@@ -17,7 +17,7 @@
 [project]
 name = "livespec-impl-beads"
 version = "0.0.0"
-description = "JSONL-backed implementation plugin for livespec"
+description = "Beads/Dolt-backed implementation plugin for livespec"
 requires-python = ">=3.10.16"
 authors = [
     { name = "Chad Woolley", email = "thewoolleyman@gmail.com" },
@@ -60,9 +60,8 @@ dev = [
 # livespec/SPECIFICATION/contracts.md §"Cross-repo coordination — pin-and-bump".
 #
 # livespec-runtime is the shared runtime sibling library
-# (livespec_runtime.cross_repo package). The data-migration script
-# under `livespec_impl_beads.migration.depends_on_typed_form`
-# uses its types module for the canonical typed-dict shape.
+# (livespec_runtime.cross_repo package). The commands/_cross_repo.py
+# module uses its types module for the canonical cross-repo manifest shape.
 # Pin matches livespec's pin (>=0.2.0; ~/livespec).
 [tool.uv.sources]
 livespec-dev-tooling = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git", tag = "v0.10.0" }
