@@ -202,32 +202,39 @@ def test_fake_children_filters_by_parent() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_connection_flags_host_port() -> None:
+def test_per_command_argv_carries_no_connection_flags() -> None:
+    """bd v1.0.5 accepts `--server*` only on `bd init`; every per-command
+    verb (`create`/`list`/`show`/`update`/`dep`) gets its connection from
+    `.beads/config.yaml` + `BEADS_DOLT_PASSWORD`, and REJECTS `--server*`
+    as unknown flags. So the per-command argv must be exactly the bd path
+    followed by the verb args — nothing appended.
+    """
     client = ShellBeadsClient(config=_config())
-    argv = client._build_argv(verb_args=["list", "--json"])  # noqa: SLF001
-    assert argv[0] == "/managed/bd"
-    assert "--server" in argv
-    assert "--external" in argv
-    assert "--server-host" in argv
-    assert "127.0.0.1" in argv
-    assert "--server-port" in argv
-    assert "3307" in argv
-    assert "--server-user" in argv
-    assert "t-user" in argv
-    assert "--database" in argv
-    assert "--prefix" in argv
-    assert "--non-interactive" in argv
-    assert "--quiet" in argv
-    assert "--server-socket" not in argv
+    argv = client._build_argv(verb_args=["list", "--status", "all", "--json"])  # noqa: SLF001
+    assert argv == ["/managed/bd", "list", "--status", "all", "--json"]
+    for forbidden in (
+        "--server",
+        "--external",
+        "--server-host",
+        "--server-port",
+        "--server-user",
+        "--server-socket",
+        "--database",
+        "--prefix",
+    ):
+        assert forbidden not in argv
 
 
-def test_connection_flags_socket_overrides_host_port() -> None:
+def test_per_command_argv_has_no_connection_flags_even_with_socket() -> None:
+    """A configured socket does not leak onto per-command argv either —
+    the socket is consumed by `bd init` / `.beads/config.yaml`, never by
+    per-command verbs.
+    """
     client = ShellBeadsClient(config=_config(socket="/tmp/dolt.sock"))
-    argv = client._build_argv(verb_args=["list", "--json"])  # noqa: SLF001
-    assert "--server-socket" in argv
-    assert "/tmp/dolt.sock" in argv
-    assert "--server-host" not in argv
-    assert "--server-port" not in argv
+    argv = client._build_argv(verb_args=["show", "li-a", "--json"])  # noqa: SLF001
+    assert argv == ["/managed/bd", "show", "li-a", "--json"]
+    assert "--server-socket" not in argv
+    assert "/tmp/dolt.sock" not in argv
 
 
 def test_build_create_argv_full_field_set() -> None:
@@ -248,7 +255,9 @@ def test_build_create_argv_full_field_set() -> None:
     assert "--description" in argv
     assert "--priority" in argv
     assert "2" in argv
-    assert "--created-at" in argv
+    # bd v1.0.5 `bd create` has NO `--created-at` flag (timestamp
+    # preservation is a `bd import`-only feature); it MUST NOT be emitted.
+    assert "--created-at" not in argv
     assert "--assignee" in argv
     assert "alice" in argv
     assert "--spec-id" in argv
@@ -284,9 +293,27 @@ def test_build_update_argv_full() -> None:
     assert "closed" in argv
     assert "--parent" in argv
     assert "li-epic" in argv
-    assert "--label" in argv
-    assert "resolution:completed" in argv
+    # bd v1.0.5 `bd update` has NO bare `--label`; label additions use
+    # `--add-label` (one per repeated label).
+    assert "--label" not in argv
+    assert argv.count("--add-label") == 1
+    add_index = argv.index("--add-label")
+    assert argv[add_index + 1] == "resolution:completed"
     assert "--metadata" in argv
+
+
+def test_build_update_argv_repeats_add_label_per_label() -> None:
+    argv = _build_update_argv(
+        issue_id="li-a",
+        status=None,
+        parent_id=None,
+        add_labels=["origin:freeform", "gap-id:G1"],
+        metadata=None,
+    )
+    assert "--label" not in argv
+    assert argv.count("--add-label") == 2
+    assert "origin:freeform" in argv
+    assert "gap-id:G1" in argv
 
 
 def test_build_update_argv_bare_is_noop_length() -> None:
@@ -387,9 +414,10 @@ def test_run_json_builds_argv_and_parses(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr("livespec_impl_beads._beads_client.subprocess.run", _fake_run)
     result = client.list_issues()
     assert result == [{"id": "li-a"}]
-    # The argv begins with the pinned bd path and carries the connection flags.
-    assert seen[0][0] == "/managed/bd"
-    assert "--server" in seen[0]
+    # The argv is exactly the pinned bd path + the per-command verb args;
+    # no `--server*` connection flags are appended (they belong to bd init).
+    assert seen[0] == ["/managed/bd", "list", "--status", "all", "--json"]
+    assert "--server" not in seen[0]
 
 
 def test_run_void_builds_argv_and_runs(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -422,19 +450,45 @@ def test_shell_list_issues_coerces_array(monkeypatch: pytest.MonkeyPatch) -> Non
     assert client.list_issues() == [{"id": "li-a"}]
 
 
-def test_shell_show_issue_returns_object(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_shell_show_issue_takes_first_element_of_array(monkeypatch: pytest.MonkeyPatch) -> None:
+    """bd v1.0.5 `bd show <id> --json` returns a JSON ARRAY of one issue;
+    `show_issue` must take the first element.
+    """
     client = ShellBeadsClient(config=_config())
     monkeypatch.setattr(
         client,
         "_run_json",
-        lambda *, verb_args: {"id": "li-a"},  # noqa: ARG005
+        lambda *, verb_args: [{"id": "li-a", "status": "open"}],  # noqa: ARG005
     )
-    assert client.show_issue(issue_id="li-a") == {"id": "li-a"}
+    assert client.show_issue(issue_id="li-a") == {"id": "li-a", "status": "open"}
 
 
-def test_shell_show_issue_non_object_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_shell_show_issue_empty_array_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An empty array (no such issue) is a clean mapping error, not an
+    IndexError.
+    """
     client = ShellBeadsClient(config=_config())
-    monkeypatch.setattr(client, "_run_json", lambda *, verb_args: [1, 2])  # noqa: ARG005
+    monkeypatch.setattr(client, "_run_json", lambda *, verb_args: [])  # noqa: ARG005
+    with pytest.raises(BeadsMappingError):
+        _ = client.show_issue(issue_id="li-a")
+
+
+def test_shell_show_issue_non_array_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Anything that is not a JSON array of issue dicts is a bad-contract
+    mapping error.
+    """
+    client = ShellBeadsClient(config=_config())
+    monkeypatch.setattr(client, "_run_json", lambda *, verb_args: {"id": "li-a"})  # noqa: ARG005
+    with pytest.raises(BeadsMappingError):
+        _ = client.show_issue(issue_id="li-a")
+
+
+def test_shell_show_issue_non_dict_first_element_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A JSON array whose first element is not an issue object is a
+    bad-contract mapping error (not a downstream TypeError).
+    """
+    client = ShellBeadsClient(config=_config())
+    monkeypatch.setattr(client, "_run_json", lambda *, verb_args: ["junk"])  # noqa: ARG005
     with pytest.raises(BeadsMappingError):
         _ = client.show_issue(issue_id="li-a")
 

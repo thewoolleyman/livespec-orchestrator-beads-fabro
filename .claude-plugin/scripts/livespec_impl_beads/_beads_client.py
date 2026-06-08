@@ -274,46 +274,19 @@ class ShellBeadsClient:
     def __init__(self, *, config: StoreConfig) -> None:
         self._config = config
 
-    def _connection_flags(self) -> list[str]:
-        """Build the server-mode FLAGS connection argv prefix.
-
-        Per the §2.1 verified v1.0.5 connection model: `--server` /
-        `--external`, then either `--server-socket` (which overrides
-        host/port) or `--server-host` + `--server-port`, plus
-        `--server-user`, `--database`, `--prefix`, and the
-        noninteractive flags. The password is supplied out-of-band via
-        the process environment (`BEADS_DOLT_PASSWORD`), never on argv.
-        """
-        config = self._config
-        flags: list[str] = ["--server", "--external"]
-        if config.socket is not None:
-            flags.extend(["--server-socket", config.socket])
-        else:
-            flags.extend(
-                [
-                    "--server-host",
-                    config.server_host,
-                    "--server-port",
-                    str(config.server_port),
-                ]
-            )
-        flags.extend(
-            [
-                "--server-user",
-                config.server_user,
-                "--database",
-                config.database,
-                "--prefix",
-                config.prefix,
-                "--non-interactive",
-                "--quiet",
-            ]
-        )
-        return flags
-
     def _build_argv(self, *, verb_args: list[str]) -> list[str]:
-        """Compose the full `bd` argv: <bd_path> <verb_args...> <connection-flags>."""
-        return [self._config.bd_path, *verb_args, *self._connection_flags()]
+        """Compose the full per-command `bd` argv: `<bd_path> <verb_args...>`.
+
+        Per the verified v1.0.5 connection model (beads-schema-mapping.md
+        §2.1), only `bd init` accepts the `--server*` connection flags.
+        Every per-command verb (`create`/`list`/`show`/`update`/`dep`)
+        takes its connection from `.beads/config.yaml` (written by
+        `bd init`) plus the tenant password in the `BEADS_DOLT_PASSWORD`
+        environment variable, and REJECTS `--server*` as unknown flags.
+        So per-command argv carries NO connection flags — just the pinned
+        bd path and the verb args.
+        """
+        return [self._config.bd_path, *verb_args]
 
     def _run_json(self, *, verb_args: list[str]) -> Any:
         """Run a read verb and parse its `--json` stdout into a Python value."""
@@ -388,12 +361,27 @@ class ShellBeadsClient:
 
     def show_issue(self, *, issue_id: str) -> BeadsRecord:
         parsed = self._run_json(verb_args=["show", issue_id, "--json"])
-        if not isinstance(parsed, dict):
+        # bd v1.0.5 `bd show <id> --json` returns a JSON ARRAY containing
+        # the single matched issue (not a bare object); take the first
+        # element. An empty array means no such issue.
+        if not isinstance(parsed, list):
             raise BeadsMappingError(
                 record_id=issue_id,
-                detail="bd show --json did not return a JSON object",
+                detail="bd show --json did not return a JSON array",
             )
-        return cast("BeadsRecord", parsed)
+        records = cast("list[Any]", parsed)
+        if not records:
+            raise BeadsMappingError(
+                record_id=issue_id,
+                detail="bd show --json returned an empty array (no such issue)",
+            )
+        first = records[0]
+        if not isinstance(first, dict):
+            raise BeadsMappingError(
+                record_id=issue_id,
+                detail="bd show --json array element was not a JSON object",
+            )
+        return cast("BeadsRecord", first)
 
     def children(self, *, parent_id: str) -> list[BeadsRecord]:
         parsed = self._run_json(verb_args=["children", parent_id, "--json"])
@@ -471,9 +459,15 @@ def _build_create_argv(*, draft: IssueDraft) -> list[str]:
 
     Per the FIELD MAP: operator-supplied `--id`, native `--type` /
     `--title` / `--description` / `--priority` / `--assignee` /
-    `--created-at` / `--spec-id` / `--parent`, every label as a repeated
-    `--label`, and the metadata JSON object as a single `--metadata`
-    argument carrying compact JSON.
+    `--spec-id` / `--parent`, every label as a repeated `--label`, and
+    the metadata JSON object as a single `--metadata` argument carrying
+    compact JSON.
+
+    `bd create` in v1.0.5 has NO `--created-at` flag — server-assigned
+    creation timestamps are authoritative and timestamp preservation is
+    a `bd import`-only feature — so `draft.created_at` is not emitted
+    here (it is still carried on the draft for the FakeBeadsClient and
+    the import path).
     """
     argv: list[str] = [
         "create",
@@ -487,8 +481,6 @@ def _build_create_argv(*, draft: IssueDraft) -> list[str]:
         draft.description,
         "--priority",
         str(draft.priority),
-        "--created-at",
-        draft.created_at,
     ]
     if draft.assignee is not None:
         argv.extend(["--assignee", draft.assignee])
@@ -510,7 +502,13 @@ def _build_update_argv(
     add_labels: list[str] | None,
     metadata: dict[str, Any] | None,
 ) -> list[str]:
-    """Build the `bd update <id> ...` verb argv (pure; fully covered)."""
+    """Build the `bd update <id> ...` verb argv (pure; fully covered).
+
+    bd v1.0.5 `bd update` has no bare `--label`; label ADDITIONS use the
+    repeatable `--add-label` flag (the in-place close path only ever adds
+    labels, e.g. `resolution:completed`), so each label is emitted as a
+    `--add-label <label>` pair.
+    """
     argv: list[str] = ["update", issue_id]
     if status is not None:
         argv.extend(["--status", status])
@@ -518,7 +516,7 @@ def _build_update_argv(
         argv.extend(["--parent", parent_id])
     if add_labels is not None:
         for label in add_labels:
-            argv.extend(["--label", label])
+            argv.extend(["--add-label", label])
     if metadata is not None:
         argv.extend(["--metadata", json.dumps(metadata, separators=(",", ":"), sort_keys=True)])
     return argv
