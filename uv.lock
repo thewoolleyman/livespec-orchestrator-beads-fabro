@@ -203,7 +203,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371 }
 wheels = [
@@ -478,6 +478,11 @@ wheels = [
 ]
 
 [[package]]
+name = "livespec-dev-tooling"
+version = "0.10.0"
+source = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git?tag=v0.10.0#f3c2e1673d861d101a4efecd0ee77e4187bc97f2" }
+
+[[package]]
 name = "livespec-impl-beads"
 version = "0.0.0"
 source = { virtual = "." }
@@ -488,6 +493,8 @@ dev = [
     { name = "hypothesis" },
     { name = "hypothesis-jsonschema" },
     { name = "import-linter" },
+    { name = "livespec-dev-tooling" },
+    { name = "livespec-runtime" },
     { name = "mutmut" },
     { name = "pyright" },
     { name = "pytest" },
@@ -505,6 +512,8 @@ dev = [
     { name = "hypothesis", specifier = "==6.122.3" },
     { name = "hypothesis-jsonschema", specifier = "==0.23.1" },
     { name = "import-linter", specifier = "==2.1" },
+    { name = "livespec-dev-tooling", git = "https://github.com/thewoolleyman/livespec-dev-tooling.git?tag=v0.10.0" },
+    { name = "livespec-runtime", git = "https://github.com/thewoolleyman/livespec-runtime.git?tag=v0.3.0" },
     { name = "mutmut", specifier = "==3.2.3" },
     { name = "pyright", specifier = "==1.1.391" },
     { name = "pytest", specifier = "==8.3.4" },
@@ -512,6 +521,14 @@ dev = [
     { name = "pytest-icdiff", specifier = "==0.9" },
     { name = "pytest-xdist", specifier = "==3.8.0" },
     { name = "ruff", specifier = "==0.8.6" },
+]
+
+[[package]]
+name = "livespec-runtime"
+version = "0.3.0"
+source = { git = "https://github.com/thewoolleyman/livespec-runtime.git?tag=v0.3.0#e7548098ecd42534c5be8a2da66851019d935d81" }
+dependencies = [
+    { name = "typing-extensions" },
 ]
 
 [[package]]

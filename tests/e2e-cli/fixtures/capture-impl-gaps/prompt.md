@@ -1,0 +1,1 @@
+/livespec-impl-beads:capture-impl-gaps Detect spec→impl gaps via the detect-impl-gaps thin transport, then file a gap-tied work-item for each surfaced gap into the beads tenant store. Consent to filing every surfaced gap.

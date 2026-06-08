@@ -1,0 +1,1 @@
+/livespec-impl-beads:implement Drive Red→Green for the most-ripe open work-item in the beads tenant store. For a gap-tied item, verify closure by re-running capture-impl-gaps in dry-run mode, then record the resolution back into the beads tenant store.

@@ -171,6 +171,13 @@ check:
         check-lint
         check-types
         check-coverage
+        # Beads-private merge-evidence static check (R7). Reads the
+        # AuditRecord from each closed issue's `metadata` via the store
+        # (hermetic fake in the default tier → empty tenant → passes
+        # trivially); same git-reachability rules as the plaintext sibling's
+        # JSONL-shaped equivalent; epics exempt. Not a canonical slug, so it
+        # rides in the private block after the canonical set.
+        check-work-item-merge-evidence
     )
     failed=()
     ran=0
@@ -239,6 +246,23 @@ check-coverage:
         echo ":: check-coverage: no .coverage data file (CI standalone job); running the suite"
         uv run pytest -n auto --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
     fi
+
+# Beads-private merge-evidence static check (R7; SPECIFICATION/contracts.md
+# §"`work_item_merge_evidence` static check"). Walks every materialized
+# work-item from the store descriptor, reading the AuditRecord from each
+# closed issue's `metadata` column through the same beads client the runtime
+# uses. In the hermetic default tier (LIVESPEC_BEADS_FAKE) the tenant is
+# empty, so the walk yields nothing and the check passes trivially; the
+# git-reachability rules (cat-file / merge-base --is-ancestor) and the
+# epics-exempt rule match the plaintext sibling's JSONL-shaped equivalent.
+# This is an impl-beads-private check (NOT a canonical livespec-dev-tooling
+# slug), so it is wired here in the private block after the canonical set.
+# Runs in the hermetic FAKE tier (LIVESPEC_BEADS_FAKE=1) so `just check`
+# never requires a live `bd` / dolt-server: the fake tenant is empty, the
+# walk yields nothing, and the check passes trivially. A live-tier audit of
+# real closures runs out-of-band with the connection env configured.
+check-work-item-merge-evidence:
+    LIVESPEC_BEADS_FAKE=1 uv run python dev-tooling/checks/work_item_merge_evidence.py
 
 # ---------------------------------------------------------------
 # Canonical structural checks (shared from livespec-dev-tooling).

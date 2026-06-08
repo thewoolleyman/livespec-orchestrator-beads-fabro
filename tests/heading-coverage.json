@@ -1,0 +1,198 @@
+[
+  {
+    "heading": "## Purpose",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "spec.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## Scope boundary",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "spec.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## Terminology",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "spec.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## Substrate properties",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "spec.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## What this spec is not",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "spec.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## Lifecycle and evolution",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "spec.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## Plugin namespace",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## The ten-skill surface",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## Beads connection model",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## Work-item beads-issue mapping",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## Memo beads-issue mapping",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## Spec Reader internal API",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## Persistent Agent Knowledge realization",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## `compat` block",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## Cross-boundary handoffs",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## Inherited from livespec",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## Beads substrate constraints",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## Process boundaries",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## Spec Reader implementation constraints",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## Skill orchestration constraints",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## Persistent Agent Knowledge constraints",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## Forbidden patterns",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+  },
+  {
+    "heading": "## Scenario 1 \u2014 Gap-tied fix cycle",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
+  },
+  {
+    "heading": "## Scenario 2 \u2014 Memo \u2192 spec-bound disposition",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
+  },
+  {
+    "heading": "## Scenario 3 \u2014 Memo \u2192 persistent-knowledge graduation",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
+  },
+  {
+    "heading": "## Scenario 4 \u2014 Freeform bug fix",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
+  },
+  {
+    "heading": "## Scenario 5 \u2014 Doctor cross-boundary read",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
+  },
+  {
+    "heading": "## Scenario 6 \u2014 Cross-repo Layer 3 loop driver (livespec-resident)",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
+  }
+]

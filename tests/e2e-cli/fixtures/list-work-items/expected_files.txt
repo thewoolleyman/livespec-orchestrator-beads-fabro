@@ -1,0 +1,2 @@
+# Thin transport: list-work-items emits JSON to stdout and writes NO files.
+# No file assertion — success is the exit-0 round-trip (contract req 4).

@@ -1,0 +1,4 @@
+# No project-root file assertion: gap-tied work-items are created as issues
+# in the per-repo beads tenant DB (the substrate has no on-disk
+# work-items.jsonl). Success is the exit-0 round-trip; the absent file list
+# means no per-skill file assertion (contract req 4).

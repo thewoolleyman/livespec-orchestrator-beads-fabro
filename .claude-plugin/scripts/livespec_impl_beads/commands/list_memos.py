@@ -25,7 +25,6 @@ from pathlib import Path
 from typing import Literal
 
 from livespec_impl_beads.commands._config import resolve_store_config
-from livespec_impl_beads.errors import StoreFileMissingError
 from livespec_impl_beads.store import materialize_memos, read_memos
 from livespec_impl_beads.types import Memo, StoreConfig
 
@@ -54,10 +53,11 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _load_memos(*, path: StoreConfig) -> list[Memo]:
-    try:
-        return list(materialize_memos(read_memos(path=path)).values())
-    except StoreFileMissingError:
-        return []
+    # The beads store has no on-disk file to be missing: an unconfigured or
+    # empty tenant simply yields an empty memo stream, so the JSONL-era
+    # `StoreFileMissingError` fallback the plaintext sibling carried is not
+    # reachable here. An empty tenant is the natural empty-result path.
+    return list(materialize_memos(read_memos(path=path)).values())
 
 
 def _filter_memos(*, materialized: list[Memo], name: str) -> list[Memo]:

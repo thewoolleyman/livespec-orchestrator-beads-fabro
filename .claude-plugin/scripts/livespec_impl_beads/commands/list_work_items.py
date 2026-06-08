@@ -41,7 +41,6 @@ from livespec_runtime.cross_repo.types import CrossRepoManifest
 
 from livespec_impl_beads.commands._config import resolve_store_config
 from livespec_impl_beads.commands._cross_repo import is_item_ready, load_manifest
-from livespec_impl_beads.errors import StoreFileMissingError
 from livespec_impl_beads.store import materialize_work_items, read_work_items
 from livespec_impl_beads.types import StoreConfig, WorkItem
 
@@ -89,10 +88,11 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _load_work_items(*, path: StoreConfig) -> list[WorkItem]:
-    try:
-        return list(materialize_work_items(read_work_items(path=path)).values())
-    except StoreFileMissingError:
-        return []
+    # The beads store has no on-disk file to be missing: an unconfigured or
+    # empty tenant simply yields an empty issue stream, so the JSONL-era
+    # `StoreFileMissingError` fallback the plaintext sibling carried is not
+    # reachable here. An empty tenant is the natural empty-result path.
+    return list(materialize_work_items(read_work_items(path=path)).values())
 
 
 def _filter_work_items(
