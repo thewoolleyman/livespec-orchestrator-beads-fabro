@@ -50,13 +50,17 @@ Show the user the assembled record and ask "file?". On `yes`, append:
 
 ```python
 from livespec_impl_beads._ids import new_work_item_id
+from livespec_impl_beads.commands._config import resolve_store_config
 from livespec_impl_beads.store import append_work_item
 from livespec_impl_beads.types import WorkItem
 from datetime import datetime, timezone
 from pathlib import Path
 
+config = resolve_store_config(cwd=Path.cwd(), work_items_arg=None, memos_arg=None)
 item = WorkItem(
-    id=new_work_item_id(),
+    # bd enforces id-prefix == tenant DB name, so the id carries the
+    # configured tenant prefix (config.prefix), not a hardcoded `li-`.
+    id=new_work_item_id(prefix=config.prefix),
     type=type_,
     status="open",
     title=title,
@@ -73,7 +77,7 @@ item = WorkItem(
     superseded_by=None,
     spec_commitment_hint=spec_commitment_hint,  # str | None; None for freeform.
 )
-append_work_item(path=Path("work-items.jsonl"), item=item)
+append_work_item(path=config, item=item)
 ```
 
 Print the assigned id back to the user.
