@@ -43,7 +43,7 @@ from livespec_impl_beads.commands._config import resolve_store_config
 from livespec_impl_beads.commands._cross_repo import is_item_ready, load_manifest
 from livespec_impl_beads.errors import StoreFileMissingError
 from livespec_impl_beads.store import materialize_work_items, read_work_items
-from livespec_impl_beads.types import WorkItem
+from livespec_impl_beads.types import StoreConfig, WorkItem
 
 FilterChoice = Literal["all", "gap-tied", "freeform", "blocked", "ready", "closed"]
 
@@ -88,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _load_work_items(*, path: Path) -> list[WorkItem]:
+def _load_work_items(*, path: StoreConfig) -> list[WorkItem]:
     try:
         return list(materialize_work_items(read_work_items(path=path)).values())
     except StoreFileMissingError:

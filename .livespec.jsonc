@@ -1,0 +1,56 @@
+// Project-local livespec configuration for livespec-impl-beads.
+// This plugin dogfoods livespec: the SPECIFICATION/ tree at the repo
+// root is the live spec; this plugin's own impl tracking lives in a
+// per-repo beads TENANT DATABASE on the shared dolt-server (NOT in JSONL
+// files at the repo root — that is the plaintext sibling's substrate).
+//
+// Authority:
+//   livespec/SPECIFICATION/contracts.md
+//     §"Cross-repo coordination — pin-and-bump"
+//     §"`compat` block" (the schema this file populates)
+//   dev-tooling/implementation/research/beads-schema-mapping.md
+//     §2.1 (the verified v1.0.5 server-mode FLAGS connection model)
+{
+  "template": "livespec",
+  "spec_root": "SPECIFICATION",
+  "implementation": { "plugin": "livespec-impl-beads" },
+  "livespec-impl-beads": {
+    // Substrate marker. The plaintext sibling declares "jsonl"; this
+    // plugin's substrate is a beads/Dolt tenant DB.
+    "format": "beads",
+    "compat": {
+      // semver range and pinned tag against livespec. The pinned value
+      // is a placeholder until the first livespec release tag; the next
+      // bump-pin PR will set a real release tag here. Doctor's
+      // contract-version-compatibility invariant fires `warn` against
+      // "master" pins; that is expected during bootstrap.
+      "livespec": ">=0.1.0,<1.0.0",
+      "pinned": "master"
+    },
+    // Per-repo beads tenant CONNECTION block. These keys are read by
+    // commands/_config.py and overlaid by the LIVESPEC_BD_PATH /
+    // LIVESPEC_BEADS_FAKE environment variables. The tenant PASSWORD is
+    // deliberately ABSENT — it is supplied only via the BEADS_DOLT_PASSWORD
+    // environment variable at bd-call time and is NEVER committed here.
+    //
+    // `prefix` == `tenant` == `database` is the load-bearing identity rule
+    // (the beads id prefix doubles as the tenant DB name). `socket`
+    // overrides host/port when set; TCP is the default for sandboxed
+    // callers that lack 0750 socket-directory access.
+    //
+    // `fake` selects the hermetic in-memory backend (the default CI tier
+    // and the no-live-connection runtime fallback). It is false here so the
+    // committed config describes the real connection; CI and tests set
+    // LIVESPEC_BEADS_FAKE=1 to force the fake.
+    "connection": {
+      "tenant": "livespec-impl-beads",
+      "prefix": "livespec-impl-beads",
+      "database": "livespec-impl-beads",
+      "server_user": "livespec-impl-beads",
+      "server_host": "127.0.0.1",
+      "server_port": 3307,
+      "socket": "/var/lib/doltdb/dolt.sock",
+      "fake": false
+    }
+  }
+}

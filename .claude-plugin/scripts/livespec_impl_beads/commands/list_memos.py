@@ -27,7 +27,7 @@ from typing import Literal
 from livespec_impl_beads.commands._config import resolve_store_config
 from livespec_impl_beads.errors import StoreFileMissingError
 from livespec_impl_beads.store import materialize_memos, read_memos
-from livespec_impl_beads.types import Memo
+from livespec_impl_beads.types import Memo, StoreConfig
 
 FilterChoice = Literal["all", "untriaged", "dispositioned"]
 
@@ -53,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _load_memos(*, path: Path) -> list[Memo]:
+def _load_memos(*, path: StoreConfig) -> list[Memo]:
     try:
         return list(materialize_memos(read_memos(path=path)).values())
     except StoreFileMissingError:

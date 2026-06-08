@@ -10,7 +10,6 @@ SPECIFICATION/contracts.md §"Spec Reader internal API".
 """
 
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Literal
 
 DependsOnRaw = str | dict[str, Any]
@@ -148,13 +147,62 @@ class FileDiff:
 
 @dataclass(frozen=True, kw_only=True)
 class StoreConfig:
-    """Configured paths for the JSONL store, read from .livespec.jsonc.
+    """Beads-tenant connection descriptor, resolved from .livespec.jsonc + env.
 
-    Per SPECIFICATION/contracts.md §"`compat` block", the
-    livespec-impl-beads configuration block declares work_items_path
-    and memos_path; defaults are work-items.jsonl and memos.jsonl at the
-    consumer project root.
+    This REPLACES the plaintext sibling's path-based `StoreConfig`. The
+    beads store has no on-disk JSONL files; the substrate is a per-repo
+    tenant database on the shared `dolt-server`. The fields below are the
+    verified v1.0.5 server-mode FLAGS connection surface
+    (beads-schema-mapping.md §2.1):
+
+    - `tenant` — the logical tenant name (the livespec-family repo).
+    - `prefix` — the beads id prefix, which by the load-bearing identity
+      rule EQUALS the tenant database name (`prefix == database`).
+    - `server_host` / `server_port` — TCP connection (default
+      `127.0.0.1:3307`).
+    - `socket` — optional unix-socket path; when set it OVERRIDES
+      host/port (the §2.1 `--server-socket` semantics).
+    - `server_user` — the least-privilege tenant user scoped to the DB.
+    - `database` — the tenant DB selected explicitly via `--database`
+      (== `prefix`).
+    - `bd_path` — absolute path to the pinned bd v1.0.5 binary (NEVER the
+      mise shim; resolved from config/env in `commands/_config.py`).
+    - `fake` — hermetic toggle. When True the store talks to an in-memory
+      `FakeBeadsClient` (the default CI tier and the no-live-connection
+      runtime fallback); when False it shells out to `bd` over the live
+      connection. Resolved from the connection block overlaid by
+      `LIVESPEC_BEADS_FAKE`.
+
+    The tenant PASSWORD is deliberately NOT a field: it is read only from
+    the `BEADS_DOLT_PASSWORD` environment variable at `bd`-call time and
+    is never stored on the descriptor or committed to `.livespec.jsonc`.
+
+    REPURPOSED-PATH NOTE: the store's public six functions keep the
+    keyword `path` (so the command call sites do not change), but `path`
+    is now typed as this `StoreConfig` rather than a filesystem `Path`.
+    The `work_items_path` / `memos_path` PROPERTIES below return `self`
+    so the legacy call expression `read_work_items(path=config.work_items_path)`
+    passes the connection descriptor straight through as the `path`
+    argument — there is exactly one tenant, so both "stores" are the
+    same connection.
     """
 
-    work_items_path: Path
-    memos_path: Path
+    tenant: str
+    prefix: str
+    server_user: str
+    database: str
+    bd_path: str
+    server_host: str = "127.0.0.1"
+    server_port: int = 3307
+    socket: str | None = None
+    fake: bool = False
+
+    @property
+    def work_items_path(self) -> "StoreConfig":
+        """Return the connection descriptor itself (see REPURPOSED-PATH NOTE)."""
+        return self
+
+    @property
+    def memos_path(self) -> "StoreConfig":
+        """Return the connection descriptor itself (see REPURPOSED-PATH NOTE)."""
+        return self

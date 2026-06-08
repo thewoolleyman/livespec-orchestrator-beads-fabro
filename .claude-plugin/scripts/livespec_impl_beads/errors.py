@@ -83,9 +83,7 @@ class BeadsCommandError(Exception):
         exit_code: int,
         stderr: str,
     ) -> None:
-        super().__init__(
-            f"beads command failed (exit {exit_code}): {command}\n{stderr}"
-        )
+        super().__init__(f"beads command failed (exit {exit_code}): {command}\n{stderr}")
         self.command = command
         self.exit_code = exit_code
         self.stderr = stderr
