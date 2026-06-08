@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from typing import Any
 
 import pytest
 from livespec_impl_beads._beads_client import (
@@ -237,6 +238,25 @@ def test_per_command_argv_has_no_connection_flags_even_with_socket() -> None:
     assert "/tmp/dolt.sock" not in argv
 
 
+def test_list_issues_passes_limit_zero_for_unbounded_enumeration() -> None:
+    """`bd list` defaults to `--limit 50`, silently capping enumeration at
+    50 records. `list_issues` MUST pass bd's `--limit 0` "unbounded"
+    sentinel so the full tenant set is returned. We capture the `verb_args`
+    that `list_issues` hands to `_run_json` (no subprocess) and assert the
+    unbounded argv.
+    """
+    captured: dict[str, list[str]] = {}
+
+    class _Recording(ShellBeadsClient):
+        def _run_json(self, *, verb_args: list[str]) -> Any:
+            captured["verb_args"] = verb_args
+            return []
+
+    client = _Recording(config=_config())
+    _ = client.list_issues()
+    assert captured["verb_args"] == ["list", "--status", "all", "--limit", "0", "--json"]
+
+
 def test_build_create_argv_full_field_set() -> None:
     draft = _draft(
         issue_id="li-a",
@@ -414,9 +434,10 @@ def test_run_json_builds_argv_and_parses(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr("livespec_impl_beads._beads_client.subprocess.run", _fake_run)
     result = client.list_issues()
     assert result == [{"id": "li-a"}]
-    # The argv is exactly the pinned bd path + the per-command verb args;
-    # no `--server*` connection flags are appended (they belong to bd init).
-    assert seen[0] == ["/managed/bd", "list", "--status", "all", "--json"]
+    # The argv is exactly the pinned bd path + the per-command verb args
+    # (including `--limit 0` for unbounded enumeration); no `--server*`
+    # connection flags are appended (they belong to bd init).
+    assert seen[0] == ["/managed/bd", "list", "--status", "all", "--limit", "0", "--json"]
     assert "--server" not in seen[0]
 
 
