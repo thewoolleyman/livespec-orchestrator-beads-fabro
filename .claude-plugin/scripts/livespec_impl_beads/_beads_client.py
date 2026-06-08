@@ -356,7 +356,7 @@ class ShellBeadsClient:
             ) from exc
 
     def list_issues(self) -> list[BeadsRecord]:
-        parsed = self._run_json(verb_args=["list", "--status", "all", "--json"])
+        parsed = self._run_json(verb_args=["list", "--status", "all", "--limit", "0", "--json"])
         return _coerce_record_list(parsed=parsed)
 
     def show_issue(self, *, issue_id: str) -> BeadsRecord:
