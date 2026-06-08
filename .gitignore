@@ -22,10 +22,7 @@ htmlcov/
 .venv/
 livespec_impl_beads.egg-info/
 
-### Beads / Dolt substrate (per build plan FILE TREE: .gitignore(A) — .beads/ + secret env)
+### Beads / Dolt substrate
 .beads/
-
-### Secret material — connection password MUST NOT be committed
-.env
-.env.*
-*.secret
+secrets.env.local
+*.env.local

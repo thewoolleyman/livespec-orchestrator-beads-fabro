@@ -18,7 +18,7 @@ To populate the spec tree, run from this repo's root:
 The seed wrapper writes the canonical NLSpec multi-file convention:
 
 - `spec.md` — overall intent and behavior
-- `contracts.md` — wire-level interfaces (the 9-skill surface, the
+- `contracts.md` — wire-level interfaces (the 10-skill surface, the
   Spec Reader internal adapter, the work-items / memos store schemas,
   the `compat` block this plugin pins against `livespec`)
 - `constraints.md` — architecture-level constraints

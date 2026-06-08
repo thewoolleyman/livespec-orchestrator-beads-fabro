@@ -1,5 +1,5 @@
 {
   "name": "livespec-impl-beads",
   "version": "0.1.0",
-  "description": "Beads/Dolt-backed implementation plugin for livespec Exposes /livespec-impl-beads:capture-impl-gaps, /livespec-impl-beads:capture-memo, /livespec-impl-beads:capture-spec-drift, /livespec-impl-beads:capture-work-item, /livespec-impl-beads:detect-impl-gaps, /livespec-impl-beads:implement, /livespec-impl-beads:list-memos, /livespec-impl-beads:list-work-items, /livespec-impl-beads:next, /livespec-impl-beads:process-memos."
+  "description": "Beads/Dolt-backed implementation plugin for livespec. Exposes /livespec-impl-beads:capture-impl-gaps, /livespec-impl-beads:capture-memo, /livespec-impl-beads:capture-spec-drift, /livespec-impl-beads:capture-work-item, /livespec-impl-beads:detect-impl-gaps, /livespec-impl-beads:implement, /livespec-impl-beads:list-memos, /livespec-impl-beads:list-work-items, /livespec-impl-beads:next, /livespec-impl-beads:process-memos."
 }

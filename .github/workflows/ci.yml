@@ -40,6 +40,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          # Need the base ref reachable for the PR diff below.
           fetch-depth: 0
 
       - name: Detect Python file changes
@@ -50,7 +51,15 @@ jobs:
         run: |
           set -uo pipefail
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
-            git fetch origin "$BASE_REF" --depth=1 2>/dev/null || true
+            # Full-depth fetch (checkout already set fetch-depth: 0) — a
+            # shallow `--depth=1` fetch doesn't bring in commits prior to
+            # the base ref tip, so `git diff origin/${BASE_REF}...HEAD`
+            # would intermittently fail with "no merge base" when the
+            # local clone's history didn't reach the divergence point.
+            # Keep `|| true` as a fallback: when fetch fails (auth,
+            # network) we still try the diff against whatever
+            # origin/${BASE_REF} ref the checkout already populated.
+            git fetch origin "$BASE_REF" || true
             changeset=$(git diff --name-only "origin/${BASE_REF}...HEAD")
             if echo "$changeset" | grep -qE '\.py$'; then
               echo "py_changed=true" >> "$GITHUB_OUTPUT"
@@ -101,13 +110,92 @@ jobs:
         run: just ${{ matrix.target }}
 
   # Metadata matrix runs unconditionally to preserve the repo-metadata
-  # safety net. Empty in the starter; populate as livespec-impl-beads
-  # adds dev-tooling/checks/<slug>.py scripts for
-  # claude-md-coverage, heading-coverage, vendor-manifest,
-  # no-direct-tool-invocation, check-tools, and similar.
+  # safety net. check-aggregate-completeness is the wiring-completeness
+  # gate (epic li-univck) — verifies the justfile `check:` aggregate
+  # wires every canonical slug. check-tool-backed-check-completeness
+  # (dev-tooling v0.8.0, epic li-pyright-gate) asserts the four
+  # tool-backed checks (lint, format, types, coverage) are LITERAL
+  # members of BOTH the `just check` targets array AND a CI matrix —
+  # so the metadata matrix MUST carry it here to satisfy the both-
+  # surfaces invariant it enforces.
   check-metadata:
-    name: metadata-checks
+    name: ${{ matrix.target }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - check-aggregate-completeness
+          - check-primary-checkout-commit-refuse-hook-installed
+          - check-tool-backed-check-completeness
     steps:
-      - name: Placeholder
-        run: echo "::notice::metadata-checks matrix is empty; populate as dev-tooling/checks/ scripts land"
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The shared livespec-dev-tooling commit-refuse-hook check
+      # enforces the canonical `.git/hooks/pre-commit` AND
+      # `.git/hooks/pre-push` body on the primary checkout per
+      # livespec/SPECIFICATION/non-functional-requirements.md
+      # §"Primary-checkout commit-refuse hook" /
+      # §"Commit-refuse hook bootstrap procedure" (v095 family-wide
+      # invariant; supersedes the v091-v094 bare-flag mechanism
+      # which caused stale-on-disk-read failures at primaries).
+      # `actions/checkout` clones with empty hook bodies; install
+      # the vendored canonical hook script at both paths so the
+      # invariant is satisfied for the CI run.
+      - name: Install commit-refuse hook (satisfy hook invariant)
+        if: matrix.target == 'check-primary-checkout-commit-refuse-hook-installed'
+        run: |
+          install -m 0755 dev-tooling/livespec-commit-refuse-hook.sh .git/hooks/pre-commit
+          install -m 0755 dev-tooling/livespec-commit-refuse-hook.sh .git/hooks/pre-push
+
+      - name: Install pinned binaries via mise
+        uses: jdx/mise-action@v2
+
+      - name: Install Python dev deps via uv
+        run: uv sync --all-groups
+
+      - name: just ${{ matrix.target }}
+        run: just ${{ matrix.target }}
+
+  # CLI end-to-end harness — the top-of-pyramid, user-surface tier whose
+  # sole interaction surface is the `claude` CLI binary (per
+  # livespec/SPECIFICATION/contracts.md §"CLI end-to-end harness
+  # contract"). The harness ships from livespec-dev-tooling (v0.8.0) and
+  # is consumed via the imported test_workflow_full_round_trip entry
+  # point wired in tests/e2e-cli/. This job runs the MOCK tier
+  # (LIVESPEC_E2E_HARNESS=mock — the one mocked boundary is the
+  # `claude -p` subprocess; real install-shape setup, real structural
+  # skill discovery, the real fail-closed time-bomb coverage gate, and
+  # the real per-skill orchestration loop all run). The coverage gate is
+  # fail-closed: a `/livespec-impl-beads:*` skill added without a
+  # `tests/e2e-cli/fixtures/<skill>/` directory raises CoverageGateError
+  # and fails this job. The `real` tier (driving the actual `claude`
+  # binary against the upstream livespec plugin paired in lockstep)
+  # requires ANTHROPIC_API_KEY and is deliberately NOT run in CI.
+  e2e-cli:
+    name: e2e-cli
+    needs: setup
+    runs-on: ubuntu-latest
+    env:
+      LIVESPEC_E2E_HARNESS: mock
+    steps:
+      - name: Skip when no .py changes
+        if: needs.setup.outputs.py_changed != 'true'
+        run: echo "::notice::skipped e2e-cli — no .py changes in this PR"
+
+      - name: Checkout
+        if: needs.setup.outputs.py_changed == 'true'
+        uses: actions/checkout@v4
+
+      - name: Install pinned binaries via mise
+        if: needs.setup.outputs.py_changed == 'true'
+        uses: jdx/mise-action@v2
+
+      - name: Install Python dev deps via uv
+        if: needs.setup.outputs.py_changed == 'true'
+        run: uv sync --all-groups
+
+      - name: Run the CLI e2e harness (mock tier, fail-closed coverage gate)
+        if: needs.setup.outputs.py_changed == 'true'
+        run: just check-e2e-cli
