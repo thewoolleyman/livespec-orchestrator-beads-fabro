@@ -30,13 +30,18 @@ Classification happens in `process-memos`.
 
 ```python
 from livespec_impl_beads._ids import new_memo_id
+from livespec_impl_beads.commands._config import resolve_store_config
 from livespec_impl_beads.store import append_memo
 from livespec_impl_beads.types import Memo
 from datetime import datetime, timezone
 from pathlib import Path
 
+config = resolve_store_config(cwd=Path.cwd(), work_items_arg=None, memos_arg=None)
 memo = Memo(
-    id=new_memo_id(),
+    # A memo is a `kind:memo` issue in the SAME tenant, so its id carries
+    # the configured tenant prefix (config.prefix), not a hardcoded `mm-`;
+    # the `kind:memo` label is the discriminator.
+    id=new_memo_id(prefix=config.prefix),
     text=text_from_user,
     state="untriaged",
     disposition=None,
@@ -45,10 +50,10 @@ memo = Memo(
     knowledge_file=None,
     propose_change_topic=None,
 )
-append_memo(path=Path("memos.jsonl"), memo=memo)
+append_memo(path=config, memo=memo)
 ```
 
-Print the assigned `mm-` id back. Do NOT ask "what disposition?" —
+Print the assigned id back. Do NOT ask "what disposition?" —
 that's the next skill's job.
 
 ## Important properties
