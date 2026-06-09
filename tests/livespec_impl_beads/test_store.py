@@ -536,24 +536,39 @@ def _raw_work_item(**overrides: object) -> dict[str, object]:
     return base
 
 
-def test_missing_origin_label_raises_mapping_error(
+def test_missing_origin_label_derives_freeform(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """A record with no origin label (e.g. raw `bd create`) derives freeform,
+    not a mapping error — one unlabeled record must not blind the enumeration."""
     _install_stub(monkeypatch=monkeypatch, records=[_raw_work_item(labels=[])])
-    with pytest.raises(BeadsMappingError) as excinfo:
-        list(read_work_items(path=_config()))
-    assert "origin" in excinfo.value.detail
+    [read_back] = list(read_work_items(path=_config()))
+    assert read_back.origin == "freeform"
+    assert read_back.gap_id is None
 
 
-def test_invalid_origin_label_raises_mapping_error(
+def test_missing_origin_with_gap_id_derives_gap_tied(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Origin is derivable: a record carrying a gap-id but no origin label
+    reads back as gap-tied."""
+    _install_stub(monkeypatch=monkeypatch, records=[_raw_work_item(labels=["gap-id:G9"])])
+    [read_back] = list(read_work_items(path=_config()))
+    assert read_back.origin == "gap-tied"
+    assert read_back.gap_id == "G9"
+
+
+def test_invalid_origin_label_derives_freeform(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unrecognized origin value is treated as malformed and derived from
+    gap_id (here absent → freeform), never a hard mapping error."""
     _install_stub(
         monkeypatch=monkeypatch,
         records=[_raw_work_item(labels=["origin:not-a-real-origin"])],
     )
-    with pytest.raises(BeadsMappingError):
-        list(read_work_items(path=_config()))
+    [read_back] = list(read_work_items(path=_config()))
+    assert read_back.origin == "freeform"
 
 
 def test_non_string_required_field_raises_mapping_error(
@@ -609,11 +624,10 @@ def test_optional_field_none_is_accepted(
 def test_non_list_labels_treated_as_empty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A non-list `labels` value yields no labels → missing origin → mapping error."""
+    """A non-list `labels` value yields no labels → no origin label → derived freeform."""
     _install_stub(monkeypatch=monkeypatch, records=[_raw_work_item(labels="origin:freeform")])
-    with pytest.raises(BeadsMappingError) as excinfo:
-        list(read_work_items(path=_config()))
-    assert "origin" in excinfo.value.detail
+    [read_back] = list(read_work_items(path=_config()))
+    assert read_back.origin == "freeform"
 
 
 def test_non_string_label_entries_are_ignored(
