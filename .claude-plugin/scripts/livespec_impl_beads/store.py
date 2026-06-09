@@ -60,6 +60,7 @@ from livespec_impl_beads._beads_client import (
 from livespec_impl_beads.errors import BeadsMappingError
 from livespec_impl_beads.types import (
     AuditRecord,
+    DependsOnRaw,
     Memo,
     WorkItem,
 )
@@ -370,21 +371,27 @@ def _record_to_memo(*, record: BeadsRecord) -> Memo:
     )
 
 
-def _depends_on_from_edges(*, record: BeadsRecord) -> tuple[str, ...]:
-    """Reconstruct `depends_on` (bare-string ids) from the `blocks` edges.
+def _depends_on_from_edges(*, record: BeadsRecord) -> tuple[DependsOnRaw, ...]:
+    """Reconstruct `depends_on` from the `blocks` edges as v072 typed-dicts.
 
     Each `blocks` edge `{depends_on_id, type:"blocks"}` means this issue
     is blocked by `depends_on_id`, which is exactly the livespec
-    `depends_on` semantics. The bare-string form is emitted because
-    `_cross_repo.parse_entry` accepts bare strings as `LocalDependency`,
-    so the existing `next` ranker works unchanged.
+    `depends_on` semantics. beads `blocks` edges are intra-tenant, so the
+    only relationship ever materialized is the `local` kind (cross-tenant
+    kinds were never representable as edges). Each edge is emitted in the
+    v072 typed-dict form `{"kind": "local", "work_item_id": <dep_id>}`
+    required by livespec's `DependsOnEntry` schema and the doctor
+    `depends_on-ref-wellformedness` / `no-orphan-dependency` integrity
+    checks — the legacy bare-string form fails wellformedness on every
+    dependency edge. `_cross_repo.parse_entry` maps this typed-dict to
+    `LocalDependency`, so the `next` ranker stays unchanged.
     """
-    deps: list[str] = []
+    deps: list[DependsOnRaw] = []
     for edge in _edges_of(record=record):
         if edge.get("type") == EDGE_BLOCKS:
             dep_id = edge.get("depends_on_id")
             if isinstance(dep_id, str):
-                deps.append(dep_id)
+                deps.append({"kind": "local", "work_item_id": dep_id})
     return tuple(deps)
 
 

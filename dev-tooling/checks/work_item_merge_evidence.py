@@ -155,10 +155,30 @@ def _negative_evidence_violation(*, item: WorkItem) -> str | None:
     return None
 
 
+def _local_child_id(*, entry: object) -> str | None:
+    """Extract the local child id from a `depends_on` entry, or None.
+
+    Mirrors the store's `_local_depends_on_id`: accepts both the legacy
+    bare-string form and the v072 typed-dict local form
+    `{"kind":"local","work_item_id":<id>}`. Non-local kinds have no
+    in-tenant child to resolve and yield None.
+    """
+    if isinstance(entry, str):
+        return entry
+    if isinstance(entry, dict):
+        typed = cast("dict[str, Any]", entry)
+        if typed.get("kind") == "local":
+            work_item_id = typed.get("work_item_id")
+            if isinstance(work_item_id, str):
+                return work_item_id
+    return None
+
+
 def _epic_violation(*, item: WorkItem, index: dict[str, WorkItem]) -> str | None:
     """Every child of a closed epic MUST itself resolve to a closed work-item."""
-    for child_id in item.depends_on:
-        if not isinstance(child_id, str):
+    for entry in item.depends_on:
+        child_id = _local_child_id(entry=entry)
+        if child_id is None:
             continue
         child = index.get(child_id)
         if child is not None and child.status != "closed":
