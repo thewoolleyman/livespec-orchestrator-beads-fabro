@@ -310,13 +310,14 @@ def _record_to_work_item(*, record: BeadsRecord) -> WorkItem:
     issue_id = _require_str(record=record, key="id")
     labels = _labels_of(record=record)
     metadata = _metadata_of(record=record)
+    gap_id = _label_value(labels=labels, prefix=_LABEL_GAP_ID)
     origin = _label_value(labels=labels, prefix=_LABEL_ORIGIN)
     if origin not in ("gap-tied", "freeform"):
-        raise BeadsMappingError(
-            record_id=issue_id,
-            detail=f"missing or invalid origin label (got {origin!r})",
-        )
-    gap_id = _label_value(labels=labels, prefix=_LABEL_GAP_ID)
+        # Origin is derivable: a work item is gap-tied iff it carries a gap_id.
+        # Records written outside the capture-work-item path (e.g. raw
+        # `bd create`) omit the origin label. Derive it rather than refusing
+        # the whole enumeration over a single unlabeled record.
+        origin = "gap-tied" if gap_id is not None else "freeform"
     resolution = _label_value(labels=labels, prefix=_LABEL_RESOLUTION)
     audit = _audit_from_metadata(record_id=issue_id, metadata=metadata)
     depends_on = _depends_on_from_edges(record=record)
