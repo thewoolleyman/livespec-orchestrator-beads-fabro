@@ -228,7 +228,11 @@ def test_depends_on_bare_string_maps_to_blocks_edge_and_back() -> None:
     record = _fake().show_issue(issue_id="li-blocked")
     assert {"depends_on_id": "li-dep", "type": EDGE_BLOCKS} in record["dependencies"]
     materialized = materialize_work_items(read_work_items(path=_config()))
-    assert materialized["li-blocked"].depends_on == ("li-dep",)
+    # The read path materializes each `blocks` edge as the v072 typed-dict
+    # local entry, NOT the legacy bare string. livespec's DependsOnEntry
+    # schema (and the doctor `depends_on-ref-wellformedness` check) require
+    # the typed-dict form.
+    assert materialized["li-blocked"].depends_on == ({"kind": "local", "work_item_id": "li-dep"},)
 
 
 def test_depends_on_typed_local_dict_maps_to_blocks_edge() -> None:
@@ -660,7 +664,7 @@ def test_non_dict_dependency_edges_are_ignored(
         ],
     )
     [read_back] = list(read_work_items(path=_config()))
-    assert read_back.depends_on == ("li-real",)
+    assert read_back.depends_on == ({"kind": "local", "work_item_id": "li-real"},)
 
 
 def test_audit_metadata_not_object_raises_mapping_error(

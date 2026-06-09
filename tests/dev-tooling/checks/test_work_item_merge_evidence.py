@@ -244,11 +244,12 @@ def test_epic_with_missing_child_passes() -> None:
     assert _CHECK.main() == 0
 
 
-def test_epic_violation_skips_non_string_child_entry() -> None:
-    """A typed-dict (non-bare-string) child entry is skipped, not mis-flagged.
+def test_epic_violation_skips_non_local_kind_child_entry() -> None:
+    """A non-local-kind typed-dict child entry is skipped, not mis-flagged.
 
-    The store yields bare-string child ids, so this defensive `depends_on`
-    shape is exercised at the helper level.
+    The store materializes intra-tenant `blocks` edges as the v072 typed-dict
+    `local` form; a non-`local` discriminator has no in-tenant child id to
+    resolve, so the epic check skips it rather than flagging.
     """
     epic = WorkItem(
         id="li-epic",
@@ -268,6 +269,55 @@ def test_epic_violation_skips_non_string_child_entry() -> None:
         superseded_by=None,
     )
     assert _CHECK._epic_violation(item=epic, index={}) is None  # noqa: SLF001
+
+
+def test_epic_violation_resolves_typed_dict_local_child() -> None:
+    """The epic check resolves the child id from the v072 typed-dict `local` form.
+
+    The store materializes intra-tenant `blocks` edges as
+    `{"kind":"local","work_item_id":...}`; `_epic_violation` MUST extract the
+    id from that shape (not only the legacy bare string) so a non-closed child
+    still fails the closed-epic gate.
+    """
+    open_child = _item(id_="li-child", status="open", resolution=None, audit=None)
+    epic = WorkItem(
+        id="li-epic",
+        type="epic",
+        status="closed",
+        title="t",
+        description="d",
+        origin="freeform",
+        gap_id=None,
+        priority=2,
+        assignee=None,
+        depends_on=({"kind": "local", "work_item_id": "li-child"},),
+        captured_at="2026-05-19T00:00:00Z",
+        resolution=None,
+        reason=None,
+        audit=None,
+        superseded_by=None,
+    )
+    index = {"li-child": open_child, "li-epic": epic}
+    assert _CHECK._epic_violation(item=epic, index=index) is not None  # noqa: SLF001
+
+
+@pytest.mark.parametrize(
+    ("entry", "expected"),
+    [
+        ("li-bare", "li-bare"),
+        ({"kind": "local", "work_item_id": "li-typed"}, "li-typed"),
+        ({"kind": "local", "work_item_id": 99}, None),
+        ({"kind": "cross-repo", "ref": "sibling#li-x"}, None),
+        (42, None),
+    ],
+)
+def test_local_child_id_extraction(entry: object, expected: str | None) -> None:
+    """`_local_child_id` accepts bare strings and typed-dict `local` entries.
+
+    Non-local kinds, a non-string `work_item_id`, and non-str/non-dict
+    entries all resolve to None (no in-tenant child to check).
+    """
+    assert _CHECK._local_child_id(entry=entry) == expected  # noqa: SLF001
 
 
 def test_item_violation_unknown_resolution_falls_through(tmp_path: Path) -> None:

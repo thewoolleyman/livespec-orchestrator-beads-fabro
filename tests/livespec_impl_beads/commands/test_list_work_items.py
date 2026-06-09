@@ -204,6 +204,26 @@ def test_main_json_output_with_audit(
     assert payload[0]["audit"]["commits"] == ["c"]
 
 
+def test_main_json_output_depends_on_is_typed_dict_local_entry(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--json` emits each `blocks`-edge dependency as the v072 typed-dict form.
+
+    livespec's `DependsOnEntry` schema and the doctor
+    `depends_on-ref-wellformedness` / `no-orphan-dependency` checks require
+    the typed-dict `{"kind":"local","work_item_id":...}` shape; the legacy
+    bare-string materialization fails wellformedness on every dependency edge.
+    """
+    _seed(_item(id_="li-dep"))
+    _seed(_item(id_="li-blocked", depends_on=("li-dep",)))
+    rc = main(["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    payload = json.loads(captured.out)
+    blocked = next(item for item in payload if item["id"] == "li-blocked")
+    assert blocked["depends_on"] == [{"kind": "local", "work_item_id": "li-dep"}]
+
+
 def test_main_json_output_without_audit(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
