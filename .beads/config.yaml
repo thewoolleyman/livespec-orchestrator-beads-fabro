@@ -1,0 +1,17 @@
+# Beads Configuration File
+# This file configures default behavior for all bd commands in this repository
+# All settings can also be set via environment variables (BD_* prefix)
+# or overridden with command-line flags
+
+dolt.auto-start: false
+# Server-mode connection to this repo's per-repo beads/Dolt TENANT on the
+# shared dolt-server. Committable: carries NO per-machine project_id and NO
+# password (the tenant password is supplied via BEADS_DOLT_PASSWORD at
+# bd-call time). Mirrors the .livespec.jsonc livespec-impl-beads.connection
+# block. TCP-only (no socket: the dolt socket dir is 0750 dolt:dolt).
+dolt.mode: server
+dolt.server-host: 127.0.0.1
+dolt.server-port: 3307
+dolt.server-user: livespec-impl-beads
+dolt.database: livespec-impl-beads
+dolt.prefix: livespec-impl-beads

@@ -23,6 +23,12 @@ htmlcov/
 livespec_impl_beads.egg-info/
 
 ### Beads / Dolt substrate
-.beads/
+# Per-clone bd runtime state (Dolt working copy, lockfiles, runtime
+# artifacts, the per-machine metadata.json) is excluded by
+# .beads/.gitignore (bd-managed, itself TRACKED). Only
+# .beads/config.yaml (the server-mode tenant connection pointer — no
+# per-machine project_id, no password) and .beads/.gitignore are
+# committed, matching the family-wide per-repo tenant cutover policy.
+.beads-credential-key
 secrets.env.local
 *.env.local

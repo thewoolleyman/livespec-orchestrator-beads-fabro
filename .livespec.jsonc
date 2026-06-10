@@ -34,9 +34,10 @@
     // environment variable at bd-call time and is NEVER committed here.
     //
     // `prefix` == `tenant` == `database` is the load-bearing identity rule
-    // (the beads id prefix doubles as the tenant DB name). `socket`
-    // overrides host/port when set; TCP is the default for sandboxed
-    // callers that lack 0750 socket-directory access.
+    // (the beads id prefix doubles as the tenant DB name). TCP-only (no
+    // `socket` key): the dolt socket dir is 0750 dolt:dolt and
+    // untraversable by sandboxed callers, matching the family-wide
+    // server-mode connection model.
     //
     // `fake` selects the hermetic in-memory backend (the default CI tier
     // and the no-live-connection runtime fallback). It is false here so the
@@ -49,8 +50,18 @@
       "server_user": "livespec-impl-beads",
       "server_host": "127.0.0.1",
       "server_port": 3307,
-      "socket": "/var/lib/doltdb/dolt.sock",
       "fake": false
     }
+  },
+  // The three orchestrator-side contract CLIs, named in argv form per
+  // livespec/SPECIFICATION/contracts.md §"Orchestrator CLI contract — the
+  // three named CLIs" and §"CLI shape conventions" (one binary per side
+  // with subcommands). Paths are project-root-relative; callability is
+  // verified by the `config-named-cli-callability` doctor invariant.
+  "orchestrator": {
+    "name": "livespec-impl-beads",
+    "spec_reader": ["python3", ".claude-plugin/scripts/bin/orchestrator.py", "spec-reader"],
+    "gap_capture": ["python3", ".claude-plugin/scripts/bin/orchestrator.py", "gap-capture"],
+    "drift_capture": ["python3", ".claude-plugin/scripts/bin/orchestrator.py", "drift-capture"]
   }
 }

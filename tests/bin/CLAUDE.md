@@ -10,7 +10,7 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   asserts the wrapper raises `SystemExit` with the expected exit
   code.
 - `test_<cmd>.py` — one per wrapper (`detect_impl_gaps`,
-  `list_memos`, `list_work_items`, `next`, `migrate_beads`). Each
+  `list_memos`, `list_work_items`, `next`, `orchestrator`). Each
   uses `wrapper_runner` to assert the wrapper threads `main()`'s
   return value into `raise SystemExit(...)`. Required for 100% line
   + branch coverage of the wrappers.
