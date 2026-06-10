@@ -18,15 +18,24 @@ Tests for the thin-transport command modules under
   private helper modules (`_config`, `_cross_repo`, `_jsonc`):
   store-path / project-root resolution, manifest loading +
   `is_item_ready`, and JSONC parsing.
+- `test_orchestrator.py` — the `orchestrator` contract CLI and its
+  `_orchestrator_*` helpers: per-subcommand exit codes, the
+  spec-reader category exposure, gap-capture Ledger writes (the one
+  LEGITIMATELY mutating surface here — capture is its contract job),
+  drift-capture routing through an injected propose-change CLI, and
+  the injected-argv / payload wire-shape validation.
 
 Conventions:
 
 - Exercise both `main()` (supervisor: exit codes, stdout/stderr
   contract, usage-error exit 2) and the named railway helpers
   directly.
-- Assert query-only behavior — these modules MUST NOT write to the
-  JSONL; a test that observes a store mutation is a regression
-  signal.
+- Assert query-only behavior for the thin-transport modules
+  (`list-*`, `next`, `detect-impl-gaps`) — they MUST NOT write to
+  the store; a test that observes a store mutation there is a
+  regression signal. The `orchestrator` gap-capture subcommand is
+  the deliberate exception (capturing INTO the store is its job);
+  its tests assert the writes instead.
 - Use `tmp_path` for store + `.livespec.jsonc` fixtures, `capsys`
   for output capture; `monkeypatch.chdir(tmp_path)` for any
   `Path.cwd()`-default path.

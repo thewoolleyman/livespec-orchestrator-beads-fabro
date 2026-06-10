@@ -10,6 +10,15 @@ public module per query-only skill:
 - `next.py` — the ripeness ranker; a pure function of work-items
   JSONL state plus the cross-repo manifest at
   `<project-root>/.livespec.jsonc`.
+- `orchestrator.py` — the orchestrator-side contract CLI (per
+  livespec contracts.md §"Orchestrator CLI contract — the three
+  named CLIs"): subcommand parsing + expected-error → exit-code
+  mapping; subcommand bodies live in the `_orchestrator_*` private
+  helpers (`_orchestrator_shared.py`, `_orchestrator_spec_reader.py`,
+  `_orchestrator_gap_capture.py`, `_orchestrator_drift_capture.py`).
+  `gap-capture` is the ONE mutating command surface here (writing
+  gap-tied work-items to the beads Ledger IS its contract job); the
+  query-only rule below still binds every `list-*`/`next` module.
 
 Each public module exports `main(argv=None) -> int` (the supervisor
 the wrapper calls) plus its named helpers, all enumerated in
