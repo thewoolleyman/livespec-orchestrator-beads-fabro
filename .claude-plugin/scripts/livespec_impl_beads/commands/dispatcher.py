@@ -11,9 +11,17 @@ the Ledger, and journals every step. It is orchestrator-PRIVATE tooling:
 core's contract sees only the three `orchestrator.py` CLIs.
 
   dispatcher.py ledger-check [--project-root <path>] [--json]
+  dispatcher.py spec-check [--project-root <path>] [--spec-root <path>] [--json]
   dispatcher.py dispatch --repo <path> --item <id> [common flags]
   dispatcher.py loop --repo <path> --budget <n> [--parallel <k>]
                      [--mode shadow|autonomous] [--item <id>]... [common flags]
+
+`spec-check` runs the three re-homed spec-context work-item invariants
+(no-stalled-epic / no-stale-gap-tied / unresolved-spec-commitment; see
+`_dispatcher_spec_checks.py`) against the tenant rows plus the spec
+tree at `--spec-root` (default `<project-root>/SPECIFICATION`). It is
+a standalone check surface — the pre-dispatch hard gate inside
+`dispatch`/`loop` stays the pure-Ledger dispatch-safety trio.
 
 Common flags: [--workflow <toml>] [--fabro-bin <path>]
 [--janitor <json-argv>] [--journal <path>] [--poll-attempts <n>]
@@ -31,9 +39,10 @@ evidence), exempt from the per-operation consent discipline that
 governs user-facing capture front-ends (livespec-impl-beads-nip);
 `--no-close-on-merge` turns them off entirely.
 
-Exit codes: 0 success / all dispatched green; 1 findings present or any
-dispatch failed; 2 usage error; 3 precondition error (missing repo /
-workflow / item not ready).
+Exit codes: 0 success / all dispatched green; 1 non-skipped findings
+present or any dispatch failed; 2 usage error; 3 precondition error
+(missing repo / workflow / item not ready). `skipped`-severity findings
+(unmet preconditions) are reported but never flip the exit code.
 """
 
 import argparse
@@ -63,6 +72,7 @@ from livespec_impl_beads.commands._dispatcher_ledger_checks import (
     run_ledger_checks,
 )
 from livespec_impl_beads.commands._dispatcher_plan import build_plan, render_goal
+from livespec_impl_beads.commands._dispatcher_spec_checks import run_spec_checks
 from livespec_impl_beads.store import append_work_item, materialize_work_items, read_work_items
 from livespec_impl_beads.types import AuditRecord, StoreConfig, WorkItem
 
@@ -78,6 +88,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.subcommand == "ledger-check":
         return _run_ledger_check(args=args)
+    if args.subcommand == "spec-check":
+        return _run_spec_check(args=args)
     if args.subcommand == "dispatch":
         return _run_dispatch_command(args=args)
     return _run_loop_command(args=args)
@@ -85,17 +97,37 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run_ledger_check(*, args: argparse.Namespace) -> int:
     project_root = Path(args.project_root) if args.project_root is not None else Path.cwd()
-    items = _load_items(repo=project_root)
-    findings = run_ledger_checks(items=items)
-    if args.as_json:
+    findings = run_ledger_checks(items=_load_items(repo=project_root))
+    return _emit_check_findings(findings=findings, as_json=args.as_json, label="ledger")
+
+
+def _run_spec_check(*, args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root) if args.project_root is not None else Path.cwd()
+    spec_root = (
+        Path(args.spec_root) if args.spec_root is not None else project_root / "SPECIFICATION"
+    )
+    findings = run_spec_checks(
+        items=_load_items(repo=project_root),
+        spec_root=spec_root,
+        manifest=load_manifest(project_root=project_root),
+    )
+    return _emit_check_findings(findings=findings, as_json=args.as_json, label="spec")
+
+
+def _emit_check_findings(*, findings: list[LedgerFinding], as_json: bool, label: str) -> int:
+    """Emit check findings (JSON array or human lines); exit 1 on non-skipped."""
+    if as_json:
         payload = [asdict(finding) for finding in findings]
         _ = sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     else:
         for finding in findings:
-            _ = sys.stdout.write(f"{finding.check}  {finding.item_id}  {finding.message}\n")
+            severity = finding.severity.upper()
+            line = f"{severity}  {finding.check}  {finding.item_id}  {finding.message}\n"
+            _ = sys.stdout.write(line)
         if not findings:
-            _ = sys.stdout.write("(no ledger findings)\n")
-    return _EXIT_FAILURE if findings else 0
+            _ = sys.stdout.write(f"(no {label} findings)\n")
+    actionable = any(finding.severity != "skipped" for finding in findings)
+    return _EXIT_FAILURE if actionable else 0
 
 
 def _run_dispatch_command(*, args: argparse.Namespace) -> int:
@@ -335,6 +367,10 @@ def _build_parser() -> argparse.ArgumentParser:
     ledger = subparsers.add_parser("ledger-check")
     _ = ledger.add_argument("--project-root", dest="project_root", default=None)
     _ = ledger.add_argument("--json", dest="as_json", action="store_true")
+    spec = subparsers.add_parser("spec-check")
+    _ = spec.add_argument("--project-root", dest="project_root", default=None)
+    _ = spec.add_argument("--spec-root", dest="spec_root", default=None)
+    _ = spec.add_argument("--json", dest="as_json", action="store_true")
     dispatch = subparsers.add_parser("dispatch")
     _add_dispatch_common(parser=dispatch)
     _ = dispatch.add_argument("--item", dest="item", required=True)

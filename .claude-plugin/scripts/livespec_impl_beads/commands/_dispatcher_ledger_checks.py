@@ -21,13 +21,16 @@ violated:
 
 The remaining three retired invariants (`no_stalled_epic`,
 `no_stale_gap_tied`, `unresolved_spec_commitment`) need spec-tree and
-staleness context beyond the Ledger rows and stay on
-livespec-impl-beads-e6x.
+staleness context beyond the Ledger rows and are re-homed in the
+sibling `_dispatcher_spec_checks.py` (the `spec-check` subcommand);
+`LedgerFinding` below is the finding shape shared by every Dispatcher
+check surface (ledger-check / spec-check / janitor-check).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from livespec_runtime.cross_repo.types import LocalDependency
 
@@ -36,17 +39,25 @@ from livespec_impl_beads.types import WorkItem
 
 __all__: list[str] = [
     "LedgerFinding",
+    "Severity",
     "run_ledger_checks",
 ]
+
+# `fail` findings flip the surfacing subcommand to exit 1; `warn`
+# findings surface recoverable housekeeping and also exit 1 when
+# present; `skipped` findings record an unmet precondition (absent
+# spec tree, failed git/gh probe) and never affect the exit code.
+Severity = Literal["fail", "warn", "skipped"]
 
 
 @dataclass(frozen=True, kw_only=True)
 class LedgerFinding:
-    """One pre-dispatch Ledger integrity violation."""
+    """One Dispatcher-side check finding (Ledger / spec / janitor surfaces)."""
 
     check: str
     item_id: str
     message: str
+    severity: Severity = "fail"
 
 
 def run_ledger_checks(*, items: list[WorkItem]) -> list[LedgerFinding]:
