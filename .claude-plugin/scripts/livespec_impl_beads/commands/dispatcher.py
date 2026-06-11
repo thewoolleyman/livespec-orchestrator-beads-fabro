@@ -4,11 +4,13 @@ Per livespec spec.md §"Contract + reference implementations architecture"
 (orchestrator-internal decomposition: Ledger / Loop / Dispatcher) and the
 Dispatcher guidance in livespec non-functional-requirements.md, this CLI
 polls the beads Ledger for ready work-items, invokes the Fabro Loop (the
-`.fabro/workflows/implement-work-item/` phase graph) once per item in
-the target repo's prepared secondary worktree, confirms the PR merge,
-runs the post-merge janitor hard gate, writes status/PR evidence back to
-the Ledger, and journals every step. It is orchestrator-PRIVATE tooling:
-core's contract sees only the three `orchestrator.py` CLIs.
+`.fabro/workflows/implement-work-item/` phase graph) once per item —
+launched from the target repo's primary checkout; Fabro clones fresh
+inside its docker sandbox (Architecture C), so the host owns no git
+working state — confirms the PR merge, runs the post-merge janitor hard
+gate, writes status/PR evidence back to the Ledger, and journals every
+step. It is orchestrator-PRIVATE tooling: core's contract sees only the
+three `orchestrator.py` CLIs.
 
   dispatcher.py ledger-check [--project-root <path>] [--json]
   dispatcher.py spec-check [--project-root <path>] [--spec-root <path>] [--json]
@@ -32,6 +34,15 @@ Common flags: [--workflow <toml>] [--fabro-bin <path>]
 [--poll-interval-seconds <s>] [--no-close-on-merge]
 [--skip-ledger-check] [--json]
 
+Credential channel (Architecture C): the committed workflow config
+carries NO secret. Per dispatch, an UNCOMMITTED mode-600 run-config
+overlay is materialized under the temp dir — the committed config with
+the graph path rewritten absolute plus `[environments.<id>.env]
+CLAUDE_CODE_OAUTH_TOKEN` — and deleted when the run returns. The token
+is read from the host-local mode-600 env-format secrets file named by
+$LIVESPEC_FABRO_SECRETS_FILE (group/world-accessible files are
+refused); it is never logged, echoed, or journaled.
+
 Connection + consent model: the Ledger connection resolves from the
 TARGET repo's `.livespec.jsonc` (cwd-style `--repo` addressing) plus
 `BEADS_DOLT_PASSWORD` for that tenant in the environment — one tenant
@@ -41,16 +52,22 @@ the ready queue. Store writes are machine-path dispositions of
 already-filed items (close-on-confirmed-merge with PR/merge-sha
 evidence), exempt from the per-operation consent discipline that
 governs user-facing capture front-ends (livespec-impl-beads-nip);
-`--no-close-on-merge` turns them off entirely.
+`--no-close-on-merge` turns them off entirely. A `blocked` outcome (run
+parked at the phase graph's in-loop human gate) closes nothing and
+frees the slot: the operator answers via `fabro attach <run-id>`; the
+Dispatcher never auto-resumes.
 
 Exit codes: 0 success / all dispatched green; 1 non-skipped findings
-present or any dispatch failed; 2 usage error; 3 precondition error
-(missing repo / workflow / item not ready). `skipped`-severity findings
-(unmet preconditions) are reported but never flip the exit code.
+present or any dispatch not green (failed OR blocked — both need the
+operator's eyes); 2 usage error; 3 precondition error (missing repo /
+workflow / item not ready). `skipped`-severity findings (unmet
+preconditions) are reported but never flip the exit code.
 """
 
 import argparse
 import json
+import os
+import stat
 import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
@@ -76,7 +93,12 @@ from livespec_impl_beads.commands._dispatcher_ledger_checks import (
     LedgerFinding,
     run_ledger_checks,
 )
-from livespec_impl_beads.commands._dispatcher_plan import build_plan, render_goal
+from livespec_impl_beads.commands._dispatcher_plan import (
+    build_plan,
+    parse_secrets_file,
+    render_goal,
+    render_run_config_overlay,
+)
 from livespec_impl_beads.commands._dispatcher_spec_checks import run_spec_checks
 from livespec_impl_beads.store import append_work_item, materialize_work_items, read_work_items
 from livespec_impl_beads.types import AuditRecord, StoreConfig, WorkItem
@@ -86,6 +108,8 @@ __all__: list[str] = ["main"]
 _EXIT_FAILURE = 1
 _EXIT_USAGE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 3
+
+_SECRETS_FILE_ENV = "LIVESPEC_FABRO_SECRETS_FILE"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -245,33 +269,108 @@ def _dispatch_one(
     janitor: tuple[str, ...] | None,
 ) -> DispatchOutcome:
     goal_file = Path(tempfile.gettempdir()) / f"fabro-goal-{item.id}.md"
+    overlay_file = Path(tempfile.gettempdir()) / f"fabro-run-config-{item.id}.toml"
     plan = build_plan(
         repo=repo,
         work_item_id=item.id,
-        workflow_toml=_workflow_toml(args=args),
+        workflow_toml=overlay_file,
         goal_file=goal_file,
         fabro_bin=args.fabro_bin,
         janitor=janitor,
     )
+    overlay_error = _materialize_overlay(committed=_workflow_toml(args=args), overlay=overlay_file)
+    if overlay_error is not None:
+        outcome = DispatchOutcome(
+            work_item_id=item.id,
+            status="failed",
+            stage="credential-overlay",
+            pr_number=None,
+            merge_sha=None,
+            detail=overlay_error,
+        )
+        journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
+        return outcome
     _ = goal_file.write_text(
         render_goal(item=item, repo=repo, branch=plan.branch),
         encoding="utf-8",
     )
-    outcome = run_dispatch(
-        plan=plan,
-        runner=ShellCommandRunner(),
-        journal=journal,
-        sleep=_real_sleep,
-        poll=PollPolicy(
-            attempts=args.poll_attempts,
-            interval_seconds=args.poll_interval_seconds,
-        ),
-    )
+    try:
+        outcome = run_dispatch(
+            plan=plan,
+            runner=ShellCommandRunner(),
+            journal=journal,
+            sleep=_real_sleep,
+            poll=PollPolicy(
+                attempts=args.poll_attempts,
+                interval_seconds=args.poll_interval_seconds,
+            ),
+        )
+    finally:
+        overlay_file.unlink(missing_ok=True)
     if outcome.status == "green" and args.close_on_merge:
         _close_item(repo=repo, item=item, outcome=outcome)
         journal.append(record={"stage": "ledger-close", "work_item_id": item.id})
     journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
     return outcome
+
+
+def _materialize_overlay(*, committed: Path, overlay: Path) -> str | None:
+    """Write the uncommitted mode-600 run-config overlay.
+
+    Returns None on success, or an actionable error message (an expected
+    failure routed as data — the dispatch reports it at the
+    `credential-overlay` stage). The overlay = committed config + the
+    credential env table; the token value never reaches a log, journal,
+    or stdout.
+    """
+    token, token_error = _resolve_fabro_token()
+    if token is None:
+        return token_error
+    rendered = render_run_config_overlay(
+        committed_text=committed.read_text(encoding="utf-8"),
+        workflow_dir=committed.parent.resolve(),
+        token=token,
+    )
+    if rendered is None:
+        return (
+            f"workflow config {committed} is not materializable: it must carry "
+            '[workflow] graph = "..." and [run.environment] id = "..."'
+        )
+    overlay.unlink(missing_ok=True)
+    descriptor = os.open(str(overlay), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        _ = handle.write(rendered)
+    return None
+
+
+def _resolve_fabro_token() -> "tuple[str, None] | tuple[None, str]":
+    """Resolve the ACP credential from the host-local secrets file.
+
+    Returns (token, None) on success or (None, actionable-error) when
+    the channel is unusable. Fail-closed on permissions: a
+    group/world-accessible secrets file is refused outright.
+    """
+    raw_path = os.environ.get(_SECRETS_FILE_ENV)
+    if raw_path is None or raw_path == "":
+        return None, (
+            "C-mode dispatch needs the ACP credential: set "
+            f"{_SECRETS_FILE_ENV} to a host-local mode-600 env-format file "
+            "carrying CLAUDE_CODE_OAUTH_TOKEN=<token>"
+        )
+    secrets_path = Path(raw_path)
+    if not secrets_path.is_file():
+        return None, f"secrets file {secrets_path} (from {_SECRETS_FILE_ENV}) does not exist"
+    mode = stat.S_IMODE(secrets_path.stat().st_mode)
+    if mode & 0o077 != 0:
+        return None, (
+            f"secrets file {secrets_path} is group/world accessible "
+            f"(mode {mode:03o}); chmod 600 it before dispatching"
+        )
+    secrets = parse_secrets_file(text=secrets_path.read_text(encoding="utf-8"))
+    token = secrets.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+    if token == "":
+        return None, f"secrets file {secrets_path} carries no CLAUDE_CODE_OAUTH_TOKEN entry"
+    return token, None
 
 
 def _close_item(*, repo: Path, item: WorkItem, outcome: DispatchOutcome) -> None:
