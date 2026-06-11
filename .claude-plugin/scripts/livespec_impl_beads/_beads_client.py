@@ -278,10 +278,10 @@ class ShellBeadsClient:
         """Compose the full per-command `bd` argv: `<bd_path> <verb_args...>`.
 
         Per the verified v1.0.5 connection model (beads-schema-mapping.md
-        §2.1), only `bd init` accepts the `--server*` connection flags.
+        §2.1), only `bd`'s `init` verb accepts the `--server*` connection flags.
         Every per-command verb (`create`/`list`/`show`/`update`/`dep`)
         takes its connection from `.beads/config.yaml` (written by
-        `bd init`) plus the tenant password in the `BEADS_DOLT_PASSWORD`
+        `bd`'s `init` verb) plus the tenant password in the `BEADS_DOLT_PASSWORD`
         environment variable, and REJECTS `--server*` as unknown flags.
         So per-command argv carries NO connection flags — just the pinned
         bd path and the verb args.

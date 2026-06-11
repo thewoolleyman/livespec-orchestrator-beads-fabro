@@ -204,7 +204,7 @@ def test_fake_children_filters_by_parent() -> None:
 
 
 def test_per_command_argv_carries_no_connection_flags() -> None:
-    """bd v1.0.5 accepts `--server*` only on `bd init`; every per-command
+    """bd v1.0.5 accepts `--server*` only on `bd`'s `init` verb; every per-command
     verb (`create`/`list`/`show`/`update`/`dep`) gets its connection from
     `.beads/config.yaml` + `BEADS_DOLT_PASSWORD`, and REJECTS `--server*`
     as unknown flags. So the per-command argv must be exactly the bd path
@@ -228,7 +228,7 @@ def test_per_command_argv_carries_no_connection_flags() -> None:
 
 def test_per_command_argv_has_no_connection_flags_even_with_socket() -> None:
     """A configured socket does not leak onto per-command argv either —
-    the socket is consumed by `bd init` / `.beads/config.yaml`, never by
+    the socket is consumed by `bd`'s `init` verb / `.beads/config.yaml`, never by
     per-command verbs.
     """
     client = ShellBeadsClient(config=_config(socket="/tmp/dolt.sock"))
@@ -436,7 +436,7 @@ def test_run_json_builds_argv_and_parses(monkeypatch: pytest.MonkeyPatch) -> Non
     assert result == [{"id": "li-a"}]
     # The argv is exactly the pinned bd path + the per-command verb args
     # (including `--limit 0` for unbounded enumeration); no `--server*`
-    # connection flags are appended (they belong to bd init).
+    # connection flags are appended (they belong to `bd`'s `init` verb).
     assert seen[0] == ["/managed/bd", "list", "--status", "all", "--limit", "0", "--json"]
     assert "--server" not in seen[0]
 
