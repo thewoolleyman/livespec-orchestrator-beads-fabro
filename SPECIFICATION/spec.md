@@ -13,7 +13,7 @@ project uses.
 implementation-plugin contract that `livespec` publishes in
 `livespec/SPECIFICATION/contracts.md` §"Implementation-plugin
 contract — the 10-skill surface". Other realizations exist on paper
-(`livespec-impl-plaintext`, `livespec-impl-gitlab`,
+(`livespec-impl-git-jsonl`, `livespec-impl-gitlab`,
 `livespec-impl-gascity`, `livespec-impl-darkfactory-kilroy`) and are
 out of scope here. This plugin's substrate is a per-repo tenant
 database on a shared, externally-managed `dolt sql-server`, reached
@@ -22,8 +22,8 @@ memos are beads issues in that tenant DB; the plugin never embeds a
 local database and never speaks SQL directly — every read and write
 goes through `bd`.
 
-`livespec-impl-beads` and `livespec-impl-plaintext` are structurally
-identical EXCEPT for this persistence substrate. The plaintext sibling
+`livespec-impl-beads` and `livespec-impl-git-jsonl` are structurally
+identical EXCEPT for this persistence substrate. The git-jsonl sibling
 commits append-only JSONL files alongside the consumer project's other
 source; this plugin keeps the same logical model (work-items, memos,
 the latest state of each by id) but stores it as rows in a beads tenant
