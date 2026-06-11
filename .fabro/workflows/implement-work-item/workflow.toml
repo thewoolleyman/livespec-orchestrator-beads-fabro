@@ -1,18 +1,32 @@
-# Run config for the implement-work-item phase graph.
+# Run config for the implement-work-item phase graph — Architecture C:
+# Fabro-owned docker sandbox mode (work-item livespec-impl-beads-wwn;
+# design: livespec/tmp/fabro-architecture-c-design.md, proven end-to-end
+# by the A2 probe run 01KTVX6AV677VBWPG63ERB4VH0 / dev-tooling PR #97).
 #
-# Launched by the Dispatcher (commands/dispatcher.py) with the target
-# repo's prepared secondary worktree as the invoking working directory:
+# Launched by the Dispatcher (commands/dispatcher.py) from the TARGET
+# repo's primary checkout as the invoking working directory:
 #
-#   cd <worktree> && fabro run <this-file> --goal-file <brief> \
-#       -I work_item_id=<id> -I branch=<branch>
+#   cd <repo> && fabro run <materialized-config> --goal-file <brief>
 #
-# The local sandbox provider runs directly in that working directory
-# (docs.fabro.sh/execution/run-configuration §"[run.environment]"):
-# isolation comes from the worktree itself, per the family worktree
-# discipline. Fabro-managed git surfaces (run branch, metadata branch,
-# GitHub-App pull requests) are all disabled: the agent owns every git
-# mutation so the Red-Green-Replay commit hooks and the `gh pr` flow
-# stay exactly the family's own.
+# Fabro detects the GitHub origin from the cwd and clones FRESH inside
+# the docker sandbox — local working-tree state never enters the run.
+# The sandbox clone is the secondary-worktree EQUIVALENT under the
+# family discipline: the prepare steps below provision it exactly like
+# `just bootstrap` EXCEPT `livespec.primaryPath` (deliberately unset, so
+# the commit-refuse wrapper's refuse branch never fires and the
+# Red-Green-Replay lefthook gates run on every commit).
+#
+# CREDENTIAL CHANNEL (decided; A2 finding #3): this committed file
+# carries NO credential. Fabro's vault cannot deliver ACP credentials in
+# v0.254.0 (worker env is allowlist-scrubbed; no vault->ACP wiring), so
+# the Dispatcher materializes an UNCOMMITTED mode-600 overlay at
+# dispatch time — this file plus
+# `[environments.livespec-ci.env] CLAUDE_CODE_OAUTH_TOKEN = "<value>"` —
+# under $TMPDIR, reading the token from the host-local mode-600
+# env-format secrets file named by $LIVESPEC_FABRO_SECRETS_FILE. The
+# `graph` path below is rewritten to an absolute path in the overlay so
+# the graph still resolves from outside this directory. See
+# commands/_dispatcher_plan.py `render_run_config_overlay`.
 _version = 1
 
 [workflow]
@@ -22,16 +36,87 @@ graph = "workflow.fabro"
 goal = "Implement one ready work-item per the livespec family discipline"
 
 [run.environment]
-id = "host"
+id = "livespec-ci"
 
-[environments.host]
-provider = "local"
+[environments.livespec-ci]
+provider = "docker"
 
+[environments.livespec-ci.image]
+# Locally-built toolchain image (mise + uv + just + lefthook + node/ACP
+# adapter + gh; Dockerfile from the A2 probe). LOCAL TAG ONLY for now —
+# dev-tooling work-item p60 will publish a versioned image to GHCR and
+# swap this reference.
+docker = "livespec-fabro-sandbox:a2"
+
+[environments.livespec-ci.resources]
+cpu = 4
+memory = "8GB"
+
+[run.clone]
+enabled = true
+
+# Fabro-managed run/meta branches stay LOCAL to the sandbox (push=false,
+# probe discipline): the pr stage publishes the work under
+# refs/heads/feat/<work-item-id> itself, so fabro/run/* never pollutes
+# the remote.
 [run.run_branch]
-enabled = false
+enabled = true
+push = false
 
 [run.meta_branch]
-enabled = false
+enabled = true
+push = false
 
+[run.checkpoint]
+# Hooks stay ON for checkpoint commits: the corrected content-trigger
+# red-green-replay gate (livespec-dev-tooling v0.11.0, bumped
+# family-wide) passes machine/empty checkpoint commits naturally, so
+# the interim skip_git_hooks=true escape from the probe is retired.
+skip_git_hooks = false
+exclude_globs = ["**/.venv/**", "**/node_modules/**", "**/.cache/**"]
+
+# Our pr graph node owns the family `gh pr` flow (body conventions,
+# rebase auto-merge arming); Fabro's native PR surface stays off.
 [run.pull_request]
 enabled = false
+
+# --- Prepare steps: provision the clone as the secondary-worktree
+# --- equivalent (Architecture C "RGR steeling", minus primaryPath).
+
+[[run.prepare.steps]]
+# Fabro's sandbox clone is hardcoded shallow (GIT_CLONE_DEPTH=10, no
+# config knob in v0.254.0); the RGR range checks and `just check` diff
+# origin/master..HEAD, which needs the master merge-base present.
+script = "git fetch --unshallow --quiet"
+
+[[run.prepare.steps]]
+script = "mise trust && mise install --quiet"
+
+[[run.prepare.steps]]
+script = "uv sync --all-groups"
+
+[[run.prepare.steps]]
+script = "uv run lefthook install"
+
+[[run.prepare.steps]]
+# Install the repo's canonical commit-refuse wrapper at pre-commit +
+# pre-push (it delegates to lefthook with GIT_DIR unset; with
+# livespec.primaryPath UNSET its refuse branch is dead code here, and
+# installing it satisfies the content-based
+# primary_checkout_commit_refuse_hook_installed check). DATA-DRIVEN
+# across the family: the hook source path is derived from the repo's
+# own `just bootstrap` recipe (the `cp dev-tooling/<hook>.sh ...
+# hooks/pre-commit` line), with a glob fallback over the conventional
+# vendored names. A repo that vendors no hook file fails this step
+# LOUDLY (fix: vendor the canonical hook per the family convention)
+# rather than being provisioned half-guarded.
+script = '''
+hook_src="$(sed -n 's|^[[:space:]]*cp \(dev-tooling/[^ ]*\.sh\) .*hooks/pre-commit.*$|\1|p' justfile | head -n 1)"
+if [ -z "$hook_src" ]; then for candidate in dev-tooling/livespec-commit-refuse-hook.sh dev-tooling/git-hook-wrapper.sh; do if [ -f "$candidate" ]; then hook_src="$candidate"; break; fi; done; fi
+test -n "$hook_src" || { echo "no vendored commit-refuse hook found (expected a 'cp dev-tooling/<hook>.sh ... hooks/pre-commit' bootstrap line or a conventional dev-tooling/*.sh file)" >&2; exit 1; }
+hooks_dir="$(git rev-parse --git-common-dir)/hooks"
+mkdir -p "$hooks_dir"
+cp "$hook_src" "$hooks_dir/pre-commit"
+cp "$hook_src" "$hooks_dir/pre-push"
+chmod +x "$hooks_dir/pre-commit" "$hooks_dir/pre-push"
+'''
