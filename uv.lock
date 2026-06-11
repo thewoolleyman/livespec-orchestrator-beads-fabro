@@ -479,8 +479,8 @@ wheels = [
 
 [[package]]
 name = "livespec-dev-tooling"
-version = "0.10.1"
-source = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git?tag=v0.10.1#3169d2bd62ba911d85138da5e201471809cbc218" }
+version = "0.11.0"
+source = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git?tag=v0.11.0#e019af298d5a95a805b1b0ee963617617482a05d" }
 
 [[package]]
 name = "livespec-impl-beads"
@@ -512,7 +512,7 @@ dev = [
     { name = "hypothesis", specifier = "==6.122.3" },
     { name = "hypothesis-jsonschema", specifier = "==0.23.1" },
     { name = "import-linter", specifier = "==2.1" },
-    { name = "livespec-dev-tooling", git = "https://github.com/thewoolleyman/livespec-dev-tooling.git?tag=v0.10.1" },
+    { name = "livespec-dev-tooling", git = "https://github.com/thewoolleyman/livespec-dev-tooling.git?tag=v0.11.0" },
     { name = "livespec-runtime", git = "https://github.com/thewoolleyman/livespec-runtime.git?tag=v0.3.0" },
     { name = "mutmut", specifier = "==3.2.3" },
     { name = "pyright", specifier = "==1.1.391" },

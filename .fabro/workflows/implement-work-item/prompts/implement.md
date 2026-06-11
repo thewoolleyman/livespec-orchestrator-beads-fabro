@@ -25,7 +25,11 @@ constraints.
   `mise exec -- git add ...`, `mise exec -- git commit ...`.
 - NEVER run `git checkout master`, never touch the primary checkout or
   any other worktree, never run `git config core.bare true`, never
-  force-push.
+  force-push a SHARED or PROTECTED ref (master, release branches, any
+  ref someone else is building on). Rewriting THIS worktree's own
+  unmerged feature branch (e.g. `git push --force-with-lease` after
+  reshaping commits into the Red→Green shape to fix RGR-shape CI
+  failures) is the prescribed remedy, not a violation.
 - Never run `bd init`. Never write to any `.beads/` directory.
 - Do NOT push or open a PR in this stage — a later stage owns that.
 - Python style (when the repo is Python): keyword-only arguments

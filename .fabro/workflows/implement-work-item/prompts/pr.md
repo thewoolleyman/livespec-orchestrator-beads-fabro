@@ -25,8 +25,9 @@ the family merge discipline.
 4. Arm auto-merge: `gh pr merge --rebase --auto --delete-branch <pr-url-or-number>`.
 5. VERIFY it armed: `gh pr view --json number,autoMergeRequest,mergeStateStatus`.
    - If `autoMergeRequest` is null, retry the arming once and re-verify.
-   - If `mergeStateStatus` is `BEHIND`, run `gh pr update-branch` and
-     re-verify.
+   - If `mergeStateStatus` is `BEHIND`, the repo automation updates the
+     branch; if it stays `BEHIND` for more than 10 minutes, report it —
+     do NOT attempt a manual update.
 6. Do NOT wait for the merge (it lands server-side after CI), do NOT
    delete or clean up this worktree, and do NOT switch branches — the
    Dispatcher owns merge confirmation, the post-merge janitor, and
