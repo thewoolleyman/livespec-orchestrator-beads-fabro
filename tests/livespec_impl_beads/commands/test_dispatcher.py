@@ -5,11 +5,21 @@ The hermetic `FakeBeadsClient` is the Ledger backend (autouse fixture).
 The engine is driven through a scripted in-memory `CommandRunner`; the
 production `ShellCommandRunner` is exercised with real `sys.executable -c`
 subprocesses, mirroring `test_orchestrator`'s injected-CLI approach.
+
+C-mode (Architecture C, Fabro-owned docker sandbox) specifics covered
+here: the credential-overlay materialization (mode-600, token from
+$LIVESPEC_FABRO_SECRETS_FILE, absolute graph rewrite, post-run cleanup),
+the no-worktree dispatch lifecycle (fabro run from the repo's primary
+checkout), and the `blocked` third terminal state (run parked at the
+in-loop human gate; `fabro attach` is the answer path, never
+auto-resumed).
 """
 
 import json
 import re
+import stat
 import sys
+import tempfile
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -35,18 +45,19 @@ from livespec_impl_beads.commands._dispatcher_ledger_checks import (
 from livespec_impl_beads.commands._dispatcher_plan import (
     DispatchPlan,
     build_plan,
+    fabro_inspect_argv,
     fabro_run_argv,
-    fetch_argv,
     janitor_argv_with_default,
-    mise_trust_argv,
     parse_pr_view,
+    parse_run_id,
+    parse_run_status,
+    parse_secrets_file,
     pr_arm_argv,
     pr_update_branch_argv,
     pr_view_argv,
     pull_primary_argv,
     render_goal,
-    worktree_add_argv,
-    worktree_remove_argv,
+    render_run_config_overlay,
 )
 from livespec_impl_beads.commands._dispatcher_spec_checks import run_spec_checks
 from livespec_impl_beads.commands._dispatcher_spec_commitments import (
@@ -62,6 +73,24 @@ from livespec_runtime.cross_repo.types import CrossRepoManifest
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def fabro_secrets_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Path:
+    """Hermetic C-mode dispatch environment for every test: a mode-600
+    secrets file exported via LIVESPEC_FABRO_SECRETS_FILE, plus a
+    per-test temp dir so parallel pytest-xdist workers never collide on
+    the dispatcher's goal/overlay temp files."""
+    scratch = tmp_path_factory.mktemp("fabro-dispatch")
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
+    secrets = scratch / "fabro-secrets.env"
+    _ = secrets.write_text("CLAUDE_CODE_OAUTH_TOKEN=test-oauth-token\n", encoding="utf-8")
+    secrets.chmod(0o600)
+    monkeypatch.setenv("LIVESPEC_FABRO_SECRETS_FILE", str(secrets))
+    return secrets
 
 
 def _config() -> StoreConfig:
@@ -566,10 +595,9 @@ def test_janitor_checks_skip_per_failed_probe(
 # ---------------------------------------------------------------------------
 
 
-def test_build_plan_derives_branch_worktree_and_default_janitor(tmp_path: Path) -> None:
+def test_build_plan_derives_publish_branch_and_default_janitor(tmp_path: Path) -> None:
     plan = _plan(repo=tmp_path)
-    assert plan.branch == "fabro/x-1"
-    assert plan.worktree == tmp_path / "worktrees" / "fabro-x-1"
+    assert plan.branch == "feat/x-1"
     assert plan.janitor == ("mise", "exec", "--", "just", "check")
 
 
@@ -579,30 +607,19 @@ def test_janitor_argv_with_default_passthrough_and_empty() -> None:
 
 
 def test_render_goal_includes_item_fields_and_optional_gap(tmp_path: Path) -> None:
-    with_gap = render_goal(item=_item(gap_id="gap-9"), repo=tmp_path, branch="fabro/t")
+    with_gap = render_goal(item=_item(gap_id="gap-9"), repo=tmp_path, branch="feat/t")
     assert "Gap id: gap-9" in with_gap
     assert "Work-item: livespec-impl-beads-t1" in with_gap
+    assert "Publish branch" in with_gap
+    assert "feat/t" in with_gap
     assert "A ready task" in with_gap
     assert "Do the thing." in with_gap
-    without_gap = render_goal(item=_item(), repo=tmp_path, branch="fabro/t")
+    without_gap = render_goal(item=_item(), repo=tmp_path, branch="feat/t")
     assert "Gap id" not in without_gap
 
 
 def test_argv_builders_encode_family_discipline(tmp_path: Path) -> None:
     plan = _plan(repo=tmp_path)
-    assert fetch_argv(plan=plan) == ["git", "-C", str(tmp_path), "fetch", "origin"]
-    assert worktree_add_argv(plan=plan) == [
-        "git",
-        "-C",
-        str(tmp_path),
-        "worktree",
-        "add",
-        str(plan.worktree),
-        "-b",
-        "fabro/x-1",
-        "origin/master",
-    ]
-    assert mise_trust_argv(plan=plan) == ["mise", "trust"]
     assert fabro_run_argv(plan=plan) == [
         "fabro",
         "run",
@@ -610,12 +627,15 @@ def test_argv_builders_encode_family_discipline(tmp_path: Path) -> None:
         "--goal-file",
         str(tmp_path / "goal.md"),
         "--no-upgrade-check",
-        "-I",
-        "work_item_id=x-1",
-        "-I",
-        "branch=fabro/x-1",
+    ]
+    assert fabro_inspect_argv(plan=plan, run_id="01RUNID") == [
+        "fabro",
+        "inspect",
+        "01RUNID",
+        "--json",
     ]
     assert pr_view_argv(plan=plan)[:3] == ["gh", "pr", "view"]
+    assert pr_view_argv(plan=plan)[3] == "feat/x-1"
     assert pr_arm_argv(plan=plan, number=7) == [
         "gh",
         "pr",
@@ -637,14 +657,6 @@ def test_argv_builders_encode_family_discipline(tmp_path: Path) -> None:
         "--ff-only",
         "origin",
         "master",
-    ]
-    assert worktree_remove_argv(plan=plan) == [
-        "git",
-        "-C",
-        str(tmp_path),
-        "worktree",
-        "remove",
-        str(plan.worktree),
     ]
 
 
@@ -672,47 +684,151 @@ def test_parse_pr_view_reads_fields_and_defaults() -> None:
     assert nonsense.merge_sha is None
 
 
+def test_parse_run_id_reads_the_cli_run_line() -> None:
+    output = "Preparing sandbox\n    Run: 01KTVX6AV677VBWPG63ERB4VH0\nmore output\n"
+    assert parse_run_id(output=output) == "01KTVX6AV677VBWPG63ERB4VH0"
+
+
+def test_parse_run_id_strips_ansi_and_misses_gracefully() -> None:
+    dimmed = "\x1b[2mRun:\x1b[0m \x1b[2m01ABCDEF\x1b[0m\n"
+    assert parse_run_id(output=dimmed) == "01ABCDEF"
+    assert parse_run_id(output="no run line here") is None
+    assert parse_run_id(output="") is None
+
+
+def test_parse_run_status_reads_tagged_kind() -> None:
+    blocked = json.dumps(
+        {
+            "run_id": "01A",
+            "status": {"kind": "blocked", "blocked_reason": "human_input_required"},
+        }
+    )
+    assert parse_run_status(stdout=blocked) == "blocked"
+    succeeded = json.dumps({"status": {"kind": "succeeded", "reason": "completed"}})
+    assert parse_run_status(stdout=succeeded) == "succeeded"
+    assert parse_run_status(stdout=json.dumps({"status": "failed"})) == "failed"
+
+
+def test_parse_run_status_rejects_unusable_shapes() -> None:
+    assert parse_run_status(stdout="not json") is None
+    assert parse_run_status(stdout=json.dumps([1, 2])) is None
+    assert parse_run_status(stdout=json.dumps({"no_status": 1})) is None
+    assert parse_run_status(stdout=json.dumps({"status": {"no_kind": 1}})) is None
+    assert parse_run_status(stdout=json.dumps({"status": 7})) is None
+
+
+def test_parse_secrets_file_env_format() -> None:
+    text = (
+        "# host-local fabro secrets\n"
+        "\n"
+        "export CLAUDE_CODE_OAUTH_TOKEN=tok-1\n"
+        'QUOTED="quoted value"\n'
+        "SINGLE='single value'\n"
+        "no equals sign on this line\n"
+        "=value-without-key\n"
+    )
+    parsed = parse_secrets_file(text=text)
+    assert parsed["CLAUDE_CODE_OAUTH_TOKEN"] == "tok-1"
+    assert parsed["QUOTED"] == "quoted value"
+    assert parsed["SINGLE"] == "single value"
+    assert "" not in parsed
+    assert len(parsed) == 3
+
+
+_COMMITTED_WORKFLOW_TOML = (
+    "_version = 1\n"
+    "\n"
+    "[workflow]\n"
+    'graph = "workflow.fabro"\n'
+    "\n"
+    "[run.environment]\n"
+    'id = "livespec-ci"\n'
+)
+
+
+def test_render_run_config_overlay_rewrites_graph_and_appends_credential(
+    tmp_path: Path,
+) -> None:
+    overlay_token = "tok-secret"
+    rendered = render_run_config_overlay(
+        committed_text=_COMMITTED_WORKFLOW_TOML,
+        workflow_dir=tmp_path,
+        token=overlay_token,
+    )
+    assert rendered is not None
+    assert f'graph = "{tmp_path / "workflow.fabro"}"' in rendered
+    assert 'graph = "workflow.fabro"' not in rendered
+    assert "[environments.livespec-ci.env]" in rendered
+    assert 'CLAUDE_CODE_OAUTH_TOKEN = "tok-secret"' in rendered
+
+
+def test_render_run_config_overlay_keeps_absolute_graph_path(tmp_path: Path) -> None:
+    overlay_token = "t"
+    absolute_graph = tmp_path / "elsewhere" / "g.fabro"
+    committed = _COMMITTED_WORKFLOW_TOML.replace(
+        'graph = "workflow.fabro"', f'graph = "{absolute_graph}"'
+    )
+    rendered = render_run_config_overlay(
+        committed_text=committed,
+        workflow_dir=tmp_path / "workflow-dir",
+        token=overlay_token,
+    )
+    assert rendered is not None
+    assert f'graph = "{absolute_graph}"' in rendered
+    assert str(tmp_path / "workflow-dir") not in rendered.split("[environments")[0]
+
+
+def test_render_run_config_overlay_rejects_unusable_shapes(tmp_path: Path) -> None:
+    overlay_token = "t"
+    assert (
+        render_run_config_overlay(
+            committed_text="_version = 1\n", workflow_dir=tmp_path, token=overlay_token
+        )
+        is None
+    )
+    no_environment = '[workflow]\ngraph = "workflow.fabro"\n'
+    assert (
+        render_run_config_overlay(
+            committed_text=no_environment, workflow_dir=tmp_path, token=overlay_token
+        )
+        is None
+    )
+    no_graph = '[workflow]\n\n[run.environment]\nid = "livespec-ci"\n'
+    assert (
+        render_run_config_overlay(
+            committed_text=no_graph, workflow_dir=tmp_path, token=overlay_token
+        )
+        is None
+    )
+    # Non-canonical whitespace: the graph value parses but the canonical
+    # `graph = "<value>"` rewrite needle is absent, so the shape is refused
+    # rather than silently shipping a relative graph path.
+    spaced = '[workflow]\ngraph =  "workflow.fabro"\n\n[run.environment]\nid = "livespec-ci"\n'
+    assert (
+        render_run_config_overlay(committed_text=spaced, workflow_dir=tmp_path, token=overlay_token)
+        is None
+    )
+
+
 # ---------------------------------------------------------------------------
 # Engine
 # ---------------------------------------------------------------------------
 
 
-def test_engine_fails_at_each_worktree_preparation_step(tmp_path: Path) -> None:
-    for failing_index, stage in [(0, "fetch"), (1, "worktree-add"), (2, "mise-trust")]:
-        queue = [_ok(), _ok(), _ok()][:failing_index] + [_err(stderr=f"{stage} broke")]
-        runner = _FakeRunner(queue=queue)
-        outcome, journal, _ = _dispatch(runner=runner, repo=tmp_path)
-        assert (outcome.status, outcome.stage) == ("failed", stage)
-        assert f"{stage} broke" in outcome.detail
-        assert journal.records[-1]["stage"] == stage
+_BLOCKED_INSPECT_JSON = json.dumps(
+    {
+        "run_id": "01RUNBLOCKED",
+        "status": {"kind": "blocked", "blocked_reason": "human_input_required"},
+    }
+)
 
 
-def test_engine_fails_when_fabro_run_fails_and_trims_detail(tmp_path: Path) -> None:
-    runner = _FakeRunner(queue=[_ok(), _ok(), _ok(), _err(stderr="x" * 3000)])
-    outcome, _, _ = _dispatch(runner=runner, repo=tmp_path)
-    assert (outcome.status, outcome.stage) == ("failed", "fabro-run")
-    assert len(outcome.detail) == 2000
-
-
-def test_engine_fails_when_no_pr_found(tmp_path: Path) -> None:
-    runner = _FakeRunner(queue=[_ok(), _ok(), _ok(), _ok(), _err(stderr="no pr")])
-    outcome, _, _ = _dispatch(runner=runner, repo=tmp_path)
-    assert (outcome.status, outcome.stage) == ("failed", "pr-view")
-    runner = _FakeRunner(queue=[_ok(), _ok(), _ok(), _ok(), _ok(stdout="garbage")])
-    outcome, _, _ = _dispatch(runner=runner, repo=tmp_path)
-    assert (outcome.status, outcome.stage) == ("failed", "pr-view")
-
-
-def test_engine_green_path_with_already_armed_pr(tmp_path: Path) -> None:
+def test_engine_runs_fabro_from_repo_without_worktree_prep(tmp_path: Path) -> None:
     runner = _FakeRunner(
         queue=[
-            _ok(),
-            _ok(),
-            _ok(),
             _ok(stdout="fabro done"),
             _ok(stdout=_pr_json(armed=True)),
             _ok(stdout=_pr_json(state="MERGED", sha="cafe01")),
-            _ok(),
             _ok(),
             _ok(),
         ]
@@ -721,16 +837,96 @@ def test_engine_green_path_with_already_armed_pr(tmp_path: Path) -> None:
     assert (outcome.status, outcome.stage) == ("green", "done")
     assert (outcome.pr_number, outcome.merge_sha) == (7, "cafe01")
     assert naps == []
+    first_argv, first_cwd = runner.calls[0]
+    assert first_argv[:2] == ["fabro", "run"]
+    assert first_cwd == tmp_path
+    assert all("worktree" not in " ".join(argv) for argv, _ in runner.calls)
     stages = [record["stage"] for record in journal.records]
-    assert stages[-3:] == ["pull-primary", "janitor-post-merge", "worktree-remove"]
+    assert stages[0] == "fabro-run"
+    assert stages[-2:] == ["pull-primary", "janitor-post-merge"]
+
+
+def test_engine_fails_when_fabro_run_fails_and_trims_detail(tmp_path: Path) -> None:
+    runner = _FakeRunner(queue=[_err(stderr="x" * 3000)])
+    outcome, _, _ = _dispatch(runner=runner, repo=tmp_path)
+    assert (outcome.status, outcome.stage) == ("failed", "fabro-run")
+    assert len(outcome.detail) == 2000
+
+
+def test_engine_blocked_run_is_a_third_terminal_state(tmp_path: Path) -> None:
+    parked = CommandResult(
+        exit_code=1,
+        stdout="",
+        stderr=(
+            "    Run: 01RUNBLOCKED\n"
+            "Interview ended without an answer. The run is still waiting "
+            "for input; reattach to answer it.\n"
+        ),
+    )
+    runner = _FakeRunner(queue=[parked, _ok(stdout=_BLOCKED_INSPECT_JSON)])
+    outcome, journal, _ = _dispatch(runner=runner, repo=tmp_path)
+    assert (outcome.status, outcome.stage) == ("blocked", "fabro-run")
+    assert (outcome.pr_number, outcome.merge_sha) == (None, None)
+    assert "fabro attach 01RUNBLOCKED" in outcome.detail
+    inspect_argv, inspect_cwd = runner.calls[1]
+    assert inspect_argv == ["fabro", "inspect", "01RUNBLOCKED", "--json"]
+    assert inspect_cwd == tmp_path
+    assert len(runner.calls) == 2
+    assert [record["stage"] for record in journal.records] == ["fabro-run", "fabro-inspect"]
+
+
+def test_engine_blocked_check_falls_back_to_exit_code_routing(tmp_path: Path) -> None:
+    failed_inspect = json.dumps({"status": {"kind": "failed", "reason": "workflow_error"}})
+    runner = _FakeRunner(
+        queue=[
+            CommandResult(exit_code=1, stdout="Run: 01RUNDEAD\n", stderr="agent died"),
+            _ok(stdout=failed_inspect),
+        ]
+    )
+    outcome, _, _ = _dispatch(runner=runner, repo=tmp_path)
+    assert (outcome.status, outcome.stage) == ("failed", "fabro-run")
+    runner = _FakeRunner(queue=[_err(stderr="hard crash, no run line")])
+    outcome, _, _ = _dispatch(runner=runner, repo=tmp_path)
+    assert (outcome.status, outcome.stage) == ("failed", "fabro-run")
+    assert len(runner.calls) == 1
+    runner = _FakeRunner(
+        queue=[
+            CommandResult(exit_code=1, stdout="Run: 01RUNGONE\n", stderr="boom"),
+            _err(stderr="inspect broke"),
+        ]
+    )
+    outcome, _, _ = _dispatch(runner=runner, repo=tmp_path)
+    assert (outcome.status, outcome.stage) == ("failed", "fabro-run")
+
+
+def test_engine_succeeded_run_with_run_id_proceeds_to_pr_flow(tmp_path: Path) -> None:
+    succeeded_inspect = json.dumps({"status": {"kind": "succeeded", "reason": "completed"}})
+    runner = _FakeRunner(
+        queue=[
+            _ok(stdout="    Run: 01RUNGREEN\n"),
+            _ok(stdout=succeeded_inspect),
+            _ok(stdout=_pr_json(armed=True)),
+            _ok(stdout=_pr_json(state="MERGED", sha="cafe07")),
+            _ok(),
+            _ok(),
+        ]
+    )
+    outcome, _, _ = _dispatch(runner=runner, repo=tmp_path)
+    assert (outcome.status, outcome.stage) == ("green", "done")
+
+
+def test_engine_fails_when_no_pr_found(tmp_path: Path) -> None:
+    runner = _FakeRunner(queue=[_ok(), _err(stderr="no pr")])
+    outcome, _, _ = _dispatch(runner=runner, repo=tmp_path)
+    assert (outcome.status, outcome.stage) == ("failed", "pr-view")
+    runner = _FakeRunner(queue=[_ok(), _ok(stdout="garbage")])
+    outcome, _, _ = _dispatch(runner=runner, repo=tmp_path)
+    assert (outcome.status, outcome.stage) == ("failed", "pr-view")
 
 
 def test_engine_arms_auto_merge_as_fallback(tmp_path: Path) -> None:
     runner = _FakeRunner(
         queue=[
-            _ok(),
-            _ok(),
-            _ok(),
             _ok(),
             _ok(stdout=_pr_json(armed=False)),
             _ok(),
@@ -738,12 +934,11 @@ def test_engine_arms_auto_merge_as_fallback(tmp_path: Path) -> None:
             _ok(stdout=_pr_json(state="MERGED", sha="cafe02")),
             _ok(),
             _ok(),
-            _ok(),
         ]
     )
     outcome, _, _ = _dispatch(runner=runner, repo=tmp_path)
     assert outcome.status == "green"
-    armed_call = runner.calls[5][0]
+    armed_call = runner.calls[2][0]
     assert armed_call[:3] == ["gh", "pr", "merge"]
 
 
@@ -751,12 +946,8 @@ def test_engine_skips_arming_when_pr_already_merged(tmp_path: Path) -> None:
     runner = _FakeRunner(
         queue=[
             _ok(),
-            _ok(),
-            _ok(),
-            _ok(),
             _ok(stdout=_pr_json(state="MERGED", armed=False, sha="cafe03")),
             _ok(stdout=_pr_json(state="MERGED", armed=False, sha="cafe03")),
-            _ok(),
             _ok(),
             _ok(),
         ]
@@ -769,9 +960,6 @@ def test_engine_skips_arming_when_pr_already_merged(tmp_path: Path) -> None:
 def test_engine_fails_when_review_after_arming_fails(tmp_path: Path) -> None:
     runner = _FakeRunner(
         queue=[
-            _ok(),
-            _ok(),
-            _ok(),
             _ok(),
             _ok(stdout=_pr_json(armed=False)),
             _ok(),
@@ -786,14 +974,10 @@ def test_engine_updates_branch_when_behind_then_merges(tmp_path: Path) -> None:
     runner = _FakeRunner(
         queue=[
             _ok(),
-            _ok(),
-            _ok(),
-            _ok(),
             _ok(stdout=_pr_json(armed=True)),
             _ok(stdout=_pr_json(armed=True, merge_state="BEHIND")),
             _ok(),
             _ok(stdout=_pr_json(state="MERGED", sha="cafe04")),
-            _ok(),
             _ok(),
             _ok(),
         ]
@@ -801,16 +985,13 @@ def test_engine_updates_branch_when_behind_then_merges(tmp_path: Path) -> None:
     outcome, _, naps = _dispatch(runner=runner, repo=tmp_path)
     assert outcome.status == "green"
     assert naps == [0.5]
-    update_call = runner.calls[6][0]
+    update_call = runner.calls[3][0]
     assert update_call == ["gh", "pr", "update-branch", "7"]
 
 
 def test_engine_poll_budget_exhaustion_keeps_pr_number(tmp_path: Path) -> None:
     runner = _FakeRunner(
         queue=[
-            _ok(),
-            _ok(),
-            _ok(),
             _ok(),
             _ok(stdout=_pr_json(armed=True)),
             _err(stderr="transient gh failure"),
@@ -827,15 +1008,11 @@ def test_engine_post_merge_failures_carry_merge_evidence(tmp_path: Path) -> None
     cases = [
         (["pull broke"], "pull-primary"),
         ([None, "janitor broke"], "janitor-post-merge"),
-        ([None, None, "reap broke"], "worktree-remove"),
     ]
     for tail_specs, stage in cases:
         tail = [_ok() if spec is None else _err(stderr=spec) for spec in tail_specs]
         runner = _FakeRunner(
             queue=[
-                _ok(),
-                _ok(),
-                _ok(),
                 _ok(),
                 _ok(stdout=_pr_json(armed=True)),
                 _ok(stdout=_pr_json(state="MERGED", sha="cafe05")),
@@ -851,18 +1028,14 @@ def test_engine_runs_configured_janitor_in_repo(tmp_path: Path) -> None:
     runner = _FakeRunner(
         queue=[
             _ok(),
-            _ok(),
-            _ok(),
-            _ok(),
             _ok(stdout=_pr_json(armed=True)),
             _ok(stdout=_pr_json(state="MERGED", sha="cafe06")),
-            _ok(),
             _ok(),
             _ok(),
         ]
     )
     _, _, _ = _dispatch(runner=runner, repo=tmp_path)
-    janitor_call = runner.calls[7]
+    janitor_call = runner.calls[4]
     assert janitor_call[0] == ["mise", "exec", "--", "just", "check"]
     assert janitor_call[1] == tmp_path
 
@@ -1014,7 +1187,7 @@ def _repo_with_workflow(*, tmp_path: Path) -> tuple[Path, Path]:
     repo = tmp_path / "repo"
     repo.mkdir()
     workflow = tmp_path / "workflow.toml"
-    _ = workflow.write_text("_version = 1\n", encoding="utf-8")
+    _ = workflow.write_text(_COMMITTED_WORKFLOW_TOML, encoding="utf-8")
     return repo, workflow
 
 
@@ -1031,13 +1204,24 @@ def _green_outcome(*, item_id: str, sha: str | None = "feed01") -> DispatchOutco
 
 @dataclass(kw_only=True)
 class _FakeRunDispatch:
+    """Stand-in for run_dispatch: records kwargs plus the materialized
+    overlay (content + mode) as observed AT CALL TIME, since the real
+    dispatcher deletes the overlay after the run returns."""
+
     outcomes: dict[str, DispatchOutcome]
     seen: list[dict[str, object]] = field(default_factory=list)
+    overlay_texts: list[str] = field(default_factory=list)
+    overlay_modes: list[int] = field(default_factory=list)
 
     def __call__(self, **kwargs: object) -> DispatchOutcome:
         self.seen.append(kwargs)
         plan = kwargs["plan"]
         assert isinstance(plan, DispatchPlan)
+        # The dispatcher materializes the overlay before every run it
+        # launches, so the file always exists here (and is gone again
+        # once the dispatch returns).
+        self.overlay_texts.append(plan.workflow_toml.read_text(encoding="utf-8"))
+        self.overlay_modes.append(stat.S_IMODE(plan.workflow_toml.stat().st_mode))
         return self.outcomes[plan.work_item_id]
 
 
@@ -1080,14 +1264,46 @@ def test_dispatch_green_closes_item_and_journals(
     assert (stored.audit.merge_sha, stored.audit.pr_number) == ("feed01", 11)
     goal_text = (tmp_path / f"fabro-goal-{item.id}.md").read_text(encoding="utf-8")
     assert "A ready task" in goal_text
-    journal_lines = (
-        (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8").splitlines()
-    )
-    stages = [json.loads(line)["stage"] for line in journal_lines]
+    journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
+    stages = [json.loads(line)["stage"] for line in journal_text.splitlines()]
     assert stages == ["ledger-close", "outcome"]
     poll = fake.seen[0]["poll"]
     assert isinstance(poll, PollPolicy)
     assert (poll.attempts, poll.interval_seconds) == (80, 30.0)
+
+
+def test_dispatch_materializes_mode600_overlay_and_cleans_up(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
+    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    exit_code = main(
+        [
+            "dispatch",
+            "--repo",
+            str(repo),
+            "--item",
+            item.id,
+            "--workflow",
+            str(workflow),
+            "--no-close-on-merge",
+        ]
+    )
+    assert exit_code == 0
+    plan = fake.seen[0]["plan"]
+    assert isinstance(plan, DispatchPlan)
+    assert plan.workflow_toml.name == f"fabro-run-config-{item.id}.toml"
+    assert not plan.workflow_toml.exists()
+    assert fake.overlay_modes == [0o600]
+    overlay_text = fake.overlay_texts[0]
+    assert 'CLAUDE_CODE_OAUTH_TOKEN = "test-oauth-token"' in overlay_text
+    assert f'graph = "{workflow.parent / "workflow.fabro"}"' in overlay_text
+    journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
+    assert "test-oauth-token" not in journal_text
 
 
 def test_dispatch_green_without_sha_closes_without_audit(
@@ -1264,7 +1480,7 @@ def test_dispatch_ledger_gate_blocks_and_skip_flag_bypasses(
     assert main([*base, "--skip-ledger-check", "--no-close-on-merge"]) == 0
 
 
-def test_dispatch_default_workflow_resolves_to_repo_fabro_tree(
+def test_dispatch_default_workflow_materializes_from_repo_fabro_tree(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1278,8 +1494,103 @@ def test_dispatch_default_workflow_resolves_to_repo_fabro_tree(
     assert exit_code == 0
     plan = fake.seen[0]["plan"]
     assert isinstance(plan, DispatchPlan)
-    assert plan.workflow_toml.name == "workflow.toml"
-    assert "implement-work-item" in str(plan.workflow_toml)
+    assert plan.workflow_toml.name == f"fabro-run-config-{item.id}.toml"
+    overlay_text = fake.overlay_texts[0]
+    assert "implement-work-item" in overlay_text
+    assert 'graph = "workflow.fabro"' not in overlay_text
+
+
+def test_dispatch_blocked_outcome_surfaces_and_leaves_item_open(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    blocked = DispatchOutcome(
+        work_item_id=item.id,
+        status="blocked",
+        stage="fabro-run",
+        pr_number=None,
+        merge_sha=None,
+        detail="run 01RUNBLOCKED parked at a human gate; answer with `fabro attach 01RUNBLOCKED`",
+    )
+    monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={item.id: blocked}))
+    exit_code = main(
+        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+    )
+    assert exit_code == 1
+    out = capsys.readouterr().out
+    assert "blocked at fabro-run" in out
+    assert "fabro attach 01RUNBLOCKED" in out
+    assert _stored()[item.id].status == "open"
+    journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
+    assert '"blocked"' in journal_text
+    assert "ledger-close" not in journal_text
+
+
+def test_dispatch_fails_actionably_without_secrets_env(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    monkeypatch.delenv("LIVESPEC_FABRO_SECRETS_FILE")
+    monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={}))
+    exit_code = main(
+        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+    )
+    assert exit_code == 1
+    out = capsys.readouterr().out
+    assert "credential-overlay" in out
+    assert "LIVESPEC_FABRO_SECRETS_FILE" in out
+    assert _stored()[item.id].status == "open"
+
+
+def test_dispatch_refuses_unsafe_or_unusable_secrets_file(
+    capsys: pytest.CaptureFixture[str],
+    fabro_secrets_file: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={}))
+    base = ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+    fabro_secrets_file.chmod(0o640)
+    assert main(base) == 1
+    assert "600" in capsys.readouterr().out
+    fabro_secrets_file.chmod(0o600)
+    _ = fabro_secrets_file.write_text("OTHER_KEY=nope\n", encoding="utf-8")
+    assert main(base) == 1
+    assert "CLAUDE_CODE_OAUTH_TOKEN" in capsys.readouterr().out
+    monkeypatch.setenv("LIVESPEC_FABRO_SECRETS_FILE", str(tmp_path / "missing.env"))
+    assert main(base) == 1
+    assert "does not exist" in capsys.readouterr().out
+    assert _stored()[item.id].status == "open"
+
+
+def test_dispatch_fails_when_workflow_config_is_not_materializable(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    bare = tmp_path / "bare.toml"
+    _ = bare.write_text("_version = 1\n", encoding="utf-8")
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={}))
+    exit_code = main(["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(bare)])
+    assert exit_code == 1
+    out = capsys.readouterr().out
+    assert "credential-overlay" in out
+    assert _stored()[item.id].status == "open"
 
 
 def test_dispatch_custom_journal_path(
