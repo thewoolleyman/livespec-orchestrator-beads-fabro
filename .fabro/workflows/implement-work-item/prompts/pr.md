@@ -19,8 +19,9 @@ rides a feature branch named after the work-item instead.
    "Publish branch" line — `feat/<work-item-id>`), NEVER under the
    current run branch's own name:
    `mise exec -- git push -u origin HEAD:refs/heads/feat/<work-item-id>`.
-   NEVER `--no-verify`; if the pre-push hook fails, stop and report its
-   output verbatim.
+   NEVER `--no-verify`; if the pre-push hook fails and you cannot
+   legitimately fix the cause, report its output verbatim and end with
+   the needs-human protocol below.
 3. Open the PR against master with
    `gh pr create --head feat/<work-item-id>` — title from the
    work-item, body summarizing the change and naming the work-item id.
@@ -41,3 +42,15 @@ rides a feature branch named after the work-item instead.
 7. Final reply: report the PR number on its own line in exactly this
    form — `PR_NUMBER=<n>` — plus whether auto-merge is armed, and any
    deviation verbatim.
+
+## When publishing is blocked (needs-human protocol)
+
+If the push or PR flow is blocked in a way you cannot legitimately
+resolve (hook rejection you must not bypass, gh/auth failure, branch
+protection surprise), end your final reply with the failed outcome and
+a STRUCTURED reason, as a JSON object on the last line:
+
+    {"outcome": "failed", "failure_reason": "<what is blocked; what you tried; what decision is needed>"}
+
+The graph routes a failed outcome to an in-loop human gate where an
+operator answers and routes the run back into the loop.

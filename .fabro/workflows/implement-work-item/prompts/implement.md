@@ -21,8 +21,8 @@ constraints.
 ## Hard rules (non-negotiable)
 
 - NEVER pass `--no-verify` to any git command. If a hook fails, fix the
-  cause; if you cannot, STOP and report the hook output verbatim in your
-  final reply.
+  cause; if you cannot, report the hook output verbatim and end with
+  the needs-human protocol below.
 - Always run git write operations through mise so the hooks fire:
   `mise exec -- git add ...`, `mise exec -- git commit ...`.
 - NEVER run `git checkout master`, never run `git config core.bare
@@ -61,6 +61,21 @@ the ritual.
 Every commit message body MUST end with the trailer line:
 
     Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+## When you are genuinely stuck (needs-human protocol)
+
+If the task is ambiguous, requires a human decision, or is proven not
+auto-resolvable (e.g. a hook rejection you cannot legitimately fix), do
+NOT go quiet and do NOT paper over it. End your final reply with the
+failed outcome and a STRUCTURED reason, as a JSON object on the last
+line:
+
+    {"outcome": "failed", "failure_reason": "<what is blocked; what you tried; what decision is needed>"}
+
+The graph routes a failed outcome to an in-loop human gate where an
+operator answers and routes the run back into the loop. Reserve it for
+genuine blockers — a failing check you can fix is YOUR job, not the
+operator's.
 
 ## What to do
 

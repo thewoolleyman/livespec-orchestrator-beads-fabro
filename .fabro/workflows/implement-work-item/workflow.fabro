@@ -6,8 +6,11 @@
 // merged-or-failed implementation attempt:
 //
 //   implement (Red-Green-Replay) -> janitor hard gate (`mise exec --
-//   just check`, fix loop bounded at 3 visits) -> PR + rebase
-//   auto-merge arming.
+//   just check`, bounded fix loop) -> PR + rebase auto-merge arming,
+//   with an in-loop `escalate` human gate (work-item
+//   livespec-impl-beads-4zl) for outcomes the loop cannot
+//   auto-resolve: the run parks in Fabro's native `blocked` status and
+//   the human's answer routes BACK into the loop (`fabro attach`).
 //
 // The run executes in an ISOLATED Fabro-owned docker sandbox clone
 // (Architecture C, workflow.toml): Fabro clones the repo fresh inside
@@ -71,11 +74,56 @@ digraph ImplementWorkItem {
         prompt="@prompts/pr.md"
     ]
 
-    // Conditional edges take priority over the unconditional fallback,
-    // so exit 0 routes Green; every other outcome falls back to Red.
-    start -> implement -> janitor
+    // In-loop human escalation (livespec-impl-beads-4zl): outcomes the
+    // loop cannot auto-resolve park the run at this gate — Fabro's
+    // native `blocked` status — instead of going quiet. A foreground
+    // `fabro run` RETURNS at the gate (the Dispatcher's slot frees)
+    // while a server-side engine stays alive holding the run; `fabro
+    // attach <run-id>` is the answer path (resume is only for a dead
+    // engine). The answer routes BACK into the loop via the labeled
+    // edges below. [A] Abandon exits with the failing stage's outcome
+    // still failed, so the run ends non-green and the work-item stays
+    // open for triage.
+    escalate [
+        shape=hexagon
+        label="Needs human: the loop cannot auto-resolve this work-item"
+    ]
+
+    start -> implement
+
+    // A failed implement (structured needs-human ending, see
+    // prompts/implement.md) routes to the human gate — conditional
+    // edges take priority over the unconditional fallback; everything
+    // else proceeds to the janitor.
+    implement -> escalate [label="Blocked", condition="outcome=failed"]
+    implement -> janitor
+
+    // Janitor outcome routing: exit 0 -> Green -> pr; non-zero -> Red
+    // -> fix while the loop budget remains, then Exhausted -> escalate.
+    //
+    // The fix budget is enforced HERE, as a visit guard on the
+    // janitor's own visit count, NOT by fix's max_visits alone:
+    // verified against fabro v0.254.0 source (fabro-core executor.rs),
+    // a node that reaches max_visits ABORTS the whole run at entry
+    // (Error::VisitLimitExceeded) — it does NOT emit outcome=failed,
+    // so no edge could route the exhaustion to the human gate. Janitor
+    // visit N means N-1 completed fix attempts; the `< 3` guard allows
+    // two fix attempts, then the third Red falls through to escalate.
+    // fix's max_visits=3 stays as the abort backstop (unreachable
+    // unless this routing regresses).
     janitor -> pr  [label="Green", condition="outcome=succeeded"]
-    janitor -> fix [label="Red"]
+    janitor -> fix [label="Red", condition="outcome!=succeeded && context.internal.node_visit_count < 3"]
+    janitor -> escalate [label="Exhausted"]
     fix -> janitor
+
+    // A failed pr stage (hook rejection, gh failure — structured
+    // needs-human ending per prompts/pr.md) parks at the gate too.
+    pr -> escalate [label="Blocked", condition="outcome=failed"]
     pr -> exit
+
+    // The human's answer = one of these labels; it routes the run back
+    // INTO the loop (or out, for triage).
+    escalate -> fix       [label="[R] Retry the fix"]
+    escalate -> implement [label="[I] Re-implement from scratch"]
+    escalate -> exit      [label="[A] Abandon (leave open for triage)"]
 }
