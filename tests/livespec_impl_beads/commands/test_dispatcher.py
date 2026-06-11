@@ -47,9 +47,16 @@ from livespec_impl_beads.commands._dispatcher_plan import (
     worktree_add_argv,
     worktree_remove_argv,
 )
+from livespec_impl_beads.commands._dispatcher_spec_checks import run_spec_checks
+from livespec_impl_beads.commands._dispatcher_spec_commitments import (
+    Obligation,
+    collect_obligations_and_supersedes,
+)
+from livespec_impl_beads.commands.detect_impl_gaps import detect_rules
 from livespec_impl_beads.commands.dispatcher import main
 from livespec_impl_beads.store import append_work_item, materialize_work_items, read_work_items
 from livespec_impl_beads.types import StoreConfig, WorkItem
+from livespec_runtime.cross_repo.types import CrossRepoManifest
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -207,6 +214,229 @@ def test_ledger_checks_flag_duplicate_gap_ids_sorted() -> None:
 def test_ledger_checks_ignore_closed_items() -> None:
     items = [_item(status="closed", depends_on=("nope-99", {"bad": True}))]
     assert run_ledger_checks(items=items) == []
+
+
+# ---------------------------------------------------------------------------
+# Spec checks (the re-homed spec-context invariants)
+# ---------------------------------------------------------------------------
+
+
+def _manifest() -> CrossRepoManifest:
+    return CrossRepoManifest(targets={})
+
+
+def _write_pc(*, directory: Path, stem: str, pc_text: str, revision_text: str | None) -> None:
+    _ = (directory / f"{stem}.md").write_text(pc_text, encoding="utf-8")
+    if revision_text is not None:
+        _ = (directory / f"{stem}-revision.md").write_text(revision_text, encoding="utf-8")
+
+
+def _revision(*, decision: str) -> str:
+    return f"---\ndecision: {decision}\n---\nNarration.\n"
+
+
+def _spec_tree(*, tmp_path: Path) -> Path:
+    """Build a SPECIFICATION tree with one live MUST rule + a rich history walk."""
+    spec = tmp_path / "SPECIFICATION"
+    v1 = spec / "history" / "v001" / "proposed_changes"
+    v1.mkdir(parents=True)
+    _ = (spec / "spec.md").write_text(
+        "# Spec\n\n## Rules\n\nThe system MUST frobnicate.\n", encoding="utf-8"
+    )
+    covered_pc = (
+        "---\n"
+        "topic: covered\n"
+        "spec_commitments:\n"
+        "  impl_followups:\n"
+        "    - id_hint: hint-filed\n"
+        "      description: tracked by a filed work-item\n"
+        "\n"
+        "    - id_hint: hint-unfiled\n"
+        "    - id_hint:\n"
+        "    - id_hint: hint-old\n"
+        "status: pending\n"
+        "---\nBody.\n"
+    )
+    _write_pc(
+        directory=v1, stem="covered", pc_text=covered_pc, revision_text=_revision(decision="accept")
+    )
+    rejected_pc = (
+        "---\nspec_commitments:\n  impl_followups:\n    - id_hint: hint-rejected\n---\nBody.\n"
+    )
+    _write_pc(
+        directory=v1,
+        stem="rejected",
+        pc_text=rejected_pc,
+        revision_text=_revision(decision="reject"),
+    )
+    _write_pc(
+        directory=v1,
+        stem="plain",
+        pc_text="No front matter here.\n",
+        revision_text=_revision(decision="accept"),
+    )
+    _write_pc(
+        directory=v1,
+        stem="unclosed",
+        pc_text="---\nspec_commitments:\n",
+        revision_text=_revision(decision="accept"),
+    )
+    _write_pc(
+        directory=v1,
+        stem="no-commitments",
+        pc_text="---\ntopic: bare\n---\nBody.\n",
+        revision_text=_revision(decision="accept"),
+    )
+    _write_pc(
+        directory=v1,
+        stem="no-decision",
+        pc_text="---\ntopic: x\n---\n",
+        revision_text="---\ntopic: undecided\n---\n",
+    )
+    _write_pc(
+        directory=v1,
+        stem="bare-rev",
+        pc_text="---\ntopic: y\n---\n",
+        revision_text="No front matter either.\n",
+    )
+    _write_pc(directory=v1, stem="orphan", pc_text="---\ntopic: z\n---\n", revision_text=None)
+    _ = (v1 / "notes.txt").write_text("not a pc\n", encoding="utf-8")
+    (v1 / "drafts").mkdir()
+    v2 = spec / "history" / "v002"
+    (v2 / "proposed_changes").mkdir(parents=True)
+    _ = (v2 / "PRUNED_HISTORY.json").write_text("{}\n", encoding="utf-8")
+    pruned_pc = "---\nspec_commitments:\n  impl_followups:\n    - id_hint: hint-pruned\n---\n"
+    _write_pc(
+        directory=v2 / "proposed_changes",
+        stem="pruned",
+        pc_text=pruned_pc,
+        revision_text=_revision(decision="accept"),
+    )
+    v3 = spec / "history" / "v003" / "proposed_changes"
+    v3.mkdir(parents=True)
+    superseder_pc = (
+        "---\n"
+        "spec_commitments:\n"
+        "  supersedes:\n"
+        "    - hint-old\n"
+        "      reason: replaced by the v003 wiring\n"
+        "  impl_followups:\n"
+        "---\n"
+    )
+    _write_pc(
+        directory=v3,
+        stem="superseder",
+        pc_text=superseder_pc,
+        revision_text=_revision(decision="modify"),
+    )
+    (spec / "history" / "v004").mkdir()
+    (spec / "history" / "not-a-version").mkdir()
+    _ = (spec / "history" / "stray.txt").write_text("not a version dir\n", encoding="utf-8")
+    return spec
+
+
+def test_collect_obligations_walks_accepted_history(tmp_path: Path) -> None:
+    spec = _spec_tree(tmp_path=tmp_path)
+    obligations, superseded = collect_obligations_and_supersedes(spec_root=spec)
+    assert obligations == [
+        Obligation(id_hint="hint-filed", version_label="v001", pc_stem="covered"),
+        Obligation(id_hint="hint-unfiled", version_label="v001", pc_stem="covered"),
+        Obligation(id_hint="hint-old", version_label="v001", pc_stem="covered"),
+    ]
+    assert superseded == {"hint-old"}
+
+
+def test_collect_obligations_empty_without_history(tmp_path: Path) -> None:
+    assert collect_obligations_and_supersedes(spec_root=tmp_path) == ([], set())
+
+
+def test_spec_checks_flag_stalled_epics() -> None:
+    items = [
+        _item(id="dep-1", status="closed"),
+        _item(id="dep-2", status="closed"),
+        _item(
+            id="epic-stalled",
+            type="epic",
+            depends_on=("dep-1", {"kind": "local", "work_item_id": "dep-2"}),
+        ),
+        _item(id="epic-rolling", type="epic", status="in_progress", depends_on=("dep-1",)),
+    ]
+    findings = run_spec_checks(items=items, spec_root=Path("/nonexistent"), manifest=_manifest())
+    stalled = [finding for finding in findings if finding.check == "no-stalled-epic"]
+    assert [(finding.item_id, finding.severity) for finding in stalled] == [
+        ("epic-rolling", "fail"),
+        ("epic-stalled", "fail"),
+    ]
+    assert "still open" in stalled[1].message
+
+
+def test_spec_checks_epic_not_stalled_when_any_dep_unresolved_or_open() -> None:
+    items = [
+        _item(id="dep-open"),
+        _item(id="dep-closed", status="closed"),
+        _item(id="epic-open-dep", type="epic", depends_on=("dep-open", "dep-closed")),
+        _item(id="epic-missing-dep", type="epic", depends_on=("ghost-1",)),
+        _item(id="epic-bad-dep", type="epic", depends_on=({"bogus": True},)),
+        _item(
+            id="epic-sibling-dep",
+            type="epic",
+            depends_on=(
+                {"kind": "sibling_work_item", "repo": "unconfigured", "work_item_id": "x-1"},
+            ),
+        ),
+        _item(id="epic-empty", type="epic"),
+        _item(id="epic-closed", type="epic", status="closed", depends_on=("dep-closed",)),
+        _item(id="task-done-deps", depends_on=("dep-closed",)),
+    ]
+    findings = run_spec_checks(items=items, spec_root=Path("/nonexistent"), manifest=_manifest())
+    assert [finding for finding in findings if finding.check == "no-stalled-epic"] == []
+
+
+def test_spec_checks_skip_spec_tree_checks_without_spec_root(tmp_path: Path) -> None:
+    findings = run_spec_checks(items=[], spec_root=tmp_path / "missing", manifest=_manifest())
+    assert [(finding.check, finding.severity) for finding in findings] == [
+        ("no-stale-gap-tied", "skipped"),
+        ("unresolved-spec-commitment", "skipped"),
+    ]
+    assert all(finding.item_id == "-" for finding in findings)
+
+
+def test_spec_checks_warn_only_for_stale_gap_tied_items(tmp_path: Path) -> None:
+    spec = _spec_tree(tmp_path=tmp_path)
+    fresh_gap = detect_rules(spec_root=spec)[0].gap_id
+    items = [
+        _item(id="g-fresh", origin="gap-tied", gap_id=fresh_gap),
+        _item(id="g-stale", origin="gap-tied", gap_id="gap-gone1234", status="in_progress"),
+        _item(id="g-closed", origin="gap-tied", gap_id="gap-gone1234", status="closed"),
+        _item(id="g-none", origin="gap-tied", gap_id=None),
+        _item(id="f-free", gap_id="gap-gone1234"),
+    ]
+    findings = run_spec_checks(items=items, spec_root=spec, manifest=_manifest())
+    stale = [finding for finding in findings if finding.check == "no-stale-gap-tied"]
+    assert [(finding.item_id, finding.severity) for finding in stale] == [("g-stale", "warn")]
+    assert "gap-gone1234" in stale[0].message
+    assert "non-fix disposition" in stale[0].message
+
+
+def test_spec_checks_no_gap_findings_without_open_gap_tied_items(tmp_path: Path) -> None:
+    spec = _spec_tree(tmp_path=tmp_path)
+    findings = run_spec_checks(items=[_item()], spec_root=spec, manifest=_manifest())
+    assert [finding for finding in findings if finding.check == "no-stale-gap-tied"] == []
+
+
+def test_spec_checks_flag_unresolved_commitments(tmp_path: Path) -> None:
+    spec = _spec_tree(tmp_path=tmp_path)
+    items = [
+        _item(id="filed-1", spec_commitment_hint="hint-filed"),
+        _item(id="empty-hint", spec_commitment_hint=""),
+    ]
+    findings = run_spec_checks(items=items, spec_root=spec, manifest=_manifest())
+    unresolved = [finding for finding in findings if finding.check == "unresolved-spec-commitment"]
+    assert [(finding.item_id, finding.severity) for finding in unresolved] == [
+        ("hint-unfiled", "fail")
+    ]
+    assert "v001/proposed_changes/covered.md" in unresolved[0].message
+    assert "--spec-commitment-hint hint-unfiled" in unresolved[0].message
 
 
 # ---------------------------------------------------------------------------
@@ -588,6 +818,49 @@ def test_ledger_check_reports_findings(
     assert main(["ledger-check", "--project-root", str(tmp_path), "--json"]) == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload[0]["check"] == "no-orphan-dependency"
+    assert payload[0]["severity"] == "fail"
+
+
+# ---------------------------------------------------------------------------
+# CLI surface — spec-check
+# ---------------------------------------------------------------------------
+
+
+def test_spec_check_cli_skips_without_spec_tree(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert main(["spec-check"]) == 0
+    out = capsys.readouterr().out
+    assert "SKIPPED" in out
+    assert "no-stale-gap-tied" in out
+    assert main(["spec-check", "--project-root", str(tmp_path), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert {entry["severity"] for entry in payload} == {"skipped"}
+
+
+def test_spec_check_cli_reports_findings(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    spec = _spec_tree(tmp_path=tmp_path)
+    append_work_item(
+        path=_config(),
+        item=_item(id="g-stale", origin="gap-tied", gap_id="gap-gone1234"),
+    )
+    assert main(["spec-check", "--project-root", str(tmp_path)]) == 1
+    out = capsys.readouterr().out
+    assert "WARN  no-stale-gap-tied  g-stale" in out
+    assert "FAIL  unresolved-spec-commitment  hint-filed" in out
+    exit_code = main(
+        ["spec-check", "--project-root", str(tmp_path), "--spec-root", str(spec), "--json"]
+    )
+    assert exit_code == 1
+    payload = json.loads(capsys.readouterr().out)
+    checks = {entry["check"] for entry in payload}
+    assert checks == {"no-stale-gap-tied", "unresolved-spec-commitment"}
 
 
 # ---------------------------------------------------------------------------
@@ -1047,4 +1320,11 @@ def test_loop_parallel_floor_of_one(
 
 def test_ledger_finding_dataclass_shape() -> None:
     finding = LedgerFinding(check="c", item_id="i", message="m")
-    assert (finding.check, finding.item_id, finding.message) == ("c", "i", "m")
+    assert (finding.check, finding.item_id, finding.message, finding.severity) == (
+        "c",
+        "i",
+        "m",
+        "fail",
+    )
+    skipped = LedgerFinding(check="c", item_id="i", message="m", severity="skipped")
+    assert skipped.severity == "skipped"

@@ -22,11 +22,15 @@ public module per query-only skill:
 - `dispatcher.py` — the orchestrator-PRIVATE thin Dispatcher of the
   Beads/Dolt + Fabro reference orchestrator (NOT a contract CLI and
   NOT a skill surface): `ledger-check` runs the three dispatch-safety
-  Ledger integrity checks; `dispatch`/`loop` drive ready work-items
+  Ledger integrity checks; `spec-check` runs the three re-homed
+  spec-context work-item invariants (no-stalled-epic /
+  no-stale-gap-tied / unresolved-spec-commitment) against the tenant
+  rows plus the spec tree; `dispatch`/`loop` drive ready work-items
   through the `.fabro/workflows/implement-work-item/` phase graph
   (worktree → Fabro run → auto-merge confirmation → post-merge
   janitor → Ledger close + journal). Bodies live in the
   `_dispatcher_*` private helpers (`_dispatcher_ledger_checks.py`,
+  `_dispatcher_spec_checks.py`, `_dispatcher_spec_commitments.py`,
   `_dispatcher_plan.py`, `_dispatcher_engine.py`,
   `_dispatcher_io.py`). Its Ledger writes are machine-path
   dispositions of already-filed items (close-on-confirmed-merge).
