@@ -6,8 +6,10 @@ thin-transport entry point (`detect_impl_gaps.py`, `list_memos.py`,
 orchestrator-side contract CLI binary (subcommands `spec-reader`,
 `gap-capture`, `drift-capture`; named in `.livespec.jsonc`'s
 `orchestrator` section per livespec contracts.md §"Orchestrator CLI
-contract — the three named CLIs"). Each wrapper is a no-logic
-supervisor entry point of the canonical shape:
+contract — the three named CLIs"), plus `dispatcher.py`, the
+orchestrator-PRIVATE Dispatcher CLI (subcommands `ledger-check`,
+`dispatch`, `loop`; not contract surface, not config-named). Each
+wrapper is a no-logic supervisor entry point of the canonical shape:
 
 ```
 #!/usr/bin/env python3
