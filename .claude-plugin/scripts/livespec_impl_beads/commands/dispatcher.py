@@ -12,6 +12,7 @@ core's contract sees only the three `orchestrator.py` CLIs.
 
   dispatcher.py ledger-check [--project-root <path>] [--json]
   dispatcher.py spec-check [--project-root <path>] [--spec-root <path>] [--json]
+  dispatcher.py janitor-check [--repo <path>] [--json]
   dispatcher.py dispatch --repo <path> --item <id> [common flags]
   dispatcher.py loop --repo <path> --budget <n> [--parallel <k>]
                      [--mode shadow|autonomous] [--item <id>]... [common flags]
@@ -19,8 +20,11 @@ core's contract sees only the three `orchestrator.py` CLIs.
 `spec-check` runs the three re-homed spec-context work-item invariants
 (no-stalled-epic / no-stale-gap-tied / unresolved-spec-commitment; see
 `_dispatcher_spec_checks.py`) against the tenant rows plus the spec
-tree at `--spec-root` (default `<project-root>/SPECIFICATION`). It is
-a standalone check surface — the pre-dispatch hard gate inside
+tree at `--spec-root` (default `<project-root>/SPECIFICATION`).
+`janitor-check` runs the three re-homed stale-cleanup checks
+(no-stale-merged-branch / no-stale-merged-pr-branch / no-stale-worktree;
+see `_dispatcher_janitor_checks.py`) against the repo's git/gh state.
+Both are standalone check surfaces — the pre-dispatch hard gate inside
 `dispatch`/`loop` stays the pure-Ledger dispatch-safety trio.
 
 Common flags: [--workflow <toml>] [--fabro-bin <path>]
@@ -67,6 +71,7 @@ from livespec_impl_beads.commands._dispatcher_io import (
     ShellCommandRunner,
     utc_now_iso,
 )
+from livespec_impl_beads.commands._dispatcher_janitor_checks import run_janitor_checks
 from livespec_impl_beads.commands._dispatcher_ledger_checks import (
     LedgerFinding,
     run_ledger_checks,
@@ -90,6 +95,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_ledger_check(args=args)
     if args.subcommand == "spec-check":
         return _run_spec_check(args=args)
+    if args.subcommand == "janitor-check":
+        return _run_janitor_check(args=args)
     if args.subcommand == "dispatch":
         return _run_dispatch_command(args=args)
     return _run_loop_command(args=args)
@@ -112,6 +119,12 @@ def _run_spec_check(*, args: argparse.Namespace) -> int:
         manifest=load_manifest(project_root=project_root),
     )
     return _emit_check_findings(findings=findings, as_json=args.as_json, label="spec")
+
+
+def _run_janitor_check(*, args: argparse.Namespace) -> int:
+    repo = Path(args.repo) if args.repo is not None else Path.cwd()
+    findings = run_janitor_checks(repo=repo, runner=ShellCommandRunner())
+    return _emit_check_findings(findings=findings, as_json=args.as_json, label="janitor")
 
 
 def _emit_check_findings(*, findings: list[LedgerFinding], as_json: bool, label: str) -> int:
@@ -371,6 +384,9 @@ def _build_parser() -> argparse.ArgumentParser:
     _ = spec.add_argument("--project-root", dest="project_root", default=None)
     _ = spec.add_argument("--spec-root", dest="spec_root", default=None)
     _ = spec.add_argument("--json", dest="as_json", action="store_true")
+    janitor = subparsers.add_parser("janitor-check")
+    _ = janitor.add_argument("--repo", dest="repo", default=None)
+    _ = janitor.add_argument("--json", dest="as_json", action="store_true")
     dispatch = subparsers.add_parser("dispatch")
     _add_dispatch_common(parser=dispatch)
     _ = dispatch.add_argument("--item", dest="item", required=True)

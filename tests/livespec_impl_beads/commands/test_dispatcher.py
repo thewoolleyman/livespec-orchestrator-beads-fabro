@@ -27,6 +27,7 @@ from livespec_impl_beads.commands._dispatcher_io import (
     _decode,  # pyright: ignore[reportPrivateUsage]
     utc_now_iso,
 )
+from livespec_impl_beads.commands._dispatcher_janitor_checks import run_janitor_checks
 from livespec_impl_beads.commands._dispatcher_ledger_checks import (
     LedgerFinding,
     run_ledger_checks,
@@ -437,6 +438,127 @@ def test_spec_checks_flag_unresolved_commitments(tmp_path: Path) -> None:
     ]
     assert "v001/proposed_changes/covered.md" in unresolved[0].message
     assert "--spec-commitment-hint hint-unfiled" in unresolved[0].message
+
+
+# ---------------------------------------------------------------------------
+# Janitor checks (the re-homed stale-cleanup checks)
+# ---------------------------------------------------------------------------
+
+_JANITOR_PROBE_COUNT = 7
+
+
+def _janitor_results(*, fail_at: int | None = None) -> list[CommandResult]:
+    """Script the seven janitor probes; `fail_at` makes that probe exit 1."""
+    worktrees = (
+        "worktree /repo\nHEAD aaa\nbranch refs/heads/master\n\n"
+        "worktree /repo/worktrees/merged\nHEAD bbb\nbranch refs/heads/feat/x\n\n"
+        "worktree /repo/worktrees/gone\nHEAD ccc\nbranch refs/heads/feat/y\n\n"
+        "worktree /repo/worktrees/detached\nHEAD ddd\ndetached\n\n"
+        "worktree /repo/worktrees/ondefault\nHEAD eee\nbranch refs/heads/master\n\n"
+        "worktree /repo/worktrees/active\nHEAD fff\nbranch refs/heads/feat/z\n"
+    )
+    remote = (
+        "aaa\trefs/heads/master\n"
+        "bbb\trefs/heads/feat/x\n"
+        "fff\trefs/heads/feat/z\n"
+        "malformed-line-without-tab\n"
+    )
+    results = [
+        _ok("true\n"),
+        _ok("origin/master\n"),
+        _ok("master\nfeat/x\n"),
+        _ok(remote),
+        _ok(worktrees),
+        _ok("thewoolleyman/livespec-impl-beads\n"),
+        _ok("feat/x\nmaster\n"),
+    ]
+    if fail_at is not None:
+        results[fail_at] = _err()
+    return results
+
+
+def test_janitor_checks_skip_outside_git_repo(tmp_path: Path) -> None:
+    runner = _FakeRunner(queue=[_err()])
+    findings = run_janitor_checks(repo=tmp_path, runner=runner)
+    assert [(finding.check, finding.severity) for finding in findings] == [
+        ("no-stale-merged-branch", "skipped"),
+        ("no-stale-merged-pr-branch", "skipped"),
+        ("no-stale-worktree", "skipped"),
+    ]
+    assert len(runner.calls) == 1
+    assert runner.calls[0][0] == ["git", "rev-parse", "--is-inside-work-tree"]
+
+
+def test_janitor_checks_skip_without_default_branch(tmp_path: Path) -> None:
+    runner = _FakeRunner(queue=[_ok("true\n"), _err()])
+    findings = run_janitor_checks(repo=tmp_path, runner=runner)
+    assert {finding.severity for finding in findings} == {"skipped"}
+    assert "default branch undetermined" in findings[0].message
+    assert len(runner.calls) == 2
+
+
+def test_janitor_checks_clean_state_yields_no_findings(tmp_path: Path) -> None:
+    results = _janitor_results()
+    results[2] = _ok("master\n")
+    results[4] = _ok("worktree /repo\nHEAD aaa\nbranch refs/heads/master\n")
+    results[6] = _ok("")
+    runner = _FakeRunner(queue=results)
+    findings = run_janitor_checks(repo=tmp_path, runner=runner)
+    assert findings == []
+    assert len(runner.calls) == _JANITOR_PROBE_COUNT
+    assert runner.calls[2][0] == [
+        "git",
+        "for-each-ref",
+        "--format=%(refname:short)",
+        "--merged",
+        "master",
+        "refs/heads",
+    ]
+
+
+def test_janitor_checks_tolerate_empty_worktree_listing(tmp_path: Path) -> None:
+    results = _janitor_results()
+    results[4] = _ok("")
+    runner = _FakeRunner(queue=results)
+    findings = run_janitor_checks(repo=tmp_path, runner=runner)
+    assert [finding for finding in findings if finding.check == "no-stale-worktree"] == []
+
+
+def test_janitor_checks_flag_stale_branches_prs_and_worktrees(tmp_path: Path) -> None:
+    runner = _FakeRunner(queue=_janitor_results())
+    findings = run_janitor_checks(repo=tmp_path, runner=runner)
+    assert [(finding.check, finding.item_id, finding.severity) for finding in findings] == [
+        ("no-stale-merged-branch", "feat/x", "warn"),
+        ("no-stale-merged-pr-branch", "feat/x", "warn"),
+        ("no-stale-worktree", "/repo/worktrees/gone", "warn"),
+        ("no-stale-worktree", "/repo/worktrees/merged", "warn"),
+    ]
+    assert "git branch -d feat/x" in findings[0].message
+    delete_action = "gh api -X DELETE repos/thewoolleyman/livespec-impl-beads/git/refs/heads/feat/x"
+    assert delete_action in findings[1].message
+    assert "git worktree remove /repo/worktrees/gone" in findings[2].message
+
+
+@pytest.mark.parametrize(
+    ("fail_at", "expected_skipped"),
+    [
+        (2, {"no-stale-merged-branch", "no-stale-worktree"}),
+        (3, {"no-stale-merged-pr-branch", "no-stale-worktree"}),
+        (4, {"no-stale-worktree"}),
+        (5, {"no-stale-merged-pr-branch"}),
+        (6, {"no-stale-merged-pr-branch"}),
+    ],
+)
+def test_janitor_checks_skip_per_failed_probe(
+    tmp_path: Path,
+    fail_at: int,
+    expected_skipped: set[str],
+) -> None:
+    runner = _FakeRunner(queue=_janitor_results(fail_at=fail_at))
+    findings = run_janitor_checks(repo=tmp_path, runner=runner)
+    skipped = {finding.check for finding in findings if finding.severity == "skipped"}
+    assert skipped == expected_skipped
+    assert len(runner.calls) == _JANITOR_PROBE_COUNT
 
 
 # ---------------------------------------------------------------------------
@@ -861,6 +983,26 @@ def test_spec_check_cli_reports_findings(
     payload = json.loads(capsys.readouterr().out)
     checks = {entry["check"] for entry in payload}
     assert checks == {"no-stale-gap-tied", "unresolved-spec-commitment"}
+
+
+# ---------------------------------------------------------------------------
+# CLI surface — janitor-check
+# ---------------------------------------------------------------------------
+
+
+def test_janitor_check_cli_skips_outside_git_repo(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert main(["janitor-check"]) == 0
+    out = capsys.readouterr().out
+    assert "SKIPPED" in out
+    assert "no-stale-worktree" in out
+    assert main(["janitor-check", "--repo", str(tmp_path), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert {entry["severity"] for entry in payload} == {"skipped"}
 
 
 # ---------------------------------------------------------------------------
