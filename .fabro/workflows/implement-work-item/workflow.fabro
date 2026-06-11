@@ -1,0 +1,78 @@
+// implement-work-item — the family-discipline phase graph.
+//
+// This is the Fabro Loop half of the Beads/Dolt + Fabro reference
+// orchestrator (livespec spec.md §"Contract + reference implementations
+// architecture"). One run consumes ONE ready work-item and produces one
+// merged-or-failed implementation attempt:
+//
+//   implement (Red-Green-Replay) -> janitor hard gate (`mise exec --
+//   just check`, fix loop bounded at 3 visits) -> PR + rebase
+//   auto-merge arming.
+//
+// The run's working directory is a SECONDARY WORKTREE prepared by the
+// Dispatcher (commands/dispatcher.py) before the run starts — the graph
+// never creates worktrees and never touches the primary checkout. The
+// per-item brief (work-item id, title, description, branch) arrives via
+// the run goal (`--goal-file`), rendered into the prompts as {{ goal }}.
+//
+// Agent nodes use the ACP backend (command-owned auth): the Claude Code
+// adapter manages its own credentials, so Fabro needs no provider API
+// key for these stages. Per docs.fabro.sh/core-concepts/agents §"ACP
+// backend", ACP requires a local or Docker sandbox (the Dispatcher runs
+// it with the local provider).
+digraph ImplementWorkItem {
+    graph [
+        goal="Implement one ready work-item per the livespec family discipline"
+        default_max_retries=0
+        stall_timeout="7200s"
+    ]
+
+    start [shape=Mdiamond, label="Start"]
+    exit  [shape=Msquare, label="Exit"]
+
+    implement [
+        label="Implement (Red-Green-Replay)"
+        backend="acp"
+        acp.command="npx -y @agentclientprotocol/claude-agent-acp"
+        timeout="7200s"
+        goal_gate=true
+        prompt="@prompts/implement.md"
+    ]
+
+    // Janitor hard gate: a non-zero `just check` MUST prevent the PR
+    // stage (livespec non-functional-requirements.md §"Orchestrator-
+    // internal Dispatcher guidance"). Script outcome routes the edges:
+    // exit 0 -> succeeded -> pr; non-zero -> failed -> fix loop.
+    janitor [
+        label="Janitor: just check"
+        shape=parallelogram
+        timeout="3600s"
+        script="mise exec -- just check"
+    ]
+
+    fix [
+        label="Fix janitor failures"
+        backend="acp"
+        acp.command="npx -y @agentclientprotocol/claude-agent-acp"
+        timeout="3600s"
+        max_visits=3
+        prompt="@prompts/fix.md"
+    ]
+
+    pr [
+        label="Open PR + arm rebase auto-merge"
+        backend="acp"
+        acp.command="npx -y @agentclientprotocol/claude-agent-acp"
+        timeout="1800s"
+        goal_gate=true
+        prompt="@prompts/pr.md"
+    ]
+
+    // Conditional edges take priority over the unconditional fallback,
+    // so exit 0 routes Green; every other outcome falls back to Red.
+    start -> implement -> janitor
+    janitor -> pr  [label="Green", condition="outcome=succeeded"]
+    janitor -> fix [label="Red"]
+    fix -> janitor
+    pr -> exit
+}

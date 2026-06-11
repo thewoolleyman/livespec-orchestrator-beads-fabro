@@ -1,0 +1,37 @@
+# Run config for the implement-work-item phase graph.
+#
+# Launched by the Dispatcher (commands/dispatcher.py) with the target
+# repo's prepared secondary worktree as the invoking working directory:
+#
+#   cd <worktree> && fabro run <this-file> --goal-file <brief> \
+#       -I work_item_id=<id> -I branch=<branch>
+#
+# The local sandbox provider runs directly in that working directory
+# (docs.fabro.sh/execution/run-configuration §"[run.environment]"):
+# isolation comes from the worktree itself, per the family worktree
+# discipline. Fabro-managed git surfaces (run branch, metadata branch,
+# GitHub-App pull requests) are all disabled: the agent owns every git
+# mutation so the Red-Green-Replay commit hooks and the `gh pr` flow
+# stay exactly the family's own.
+_version = 1
+
+[workflow]
+graph = "workflow.fabro"
+
+[run]
+goal = "Implement one ready work-item per the livespec family discipline"
+
+[run.environment]
+id = "host"
+
+[environments.host]
+provider = "local"
+
+[run.run_branch]
+enabled = false
+
+[run.meta_branch]
+enabled = false
+
+[run.pull_request]
+enabled = false

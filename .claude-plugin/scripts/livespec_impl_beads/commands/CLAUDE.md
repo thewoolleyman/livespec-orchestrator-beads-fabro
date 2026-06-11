@@ -19,6 +19,17 @@ public module per query-only skill:
   `gap-capture` is the ONE mutating command surface here (writing
   gap-tied work-items to the beads Ledger IS its contract job); the
   query-only rule below still binds every `list-*`/`next` module.
+- `dispatcher.py` — the orchestrator-PRIVATE thin Dispatcher of the
+  Beads/Dolt + Fabro reference orchestrator (NOT a contract CLI and
+  NOT a skill surface): `ledger-check` runs the three dispatch-safety
+  Ledger integrity checks; `dispatch`/`loop` drive ready work-items
+  through the `.fabro/workflows/implement-work-item/` phase graph
+  (worktree → Fabro run → auto-merge confirmation → post-merge
+  janitor → Ledger close + journal). Bodies live in the
+  `_dispatcher_*` private helpers (`_dispatcher_ledger_checks.py`,
+  `_dispatcher_plan.py`, `_dispatcher_engine.py`,
+  `_dispatcher_io.py`). Its Ledger writes are machine-path
+  dispositions of already-filed items (close-on-confirmed-merge).
 
 Each public module exports `main(argv=None) -> int` (the supervisor
 the wrapper calls) plus its named helpers, all enumerated in
