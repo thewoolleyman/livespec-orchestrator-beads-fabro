@@ -9,17 +9,20 @@
 //   just check`, fix loop bounded at 3 visits) -> PR + rebase
 //   auto-merge arming.
 //
-// The run's working directory is a SECONDARY WORKTREE prepared by the
-// Dispatcher (commands/dispatcher.py) before the run starts — the graph
-// never creates worktrees and never touches the primary checkout. The
-// per-item brief (work-item id, title, description, branch) arrives via
-// the run goal (`--goal-file`), rendered into the prompts as {{ goal }}.
+// The run executes in an ISOLATED Fabro-owned docker sandbox clone
+// (Architecture C, workflow.toml): Fabro clones the repo fresh inside
+// the sandbox and checks out a managed run branch before the first node
+// runs — the graph never creates worktrees and never touches the host.
+// The per-item brief (work-item id, title, description, publish branch)
+// arrives via the run goal (`--goal-file`), rendered into the prompts
+// as {{ goal }}.
 //
-// Agent nodes use the ACP backend (command-owned auth): the Claude Code
-// adapter manages its own credentials, so Fabro needs no provider API
-// key for these stages. Per docs.fabro.sh/core-concepts/agents §"ACP
-// backend", ACP requires a local or Docker sandbox (the Dispatcher runs
-// it with the local provider).
+// Agent nodes use the ACP backend: the Claude Code adapter reads
+// CLAUDE_CODE_OAUTH_TOKEN from the sandbox environment, injected at
+// dispatch time via the Dispatcher's uncommitted run-config overlay
+// (see workflow.toml §"CREDENTIAL CHANNEL"). Per
+// docs.fabro.sh/core-concepts/agents §"ACP backend", ACP requires a
+// local or Docker sandbox (the Dispatcher runs the docker provider).
 digraph ImplementWorkItem {
     graph [
         goal="Implement one ready work-item per the livespec family discipline"

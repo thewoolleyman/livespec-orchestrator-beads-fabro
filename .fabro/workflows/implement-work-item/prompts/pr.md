@@ -1,7 +1,9 @@
-# PR stage — publish the branch and arm rebase auto-merge
+# PR stage — publish the work and arm rebase auto-merge
 
-The janitor gate is green. Publish this worktree's branch as a PR per
-the family merge discipline.
+The janitor gate is green. Publish this sandbox clone's committed work
+as a PR per the family merge discipline. You are on a Fabro-managed run
+branch — its name is run-internal and MUST NOT be published; the PR
+rides a feature branch named after the work-item instead.
 
 ## Your assignment (for the PR description)
 
@@ -13,10 +15,14 @@ the family merge discipline.
    origin/master..HEAD`. If there are zero commits, STOP — reply
    explaining that nothing was produced, and end your reply with
    `{"preferred_next_label": "done"}`.
-2. Push the branch: `mise exec -- git push -u origin HEAD`. NEVER
-   `--no-verify`; if the pre-push hook fails, stop and report its
+2. Publish under the feature branch named in your assignment (the
+   "Publish branch" line — `feat/<work-item-id>`), NEVER under the
+   current run branch's own name:
+   `mise exec -- git push -u origin HEAD:refs/heads/feat/<work-item-id>`.
+   NEVER `--no-verify`; if the pre-push hook fails, stop and report its
    output verbatim.
-3. Open the PR against master with `gh pr create` — title from the
+3. Open the PR against master with
+   `gh pr create --head feat/<work-item-id>` — title from the
    work-item, body summarizing the change and naming the work-item id.
    The body MUST end with the line:
 
@@ -29,9 +35,9 @@ the family merge discipline.
      branch; if it stays `BEHIND` for more than 10 minutes, report it —
      do NOT attempt a manual update.
 6. Do NOT wait for the merge (it lands server-side after CI), do NOT
-   delete or clean up this worktree, and do NOT switch branches — the
-   Dispatcher owns merge confirmation, the post-merge janitor, and
-   worktree reaping.
+   clean anything up, and do NOT switch branches — the Dispatcher owns
+   merge confirmation and the post-merge janitor, and Fabro owns this
+   sandbox's lifecycle.
 7. Final reply: report the PR number on its own line in exactly this
    form — `PR_NUMBER=<n>` — plus whether auto-merge is armed, and any
    deviation verbatim.

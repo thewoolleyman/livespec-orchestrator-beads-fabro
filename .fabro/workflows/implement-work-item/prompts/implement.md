@@ -6,13 +6,15 @@
 
 ## Where you are
 
-Your current working directory is a SECONDARY GIT WORKTREE already
-created for you off fresh `origin/master`, on the dedicated branch named
-in the assignment above. Verify with `git rev-parse --abbrev-ref HEAD`
-before doing anything. Do all work inside this worktree.
+You are in an ISOLATED Fabro sandbox clone of the repo, already checked
+out on a Fabro-managed run branch (verify: `git rev-parse --abbrev-ref
+HEAD` — it is NOT master). This clone is the secondary-worktree
+EQUIVALENT under the family discipline: every rule below applies
+unchanged. Do NOT create or switch branches; commit on the current
+branch. Do all work inside this clone.
 
 Before writing any code, read the repo's binding rules: `AGENTS.md`
-and/or `CLAUDE.md` at the worktree root, plus the `CLAUDE.md` of any
+and/or `CLAUDE.md` at the repo root, plus the `CLAUDE.md` of any
 directory you edit in. Those files are authoritative for local
 constraints.
 
@@ -23,13 +25,12 @@ constraints.
   final reply.
 - Always run git write operations through mise so the hooks fire:
   `mise exec -- git add ...`, `mise exec -- git commit ...`.
-- NEVER run `git checkout master`, never touch the primary checkout or
-  any other worktree, never run `git config core.bare true`, never
-  force-push a SHARED or PROTECTED ref (master, release branches, any
-  ref someone else is building on). Rewriting THIS worktree's own
-  unmerged feature branch (e.g. `git push --force-with-lease` after
-  reshaping commits into the Red→Green shape to fix RGR-shape CI
-  failures) is the prescribed remedy, not a violation.
+- NEVER run `git checkout master`, never run `git config core.bare
+  true`, never force-push a SHARED or PROTECTED ref (master, release
+  branches, any ref someone else is building on). Rewriting THIS run's
+  own unmerged, unpublished work (e.g. reshaping commits into the
+  Red→Green shape to fix RGR-shape failures before the PR stage
+  publishes) is the prescribed remedy, not a violation.
 - Never run `bd init`. Never write to any `.beads/` directory.
 - Do NOT push or open a PR in this stage — a later stage owns that.
 - Python style (when the repo is Python): keyword-only arguments
