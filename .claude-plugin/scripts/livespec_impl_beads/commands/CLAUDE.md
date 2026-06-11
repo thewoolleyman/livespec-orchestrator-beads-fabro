@@ -25,15 +25,19 @@ public module per query-only skill:
   Ledger integrity checks; `spec-check` runs the three re-homed
   spec-context work-item invariants (no-stalled-epic /
   no-stale-gap-tied / unresolved-spec-commitment) against the tenant
-  rows plus the spec tree; `dispatch`/`loop` drive ready work-items
+  rows plus the spec tree; `janitor-check` runs the three re-homed
+  stale-cleanup checks (no-stale-merged-branch /
+  no-stale-merged-pr-branch / no-stale-worktree) against the repo's
+  git/gh state; `dispatch`/`loop` drive ready work-items
   through the `.fabro/workflows/implement-work-item/` phase graph
   (worktree → Fabro run → auto-merge confirmation → post-merge
   janitor → Ledger close + journal). Bodies live in the
   `_dispatcher_*` private helpers (`_dispatcher_ledger_checks.py`,
   `_dispatcher_spec_checks.py`, `_dispatcher_spec_commitments.py`,
-  `_dispatcher_plan.py`, `_dispatcher_engine.py`,
-  `_dispatcher_io.py`). Its Ledger writes are machine-path
-  dispositions of already-filed items (close-on-confirmed-merge).
+  `_dispatcher_janitor_checks.py`, `_dispatcher_plan.py`,
+  `_dispatcher_engine.py`, `_dispatcher_io.py`). Its Ledger writes
+  are machine-path dispositions of already-filed items
+  (close-on-confirmed-merge).
 
 Each public module exports `main(argv=None) -> int` (the supervisor
 the wrapper calls) plus its named helpers, all enumerated in
