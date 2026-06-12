@@ -7,12 +7,16 @@ production `ShellCommandRunner` is exercised with real `sys.executable -c`
 subprocesses, mirroring `test_orchestrator`'s injected-CLI approach.
 
 C-mode (Architecture C, Fabro-owned docker sandbox) specifics covered
-here: the credential-overlay materialization (mode-600, token from
-$LIVESPEC_FABRO_SECRETS_FILE, absolute graph rewrite, post-run cleanup),
-the no-worktree dispatch lifecycle (fabro run from the repo's primary
-checkout), and the `blocked` third terminal state (run parked at the
-in-loop human gate; `fabro attach` is the answer path, never
-auto-resumed).
+here: the run-config overlay materialization (mode-600, absolute graph
+rewrite, post-run cleanup, and NO secret in the overlay — the committed
+config's `{{ env.CLAUDE_CODE_OAUTH_TOKEN }}` interpolation token is the
+credential channel, resolved by fabro from its own process env at stage
+execution), the CLAUDE_CODE_OAUTH_TOKEN fail-fast (a variable missing
+from fabro's env falls back to the literal token string, so the
+Dispatcher refuses to dispatch without it), the no-worktree dispatch
+lifecycle (fabro run from the repo's primary checkout), and the
+`blocked` third terminal state (run parked at the in-loop human gate;
+`fabro attach` is the answer path, never auto-resumed).
 """
 
 import json
@@ -51,7 +55,6 @@ from livespec_impl_beads.commands._dispatcher_plan import (
     parse_pr_view,
     parse_run_id,
     parse_run_status,
-    parse_secrets_file,
     pr_arm_argv,
     pr_update_branch_argv,
     pr_view_argv,
@@ -76,21 +79,19 @@ from livespec_runtime.cross_repo.types import CrossRepoManifest
 
 
 @pytest.fixture(autouse=True)
-def fabro_secrets_file(
+def fabro_dispatch_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path_factory: pytest.TempPathFactory,
-) -> Path:
-    """Hermetic C-mode dispatch environment for every test: a mode-600
-    secrets file exported via LIVESPEC_FABRO_SECRETS_FILE, plus a
-    per-test temp dir so parallel pytest-xdist workers never collide on
-    the dispatcher's goal/overlay temp files."""
+) -> None:
+    """Hermetic C-mode dispatch environment for every test: an obviously
+    fake CLAUDE_CODE_OAUTH_TOKEN in the process env (the Dispatcher
+    fail-fasts without one; fabro interpolates the real value from its
+    own env at stage execution), plus a per-test temp dir so parallel
+    pytest-xdist workers never collide on the dispatcher's goal/overlay
+    temp files."""
     scratch = tmp_path_factory.mktemp("fabro-dispatch")
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
-    secrets = scratch / "fabro-secrets.env"
-    _ = secrets.write_text("CLAUDE_CODE_OAUTH_TOKEN=test-oauth-token\n", encoding="utf-8")
-    secrets.chmod(0o600)
-    monkeypatch.setenv("LIVESPEC_FABRO_SECRETS_FILE", str(secrets))
-    return secrets
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
 
 
 def _config() -> StoreConfig:
@@ -717,23 +718,7 @@ def test_parse_run_status_rejects_unusable_shapes() -> None:
     assert parse_run_status(stdout=json.dumps({"status": 7})) is None
 
 
-def test_parse_secrets_file_env_format() -> None:
-    text = (
-        "# host-local fabro secrets\n"
-        "\n"
-        "export CLAUDE_CODE_OAUTH_TOKEN=tok-1\n"
-        'QUOTED="quoted value"\n'
-        "SINGLE='single value'\n"
-        "no equals sign on this line\n"
-        "=value-without-key\n"
-    )
-    parsed = parse_secrets_file(text=text)
-    assert parsed["CLAUDE_CODE_OAUTH_TOKEN"] == "tok-1"
-    assert parsed["QUOTED"] == "quoted value"
-    assert parsed["SINGLE"] == "single value"
-    assert "" not in parsed
-    assert len(parsed) == 3
-
+_ENV_INTERPOLATION_LINE = 'CLAUDE_CODE_OAUTH_TOKEN = "{{ env.CLAUDE_CODE_OAUTH_TOKEN }}"'
 
 _COMMITTED_WORKFLOW_TOML = (
     "_version = 1\n"
@@ -743,27 +728,31 @@ _COMMITTED_WORKFLOW_TOML = (
     "\n"
     "[run.environment]\n"
     'id = "livespec-ci"\n'
+    "\n"
+    "[environments.livespec-ci.env]\n"
+    f"{_ENV_INTERPOLATION_LINE}\n"
 )
 
 
-def test_render_run_config_overlay_rewrites_graph_and_appends_credential(
+def test_render_run_config_overlay_rewrites_graph_and_carries_no_secret(
     tmp_path: Path,
 ) -> None:
-    overlay_token = "tok-secret"
     rendered = render_run_config_overlay(
         committed_text=_COMMITTED_WORKFLOW_TOML,
         workflow_dir=tmp_path,
-        token=overlay_token,
     )
     assert rendered is not None
     assert f'graph = "{tmp_path / "workflow.fabro"}"' in rendered
     assert 'graph = "workflow.fabro"' not in rendered
-    assert "[environments.livespec-ci.env]" in rendered
-    assert 'CLAUDE_CODE_OAUTH_TOKEN = "tok-secret"' in rendered
+    # The credential channel is the committed {{ env }} interpolation
+    # token, untouched by the overlay: fabro resolves it from its own
+    # process environment at stage execution. No resolved value is ever
+    # appended.
+    assert _ENV_INTERPOLATION_LINE in rendered
+    assert rendered.count("CLAUDE_CODE_OAUTH_TOKEN") == 2
 
 
 def test_render_run_config_overlay_keeps_absolute_graph_path(tmp_path: Path) -> None:
-    overlay_token = "t"
     absolute_graph = tmp_path / "elsewhere" / "g.fabro"
     committed = _COMMITTED_WORKFLOW_TOML.replace(
         'graph = "workflow.fabro"', f'graph = "{absolute_graph}"'
@@ -771,43 +760,30 @@ def test_render_run_config_overlay_keeps_absolute_graph_path(tmp_path: Path) -> 
     rendered = render_run_config_overlay(
         committed_text=committed,
         workflow_dir=tmp_path / "workflow-dir",
-        token=overlay_token,
     )
     assert rendered is not None
     assert f'graph = "{absolute_graph}"' in rendered
     assert str(tmp_path / "workflow-dir") not in rendered.split("[environments")[0]
 
 
-def test_render_run_config_overlay_rejects_unusable_shapes(tmp_path: Path) -> None:
-    overlay_token = "t"
-    assert (
-        render_run_config_overlay(
-            committed_text="_version = 1\n", workflow_dir=tmp_path, token=overlay_token
-        )
-        is None
-    )
+def test_render_run_config_overlay_needs_no_environment_id(tmp_path: Path) -> None:
+    # The overlay no longer appends an env table, so a committed config
+    # without [run.environment] id still materializes (graph-only rewrite).
     no_environment = '[workflow]\ngraph = "workflow.fabro"\n'
-    assert (
-        render_run_config_overlay(
-            committed_text=no_environment, workflow_dir=tmp_path, token=overlay_token
-        )
-        is None
-    )
+    rendered = render_run_config_overlay(committed_text=no_environment, workflow_dir=tmp_path)
+    assert rendered is not None
+    assert f'graph = "{tmp_path / "workflow.fabro"}"' in rendered
+
+
+def test_render_run_config_overlay_rejects_unusable_shapes(tmp_path: Path) -> None:
+    assert render_run_config_overlay(committed_text="_version = 1\n", workflow_dir=tmp_path) is None
     no_graph = '[workflow]\n\n[run.environment]\nid = "livespec-ci"\n'
-    assert (
-        render_run_config_overlay(
-            committed_text=no_graph, workflow_dir=tmp_path, token=overlay_token
-        )
-        is None
-    )
+    assert render_run_config_overlay(committed_text=no_graph, workflow_dir=tmp_path) is None
     # Non-canonical whitespace: the graph value parses but the canonical
     # `graph = "<value>"` rewrite needle is absent, so the shape is refused
     # rather than silently shipping a relative graph path.
     spaced = '[workflow]\ngraph =  "workflow.fabro"\n\n[run.environment]\nid = "livespec-ci"\n'
-    assert (
-        render_run_config_overlay(committed_text=spaced, workflow_dir=tmp_path, token=overlay_token)
-        is None
-    )
+    assert render_run_config_overlay(committed_text=spaced, workflow_dir=tmp_path) is None
 
 
 # ---------------------------------------------------------------------------
@@ -1300,7 +1276,10 @@ def test_dispatch_materializes_mode600_overlay_and_cleans_up(
     assert not plan.workflow_toml.exists()
     assert fake.overlay_modes == [0o600]
     overlay_text = fake.overlay_texts[0]
-    assert 'CLAUDE_CODE_OAUTH_TOKEN = "test-oauth-token"' in overlay_text
+    # The overlay carries NO secret: only the committed {{ env }}
+    # interpolation token, never the resolved credential value.
+    assert "test-oauth-token" not in overlay_text
+    assert _ENV_INTERPOLATION_LINE in overlay_text
     assert f'graph = "{workflow.parent / "workflow.fabro"}"' in overlay_text
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
     assert "test-oauth-token" not in journal_text
@@ -1498,6 +1477,10 @@ def test_dispatch_default_workflow_materializes_from_repo_fabro_tree(
     overlay_text = fake.overlay_texts[0]
     assert "implement-work-item" in overlay_text
     assert 'graph = "workflow.fabro"' not in overlay_text
+    # The repo's committed run config carries the credential channel as
+    # the {{ env }} interpolation token (resolved by fabro from its own
+    # process env), never a secret value.
+    assert _ENV_INTERPOLATION_LINE in overlay_text
 
 
 def test_dispatch_blocked_outcome_surfaces_and_leaves_item_open(
@@ -1530,47 +1513,29 @@ def test_dispatch_blocked_outcome_surfaces_and_leaves_item_open(
     assert "ledger-close" not in journal_text
 
 
-def test_dispatch_fails_actionably_without_secrets_env(
+def test_dispatch_fails_fast_when_oauth_token_env_is_absent_or_empty(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
-    item = _item()
-    append_work_item(path=_config(), item=item)
-    monkeypatch.delenv("LIVESPEC_FABRO_SECRETS_FILE")
-    monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={}))
-    exit_code = main(
-        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
-    )
-    assert exit_code == 1
-    out = capsys.readouterr().out
-    assert "credential-overlay" in out
-    assert "LIVESPEC_FABRO_SECRETS_FILE" in out
-    assert _stored()[item.id].status == "open"
-
-
-def test_dispatch_refuses_unsafe_or_unusable_secrets_file(
-    capsys: pytest.CaptureFixture[str],
-    fabro_secrets_file: Path,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+    """A missing CLAUDE_CODE_OAUTH_TOKEN refuses the dispatch outright:
+    fabro would silently pass the LITERAL `{{ env... }}` string through
+    to the sandbox, so absence must be caught before dispatch. The error
+    names the with-livespec-env.sh wrapper as the fix."""
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     item = _item()
     append_work_item(path=_config(), item=item)
     monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={}))
     base = ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
-    fabro_secrets_file.chmod(0o640)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN")
     assert main(base) == 1
-    assert "600" in capsys.readouterr().out
-    fabro_secrets_file.chmod(0o600)
-    _ = fabro_secrets_file.write_text("OTHER_KEY=nope\n", encoding="utf-8")
+    out = capsys.readouterr().out
+    assert "credential-overlay" in out
+    assert "CLAUDE_CODE_OAUTH_TOKEN" in out
+    assert "with-livespec-env.sh" in out
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
     assert main(base) == 1
-    assert "CLAUDE_CODE_OAUTH_TOKEN" in capsys.readouterr().out
-    monkeypatch.setenv("LIVESPEC_FABRO_SECRETS_FILE", str(tmp_path / "missing.env"))
-    assert main(base) == 1
-    assert "does not exist" in capsys.readouterr().out
+    assert "with-livespec-env.sh" in capsys.readouterr().out
     assert _stored()[item.id].status == "open"
 
 

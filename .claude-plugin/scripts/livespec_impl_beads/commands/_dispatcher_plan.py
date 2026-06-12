@@ -15,12 +15,13 @@ state — no worktree prep, no reaping), the work publishes under
 `gh pr view` confirms the merge, and the janitor argv is injected from
 configuration (never hardcoded).
 
-The credential-channel helpers (`parse_secrets_file`,
-`render_run_config_overlay`) keep the committed run config secret-free:
-the Dispatcher materializes an UNCOMMITTED mode-600 overlay at dispatch
-time carrying CLAUDE_CODE_OAUTH_TOKEN (Fabro's vault cannot deliver ACP
-credentials in v0.254.0), with the `graph` path rewritten absolute so
-the overlay resolves from outside the workflow directory.
+The run-config helper (`render_run_config_overlay`) carries no secret:
+the committed config's `[environments.<id>.env]` table holds the
+`{{ env.CLAUDE_CODE_OAUTH_TOKEN }}` interpolation token, which fabro
+resolves from its OWN process environment at stage execution. The
+Dispatcher still materializes an UNCOMMITTED overlay at dispatch time,
+but only to rewrite the `graph` path absolute so the overlay resolves
+from outside the workflow directory.
 """
 
 from __future__ import annotations
@@ -43,7 +44,6 @@ __all__: list[str] = [
     "parse_pr_view",
     "parse_run_id",
     "parse_run_status",
-    "parse_secrets_file",
     "pr_arm_argv",
     "pr_update_branch_argv",
     "pr_view_argv",
@@ -56,10 +56,6 @@ _DEFAULT_JANITOR: tuple[str, ...] = ("mise", "exec", "--", "just", "check")
 
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
 _RUN_ID_RE = re.compile(r"Run:\s*([0-9A-Za-z-]+)")
-
-# A value shorter than one opening plus one closing quote cannot be
-# quote-wrapped.
-_MIN_QUOTED_LENGTH = 2
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -147,60 +143,27 @@ def render_run_config_overlay(
     *,
     committed_text: str,
     workflow_dir: Path,
-    token: str,
 ) -> str | None:
     """Render the dispatch-time run-config overlay (pure string transform).
 
-    The overlay is the committed config with (a) the `[workflow]` graph
-    path rewritten to an absolute path (the materialized file lives
-    outside the workflow directory, so a relative graph would not
-    resolve) and (b) an appended `[environments.<id>.env]` table
-    carrying CLAUDE_CODE_OAUTH_TOKEN. Returns None when the committed
-    shape is unusable (no graph value or no run-environment id).
+    The overlay is the committed config with the `[workflow]` graph path
+    rewritten to an absolute path (the materialized file lives outside
+    the workflow directory, so a relative graph would not resolve). It
+    carries NO secret: the committed `[environments.<id>.env]` table
+    holds the `{{ env.CLAUDE_CODE_OAUTH_TOKEN }}` interpolation token,
+    which fabro resolves from its own process environment at stage
+    execution. Returns None when the committed shape is unusable (no
+    canonical graph value).
     """
     graph_value = _toml_section_string(text=committed_text, section="workflow", key="graph")
-    environment_id = _toml_section_string(text=committed_text, section="run.environment", key="id")
-    if graph_value is None or environment_id is None:
+    if graph_value is None:
         return None
     graph_path = Path(graph_value)
     resolved_graph = graph_path if graph_path.is_absolute() else workflow_dir / graph_path
     needle = f'graph = "{graph_value}"'
     if needle not in committed_text:
         return None
-    rewritten = committed_text.replace(needle, f'graph = "{resolved_graph}"', 1)
-    token_literal = json.dumps(token)
-    return (
-        rewritten
-        + "\n# --- Dispatcher-materialized credential overlay (UNCOMMITTED;"
-        + "\n# --- mode 600; deleted when the run returns) ---\n"
-        + f"[environments.{environment_id}.env]\n"
-        + f"CLAUDE_CODE_OAUTH_TOKEN = {token_literal}\n"
-    )
-
-
-def parse_secrets_file(*, text: str) -> dict[str, str]:
-    """Parse a mode-600 env-format secrets file (KEY=value lines).
-
-    Comments, blank lines, and lines without `=` are skipped; a leading
-    `export ` and one level of matching quotes around the value are
-    stripped. Values are never logged by any caller.
-    """
-    secrets: dict[str, str] = {}
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("export "):
-            line = line[len("export ") :].strip()
-        key, separator, raw_value = line.partition("=")
-        key = key.strip()
-        if not separator or not key or " " in key:
-            continue
-        value = raw_value.strip()
-        if len(value) >= _MIN_QUOTED_LENGTH and value[0] == value[-1] and value[0] in {'"', "'"}:
-            value = value[1:-1]
-        secrets[key] = value
-    return secrets
+    return committed_text.replace(needle, f'graph = "{resolved_graph}"', 1)
 
 
 def fabro_run_argv(*, plan: DispatchPlan) -> list[str]:
