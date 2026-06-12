@@ -15,10 +15,13 @@ interpolation cannot deliver it because the server spawns the
 resolving worker under a fail-closed env allowlist), the
 CLAUDE_CODE_OAUTH_TOKEN fail-fast (an absent variable leaves nothing
 to project, so the Dispatcher refuses to dispatch without it), the
-no-worktree dispatch lifecycle (fabro run from the repo's primary
-checkout), and the `blocked` third terminal state (run parked at the
-in-loop human gate; `fabro attach` is the answer path, never
-auto-resumed).
+sandbox sibling-clone provisioning (fleet-manifest-derived depth-1
+clone prepare steps plus the LIVESPEC_SIBLING_CLONES_ROOT env key in
+the same overlay, so cross-repo checks resolve family siblings inside
+the sandbox), the no-worktree dispatch lifecycle (fabro run from the
+repo's primary checkout), and the `blocked` third terminal state (run
+parked at the in-loop human gate; `fabro attach` is the answer path,
+never auto-resumed).
 """
 
 import json
@@ -50,10 +53,13 @@ from livespec_impl_beads.commands._dispatcher_ledger_checks import (
 )
 from livespec_impl_beads.commands._dispatcher_plan import (
     DispatchPlan,
+    FleetMembers,
+    SiblingClones,
     build_plan,
     fabro_inspect_argv,
     fabro_run_argv,
     janitor_argv_with_default,
+    parse_fleet_members,
     parse_pr_view,
     parse_run_id,
     parse_run_status,
@@ -70,7 +76,10 @@ from livespec_impl_beads.commands._dispatcher_spec_commitments import (
     collect_obligations_and_supersedes,
 )
 from livespec_impl_beads.commands.detect_impl_gaps import detect_rules
-from livespec_impl_beads.commands.dispatcher import main
+from livespec_impl_beads.commands.dispatcher import (
+    _fetch_fleet_manifest_text,  # pyright: ignore[reportPrivateUsage]
+    main,
+)
 from livespec_impl_beads.store import append_work_item, materialize_work_items, read_work_items
 from livespec_impl_beads.types import StoreConfig, WorkItem
 from livespec_runtime.cross_repo.types import CrossRepoManifest
@@ -78,6 +87,32 @@ from livespec_runtime.cross_repo.types import CrossRepoManifest
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
+# Canned fleet-manifest.jsonc payload the autouse fixture serves in
+# place of the real `gh api` fetch (which must never run in the
+# hermetic tier). Mirrors the committed shape on livespec master
+# (owner + classed members, `//` comments). It includes a member named
+# "repo" because `_repo_with_workflow` creates the dispatch-target
+# checkout under that basename — letting dispatch-level tests assert
+# the target's own clone step is excluded from the overlay.
+_FLEET_MANIFEST_TEXT = (
+    "// fleet-manifest.jsonc — canned test copy\n"
+    "{\n"
+    '  "owner": "thewoolleyman",\n'
+    '  "members": [\n'
+    '    { "repo": "livespec", "class": "core" },\n'
+    '    { "repo": "livespec-dev-tooling", "class": "enforcement-suite" },\n'
+    '    { "repo": "repo", "class": "impl-plugin" }\n'
+    "  ]\n"
+    "}\n"
+)
+
+# The `_fetch_fleet_manifest_text` import above binds the production
+# function object at import time, BEFORE the autouse fixture swaps the
+# dispatcher module attribute for the canned text — so the real fetch
+# implementation stays directly testable (with a scripted runner
+# stand-in).
+_real_fetch_fleet_manifest_text = _fetch_fleet_manifest_text
 
 
 @pytest.fixture(autouse=True)
@@ -88,12 +123,18 @@ def fabro_dispatch_env(
     """Hermetic C-mode dispatch environment for every test: an obviously
     fake CLAUDE_CODE_OAUTH_TOKEN in the process env (the Dispatcher
     fail-fasts without one, and projects the value into the run-config
-    overlay's env table at dispatch), plus a per-test temp dir so
-    parallel pytest-xdist workers never collide on the dispatcher's
-    goal/overlay temp files."""
+    overlay's env table at dispatch), a canned fleet-manifest fetch (the
+    production one shells out to `gh api`, which must never happen in
+    the hermetic tier), plus a per-test temp dir so parallel
+    pytest-xdist workers never collide on the dispatcher's goal/overlay
+    temp files."""
     scratch = tmp_path_factory.mktemp("fabro-dispatch")
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
+    monkeypatch.setattr(
+        "livespec_impl_beads.commands.dispatcher._fetch_fleet_manifest_text",
+        lambda: _FLEET_MANIFEST_TEXT,
+    )
 
 
 def _config() -> StoreConfig:
@@ -750,6 +791,7 @@ def test_render_run_config_overlay_rewrites_graph_and_appends_env_token(
         committed_text=_COMMITTED_WORKFLOW_TOML,
         workflow_dir=tmp_path,
         token=overlay_token,
+        siblings=None,
     )
     assert rendered is not None
     assert f'graph = "{tmp_path / "workflow.fabro"}"' in rendered
@@ -773,6 +815,7 @@ def test_render_run_config_overlay_keeps_absolute_graph_path(tmp_path: Path) -> 
         committed_text=committed,
         workflow_dir=tmp_path / "workflow-dir",
         token=overlay_token,
+        siblings=None,
     )
     assert rendered is not None
     assert f'graph = "{absolute_graph}"' in rendered
@@ -783,14 +826,17 @@ def test_render_run_config_overlay_rejects_unusable_shapes(tmp_path: Path) -> No
     overlay_token = "test-oauth-token"
     assert (
         render_run_config_overlay(
-            committed_text="_version = 1\n", workflow_dir=tmp_path, token=overlay_token
+            committed_text="_version = 1\n",
+            workflow_dir=tmp_path,
+            token=overlay_token,
+            siblings=None,
         )
         is None
     )
     no_graph = '[workflow]\n\n[run.environment]\nid = "livespec-ci"\n'
     assert (
         render_run_config_overlay(
-            committed_text=no_graph, workflow_dir=tmp_path, token=overlay_token
+            committed_text=no_graph, workflow_dir=tmp_path, token=overlay_token, siblings=None
         )
         is None
     )
@@ -799,7 +845,7 @@ def test_render_run_config_overlay_rejects_unusable_shapes(tmp_path: Path) -> No
     no_environment = '[workflow]\ngraph = "workflow.fabro"\n'
     assert (
         render_run_config_overlay(
-            committed_text=no_environment, workflow_dir=tmp_path, token=overlay_token
+            committed_text=no_environment, workflow_dir=tmp_path, token=overlay_token, siblings=None
         )
         is None
     )
@@ -808,9 +854,105 @@ def test_render_run_config_overlay_rejects_unusable_shapes(tmp_path: Path) -> No
     # rather than silently shipping a relative graph path.
     spaced = '[workflow]\ngraph =  "workflow.fabro"\n\n[run.environment]\nid = "livespec-ci"\n'
     assert (
-        render_run_config_overlay(committed_text=spaced, workflow_dir=tmp_path, token=overlay_token)
+        render_run_config_overlay(
+            committed_text=spaced, workflow_dir=tmp_path, token=overlay_token, siblings=None
+        )
         is None
     )
+
+
+# The sandbox sibling-clone plan the render tests exercise: clones land
+# under the fabro sandbox workspace root, mirroring how livespec CI
+# provisions LIVESPEC_SIBLING_CLONES_ROOT for the cross-repo wiring
+# check.
+_SIBLINGS = SiblingClones(
+    owner="thewoolleyman",
+    repos=("livespec", "livespec-dev-tooling"),
+    clones_root="/workspace/siblings",
+)
+
+_LIVESPEC_CLONE_STEP_LINE = (
+    'script = "mkdir -p /workspace/siblings && git clone --quiet --depth 1'
+    ' https://github.com/thewoolleyman/livespec.git /workspace/siblings/livespec"'
+)
+
+_DEV_TOOLING_CLONE_STEP_LINE = (
+    'script = "mkdir -p /workspace/siblings && git clone --quiet --depth 1'
+    " https://github.com/thewoolleyman/livespec-dev-tooling.git"
+    ' /workspace/siblings/livespec-dev-tooling"'
+)
+
+_SIBLING_ENV_LINE = 'LIVESPEC_SIBLING_CLONES_ROOT = "/workspace/siblings"'
+
+
+def test_parse_fleet_members_reads_owner_and_member_repos() -> None:
+    members = parse_fleet_members(manifest_text=_FLEET_MANIFEST_TEXT)
+    assert members == FleetMembers(
+        owner="thewoolleyman",
+        repos=("livespec", "livespec-dev-tooling", "repo"),
+    )
+
+
+def test_parse_fleet_members_rejects_malformed_manifests() -> None:
+    """Fail-fast philosophy: a manifest that does not parse into an
+    owner plus a non-empty members list (with GitHub-slug-shaped names —
+    the values are spliced into prepare-step scripts, so anything else
+    is refused) yields None, and the caller refuses the dispatch with an
+    actionable error instead of cloning from a guessed list."""
+    bad_manifests = [
+        "not json {{",
+        json.dumps([1, 2]),
+        json.dumps({"members": [{"repo": "livespec"}]}),
+        json.dumps({"owner": "bad owner!", "members": [{"repo": "livespec"}]}),
+        json.dumps({"owner": "o", "members": {}}),
+        json.dumps({"owner": "o", "members": ["livespec"]}),
+        json.dumps({"owner": "o", "members": [{"class": "core"}]}),
+        json.dumps({"owner": "o", "members": [{"repo": "bad repo"}]}),
+        json.dumps({"owner": "o", "members": []}),
+    ]
+    for manifest_text in bad_manifests:
+        assert parse_fleet_members(manifest_text=manifest_text) is None
+
+
+def test_render_run_config_overlay_appends_sibling_clone_steps_and_env_root(
+    tmp_path: Path,
+) -> None:
+    overlay_token = "test-oauth-token"
+    rendered = render_run_config_overlay(
+        committed_text=_COMMITTED_WORKFLOW_TOML,
+        workflow_dir=tmp_path,
+        token=overlay_token,
+        siblings=_SIBLINGS,
+    )
+    assert rendered is not None
+    assert rendered.count("[[run.prepare.steps]]") == 2
+    assert _LIVESPEC_CLONE_STEP_LINE in rendered
+    assert _DEV_TOOLING_CLONE_STEP_LINE in rendered
+    # The clone prepare steps are appended BEFORE the env table header,
+    # and the clones-root env key lands INSIDE [environments.<id>.env]
+    # (after the header) so it reaches the sandbox as container-level
+    # environment alongside the credential — the single declaration
+    # point TOML allows for that table.
+    env_table_at = rendered.index("[environments.livespec-ci.env]")
+    assert rendered.index(_LIVESPEC_CLONE_STEP_LINE) < env_table_at
+    assert rendered.index(_DEV_TOOLING_CLONE_STEP_LINE) < env_table_at
+    assert rendered.index(_SIBLING_ENV_LINE) > env_table_at
+    assert _FAKE_TOKEN_LINE in rendered
+
+
+def test_render_run_config_overlay_without_siblings_appends_no_clone_steps(
+    tmp_path: Path,
+) -> None:
+    overlay_token = "test-oauth-token"
+    rendered = render_run_config_overlay(
+        committed_text=_COMMITTED_WORKFLOW_TOML,
+        workflow_dir=tmp_path,
+        token=overlay_token,
+        siblings=None,
+    )
+    assert rendered is not None
+    assert "[[run.prepare.steps]]" not in rendered
+    assert "LIVESPEC_SIBLING_CLONES_ROOT" not in rendered
 
 
 # ---------------------------------------------------------------------------
@@ -1315,6 +1457,44 @@ def test_dispatch_materializes_mode600_overlay_and_cleans_up(
     assert "test-oauth-token" not in journal_text
 
 
+def test_dispatch_overlay_provisions_sibling_clones_for_fleet(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The materialized overlay provisions every fleet member EXCEPT the
+    dispatch target (already the sandbox workspace clone) as a depth-1
+    prepare-step clone under /workspace/siblings, and projects
+    LIVESPEC_SIBLING_CLONES_ROOT into the sandbox env table so
+    cross-repo checks under `just check` resolve the siblings there —
+    mirroring livespec CI's sibling-clone provisioning."""
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
+    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    exit_code = main(
+        [
+            "dispatch",
+            "--repo",
+            str(repo),
+            "--item",
+            item.id,
+            "--workflow",
+            str(workflow),
+            "--no-close-on-merge",
+        ]
+    )
+    assert exit_code == 0
+    overlay_text = fake.overlay_texts[0]
+    assert _LIVESPEC_CLONE_STEP_LINE in overlay_text
+    assert _DEV_TOOLING_CLONE_STEP_LINE in overlay_text
+    assert _SIBLING_ENV_LINE in overlay_text
+    # The canned fleet manifest registers the dispatch target itself
+    # (basename "repo"); its clone step must be excluded — the sandbox
+    # already holds that repo as the workspace clone.
+    assert "github.com/thewoolleyman/repo" not in overlay_text
+
+
 def test_dispatch_green_without_sha_closes_without_audit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1563,7 +1743,7 @@ def test_dispatch_fails_fast_when_oauth_token_env_is_absent_or_empty(
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN")
     assert main(base) == 1
     out = capsys.readouterr().out
-    assert "credential-overlay" in out
+    assert "run-config-overlay" in out
     assert "CLAUDE_CODE_OAUTH_TOKEN" in out
     assert "with-livespec-env.sh" in out
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
@@ -1587,7 +1767,104 @@ def test_dispatch_fails_when_workflow_config_is_not_materializable(
     exit_code = main(["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(bare)])
     assert exit_code == 1
     out = capsys.readouterr().out
-    assert "credential-overlay" in out
+    assert "run-config-overlay" in out
+    assert _stored()[item.id].status == "open"
+
+
+@dataclass(kw_only=True)
+class _FakeManifestRunner:
+    """Scripted ShellCommandRunner stand-in for the fleet-manifest fetch."""
+
+    result: CommandResult
+    calls: list[tuple[list[str], Path]] = field(default_factory=list)
+
+    def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
+        assert timeout_seconds > 0
+        self.calls.append((argv, cwd))
+        return self.result
+
+
+def test_fetch_fleet_manifest_text_shells_gh_api_raw(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The production fetch is a HOST-SIDE `gh api` raw-content read of
+    fleet-manifest.jsonc from livespec master at run-config generation
+    time — the canonical fleet member registry, fetched the same way the
+    other family consumers (fleet conformance, release fan-out) consume
+    it."""
+    fake = _FakeManifestRunner(
+        result=CommandResult(exit_code=0, stdout=_FLEET_MANIFEST_TEXT, stderr="")
+    )
+    monkeypatch.setattr(dispatcher, "ShellCommandRunner", lambda: fake)
+    assert _real_fetch_fleet_manifest_text() == _FLEET_MANIFEST_TEXT
+    argv, _cwd = fake.calls[0]
+    assert argv[:2] == ["gh", "api"]
+    assert "Accept: application/vnd.github.raw" in argv
+    assert argv[-1] == "repos/thewoolleyman/livespec/contents/fleet-manifest.jsonc"
+
+
+def test_fetch_fleet_manifest_text_returns_none_on_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failing = _FakeManifestRunner(
+        result=CommandResult(exit_code=1, stdout="", stderr="gh: HTTP 404")
+    )
+    monkeypatch.setattr(dispatcher, "ShellCommandRunner", lambda: failing)
+    assert _real_fetch_fleet_manifest_text() is None
+    empty = _FakeManifestRunner(result=CommandResult(exit_code=0, stdout="  \n", stderr=""))
+    monkeypatch.setattr(dispatcher, "ShellCommandRunner", lambda: empty)
+    assert _real_fetch_fleet_manifest_text() is None
+
+
+def test_dispatch_fails_fast_when_fleet_manifest_is_unfetchable(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unfetchable fleet manifest refuses the dispatch with an
+    actionable error: dispatching without sibling clones would
+    reintroduce the in-sandbox `:no-justfile-resolved` aggregate failure
+    for every cross-repo check, and silently falling back to a hardcoded
+    member list would rot as the fleet changes."""
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={}))
+    monkeypatch.setattr(
+        "livespec_impl_beads.commands.dispatcher._fetch_fleet_manifest_text",
+        lambda: None,
+    )
+    exit_code = main(
+        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+    )
+    assert exit_code == 1
+    out = capsys.readouterr().out
+    assert "run-config-overlay" in out
+    assert "fleet-manifest.jsonc" in out
+    assert "gh api" in out
+    assert _stored()[item.id].status == "open"
+
+
+def test_dispatch_fails_fast_when_fleet_manifest_is_malformed(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={}))
+    monkeypatch.setattr(
+        "livespec_impl_beads.commands.dispatcher._fetch_fleet_manifest_text",
+        lambda: "not a fleet manifest {{",
+    )
+    exit_code = main(
+        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+    )
+    assert exit_code == 1
+    out = capsys.readouterr().out
+    assert "run-config-overlay" in out
+    assert "fleet-manifest.jsonc" in out
     assert _stored()[item.id].status == "open"
 
 

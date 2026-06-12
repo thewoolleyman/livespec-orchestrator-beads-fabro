@@ -22,7 +22,14 @@ secret, and the rendered overlay appends an `[environments.<id>.env]`
 table carrying the CLAUDE_CODE_OAUTH_TOKEN value the caller read from
 the Dispatcher's process environment, alongside the `graph` path
 rewritten absolute so the overlay resolves from outside the workflow
-directory. Fabro `{{ env.* }}` interpolation can NOT carry the
+directory. The same overlay provisions the sandbox sibling clones:
+per-fleet-member depth-1 `[[run.prepare.steps]]` clone blocks plus the
+non-secret `LIVESPEC_SIBLING_CLONES_ROOT` env key (riding in the same
+appended env table — TOML allows only one declaration of that table),
+so cross-repo checks under `just check` resolve family siblings inside
+the sandbox exactly like livespec CI provisions them.
+
+Fabro `{{ env.* }}` interpolation can NOT carry the
 credential for server-mediated runs — do not re-attempt it: the
 interpolation resolves in the WORKER process, which fabro-server
 spawns with a fail-closed env allowlist (fabro-server/src/spawn_env.rs
@@ -40,15 +47,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from livespec_impl_beads.commands import _jsonc
 from livespec_impl_beads.types import WorkItem
 
 __all__: list[str] = [
+    "SIBLING_CLONES_ROOT_ENV_VAR",
     "DispatchPlan",
+    "FleetMembers",
     "PrView",
+    "SiblingClones",
     "build_plan",
     "fabro_inspect_argv",
     "fabro_run_argv",
     "janitor_argv_with_default",
+    "parse_fleet_members",
     "parse_pr_view",
     "parse_run_id",
     "parse_run_status",
@@ -60,10 +72,24 @@ __all__: list[str] = [
     "render_run_config_overlay",
 ]
 
+# The env-var contract shared with livespec's cross-repo doctor checks
+# (e.g. `wiring_completeness_cross_repo`): when set, a sibling repo's
+# clone resolves as `<value>/<sibling-slug>` instead of the manifest's
+# `local_clone` path. livespec CI provisions it the same way; the
+# Dispatcher's overlay projects it into the sandbox env table.
+SIBLING_CLONES_ROOT_ENV_VAR = "LIVESPEC_SIBLING_CLONES_ROOT"
+
 _DEFAULT_JANITOR: tuple[str, ...] = ("mise", "exec", "--", "just", "check")
 
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
 _RUN_ID_RE = re.compile(r"Run:\s*([0-9A-Za-z-]+)")
+
+# GitHub owner / repo-name shape. The matched values are spliced into
+# prepare-step clone scripts, so anything outside this conservative
+# alphabet is refused at parse time (fail-fast over fail-soft: the
+# fleet manifest is a tightly-owned committed file on livespec master,
+# and a malformed member is a real problem to surface, not skip).
+_GITHUB_SLUG_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -96,6 +122,77 @@ class PrView:
     auto_merge_armed: bool
     merge_state_status: str
     merge_sha: str | None
+
+
+@dataclass(frozen=True, kw_only=True)
+class FleetMembers:
+    """Owner + member repo names parsed from livespec's fleet-manifest.jsonc.
+
+    The fleet manifest (livespec non-functional-requirements.md §"Fleet
+    membership contract") is the canonical family member registry; the
+    `class` field of each member is irrelevant here — every member gets
+    a sandbox sibling clone, so any future cross-repo check resolves.
+    """
+
+    owner: str
+    repos: tuple[str, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
+class SiblingClones:
+    """The per-dispatch sandbox sibling-clone plan.
+
+    `repos` is the fleet member set MINUS the dispatch target (the
+    target is already the sandbox workspace clone); `clones_root` is
+    the in-sandbox directory the clones land under — the same path the
+    overlay projects as `LIVESPEC_SIBLING_CLONES_ROOT`.
+    """
+
+    owner: str
+    repos: tuple[str, ...]
+    clones_root: str
+
+
+def parse_fleet_members(*, manifest_text: str) -> FleetMembers | None:
+    """Parse fleet-manifest.jsonc text into FleetMembers; None when malformed.
+
+    Accepts the committed shape on livespec master: a JSONC object with
+    a string `owner` and a non-empty `members` list of objects each
+    carrying a string `repo`. Owner and repo values must be
+    GitHub-slug-shaped (they are spliced into clone scripts). Any
+    deviation yields None — the caller refuses the dispatch with an
+    actionable error rather than cloning from a guessed member list.
+    """
+    try:
+        parsed_raw: object = _jsonc.loads(text=manifest_text)
+    except _jsonc.JsoncParseError:
+        return None
+    if not isinstance(parsed_raw, dict):
+        return None
+    parsed = cast("dict[str, Any]", parsed_raw)
+    owner_raw: object = parsed.get("owner")
+    members_raw: object = parsed.get("members")
+    if not isinstance(owner_raw, str) or not isinstance(members_raw, list):
+        return None
+    if _GITHUB_SLUG_PATTERN.match(owner_raw) is None:
+        return None
+    repos: list[str] = []
+    for member_raw in cast("list[object]", members_raw):
+        repo_name = _parse_member_repo(member_raw=member_raw)
+        if repo_name is None:
+            return None
+        repos.append(repo_name)
+    return FleetMembers(owner=owner_raw, repos=tuple(repos)) if repos else None
+
+
+def _parse_member_repo(*, member_raw: object) -> str | None:
+    """Extract a validated repo name from one fleet-manifest member entry."""
+    if not isinstance(member_raw, dict):
+        return None
+    repo_raw: object = cast("dict[str, Any]", member_raw).get("repo")
+    if not isinstance(repo_raw, str) or _GITHUB_SLUG_PATTERN.match(repo_raw) is None:
+        return None
+    return repo_raw
 
 
 def build_plan(
@@ -152,6 +249,7 @@ def render_run_config_overlay(
     committed_text: str,
     workflow_dir: Path,
     token: str,
+    siblings: SiblingClones | None,
 ) -> str | None:
     """Render the dispatch-time run-config overlay (pure string transform).
 
@@ -159,16 +257,27 @@ def render_run_config_overlay(
     family-secrets scoped transient-materialization rule): the committed
     config with (a) the `[workflow]` graph path rewritten to an absolute
     path (the materialized file lives outside the workflow directory, so
-    a relative graph would not resolve) and (b) an appended
-    `[environments.<id>.env]` table carrying the CLAUDE_CODE_OAUTH_TOKEN
-    value read from the Dispatcher's process environment. The committed
-    file itself carries NO secret and NO `{{ env }}` interpolation —
-    interpolation cannot deliver the credential to server-mediated runs,
-    because the server spawns the resolving worker with a fail-closed
-    env allowlist (fabro-server/src/spawn_env.rs); see the module
-    docstring. The caller writes the rendered text mode-600 and deletes
-    it when the run returns. Returns None when the committed shape is
-    unusable (no canonical graph value or no run-environment id).
+    a relative graph would not resolve), (b) appended sibling-clone
+    `[[run.prepare.steps]]` blocks (when `siblings` is not None) so
+    cross-repo checks resolve family siblings inside the sandbox, and
+    (c) an appended `[environments.<id>.env]` table carrying the
+    CLAUDE_CODE_OAUTH_TOKEN value read from the Dispatcher's process
+    environment plus the NON-secret `LIVESPEC_SIBLING_CLONES_ROOT` key.
+    The non-secret key rides in the credential table because TOML
+    forbids a second declaration of the same table and this appended
+    table is the single `[environments.<id>.env]` declaration point —
+    the committed file deliberately carries none; the table maps to
+    docker container-level env (fabro-sandbox), so the value reaches
+    every node's `just check` subprocesses.
+
+    The committed file itself carries NO secret and NO `{{ env }}`
+    interpolation — interpolation cannot deliver the credential to
+    server-mediated runs, because the server spawns the resolving
+    worker with a fail-closed env allowlist
+    (fabro-server/src/spawn_env.rs); see the module docstring. The
+    caller writes the rendered text mode-600 and deletes it when the
+    run returns. Returns None when the committed shape is unusable (no
+    canonical graph value or no run-environment id).
     """
     graph_value = _toml_section_string(text=committed_text, section="workflow", key="graph")
     environment_id = _toml_section_string(text=committed_text, section="run.environment", key="id")
@@ -181,13 +290,50 @@ def render_run_config_overlay(
         return None
     rewritten = committed_text.replace(needle, f'graph = "{resolved_graph}"', 1)
     token_literal = json.dumps(token)
+    sibling_steps = "" if siblings is None else _sibling_clone_steps_block(siblings=siblings)
+    sibling_env_line = (
+        ""
+        if siblings is None
+        else f"{SIBLING_CLONES_ROOT_ENV_VAR} = {json.dumps(siblings.clones_root)}\n"
+    )
     return (
         rewritten
+        + sibling_steps
         + "\n# --- Dispatcher-materialized run-scoped credential projection"
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
         + f"[environments.{environment_id}.env]\n"
         + f"CLAUDE_CODE_OAUTH_TOKEN = {token_literal}\n"
+        + sibling_env_line
     )
+
+
+def _sibling_clone_steps_block(*, siblings: SiblingClones) -> str:
+    """Render the appended sibling-clone `[[run.prepare.steps]]` blocks.
+
+    One step per fleet member (the dispatch target is excluded
+    upstream): a depth-1 default-branch `git clone` into
+    `<clones_root>/<repo>` — mirroring how livespec CI provisions the
+    `LIVESPEC_SIBLING_CLONES_ROOT` siblings-root for the cross-repo
+    wiring check. Plain `git clone` over https is used (NOT `gh`): the
+    sandbox clones its own workspace repo the same way, while `gh api`
+    is unauthenticated there.
+    """
+    lines: list[str] = [
+        "",
+        "# --- Dispatcher-materialized sibling clones (from livespec master's",
+        "# --- fleet-manifest.jsonc): depth-1 default-branch clones so",
+        "# --- cross-repo checks resolve every family sibling under",
+        f"# --- {siblings.clones_root} inside the sandbox ---",
+    ]
+    for repo_name in siblings.repos:
+        script = (
+            f"mkdir -p {siblings.clones_root} && git clone --quiet --depth 1"
+            f" https://github.com/{siblings.owner}/{repo_name}.git"
+            f" {siblings.clones_root}/{repo_name}"
+        )
+        lines.append("[[run.prepare.steps]]")
+        lines.append(f"script = {json.dumps(script)}")
+    return "\n".join(lines) + "\n"
 
 
 def fabro_run_argv(*, plan: DispatchPlan) -> list[str]:
