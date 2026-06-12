@@ -65,11 +65,33 @@ id = "livespec-ci"
 provider = "docker"
 
 [environments.livespec-ci.image]
-# Locally-built toolchain image (mise + uv + just + lefthook + node/ACP
-# adapter + gh; Dockerfile from the A2 probe). LOCAL TAG ONLY for now —
-# dev-tooling work-item p60 will publish a versioned image to GHCR and
-# swap this reference.
-docker = "livespec-fabro-sandbox:a2"
+# GHCR-published family sandbox image (mise + uv + just + lefthook +
+# node/ACP adapter + gh; Dockerfile in livespec-dev-tooling). Published
+# by dev-tooling PR #111 (2026-06-12) to
+# ghcr.io/thewoolleyman/livespec-fabro-sandbox. Tag format:
+#   sha-<short>  — per master-build (mutable; tracks HEAD)
+#   v<X.Y.Z>     — per release tag (immutable)
+#
+# CURRENT PIN: sha-ea684ad (dev-tooling master as of 2026-06-12).
+# Bump to v0.13.0 once the dev-tooling v0.13.0 release tag publishes
+# (work-item livespec-impl-beads-873; dev-tooling p60 release pending).
+#
+# PIN SURFACE NOTE: this image reference is a manual pin. The v013
+# pin_autodiscovery formats (.livespec.jsonc compat.pinned,
+# pyproject.toml [tool.uv.sources], .vendor.jsonc, .copier-answers.yml,
+# .github/workflows uses: refs) do not cover workflow.toml docker images,
+# so bumps must be applied here manually. The producer-side lockstep gate
+# (livespec_dev_tooling.fabro_image_pin_lockstep) guards the Dockerfile
+# ARG pins in livespec-dev-tooling and does not run in consumer repos.
+#
+# HOST-LOCAL STEP: if ~/.fabro/environments/livespec-ci.toml exists on
+# a developer's machine (the pre-p60 local-image fallback), update its
+# `image` key to match this committed value so host-local `fabro run`
+# invocations use the same GHCR tag. The host-local file MUST contain
+# only `provider = "docker"` + `[image] docker = "..."` — never an
+# `[env]` table (the Dispatcher's per-dispatch overlay owns that block;
+# TOML forbids duplicate table declarations).
+docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:sha-ea684ad"
 
 [environments.livespec-ci.resources]
 cpu = 4
