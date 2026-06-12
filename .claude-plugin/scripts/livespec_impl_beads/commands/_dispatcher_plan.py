@@ -45,10 +45,13 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from livespec_impl_beads.commands import _jsonc
 from livespec_impl_beads.types import WorkItem
+
+if TYPE_CHECKING:
+    from livespec_impl_beads.store import WorkItemComment
 
 __all__: list[str] = [
     "SIBLING_CLONES_ROOT_ENV_VAR",
@@ -59,6 +62,7 @@ __all__: list[str] = [
     "build_plan",
     "fabro_inspect_argv",
     "fabro_run_argv",
+    "item_sizing_warnings",
     "janitor_argv_with_default",
     "parse_fleet_members",
     "parse_pr_view",
@@ -223,15 +227,24 @@ def janitor_argv_with_default(*, janitor: tuple[str, ...] | None) -> tuple[str, 
     return janitor
 
 
-def render_goal(*, item: WorkItem, repo: Path, branch: str) -> str:
+def render_goal(
+    *,
+    item: WorkItem,
+    repo: Path,
+    branch: str,
+    comments: tuple[WorkItemComment, ...] = (),
+) -> str:
     """Render the per-item brief delivered to the phase graph as the run goal.
 
     Item specifics ONLY: the durable family discipline (Red-Green-Replay,
     hook rules, PR/merge protocol) lives in the versioned prompt files of
-    the phase graph, not here.
+    the phase graph, not here. `comments` are the item's ledger comments
+    (operator riders appended after filing — e.g. pre-authorizations);
+    they render under a labeled section so they reach the sandbox brief
+    (bn4 finding (c): the description-only brief silently dropped them).
     """
     gap_line = f"Gap id: {item.gap_id}\n" if item.gap_id is not None else ""
-    return (
+    base = (
         f"Work-item: {item.id}\n"
         f"Repo: {repo}\n"
         f"Publish branch (push HEAD to this exact ref at the PR stage): {branch}\n"
@@ -242,6 +255,68 @@ def render_goal(*, item: WorkItem, repo: Path, branch: str) -> str:
         "Description:\n"
         f"{item.description}\n"
     )
+    if not comments:
+        return base
+    lines = [
+        "",
+        "Ledger comments (operator riders appended after filing; treat them as part of the brief):",
+    ]
+    for index, comment in enumerate(comments, start=1):
+        lines.append(f"[{index}] {_comment_entry(comment=comment)}")
+    return base + "\n".join(lines) + "\n"
+
+
+def _comment_entry(*, comment: WorkItemComment) -> str:
+    """Format one rider as `(author, created_at) text`, dropping absent parts."""
+    provenance = ", ".join(
+        part for part in (comment.author, comment.created_at) if part is not None
+    )
+    if provenance == "":
+        return comment.text
+    return f"({provenance}) {comment.text}"
+
+
+# Sizing heuristics (warn-only; see `item_sizing_warnings`). Calibrated on
+# the 2026-06-12 shakedown evidence: the two ACP-turn-timeout casualties
+# (dev-tooling p60, git-jsonl tenpup) were both heavy multi-part /
+# multi-RGR items with long enumerated descriptions, and both succeeded
+# immediately once split out to host sub-agents.
+_SIZING_DESCRIPTION_CHAR_LIMIT = 1500
+_SIZING_PART_MARKER_RE = re.compile(r"multi[-\s]?(?:part|rgr)", re.IGNORECASE)
+_SIZING_ENUMERATED_RE = re.compile(r"\(\d+\)|^\s*\d+[.)]\s", re.MULTILINE)
+_SIZING_ENUMERATED_LIMIT = 3
+
+
+def item_sizing_warnings(*, item: WorkItem) -> tuple[str, ...]:
+    """Warn-only sizing heuristics applied at dispatch/loop-feed time.
+
+    Pure function of the item; the Dispatcher journals + stderr-WARNs the
+    hits and proceeds regardless (never blocking). Three heuristics:
+    description length, explicit multi-part/multi-RGR markers, and
+    enumerated part counts.
+    """
+    warnings: list[str] = []
+    if len(item.description) > _SIZING_DESCRIPTION_CHAR_LIMIT:
+        length_warning = (
+            f"description is {len(item.description)} chars "
+            f"(> {_SIZING_DESCRIPTION_CHAR_LIMIT}): heavy items have exceeded one "
+            "unattended ACP turn; consider splitting before loop-feeding"
+        )
+        warnings.append(length_warning)
+    if _SIZING_PART_MARKER_RE.search(f"{item.title}\n{item.description}") is not None:
+        marker_warning = (
+            "title/description carries a multi-part/multi-RGR marker: such items "
+            "have exceeded one unattended ACP turn; consider splitting"
+        )
+        warnings.append(marker_warning)
+    enumerated = len(_SIZING_ENUMERATED_RE.findall(item.description))
+    if enumerated >= _SIZING_ENUMERATED_LIMIT:
+        enumerated_warning = (
+            f"description carries {enumerated} enumerated parts: consider one "
+            "work-item per part before loop-feeding"
+        )
+        warnings.append(enumerated_warning)
+    return tuple(warnings)
 
 
 def render_run_config_overlay(
