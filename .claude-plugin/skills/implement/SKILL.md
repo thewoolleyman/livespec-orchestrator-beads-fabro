@@ -136,6 +136,11 @@ Print "closed `<id>` (`<resolution>`)" to the user.
 
 ## Important properties
 
+- **Closure writes are user-consented** — the Step 2 resolution-path
+  decision (plus the Step 5a re-detection confirmation for gap-tied
+  items) is the per-operation consent for the Step 6 closure write
+  (per SPECIFICATION/contracts.md §"Store-write consent discipline");
+  no closure record is written without it.
 - **Same `id`, new record** — closure does NOT mutate the open record.
   It appends a new record with the same `id`; the materialized view
   (latest-record-wins) shows the closed state.

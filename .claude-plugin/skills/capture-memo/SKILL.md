@@ -58,6 +58,11 @@ that's the next skill's job.
 
 ## Important properties
 
+- **Consent-by-authorship** — the user-typed memo text fully
+  determines the single resulting append and IS the per-operation
+  consent for it (per SPECIFICATION/contracts.md §"Store-write
+  consent discipline"); the skill performs no other store write, so
+  no second confirmation prompt is required.
 - **Transient by construction** — every memo MUST eventually flow
   through `process-memos` to one of the four canonical dispositions
   (spec-bound, impl-bound, persistent-knowledge, discard) per
