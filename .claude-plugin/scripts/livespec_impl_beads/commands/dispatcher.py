@@ -55,6 +55,16 @@ dispatch when the variable is absent or empty — there would be
 nothing to project. The token value is never logged, echoed, or
 journaled.
 
+Sandbox sibling clones: the same overlay appends one depth-1
+prepare-step clone per fleet member (from livespec master's
+fleet-manifest.jsonc, fetched host-side via `gh api` at run-config
+generation; the dispatch target is excluded) and projects the
+non-secret LIVESPEC_SIBLING_CLONES_ROOT=/workspace/siblings into the
+sandbox env table, so cross-repo checks under `just check` resolve
+family siblings inside the sandbox — mirroring livespec CI. An
+unreachable or malformed manifest fails the dispatch fast at the
+`run-config-overlay` stage.
+
 Connection + consent model: the Ledger connection resolves from the
 TARGET repo's `.livespec.jsonc` (cwd-style `--repo` addressing) plus
 `BEADS_DOLT_PASSWORD` for that tenant in the environment — one tenant
@@ -105,7 +115,9 @@ from livespec_impl_beads.commands._dispatcher_ledger_checks import (
     run_ledger_checks,
 )
 from livespec_impl_beads.commands._dispatcher_plan import (
+    SiblingClones,
     build_plan,
+    parse_fleet_members,
     render_goal,
     render_run_config_overlay,
 )
@@ -120,6 +132,23 @@ _EXIT_USAGE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 3
 
 _OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"  # noqa: S105 - env-var NAME, not a secret value
+
+# Where the canonical fleet member registry lives: fleet-manifest.jsonc
+# on livespec master (livespec non-functional-requirements.md §"Fleet
+# membership contract"). Fetched HOST-SIDE at run-config generation
+# time via `gh api` raw content — the same consume-from-master pattern
+# the other family consumers (fleet conformance, release fan-out) use.
+# This pins the manifest LOCATION, not the member list: the list itself
+# is always read fresh, and an unreachable/malformed manifest fails the
+# dispatch fast instead of falling back to a stale hardcoded set.
+_FLEET_MANIFEST_API_PATH = "repos/thewoolleyman/livespec/contents/fleet-manifest.jsonc"
+_FLEET_MANIFEST_FETCH_TIMEOUT_SECONDS = 60.0
+
+# In-sandbox directory the sibling clones land under; projected into
+# the sandbox env as LIVESPEC_SIBLING_CLONES_ROOT. `/workspace` is the
+# fabro docker sandbox's workspace root (the target repo's clone sits
+# at /workspace/<repo>), so the siblings root never collides with it.
+_SIBLING_CLONES_ROOT = "/workspace/siblings"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -288,12 +317,16 @@ def _dispatch_one(
         fabro_bin=args.fabro_bin,
         janitor=janitor,
     )
-    overlay_error = _materialize_overlay(committed=_workflow_toml(args=args), overlay=overlay_file)
+    overlay_error = _materialize_overlay(
+        committed=_workflow_toml(args=args),
+        overlay=overlay_file,
+        repo=repo,
+    )
     if overlay_error is not None:
         outcome = DispatchOutcome(
             work_item_id=item.id,
             status="failed",
-            stage="credential-overlay",
+            stage="run-config-overlay",
             pr_number=None,
             merge_sha=None,
             detail=overlay_error,
@@ -324,26 +357,37 @@ def _dispatch_one(
     return outcome
 
 
-def _materialize_overlay(*, committed: Path, overlay: Path) -> str | None:
+def _materialize_overlay(*, committed: Path, overlay: Path, repo: Path) -> str | None:
     """Write the uncommitted mode-600 run-config overlay.
 
     Returns None on success, or an actionable error message (an expected
     failure routed as data — the dispatch reports it at the
-    `credential-overlay` stage). The overlay is the RUN-SCOPED
+    `run-config-overlay` stage). The overlay is the RUN-SCOPED
     credential projection: the committed config (graph path absolutized)
     plus an appended env table carrying the CLAUDE_CODE_OAUTH_TOKEN
     value read from this process's environment. Fabro `{{ env }}`
     interpolation is NOT usable here (see the module docstring), so the
     value MUST be materialized. The token never reaches a log, journal,
     or argv; the overlay file is deleted when the run returns.
+
+    The overlay ALSO provisions the sandbox sibling clones: one depth-1
+    prepare-step clone per fleet member (minus the dispatch target,
+    keyed by the `--repo` basename) plus the non-secret
+    `LIVESPEC_SIBLING_CLONES_ROOT` env key, so cross-repo checks under
+    `just check` resolve family siblings inside the sandbox the same
+    way livespec CI provisions them.
     """
     env_error = _check_credential_env()
     if env_error is not None:
         return env_error
+    siblings = _resolve_sibling_clones(repo=repo)
+    if isinstance(siblings, str):
+        return siblings
     rendered = render_run_config_overlay(
         committed_text=committed.read_text(encoding="utf-8"),
         workflow_dir=committed.parent.resolve(),
         token=os.environ[_OAUTH_TOKEN_ENV],
+        siblings=siblings,
     )
     if rendered is None:
         return (
@@ -355,6 +399,68 @@ def _materialize_overlay(*, committed: Path, overlay: Path) -> str | None:
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
         _ = handle.write(rendered)
     return None
+
+
+def _fetch_fleet_manifest_text() -> str | None:
+    """Fetch fleet-manifest.jsonc raw text from livespec master via `gh api`.
+
+    HOST-SIDE read at run-config generation time (the Dispatcher's own
+    environment has an authenticated `gh`; the sandbox does not).
+    Returns the raw JSONC text, or None on any failure — the caller
+    renders the actionable refusal.
+    """
+    result = ShellCommandRunner().run(
+        argv=[
+            "gh",
+            "api",
+            "-H",
+            "Accept: application/vnd.github.raw",
+            _FLEET_MANIFEST_API_PATH,
+        ],
+        cwd=Path.cwd(),
+        timeout_seconds=_FLEET_MANIFEST_FETCH_TIMEOUT_SECONDS,
+    )
+    if result.exit_code != 0 or result.stdout.strip() == "":
+        return None
+    return result.stdout
+
+
+def _resolve_sibling_clones(*, repo: Path) -> SiblingClones | str:
+    """Resolve the sandbox sibling-clone plan from the fleet manifest.
+
+    Returns the plan (fleet members minus the dispatch target, keyed by
+    the `--repo` basename — primary checkouts are named after their
+    repo), or an actionable error string routed as data (the dispatch
+    fails at the `run-config-overlay` stage). Failing fast beats
+    silently dispatching without sibling clones: that would reintroduce
+    the in-sandbox `:no-justfile-resolved` aggregate failure for every
+    cross-repo check, and a hardcoded fallback list would rot as the
+    fleet changes.
+    """
+    manifest_text = _fetch_fleet_manifest_text()
+    if manifest_text is None:
+        return (
+            "sibling-clone provisioning refused: could not fetch "
+            f"fleet-manifest.jsonc from livespec master (`gh api "
+            f"{_FLEET_MANIFEST_API_PATH}`). The sandbox provisions one "
+            "depth-1 clone per fleet member so cross-repo checks resolve "
+            f"siblings under {_SIBLING_CLONES_ROOT}; check `gh auth "
+            "status` and network reachability, then retry the dispatch."
+        )
+    members = parse_fleet_members(manifest_text=manifest_text)
+    if members is None:
+        return (
+            "sibling-clone provisioning refused: fleet-manifest.jsonc "
+            "fetched from livespec master did not parse into an owner "
+            "plus a non-empty members list of GitHub-slug-shaped repo "
+            "names. Fix the manifest on livespec master (it is the "
+            "canonical fleet member registry), then retry the dispatch."
+        )
+    return SiblingClones(
+        owner=members.owner,
+        repos=tuple(name for name in members.repos if name != repo.name),
+        clones_root=_SIBLING_CLONES_ROOT,
+    )
 
 
 def _check_credential_env() -> str | None:
