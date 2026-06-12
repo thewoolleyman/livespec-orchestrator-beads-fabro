@@ -34,19 +34,26 @@ Common flags: [--workflow <toml>] [--fabro-bin <path>]
 [--poll-interval-seconds <s>] [--no-close-on-merge]
 [--skip-ledger-check] [--json]
 
-Credential channel (Architecture C): the committed workflow config
-carries NO secret VALUE — its `[environments.<id>.env]` table holds
-`CLAUDE_CODE_OAUTH_TOKEN = "{{ env.CLAUDE_CODE_OAUTH_TOKEN }}"`, which
-fabro interpolates from its OWN process environment at stage
-execution. The Dispatcher is therefore invoked under the
-with-livespec-env.sh wrapper (the livespec 1Password Environment
-carries CLAUDE_CODE_OAUTH_TOKEN). Because fabro falls back to the
-LITERAL `{{ env.X }}` string when the variable is missing from its
-env, the Dispatcher refuses to dispatch when CLAUDE_CODE_OAUTH_TOKEN
-is absent from its process environment. The per-dispatch UNCOMMITTED
-run-config overlay materialized under the temp dir (deleted when the
-run returns) only rewrites the graph path absolute — it carries no
-secret. The token value is never logged, echoed, or journaled.
+Credential channel (Architecture C): the per-dispatch UNCOMMITTED
+run-config overlay materialized under the temp dir is the RUN-SCOPED
+credential projection (per the family-secrets scoped
+transient-materialization rule): it appends an
+`[environments.<id>.env]` table carrying the CLAUDE_CODE_OAUTH_TOKEN
+value read from the Dispatcher's process environment, is written
+mode-600, and is deleted when the run returns. The committed workflow
+config carries NO secret VALUE and NO `{{ env }}` interpolation —
+interpolation can NOT deliver credentials to server-mediated runs (do
+not re-attempt it): resolution happens in the WORKER process, which
+fabro-server spawns with a fail-closed env allowlist
+(fabro-server/src/spawn_env.rs), so the token never reaches the
+resolver and the LITERAL `{{ env.X }}` string flows into the sandbox
+(proven empirically 2026-06-12: API 401 with the token present in
+both the dispatcher's and the server daemon's env). The Dispatcher is
+invoked under the with-livespec-env.sh wrapper (the livespec
+1Password Environment carries CLAUDE_CODE_OAUTH_TOKEN) and refuses to
+dispatch when the variable is absent or empty — there would be
+nothing to project. The token value is never logged, echoed, or
+journaled.
 
 Connection + consent model: the Ledger connection resolves from the
 TARGET repo's `.livespec.jsonc` (cwd-style `--repo` addressing) plus
@@ -318,16 +325,17 @@ def _dispatch_one(
 
 
 def _materialize_overlay(*, committed: Path, overlay: Path) -> str | None:
-    """Write the uncommitted run-config overlay (graph path absolutized).
+    """Write the uncommitted mode-600 run-config overlay.
 
     Returns None on success, or an actionable error message (an expected
     failure routed as data — the dispatch reports it at the
-    `credential-overlay` stage). The overlay carries NO secret — the
-    committed config's `{{ env.CLAUDE_CODE_OAUTH_TOKEN }}` interpolation
-    is the credential channel — but the credential PRECONDITION is
-    checked here: fabro resolves the interpolation from its own process
-    environment and silently falls back to the LITERAL token string when
-    the variable is missing, so an absent variable refuses the dispatch.
+    `credential-overlay` stage). The overlay is the RUN-SCOPED
+    credential projection: the committed config (graph path absolutized)
+    plus an appended env table carrying the CLAUDE_CODE_OAUTH_TOKEN
+    value read from this process's environment. Fabro `{{ env }}`
+    interpolation is NOT usable here (see the module docstring), so the
+    value MUST be materialized. The token never reaches a log, journal,
+    or argv; the overlay file is deleted when the run returns.
     """
     env_error = _check_credential_env()
     if env_error is not None:
@@ -335,11 +343,12 @@ def _materialize_overlay(*, committed: Path, overlay: Path) -> str | None:
     rendered = render_run_config_overlay(
         committed_text=committed.read_text(encoding="utf-8"),
         workflow_dir=committed.parent.resolve(),
+        token=os.environ[_OAUTH_TOKEN_ENV],
     )
     if rendered is None:
         return (
             f"workflow config {committed} is not materializable: it must carry "
-            '[workflow] graph = "..."'
+            '[workflow] graph = "..." and [run.environment] id = "..."'
         )
     overlay.unlink(missing_ok=True)
     descriptor = os.open(str(overlay), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -352,19 +361,22 @@ def _check_credential_env() -> str | None:
     """Fail fast when CLAUDE_CODE_OAUTH_TOKEN is absent from the process env.
 
     Returns None when the credential is present, or an actionable error
-    naming the wrapper that provides it. The value itself is never read
-    beyond the presence check, and never logged.
+    naming the wrapper that provides it. The Dispatcher's process env is
+    the SOURCE of the run-scoped overlay projection, so an absent or
+    empty variable means there is nothing to project. The value is never
+    logged.
     """
     if os.environ.get(_OAUTH_TOKEN_ENV, "") != "":
         return None
     return (
         f"C-mode dispatch refused: {_OAUTH_TOKEN_ENV} is not set in the "
-        f"Dispatcher's process environment. fabro resolves the committed "
-        f"config's '{{{{ env.{_OAUTH_TOKEN_ENV} }}}}' interpolation from "
-        f"its own process env and falls back to that LITERAL string when "
-        f"the variable is missing. Invoke the Dispatcher under the "
-        f"with-livespec-env.sh wrapper (the livespec 1Password Environment "
-        f"carries the token)."
+        f"Dispatcher's process environment. The run-config overlay "
+        f"projects this variable into the sandbox env table (fabro "
+        f"'{{{{ env.{_OAUTH_TOKEN_ENV} }}}}' interpolation cannot deliver "
+        f"it — the server-spawned worker env is allowlist-scrubbed), so "
+        f"an absent variable leaves nothing to project. Invoke the "
+        f"Dispatcher under the with-livespec-env.sh wrapper (the livespec "
+        f"1Password Environment carries the token)."
     )
 
 

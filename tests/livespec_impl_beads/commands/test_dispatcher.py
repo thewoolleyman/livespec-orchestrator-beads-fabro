@@ -8,15 +8,17 @@ subprocesses, mirroring `test_orchestrator`'s injected-CLI approach.
 
 C-mode (Architecture C, Fabro-owned docker sandbox) specifics covered
 here: the run-config overlay materialization (mode-600, absolute graph
-rewrite, post-run cleanup, and NO secret in the overlay — the committed
-config's `{{ env.CLAUDE_CODE_OAUTH_TOKEN }}` interpolation token is the
-credential channel, resolved by fabro from its own process env at stage
-execution), the CLAUDE_CODE_OAUTH_TOKEN fail-fast (a variable missing
-from fabro's env falls back to the literal token string, so the
-Dispatcher refuses to dispatch without it), the no-worktree dispatch
-lifecycle (fabro run from the repo's primary checkout), and the
-`blocked` third terminal state (run parked at the in-loop human gate;
-`fabro attach` is the answer path, never auto-resumed).
+rewrite, post-run cleanup, and the appended env table carrying the
+CLAUDE_CODE_OAUTH_TOKEN value read from the Dispatcher's process env —
+the overlay IS the run-scoped credential projection; fabro `{{ env }}`
+interpolation cannot deliver it because the server spawns the
+resolving worker under a fail-closed env allowlist), the
+CLAUDE_CODE_OAUTH_TOKEN fail-fast (an absent variable leaves nothing
+to project, so the Dispatcher refuses to dispatch without it), the
+no-worktree dispatch lifecycle (fabro run from the repo's primary
+checkout), and the `blocked` third terminal state (run parked at the
+in-loop human gate; `fabro attach` is the answer path, never
+auto-resumed).
 """
 
 import json
@@ -85,10 +87,10 @@ def fabro_dispatch_env(
 ) -> None:
     """Hermetic C-mode dispatch environment for every test: an obviously
     fake CLAUDE_CODE_OAUTH_TOKEN in the process env (the Dispatcher
-    fail-fasts without one; fabro interpolates the real value from its
-    own env at stage execution), plus a per-test temp dir so parallel
-    pytest-xdist workers never collide on the dispatcher's goal/overlay
-    temp files."""
+    fail-fasts without one, and projects the value into the run-config
+    overlay's env table at dispatch), plus a per-test temp dir so
+    parallel pytest-xdist workers never collide on the dispatcher's
+    goal/overlay temp files."""
     scratch = tmp_path_factory.mktemp("fabro-dispatch")
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
@@ -718,7 +720,16 @@ def test_parse_run_status_rejects_unusable_shapes() -> None:
     assert parse_run_status(stdout=json.dumps({"status": 7})) is None
 
 
-_ENV_INTERPOLATION_LINE = 'CLAUDE_CODE_OAUTH_TOKEN = "{{ env.CLAUDE_CODE_OAUTH_TOKEN }}"'
+# The fake token the autouse fixture plants in the process env; the
+# overlay must carry it VERBATIM (and nothing else may — journals,
+# argvs, and the committed config stay token-free).
+_FAKE_TOKEN_LINE = 'CLAUDE_CODE_OAUTH_TOKEN = "test-oauth-token"'
+
+# The dead interpolation channel: fabro resolves {{ env.* }} in the
+# server-spawned WORKER, whose env is a fail-closed allowlist
+# (fabro-server/src/spawn_env.rs), so this literal must never appear in
+# a materialized overlay — it would flow through to the sandbox as-is.
+_ENV_INTERPOLATION_LITERAL = "{{ env.CLAUDE_CODE_OAUTH_TOKEN }}"
 
 _COMMITTED_WORKFLOW_TOML = (
     "_version = 1\n"
@@ -728,28 +739,28 @@ _COMMITTED_WORKFLOW_TOML = (
     "\n"
     "[run.environment]\n"
     'id = "livespec-ci"\n'
-    "\n"
-    "[environments.livespec-ci.env]\n"
-    f"{_ENV_INTERPOLATION_LINE}\n"
 )
 
 
-def test_render_run_config_overlay_rewrites_graph_and_carries_no_secret(
+def test_render_run_config_overlay_rewrites_graph_and_appends_env_token(
     tmp_path: Path,
 ) -> None:
+    overlay_token = "test-oauth-token"
     rendered = render_run_config_overlay(
         committed_text=_COMMITTED_WORKFLOW_TOML,
         workflow_dir=tmp_path,
+        token=overlay_token,
     )
     assert rendered is not None
     assert f'graph = "{tmp_path / "workflow.fabro"}"' in rendered
     assert 'graph = "workflow.fabro"' not in rendered
-    # The credential channel is the committed {{ env }} interpolation
-    # token, untouched by the overlay: fabro resolves it from its own
-    # process environment at stage execution. No resolved value is ever
-    # appended.
-    assert _ENV_INTERPOLATION_LINE in rendered
-    assert rendered.count("CLAUDE_CODE_OAUTH_TOKEN") == 2
+    # The overlay IS the run-scoped credential projection: it appends
+    # the [environments.<id>.env] table carrying the real token value
+    # read from the Dispatcher's process env. No interpolation literal
+    # may survive into it.
+    assert "[environments.livespec-ci.env]" in rendered
+    assert _FAKE_TOKEN_LINE in rendered
+    assert _ENV_INTERPOLATION_LITERAL not in rendered
 
 
 def test_render_run_config_overlay_keeps_absolute_graph_path(tmp_path: Path) -> None:
@@ -757,33 +768,49 @@ def test_render_run_config_overlay_keeps_absolute_graph_path(tmp_path: Path) -> 
     committed = _COMMITTED_WORKFLOW_TOML.replace(
         'graph = "workflow.fabro"', f'graph = "{absolute_graph}"'
     )
+    overlay_token = "test-oauth-token"
     rendered = render_run_config_overlay(
         committed_text=committed,
         workflow_dir=tmp_path / "workflow-dir",
+        token=overlay_token,
     )
     assert rendered is not None
     assert f'graph = "{absolute_graph}"' in rendered
     assert str(tmp_path / "workflow-dir") not in rendered.split("[environments")[0]
 
 
-def test_render_run_config_overlay_needs_no_environment_id(tmp_path: Path) -> None:
-    # The overlay no longer appends an env table, so a committed config
-    # without [run.environment] id still materializes (graph-only rewrite).
-    no_environment = '[workflow]\ngraph = "workflow.fabro"\n'
-    rendered = render_run_config_overlay(committed_text=no_environment, workflow_dir=tmp_path)
-    assert rendered is not None
-    assert f'graph = "{tmp_path / "workflow.fabro"}"' in rendered
-
-
 def test_render_run_config_overlay_rejects_unusable_shapes(tmp_path: Path) -> None:
-    assert render_run_config_overlay(committed_text="_version = 1\n", workflow_dir=tmp_path) is None
+    overlay_token = "test-oauth-token"
+    assert (
+        render_run_config_overlay(
+            committed_text="_version = 1\n", workflow_dir=tmp_path, token=overlay_token
+        )
+        is None
+    )
     no_graph = '[workflow]\n\n[run.environment]\nid = "livespec-ci"\n'
-    assert render_run_config_overlay(committed_text=no_graph, workflow_dir=tmp_path) is None
+    assert (
+        render_run_config_overlay(
+            committed_text=no_graph, workflow_dir=tmp_path, token=overlay_token
+        )
+        is None
+    )
+    # The env-table append targets [environments.<id>.env], so a config
+    # without a [run.environment] id has nowhere to project the token.
+    no_environment = '[workflow]\ngraph = "workflow.fabro"\n'
+    assert (
+        render_run_config_overlay(
+            committed_text=no_environment, workflow_dir=tmp_path, token=overlay_token
+        )
+        is None
+    )
     # Non-canonical whitespace: the graph value parses but the canonical
     # `graph = "<value>"` rewrite needle is absent, so the shape is refused
     # rather than silently shipping a relative graph path.
     spaced = '[workflow]\ngraph =  "workflow.fabro"\n\n[run.environment]\nid = "livespec-ci"\n'
-    assert render_run_config_overlay(committed_text=spaced, workflow_dir=tmp_path) is None
+    assert (
+        render_run_config_overlay(committed_text=spaced, workflow_dir=tmp_path, token=overlay_token)
+        is None
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1276,10 +1303,13 @@ def test_dispatch_materializes_mode600_overlay_and_cleans_up(
     assert not plan.workflow_toml.exists()
     assert fake.overlay_modes == [0o600]
     overlay_text = fake.overlay_texts[0]
-    # The overlay carries NO secret: only the committed {{ env }}
-    # interpolation token, never the resolved credential value.
-    assert "test-oauth-token" not in overlay_text
-    assert _ENV_INTERPOLATION_LINE in overlay_text
+    # The overlay is the run-scoped credential projection: it carries
+    # the token value read from the Dispatcher's process env (mode-600,
+    # deleted when the run returns — both asserted above). The token
+    # never reaches the journal, and no dead {{ env }} interpolation
+    # literal survives into the overlay.
+    assert _FAKE_TOKEN_LINE in overlay_text
+    assert _ENV_INTERPOLATION_LITERAL not in overlay_text
     assert f'graph = "{workflow.parent / "workflow.fabro"}"' in overlay_text
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
     assert "test-oauth-token" not in journal_text
@@ -1477,10 +1507,12 @@ def test_dispatch_default_workflow_materializes_from_repo_fabro_tree(
     overlay_text = fake.overlay_texts[0]
     assert "implement-work-item" in overlay_text
     assert 'graph = "workflow.fabro"' not in overlay_text
-    # The repo's committed run config carries the credential channel as
-    # the {{ env }} interpolation token (resolved by fabro from its own
-    # process env), never a secret value.
-    assert _ENV_INTERPOLATION_LINE in overlay_text
+    # The repo's committed run config carries NO secret and NO
+    # {{ env }} interpolation (a dead channel for server-mediated runs:
+    # the worker env is allowlist-scrubbed); the overlay appends the env
+    # table with the token from the Dispatcher's process env.
+    assert _FAKE_TOKEN_LINE in overlay_text
+    assert _ENV_INTERPOLATION_LITERAL not in overlay_text
 
 
 def test_dispatch_blocked_outcome_surfaces_and_leaves_item_open(
@@ -1519,9 +1551,10 @@ def test_dispatch_fails_fast_when_oauth_token_env_is_absent_or_empty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A missing CLAUDE_CODE_OAUTH_TOKEN refuses the dispatch outright:
-    fabro would silently pass the LITERAL `{{ env... }}` string through
-    to the sandbox, so absence must be caught before dispatch. The error
-    names the with-livespec-env.sh wrapper as the fix."""
+    the Dispatcher's process env is the SOURCE of the run-scoped overlay
+    projection, so absence means there is nothing to project into the
+    sandbox. The error names the with-livespec-env.sh wrapper as the
+    fix."""
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     item = _item()
     append_work_item(path=_config(), item=item)
