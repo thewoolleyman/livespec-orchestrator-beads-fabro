@@ -27,6 +27,20 @@
 // docs.fabro.sh/core-concepts/agents §"ACP backend", ACP requires a
 // local or Docker sandbox (the Dispatcher runs the docker provider).
 digraph ImplementWorkItem {
+    // Retry discipline (work-item livespec-impl-beads-bn4, 2026-06-12
+    // shakedown): `default_max_retries=0` keeps every node single-shot
+    // EXCEPT the two goal-gated nodes below, which carry an explicit
+    // `max_retries=1`. Fabro's node-retry layer is failure-category-
+    // aware BY ENGINE DESIGN (docs.fabro.sh/execution/failures §"What
+    // gets retried"): only failures classified `transient_infra` (ACP
+    // turn timeout, rate limit, network, 5xx) re-execute the handler;
+    // `deterministic` failures fail immediately WITHOUT consuming the
+    // retry budget and route via the `outcome=failed` edges to the
+    // human gate exactly as before. So: transient -> ONE auto-retry;
+    // categorical -> park at needs-human. `stall_timeout` stays 7200s:
+    // it is the zero-EVENT watchdog (cancels the run on 2h of event
+    // silence), not the per-turn ceiling — an active agent turn streams
+    // events continuously, so a longer implement turn does not trip it.
     graph [
         goal="Implement one ready work-item per the livespec family discipline"
         default_max_retries=0
@@ -36,12 +50,31 @@ digraph ImplementWorkItem {
     start [shape=Mdiamond, label="Start"]
     exit  [shape=Msquare, label="Exit"]
 
+    // timeout=14400s (was 7200s): two heavy multi-RGR items (dev-tooling
+    // p60, git-jsonl tenpup, both 2026-06-12) died at "ACP turn timed
+    // out" at ~120m — the node timeout is the per-turn ceiling for the
+    // ACP backend (the run PARKED at the human gate afterwards, i.e. the
+    // node failed; the stall watchdog by contrast CANCELS the whole run,
+    // so it was not the stall_timeout). 4h gives multi-part items one
+    // unattended turn of headroom; the Dispatcher's own fabro-run
+    // subprocess budget covers the worst case (see _dispatcher_engine
+    // _FABRO_TIMEOUT_SECONDS).
+    //
+    // retry_target: fires ONLY at exit-node goal-gate enforcement (the
+    // `outcome=failed` edge to the human gate takes precedence at node
+    // failure — docs.fabro.sh/execution/failures §"When failures become
+    // fatal"). With the `abandon` terminal node below, the only path
+    // that reaches exit with this gate unsatisfied is a human [R]
+    // answer after an implement failure; the jump back here re-attempts
+    // the implement instead of failing a run whose fix path went green.
     implement [
         label="Implement (Red-Green-Replay)"
         backend="acp"
         acp.command="npx -y @agentclientprotocol/claude-agent-acp"
-        timeout="7200s"
+        timeout="14400s"
+        max_retries=1
         goal_gate=true
+        retry_target="implement"
         prompt="@prompts/implement.md"
     ]
 
@@ -65,12 +98,20 @@ digraph ImplementWorkItem {
         prompt="@prompts/fix.md"
     ]
 
+    // max_retries=1 + retry_target: same bn4 retry discipline as the
+    // implement node (transient -> one auto-retry; deterministic ->
+    // park via the Blocked edge). The retry_target is structurally
+    // unreachable here — the only edge into exit is `pr -> exit`, taken
+    // when pr did NOT fail — it exists to satisfy fabro's
+    // goal_gate_has_retry lint alongside the real node-retry budget.
     pr [
         label="Open PR + arm rebase auto-merge"
         backend="acp"
         acp.command="npx -y @agentclientprotocol/claude-agent-acp"
         timeout="1800s"
+        max_retries=1
         goal_gate=true
+        retry_target="pr"
         prompt="@prompts/pr.md"
     ]
 
@@ -81,12 +122,32 @@ digraph ImplementWorkItem {
     // while a server-side engine stays alive holding the run; `fabro
     // attach <run-id>` is the answer path (resume is only for a dead
     // engine). The answer routes BACK into the loop via the labeled
-    // edges below. [A] Abandon exits with the failing stage's outcome
-    // still failed, so the run ends non-green and the work-item stays
-    // open for triage.
+    // edges below. [A] Abandon routes to the `abandon` terminal command
+    // node, which fails the run WITHOUT reaching exit, so the work-item
+    // stays open for triage.
     escalate [
         shape=hexagon
         label="Needs human: the loop cannot auto-resolve this work-item"
+    ]
+
+    // Terminal abandon node (bn4): a deliberate dead end (no outgoing
+    // edges — fabro validate accepts a dead-end node but rejects a
+    // conditional-only edge set). Pre-bn4, [A] Abandon routed straight
+    // to exit and relied on "goal gate unsatisfied at exit WITH NO
+    // RETRY TARGET" to fail the run — but wiring retry_target on the
+    // goal-gated nodes (above) would have turned that exact path into
+    // a jump BACK into the loop, making Abandon un-answerable. This
+    // node restores hard termination: the script always exits 1 (a
+    // deterministic, never-retried failure), there is no outgoing edge
+    // to follow and no retry target on the node or graph, so the run
+    // terminates non-green BEFORE the exit node's goal-gate enforcement
+    // can bounce it (docs.fabro.sh/execution/failures §"When failures
+    // become fatal", step 7).
+    abandon [
+        label="Abandon: terminate non-green (work-item stays open)"
+        shape=parallelogram
+        timeout="60s"
+        script="echo 'operator abandoned the run; work-item left open for triage' >&2; exit 1"
     ]
 
     start -> implement
@@ -122,8 +183,8 @@ digraph ImplementWorkItem {
     pr -> exit
 
     // The human's answer = one of these labels; it routes the run back
-    // INTO the loop (or out, for triage).
+    // INTO the loop (or to the abandon terminal node, for triage).
     escalate -> fix       [label="[R] Retry the fix"]
     escalate -> implement [label="[I] Re-implement from scratch"]
-    escalate -> exit      [label="[A] Abandon (leave open for triage)"]
+    escalate -> abandon   [label="[A] Abandon (leave open for triage)"]
 }
