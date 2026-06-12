@@ -647,3 +647,88 @@ def test_raise_for_status_other_nonzero_is_command_error() -> None:
         )
     assert excinfo.value.exit_code == 5
     assert excinfo.value.command == "bd show li-a"
+
+
+# --------------------------------------------------------------------------
+# Comments — fake seeding seam + shell `bd comments <id> --json` read.
+# --------------------------------------------------------------------------
+
+
+def test_fake_seed_and_list_comments_roundtrip() -> None:
+    fake = FakeBeadsClient()
+    _ = fake.create_issue(draft=_draft(issue_id="li-x"))
+    fake.seed_comment(
+        issue_id="li-x",
+        text="first rider",
+        author="operator",
+        created_at="2026-06-12T00:00:00Z",
+    )
+    fake.seed_comment(issue_id="li-x", text="second rider")
+    records = fake.list_comments(issue_id="li-x")
+    assert [record["text"] for record in records] == ["first rider", "second rider"]
+    assert records[0]["author"] == "operator"
+    assert records[0]["created_at"] == "2026-06-12T00:00:00Z"
+    assert records[1]["author"] is None
+    assert records[1]["created_at"] is None
+
+
+def test_fake_list_comments_returns_copies() -> None:
+    fake = FakeBeadsClient()
+    _ = fake.create_issue(draft=_draft(issue_id="li-x"))
+    fake.seed_comment(issue_id="li-x", text="original")
+    records = fake.list_comments(issue_id="li-x")
+    records[0]["text"] = "mutated"
+    assert fake.list_comments(issue_id="li-x")[0]["text"] == "original"
+
+
+def test_fake_list_comments_empty_for_uncommented_issue() -> None:
+    fake = FakeBeadsClient()
+    _ = fake.create_issue(draft=_draft(issue_id="li-x"))
+    assert fake.list_comments(issue_id="li-x") == []
+
+
+def test_fake_list_comments_missing_issue_raises() -> None:
+    fake = FakeBeadsClient()
+    with pytest.raises(BeadsMappingError):
+        _ = fake.list_comments(issue_id="li-absent")
+
+
+def test_fake_seed_comment_missing_issue_raises() -> None:
+    fake = FakeBeadsClient()
+    with pytest.raises(BeadsMappingError):
+        fake.seed_comment(issue_id="li-absent", text="orphan")
+
+
+def test_shell_list_comments_builds_argv_and_filters_non_dicts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`bd comments <id> --json` returns a JSON array of comment objects
+    (`{id, issue_id, author, text, created_at}` in bd v1.0.5; empty array
+    when uncommented); non-dict elements are dropped fail-soft."""
+    client = ShellBeadsClient(config=_config())
+    seen: list[list[str]] = []
+
+    def _fake_run(argv: list[str], **_kw: object) -> subprocess.CompletedProcess[str]:
+        seen.append(argv)
+        return subprocess.CompletedProcess(
+            args=argv,
+            returncode=0,
+            stdout='[{"issue_id": "li-a", "text": "a rider"}, 42]',
+            stderr="",
+        )
+
+    monkeypatch.setattr("livespec_impl_beads._beads_client.subprocess.run", _fake_run)
+    result = client.list_comments(issue_id="li-a")
+    assert result == [{"issue_id": "li-a", "text": "a rider"}]
+    assert seen[0] == ["/managed/bd", "comments", "li-a", "--json"]
+
+
+def test_shell_list_comments_non_array_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = ShellBeadsClient(config=_config())
+    monkeypatch.setattr(
+        client,
+        "_run_json",
+        lambda *, verb_args: {"not": "an array"},  # noqa: ARG005
+    )
+    with pytest.raises(BeadsMappingError):
+        _ = client.list_comments(issue_id="li-a")
