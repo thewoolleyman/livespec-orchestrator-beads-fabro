@@ -2,8 +2,9 @@
 
 The store layer (`store.py`) never shells out to `bd` directly. Instead it
 talks to a `BeadsClient` — a small protocol whose verbs cover exactly the
-beads operations the store needs (list-all, show-one, children, create,
-update, close, dep-add). Two implementations satisfy the protocol:
+beads operations the store needs (list-all, show-one, comments-list,
+children, create, update, close, dep-add). Two implementations satisfy the
+protocol:
 
 - `ShellBeadsClient` — shells out to the pinned `bd` binary (by absolute
   path, NEVER the mise shim) over the server-mode FLAGS connection and
@@ -110,6 +111,14 @@ class BeadsClient(Protocol):
         """Return one issue by id (`bd show <id> --json`)."""
         ...
 
+    def list_comments(self, *, issue_id: str) -> list[BeadsRecord]:
+        """Return an issue's comments (`bd comments <id> --json`).
+
+        `bd show` does NOT carry comment bodies (only `comment_count`),
+        so comment reads need this dedicated verb.
+        """
+        ...
+
     def children(self, *, parent_id: str) -> list[BeadsRecord]:
         """Return the parent-child children of an issue (`bd children <id>`)."""
         ...
@@ -165,6 +174,7 @@ class FakeBeadsClient:
 
     def __init__(self) -> None:
         self._issues: dict[str, BeadsRecord] = {}
+        self._comments: dict[str, list[BeadsRecord]] = {}
 
     def list_issues(self) -> list[BeadsRecord]:
         return [dict(record) for record in self._issues.values()]
@@ -177,6 +187,44 @@ class FakeBeadsClient:
                 detail="issue not present in the in-memory tenant",
             )
         return dict(record)
+
+    def seed_comment(
+        self,
+        *,
+        issue_id: str,
+        text: str,
+        author: str | None = None,
+        created_at: str | None = None,
+    ) -> None:
+        """Seed a comment onto an issue (fake-only hermetic seeding seam).
+
+        NOT a `BeadsClient` protocol verb: the store layer only READS
+        comments (the Dispatcher folds them into the dispatch goal), so
+        the protocol carries `list_comments` alone. The fake still needs
+        a write path so hermetic tests can stage comment state — this is
+        it. Records mirror the `bd comments <id> --json` object shape.
+        """
+        if issue_id not in self._issues:
+            raise BeadsMappingError(
+                record_id=issue_id,
+                detail="cannot comment on an issue that is not present in the tenant",
+            )
+        record: BeadsRecord = {
+            "issue_id": issue_id,
+            "text": text,
+            "author": author,
+            "created_at": created_at,
+        }
+        self._comments.setdefault(issue_id, []).append(record)
+
+    def list_comments(self, *, issue_id: str) -> list[BeadsRecord]:
+        """Return copies of an issue's seeded comments."""
+        if issue_id not in self._issues:
+            raise BeadsMappingError(
+                record_id=issue_id,
+                detail="issue not present in the in-memory tenant",
+            )
+        return [dict(record) for record in self._comments.get(issue_id, [])]
 
     def children(self, *, parent_id: str) -> list[BeadsRecord]:
         return [
@@ -382,6 +430,23 @@ class ShellBeadsClient:
                 detail="bd show --json array element was not a JSON object",
             )
         return cast("BeadsRecord", first)
+
+    def list_comments(self, *, issue_id: str) -> list[BeadsRecord]:
+        """Return an issue's comments (`bd comments <id> --json`).
+
+        bd v1.0.5 returns a JSON array of comment objects
+        (`{id, issue_id, author, text, created_at}`); an uncommented
+        issue yields an empty array. Non-dict elements are dropped
+        fail-soft, mirroring `_coerce_record_list`.
+        """
+        parsed = self._run_json(verb_args=["comments", issue_id, "--json"])
+        if not isinstance(parsed, list):
+            raise BeadsMappingError(
+                record_id=issue_id,
+                detail="bd comments --json did not return a JSON array",
+            )
+        records = cast("list[Any]", parsed)
+        return [cast("BeadsRecord", record) for record in records if isinstance(record, dict)]
 
     def children(self, *, parent_id: str) -> list[BeadsRecord]:
         parsed = self._run_json(verb_args=["children", parent_id, "--json"])
