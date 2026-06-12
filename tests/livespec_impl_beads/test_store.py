@@ -29,11 +29,13 @@ from livespec_impl_beads._beads_client import (
 )
 from livespec_impl_beads.errors import BeadsMappingError
 from livespec_impl_beads.store import (
+    WorkItemComment,
     append_memo,
     append_work_item,
     materialize_memos,
     materialize_work_items,
     read_memos,
+    read_work_item_comments,
     read_work_items,
 )
 from livespec_impl_beads.types import AuditRecord, Memo, StoreConfig, WorkItem
@@ -874,3 +876,68 @@ def test_memo_with_string_cross_ref_reads_value(
     )
     [read_back] = list(read_memos(path=_config()))
     assert read_back.work_item_id == "li-ref"
+
+
+# --------------------------------------------------------------------------
+# Work-item comments — the dispatch-goal rider read.
+# --------------------------------------------------------------------------
+
+
+class _CommentsStubClient:
+    """A read-only stand-in returning a fixed raw comment set.
+
+    `read_work_item_comments` only calls `list_comments`, so that is the
+    sole verb implemented; injected via monkeypatching
+    `store.make_beads_client` (same pattern as `_StubClient`).
+    """
+
+    def __init__(self, *, records: list[dict[str, object]]) -> None:
+        self._records = records
+
+    def list_comments(self, *, issue_id: str) -> list[dict[str, object]]:
+        _ = issue_id
+        return [dict(record) for record in self._records]
+
+
+def test_read_work_item_comments_roundtrip() -> None:
+    append_work_item(path=_config(), item=_minimal_work_item())
+    _fake().seed_comment(
+        issue_id="li-aaa111",
+        text="rider one",
+        author="operator",
+        created_at="2026-06-12T00:00:00Z",
+    )
+    _fake().seed_comment(issue_id="li-aaa111", text="rider two")
+    comments = read_work_item_comments(path=_config(), work_item_id="li-aaa111")
+    assert comments == (
+        WorkItemComment(text="rider one", author="operator", created_at="2026-06-12T00:00:00Z"),
+        WorkItemComment(text="rider two", author=None, created_at=None),
+    )
+
+
+def test_read_work_item_comments_empty_for_uncommented_item() -> None:
+    append_work_item(path=_config(), item=_minimal_work_item())
+    assert read_work_item_comments(path=_config(), work_item_id="li-aaa111") == ()
+
+
+def test_read_work_item_comments_skips_unusable_records_fail_soft(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A comment without a non-empty string `text` cannot brief anyone and is
+    skipped; non-string author/created_at map to None — one malformed comment
+    must not blind the whole dispatch-goal read."""
+    stub = _CommentsStubClient(
+        records=[
+            {"text": ""},
+            {"text": None},
+            {"author": "no-text-at-all"},
+            {"text": 42},
+            {"text": "kept", "author": 7, "created_at": False},
+        ]
+    )
+    monkeypatch.setattr(
+        "livespec_impl_beads.store.make_beads_client",
+        lambda *, config: stub,  # noqa: ARG005
+    )
+    comments = read_work_item_comments(path=_config(), work_item_id="li-any")
+    assert comments == (WorkItemComment(text="kept", author=None, created_at=None),)
