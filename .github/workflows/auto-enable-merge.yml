@@ -1,17 +1,19 @@
 # Auto-enable-merge workflow — set --auto --rebase on PRs from the
 # user-or-agent identity allowlist, when not draft and not flagged
-# do-not-merge. Eliminates the "agent opened a PR but forgot to
-# `gh pr merge --auto --rebase` the user" failure mode (li-8f3,
-# supersedes li-abl; original PR #78 reverted because GITHUB_TOKEN
-# could not enable auto-merge — see li-8f3 description for the
-# full diagnosis).
+# do-not-merge.
+#
+# Generated from livespec/templates/impl-plugin/.github/workflows/
+# auto-enable-merge.yml.jinja at copier-copy time; re-sync via
+# `copier update --vcs-ref=master` when livespec publishes a new release.
+#
+# Authority: livespec/SPECIFICATION/contracts.md
+#   §"Shared content sync — copier template" — enumerated required
+#   workflow file set every livespec-impl-* repo MUST carry.
 #
 # Auth model:
 #   - Uses a GitHub App installation token instead of GITHUB_TOKEN.
 #   - actions/create-github-app-token@v1 mints a fresh token at
 #     runtime (lasts ~1 hour, discarded after the run).
-#   - The App's private key has no calendar expiration, so this
-#     workflow never silently breaks on token expiry.
 #   - Required repo secrets: APP_ID, APP_PRIVATE_KEY (managed via
 #     `gh secret set`).
 #
@@ -20,35 +22,6 @@
 # access that `github-actions[bot]` lacks regardless of declared
 # `permissions:` scopes. Apps installed on the repo are granted
 # the access by the install grant itself.
-#
-# Author allowlist (initially):
-#   - thewoolleyman — covers the user's own PRs and PRs opened by
-#     agents acting via the user's PAT (Claude Code, etc., where
-#     the PR author == the PAT owner).
-#
-# Explicit opt-out paths:
-#   - `--draft` PRs are skipped (the trigger only fires on
-#     ready-for-review state).
-#   - PRs labelled `do-not-merge` are skipped.
-#
-# Out of scope by design:
-#   - External bot PRs (dependabot, future renovate) — author not
-#     in the allowlist.
-#   - Future collaborator PRs — same gate.
-#
-# Complementary to .github/workflows/auto-update-branches.yml
-# (li-x0x): that workflow keeps PRs from sticking in BEHIND after
-# master moves; THIS workflow ensures they enter the auto-merge
-# state in the first place. Both are needed for the
-# rebase-merge-only discipline (per
-# SPECIFICATION/non-functional-requirements.md §"Commit and merge
-# discipline") to be hands-off.
-#
-# auto-update-branches.yml also uses the same App token (li-6du):
-# GITHUB_TOKEN-authored pushes do NOT trigger downstream workflows,
-# so update-branch's merge-commit push left every auto-updated PR
-# with zero CI check-runs and permanent BLOCKED+MERGEABLE state.
-# App-token pushes are treated as external and fire CI normally.
 
 name: Auto-enable merge
 
@@ -66,16 +39,12 @@ permissions:
   pull-requests: read
 
 concurrency:
-  # Per-PR concurrency: a synchronize-then-unlabeled burst on the
-  # same PR collapses to one effective run.
   group: auto-enable-merge-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   enable-auto-merge:
     runs-on: ubuntu-latest
-    # Composed gate: NOT draft AND author in allowlist AND
-    # do-not-merge label absent.
     if: >-
       github.event.pull_request.draft == false
       && contains(fromJSON('["thewoolleyman"]'), github.event.pull_request.user.login)
@@ -95,8 +64,6 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
         run: |
           set -uo pipefail
-          # `gh pr merge --auto` is idempotent — re-running on a PR
-          # that already has auto-merge set returns 0.
           if gh pr merge "$PR" --repo "$REPO" --auto --rebase; then
             echo "Auto-merge enabled on PR #$PR (rebase strategy)"
           else

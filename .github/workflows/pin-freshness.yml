@@ -1,7 +1,15 @@
 # pin-freshness.yml — periodic pin-staleness safety-net shim.
 #
+# Generated from livespec/templates/impl-plugin/.github/workflows/
+# pin-freshness.yml.jinja at copier-copy time; re-sync via
+# `copier update --vcs-ref=master` when livespec publishes a new release.
+#
+# Authority: livespec/SPECIFICATION/contracts.md
+#   §"Shared content sync — copier template" — enumerated required
+#   workflow file set every livespec-impl-* repo MUST carry.
 # Authority: livespec-dev-tooling SPECIFICATION/contracts.md
-#   §"Cross-repo coordination automation surface" §"reusable-pin-freshness.yml".
+#   §"Cross-repo coordination automation surface"
+#   §"reusable-pin-freshness.yml".
 #
 # Daily (13:00 UTC) and on manual trigger, this shim delegates to the
 # upstream reusable workflow which:
@@ -20,10 +28,10 @@ name: Pin freshness sweep
 
 on:
   schedule:
-    - cron: '0 13 * * *'  # 13:00 UTC daily
+    - cron: '0 13 * * *'
   workflow_dispatch: {}
 
 jobs:
   freshness:
-    uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-pin-freshness.yml@v0.13.0
+    uses: thewoolleyman/livespec-dev-tooling/.github/workflows/reusable-pin-freshness.yml@master
     secrets: inherit
