@@ -33,6 +33,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
+from livespec_impl_beads._beads_client import FakeBeadsClient, make_beads_client
 from livespec_impl_beads.commands import dispatcher
 from livespec_impl_beads.commands._dispatcher_engine import (
     CommandResult,
@@ -58,6 +59,7 @@ from livespec_impl_beads.commands._dispatcher_plan import (
     build_plan,
     fabro_inspect_argv,
     fabro_run_argv,
+    item_sizing_warnings,
     janitor_argv_with_default,
     parse_fleet_members,
     parse_pr_view,
@@ -80,7 +82,13 @@ from livespec_impl_beads.commands.dispatcher import (
     _fetch_fleet_manifest_text,  # pyright: ignore[reportPrivateUsage]
     main,
 )
-from livespec_impl_beads.store import append_work_item, materialize_work_items, read_work_items
+from livespec_impl_beads.errors import BeadsCommandError
+from livespec_impl_beads.store import (
+    WorkItemComment,
+    append_work_item,
+    materialize_work_items,
+    read_work_items,
+)
 from livespec_impl_beads.types import StoreConfig, WorkItem
 from livespec_runtime.cross_repo.types import CrossRepoManifest
 
@@ -186,10 +194,12 @@ class _FakeRunner:
 
     queue: list[CommandResult]
     calls: list[tuple[list[str], Path]] = field(default_factory=list)
+    timeouts: list[float] = field(default_factory=list)
 
     def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
         assert timeout_seconds > 0
         self.calls.append((argv, cwd))
+        self.timeouts.append(timeout_seconds)
         return self.queue.pop(0)
 
 
@@ -2056,3 +2066,178 @@ def test_ledger_finding_dataclass_shape() -> None:
     )
     skipped = LedgerFinding(check="c", item_id="i", message="m", severity="skipped")
     assert skipped.severity == "skipped"
+
+
+# ---------------------------------------------------------------------------
+# bn4 — ledger comments in the goal, sizing warnings, long-haul fabro budget
+# ---------------------------------------------------------------------------
+
+
+def test_render_goal_renders_labeled_comments_section(tmp_path: Path) -> None:
+    """Comments are operator riders (finding (c) of bn4): they must reach the
+    sandbox brief under a clearly-labeled section, with per-entry provenance
+    when the record carries it."""
+    comments = (
+        WorkItemComment(text="first rider", author="operator", created_at="2026-06-12T00:00:00Z"),
+        WorkItemComment(text="author only", author="operator", created_at=None),
+        WorkItemComment(text="date only", author=None, created_at="2026-06-13T00:00:00Z"),
+        WorkItemComment(text="bare", author=None, created_at=None),
+    )
+    goal = render_goal(item=_item(), repo=tmp_path, branch="feat/t", comments=comments)
+    assert "Ledger comments" in goal
+    assert "treat them as part of the brief" in goal
+    assert "[1] (operator, 2026-06-12T00:00:00Z) first rider" in goal
+    assert "[2] (operator) author only" in goal
+    assert "[3] (2026-06-13T00:00:00Z) date only" in goal
+    assert "[4] bare" in goal
+
+
+def test_render_goal_omits_comments_section_when_none(tmp_path: Path) -> None:
+    goal = render_goal(item=_item(), repo=tmp_path, branch="feat/t")
+    assert "Ledger comments" not in goal
+
+
+def test_item_sizing_warnings_empty_for_small_item() -> None:
+    assert item_sizing_warnings(item=_item()) == ()
+
+
+def test_item_sizing_warnings_flags_long_description() -> None:
+    [warning] = item_sizing_warnings(item=_item(description="y" * 1501))
+    assert "1501" in warning
+    assert "splitting" in warning
+
+
+def test_item_sizing_warnings_flags_multi_part_marker() -> None:
+    [warning] = item_sizing_warnings(item=_item(title="A multi-RGR refactor"))
+    assert "multi-part/multi-RGR" in warning
+
+
+def test_item_sizing_warnings_flags_enumerated_parts() -> None:
+    enumerated = _item(description="Do (1) the first, (2) the second, (3) the third thing.")
+    [warning] = item_sizing_warnings(item=enumerated)
+    assert "3 enumerated parts" in warning
+    two_parts = _item(description="Do (1) the first and (2) the second thing.")
+    assert item_sizing_warnings(item=two_parts) == ()
+
+
+def test_fabro_run_uses_long_haul_subprocess_timeout(tmp_path: Path) -> None:
+    """The foreground `fabro run` subprocess budget must outlive the
+    worst-case phase graph (implement 2x14400s + janitor 3x3600s +
+    fix 2x3600s + pr 2x1800s = 50400s) plus provisioning slack; a budget
+    below the graph's own ceiling kills the CLI mid-run."""
+    runner = _FakeRunner(queue=[_err()])
+    outcome, _journal, _naps = _dispatch(runner=runner, repo=tmp_path)
+    assert outcome.status == "failed"
+    assert runner.timeouts[0] == 54000.0
+
+
+def test_dispatch_goal_text_carries_ledger_comments(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Finding (c) of bn4: rider instructions added as ledger comments must
+    arrive in the sandbox goal text (the dispatcher previously rendered the
+    description only, so pre-authorizations never reached the agent)."""
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    client = make_beads_client(config=_config())
+    assert isinstance(client, FakeBeadsClient)
+    client.seed_comment(
+        issue_id=item.id,
+        text="pre-authorization: also bump the dev-tooling pin",
+        author="operator",
+        created_at="2026-06-12T08:00:00Z",
+    )
+    fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
+    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    monkeypatch.setattr(
+        "livespec_impl_beads.commands.dispatcher.tempfile.gettempdir",
+        lambda: str(tmp_path),
+    )
+    exit_code = main(
+        [
+            "dispatch",
+            "--repo",
+            str(repo),
+            "--item",
+            item.id,
+            "--workflow",
+            str(workflow),
+            "--no-close-on-merge",
+        ]
+    )
+    assert exit_code == 0
+    goal_text = (tmp_path / f"fabro-goal-{item.id}.md").read_text(encoding="utf-8")
+    assert "Ledger comments" in goal_text
+    assert "pre-authorization: also bump the dev-tooling pin" in goal_text
+    assert "(operator, 2026-06-12T08:00:00Z)" in goal_text
+
+
+def test_dispatch_fails_at_ledger_comments_stage_when_read_raises(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed comments read refuses the dispatch (error-as-data at the
+    `ledger-comments` stage) instead of proceeding comment-blind — silently
+    dropping riders is exactly the bug this stage exists to prevent."""
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={}))
+
+    def _boom(*, path: StoreConfig, work_item_id: str) -> tuple[WorkItemComment, ...]:
+        _ = (path, work_item_id)
+        raise BeadsCommandError(command="bd comments", exit_code=1, stderr="connection lost")
+
+    monkeypatch.setattr(
+        "livespec_impl_beads.commands.dispatcher.read_work_item_comments",
+        _boom,
+    )
+    exit_code = main(
+        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+    )
+    assert exit_code == 1
+    out = capsys.readouterr().out
+    assert "ledger-comments" in out
+    assert "BeadsCommandError" in out
+    assert _stored()[item.id].status == "open"
+
+
+def test_dispatch_warns_on_oversized_item_without_blocking(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sizing heuristics are WARN-only (journal record + stderr line): an
+    oversized item still dispatches — the dispatcher never blocks on them."""
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item(description="multi-RGR scope: " + "z" * 1600)
+    append_work_item(path=_config(), item=item)
+    fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
+    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    exit_code = main(
+        [
+            "dispatch",
+            "--repo",
+            str(repo),
+            "--item",
+            item.id,
+            "--workflow",
+            str(workflow),
+            "--no-close-on-merge",
+        ]
+    )
+    assert exit_code == 0
+    err = capsys.readouterr().err
+    assert "WARN: item-sizing" in err
+    assert item.id in err
+    journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
+    sizing = next(
+        json.loads(line)
+        for line in journal_text.splitlines()
+        if json.loads(line)["stage"] == "sizing-warn"
+    )
+    assert sizing["work_item_id"] == item.id
+    assert len(sizing["warnings"]) == 2

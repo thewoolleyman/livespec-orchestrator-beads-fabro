@@ -62,7 +62,13 @@ __all__: list[str] = [
 ]
 
 _GIT_TIMEOUT_SECONDS = 600.0
-_FABRO_TIMEOUT_SECONDS = 14400.0
+# Worst-case phase-graph wall clock the foreground `fabro run` subprocess
+# must outlive (workflow.fabro budgets): implement 2 attempts x 14400s
+# (one transient auto-retry) + janitor 3 visits x 3600s + fix 2 visits x
+# 3600s + pr 2 attempts x 1800s = 50400s, plus sandbox-provisioning
+# slack. A subprocess budget below the graph's own ceiling kills the CLI
+# mid-run while the server-side engine keeps executing the graph.
+_FABRO_TIMEOUT_SECONDS = 54000.0
 _FABRO_INSPECT_TIMEOUT_SECONDS = 300.0
 _GH_TIMEOUT_SECONDS = 300.0
 _JANITOR_TIMEOUT_SECONDS = 3600.0

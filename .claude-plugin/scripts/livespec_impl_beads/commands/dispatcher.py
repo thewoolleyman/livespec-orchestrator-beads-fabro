@@ -117,12 +117,25 @@ from livespec_impl_beads.commands._dispatcher_ledger_checks import (
 from livespec_impl_beads.commands._dispatcher_plan import (
     SiblingClones,
     build_plan,
+    item_sizing_warnings,
     parse_fleet_members,
     render_goal,
     render_run_config_overlay,
 )
 from livespec_impl_beads.commands._dispatcher_spec_checks import run_spec_checks
-from livespec_impl_beads.store import append_work_item, materialize_work_items, read_work_items
+from livespec_impl_beads.errors import (
+    BeadsCommandError,
+    BeadsConnectionError,
+    BeadsMappingError,
+    BeadsTenantMissingError,
+)
+from livespec_impl_beads.store import (
+    WorkItemComment,
+    append_work_item,
+    materialize_work_items,
+    read_work_item_comments,
+    read_work_items,
+)
 from livespec_impl_beads.types import AuditRecord, StoreConfig, WorkItem
 
 __all__: list[str] = ["main"]
@@ -317,6 +330,19 @@ def _dispatch_one(
         fabro_bin=args.fabro_bin,
         janitor=janitor,
     )
+    _warn_item_sizing(item=item, journal=journal)
+    comments = _read_dispatch_comments(repo=repo, item=item)
+    if isinstance(comments, str):
+        outcome = DispatchOutcome(
+            work_item_id=item.id,
+            status="failed",
+            stage="ledger-comments",
+            pr_number=None,
+            merge_sha=None,
+            detail=comments,
+        )
+        journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
+        return outcome
     overlay_error = _materialize_overlay(
         committed=_workflow_toml(args=args),
         overlay=overlay_file,
@@ -334,7 +360,7 @@ def _dispatch_one(
         journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
         return outcome
     _ = goal_file.write_text(
-        render_goal(item=item, repo=repo, branch=plan.branch),
+        render_goal(item=item, repo=repo, branch=plan.branch, comments=comments),
         encoding="utf-8",
     )
     try:
@@ -355,6 +381,52 @@ def _dispatch_one(
         journal.append(record={"stage": "ledger-close", "work_item_id": item.id})
     journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
     return outcome
+
+
+def _warn_item_sizing(*, item: WorkItem, journal: JournalFile) -> None:
+    """Emit the warn-only item-sizing heuristics at dispatch/loop-feed time.
+
+    Heavy multi-part items have exceeded one unattended ACP turn (bn4
+    shakedown evidence), so the Dispatcher flags suspicious sizes — one
+    journal record plus one stderr WARN line per heuristic hit. Never
+    blocking: the dispatch proceeds regardless.
+    """
+    warnings = item_sizing_warnings(item=item)
+    if not warnings:
+        return
+    journal.append(
+        record={
+            "stage": "sizing-warn",
+            "work_item_id": item.id,
+            "warnings": list(warnings),
+        }
+    )
+    for warning in warnings:
+        _ = sys.stderr.write(f"WARN: item-sizing {item.id}: {warning}\n")
+
+
+def _read_dispatch_comments(
+    *,
+    repo: Path,
+    item: WorkItem,
+) -> tuple[WorkItemComment, ...] | str:
+    """Read the item's ledger comments for the goal; error string on failure.
+
+    Comments are operator riders appended after filing (e.g.
+    pre-authorizations); a brief without them silently re-creates bn4
+    finding (c), so a failed read REFUSES the dispatch (error-as-data,
+    routed at the `ledger-comments` stage) instead of proceeding
+    comment-blind.
+    """
+    try:
+        return read_work_item_comments(path=_store_config(repo=repo), work_item_id=item.id)
+    except (
+        BeadsCommandError,
+        BeadsConnectionError,
+        BeadsMappingError,
+        BeadsTenantMissingError,
+    ) as exc:
+        return f"ledger comments read failed for {item.id} ({type(exc).__name__}: {exc})"
 
 
 def _materialize_overlay(*, committed: Path, overlay: Path, repo: Path) -> str | None:
