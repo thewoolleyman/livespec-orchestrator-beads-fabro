@@ -8,9 +8,12 @@ polls the beads Ledger for ready work-items, invokes the Fabro Loop (the
 launched from the target repo's primary checkout; Fabro clones fresh
 inside its docker sandbox (Architecture C), so the host owns no git
 working state — confirms the PR merge, runs the post-merge janitor hard
-gate, writes status/PR evidence back to the Ledger, and journals every
-step. It is orchestrator-PRIVATE tooling: core's contract sees only the
-three `orchestrator.py` CLIs.
+gate in a fresh detached worktree of merged master (never the host
+primary's working tree, whose environment rot once false-redded a
+confirmed-green merge — work-item livespec-impl-beads-cgd), writes
+status/PR evidence back to the Ledger, and journals every step. It is
+orchestrator-PRIVATE tooling: core's contract sees only the three
+`orchestrator.py` CLIs.
 
   dispatcher.py ledger-check [--project-root <path>] [--json]
   dispatcher.py spec-check [--project-root <path>] [--spec-root <path>] [--json]
@@ -322,6 +325,7 @@ def _dispatch_one(
 ) -> DispatchOutcome:
     goal_file = Path(tempfile.gettempdir()) / f"fabro-goal-{item.id}.md"
     overlay_file = Path(tempfile.gettempdir()) / f"fabro-run-config-{item.id}.toml"
+    janitor_checkout = Path(tempfile.gettempdir()) / f"fabro-janitor-{item.id}"
     plan = build_plan(
         repo=repo,
         work_item_id=item.id,
@@ -329,6 +333,7 @@ def _dispatch_one(
         goal_file=goal_file,
         fabro_bin=args.fabro_bin,
         janitor=janitor,
+        janitor_checkout=janitor_checkout,
     )
     _warn_item_sizing(item=item, journal=journal)
     comments = _read_dispatch_comments(repo=repo, item=item)

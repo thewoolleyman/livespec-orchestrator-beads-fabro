@@ -30,8 +30,10 @@ public module per query-only skill:
   no-stale-merged-pr-branch / no-stale-worktree) against the repo's
   git/gh state; `dispatch`/`loop` drive ready work-items
   through the `.fabro/workflows/implement-work-item/` phase graph
-  (worktree → Fabro run → auto-merge confirmation → post-merge
-  janitor → Ledger close + journal). Bodies live in the
+  (Fabro sandbox run → auto-merge confirmation → post-merge janitor
+  in a fresh detached worktree of merged master, with provisioning
+  failures classified as janitor-env-degraded rather than work-item
+  failures → Ledger close + journal). Bodies live in the
   `_dispatcher_*` private helpers (`_dispatcher_ledger_checks.py`,
   `_dispatcher_spec_checks.py`, `_dispatcher_spec_commitments.py`,
   `_dispatcher_janitor_checks.py`, `_dispatcher_plan.py`,
