@@ -64,6 +64,9 @@ __all__: list[str] = [
     "fabro_run_argv",
     "item_sizing_warnings",
     "janitor_argv_with_default",
+    "janitor_trust_argv",
+    "janitor_worktree_add_argv",
+    "janitor_worktree_remove_argv",
     "parse_fleet_members",
     "parse_pr_view",
     "parse_run_id",
@@ -105,7 +108,12 @@ class DispatchPlan:
     run branch inside the sandbox is run-internal and never leaves it.
     `workflow_toml` is the MATERIALIZED run-config overlay path (the
     committed config plus the credential env table), not the committed
-    file itself.
+    file itself. `janitor_checkout` is the path the engine provisions
+    as a FRESH detached worktree of the merged ref and runs the
+    post-merge janitor in — never the host primary's working tree,
+    whose environment rot (stale `.venv` shebangs, stale `.coverage`,
+    ghost `__pycache__` dirs) once false-redded a confirmed-green
+    merge (work-item livespec-impl-beads-cgd).
     """
 
     repo: Path
@@ -115,6 +123,7 @@ class DispatchPlan:
     goal_file: Path
     fabro_bin: str
     janitor: tuple[str, ...]
+    janitor_checkout: Path
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -199,7 +208,7 @@ def _parse_member_repo(*, member_raw: object) -> str | None:
     return repo_raw
 
 
-def build_plan(
+def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an independent caller input.
     *,
     repo: Path,
     work_item_id: str,
@@ -207,6 +216,7 @@ def build_plan(
     goal_file: Path,
     fabro_bin: str,
     janitor: tuple[str, ...] | None,
+    janitor_checkout: Path,
 ) -> DispatchPlan:
     """Resolve the per-item dispatch plan (publish branch, argv config)."""
     return DispatchPlan(
@@ -217,6 +227,7 @@ def build_plan(
         goal_file=goal_file,
         fabro_bin=fabro_bin,
         janitor=janitor_argv_with_default(janitor=janitor),
+        janitor_checkout=janitor_checkout,
     )
 
 
@@ -460,6 +471,55 @@ def pull_primary_argv(*, plan: DispatchPlan) -> list[str]:
         "origin",
         "master",
     ]
+
+
+def janitor_worktree_add_argv(*, plan: DispatchPlan, ref: str) -> list[str]:
+    """Provision the fresh detached janitor checkout at the merged ref.
+
+    Plain `git` (no `mise exec`): worktree commands fire no hooks and
+    need no pinned toolchain, and the checkout path is not yet
+    mise-trusted at this point anyway.
+    """
+    return [
+        "git",
+        "-C",
+        str(plan.repo),
+        "worktree",
+        "add",
+        "--detach",
+        str(plan.janitor_checkout),
+        ref,
+    ]
+
+
+def janitor_worktree_remove_argv(*, plan: DispatchPlan) -> list[str]:
+    """Remove the janitor checkout (both pre-clean and post-green cleanup).
+
+    `--force` covers the untracked state a janitor run leaves behind
+    (the self-provisioned `.venv`), and as the pre-clean it also clears
+    a stale registration left by a crashed earlier dispatch of the same
+    item.
+    """
+    return [
+        "git",
+        "-C",
+        str(plan.repo),
+        "worktree",
+        "remove",
+        "--force",
+        str(plan.janitor_checkout),
+    ]
+
+
+def janitor_trust_argv() -> list[str]:
+    """Trust the janitor checkout's mise config (run with cwd=checkout).
+
+    mise trust is per-PATH, so a freshly provisioned checkout is never
+    pre-trusted and the default janitor's `mise exec` would refuse to
+    run there. With no config file present, `mise trust` warns and
+    exits 0, so this is safe to run unconditionally.
+    """
+    return ["mise", "trust"]
 
 
 def parse_run_id(*, output: str) -> str | None:

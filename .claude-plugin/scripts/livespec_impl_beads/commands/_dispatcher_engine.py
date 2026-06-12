@@ -11,7 +11,16 @@ livespec/tmp/fabro-architecture-c-design.md):
   is no worktree prep and no reaping) -> blocked-state check (`fabro
   inspect`) -> confirm auto-merge armed (arming as fallback when the
   graph could not) -> poll until the PR is MERGED -> refresh the
-  primary -> post-merge janitor hard gate -> report.
+  primary -> post-merge janitor hard gate in a FRESH detached worktree
+  of the merged ref -> report.
+
+The post-merge janitor venue is deliberate (work-item
+livespec-impl-beads-cgd): the host primary's working tree can carry
+environment rot — stale `.venv` shebangs after a repo rename, a stale
+`.coverage`, untracked ghost `__pycache__` dirs — that false-reds a
+merge whose own sandbox checks and CI were green, recording a failed
+dispatch for a green work-item. A fresh checkout of merged master
+cannot carry that rot, so a red there is a real signal.
 
 Three terminal states (livespec-impl-beads-4zl): `green` (merged,
 post-merge janitor green), `failed` (an expected failure at a named
@@ -21,6 +30,16 @@ returns and the slot frees while a server-side engine holds the run).
 Blocked is NOT a failure: the item stays open, nothing is closed, and
 the human answers via `fabro attach <run-id>` (`fabro resume` only
 when the engine died) — the Dispatcher never auto-resumes.
+
+One refinement on `green` (livespec-impl-beads-cgd): when the merge
+is confirmed but the janitor CHECKOUT cannot be provisioned (worktree
+add or mise trust failed), the outcome is still `green` — gate
+accounting must not count a host-environment problem as a work-item
+failure — but the stage is `janitor-env-degraded` and the detail
+carries an actionable remediation message. A red janitor INSIDE the
+fresh checkout stays `failed` at `janitor-post-merge`, and the
+checkout is kept on disk for diagnosis (it is removed after a green
+run).
 
 All side effects flow through the injected `CommandRunner` /
 `JournalWriter` / `SleepFn` seams so the hermetic test tier drives every
@@ -42,6 +61,9 @@ from livespec_impl_beads.commands._dispatcher_plan import (
     PrView,
     fabro_inspect_argv,
     fabro_run_argv,
+    janitor_trust_argv,
+    janitor_worktree_add_argv,
+    janitor_worktree_remove_argv,
     parse_pr_view,
     parse_run_id,
     parse_run_status,
@@ -263,6 +285,16 @@ def _post_merge(
     journal: JournalWriter,
     merged: PrView,
 ) -> DispatchOutcome:
+    """Refresh the primary, then gate on the janitor in a fresh checkout.
+
+    The janitor runs in a freshly provisioned detached worktree of the
+    merged ref — NEVER the host primary's working tree, whose
+    environment rot once false-redded a confirmed-green merge
+    (livespec-impl-beads-cgd). Provisioning failures degrade (green
+    outcome at `janitor-env-degraded` with actionable detail) instead
+    of failing; a red janitor inside the fresh checkout is the real
+    signal and stays a failure, with the checkout kept for diagnosis.
+    """
     pull = runner.run(
         argv=pull_primary_argv(plan=plan),
         cwd=plan.repo,
@@ -271,14 +303,33 @@ def _post_merge(
     _journal_stage(journal=journal, plan=plan, stage="pull-primary", result=pull)
     if pull.exit_code != 0:
         return _merged_failure(plan=plan, stage="pull-primary", merged=merged, result=pull)
+    degraded = _provision_janitor_checkout(plan=plan, runner=runner, journal=journal, merged=merged)
+    if degraded is not None:
+        return degraded
     janitor = runner.run(
         argv=list(plan.janitor),
-        cwd=plan.repo,
+        cwd=plan.janitor_checkout,
         timeout_seconds=_JANITOR_TIMEOUT_SECONDS,
     )
     _journal_stage(journal=journal, plan=plan, stage="janitor-post-merge", result=janitor)
     if janitor.exit_code != 0:
-        return _merged_failure(plan=plan, stage="janitor-post-merge", merged=merged, result=janitor)
+        return DispatchOutcome(
+            work_item_id=plan.work_item_id,
+            status="failed",
+            stage="janitor-post-merge",
+            pr_number=merged.number,
+            merge_sha=merged.merge_sha,
+            detail=(
+                f"post-merge janitor red in fresh checkout {plan.janitor_checkout} "
+                f"(kept for diagnosis): {_tail(text=janitor.stderr)}"
+            ),
+        )
+    cleanup = runner.run(
+        argv=janitor_worktree_remove_argv(plan=plan),
+        cwd=plan.repo,
+        timeout_seconds=_GIT_TIMEOUT_SECONDS,
+    )
+    _journal_stage(journal=journal, plan=plan, stage="janitor-checkout-remove", result=cleanup)
     return DispatchOutcome(
         work_item_id=plan.work_item_id,
         status="green",
@@ -286,6 +337,97 @@ def _post_merge(
         pr_number=merged.number,
         merge_sha=merged.merge_sha,
         detail="merged, post-merge janitor green",
+    )
+
+
+def _provision_janitor_checkout(
+    *,
+    plan: DispatchPlan,
+    runner: CommandRunner,
+    journal: JournalWriter,
+    merged: PrView,
+) -> DispatchOutcome | None:
+    """Provision the fresh detached worktree the post-merge janitor runs in.
+
+    Returns None when the checkout is ready, or the janitor-env-degraded
+    outcome when a provisioning step fails (environment-shaped; the
+    merge is already confirmed, so gate accounting must not record a
+    work-item failure). Steps: a pre-clean `git worktree remove --force`
+    whose result is deliberately ignored (it clears a stale registration
+    left by a crashed earlier dispatch; on a clean host it just fails),
+    the detached `git worktree add` at the merged ref (the merge sha
+    when the PR view carried one, `origin/master` otherwise — the
+    just-pulled primary has both), and `mise trust` inside the checkout
+    (trust is per-path, so the fresh path is never pre-trusted and the
+    default janitor's `mise exec` would refuse to run there).
+    """
+    preclean = runner.run(
+        argv=janitor_worktree_remove_argv(plan=plan),
+        cwd=plan.repo,
+        timeout_seconds=_GIT_TIMEOUT_SECONDS,
+    )
+    _journal_stage(journal=journal, plan=plan, stage="janitor-checkout-preclean", result=preclean)
+    ref = merged.merge_sha if merged.merge_sha is not None else "origin/master"
+    add = runner.run(
+        argv=janitor_worktree_add_argv(plan=plan, ref=ref),
+        cwd=plan.repo,
+        timeout_seconds=_GIT_TIMEOUT_SECONDS,
+    )
+    _journal_stage(journal=journal, plan=plan, stage="janitor-checkout-add", result=add)
+    if add.exit_code != 0:
+        return _merged_degraded(
+            plan=plan,
+            merged=merged,
+            step=(
+                f"provisioning the fresh janitor checkout at "
+                f"{plan.janitor_checkout} (ref {ref})"
+            ),
+            result=add,
+        )
+    trust = runner.run(
+        argv=janitor_trust_argv(),
+        cwd=plan.janitor_checkout,
+        timeout_seconds=_GIT_TIMEOUT_SECONDS,
+    )
+    _journal_stage(journal=journal, plan=plan, stage="janitor-checkout-trust", result=trust)
+    if trust.exit_code != 0:
+        return _merged_degraded(
+            plan=plan,
+            merged=merged,
+            step=f"`mise trust` inside the janitor checkout {plan.janitor_checkout}",
+            result=trust,
+        )
+    return None
+
+
+def _merged_degraded(
+    *,
+    plan: DispatchPlan,
+    merged: PrView,
+    step: str,
+    result: CommandResult,
+) -> DispatchOutcome:
+    """Janitor-env-degraded: merged green, but the gate could not run.
+
+    NOT a work-item failure (livespec-impl-beads-cgd): the merge is
+    confirmed on the remote and the work-item's own sandbox checks and
+    CI were green, so a host-side provisioning failure must not reset
+    the gate streak. The outcome stays `green` for accounting, with the
+    degradation loud in the stage and an actionable remediation detail.
+    """
+    return DispatchOutcome(
+        work_item_id=plan.work_item_id,
+        status="green",
+        stage="janitor-env-degraded",
+        pr_number=merged.number,
+        merge_sha=merged.merge_sha,
+        detail=(
+            f"merged, but the post-merge janitor DID NOT RUN: {step} failed "
+            f"({_tail(text=result.stderr, limit=500)}). This is a host-environment "
+            f"problem, not a work-item failure — the merge is confirmed on the "
+            f"remote. Remediate the host, then run `{' '.join(plan.janitor)}` in "
+            f"a clean checkout of merged master to close the gate by hand."
+        ),
     )
 
 
