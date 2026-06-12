@@ -2,15 +2,19 @@
 #
 # Tracked per livespec/SPECIFICATION/contracts.md
 # §"Shared content sync — copier template".
-_commit: b30e727a2605c2852badde201b4d009679279a3a
+#
+# Re-sync via `copier update --vcs-ref=master` (a bare `copier update`
+# resolves the latest git TAG, which predates the template workflow
+# set; the family's blessed re-sync ref is master).
+_commit: v1.0.0-512-g54b7938
 _src_path: gh:thewoolleyman/livespec
-plugin_short_name: beads
-plugin_full_name: livespec-impl-beads
-plugin_description: Beads/Dolt-backed implementation plugin for livespec
-plugin_namespace: livespec-impl-beads
-author_name: Chad Woolley
 author_email: thewoolleyman@gmail.com
+author_name: Chad Woolley
 github_owner: thewoolleyman
 github_repo: livespec-impl-beads
-python_version: 3.10.16
 livespec_release_tag: master
+plugin_description: Beads/Dolt-backed implementation plugin for livespec
+plugin_full_name: livespec-impl-beads
+plugin_namespace: livespec-impl-beads
+plugin_short_name: beads
+python_version: 3.10.16

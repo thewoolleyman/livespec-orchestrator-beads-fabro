@@ -1,7 +1,7 @@
 # justfile — livespec-impl-beads dev-tooling task runner.
 #
 # Generated from livespec/templates/impl-plugin/justfile.jinja at
-# copier-copy time; re-sync via `copier update` when livespec
+# copier-copy time; re-sync via `copier update --vcs-ref=master` when livespec
 # publishes a new release.
 #
 # Authority: livespec/SPECIFICATION/non-functional-requirements.md
@@ -70,17 +70,36 @@ bootstrap:
     just ensure-plugins
 
 # Idempotent: `claude plugin marketplace add` and `claude plugin install`
-# both exit 0 when the target is already present.
+# both exit 0 when the target is already present. livespec@livespec is
+# the core artifact carrier (prose + reference CLIs);
+# livespec@livespec-driver-claude is the Claude Code Driver that
+# exposes the /livespec:* commands — both are required for the
+# spec-side surface.
 ensure-plugins:
     claude plugin marketplace add thewoolleyman/livespec
+    claude plugin marketplace add thewoolleyman/livespec-driver-claude
     claude plugin marketplace add thewoolleyman/livespec-impl-beads
     claude plugin install livespec@livespec
+    claude plugin install livespec@livespec-driver-claude
     claude plugin install livespec-impl-beads@livespec-impl-beads
 
 # ---------------------------------------------------------------
-# Aggregate check — runs every check below sequentially. Continues
-# on failure (matches CI fail-fast: false behavior); exits non-zero
-# if any target failed and prints the failure list.
+# Aggregate check — canonical full-set stamped at copier-copy time.
+#
+# The `targets=(...)` array below is Jinja-generated from
+# `livespec_dev_tooling.canonical_checks.canonical_check_slugs()` via
+# the `copier_extensions.canonical_checks:CanonicalChecksExtension`
+# Jinja extension registered in `copier.yml`. Per
+# livespec/SPECIFICATION/contracts.md §"Shared code sync —
+# livespec-dev-tooling", every newly-generated `livespec-impl-*`
+# sibling inherits the full canonical aggregate from inception;
+# existing siblings see canonical-set growth as merge conflicts on
+# `copier update` (3-way merge surfaces canonical drift).
+#
+# Slugs are stamped in alphabetical order (sorted at the source in
+# `_discover_slugs`). DO NOT hand-edit this list — extend the
+# canonical set by adding `livespec_dev_tooling/checks/<name>.py` in
+# the dev-tooling sibling repo, then re-running `copier update --vcs-ref=master` here.
 # ---------------------------------------------------------------
 
 check:
