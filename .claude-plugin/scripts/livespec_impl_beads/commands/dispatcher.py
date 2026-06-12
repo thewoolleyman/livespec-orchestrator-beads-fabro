@@ -35,13 +35,18 @@ Common flags: [--workflow <toml>] [--fabro-bin <path>]
 [--skip-ledger-check] [--json]
 
 Credential channel (Architecture C): the committed workflow config
-carries NO secret. Per dispatch, an UNCOMMITTED mode-600 run-config
-overlay is materialized under the temp dir — the committed config with
-the graph path rewritten absolute plus `[environments.<id>.env]
-CLAUDE_CODE_OAUTH_TOKEN` — and deleted when the run returns. The token
-is read from the host-local mode-600 env-format secrets file named by
-$LIVESPEC_FABRO_SECRETS_FILE (group/world-accessible files are
-refused); it is never logged, echoed, or journaled.
+carries NO secret VALUE — its `[environments.<id>.env]` table holds
+`CLAUDE_CODE_OAUTH_TOKEN = "{{ env.CLAUDE_CODE_OAUTH_TOKEN }}"`, which
+fabro interpolates from its OWN process environment at stage
+execution. The Dispatcher is therefore invoked under the
+with-livespec-env.sh wrapper (the livespec 1Password Environment
+carries CLAUDE_CODE_OAUTH_TOKEN). Because fabro falls back to the
+LITERAL `{{ env.X }}` string when the variable is missing from its
+env, the Dispatcher refuses to dispatch when CLAUDE_CODE_OAUTH_TOKEN
+is absent from its process environment. The per-dispatch UNCOMMITTED
+run-config overlay materialized under the temp dir (deleted when the
+run returns) only rewrites the graph path absolute — it carries no
+secret. The token value is never logged, echoed, or journaled.
 
 Connection + consent model: the Ledger connection resolves from the
 TARGET repo's `.livespec.jsonc` (cwd-style `--repo` addressing) plus
@@ -67,7 +72,6 @@ preconditions) are reported but never flip the exit code.
 import argparse
 import json
 import os
-import stat
 import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
@@ -95,7 +99,6 @@ from livespec_impl_beads.commands._dispatcher_ledger_checks import (
 )
 from livespec_impl_beads.commands._dispatcher_plan import (
     build_plan,
-    parse_secrets_file,
     render_goal,
     render_run_config_overlay,
 )
@@ -109,7 +112,7 @@ _EXIT_FAILURE = 1
 _EXIT_USAGE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 3
 
-_SECRETS_FILE_ENV = "LIVESPEC_FABRO_SECRETS_FILE"
+_OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"  # noqa: S105 - env-var NAME, not a secret value
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -315,26 +318,28 @@ def _dispatch_one(
 
 
 def _materialize_overlay(*, committed: Path, overlay: Path) -> str | None:
-    """Write the uncommitted mode-600 run-config overlay.
+    """Write the uncommitted run-config overlay (graph path absolutized).
 
     Returns None on success, or an actionable error message (an expected
     failure routed as data — the dispatch reports it at the
-    `credential-overlay` stage). The overlay = committed config + the
-    credential env table; the token value never reaches a log, journal,
-    or stdout.
+    `credential-overlay` stage). The overlay carries NO secret — the
+    committed config's `{{ env.CLAUDE_CODE_OAUTH_TOKEN }}` interpolation
+    is the credential channel — but the credential PRECONDITION is
+    checked here: fabro resolves the interpolation from its own process
+    environment and silently falls back to the LITERAL token string when
+    the variable is missing, so an absent variable refuses the dispatch.
     """
-    token, token_error = _resolve_fabro_token()
-    if token is None:
-        return token_error
+    env_error = _check_credential_env()
+    if env_error is not None:
+        return env_error
     rendered = render_run_config_overlay(
         committed_text=committed.read_text(encoding="utf-8"),
         workflow_dir=committed.parent.resolve(),
-        token=token,
     )
     if rendered is None:
         return (
             f"workflow config {committed} is not materializable: it must carry "
-            '[workflow] graph = "..." and [run.environment] id = "..."'
+            '[workflow] graph = "..."'
         )
     overlay.unlink(missing_ok=True)
     descriptor = os.open(str(overlay), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -343,34 +348,24 @@ def _materialize_overlay(*, committed: Path, overlay: Path) -> str | None:
     return None
 
 
-def _resolve_fabro_token() -> "tuple[str, None] | tuple[None, str]":
-    """Resolve the ACP credential from the host-local secrets file.
+def _check_credential_env() -> str | None:
+    """Fail fast when CLAUDE_CODE_OAUTH_TOKEN is absent from the process env.
 
-    Returns (token, None) on success or (None, actionable-error) when
-    the channel is unusable. Fail-closed on permissions: a
-    group/world-accessible secrets file is refused outright.
+    Returns None when the credential is present, or an actionable error
+    naming the wrapper that provides it. The value itself is never read
+    beyond the presence check, and never logged.
     """
-    raw_path = os.environ.get(_SECRETS_FILE_ENV)
-    if raw_path is None or raw_path == "":
-        return None, (
-            "C-mode dispatch needs the ACP credential: set "
-            f"{_SECRETS_FILE_ENV} to a host-local mode-600 env-format file "
-            "carrying CLAUDE_CODE_OAUTH_TOKEN=<token>"
-        )
-    secrets_path = Path(raw_path)
-    if not secrets_path.is_file():
-        return None, f"secrets file {secrets_path} (from {_SECRETS_FILE_ENV}) does not exist"
-    mode = stat.S_IMODE(secrets_path.stat().st_mode)
-    if mode & 0o077 != 0:
-        return None, (
-            f"secrets file {secrets_path} is group/world accessible "
-            f"(mode {mode:03o}); chmod 600 it before dispatching"
-        )
-    secrets = parse_secrets_file(text=secrets_path.read_text(encoding="utf-8"))
-    token = secrets.get("CLAUDE_CODE_OAUTH_TOKEN", "")
-    if token == "":
-        return None, f"secrets file {secrets_path} carries no CLAUDE_CODE_OAUTH_TOKEN entry"
-    return token, None
+    if os.environ.get(_OAUTH_TOKEN_ENV, "") != "":
+        return None
+    return (
+        f"C-mode dispatch refused: {_OAUTH_TOKEN_ENV} is not set in the "
+        f"Dispatcher's process environment. fabro resolves the committed "
+        f"config's '{{{{ env.{_OAUTH_TOKEN_ENV} }}}}' interpolation from "
+        f"its own process env and falls back to that LITERAL string when "
+        f"the variable is missing. Invoke the Dispatcher under the "
+        f"with-livespec-env.sh wrapper (the livespec 1Password Environment "
+        f"carries the token)."
+    )
 
 
 def _close_item(*, repo: Path, item: WorkItem, outcome: DispatchOutcome) -> None:
