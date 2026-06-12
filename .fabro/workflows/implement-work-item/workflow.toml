@@ -16,17 +16,22 @@
 # the commit-refuse wrapper's refuse branch never fires and the
 # Red-Green-Replay lefthook gates run on every commit).
 #
-# CREDENTIAL CHANNEL (decided; A2 finding #3): this committed file
-# carries NO credential. Fabro's vault cannot deliver ACP credentials in
-# v0.254.0 (worker env is allowlist-scrubbed; no vault->ACP wiring), so
-# the Dispatcher materializes an UNCOMMITTED mode-600 overlay at
-# dispatch time — this file plus
-# `[environments.livespec-ci.env] CLAUDE_CODE_OAUTH_TOKEN = "<value>"` —
-# under $TMPDIR, reading the token from the host-local mode-600
-# env-format secrets file named by $LIVESPEC_FABRO_SECRETS_FILE. The
-# `graph` path below is rewritten to an absolute path in the overlay so
-# the graph still resolves from outside this directory. See
-# commands/_dispatcher_plan.py `render_run_config_overlay`.
+# CREDENTIAL CHANNEL (work-item livespec-impl-beads-am9; supersedes A2
+# finding #3's secrets-file overlay): this committed file carries NO
+# secret VALUE. The `[environments.livespec-ci.env]` table below
+# carries the `{{ env.CLAUDE_CODE_OAUTH_TOKEN }}` interpolation token,
+# which fabro resolves from its OWN process environment at stage
+# execution (fabro-types settings interpolation). The Dispatcher is
+# therefore invoked under the with-livespec-env.sh wrapper (the
+# livespec 1Password Environment carries CLAUDE_CODE_OAUTH_TOKEN).
+# CAVEAT: a variable missing from fabro's env falls back to the
+# LITERAL `{{ env.X }}` string, so the Dispatcher refuses to dispatch
+# when CLAUDE_CODE_OAUTH_TOKEN is absent (commands/dispatcher.py). The
+# Dispatcher still materializes an UNCOMMITTED per-dispatch overlay of
+# this file, but only to rewrite the `graph` path below to an absolute
+# path so it resolves from outside this directory — the overlay
+# carries no secret. See commands/_dispatcher_plan.py
+# `render_run_config_overlay`.
 _version = 1
 
 [workflow]
@@ -51,6 +56,13 @@ docker = "livespec-fabro-sandbox:a2"
 [environments.livespec-ci.resources]
 cpu = 4
 memory = "8GB"
+
+[environments.livespec-ci.env]
+# No secret VALUE here: fabro interpolates {{ env.* }} tokens from its
+# own process environment at stage execution. The Dispatcher refuses to
+# dispatch when CLAUDE_CODE_OAUTH_TOKEN is absent from its env — a
+# missing variable would otherwise flow through as this literal string.
+CLAUDE_CODE_OAUTH_TOKEN = "{{ env.CLAUDE_CODE_OAUTH_TOKEN }}"
 
 [run.clone]
 enabled = true
