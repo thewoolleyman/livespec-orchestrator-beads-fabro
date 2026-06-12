@@ -15,13 +15,21 @@ state — no worktree prep, no reaping), the work publishes under
 `gh pr view` confirms the merge, and the janitor argv is injected from
 configuration (never hardcoded).
 
-The run-config helper (`render_run_config_overlay`) carries no secret:
-the committed config's `[environments.<id>.env]` table holds the
-`{{ env.CLAUDE_CODE_OAUTH_TOKEN }}` interpolation token, which fabro
-resolves from its OWN process environment at stage execution. The
-Dispatcher still materializes an UNCOMMITTED overlay at dispatch time,
-but only to rewrite the `graph` path absolute so the overlay resolves
-from outside the workflow directory.
+The run-config helper (`render_run_config_overlay`) materializes the
+RUN-SCOPED credential projection (the family-secrets scoped
+transient-materialization rule): the committed config carries NO
+secret, and the rendered overlay appends an `[environments.<id>.env]`
+table carrying the CLAUDE_CODE_OAUTH_TOKEN value the caller read from
+the Dispatcher's process environment, alongside the `graph` path
+rewritten absolute so the overlay resolves from outside the workflow
+directory. Fabro `{{ env.* }}` interpolation can NOT carry the
+credential for server-mediated runs — do not re-attempt it: the
+interpolation resolves in the WORKER process, which fabro-server
+spawns with a fail-closed env allowlist (fabro-server/src/spawn_env.rs
+— PATH/HOME/TMPDIR/USER/RUST_*/FABRO_*/TERM etc. only), so the token
+never reaches the resolver and the LITERAL `{{ env.X }}` string flows
+into the sandbox (proven empirically 2026-06-12: API 401 with the
+token present in both the dispatcher's and the server daemon's env).
 """
 
 from __future__ import annotations
@@ -143,27 +151,43 @@ def render_run_config_overlay(
     *,
     committed_text: str,
     workflow_dir: Path,
+    token: str,
 ) -> str | None:
     """Render the dispatch-time run-config overlay (pure string transform).
 
-    The overlay is the committed config with the `[workflow]` graph path
-    rewritten to an absolute path (the materialized file lives outside
-    the workflow directory, so a relative graph would not resolve). It
-    carries NO secret: the committed `[environments.<id>.env]` table
-    holds the `{{ env.CLAUDE_CODE_OAUTH_TOKEN }}` interpolation token,
-    which fabro resolves from its own process environment at stage
-    execution. Returns None when the committed shape is unusable (no
-    canonical graph value).
+    The overlay is the RUN-SCOPED credential projection (per the
+    family-secrets scoped transient-materialization rule): the committed
+    config with (a) the `[workflow]` graph path rewritten to an absolute
+    path (the materialized file lives outside the workflow directory, so
+    a relative graph would not resolve) and (b) an appended
+    `[environments.<id>.env]` table carrying the CLAUDE_CODE_OAUTH_TOKEN
+    value read from the Dispatcher's process environment. The committed
+    file itself carries NO secret and NO `{{ env }}` interpolation —
+    interpolation cannot deliver the credential to server-mediated runs,
+    because the server spawns the resolving worker with a fail-closed
+    env allowlist (fabro-server/src/spawn_env.rs); see the module
+    docstring. The caller writes the rendered text mode-600 and deletes
+    it when the run returns. Returns None when the committed shape is
+    unusable (no canonical graph value or no run-environment id).
     """
     graph_value = _toml_section_string(text=committed_text, section="workflow", key="graph")
-    if graph_value is None:
+    environment_id = _toml_section_string(text=committed_text, section="run.environment", key="id")
+    if graph_value is None or environment_id is None:
         return None
     graph_path = Path(graph_value)
     resolved_graph = graph_path if graph_path.is_absolute() else workflow_dir / graph_path
     needle = f'graph = "{graph_value}"'
     if needle not in committed_text:
         return None
-    return committed_text.replace(needle, f'graph = "{resolved_graph}"', 1)
+    rewritten = committed_text.replace(needle, f'graph = "{resolved_graph}"', 1)
+    token_literal = json.dumps(token)
+    return (
+        rewritten
+        + "\n# --- Dispatcher-materialized run-scoped credential projection"
+        + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
+        + f"[environments.{environment_id}.env]\n"
+        + f"CLAUDE_CODE_OAUTH_TOKEN = {token_literal}\n"
+    )
 
 
 def fabro_run_argv(*, plan: DispatchPlan) -> list[str]:
