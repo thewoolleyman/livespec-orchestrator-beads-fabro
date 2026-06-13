@@ -82,11 +82,13 @@ __all__: list[str] = [
     "CostGateDecision",
     "CostObservation",
     "JournalWriter",
+    "cap_value_decision",
     "cost_gate_decision",
     "gate_wave",
     "observe_run_cost",
     "resolve_per_run_cap_usd",
     "resolve_per_session_cap_usd",
+    "usd_micros_to_usd",
 ]
 
 # Env-var NAMES (not secret values) for the cap overrides. Committed
@@ -195,6 +197,82 @@ def cost_gate_decision(*, mode: str, observation: CostObservation) -> CostGateDe
     )
 
 
+def usd_micros_to_usd(*, usd_micros: int) -> float:
+    """Convert fabro's integer micro-USD cost to a USD float for cap comparison.
+
+    fabro reports `total_usd_micros` as an integer count of millionths of a
+    dollar; the cap defaults / env overrides are plain USD floats
+    (`$25` / `$100`). This is the single conversion the cap-VALUE check
+    funnels through, so the unit boundary lives in one place.
+    """
+    return usd_micros / 1_000_000
+
+
+def cap_value_decision(
+    *,
+    run_id: str,
+    usd_micros: int,
+    per_run_cap_usd: float,
+    session_usd_micros_after: int,
+    per_session_cap_usd: float,
+) -> CostGateDecision:
+    """The per-run + per-session USD cap-VALUE gate (y0m's spend cap).
+
+    The fail-CLOSED comparison 5v9 deferred: given an OBSERVED per-run cost
+    (`usd_micros`) and the cumulative session cost INCLUDING this run
+    (`session_usd_micros_after`), refuse when EITHER ceiling is exceeded —
+    the per-run cap (this single run cost more than `per_run_cap_usd`) or
+    the per-session cap (the running total has crossed `per_session_cap_usd`).
+    A breach of either is a `critical` REFUSE so the loop halts / abandons
+    rather than burn spend past the committed ceiling. Within both caps ⇒
+    `info`, the loop proceeds.
+
+    This path is DORMANT in the current fabro version: `total_usd_micros`
+    is null on every run (the 5v9 finding), so `gate_wave` never reaches a
+    cap-value comparison today and the unobservable gate
+    (`cost_gate_decision`) fires instead. It is correct + unit-tested for
+    the moment fabro begins reporting cost (tracked as
+    livespec-impl-beads-efj), at which point the comparison goes live with
+    no further code change. Caller resolves the caps from the committed
+    env-overridable defaults (`resolve_per_run_cap_usd` /
+    `resolve_per_session_cap_usd`).
+
+    Leak-free: the reason carries only the run id and the scalar USD
+    figures — no goal text, env values, or remote URLs.
+    """
+    run_usd = usd_micros_to_usd(usd_micros=usd_micros)
+    session_usd = usd_micros_to_usd(usd_micros=session_usd_micros_after)
+    if run_usd > per_run_cap_usd:
+        return CostGateDecision(
+            refuse=True,
+            severity="critical",
+            reason=(
+                f"run {run_id} cost ${run_usd:.6f} EXCEEDS the per-run cap "
+                f"${per_run_cap_usd:.2f}; halting rather than burn spend past "
+                f"the committed ceiling (fail-closed)"
+            ),
+        )
+    if session_usd > per_session_cap_usd:
+        return CostGateDecision(
+            refuse=True,
+            severity="critical",
+            reason=(
+                f"run {run_id} pushes the session total to ${session_usd:.6f}, "
+                f"EXCEEDING the per-session cap ${per_session_cap_usd:.2f}; halting "
+                f"rather than burn spend past the committed ceiling (fail-closed)"
+            ),
+        )
+    return CostGateDecision(
+        refuse=False,
+        severity="info",
+        reason=(
+            f"run {run_id} cost ${run_usd:.6f} within the per-run cap "
+            f"${per_run_cap_usd:.2f}; session total ${session_usd:.6f} within "
+            f"the per-session cap ${per_session_cap_usd:.2f}"
+        ),
+    )
+
+
 def resolve_per_run_cap_usd(*, environ: dict[str, str]) -> float:
     """The per-run USD cap: `LIVESPEC_MAX_RUN_USD` or the committed default.
 
@@ -222,8 +300,9 @@ def gate_wave(
     outcomes: tuple[DispatchOutcome, ...],
     ps_json: str,
     journal: JournalWriter,
+    environ: dict[str, str] | None = None,
 ) -> tuple[str, ...]:
-    """Apply the fail-closed cost gate to a completed dispatch wave (5v9).
+    """Apply the fail-closed cost gate to a completed dispatch wave (5v9 + y0m).
 
     Called AFTER the wave's verdict / exit code is computed (alongside
     `reflect` and the ntfy alarm), so it can never change the verdict.
@@ -232,20 +311,36 @@ def gate_wave(
     to read; `failed`/`blocked` runs either never launched, like uvd's
     host-only refusal, or have no meaningful cost yet) — it resolves the
     run id from `ps_json` (`fabro ps -a --json`), observes the per-run
-    cost, decides the fail-closed gate, and journals one `cost-gate`
-    record carrying ONLY leak-free scalars (work-item id, severity,
-    refuse, observable). A run whose id cannot be resolved is journaled as
+    cost, decides the gate, and journals one `cost-gate` record carrying
+    ONLY leak-free scalars (work-item id, severity, refuse, observable,
+    usd_micros). A run whose id cannot be resolved is journaled as
     `cost-gate-skipped` (the cost is unknown for an unknown run) and is
-    NOT a refusal — fail-open. Returns the work-item ids that REFUSED
-    (autonomous mode + unobservable cost), which the caller turns into a
-    `spend-cap` ntfy alarm event.
+    NOT a refusal — fail-open. Returns the work-item ids that REFUSED,
+    which the caller turns into a `spend-cap`-class ntfy alarm event.
 
-    This is the seam y0m's per-run + per-session USD cap builds on: the
-    cost is observed here and journaled; y0m extends the gate from the
-    "unobservable" verdict to the cap-VALUE comparison and the
-    cross-invocation session sum.
+    The verdict is decided in two layers:
+
+      * UNOBSERVABLE cost (the current fabro reality — `total_usd_micros`
+        null) ⇒ `cost_gate_decision` (5v9): autonomous mode refuses, shadow
+        warns. This is the live path today.
+      * OBSERVED cost ⇒ y0m's `cap_value_decision`: the per-run cost is
+        accumulated into a running per-session total and BOTH are compared
+        to the committed env-overridable caps (`resolve_per_run_cap_usd` /
+        `resolve_per_session_cap_usd`); exceeding either ceiling refuses
+        fail-closed. This path is DORMANT until fabro reports cost
+        (livespec-impl-beads-efj) but is correct + unit-tested. The session
+        total accumulates across every observed run in the wave (the loop's
+        per-session cumulative spend).
+
+    `environ` gates the cap-VALUE layer: when None (5v9's call shape) an
+    observed cost is `info` and the cap comparison is skipped; when supplied
+    (the dispatcher's live wiring passes `os.environ`) the caps resolve from
+    it and the cap-value comparison runs.
     """
     refusals: list[str] = []
+    session_usd_micros = 0
+    per_run_cap = resolve_per_run_cap_usd(environ=environ) if environ is not None else None
+    per_session_cap = resolve_per_session_cap_usd(environ=environ) if environ is not None else None
     for outcome in outcomes:
         if outcome.status != "green":
             continue
@@ -260,7 +355,22 @@ def gate_wave(
             )
             continue
         observation = observe_run_cost(ps_json=ps_json, run_id=run_id)
-        decision = cost_gate_decision(mode=mode, observation=observation)
+        usd_micros = observation.usd_micros
+        # The cap-VALUE path (y0m) runs only when the cost is OBSERVED and the
+        # caps are resolved (environ supplied); otherwise 5v9's unobservable
+        # gate decides. The explicit non-None checks narrow the optional
+        # cost + caps for the type checker.
+        if usd_micros is not None and per_run_cap is not None and per_session_cap is not None:
+            session_usd_micros += usd_micros
+            decision = cap_value_decision(
+                run_id=run_id,
+                usd_micros=usd_micros,
+                per_run_cap_usd=per_run_cap,
+                session_usd_micros_after=session_usd_micros,
+                per_session_cap_usd=per_session_cap,
+            )
+        else:
+            decision = cost_gate_decision(mode=mode, observation=observation)
         journal.append(
             record={
                 "stage": "cost-gate",
@@ -268,6 +378,7 @@ def gate_wave(
                 "run_id": run_id,
                 "observable": observation.observable,
                 "usd_micros": observation.usd_micros,
+                "session_usd_micros": session_usd_micros,
                 "refuse": decision.refuse,
                 "severity": decision.severity,
                 "reason": decision.reason,

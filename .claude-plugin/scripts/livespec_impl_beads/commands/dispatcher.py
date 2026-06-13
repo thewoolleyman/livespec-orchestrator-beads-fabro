@@ -98,19 +98,27 @@ run_id)` is the cost SIGNAL (reads `total_usd_micros` from `fabro ps -a
 --json`, surfacing a real value the moment fabro populates it),
 `cost_gate_decision(mode, observation)` is the fail-closed rule
 (autonomous + unobservable cost ⇒ refuse; shadow ⇒ warn), and
-`gate_wave(mode, outcomes, ps_json, journal)` applies it across a
-completed wave — journaling one leak-free `cost-gate` record per launched
-run and returning the work-item ids that refused. To make the gate LIVE,
-y0m runs `fabro ps -a --json` (via `ShellCommandRunner`, the same seam
-the watchdog uses) once after the wave's verdict is computed — alongside
-`reflect` / `_alarm_on_terminal_failure`, fail-OPEN so the verdict is
-never changed — passes the output to `gate_wave`, and turns each returned
-refusal into a `spend-cap`-class `NotifyEvent` through the existing
-`notify_terminal` seam. y0m then extends the gate from the "unobservable"
-verdict to the per-run / per-session USD cap-VALUE comparison using the
-committed env-overridable defaults `resolve_per_run_cap_usd` /
+`gate_wave(...)` applies it across a completed wave — journaling one
+leak-free `cost-gate` record per launched run and returning the work-item
+ids that refused.
+
+The gate is LIVE (work-item livespec-impl-beads-y0m): `_cost_gate_after_verdict`
+runs `fabro ps -a --json` (via `ShellCommandRunner`, the same seam the
+watchdog uses) ONCE after the wave's verdict is computed — alongside
+`reflect` / `_alarm_on_terminal_failure`, FAIL-OPEN so a probe error or any
+exception is journaled as `cost-gate-error` and the verdict is never
+changed — passes the output to `gate_wave` (with `os.environ` so the caps
+resolve), and turns each returned refusal into a `spend-cap-breach`-class
+`NotifyEvent` through the existing `notify_terminal` seam. y0m extends the
+gate from the "unobservable" verdict to the per-run + per-session USD
+cap-VALUE comparison (`cap_value_decision`) using the committed
+env-overridable defaults `resolve_per_run_cap_usd` /
 `resolve_per_session_cap_usd` ($25 / $100, `LIVESPEC_MAX_RUN_USD` /
-`LIVESPEC_MAX_SESSION_USD`).
+`LIVESPEC_MAX_SESSION_USD`), accumulating the per-session total across the
+wave's observed runs. The cap-VALUE path is DORMANT until fabro reports a
+populated cost (`total_usd_micros` null today; tracked as
+livespec-impl-beads-efj) but is correct + tested; the
+fail-closed-when-unobservable behavior 5v9 built stays the live path.
 """
 
 import argparse
@@ -127,6 +135,7 @@ from typing import cast
 
 from livespec_impl_beads.commands._config import resolve_store_config
 from livespec_impl_beads.commands._cross_repo import is_item_ready, load_manifest
+from livespec_impl_beads.commands._dispatcher_cost import gate_wave
 from livespec_impl_beads.commands._dispatcher_engine import (
     DispatchOutcome,
     PollPolicy,
@@ -145,6 +154,7 @@ from livespec_impl_beads.commands._dispatcher_ledger_checks import (
 )
 from livespec_impl_beads.commands._dispatcher_notify import (
     HttpNotifyPoster,
+    NotifyEvent,
     NotifyPoster,
     notify_terminal,
     terminal_events,
@@ -285,6 +295,12 @@ def _run_dispatch_command(*, args: argparse.Namespace) -> int:
         include_loop_summary=False,
         journal=journal,
     )
+    _cost_gate_after_verdict(
+        args=args,
+        repo=repo,
+        outcomes=[outcome],
+        journal=journal,
+    )
     reflect(
         outcomes=[outcome],
         journal=journal,
@@ -341,6 +357,12 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
         include_loop_summary=True,
         journal=journal,
     )
+    _cost_gate_after_verdict(
+        args=args,
+        repo=repo,
+        outcomes=outcomes,
+        journal=journal,
+    )
     reflect(
         outcomes=outcomes,
         journal=journal,
@@ -376,6 +398,105 @@ def _alarm_on_terminal_failure(
         events=events,
         run_id=_run_id(),
         poster=poster if poster is not None else HttpNotifyPoster(),
+        journal=journal,
+    )
+
+
+_FABRO_PS_PROBE_TIMEOUT_SECONDS = 60.0
+
+# The alarm class for a fail-closed cost-gate refusal (the producer h1p's
+# `notify_terminal` seam names as y0m's). NOT a `DispatchOutcome.status`,
+# so it is built as its own `NotifyEvent` rather than flowing through
+# `terminal_events`.
+_SPEND_CAP_BREACH_CLASS = "spend-cap-breach"
+
+
+def _cost_gate_after_verdict(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    outcomes: list[DispatchOutcome],
+    journal: JournalFile,
+    runner: ShellCommandRunner | None = None,
+    poster: NotifyPoster | None = None,
+) -> None:
+    """Run the fail-closed cost gate after the verdict is computed (y0m).
+
+    Called AFTER the wave's verdict / exit code is final (alongside the
+    reflection + ntfy-alarm stages), and FAIL-OPEN: the whole stage is
+    wrapped in a broad supervisor, so a `fabro ps` failure, an unparseable
+    payload, or ANY exception is journaled as `cost-gate-error` and
+    swallowed — it can never change a computed verdict or crash the
+    dispatcher (the load-bearing 0jxs invariant, mirroring the reflection /
+    notify stages). It runs `fabro ps -a --json` ONCE, hands the output to
+    `gate_wave` (which applies 5v9's unobservable fail-closed gate AND
+    y0m's per-run + per-session cap-VALUE comparison, resolving the
+    committed env-overridable caps from `os.environ`), and turns each
+    returned refusal into a `spend-cap-breach`-class `NotifyEvent` through
+    h1p's existing `notify_terminal` seam (strict credential hygiene: only
+    the work-item id + outcome class + a non-credential-bearing run id
+    reach the alarm body). `runner` / `poster` are injectable for the
+    hermetic test tier; production is the real `ShellCommandRunner` /
+    `HttpNotifyPoster`.
+    """
+    try:
+        _cost_gate(
+            args=args,
+            repo=repo,
+            outcomes=outcomes,
+            journal=journal,
+            runner=runner if runner is not None else ShellCommandRunner(),
+            poster=poster if poster is not None else HttpNotifyPoster(),
+        )
+    except Exception as exc:
+        # Fail-open supervisor: the verdict is already final, so a broad
+        # catch is the whole point — any error is journaled and swallowed,
+        # never raised (0jxs operability gate).
+        journal.append(
+            record={
+                "stage": "cost-gate-error",
+                "reason": f"{type(exc).__name__}",
+            }
+        )
+
+
+def _cost_gate(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    outcomes: list[DispatchOutcome],
+    journal: JournalFile,
+    runner: ShellCommandRunner,
+    poster: NotifyPoster,
+) -> None:
+    """The cost-gate body wrapped fail-open by `_cost_gate_after_verdict`."""
+    if not any(outcome.status == "green" for outcome in outcomes):
+        # No launched run in the wave -> no cost to gate (host-only refusals
+        # and other non-green outcomes never reached a fabro run).
+        return
+    ps = runner.run(
+        argv=[args.fabro_bin, "ps", "-a", "--json"],
+        cwd=repo,
+        timeout_seconds=_FABRO_PS_PROBE_TIMEOUT_SECONDS,
+    )
+    ps_json = ps.stdout if ps.exit_code == 0 else ""
+    refusals = gate_wave(
+        mode=getattr(args, "mode", "shadow"),
+        outcomes=tuple(outcomes),
+        ps_json=ps_json,
+        journal=journal,
+        environ=dict(os.environ),
+    )
+    if not refusals:
+        return
+    events = tuple(
+        NotifyEvent(work_item_id=work_item_id, outcome_class=_SPEND_CAP_BREACH_CLASS)
+        for work_item_id in refusals
+    )
+    notify_terminal(
+        events=events,
+        run_id=_run_id(),
+        poster=poster,
         journal=journal,
     )
 
