@@ -171,6 +171,15 @@ from livespec_impl_beads.commands._dispatcher_plan import (
     render_run_config_overlay,
 )
 from livespec_impl_beads.commands._dispatcher_reflection import reflect
+from livespec_impl_beads.commands._dispatcher_self_update import (
+    SELF_UPDATE_BREACH_CLASS,
+    canary_self_check_argv,
+    canary_verdict,
+    is_self_merge,
+    parse_pr_files,
+    pr_files_argv,
+    promotion_decision,
+)
 from livespec_impl_beads.commands._dispatcher_spec_checks import run_spec_checks
 from livespec_impl_beads.errors import (
     BeadsCommandError,
@@ -301,6 +310,11 @@ def _run_dispatch_command(*, args: argparse.Namespace) -> int:
         outcomes=[outcome],
         journal=journal,
     )
+    _self_update_after_verdict(
+        repo=repo,
+        outcomes=[outcome],
+        journal=journal,
+    )
     reflect(
         outcomes=[outcome],
         journal=journal,
@@ -359,6 +373,11 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
     )
     _cost_gate_after_verdict(
         args=args,
+        repo=repo,
+        outcomes=outcomes,
+        journal=journal,
+    )
+    _self_update_after_verdict(
         repo=repo,
         outcomes=outcomes,
         journal=journal,
@@ -495,6 +514,190 @@ def _cost_gate(
     )
     notify_terminal(
         events=events,
+        run_id=_run_id(),
+        poster=poster,
+        journal=journal,
+    )
+
+
+_CANARY_TIMEOUT_SECONDS = 300.0
+_PR_FILES_PROBE_TIMEOUT_SECONDS = 60.0
+
+
+def _self_update_after_verdict(
+    *,
+    repo: Path,
+    outcomes: list[DispatchOutcome],
+    journal: JournalFile,
+    runner: ShellCommandRunner | None = None,
+    poster: NotifyPoster | None = None,
+) -> None:
+    """Run the staged-self-update gate after the verdict is final (work-item ddu).
+
+    Called AFTER the wave's verdict / exit code is computed (alongside the
+    cost gate / reflection / ntfy-alarm stages) and FAIL-OPEN: the whole
+    stage is wrapped in a broad supervisor, so a `gh pr view` failure, an
+    unparseable payload, or ANY exception is journaled as
+    `self-update-error` and swallowed — it can never change a computed
+    verdict or crash the dispatcher (the load-bearing 0jxs invariant).
+
+    For each GREEN outcome carrying a PR number (a confirmed self-merge
+    candidate), it reads the merged file list (`gh pr view <branch> --json
+    files`) and runs `_self_update_after_merge`: a merge that touched the
+    dispatcher's OWN scripts CANARIES the just-pulled candidate and only
+    PROMOTES it on a passing canary, else keeps the last-known-good copy
+    and alarms. The candidate is the just-pulled primary's own
+    `bin/dispatcher.py`; the canary scratch root is a throwaway temp dir.
+    `runner` / `poster` are injectable for the hermetic test tier.
+    """
+    resolved_runner = runner if runner is not None else ShellCommandRunner()
+    resolved_poster = poster if poster is not None else HttpNotifyPoster()
+    for outcome in outcomes:
+        if outcome.status != "green" or outcome.pr_number is None:
+            continue
+        merged_paths = _resolve_merged_paths(repo=repo, runner=resolved_runner)
+        _self_update_after_merge(
+            work_item_id=outcome.work_item_id,
+            merged_paths=merged_paths,
+            candidate_bin=str(_candidate_dispatcher_bin()),
+            scratch_root=tempfile.mkdtemp(prefix=f"self-update-canary-{outcome.work_item_id}-"),
+            repo=repo,
+            journal=journal,
+            runner=resolved_runner,
+            poster=resolved_poster,
+        )
+
+
+def _resolve_merged_paths(*, repo: Path, runner: ShellCommandRunner) -> tuple[str, ...]:
+    """Read the merged PR's changed paths; () on any unobservable signal.
+
+    The publish branch is `feat/<work-item-id>` but the merge is already
+    confirmed, so the simplest authoritative source is the repo's most
+    recent merge to master — read via `gh pr view <branch> --json files`.
+    A `gh` failure / empty payload yields () (no signal), which
+    `is_self_merge` treats as "not a self-merge" (the safe default).
+    """
+    head = runner.run(
+        argv=["git", "-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=repo,
+        timeout_seconds=_PR_FILES_PROBE_TIMEOUT_SECONDS,
+    )
+    branch = head.stdout.strip() if head.exit_code == 0 else "master"
+    files = runner.run(
+        argv=pr_files_argv(branch=branch),
+        cwd=repo,
+        timeout_seconds=_PR_FILES_PROBE_TIMEOUT_SECONDS,
+    )
+    return parse_pr_files(stdout=files.stdout) if files.exit_code == 0 else ()
+
+
+def _candidate_dispatcher_bin() -> Path:
+    """The just-pulled primary's own `bin/dispatcher.py` (the canary target).
+
+    Resolved off this module's location (the same package-root walk
+    `_workflow_toml` uses): after `_post_merge` pulls the primary, this
+    path holds the STAGED new dispatcher code, which the canary
+    self-checks before it can take over the loop.
+    """
+    package_root = Path(__file__).resolve().parents[4]
+    return package_root / ".claude-plugin" / "scripts" / "bin" / "dispatcher.py"
+
+
+def _self_update_after_merge(  # noqa: PLR0913 — kw-only fail-open stage; each field is an independent caller input.
+    *,
+    work_item_id: str,
+    merged_paths: tuple[str, ...],
+    candidate_bin: str,
+    scratch_root: str,
+    repo: Path,
+    journal: JournalFile,
+    runner: ShellCommandRunner | None = None,
+    poster: NotifyPoster | None = None,
+) -> None:
+    """Stage + canary a self-merge before it can take over (work-item ddu).
+
+    The dispatcher-self-update hazard: `_post_merge` pulls the target
+    repo's primary, and when the target IS impl-beads itself that pull
+    swaps the running dispatcher's code. This stage, run AFTER a confirmed
+    merge, gates the swap: when the merge touched the dispatcher's OWN
+    scripts (`is_self_merge`), it CANARIES the staged candidate (the
+    candidate's own cheap, side-effect-free `ledger-check` self-check —
+    NEVER a real fabro run, per the self-machinery hang-guard) and only
+    PROMOTES it to the active pinned copy on a passing canary; a failing
+    canary keeps the last-known-good pinned copy and ALARMS through h1p's
+    `notify_terminal` seam (`self-update-canary-failed` class).
+
+    FAIL-OPEN, mirroring `_cost_gate_after_verdict`: the whole body is
+    wrapped in a broad supervisor, so a canary subprocess failure, an
+    unexpected payload, or ANY exception is journaled as
+    `self-update-error` and swallowed — it can never crash the dispatcher
+    or masquerade as a promotion (the load-bearing 0jxs invariant).
+    `runner` / `poster` are injectable for the hermetic test tier;
+    production is the real `ShellCommandRunner` / `HttpNotifyPoster`.
+    """
+    try:
+        _self_update(
+            work_item_id=work_item_id,
+            merged_paths=merged_paths,
+            candidate_bin=candidate_bin,
+            scratch_root=scratch_root,
+            repo=repo,
+            journal=journal,
+            runner=runner if runner is not None else ShellCommandRunner(),
+            poster=poster if poster is not None else HttpNotifyPoster(),
+        )
+    except Exception as exc:
+        # Fail-open supervisor: the verdict is already final, so a broad
+        # catch is the whole point — any error is journaled and swallowed,
+        # never raised (0jxs operability gate, mirroring the cost-gate /
+        # notify stages).
+        journal.append(
+            record={
+                "stage": "self-update-error",
+                "reason": f"{type(exc).__name__}",
+            }
+        )
+
+
+def _self_update(  # noqa: PLR0913 — kw-only fail-open stage body; each field is an independent caller input.
+    *,
+    work_item_id: str,
+    merged_paths: tuple[str, ...],
+    candidate_bin: str,
+    scratch_root: str,
+    repo: Path,
+    journal: JournalFile,
+    runner: ShellCommandRunner,
+    poster: NotifyPoster,
+) -> None:
+    """The self-update body wrapped fail-open by `_self_update_after_merge`."""
+    if not is_self_merge(merged_paths=merged_paths):
+        journal.append(
+            record={
+                "stage": "self-update-skipped",
+                "work_item_id": work_item_id,
+                "reason": "merge did not touch the dispatcher's own scripts",
+            }
+        )
+        return
+    canary = runner.run(
+        argv=canary_self_check_argv(candidate_bin=candidate_bin, scratch_root=scratch_root),
+        cwd=repo,
+        timeout_seconds=_CANARY_TIMEOUT_SECONDS,
+    )
+    decision = promotion_decision(verdict=canary_verdict(exit_code=canary.exit_code))
+    stage = "self-update-promoted" if decision.promote else "self-update-kept-last-known-good"
+    journal.append(
+        record={
+            "stage": stage,
+            "work_item_id": work_item_id,
+            "reason": decision.reason,
+        }
+    )
+    if not decision.alarm:
+        return
+    notify_terminal(
+        events=(NotifyEvent(work_item_id=work_item_id, outcome_class=SELF_UPDATE_BREACH_CLASS),),
         run_id=_run_id(),
         poster=poster,
         journal=journal,

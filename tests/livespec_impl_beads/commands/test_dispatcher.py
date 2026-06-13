@@ -1619,10 +1619,19 @@ def test_dispatch_green_closes_item_and_journals(
     stages = [json.loads(line)["stage"] for line in journal_text.splitlines()]
     # After `outcome` come the post-verdict fail-open stages: y0m's
     # cost-gate (here `cost-gate-error` because no `fabro` binary is on the
-    # hermetic PATH — the gate fails open and never changes the verdict)
-    # then the mechanical reflection stage at the default `observe` lever
-    # (work-item 29f.2). The ledger-close precedes both.
-    assert stages == ["ledger-close", "outcome", "cost-gate-error", "reflection"]
+    # hermetic PATH — the gate fails open and never changes the verdict),
+    # then ddu's staged-self-update gate (here `self-update-skipped`: the
+    # green outcome has a PR, but `gh pr view` fails on the hermetic
+    # non-repo so the merged-file list is empty — NOT a self-merge), then
+    # the mechanical reflection stage at the default `observe` lever
+    # (work-item 29f.2). The ledger-close precedes them all.
+    assert stages == [
+        "ledger-close",
+        "outcome",
+        "cost-gate-error",
+        "self-update-skipped",
+        "reflection",
+    ]
     poll = fake.seen[0]["poll"]
     assert isinstance(poll, PollPolicy)
     assert (poll.attempts, poll.interval_seconds) == (80, 30.0)
