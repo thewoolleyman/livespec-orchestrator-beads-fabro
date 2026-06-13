@@ -2299,6 +2299,61 @@ def test_render_goal_omits_comments_section_when_none(tmp_path: Path) -> None:
     assert "Ledger comments" not in goal
 
 
+# MiniJinja's three opening delimiters: expression `{{`, statement `{%`,
+# comment `{#`. Fabro renders the run goal through MiniJinja (the graph's
+# `goal` attribute) and into the prompts as `{{ goal }}`, so any one of
+# these in untrusted item prose would re-enter template mode and the
+# undefined name would raise `template_undefined_variable` at validation
+# (livespec-impl-beads-ajv: three v5k-leg dispatches failed pre-flight on
+# justfile recipe `{{ }}` syntax in the description). The escape
+# neutralizes the OPENING delimiters, so the lexer never enters a tag.
+_MINIJINJA_OPENERS = ("{{", "{%", "{#")
+
+
+def _live_minijinja_openers(*, rendered: str) -> list[str]:
+    """Return MiniJinja openers still LIVE in `rendered` after stripping the
+    literal-emitting escape expressions render_goal inserts.
+
+    render_goal neutralizes each opener into a literal-emitting expression
+    that ALWAYS opens with `{{` (only `{{ ... }}` emits a value): `{{` ->
+    `{{ "{{" }}`, `{%` -> `{{ "{%" }}`, `{#` -> `{{ "{#" }}`. Removing every
+    such escape expression must leave NO opener behind: any `{{`/`{%`/`{#`
+    that survives the strip is a live template construct that would
+    re-enter template mode and raise `template_undefined_variable` at
+    validation. Stripping the full expressions first is necessary because
+    each escape itself contains the two literal opener characters inside
+    its quoted string.
+    """
+    stripped = rendered
+    for opener in _MINIJINJA_OPENERS:
+        stripped = stripped.replace(f'{{{{ "{opener}" }}}}', "")
+    return [opener for opener in _MINIJINJA_OPENERS if opener in stripped]
+
+
+def test_render_goal_escapes_minijinja_delimiters_in_arbitrary_prose(tmp_path: Path) -> None:
+    """Untrusted item prose (justfile `{{ }}`, statement/comment tags, a raw-block
+    breaker, backslashes, quotes, newlines) must NOT survive into the rendered goal
+    as live MiniJinja syntax — otherwise fabro raises `template_undefined_variable`
+    in graph attribute `goal` (livespec-impl-beads-ajv). The escape neutralizes
+    every opening delimiter into a literal-emitting expression; fabro renders those
+    back to the original text, so no live `{{`/`{%`/`{#` remains."""
+    adversarial = (
+        'recipe target: just {{ build_dir }} && echo "go"\n'
+        "stmt {% if x %}body{% endif %} comment {# note #}\n"
+        "raw-block breaker {% endraw %} then {{ another }}\n"
+        "backslash \\ path C:\\tmp and nested {{ {{ inner }} }}"
+    )
+    item = _item(title="curly {{ title_var }} bug", description=adversarial)
+    comments = (WorkItemComment(text="rider with {{ comment_var }}", author=None, created_at=None),)
+    goal = render_goal(item=item, repo=tmp_path, branch="feat/t", comments=comments)
+    assert _live_minijinja_openers(rendered=goal) == []
+    # The escape is literal-emitting (not lossy): each neutralized opener
+    # is still present as the start of its escape expression.
+    assert '{{ "{{" }}' in goal
+    assert '{{ "{%" }}' in goal
+    assert '{{ "{#" }}' in goal
+
+
 def test_item_sizing_warnings_empty_for_small_item() -> None:
     assert item_sizing_warnings(item=_item()) == ()
 
