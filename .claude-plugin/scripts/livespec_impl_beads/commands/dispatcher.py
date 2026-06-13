@@ -94,6 +94,7 @@ import json
 import os
 import sys
 import tempfile
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -116,6 +117,12 @@ from livespec_impl_beads.commands._dispatcher_janitor_checks import run_janitor_
 from livespec_impl_beads.commands._dispatcher_ledger_checks import (
     LedgerFinding,
     run_ledger_checks,
+)
+from livespec_impl_beads.commands._dispatcher_notify import (
+    HttpNotifyPoster,
+    NotifyPoster,
+    notify_terminal,
+    terminal_events,
 )
 from livespec_impl_beads.commands._dispatcher_plan import (
     SiblingClones,
@@ -244,9 +251,15 @@ def _run_dispatch_command(*, args: argparse.Namespace) -> int:
         return _EXIT_PRECONDITION_ERROR
     outcome = _dispatch_one(args=args, repo=repo, item=target, journal=journal, janitor=janitor)
     _emit_outcomes(outcomes=[outcome], as_json=args.as_json)
-    # Verdict computed BEFORE the fail-open reflection stage; immutable by
-    # it (loop-reflection-gate best-practices §6).
+    # Verdict computed BEFORE the fail-open reflection + notification
+    # stages; immutable by both (loop-reflection-gate best-practices §6 /
+    # 0jxs operability gate). The alarm is strictly best-effort.
     exit_code = 0 if outcome.status == "green" else _EXIT_FAILURE
+    _alarm_on_terminal_failure(
+        outcomes=[outcome],
+        include_loop_summary=False,
+        journal=journal,
+    )
     reflect(
         outcomes=[outcome],
         journal=journal,
@@ -298,6 +311,11 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
     # never changes a dispatch verdict). reflect() is fail-open and never
     # raises — it cannot alter `exit_code`.
     exit_code = 0 if all(outcome.status == "green" for outcome in outcomes) else _EXIT_FAILURE
+    _alarm_on_terminal_failure(
+        outcomes=outcomes,
+        include_loop_summary=True,
+        journal=journal,
+    )
     reflect(
         outcomes=outcomes,
         journal=journal,
@@ -305,6 +323,46 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
         spans_path=_spans_path(args=args, repo=repo),
     )
     return exit_code
+
+
+def _alarm_on_terminal_failure(
+    *,
+    outcomes: list[DispatchOutcome],
+    include_loop_summary: bool,
+    journal: JournalFile,
+    poster: NotifyPoster | None = None,
+) -> None:
+    """Fire the fail-open ntfy alarm for any terminal failure (0jxs gate).
+
+    Called AFTER the verdict / exit code is computed, so it can never
+    change it. Derives the leak-free alarm events (one per non-green
+    outcome — `failed`/`blocked`, covering uvd's `host-only-refused` —
+    plus a `non-green-loop` summary for the loop command), then posts them
+    fail-open: a missing topic, an unreachable server, or any POST error
+    is journaled and swallowed, never raised. A fully-green wave fires
+    nothing. `poster` is injectable for the hermetic test tier; production
+    is the real `HttpNotifyPoster`.
+    """
+    events = terminal_events(
+        outcomes=tuple(outcomes),
+        include_loop_summary=include_loop_summary,
+    )
+    notify_terminal(
+        events=events,
+        run_id=_run_id(),
+        poster=poster if poster is not None else HttpNotifyPoster(),
+        journal=journal,
+    )
+
+
+def _run_id() -> str:
+    """A non-credential-bearing correlation id for one dispatch run.
+
+    Generated per invocation (a random uuid4 hex): it carries no env / goal
+    / secret material by construction, so it is always safe to ship in the
+    alarm body and to correlate against the journal.
+    """
+    return uuid.uuid4().hex
 
 
 def _prepare(
