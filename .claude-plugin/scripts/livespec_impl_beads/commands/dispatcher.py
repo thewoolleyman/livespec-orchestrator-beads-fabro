@@ -127,6 +127,7 @@ import os
 import sys
 import tempfile
 import uuid
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -181,6 +182,13 @@ from livespec_impl_beads.commands._dispatcher_self_update import (
     promotion_decision,
 )
 from livespec_impl_beads.commands._dispatcher_spec_checks import run_spec_checks
+from livespec_impl_beads.commands._otel_receive import (
+    HeartbeatSink,
+    OtelReceiver,
+    StartableServer,
+    ensure_receiver_started,
+    resolve_receiver_config,
+)
 from livespec_impl_beads.errors import (
     BeadsCommandError,
     BeadsConnectionError,
@@ -203,6 +211,17 @@ _EXIT_USAGE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 3
 
 _OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"  # noqa: S105 - env-var NAME, not a secret value
+
+# The ingest-only Honeycomb key (write-only; the management/MCP key never
+# touches this egress path, per telemetry-pipeline-architecture.md §3.4).
+# An env-var NAME, not a secret value.
+_HONEYCOMB_INGEST_KEY_ENV = "HONEYCOMB_INGEST_KEY_LIVESPEC"
+
+# Process-level holder for the single shared live OTLP receiver (29f.7 E1).
+# `ensure_receiver_started` keeps ONE receiver per host across concurrent
+# dispatches in this dict — NOT one per dispatch (that would collide on the
+# bound port). Module-scoped state, started fail-open at dispatch entry.
+_OTEL_RECEIVER_HOLDER: dict[str, object] = {}
 
 # Where the canonical fleet member registry lives: fleet-manifest.jsonc
 # on livespec master (livespec non-functional-requirements.md §"Fleet
@@ -282,6 +301,7 @@ def _run_dispatch_command(*, args: argparse.Namespace) -> int:
     janitor, janitor_ok = _parse_janitor(raw=args.janitor)
     if not janitor_ok:
         return _EXIT_USAGE_ERROR
+    _ = _ensure_otel_receiver(args=args, repo=repo)
     prepared = _prepare(args=args, repo=repo)
     if prepared is None:
         return _EXIT_PRECONDITION_ERROR
@@ -329,6 +349,7 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
     janitor, janitor_ok = _parse_janitor(raw=args.janitor)
     if not janitor_ok:
         return _EXIT_USAGE_ERROR
+    _ = _ensure_otel_receiver(args=args, repo=repo)
     prepared = _prepare(args=args, repo=repo)
     if prepared is None:
         return _EXIT_PRECONDITION_ERROR
@@ -1118,6 +1139,56 @@ def _spans_path(*, args: argparse.Namespace, repo: Path) -> Path:
     """
     journal = _journal_path(args=args, repo=repo)
     return journal.with_name(f"{journal.stem}-reflection-spans.jsonl")
+
+
+def _heartbeat_path(*, args: argparse.Namespace, repo: Path) -> Path:
+    """Where the live receiver writes the per-run metrics heartbeat (§4.4).
+
+    Co-located with the journal (a `<base>-otel-heartbeat.json` sibling) so
+    29f.6's oyg `LivenessProbe` reads it OUT OF PROCESS next to the rest of
+    the dispatch's tmp artifacts.
+    """
+    journal = _journal_path(args=args, repo=repo)
+    return journal.with_name(f"{journal.stem}-otel-heartbeat.json")
+
+
+def _build_otel_receiver(*, args: argparse.Namespace, repo: Path) -> StartableServer:
+    """Build (but do NOT start) the single host-local live OTLP receiver.
+
+    Resolves the bound loopback addr/port from the `LIVESPEC_OTEL_RECEIVER_*`
+    levers, wires the SHARED 29f.5 Honeycomb egress exporter (ingest-only
+    key from env), and points the metrics heartbeat at the journal-sibling
+    file. Imported lazily so the egress transport is only pulled in when a
+    dispatch actually arms the receiver.
+    """
+    from livespec_impl_beads.commands._otel_enrich import HoneycombHttpExporter
+
+    config = resolve_receiver_config(environ=dict(os.environ))
+    exporter = HoneycombHttpExporter(ingest_key=os.environ.get(_HONEYCOMB_INGEST_KEY_ENV, ""))
+    heartbeat = HeartbeatSink(path=_heartbeat_path(args=args, repo=repo))
+    return OtelReceiver(config=config, exporter=exporter, heartbeat=heartbeat)
+
+
+def _ensure_otel_receiver(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    holder: dict[str, object] | None = None,
+    factory: Callable[[], StartableServer] | None = None,
+) -> StartableServer | None:
+    """Idempotently start the single shared live OTLP receiver (29f.7 E1).
+
+    Called at dispatch entry. Fail-OPEN: a receiver start failure NEVER
+    blocks or fails a dispatch (the dispatcher already wrote the
+    authoritative journal; egress is best-effort). `holder` + `factory` are
+    injectable for the hermetic test tier (so no real socket binds in a
+    test); production uses the module-level holder + the real factory.
+    """
+    target_holder = _OTEL_RECEIVER_HOLDER if holder is None else holder
+    resolved_factory = (
+        (lambda: _build_otel_receiver(args=args, repo=repo)) if factory is None else factory
+    )
+    return ensure_receiver_started(holder=target_holder, factory=resolved_factory)
 
 
 def _parse_janitor(*, raw: str | None) -> tuple[tuple[str, ...] | None, bool]:
