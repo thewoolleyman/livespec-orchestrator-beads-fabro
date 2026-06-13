@@ -77,9 +77,12 @@ __all__: list[str] = [
     "CommandResult",
     "CommandRunner",
     "DispatchOutcome",
+    "FabroLauncher",
+    "FabroRunResult",
     "JournalWriter",
     "PollPolicy",
     "SleepFn",
+    "SynchronousFabroLauncher",
     "run_dispatch",
 ]
 
@@ -94,6 +97,10 @@ _FABRO_TIMEOUT_SECONDS = 54000.0
 _FABRO_INSPECT_TIMEOUT_SECONDS = 300.0
 _GH_TIMEOUT_SECONDS = 300.0
 _JANITOR_TIMEOUT_SECONDS = 3600.0
+
+# The env-var an operator tunes the watchdog stall window with (named in
+# the stalled-no-progress detail so the message is self-documenting).
+_STALL_ENV_HINT = "LIVESPEC_DISPATCH_STALL_SECONDS"
 
 SleepFn = Callable[[float], None]
 
@@ -139,6 +146,76 @@ class PollPolicy:
 
 
 @dataclass(frozen=True, kw_only=True)
+class FabroRunResult:
+    """Outcome of the watched `fabro run` foreground stage.
+
+    `command` is the `CommandResult` of the `fabro run` process (its exit
+    code routes the blocked / failed / green flow exactly as before).
+    `stalled_run_id` is set ONLY when the coarse wall-clock watchdog
+    confirmed a sustained-no-progress stall and `fabro rm -f`-ed the run
+    (the 7us.6 hang class) — the engine then short-circuits to a distinct
+    `stalled-no-progress` outcome. None means the watchdog never tripped
+    (the normal path, including a clean probe-failure-but-healthy run:
+    fail-safe, a flaky probe is NOT a stall).
+    """
+
+    command: CommandResult
+    stalled_run_id: str | None = None
+
+
+class FabroLauncher(Protocol):
+    """Seam that runs `fabro run` to completion with a progress watchdog.
+
+    Production is `_dispatcher_io.WatchedFabroLauncher`: it runs `fabro
+    run` while the coarse wall-clock watchdog samples the event stream and
+    `fabro rm -f`-es a confirmed stall. `SynchronousFabroLauncher` is the
+    no-watchdog default (a plain `runner.run`, used where the watchdog is
+    not wired and by the legacy hermetic engine tests). The DEFERRED 29f
+    metrics-heartbeat primary becomes a third launcher feeding the same
+    `decide_stall` — see `_dispatcher_watchdog`.
+    """
+
+    def launch(
+        self,
+        *,
+        plan: DispatchPlan,
+        runner: CommandRunner,
+        journal: JournalWriter,
+    ) -> FabroRunResult:
+        """Run `fabro run` for `plan`, watching liveness; return the result."""
+        ...
+
+
+@dataclass(frozen=True, kw_only=True)
+class SynchronousFabroLauncher:
+    """No-watchdog launcher: a plain blocking `fabro run` (the legacy path).
+
+    Preserves the exact pre-watchdog behavior — one `runner.run` of
+    `fabro run` with the 15h `_FABRO_TIMEOUT_SECONDS` subprocess ceiling
+    (bn4's coarse timeout, which COEXISTS with the watchdog as defense in
+    depth). It never reports a stall, so `run_dispatch` routes purely on
+    the exit code. `run_dispatch` defaults to this launcher so callers
+    that do not wire the watchdog (and the existing engine tests) are
+    unaffected.
+    """
+
+    def launch(
+        self,
+        *,
+        plan: DispatchPlan,
+        runner: CommandRunner,
+        journal: JournalWriter,
+    ) -> FabroRunResult:
+        _ = journal
+        command = runner.run(
+            argv=fabro_run_argv(plan=plan),
+            cwd=plan.repo,
+            timeout_seconds=_FABRO_TIMEOUT_SECONDS,
+        )
+        return FabroRunResult(command=command)
+
+
+@dataclass(frozen=True, kw_only=True)
 class DispatchOutcome:
     """Terminal report for one dispatched work-item.
 
@@ -162,14 +239,24 @@ def run_dispatch(
     journal: JournalWriter,
     sleep: SleepFn,
     poll: PollPolicy,
+    fabro_launcher: FabroLauncher | None = None,
 ) -> DispatchOutcome:
-    """Drive one work-item end-to-end; never raises for expected failures."""
-    fabro = runner.run(
-        argv=fabro_run_argv(plan=plan),
-        cwd=plan.repo,
-        timeout_seconds=_FABRO_TIMEOUT_SECONDS,
-    )
+    """Drive one work-item end-to-end; never raises for expected failures.
+
+    `fabro_launcher` runs the `fabro run` stage with the coarse
+    wall-clock progress watchdog (work-item livespec-impl-beads-oyg). It
+    defaults to the no-watchdog `SynchronousFabroLauncher` so callers that
+    do not wire the watchdog keep the prior blocking behavior. When the
+    launcher reports a confirmed stall, the engine short-circuits to a
+    distinct `stalled-no-progress` outcome (fail-CLOSED) BEFORE any PR
+    flow — the run was already `fabro rm -f`-ed by the launcher.
+    """
+    launcher = fabro_launcher if fabro_launcher is not None else SynchronousFabroLauncher()
+    launched = launcher.launch(plan=plan, runner=runner, journal=journal)
+    fabro = launched.command
     _journal_stage(journal=journal, plan=plan, stage="fabro-run", result=fabro)
+    if launched.stalled_run_id is not None:
+        return _stalled(plan=plan, run_id=launched.stalled_run_id)
     blocked = _blocked_outcome(plan=plan, runner=runner, journal=journal, fabro=fabro)
     if blocked is not None:
         return blocked
@@ -473,6 +560,32 @@ def _failed(*, plan: DispatchPlan, stage: str, detail: str) -> DispatchOutcome:
         pr_number=None,
         merge_sha=None,
         detail=detail,
+    )
+
+
+def _stalled(*, plan: DispatchPlan, run_id: str) -> DispatchOutcome:
+    """The distinct `stalled-no-progress` terminal (the 7us.6 hang class).
+
+    The coarse wall-clock watchdog confirmed sustained no progress (no new
+    fabro event for the full stall window) and `fabro rm -f`-ed the run.
+    This is a FAIL-CLOSED terminal — never silently treated as success: a
+    distinct `status` so the loop verdict exits non-zero and h1p's
+    `notify_terminal` alarms the operator with the `stalled-no-progress`
+    outcome class.
+    """
+    return DispatchOutcome(
+        work_item_id=plan.work_item_id,
+        status="stalled-no-progress",
+        stage="fabro-run",
+        pr_number=None,
+        merge_sha=None,
+        detail=(
+            f"run {run_id} made no progress for the full stall window "
+            f"(no new fabro event); the coarse wall-clock watchdog "
+            f"`fabro rm -f`-ed it (the 7us.6 silent-deadlock class). "
+            f"Set {_STALL_ENV_HINT} to tune the window; the DEFERRED 29f "
+            f"OTEL metrics-heartbeat primary will refine this coarse signal."
+        ),
     )
 
 
