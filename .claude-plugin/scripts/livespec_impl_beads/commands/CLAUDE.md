@@ -40,7 +40,11 @@ public module per query-only skill:
   `_dispatcher_spec_checks.py`, `_dispatcher_spec_commitments.py`,
   `_dispatcher_janitor_checks.py`, `_dispatcher_plan.py`,
   `_dispatcher_engine.py`, `_dispatcher_io.py`, `_dispatcher_notify.py`,
-  `_dispatcher_reflection.py`, `_dispatcher_watchdog.py`). Its Ledger
+  `_dispatcher_reflection.py`, `_dispatcher_watchdog.py`,
+  `_dispatcher_cost.py` — the fail-closed cost-observability seam
+  (work-item 5v9: `total_usd_micros` is null on every fabro run in
+  v0.254.0, so autonomous mode refuses to keep picking on unobservable
+  cost; the seam y0m's spend cap builds on). Its Ledger
   writes are machine-path dispositions of already-filed items
   (close-on-confirmed-merge).
 
