@@ -54,12 +54,15 @@ if TYPE_CHECKING:
     from livespec_impl_beads.store import WorkItemComment
 
 __all__: list[str] = [
+    "DEFAULT_SANDBOX_OTEL_ENDPOINT",
+    "SANDBOX_OTEL_ENDPOINT_ENV_VAR",
     "SIBLING_CLONES_ROOT_ENV_VAR",
     "DispatchPlan",
     "FleetMembers",
     "PrView",
     "SiblingClones",
     "build_plan",
+    "cc_otel_overlay_env",
     "escape_minijinja_literal",
     "fabro_events_argv",
     "fabro_inspect_argv",
@@ -86,6 +89,7 @@ __all__: list[str] = [
     "pull_primary_argv",
     "render_goal",
     "render_run_config_overlay",
+    "resolve_sandbox_otel_endpoint",
 ]
 
 # The env-var contract shared with livespec's cross-repo doctor checks
@@ -94,6 +98,23 @@ __all__: list[str] = [
 # `local_clone` path. livespec CI provisions it the same way; the
 # Dispatcher's overlay projects it into the sandbox env table.
 SIBLING_CLONES_ROOT_ENV_VAR = "LIVESPEC_SIBLING_CLONES_ROOT"
+
+# The lever that overrides where the in-sandbox Claude-Code OTel export
+# ships (29f.3). It points at the host-local E1 OTLP receiver (29f.7),
+# NOT Honeycomb — the sandbox ships PLAINTEXT and the host-local egress
+# stage holds the Honeycomb ingest key (telemetry-pipeline-architecture.md
+# §3.5). The committed default is the Docker default-bridge gateway:
+# inside a fabro docker sandbox `127.0.0.1` is the sandbox's OWN loopback,
+# so the host's loopback-bound receiver is reached via the bridge gateway
+# address instead. 172.17.0.1 is the conventional Docker default-bridge
+# gateway; the orchestrator's later live-verify corrects this lever if the
+# real reachable address differs (e.g. `host.docker.internal` when the
+# sandbox provisions that alias). NOTE: the host-side E1 receiver defaults
+# to a loopback (127.0.0.1) bind — for sandbox egress to actually land it
+# must bind a bridge-reachable interface; that host-side wiring is the
+# live-verify leg, OUT OF SCOPE for the overlay-assembly here.
+SANDBOX_OTEL_ENDPOINT_ENV_VAR = "LIVESPEC_SANDBOX_OTEL_ENDPOINT"
+DEFAULT_SANDBOX_OTEL_ENDPOINT = "http://172.17.0.1:4318"
 
 _DEFAULT_JANITOR: tuple[str, ...] = ("mise", "exec", "--", "just", "check")
 
@@ -457,12 +478,98 @@ def host_only_refusal_detail(*, item_id: str) -> str:
     )
 
 
+def resolve_sandbox_otel_endpoint(*, environ: dict[str, str]) -> str:
+    """Resolve the sandbox->host OTLP endpoint for in-sandbox CC OTel (29f.3).
+
+    The in-sandbox Claude-Code OTel export ships PLAINTEXT OTLP to the
+    host-local E1 receiver (29f.7), NOT Honeycomb — the Honeycomb ingest
+    key stays on the host-local egress stage (telemetry design §3.5). This
+    endpoint is the host *as reachable from inside the fabro docker
+    sandbox*: inside the container `127.0.0.1` is the sandbox's OWN
+    loopback, so the host's loopback-bound receiver is reached via the
+    Docker bridge gateway instead.
+
+    The `LIVESPEC_SANDBOX_OTEL_ENDPOINT` lever overrides the committed
+    default (`http://172.17.0.1:4318`, the conventional Docker
+    default-bridge gateway on the OTLP/HTTP port). The default is a
+    best-determined address — fabro's binary does not auto-provision a
+    `host.docker.internal` alias, so the bridge-gateway IP is the
+    reliable default; the orchestrator's later live-verify corrects this
+    lever if the real reachable address differs. A blank / whitespace-only
+    override falls back to the default rather than shipping an empty
+    endpoint (the same fail-soft discipline as the cost-cap / receiver
+    levers).
+    """
+    override = environ.get(SANDBOX_OTEL_ENDPOINT_ENV_VAR, "").strip()
+    return override or DEFAULT_SANDBOX_OTEL_ENDPOINT
+
+
+def cc_otel_overlay_env(
+    *,
+    work_item_id: str,
+    dispatch_id: str,
+    endpoint: str,
+) -> dict[str, str]:
+    """Assemble the in-sandbox Claude-Code OTel env dict (29f.3).
+
+    Pure function of the dispatch context (work-item id, dispatch id,
+    resolved sandbox->host endpoint). Returns the exact env the run-config
+    overlay projects into the sandbox so CC exports native telemetry to
+    the host-local E1 receiver. Built from the 29f.1 gap analysis
+    (cc-otel-gap-analysis.md §4) and the telemetry pipeline design
+    (§3.3 correlation triple, §3.4 content-flags-off, §3.5 plaintext to
+    the host-local stage):
+
+    - **Enable + native signals**: the master switch plus all three
+      signals on OTLP — metrics, logs (CC events ride the logs signal),
+      and the BETA trace exporter (`CLAUDE_CODE_ENHANCED_TELEMETRY_BETA`;
+      harmless if the beta is org-gated — metrics + events still deliver).
+    - **Transport**: the host-local E1 receiver, `http/json` (the 29f.7
+      receiver is JSON-only), base URL only (CC appends the per-signal
+      `/v1/<signal>` path). No `OTEL_EXPORTER_OTLP_HEADERS` / ingest key —
+      the sandbox ships plaintext; the key lives on the host egress stage.
+    - **Correlation triple** (§3.3): `OTEL_RESOURCE_ATTRIBUTES` carries
+      `work.item.id` + `livespec.dispatch.id` (the dispatcher knows both
+      at dispatch time) plus `service.namespace=livespec-family`, so every
+      CC metric / event / span lands pre-joined to the dispatch.
+      `service.name` is left at CC's own `claude-code` (one dataset for
+      all sandbox CC telemetry, sliced by `work.item.id`).
+    - **Short metric interval** (10s): a short-lived sandbox would
+      otherwise lose the tail; the metrics-heartbeat also feeds 29f.6's
+      oyg `LivenessProbe`.
+    - **Content flags**: ALL four CC content-bearing flags
+      (`OTEL_LOG_USER_PROMPTS` / `_TOOL_DETAILS` / `_TOOL_CONTENT` /
+      `_RAW_API_BODIES`) are deliberately UNSET so CC redacts prompts /
+      tool I/O / raw API bodies at the source (§3.4 credential hygiene).
+    """
+    resource_attributes = ",".join(
+        (
+            "service.namespace=livespec-family",
+            f"work.item.id={work_item_id}",
+            f"livespec.dispatch.id={dispatch_id}",
+        )
+    )
+    return {
+        "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+        "OTEL_METRICS_EXPORTER": "otlp",
+        "OTEL_LOGS_EXPORTER": "otlp",
+        "OTEL_TRACES_EXPORTER": "otlp",
+        "CLAUDE_CODE_ENHANCED_TELEMETRY_BETA": "1",
+        "OTEL_EXPORTER_OTLP_ENDPOINT": endpoint,
+        "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
+        "OTEL_RESOURCE_ATTRIBUTES": resource_attributes,
+        "OTEL_METRIC_EXPORT_INTERVAL": "10000",
+        "OTEL_LOGS_EXPORT_INTERVAL": "5000",
+    }
+
+
 def render_run_config_overlay(
     *,
     committed_text: str,
     workflow_dir: Path,
     token: str,
     siblings: SiblingClones | None,
+    otel_env: dict[str, str] | None = None,
 ) -> str | None:
     """Render the dispatch-time run-config overlay (pure string transform).
 
@@ -482,6 +589,17 @@ def render_run_config_overlay(
     the committed file deliberately carries none; the table maps to
     docker container-level env (fabro-sandbox), so the value reaches
     every node's `just check` subprocesses.
+
+    When `otel_env` is not None (the 29f.3 in-sandbox CC OTel projection),
+    its key/value pairs are appended to that SAME
+    `[environments.<id>.env]` table (sorted for a stable overlay), turning
+    on Claude-Code native telemetry inside the sandbox pointed at the
+    host-local E1 receiver. The keys ride in the credential table for the
+    same TOML reason the sibling-clones key does — that table is the
+    single declaration point. These values are NON-secret (endpoint, env
+    knobs, the correlation triple); the Honeycomb ingest key is NOT among
+    them (the sandbox ships plaintext; the host egress stage holds the
+    key). Omitting `otel_env` preserves the pre-29f.3 token-only shape.
 
     The committed file itself carries NO secret and NO `{{ env }}`
     interpolation — interpolation cannot deliver the credential to
@@ -509,6 +627,7 @@ def render_run_config_overlay(
         if siblings is None
         else f"{SIBLING_CLONES_ROOT_ENV_VAR} = {json.dumps(siblings.clones_root)}\n"
     )
+    otel_env_lines = _otel_env_lines(otel_env=otel_env)
     return (
         rewritten
         + sibling_steps
@@ -517,7 +636,24 @@ def render_run_config_overlay(
         + f"[environments.{environment_id}.env]\n"
         + f"CLAUDE_CODE_OAUTH_TOKEN = {token_literal}\n"
         + sibling_env_line
+        + otel_env_lines
     )
+
+
+def _otel_env_lines(*, otel_env: dict[str, str] | None) -> str:
+    """Render the in-sandbox CC OTel env keys as `[environments.<id>.env]` lines.
+
+    Empty string when `otel_env` is None (the pre-29f.3 token-only shape).
+    Keys are sorted for a stable overlay and each value is `json.dumps`-ed
+    so any special character (e.g. the `=`/`,` in OTEL_RESOURCE_ATTRIBUTES,
+    the `:` in the endpoint, the `/` in `http/json`) is TOML-quoted
+    correctly. These are all NON-secret values — the Honeycomb ingest key
+    is never among them (the sandbox ships plaintext to the host-local
+    receiver; telemetry design §3.5).
+    """
+    if otel_env is None:
+        return ""
+    return "".join(f"{key} = {json.dumps(otel_env[key])}\n" for key in sorted(otel_env))
 
 
 def _sibling_clone_steps_block(*, siblings: SiblingClones) -> str:
