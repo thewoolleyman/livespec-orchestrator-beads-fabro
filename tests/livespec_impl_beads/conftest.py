@@ -29,6 +29,16 @@ from livespec_impl_beads._beads_client import reset_fake_singleton
 @pytest.fixture(autouse=True)
 def _hermetic_fake_backend(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
+    # No test may make a real ntfy POST. The dispatcher's fail-open
+    # terminal-failure alarm (work-item livespec-impl-beads-h1p) resolves
+    # its topic from these env vars and POSTs via urllib; the host carries
+    # a live CLAUDE_NTFY_TOPIC, so an unscrubbed env would let a failed /
+    # blocked / non-green-loop dispatch test fire a real network request.
+    # Scrubbing them makes the notifier a silent no-op by default; tests
+    # that exercise a delivered POST set the env back explicitly and inject
+    # a recording poster.
+    for _ntfy_env in ("CLAUDE_NTFY_DISPATCHER_TOPIC", "CLAUDE_NTFY_TOPIC", "CLAUDE_NTFY_SERVER"):
+        monkeypatch.delenv(_ntfy_env, raising=False)
     reset_fake_singleton()
     yield
     reset_fake_singleton()
