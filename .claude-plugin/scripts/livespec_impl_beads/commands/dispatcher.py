@@ -163,6 +163,7 @@ from livespec_impl_beads.commands._dispatcher_notify import (
 from livespec_impl_beads.commands._dispatcher_plan import (
     SiblingClones,
     build_plan,
+    cc_otel_overlay_env,
     host_only_refusal_detail,
     is_host_only_item,
     item_sizing_warnings,
@@ -170,6 +171,7 @@ from livespec_impl_beads.commands._dispatcher_plan import (
     parse_fleet_members,
     render_goal,
     render_run_config_overlay,
+    resolve_sandbox_otel_endpoint,
 )
 from livespec_impl_beads.commands._dispatcher_reflection import reflect
 from livespec_impl_beads.commands._dispatcher_self_update import (
@@ -803,10 +805,16 @@ def _dispatch_one(
         )
         journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
         return outcome
+    dispatch_id = _run_id()
+    journal.append(
+        record={"stage": "dispatch-id", "work_item_id": item.id, "dispatch_id": dispatch_id}
+    )
     overlay_error = _materialize_overlay(
         committed=_workflow_toml(args=args),
         overlay=overlay_file,
         repo=repo,
+        work_item_id=item.id,
+        dispatch_id=dispatch_id,
     )
     if overlay_error is not None:
         outcome = DispatchOutcome(
@@ -927,7 +935,14 @@ def _read_dispatch_comments(
         return f"ledger comments read failed for {item.id} ({type(exc).__name__}: {exc})"
 
 
-def _materialize_overlay(*, committed: Path, overlay: Path, repo: Path) -> str | None:
+def _materialize_overlay(
+    *,
+    committed: Path,
+    overlay: Path,
+    repo: Path,
+    work_item_id: str,
+    dispatch_id: str,
+) -> str | None:
     """Write the uncommitted mode-600 run-config overlay.
 
     Returns None on success, or an actionable error message (an expected
@@ -946,6 +961,14 @@ def _materialize_overlay(*, committed: Path, overlay: Path, repo: Path) -> str |
     `LIVESPEC_SIBLING_CLONES_ROOT` env key, so cross-repo checks under
     `just check` resolve family siblings inside the sandbox the same
     way livespec CI provisions them.
+
+    Finally it projects the in-sandbox Claude-Code OTel env (29f.3): the
+    `cc_otel_overlay_env` dict carrying the correlation triple
+    (`work_item_id` + `dispatch_id`) and the host-local E1 receiver
+    endpoint, so CC native telemetry exports from inside the sandbox to
+    the host-local enrich/receive stage. All NON-secret values — the
+    Honeycomb ingest key is NOT among them (the sandbox ships plaintext;
+    the host egress stage holds the key).
     """
     env_error = _check_credential_env()
     if env_error is not None:
@@ -953,11 +976,17 @@ def _materialize_overlay(*, committed: Path, overlay: Path, repo: Path) -> str |
     siblings = _resolve_sibling_clones(repo=repo)
     if isinstance(siblings, str):
         return siblings
+    otel_env = cc_otel_overlay_env(
+        work_item_id=work_item_id,
+        dispatch_id=dispatch_id,
+        endpoint=resolve_sandbox_otel_endpoint(environ=dict(os.environ)),
+    )
     rendered = render_run_config_overlay(
         committed_text=committed.read_text(encoding="utf-8"),
         workflow_dir=committed.parent.resolve(),
         token=os.environ[_OAUTH_TOKEN_ENV],
         siblings=siblings,
+        otel_env=otel_env,
     )
     if rendered is None:
         return (
