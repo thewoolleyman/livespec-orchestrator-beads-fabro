@@ -64,6 +64,7 @@ __all__: list[str] = [
     "fabro_run_argv",
     "item_sizing_warnings",
     "janitor_argv_with_default",
+    "janitor_checkout_path",
     "janitor_trust_argv",
     "janitor_worktree_add_argv",
     "janitor_worktree_remove_argv",
@@ -236,6 +237,22 @@ def janitor_argv_with_default(*, janitor: tuple[str, ...] | None) -> tuple[str, 
     if janitor is None or len(janitor) == 0:
         return _DEFAULT_JANITOR
     return janitor
+
+
+def janitor_checkout_path(*, repo: Path, work_item_id: str) -> Path:
+    """The post-merge janitor's fresh-checkout venue: `<repo>/worktrees/janitor-<id>`.
+
+    Under the target repo's own `worktrees/` dispatch-worktree dir and
+    NEVER under the system temp dir: the family pyproject's
+    `[tool.coverage.run]` omit carries `/tmp/*` (a guard against
+    measured tempfile artifacts that must stay), so a /tmp venue omits
+    every source file inside the checkout — coverage measures zero
+    files and check-per-file-coverage dies with NoDataError,
+    false-redding a merged-green change (work-item
+    livespec-impl-beads-1l6; reproduced in the preserved tpu checkout).
+    `git worktree add` creates the missing parent dirs itself.
+    """
+    return repo / "worktrees" / f"janitor-{work_item_id}"
 
 
 def render_goal(

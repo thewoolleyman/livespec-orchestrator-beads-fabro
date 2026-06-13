@@ -37,6 +37,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
+from coverage import Coverage
+from coverage.files import GlobMatcher, prep_patterns
 from livespec_impl_beads._beads_client import FakeBeadsClient, make_beads_client
 from livespec_impl_beads.commands import dispatcher
 from livespec_impl_beads.commands._dispatcher_engine import (
@@ -65,6 +67,7 @@ from livespec_impl_beads.commands._dispatcher_plan import (
     fabro_run_argv,
     item_sizing_warnings,
     janitor_argv_with_default,
+    janitor_checkout_path,
     janitor_trust_argv,
     janitor_worktree_add_argv,
     janitor_worktree_remove_argv,
@@ -674,6 +677,37 @@ def test_build_plan_derives_publish_branch_and_default_janitor(tmp_path: Path) -
 def test_janitor_argv_with_default_passthrough_and_empty() -> None:
     assert janitor_argv_with_default(janitor=("echo", "hi")) == ("echo", "hi")
     assert janitor_argv_with_default(janitor=()) == ("mise", "exec", "--", "just", "check")
+
+
+def test_janitor_checkout_path_lives_under_the_repo_worktrees_dir(tmp_path: Path) -> None:
+    """The venue derives from the TARGET REPO (its `worktrees/` dispatch-
+    worktree dir), never from the system temp dir — see the omit-glob
+    test below for why a temp-dir venue false-reds the janitor."""
+    checkout = janitor_checkout_path(repo=tmp_path / "primary", work_item_id="x-1")
+    assert checkout == tmp_path / "primary" / "worktrees" / "janitor-x-1"
+    assert not str(checkout).startswith(tempfile.gettempdir())
+
+
+def test_janitor_checkout_venue_matches_no_coverage_omit_glob() -> None:
+    """The tpu janitor false-red RCA: the venue used to be
+    `/tmp/fabro-janitor-<item-id>` while pyproject's `[tool.coverage.run]`
+    omit carries `/tmp/*` (a guard against measured tempfile artifacts
+    that must STAY), so every source file inside the janitor checkout
+    was omitted — coverage measured zero files and
+    check-per-file-coverage died with NoDataError, false-redding a
+    merged-green change. Pin the venue against the REAL committed omit
+    configuration (read from this repo's pyproject.toml, never
+    hardcoded) using coverage's own matcher: a product file inside the
+    relocated janitor checkout matches no omit glob, while the same
+    file under the old /tmp venue still does."""
+    repo_root = Path(__file__).resolve().parents[3]
+    omit = Coverage(config_file=str(repo_root / "pyproject.toml")).get_option("run:omit")
+    assert isinstance(omit, list)
+    matcher = GlobMatcher(prep_patterns(omit), "omit")
+    probe = Path(".claude-plugin", "scripts", "livespec_impl_beads", "commands", "dispatcher.py")
+    checkout = janitor_checkout_path(repo=repo_root, work_item_id="livespec-impl-beads-tpu")
+    assert not matcher.match(str(checkout / probe))
+    assert matcher.match(str(Path("/tmp", "fabro-janitor-livespec-impl-beads-tpu") / probe))
 
 
 def test_render_goal_includes_item_fields_and_optional_gap(tmp_path: Path) -> None:
@@ -1614,7 +1648,7 @@ def test_dispatch_materializes_mode600_overlay_and_cleans_up(
     plan = fake.seen[0]["plan"]
     assert isinstance(plan, DispatchPlan)
     assert plan.workflow_toml.name == f"fabro-run-config-{item.id}.toml"
-    assert plan.janitor_checkout.name == f"fabro-janitor-{item.id}"
+    assert plan.janitor_checkout == repo / "worktrees" / f"janitor-{item.id}"
     assert not plan.workflow_toml.exists()
     assert fake.overlay_modes == [0o600]
     overlay_text = fake.overlay_texts[0]
