@@ -44,6 +44,11 @@ from livespec_impl_beads.commands._dispatcher_engine import (
     FabroRunResult,
     JournalWriter,
 )
+from livespec_impl_beads.commands._dispatcher_heartbeat_probe import (
+    HeartbeatLivenessProbe,
+    LayeredLivenessProbe,
+    heartbeat_lookup_keys,
+)
 from livespec_impl_beads.commands._dispatcher_plan import (
     DispatchPlan,
     fabro_events_argv,
@@ -60,6 +65,7 @@ from livespec_impl_beads.commands._dispatcher_watchdog import (
     parse_last_event_epoch,
     resolve_stall_seconds,
 )
+from livespec_impl_beads.commands._otel_receive import HeartbeatSink
 
 __all__: list[str] = [
     "JournalFile",
@@ -116,6 +122,42 @@ class ShellCommandRunner:
 
 
 @dataclass(frozen=True, kw_only=True)
+class _WallClockEventProbe:
+    """The coarse wall-clock backstop expressed as a `LivenessProbe`.
+
+    Wraps the pre-29f.6 inline reading: the max `fabro events` timestamp
+    (with `fabro inspect`'s `updated_at` as a fallback) for `run_id`, or
+    no signal when the run id has not resolved yet or both probes error.
+    Pulled out as a `LivenessProbe` so `_WatchedFabroLauncher._sample` can
+    compose it as the FALLBACK layer under the 29f.6 heartbeat primary.
+    The `decide_stall` fail-safety contract is unchanged — a probe error
+    is a no-signal sample, never a stall.
+    """
+
+    plan: DispatchPlan
+    runner: CommandRunner
+    run_id: str | None
+
+    def sample(self, *, observed_at: float) -> LivenessSample:
+        if self.run_id is None:
+            return LivenessSample(last_event_epoch=None, observed_at=observed_at)
+        events = self.runner.run(
+            argv=fabro_events_argv(plan=self.plan, run_id=self.run_id),
+            cwd=self.plan.repo,
+            timeout_seconds=_FABRO_PROBE_TIMEOUT_SECONDS,
+        )
+        inspect = self.runner.run(
+            argv=fabro_inspect_argv(plan=self.plan, run_id=self.run_id),
+            cwd=self.plan.repo,
+            timeout_seconds=_FABRO_PROBE_TIMEOUT_SECONDS,
+        )
+        events_json = events.stdout if events.exit_code == 0 else ""
+        inspect_json = inspect.stdout if inspect.exit_code == 0 else ""
+        epoch = parse_last_event_epoch(events_json=events_json, inspect_json=inspect_json)
+        return LivenessSample(last_event_epoch=epoch, observed_at=observed_at)
+
+
+@dataclass(frozen=True, kw_only=True)
 class WatchedFabroLauncher:
     """Production FabroLauncher: `fabro run` + the coarse wall-clock watchdog.
 
@@ -124,31 +166,44 @@ class WatchedFabroLauncher:
     the run's liveness on a fixed interval until either the run thread
     finishes OR the watchdog confirms a sustained-no-progress stall.
 
-    Liveness signal (coarse backstop; the DEFERRED 29f OTEL
-    metrics-heartbeat primary refines it later): the run id is discovered
-    from `fabro ps -a --json` (the still-blocking `fabro run` output is
-    unavailable until completion), then the max event timestamp from
-    `fabro events <id> --json` (with `fabro inspect`'s `updated_at` as a
-    fallback) is the liveness reading. `decide_stall` confirms a stall
-    ONLY on the FULL stall window of genuinely-absent events.
+    Liveness signal (layered): the DEFERRED-PRIMARY signal (29f.6) is the
+    29f metrics-HEARTBEAT — CC's metric export keeps advancing while a
+    turn is genuinely alive even when ZERO spans/events are emitted (the
+    7us.6 wedged-commit class), so it is a finer, earlier signal than the
+    coarse event stream. When `heartbeat_path` is set the launcher layers
+    a `HeartbeatLivenessProbe` over the coarse wall-clock probe as the
+    PRIMARY, with the wall-clock probe as the PERMANENT fallback: an
+    observability-pipeline outage degrades the watchdog to coarse
+    detection, NEVER to NO detection. The coarse BACKSTOP reading is the
+    run id discovered from `fabro ps -a --json` (the still-blocking `fabro
+    run` output is unavailable until completion), then the max event
+    timestamp from `fabro events <id> --json` (with `fabro inspect`'s
+    `updated_at` as a fallback). Either layer's reading feeds the SAME
+    `decide_stall`, which confirms a stall ONLY on the FULL stall window
+    of genuinely-absent activity.
 
     Fail-safety (load-bearing): a probe failure — `fabro ps` / `fabro
-    events` / `fabro inspect` errors or is unreachable, or the run id is
-    not discoverable yet — is "no signal", recorded as a sample with NO
-    timestamp, which `decide_stall` skips. A flaky probe can therefore
-    NEVER kill a healthy run; only the full window of present-but-frozen
-    timestamps trips it. On a confirmed stall the run is `fabro rm -f`-ed
-    and `stalled_run_id` is set; otherwise the launcher waits for the run
-    thread and returns its `CommandResult` (exit-code routing unchanged).
+    events` / `fabro inspect` errors or is unreachable, the run id is not
+    discoverable yet, or the heartbeat file is missing / malformed — is
+    "no signal", recorded as a sample with NO timestamp, which
+    `decide_stall` skips. A flaky probe can therefore NEVER kill a healthy
+    run; only the full window of present-but-frozen timestamps trips it.
+    On a confirmed stall the run is `fabro rm -f`-ed and `stalled_run_id`
+    is set; otherwise the launcher waits for the run thread and returns
+    its `CommandResult` (exit-code routing unchanged).
 
     `sleep` and `clock` are injectable (default `time.sleep` /
     `time.monotonic`) so the hermetic tier drives the watch loop
     deterministically with a controllable clock and instant polls — no
     real wall-clock wait, no global monkeypatching of `time`.
+    `heartbeat_path` is the journal-sibling heartbeat file the live
+    receiver writes (None disables the heartbeat layer, leaving the pure
+    wall-clock backstop — the pre-29f.6 behavior).
     """
 
     sleep: Callable[[float], None] = time.sleep
     clock: Callable[[], float] = time.monotonic
+    heartbeat_path: Path | None = None
 
     def launch(
         self,
@@ -239,23 +294,27 @@ class WatchedFabroLauncher:
         runner: CommandRunner,
         run_id: str | None,
     ) -> LivenessSample:
+        """Take one layered liveness reading: heartbeat PRIMARY, wall-clock backstop.
+
+        When `heartbeat_path` is set the 29f.6 metrics-heartbeat is the
+        deferred-PRIMARY signal: a `HeartbeatLivenessProbe` is layered over
+        the coarse wall-clock probe, so a fresh heartbeat (finer, earlier)
+        wins and a stale/absent/malformed heartbeat falls THROUGH to the
+        wall-clock backstop — degrade to coarse detection, never to NO
+        detection. With no `heartbeat_path` the pure wall-clock probe runs
+        (the pre-29f.6 behavior). Both layers share the SAME `observed_at`
+        so `decide_stall`'s observed-span math is consistent.
+        """
         observed_at = self.clock()
-        if run_id is None:
-            return LivenessSample(last_event_epoch=None, observed_at=observed_at)
-        events = runner.run(
-            argv=fabro_events_argv(plan=plan, run_id=run_id),
-            cwd=plan.repo,
-            timeout_seconds=_FABRO_PROBE_TIMEOUT_SECONDS,
+        wall_clock = _WallClockEventProbe(plan=plan, runner=runner, run_id=run_id)
+        if self.heartbeat_path is None:
+            return wall_clock.sample(observed_at=observed_at)
+        heartbeat = HeartbeatLivenessProbe(
+            sink=HeartbeatSink(path=self.heartbeat_path),
+            keys=heartbeat_lookup_keys(work_item_id=plan.work_item_id, run_id=run_id),
         )
-        inspect = runner.run(
-            argv=fabro_inspect_argv(plan=plan, run_id=run_id),
-            cwd=plan.repo,
-            timeout_seconds=_FABRO_PROBE_TIMEOUT_SECONDS,
-        )
-        events_json = events.stdout if events.exit_code == 0 else ""
-        inspect_json = inspect.stdout if inspect.exit_code == 0 else ""
-        epoch = parse_last_event_epoch(events_json=events_json, inspect_json=inspect_json)
-        return LivenessSample(last_event_epoch=epoch, observed_at=observed_at)
+        layered = LayeredLivenessProbe(primary=heartbeat, fallback=wall_clock)
+        return layered.sample(observed_at=observed_at)
 
     def _cancel(
         self,
