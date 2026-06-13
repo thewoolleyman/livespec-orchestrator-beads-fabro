@@ -121,6 +121,7 @@ from livespec_impl_beads.commands._dispatcher_plan import (
     SiblingClones,
     build_plan,
     item_sizing_warnings,
+    janitor_checkout_path,
     parse_fleet_members,
     render_goal,
     render_run_config_overlay,
@@ -325,7 +326,7 @@ def _dispatch_one(
 ) -> DispatchOutcome:
     goal_file = Path(tempfile.gettempdir()) / f"fabro-goal-{item.id}.md"
     overlay_file = Path(tempfile.gettempdir()) / f"fabro-run-config-{item.id}.toml"
-    janitor_checkout = Path(tempfile.gettempdir()) / f"fabro-janitor-{item.id}"
+    janitor_checkout = janitor_checkout_path(repo=repo, work_item_id=item.id)
     plan = build_plan(
         repo=repo,
         work_item_id=item.id,
