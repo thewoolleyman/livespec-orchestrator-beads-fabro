@@ -25,14 +25,10 @@
 #   private extras MAY follow after the canonical block. The in-repo
 #   gate `check-aggregate-completeness` enforces this on every run.
 
-# `skip` — space-separated list of `check:` aggregate targets to omit
-# from a single run (epic li-cvaudit, cvredmd). Default empty: the full
-# aggregate runs. The Red-mode pre-commit overrides it on the command
-# line — `just skip="check-coverage check-per-file-coverage" check` — so
-# the coverage gates are not run at the Red commit (coverage is verified
-# at the Green amend). This is a self-contained just variable; it replaces
-# the prior ambient `LIVESPEC_PRECOMMIT_RED_MODE` env var with no env var
-# and no spec change.
+# `skip` — space-separated list of `check:` targets to omit from a single run.
+# Default empty (full aggregate). Overridden on the command line by the Red-mode
+# pre-commit hook (see check-pre-commit). When empty, the green token is written
+# after a full green aggregate pass for the pre-push short-circuit.
 skip := ""
 
 # Default to listing targets when no recipe is invoked.
@@ -243,7 +239,8 @@ check:
         printf '  - %s\n' "${failed[@]}"
         exit 1
     fi
-    printf '\nAll %d targets passed.\n' "$ran"
+    printf '\nAll %d targets passed.\n' "${#targets[@]}"
+    if [[ -z "{{skip}}" ]]; then uv run python -m livespec_dev_tooling.green_token write || true; fi
 
 # ---------------------------------------------------------------
 # Tool-backed checks (livespec-impl-beads-private).
@@ -631,6 +628,10 @@ check-pre-push:
         echo ":: doc-only push detected (zero .py changes vs ${upstream}): running check-pre-commit-doc-only"
         just check-pre-commit-doc-only
         exit $?
+    fi
+    if uv run python -m livespec_dev_tooling.green_token check 2>&1; then
+        echo ":: pre-push: green token matched — tree byte-identical to last green check; skipping full aggregate (CI is authoritative)"
+        exit 0
     fi
     just check
 
