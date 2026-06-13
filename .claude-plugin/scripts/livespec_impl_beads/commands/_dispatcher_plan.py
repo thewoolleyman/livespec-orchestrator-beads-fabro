@@ -76,6 +76,7 @@ __all__: list[str] = [
     "parse_fleet_members",
     "parse_pr_view",
     "parse_run_id",
+    "parse_run_id_for_work_item",
     "parse_run_status",
     "parse_running_run_id",
     "pr_arm_argv",
@@ -571,6 +572,35 @@ def _runs_list(*, parsed_raw: object) -> list[object]:
         if isinstance(runs_raw, list):
             return cast("list[object]", runs_raw)
     return []
+
+
+def parse_run_id_for_work_item(*, ps_json: str, work_item_id: str) -> str | None:
+    """Find the run id for `work_item_id` from `fabro ps -a --json`, any status.
+
+    Like `parse_running_run_id` but STATUS-AGNOSTIC: it matches the run
+    whose goal embeds `work_item_id` regardless of status, which is what
+    the post-dispatch cost gate needs — the run is terminal (succeeded /
+    failed) by the time the cost is read, not `running`. The cost source
+    (work-item livespec-impl-beads-5v9) is `fabro ps -a --json`'s
+    `total_usd_micros`, keyed by this run id. None when no goal embeds the
+    id or the JSON is unusable; the cost gate journals `cost-gate-skipped`
+    for a None match rather than crashing the wave.
+    """
+    try:
+        parsed_raw: object = json.loads(ps_json)
+    except json.JSONDecodeError:
+        return None
+    for run_raw in _runs_list(parsed_raw=parsed_raw):
+        if not isinstance(run_raw, dict):
+            continue
+        run = cast("dict[str, Any]", run_raw)
+        goal_raw: object = run.get("goal")
+        if not isinstance(goal_raw, str) or work_item_id not in goal_raw:
+            continue
+        run_id_raw: object = run.get("run_id")
+        if isinstance(run_id_raw, str) and run_id_raw:
+            return run_id_raw
+    return None
 
 
 def _running_run_id_for(*, run_raw: object, work_item_id: str) -> str | None:

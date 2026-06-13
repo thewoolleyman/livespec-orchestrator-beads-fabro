@@ -64,12 +64,26 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Protocol, cast
+
+from livespec_impl_beads.commands._dispatcher_engine import DispatchOutcome
+from livespec_impl_beads.commands._dispatcher_plan import parse_run_id_for_work_item
+
+
+class JournalWriter(Protocol):
+    """Append-one-record seam (mirrors `_dispatcher_engine.JournalWriter`)."""
+
+    def append(self, *, record: dict[str, object]) -> None:
+        """Persist one journal record."""
+        ...
+
 
 __all__: list[str] = [
     "CostGateDecision",
     "CostObservation",
+    "JournalWriter",
     "cost_gate_decision",
+    "gate_wave",
     "observe_run_cost",
     "resolve_per_run_cap_usd",
     "resolve_per_session_cap_usd",
@@ -200,6 +214,68 @@ def resolve_per_session_cap_usd(*, environ: dict[str, str]) -> float:
     return _resolve_cap(
         environ=environ, name=_MAX_SESSION_USD_ENV, default=_DEFAULT_MAX_SESSION_USD
     )
+
+
+def gate_wave(
+    *,
+    mode: str,
+    outcomes: tuple[DispatchOutcome, ...],
+    ps_json: str,
+    journal: JournalWriter,
+) -> tuple[str, ...]:
+    """Apply the fail-closed cost gate to a completed dispatch wave (5v9).
+
+    Called AFTER the wave's verdict / exit code is computed (alongside
+    `reflect` and the ntfy alarm), so it can never change the verdict.
+    For each outcome that actually LAUNCHED a fabro run — a `green`
+    terminal outcome (the only state with a confirmed run + a cost record
+    to read; `failed`/`blocked` runs either never launched, like uvd's
+    host-only refusal, or have no meaningful cost yet) — it resolves the
+    run id from `ps_json` (`fabro ps -a --json`), observes the per-run
+    cost, decides the fail-closed gate, and journals one `cost-gate`
+    record carrying ONLY leak-free scalars (work-item id, severity,
+    refuse, observable). A run whose id cannot be resolved is journaled as
+    `cost-gate-skipped` (the cost is unknown for an unknown run) and is
+    NOT a refusal — fail-open. Returns the work-item ids that REFUSED
+    (autonomous mode + unobservable cost), which the caller turns into a
+    `spend-cap` ntfy alarm event.
+
+    This is the seam y0m's per-run + per-session USD cap builds on: the
+    cost is observed here and journaled; y0m extends the gate from the
+    "unobservable" verdict to the cap-VALUE comparison and the
+    cross-invocation session sum.
+    """
+    refusals: list[str] = []
+    for outcome in outcomes:
+        if outcome.status != "green":
+            continue
+        run_id = parse_run_id_for_work_item(ps_json=ps_json, work_item_id=outcome.work_item_id)
+        if run_id is None:
+            journal.append(
+                record={
+                    "stage": "cost-gate-skipped",
+                    "work_item_id": outcome.work_item_id,
+                    "reason": "could not resolve the run id from `fabro ps -a --json`",
+                }
+            )
+            continue
+        observation = observe_run_cost(ps_json=ps_json, run_id=run_id)
+        decision = cost_gate_decision(mode=mode, observation=observation)
+        journal.append(
+            record={
+                "stage": "cost-gate",
+                "work_item_id": outcome.work_item_id,
+                "run_id": run_id,
+                "observable": observation.observable,
+                "usd_micros": observation.usd_micros,
+                "refuse": decision.refuse,
+                "severity": decision.severity,
+                "reason": decision.reason,
+            }
+        )
+        if decision.refuse:
+            refusals.append(outcome.work_item_id)
+    return tuple(refusals)
 
 
 def _resolve_cap(*, environ: dict[str, str], name: str, default: float) -> float:
