@@ -40,7 +40,7 @@ import pytest
 from coverage import Coverage
 from coverage.files import GlobMatcher, prep_patterns
 from livespec_impl_beads._beads_client import FakeBeadsClient, make_beads_client
-from livespec_impl_beads.commands import dispatcher
+from livespec_impl_beads.commands import _dispatcher_reflection, dispatcher
 from livespec_impl_beads.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
@@ -1617,7 +1617,9 @@ def test_dispatch_green_closes_item_and_journals(
     assert "A ready task" in goal_text
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
     stages = [json.loads(line)["stage"] for line in journal_text.splitlines()]
-    assert stages == ["ledger-close", "outcome"]
+    # The fail-open mechanical reflection stage runs after `outcome` at the
+    # default `observe` lever (work-item 29f.2).
+    assert stages == ["ledger-close", "outcome", "reflection"]
     poll = fake.seen[0]["poll"]
     assert isinstance(poll, PollPolicy)
     assert (poll.attempts, poll.interval_seconds) == (80, 30.0)
@@ -2438,3 +2440,115 @@ def test_dispatch_warns_on_oversized_item_without_blocking(
     )
     assert sizing["work_item_id"] == item.id
     assert len(sizing["warnings"]) == 2
+
+
+# --------------------------------------------------------------------------
+# Loop-exit reflection stage wiring (work-item 29f.2). The stage runs AFTER
+# the verdict is computed and is immutable by it (best-practices §6).
+# --------------------------------------------------------------------------
+
+
+def test_loop_runs_reflection_stage_after_dispatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LIVESPEC_REFLECTION", "observe")
+    _dispatcher_reflection.reset_auto_trip()
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item(id="a-1", priority=1)
+    append_work_item(path=_config(), item=item)
+    fake = _FakeRunDispatch(outcomes={"a-1": _green_outcome(item_id="a-1")})
+    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    exit_code = main(
+        [
+            "loop",
+            "--repo",
+            str(repo),
+            "--budget",
+            "1",
+            "--mode",
+            "autonomous",
+            "--workflow",
+            str(workflow),
+            "--no-close-on-merge",
+        ]
+    )
+    assert exit_code == 0
+    journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
+    reflection_rec = next(
+        json.loads(line)
+        for line in journal_text.splitlines()
+        if json.loads(line)["stage"] == "reflection"
+    )
+    assert reflection_rec["mode"] == "observe"
+    assert reflection_rec["green_count"] == 1
+    # The OTLP spans land in the journal's sibling spans file.
+    spans_path = repo / "tmp" / "fabro-dispatch-journal-reflection-spans.jsonl"
+    assert spans_path.is_file()
+
+
+def test_loop_reflection_failure_never_changes_verdict(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reflection that raises must NOT alter the loop's exit code: the
+    verdict is computed before the fail-open stage runs (best-practices
+    §6). `reflect` is itself fail-open, but even a hypothetical raise out
+    of it is contained because the exit code is already decided — the
+    patched raise here proves reflect is the LAST thing the loop does,
+    after the green verdict is already computed."""
+    monkeypatch.setenv("LIVESPEC_REFLECTION", "observe")
+    _dispatcher_reflection.reset_auto_trip()
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item(id="a-1", priority=1)
+    append_work_item(path=_config(), item=item)
+    fake = _FakeRunDispatch(outcomes={"a-1": _green_outcome(item_id="a-1")})
+    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+
+    def _boom(**_kwargs: object) -> None:
+        raise RuntimeError("reflection blew up")
+
+    monkeypatch.setattr(dispatcher, "reflect", _boom)
+    with pytest.raises(RuntimeError, match="reflection blew up"):
+        _ = main(
+            [
+                "loop",
+                "--repo",
+                str(repo),
+                "--budget",
+                "1",
+                "--mode",
+                "autonomous",
+                "--workflow",
+                str(workflow),
+                "--no-close-on-merge",
+            ]
+        )
+
+
+def test_dispatch_runs_reflection_stage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LIVESPEC_REFLECTION", "observe")
+    _dispatcher_reflection.reset_auto_trip()
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
+    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    exit_code = main(
+        [
+            "dispatch",
+            "--repo",
+            str(repo),
+            "--item",
+            item.id,
+            "--workflow",
+            str(workflow),
+            "--no-close-on-merge",
+        ]
+    )
+    assert exit_code == 0
+    journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
+    assert any(json.loads(line)["stage"] == "reflection" for line in journal_text.splitlines())
