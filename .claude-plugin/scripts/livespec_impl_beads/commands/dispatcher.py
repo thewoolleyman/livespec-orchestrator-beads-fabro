@@ -126,6 +126,7 @@ from livespec_impl_beads.commands._dispatcher_plan import (
     render_goal,
     render_run_config_overlay,
 )
+from livespec_impl_beads.commands._dispatcher_reflection import reflect
 from livespec_impl_beads.commands._dispatcher_spec_checks import run_spec_checks
 from livespec_impl_beads.errors import (
     BeadsCommandError,
@@ -241,7 +242,16 @@ def _run_dispatch_command(*, args: argparse.Namespace) -> int:
         return _EXIT_PRECONDITION_ERROR
     outcome = _dispatch_one(args=args, repo=repo, item=target, journal=journal, janitor=janitor)
     _emit_outcomes(outcomes=[outcome], as_json=args.as_json)
-    return 0 if outcome.status == "green" else _EXIT_FAILURE
+    # Verdict computed BEFORE the fail-open reflection stage; immutable by
+    # it (loop-reflection-gate best-practices §6).
+    exit_code = 0 if outcome.status == "green" else _EXIT_FAILURE
+    reflect(
+        outcomes=[outcome],
+        journal=journal,
+        journal_path=_journal_path(args=args, repo=repo),
+        spans_path=_spans_path(args=args, repo=repo),
+    )
+    return exit_code
 
 
 def _run_loop_command(*, args: argparse.Namespace) -> int:
@@ -281,7 +291,18 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
         ]
         outcomes = [future.result() for future in futures]
     _emit_outcomes(outcomes=outcomes, as_json=args.as_json)
-    return 0 if all(outcome.status == "green" for outcome in outcomes) else _EXIT_FAILURE
+    # Verdict is computed BEFORE the mechanical reflection stage and is
+    # immutable by it (loop-reflection-gate best-practices §6: reflection
+    # never changes a dispatch verdict). reflect() is fail-open and never
+    # raises — it cannot alter `exit_code`.
+    exit_code = 0 if all(outcome.status == "green" for outcome in outcomes) else _EXIT_FAILURE
+    reflect(
+        outcomes=outcomes,
+        journal=journal,
+        journal_path=_journal_path(args=args, repo=repo),
+        spans_path=_spans_path(args=args, repo=repo),
+    )
+    return exit_code
 
 
 def _prepare(
@@ -642,6 +663,17 @@ def _journal_path(*, args: argparse.Namespace, repo: Path) -> Path:
     if args.journal is not None:
         return Path(args.journal)
     return repo / "tmp" / "fabro-dispatch-journal.jsonl"
+
+
+def _spans_path(*, args: argparse.Namespace, repo: Path) -> Path:
+    """Where the mechanical reflection stage appends its OTLP/JSON spans.
+
+    Co-located with the journal (one `<base>-reflection-spans.jsonl`
+    sibling) so a future one-shot replay finds both in the same place;
+    one `ExportTraceServiceRequest` per line (the family capture format).
+    """
+    journal = _journal_path(args=args, repo=repo)
+    return journal.with_name(f"{journal.stem}-reflection-spans.jsonl")
 
 
 def _parse_janitor(*, raw: str | None) -> tuple[tuple[str, ...] | None, bool]:
