@@ -10,12 +10,15 @@ call.
 
 Trigger points wired today (`dispatcher._run_dispatch_command` /
 `_run_loop_command`): a terminal `failed` outcome (including uvd's
-`host-only-refused` stage), a `blocked` outcome (parked at the in-loop
-human gate), and a non-green loop-end summary. Future producers
-(`stalled-no-progress` is oyg's watchdog class; `spend-cap` breach is
-y0m's class) are NOT implemented here — they call `notify_terminal` with
-their own `NotifyEvent`s once they exist, which is exactly why this is a
-single reusable function rather than inline POST calls.
+`host-only-refused` stage and oyg's `stalled-no-progress` watchdog
+outcome — both are `DispatchOutcome`s with a non-green `status`, so they
+flow through `terminal_events` automatically, no per-class wiring), a
+`blocked` outcome (parked at the in-loop human gate), and a non-green
+loop-end summary. The remaining future producer (`spend-cap` breach is
+y0m's class) is NOT a `DispatchOutcome.status`; it will call
+`notify_terminal` with its own `NotifyEvent` once it exists, which is
+exactly why this is a single reusable function rather than inline POST
+calls.
 
 Load-bearing invariant — **FAIL-OPEN**: the dispatch verdict / exit code
 is computed by the caller BEFORE this stage runs, and nothing here flows
@@ -140,15 +143,17 @@ def terminal_events(
 ) -> tuple[NotifyEvent, ...]:
     """Derive the alarm events for a wave of outcomes.
 
-    One event per non-green outcome (class = the leak-free `status`,
-    `failed` or `blocked` — this covers uvd's `host-only-refused`, which
-    is a `failed` outcome). When `include_loop_summary` is set (the loop
-    command) and any outcome is non-green, one additional
-    `non-green-loop` summary event is appended so a non-green loop-end is
-    alarmed as its own class. A fully-green wave yields no events (the
-    notifier then no-ops). The `stalled-no-progress` and `spend-cap`
-    classes have no producer yet (oyg / y0m); they will build their own
-    `NotifyEvent`s and call `notify_terminal` directly.
+    One event per non-green outcome (class = the leak-free `status`:
+    `failed`, `blocked`, or oyg's `stalled-no-progress`). This covers
+    uvd's `host-only-refused` (a `failed` outcome) and oyg's
+    `stalled-no-progress` watchdog outcome automatically — any non-green
+    `DispatchOutcome.status` becomes an alarm class with no per-class
+    wiring. When `include_loop_summary` is set (the loop command) and any
+    outcome is non-green, one additional `non-green-loop` summary event is
+    appended so a non-green loop-end is alarmed as its own class. A
+    fully-green wave yields no events (the notifier then no-ops). The
+    `spend-cap` class (y0m) is not a `DispatchOutcome.status`; it will
+    build its own `NotifyEvent` and call `notify_terminal` directly.
     """
     events = tuple(
         NotifyEvent(work_item_id=outcome.work_item_id, outcome_class=outcome.status)

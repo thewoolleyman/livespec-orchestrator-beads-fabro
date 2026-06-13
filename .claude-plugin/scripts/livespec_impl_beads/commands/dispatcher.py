@@ -111,6 +111,7 @@ from livespec_impl_beads.commands._dispatcher_engine import (
 from livespec_impl_beads.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
+    WatchedFabroLauncher,
     utc_now_iso,
 )
 from livespec_impl_beads.commands._dispatcher_janitor_checks import run_janitor_checks
@@ -463,6 +464,13 @@ def _dispatch_one(
                 attempts=args.poll_attempts,
                 interval_seconds=args.poll_interval_seconds,
             ),
+            # The coarse wall-clock progress watchdog (work-item
+            # livespec-impl-beads-oyg): runs `fabro run` while watching the
+            # event stream and `fabro rm -f`-es a sustained-no-progress
+            # stall (the 7us.6 silent-deadlock backstop). A stall yields a
+            # distinct `stalled-no-progress` outcome that h1p's
+            # `notify_terminal` alarms on.
+            fabro_launcher=WatchedFabroLauncher(),
         )
     finally:
         overlay_file.unlink(missing_ok=True)

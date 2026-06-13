@@ -60,7 +60,10 @@ __all__: list[str] = [
     "PrView",
     "SiblingClones",
     "build_plan",
+    "fabro_events_argv",
     "fabro_inspect_argv",
+    "fabro_ps_argv",
+    "fabro_rm_argv",
     "fabro_run_argv",
     "host_only_refusal_detail",
     "is_host_only_item",
@@ -74,6 +77,7 @@ __all__: list[str] = [
     "parse_pr_view",
     "parse_run_id",
     "parse_run_status",
+    "parse_running_run_id",
     "pr_arm_argv",
     "pr_update_branch_argv",
     "pr_view_argv",
@@ -501,6 +505,98 @@ def fabro_run_argv(*, plan: DispatchPlan) -> list[str]:
 
 def fabro_inspect_argv(*, plan: DispatchPlan, run_id: str) -> list[str]:
     return [plan.fabro_bin, "inspect", run_id, "--json"]
+
+
+def fabro_events_argv(*, plan: DispatchPlan, run_id: str) -> list[str]:
+    """`fabro events <run-id> --json`: the per-run event log (liveness source).
+
+    The watchdog reads the maximum event timestamp here as its coarse
+    liveness signal (work-item livespec-impl-beads-oyg); a stream that
+    flatlines for the full stall window is the confirmed-stall signal.
+    """
+    return [plan.fabro_bin, "events", run_id, "--json"]
+
+
+def fabro_ps_argv(*, plan: DispatchPlan) -> list[str]:
+    """`fabro ps -a --json`: per-run metadata used to discover the run id.
+
+    The watchdog cannot read the run id from the still-blocking `fabro
+    run` output, so it discovers the in-flight run for this dispatch from
+    `fabro ps` (matched on the work-item id embedded in the run's goal
+    text plus a `running` status — see `parse_running_run_id`).
+    """
+    return [plan.fabro_bin, "ps", "-a", "--json"]
+
+
+def fabro_rm_argv(*, plan: DispatchPlan, run_id: str) -> list[str]:
+    """`fabro rm -f <run-id>`: force-cancel a confirmed-stalled run.
+
+    The watchdog calls this on a confirmed sustained-no-progress stall to
+    free the slot + stop the spend (the manual `fabro rm` a human had to
+    do at 152min in the 7us.6 incident, now mechanized).
+    """
+    return [plan.fabro_bin, "rm", "-f", run_id]
+
+
+def parse_running_run_id(*, ps_json: str, work_item_id: str) -> str | None:
+    """Find the RUNNING run id for `work_item_id` from `fabro ps -a --json`.
+
+    `fabro ps -a --json` lists per-run metadata: a `run_id`, a
+    serde-tagged `status` (`{"kind": "running", ...}` or a plain string),
+    and the full `goal` text (which embeds `Work-item: <id>` per
+    `render_goal`). The watchdog matches the run whose goal contains this
+    dispatch's work-item id AND whose status is `running` — the in-flight
+    run to watch. None when no such run is found yet (the run may not have
+    registered; the watchdog treats that as "no signal", never a stall).
+    Accepts a top-level array or a `{"runs": [...]}` envelope.
+    """
+    try:
+        parsed_raw: object = json.loads(ps_json)
+    except json.JSONDecodeError:
+        return None
+    runs = _runs_list(parsed_raw=parsed_raw)
+    for run_raw in runs:
+        run_id = _running_run_id_for(run_raw=run_raw, work_item_id=work_item_id)
+        if run_id is not None:
+            return run_id
+    return None
+
+
+def _runs_list(*, parsed_raw: object) -> list[object]:
+    """Normalize `fabro ps --json` to a list (top-level array or {"runs": [...]})."""
+    if isinstance(parsed_raw, list):
+        return cast("list[object]", parsed_raw)
+    if isinstance(parsed_raw, dict):
+        runs_raw: object = cast("dict[str, Any]", parsed_raw).get("runs")
+        if isinstance(runs_raw, list):
+            return cast("list[object]", runs_raw)
+    return []
+
+
+def _running_run_id_for(*, run_raw: object, work_item_id: str) -> str | None:
+    """Return the run id IFF this entry is a running run for `work_item_id`."""
+    if not isinstance(run_raw, dict):
+        return None
+    run = cast("dict[str, Any]", run_raw)
+    goal_raw: object = run.get("goal")
+    if not isinstance(goal_raw, str) or work_item_id not in goal_raw:
+        return None
+    if _run_status_kind(run=run) != "running":
+        return None
+    run_id_raw: object = run.get("run_id")
+    return run_id_raw if isinstance(run_id_raw, str) and run_id_raw else None
+
+
+def _run_status_kind(*, run: dict[str, Any]) -> str | None:
+    """Read a run entry's status kind (`{"kind": ...}` or a plain string)."""
+    status_raw: object = run.get("status")
+    if isinstance(status_raw, str):
+        return status_raw
+    if isinstance(status_raw, dict):
+        kind_raw: object = cast("dict[str, Any]", status_raw).get("kind")
+        if isinstance(kind_raw, str):
+            return kind_raw
+    return None
 
 
 def pr_view_argv(*, plan: DispatchPlan) -> list[str]:

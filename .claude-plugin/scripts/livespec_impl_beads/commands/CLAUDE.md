@@ -30,15 +30,18 @@ public module per query-only skill:
   no-stale-merged-pr-branch / no-stale-worktree) against the repo's
   git/gh state; `dispatch`/`loop` drive ready work-items
   through the `.fabro/workflows/implement-work-item/` phase graph
-  (Fabro sandbox run → auto-merge confirmation → post-merge janitor
-  in a fresh detached worktree of merged master, with provisioning
-  failures classified as janitor-env-degraded rather than work-item
-  failures → Ledger close + journal). Bodies live in the
+  (Fabro sandbox run, guarded by a coarse wall-clock progress watchdog
+  that `fabro rm -f`-es a sustained-no-progress run and reports a
+  distinct `stalled-no-progress` outcome → auto-merge confirmation →
+  post-merge janitor in a fresh detached worktree of merged master,
+  with provisioning failures classified as janitor-env-degraded rather
+  than work-item failures → Ledger close + journal). Bodies live in the
   `_dispatcher_*` private helpers (`_dispatcher_ledger_checks.py`,
   `_dispatcher_spec_checks.py`, `_dispatcher_spec_commitments.py`,
   `_dispatcher_janitor_checks.py`, `_dispatcher_plan.py`,
-  `_dispatcher_engine.py`, `_dispatcher_io.py`). Its Ledger writes
-  are machine-path dispositions of already-filed items
+  `_dispatcher_engine.py`, `_dispatcher_io.py`, `_dispatcher_notify.py`,
+  `_dispatcher_reflection.py`, `_dispatcher_watchdog.py`). Its Ledger
+  writes are machine-path dispositions of already-filed items
   (close-on-confirmed-merge).
 
 Each public module exports `main(argv=None) -> int` (the supervisor
