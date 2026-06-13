@@ -67,7 +67,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 import sys
 import time
 from dataclasses import dataclass
@@ -75,6 +74,15 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from livespec_impl_beads.commands._dispatcher_engine import DispatchOutcome
+
+# The fail-closed scrub + OTLP attribute discipline is the SHARED single
+# source of truth (29f E1): `_otel_scrub` is reused here AND by the
+# host-local enrich/scrub stage (`_otel_enrich`), so the scrub policy lives
+# in exactly one place (telemetry-pipeline-architecture.md §3.4 — "lifting
+# `_scrub` ... into a SHARED module ... single source of truth for the scrub
+# policy"). This module consumes `attr` (which itself scrubs string values
+# via the shared `scrub` + credential-URL regex).
+from livespec_impl_beads.commands._otel_scrub import attr as _attr
 
 __all__: list[str] = [
     "ReflectionFinding",
@@ -122,12 +130,6 @@ _OTLP_SERVICE_NAMESPACE = "livespec-family"
 _OTLP_SCOPE_NAME = "livespec.dispatcher.reflection"
 _OTLP_SCOPE_VERSION = "0.1.0"
 _SPAN_KIND_INTERNAL = 1
-_ATTR_MAX_LEN = 300
-
-# Defense-in-depth: reject any attribute value that looks like a
-# credential-bearing URL (`scheme://user:secret@host`) rather than
-# redacting — a scrub miss must fail closed (cc-otel-gap-analysis.md §3.6).
-_CREDENTIAL_URL_RE = re.compile(r"[a-zA-Z0-9_-]+:[^@\s/]+@")
 
 
 @dataclass(kw_only=True)
@@ -609,27 +611,6 @@ def _build_span(
     if parent_id is not None:
         span["parentSpanId"] = _hex_id(key=parent_id, nbytes=8)
     return span
-
-
-def _attr(*, key: str, value: object) -> dict[str, object]:
-    if isinstance(value, bool):
-        return {"key": key, "value": {"boolValue": value}}
-    if isinstance(value, int):
-        return {"key": key, "value": {"intValue": str(value)}}
-    text = _scrub(value=str(value))
-    return {"key": key, "value": {"stringValue": text}}
-
-
-def _scrub(*, value: str) -> str:
-    """Fail-closed credential scrub: reject (do not redact) a token-URL value.
-
-    A scrub miss must fail closed (cc-otel-gap-analysis.md §3.6), so a
-    value that matches the credential-URL shape is replaced wholesale
-    with a redaction marker rather than shipped partially.
-    """
-    if _CREDENTIAL_URL_RE.search(value) is not None:
-        return "[redacted-credential-shaped-value]"
-    return value[:_ATTR_MAX_LEN]
 
 
 def _hex_id(*, key: str, nbytes: int) -> str:
