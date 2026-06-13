@@ -120,6 +120,8 @@ from livespec_impl_beads.commands._dispatcher_ledger_checks import (
 from livespec_impl_beads.commands._dispatcher_plan import (
     SiblingClones,
     build_plan,
+    host_only_refusal_detail,
+    is_host_only_item,
     item_sizing_warnings,
     janitor_checkout_path,
     parse_fleet_members,
@@ -345,6 +347,9 @@ def _dispatch_one(
     journal: JournalFile,
     janitor: tuple[str, ...] | None,
 ) -> DispatchOutcome:
+    host_only_refusal = _host_only_refusal(item=item, journal=journal)
+    if host_only_refusal is not None:
+        return host_only_refusal
     goal_file = Path(tempfile.gettempdir()) / f"fabro-goal-{item.id}.md"
     overlay_file = Path(tempfile.gettempdir()) / f"fabro-run-config-{item.id}.toml"
     janitor_checkout = janitor_checkout_path(repo=repo, work_item_id=item.id)
@@ -406,6 +411,31 @@ def _dispatch_one(
     if outcome.status == "green" and args.close_on_merge:
         _close_item(repo=repo, item=item, outcome=outcome)
         journal.append(record={"stage": "ledger-close", "work_item_id": item.id})
+    journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
+    return outcome
+
+
+def _host_only_refusal(*, item: WorkItem, journal: JournalFile) -> DispatchOutcome | None:
+    """Refuse to sandbox a host-only self-machinery item (uvd hang-guard).
+
+    Returns the `host-only-refused` outcome (routed BEFORE any fabro
+    launch, so the in-sandbox/in-hook git commit can never deadlock — the
+    7us.6 hang class) when the item carries the explicit host-only
+    marker, or None to let the dispatch proceed. The refusal is a
+    `failed` outcome so the dispatch exit code flips to 1 and the
+    orchestrator host-routes the item; the detail carries the actionable
+    host-route instruction. Nothing is closed — the item stays open.
+    """
+    if not is_host_only_item(item=item):
+        return None
+    outcome = DispatchOutcome(
+        work_item_id=item.id,
+        status="failed",
+        stage="host-only-refused",
+        pr_number=None,
+        merge_sha=None,
+        detail=host_only_refusal_detail(item_id=item.id),
+    )
     journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
     return outcome
 
