@@ -25,13 +25,24 @@ from livespec_impl_beads.commands._dispatcher_io import JournalFile
 # verifies the mechanical scan/emit internals); importing them avoids the
 # SLF001 attribute-access ban while keeping the names addressable.
 from livespec_impl_beads.commands._dispatcher_reflection import (
-    _ATTR_MAX_LEN,  # pyright: ignore[reportPrivateUsage]
     _AUTO_TRIP,  # pyright: ignore[reportPrivateUsage]
     _BUDGET_EXCEEDED_MESSAGE,  # pyright: ignore[reportPrivateUsage]
     _REFLECTION_BUDGET_SECONDS,  # pyright: ignore[reportPrivateUsage]
-    _attr,  # pyright: ignore[reportPrivateUsage]
     _read_journal_records,  # pyright: ignore[reportPrivateUsage]
-    _scrub,  # pyright: ignore[reportPrivateUsage]
+)
+
+# The scrub + attribute discipline lives in the SHARED `_otel_scrub` module
+# (29f E1 single source of truth); the reflection emitter consumes it. The
+# credential-hygiene tests below address it through its real home (see also
+# test_otel_scrub.py for the module's own direct + property-based suite).
+from livespec_impl_beads.commands._otel_scrub import (
+    ATTR_MAX_LEN as _ATTR_MAX_LEN,
+)
+from livespec_impl_beads.commands._otel_scrub import (
+    attr as _attr,
+)
+from livespec_impl_beads.commands._otel_scrub import (
+    scrub as _scrub,
 )
 
 
