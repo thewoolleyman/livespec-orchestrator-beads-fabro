@@ -1617,9 +1617,12 @@ def test_dispatch_green_closes_item_and_journals(
     assert "A ready task" in goal_text
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
     stages = [json.loads(line)["stage"] for line in journal_text.splitlines()]
-    # The fail-open mechanical reflection stage runs after `outcome` at the
-    # default `observe` lever (work-item 29f.2).
-    assert stages == ["ledger-close", "outcome", "reflection"]
+    # After `outcome` come the post-verdict fail-open stages: y0m's
+    # cost-gate (here `cost-gate-error` because no `fabro` binary is on the
+    # hermetic PATH — the gate fails open and never changes the verdict)
+    # then the mechanical reflection stage at the default `observe` lever
+    # (work-item 29f.2). The ledger-close precedes both.
+    assert stages == ["ledger-close", "outcome", "cost-gate-error", "reflection"]
     poll = fake.seen[0]["poll"]
     assert isinstance(poll, PollPolicy)
     assert (poll.attempts, poll.interval_seconds) == (80, 30.0)
