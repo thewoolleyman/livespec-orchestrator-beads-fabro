@@ -833,13 +833,19 @@ def _dispatch_one(
                 attempts=args.poll_attempts,
                 interval_seconds=args.poll_interval_seconds,
             ),
-            # The coarse wall-clock progress watchdog (work-item
-            # livespec-impl-beads-oyg): runs `fabro run` while watching the
-            # event stream and `fabro rm -f`-es a sustained-no-progress
-            # stall (the 7us.6 silent-deadlock backstop). A stall yields a
-            # distinct `stalled-no-progress` outcome that h1p's
-            # `notify_terminal` alarms on.
-            fabro_launcher=WatchedFabroLauncher(),
+            # The progress watchdog (work-item livespec-impl-beads-oyg):
+            # runs `fabro run` while watching liveness and `fabro rm -f`-es
+            # a sustained-no-progress stall (the 7us.6 silent-deadlock
+            # backstop) — a distinct `stalled-no-progress` outcome that
+            # h1p's `notify_terminal` alarms on. 29f.6 layers the
+            # metrics-HEARTBEAT (the journal-sibling file the live receiver
+            # writes) as the deferred-PRIMARY liveness signal over the
+            # coarse wall-clock backstop; an absent/stale/malformed
+            # heartbeat degrades to the wall-clock layer, never to NO
+            # detection.
+            fabro_launcher=WatchedFabroLauncher(
+                heartbeat_path=_heartbeat_path(args=args, repo=repo),
+            ),
         )
     finally:
         overlay_file.unlink(missing_ok=True)
