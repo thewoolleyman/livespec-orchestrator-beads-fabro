@@ -87,6 +87,30 @@ present or any dispatch not green (failed OR blocked — both need the
 operator's eyes); 2 usage error; 3 precondition error (missing repo /
 workflow / item not ready). `skipped`-severity findings (unmet
 preconditions) are reported but never flip the exit code.
+
+Cost-observability seam (work-item livespec-impl-beads-5v9, the
+prerequisite to y0m's fail-closed spend cap): the 5v9 investigation found
+per-run cost FUNDAMENTALLY UNOBSERVABLE in this fabro version (v0.254.0,
+ACP backend) — `fabro ps -a --json`'s `total_usd_micros` is null on every
+run and no token/usage signal is populated anywhere. The warranted
+fail-closed gate lives in `_dispatcher_cost`: `observe_run_cost(ps_json,
+run_id)` is the cost SIGNAL (reads `total_usd_micros` from `fabro ps -a
+--json`, surfacing a real value the moment fabro populates it),
+`cost_gate_decision(mode, observation)` is the fail-closed rule
+(autonomous + unobservable cost ⇒ refuse; shadow ⇒ warn), and
+`gate_wave(mode, outcomes, ps_json, journal)` applies it across a
+completed wave — journaling one leak-free `cost-gate` record per launched
+run and returning the work-item ids that refused. To make the gate LIVE,
+y0m runs `fabro ps -a --json` (via `ShellCommandRunner`, the same seam
+the watchdog uses) once after the wave's verdict is computed — alongside
+`reflect` / `_alarm_on_terminal_failure`, fail-OPEN so the verdict is
+never changed — passes the output to `gate_wave`, and turns each returned
+refusal into a `spend-cap`-class `NotifyEvent` through the existing
+`notify_terminal` seam. y0m then extends the gate from the "unobservable"
+verdict to the per-run / per-session USD cap-VALUE comparison using the
+committed env-overridable defaults `resolve_per_run_cap_usd` /
+`resolve_per_session_cap_usd` ($25 / $100, `LIVESPEC_MAX_RUN_USD` /
+`LIVESPEC_MAX_SESSION_USD`).
 """
 
 import argparse
