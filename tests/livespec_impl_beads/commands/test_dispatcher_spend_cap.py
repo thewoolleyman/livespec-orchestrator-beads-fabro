@@ -241,6 +241,7 @@ def test_gate_wave_refuses_observed_run_over_per_run_cap() -> None:
         ),
         journal=journal,
         environ={"LIVESPEC_MAX_RUN_USD": "25", "LIVESPEC_MAX_SESSION_USD": "100"},
+        cost_mode="enforce",
     )
     assert refusals == ("item-aaa",)
     record = next(r for r in journal.records if r.get("stage") == "cost-gate")
@@ -259,6 +260,7 @@ def test_gate_wave_proceeds_observed_run_under_caps() -> None:
         ps_json=_ps_json_observed(run_id="01RUNAAA", work_item_id="item-aaa", usd_micros=1_250_000),
         journal=journal,
         environ={"LIVESPEC_MAX_RUN_USD": "25", "LIVESPEC_MAX_SESSION_USD": "100"},
+        cost_mode="enforce",
     )
     assert refusals == ()
     record = next(r for r in journal.records if r.get("stage") == "cost-gate")
@@ -286,6 +288,7 @@ def test_gate_wave_accumulates_per_session_cost_across_runs() -> None:
         ),
         journal=journal,
         environ={"LIVESPEC_MAX_RUN_USD": "50", "LIVESPEC_MAX_SESSION_USD": "60"},
+        cost_mode="enforce",
     )
     # The first run ($40) is within both caps; the second pushes the
     # session total to $80, over the $60 session cap → it alone refuses.
@@ -311,6 +314,7 @@ def test_gate_wave_still_refuses_unobservable_in_autonomous_with_caps() -> None:
         ps_json=_PS_JSON_NULL,
         journal=journal,
         environ={"LIVESPEC_MAX_RUN_USD": "25", "LIVESPEC_MAX_SESSION_USD": "100"},
+        cost_mode="enforce",
     )
     assert refusals == ("item-aaa",)
     record = next(r for r in journal.records if r.get("stage") == "cost-gate")
@@ -360,7 +364,9 @@ def test_cost_gate_after_verdict_refusal_fires_spend_cap_breach_alarm(
     autonomous-mode unobservable gate refuses, and the wiring turns the
     refusal into a `spend-cap-breach` `NotifyEvent`. With a dispatcher topic
     set, the leak-free body carries the item id + the class + a run id only.
+    (Opt into `enforce`, since the `report` default never refuses.)
     """
+    monkeypatch.setenv("LIVESPEC_COST_MODE", "enforce")
     monkeypatch.setenv("CLAUDE_NTFY_DISPATCHER_TOPIC", "dispatch-alarms")
     journal = _RecordingJournal()
     runner = _FakeRunner(stdout=_PS_JSON_NULL, exit_code=0)

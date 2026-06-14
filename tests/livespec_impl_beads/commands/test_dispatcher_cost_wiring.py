@@ -93,13 +93,17 @@ def test_parse_run_id_for_work_item_none_when_matching_run_lacks_run_id() -> Non
 
 
 def test_gate_wave_autonomous_refuses_and_journals_on_dark_cost() -> None:
-    """Autonomous + unobservable cost → a refusal event + a cost-gate record."""
+    """Autonomous + unobservable cost → a refusal event + a cost-gate record.
+
+    The enforce-mode 5v9 behavior (the `report` default never refuses).
+    """
     journal = _RecordingJournal()
     refusals = gate_wave(
         mode="autonomous",
         outcomes=(_green("item-aaa"),),
         ps_json=_PS_JSON_NULL,
         journal=journal,
+        cost_mode="enforce",
     )
     assert refusals == ("item-aaa",)
     gate_records = [r for r in journal.records if r.get("stage") == "cost-gate"]
@@ -112,13 +116,14 @@ def test_gate_wave_autonomous_refuses_and_journals_on_dark_cost() -> None:
 
 
 def test_gate_wave_shadow_warns_and_does_not_refuse() -> None:
-    """Shadow + unobservable cost → a warn cost-gate record, no refusal."""
+    """Shadow + unobservable cost → a warn cost-gate record, no refusal (enforce)."""
     journal = _RecordingJournal()
     refusals = gate_wave(
         mode="shadow",
         outcomes=(_green("item-aaa"),),
         ps_json=_PS_JSON_NULL,
         journal=journal,
+        cost_mode="enforce",
     )
     assert refusals == ()
     gate_records = [r for r in journal.records if r.get("stage") == "cost-gate"]

@@ -106,6 +106,21 @@ ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
         "duration_ms",
         "model",
         "request_id",
+        # Report-mode derived per-dispatch cost span (LIVESPEC_COST_MODE=report):
+        # the API-equivalent cost observability signal the dispatcher emits at
+        # loop exit so Honeycomb can query per-dispatch spend WITHOUT enforcing
+        # it. All scalar numbers / a stable model-basis label, scrub-safe.
+        "livespec.cost.usd_micros",
+        "livespec.cost.usd",
+        "livespec.cost.input_tokens",
+        "livespec.cost.output_tokens",
+        "livespec.cost.cache_creation_tokens",
+        "livespec.cost.cache_read_tokens",
+        "livespec.cost.model_basis",
+        "livespec.cost.model_resolved",
+        "livespec.cost.mode",
+        "livespec.cost.observable",
+        "livespec.cost.session_usd_micros",
     }
 )
 
