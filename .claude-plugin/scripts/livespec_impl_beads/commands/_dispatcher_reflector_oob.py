@@ -89,6 +89,7 @@ from livespec_impl_beads.commands._otel_scrub import scrub as _scrub
 from livespec_impl_beads.types import StoreConfig
 
 __all__: list[str] = [
+    "GitPrLessonsProposer",
     "LessonProposal",
     "LessonsProposer",
     "RecordingLessonsProposer",

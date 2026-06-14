@@ -126,6 +126,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -140,6 +141,7 @@ from livespec_impl_beads.commands._dispatcher_cost import gate_wave
 from livespec_impl_beads.commands._dispatcher_cost_pricing import DEFAULT_DISPATCH_COST_MODEL_ENV
 from livespec_impl_beads.commands._dispatcher_cost_sink import CostSink, cost_lookup_keys
 from livespec_impl_beads.commands._dispatcher_engine import (
+    CommandRunner,
     DispatchOutcome,
     PollPolicy,
     run_dispatch,
@@ -176,6 +178,11 @@ from livespec_impl_beads.commands._dispatcher_plan import (
     resolve_sandbox_otel_endpoint,
 )
 from livespec_impl_beads.commands._dispatcher_reflection import reflect
+from livespec_impl_beads.commands._dispatcher_reflector_oob import (
+    GitPrLessonsProposer,
+    LessonsProposer,
+    run_reflector_oob,
+)
 from livespec_impl_beads.commands._dispatcher_self_update import (
     SELF_UPDATE_BREACH_CLASS,
     canary_self_check_argv,
@@ -345,6 +352,7 @@ def _run_dispatch_command(*, args: argparse.Namespace) -> int:
         journal_path=_journal_path(args=args, repo=repo),
         spans_path=_spans_path(args=args, repo=repo),
     )
+    _reflector_oob_after_verdict(args=args, repo=repo, journal=journal)
     return exit_code
 
 
@@ -413,7 +421,64 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
         journal_path=_journal_path(args=args, repo=repo),
         spans_path=_spans_path(args=args, repo=repo),
     )
+    _reflector_oob_after_verdict(args=args, repo=repo, journal=journal)
     return exit_code
+
+
+def _reflector_oob_after_verdict(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    journal: JournalFile,
+    runner: CommandRunner | None = None,
+    lessons_proposer: LessonsProposer | None = None,
+    spawn: Callable[[Callable[[], None]], None] | None = None,
+) -> None:
+    """Fire the out-of-band LLM reflector as the 5th post-verdict stage (29f.4).
+
+    Called AFTER the verdict / exit code is computed (alongside the
+    ntfy-alarm, cost-gate, self-update, and mechanical-reflection stages)
+    and is the LAST consumer leg of the 29f telemetry pipeline. It spawns
+    the reflector in a FIRE-AND-FORGET DAEMON thread (mirroring
+    `WatchedFabroLauncher`'s `threading.Thread(daemon=True)`) so it never
+    delays loop exit; `run_reflector_oob` is itself fail-OPEN, time-boxed,
+    and default-OFF (the `LIVESPEC_REFLECTOR_OOB` lever), so on a plain
+    dispatch this is a no-op that never raises and never touches the
+    verdict.
+
+    `runner` / `lessons_proposer` are injectable for the hermetic test
+    tier; production is the real `ShellCommandRunner` (the `claude -p` +
+    git/gh subprocess seam) and `GitPrLessonsProposer` (the lessons-via-PR
+    seam). `spawn` is injectable so the test tier runs the body
+    SYNCHRONOUSLY instead of detaching a thread; production detaches a
+    daemon thread. The OOB reflector writes its own verdict spans to a
+    journal-sibling file the enrich stage forwards.
+    """
+    resolved_runner = runner if runner is not None else ShellCommandRunner()
+    resolved_proposer = (
+        lessons_proposer
+        if lessons_proposer is not None
+        else GitPrLessonsProposer(runner=resolved_runner)
+    )
+    spans_path = _reflector_oob_spans_path(args=args, repo=repo)
+
+    def _body() -> None:
+        run_reflector_oob(
+            repo=repo,
+            journal=journal,
+            spans_path=spans_path,
+            runner=resolved_runner,
+            lessons_proposer=resolved_proposer,
+        )
+
+    resolved_spawn = spawn if spawn is not None else _spawn_daemon
+    resolved_spawn(_body)
+
+
+def _spawn_daemon(body: Callable[[], None]) -> None:
+    """Run `body` in a fire-and-forget daemon thread (never blocks the loop)."""
+    thread = threading.Thread(target=body, name="reflector-oob", daemon=True)
+    thread.start()
 
 
 def _alarm_on_terminal_failure(
@@ -1223,6 +1288,18 @@ def _spans_path(*, args: argparse.Namespace, repo: Path) -> Path:
     """
     journal = _journal_path(args=args, repo=repo)
     return journal.with_name(f"{journal.stem}-reflection-spans.jsonl")
+
+
+def _reflector_oob_spans_path(*, args: argparse.Namespace, repo: Path) -> Path:
+    """Where the out-of-band reflector appends its `gen_ai.evaluation.result` spans.
+
+    Co-located with the journal (a `<base>-reflector-oob-spans.jsonl`
+    sibling next to the mechanical-reflection spans file) so the verdict
+    spans ride the SAME established local-span-file → enrich egress path;
+    one `ExportTraceServiceRequest` per line (the family capture format).
+    """
+    journal = _journal_path(args=args, repo=repo)
+    return journal.with_name(f"{journal.stem}-reflector-oob-spans.jsonl")
 
 
 def _heartbeat_path(*, args: argparse.Namespace, repo: Path) -> Path:
