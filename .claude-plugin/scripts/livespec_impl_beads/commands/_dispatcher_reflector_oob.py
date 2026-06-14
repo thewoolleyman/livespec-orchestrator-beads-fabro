@@ -125,8 +125,12 @@ _DEFAULT_MODE = _MODE_OFF
 # The hosted Honeycomb MCP read endpoint + its management/MCP key env var
 # (CONFIRMED present in the host env). Mirrors `_HONEYCOMB_INGEST_KEY_ENV`
 # on the egress side — this is the SEPARATE read key, never the ingest key.
+# The endpoint is the `/mcp` path, NOT the bare host: live probes show
+# `https://mcp.honeycomb.io` → HTTP 404, while `https://mcp.honeycomb.io/mcp`
+# is the served MCP endpoint (the same URL the working honeycomb plugin uses).
+# The EU region variant is `https://mcp.eu1.honeycomb.io/mcp`.
 _HONEYCOMB_MCP_KEY_ENV = "HONEYCOMB_MCP_API_KEY_LIVESPEC"
-_HONEYCOMB_MCP_URL = "https://mcp.honeycomb.io"
+_HONEYCOMB_MCP_URL = "https://mcp.honeycomb.io/mcp"
 _HONEYCOMB_MCP_SERVER_NAME = "honeycomb"
 
 # The headless `claude -p` tool-permission scope (29f.8 gap 4). A headless
@@ -427,11 +431,18 @@ def severity_priority(*, severity: str) -> int:
 def build_mcp_config(*, api_key: str) -> dict[str, object]:
     """Build the `--mcp-config` JSON wiring the hosted Honeycomb MCP server.
 
-    The reflector reads the already-scrubbed pass evidence from
-    `mcp.honeycomb.io` over HTTP, authed with the management/MCP key in an
-    `Authorization: Bearer` header. The key VALUE flows only into the
-    generated temp config (probe-only hygiene: never echoed, never
-    journaled, never put on a span).
+    The reflector reads the already-scrubbed pass evidence from the hosted
+    Honeycomb MCP at `https://mcp.honeycomb.io/mcp` over HTTP (the `/mcp`
+    path — the bare host 404s; the EU region variant is
+    `https://mcp.eu1.honeycomb.io/mcp`, not currently wired).
+
+    Auth contract (Honeycomb headless-agent docs): the `Authorization:
+    Bearer <key>` value MUST be a Honeycomb API key in the `<KEY_ID>:
+    <SECRET_KEY>` composite form (a team-owner-generated key), scoped to
+    "Model Context Protocol (Read)" + "Environments (Read)". A team-member
+    key, or a key missing those scopes, fails the MCP handshake. The key
+    VALUE flows only into the generated temp config (probe-only hygiene:
+    never echoed, never journaled, never put on a span).
     """
     return {
         "mcpServers": {

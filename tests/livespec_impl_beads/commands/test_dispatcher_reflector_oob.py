@@ -171,7 +171,7 @@ def test_build_mcp_config_wires_honeycomb_bearer() -> None:
     # Round-trip through JSON so the assertions read scalars, not `object`.
     rendered = json.loads(json.dumps(config))
     server = rendered["mcpServers"]["honeycomb"]
-    assert server["url"] == "https://mcp.honeycomb.io"
+    assert server["url"] == "https://mcp.honeycomb.io/mcp"
     assert server["headers"]["Authorization"] == "Bearer hcmk-xyz"
 
 
