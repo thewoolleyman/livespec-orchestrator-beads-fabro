@@ -73,6 +73,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -100,7 +101,10 @@ __all__: list[str] = [
     "fingerprint",
     "parse_findings",
     "reset_auto_trip",
+    "resolve_claude_path",
+    "resolve_claude_timeout_seconds",
     "resolve_mode",
+    "resolve_reflector_budget_seconds",
     "run_reflector_oob",
     "severity_priority",
 ]
@@ -125,6 +129,14 @@ _HONEYCOMB_MCP_KEY_ENV = "HONEYCOMB_MCP_API_KEY_LIVESPEC"
 _HONEYCOMB_MCP_URL = "https://mcp.honeycomb.io"
 _HONEYCOMB_MCP_SERVER_NAME = "honeycomb"
 
+# The headless `claude -p` tool-permission scope (29f.8 gap 4). A headless
+# `claude -p` defaults to NO tool permission, so without this the reflector's
+# `--mcp-config` honeycomb server is never callable unattended and the review
+# produces nothing. `mcp__<server>` grants every tool on that ONE configured
+# MCP server (the minimal grant — NOT `--dangerously-skip-permissions`, which
+# would also unlock Bash/Edit/etc. the reflector must never touch).
+_HONEYCOMB_MCP_TOOL_SCOPE = f"mcp__{_HONEYCOMB_MCP_SERVER_NAME}"
+
 # Default headless model for the reflector. The single-strong-judge review
 # (best-practices §1.1) runs as one `claude -p` call; `LIVESPEC_REFLECTOR_MODEL`
 # overrides the model if a different judge is wanted.
@@ -134,12 +146,39 @@ _DEFAULT_REFLECTOR_MODEL = "claude-opus-4-8"
 # Mechanical auto-trip + time-box (best-practices §6), mirroring the
 # mechanical stage so a flapping reflector self-disables for the process.
 _AUTO_TRIP_THRESHOLD = 3
-_REFLECTOR_BUDGET_SECONDS = 120.0
+
+# Time-box defaults (29f.8 gap 1). The session-8 live proof clocked a real
+# reference-anchored Honeycomb review at ~371s (17 tool calls); the pre-29f.8
+# 90s ceiling ALWAYS timed out, was reaped as a non-zero result, and fail-softed
+# to 0 findings — the reflector silently did nothing in production. The claude
+# subprocess ceiling is raised to 600s (margin over the observed 371s, and
+# larger telemetry windows take longer), and the stage budget sits ABOVE it so
+# the `claude -p` subprocess timeout (not the budget `_check_budget`) is the
+# tripwire on a hung judge. Both are env-overridable via the resolvers below.
+_DEFAULT_CLAUDE_TIMEOUT_SECONDS = 600.0
+_DEFAULT_REFLECTOR_BUDGET_SECONDS = 660.0
 _BUDGET_EXCEEDED_MESSAGE = "out-of-band reflector exceeded its scan time budget"
 
-# The `claude -p` call's own subprocess ceiling — well under the stage
-# budget so a hung judge is reaped as a non-zero CommandResult, not a hang.
-_CLAUDE_TIMEOUT_SECONDS = 90.0
+# Env levers (always wired; NAMES only, never secrets) tuning the time-box.
+# An unset / unparseable value falls back to the committed default rather than
+# crashing the fail-open stage (mirrors `_dispatcher_cost._resolve_cap`).
+_CLAUDE_TIMEOUT_ENV = "LIVESPEC_REFLECTOR_CLAUDE_TIMEOUT_SECONDS"
+_REFLECTOR_BUDGET_ENV = "LIVESPEC_REFLECTOR_BUDGET_SECONDS"
+
+# Module-level back-compat aliases (the committed defaults). Kept so existing
+# call sites / tests that read the constant still resolve, but the live values
+# now flow through the env resolvers below.
+_CLAUDE_TIMEOUT_SECONDS = _DEFAULT_CLAUDE_TIMEOUT_SECONDS
+_REFLECTOR_BUDGET_SECONDS = _DEFAULT_REFLECTOR_BUDGET_SECONDS
+
+# `claude` PATH resolution (29f.8 gap 3). Under `with-livespec-env.sh` the
+# bash PATH is minimal (no `~/.local/bin`, where `claude` lives), so a bare
+# `claude` argv[0] fail-opens with `FileNotFoundError: 'claude'` and the
+# reflector silently does nothing. Resolution order: the explicit absolute-path
+# env override → `shutil.which` → the conventional `~/.local/bin/claude` →
+# bare `"claude"` (last-resort, lets the runner surface the FileNotFoundError).
+_CLAUDE_PATH_ENV = "LIVESPEC_REFLECTOR_CLAUDE_PATH"
+_CLAUDE_LOCAL_BIN_FALLBACK = "~/.local/bin/claude"
 
 # Dedup-first filing constants (best-practices §5.2 / decision 6).
 _MAX_NEW_ITEMS_PER_PASS = 3
@@ -296,6 +335,74 @@ def resolve_mode(*, raw: str | None) -> str:
     return _MODE_OFF
 
 
+def _resolve_positive_float(*, environ: dict[str, str], name: str, default: float) -> float:
+    """Resolve a positive-float env lever, falling back on absent/bad/≤0 values.
+
+    Mirrors `_dispatcher_cost._resolve_cap`: an unset, empty, unparseable, or
+    non-positive value reads as the committed default rather than crashing the
+    fail-open stage (a 0/negative time-box would be a self-inflicted hang).
+    """
+    raw = environ.get(name, "")
+    if raw == "":
+        return default
+    try:
+        parsed = float(raw)
+    except ValueError:
+        return default
+    return parsed if parsed > 0 else default
+
+
+def resolve_claude_timeout_seconds(*, environ: dict[str, str]) -> float:
+    """The `claude -p` subprocess ceiling: env override or the 600s default.
+
+    Raised from the silently-fatal 90s (29f.8 gap 1): a real review took ~371s,
+    so 90s ALWAYS timed out + fail-softed to 0 findings. Operators tune larger
+    telemetry windows via `LIVESPEC_REFLECTOR_CLAUDE_TIMEOUT_SECONDS`. The
+    fallback reads the module `_CLAUDE_TIMEOUT_SECONDS` alias (which is the
+    committed default) so a test that monkeypatches it still flows through.
+    """
+    return _resolve_positive_float(
+        environ=environ, name=_CLAUDE_TIMEOUT_ENV, default=_CLAUDE_TIMEOUT_SECONDS
+    )
+
+
+def resolve_reflector_budget_seconds(*, environ: dict[str, str]) -> float:
+    """The whole-pass stage budget: env override or the 660s default.
+
+    Sits ABOVE the claude subprocess ceiling so the subprocess timeout (not the
+    `_check_budget` deadline) is the tripwire on a hung judge — the budget only
+    bounds the post-claude filing/span work. Tuned via
+    `LIVESPEC_REFLECTOR_BUDGET_SECONDS`. The fallback reads the module
+    `_REFLECTOR_BUDGET_SECONDS` alias (the committed default) so a test that
+    monkeypatches it still flows through.
+    """
+    return _resolve_positive_float(
+        environ=environ, name=_REFLECTOR_BUDGET_ENV, default=_REFLECTOR_BUDGET_SECONDS
+    )
+
+
+def resolve_claude_path(*, environ: dict[str, str]) -> str:
+    """Resolve the `claude` executable for the host dispatcher (29f.8 gap 3).
+
+    Under `with-livespec-env.sh` the bash PATH is minimal (no `~/.local/bin`),
+    so a bare `claude` argv[0] fail-opens with `FileNotFoundError: 'claude'`
+    and the reflector silently does nothing. Resolution order: the explicit
+    `LIVESPEC_REFLECTOR_CLAUDE_PATH` override → `shutil.which("claude")` → the
+    conventional `~/.local/bin/claude` (only if it exists) → bare `"claude"`
+    (last resort; lets the runner surface the FileNotFoundError honestly).
+    """
+    override = environ.get(_CLAUDE_PATH_ENV, "").strip()
+    if override:
+        return override
+    found = shutil.which("claude")
+    if found is not None:
+        return found
+    local_bin = Path(_CLAUDE_LOCAL_BIN_FALLBACK).expanduser()
+    if local_bin.is_file():
+        return str(local_bin)
+    return "claude"
+
+
 def fingerprint(*, category: str, stage: str, repo: str, subject: str) -> str:
     """`sha256(category | stage-or-node | repo | normalized-subject)[:12]`.
 
@@ -337,20 +444,36 @@ def build_mcp_config(*, api_key: str) -> dict[str, object]:
     }
 
 
-def claude_reflector_argv(*, prompt: str, mcp_config_path: Path, model: str) -> list[str]:
+def claude_reflector_argv(
+    *,
+    prompt: str,
+    mcp_config_path: Path,
+    model: str,
+    claude_path: str = "claude",
+) -> list[str]:
     """Build the headless `claude -p` argv (best-practices §7 decision 9).
 
     A plain headless invocation — NOT a fabro run (recursion hazard). The
     prompt drives the reference-anchored single-strong-judge review; the
     MCP config grants read-only Honeycomb access; `--output-format json`
     yields a machine envelope the runtime parses.
+
+    `claude_path` is the resolved executable (29f.8 gap 3): under the env
+    wrapper's minimal PATH a bare `claude` is not found, so the host dispatcher
+    passes an absolute path. `--allowedTools` scopes headless tool permission to
+    the ONE configured honeycomb MCP server (29f.8 gap 4): a headless `claude -p`
+    grants no tools by default, so without this the MCP review can call nothing
+    and produces an empty pass. The scope is `mcp__<server>` — the minimal grant
+    (every honeycomb tool, nothing else), NOT `--dangerously-skip-permissions`.
     """
     return [
-        "claude",
+        claude_path,
         "-p",
         prompt,
         "--mcp-config",
         str(mcp_config_path),
+        "--allowedTools",
+        _HONEYCOMB_MCP_TOOL_SCOPE,
         "--model",
         model,
         "--output-format",
@@ -473,13 +596,20 @@ def run_claude_reflector(
         mode="w", suffix="-honeycomb-mcp.json", delete=False, encoding="utf-8"
     )
     config_path = Path(handle.name)
+    claude_path = resolve_claude_path(environ=dict(os.environ))
+    timeout_seconds = resolve_claude_timeout_seconds(environ=dict(os.environ))
     try:
         json.dump(config, handle)
         handle.close()
         return runner.run(
-            argv=claude_reflector_argv(prompt=prompt, mcp_config_path=config_path, model=model),
+            argv=claude_reflector_argv(
+                prompt=prompt,
+                mcp_config_path=config_path,
+                model=model,
+                claude_path=claude_path,
+            ),
             cwd=repo,
-            timeout_seconds=_CLAUDE_TIMEOUT_SECONDS,
+            timeout_seconds=timeout_seconds,
         )
     finally:
         config_path.unlink(missing_ok=True)
@@ -578,7 +708,7 @@ def run_reflector_oob(
             }
         )
         return
-    deadline = time.monotonic() + _REFLECTOR_BUDGET_SECONDS
+    deadline = time.monotonic() + resolve_reflector_budget_seconds(environ=dict(os.environ))
     try:
         report = _run_pass(
             repo=repo,

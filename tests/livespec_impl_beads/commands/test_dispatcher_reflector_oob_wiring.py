@@ -21,9 +21,11 @@ from livespec_impl_beads.commands._dispatcher_engine import CommandResult
 from livespec_impl_beads.commands._dispatcher_io import JournalFile
 from livespec_impl_beads.commands._dispatcher_reflector_oob import RecordingLessonsProposer
 from livespec_impl_beads.commands.dispatcher import (
+    _default_reflector_spawn,  # pyright: ignore[reportPrivateUsage]
     _reflector_oob_after_verdict,  # pyright: ignore[reportPrivateUsage]
     _reflector_oob_spans_path,  # pyright: ignore[reportPrivateUsage]
     _spawn_daemon,  # pyright: ignore[reportPrivateUsage]
+    _spawn_daemon_joining,  # pyright: ignore[reportPrivateUsage]
 )
 
 _MCP_ENV = "HONEYCOMB_MCP_API_KEY_LIVESPEC"
@@ -99,7 +101,9 @@ def test_armed_runs_the_reflector_through_the_injected_seams(
         spawn=_sync_spawn(),
     )
     # The reflector ran the claude -p reflector through the injected runner.
-    assert any(call[:2] == ["claude", "-p"] for call in runner.calls)
+    # argv[0] is the RESOLVED claude path (29f.8 gap 3 — may be absolute under
+    # the env wrapper), so match on the basename + the headless `-p` flag.
+    assert any(Path(call[0]).name == "claude" and call[1] == "-p" for call in runner.calls)
 
 
 def test_reflector_after_verdict_never_raises(
@@ -150,3 +154,63 @@ def test_default_seams_resolve_without_injection(
         spawn=_sync_spawn(),
     )
     assert not (tmp_path / "j.jsonl").exists()  # off -> nothing journaled.
+
+
+# ---------------------------------------------------------------------------
+# 29f.8 gap 2 — daemon-lifetime reconciliation: lever-gated JOIN.
+# ---------------------------------------------------------------------------
+
+
+def test_default_spawn_is_fire_and_forget_when_lever_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Lever OFF (default): the plain-dispatch path stays the fire-and-forget
+    # daemon — no JOIN, so a plain dispatch is never delayed.
+    monkeypatch.delenv(_LEVER_ENV, raising=False)
+    assert _default_reflector_spawn() is _spawn_daemon
+
+
+def test_default_spawn_joins_to_completion_when_lever_armed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Lever ARMED: the spawn JOINS the reflector thread, so a ~6-min review
+    # actually completes before the dispatcher process exits (gap 2). We prove
+    # the JOIN by observing the body finished synchronously on return.
+    monkeypatch.setenv(_LEVER_ENV, "observe")
+    spawn = _default_reflector_spawn()
+    assert spawn is not _spawn_daemon  # not the fire-and-forget variant.
+    completed: list[bool] = []
+    spawn(lambda: completed.append(True))
+    # The joining spawn returned only after the body finished.
+    assert completed == [True]
+
+
+def test_spawn_daemon_joining_waits_for_the_body_then_returns() -> None:
+    import threading as _threading
+
+    started = _threading.Event()
+    finished = _threading.Event()
+
+    def _body() -> None:
+        started.set()
+        finished.set()
+
+    _spawn_daemon_joining(_body, join_timeout=2.0)
+    # The join held until the body completed (both events set on return).
+    assert started.is_set()
+    assert finished.is_set()
+
+
+def test_spawn_daemon_joining_bounds_a_wedged_body_and_returns() -> None:
+    import threading as _threading
+
+    release = _threading.Event()
+
+    def _wedged() -> None:
+        # Never releases within the join window; the bounded join must still
+        # return (a wedged reflector must NEVER hang the loop).
+        _ = release.wait(timeout=30.0)
+
+    _spawn_daemon_joining(_wedged, join_timeout=0.05)
+    # We got here despite the body still running → the join is bounded.
+    release.set()  # let the daemon unwind.
