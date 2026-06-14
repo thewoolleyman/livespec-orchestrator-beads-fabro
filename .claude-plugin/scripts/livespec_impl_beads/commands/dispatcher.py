@@ -137,9 +137,21 @@ from typing import cast
 
 from livespec_impl_beads.commands._config import resolve_store_config
 from livespec_impl_beads.commands._cross_repo import is_item_ready, load_manifest
-from livespec_impl_beads.commands._dispatcher_cost import gate_wave
+from livespec_impl_beads.commands._dispatcher_cost import (
+    COST_MODE_REPORT,
+    gate_wave,
+    resolve_cost_mode,
+)
 from livespec_impl_beads.commands._dispatcher_cost_pricing import DEFAULT_DISPATCH_COST_MODEL_ENV
-from livespec_impl_beads.commands._dispatcher_cost_sink import CostSink, cost_lookup_keys
+from livespec_impl_beads.commands._dispatcher_cost_report import (
+    build_cost_report_item,
+    emit_cost_report,
+)
+from livespec_impl_beads.commands._dispatcher_cost_sink import (
+    CostReport,
+    CostSink,
+    cost_lookup_keys,
+)
 from livespec_impl_beads.commands._dispatcher_engine import (
     CommandRunner,
     DispatchOutcome,
@@ -578,11 +590,21 @@ def _cost_gate(
     runner: ShellCommandRunner,
     poster: NotifyPoster,
 ) -> None:
-    """The cost-gate body wrapped fail-open by `_cost_gate_after_verdict`."""
+    """The cost-gate / cost-reporter body wrapped fail-open by `_cost_gate_after_verdict`.
+
+    Resolves `LIVESPEC_COST_MODE` (`report` default / `enforce` opt-in) and
+    hands it to `gate_wave`. In `report` mode the per-dispatch
+    API-equivalent cost is DERIVED + journaled but NEVER refused: the wave
+    returns no refusals, and this stage instead EMITS the cost-report
+    telemetry span (through the established spans-file → enrich egress) and
+    a one-line stderr summary. In `enforce` mode the original fail-closed
+    behavior is intact: each refusal becomes a `spend-cap-breach` alarm.
+    """
     if not any(outcome.status == "green" for outcome in outcomes):
         # No launched run in the wave -> no cost to gate (host-only refusals
         # and other non-green outcomes never reached a fabro run).
         return
+    cost_mode = resolve_cost_mode(environ=dict(os.environ))
     ps = runner.run(
         argv=[args.fabro_bin, "ps", "-a", "--json"],
         cwd=repo,
@@ -596,7 +618,11 @@ def _cost_gate(
         journal=journal,
         environ=dict(os.environ),
         derived_cost_micros_by_work_item=_derived_costs(args=args, repo=repo, outcomes=outcomes),
+        cost_mode=cost_mode,
     )
+    if cost_mode == COST_MODE_REPORT:
+        _emit_cost_report_telemetry(args=args, repo=repo, outcomes=outcomes)
+        return
     if not refusals:
         return
     events = tuple(
@@ -609,6 +635,53 @@ def _cost_gate(
         poster=poster,
         journal=journal,
     )
+
+
+def _emit_cost_report_telemetry(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    outcomes: list[DispatchOutcome],
+) -> None:
+    """Build + emit the report-mode per-dispatch cost telemetry (report mode).
+
+    Reads each green outcome's full `CostReport` from the per-dispatch cost
+    sink, builds the leak-free cost-report items (derived USD + per-category
+    token sums + the honest model basis), and emits the `cost.report` OTLP
+    span(s) plus the one-line stderr summary. A green run with no accrued
+    cost (no CC telemetry arrived) is reported as UNOBSERVABLE — never
+    refused. The whole call is inside `_cost_gate_after_verdict`'s fail-open
+    supervisor, so a sink-read / emit error degrades to a journaled
+    `cost-gate-error` rather than crashing the (already-final) verdict.
+    """
+    default_model = os.environ.get(DEFAULT_DISPATCH_COST_MODEL_ENV, "").strip() or None
+    reports = _derived_reports(args=args, repo=repo, outcomes=outcomes)
+    items = tuple(
+        build_cost_report_item(
+            work_item_id=outcome.work_item_id,
+            report=reports.get(outcome.work_item_id),
+            default_model=default_model,
+        )
+        for outcome in outcomes
+        if outcome.status == "green"
+    )
+    emit_cost_report(
+        items=items,
+        dispatch_id=_dispatch_id_of(outcomes=outcomes),
+        spans_path=_cost_report_spans_path(args=args, repo=repo),
+    )
+
+
+def _dispatch_id_of(*, outcomes: list[DispatchOutcome]) -> str | None:
+    """The dispatch id correlating the wave's cost-report wave span, if any.
+
+    `DispatchOutcome` does not carry a dispatch id, so the wave span is
+    correlated by the per-item `work.item.id` on each child span; the wave
+    root carries a dispatch id only when one is later threaded through.
+    Returns None today (the child-span work-item ids are the join keys).
+    """
+    _ = outcomes
+    return None
 
 
 def _derived_costs(
@@ -655,6 +728,48 @@ def _read_derived_costs(
                 derived[outcome.work_item_id] = micros
                 break
     return derived
+
+
+def _derived_reports(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    outcomes: list[DispatchOutcome],
+) -> dict[str, CostReport]:
+    """The full per-dispatch `CostReport` for each green outcome (report mode).
+
+    The richer sibling of `_derived_costs`: reads the per-dispatch cost sink
+    and, for each green outcome, looks the full report (token sums +
+    model-resolution + summed micro-USD) up by the work-item id. A work-item
+    with no accrued cost is OMITTED (the report builder then reports it
+    UNOBSERVABLE). Fail-open: a sink-read error yields an empty map, so the
+    report degrades to all-unobservable rather than crashing the cost stage.
+    """
+    try:
+        return _read_derived_reports(args=args, repo=repo, outcomes=outcomes)
+    except Exception:
+        # Fail-open: a cost-sink read error degrades the report to
+        # all-unobservable, never crashing the (already fail-open) cost stage.
+        return {}
+
+
+def _read_derived_reports(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    outcomes: list[DispatchOutcome],
+) -> dict[str, CostReport]:
+    sink = CostSink(path=_cost_sink_path(args=args, repo=repo))
+    reports: dict[str, CostReport] = {}
+    for outcome in outcomes:
+        if outcome.status != "green":
+            continue
+        for key in cost_lookup_keys(work_item_id=outcome.work_item_id, dispatch_id=None):
+            report = sink.cost_report(key=key)
+            if report is not None:
+                reports[outcome.work_item_id] = report
+                break
+    return reports
 
 
 _CANARY_TIMEOUT_SECONDS = 300.0
@@ -1324,6 +1439,19 @@ def _cost_sink_path(*, args: argparse.Namespace, repo: Path) -> Path:
     """
     journal = _journal_path(args=args, repo=repo)
     return journal.with_name(f"{journal.stem}-otel-cost.json")
+
+
+def _cost_report_spans_path(*, args: argparse.Namespace, repo: Path) -> Path:
+    """Where report mode appends its `cost.report` OTLP spans (LIVESPEC_COST_MODE=report).
+
+    Co-located with the journal (a `<base>-cost-report-spans.jsonl` sibling
+    next to the reflection / reflector-oob spans files) so the report-mode
+    cost telemetry rides the SAME established local-span-file → enrich
+    egress path; one `ExportTraceServiceRequest` per line (the family
+    capture format).
+    """
+    journal = _journal_path(args=args, repo=repo)
+    return journal.with_name(f"{journal.stem}-cost-report-spans.jsonl")
 
 
 def _build_otel_receiver(*, args: argparse.Namespace, repo: Path) -> StartableServer:

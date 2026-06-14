@@ -370,6 +370,36 @@ def test_sink_read_skips_non_dict_per_key_value(tmp_path: Path) -> None:
     assert sink.usd_micros(key="li-ok") == 7
 
 
+def test_sink_read_skips_record_missing_usd_micros(tmp_path: Path) -> None:
+    """A record-dict lacking `usd_micros` is skipped (a malformed record).
+
+    The richer record form requires `usd_micros`; a dedup value that is a
+    dict without it (or with a non-int / bool one) is dropped on read so a
+    malformed record never poisons the sum.
+    """
+    path = tmp_path / "cost.json"
+    _ = path.write_text(
+        json.dumps(
+            {
+                "li-efj": {
+                    "req-no-usd": {"input": 5},  # no usd_micros -> skipped
+                    "req-bool-usd": {"usd_micros": True},  # bool usd -> skipped
+                    "req-str-usd": {"usd_micros": "x"},  # str usd -> skipped
+                    "req-ok": {"usd_micros": 9, "input": 1},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    sink = CostSink(path=path)
+    # Only the well-formed record survives.
+    assert sink.usd_micros(key="li-efj") == 9
+    report = sink.cost_report(key="li-efj")
+    assert report is not None
+    assert report.usd_micros == 9
+    assert report.input_tokens == 1
+
+
 def test_sink_write_is_fail_open_on_oserror(tmp_path: Path) -> None:
     """A write to an unwritable path is swallowed (fail-open), never raising.
 

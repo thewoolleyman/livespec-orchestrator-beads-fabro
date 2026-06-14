@@ -54,6 +54,7 @@ from livespec_impl_beads.commands._dispatcher_cost_pricing import (
 )
 
 __all__: list[str] = [
+    "CostReport",
     "CostSink",
     "SpanCost",
     "cost_lookup_keys",
@@ -92,14 +93,43 @@ class SpanCost:
     `correlation_key` is the `work.item.id` (or `livespec.dispatch.id`
     fallback) the cost accrues to; `dedup_key` is the per-API-call
     `request_id` (or `spanId` fallback) that makes a re-delivered span
-    count once; `usd_micros` is the derived integer micro-USD cost. A span
-    with no token scalars or no correlation key yields None from
-    `span_cost` (it is not a cost-bearing span).
+    count once; `usd_micros` is the derived integer micro-USD cost;
+    `tokens` is the four-category token vector the cost was priced from
+    (carried so the report-mode telemetry can sum per-category token
+    usage); `model_resolved` is True iff the span carried a resolvable
+    `model` attribute (False ⇒ the cost was priced at the configured
+    default model — the honesty flag the report labels its model basis
+    with). A span with no token scalars or no correlation key yields None
+    from `span_cost` (it is not a cost-bearing span).
     """
 
     correlation_key: str
     dedup_key: str
     usd_micros: int
+    tokens: TokenVector
+    model_resolved: bool
+
+
+@dataclass(frozen=True, kw_only=True)
+class CostReport:
+    """The aggregated per-dispatch cost report read back from the sink (leak-free).
+
+    The report-mode observability record for one correlation key: the
+    summed integer micro-USD across the dispatch's distinct API calls, the
+    four per-category token sums, and `model_resolved` — True only when
+    EVERY contributing span carried a resolvable `model` attribute. When
+    any span fell back to the default model (the real CC reality today,
+    where `claude_code.llm_request` carries no `model`), `model_resolved`
+    is False so the emitted/summarized cost is honestly labeled a
+    default-model estimate rather than silently mis-attributed.
+    """
+
+    usd_micros: int
+    input_tokens: int
+    output_tokens: int
+    cache_write_tokens: int
+    cache_read_tokens: int
+    model_resolved: bool
 
 
 def cost_lookup_keys(*, work_item_id: str, dispatch_id: str | None) -> tuple[str, ...]:
@@ -148,38 +178,84 @@ def span_cost(*, span: dict[str, object], default_model: str | None = None) -> S
         cache_read=_int_attr(attrs=attrs, key=_CACHE_READ_TOKENS_ATTR),
     )
     fallback_model = default_model if default_model is not None else DEFAULT_DISPATCH_COST_MODEL
-    model_id = _resolve_model(attrs=attrs, fallback_model=fallback_model)
+    model_id, model_resolved = _resolve_model(attrs=attrs, fallback_model=fallback_model)
     usd_micros = derive_usd_micros(tokens=tokens, model_id=model_id)
     dedup_key = _dedup_key(span=span, attrs=attrs)
-    return SpanCost(correlation_key=correlation_key, dedup_key=dedup_key, usd_micros=usd_micros)
+    return SpanCost(
+        correlation_key=correlation_key,
+        dedup_key=dedup_key,
+        usd_micros=usd_micros,
+        tokens=tokens,
+        model_resolved=model_resolved,
+    )
+
+
+# The persisted per-dedup-key record fields. Each dedup key stores the
+# derived micro-USD plus the four token-category counts + the
+# model-resolved flag, so the report-mode telemetry can sum per-category
+# token usage and honestly label its model basis. The legacy bare-int form
+# (a dedup value that is just the micro-USD int) is still READ as a
+# usd_micros-only record (token sums 0, model UNresolved) — a forward /
+# backward compatible migration with no separate file.
+_USD_MICROS_FIELD = "usd_micros"
+_INPUT_FIELD = "input"
+_OUTPUT_FIELD = "output"
+_CACHE_WRITE_FIELD = "cache_write"
+_CACHE_READ_FIELD = "cache_read"
+_MODEL_RESOLVED_FIELD = "model_resolved"
+
+
+@dataclass(frozen=True, kw_only=True)
+class _DedupRecord:
+    """One distinct API call's contribution, read back from the sink file.
+
+    The richer persisted value: the derived micro-USD plus the four
+    token-category counts + whether the priced model was the span's own.
+    A legacy bare-int dedup value reads as a record with that int as
+    `usd_micros`, zero token sums, and `model_resolved=False`.
+    """
+
+    usd_micros: int
+    input_tokens: int
+    output_tokens: int
+    cache_write_tokens: int
+    cache_read_tokens: int
+    model_resolved: bool
 
 
 @dataclass(kw_only=True)
 class CostSink:
-    """Persisted `{correlation-key -> {dedup-key -> usd_micros}}` map (efj).
+    """Persisted `{correlation-key -> {dedup-key -> record}}` map (efj + report-only).
 
     The per-dispatch cost accumulator the live receiver writes and the
-    dispatcher's cost gate reads OUT OF PROCESS, mirroring `HeartbeatSink`.
-    `accumulate_span` records a token-bearing span's derived cost under its
+    dispatcher's cost gate / reporter read OUT OF PROCESS, mirroring
+    `HeartbeatSink`. `accumulate_span` records a token-bearing span's
+    derived cost + token vector + model-resolution under its
     (correlation-key, dedup-key) pair (a re-delivered span with the same
-    dedup key overwrites rather than double-adds — idempotent); `usd_micros`
-    reads back the SUM over the distinct dedup keys for a correlation key.
-    Both are fail-open: a corrupt / unreadable file reads as empty rather
-    than crashing the receiver's trace path.
+    dedup key overwrites rather than double-adds — idempotent);
+    `usd_micros` reads back the SUM of the micro-USD over the distinct
+    dedup keys for a correlation key, and `cost_report` reads back the full
+    aggregate (token sums + the conservative model-resolved flag). All are
+    fail-open: a corrupt / unreadable file reads as empty rather than
+    crashing the receiver's trace path.
 
     A `threading.Lock` serializes the read-modify-write so concurrent
     `ThreadingHTTPServer` worker threads never clobber the file (the
-    identical discipline as `HeartbeatSink`).
+    identical discipline as `HeartbeatSink`). The on-disk value per dedup
+    key is now a small record (micro-USD + token counts + model-resolved);
+    a legacy bare-int value is still read (as a usd_micros-only record), so
+    the format migrates without a separate file.
     """
 
     path: Path
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
     def accumulate_span(self, *, span: dict[str, object], default_model: str | None = None) -> None:
-        """Record one span's derived cost (idempotent per dedup key; fail-open).
+        """Record one span's derived cost + token vector (idempotent; fail-open).
 
         A non-cost-bearing span (no token scalars / no correlation key) is
-        a no-op. Otherwise the span's derived micro-USD is stored under its
+        a no-op. Otherwise the span's derived micro-USD, its four
+        token-category counts, and its model-resolution are stored under its
         (correlation-key, dedup-key) pair — re-delivery of the same span
         (same dedup key) overwrites the same slot rather than double-adding,
         so the sum stays the true per-dispatch cost.
@@ -190,7 +266,14 @@ class CostSink:
         with self._lock:
             accruals = self._read()
             per_key = accruals.setdefault(cost.correlation_key, {})
-            per_key[cost.dedup_key] = cost.usd_micros
+            per_key[cost.dedup_key] = _DedupRecord(
+                usd_micros=cost.usd_micros,
+                input_tokens=cost.tokens.input,
+                output_tokens=cost.tokens.output,
+                cache_write_tokens=cost.tokens.cache_write,
+                cache_read_tokens=cost.tokens.cache_read,
+                model_resolved=cost.model_resolved,
+            )
             self._write(accruals=accruals)
 
     def usd_micros(self, *, key: str) -> int | None:
@@ -199,15 +282,39 @@ class CostSink:
         The sum over the DISTINCT dedup keys recorded for the correlation
         key — None when no span has ever accrued to it (the unobservable
         condition the dispatcher's gate falls back to 5v9's fail-closed
-        path on).
+        path on). Unchanged contract: the enforce-mode cap path reads only
+        this.
         """
         with self._lock:
             per_key = self._read().get(key)
         if not per_key:
             return None
-        return sum(per_key.values())
+        return sum(record.usd_micros for record in per_key.values())
 
-    def _read(self) -> dict[str, dict[str, int]]:
+    def cost_report(self, *, key: str) -> CostReport | None:
+        """Return the full per-dispatch cost report for `key`, or None if never accrued.
+
+        Aggregates over the DISTINCT dedup keys: the summed micro-USD, the
+        four summed token categories, and `model_resolved` (True only when
+        EVERY contributing span carried a resolvable `model`). This is the
+        report-mode observability read — None when no span ever accrued (the
+        unobservable condition).
+        """
+        with self._lock:
+            per_key = self._read().get(key)
+        if not per_key:
+            return None
+        records = tuple(per_key.values())
+        return CostReport(
+            usd_micros=sum(r.usd_micros for r in records),
+            input_tokens=sum(r.input_tokens for r in records),
+            output_tokens=sum(r.output_tokens for r in records),
+            cache_write_tokens=sum(r.cache_write_tokens for r in records),
+            cache_read_tokens=sum(r.cache_read_tokens for r in records),
+            model_resolved=all(r.model_resolved for r in records),
+        )
+
+    def _read(self) -> dict[str, dict[str, _DedupRecord]]:
         if not self.path.is_file():
             return {}
         try:
@@ -216,21 +323,26 @@ class CostSink:
             return {}
         if not isinstance(raw, dict):
             return {}
-        accruals: dict[str, dict[str, int]] = {}
+        accruals: dict[str, dict[str, _DedupRecord]] = {}
         for key, value in cast("dict[str, object]", raw).items():
             if not isinstance(value, dict):
                 continue
-            per_key: dict[str, int] = {}
-            for dedup_key, micros in cast("dict[str, object]", value).items():
-                if isinstance(micros, bool):
-                    continue
-                if isinstance(micros, int):
-                    per_key[dedup_key] = micros
+            per_key: dict[str, _DedupRecord] = {}
+            for dedup_key, stored in cast("dict[str, object]", value).items():
+                record = _record_from_stored(stored=stored)
+                if record is not None:
+                    per_key[dedup_key] = record
             accruals[key] = per_key
         return accruals
 
-    def _write(self, *, accruals: dict[str, dict[str, int]]) -> None:
-        text = json.dumps(accruals, separators=(",", ":"), sort_keys=True)
+    def _write(self, *, accruals: dict[str, dict[str, _DedupRecord]]) -> None:
+        serializable = {
+            key: {
+                dedup_key: _record_to_dict(record=record) for dedup_key, record in per_key.items()
+            }
+            for key, per_key in accruals.items()
+        }
+        text = json.dumps(serializable, separators=(",", ":"), sort_keys=True)
         tmp = self.path.with_name(f"{self.path.name}.tmp")
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -241,6 +353,61 @@ class CostSink:
             # trace path (the cost gate degrades to 5v9's unobservable
             # fail-closed refusal, which is the safe direction).
             return
+
+
+def _record_to_dict(*, record: _DedupRecord) -> dict[str, object]:
+    return {
+        _USD_MICROS_FIELD: record.usd_micros,
+        _INPUT_FIELD: record.input_tokens,
+        _OUTPUT_FIELD: record.output_tokens,
+        _CACHE_WRITE_FIELD: record.cache_write_tokens,
+        _CACHE_READ_FIELD: record.cache_read_tokens,
+        _MODEL_RESOLVED_FIELD: record.model_resolved,
+    }
+
+
+def _record_from_stored(*, stored: object) -> _DedupRecord | None:
+    """Parse one stored dedup value into a `_DedupRecord`, or None to skip.
+
+    Tolerates BOTH the new record-dict form and the legacy bare-int form (a
+    plain micro-USD int → a usd_micros-only record with zero token sums and
+    `model_resolved=False`). A bool / unparseable value is skipped, matching
+    the prior defensive read.
+    """
+    if isinstance(stored, bool):
+        return None
+    if isinstance(stored, int):
+        return _DedupRecord(
+            usd_micros=stored,
+            input_tokens=0,
+            output_tokens=0,
+            cache_write_tokens=0,
+            cache_read_tokens=0,
+            model_resolved=False,
+        )
+    if not isinstance(stored, dict):
+        return None
+    block = cast("dict[str, object]", stored)
+    usd = _int_field(block=block, field_name=_USD_MICROS_FIELD)
+    if usd is None:
+        return None
+    return _DedupRecord(
+        usd_micros=usd,
+        input_tokens=_int_field(block=block, field_name=_INPUT_FIELD) or 0,
+        output_tokens=_int_field(block=block, field_name=_OUTPUT_FIELD) or 0,
+        cache_write_tokens=_int_field(block=block, field_name=_CACHE_WRITE_FIELD) or 0,
+        cache_read_tokens=_int_field(block=block, field_name=_CACHE_READ_FIELD) or 0,
+        model_resolved=block.get(_MODEL_RESOLVED_FIELD) is True,
+    )
+
+
+def _int_field(*, block: dict[str, object], field_name: str) -> int | None:
+    value = block.get(field_name)
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    return None
 
 
 def _string_and_int_attrs(*, span: dict[str, object]) -> dict[str, object]:
@@ -293,13 +460,22 @@ def _preferred_correlation_key(*, attrs: dict[str, object]) -> str | None:
     return None
 
 
-def _resolve_model(*, attrs: dict[str, object], fallback_model: str) -> str:
+def _resolve_model(*, attrs: dict[str, object], fallback_model: str) -> tuple[str, bool]:
+    """Resolve the priced model id + whether it came from the span's own `model`.
+
+    Returns `(model_id, resolved)`: `resolved` is True only when the span
+    carried a `model` attribute that normalized to a priced id. A missing
+    or unrecognized `model` falls back to `fallback_model` with
+    `resolved=False` — the honesty flag the cost report labels its basis
+    with (the real CC reality, where `claude_code.llm_request` carries no
+    `model`, lands here and is labeled a default-model estimate).
+    """
     raw_model = attrs.get(_MODEL_ATTR)
     if isinstance(raw_model, str):
         normalized = normalize_model_id(raw_model=raw_model)
         if normalized is not None:
-            return normalized
-    return fallback_model
+            return normalized, True
+    return fallback_model, False
 
 
 def _dedup_key(*, span: dict[str, object], attrs: dict[str, object]) -> str:

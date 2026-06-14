@@ -255,6 +255,7 @@ def test_gate_flip_derived_cost_lifts_autonomous_fail_closed() -> None:
         journal=journal,
         environ={"LIVESPEC_MAX_RUN_USD": "25", "LIVESPEC_MAX_SESSION_USD": "100"},
         derived_cost_micros_by_work_item={"item-aaa": 5_000_000},  # $5, under caps
+        cost_mode="enforce",
     )
     assert refusals == ()
     record = next(r for r in journal.records if r.get("stage") == "cost-gate")
@@ -274,6 +275,7 @@ def test_gate_flip_derived_cost_over_per_run_cap_refuses() -> None:
         journal=journal,
         environ={"LIVESPEC_MAX_RUN_USD": "25", "LIVESPEC_MAX_SESSION_USD": "100"},
         derived_cost_micros_by_work_item={"item-aaa": 30_000_000},  # $30, over $25
+        cost_mode="enforce",
     )
     assert refusals == ("item-aaa",)
     record = next(r for r in journal.records if r.get("stage") == "cost-gate")
@@ -310,6 +312,7 @@ def test_gate_flip_derived_cost_accumulates_per_session() -> None:
             "item-aaa": 40_000_000,
             "item-bbb": 40_000_000,
         },
+        cost_mode="enforce",
     )
     assert refusals == ("item-bbb",)
     gate_records = [r for r in journal.records if r.get("stage") == "cost-gate"]
@@ -334,6 +337,7 @@ def test_gate_still_fail_closed_when_no_telemetry_arrived() -> None:
         journal=journal,
         environ={"LIVESPEC_MAX_RUN_USD": "25", "LIVESPEC_MAX_SESSION_USD": "100"},
         derived_cost_micros_by_work_item={},  # nothing accrued
+        cost_mode="enforce",
     )
     assert refusals == ("item-aaa",)
     record = next(r for r in journal.records if r.get("stage") == "cost-gate")
@@ -348,14 +352,18 @@ def _args(*, journal_path: Path, mode: str = "autonomous") -> argparse.Namespace
     return argparse.Namespace(mode=mode, fabro_bin="fabro", journal=str(journal_path))
 
 
-def test_cost_gate_after_verdict_reads_derived_cost_and_proceeds(tmp_path: Path) -> None:
+def test_cost_gate_after_verdict_reads_derived_cost_and_proceeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """End-to-end: the dispatcher reads the derived cost the receiver wrote and
     PROCEEDS — the gate flip wired through `_cost_gate_after_verdict`.
 
     fabro reports null cost (dark), but the cost sink the receiver wrote
     carries a within-cap derived cost for the work item, so the autonomous
-    gate proceeds with no `spend-cap-breach` alarm.
+    enforce gate proceeds with no `spend-cap-breach` alarm. (Opt into
+    `enforce`, since the `report` default never refuses / caps.)
     """
+    monkeypatch.setenv("LIVESPEC_COST_MODE", "enforce")
     journal_path = tmp_path / "journal.jsonl"
     args = _args(journal_path=journal_path, mode="autonomous")
     # Seed the cost sink the receiver would have written, at the path the
@@ -402,6 +410,7 @@ def test_cost_gate_after_verdict_derived_over_cap_fires_alarm(
     """
     monkeypatch.setenv("CLAUDE_NTFY_DISPATCHER_TOPIC", "dispatch-alarms")
     monkeypatch.setenv("LIVESPEC_MAX_RUN_USD", "25")
+    monkeypatch.setenv("LIVESPEC_COST_MODE", "enforce")
     journal_path = tmp_path / "journal.jsonl"
     args = _args(journal_path=journal_path, mode="autonomous")
     sink = CostSink(path=_cost_sink_path(args=args, repo=tmp_path))
@@ -449,15 +458,18 @@ def _failed(work_item_id: str) -> DispatchOutcome:
     )
 
 
-def test_cost_gate_after_verdict_skips_non_green_and_unaccrued(tmp_path: Path) -> None:
+def test_cost_gate_after_verdict_skips_non_green_and_unaccrued(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """`_derived_costs` skips a non-green outcome and a green one with no accrual.
 
     Mixed wave: a non-green (host-only) outcome is skipped for cost
     derivation, and a green outcome whose work item NEVER accrued a cost
-    yields no derived value — so the gate falls back to 5v9's fail-closed
-    path (autonomous + null fabro cost → refuse), proving the omission is
-    fail-closed, not silently free.
+    yields no derived value — so the enforce gate falls back to 5v9's
+    fail-closed path (autonomous + null fabro cost → refuse), proving the
+    omission is fail-closed, not silently free. (Opt into `enforce`.)
     """
+    monkeypatch.setenv("LIVESPEC_COST_MODE", "enforce")
     journal_path = tmp_path / "journal.jsonl"
     args = _args(journal_path=journal_path, mode="autonomous")
     journal = _RecordingJournal()
@@ -477,14 +489,18 @@ def test_cost_gate_after_verdict_skips_non_green_and_unaccrued(tmp_path: Path) -
     assert gate["refuse"] is True
 
 
-def test_cost_gate_after_verdict_is_fail_open_on_missing_journal_attr() -> None:
+def test_cost_gate_after_verdict_is_fail_open_on_missing_journal_attr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """`_derived_costs` is fail-open: an `args` lacking `.journal` degrades to
     no derived cost (the fail-closed path), never crashing the cost gate.
 
     The minimal `args` shape some callers use omits `journal`; the
     cost-sink read must swallow the resulting error and fall back rather
-    than propagate it.
+    than propagate it. (Opt into `enforce` so the unobservable refusal that
+    proves the fall-back fires.)
     """
+    monkeypatch.setenv("LIVESPEC_COST_MODE", "enforce")
     args = argparse.Namespace(mode="autonomous", fabro_bin="fabro")  # no `journal`
     journal = _RecordingJournal()
     runner = _FakeRunner(stdout=_ps_null(run_id="01RUNAAA", work_item_id="item-aaa"), exit_code=0)

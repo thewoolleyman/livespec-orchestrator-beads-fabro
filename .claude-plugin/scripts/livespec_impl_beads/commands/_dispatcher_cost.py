@@ -79,6 +79,8 @@ class JournalWriter(Protocol):
 
 
 __all__: list[str] = [
+    "COST_MODE_ENFORCE",
+    "COST_MODE_REPORT",
     "CostGateDecision",
     "CostObservation",
     "JournalWriter",
@@ -86,6 +88,7 @@ __all__: list[str] = [
     "cost_gate_decision",
     "gate_wave",
     "observe_run_cost",
+    "resolve_cost_mode",
     "resolve_per_run_cap_usd",
     "resolve_per_session_cap_usd",
     "usd_micros_to_usd",
@@ -104,6 +107,35 @@ _DEFAULT_MAX_SESSION_USD = 100.0
 # `shadow` (explicit `--item`, human present) the same condition is a
 # warn — preconditions.md §"Fail-closed means".
 _AUTONOMOUS_MODE = "autonomous"
+
+# The cost-mode lever (`LIVESPEC_COST_MODE`): the NAME of an env var, not a
+# secret. `report` (the DEFAULT) derives + emits the API-equivalent cost as
+# an observability signal and NEVER refuses / applies caps — the
+# subscription-billing model the user runs on (provider-side spend limits,
+# so a fail-closed dollar gate is the wrong model). `enforce` is the
+# opt-in fail-closed gate (5v9 unobservable refusal + y0m cap-value
+# breach), retained intact for anyone actually on API billing. An
+# unset / unrecognized value resolves to `report` — the lever is always
+# wired and only the explicit `enforce` value flips on enforcement.
+_COST_MODE_ENV = "LIVESPEC_COST_MODE"
+COST_MODE_REPORT = "report"
+COST_MODE_ENFORCE = "enforce"
+_DEFAULT_COST_MODE = COST_MODE_REPORT
+
+
+def resolve_cost_mode(*, environ: dict[str, str]) -> str:
+    """Resolve `LIVESPEC_COST_MODE` to `report` (default) or `enforce`.
+
+    Mirrors the committed-default discipline of the cap resolvers: an
+    unset, empty, or unrecognized value resolves to `report` (the
+    subscription-friendly default), so the spend machinery is observe-only
+    unless an operator explicitly opts into `enforce`. The lever is always
+    wired — `report` is never a silent skip of the cost derivation, only of
+    the refusal / cap application.
+    """
+    if environ.get(_COST_MODE_ENV, "").strip() == COST_MODE_ENFORCE:
+        return COST_MODE_ENFORCE
+    return _DEFAULT_COST_MODE
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -294,7 +326,7 @@ def resolve_per_session_cap_usd(*, environ: dict[str, str]) -> float:
     )
 
 
-def gate_wave(
+def gate_wave(  # noqa: PLR0913 — kw-only post-verdict gate/reporter; each field is an independent caller input.
     *,
     mode: str,
     outcomes: tuple[DispatchOutcome, ...],
@@ -302,8 +334,9 @@ def gate_wave(
     journal: JournalWriter,
     environ: dict[str, str] | None = None,
     derived_cost_micros_by_work_item: dict[str, int] | None = None,
+    cost_mode: str = COST_MODE_REPORT,
 ) -> tuple[str, ...]:
-    """Apply the fail-closed cost gate to a completed dispatch wave (5v9 + y0m + efj).
+    """Apply the cost gate / reporter to a completed dispatch wave (5v9 + y0m + efj).
 
     Called AFTER the wave's verdict / exit code is computed (alongside
     `reflect` and the ntfy alarm), so it can never change the verdict.
@@ -319,7 +352,20 @@ def gate_wave(
     NOT a refusal — fail-open. Returns the work-item ids that REFUSED,
     which the caller turns into a `spend-cap`-class ntfy alarm event.
 
-    The verdict is decided in two layers:
+    `cost_mode` (`LIVESPEC_COST_MODE`) selects the posture:
+
+      * `report` (the DEFAULT, the subscription-billing model): the
+        per-run + running per-session API-equivalent cost is STILL derived
+        from the token sums, and one `cost-gate` record per run is still
+        journaled, but the verdict is forced `refuse=False` /
+        `severity="report"` — the fail-closed "unobservable ⇒ refuse"
+        branch and the cap-breach refusal are BOTH suppressed, so this
+        ALWAYS returns no refusals and never short-circuits dispatch. The
+        derived cost is observability, not a gate.
+      * `enforce` (opt-in, anyone on API billing): the original
+        fail-closed two-layer verdict below runs intact.
+
+    The `enforce` verdict is decided in two layers:
 
       * UNOBSERVABLE cost ⇒ `cost_gate_decision` (5v9): autonomous mode
         refuses, shadow warns. This is the fall-back when NO telemetry
@@ -341,9 +387,9 @@ def gate_wave(
     Per `cc-otel-gap-analysis.md` §"Conclusion 9", CC-token-derived cost is
     the primary signal; fabro's `total_usd_micros` (read from `ps_json`) is
     corroboration, used only when no derived cost is present. The
-    fail-closed branch STILL fires when cost is genuinely unobservable (no
-    telemetry arrived AND fabro's field is null) — the gate is not blinded,
-    the common path is merely made observable.
+    fail-closed branch STILL fires (in `enforce` mode) when cost is
+    genuinely unobservable (no telemetry arrived AND fabro's field is null)
+    — the gate is not blinded, the common path is merely made observable.
 
     `environ` gates the cap-VALUE layer: when None (5v9's call shape) an
     observed cost is `info` and the cap comparison is skipped; when supplied
@@ -353,6 +399,7 @@ def gate_wave(
     refusals: list[str] = []
     session_usd_micros = 0
     derived = derived_cost_micros_by_work_item or {}
+    enforcing = cost_mode == COST_MODE_ENFORCE
     per_run_cap = resolve_per_run_cap_usd(environ=environ) if environ is not None else None
     per_session_cap = resolve_per_session_cap_usd(environ=environ) if environ is not None else None
     for outcome in outcomes:
@@ -374,12 +421,21 @@ def gate_wave(
             derived_micros=derived.get(outcome.work_item_id),
         )
         usd_micros = observation.usd_micros
-        # The cap-VALUE path (y0m) runs only when the cost is OBSERVED and the
-        # caps are resolved (environ supplied); otherwise 5v9's unobservable
-        # gate decides. The explicit non-None checks narrow the optional
-        # cost + caps for the type checker.
-        if usd_micros is not None and per_run_cap is not None and per_session_cap is not None:
+        if usd_micros is not None:
+            # The running per-session total accumulates the observed cost in
+            # BOTH modes (report needs the cumulative spend for its summary;
+            # enforce needs it for the cap comparison).
             session_usd_micros += usd_micros
+        # In `report` mode (the default) the cost is derived + journaled but
+        # NEVER refused / capped — the verdict is a non-refusing `report`.
+        # In `enforce` mode the original two-layer fail-closed verdict runs:
+        # the cap-VALUE path (y0m) when the cost is OBSERVED and the caps are
+        # resolved (environ supplied), else 5v9's unobservable gate. The
+        # explicit non-None checks narrow the optional cost + caps for the
+        # type checker.
+        if not enforcing:
+            decision = _report_decision(run_id=run_id, observation=observation)
+        elif usd_micros is not None and per_run_cap is not None and per_session_cap is not None:
             decision = cap_value_decision(
                 run_id=run_id,
                 usd_micros=usd_micros,
@@ -405,6 +461,34 @@ def gate_wave(
         if decision.refuse:
             refusals.append(outcome.work_item_id)
     return tuple(refusals)
+
+
+def _report_decision(*, run_id: str, observation: CostObservation) -> CostGateDecision:
+    """The report-mode verdict: never refuse, never cap (subscription model).
+
+    The derived cost is OBSERVABILITY, not a gate: this always returns
+    `refuse=False` with a `report` severity, so report mode can never
+    short-circuit dispatch — neither the 5v9 unobservable refusal nor the
+    y0m cap-breach refusal fires. The reason carries only the run id + the
+    derived micro-USD (or the dark condition), leak-free.
+    """
+    if observation.observable:
+        return CostGateDecision(
+            refuse=False,
+            severity="report",
+            reason=(
+                f"run {run_id} cost reported "
+                f"({observation.usd_micros} usd_micros); report-only, never enforced"
+            ),
+        )
+    return CostGateDecision(
+        refuse=False,
+        severity="report",
+        reason=(
+            f"run {run_id} cost is unobservable (no CC token telemetry / fabro "
+            f"total_usd_micros null); report-only, never enforced"
+        ),
+    )
 
 
 def _observe_with_derived(
