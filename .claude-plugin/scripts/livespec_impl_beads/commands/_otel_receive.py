@@ -69,6 +69,7 @@ from typing import Protocol, cast
 
 from typing_extensions import override
 
+from livespec_impl_beads.commands._dispatcher_cost_sink import CostSink
 from livespec_impl_beads.commands._otel_enrich import (
     CorrelationJoin,
     IngestedSpan,
@@ -257,16 +258,23 @@ class OtelReceiver:
     the server up on a daemon thread; `bound_port` is the actual bound port
     (resolved from the listening socket). `stop()` shuts it down and joins
     the thread deterministically. Trace POSTs route into the injected
-    `exporter` through the SHARED enrich/scrub seam; metric POSTs advance
-    `heartbeat`. The `CorrelationJoin` is process-scoped state shared
-    across requests so a later span backfills the triple a dispatcher span
-    taught earlier (§3.3).
+    `exporter` through the SHARED enrich/scrub seam AND accrue per-API-call
+    token cost into the injected `cost` sink when one is wired (efj: the
+    seam the y0m spend cap reads, keyed by `work.item.id` /
+    `livespec.dispatch.id`; `cost=None` simply skips the accrual); metric
+    POSTs advance `heartbeat`. `default_model` prices a token-bearing span
+    that carries no resolvable `model` attribute (None → the pricing
+    module's committed default, CC's own default model). The
+    `CorrelationJoin` is process-scoped state shared across requests so a
+    later span backfills the triple a dispatcher span taught earlier (§3.3).
     """
 
     config: ReceiverConfig
     exporter: SpanExporter
     heartbeat: HeartbeatSink
+    cost: CostSink | None = None
     join: CorrelationJoin = field(default_factory=CorrelationJoin)
+    default_model: str | None = None
     bound_port: int = 0
     _server: ThreadingHTTPServer | None = field(default=None, init=False, repr=False)
     _thread: threading.Thread | None = field(default=None, init=False, repr=False)
@@ -340,9 +348,15 @@ class OtelReceiver:
             return
         spans = _ingested_spans_from_trace_request(request=parsed)
         # Learn the correlation triple from every span first so a later span
-        # in the SAME request backfills from an earlier one (§3.3).
+        # in the SAME request backfills from an earlier one (§3.3), and
+        # accrue the per-API-call token cost (efj): each span's token vector
+        # is priced + recorded in the cost sink keyed by `work.item.id` /
+        # `livespec.dispatch.id`, deduped per `request_id` so a re-delivered
+        # span counts once. A non-token-bearing span is a no-op in the sink.
         for ingested in spans:
             self.join.observe(keys=correlation_keys_from_attrs(span=ingested.span))
+            if self.cost is not None:
+                self.cost.accumulate_span(span=ingested.span, default_model=self.default_model)
         per_dataset: dict[str, list[dict[str, object]]] = {}
         for ingested in spans:
             keys = correlation_keys_from_attrs(span=ingested.span)
