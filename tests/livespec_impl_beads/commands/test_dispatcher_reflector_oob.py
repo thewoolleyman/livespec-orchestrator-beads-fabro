@@ -45,7 +45,10 @@ from livespec_impl_beads.commands._dispatcher_reflector_oob import (
     claude_reflector_argv,
     fingerprint,
     parse_findings,
+    resolve_claude_path,
+    resolve_claude_timeout_seconds,
     resolve_mode,
+    resolve_reflector_budget_seconds,
     run_reflector_oob,
     severity_priority,
 )
@@ -182,6 +185,112 @@ def test_claude_reflector_argv_is_headless_with_mcp_config() -> None:
     assert "--model" in argv and "claude-x" in argv
 
 
+# ---------------------------------------------------------------------------
+# 29f.8 gap 1 — time-box resolvers (env-overridable; positive-only).
+# ---------------------------------------------------------------------------
+
+
+def test_claude_timeout_default_is_at_least_600s() -> None:
+    # The pre-29f.8 90s ALWAYS timed out (a real review took ~371s); the
+    # default is raised well above that so the judge can actually finish.
+    assert resolve_claude_timeout_seconds(environ={}) >= 600.0
+
+
+def test_claude_timeout_env_override_and_bad_value_fallback() -> None:
+    assert (
+        resolve_claude_timeout_seconds(environ={"LIVESPEC_REFLECTOR_CLAUDE_TIMEOUT_SECONDS": "900"})
+        == 900.0
+    )
+    # Unparseable / non-positive values fall back to the committed default.
+    default = resolve_claude_timeout_seconds(environ={})
+    assert (
+        resolve_claude_timeout_seconds(
+            environ={"LIVESPEC_REFLECTOR_CLAUDE_TIMEOUT_SECONDS": "not-a-number"}
+        )
+        == default
+    )
+    assert (
+        resolve_claude_timeout_seconds(environ={"LIVESPEC_REFLECTOR_CLAUDE_TIMEOUT_SECONDS": "0"})
+        == default
+    )
+
+
+def test_reflector_budget_sits_above_the_claude_timeout() -> None:
+    # The stage budget must exceed the claude subprocess ceiling so the
+    # subprocess timeout (not _check_budget) is the tripwire on a hung judge.
+    assert resolve_reflector_budget_seconds(environ={}) > resolve_claude_timeout_seconds(environ={})
+
+
+def test_reflector_budget_env_override_and_bad_value_fallback() -> None:
+    assert (
+        resolve_reflector_budget_seconds(environ={"LIVESPEC_REFLECTOR_BUDGET_SECONDS": "1200"})
+        == 1200.0
+    )
+    default = resolve_reflector_budget_seconds(environ={})
+    assert (
+        resolve_reflector_budget_seconds(environ={"LIVESPEC_REFLECTOR_BUDGET_SECONDS": "garbage"})
+        == default
+    )
+
+
+# ---------------------------------------------------------------------------
+# 29f.8 gap 3 — `claude` PATH resolution under the minimal env-wrapper PATH.
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_claude_path_prefers_explicit_override() -> None:
+    assert (
+        resolve_claude_path(environ={"LIVESPEC_REFLECTOR_CLAUDE_PATH": "/opt/claude/bin/claude"})
+        == "/opt/claude/bin/claude"
+    )
+
+
+def test_resolve_claude_path_uses_which_when_no_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(reflector.shutil, "which", lambda _name: "/usr/bin/claude")
+    assert resolve_claude_path(environ={}) == "/usr/bin/claude"
+
+
+def test_resolve_claude_path_falls_back_to_local_bin_then_bare(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(reflector.shutil, "which", lambda _name: None)
+    # local-bin fallback exists → that path is used.
+    local_bin = tmp_path / ".local" / "bin"
+    local_bin.mkdir(parents=True)
+    fake_claude = local_bin / "claude"
+    _ = fake_claude.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(reflector, "_CLAUDE_LOCAL_BIN_FALLBACK", str(fake_claude))
+    assert resolve_claude_path(environ={}) == str(fake_claude)
+    # nothing on PATH and no local-bin file → bare "claude" (lets the runner
+    # surface the FileNotFoundError honestly rather than guessing).
+    monkeypatch.setattr(reflector, "_CLAUDE_LOCAL_BIN_FALLBACK", str(tmp_path / "nope" / "claude"))
+    assert resolve_claude_path(environ={}) == "claude"
+
+
+# ---------------------------------------------------------------------------
+# 29f.8 gap 4 — headless MCP tool permission scoped to the honeycomb server.
+# ---------------------------------------------------------------------------
+
+
+def test_claude_reflector_argv_allows_only_the_honeycomb_mcp_server() -> None:
+    argv = claude_reflector_argv(
+        prompt="review",
+        mcp_config_path=Path("/tmp/mcp.json"),
+        model="claude-x",
+        claude_path="/abs/claude",
+    )
+    assert "--allowedTools" in argv
+    scope = argv[argv.index("--allowedTools") + 1]
+    # Scoped to the configured "honeycomb" MCP server only — the minimal grant.
+    assert scope == "mcp__honeycomb"
+    # NEVER the blanket skip-permissions escape hatch.
+    assert "--dangerously-skip-permissions" not in argv
+    # The resolved claude path is argv[0] (29f.8 gap 3 threaded through).
+    assert argv[0] == "/abs/claude"
+
+
 def test_parse_findings_accepts_claude_json_envelope() -> None:
     findings = parse_findings(raw=_claude_json([_finding()]))
     assert len(findings) == 1
@@ -256,7 +365,9 @@ def test_observe_mode_runs_claude_emits_spans_files_nothing(
         lessons_proposer=RecordingLessonsProposer(),
     )
     # claude -p ran once; spans were written; NO ledger item was filed.
-    assert any(call[:2] == ["claude", "-p"] for call in runner.calls)
+    # argv[0] is the RESOLVED claude path (29f.8 gap 3 — may be absolute under
+    # the env wrapper), so match on the basename + the headless `-p` flag.
+    assert any(Path(call[0]).name == "claude" and call[1] == "-p" for call in runner.calls)
     assert spans_path.is_file()
     stages = [rec.get("stage") for rec in journal.records]
     assert "reflector-oob" in stages
