@@ -154,6 +154,26 @@ def test_fake_add_dependency_missing_from_raises() -> None:
         fake.add_dependency(from_id="li-absent", to_id="li-y", edge_type=EDGE_BLOCKS)
 
 
+def test_fake_add_comment_round_trips_via_list_comments() -> None:
+    """`add_comment` is the net-new write verb (29f.4 comment-bump path).
+
+    Unlike `seed_comment` (a fake-only hermetic seeding hook), `add_comment`
+    is a real `BeadsClient` protocol verb, so the out-of-band reflector can
+    append occurrence evidence to a recurring finding's existing item.
+    """
+    fake = FakeBeadsClient()
+    _ = fake.create_issue(draft=_draft(issue_id="li-x"))
+    fake.add_comment(issue_id="li-x", body="recurrence x2 on wave w7")
+    bodies = [comment["text"] for comment in fake.list_comments(issue_id="li-x")]
+    assert bodies == ["recurrence x2 on wave w7"]
+
+
+def test_fake_add_comment_missing_issue_raises() -> None:
+    fake = FakeBeadsClient()
+    with pytest.raises(BeadsMappingError):
+        fake.add_comment(issue_id="li-absent", body="orphan comment")
+
+
 def test_fake_update_applies_all_fields() -> None:
     fake = FakeBeadsClient()
     _ = fake.create_issue(draft=_draft(issue_id="li-x"))
@@ -392,6 +412,18 @@ def test_shell_close_without_reason(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     client.close_issue(issue_id="li-a", reason=None)
     assert seen[0] == ["close", "li-a"]
+
+
+def test_shell_add_comment_builds_comment_argv(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = ShellBeadsClient(config=_config())
+    seen: list[list[str]] = []
+    monkeypatch.setattr(
+        client,
+        "_run_void",
+        lambda *, verb_args: seen.append(verb_args),
+    )
+    client.add_comment(issue_id="li-a", body="recurrence note")
+    assert seen[0] == ["comment", "li-a", "recurrence note"]
 
 
 def test_shell_create_returns_id(monkeypatch: pytest.MonkeyPatch) -> None:

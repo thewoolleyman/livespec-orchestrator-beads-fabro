@@ -151,6 +151,10 @@ class BeadsClient(Protocol):
         """Add a dependency edge (`bd dep add <FROM> <TO> --type <edge_type>`)."""
         ...
 
+    def add_comment(self, *, issue_id: str, body: str) -> None:
+        """Append a comment to an issue (`bd comment <id> <body>`)."""
+        ...
+
 
 # Dependency-edge type constants (the `--type` values `bd dep add` accepts).
 EDGE_BLOCKS = "blocks"
@@ -304,6 +308,21 @@ class FakeBeadsClient:
         edge: DependencyEdge = {"depends_on_id": to_id, "type": edge_type}
         if edge not in edges:
             edges.append(edge)
+
+    def add_comment(self, *, issue_id: str, body: str) -> None:
+        """Append a comment in the in-memory tenant (mirrors `seed_comment`)."""
+        if issue_id not in self._issues:
+            raise BeadsMappingError(
+                record_id=issue_id,
+                detail="cannot comment on an issue that is not present in the tenant",
+            )
+        record: BeadsRecord = {
+            "issue_id": issue_id,
+            "text": body,
+            "author": None,
+            "created_at": None,
+        }
+        self._comments.setdefault(issue_id, []).append(record)
 
 
 class ShellBeadsClient:
@@ -495,6 +514,16 @@ class ShellBeadsClient:
         self._run_void(
             verb_args=["dep", "add", from_id, to_id, "--type", edge_type],
         )
+
+    def add_comment(self, *, issue_id: str, body: str) -> None:
+        """Append a comment via `bd comment <id> <body>` (the write verb).
+
+        bd v1.0.5 exposes `bd comment <id> "text"` as the shorthand for
+        `bd comments add <id> "text"`; the body is a single positional
+        argument (never shell-interpolated — it crosses the subprocess
+        seam as an argv element).
+        """
+        self._run_void(verb_args=["comment", issue_id, body])
 
 
 def _coerce_record_list(*, parsed: Any) -> list[BeadsRecord]:
