@@ -92,14 +92,20 @@ ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
         "agent.id",
         "ci.run_id",
         # CC-native per-API-call cost + token scalars (efj rider 2026-06-13):
-        # scalar numbers, scrub-safe; kept so a downstream sub-task can sum
-        # per-run cost (`cost_usd`) and token usage by the correlation triple.
+        # scalar numbers, scrub-safe; kept so the efj cost sink sums
+        # per-dispatch token usage by the correlation key and DERIVES the
+        # per-run cost (`cost_usd` is corroboration when present; CC emits
+        # cost only as a metric, so the host prices the tokens). `model`
+        # selects the price table row; `request_id` is the per-API-call
+        # dedup key the cost sink counts each call once by (efj wiring).
         "cost_usd",
         "input_tokens",
         "output_tokens",
         "cache_read_tokens",
         "cache_creation_tokens",
         "duration_ms",
+        "model",
+        "request_id",
     }
 )
 

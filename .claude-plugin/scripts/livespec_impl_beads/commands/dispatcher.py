@@ -137,6 +137,8 @@ from typing import cast
 from livespec_impl_beads.commands._config import resolve_store_config
 from livespec_impl_beads.commands._cross_repo import is_item_ready, load_manifest
 from livespec_impl_beads.commands._dispatcher_cost import gate_wave
+from livespec_impl_beads.commands._dispatcher_cost_pricing import DEFAULT_DISPATCH_COST_MODEL_ENV
+from livespec_impl_beads.commands._dispatcher_cost_sink import CostSink, cost_lookup_keys
 from livespec_impl_beads.commands._dispatcher_engine import (
     DispatchOutcome,
     PollPolicy,
@@ -528,6 +530,7 @@ def _cost_gate(
         ps_json=ps_json,
         journal=journal,
         environ=dict(os.environ),
+        derived_cost_micros_by_work_item=_derived_costs(args=args, repo=repo, outcomes=outcomes),
     )
     if not refusals:
         return
@@ -541,6 +544,52 @@ def _cost_gate(
         poster=poster,
         journal=journal,
     )
+
+
+def _derived_costs(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    outcomes: list[DispatchOutcome],
+) -> dict[str, int]:
+    """The CC-token-derived per-dispatch cost for each green outcome (efj).
+
+    Reads the per-dispatch cost sink the live receiver wrote
+    (`<base>-otel-cost.json`) and, for each green outcome, looks the
+    accumulated micro-USD up by the work-item id (the `work.item.id`
+    correlation key CC spans carry — the join key per
+    `cc-otel-gap-analysis.md` §"Conclusion 9"). A work-item with no accrued
+    cost (no CC telemetry arrived) is OMITTED, so `gate_wave` falls back to
+    5v9's fabro / fail-closed path for it — the gate is never blinded. The
+    read goes through `CostSink`, which is fail-open (a missing / corrupt
+    file reads as empty), so a cost-sink error degrades to the fail-closed
+    path rather than crashing the (already fail-open) cost gate.
+    """
+    try:
+        return _read_derived_costs(args=args, repo=repo, outcomes=outcomes)
+    except Exception:
+        # Fail-open: a cost-sink read error degrades to the fail-closed path
+        # (gate_wave then sees no derived cost), never crashing the cost gate.
+        return {}
+
+
+def _read_derived_costs(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    outcomes: list[DispatchOutcome],
+) -> dict[str, int]:
+    sink = CostSink(path=_cost_sink_path(args=args, repo=repo))
+    derived: dict[str, int] = {}
+    for outcome in outcomes:
+        if outcome.status != "green":
+            continue
+        for key in cost_lookup_keys(work_item_id=outcome.work_item_id, dispatch_id=None):
+            micros = sink.usd_micros(key=key)
+            if micros is not None:
+                derived[outcome.work_item_id] = micros
+                break
+    return derived
 
 
 _CANARY_TIMEOUT_SECONDS = 300.0
@@ -1187,21 +1236,45 @@ def _heartbeat_path(*, args: argparse.Namespace, repo: Path) -> Path:
     return journal.with_name(f"{journal.stem}-otel-heartbeat.json")
 
 
+def _cost_sink_path(*, args: argparse.Namespace, repo: Path) -> Path:
+    """Where the live receiver writes the per-dispatch CC-token cost (efj).
+
+    Co-located with the journal (a `<base>-otel-cost.json` sibling next to
+    the heartbeat file) so the cost gate reads the DERIVED per-dispatch
+    cost OUT OF PROCESS, exactly as 29f.6's probe reads the heartbeat. The
+    receiver accrues each per-API-call token vector here keyed by
+    `work.item.id` / `livespec.dispatch.id`.
+    """
+    journal = _journal_path(args=args, repo=repo)
+    return journal.with_name(f"{journal.stem}-otel-cost.json")
+
+
 def _build_otel_receiver(*, args: argparse.Namespace, repo: Path) -> StartableServer:
     """Build (but do NOT start) the single host-local live OTLP receiver.
 
     Resolves the bound loopback addr/port from the `LIVESPEC_OTEL_RECEIVER_*`
     levers, wires the SHARED 29f.5 Honeycomb egress exporter (ingest-only
-    key from env), and points the metrics heartbeat at the journal-sibling
-    file. Imported lazily so the egress transport is only pulled in when a
-    dispatch actually arms the receiver.
+    key from env), points the metrics heartbeat at the journal-sibling
+    file, and points the efj CC-token cost sink at its sibling
+    `<base>-otel-cost.json` (the derived-cost seam the y0m spend cap
+    reads), with the fallback pricing model resolved from
+    `LIVESPEC_DISPATCH_COST_MODEL`. Imported lazily so the egress transport
+    is only pulled in when a dispatch actually arms the receiver.
     """
     from livespec_impl_beads.commands._otel_enrich import HoneycombHttpExporter
 
     config = resolve_receiver_config(environ=dict(os.environ))
     exporter = HoneycombHttpExporter(ingest_key=os.environ.get(_HONEYCOMB_INGEST_KEY_ENV, ""))
     heartbeat = HeartbeatSink(path=_heartbeat_path(args=args, repo=repo))
-    return OtelReceiver(config=config, exporter=exporter, heartbeat=heartbeat)
+    cost = CostSink(path=_cost_sink_path(args=args, repo=repo))
+    default_model = os.environ.get(DEFAULT_DISPATCH_COST_MODEL_ENV, "").strip() or None
+    return OtelReceiver(
+        config=config,
+        exporter=exporter,
+        heartbeat=heartbeat,
+        cost=cost,
+        default_model=default_model,
+    )
 
 
 def _ensure_otel_receiver(

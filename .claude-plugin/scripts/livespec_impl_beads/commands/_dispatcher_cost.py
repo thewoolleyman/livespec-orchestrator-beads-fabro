@@ -301,8 +301,9 @@ def gate_wave(
     ps_json: str,
     journal: JournalWriter,
     environ: dict[str, str] | None = None,
+    derived_cost_micros_by_work_item: dict[str, int] | None = None,
 ) -> tuple[str, ...]:
-    """Apply the fail-closed cost gate to a completed dispatch wave (5v9 + y0m).
+    """Apply the fail-closed cost gate to a completed dispatch wave (5v9 + y0m + efj).
 
     Called AFTER the wave's verdict / exit code is computed (alongside
     `reflect` and the ntfy alarm), so it can never change the verdict.
@@ -320,17 +321,29 @@ def gate_wave(
 
     The verdict is decided in two layers:
 
-      * UNOBSERVABLE cost (the current fabro reality — `total_usd_micros`
-        null) ⇒ `cost_gate_decision` (5v9): autonomous mode refuses, shadow
-        warns. This is the live path today.
+      * UNOBSERVABLE cost ⇒ `cost_gate_decision` (5v9): autonomous mode
+        refuses, shadow warns. This is the fall-back when NO telemetry
+        arrived for the run — the genuinely-dark condition the fail-closed
+        refusal exists for.
       * OBSERVED cost ⇒ y0m's `cap_value_decision`: the per-run cost is
         accumulated into a running per-session total and BOTH are compared
         to the committed env-overridable caps (`resolve_per_run_cap_usd` /
         `resolve_per_session_cap_usd`); exceeding either ceiling refuses
-        fail-closed. This path is DORMANT until fabro reports cost
-        (livespec-impl-beads-efj) but is correct + unit-tested. The session
-        total accumulates across every observed run in the wave (the loop's
-        per-session cumulative spend).
+        fail-closed. The session total accumulates across every observed
+        run in the wave (the loop's per-session cumulative spend).
+
+    `derived_cost_micros_by_work_item` (efj) is the PRIMARY observed-cost
+    source: the per-dispatch cost the host OTLP receiver DERIVES from CC
+    token telemetry (`_dispatcher_cost_sink`), keyed by work-item id. When
+    a run has a derived cost it becomes the observed cost — so the common
+    path is now OBSERVABLE and 5v9's autonomous fail-closed refusal NO
+    LONGER fires, activating the (previously dormant) `cap_value_decision`.
+    Per `cc-otel-gap-analysis.md` §"Conclusion 9", CC-token-derived cost is
+    the primary signal; fabro's `total_usd_micros` (read from `ps_json`) is
+    corroboration, used only when no derived cost is present. The
+    fail-closed branch STILL fires when cost is genuinely unobservable (no
+    telemetry arrived AND fabro's field is null) — the gate is not blinded,
+    the common path is merely made observable.
 
     `environ` gates the cap-VALUE layer: when None (5v9's call shape) an
     observed cost is `info` and the cap comparison is skipped; when supplied
@@ -339,6 +352,7 @@ def gate_wave(
     """
     refusals: list[str] = []
     session_usd_micros = 0
+    derived = derived_cost_micros_by_work_item or {}
     per_run_cap = resolve_per_run_cap_usd(environ=environ) if environ is not None else None
     per_session_cap = resolve_per_session_cap_usd(environ=environ) if environ is not None else None
     for outcome in outcomes:
@@ -354,7 +368,11 @@ def gate_wave(
                 }
             )
             continue
-        observation = observe_run_cost(ps_json=ps_json, run_id=run_id)
+        observation = _observe_with_derived(
+            ps_json=ps_json,
+            run_id=run_id,
+            derived_micros=derived.get(outcome.work_item_id),
+        )
         usd_micros = observation.usd_micros
         # The cap-VALUE path (y0m) runs only when the cost is OBSERVED and the
         # caps are resolved (environ supplied); otherwise 5v9's unobservable
@@ -387,6 +405,24 @@ def gate_wave(
         if decision.refuse:
             refusals.append(outcome.work_item_id)
     return tuple(refusals)
+
+
+def _observe_with_derived(
+    *, ps_json: str, run_id: str, derived_micros: int | None
+) -> CostObservation:
+    """The per-run cost observation, CC-token-derived cost PRIMARY (efj).
+
+    When a CC-token-derived cost is present for the run it is the observed
+    cost (the primary signal per `cc-otel-gap-analysis.md` §"Conclusion 9")
+    — so the common path is OBSERVABLE and the autonomous fail-closed
+    refusal no longer fires. Absent a derived cost, falls back to fabro's
+    `total_usd_micros` from `fabro ps -a --json` (corroboration); a null
+    field there leaves the cost UNOBSERVABLE, the genuinely-dark condition
+    5v9's fail-closed gate still fires on.
+    """
+    if derived_micros is not None:
+        return CostObservation(run_id=run_id, usd_micros=derived_micros, observable=True)
+    return observe_run_cost(ps_json=ps_json, run_id=run_id)
 
 
 def _resolve_cap(*, environ: dict[str, str], name: str, default: float) -> float:
