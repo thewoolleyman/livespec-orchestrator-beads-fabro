@@ -49,6 +49,7 @@ from livespec_impl_beads.commands._dispatcher_reflector_oob import (
     resolve_claude_timeout_seconds,
     resolve_mode,
     resolve_reflector_budget_seconds,
+    resolve_strict_mcp,
     run_reflector_oob,
     severity_priority,
 )
@@ -289,6 +290,61 @@ def test_claude_reflector_argv_allows_only_the_honeycomb_mcp_server() -> None:
     assert "--dangerously-skip-permissions" not in argv
     # The resolved claude path is argv[0] (29f.8 gap 3 threaded through).
     assert argv[0] == "/abs/claude"
+
+
+# ---------------------------------------------------------------------------
+# 29f.8 follow-up — strict-MCP isolation (durable hosted-key path only).
+#
+# Without `--strict-mcp-config` the headless judge can pick up an ambient
+# OAuth honeycomb plugin whose token expires unattended; strict-by-default
+# pins the judge to ONLY the `--mcp-config` hosted server (the durable
+# API-key path). The lever is the explicit opt-out escape hatch.
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_strict_mcp_defaults_on_when_unset() -> None:
+    # Unset → strict ON, so the judge never falls back to an ambient plugin.
+    assert resolve_strict_mcp(environ={}) is True
+
+
+def test_resolve_strict_mcp_stays_on_for_truthy_and_unknown_values() -> None:
+    # Any non-falsey value (incl. an explicit truthy one) keeps strict ON.
+    assert resolve_strict_mcp(environ={"LIVESPEC_REFLECTOR_STRICT_MCP": "on"}) is True
+    assert resolve_strict_mcp(environ={"LIVESPEC_REFLECTOR_STRICT_MCP": "1"}) is True
+    assert resolve_strict_mcp(environ={"LIVESPEC_REFLECTOR_STRICT_MCP": "true"}) is True
+    assert resolve_strict_mcp(environ={"LIVESPEC_REFLECTOR_STRICT_MCP": "whatever"}) is True
+
+
+def test_resolve_strict_mcp_explicit_falsey_disables_case_insensitively() -> None:
+    # Explicit falsey values are the opt-out escape hatch; case/whitespace tolerant.
+    for falsey in ("off", "OFF", "false", "False", "0", "no", "  off  "):
+        assert resolve_strict_mcp(environ={"LIVESPEC_REFLECTOR_STRICT_MCP": falsey}) is False
+
+
+def test_claude_reflector_argv_appends_strict_mcp_config_by_default() -> None:
+    # Default (strict_mcp omitted) pins the judge to ONLY the --mcp-config server.
+    argv = claude_reflector_argv(
+        prompt="review",
+        mcp_config_path=Path("/tmp/mcp.json"),
+        model="claude-x",
+        claude_path="/abs/claude",
+    )
+    assert "--strict-mcp-config" in argv
+
+
+def test_claude_reflector_argv_omits_strict_mcp_config_when_opted_out() -> None:
+    # strict_mcp=False reproduces the pre-follow-up behavior (ambient plugins allowed).
+    argv = claude_reflector_argv(
+        prompt="review",
+        mcp_config_path=Path("/tmp/mcp.json"),
+        model="claude-x",
+        claude_path="/abs/claude",
+        strict_mcp=False,
+    )
+    assert "--strict-mcp-config" not in argv
+    # The honeycomb --mcp-config wiring is unaffected by the opt-out.
+    assert "--mcp-config" in argv
+    assert argv[argv.index("--allowedTools") + 1] == "mcp__honeycomb"
 
 
 def test_parse_findings_accepts_claude_json_envelope() -> None:
