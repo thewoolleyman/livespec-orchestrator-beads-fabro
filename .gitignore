@@ -1,5 +1,10 @@
 ### Project ignores
 tmp/
+# The pinned fabro binary is fetched into the orchestrator-image build context
+# at build time (orchestrator-image/build-and-verify.sh copies it from
+# ~/.fabro/bin/fabro) — a 111MB blob, never committed. The version is pinned in
+# orchestrator-image/Dockerfile's FABRO_VERSION.
+orchestrator-image/fabro
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 .claude/worktrees/

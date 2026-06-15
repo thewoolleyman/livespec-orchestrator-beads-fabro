@@ -1,0 +1,6 @@
+# Keep the build context tiny: only the Dockerfile, entrypoint, and the staged
+# `fabro` binary are needed. Everything else is excluded.
+*
+!Dockerfile
+!orchestrator-entrypoint.sh
+!fabro
