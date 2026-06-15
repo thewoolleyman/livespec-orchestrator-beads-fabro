@@ -105,6 +105,7 @@ __all__: list[str] = [
     "resolve_claude_timeout_seconds",
     "resolve_mode",
     "resolve_reflector_budget_seconds",
+    "resolve_strict_mcp",
     "run_reflector_oob",
     "severity_priority",
 ]
@@ -183,6 +184,17 @@ _REFLECTOR_BUDGET_SECONDS = _DEFAULT_REFLECTOR_BUDGET_SECONDS
 # bare `"claude"` (last-resort, lets the runner surface the FileNotFoundError).
 _CLAUDE_PATH_ENV = "LIVESPEC_REFLECTOR_CLAUDE_PATH"
 _CLAUDE_LOCAL_BIN_FALLBACK = "~/.local/bin/claude"
+
+# Strict-MCP isolation lever (29f.8 follow-up). DEFAULT = strict ON: the
+# headless judge loads ONLY the `--mcp-config` hosted honeycomb server (the
+# durable API-key path proven working in PR #49) and IGNORES any ambient OAuth
+# honeycomb plugin, whose token can expire unattended and silently blind the
+# reflector. An explicit falsey value (`off` / `false` / `0` / `no`, case- and
+# whitespace-insensitive) is the opt-out escape hatch that restores the prior
+# behavior (ambient plugins allowed). Mirrors the always-wired env-lever shape
+# of the other resolvers; NAME only, never a secret.
+_STRICT_MCP_ENV = "LIVESPEC_REFLECTOR_STRICT_MCP"
+_STRICT_MCP_FALSEY = frozenset({"off", "false", "0", "no"})
 
 # Dedup-first filing constants (best-practices §5.2 / decision 6).
 _MAX_NEW_ITEMS_PER_PASS = 3
@@ -407,6 +419,21 @@ def resolve_claude_path(*, environ: dict[str, str]) -> str:
     return "claude"
 
 
+def resolve_strict_mcp(*, environ: dict[str, str]) -> bool:
+    """Whether the headless judge runs with `--strict-mcp-config` (29f.8 follow-up).
+
+    DEFAULT = strict ON: an unset (or empty) `LIVESPEC_REFLECTOR_STRICT_MCP`
+    reads as `True`, so the judge loads ONLY the `--mcp-config` hosted
+    Honeycomb server (the durable API-key path) and never falls back to an
+    ambient OAuth honeycomb plugin whose token can expire unattended. An
+    explicit falsey value (`off` / `false` / `0` / `no`, case- and
+    whitespace-insensitive) is the opt-out escape hatch that restores the
+    prior ambient-plugin-permitted behavior. Any other value keeps strict on.
+    Mirrors the tolerant, always-wired shape of the other env resolvers.
+    """
+    return environ.get(_STRICT_MCP_ENV, "").strip().lower() not in _STRICT_MCP_FALSEY
+
+
 def fingerprint(*, category: str, stage: str, repo: str, subject: str) -> str:
     """`sha256(category | stage-or-node | repo | normalized-subject)[:12]`.
 
@@ -461,6 +488,7 @@ def claude_reflector_argv(
     mcp_config_path: Path,
     model: str,
     claude_path: str = "claude",
+    strict_mcp: bool = True,
 ) -> list[str]:
     """Build the headless `claude -p` argv (best-practices §7 decision 9).
 
@@ -476,7 +504,16 @@ def claude_reflector_argv(
     grants no tools by default, so without this the MCP review can call nothing
     and produces an empty pass. The scope is `mcp__<server>` — the minimal grant
     (every honeycomb tool, nothing else), NOT `--dangerously-skip-permissions`.
+
+    `strict_mcp` (29f.8 follow-up; default `True`): when set, appends
+    `--strict-mcp-config` so claude loads ONLY the `--mcp-config` honeycomb
+    server and IGNORES any ambient OAuth honeycomb plugin (whose token can
+    expire unattended and silently blind the reflector). The opt-out
+    (`strict_mcp=False`) omits the flag, restoring the prior ambient-permitted
+    behavior. The resolved value is threaded in by `run_claude_reflector`
+    (via `resolve_strict_mcp`), mirroring how `claude_path` is threaded.
     """
+    strict_flag = ["--strict-mcp-config"] if strict_mcp else []
     return [
         claude_path,
         "-p",
@@ -489,6 +526,7 @@ def claude_reflector_argv(
         model,
         "--output-format",
         "json",
+        *strict_flag,
     ]
 
 
@@ -609,6 +647,7 @@ def run_claude_reflector(
     config_path = Path(handle.name)
     claude_path = resolve_claude_path(environ=dict(os.environ))
     timeout_seconds = resolve_claude_timeout_seconds(environ=dict(os.environ))
+    strict_mcp = resolve_strict_mcp(environ=dict(os.environ))
     try:
         json.dump(config, handle)
         handle.close()
@@ -618,6 +657,7 @@ def run_claude_reflector(
                 mcp_config_path=config_path,
                 model=model,
                 claude_path=claude_path,
+                strict_mcp=strict_mcp,
             ),
             cwd=repo,
             timeout_seconds=timeout_seconds,
