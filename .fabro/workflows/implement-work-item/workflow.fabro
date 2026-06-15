@@ -18,7 +18,9 @@
 // runs — the graph never creates worktrees and never touches the host.
 // The per-item brief (work-item id, title, description, publish branch)
 // arrives via the run goal (`--goal-file`), rendered into the prompts
-// as {{ goal }}.
+// as the `goal` template variable. (Keep brace tokens out of comments
+// BEFORE the digraph line — a brace there breaks Fabro's graph render in
+// the web UI; cosmetic, execution is unaffected. See fabro-sh/fabro#508.)
 //
 // Agent nodes use the ACP backend: the Claude Code adapter reads
 // CLAUDE_CODE_OAUTH_TOKEN from the sandbox environment, injected at
