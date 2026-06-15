@@ -122,13 +122,28 @@ browser.
   `[server.listen] address`). The entrypoint binds `0.0.0.0:32276` *inside the
   container* so a published port is reachable, and `EXPOSE 32276` documents it.
 - **Auth (dev-token).** The control plane is protected by fabro's `dev-token`
-  auth — a session token `fabro install` generates and stores under
-  `~/.fabro/storage/` (server.env + the default vault). It is a **secret**: do
-  not print it. To learn the token for a UI login *without echoing it to a
-  shared log*, read it inside the container into the clipboard / a private
-  pager, or use `fabro doctor` / the fabro CLI which authenticates against the
-  local server automatically. A human opening the UI authenticates with that
-  dev-token; the value should be transferred over a private channel only.
+  auth. The token is a **secret** — anyone holding it controls the orchestrator
+  (GitHub + model creds, dispatch power) — so transfer it over a private channel
+  only and never commit it or paste it into a shared log.
+  - **Where the token lives / how to retrieve it.** It is stored in fabro's CLI
+    auth state at `~/.fabro/auth.json`, under `servers["<server-url>"].token`
+    (with sibling keys `kind` = `dev-token` and `logged_in_at`). On the host:
+
+    ```bash
+    jq -r '.servers["http://127.0.0.1:32276"].token' ~/.fabro/auth.json
+    ```
+
+    For the containerized orchestrator the entrypoint's `fabro install`
+    provisions it; retrieve it from the running container the same way, e.g.
+    `docker exec <name> jq -r '.servers["http://127.0.0.1:32276"].token' /root/.fabro/auth.json`
+    (the server side also persists it under `~/.fabro/storage/`). Note:
+    `fabro server start` prints `Auth: dev-token` but does **not** print the
+    token value.
+  - **Logging a browser in.** `fabro auth login --no-browser` prints an
+    `http://127.0.0.1:32276/auth/cli/start?…` PKCE URL to open in a browser. Its
+    redirect target is a localhost callback, so it completes cleanly when the
+    browser and the server share a host (local use); for a pure SSH-tunnel setup,
+    authenticate the UI with the dev-token value retrieved above.
 - **Remote access = SSH tunnel, NOT a 0.0.0.0 host bind.** The host publish is
   loopback-only (`-p 127.0.0.1:32276:32276`) by default, so the control plane is
   **not** network-exposed. To view it from your laptop, tunnel over SSH:
