@@ -76,7 +76,7 @@ livespec-runtime = { git = "https://github.com/thewoolleyman/livespec-runtime.gi
 
 [tool.ruff]
 line-length = 100
-extend-exclude = ["**/_vendor/**", "**/__pycache__/**", "mutants/**"]
+extend-exclude = [".claude/hooks/**", "**/_vendor/**", "**/__pycache__/**", "mutants/**"]
 
 [tool.ruff.lint]
 select = [
