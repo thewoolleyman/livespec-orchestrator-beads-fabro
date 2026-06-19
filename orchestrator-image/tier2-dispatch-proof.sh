@@ -127,10 +127,10 @@ preflight() {
   require_env CLAUDE_CODE_OAUTH_TOKEN
   require_env BEADS_DOLT_PASSWORD_livespec_impl_beads
   require_env HONEYCOMB_INGEST_KEY_LIVESPEC
-  if docker image inspect "$IMAGE" >/dev/null 2>&1; then
-    printf 'image present: %s\n' "$IMAGE"
-  elif [ "$BUILD_IMAGE" -eq 1 ]; then
+  if [ "$BUILD_IMAGE" -eq 1 ]; then
     stage_and_build_image
+  elif docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    printf 'image present: %s\n' "$IMAGE"
   else
     fail "image not present: $IMAGE (rerun with --build-image or build-and-verify.sh first)"
   fi
