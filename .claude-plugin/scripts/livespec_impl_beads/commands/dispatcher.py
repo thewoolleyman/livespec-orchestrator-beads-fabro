@@ -193,6 +193,7 @@ from livespec_impl_beads.commands._dispatcher_plan import (
     human_gated_surface_detail,
     is_host_only_item,
     is_human_gated_item,
+    is_non_convergence_outcome,
     item_sizing_warnings,
     janitor_checkout_path,
     parse_fleet_members,
@@ -230,7 +231,9 @@ from livespec_impl_beads.errors import (
     BeadsConnectionError,
     BeadsMappingError,
     BeadsTenantMissingError,
+    WorkItemNotFoundError,
 )
+from livespec_impl_beads.regroom import enter as enter_needs_regroom
 from livespec_impl_beads.store import (
     WorkItemComment,
     append_work_item,
@@ -1149,11 +1152,7 @@ def _dispatch_one(
         )
     finally:
         overlay_file.unlink(missing_ok=True)
-    if outcome.status == "green" and args.close_on_merge:
-        _close_item(repo=repo, item=item, outcome=outcome)
-        journal.append(record={"stage": "ledger-close", "work_item_id": item.id})
-    journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
-    _emit_calibration(
+    _post_run_dispositions(
         args=args,
         repo=repo,
         item=item,
@@ -1163,6 +1162,41 @@ def _dispatch_one(
         dispatch_context_size=len(goal_text),
     )
     return outcome
+
+
+def _post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each field is an independent caller input.
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    item: WorkItem,
+    outcome: DispatchOutcome,
+    journal: JournalFile,
+    wall_clock_seconds: float,
+    dispatch_context_size: int,
+) -> None:
+    """Run the machine-path dispositions after a dispatch reaches its terminal.
+
+    The sequence the Dispatcher runs once a `run_dispatch` returns: close
+    on a confirmed merge (when armed), journal the terminal outcome, bounce
+    a non-converging slice to `needs-regroom` (n5kina), and emit the
+    calibration telemetry (yfsv4j). Aggregated here so `_dispatch_one`
+    stays a single readable sequence; every step is keyed off the terminal
+    `outcome` and is independently fail-soft where it touches IO.
+    """
+    if outcome.status == "green" and args.close_on_merge:
+        _close_item(repo=repo, item=item, outcome=outcome)
+        journal.append(record={"stage": "ledger-close", "work_item_id": item.id})
+    journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
+    _bounce_non_convergence_to_regroom(repo=repo, item=item, outcome=outcome, journal=journal)
+    _emit_calibration(
+        args=args,
+        repo=repo,
+        item=item,
+        outcome=outcome,
+        journal=journal,
+        wall_clock_seconds=wall_clock_seconds,
+        dispatch_context_size=dispatch_context_size,
+    )
 
 
 def _emit_calibration(  # noqa: PLR0913 — kw-only fail-open stage; each field is an independent caller input.
@@ -1400,6 +1434,77 @@ def _human_gated_surface(*, item: WorkItem, journal: JournalFile) -> DispatchOut
     )
     journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
     return outcome
+
+
+def _bounce_non_convergence_to_regroom(
+    *,
+    repo: Path,
+    item: WorkItem,
+    outcome: DispatchOutcome,
+    journal: JournalFile,
+) -> None:
+    """Mark a non-converging slice `needs-regroom` and surface it (n5kina).
+
+    Per SPECIFICATION/contracts.md §"Dispatcher grooming behavior" and
+    SPECIFICATION/scenarios.md "Scenario 11 — Dispatcher bounces a
+    non-converging slice to needs-regroom": when a dispatched slice will
+    not converge through the janitor gate within the bounded fix-loop cap,
+    the Dispatcher MUST mark it `needs-regroom` and SURFACE it
+    (escalate-don't-drop) — non-convergence is the empirical "too big"
+    signal, never a reason to infinite-retry. The single Fabro DOT tweak
+    (work-item livespec-impl-beads-rw75ym, Scenario 14) routes the
+    fix-loop-cap exhaustion back to the Dispatcher; THIS is the
+    Dispatcher-side counterpart that marks and surfaces the bounced item.
+
+    Runs AFTER the terminal `outcome` is journaled and only for a
+    non-convergence terminal (`is_non_convergence_outcome`): it applies
+    the `needs-regroom` label via the shared `regroom.enter` verb (the
+    same one the intake Definition-of-Ready path uses, so every entry into
+    the state is the one observable mutation) and journals a
+    `non-convergence-bounce` record plus a stderr SURFACE line. It does
+    NOT retry and does NOT close the item — the slice stays open at
+    `needs-regroom` for the groom front-end to decompose.
+
+    Fail-soft on the ledger write: the verdict is already final, so a
+    `WorkItemNotFoundError` (the item was pruned between dispatch and
+    bounce) or a beads command/connection failure is journaled as
+    `non-convergence-bounce-error` and swallowed — the dispatch never
+    crashes on the escalation write (mirroring the cost-gate / calibration
+    fail-soft stages). A genuine bug still propagates.
+    """
+    if not is_non_convergence_outcome(outcome=outcome):
+        return
+    try:
+        enter_needs_regroom(path=_store_config(repo=repo), item_id=item.id)
+    except (
+        WorkItemNotFoundError,
+        BeadsCommandError,
+        BeadsConnectionError,
+        BeadsMappingError,
+        BeadsTenantMissingError,
+    ) as exc:
+        journal.append(
+            record={
+                "stage": "non-convergence-bounce-error",
+                "work_item_id": item.id,
+                "reason": f"{type(exc).__name__}",
+            }
+        )
+        return
+    journal.append(
+        record={
+            "stage": "non-convergence-bounce",
+            "work_item_id": item.id,
+            "outcome_stage": outcome.stage,
+            "outcome_status": outcome.status,
+        }
+    )
+    surface_line = (
+        f"SURFACE: work-item {item.id} did not converge through the janitor gate "
+        f"({outcome.status} at {outcome.stage}); marked needs-regroom and surfaced "
+        f"for grooming — NOT infinite-retried.\n"
+    )
+    _ = sys.stderr.write(surface_line)
 
 
 def _warn_item_sizing(*, item: WorkItem, journal: JournalFile) -> None:

@@ -45,7 +45,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from livespec_impl_beads.commands import _jsonc
 from livespec_impl_beads.types import WorkItem
@@ -55,6 +55,7 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "DEFAULT_SANDBOX_OTEL_ENDPOINT",
+    "NON_CONVERGED_MARKER",
     "SANDBOX_OTEL_ENDPOINT_ENV_VAR",
     "SIBLING_CLONES_ROOT_ENV_VAR",
     "DispatchPlan",
@@ -73,6 +74,7 @@ __all__: list[str] = [
     "human_gated_surface_detail",
     "is_host_only_item",
     "is_human_gated_item",
+    "is_non_convergence_outcome",
     "item_sizing_warnings",
     "janitor_argv_with_default",
     "janitor_checkout_path",
@@ -416,6 +418,17 @@ _HOST_ONLY_MARKER_RE = re.compile(r"(?<![\w-])host[-_]only(?![\w-])", re.IGNOREC
 # contracts.md change (the mapped beads record drops unrecognised labels).
 _HUMAN_GATED_MARKER_RE = re.compile(r"(?<![\w-])human[-_]gated(?![\w-])", re.IGNORECASE)
 
+# The stable non-convergence sentinel the Fabro workflow-DOT's
+# "non-converged" terminal node emits to stderr (work-item
+# livespec-impl-beads-rw75ym, Scenario 14) when a slice hits the fix-loop
+# cap without converging. The terminal node exits non-zero (no outgoing
+# edge), so the run ends non-green and the Dispatcher's engine surfaces
+# this marker in the failed outcome's detail; `is_non_convergence_outcome`
+# matches it to drive the n5kina bounce-to-`needs-regroom`. Keeping the
+# sentinel here makes the DOT-side producer and the Dispatcher-side
+# consumer share ONE literal (the DOT references this exact string).
+NON_CONVERGED_MARKER = "LIVESPEC_NON_CONVERGED"
+
 
 def item_sizing_warnings(*, item: WorkItem) -> tuple[str, ...]:
     """Warn-only sizing heuristics applied at dispatch/loop-feed time.
@@ -530,6 +543,61 @@ def human_gated_surface_detail(*, item_id: str) -> str:
         "maintainer instead of the factory. Surface it to the maintainer to drive "
         "by hand (e.g. via `/livespec:propose-change`); the item is left open."
     )
+
+
+class _NonConvergenceOutcome(Protocol):
+    """Structural view of a terminal outcome's non-convergence signals.
+
+    The pure planning layer cannot import `DispatchOutcome` from
+    `_dispatcher_engine` (that module imports THIS one — a concrete import
+    would be circular), so the predicate reads only the two fields it
+    needs through this Protocol. `DispatchOutcome` satisfies it
+    structurally, so the Dispatcher passes the dataclass straight through.
+    """
+
+    @property
+    def status(self) -> str: ...
+
+    @property
+    def detail(self) -> str: ...
+
+
+def is_non_convergence_outcome(*, outcome: _NonConvergenceOutcome) -> bool:
+    """Recognise a non-convergence terminal the Dispatcher must bounce (n5kina).
+
+    Per SPECIFICATION/contracts.md §"Dispatcher grooming behavior" and
+    SPECIFICATION/scenarios.md "Scenario 11 — Dispatcher bounces a
+    non-converging slice to needs-regroom": a dispatched slice that will
+    not converge through the janitor gate within the bounded fix-loop cap
+    MUST be marked `needs-regroom` and surfaced, never infinite-retried.
+    The Dispatcher reads this predicate AFTER the terminal outcome to
+    decide whether to bounce the item to `needs-regroom`.
+
+    Two mechanical signals mark non-convergence, both already produced by
+    the existing dispatch path:
+
+    - `stalled-no-progress` — the coarse wall-clock watchdog confirmed the
+      run made no progress for the full stall window and `fabro rm -f`-ed
+      it (the 7us.6 hang class). A stalled run will not converge and would
+      otherwise be retried; it is the empirical non-convergence terminal
+      already in the engine's vocabulary.
+    - the DOT non-converged sentinel — the single Fabro workflow-DOT tweak
+      (work-item livespec-impl-beads-rw75ym, Scenario 14) routes a
+      fix-loop-cap exhaustion to a terminal `non_converged` node that exits
+      non-zero with `NON_CONVERGED_MARKER` on stderr. The run ends non-green
+      and the engine surfaces that marker in the failed outcome's `detail`,
+      so a substring match recovers the DOT's non-converged exit edge as a
+      Dispatcher-side bounce trigger.
+
+    Ordinary failures (a `host-only-refused` / `human-gated-surfaced`
+    routing refusal, a `blocked` human-gate park, a one-off `pr-view`
+    failure) are NOT non-convergence and must not be bounced, so the match
+    is deliberately narrow — the watchdog status plus the explicit DOT
+    sentinel only.
+    """
+    if outcome.status == "stalled-no-progress":
+        return True
+    return outcome.status == "failed" and NON_CONVERGED_MARKER in outcome.detail
 
 
 def resolve_sandbox_otel_endpoint(*, environ: dict[str, str]) -> str:

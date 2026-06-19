@@ -241,8 +241,8 @@
     "heading": "## Scenario 11 — Dispatcher bounces a non-converging slice to needs-regroom",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the grooming-gherkin-and-gap-detectability revise pass. This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
+    "test": "tests.integration.test_dispatcher_non_convergence_scenario11.test_dispatch_bounces_stalled_slice_to_needs_regroom",
+    "reason": "Integration-tier acceptance for the Dispatcher's non-convergence bounce (work-item livespec-impl-beads-n5kina, gap-rs4tkntz): the dispatch CLI is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend), and a non-convergence terminal is read back through the SAME livespec_impl_beads.regroom primitive — proving the slice is marked needs-regroom (escalate-don't-drop, never infinite-retried) and surfaced. The bound node id is the stalled-slice bounce journey; the DOT-marker bounce, the no-bounce-on-ordinary-failure/green cases, and the predicate cases are sibling tests in the same module."
   },
   {
     "heading": "## Scenario 12 — Dispatcher emits calibration telemetry",
