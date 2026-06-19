@@ -234,8 +234,8 @@
     "heading": "## Scenario 10 — Dispatcher refuses a human-gated item",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the grooming-gherkin-and-gap-detectability revise pass. This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
+    "test": "tests.integration.test_dispatcher_human_gated_scenario10.test_dispatch_surfaces_human_gated_item_without_launching_fabro",
+    "reason": "Integration-tier acceptance for the Dispatcher's human-gated refusal (work-item livespec-impl-beads-cjey2z, gap-dpk6g22t): the dispatch CLI is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend) with run_dispatch recorded, proving a human-gated slice is surfaced (failed at human-gated-surfaced) and NEVER launched into a fabro sandbox, and the item is left open. The bound node id is the surface journey; the predicate, journal, and ordinary-item cases are sibling tests in the same module."
   },
   {
     "heading": "## Scenario 11 — Dispatcher bounces a non-converging slice to needs-regroom",

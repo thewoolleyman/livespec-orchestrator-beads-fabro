@@ -190,7 +190,9 @@ from livespec_impl_beads.commands._dispatcher_plan import (
     build_plan,
     cc_otel_overlay_env,
     host_only_refusal_detail,
+    human_gated_surface_detail,
     is_host_only_item,
+    is_human_gated_item,
     item_sizing_warnings,
     janitor_checkout_path,
     parse_fleet_members,
@@ -1068,9 +1070,9 @@ def _dispatch_one(
     journal: JournalFile,
     janitor: tuple[str, ...] | None,
 ) -> DispatchOutcome:
-    host_only_refusal = _host_only_refusal(item=item, journal=journal)
-    if host_only_refusal is not None:
-        return host_only_refusal
+    pre_launch_refusal = _pre_launch_refusal(item=item, journal=journal)
+    if pre_launch_refusal is not None:
+        return pre_launch_refusal
     goal_file = Path(tempfile.gettempdir()) / f"fabro-goal-{item.id}.md"
     overlay_file = Path(tempfile.gettempdir()) / f"fabro-run-config-{item.id}.toml"
     janitor_checkout = janitor_checkout_path(repo=repo, work_item_id=item.id)
@@ -1327,6 +1329,22 @@ def _parse_pr_diff_size(*, stdout: str) -> int | None:
     return additions + deletions
 
 
+def _pre_launch_refusal(*, item: WorkItem, journal: JournalFile) -> DispatchOutcome | None:
+    """Run the pre-launch routing gates, returning the first refusal or None.
+
+    The gates that fire BEFORE any fabro launch — `host-only` (uvd
+    hang-guard: a self-machinery item must never reach a sandbox) and
+    `human-gated` (cjey2z: a spec-change item must reach the maintainer,
+    not the factory). Each returns a `failed` routing outcome (journaled)
+    or None; the dispatch proceeds only when every gate passes. Aggregated
+    here so `_dispatch_one` stays a single readable sequence as more
+    routing refusals are added.
+    """
+    return _host_only_refusal(item=item, journal=journal) or _human_gated_surface(
+        item=item, journal=journal
+    )
+
+
 def _host_only_refusal(*, item: WorkItem, journal: JournalFile) -> DispatchOutcome | None:
     """Refuse to sandbox a host-only self-machinery item (uvd hang-guard).
 
@@ -1347,6 +1365,38 @@ def _host_only_refusal(*, item: WorkItem, journal: JournalFile) -> DispatchOutco
         pr_number=None,
         merge_sha=None,
         detail=host_only_refusal_detail(item_id=item.id),
+    )
+    journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
+    return outcome
+
+
+def _human_gated_surface(*, item: WorkItem, journal: JournalFile) -> DispatchOutcome | None:
+    """Refuse to auto-dispatch a human-gated item, surfacing it instead (cjey2z).
+
+    Per SPECIFICATION/contracts.md §"Dispatcher grooming behavior" and
+    SPECIFICATION/scenarios.md "Scenario 10 — Dispatcher refuses a
+    human-gated item": the Dispatcher MUST refuse to auto-dispatch a
+    `human-gated` (spec-change) item and MUST surface it for the
+    maintainer instead — spec change always reaches the maintainer, never
+    the factory.
+
+    Returns the `human-gated-surfaced` outcome (routed BEFORE any fabro
+    launch, alongside the host-only refusal) when the item carries the
+    explicit human-gated marker, or None to let the dispatch proceed. It
+    is a `failed` outcome so the dispatch exit code flips to 1 and the
+    maintainer's eyes are required; the detail carries the actionable
+    surface instruction. Nothing is closed — the item stays open for the
+    maintainer to drive (e.g. a `/livespec:propose-change` pass).
+    """
+    if not is_human_gated_item(item=item):
+        return None
+    outcome = DispatchOutcome(
+        work_item_id=item.id,
+        status="failed",
+        stage="human-gated-surfaced",
+        pr_number=None,
+        merge_sha=None,
+        detail=human_gated_surface_detail(item_id=item.id),
     )
     journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
     return outcome
