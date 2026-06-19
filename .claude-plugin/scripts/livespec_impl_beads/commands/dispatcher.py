@@ -136,7 +136,11 @@ from time import sleep as _real_sleep
 from typing import cast
 
 from livespec_impl_beads.commands._config import resolve_store_config
-from livespec_impl_beads.commands._cross_repo import is_item_ready, load_manifest
+from livespec_impl_beads.commands._cross_repo import (
+    is_item_ready,
+    load_manifest,
+    ready_sort_key,
+)
 from livespec_impl_beads.commands._dispatcher_cost import (
     COST_MODE_REPORT,
     gate_wave,
@@ -1041,7 +1045,10 @@ def _ready_items(*, items: list[WorkItem], repo: Path) -> list[WorkItem]:
     index = {item.id: item for item in items}
     manifest = load_manifest(project_root=repo)
     ready = [item for item in items if is_item_ready(item=item, index=index, manifest=manifest)]
-    return sorted(ready, key=lambda item: (item.priority, item.id))
+    # Compose the single canonical ranking authority so the Dispatcher's
+    # drain order never diverges from what `next` advertises (i3jiny):
+    # (priority, gap-tied-before-freeform, FIFO captured_at, id).
+    return sorted(ready, key=ready_sort_key)
 
 
 def _dispatch_one(

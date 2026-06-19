@@ -41,6 +41,7 @@ from coverage import Coverage
 from coverage.files import GlobMatcher, prep_patterns
 from livespec_impl_beads._beads_client import FakeBeadsClient, make_beads_client
 from livespec_impl_beads.commands import _dispatcher_reflection, dispatcher
+from livespec_impl_beads.commands import next as next_command
 from livespec_impl_beads.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
@@ -90,6 +91,7 @@ from livespec_impl_beads.commands._dispatcher_spec_commitments import (
 from livespec_impl_beads.commands.detect_impl_gaps import detect_rules
 from livespec_impl_beads.commands.dispatcher import (
     _fetch_fleet_manifest_text,  # pyright: ignore[reportPrivateUsage]
+    _ready_items,  # pyright: ignore[reportPrivateUsage]
     main,
 )
 from livespec_impl_beads.errors import BeadsCommandError
@@ -2623,3 +2625,53 @@ def test_dispatch_runs_reflection_stage(
     assert exit_code == 0
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
     assert any(json.loads(line)["stage"] == "reflection" for line in journal_text.splitlines())
+
+
+# ---------------------------------------------------------------------------
+# Dispatcher drain order composes the `next` ranking authority (i3jiny).
+#
+# The `next` ranker and the Fabro Dispatcher share the readiness filter
+# (`_cross_repo.is_item_ready`) but historically DIVERGED on sort: `next`
+# ranked `(priority, origin_rank, captured_at, id)` while `_ready_items`
+# dropped the gap-tied preference and the FIFO `captured_at` ordering,
+# sorting only `(priority, id)`. Under the dark factory's concurrency cap +
+# budget + merge backpressure, drain ORDER decides which ready items run, so
+# the Dispatcher silently starved gap-tied and older work relative to the
+# policy `next` advertises as authoritative. Both now compose the single
+# shared `_cross_repo.ready_sort_key`.
+# ---------------------------------------------------------------------------
+
+
+def test_ready_items_drain_order_equals_next_ranking(tmp_path: Path) -> None:
+    # Equal-priority, mixed-origin, differing-captured_at fixture constructed
+    # so the OLD `(priority, id)` sort orders them DIFFERENTLY from the
+    # canonical `(priority, origin_rank, captured_at, id)` ranking.
+    fixture = [
+        _item(
+            id="li-aaa",
+            origin="freeform",
+            gap_id=None,
+            captured_at="2026-06-15T00:00:00Z",
+        ),
+        _item(
+            id="li-bbb",
+            origin="gap-tied",
+            gap_id="G1",
+            captured_at="2026-06-10T00:00:00Z",
+        ),
+        _item(
+            id="li-ccc",
+            origin="freeform",
+            gap_id=None,
+            captured_at="2026-06-01T00:00:00Z",
+        ),
+    ]
+    # tmp_path has no `.livespec.jsonc`, so `_ready_items` sees an empty
+    # cross-repo manifest and every open, dependency-free item is ready.
+    drain_order = [item.id for item in _ready_items(items=fixture, repo=tmp_path)]
+    next_order = [c["work_item_ref"] for c in next_command.rank_candidates(items=fixture)]
+    assert drain_order == next_order
+    # Pin the canonical order explicitly: gap-tied first, then freeform FIFO
+    # by captured_at (oldest first). The OLD `(priority, id)` sort would have
+    # produced `["li-aaa", "li-bbb", "li-ccc"]`.
+    assert drain_order == ["li-bbb", "li-ccc", "li-aaa"]
