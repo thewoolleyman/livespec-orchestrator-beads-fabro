@@ -82,6 +82,64 @@ append_work_item(path=config, item=item)
 
 Print the assigned id back to the user.
 
+### Step 3 — Run the intake Definition-of-Ready checklist
+
+Every capture front-end MUST run the intake Definition-of-Ready
+checklist at capture and tag the filed item `ready`, `needs-regroom`,
+or `not-yet-actionable` (SPECIFICATION/scenarios.md "Scenario 8 —
+Intake Definition-of-Ready triage"; contracts.md §"Gap-detectable
+behavior clauses"). The gate logic is the ONE shared
+`livespec_impl_beads.intake_dor` primitive — never re-derive the gates
+in prose here.
+
+Resolve the six gates from the inputs you already gathered plus a short
+confirmation dialogue (one question at a time; many gates are already
+answerable from Step 1):
+
+- `single_coherent_done` — does the item describe exactly ONE coherent
+  "done"? (more than one ⇒ an epic ⇒ `needs-regroom`)
+- `autonomously_verifiable` — can the acceptance be checked WITHOUT a
+  human judgement call?
+- `autonomy_tiered` — does the item carry an explicit autonomy tier?
+- `dependency_linked` — are its blockers linked (the `depends_on` set),
+  or does it genuinely have none?
+- `repo_targeted` — does it name the repo it lands in?
+- `above_floor` — is it above the size floor (worth a discrete
+  dispatch)?
+
+Then stamp the verdict on the just-filed item:
+
+```python
+from livespec_impl_beads.intake_dor import (
+    DefinitionOfReadyChecklist,
+    apply_intake_dor,
+)
+
+verdict = apply_intake_dor(
+    path=config,
+    item_id=item.id,
+    checklist=DefinitionOfReadyChecklist(
+        single_coherent_done=single_coherent_done,
+        autonomously_verifiable=autonomously_verifiable,
+        autonomy_tiered=autonomy_tiered,
+        dependency_linked=dependency_linked,
+        repo_targeted=repo_targeted,
+        above_floor=above_floor,
+    ),
+)
+# verdict is one of "ready" / "needs-regroom" / "not-yet-actionable".
+```
+
+Narrate the verdict to the user:
+
+- `ready` — eligible for autonomous dispatch.
+- `needs-regroom` — an epic; surfaced for grooming (run `groom <id>`),
+  NOT filed `ready`. The label is applied via the shared
+  `regroom.enter` verb.
+- `not-yet-actionable` — its acceptance needs a human judgement call, it
+  has an unresolved blocker, or it is missing a dispatch facet; it is
+  NOT auto-dispatched and MUST NOT be filed `ready`.
+
 ## Important properties
 
 - **`origin: freeform`** — never `gap-tied`. Use `capture-impl-gaps`
