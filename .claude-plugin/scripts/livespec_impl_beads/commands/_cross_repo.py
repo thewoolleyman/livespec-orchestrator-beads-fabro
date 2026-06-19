@@ -18,6 +18,9 @@ entry and treat `OPEN` as a blocking state. This module bundles:
   the next ranker and the list-work-items "ready" filter. An item is
   ready iff its status is "open" AND no typed `depends_on` entry
   resolves to `OPEN` via `resolve_ref`.
+- `ready_sort_key(item)` — the single canonical ranking authority both
+  the next ranker and the Fabro Dispatcher's drain order compose, so
+  the two never diverge on which ready item runs first.
 """
 
 from __future__ import annotations
@@ -44,6 +47,7 @@ __all__: list[str] = [
     "is_item_ready",
     "load_manifest",
     "parse_entry",
+    "ready_sort_key",
 ]
 
 
@@ -163,3 +167,28 @@ def is_item_ready(
     return not any(
         _entry_blocks(raw=raw, index=index, manifest=manifest) for raw in item.depends_on
     )
+
+
+_GAP_TIED_RANK = 0
+_FREEFORM_RANK = 1
+
+
+def ready_sort_key(item: WorkItem) -> tuple[int, int, str, str]:
+    """Canonical ranking key for ready items, composed by next + Dispatcher.
+
+    Ordering (ascending tuple comparison):
+
+    1. `priority` — lower number is more urgent.
+    2. `origin` — gap-tied before freeform at the same priority.
+    3. `captured_at` — oldest first (FIFO) within the same priority/origin.
+    4. `id` — lexicographic tie-break.
+
+    Both the `next` ranker and the Fabro Dispatcher's `_ready_items`
+    drain order compose this single function, so the two can never
+    diverge on which ready item runs first. The signature mirrors the
+    `key=` callable precedent (a single positional `item`, not
+    keyword-only) so it can be passed directly to `list.sort` /
+    `sorted`.
+    """
+    origin_rank = _GAP_TIED_RANK if item.origin == "gap-tied" else _FREEFORM_RANK
+    return (item.priority, origin_rank, item.captured_at, item.id)
