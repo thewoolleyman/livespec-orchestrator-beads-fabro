@@ -213,6 +213,17 @@ check:
         # JSONL-shaped equivalent; epics exempt. Not a canonical slug, so it
         # rides in the private block after the canonical set.
         check-work-item-merge-evidence
+        # Beads-private closed-item-integrity static check
+        # (SPECIFICATION/contracts.md §"Closed-item-integrity check").
+        # Enumerates every closed gap-tied work-item via the store
+        # (hermetic fake in the default tier → empty tenant → passes
+        # trivially) and flags any "closed but unproven" item — one whose
+        # clauses[]-resolved acceptance scenario is still TODO-bound or
+        # which lacks the resolution:completed label. ALWAYS-WIRED +
+        # ALWAYS-RUNNING; severity rides the LIVESPEC_CLOSED_ITEM_INTEGRITY
+        # lever (default warn → exit 0, advisory). Not a canonical slug, so
+        # it rides in the private block after the canonical set.
+        check-closed-item-integrity
     )
     failed=()
     ran=0
@@ -373,6 +384,23 @@ check-coverage:
 # real closures runs out-of-band with the connection env configured.
 check-work-item-merge-evidence:
     LIVESPEC_BEADS_FAKE=1 uv run python dev-tooling/checks/work_item_merge_evidence.py
+
+# `check-closed-item-integrity` — beads-private closed-item-integrity static
+# check (SPECIFICATION/contracts.md §"Closed-item-integrity check"). Enumerates
+# every closed gap-tied work-item from the store, resolves each item's gap-id
+# to an acceptance scenario via the clauses[] gap-id->scenario map in
+# tests/heading-coverage.json, and flags any "closed but unproven" item (a
+# TODO-bound or unresolvable acceptance scenario, or a missing
+# resolution:completed label). ALWAYS-WIRED + ALWAYS-RUNNING; the
+# LIVESPEC_CLOSED_ITEM_INTEGRITY lever (default warn → exit 0, advisory; fail →
+# exit non-zero) is the SEVERITY switch only, never a wiring carve-out. Like the
+# merge-evidence sibling, the aggregate run forces the hermetic empty tenant
+# (LIVESPEC_BEADS_FAKE=1), so this never requires a live bd / dolt-server: the
+# fake tenant is empty, the enumeration yields nothing, and the check passes
+# trivially. A live-tier audit of real closures runs out-of-band with the
+# connection env configured.
+check-closed-item-integrity:
+    LIVESPEC_BEADS_FAKE=1 uv run python dev-tooling/checks/closed_item_integrity.py
 
 # ---------------------------------------------------------------
 # Canonical structural checks (shared from livespec-dev-tooling).
