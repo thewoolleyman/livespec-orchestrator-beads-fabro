@@ -255,8 +255,8 @@
     "heading": "## Scenario 13 — Calibration analysis pass proposes advisory thresholds",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the grooming-gherkin-and-gap-detectability revise pass. This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
+    "test": "tests.integration.test_calibration_analysis_scenario13.test_proposal_is_advisory_and_never_auto_enforced",
+    "reason": "Integration-tier acceptance for the periodic calibration analysis pass (livespec_impl_beads.calibration_analysis): a real on-disk Dispatcher journal seeded with behavior 6's flat calibration-stage records is read back through the production seam and analyze_calibration proposes ceiling thresholds. The bound node id is the advisory-and-never-auto-enforced guardrail (the proposal flags advisory/not-adopted and mutates no journal state); the correlation-proposes-a-ceiling Then, the not-an-always-on-service Then, the decline-on-no-signal cases, and the no-false-zero proxy handling are sibling tests in the same module."
   },
   {
     "heading": "## Scenario 14 — Fabro non-convergence routes back to the Dispatcher",
