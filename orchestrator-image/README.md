@@ -20,6 +20,7 @@ credential is injected at `docker run` time.
 | `Dockerfile` | `ubuntu:24.04` base (glibc 2.39 — the fabro v0.254.0 hard floor) + inner `docker.io` + content-pinned `bd` v1.0.5 / `dolt` v2.1.4 + `uv` + `gh` + the COPYed pinned `fabro` binary; `VOLUME /var/lib/docker`; `EXPOSE 32276`. |
 | `orchestrator-entrypoint.sh` | Supervisor: start dockerd → wait for socket → provision headless fabro (gh auth + `fabro install --non-interactive` + bind `0.0.0.0:32276`) → exec the dispatcher (or a passed command). |
 | `build-and-verify.sh` | Stages the fabro binary, builds the image, runs the privileged container with an ext4-backed volume + injected secrets, and runs tier-1 verification. |
+| `tier2-dispatch-proof.sh` | Runs the W7 Tier-2 proof: one explicit shadow dispatch from inside the container against a tiny ready item, with redacted logs and inner-daemon evidence. |
 | `fabro` | The pinned fabro binary, fetched at build time from `~/.fabro/bin/fabro`. **Gitignored — never committed** (111MB blob; the version is pinned in the Dockerfile's `FABRO_VERSION` for documentation). |
 
 ## Hard constraints (proven by the spike + this build)
@@ -56,6 +57,32 @@ configured, the web UI answers on the published port, and an ephemeral
 in-container Dolt + `bd` round-trip succeeds. All probe output is redacted /
 status-only; no secret is printed. The container + volume + staged binary are
 cleaned up on exit.
+
+## Tier-2 dispatch proof
+
+After Tier 1 is green, `tier2-dispatch-proof.sh` runs the next W7 proof: one
+explicit `dispatcher.py loop --mode shadow --item <id>` invocation from inside
+the container. It uses the same entrypoint path as production, proves the inner
+Docker daemon is the only daemon available to Fabro, captures a redacted
+dispatcher journal tail, and leaves automatic item closure disabled with
+`--no-close-on-merge`.
+
+Preflight:
+
+```bash
+/data/projects/1password-env-wrapper/with-livespec-env.sh -- \
+  bash orchestrator-image/tier2-dispatch-proof.sh --preflight
+```
+
+Run against a deliberately tiny ready item:
+
+```bash
+/data/projects/1password-env-wrapper/with-livespec-env.sh -- \
+  bash orchestrator-image/tier2-dispatch-proof.sh --run --item <tiny-ready-item>
+```
+
+See `research/w7-orchestrator-convergence/tier2-dispatch-proof.md` for the
+evidence checklist and Codex/runtime classification.
 
 ## `docker run` invocation (production)
 

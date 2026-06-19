@@ -631,6 +631,12 @@ check-wrapper-shape:
 check-e2e-cli:
     uv run pytest tests/e2e-cli -v
 
+# W7 Tier-2 containerized dispatch proof. Pass script args after `--`, e.g.:
+#   just w7-tier2-dispatch-proof -- --preflight
+#   just w7-tier2-dispatch-proof -- --run --item <tiny-ready-item>
+w7-tier2-dispatch-proof *ARGS:
+    bash orchestrator-image/tier2-dispatch-proof.sh {{ARGS}}
+
 # ---------------------------------------------------------------
 # Pre-commit aggregate — Red-mode-aware. Classifies the staged
 # tree shape; in Red mode it passes `skip="check-coverage
