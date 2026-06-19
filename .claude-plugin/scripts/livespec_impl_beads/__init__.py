@@ -15,6 +15,10 @@ seam. Public package layout:
 - `livespec_impl_beads.regroom` — the `needs-regroom` state machine, the
   shared grooming-lifecycle primitive (enter / exit / query) the capture
   front-ends, Dispatcher, and `groom` front-end consume.
+- `livespec_impl_beads.intake_dor` — the intake Definition-of-Ready
+  checklist, the shared capture-time triage primitive (evaluate / apply)
+  every capture front-end calls to tag a filed item `ready` /
+  `needs-regroom` / `not-yet-actionable`.
 - `livespec_impl_beads.spec_reader` — Spec Reader adapter implementing
   the four required capabilities defined in
   livespec/SPECIFICATION/contracts.md

@@ -146,6 +146,47 @@ item = WorkItem(
 append_work_item(path=config, item=item)
 ```
 
+#### Intake Definition-of-Ready (per filed gap)
+
+Every capture front-end MUST run the intake Definition-of-Ready
+checklist at capture and tag the filed item `ready`, `needs-regroom`,
+or `not-yet-actionable` (SPECIFICATION/scenarios.md "Scenario 8 —
+Intake Definition-of-Ready triage"; contracts.md §"Gap-detectable
+behavior clauses"). The gate logic is the ONE shared
+`livespec_impl_beads.intake_dor` primitive — never re-derive the gates
+in prose here.
+
+Immediately after filing each gap-tied item, resolve the six gates from
+the gap context (the rule text usually names a single coherent "done"
+and a repo target) plus a short confirmation, then stamp the verdict:
+
+```python
+from livespec_impl_beads.intake_dor import (
+    DefinitionOfReadyChecklist,
+    apply_intake_dor,
+)
+
+verdict = apply_intake_dor(
+    path=config,
+    item_id=item.id,
+    checklist=DefinitionOfReadyChecklist(
+        single_coherent_done=single_coherent_done,
+        autonomously_verifiable=autonomously_verifiable,
+        autonomy_tiered=autonomy_tiered,
+        dependency_linked=dependency_linked,
+        repo_targeted=repo_targeted,
+        above_floor=above_floor,
+    ),
+)
+# verdict is one of "ready" / "needs-regroom" / "not-yet-actionable".
+```
+
+Narrate the verdict: `ready` is dispatch-eligible; `needs-regroom`
+surfaces the item for grooming (`groom <id>`, via the shared
+`regroom.enter`) instead of filing it `ready`; `not-yet-actionable`
+means the acceptance needs a human judgement call, an unresolved blocker
+remains, or a dispatch facet is missing — it MUST NOT be filed `ready`.
+
 ### Step 4 — Summary
 
 When all candidates are processed, print a summary:

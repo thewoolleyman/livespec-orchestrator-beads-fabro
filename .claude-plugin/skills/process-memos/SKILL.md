@@ -81,6 +81,19 @@ tactical task).
 3. Append a closing memo record with `state: dispositioned`,
    `disposition: impl-bound`, `work_item_id: <li-id>`.
 
+The impl-bound disposition is one of the three capture front-ends the
+intake Definition-of-Ready clause names (SPECIFICATION/scenarios.md
+"Scenario 8 — Intake Definition-of-Ready triage"; contracts.md
+§"Gap-detectable behavior clauses"). It satisfies that clause through
+the `capture-work-item` invocation in step 1: `capture-work-item` runs
+the shared `livespec_impl_beads.intake_dor` checklist and tags the filed
+item `ready` / `needs-regroom` / `not-yet-actionable` before returning.
+Surface that verdict to the user alongside the new `work_item_id` (an
+impl-bound memo whose work-item came back `needs-regroom` is an epic to
+`groom <id>`, not dispatch-ready). Do NOT re-run or re-derive the
+checklist here — the gate logic lives once, in `capture-work-item`'s
+Step 3.
+
 ### Step 3c — persistent-knowledge
 
 The memo content is long-term agent guidance.
