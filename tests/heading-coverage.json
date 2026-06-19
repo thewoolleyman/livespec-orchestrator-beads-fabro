@@ -271,5 +271,19 @@
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Added by the grooming-gherkin-and-gap-detectability revise pass. This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
+  },
+  {
+    "heading": "## Closed-item integrity",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "test": "TODO",
+    "reason": "Added by the closed-item-integrity revise pass (v007). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; the closed-item-integrity invariant's mechanical guard (the closed_item_integrity check) is not yet built, so this constraint heading binds to its real test via the governed propose-change/revise resulting_files[] loop once the gap-tied impl work-item that wires the check lands its exercising test. The clauses[] gap-id->scenario link is deferred to that implementation step (impl-beads ships no clauses[] entries or livespec_spec_clauses extractor yet; adopting the clauses[] map is itself the first implementation work-item)."
+  },
+  {
+    "heading": "## Scenario 16 — Closed-item-integrity check rejects \"closed but unproven\"",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Added by the closed-item-integrity revise pass (v007). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising the user-observable closed_item_integrity check behavior (the failing and passing cases), never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. The real node id is populated by the gap-tied impl work-item that builds the check before its own resolution:completed closure (the check is its own first subject). The clauses[] gap-id->scenario link is deferred to that implementation step (impl-beads ships no clauses[] entries or livespec_spec_clauses extractor yet)."
   }
 ]
