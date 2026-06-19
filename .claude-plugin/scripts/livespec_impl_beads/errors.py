@@ -104,3 +104,34 @@ class BeadsMappingError(Exception):
         super().__init__(f"Could not map beads record {record_id}: {detail}")
         self.record_id = record_id
         self.detail = detail
+
+
+class WorkItemNotFoundError(Exception):
+    """The referenced work-item id was not present in the tenant.
+
+    EXPECTED: a regroom transition can be requested against an id that was
+    never filed (a typo, or an item closed and pruned between read and
+    write). The caller surfaces this rather than the transition proceeding
+    against a phantom id.
+    """
+
+    def __init__(self, *, item_id: str) -> None:
+        super().__init__(f"work-item not found in the tenant: {item_id}")
+        self.item_id = item_id
+
+
+class RegroomExitRefusedError(Exception):
+    """A `needs-regroom` exit was refused because no `ready` replacement slices were filed.
+
+    EXPECTED: the regroom contract is that an item leaves `needs-regroom`
+    ONLY by being decomposed into `ready` replacement slices — the original
+    is regroomed-OUT, never silently dropped. An exit attempt that names no
+    replacement slice, or names ids that are not present-and-`ready`, is
+    refused here so the label is never cleared on an item that would then
+    vanish with nothing filed in its place.
+    """
+
+    def __init__(self, *, item_id: str, detail: str) -> None:
+        super().__init__(f"refusing to exit needs-regroom for {item_id}: {detail}")
+        self.item_id = item_id
+        self.detail = detail

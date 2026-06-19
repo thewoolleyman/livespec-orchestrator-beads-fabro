@@ -12,6 +12,9 @@ seam. Public package layout:
   `FakeBeadsClient`), selected by `make_beads_client(*, config)`.
 - `livespec_impl_beads.store` — the six store primitives (read /
   append / materialize for work-items and memos) over the beads tenant.
+- `livespec_impl_beads.regroom` — the `needs-regroom` state machine, the
+  shared grooming-lifecycle primitive (enter / exit / query) the capture
+  front-ends, Dispatcher, and `groom` front-end consume.
 - `livespec_impl_beads.spec_reader` — Spec Reader adapter implementing
   the four required capabilities defined in
   livespec/SPECIFICATION/contracts.md
