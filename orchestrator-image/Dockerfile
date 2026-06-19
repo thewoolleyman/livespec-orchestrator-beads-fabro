@@ -25,9 +25,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 # --- Base system + inner Docker daemon. distro docker.io on noble == Docker
 #     29.x (containerd image store / overlayfs snapshotter), proven to nest
 #     cleanly. Plus the orchestrator's host-level runtime: git, ca-certs,
-#     curl/jq for provisioning, python3 (3.12 on noble; the dispatcher needs
-#     3.10+ and vendors its own runtime so no pip deps), gh (GitHub CLI), and
-#     iptables (dockerd networking inside the container). ---
+#     curl/jq for provisioning, python3 (3.12 on noble) plus the small stdlib
+#     compatibility shim imported by the mounted dispatcher runtime, gh
+#     (GitHub CLI), and iptables (dockerd networking inside the container). ---
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         docker.io \
@@ -36,6 +36,7 @@ RUN apt-get update \
         jq \
         git \
         python3 \
+        python3-typing-extensions \
         iptables \
         uidmap \
  && rm -rf /var/lib/apt/lists/*
