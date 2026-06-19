@@ -213,8 +213,8 @@
     "heading": "## Scenario 7 — Regroom an oversized work-item",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the grooming-and-slice-size-calibration-realization revise pass. This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
+    "test": "tests.integration.test_groom_scenario7.test_groom_journey_files_ready_slices_links_deps_and_regrooms_out",
+    "reason": "Integration-tier acceptance for the groom regroom front-end's mechanical seam (livespec_impl_beads.commands.groom): the Scenario-7 journey (draft read-only via load_groom_context -> on approval file_approved_slices files the ready factory slices with dependency edges linked, routes the spec-change slice to /livespec:propose-change, and regrooms the original out via regroom.exit_regroom) is exercised through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id is the end-to-end approval journey; read-only-until-approval, the dependency-edge linkage, the all-spec-change refuse-don't-drop guarantee, and the non-regroom-target / unknown-id expected errors are sibling tests in the same module."
   },
   {
     "heading": "## Scenario 8 — Intake Definition-of-Ready triage",

@@ -1,0 +1,5 @@
+# No project-root file assertion: the groom front-end files the approved
+# `ready` factory slices as issues in the per-repo beads tenant DB and
+# transitions the original item out of needs-regroom in place (the substrate
+# has no on-disk work-items.jsonl). Success is the exit-0 round-trip; the
+# absent file list means no per-skill file assertion (contract req 4).
