@@ -262,8 +262,8 @@
     "heading": "## Scenario 14 — Fabro non-convergence routes back to the Dispatcher",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the grooming-gherkin-and-gap-detectability revise pass. This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
+    "test": "tests.integration.test_workflow_dot_non_convergence_scenario14.test_exhausted_edge_routes_to_non_converged_not_the_human_gate",
+    "reason": "Integration-tier acceptance for the single Fabro workflow-DOT tweak (work-item livespec-impl-beads-rw75ym, gap-f7kcvboh): the shipped .fabro/workflows/implement-work-item/workflow.fabro is read and asserted to carry the fix-loop cap (the existing janitor node-visit governor) plus a non-converged exit edge (janitor Exhausted -> the non_converged terminal command node, NOT the human gate) that routes back to the Dispatcher, within Fabro's existing DOT vocabulary and requiring no platform/setup change. The bound node id is the exit-edge-routing assertion; the cap, terminal-node, and shared-sentinel cases are sibling tests in the same module."
   },
   {
     "heading": "## Scenario 15 — Dispatcher composes next's ranking",

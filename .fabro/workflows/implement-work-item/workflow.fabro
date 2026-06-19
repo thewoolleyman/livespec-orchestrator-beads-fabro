@@ -152,6 +152,32 @@ digraph ImplementWorkItem {
         script="echo 'operator abandoned the run; work-item left open for triage' >&2; exit 1"
     ]
 
+    // Terminal non-converged node (work-item livespec-impl-beads-rw75ym,
+    // Scenario 14): the "non-converged" EXIT EDGE that routes a fix-loop-cap
+    // exhaustion BACK to the Dispatcher (-> needs-regroom) within Fabro's
+    // EXISTING DOT vocabulary — a plain dead-end command node, the same
+    // shape the `abandon` terminal uses, requiring NO Fabro platform or
+    // setup change. The fix-loop CAP is the unchanged `< 3` visit guard on
+    // the janitor->fix edge below (two fix attempts); the THIRD Red, which
+    // used to park at the human gate, now routes HERE instead. The script
+    // emits the LIVESPEC_NON_CONVERGED sentinel to stderr and exits 1
+    // (deterministic, never-retried), so the run terminates non-green and
+    // the foreground `fabro run` surfaces the sentinel in its output. The
+    // Dispatcher's `is_non_convergence_outcome` matches that sentinel in
+    // the failed outcome's detail and marks the slice `needs-regroom`
+    // (escalate-don't-drop), never infinite-retrying. The sentinel string
+    // is shared with the Dispatcher consumer
+    // (commands/_dispatcher_plan.NON_CONVERGED_MARKER) — keep the two in
+    // lockstep. A dead end (no outgoing edge) is what makes the run
+    // terminate rather than loop; same fabro-validate-accepted shape as
+    // `abandon`.
+    non_converged [
+        label="Non-converged: fix-loop cap hit; route back to Dispatcher (needs-regroom)"
+        shape=parallelogram
+        timeout="60s"
+        script="echo 'LIVESPEC_NON_CONVERGED: janitor fix-loop cap hit without converging; routing back to the Dispatcher for needs-regroom' >&2; exit 1"
+    ]
+
     start -> implement
 
     // A failed implement (structured needs-human ending, see
@@ -162,21 +188,29 @@ digraph ImplementWorkItem {
     implement -> janitor
 
     // Janitor outcome routing: exit 0 -> Green -> pr; non-zero -> Red
-    // -> fix while the loop budget remains, then Exhausted -> escalate.
+    // -> fix while the loop budget remains, then Exhausted -> non_converged.
     //
-    // The fix budget is enforced HERE, as a visit guard on the
+    // The fix-loop CAP is enforced HERE, as a visit guard on the
     // janitor's own visit count, NOT by fix's max_visits alone:
     // verified against fabro v0.254.0 source (fabro-core executor.rs),
     // a node that reaches max_visits ABORTS the whole run at entry
     // (Error::VisitLimitExceeded) — it does NOT emit outcome=failed,
-    // so no edge could route the exhaustion to the human gate. Janitor
-    // visit N means N-1 completed fix attempts; the `< 3` guard allows
-    // two fix attempts, then the third Red falls through to escalate.
-    // fix's max_visits=3 stays as the abort backstop (unreachable
-    // unless this routing regresses).
+    // so no edge could route the exhaustion onward. Janitor visit N means
+    // N-1 completed fix attempts; the `< 3` guard allows two fix attempts,
+    // then the third Red falls through to the `non_converged` terminal.
+    // fix's max_visits=3 stays as the abort backstop (unreachable unless
+    // this routing regresses).
+    //
+    // Scenario 14 (work-item livespec-impl-beads-rw75ym): the Exhausted
+    // edge routes to `non_converged` (the non-converged EXIT EDGE back to
+    // the Dispatcher -> needs-regroom), NOT to `escalate`. A non-converging
+    // slice is the empirical "too big" signal and belongs in grooming, not
+    // the in-loop human gate — the Dispatcher marks it `needs-regroom` and
+    // surfaces it (escalate-don't-drop), rather than the operator answering
+    // [R]/[I]/[A] only to face the same non-convergence again.
     janitor -> pr  [label="Green", condition="outcome=succeeded"]
     janitor -> fix [label="Red", condition="outcome!=succeeded && context.internal.node_visit_count < 3"]
-    janitor -> escalate [label="Exhausted"]
+    janitor -> non_converged [label="Exhausted (fix-loop cap)"]
     fix -> janitor
 
     // A failed pr stage (hook rejection, gh failure — structured
