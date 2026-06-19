@@ -34,13 +34,11 @@ prompts, no spec modifications.
 """
 
 import argparse
-import hashlib
 import json
-import re
 import sys
-from base64 import b32encode
-from dataclasses import dataclass
 from pathlib import Path
+
+from livespec_spec_clauses import RuleMatch, extract_rules_from_file
 
 from livespec_impl_beads.errors import SpecVersionNotFoundError
 from livespec_impl_beads.spec_reader import (
@@ -48,23 +46,17 @@ from livespec_impl_beads.spec_reader import (
     read_specification_history,
 )
 
-_RULE_KEYWORD_PATTERN = re.compile(r"\b(MUST NOT|SHOULD NOT|MUST|SHOULD)\b")
-_HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
-_CODE_FENCE_PATTERN = re.compile(r"^\s*```")
-_GAP_ID_LENGTH = 8
+# `RuleMatch`, the clause extractor, and the gap-id derivation are
+# single-sourced from the shared `livespec_spec_clauses` primitive
+# (vendored at `_vendor/livespec_spec_clauses.py`, byte-identical to
+# `livespec` core's `dev-tooling/spec_clauses.py`). A gap-id parity
+# test pins the vendored copy to its core source so the derivation
+# can never silently drift between repos. `RuleMatch` is re-exported
+# so existing importers of `detect_impl_gaps.RuleMatch` keep working.
+__all__ = ["RuleMatch", "detect_rules", "main"]
 
 _EXIT_USAGE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 3
-
-
-@dataclass(frozen=True, kw_only=True)
-class RuleMatch:
-    """A single MUST/SHOULD rule detected in the spec."""
-
-    spec_file: str
-    heading_path: str
-    line_text: str
-    gap_id: str
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -173,7 +165,7 @@ def detect_rules(
         if not spec_file.endswith(".md"):
             continue
         content = snapshot.files[spec_file]
-        rules.extend(_extract_rules_from_file(spec_file=spec_file, content=content))
+        rules.extend(extract_rules_from_file(spec_file=spec_file, content=content))
     rules.sort(key=lambda rule: (rule.spec_file, rule.heading_path, rule.line_text))
     return rules
 
@@ -197,53 +189,6 @@ def _files_changed_since(*, spec_root: Path, since_version: int) -> set[str]:
         if since_snapshot.files.get(path, "") != live_snapshot.files.get(path, ""):
             changed.add(path)
     return changed
-
-
-def _extract_rules_from_file(*, spec_file: str, content: str) -> list[RuleMatch]:
-    rules: list[RuleMatch] = []
-    heading_stack: list[str] = []
-    in_code_fence = False
-    for raw_line in content.splitlines():
-        if _CODE_FENCE_PATTERN.match(raw_line):
-            in_code_fence = not in_code_fence
-            continue
-        if in_code_fence:
-            continue
-        heading_match = _HEADING_PATTERN.match(raw_line)
-        if heading_match is not None:
-            level = len(heading_match.group(1))
-            title = heading_match.group(2)
-            _push_heading(stack=heading_stack, level=level, title=title)
-            continue
-        if _RULE_KEYWORD_PATTERN.search(raw_line) is None:
-            continue
-        rule_text = raw_line.strip()
-        heading_path = " > ".join(heading_stack) if heading_stack else "(top)"
-        gap_id = _derive_gap_id(spec_file=spec_file, heading_path=heading_path, rule_text=rule_text)
-        rules.append(
-            RuleMatch(
-                spec_file=spec_file,
-                heading_path=heading_path,
-                line_text=rule_text,
-                gap_id=gap_id,
-            )
-        )
-    return rules
-
-
-def _push_heading(*, stack: list[str], level: int, title: str) -> None:
-    while len(stack) >= level:
-        _ = stack.pop()
-    while len(stack) < level - 1:
-        stack.append("")
-    stack.append(title)
-
-
-def _derive_gap_id(*, spec_file: str, heading_path: str, rule_text: str) -> str:
-    payload = f"{spec_file}\x1f{heading_path}\x1f{rule_text}".encode()
-    digest = hashlib.sha256(payload).digest()
-    suffix = b32encode(digest).decode("ascii").rstrip("=").lower()[:_GAP_ID_LENGTH]
-    return f"gap-{suffix}"
 
 
 def _write_json(*, rules: list[RuleMatch]) -> None:
