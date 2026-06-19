@@ -70,7 +70,9 @@ __all__: list[str] = [
     "fabro_rm_argv",
     "fabro_run_argv",
     "host_only_refusal_detail",
+    "human_gated_surface_detail",
     "is_host_only_item",
+    "is_human_gated_item",
     "item_sizing_warnings",
     "janitor_argv_with_default",
     "janitor_checkout_path",
@@ -405,6 +407,15 @@ _SIZING_ENUMERATED_LIMIT = 3
 # char nor a hyphen (so `host-onlyish` is NOT a match).
 _HOST_ONLY_MARKER_RE = re.compile(r"(?<![\w-])host[-_]only(?![\w-])", re.IGNORECASE)
 
+# The explicit human-gated routing marker (see `is_human_gated_item`). A
+# word-bounded `human-gated` / `human_gated` token, recognised exactly the
+# way `is_host_only_item` recognises its `host-only` marker — the same
+# boundary discipline so incidental prose ("a human gated the release")
+# never trips it. The marker rides in the item's title/description, the
+# only field-space the `WorkItem` schema exposes without a cross-repo
+# contracts.md change (the mapped beads record drops unrecognised labels).
+_HUMAN_GATED_MARKER_RE = re.compile(r"(?<![\w-])human[-_]gated(?![\w-])", re.IGNORECASE)
+
 
 def item_sizing_warnings(*, item: WorkItem) -> tuple[str, ...]:
     """Warn-only sizing heuristics applied at dispatch/loop-feed time.
@@ -475,6 +486,49 @@ def host_only_refusal_detail(*, item_id: str) -> str:
         "dispatcher self-machinery once deadlocked the in-sandbox git commit — "
         "the 7us.6 hang class). Host-route it to a host sub-agent instead "
         "(the livespec-implementer dispatch path)."
+    )
+
+
+def is_human_gated_item(*, item: WorkItem) -> bool:
+    """Recognise the explicit human-gated routing marker on a work-item.
+
+    Per SPECIFICATION/contracts.md §"Dispatcher grooming behavior" and
+    SPECIFICATION/scenarios.md "Scenario 10 — Dispatcher refuses a
+    human-gated item": a `human-gated` (spec-change) slice MUST reach the
+    maintainer, never the factory. The Dispatcher reads this predicate
+    BEFORE launching any fabro run and refuses to auto-dispatch a
+    human-gated item, surfacing it for the maintainer instead — spec
+    change is always a human decision, not an autonomous one.
+
+    The marker is the EXPLICIT contract — a `human-gated` / `human_gated`
+    token in the item's title or description — carried in the only
+    field-space the `WorkItem` schema exposes without a cross-repo
+    contracts.md change (the mapped beads record drops unrecognised
+    labels). It is recognised exactly the way `is_host_only_item`
+    recognises its `host-only` marker, but its disposition is SURFACE
+    (route to the maintainer), not the host-route a host-only item gets.
+    The token is word-bounded so incidental prose ("a human gated the
+    release") never trips the gate.
+    """
+    return _HUMAN_GATED_MARKER_RE.search(f"{item.title}\n{item.description}") is not None
+
+
+def human_gated_surface_detail(*, item_id: str) -> str:
+    """Build the actionable surface message for a human-gated item.
+
+    Routed as DATA (the `human-gated-surfaced` DispatchOutcome detail), so
+    the orchestrator reads a clear instruction to SURFACE the item to the
+    maintainer — never a launched run, because a spec-change item is a
+    human decision the factory must not make. Nothing is closed: the item
+    stays open for the maintainer to drive (a `/livespec:propose-change`
+    pass, not an autonomous dispatch).
+    """
+    return (
+        f"human-gated surface: work-item {item_id} carries the explicit human-gated "
+        "marker (a spec-change item, autonomy tier human-gated) and MUST NOT be "
+        "auto-dispatched to a fabro sandbox — spec change always reaches the "
+        "maintainer instead of the factory. Surface it to the maintainer to drive "
+        "by hand (e.g. via `/livespec:propose-change`); the item is left open."
     )
 
 
