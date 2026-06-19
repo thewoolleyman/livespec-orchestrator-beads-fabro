@@ -7,6 +7,17 @@ public module per query-only skill:
   Spec Reader; pure read-and-emit (never mutates the JSONL, never
   prompts).
 - `list_memos.py`, `list_work_items.py` — JSONL store listing.
+- `close_work_item.py` — the atomic close + `resolution:completed`
+  wrapper (the "pit of success" for the closed-item-integrity
+  invariant, SPECIFICATION/constraints.md §"Closed-item integrity").
+  A MUTATING helper (like `gap-capture`, not a query-only `list-*`):
+  `close_completed` reads the existing item and persists a closed copy
+  carrying `resolution="completed"` through `append_work_item`, so the
+  `bd close` + `resolution:completed` label land in ONE store
+  operation and the two-step close recipe can never be half-done.
+  `main` is the thin CLI (`close-work-item <id> [--reason …]`); the
+  one EXPECTED misuse (a never-filed id) maps to `WorkItemNotFoundError`
+  → exit 3.
 - `next.py` — the ripeness ranker; a pure function of work-items
   JSONL state plus the cross-repo manifest at
   `<project-root>/.livespec.jsonc`.
