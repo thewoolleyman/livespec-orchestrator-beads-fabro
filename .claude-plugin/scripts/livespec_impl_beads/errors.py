@@ -135,3 +135,32 @@ class RegroomExitRefusedError(Exception):
         super().__init__(f"refusing to exit needs-regroom for {item_id}: {detail}")
         self.item_id = item_id
         self.detail = detail
+
+
+class GroomTargetNotRegroomError(Exception):
+    """The `groom` front-end was pointed at an item not at `needs-regroom`.
+
+    EXPECTED: grooming is the agent-drafts / human-approves surface for a
+    `needs-regroom` item. Pointing `groom` at a `ready`, closed, or
+    already-groomed item is an expected misuse the front-end surfaces
+    rather than drafting a decomposition for an item that does not need
+    one.
+    """
+
+    def __init__(self, *, item_id: str) -> None:
+        super().__init__(f"groom target is not at needs-regroom: {item_id}")
+        self.item_id = item_id
+
+
+class GroomDraftError(Exception):
+    """An approved groom draft was malformed and could not be filed.
+
+    EXPECTED: the maintainer authors the cut, so an inconsistent draft
+    (e.g. a slice that depends on a handle naming no earlier factory slice
+    in the same draft) is an authoring error the front-end surfaces for a
+    re-draft rather than filing a dangling dependency edge.
+    """
+
+    def __init__(self, *, detail: str) -> None:
+        super().__init__(f"invalid groom draft: {detail}")
+        self.detail = detail
