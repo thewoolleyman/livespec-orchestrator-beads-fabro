@@ -103,6 +103,7 @@ process's env — it is never written to a file or logged):
   -e ANTHROPIC_API_KEY_LIVESPEC_E2E \                # fabro LLM provider key
   -e CLAUDE_CODE_OAUTH_TOKEN \                       # model auth the dispatcher projects per-dispatch
   -e BEADS_DOLT_PASSWORD_livespec_impl_beads \       # external tenant Dolt password
+  -e BEADS_DOLT_PASSWORD="$BEADS_DOLT_PASSWORD_livespec_impl_beads" \
   -e HONEYCOMB_INGEST_KEY_LIVESPEC \                 # telemetry egress key
   livespec-orchestrator:dev \
   python3 /workspace/livespec-impl-beads/.claude-plugin/scripts/bin/dispatcher.py \
@@ -126,6 +127,7 @@ process's env — it is never written to a file or logged):
 | `ANTHROPIC_API_KEY_LIVESPEC_E2E` | fabro LLM-provider API key (name overridable via `FABRO_LLM_API_KEY_ENV`) | `fabro install` |
 | `CLAUDE_CODE_OAUTH_TOKEN` | model auth the dispatcher projects into each sandbox per-dispatch (run-scoped overlay) | dispatcher |
 | `BEADS_DOLT_PASSWORD_<tenant>` | external family-tenant Dolt password (tenant DB == repo name) | dispatcher / `bd` |
+| `BEADS_DOLT_PASSWORD` | generic password name consumed by `bd`; set from the tenant-scoped variable at `docker run` time | `bd` |
 | `HONEYCOMB_INGEST_KEY_LIVESPEC` | OTel/Honeycomb telemetry egress key | dispatcher |
 | `FABRO_PORT` | control-plane / web-UI port (default `32276`) | entrypoint |
 | `FABRO_SKIP_LLM` | set non-empty to provision GitHub only (no LLM) | entrypoint |

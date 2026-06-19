@@ -33,6 +33,21 @@ proof cannot close the ledger item automatically. The operator must provide a
 deliberately tiny, isolated, ready work item that is safe for a one-dispatch
 probe.
 
+The production tenant is the host's Dolt sql-server at `127.0.0.1:3307`, as
+recorded in the repo's `.beads/config.yaml`. The proof runner therefore starts
+the orchestrator container with host networking by default
+(`TIER2_USE_HOST_NETWORK=1`) so that loopback still reaches the host tenant.
+This is still Docker-in-Docker, not Docker-outside-of-Docker: the host Docker
+socket is not mounted, and the script verifies that absence before dispatch.
+The runner also maps `BEADS_DOLT_PASSWORD_livespec_impl_beads` into the generic
+`BEADS_DOLT_PASSWORD` process variable consumed by `bd`, without printing the
+secret value.
+
+`MOUNT_REPO` must point at a checkout with both Beads pointer files present:
+the committed `.beads/config.yaml` and the gitignored `.beads/metadata.json`.
+Fresh worktrees usually lack `metadata.json`; use the primary checkout or
+regenerate/copy the pointer before running the proof from a worktree.
+
 ## Running
 
 Preflight only:
@@ -101,14 +116,24 @@ Record the following in this file or in a successor note before closing
   - image size reported by Docker: `1064148333` bytes.
 - A second preflight without `--build-image` succeeded and confirmed the image
   is present.
+- First real-dispatch attempt reached the inner Docker proof, then failed
+  before journaling because the image was missing `typing_extensions`, which
+  the mounted dispatcher import graph uses.
+- After adding that image dependency, the next attempt reached the ledger and
+  failed before journaling because the bridge-networked container could not
+  reach the host's `127.0.0.1:3307` Dolt tenant and had not projected the
+  family-scoped password into `BEADS_DOLT_PASSWORD`. A host-networked minimal
+  probe then succeeded: inside `livespec-orchestrator:dev`,
+  `bd list --status all --limit 1 --json` reached the tenant and produced a
+  JSON response.
 
-Remaining proof blocker: select or create a deliberately tiny, isolated, ready
-work item that is safe for one shadow dispatch. Do not use `dn9` itself as the
+Current tiny proof target: `livespec-impl-beads-ctq`, a P3 doc-only item
+created specifically for this Tier-2 run. Do not use `dn9` itself as the
 dispatch target. The actual Tier-2 run is:
 
 ```bash
 /data/projects/1password-env-wrapper/with-livespec-env.sh -- \
-  bash orchestrator-image/tier2-dispatch-proof.sh --run --item <tiny-ready-item>
+  bash orchestrator-image/tier2-dispatch-proof.sh --run --item livespec-impl-beads-ctq
 ```
 
 ## Codex Runtime Classification
