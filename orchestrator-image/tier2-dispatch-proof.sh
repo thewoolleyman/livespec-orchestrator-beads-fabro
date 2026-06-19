@@ -20,6 +20,7 @@ HOST_PUBLISH_PORT="${HOST_PUBLISH_PORT:-32281}"
 HOST_FABRO_BIN="${HOST_FABRO_BIN:-$HOME/.fabro/bin/fabro}"
 MOUNT_REPO="${MOUNT_REPO:-$REPO_ROOT}"
 WORKSPACE_REPO="${WORKSPACE_REPO:-/workspace/livespec-impl-beads}"
+TIER2_USE_HOST_NETWORK="${TIER2_USE_HOST_NETWORK:-1}"
 POLL_ATTEMPTS="${POLL_ATTEMPTS:-3}"
 POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-10}"
 JOURNAL_PATH="${JOURNAL_PATH:-/tmp/livespec-tier2-dispatch-journal.jsonl}"
@@ -46,6 +47,7 @@ Options:
   --image NAME         Docker image tag. Default: livespec-orchestrator:dev.
   --container NAME     Container name. Default: livespec-orch-tier2.
   --host-port PORT     Host loopback port for Fabro UI. Default: 32281.
+                      Ignored when TIER2_USE_HOST_NETWORK=1.
   --poll-attempts N    Dispatcher PR poll attempts. Default: 3.
 
 Required env, normally supplied by:
@@ -122,6 +124,8 @@ preflight() {
   docker info >/dev/null 2>&1 || fail "docker is not reachable from the host"
   [ -e "$MOUNT_REPO/.git" ] || fail "MOUNT_REPO is not a git checkout: $MOUNT_REPO"
   [ -f "$MOUNT_REPO/.livespec.jsonc" ] || fail "MOUNT_REPO lacks .livespec.jsonc: $MOUNT_REPO"
+  [ -f "$MOUNT_REPO/.beads/config.yaml" ] || fail "MOUNT_REPO lacks .beads/config.yaml: $MOUNT_REPO"
+  [ -f "$MOUNT_REPO/.beads/metadata.json" ] || fail "MOUNT_REPO lacks .beads/metadata.json: $MOUNT_REPO"
   require_env LIVESPEC_FAMILY_GITHUB_TOKEN
   require_env ANTHROPIC_API_KEY_LIVESPEC_E2E
   require_env CLAUDE_CODE_OAUTH_TOKEN
@@ -164,16 +168,28 @@ start_container() {
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
   docker volume rm "$VARLIB_VOL" >/dev/null 2>&1 || true
   docker volume create "$VARLIB_VOL" >/dev/null
+  local network_args=()
+  local publish_args=()
+  if [ "$TIER2_USE_HOST_NETWORK" = "1" ]; then
+    # The committed .beads/config.yaml points at the host Dolt sql-server on
+    # 127.0.0.1:3307. Host networking preserves that loopback meaning inside
+    # the orchestrator container; no host Docker socket is mounted.
+    network_args=(--network host)
+  else
+    publish_args=(-p "127.0.0.1:${HOST_PUBLISH_PORT}:${FABRO_PORT}")
+  fi
   docker run -d --name "$CONTAINER" \
     --privileged \
+    "${network_args[@]}" \
     -v "$VARLIB_VOL:/var/lib/docker" \
     -v "$MOUNT_REPO:$WORKSPACE_REPO:ro" \
-    -p "127.0.0.1:${HOST_PUBLISH_PORT}:${FABRO_PORT}" \
+    "${publish_args[@]}" \
     -e FABRO_PORT="$FABRO_PORT" \
     -e LIVESPEC_FAMILY_GITHUB_TOKEN \
     -e ANTHROPIC_API_KEY_LIVESPEC_E2E \
     -e CLAUDE_CODE_OAUTH_TOKEN \
     -e BEADS_DOLT_PASSWORD_livespec_impl_beads \
+    -e BEADS_DOLT_PASSWORD="$BEADS_DOLT_PASSWORD_livespec_impl_beads" \
     -e HONEYCOMB_INGEST_KEY_LIVESPEC \
     "$IMAGE" \
     sleep infinity >/dev/null
