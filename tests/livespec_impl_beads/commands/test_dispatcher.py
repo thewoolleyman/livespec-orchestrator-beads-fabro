@@ -1622,18 +1622,23 @@ def test_dispatch_green_closes_item_and_journals(
     # The dispatch opens by journaling the per-dispatch correlation id
     # (29f.3 — projected into the sandbox's CC OTel OTEL_RESOURCE_ATTRIBUTES
     # so telemetry joins to this dispatch). After `outcome` come the
-    # post-verdict fail-open stages: y0m's cost-gate (here `cost-gate-error`
-    # because no `fabro` binary is on the hermetic PATH — the gate fails
-    # open and never changes the verdict), then ddu's staged-self-update
-    # gate (here `self-update-skipped`: the green outcome has a PR, but
-    # `gh pr view` fails on the hermetic non-repo so the merged-file list is
-    # empty — NOT a self-merge), then the mechanical reflection stage at the
-    # default `observe` lever (work-item 29f.2). The ledger-close precedes
-    # the post-verdict stages.
+    # post-verdict fail-open stages. First comes yfsv4j's `calibration`
+    # record (the per-dispatch outcome signal + mechanical size proxies on
+    # the existing journal — here the merged-PR diff-size probe returns None
+    # because `gh pr view` fails on the hermetic non-repo, but the record is
+    # still journaled). Then y0m's cost-gate (here `cost-gate-error` because
+    # no `fabro` binary is on the hermetic PATH — the gate fails open and
+    # never changes the verdict), then ddu's staged-self-update gate (here
+    # `self-update-skipped`: the green outcome has a PR, but `gh pr view`
+    # fails on the hermetic non-repo so the merged-file list is empty — NOT a
+    # self-merge), then the mechanical reflection stage at the default
+    # `observe` lever (work-item 29f.2). The ledger-close precedes the
+    # post-verdict stages.
     assert stages == [
         "dispatch-id",
         "ledger-close",
         "outcome",
+        "calibration",
         "cost-gate-error",
         "self-update-skipped",
         "reflection",
