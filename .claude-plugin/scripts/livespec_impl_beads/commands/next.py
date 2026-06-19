@@ -58,7 +58,11 @@ from typing import Any
 from livespec_runtime.cross_repo.types import CrossRepoManifest
 
 from livespec_impl_beads.commands._config import resolve_store_config
-from livespec_impl_beads.commands._cross_repo import is_item_ready, load_manifest
+from livespec_impl_beads.commands._cross_repo import (
+    is_item_ready,
+    load_manifest,
+    ready_sort_key,
+)
 from livespec_impl_beads.store import materialize_work_items, read_work_items
 from livespec_impl_beads.types import StoreConfig, WorkItem
 
@@ -127,7 +131,7 @@ def rank_candidates(
     ready = [
         item for item in items if is_item_ready(item=item, index=index, manifest=effective_manifest)
     ]
-    ready.sort(key=_sort_key)
+    ready.sort(key=ready_sort_key)
     return [_candidate_for(item=item) for item in ready]
 
 
@@ -179,11 +183,6 @@ def _candidate_for(*, item: WorkItem) -> dict[str, Any]:
         "priority": item.priority,
         "origin": item.origin,
     }
-
-
-def _sort_key(item: WorkItem) -> tuple[int, int, str, str]:
-    origin_rank = 0 if item.origin == "gap-tied" else 1
-    return (item.priority, origin_rank, item.captured_at, item.id)
 
 
 _URGENCY_HIGH_THRESHOLD = 0

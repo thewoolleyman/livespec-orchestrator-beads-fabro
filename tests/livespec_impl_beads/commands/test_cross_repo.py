@@ -246,7 +246,12 @@ def test_is_item_ready_merged_pr_dep_does_not_block(monkeypatch: pytest.MonkeyPa
 
 
 def test_module_public_api() -> None:
-    assert set(_cross_repo.__all__) == {"is_item_ready", "load_manifest", "parse_entry"}
+    assert set(_cross_repo.__all__) == {
+        "is_item_ready",
+        "load_manifest",
+        "parse_entry",
+        "ready_sort_key",
+    }
 
 
 def test_local_lookup_unknown_for_missing_id() -> None:
