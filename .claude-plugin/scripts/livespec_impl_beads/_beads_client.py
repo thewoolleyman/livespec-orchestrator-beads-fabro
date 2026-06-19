@@ -138,9 +138,16 @@ class BeadsClient(Protocol):
         status: str | None = None,
         parent_id: str | None = None,
         add_labels: list[str] | None = None,
+        remove_labels: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        """Mutate an existing issue's status / parent / labels / metadata."""
+        """Mutate an existing issue's status / parent / labels / metadata.
+
+        `remove_labels` maps onto `bd update --remove-label` (repeatable);
+        it is the seam the regroom state machine uses to CLEAR the
+        `needs-regroom` label when an item is regroomed out. Removing a
+        label the issue does not carry is a no-op (bd is idempotent here).
+        """
         ...
 
     def close_issue(self, *, issue_id: str, reason: str | None) -> None:
@@ -265,6 +272,7 @@ class FakeBeadsClient:
         status: str | None = None,
         parent_id: str | None = None,
         add_labels: list[str] | None = None,
+        remove_labels: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> None:
         record = self._issues.get(issue_id)
@@ -284,6 +292,9 @@ class FakeBeadsClient:
                 if label not in merged:
                     merged.append(label)
             record["labels"] = merged
+        if remove_labels is not None:
+            current = cast("list[str]", record.get("labels", []))
+            record["labels"] = [label for label in current if label not in remove_labels]
         if metadata is not None:
             record["metadata"] = dict(metadata)
 
@@ -491,6 +502,7 @@ class ShellBeadsClient:
         status: str | None = None,
         parent_id: str | None = None,
         add_labels: list[str] | None = None,
+        remove_labels: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> None:
         verb_args = _build_update_argv(
@@ -498,6 +510,7 @@ class ShellBeadsClient:
             status=status,
             parent_id=parent_id,
             add_labels=add_labels,
+            remove_labels=remove_labels,
             metadata=metadata,
         )
         if len(verb_args) <= _UPDATE_ARGV_NO_OP_LENGTH:
@@ -595,13 +608,16 @@ def _build_update_argv(
     parent_id: str | None,
     add_labels: list[str] | None,
     metadata: dict[str, Any] | None,
+    remove_labels: list[str] | None = None,
 ) -> list[str]:
     """Build the `bd update <id> ...` verb argv (pure; fully covered).
 
     bd v1.0.5 `bd update` has no bare `--label`; label ADDITIONS use the
     repeatable `--add-label` flag (the in-place close path only ever adds
     labels, e.g. `resolution:completed`), so each label is emitted as a
-    `--add-label <label>` pair.
+    `--add-label <label>` pair. Label REMOVALS use the symmetric repeatable
+    `--remove-label` flag (the regroom state machine clears `needs-regroom`
+    this way).
     """
     argv: list[str] = ["update", issue_id]
     if status is not None:
@@ -611,6 +627,9 @@ def _build_update_argv(
     if add_labels is not None:
         for label in add_labels:
             argv.extend(["--add-label", label])
+    if remove_labels is not None:
+        for label in remove_labels:
+            argv.extend(["--remove-label", label])
     if metadata is not None:
         argv.extend(["--metadata", json.dumps(metadata, separators=(",", ":"), sort_keys=True)])
     return argv
