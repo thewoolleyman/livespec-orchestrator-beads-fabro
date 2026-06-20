@@ -169,7 +169,7 @@ check:
     # the safety net.
     read -ra skip_targets <<< "{{skip}}"
     targets=(
-        # ---- Canonical block (39 slugs, alphabetical) ----
+        # ---- Canonical block (40 slugs, alphabetical) ----
         check-aggregate-completeness
         check-all-declared
         check-assert-never-exhaustiveness
@@ -206,6 +206,7 @@ check:
         check-skill-invocation-paths
         check-supervisor-discipline
         check-tests-mirror-pairing
+        check-tests-no-subprocess-spawn
         check-tool-backed-check-completeness
         check-vendor-manifest
         check-wrapper-shape
@@ -618,6 +619,9 @@ check-supervisor-discipline:
 
 check-tests-mirror-pairing:
     uv run python -m livespec_dev_tooling.checks.tests_mirror_pairing
+
+check-tests-no-subprocess-spawn:
+    uv run python -m livespec_dev_tooling.checks.tests_no_subprocess_spawn
 
 # Tool-backed-check completeness meta-check (epic li-pyright-gate,
 # work-item li-pyright-gate-wi3; shared from livespec-dev-tooling
