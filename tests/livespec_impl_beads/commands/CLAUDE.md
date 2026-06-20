@@ -10,7 +10,7 @@ Tests for the thin-transport command modules under
   envelope shape, `--limit`/`--offset` slicing, the empty-list
   no-work signal, and `depends_on` readiness gating (candidates with
   an OPEN dependency are absent from the ranked list).
-- `test_list_memos.py`, `test_list_work_items.py` — listing,
+- `test_list_work_items.py` — listing,
   filtering, and the `--json` vs human output contracts.
 - `test_detect_impl_gaps.py` — mechanical gap detection emits the
   expected gap-id set; verifies it never mutates the JSONL.
