@@ -50,6 +50,17 @@ acceptance-live-preflight:
 acceptance-live item:
     bash orchestrator-image/tier2-dispatch-proof.sh --run --item {{item}}
 
+# W7 LIVE Beads/Fabro golden-master tier. The REAL end-to-end proof: creates a
+# throwaway `livespec-e2e/livespec-e2e-*` repo, seeds it with the hello-world
+# fixture SPECIFICATION + an embedded beads ledger carrying one ready greeting
+# item, runs the production container/Fabro factory so Fabro implements + PRs +
+# merges, clones the merged repo, asserts greet("Ada")=="Hello, Ada!", and
+# deletes the repo (with reaper stale-sweep on entry, teardown on exit). Run
+# under the 1Password wrapper:
+#   with-livespec-env.sh -- just acceptance-live-golden-master -- --run
+acceptance-live-golden-master *ARGS:
+    bash orchestrator-image/acceptance-live-golden-master.sh {{ARGS}}
+
 # ---------------------------------------------------------------
 # First-time setup.
 # ---------------------------------------------------------------

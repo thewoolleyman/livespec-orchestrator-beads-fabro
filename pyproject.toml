@@ -283,17 +283,19 @@ target_dirs = [".claude-plugin/scripts", "dev-tooling", "tests"]
 
 # Path-prefix allowlist for the `no_direct_destructive_cli` check: files whose
 # repo-root-relative POSIX path starts with one of these entries are exempt
-# from the destructive-default CLI scan. The W7 e2e-repo reaper deliberately
-# wraps `gh repo delete` (via `gh api -X DELETE /repos/...`) with retry/backoff
-# inside the disposable `livespec-e2e` org; its script and runbook are exempt.
+# from the destructive-default CLI scan. The W7 e2e-repo reaper and the W7 LIVE
+# golden-master orchestration deliberately create + delete throwaway repos
+# (`gh repo create`; `gh api -X DELETE /repos/...` with retry/backoff) inside
+# the disposable `livespec-e2e` org; their scripts and runbooks are exempt.
 # (The scan only walks dev-tooling/, .claude-plugin/, .claude/plugins/, so the
-# orchestrator-image/ script is already outside its reach; the research-note
-# prefix is the one that would otherwise be scannable if relocated.)
+# orchestrator-image/ scripts are already outside its reach; these entries
+# document the exemption and keep it intact if a script is ever relocated.)
 #
 # This key MUST stay above the `[[...mirror_pairings]]` array-of-tables below:
 # in TOML a bare key after an array-of-tables header attaches to that sub-table,
 # not the parent.
 destructive_cli_allowlist = [
+    "orchestrator-image/acceptance-live-golden-master.sh",
     "orchestrator-image/reap-e2e-repos.sh",
     "research/w7-orchestrator-convergence/e2e-repo-reaper.md",
 ]
