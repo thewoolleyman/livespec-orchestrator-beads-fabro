@@ -65,6 +65,7 @@ ORG="livespec-e2e"
 IMAGE="${IMAGE:-livespec-orchestrator:dev}"
 CONTAINER="${CONTAINER:-livespec-orch-live-gm}"
 VARLIB_VOL="${VARLIB_VOL:-livespec-orch-live-gm-varlib}"
+FABRO_PORT_WAS_SET="${FABRO_PORT+x}"
 FABRO_PORT="${FABRO_PORT:-32276}"
 HOST_PUBLISH_PORT="${HOST_PUBLISH_PORT:-32282}"
 HOST_FABRO_BIN="${HOST_FABRO_BIN:-$HOME/.fabro/bin/fabro}"
@@ -74,6 +75,14 @@ HOST_FABRO_BIN="${HOST_FABRO_BIN:-$HOME/.fabro/bin/fabro}"
 WORKSPACE_REPO="${WORKSPACE_REPO:-/workspace/livespec-impl-beads}"
 TARGET_MOUNT="${TARGET_MOUNT:-/workspace/e2e-target}"
 TIER2_USE_HOST_NETWORK="${TIER2_USE_HOST_NETWORK:-1}"
+# Under --network host the container shares the host network namespace, so an
+# in-container fabro bound to the default 32276 collides with the host's own
+# fabro server (which holds 127.0.0.1:32276). When the operator did not pin
+# FABRO_PORT explicitly, bind the in-container server to HOST_PUBLISH_PORT
+# instead so the two never contend (mirrors tier2-dispatch-proof.sh).
+if [ "$TIER2_USE_HOST_NETWORK" = "1" ] && [ -z "$FABRO_PORT_WAS_SET" ]; then
+  FABRO_PORT="$HOST_PUBLISH_PORT"
+fi
 POLL_ATTEMPTS="${POLL_ATTEMPTS:-80}"
 POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-30}"
 NAME="${NAME:-Ada}"
@@ -244,7 +253,12 @@ sweep_stale_repos() {
 # push the initial state. Echoes nothing secret.
 create_and_seed_repo() {
   local rand
-  rand="$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 8)"
+  # SIGPIPE-safe random suffix: read a FIXED, generous chunk of urandom first
+  # (head is the reader, so nothing downstream can SIGPIPE `tr` under `set -o
+  # pipefail`), then filter + slice to 8 lowercase alphanumerics. 256 bytes
+  # yields ~36 alphanumerics on average, comfortably above 8.
+  rand="$(head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-z0-9' | cut -c1-8)"
+  [ "${#rand}" -ge 8 ] || rand="r$(date +%s)"
   THROWAWAY_REPO="livespec-e2e-${rand}"
   log "creating throwaway repo $ORG/$THROWAWAY_REPO (private)"
   GH_TOKEN="$LIVESPEC_E2E_GITHUB_TOKEN" gh repo create "$ORG/$THROWAWAY_REPO" \
@@ -370,8 +384,17 @@ run_dispatch() {
   # mode shadow + explicit --item targets exactly the seeded item. A no-op
   # janitor ("true") is injected because the throwaway repo is a bare
   # hello-world (no justfile / livespec impl); the PR merge is the gate.
+  #
+  # CWD = the THROWAWAY repo (-w "$TARGET_MOUNT"): the dispatcher's
+  # ShellBeadsClient shells out to `bd` WITHOUT a cwd override, so `bd`
+  # discovers the `.beads/` of the process cwd. Running with cwd = the
+  # throwaway mount makes `bd list` resolve the throwaway's EMBEDDED ledger
+  # (no family server, no password). The dispatcher script itself is invoked
+  # by its ABSOLUTE path under $WORKSPACE_REPO, so its package-root resolution
+  # (the .fabro/workflows graph, via __file__) is cwd-independent and still
+  # points at the mounted impl-beads repo.
   docker exec \
-    -w "$WORKSPACE_REPO" \
+    -w "$TARGET_MOUNT" \
     "$CONTAINER" \
     sh -lc 'export GH_TOKEN="$LIVESPEC_FAMILY_GITHUB_TOKEN"; exec python3 "$1/.claude-plugin/scripts/bin/dispatcher.py" \
       loop \
