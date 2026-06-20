@@ -1606,6 +1606,10 @@ def _stored() -> dict[str, WorkItem]:
     return materialize_work_items(read_work_items(path=_config()))
 
 
+def _raise_cost_gate_error(**_: object) -> None:
+    raise RuntimeError("cost probe unavailable")
+
+
 def test_dispatch_green_closes_item_and_journals(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
@@ -1616,6 +1620,7 @@ def test_dispatch_green_closes_item_and_journals(
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
     monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    monkeypatch.setattr(dispatcher, "_cost_gate", _raise_cost_gate_error)
     monkeypatch.setattr(
         "livespec_impl_beads.commands.dispatcher.tempfile.gettempdir",
         lambda: str(tmp_path),
