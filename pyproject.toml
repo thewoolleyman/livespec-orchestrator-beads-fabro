@@ -234,3 +234,82 @@ exclude_also = [
     "sys.path.insert",
     "case _:",
 ]
+
+# ---------------------------------------------------------------------------
+# livespec-dev-tooling consumer layout + check config. Per
+# livespec/SPECIFICATION/contracts.md §"Consumer configuration schema".
+#
+# IMPORTANT — why every role key is spelled out here:
+# `livespec_dev_tooling.config.load_config` has two regimes. With NO
+# `[tool.livespec_dev_tooling]` block, it falls back to the livespec-core
+# historical layout (`_livespec_core_config`). The MOMENT any key in this
+# block exists, that whole-block-absent fallback is gone and every omitted
+# role key reverts to an EMPTY baseline — which would silently break every
+# load_config-driven check (coverage mirror pairings, source/pure/covered
+# trees, supervisor entries, etc.). This repo's layout matches the core
+# fallback exactly, so we needed to introduce a `destructive_cli_allowlist`
+# (read by `no_direct_destructive_cli`) WITHOUT triggering that empty-baseline
+# flip. The fix is to restate the full core layout here verbatim, so
+# load_config produces the identical Config it produced before this block
+# existed, plus the new allowlist key. Keep these in lockstep with
+# `_livespec_core_config` if the upstream layout ever changes.
+# ---------------------------------------------------------------------------
+
+[tool.livespec_dev_tooling]
+source_trees = [".claude-plugin/scripts/livespec"]
+io_trees = [".claude-plugin/scripts/livespec/io"]
+commands_trees = [".claude-plugin/scripts/livespec/commands"]
+supervisor_entry_files = [
+    ".claude-plugin/scripts/livespec/doctor/run_static.py",
+    ".claude-plugin/scripts/bin/_bootstrap.py",
+]
+dataclasses_tree = ".claude-plugin/scripts/livespec/schemas/dataclasses"
+pure_trees = [
+    ".claude-plugin/scripts/livespec/parse",
+    ".claude-plugin/scripts/livespec/validate",
+]
+covered_trees = [
+    ".claude-plugin/scripts/livespec",
+    ".claude-plugin/scripts/bin",
+    "dev-tooling",
+]
+source_tree_prefixes = [
+    ".claude-plugin/scripts/livespec/",
+    ".claude-plugin/scripts/bin/",
+    "dev-tooling/checks/",
+]
+tests_tree_prefix = "tests/"
+target_dirs = [".claude-plugin/scripts", "dev-tooling", "tests"]
+
+# Path-prefix allowlist for the `no_direct_destructive_cli` check: files whose
+# repo-root-relative POSIX path starts with one of these entries are exempt
+# from the destructive-default CLI scan. The W7 e2e-repo reaper deliberately
+# wraps `gh repo delete` (via `gh api -X DELETE /repos/...`) with retry/backoff
+# inside the disposable `livespec-e2e` org; its script and runbook are exempt.
+# (The scan only walks dev-tooling/, .claude-plugin/, .claude/plugins/, so the
+# orchestrator-image/ script is already outside its reach; the research-note
+# prefix is the one that would otherwise be scannable if relocated.)
+#
+# This key MUST stay above the `[[...mirror_pairings]]` array-of-tables below:
+# in TOML a bare key after an array-of-tables header attaches to that sub-table,
+# not the parent.
+destructive_cli_allowlist = [
+    "orchestrator-image/reap-e2e-repos.sh",
+    "research/w7-orchestrator-convergence/e2e-repo-reaper.md",
+]
+
+[[tool.livespec_dev_tooling.mirror_pairings]]
+source_tree = ".claude-plugin/scripts/livespec"
+test_tree = "tests/livespec"
+
+[[tool.livespec_dev_tooling.mirror_pairings]]
+source_tree = ".claude-plugin/scripts/bin"
+test_tree = "tests/bin"
+
+[[tool.livespec_dev_tooling.mirror_pairings]]
+source_tree = "dev-tooling/checks"
+test_tree = "tests/dev-tooling/checks"
+
+[[tool.livespec_dev_tooling.mirror_pairings]]
+source_tree = "livespec_dev_tooling/checks"
+test_tree = "tests/livespec_dev_tooling/checks"
