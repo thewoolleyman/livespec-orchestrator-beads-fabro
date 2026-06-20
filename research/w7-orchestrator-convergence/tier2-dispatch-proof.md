@@ -166,6 +166,18 @@ Record the following in this file or in a successor note before closing
   container showed `git -C /workspace/livespec-impl-beads status` failed with
   Git's dubious-ownership guard. The runner now installs a `safe.directory`
   entry for the mounted repo before dispatch.
+- Minimal wrap boundary: with the safe-directory fix in place, the same proof
+  command against `livespec-impl-beads-ctq` reached Fabro run
+  `01KVH6WANRMTRTM7EBRFB5TGBF`. The run launched the pinned sandbox image on the
+  inner Docker daemon, cloned `https://github.com/thewoolleyman/livespec-impl-beads`
+  at base `master` `a269ac88e1cb`, completed `Implement (Red-Green-Replay)` in
+  54s, and completed `Janitor: just check` in 2m17s. Fabro then pushed branch
+  `feat/livespec-impl-beads-ctq` with doc-only sentinel commits, but the PR node
+  failed because the sandbox had no GitHub credential under `GH_TOKEN` and no
+  `gh` auth config. That PR-creation credential projection is deliberately
+  deferred to follow-on item `livespec-impl-beads-5qv`; the Tier-2 minimal proof
+  is considered green only through real dispatch, sandbox clone, implementation,
+  janitor, and branch push.
 
 Current tiny proof target: `livespec-impl-beads-ctq`, a P3 doc-only item
 created specifically for this Tier-2 run. Do not use `dn9` itself as the
