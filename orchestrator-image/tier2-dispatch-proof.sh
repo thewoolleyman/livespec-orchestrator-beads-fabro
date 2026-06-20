@@ -188,7 +188,7 @@ start_container() {
     --cgroupns=host \
     "${network_args[@]}" \
     -v "$VARLIB_VOL:/var/lib/docker" \
-    -v "$MOUNT_REPO:$WORKSPACE_REPO:ro" \
+    -v "$MOUNT_REPO:$WORKSPACE_REPO" \
     "${publish_args[@]}" \
     -e FABRO_PORT="$FABRO_PORT" \
     -e LIVESPEC_FAMILY_GITHUB_TOKEN \
