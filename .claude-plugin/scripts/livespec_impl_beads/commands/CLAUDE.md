@@ -6,7 +6,7 @@ public module per query-only skill:
 - `detect_impl_gaps.py` — mechanical spec→impl gap detection via the
   Spec Reader; pure read-and-emit (never mutates the JSONL, never
   prompts).
-- `list_memos.py`, `list_work_items.py` — JSONL store listing.
+- `list_work_items.py` — JSONL store listing.
 - `close_work_item.py` — the atomic close + `resolution:completed`
   wrapper (the "pit of success" for the closed-item-integrity
   invariant, SPECIFICATION/constraints.md §"Closed-item integrity").

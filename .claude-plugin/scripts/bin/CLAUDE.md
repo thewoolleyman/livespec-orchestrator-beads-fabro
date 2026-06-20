@@ -1,7 +1,7 @@
 # bin/
 
 Shebang-wrapper executables (`#!/usr/bin/env python3`) — one per
-thin-transport entry point (`detect_impl_gaps.py`, `list_memos.py`,
+thin-transport entry point (`detect_impl_gaps.py`,
 `list_work_items.py`, `next.py`) plus `orchestrator.py`, the one
 orchestrator-side contract CLI binary (subcommands `spec-reader`,
 `gap-capture`, `drift-capture`; named in `.livespec.jsonc`'s
