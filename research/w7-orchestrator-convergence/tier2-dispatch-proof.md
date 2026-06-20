@@ -54,6 +54,11 @@ containers work without it, but Fabro's sandbox launch applies the workflow's
 CPU/memory resources; on cgroup v2 those resource-limited nested containers
 fail without the host cgroup namespace.
 
+The runner marks the mounted checkout as a Git `safe.directory` inside the
+orchestrator container before invoking Fabro. Without that trust entry, root
+inside the container rejects the host-owned checkout as dubious ownership;
+Fabro cannot derive a clone source and falls back to an empty `/workspace`.
+
 `MOUNT_REPO` must point at a checkout with both Beads pointer files present:
 the committed `.beads/config.yaml` and the gitignored `.beads/metadata.json`.
 Fresh worktrees usually lack `metadata.json`; use the primary checkout or
@@ -154,6 +159,13 @@ Record the following in this file or in a successor note before closing
   image run successfully, but `docker run --cpus 4 --memory 8g ...` reproduces
   the error unless the outer container is launched with `--cgroupns=host`; with
   that flag, the resource-limited pinned sandbox image prints `cgroupns-ok`.
+- After adding `--cgroupns=host`, Fabro run `01KVH6N9SEZDCKV1HDNCRG8C4H`
+  reached `Sandbox: docker (ready in 39s)`, but setup failed on
+  `git fetch --unshallow --quiet` because Fabro logged
+  `Clone source missing for clone-based sandbox`; inspection of the preserved
+  container showed `git -C /workspace/livespec-impl-beads status` failed with
+  Git's dubious-ownership guard. The runner now installs a `safe.directory`
+  entry for the mounted repo before dispatch.
 
 Current tiny proof target: `livespec-impl-beads-ctq`, a P3 doc-only item
 created specifically for this Tier-2 run. Do not use `dn9` itself as the

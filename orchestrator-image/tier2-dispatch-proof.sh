@@ -217,6 +217,12 @@ prove_inner_daemon() {
   printf 'no\n'
 }
 
+trust_mounted_repo() {
+  log "trusting mounted repo for in-container git discovery"
+  docker exec "$CONTAINER" git config --global --add safe.directory "$WORKSPACE_REPO"
+  docker exec "$CONTAINER" git -C "$WORKSPACE_REPO" status --short --branch >/dev/null
+}
+
 run_dispatch() {
   log "running one explicit shadow dispatch"
   docker exec "$CONTAINER" mkdir -p "$(dirname "$JOURNAL_PATH")"
@@ -260,4 +266,5 @@ fi
 
 start_container
 prove_inner_daemon
+trust_mounted_repo
 run_dispatch
