@@ -4,7 +4,8 @@ Step 1 of the W7 orchestrator-convergence epic (`livespec-impl-beads-8bc`). This
 directory builds the **production orchestrator container**: a privileged image
 running an *inner* Docker daemon (Docker-in-Docker) on which Fabro spawns its
 sandboxes, fully decoupled from the host daemon. It carries the dispatcher's
-host-level runtime (`fabro`, `bd`, `dolt`, `gh`, `mise`, `uv`, `git`, Python) and a
+host-level runtime (`fabro`, `bd`, `dolt`, `gh`, `mise`, `uv`, `git`, Python,
+and `libatomic1` for Pyright's Node runtime) and a
 supervisor entrypoint that brings up dockerd + a headless fabro server, then
 hands off to the dispatcher.
 
@@ -17,7 +18,7 @@ credential is injected at `docker run` time.
 
 | File | Purpose |
 |---|---|
-| `Dockerfile` | `ubuntu:24.04` base (glibc 2.39 — the fabro v0.254.0 hard floor) + inner `docker.io` + content-pinned `bd` v1.0.5 / `dolt` v2.1.4 + `uv` + `gh` + `mise` + the COPYed pinned `fabro` binary; `VOLUME /var/lib/docker`; `EXPOSE 32276`. |
+| `Dockerfile` | `ubuntu:24.04` base (glibc 2.39 — the fabro v0.254.0 hard floor) + inner `docker.io` + content-pinned `bd` v1.0.5 / `dolt` v2.1.4 + `uv` + `gh` + `mise` + `libatomic1` + the COPYed pinned `fabro` binary; `VOLUME /var/lib/docker`; `EXPOSE 32276`. |
 | `orchestrator-entrypoint.sh` | Supervisor: start dockerd → wait for socket → provision headless fabro (gh auth + `fabro install --non-interactive` + bind `0.0.0.0:32276`) → exec the dispatcher (or a passed command). |
 | `build-and-verify.sh` | Stages the fabro binary, builds the image, runs the privileged container with an ext4-backed volume + injected secrets, and runs tier-1 verification. |
 | `tier2-dispatch-proof.sh` | Runs the W7 Tier-2 proof: one explicit shadow dispatch from inside the container against a tiny ready item, with redacted logs and inner-daemon evidence. |
