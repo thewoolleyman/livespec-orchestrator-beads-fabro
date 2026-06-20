@@ -32,7 +32,7 @@ def test_resolve_uses_defaults_when_no_config_file(
 ) -> None:
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     monkeypatch.delenv("LIVESPEC_BD_PATH", raising=False)
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.tenant == "livespec-impl-beads"
     assert config.prefix == "livespec-impl-beads"
     assert config.database == "livespec-impl-beads"
@@ -44,12 +44,11 @@ def test_resolve_uses_defaults_when_no_config_file(
     assert config.fake is False
 
 
-def test_work_items_and_memos_path_properties_return_self(
+def test_work_items_path_property_returns_self(
     tmp_path: Path,
 ) -> None:
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.work_items_path is config
-    assert config.memos_path is config
 
 
 def test_resolve_reads_connection_block(
@@ -78,7 +77,7 @@ def test_resolve_reads_connection_block(
         }
         """,
     )
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.tenant == "my-tenant"
     assert config.prefix == "my-prefix"
     assert config.database == "my-db"
@@ -100,7 +99,7 @@ def test_prefix_database_user_default_to_tenant(
         cwd=tmp_path,
         body='{"livespec-impl-beads": {"connection": {"tenant": "solo"}}}',
     )
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.prefix == "solo"
     assert config.database == "solo"
     assert config.server_user == "solo"
@@ -115,7 +114,7 @@ def test_env_bd_path_overrides_block(
         cwd=tmp_path,
         body='{"livespec-impl-beads": {"connection": {"bd_path": "/block/bd"}}}',
     )
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.bd_path == "/managed/bd"
 
 
@@ -128,7 +127,7 @@ def test_empty_env_bd_path_falls_through_to_block(
         cwd=tmp_path,
         body='{"livespec-impl-beads": {"connection": {"bd_path": "/block/bd"}}}',
     )
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.bd_path == "/block/bd"
 
 
@@ -139,7 +138,7 @@ def test_env_fake_truthy_forces_fake(
     truthy: str,
 ) -> None:
     monkeypatch.setenv("LIVESPEC_BEADS_FAKE", truthy)
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.fake is True
 
 
@@ -148,7 +147,7 @@ def test_env_fake_falsy_forces_real(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "0")
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.fake is False
 
 
@@ -161,7 +160,7 @@ def test_block_fake_used_when_env_unset(
         cwd=tmp_path,
         body='{"livespec-impl-beads": {"connection": {"fake": true}}}',
     )
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.fake is True
 
 
@@ -174,7 +173,7 @@ def test_block_non_bool_fake_falls_back_to_false(
         cwd=tmp_path,
         body='{"livespec-impl-beads": {"connection": {"fake": "yes"}}}',
     )
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.fake is False
 
 
@@ -187,7 +186,7 @@ def test_non_int_server_port_falls_back_to_default(
         cwd=tmp_path,
         body='{"livespec-impl-beads": {"connection": {"server_port": "nope"}}}',
     )
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.server_port == 3307
 
 
@@ -200,7 +199,7 @@ def test_empty_socket_string_reads_as_none(
         cwd=tmp_path,
         body='{"livespec-impl-beads": {"connection": {"socket": ""}}}',
     )
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.socket is None
 
 
@@ -210,7 +209,7 @@ def test_malformed_jsonc_falls_back_to_defaults(
 ) -> None:
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(cwd=tmp_path, body="{ this is not valid json ")
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.tenant == "livespec-impl-beads"
 
 
@@ -220,7 +219,7 @@ def test_non_object_root_falls_back_to_defaults(
 ) -> None:
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(cwd=tmp_path, body="[1, 2, 3]")
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.tenant == "livespec-impl-beads"
 
 
@@ -230,7 +229,7 @@ def test_non_dict_plugin_block_falls_back_to_defaults(
 ) -> None:
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(cwd=tmp_path, body='{"livespec-impl-beads": "scalar"}')
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.tenant == "livespec-impl-beads"
 
 
@@ -240,7 +239,7 @@ def test_non_dict_connection_block_falls_back_to_defaults(
 ) -> None:
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(cwd=tmp_path, body='{"livespec-impl-beads": {"connection": 7}}')
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.tenant == "livespec-impl-beads"
 
 
@@ -248,12 +247,11 @@ def test_path_args_are_accepted_and_ignored(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The plaintext-signature work_items_arg / memos_arg are no-ops here."""
+    """The plaintext-signature work_items_arg is a no-op here."""
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     config = resolve_store_config(
         cwd=tmp_path,
         work_items_arg="custom/work.jsonl",
-        memos_arg="custom/memos.jsonl",
     )
     assert config.tenant == "livespec-impl-beads"
 

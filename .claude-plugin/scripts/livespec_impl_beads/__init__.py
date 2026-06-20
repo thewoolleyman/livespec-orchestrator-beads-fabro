@@ -4,14 +4,14 @@ The substrate is a per-repo beads tenant database on the shared
 `dolt-server` (bd v1.0.5, server mode), reached through the `BeadsClient`
 seam. Public package layout:
 
-- `livespec_impl_beads.types` — work-item and memo dataclasses, the Spec
+- `livespec_impl_beads.types` — work-item dataclasses, the Spec
   Reader snapshot / diff dataclasses, and the `StoreConfig` beads
   connection descriptor.
 - `livespec_impl_beads._beads_client` — the `BeadsClient` backend seam
   (`ShellBeadsClient` over the pinned `bd` binary + a pure in-memory
   `FakeBeadsClient`), selected by `make_beads_client(*, config)`.
-- `livespec_impl_beads.store` — the six store primitives (read /
-  append / materialize for work-items and memos) over the beads tenant.
+- `livespec_impl_beads.store` — the store primitives (read /
+  append / materialize for work-items) over the beads tenant.
 - `livespec_impl_beads.regroom` — the `needs-regroom` state machine, the
   shared grooming-lifecycle primitive (enter / exit / query) the capture
   front-ends, Dispatcher, and `groom` front-end consume.

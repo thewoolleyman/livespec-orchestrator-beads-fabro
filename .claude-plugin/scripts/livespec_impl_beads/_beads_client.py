@@ -33,7 +33,7 @@ the `bd ... --json` issue object: `id`, `title`, `description`, `status`,
 `priority`, `issue_type`, `assignee`, `created_at`, `close_reason`,
 `spec_id`, `labels` (list[str]), `metadata` (a JSON object), and
 `dependencies` (a list of `{depends_on_id, type}` edge records). The store
-layer owns the field map from this dict onto `WorkItem` / `Memo`.
+layer owns the field map from this dict onto `WorkItem`.
 
 Per SPECIFICATION/constraints.md §"Inherited from livespec" (the
 Result-vs-bugs split), EXPECTED backend failures raise the typed

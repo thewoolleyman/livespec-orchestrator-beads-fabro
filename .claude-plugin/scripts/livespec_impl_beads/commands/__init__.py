@@ -1,6 +1,6 @@
 """Thin-transport command entry points for livespec-impl-beads.
 
-Each public-facing slash command (`list-memos`, `list-work-items`, `next`)
+Each public-facing slash command (`list-work-items`, `next`)
 has a Python module here with a `main()` function returning an integer
 exit code. The corresponding wrapper at
 `.claude-plugin/scripts/bin/<skill>.py` bootstraps sys.path and invokes

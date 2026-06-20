@@ -24,12 +24,12 @@ The tenant PASSWORD is never resolved here: the shell backend reads
 `BEADS_DOLT_PASSWORD` from the environment at `bd`-call time. It is never
 stored on the descriptor.
 
-The function signature is kept identical to the plaintext sibling
-(`resolve_store_config(*, cwd, work_items_arg, memos_arg)`) so the command
-call sites do not change. The `work_items_arg` / `memos_arg` parameters
-are accepted-and-ignored under the beads substrate (there are no JSONL
-path overrides); they remain in the signature only for call-site
-compatibility.
+The function signature keeps the plaintext sibling's
+`work_items_arg` parameter (`resolve_store_config(*, cwd,
+work_items_arg)`) so the command call sites do not change. The
+`work_items_arg` parameter is accepted-and-ignored under the beads
+substrate (there are no JSONL path overrides); it remains in the
+signature only for call-site compatibility.
 """
 
 from __future__ import annotations
@@ -60,16 +60,14 @@ def resolve_store_config(
     *,
     cwd: Path,
     work_items_arg: str | None,
-    memos_arg: str | None,
 ) -> StoreConfig:
     """Resolve the beads connection descriptor from .livespec.jsonc + env.
 
-    `work_items_arg` / `memos_arg` are accepted for call-site
-    compatibility with the plaintext signature and are intentionally
-    unused under the beads substrate (no JSONL path overrides exist).
+    `work_items_arg` is accepted for call-site compatibility with the
+    plaintext signature and is intentionally unused under the beads
+    substrate (no JSONL path overrides exist).
     """
     _ = work_items_arg
-    _ = memos_arg
     block = _read_connection_block(cwd=cwd)
     tenant = _str_or(block.get("tenant"), default=_DEFAULT_TENANT)
     prefix = _str_or(block.get("prefix"), default=tenant)

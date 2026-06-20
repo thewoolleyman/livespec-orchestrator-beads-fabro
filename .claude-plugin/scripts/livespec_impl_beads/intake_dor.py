@@ -6,19 +6,19 @@ that only autonomously-dispatchable work reaches the factory
 triage"; the normative clause in contracts.md §"Gap-detectable behavior
 clauses"):
 
-    The `capture-work-item`, `capture-impl-gaps`, and `process-memos`
-    (impl-bound) capture front-ends MUST run the intake Definition-of-Ready
-    checklist over the six gates at capture and MUST tag the resulting item
-    `ready`, `needs-regroom`, or `not-yet-actionable` accordingly — a
-    single-coherent-done, autonomously-verifiable, autonomy-tiered,
-    dependency-linked, repo-targeted, above-floor item is tagged `ready`;
-    an item with more than one coherent "done" (an epic) MUST be tagged
-    `needs-regroom`; an item whose acceptance is not autonomously
-    verifiable, or that has unresolved blockers, MUST be tagged
-    `not-yet-actionable` and MUST NOT be filed as `ready`.
+    The `capture-work-item` and `capture-impl-gaps` capture front-ends
+    MUST run the intake Definition-of-Ready checklist over the six gates
+    at capture and MUST tag the resulting item `ready`, `needs-regroom`,
+    or `not-yet-actionable` accordingly — a single-coherent-done,
+    autonomously-verifiable, autonomy-tiered, dependency-linked,
+    repo-targeted, above-floor item is tagged `ready`; an item with more
+    than one coherent "done" (an epic) MUST be tagged `needs-regroom`; an
+    item whose acceptance is not autonomously verifiable, or that has
+    unresolved blockers, MUST be tagged `not-yet-actionable` and MUST NOT
+    be filed as `ready`.
 
-This module is the ONE shared primitive all three front-ends call — the
-gate logic lives here once, never duplicated three times. A front-end's
+This module is the ONE shared primitive both front-ends call — the
+gate logic lives here once, never duplicated. A front-end's
 SKILL.md gathers the six checklist answers from the capture dialogue,
 files the item through the normal store path, and then calls
 `apply_intake_dor` to evaluate the verdict and stamp the tag on the
@@ -104,7 +104,7 @@ class DefinitionOfReadyChecklist:
 
     Each field is the capture front-end's answer to one gate. The
     front-end SKILL.md walks the maintainer (or auto-fills from the gap /
-    memo / freeform inputs) through these, then hands the assembled
+    freeform inputs) through these, then hands the assembled
     checklist to `apply_intake_dor`.
     """
 

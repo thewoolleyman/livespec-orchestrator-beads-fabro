@@ -1760,7 +1760,7 @@ def _load_items(*, repo: Path) -> list[WorkItem]:
 
 
 def _store_config(*, repo: Path) -> StoreConfig:
-    return resolve_store_config(cwd=repo, work_items_arg=None, memos_arg=None)
+    return resolve_store_config(cwd=repo, work_items_arg=None)
 
 
 def _emit_outcomes(*, outcomes: list[DispatchOutcome], as_json: bool) -> None:

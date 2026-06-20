@@ -49,7 +49,7 @@
     "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
   },
   {
-    "heading": "## The ten-skill surface",
+    "heading": "## The seven-skill surface",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
@@ -78,13 +78,6 @@
   },
   {
     "heading": "## Work-item beads-issue mapping",
-    "spec_root": "SPECIFICATION",
-    "spec_file": "contracts.md",
-    "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
-  },
-  {
-    "heading": "## Memo beads-issue mapping",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
@@ -175,20 +168,6 @@
     "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
   },
   {
-    "heading": "## Scenario 2 — Memo → spec-bound disposition",
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
-  },
-  {
-    "heading": "## Scenario 3 — Memo → persistent-knowledge graduation",
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
-  },
-  {
     "heading": "## Scenario 4 — Freeform bug fix",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
@@ -229,7 +208,7 @@
     "test": "tests.integration.test_intake_dor_scenario8.test_single_acceptance_item_is_tagged_ready",
     "clauses": [
       {
-        "gap_id": "gap-mgtc67l3",
+        "gap_id": "gap-55i6toie",
         "scenario": "Scenario 8 — Intake Definition-of-Ready triage"
       }
     ],

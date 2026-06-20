@@ -8,7 +8,7 @@ server mode), NOT JSONL files. The package name is `livespec_impl_beads`
 
 Top-level modules:
 
-- `types.py` — work-item and memo dataclasses, the Spec Reader
+- `types.py` — work-item dataclasses, the Spec Reader
   snapshot / diff dataclasses, AND `StoreConfig` (rewritten from the
   plaintext sibling's path pair into the beads CONNECTION descriptor).
   Consumed by every skill and every thin-transport CLI. Dataclasses
@@ -25,12 +25,11 @@ Top-level modules:
     the SAME interface. It is PRODUCT code — the runtime backend when no
     live connection is configured AND the backend the default hermetic
     CI tier runs against — not test scaffolding.
-- `store.py` — the SIX public store functions (`read_work_items`,
-  `read_memos`, `append_work_item`, `append_memo`,
-  `materialize_work_items`, `materialize_memos`) — identical signatures
+- `store.py` — the public store functions (`read_work_items`,
+  `append_work_item`, `materialize_work_items`) — identical signatures
   to the plaintext sibling so the command call sites do not change. The
   `path` keyword is REPURPOSED into the `StoreConfig` connection
-  descriptor. `store.py` owns the WorkItem/Memo ⇄ beads field map and
+  descriptor. `store.py` owns the WorkItem ⇄ beads field map and
   never shells out directly (it talks only to a `BeadsClient`).
 - `spec_reader.py` — read-only Spec Reader adapter implementing the
   four required capabilities from `livespec/SPECIFICATION/
@@ -39,7 +38,7 @@ Top-level modules:
 - `errors.py` — the EXPECTED-error exception surface, including the
   beads-specific `BeadsConnectionError` / `BeadsCommandError` /
   `BeadsTenantMissingError` / `BeadsMappingError`.
-- `_ids.py` — work-item / memo id generation helpers.
+- `_ids.py` — work-item id generation helpers.
 
 ## Backend selection mechanism (Fake vs Shell)
 
@@ -79,9 +78,9 @@ Module-level rules an agent editing this tree must follow:
 
 - Every module declares `__all__: list[str]` enumerating its public
   surface.
-- Records conform exactly to the schemas in
-  `SPECIFICATION/contracts.md` §"Work-items record schema" /
-  §"Memos record schema"; the beads field map (id / type / status /
+- Records conform exactly to the schema in
+  `SPECIFICATION/contracts.md` §"Work-item beads-issue mapping";
+  the beads field map (id / type / status /
   priority natives; origin / gap-id / resolution labels; audit in
   metadata JSON; depends_on via `blocks` edges; superseded_by via the
   `supersedes` edge; spec_commitment_hint via native `spec_id`) is

@@ -44,7 +44,7 @@ from livespec_impl_beads.commands._config import resolve_store_config
 from livespec_impl_beads.commands.groom import load_groom_context
 from pathlib import Path
 
-config = resolve_store_config(cwd=Path.cwd(), work_items_arg=None, memos_arg=None)
+config = resolve_store_config(cwd=Path.cwd(), work_items_arg=None)
 context = load_groom_context(path=config, item_id=item_id)
 # context.title / context.description ground the draft in the real item.
 ```

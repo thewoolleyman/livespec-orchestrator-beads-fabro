@@ -7,7 +7,7 @@ make that hermetic and isolated:
 1. `LIVESPEC_BEADS_FAKE=1` is set in the environment so
    `commands._config.resolve_store_config` resolves `StoreConfig.fake=True`
    and `store.make_beads_client` returns the fake. The command modules
-   (list-work-items / list-memos / next) call the resolver internally, so
+   (list-work-items / next) call the resolver internally, so
    this is the only seam that flips them onto the fake.
 2. `reset_fake_singleton()` runs before AND after each test so the
    process-singleton fake tenant starts empty for every test — the
