@@ -19,9 +19,9 @@ The run-config helper (`render_run_config_overlay`) materializes the
 RUN-SCOPED credential projection (the family-secrets scoped
 transient-materialization rule): the committed config carries NO
 secret, and the rendered overlay appends an `[environments.<id>.env]`
-table carrying the CLAUDE_CODE_OAUTH_TOKEN value the caller read from
-the Dispatcher's process environment, alongside the `graph` path
-rewritten absolute so the overlay resolves from outside the workflow
+table carrying the CLAUDE_CODE_OAUTH_TOKEN and GH_TOKEN values the caller
+read from the Dispatcher's process environment, alongside the `graph`
+path rewritten absolute so the overlay resolves from outside the workflow
 directory. The same overlay provisions the sandbox sibling clones:
 per-fleet-member depth-1 `[[run.prepare.steps]]` clone blocks plus the
 non-secret `LIVESPEC_SIBLING_CLONES_ROOT` env key (riding in the same
@@ -690,6 +690,7 @@ def render_run_config_overlay(
     committed_text: str,
     workflow_dir: Path,
     token: str,
+    github_token: str,
     siblings: SiblingClones | None,
     otel_env: dict[str, str] | None = None,
 ) -> str | None:
@@ -703,8 +704,8 @@ def render_run_config_overlay(
     `[[run.prepare.steps]]` blocks (when `siblings` is not None) so
     cross-repo checks resolve family siblings inside the sandbox, and
     (c) an appended `[environments.<id>.env]` table carrying the
-    CLAUDE_CODE_OAUTH_TOKEN value read from the Dispatcher's process
-    environment plus the NON-secret `LIVESPEC_SIBLING_CLONES_ROOT` key.
+    CLAUDE_CODE_OAUTH_TOKEN and GH_TOKEN values read from the Dispatcher's
+    process environment plus the NON-secret `LIVESPEC_SIBLING_CLONES_ROOT` key.
     The non-secret key rides in the credential table because TOML
     forbids a second declaration of the same table and this appended
     table is the single `[environments.<id>.env]` declaration point —
@@ -743,6 +744,7 @@ def render_run_config_overlay(
         return None
     rewritten = committed_text.replace(needle, f'graph = "{resolved_graph}"', 1)
     token_literal = json.dumps(token)
+    github_token_literal = json.dumps(github_token)
     sibling_steps = "" if siblings is None else _sibling_clone_steps_block(siblings=siblings)
     sibling_env_line = (
         ""
@@ -757,6 +759,7 @@ def render_run_config_overlay(
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
         + f"[environments.{environment_id}.env]\n"
         + f"CLAUDE_CODE_OAUTH_TOKEN = {token_literal}\n"
+        + f"GH_TOKEN = {github_token_literal}\n"
         + sibling_env_line
         + otel_env_lines
     )

@@ -151,6 +151,7 @@ def fabro_dispatch_env(
     scratch = tmp_path_factory.mktemp("fabro-dispatch")
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
+    monkeypatch.setenv("GH_TOKEN", "test-github-token")
     monkeypatch.setattr(
         "livespec_impl_beads.commands.dispatcher._fetch_fleet_manifest_text",
         lambda: _FLEET_MANIFEST_TEXT,
@@ -847,12 +848,15 @@ def test_parse_run_status_rejects_unusable_shapes() -> None:
 # overlay must carry it VERBATIM (and nothing else may — journals,
 # argvs, and the committed config stay token-free).
 _FAKE_TOKEN_LINE = 'CLAUDE_CODE_OAUTH_TOKEN = "test-oauth-token"'
+_FAKE_GITHUB_TOKEN = "test-github-token"
+_FAKE_GITHUB_TOKEN_LINE = 'GH_TOKEN = "test-github-token"'
 
 # The dead interpolation channel: fabro resolves {{ env.* }} in the
 # server-spawned WORKER, whose env is a fail-closed allowlist
 # (fabro-server/src/spawn_env.rs), so this literal must never appear in
 # a materialized overlay — it would flow through to the sandbox as-is.
 _ENV_INTERPOLATION_LITERAL = "{{ env.CLAUDE_CODE_OAUTH_TOKEN }}"
+_GH_ENV_INTERPOLATION_LITERAL = "{{ env.GH_TOKEN }}"
 
 _COMMITTED_WORKFLOW_TOML = (
     "_version = 1\n"
@@ -873,6 +877,7 @@ def test_render_run_config_overlay_rewrites_graph_and_appends_env_token(
         committed_text=_COMMITTED_WORKFLOW_TOML,
         workflow_dir=tmp_path,
         token=overlay_token,
+        github_token=_FAKE_GITHUB_TOKEN,
         siblings=None,
     )
     assert rendered is not None
@@ -884,7 +889,9 @@ def test_render_run_config_overlay_rewrites_graph_and_appends_env_token(
     # may survive into it.
     assert "[environments.livespec-ci.env]" in rendered
     assert _FAKE_TOKEN_LINE in rendered
+    assert _FAKE_GITHUB_TOKEN_LINE in rendered
     assert _ENV_INTERPOLATION_LITERAL not in rendered
+    assert _GH_ENV_INTERPOLATION_LITERAL not in rendered
 
 
 def test_render_run_config_overlay_keeps_absolute_graph_path(tmp_path: Path) -> None:
@@ -897,6 +904,7 @@ def test_render_run_config_overlay_keeps_absolute_graph_path(tmp_path: Path) -> 
         committed_text=committed,
         workflow_dir=tmp_path / "workflow-dir",
         token=overlay_token,
+        github_token=_FAKE_GITHUB_TOKEN,
         siblings=None,
     )
     assert rendered is not None
@@ -911,6 +919,7 @@ def test_render_run_config_overlay_rejects_unusable_shapes(tmp_path: Path) -> No
             committed_text="_version = 1\n",
             workflow_dir=tmp_path,
             token=overlay_token,
+            github_token=_FAKE_GITHUB_TOKEN,
             siblings=None,
         )
         is None
@@ -918,7 +927,11 @@ def test_render_run_config_overlay_rejects_unusable_shapes(tmp_path: Path) -> No
     no_graph = '[workflow]\n\n[run.environment]\nid = "livespec-ci"\n'
     assert (
         render_run_config_overlay(
-            committed_text=no_graph, workflow_dir=tmp_path, token=overlay_token, siblings=None
+            committed_text=no_graph,
+            workflow_dir=tmp_path,
+            token=overlay_token,
+            github_token=_FAKE_GITHUB_TOKEN,
+            siblings=None,
         )
         is None
     )
@@ -927,7 +940,11 @@ def test_render_run_config_overlay_rejects_unusable_shapes(tmp_path: Path) -> No
     no_environment = '[workflow]\ngraph = "workflow.fabro"\n'
     assert (
         render_run_config_overlay(
-            committed_text=no_environment, workflow_dir=tmp_path, token=overlay_token, siblings=None
+            committed_text=no_environment,
+            workflow_dir=tmp_path,
+            token=overlay_token,
+            github_token=_FAKE_GITHUB_TOKEN,
+            siblings=None,
         )
         is None
     )
@@ -937,7 +954,11 @@ def test_render_run_config_overlay_rejects_unusable_shapes(tmp_path: Path) -> No
     spaced = '[workflow]\ngraph =  "workflow.fabro"\n\n[run.environment]\nid = "livespec-ci"\n'
     assert (
         render_run_config_overlay(
-            committed_text=spaced, workflow_dir=tmp_path, token=overlay_token, siblings=None
+            committed_text=spaced,
+            workflow_dir=tmp_path,
+            token=overlay_token,
+            github_token=_FAKE_GITHUB_TOKEN,
+            siblings=None,
         )
         is None
     )
@@ -1004,6 +1025,7 @@ def test_render_run_config_overlay_appends_sibling_clone_steps_and_env_root(
         committed_text=_COMMITTED_WORKFLOW_TOML,
         workflow_dir=tmp_path,
         token=overlay_token,
+        github_token=_FAKE_GITHUB_TOKEN,
         siblings=_SIBLINGS,
     )
     assert rendered is not None
@@ -1020,6 +1042,7 @@ def test_render_run_config_overlay_appends_sibling_clone_steps_and_env_root(
     assert rendered.index(_DEV_TOOLING_CLONE_STEP_LINE) < env_table_at
     assert rendered.index(_SIBLING_ENV_LINE) > env_table_at
     assert _FAKE_TOKEN_LINE in rendered
+    assert _FAKE_GITHUB_TOKEN_LINE in rendered
 
 
 def test_render_run_config_overlay_without_siblings_appends_no_clone_steps(
@@ -1030,6 +1053,7 @@ def test_render_run_config_overlay_without_siblings_appends_no_clone_steps(
         committed_text=_COMMITTED_WORKFLOW_TOML,
         workflow_dir=tmp_path,
         token=overlay_token,
+        github_token=_FAKE_GITHUB_TOKEN,
         siblings=None,
     )
     assert rendered is not None
@@ -1683,10 +1707,13 @@ def test_dispatch_materializes_mode600_overlay_and_cleans_up(
     # never reaches the journal, and no dead {{ env }} interpolation
     # literal survives into the overlay.
     assert _FAKE_TOKEN_LINE in overlay_text
+    assert _FAKE_GITHUB_TOKEN_LINE in overlay_text
     assert _ENV_INTERPOLATION_LITERAL not in overlay_text
+    assert _GH_ENV_INTERPOLATION_LITERAL not in overlay_text
     assert f'graph = "{workflow.parent / "workflow.fabro"}"' in overlay_text
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
     assert "test-oauth-token" not in journal_text
+    assert "test-github-token" not in journal_text
 
 
 def test_dispatch_overlay_provisions_sibling_clones_for_fleet(
@@ -1802,7 +1829,11 @@ def test_dispatch_rejects_not_ready_item(
     blocked = _item(id="blocked-2", depends_on=("blocker-1",))
     append_work_item(path=_config(), item=blocker)
     append_work_item(path=_config(), item=blocked)
-    monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={}))
+    monkeypatch.setattr(
+        dispatcher,
+        "run_dispatch",
+        _FakeRunDispatch(outcomes={}),
+    )
     exit_code = main(
         ["dispatch", "--repo", str(repo), "--item", "blocked-2", "--workflow", str(workflow)]
     )
@@ -1970,7 +2001,11 @@ def test_dispatch_fails_fast_when_oauth_token_env_is_absent_or_empty(
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     item = _item()
     append_work_item(path=_config(), item=item)
-    monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={}))
+    monkeypatch.setattr(
+        dispatcher,
+        "run_dispatch",
+        _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)}),
+    )
     base = ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN")
     assert main(base) == 1
@@ -1979,6 +2014,39 @@ def test_dispatch_fails_fast_when_oauth_token_env_is_absent_or_empty(
     assert "CLAUDE_CODE_OAUTH_TOKEN" in out
     assert "with-livespec-env.sh" in out
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
+    assert main(base) == 1
+    assert "with-livespec-env.sh" in capsys.readouterr().out
+    assert _stored()[item.id].status == "open"
+
+
+def test_dispatch_fails_fast_when_github_token_env_is_absent_or_empty(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing GH_TOKEN refuses dispatch before Fabro launches.
+
+    The PR node runs inside the Fabro sandbox, so the Dispatcher's
+    per-run overlay must project the GitHub token into that sandbox env
+    table. Absence would let implement/janitor succeed and fail only at
+    `gh pr create`, the W7 5qv failure class.
+    """
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    monkeypatch.setattr(
+        dispatcher,
+        "run_dispatch",
+        _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)}),
+    )
+    base = ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+    monkeypatch.delenv("GH_TOKEN")
+    assert main(base) == 1
+    out = capsys.readouterr().out
+    assert "run-config-overlay" in out
+    assert "GH_TOKEN" in out
+    assert "with-livespec-env.sh" in out
+    monkeypatch.setenv("GH_TOKEN", "")
     assert main(base) == 1
     assert "with-livespec-env.sh" in capsys.readouterr().out
     assert _stored()[item.id].status == "open"

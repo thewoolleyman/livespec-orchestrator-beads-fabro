@@ -102,6 +102,7 @@ def _hermetic_dispatch_env(
     scratch = tmp_path_factory.mktemp("fabro-calibration")
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
+    monkeypatch.setenv("GH_TOKEN", "test-github-token")
     # `main()` resolves its store config internally; forcing the fake toggle is
     # the only seam that flips the dispatcher onto the in-memory tenant.
     monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")

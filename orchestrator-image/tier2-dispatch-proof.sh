@@ -58,6 +58,7 @@ Required env, normally supplied by:
   /data/projects/1password-env-wrapper/with-livespec-env.sh -- <command>
 
   LIVESPEC_FAMILY_GITHUB_TOKEN
+    (forwarded to the Dispatcher as GH_TOKEN for in-sandbox PR creation)
   ANTHROPIC_API_KEY_LIVESPEC_E2E
   CLAUDE_CODE_OAUTH_TOKEN
   BEADS_DOLT_PASSWORD_livespec_impl_beads
@@ -191,6 +192,7 @@ start_container() {
     "${publish_args[@]}" \
     -e FABRO_PORT="$FABRO_PORT" \
     -e LIVESPEC_FAMILY_GITHUB_TOKEN \
+    -e GH_TOKEN="$LIVESPEC_FAMILY_GITHUB_TOKEN" \
     -e ANTHROPIC_API_KEY_LIVESPEC_E2E \
     -e CLAUDE_CODE_OAUTH_TOKEN \
     -e BEADS_DOLT_PASSWORD_livespec_impl_beads \
