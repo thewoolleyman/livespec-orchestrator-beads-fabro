@@ -268,6 +268,30 @@ jobs:
         if: needs.setup.outputs.py_changed == 'true'
         run: just check-e2e-cli
 
+  acceptance:
+    name: acceptance
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pinned binaries via mise
+        uses: jdx/mise-action@v2
+
+      - name: Restore uv download cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
+
+      - name: Install Python dev deps via uv
+        run: uv sync --all-groups
+
+      - name: Run golden-master acceptance harness
+        run: just acceptance
+
   # Closed-loop CI telemetry: export this run's per-job timings to Honeycomb
   # (dataset github-ci) and FAIL if Honeycomb does not accept them. The run
   # that produced the data confirms its own telemetry landed — so a broken
@@ -281,7 +305,7 @@ jobs:
   # repo-agnostic, driven by $REPO/$RUN_ID from the workflow env.
   export-telemetry:
     name: export-telemetry
-    needs: [setup, check-python, check-metadata, e2e-cli]
+    needs: [setup, check-python, check-metadata, e2e-cli, acceptance]
     if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'merge_group') }}
     runs-on: ubuntu-latest
     permissions:

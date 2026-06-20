@@ -35,6 +35,21 @@ skip := ""
 default:
     @just --list
 
+# Golden-master acceptance harness. Kept outside `just check` so the fast
+# aggregate remains the local/pre-push safety net while CI can expose this as a
+# separate merge-gate status.
+acceptance:
+    uv run pytest acceptance -q
+
+# Live Beads/Fabro tier entrypoints. These intentionally delegate to the
+# existing production container proof and require the 1Password-provisioned
+# operator env documented in orchestrator-image/tier2-dispatch-proof.sh.
+acceptance-live-preflight:
+    bash orchestrator-image/tier2-dispatch-proof.sh --preflight
+
+acceptance-live item:
+    bash orchestrator-image/tier2-dispatch-proof.sh --run --item {{item}}
+
 # ---------------------------------------------------------------
 # First-time setup.
 # ---------------------------------------------------------------

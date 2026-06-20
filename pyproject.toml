@@ -148,6 +148,9 @@ ban-relative-imports = "all"
 "tests/**.py" = [
     "S101", "PLR2004", "S603", "S607", "PT018", "S108", "S105", "TRY003", "E501", "PLR0913",
 ]
+"acceptance/**.py" = [
+    "S101", "PLR2004", "S603", "S607", "PT018", "S108", "S105", "TRY003", "E501", "PLR0913",
+]
 # dev-tooling/checks/ scripts shell out to git, ruff, python via
 # subprocess.run with fixed argv lists per the canonical-target
 # invocation contract. S603/S607/S404 are over-strict for this
