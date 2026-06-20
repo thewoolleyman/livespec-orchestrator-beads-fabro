@@ -184,6 +184,7 @@ start_container() {
   fi
   docker run -d --name "$CONTAINER" \
     --privileged \
+    --cgroupns=host \
     "${network_args[@]}" \
     -v "$VARLIB_VOL:/var/lib/docker" \
     -v "$MOUNT_REPO:$WORKSPACE_REPO:ro" \

@@ -49,6 +49,11 @@ maintainer's existing host Fabro server on the normal default port. The
 dispatcher is executed with the mounted repo as its working directory so `bd`
 can auto-discover `.beads/`.
 
+The outer orchestrator container also runs with `--cgroupns=host`. Plain nested
+containers work without it, but Fabro's sandbox launch applies the workflow's
+CPU/memory resources; on cgroup v2 those resource-limited nested containers
+fail without the host cgroup namespace.
+
 `MOUNT_REPO` must point at a checkout with both Beads pointer files present:
 the committed `.beads/config.yaml` and the gitignored `.beads/metadata.json`.
 Fresh worktrees usually lack `metadata.json`; use the primary checkout or
@@ -141,6 +146,14 @@ Record the following in this file or in a successor note before closing
   dispatch command line but failed before journaling because `docker exec`'s
   `-w` option was ordered after the container name; Docker treated `-w` as the
   executable.
+- After fixing `docker exec`, the next attempt wrote a dispatcher journal and
+  launched Fabro run `01KVH5KTRRQ08ZR8W24NXP27BF`, but the Fabro sandbox failed
+  to initialize on the inner Docker daemon with a cgroup-v2 error:
+  `cannot enter cgroupv2 "/sys/fs/cgroup/docker" with domain controllers`.
+  Controlled probes showed plain nested `hello-world` and the pinned sandbox
+  image run successfully, but `docker run --cpus 4 --memory 8g ...` reproduces
+  the error unless the outer container is launched with `--cgroupns=host`; with
+  that flag, the resource-limited pinned sandbox image prints `cgroupns-ok`.
 
 Current tiny proof target: `livespec-impl-beads-ctq`, a P3 doc-only item
 created specifically for this Tier-2 run. Do not use `dn9` itself as the
