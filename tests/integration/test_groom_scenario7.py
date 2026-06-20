@@ -103,7 +103,7 @@ def _factory_slice(*, title: str, depends_on: tuple[str, ...] = ()) -> Candidate
 
 
 def _all_items() -> dict[str, object]:
-    return dict(materialize_work_items(read_work_items(path=_config())))
+    return dict(materialize_work_items(records=read_work_items(path=_config())))
 
 
 def _labels_of(*, issue_id: str) -> list[str]:
@@ -163,7 +163,7 @@ def test_groom_journey_files_ready_slices_links_deps_and_regrooms_out() -> None:
     assert result.regroomed_out is True
 
     # Each filed factory slice is tagged `ready` and is in the ledger.
-    items = materialize_work_items(read_work_items(path=_config()))
+    items = materialize_work_items(records=read_work_items(path=_config()))
     for slice_id in result.filed_slice_ids:
         assert slice_id in items
         assert READY_LABEL in _labels_of(issue_id=slice_id)
@@ -190,7 +190,7 @@ def test_filed_factory_slices_link_their_dependency_edges() -> None:
         ],
     )
     base_id, dependent_id = result.filed_slice_ids
-    items = materialize_work_items(read_work_items(path=_config()))
+    items = materialize_work_items(records=read_work_items(path=_config()))
     dependent = items[dependent_id]
     # The dependency edge points at the base slice's REAL minted id.
     assert base_id in items

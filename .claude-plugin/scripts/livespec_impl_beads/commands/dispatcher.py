@@ -1756,7 +1756,8 @@ def _write_findings(*, findings: list[LedgerFinding]) -> None:
 
 
 def _load_items(*, repo: Path) -> list[WorkItem]:
-    return list(materialize_work_items(read_work_items(path=_store_config(repo=repo))).values())
+    records = read_work_items(path=_store_config(repo=repo))
+    return list(materialize_work_items(records=records).values())
 
 
 def _store_config(*, repo: Path) -> StoreConfig:

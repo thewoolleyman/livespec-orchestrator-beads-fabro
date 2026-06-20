@@ -122,7 +122,7 @@ def _repo_with_workflow(*, tmp_path: Path) -> tuple[Path, Path]:
 
 
 def _stored() -> dict[str, WorkItem]:
-    return materialize_work_items(read_work_items(path=_config()))
+    return materialize_work_items(records=read_work_items(path=_config()))
 
 
 @dataclass(kw_only=True)

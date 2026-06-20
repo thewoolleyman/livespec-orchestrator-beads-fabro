@@ -70,7 +70,7 @@ def close_completed(*, path: StoreConfig, item_id: str, reason: str | None = Non
     `item_id` is not present in the tenant (an expected misuse — a typo,
     or an id closed and pruned between read and write).
     """
-    index = materialize_work_items(read_work_items(path=path))
+    index = materialize_work_items(records=read_work_items(path=path))
     existing = index.get(item_id)
     if existing is None:
         raise WorkItemNotFoundError(item_id=item_id)

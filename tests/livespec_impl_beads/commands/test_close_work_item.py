@@ -62,7 +62,7 @@ def _seed(item: WorkItem) -> None:
 
 
 def _reload(item_id: str) -> WorkItem | None:
-    return materialize_work_items(read_work_items(path=_config())).get(item_id)
+    return materialize_work_items(records=read_work_items(path=_config())).get(item_id)
 
 
 # --------------------------------------------------------------------------

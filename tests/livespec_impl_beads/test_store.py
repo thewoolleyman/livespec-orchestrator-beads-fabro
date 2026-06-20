@@ -29,6 +29,7 @@ from livespec_impl_beads._beads_client import (
 )
 from livespec_impl_beads.errors import BeadsMappingError
 from livespec_impl_beads.store import (
+    BeadsWorkItemStore,
     WorkItemComment,
     append_work_item,
     materialize_work_items,
@@ -36,6 +37,7 @@ from livespec_impl_beads.store import (
     read_work_items,
 )
 from livespec_impl_beads.types import AuditRecord, StoreConfig, WorkItem
+from livespec_runtime.work_items.store import WorkItemStore
 
 
 def _config() -> StoreConfig:
@@ -204,7 +206,7 @@ def test_depends_on_bare_string_maps_to_blocks_edge_and_back() -> None:
     )
     record = _fake().show_issue(issue_id="li-blocked")
     assert {"depends_on_id": "li-dep", "type": EDGE_BLOCKS} in record["dependencies"]
-    materialized = materialize_work_items(read_work_items(path=_config()))
+    materialized = materialize_work_items(records=read_work_items(path=_config()))
     # The read path materializes each `blocks` edge as the v072 typed-dict
     # local entry, NOT the legacy bare string. livespec's DependsOnEntry
     # schema (and the doctor `depends_on-ref-wellformedness` check) require
@@ -256,7 +258,7 @@ def test_read_back_superseded_by_is_none_by_design() -> None:
         path=_config(),
         item=_minimal_work_item(id_="li-old", superseded_by="li-new"),
     )
-    materialized = materialize_work_items(read_work_items(path=_config()))
+    materialized = materialize_work_items(records=read_work_items(path=_config()))
     assert materialized["li-old"].superseded_by is None
 
 
@@ -334,7 +336,7 @@ def test_close_in_place_reads_back_resolution_and_audit() -> None:
             audit=audit,
         ),
     )
-    materialized = materialize_work_items(read_work_items(path=_config()))
+    materialized = materialize_work_items(records=read_work_items(path=_config()))
     closed = materialized["li-a"]
     assert closed.status == "closed"
     assert closed.resolution == "spec-revised"
@@ -392,14 +394,17 @@ def test_read_work_items_returns_every_issue() -> None:
 
 
 # --------------------------------------------------------------------------
-# materialize_* — identity reductions kept for API symmetry (R8).
+# materialize_* — the shared canonical head reduction
+# (livespec_runtime.work_items.reduce.materialize_work_items) over beads
+# records. beads is one-record-per-id (supersedes always None), so the
+# reduction is its degenerate identity-collection case keyed by id.
 # --------------------------------------------------------------------------
 
 
 def test_materialize_work_items_is_identity_keyed_by_id() -> None:
     append_work_item(path=_config(), item=_minimal_work_item(id_="li-a"))
     append_work_item(path=_config(), item=_minimal_work_item(id_="li-b"))
-    materialized = materialize_work_items(read_work_items(path=_config()))
+    materialized = materialize_work_items(records=read_work_items(path=_config()))
     assert set(materialized.keys()) == {"li-a", "li-b"}
     assert materialized["li-a"].id == "li-a"
 
@@ -796,3 +801,32 @@ def test_read_work_item_comments_skips_unusable_records_fail_soft(
     )
     comments = read_work_item_comments(path=_config(), work_item_id="li-any")
     assert comments == (WorkItemComment(text="kept", author=None, created_at=None),)
+
+
+# --------------------------------------------------------------------------
+# BeadsWorkItemStore — the WorkItemStore conformance facade.
+# --------------------------------------------------------------------------
+
+
+def test_beads_work_item_store_conforms_to_protocol() -> None:
+    """The facade is structurally assignable to the shared `WorkItemStore`."""
+    store: WorkItemStore = BeadsWorkItemStore(config=_config())
+    assert isinstance(store, BeadsWorkItemStore)
+
+
+def test_beads_work_item_store_round_trips_via_fake_backend() -> None:
+    """append_work_item then read_work_items through the facade round-trips."""
+    store = BeadsWorkItemStore(config=_config())
+    store.append_work_item(item=_minimal_work_item(id_="li-facade1"))
+    store.append_work_item(item=_minimal_work_item(id_="li-facade2"))
+    read_ids = {item.id for item in store.read_work_items()}
+    assert read_ids == {"li-facade1", "li-facade2"}
+
+
+def test_beads_work_item_store_read_matches_free_function() -> None:
+    """The facade's read delegates to the `read_work_items` free function."""
+    append_work_item(path=_config(), item=_minimal_work_item(id_="li-a"))
+    store = BeadsWorkItemStore(config=_config())
+    facade_ids = {item.id for item in store.read_work_items()}
+    free_ids = {item.id for item in read_work_items(path=_config())}
+    assert facade_ids == free_ids == {"li-a"}
