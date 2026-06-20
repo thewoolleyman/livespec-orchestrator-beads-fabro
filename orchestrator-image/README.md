@@ -101,7 +101,7 @@ process's env — it is never written to a file or logged):
   --privileged \
   --cgroupns=host \                                  # nested resource-limited Fabro sandboxes on cgroup v2
   -v livespec-orch-varlib:/var/lib/docker \          # ext4-backed inner graph store
-  -v /data/projects/livespec-impl-beads:/workspace/livespec-impl-beads:ro \
+  -v /data/projects/livespec-impl-beads:/workspace/livespec-impl-beads \
   -p 127.0.0.1:32276:32276 \                         # web UI / control plane, HOST LOOPBACK ONLY
   --network host \                                   # to reach the EXTERNAL family-tenant Dolt (127.0.0.1:3307)
   -e LIVESPEC_FAMILY_GITHUB_TOKEN \                  # GitHub token (clone/push/PR)
@@ -114,6 +114,10 @@ process's env — it is never written to a file or logged):
   python3 /workspace/livespec-impl-beads/.claude-plugin/scripts/bin/dispatcher.py \
     loop --repo /workspace/livespec-impl-beads --budget 1 --mode shadow --item <id>
 ```
+
+The checkout mount is intentionally read-write: after Fabro merges a PR, the
+dispatcher refreshes that primary checkout and provisions a fresh post-merge
+janitor worktree from it.
 
 > **`--network host` vs `-p`.** If you use `--network host` (to reach the
 > external family-tenant Dolt on `127.0.0.1:3307`), the `-p` publish is ignored
