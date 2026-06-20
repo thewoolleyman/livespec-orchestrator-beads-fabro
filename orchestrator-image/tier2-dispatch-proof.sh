@@ -15,12 +15,16 @@ REPO_ROOT="$(cd "$HERE/.." && pwd)"
 IMAGE="${IMAGE:-livespec-orchestrator:dev}"
 CONTAINER="${CONTAINER:-livespec-orch-tier2}"
 VARLIB_VOL="${VARLIB_VOL:-livespec-orch-tier2-varlib}"
+FABRO_PORT_WAS_SET="${FABRO_PORT+x}"
 FABRO_PORT="${FABRO_PORT:-32276}"
 HOST_PUBLISH_PORT="${HOST_PUBLISH_PORT:-32281}"
 HOST_FABRO_BIN="${HOST_FABRO_BIN:-$HOME/.fabro/bin/fabro}"
 MOUNT_REPO="${MOUNT_REPO:-$REPO_ROOT}"
 WORKSPACE_REPO="${WORKSPACE_REPO:-/workspace/livespec-impl-beads}"
 TIER2_USE_HOST_NETWORK="${TIER2_USE_HOST_NETWORK:-1}"
+if [ "$TIER2_USE_HOST_NETWORK" = "1" ] && [ -z "$FABRO_PORT_WAS_SET" ]; then
+  FABRO_PORT="$HOST_PUBLISH_PORT"
+fi
 POLL_ATTEMPTS="${POLL_ATTEMPTS:-3}"
 POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-10}"
 JOURNAL_PATH="${JOURNAL_PATH:-/tmp/livespec-tier2-dispatch-journal.jsonl}"
@@ -217,6 +221,7 @@ run_dispatch() {
   docker exec "$CONTAINER" mkdir -p "$(dirname "$JOURNAL_PATH")"
   set +e
   docker exec "$CONTAINER" \
+    -w "$WORKSPACE_REPO" \
     python3 "$WORKSPACE_REPO/.claude-plugin/scripts/bin/dispatcher.py" \
       loop \
       --repo "$WORKSPACE_REPO" \

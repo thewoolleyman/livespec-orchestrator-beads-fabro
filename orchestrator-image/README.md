@@ -84,6 +84,10 @@ Run against a deliberately tiny ready item:
 See `research/w7-orchestrator-convergence/tier2-dispatch-proof.md` for the
 evidence checklist and Codex/runtime classification.
 
+When `TIER2_USE_HOST_NETWORK=1` (the default for that helper), the helper runs
+Fabro on `32281` unless `FABRO_PORT` is explicitly set. This avoids colliding
+with a maintainer's normal host Fabro server on `32276`.
+
 ## `docker run` invocation (production)
 
 The dispatcher needs the impl-beads checkout mounted and the externals injected.

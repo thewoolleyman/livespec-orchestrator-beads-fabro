@@ -43,6 +43,12 @@ The runner also maps `BEADS_DOLT_PASSWORD_livespec_impl_beads` into the generic
 `BEADS_DOLT_PASSWORD` process variable consumed by `bd`, without printing the
 secret value.
 
+With host networking enabled, the runner defaults Fabro to `32281` instead of
+`32276` unless `FABRO_PORT` is explicitly set. That avoids colliding with a
+maintainer's existing host Fabro server on the normal default port. The
+dispatcher is executed with the mounted repo as its working directory so `bd`
+can auto-discover `.beads/`.
+
 `MOUNT_REPO` must point at a checkout with both Beads pointer files present:
 the committed `.beads/config.yaml` and the gitignored `.beads/metadata.json`.
 Fresh worktrees usually lack `metadata.json`; use the primary checkout or
@@ -126,6 +132,11 @@ Record the following in this file or in a successor note before closing
   probe then succeeded: inside `livespec-orchestrator:dev`,
   `bd list --status all --limit 1 --json` reached the tenant and produced a
   JSON response.
+- After adding host networking, the next attempt first collided with the host's
+  existing Fabro server on `127.0.0.1:32276`, then with `FABRO_PORT=32281`
+  reached dispatch startup but still failed before journaling because
+  `docker exec` launched the dispatcher from `/`; `bd` therefore could not
+  auto-discover the mounted repo's `.beads/` directory.
 
 Current tiny proof target: `livespec-impl-beads-ctq`, a P3 doc-only item
 created specifically for this Tier-2 run. Do not use `dn9` itself as the
