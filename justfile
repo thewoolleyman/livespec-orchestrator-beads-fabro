@@ -667,6 +667,17 @@ check-e2e-cli:
 w7-tier2-dispatch-proof *ARGS:
     bash orchestrator-image/tier2-dispatch-proof.sh {{ARGS}}
 
+# W7 step-5 REAL-WORK containerized dispatch path: the production substrate the
+# Dispatcher runs on for routine cross-repo work. Unlike the Tier-2 proof it
+# mounts NO host checkout — it fresh-`git clone`s impl-beads (dispatcher code +
+# .fabro/workflows graph) AND the dispatch target INSIDE the container, so the
+# only host coupling is explicit secret provisioning (`-e VAR`). Run under the
+# 1Password wrapper. Pass script args after `--`, e.g.:
+#   with-livespec-env.sh -- just w7-real-work-dispatch -- --target-repo <name> --preflight
+#   with-livespec-env.sh -- just w7-real-work-dispatch -- --target-repo <name> --item <id> --run
+w7-real-work-dispatch *ARGS:
+    bash orchestrator-image/real-work-dispatch.sh {{ARGS}}
+
 # W7 mechanical fail-safe reaper for orphaned `livespec-e2e-*` throwaway
 # repos in the disposable `livespec-e2e` GitHub org. Org- and name-scoped by
 # construction; age-gated so an in-progress run's repo is not reaped. Run only
