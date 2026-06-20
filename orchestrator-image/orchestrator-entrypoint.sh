@@ -87,6 +87,11 @@ provision_github() {
   log "authenticating gh CLI from LIVESPEC_FAMILY_GITHUB_TOKEN (token via stdin) ..."
   printf '%s' "$LIVESPEC_FAMILY_GITHUB_TOKEN" | gh auth login --with-token \
     || die "gh auth login failed (bad/expired token?)"
+  # Export only after `gh auth login`: if GH_TOKEN is present during login, the
+  # gh CLI treats it as the active auth source and refuses to store credentials.
+  # The Dispatcher later materializes GH_TOKEN into the Fabro sandbox env table
+  # so the in-sandbox PR node can run `gh pr create`.
+  export GH_TOKEN="$LIVESPEC_FAMILY_GITHUB_TOKEN"
   log "gh CLI authenticated."
 }
 

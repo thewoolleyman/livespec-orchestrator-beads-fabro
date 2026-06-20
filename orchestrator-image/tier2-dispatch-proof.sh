@@ -192,7 +192,6 @@ start_container() {
     "${publish_args[@]}" \
     -e FABRO_PORT="$FABRO_PORT" \
     -e LIVESPEC_FAMILY_GITHUB_TOKEN \
-    -e GH_TOKEN="$LIVESPEC_FAMILY_GITHUB_TOKEN" \
     -e ANTHROPIC_API_KEY_LIVESPEC_E2E \
     -e CLAUDE_CODE_OAUTH_TOKEN \
     -e BEADS_DOLT_PASSWORD_livespec_impl_beads \
@@ -231,6 +230,7 @@ run_dispatch() {
   set +e
   docker exec \
     -w "$WORKSPACE_REPO" \
+    -e GH_TOKEN="$LIVESPEC_FAMILY_GITHUB_TOKEN" \
     "$CONTAINER" \
     python3 "$WORKSPACE_REPO/.claude-plugin/scripts/bin/dispatcher.py" \
       loop \

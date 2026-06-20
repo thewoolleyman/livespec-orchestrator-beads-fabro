@@ -105,7 +105,6 @@ process's env — it is never written to a file or logged):
   -p 127.0.0.1:32276:32276 \                         # web UI / control plane, HOST LOOPBACK ONLY
   --network host \                                   # to reach the EXTERNAL family-tenant Dolt (127.0.0.1:3307)
   -e LIVESPEC_FAMILY_GITHUB_TOKEN \                  # GitHub token (clone/push/PR)
-  -e GH_TOKEN="$LIVESPEC_FAMILY_GITHUB_TOKEN" \      # projected into Fabro PR sandbox
   -e ANTHROPIC_API_KEY_LIVESPEC_E2E \                # fabro LLM provider key
   -e CLAUDE_CODE_OAUTH_TOKEN \                       # model auth the dispatcher projects per-dispatch
   -e BEADS_DOLT_PASSWORD_livespec_impl_beads \       # external tenant Dolt password
@@ -129,8 +128,8 @@ process's env — it is never written to a file or logged):
 
 | Env var | Purpose | Used by |
 |---|---|---|
-| `LIVESPEC_FAMILY_GITHUB_TOKEN` | GitHub token for clone / push / PR (`token` strategy; the entrypoint `gh auth login`s with it, then `fabro install` reads it from the gh CLI) | entrypoint + dispatcher |
-| `GH_TOKEN` | conventional GitHub token name projected by the Dispatcher into the Fabro sandbox env table so the in-sandbox PR node can run `gh pr create`; set it from `LIVESPEC_FAMILY_GITHUB_TOKEN` at container launch | dispatcher / sandbox PR node |
+| `LIVESPEC_FAMILY_GITHUB_TOKEN` | GitHub token for clone / push / PR (`token` strategy; the entrypoint `gh auth login`s with it, then exports it as `GH_TOKEN` for the Dispatcher) | entrypoint + dispatcher |
+| `GH_TOKEN` | conventional GitHub token name projected by the Dispatcher into the Fabro sandbox env table so the in-sandbox PR node can run `gh pr create`; do not inject it at container launch because `gh auth login --with-token` refuses to store credentials when `GH_TOKEN` is already set | dispatcher / sandbox PR node |
 | `ANTHROPIC_API_KEY_LIVESPEC_E2E` | fabro LLM-provider API key (name overridable via `FABRO_LLM_API_KEY_ENV`) | `fabro install` |
 | `CLAUDE_CODE_OAUTH_TOKEN` | model auth the dispatcher projects into each sandbox per-dispatch (run-scoped overlay) | dispatcher |
 | `BEADS_DOLT_PASSWORD_<tenant>` | external family-tenant Dolt password (tenant DB == repo name) | dispatcher / `bd` |
