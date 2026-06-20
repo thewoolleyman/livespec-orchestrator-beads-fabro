@@ -1,0 +1,72 @@
+# W7 LIVE Beads/Fabro golden-master tier — NON-BLOCKING, operator-triggered.
+#
+# This workflow is DELIBERATELY NOT a per-PR or merge_group gate: it is
+# `workflow_dispatch`-only, so it never appears in PR CI and can never be a
+# required status check. The hermetic `acceptance` job in ci.yml stays the
+# merge gate. This tier:
+#   - needs the disposable `livespec-e2e` org token + the Fabro LLM key +
+#     Claude model auth + Honeycomb ingest key (the 1Password-provisioned
+#     operator secrets);
+#   - needs a privileged DinD-capable host with the pinned `fabro` binary and
+#     `bd`/`dolt` available (the production orchestrator runtime) — a stock
+#     GitHub-hosted runner cannot provide this;
+#   - CHURNS GitHub repos (creates + deletes throwaway `livespec-e2e-*` repos)
+#     and consumes real LLM budget.
+#
+# It therefore runs on a SELF-HOSTED runner labeled `livespec-orchestrator`
+# (the host that already carries the Fabro/bd/Dolt runtime and the 1Password
+# env wrapper). Secrets are injected via the runner's environment (the same
+# wrapper the operator uses locally) rather than GitHub Actions secrets, so the
+# org-scoped fine-grained token is never copied into GitHub secret storage.
+#
+# Trigger from the Actions tab (or `gh workflow run`). `mode=preflight`
+# (default) only validates host/env/image inputs; `mode=run` executes the full
+# create -> factory -> merge -> assert -> delete proof.
+name: acceptance-live-golden-master
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "preflight (validate only) or run (full live proof)"
+        type: choice
+        default: preflight
+        options:
+          - preflight
+          - run
+      name:
+        description: "greeting name to assert"
+        type: string
+        default: Ada
+
+permissions:
+  contents: read
+
+jobs:
+  live-golden-master:
+    name: live-golden-master
+    # Self-hosted: the live tier needs privileged DinD + the pinned Fabro/bd/
+    # Dolt runtime + the operator secret environment, none of which a
+    # GitHub-hosted runner provides.
+    runs-on: [self-hosted, livespec-orchestrator]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pinned binaries via mise
+        uses: jdx/mise-action@v2
+
+      - name: Run the live golden-master tier (under the 1Password env wrapper)
+        env:
+          MODE: ${{ inputs.mode }}
+          GREET_NAME: ${{ inputs.name }}
+        run: |
+          set -euo pipefail
+          flag="--preflight"
+          if [ "$MODE" = "run" ]; then flag="--run"; fi
+          # The self-hosted runner wraps the invocation in the livespec
+          # 1Password Environment so LIVESPEC_E2E_GITHUB_TOKEN /
+          # ANTHROPIC_API_KEY_LIVESPEC_E2E / CLAUDE_CODE_OAUTH_TOKEN /
+          # HONEYCOMB_INGEST_KEY_LIVESPEC are present; secrets are never echoed.
+          /data/projects/1password-env-wrapper/with-livespec-env.sh -- \
+            just acceptance-live-golden-master -- "$flag" --name "$GREET_NAME"
