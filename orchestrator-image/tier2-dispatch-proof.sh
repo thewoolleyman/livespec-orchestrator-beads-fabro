@@ -220,8 +220,9 @@ run_dispatch() {
   log "running one explicit shadow dispatch"
   docker exec "$CONTAINER" mkdir -p "$(dirname "$JOURNAL_PATH")"
   set +e
-  docker exec "$CONTAINER" \
+  docker exec \
     -w "$WORKSPACE_REPO" \
+    "$CONTAINER" \
     python3 "$WORKSPACE_REPO/.claude-plugin/scripts/bin/dispatcher.py" \
       loop \
       --repo "$WORKSPACE_REPO" \
