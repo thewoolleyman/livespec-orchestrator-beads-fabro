@@ -33,6 +33,7 @@ RUN apt-get update \
         docker.io \
         ca-certificates \
         curl \
+        gpg \
         jq \
         git \
         python3 \
@@ -52,6 +53,22 @@ RUN mkdir -p -m 755 /etc/apt/keyrings \
  && apt-get update \
  && apt-get install -y --no-install-recommends gh \
  && rm -rf /var/lib/apt/lists/*
+
+# --- mise — needed by the dispatcher itself after a PR merge. Fabro sandboxes
+#     provision their own toolchain, but the orchestrator container owns the
+#     post-merge primary refresh and janitor checkout (`mise trust` +
+#     `mise exec -- just check`), so mise must be present in the production
+#     runtime too. ---
+RUN mkdir -p -m 755 /etc/apt/keyrings \
+ && curl -fsSL https://mise.jdx.dev/gpg-key.pub \
+        | gpg --dearmor -o /etc/apt/keyrings/mise-archive-keyring.gpg \
+ && chmod go+r /etc/apt/keyrings/mise-archive-keyring.gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg] https://mise.jdx.dev/deb stable main" \
+        > /etc/apt/sources.list.d/mise.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends mise \
+ && rm -rf /var/lib/apt/lists/* \
+ && mise --version
 
 # --- uv (Astral) — the Python toolchain manager (family convention: uv pins
 #     Python + Python packages; mise pins non-Python binaries). Pinned to the
