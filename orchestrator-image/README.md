@@ -99,6 +99,7 @@ process's env — it is never written to a file or logged):
 /data/projects/1password-env-wrapper/with-livespec-env.sh -- docker run -d \
   --name livespec-orchestrator \
   --privileged \
+  --cgroupns=host \                                  # nested resource-limited Fabro sandboxes on cgroup v2
   -v livespec-orch-varlib:/var/lib/docker \          # ext4-backed inner graph store
   -v /data/projects/livespec-impl-beads:/workspace/livespec-impl-beads:ro \
   -p 127.0.0.1:32276:32276 \                         # web UI / control plane, HOST LOOPBACK ONLY
