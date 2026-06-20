@@ -92,7 +92,6 @@ def main(argv: list[str] | None = None) -> int:
     config = resolve_store_config(
         cwd=project_root,
         work_items_arg=args.work_items_path,
-        memos_arg=None,
     )
     materialized = _load_work_items(path=config.work_items_path)
     manifest = load_manifest(project_root=project_root)

@@ -109,7 +109,7 @@ def _finding(**overrides: object) -> dict[str, object]:
 
 def _seed_existing(*, repo: Path, fingerprint_hex: str, closed: bool, muted: bool) -> str:
     """Seed an existing fingerprinted issue into the shared fake tenant."""
-    config = resolve_store_config(cwd=repo, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=repo, work_items_arg=None)
     client = make_beads_client(config=config)
     assert isinstance(client, FakeBeadsClient)
     labels = ["reflection", f"fingerprint:{fingerprint_hex}"]
@@ -499,7 +499,7 @@ def test_file_mode_files_a_new_critical_item_with_dedup_labels(
         runner=runner,
         lessons_proposer=RecordingLessonsProposer(),
     )
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     client = make_beads_client(config=config)
     items = client.list_issues()
     filed = [i for i in items if "reflection" in i.get("labels", [])]
@@ -532,7 +532,7 @@ def test_file_mode_bumps_existing_open_item_instead_of_refiling(
         runner=runner,
         lessons_proposer=RecordingLessonsProposer(),
     )
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     client = make_beads_client(config=config)
     assert isinstance(client, FakeBeadsClient)
     # No NEW reflection item filed; the existing one got a comment-bump.
@@ -565,7 +565,7 @@ def test_file_mode_never_refiles_a_muted_closed_item(
         runner=runner,
         lessons_proposer=RecordingLessonsProposer(),
     )
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     client = make_beads_client(config=config)
     # Only the seeded (muted, closed) item exists — nothing re-filed.
     reflection_items = [i for i in client.list_issues() if "reflection" in i.get("labels", [])]
@@ -591,7 +591,7 @@ def test_info_severity_is_digest_only_no_item(
         runner=runner,
         lessons_proposer=RecordingLessonsProposer(),
     )
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     client = make_beads_client(config=config)
     filed = [i for i in client.list_issues() if "reflection" in i.get("labels", [])]
     assert filed == []
@@ -623,7 +623,7 @@ def test_warn_severity_files_only_at_two_or_more_occurrences(
         runner=runner,
         lessons_proposer=RecordingLessonsProposer(),
     )
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     client = make_beads_client(config=config)
     titles = [i["title"] for i in client.list_issues() if "reflection" in i.get("labels", [])]
     assert any("warn-recurring" in t for t in titles)
@@ -642,7 +642,7 @@ def test_caps_new_items_at_three_per_pass(tmp_path: Path, monkeypatch: pytest.Mo
         runner=runner,
         lessons_proposer=RecordingLessonsProposer(),
     )
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     client = make_beads_client(config=config)
     filed = [i for i in client.list_issues() if "reflection" in i.get("labels", [])]
     assert len(filed) == 3  # capped, even though 5 critical findings arrived.
@@ -669,7 +669,7 @@ def test_filed_body_is_scrubbed_failclosed_on_credential_url(
         runner=runner,
         lessons_proposer=RecordingLessonsProposer(),
     )
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     client = make_beads_client(config=config)
     filed = [i for i in client.list_issues() if "reflection" in i.get("labels", [])]
     assert filed[0]["description"] == REDACTION_MARKER

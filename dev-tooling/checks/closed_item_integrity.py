@@ -232,7 +232,7 @@ def main() -> int:
     lever = _resolve_lever(raw=os.environ.get(_LEVER_ENV))
     cwd = Path.cwd()
     clause_map = load_clause_map(coverage_path=_coverage_path(cwd=cwd))
-    config = resolve_store_config(cwd=cwd, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=cwd, work_items_arg=None)
     index = materialize_work_items(read_work_items(path=config.work_items_path))
     offenders: list[tuple[str, str]] = []
     for item in _closed_gap_tied(index=index):

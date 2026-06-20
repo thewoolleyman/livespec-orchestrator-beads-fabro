@@ -940,11 +940,10 @@ def _file_new(
 ) -> str:
     """File a NEW reflection work-item carrying the dedup + reflection labels.
 
-    Filed directly through `create_issue(IssueDraft)` (mirroring how
-    `store.append_memo` mints a labelled issue) because the `WorkItem` →
-    `append_work_item` path derives a FIXED label set and cannot carry the
-    arbitrary `reflection` / `fingerprint:<hex>` labels. The body is
-    scrubbed before it crosses the seam.
+    Filed directly through `create_issue(IssueDraft)` (rather than the
+    `WorkItem` → `append_work_item` path, which derives a FIXED label set
+    and cannot carry the arbitrary `reflection` / `fingerprint:<hex>`
+    labels). The body is scrubbed before it crosses the seam.
     """
     _ = repo
     config = _store_config(repo=repo)
@@ -1021,7 +1020,7 @@ def _make_client(*, repo: Path) -> BeadsClient:
 
 
 def _store_config(*, repo: Path) -> StoreConfig:
-    return resolve_store_config(cwd=repo, work_items_arg=None, memos_arg=None)
+    return resolve_store_config(cwd=repo, work_items_arg=None)
 
 
 def _label_index(*, client: BeadsClient) -> dict[str, _OpenItem]:

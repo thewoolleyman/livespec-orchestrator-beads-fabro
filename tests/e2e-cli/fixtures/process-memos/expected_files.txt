@@ -1,4 +1,0 @@
-# No project-root file assertion: process-memos mutates each memo issue in
-# place in the per-repo beads tenant DB after per-memo disposition (the
-# substrate has no on-disk memos.jsonl). Success is the exit-0 round-trip;
-# the absent file list means no per-skill file assertion (contract req 4).

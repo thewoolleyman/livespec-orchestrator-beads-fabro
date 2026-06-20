@@ -56,7 +56,7 @@ from livespec_impl_beads.types import WorkItem
 from datetime import datetime, timezone
 from pathlib import Path
 
-config = resolve_store_config(cwd=Path.cwd(), work_items_arg=None, memos_arg=None)
+config = resolve_store_config(cwd=Path.cwd(), work_items_arg=None)
 item = WorkItem(
     # bd enforces id-prefix == tenant DB name, so the id carries the
     # configured tenant prefix (config.prefix), not a hardcoded `li-`.

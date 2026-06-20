@@ -785,8 +785,8 @@ Proposed finding-record mapping:
   outcomes array or exit code).
 - **Asynchronous (option c)**: filed items surface naturally in the
   ready queue / `next` ranking; plus one journal record per pass. If
-  push notification proves wanted, a memo via the existing
-  capture-memo path beats inventing a channel.
+  push notification proves wanted, a work-item via the existing
+  capture-work-item path beats inventing a channel.
 
 ## 6. Stability and performance guardrails
 

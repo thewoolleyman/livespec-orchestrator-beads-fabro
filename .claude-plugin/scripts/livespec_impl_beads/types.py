@@ -1,9 +1,8 @@
-"""Dataclasses for work-items, memos, and Spec Reader outputs.
+"""Dataclasses for work-items and Spec Reader outputs.
 
-The work-item and memo schemas are codified by SPECIFICATION/contracts.md
-§"Work-items JSONL record schema" / §"Memos JSONL record schema". Every
-field below has an entry there; field types here are the Python-level
-realization.
+The work-item schema is codified by SPECIFICATION/contracts.md
+§"Work-item beads-issue mapping". Every field below has an entry there;
+field types here are the Python-level realization.
 
 SpecSnapshot and SpecDiff are the Spec Reader's return types per
 SPECIFICATION/contracts.md §"Spec Reader internal API".
@@ -24,14 +23,6 @@ Resolution = Literal[
     "spec-revised",
     "no-longer-applicable",
     "resolved-out-of-band",
-]
-
-MemoState = Literal["untriaged", "dispositioned"]
-Disposition = Literal[
-    "spec-bound",
-    "impl-bound",
-    "persistent-knowledge",
-    "discard",
 ]
 
 
@@ -88,20 +79,6 @@ class WorkItem:
     audit: AuditRecord | None
     superseded_by: str | None
     spec_commitment_hint: str | None = None
-
-
-@dataclass(frozen=True, kw_only=True)
-class Memo:
-    """A single JSONL memo record (one line of the memos file)."""
-
-    id: str
-    text: str
-    state: MemoState
-    disposition: Disposition | None
-    captured_at: str
-    work_item_id: str | None
-    knowledge_file: str | None
-    propose_change_topic: str | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -177,14 +154,13 @@ class StoreConfig:
     the `BEADS_DOLT_PASSWORD` environment variable at `bd`-call time and
     is never stored on the descriptor or committed to `.livespec.jsonc`.
 
-    REPURPOSED-PATH NOTE: the store's public six functions keep the
+    REPURPOSED-PATH NOTE: the store's public functions keep the
     keyword `path` (so the command call sites do not change), but `path`
     is now typed as this `StoreConfig` rather than a filesystem `Path`.
-    The `work_items_path` / `memos_path` PROPERTIES below return `self`
-    so the legacy call expression `read_work_items(path=config.work_items_path)`
+    The `work_items_path` PROPERTY below returns `self` so the legacy
+    call expression `read_work_items(path=config.work_items_path)`
     passes the connection descriptor straight through as the `path`
-    argument — there is exactly one tenant, so both "stores" are the
-    same connection.
+    argument.
     """
 
     tenant: str
@@ -199,10 +175,5 @@ class StoreConfig:
 
     @property
     def work_items_path(self) -> "StoreConfig":
-        """Return the connection descriptor itself (see REPURPOSED-PATH NOTE)."""
-        return self
-
-    @property
-    def memos_path(self) -> "StoreConfig":
         """Return the connection descriptor itself (see REPURPOSED-PATH NOTE)."""
         return self

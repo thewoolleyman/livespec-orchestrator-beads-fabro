@@ -96,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
     _ = parser.add_argument("--project-root", dest="project_root", default=None)
     args = parser.parse_args(argv)
     project_root = Path(args.project_root) if args.project_root is not None else Path.cwd()
-    config = resolve_store_config(cwd=project_root, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=project_root, work_items_arg=None)
     try:
         closed = close_completed(path=config, item_id=args.work_item_id, reason=args.reason)
     except WorkItemNotFoundError as exc:

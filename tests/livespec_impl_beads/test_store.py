@@ -2,9 +2,10 @@
 
 Every test drives the store through the in-memory `FakeBeadsClient` (the
 autouse fixture in `conftest.py` sets `LIVESPEC_BEADS_FAKE=1` and resets the
-process-singleton between cases). Round-trip tests go through the public six
-functions; the typed `BeadsMappingError` paths are exercised by injecting
-malformed records straight into the fake tenant via the client seam.
+process-singleton between cases). Round-trip tests go through the public
+store functions; the typed `BeadsMappingError` paths are exercised by
+injecting malformed records straight into the fake tenant via the client
+seam.
 
 Coverage targets the whole FIELD MAP:
 
@@ -15,7 +16,6 @@ Coverage targets the whole FIELD MAP:
 - depends_on → `blocks` edges; superseded_by → `supersedes` edge
 - close-in-place semantics (one record per id; resolution label + audit in
   metadata; NO second record)
-- memo segregation via the `kind:memo` label
 """
 
 from __future__ import annotations
@@ -30,15 +30,12 @@ from livespec_impl_beads._beads_client import (
 from livespec_impl_beads.errors import BeadsMappingError
 from livespec_impl_beads.store import (
     WorkItemComment,
-    append_memo,
     append_work_item,
-    materialize_memos,
     materialize_work_items,
-    read_memos,
     read_work_item_comments,
     read_work_items,
 )
-from livespec_impl_beads.types import AuditRecord, Memo, StoreConfig, WorkItem
+from livespec_impl_beads.types import AuditRecord, StoreConfig, WorkItem
 
 
 def _config() -> StoreConfig:
@@ -91,28 +88,6 @@ def _minimal_work_item(
         audit=audit,
         superseded_by=superseded_by,
         spec_commitment_hint=spec_commitment_hint,
-    )
-
-
-def _minimal_memo(
-    *,
-    id_: str = "mm-aaa111",
-    state: str = "untriaged",
-    disposition: str | None = None,
-    text: str = "some observation",
-    work_item_id: str | None = None,
-    knowledge_file: str | None = None,
-    propose_change_topic: str | None = None,
-) -> Memo:
-    return Memo(
-        id=id_,
-        text=text,
-        state=state,  # type: ignore[arg-type]
-        disposition=disposition,  # type: ignore[arg-type]
-        captured_at="2026-05-19T00:00:00Z",
-        work_item_id=work_item_id,
-        knowledge_file=knowledge_file,
-        propose_change_topic=propose_change_topic,
     )
 
 
@@ -405,61 +380,15 @@ def test_append_born_closed_item_for_absent_id_creates_then_closes() -> None:
 
 
 # --------------------------------------------------------------------------
-# Memo read / append + segregation.
+# read_work_items returns every issue in the tenant.
 # --------------------------------------------------------------------------
 
 
-def test_append_then_read_memo_roundtrips() -> None:
-    memo = _minimal_memo()
-    append_memo(path=_config(), memo=memo)
-    [read_back] = list(read_memos(path=_config()))
-    assert read_back == memo
-
-
-def test_memo_carries_kind_memo_label() -> None:
-    append_memo(path=_config(), memo=_minimal_memo(id_="mm-x"))
-    record = _fake().show_issue(issue_id="mm-x")
-    assert "kind:memo" in record["labels"]
-    assert "memo-state:untriaged" in record["labels"]
-
-
-def test_dispositioned_memo_with_cross_refs_roundtrips() -> None:
-    memo = _minimal_memo(
-        id_="mm-zzz999",
-        state="dispositioned",
-        disposition="impl-bound",
-        text="dispositioned memo",
-        work_item_id="li-aaa111",
-        knowledge_file=".ai/topic.md",
-        propose_change_topic="some-topic",
-    )
-    append_memo(path=_config(), memo=memo)
-    [read_back] = list(read_memos(path=_config()))
-    assert read_back == memo
-
-
-def test_memo_title_derives_from_first_line_of_text() -> None:
-    append_memo(
-        path=_config(),
-        memo=_minimal_memo(id_="mm-multi", text="first line\nsecond line"),
-    )
-    record = _fake().show_issue(issue_id="mm-multi")
-    assert record["title"] == "first line"
-
-
-def test_memo_title_falls_back_to_id_when_text_empty() -> None:
-    append_memo(path=_config(), memo=_minimal_memo(id_="mm-empty", text=""))
-    record = _fake().show_issue(issue_id="mm-empty")
-    assert record["title"] == "mm-empty"
-
-
-def test_memos_excluded_from_read_work_items() -> None:
+def test_read_work_items_returns_every_issue() -> None:
     append_work_item(path=_config(), item=_minimal_work_item(id_="li-a"))
-    append_memo(path=_config(), memo=_minimal_memo(id_="mm-a"))
+    append_work_item(path=_config(), item=_minimal_work_item(id_="li-b"))
     work_ids = {item.id for item in read_work_items(path=_config())}
-    memo_ids = {memo.id for memo in read_memos(path=_config())}
-    assert work_ids == {"li-a"}
-    assert memo_ids == {"mm-a"}
+    assert work_ids == {"li-a", "li-b"}
 
 
 # --------------------------------------------------------------------------
@@ -473,13 +402,6 @@ def test_materialize_work_items_is_identity_keyed_by_id() -> None:
     materialized = materialize_work_items(read_work_items(path=_config()))
     assert set(materialized.keys()) == {"li-a", "li-b"}
     assert materialized["li-a"].id == "li-a"
-
-
-def test_materialize_memos_is_identity_keyed_by_id() -> None:
-    append_memo(path=_config(), memo=_minimal_memo(id_="mm-a"))
-    append_memo(path=_config(), memo=_minimal_memo(id_="mm-b"))
-    materialized = materialize_memos(read_memos(path=_config()))
-    assert set(materialized.keys()) == {"mm-a", "mm-b"}
 
 
 # --------------------------------------------------------------------------
@@ -497,9 +419,9 @@ def test_materialize_memos_is_identity_keyed_by_id() -> None:
 class _StubClient:
     """A read-only stand-in returning a fixed raw record set.
 
-    The store's read path (`read_work_items` / `read_memos`) only calls
-    `list_issues`, so that is the sole verb implemented; the stub is injected
-    via monkeypatching `store.make_beads_client` and never type-checked
+    The store's read path (`read_work_items`) only calls `list_issues`, so
+    that is the sole verb implemented; the stub is injected via
+    monkeypatching `store.make_beads_client` and never type-checked
     against the full `BeadsClient` protocol.
     """
 
@@ -809,73 +731,6 @@ def test_audit_non_list_commits_reads_as_empty_tuple(
     assert read_back.audit is not None
     assert read_back.audit.commits == ()
     assert read_back.audit.files_changed == ("keep",)
-
-
-# -- memo mapping errors --------------------------------------------------
-
-
-def _raw_memo(**overrides: object) -> dict[str, object]:
-    base: dict[str, object] = {
-        "id": "mm-bad",
-        "issue_type": "task",
-        "status": "open",
-        "title": "t",
-        "description": "memo body",
-        "priority": 2,
-        "assignee": None,
-        "created_at": "2026-05-19T00:00:00Z",
-        "close_reason": None,
-        "spec_id": None,
-        "labels": ["kind:memo", "memo-state:untriaged"],
-        "metadata": {},
-        "dependencies": [],
-    }
-    base.update(overrides)
-    return base
-
-
-def test_invalid_memo_state_label_raises_mapping_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _install_stub(
-        monkeypatch=monkeypatch,
-        records=[_raw_memo(labels=["kind:memo", "memo-state:not-a-real-state"])],
-    )
-    with pytest.raises(BeadsMappingError) as excinfo:
-        list(read_memos(path=_config()))
-    assert "memo-state" in excinfo.value.detail
-
-
-def test_memo_with_non_dict_memo_metadata_reads_cross_refs_as_none(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _install_stub(monkeypatch=monkeypatch, records=[_raw_memo(metadata={"memo": "not-a-dict"})])
-    [read_back] = list(read_memos(path=_config()))
-    assert read_back.work_item_id is None
-    assert read_back.knowledge_file is None
-    assert read_back.propose_change_topic is None
-
-
-def test_memo_with_non_string_cross_ref_reads_as_none(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _install_stub(
-        monkeypatch=monkeypatch,
-        records=[_raw_memo(metadata={"memo": {"work_item_id": 123}})],
-    )
-    [read_back] = list(read_memos(path=_config()))
-    assert read_back.work_item_id is None
-
-
-def test_memo_with_string_cross_ref_reads_value(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _install_stub(
-        monkeypatch=monkeypatch,
-        records=[_raw_memo(metadata={"memo": {"work_item_id": "li-ref"}})],
-    )
-    [read_back] = list(read_memos(path=_config()))
-    assert read_back.work_item_id == "li-ref"
 
 
 # --------------------------------------------------------------------------

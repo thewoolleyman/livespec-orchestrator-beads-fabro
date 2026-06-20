@@ -7,7 +7,7 @@ abstract implementation-plugin contract livespec publishes in its
 `SPECIFICATION/contracts.md` §"Implementation-plugin contract — the
 10-skill surface": a Claude Code plugin exposing the
 `/livespec-impl-beads:*` skill surface that captures, ranks, and drives
-impl-side work, with work-items and memos stored as rows in a per-repo
+impl-side work, with work-items stored as rows in a per-repo
 beads tenant on a shared Dolt `sql-server`. The repo dogfoods livespec:
 its own spec lives at `SPECIFICATION/` and evolves through the
 `/livespec:*` lifecycle.
@@ -49,8 +49,8 @@ even though the plugin is present.
 
 ## Skill surface
 
-The plugin ships ten skills — six heavyweight authored skills and four
-thin-transport machine-query surfaces, per livespec's
+The plugin ships seven skills — four heavyweight authored skills and
+three thin-transport machine-query surfaces, per livespec's
 `SPECIFICATION/contracts.md`:
 
 - `/livespec-impl-beads:capture-impl-gaps` — detect spec→impl gaps and
@@ -59,17 +59,12 @@ thin-transport machine-query surfaces, per livespec's
   hand each finding to `/livespec:propose-change`
 - `/livespec-impl-beads:capture-work-item` — freeform direct filing of an
   impl-side work item (`origin: freeform`, `gap_id: null`)
-- `/livespec-impl-beads:capture-memo` — low-friction free-text deposit of
-  an in-flight observation
-- `/livespec-impl-beads:process-memos` — per-memo disposition dialogue
-  (spec-bound, impl-bound, persistent-knowledge, discard)
 - `/livespec-impl-beads:implement` — drive Red→Green for a single
   work-item; verify gap-tied closure by re-running gap detection
 - `/livespec-impl-beads:detect-impl-gaps` — emit the current gap-id set
   as JSON (pure read-and-emit; never mutates, never prompts)
 - `/livespec-impl-beads:list-work-items` — list work-items from the
   beads store
-- `/livespec-impl-beads:list-memos` — list memos from the beads store
 - `/livespec-impl-beads:next` — rank the most-ripe impl-side action (pure
   function of store state; no LLM in the ranking path)
 

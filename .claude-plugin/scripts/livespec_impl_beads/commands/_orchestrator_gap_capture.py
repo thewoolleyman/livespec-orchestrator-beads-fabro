@@ -69,7 +69,7 @@ def run_gap_capture(
     """Run the gap-capture subcommand: validate, dedupe, append, report."""
     gaps = validate_gaps(payload=load_payload(source=gaps_json))
     spec_version = resolve_spec_version(spec_reader_cli=spec_reader_cli, context=context)
-    config = resolve_store_config(cwd=context.project_root, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=context.project_root, work_items_arg=None)
     seen = _open_gap_ids(config=config)
     created: list[dict[str, str]] = []
     skipped: list[str] = []

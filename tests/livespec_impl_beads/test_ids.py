@@ -2,7 +2,7 @@
 
 import re
 
-from livespec_impl_beads._ids import new_memo_id, new_work_item_id
+from livespec_impl_beads._ids import new_work_item_id
 
 
 def test_new_work_item_id_uses_configured_prefix() -> None:
@@ -14,20 +14,8 @@ def test_new_work_item_id_uses_configured_prefix() -> None:
     assert re.fullmatch(r"livespec-[a-z2-7]{6}", new_work_item_id(prefix="livespec")) is not None
 
 
-def test_new_memo_id_uses_configured_prefix() -> None:
-    """Memos are also stored as issues in the SAME tenant (a `kind:memo`
-    issue), so their ids are subject to the identical prefix rule — a
-    hardcoded `mm-` id would be rejected. Mint `<prefix>-<suffix>`.
-    """
-    assert re.fullmatch(r"livespec-[a-z2-7]{6}", new_memo_id(prefix="livespec")) is not None
-
-
 def test_work_item_id_honors_a_different_prefix() -> None:
     assert new_work_item_id(prefix="otherrepo").startswith("otherrepo-")
-
-
-def test_memo_id_honors_a_different_prefix() -> None:
-    assert new_memo_id(prefix="otherrepo").startswith("otherrepo-")
 
 
 def test_work_item_id_is_not_hardcoded_li() -> None:
@@ -35,13 +23,6 @@ def test_work_item_id_is_not_hardcoded_li() -> None:
     tenant prefix is configured.
     """
     assert not new_work_item_id(prefix="acme").startswith("li-")
-
-
-def test_memo_id_is_not_hardcoded_mm() -> None:
-    """The legacy hardcoded `mm-` prefix must NOT appear when a different
-    tenant prefix is configured.
-    """
-    assert not new_memo_id(prefix="acme").startswith("mm-")
 
 
 def test_ids_are_distinct_across_calls() -> None:

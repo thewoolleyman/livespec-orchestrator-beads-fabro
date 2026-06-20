@@ -217,7 +217,7 @@ def main() -> int:
     log = structlog.get_logger("work_item_merge_evidence")
     cwd = Path.cwd()
     canonical_branch = _resolve_canonical_branch(cwd=cwd)
-    config = resolve_store_config(cwd=cwd, work_items_arg=None, memos_arg=None)
+    config = resolve_store_config(cwd=cwd, work_items_arg=None)
     index = materialize_work_items(read_work_items(path=config.work_items_path))
     violations: list[tuple[str, str]] = []
     for item in index.values():

@@ -3,19 +3,19 @@
 Binds SPECIFICATION/scenarios.md "Scenario 8 — Intake Definition-of-Ready
 triage" and the contracts.md §"Gap-detectable behavior clauses" clause:
 
-    The `capture-work-item`, `capture-impl-gaps`, and `process-memos`
-    (impl-bound) capture front-ends MUST run the intake Definition-of-Ready
-    checklist over the six gates at capture and MUST tag the resulting item
-    `ready`, `needs-regroom`, or `not-yet-actionable` accordingly — a
-    single-coherent-done, autonomously-verifiable, autonomy-tiered,
-    dependency-linked, repo-targeted, above-floor item is tagged `ready`;
-    an item with more than one coherent "done" (an epic) MUST be tagged
-    `needs-regroom`; an item whose acceptance is not autonomously
-    verifiable, or that has unresolved blockers, MUST be tagged
-    `not-yet-actionable` and MUST NOT be filed as `ready`.
+    The `capture-work-item` and `capture-impl-gaps` capture front-ends
+    MUST run the intake Definition-of-Ready checklist over the six gates
+    at capture and MUST tag the resulting item `ready`, `needs-regroom`,
+    or `not-yet-actionable` accordingly — a single-coherent-done,
+    autonomously-verifiable, autonomy-tiered, dependency-linked,
+    repo-targeted, above-floor item is tagged `ready`; an item with more
+    than one coherent "done" (an epic) MUST be tagged `needs-regroom`; an
+    item whose acceptance is not autonomously verifiable, or that has
+    unresolved blockers, MUST be tagged `not-yet-actionable` and MUST NOT
+    be filed as `ready`.
 
 This is the top-of-pyramid behavior journey for the shared
-`livespec_impl_beads.intake_dor` primitive that all three capture
+`livespec_impl_beads.intake_dor` primitive that both capture
 front-ends call: it drives `evaluate` / `apply_intake_dor` through the
 REAL store/client seam against the in-memory `FakeBeadsClient` — the same
 backend the hermetic CI tier and the no-live-connection runtime use, and

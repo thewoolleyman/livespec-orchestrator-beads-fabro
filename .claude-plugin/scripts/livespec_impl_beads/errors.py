@@ -98,7 +98,7 @@ class BeadsTenantMissingError(Exception):
 
 
 class BeadsMappingError(Exception):
-    """A beads record could not be mapped onto the work-item/memo schema."""
+    """A beads record could not be mapped onto the work-item schema."""
 
     def __init__(self, *, record_id: str, detail: str) -> None:
         super().__init__(f"Could not map beads record {record_id}: {detail}")

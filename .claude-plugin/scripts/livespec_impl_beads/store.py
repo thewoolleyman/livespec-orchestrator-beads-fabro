@@ -1,23 +1,19 @@
-"""Beads-backed store primitives for work-items and memos.
+"""Beads-backed store primitives for work-items.
 
 This REPLACES the plaintext sibling's append-only JSONL store. The
 substrate is a per-repo tenant database on the shared `dolt-server`,
 reached through the `BeadsClient` seam (`_beads_client.py`). The public
-API is byte-for-byte the SAME six functions the command modules import,
-so the wrappers and thin-transport commands do not change:
+API is byte-for-byte the SAME functions the command modules import, so
+the wrappers and thin-transport commands do not change:
 
 - `read_work_items(*, path)` — list every issue in the tenant and map
-  each onto a `WorkItem` (memos are excluded by the `kind:memo` label).
-- `read_memos(*, path)` — the complement: issues carrying `kind:memo`
-  mapped onto `Memo`.
+  each onto a `WorkItem`.
 - `append_work_item(*, path, item)` — create a new issue, OR, when the
   item carries a `closed` status against an already-present id, mutate it
   in place (close + resolution label + audit metadata). NO second record.
-- `append_memo(*, path, memo)` — create a `kind:memo` issue.
-- `materialize_work_items(records)` / `materialize_memos(records)` —
-  near-identity reductions kept for API symmetry with the plaintext
-  store (R8): beads is already one-record-per-id, so there is no
-  latest-record-wins fold to perform.
+- `materialize_work_items(records)` — a near-identity reduction kept for
+  API symmetry with the plaintext store (R8): beads is already
+  one-record-per-id, so there is no latest-record-wins fold to perform.
 
 REPURPOSED-PATH: the `path` keyword is retained for call-site
 compatibility but is now typed as `StoreConfig` (the connection
@@ -62,7 +58,6 @@ from livespec_impl_beads.errors import BeadsMappingError
 from livespec_impl_beads.types import (
     AuditRecord,
     DependsOnRaw,
-    Memo,
     WorkItem,
 )
 
@@ -75,48 +70,26 @@ if TYPE_CHECKING:
 _LABEL_ORIGIN = "origin:"
 _LABEL_GAP_ID = "gap-id:"
 _LABEL_RESOLUTION = "resolution:"
-_LABEL_KIND = "kind:"
-_LABEL_MEMO_STATE = "memo-state:"
-_LABEL_MEMO_DISPOSITION = "memo-disposition:"
 
-_MEMO_KIND = "memo"
 # Metadata keys carrying livespec fields that ride in the JSON column.
 _META_AUDIT = "audit"
-_META_MEMO = "memo"
-
-# beads `priority` for memos. Memos carry no livespec priority, so they map
-# to the beads schema default (2 = Medium; 0 = highest, 4 = backlog).
-_MEMO_DEFAULT_PRIORITY = 2
 
 
 # --------------------------------------------------------------------------
-# Public API — the six functions the command modules import.
+# Public API — the functions the command modules import.
 # --------------------------------------------------------------------------
 
 
 def read_work_items(*, path: StoreConfig) -> Iterator[WorkItem]:
-    """Stream every (non-memo) issue in the tenant as a WorkItem.
+    """Stream every issue in the tenant as a WorkItem.
 
-    `path` is the repurposed connection descriptor. Issues carrying the
-    `kind:memo` label are excluded (they are memos, surfaced by
-    `read_memos`). `depends_on` is populated from each issue's `blocks`
-    edges so the existing `next` ranker works UNCHANGED over the
-    materialized WorkItems.
+    `path` is the repurposed connection descriptor. `depends_on` is
+    populated from each issue's `blocks` edges so the existing `next`
+    ranker works UNCHANGED over the materialized WorkItems.
     """
     client = make_beads_client(config=path)
     for record in client.list_issues():
-        if _is_memo_record(record=record):
-            continue
         yield _record_to_work_item(record=record)
-
-
-def read_memos(*, path: StoreConfig) -> Iterator[Memo]:
-    """Stream every `kind:memo` issue in the tenant as a Memo."""
-    client = make_beads_client(config=path)
-    for record in client.list_issues():
-        if not _is_memo_record(record=record):
-            continue
-        yield _record_to_memo(record=record)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -201,28 +174,6 @@ def append_work_item(*, path: StoreConfig, item: WorkItem) -> None:
     _create_work_item(client=client, item=item)
 
 
-def append_memo(*, path: StoreConfig, memo: Memo) -> None:
-    """Create a `kind:memo` issue carrying the memo's fields."""
-    client = make_beads_client(config=path)
-    labels = _memo_labels(memo=memo)
-    metadata: dict[str, Any] = {_META_MEMO: _memo_metadata(memo=memo)}
-    _ = client.create_issue(
-        draft=IssueDraft(
-            issue_id=memo.id,
-            issue_type="task",
-            title=_memo_title(memo=memo),
-            description=memo.text,
-            priority=_MEMO_DEFAULT_PRIORITY,
-            assignee=None,
-            created_at=memo.captured_at,
-            labels=labels,
-            metadata=metadata,
-            spec_id=None,
-            parent_id=None,
-        )
-    )
-
-
 def materialize_work_items(records: Iterator[WorkItem]) -> dict[str, WorkItem]:
     """Reduce a WorkItem stream to an id-keyed dict.
 
@@ -232,11 +183,6 @@ def materialize_work_items(records: Iterator[WorkItem]) -> dict[str, WorkItem]:
     latest-record-wins fold — but the signature and call sites are
     identical, so the command layer does not branch on substrate.
     """
-    return {record.id: record for record in records}
-
-
-def materialize_memos(records: Iterator[Memo]) -> dict[str, Memo]:
-    """Reduce a Memo stream to an id-keyed dict (identity; see R8 note above)."""
     return {record.id: record for record in records}
 
 
@@ -333,34 +279,9 @@ def _audit_to_dict(*, audit: AuditRecord) -> dict[str, Any]:
     }
 
 
-def _memo_labels(*, memo: Memo) -> list[str]:
-    labels: list[str] = [f"{_LABEL_KIND}{_MEMO_KIND}", f"{_LABEL_MEMO_STATE}{memo.state}"]
-    if memo.disposition is not None:
-        labels.append(f"{_LABEL_MEMO_DISPOSITION}{memo.disposition}")
-    return labels
-
-
-def _memo_metadata(*, memo: Memo) -> dict[str, Any]:
-    return {
-        "work_item_id": memo.work_item_id,
-        "knowledge_file": memo.knowledge_file,
-        "propose_change_topic": memo.propose_change_topic,
-    }
-
-
-def _memo_title(*, memo: Memo) -> str:
-    """Derive a short title from the memo text (beads requires a title)."""
-    first_line = memo.text.splitlines()[0] if memo.text else memo.id
-    return first_line[:80]
-
-
 # --------------------------------------------------------------------------
-# Read helpers — beads record -> WorkItem / Memo.
+# Read helpers — beads record -> WorkItem.
 # --------------------------------------------------------------------------
-
-
-def _is_memo_record(*, record: BeadsRecord) -> bool:
-    return f"{_LABEL_KIND}{_MEMO_KIND}" in _labels_of(record=record)
 
 
 def _record_to_work_item(*, record: BeadsRecord) -> WorkItem:
@@ -401,31 +322,6 @@ def _record_to_work_item(*, record: BeadsRecord) -> WorkItem:
         # supersedes edge on the superseding issue.
         superseded_by=None,
         spec_commitment_hint=_optional_str(record=record, key="spec_id"),
-    )
-
-
-def _record_to_memo(*, record: BeadsRecord) -> Memo:
-    issue_id = _require_str(record=record, key="id")
-    labels = _labels_of(record=record)
-    metadata = _metadata_of(record=record)
-    memo_meta = metadata.get(_META_MEMO)
-    memo_meta_dict = cast("dict[str, Any]", memo_meta) if isinstance(memo_meta, dict) else {}
-    state = _label_value(labels=labels, prefix=_LABEL_MEMO_STATE)
-    if state not in ("untriaged", "dispositioned"):
-        raise BeadsMappingError(
-            record_id=issue_id,
-            detail=f"missing or invalid memo-state label (got {state!r})",
-        )
-    disposition = _label_value(labels=labels, prefix=_LABEL_MEMO_DISPOSITION)
-    return Memo(
-        id=issue_id,
-        text=_optional_str(record=record, key="description") or "",
-        state=cast("Any", state),
-        disposition=cast("Any", disposition),
-        captured_at=_require_str(record=record, key="created_at"),
-        work_item_id=_optional_meta_str(meta=memo_meta_dict, key="work_item_id"),
-        knowledge_file=_optional_meta_str(meta=memo_meta_dict, key="knowledge_file"),
-        propose_change_topic=_optional_meta_str(meta=memo_meta_dict, key="propose_change_topic"),
     )
 
 
@@ -583,15 +479,6 @@ def _require_meta_str(*, record_id: str, meta: dict[str, Any], key: str) -> str:
             record_id=record_id,
             detail=f"metadata field {key!r} must be a string (got {type(value).__name__})",
         )
-    return value
-
-
-def _optional_meta_str(*, meta: dict[str, Any], key: str) -> str | None:
-    value = meta.get(key)
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        return None
     return value
 
 
