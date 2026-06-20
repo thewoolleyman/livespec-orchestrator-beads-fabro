@@ -124,7 +124,7 @@ def _validate_gap(*, entry: object, index: int) -> GapFinding:
 
 
 def _open_gap_ids(*, config: StoreConfig) -> set[str]:
-    items = materialize_work_items(read_work_items(path=config)).values()
+    items = materialize_work_items(records=read_work_items(path=config)).values()
     return {item.gap_id for item in items if item.gap_id is not None and item.status != "closed"}
 
 

@@ -41,7 +41,7 @@ def _config() -> StoreConfig:
 
 
 def _stored_items() -> list[WorkItem]:
-    return list(materialize_work_items(read_work_items(path=_config())).values())
+    return list(materialize_work_items(records=read_work_items(path=_config())).values())
 
 
 def _make_spec_tree(*, root: Path) -> Path:

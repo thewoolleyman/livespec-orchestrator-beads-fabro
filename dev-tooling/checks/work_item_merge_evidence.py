@@ -218,7 +218,7 @@ def main() -> int:
     cwd = Path.cwd()
     canonical_branch = _resolve_canonical_branch(cwd=cwd)
     config = resolve_store_config(cwd=cwd, work_items_arg=None)
-    index = materialize_work_items(read_work_items(path=config.work_items_path))
+    index = materialize_work_items(records=read_work_items(path=config.work_items_path))
     violations: list[tuple[str, str]] = []
     for item in index.values():
         if item.status != "closed":

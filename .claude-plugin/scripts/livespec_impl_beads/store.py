@@ -11,9 +11,22 @@ the wrappers and thin-transport commands do not change:
 - `append_work_item(*, path, item)` — create a new issue, OR, when the
   item carries a `closed` status against an already-present id, mutate it
   in place (close + resolution label + audit metadata). NO second record.
-- `materialize_work_items(records)` — a near-identity reduction kept for
-  API symmetry with the plaintext store (R8): beads is already
-  one-record-per-id, so there is no latest-record-wins fold to perform.
+
+`materialize_work_items` is no longer defined here: the canonical
+keyword-only head reduction is the SHARED
+`livespec_runtime.work_items.reduce.materialize_work_items`, re-exported
+below for the command-layer call sites. beads is inherently
+one-record-per-id (every issue's `supersedes` is `None`), so the
+canonical reduction is its degenerate identity-collection case and
+produces the SAME id-keyed dict the local near-identity reduction did.
+
+`BeadsWorkItemStore` is the thin conformance facade satisfying the
+shared `livespec_runtime.work_items.store.WorkItemStore` Protocol over
+the EXISTING `read_work_items` / `append_work_item` free functions.
+Backend I/O — the `_record_to_work_item` field map, label/edge/metadata
+mapping, and the comments sidecar (`read_work_item_comments` /
+`WorkItemComment`, deliberately NOT part of the shared contract) — stays
+LOCAL.
 
 REPURPOSED-PATH: the `path` keyword is retained for call-site
 compatibility but is now typed as `StoreConfig` (the connection
@@ -48,6 +61,9 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
+from livespec_runtime.work_items.reduce import materialize_work_items
+from livespec_runtime.work_items.store import WorkItemStore
+
 from livespec_impl_beads._beads_client import (
     EDGE_BLOCKS,
     EDGE_SUPERSEDES,
@@ -64,6 +80,15 @@ from livespec_impl_beads.types import (
 if TYPE_CHECKING:
     from livespec_impl_beads._beads_client import BeadsClient, BeadsRecord
     from livespec_impl_beads.types import StoreConfig
+
+__all__ = [
+    "BeadsWorkItemStore",
+    "WorkItemComment",
+    "append_work_item",
+    "materialize_work_items",
+    "read_work_item_comments",
+    "read_work_items",
+]
 
 # Label prefixes that carry livespec-side enum/flag fields with no native
 # beads home (the bridge-owned label encodings — see the field map).
@@ -174,16 +199,35 @@ def append_work_item(*, path: StoreConfig, item: WorkItem) -> None:
     _create_work_item(client=client, item=item)
 
 
-def materialize_work_items(records: Iterator[WorkItem]) -> dict[str, WorkItem]:
-    """Reduce a WorkItem stream to an id-keyed dict.
+class BeadsWorkItemStore:
+    """Thin `WorkItemStore` conformance facade over the store free functions.
 
-    Kept for API symmetry with the plaintext store (R8). beads is already
-    one-record-per-id (each id maps to exactly one tenant issue), so this
-    is an identity collection rather than the plaintext store's
-    latest-record-wins fold — but the signature and call sites are
-    identical, so the command layer does not branch on substrate.
+    The shared `livespec_runtime.work_items.store.WorkItemStore` Protocol
+    is the substrate-neutral contract — a stream of `WorkItem` out, one
+    `WorkItem` in — that the canonical reducer and the `next` ranker
+    depend on. This facade satisfies it by delegating to the EXISTING
+    `read_work_items` / `append_work_item` free functions over the
+    resolved beads connection descriptor; it adds no new backend
+    behavior. The module-level `_: type[WorkItemStore]` assertion below
+    is the pyright-checked conformance pin.
     """
-    return {record.id: record for record in records}
+
+    def __init__(self, *, config: StoreConfig) -> None:
+        self._config = config
+
+    def read_work_items(self) -> Iterator[WorkItem]:
+        """Stream every WorkItem in the tenant (delegates to the free function)."""
+        return read_work_items(path=self._config)
+
+    def append_work_item(self, *, item: WorkItem) -> None:
+        """Add one WorkItem to the tenant (delegates to the free function)."""
+        append_work_item(path=self._config, item=item)
+
+
+# A pyright-checked structural-conformance pin: `BeadsWorkItemStore`
+# satisfies the shared `WorkItemStore` Protocol. If the facade ever
+# drifts from the contract, strict typechecking fails here.
+_: type[WorkItemStore] = BeadsWorkItemStore
 
 
 # --------------------------------------------------------------------------

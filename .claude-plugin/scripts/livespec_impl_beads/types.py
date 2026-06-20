@@ -1,84 +1,51 @@
-"""Dataclasses for work-items and Spec Reader outputs.
+"""Spec Reader output dataclasses + re-export of the shared work-item model.
 
-The work-item schema is codified by SPECIFICATION/contracts.md
-§"Work-item beads-issue mapping". Every field below has an entry there;
-field types here are the Python-level realization.
+The work-item MODEL (`WorkItem`, `AuditRecord`) and its schema
+enums/aliases (`WorkItemStatus`/`WorkItemType`/`Origin`/`Resolution`/
+`DependsOnRaw`) are the SHARED surface published by
+`livespec_runtime.work_items.types` at runtime v0.4.0 — beads used to
+re-implement them identically here. They are now re-exported from the
+runtime package so the single canonical definition is the source of
+record; every existing call site that imports them from
+`livespec_impl_beads.types` keeps working unchanged. The work-item
+schema is codified by SPECIFICATION/contracts.md §"Work-item
+beads-issue mapping"; the runtime model carries the unified 16-field
+shape (beads' historical record MINUS the append-only `supersedes`
+pointer, which the unified model adds defaulted `None` — beads is
+inherently one-record-per-id and never populates it).
 
-SpecSnapshot and SpecDiff are the Spec Reader's return types per
-SPECIFICATION/contracts.md §"Spec Reader internal API".
+The Spec Reader return types (`SpecSnapshot`/`SpecDiff`/`FileDiff`) and
+the beads-tenant connection descriptor (`StoreConfig`) are NOT part of
+the shared lift — they stay LOCAL here (per
+SPECIFICATION/contracts.md §"Spec Reader internal API" and the beads
+connection model).
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Literal
 
-DependsOnRaw = str | dict[str, Any]
+from livespec_runtime.work_items.types import (
+    AuditRecord,
+    DependsOnRaw,
+    Origin,
+    Resolution,
+    WorkItem,
+    WorkItemStatus,
+    WorkItemType,
+)
 
-WorkItemStatus = Literal["open", "in_progress", "blocked", "closed", "deferred"]
-WorkItemType = Literal["bug", "feature", "task", "chore", "epic"]
-Origin = Literal["gap-tied", "freeform"]
-Resolution = Literal[
-    "completed",
-    "wontfix",
-    "duplicate",
-    "spec-revised",
-    "no-longer-applicable",
-    "resolved-out-of-band",
+__all__ = [
+    "AuditRecord",
+    "DependsOnRaw",
+    "FileDiff",
+    "Origin",
+    "Resolution",
+    "SpecDiff",
+    "SpecSnapshot",
+    "StoreConfig",
+    "WorkItem",
+    "WorkItemStatus",
+    "WorkItemType",
 ]
-
-
-@dataclass(frozen=True, kw_only=True)
-class AuditRecord:
-    """Audit-trail fields captured at completed-resolution closure time.
-
-    `merge_sha` and `pr_number` are the merge-evidence fields landed for
-    li-tenpup (the `work-item-merge-evidence` child PC). Per
-    SPECIFICATION/contracts.md "Work-items JSONL record schema" -> audit,
-    `merge_sha` is the required, non-empty SHA of the merge commit on the
-    canonical branch that introduced the work; `pr_number` is the optional
-    GitHub PR number (int or `None`) for traceability. Audit objects authored
-    before `pr_number` landed read back as `None` without firing a schema
-    violation; `merge_sha` is required-on-read for any audit object the
-    merge-evidence static check will later attest.
-    """
-
-    verification_timestamp: str
-    commits: tuple[str, ...]
-    files_changed: tuple[str, ...]
-    merge_sha: str
-    pr_number: int | None = None
-
-
-@dataclass(frozen=True, kw_only=True)
-class WorkItem:
-    """A single JSONL work-item record (one line of the work-items file).
-
-    `spec_commitment_hint` is the OPTIONAL pairing field landed for
-    livespec PC #4 sub-proposal 3 (livespec v083). When the work-item
-    is filed in response to a spec-side `spec_commitments.impl_followups[]`
-    declaration, this field carries the originating `id_hint` verbatim.
-    For freeform work-items unrelated to any spec commitment, it is
-    `None`. Legacy records lacking the field on disk read back as
-    `None` (no in-place migration required); the field is OPTIONAL on
-    the read path but always written explicitly on append (as `null`
-    or the value).
-    """
-
-    id: str
-    type: WorkItemType
-    status: WorkItemStatus
-    title: str
-    description: str
-    origin: Origin
-    gap_id: str | None
-    priority: int
-    assignee: str | None
-    depends_on: tuple[DependsOnRaw, ...]
-    captured_at: str
-    resolution: Resolution | None
-    reason: str | None
-    audit: AuditRecord | None
-    superseded_by: str | None
-    spec_commitment_hint: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

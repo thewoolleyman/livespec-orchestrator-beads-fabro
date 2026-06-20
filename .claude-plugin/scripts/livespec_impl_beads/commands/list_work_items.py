@@ -91,7 +91,7 @@ def _load_work_items(*, path: StoreConfig) -> list[WorkItem]:
     # empty tenant simply yields an empty issue stream, so the JSONL-era
     # `StoreFileMissingError` fallback the plaintext sibling carried is not
     # reachable here. An empty tenant is the natural empty-result path.
-    return list(materialize_work_items(read_work_items(path=path)).values())
+    return list(materialize_work_items(records=read_work_items(path=path)).values())
 
 
 def _filter_work_items(

@@ -233,7 +233,7 @@ def main() -> int:
     cwd = Path.cwd()
     clause_map = load_clause_map(coverage_path=_coverage_path(cwd=cwd))
     config = resolve_store_config(cwd=cwd, work_items_arg=None)
-    index = materialize_work_items(read_work_items(path=config.work_items_path))
+    index = materialize_work_items(records=read_work_items(path=config.work_items_path))
     offenders: list[tuple[str, str]] = []
     for item in _closed_gap_tied(index=index):
         reason = offender_reason(item=item, clause_map=clause_map)

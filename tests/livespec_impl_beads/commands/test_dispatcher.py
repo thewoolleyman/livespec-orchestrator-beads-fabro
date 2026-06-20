@@ -1603,7 +1603,7 @@ class _FakeRunDispatch:
 
 
 def _stored() -> dict[str, WorkItem]:
-    return materialize_work_items(read_work_items(path=_config()))
+    return materialize_work_items(records=read_work_items(path=_config()))
 
 
 def _raise_cost_gate_error(**_: object) -> None:
