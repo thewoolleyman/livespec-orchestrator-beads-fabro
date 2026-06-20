@@ -293,6 +293,14 @@ create_and_seed_repo() {
     git init -q -b master
     git config user.email "e2e@livespec.invalid"
     git config user.name "livespec-e2e"
+    # Set a TOKEN-FREE `origin` remote at the GitHub repo. This is LOAD-BEARING:
+    # Fabro detects the GitHub origin from the mounted clone's .git/config and
+    # clones FRESH in-sandbox from it (run #5 proved that WITHOUT an origin
+    # remote, Fabro reports repo_cloned=false / origin_url="" and the workflow's
+    # `git fetch --unshallow` then fails with "not a git repository"). The URL
+    # carries NO token (secret hygiene); Fabro authenticates the in-sandbox clone
+    # with the GH_TOKEN the Dispatcher projects into the sandbox env.
+    git remote add origin "https://github.com/${ORG}/${THROWAWAY_REPO}.git"
     git add -A
     git commit -q -m "seed: minimal livespec-impl skeleton + greeting SPECIFICATION"
   )
