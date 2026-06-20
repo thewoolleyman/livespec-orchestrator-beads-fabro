@@ -1,0 +1,30 @@
+# Minimal livespec-impl-shaped skeleton — task runner.
+#
+# The production implement-work-item Fabro workflow runs `mise exec -- just
+# check` as the janitor hard gate (and the lefthook pre-commit delegates to it
+# too). It is deliberately LIGHTWEIGHT: it runs the skeleton's pytest suite and
+# nothing else — NO ruff/pyright/coverage/AST checks, NO red-green-replay.
+
+default:
+    @just --list
+
+# Janitor hard gate + pre-commit body: the skeleton's pytest suite. Green on the
+# seeded tree (sanity test) and green once the agent adds greet + its test.
+check:
+    uv run pytest -q
+
+# Referenced by lefthook pre-commit; a no-op autofix placeholder (the skeleton
+# ships no linter, so there is nothing to autofix). Kept so `lefthook install`'s
+# pre-commit command resolves.
+lint-autofix-staged:
+    @true
+
+# First-touch setup parity. The production workflow's prepare step derives the
+# commit-refuse-hook source from THIS recipe's `cp dev-tooling/<hook>.sh ...
+# hooks/pre-commit` line; the skeleton's hook is a benign pass-through (it
+# installs NO red-green-replay gate — see dev-tooling/skeleton-passthrough-hook.sh).
+bootstrap:
+    mkdir -p .git/hooks
+    cp dev-tooling/skeleton-passthrough-hook.sh .git/hooks/pre-commit
+    cp dev-tooling/skeleton-passthrough-hook.sh .git/hooks/pre-push
+    chmod +x .git/hooks/pre-commit .git/hooks/pre-push

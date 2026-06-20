@@ -1,0 +1,14 @@
+// Minimal livespec config for the W7 live-golden-master throwaway skeleton.
+// connection.fake=false selects the ShellBeadsClient so the dispatcher reads
+// this repo's EMBEDDED .beads/ ledger (bd init without --server); all other
+// connection values are irrelevant under embedded mode (the per-command bd
+// argv carries NO connection flags — bd reads .beads/config.yaml).
+{
+  "template": "livespec",
+  "spec_root": "SPECIFICATION",
+  "implementation": { "plugin": "livespec-impl-beads" },
+  "livespec-impl-beads": {
+    "format": "beads",
+    "connection": { "fake": false }
+  }
+}
