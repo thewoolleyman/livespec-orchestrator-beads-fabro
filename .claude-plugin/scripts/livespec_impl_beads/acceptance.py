@@ -91,7 +91,15 @@ def _write_generated_program(*, workspace: Path) -> Path:
 def _generated_greeting(*, generated_program: Path, name: str) -> str:
     namespace: dict[str, Any] = runpy.run_path(str(generated_program))
     greet = cast(Callable[[str], str], namespace["greet"])
-    return greet(name)
+    # The fixture contract is `greet(name: str) -> str` — a generator may make
+    # the parameter positional OR keyword-only (`def greet(*, name)`, the
+    # livespec family discipline). Call faithfully for either: try positional,
+    # and on a TypeError that signals a keyword-only signature, retry by keyword.
+    try:
+        return greet(name)
+    except TypeError:
+        greet_kw = cast(Callable[..., str], greet)
+        return greet_kw(name=name)
 
 
 def run_live_acceptance(*, config: LiveAcceptanceConfig) -> AcceptanceResult:
