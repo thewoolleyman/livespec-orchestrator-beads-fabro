@@ -137,6 +137,10 @@ Record the following in this file or in a successor note before closing
   reached dispatch startup but still failed before journaling because
   `docker exec` launched the dispatcher from `/`; `bd` therefore could not
   auto-discover the mounted repo's `.beads/` directory.
+- After adding a dispatcher working directory, the next attempt reached the
+  dispatch command line but failed before journaling because `docker exec`'s
+  `-w` option was ordered after the container name; Docker treated `-w` as the
+  executable.
 
 Current tiny proof target: `livespec-impl-beads-ctq`, a P3 doc-only item
 created specifically for this Tier-2 run. Do not use `dn9` itself as the
