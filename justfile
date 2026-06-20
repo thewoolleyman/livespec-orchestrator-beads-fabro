@@ -652,6 +652,17 @@ check-e2e-cli:
 w7-tier2-dispatch-proof *ARGS:
     bash orchestrator-image/tier2-dispatch-proof.sh {{ARGS}}
 
+# W7 mechanical fail-safe reaper for orphaned `livespec-e2e-*` throwaway
+# repos in the disposable `livespec-e2e` GitHub org. Org- and name-scoped by
+# construction; age-gated so an in-progress run's repo is not reaped. Run only
+# when no dispatch is in flight (session-start / post-merge / teardown). Pass
+# script args after `--`, e.g.:
+#   just reap-e2e-repos -- --dry-run
+#   just reap-e2e-repos -- --dry-run --max-age 60
+#   just reap-e2e-repos                 # real reap, default 120m age gate
+reap-e2e-repos *ARGS:
+    bash orchestrator-image/reap-e2e-repos.sh {{ARGS}}
+
 # ---------------------------------------------------------------
 # Pre-commit aggregate — Red-mode-aware. Classifies the staged
 # tree shape; in Red mode it passes `skip="check-coverage

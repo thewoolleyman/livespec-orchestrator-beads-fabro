@@ -89,6 +89,37 @@ When `TIER2_USE_HOST_NETWORK=1` (the default for that helper), the helper runs
 Fabro on `32281` unless `FABRO_PORT` is explicitly set. This avoids colliding
 with a maintainer's normal host Fabro server on `32276`.
 
+## e2e-repo reaper (orphaned `livespec-e2e-*` cleanup)
+
+`reap-e2e-repos.sh` is the W7 mechanical fail-safe that sweeps orphaned
+throwaway GitHub repos (`livespec-e2e-*`) left behind by dark-factory
+acceptance runs in the disposable `livespec-e2e` org. It is **org- and
+name-scoped by construction**, **age-gated** so an in-progress run's repo is
+never reaped, and its deletes **retry with backoff** for the GitHub
+create-on-disk race (`HTTP 403 … done being created on disk`) and treat an
+already-gone repo as success. It reads `LIVESPEC_E2E_GITHUB_TOKEN` by byte
+count only and never prints a secret.
+
+Preview (deletes nothing):
+
+```bash
+/data/projects/1password-env-wrapper/with-livespec-env.sh -- \
+  bash orchestrator-image/reap-e2e-repos.sh --dry-run
+```
+
+Real reap (default 120-minute age gate; `--force-all` deletes regardless of
+age):
+
+```bash
+/data/projects/1password-env-wrapper/with-livespec-env.sh -- \
+  bash orchestrator-image/reap-e2e-repos.sh
+```
+
+**Run it only at boundaries — session-start, post-confirmed-merge, deliberate
+teardown, or as a scheduled sweep — never mid-dispatch.** See
+`research/w7-orchestrator-convergence/e2e-repo-reaper.md` for the full safety
+model and validation evidence.
+
 ## `docker run` invocation (production)
 
 The dispatcher needs the impl-beads checkout mounted and the externals injected.
