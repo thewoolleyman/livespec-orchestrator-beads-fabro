@@ -226,6 +226,8 @@ preflight() {
   [ -f "$REPO_ROOT/.claude-plugin/scripts/bin/dispatcher.py" ] || fail "dispatcher.py missing under impl-beads"
   [ -d "$REPO_ROOT/acceptance/fixtures/hello-world-greets-a-name/SPECIFICATION" ] \
     || fail "fixture SPECIFICATION missing"
+  [ -f "$REPO_ROOT/orchestrator-image/e2e-skeleton/pyproject.toml" ] \
+    || fail "throwaway-repo skeleton template missing: orchestrator-image/e2e-skeleton/"
   require_env LIVESPEC_E2E_GITHUB_TOKEN
   require_env ANTHROPIC_API_KEY_LIVESPEC_E2E
   require_env CLAUDE_CODE_OAUTH_TOKEN
@@ -267,55 +269,70 @@ create_and_seed_repo() {
 
   SCRATCH_DIR="$(mktemp -d /tmp/live-gm-seed.XXXXXX)"
   local clone="$SCRATCH_DIR/$THROWAWAY_REPO"
-  # Clone via an x-access-token URL kept ONLY in this subshell's argv to the
-  # `git clone`; the persisted remote is rewritten to a token-free https URL,
-  # and the in-container push uses the entrypoint's gh-stored credential.
-  GH_TOKEN="$LIVESPEC_E2E_GITHUB_TOKEN" gh repo clone "$ORG/$THROWAWAY_REPO" "$clone" >/dev/null 2>&1
 
-  log "seeding fixture SPECIFICATION + .livespec.jsonc"
-  cp -R "$REPO_ROOT/acceptance/fixtures/hello-world-greets-a-name/SPECIFICATION" "$clone/SPECIFICATION"
-  # A minimal .livespec.jsonc so the dispatcher's config resolver picks the
-  # ShellBeadsClient (fake:false) and the embedded .beads/ decides the
-  # connection. NO server keys, NO password — embedded mode needs neither.
-  cat >"$clone/.livespec.jsonc" <<JSONC
-{
-  "template": "livespec",
-  "spec_root": "SPECIFICATION",
-  "implementation": { "plugin": "livespec-impl-beads" },
-  "livespec-impl-beads": {
-    "format": "beads",
-    "connection": { "fake": false }
-  }
-}
-JSONC
+  log "seeding minimal livespec-impl-shaped skeleton (master, >10 commits)"
+  # The skeleton is a committed template (orchestrator-image/e2e-skeleton/): a
+  # minimal-but-real livespec-impl-shaped repo (.mise.toml, pyproject + uv,
+  # lefthook.yml, a lightweight green `just check`, a benign pass-through hook,
+  # SPECIFICATION/, CLAUDE.md local constraints) so the UNMODIFIED production
+  # implement-work-item workflow's prepare -> implement -> janitor -> PR steps
+  # all succeed. We build the working tree locally and push it (no `gh repo
+  # clone` round-trip needed).
+  local skeleton="$REPO_ROOT/orchestrator-image/e2e-skeleton"
+  [ -d "$skeleton" ] || fail "skeleton template missing: $skeleton"
+  mkdir -p "$clone"
+  # Copy tracked + dotfiles (cp -R of `.` brings hidden entries).
+  cp -R "$skeleton/." "$clone/"
+
+  log "initializing git on master + committing the skeleton"
+  (
+    cd "$clone"
+    # git init FIRST (deterministic master branch), then the skeleton commit, so
+    # the later `bd init` auto-commit (it git-commits its own .beads/ scaffold
+    # even with --skip-hooks) lands ON master rather than racing the branch name.
+    git init -q -b master
+    git config user.email "e2e@livespec.invalid"
+    git config user.name "livespec-e2e"
+    git add -A
+    git commit -q -m "seed: minimal livespec-impl skeleton + greeting SPECIFICATION"
+  )
 
   log "seeding embedded beads ledger + one ready greeting work-item"
   (
     cd "$clone"
     # Embedded mode: NO --server. Provisions a self-contained Dolt store under
-    # .beads/embeddeddolt/. --skip-agents --skip-hooks per the family rule.
+    # .beads/embeddeddolt/. --skip-agents --skip-hooks per the family rule. bd
+    # init also auto-commits its .beads/ scaffold (on the current master HEAD).
     bd init --prefix "${rand}greet" --skip-agents --skip-hooks --non-interactive --quiet >/dev/null 2>&1
     bd create "Implement greet per the SPECIFICATION" \
-      -d "Implement the program described in this repo's SPECIFICATION/: expose a Python function greet(name: str) -> str that returns exactly \"Hello, <name>!\". For the input Ada it must return \"Hello, Ada!\". Follow the contracts.md / scenarios.md exactly." \
+      -d "Implement the program described in this repo's SPECIFICATION/: expose a Python function greet(name: str) -> str (in src/greeting/greet.py) that returns exactly \"Hello, <name>!\". For the input Ada it must return \"Hello, Ada!\". Add a test under tests/ and make \`just check\` pass. Read this repo's root CLAUDE.md for local constraints (no Red-Green-Replay ritual here; commit normally). Follow contracts.md / scenarios.md exactly." \
       >/dev/null 2>&1
   )
-  # Confirm the ready item exists in the embedded ledger (redacted count only).
+  # Confirm exactly one ready item in the embedded ledger (redacted count only).
   local ready_count
   ready_count="$(cd "$clone" && bd list --status open --json 2>/dev/null | jq 'length' 2>/dev/null || echo '?')"
   printf 'embedded ledger ready (open) items: %s\n' "$ready_count"
   [ "$ready_count" = "1" ] || fail "expected exactly 1 ready item in the embedded ledger (got $ready_count)"
 
-  log "pushing initial state (git content; embedded Dolt files are gitignored)"
+  log "padding git history (>10 commits so the depth-10 sandbox clone is shallow)"
   (
     cd "$clone"
-    git add -A
-    git -c user.email="e2e@livespec.invalid" -c user.name="livespec-e2e" \
-      commit -q -m "seed: hello-world greeting fixture + embedded ledger"
-    # Push over a token URL passed ONLY on this argv; no token persisted to the
-    # repo config and nothing echoed.
-    git push "https://x-access-token:${LIVESPEC_E2E_GITHUB_TOKEN}@github.com/${ORG}/${THROWAWAY_REPO}.git" HEAD:main >/dev/null 2>&1
+    # Pad the history past Fabro's hardcoded GIT_CLONE_DEPTH=10 so the workflow's
+    # `git fetch --unshallow` prepare step succeeds in-sandbox (a depth-10 clone
+    # of a <=10-commit repo is COMPLETE, and --unshallow then errors).
+    local i
+    for i in $(seq 1 12); do
+      printf 'history line %s\n' "$i" >>HISTORY.txt
+      git add HISTORY.txt
+      git commit -q -m "chore: history padding ${i}/12 (depth-10 unshallow headroom)"
+    done
+    printf 'commit count: %s\n' "$(git rev-list --count HEAD)"
+    # Push master and SET it as the default branch (the PR stage targets master
+    # and ranges origin/master..HEAD). Token only on this argv; nothing echoed.
+    git push -q "https://x-access-token:${LIVESPEC_E2E_GITHUB_TOKEN}@github.com/${ORG}/${THROWAWAY_REPO}.git" HEAD:master 2>/dev/null
   )
-  printf 'seeded + pushed: %s/%s (default branch main)\n' "$ORG" "$THROWAWAY_REPO"
+  GH_TOKEN="$LIVESPEC_E2E_GITHUB_TOKEN" gh api -X PATCH "/repos/${ORG}/${THROWAWAY_REPO}" -f default_branch=master >/dev/null 2>&1 || true
+  printf 'seeded + pushed: %s/%s (default branch master)\n' "$ORG" "$THROWAWAY_REPO"
   CLONE_DIR="$clone"
 }
 

@@ -1,0 +1,13 @@
+# Minimal livespec-impl-shaped skeleton — developer-tooling pins.
+#
+# This is the SEED for a W7 live-golden-master throwaway repo. It is a
+# minimal-but-real livespec-impl-shaped repo carrying a hello-world greeting
+# SPECIFICATION, just real enough for the UNMODIFIED production
+# implement-work-item Fabro workflow's prepare -> implement -> janitor -> PR
+# steps to all succeed. Versions match the family sandbox image
+# (ghcr.io/thewoolleyman/livespec-fabro-sandbox) so `mise install` is a no-op
+# in-sandbox.
+[tools]
+uv       = "0.9.26"
+just     = "1.36.0"
+lefthook = "1.13.6"

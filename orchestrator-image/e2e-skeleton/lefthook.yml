@@ -1,0 +1,14 @@
+# Minimal livespec-impl-shaped skeleton — lefthook config.
+#
+# Exists so the production workflow's `uv run lefthook install` prepare step
+# resolves. Deliberately MINIMAL: a pre-commit that delegates to the skeleton's
+# lightweight `just check`. NOTE: the workflow's later prepare step overwrites
+# .git/hooks/pre-commit + pre-push with the benign pass-through
+# (dev-tooling/skeleton-passthrough-hook.sh), so in-sandbox commits are NOT
+# gated at commit time (the janitor `just check` is the hard gate). There is
+# deliberately NO red-green-replay / commit-refuse hook here: the deliverable is
+# the greeting program, not a TDD-ritual demo, so the agent commits normally.
+pre-commit:
+  commands:
+    check:
+      run: just check

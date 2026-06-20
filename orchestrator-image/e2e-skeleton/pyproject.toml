@@ -1,0 +1,26 @@
+# Minimal livespec-impl-shaped skeleton — uv project.
+#
+# Just real enough that `uv sync --all-groups` provisions a venv with pytest so
+# the skeleton's lightweight `just check` (pytest over tests/) runs green. NOT
+# the full impl-beads enforcement suite — deliberately minimal.
+[project]
+name = "livespec-e2e-greeting"
+version = "0.0.0"
+description = "W7 live-golden-master throwaway: hello-world greeting"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8,<9",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/greeting"]
