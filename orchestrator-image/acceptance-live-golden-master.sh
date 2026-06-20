@@ -478,18 +478,28 @@ assert_merged_greeting() {
   local merged="$SCRATCH_DIR/merged-$THROWAWAY_REPO"
   GH_TOKEN="$LIVESPEC_E2E_GITHUB_TOKEN" gh repo clone "$ORG/$THROWAWAY_REPO" "$merged" >/dev/null 2>&1 \
     || fail "could not clone the merged repo for assertion"
+  # Diagnostics: confirm the merged checkout carries the generated program.
+  printf 'merged checkout: %s\n' "$merged"
+  printf 'merged .py files (excluding SPECIFICATION/.git):\n'
+  find "$merged" -name '*.py' -not -path '*/.git/*' -not -path '*/SPECIFICATION/*' 2>/dev/null \
+    | sed "s|$merged/||" | sort | sed 's/^/  /'
   # Drive the assertion through the committed pytest binding so the SAME
   # run_live_acceptance code path is exercised. The binding reads the checkout
   # path + expected name from env and asserts greet(name) == "Hello, <name>!".
-  # Capture the exit code (pipefail + the tee) so a FAILED assertion fails the
-  # whole proof — the greeting assertion is NEVER weakened or masked.
+  # `set +e` around the capture so a non-zero exit does NOT trip the script's
+  # `set -e` at the assignment (which would skip the print + the explicit
+  # diagnosis); the output is ALWAYS printed and the exit code is then checked
+  # explicitly. The greeting assertion is NEVER weakened or masked.
   local out rc
+  set +e
   out="$(LIVESPEC_LIVE_CHECKOUT="$merged" LIVESPEC_LIVE_NAME="$NAME" LIVESPEC_BEADS_FAKE=1 \
     uv run --project "$REPO_ROOT" pytest \
       "$REPO_ROOT/acceptance/test_beads_fabro_live_golden_master.py" -q 2>&1)"
   rc=$?
-  printf '%s\n' "$out" | redact | tail -20
-  [ "$rc" -eq 0 ] || fail "greeting assertion FAILED (pytest exit $rc) — the merged program did not greet $NAME as \"$EXPECTED_GREETING\""
+  set -e
+  log "greeting assertion output (redacted)"
+  printf '%s\n' "$out" | redact | tail -30
+  [ "$rc" -eq 0 ] || fail "greeting assertion FAILED (pytest exit $rc) — see output above; the merged program did not greet $NAME as \"$EXPECTED_GREETING\""
   printf 'asserted greeting: %s == greet("%s") from the merged repo\n' "$EXPECTED_GREETING" "$NAME"
 }
 
