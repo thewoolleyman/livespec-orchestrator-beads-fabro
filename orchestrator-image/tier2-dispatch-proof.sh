@@ -230,19 +230,19 @@ run_dispatch() {
   set +e
   docker exec \
     -w "$WORKSPACE_REPO" \
-    -e GH_TOKEN="$LIVESPEC_FAMILY_GITHUB_TOKEN" \
     "$CONTAINER" \
-    python3 "$WORKSPACE_REPO/.claude-plugin/scripts/bin/dispatcher.py" \
+    sh -lc 'export GH_TOKEN="$LIVESPEC_FAMILY_GITHUB_TOKEN"; exec python3 "$1/.claude-plugin/scripts/bin/dispatcher.py" \
       loop \
-      --repo "$WORKSPACE_REPO" \
+      --repo "$1" \
       --budget 1 \
       --mode shadow \
-      --item "$ITEM_ID" \
+      --item "$2" \
       --no-close-on-merge \
-      --journal "$JOURNAL_PATH" \
-      --poll-attempts "$POLL_ATTEMPTS" \
-      --poll-interval-seconds "$POLL_INTERVAL_SECONDS" \
-      --json \
+      --journal "$3" \
+      --poll-attempts "$4" \
+      --poll-interval-seconds "$5" \
+      --json' \
+      sh "$WORKSPACE_REPO" "$ITEM_ID" "$JOURNAL_PATH" "$POLL_ATTEMPTS" "$POLL_INTERVAL_SECONDS" \
       >"$LOG_PATH" 2>&1
   local code=$?
   set -e
