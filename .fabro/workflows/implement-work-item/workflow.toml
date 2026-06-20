@@ -29,17 +29,17 @@
 # under /workspace/siblings inside the sandbox (work-item
 # livespec-impl-beads-8m2), and (c) APPENDS an
 # [environments.livespec-ci.env] table carrying the real
-# CLAUDE_CODE_OAUTH_TOKEN value read from the Dispatcher's process
-# environment — the run-scoped credential projection per the
-# family-secrets scoped transient-materialization rule — plus the
-# NON-secret LIVESPEC_SIBLING_CLONES_ROOT key (it rides in the same
-# appended table because TOML forbids declaring that table twice, and
-# the environment env table is the container-level channel that
-# reaches every node's `just check` subprocesses). The Dispatcher is
-# invoked under the with-livespec-env.sh wrapper (the livespec
-# 1Password Environment carries the token) and refuses to dispatch
-# when the variable is absent, and fails fast when the fleet manifest
-# is unreachable or malformed.
+# CLAUDE_CODE_OAUTH_TOKEN and GH_TOKEN values read from the Dispatcher's
+# process environment — the run-scoped credential projection per the
+# family-secrets scoped transient-materialization rule — plus the NON-secret
+# LIVESPEC_SIBLING_CLONES_ROOT key (it rides in the same appended table because
+# TOML forbids declaring that table twice, and the environment env table is the
+# container-level channel that reaches every node's subprocesses, including
+# `just check` and `gh pr create`). The Dispatcher is invoked under the
+# with-livespec-env.sh wrapper (the livespec 1Password Environment carries the
+# model token, and the orchestrator aliases the family GitHub token to
+# GH_TOKEN) and refuses to dispatch when either credential variable is absent,
+# and fails fast when the fleet manifest is unreachable or malformed.
 # WHY NOT `{{ env }}` INTERPOLATION (do not re-attempt it): fabro
 # resolves interpolations in the WORKER process, which fabro-server
 # spawns with a fail-closed env allowlist (fabro-server/src/
@@ -99,7 +99,7 @@ memory = "8GB"
 
 # NOTE: deliberately NO [environments.livespec-ci.env] table here. The
 # Dispatcher's per-dispatch overlay APPENDS that table carrying the
-# real CLAUDE_CODE_OAUTH_TOKEN value plus the non-secret
+# real CLAUDE_CODE_OAUTH_TOKEN and GH_TOKEN values plus the non-secret
 # LIVESPEC_SIBLING_CLONES_ROOT key at dispatch time (TOML forbids
 # duplicate table declarations, so this committed file must not declare
 # it — which is also why the non-secret key lives in the appended

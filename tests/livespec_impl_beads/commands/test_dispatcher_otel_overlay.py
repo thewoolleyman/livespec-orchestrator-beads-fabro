@@ -60,6 +60,7 @@ _COMMITTED_WORKFLOW_TOML = (
 # password) does not flag the literal — the same indirection the existing
 # overlay tests in test_dispatcher.py use.
 _FAKE_TOKEN = "test-oauth-token"
+_FAKE_GITHUB_TOKEN = "test-github-token"
 
 
 def test_resolve_sandbox_otel_endpoint_defaults_to_bridge_gateway() -> None:
@@ -153,6 +154,7 @@ def test_render_run_config_overlay_projects_otel_env(tmp_path: Path) -> None:
         committed_text=_COMMITTED_WORKFLOW_TOML,
         workflow_dir=tmp_path,
         token=_FAKE_TOKEN,
+        github_token=_FAKE_GITHUB_TOKEN,
         siblings=None,
         otel_env=otel_env,
     )
@@ -161,6 +163,7 @@ def test_render_run_config_overlay_projects_otel_env(tmp_path: Path) -> None:
     # The token still projects; the OTel keys ride in the SAME table (TOML
     # forbids declaring [environments.<id>.env] twice).
     assert 'CLAUDE_CODE_OAUTH_TOKEN = "test-oauth-token"' in env_table
+    assert 'GH_TOKEN = "test-github-token"' in env_table
     assert 'CLAUDE_CODE_ENABLE_TELEMETRY = "1"' in env_table
     assert 'OTEL_EXPORTER_OTLP_ENDPOINT = "http://172.17.0.1:4318"' in env_table
     assert 'OTEL_EXPORTER_OTLP_PROTOCOL = "http/json"' in env_table
@@ -178,10 +181,12 @@ def test_render_run_config_overlay_otel_env_is_optional(tmp_path: Path) -> None:
         committed_text=_COMMITTED_WORKFLOW_TOML,
         workflow_dir=tmp_path,
         token=_FAKE_TOKEN,
+        github_token=_FAKE_GITHUB_TOKEN,
         siblings=None,
     )
     assert rendered is not None
     assert 'CLAUDE_CODE_OAUTH_TOKEN = "test-oauth-token"' in rendered
+    assert 'GH_TOKEN = "test-github-token"' in rendered
     assert "OTEL_EXPORTER_OTLP_ENDPOINT" not in rendered
     assert "CLAUDE_CODE_ENABLE_TELEMETRY" not in rendered
 

@@ -42,6 +42,10 @@ socket is not mounted, and the script verifies that absence before dispatch.
 The runner also maps `BEADS_DOLT_PASSWORD_livespec_impl_beads` into the generic
 `BEADS_DOLT_PASSWORD` process variable consumed by `bd`, without printing the
 secret value.
+It also maps `LIVESPEC_FAMILY_GITHUB_TOKEN` into the conventional `GH_TOKEN`
+process variable before invoking the Dispatcher; the Dispatcher materializes
+that `GH_TOKEN` into the mode-600 Fabro run overlay so the in-sandbox PR node can
+run `gh pr create`.
 
 With host networking enabled, the runner defaults Fabro to `32281` instead of
 `32276` unless `FABRO_PORT` is explicitly set. That avoids colliding with a
@@ -178,6 +182,10 @@ Record the following in this file or in a successor note before closing
   deferred to follow-on item `livespec-impl-beads-5qv`; the Tier-2 minimal proof
   is considered green only through real dispatch, sandbox clone, implementation,
   janitor, and branch push.
+- Follow-on `livespec-impl-beads-5qv` fixes that final credential-projection
+  gap by requiring the Dispatcher to project `GH_TOKEN` into the sandbox env
+  table and by having this proof wrapper source it from
+  `LIVESPEC_FAMILY_GITHUB_TOKEN`.
 
 Current tiny proof target: `livespec-impl-beads-ctq`, a P3 doc-only item
 created specifically for this Tier-2 run. Do not use `dn9` itself as the

@@ -42,8 +42,8 @@ run-config overlay materialized under the temp dir is the RUN-SCOPED
 credential projection (per the family-secrets scoped
 transient-materialization rule): it appends an
 `[environments.<id>.env]` table carrying the CLAUDE_CODE_OAUTH_TOKEN
-value read from the Dispatcher's process environment, is written
-mode-600, and is deleted when the run returns. The committed workflow
+and GH_TOKEN values read from the Dispatcher's process environment, is
+written mode-600, and is deleted when the run returns. The committed workflow
 config carries NO secret VALUE and NO `{{ env }}` interpolation —
 interpolation can NOT deliver credentials to server-mediated runs (do
 not re-attempt it): resolution happens in the WORKER process, which
@@ -53,9 +53,10 @@ resolver and the LITERAL `{{ env.X }}` string flows into the sandbox
 (proven empirically 2026-06-12: API 401 with the token present in
 both the dispatcher's and the server daemon's env). The Dispatcher is
 invoked under the with-livespec-env.sh wrapper (the livespec
-1Password Environment carries CLAUDE_CODE_OAUTH_TOKEN) and refuses to
-dispatch when the variable is absent or empty — there would be
-nothing to project. The token value is never logged, echoed, or
+1Password Environment carries CLAUDE_CODE_OAUTH_TOKEN, and the
+orchestrator projects the family GitHub token as GH_TOKEN) and refuses to
+dispatch when either variable is absent or empty — there would be
+nothing to project. Token values are never logged, echoed, or
 journaled.
 
 Sandbox sibling clones: the same overlay appends one depth-1
@@ -250,6 +251,7 @@ _EXIT_USAGE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 3
 
 _OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"  # noqa: S105 - env-var NAME, not a secret value
+_GITHUB_TOKEN_ENV = "GH_TOKEN"  # noqa: S105 - env-var NAME, not a secret value
 
 # The ingest-only Honeycomb key (write-only; the management/MCP key never
 # touches this egress path, per telemetry-pipeline-architecture.md §3.4).
@@ -1568,7 +1570,7 @@ def _materialize_overlay(
     `run-config-overlay` stage). The overlay is the RUN-SCOPED
     credential projection: the committed config (graph path absolutized)
     plus an appended env table carrying the CLAUDE_CODE_OAUTH_TOKEN
-    value read from this process's environment. Fabro `{{ env }}`
+    and GH_TOKEN values read from this process's environment. Fabro `{{ env }}`
     interpolation is NOT usable here (see the module docstring), so the
     value MUST be materialized. The token never reaches a log, journal,
     or argv; the overlay file is deleted when the run returns.
@@ -1603,6 +1605,7 @@ def _materialize_overlay(
         committed_text=committed.read_text(encoding="utf-8"),
         workflow_dir=committed.parent.resolve(),
         token=os.environ[_OAUTH_TOKEN_ENV],
+        github_token=os.environ[_GITHUB_TOKEN_ENV],
         siblings=siblings,
         otel_env=otel_env,
     )
@@ -1681,25 +1684,29 @@ def _resolve_sibling_clones(*, repo: Path) -> SiblingClones | str:
 
 
 def _check_credential_env() -> str | None:
-    """Fail fast when CLAUDE_CODE_OAUTH_TOKEN is absent from the process env.
+    """Fail fast when a required sandbox credential is absent.
 
-    Returns None when the credential is present, or an actionable error
-    naming the wrapper that provides it. The Dispatcher's process env is
+    Returns None when both credentials are present, or an actionable
+    error naming the missing env var(s). The Dispatcher's process env is
     the SOURCE of the run-scoped overlay projection, so an absent or
-    empty variable means there is nothing to project. The value is never
+    empty variable means there is nothing to project. Values are never
     logged.
     """
-    if os.environ.get(_OAUTH_TOKEN_ENV, "") != "":
+    missing = [
+        name for name in (_OAUTH_TOKEN_ENV, _GITHUB_TOKEN_ENV) if os.environ.get(name, "") == ""
+    ]
+    if not missing:
         return None
+    missing_text = ", ".join(missing)
     return (
-        f"C-mode dispatch refused: {_OAUTH_TOKEN_ENV} is not set in the "
+        f"C-mode dispatch refused: {missing_text} is not set in the "
         f"Dispatcher's process environment. The run-config overlay "
-        f"projects this variable into the sandbox env table (fabro "
-        f"'{{{{ env.{_OAUTH_TOKEN_ENV} }}}}' interpolation cannot deliver "
-        f"it — the server-spawned worker env is allowlist-scrubbed), so "
-        f"an absent variable leaves nothing to project. Invoke the "
-        f"Dispatcher under the with-livespec-env.sh wrapper (the livespec "
-        f"1Password Environment carries the token)."
+        f"projects these variables into the sandbox env table (fabro "
+        f"'{{{{ env.* }}}}' interpolation cannot deliver them — the "
+        f"server-spawned worker env is allowlist-scrubbed), so an absent "
+        f"variable leaves nothing to project. Invoke the Dispatcher under "
+        f"the with-livespec-env.sh wrapper and alias the family GitHub "
+        f"token into {_GITHUB_TOKEN_ENV} before dispatch."
     )
 
 
