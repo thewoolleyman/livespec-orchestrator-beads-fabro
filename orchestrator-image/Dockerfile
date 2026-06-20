@@ -36,6 +36,7 @@ RUN apt-get update \
         gpg \
         jq \
         git \
+        libatomic1 \
         python3 \
         python3-typing-extensions \
         iptables \
