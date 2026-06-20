@@ -21,7 +21,8 @@ credential is injected at `docker run` time.
 | `Dockerfile` | `ubuntu:24.04` base (glibc 2.39 — the fabro v0.254.0 hard floor) + inner `docker.io` + content-pinned `bd` v1.0.5 / `dolt` v2.1.4 + `uv` + `gh` + `mise` + `libatomic1` + the COPYed pinned `fabro` binary; `VOLUME /var/lib/docker`; `EXPOSE 32276`. |
 | `orchestrator-entrypoint.sh` | Supervisor: start dockerd → wait for socket → provision headless fabro (gh auth + `fabro install --non-interactive` + bind `0.0.0.0:32276`) → exec the dispatcher (or a passed command). |
 | `build-and-verify.sh` | Stages the fabro binary, builds the image, runs the privileged container with an ext4-backed volume + injected secrets, and runs tier-1 verification. |
-| `tier2-dispatch-proof.sh` | Runs the W7 Tier-2 proof: one explicit shadow dispatch from inside the container against a tiny ready item, with redacted logs and inner-daemon evidence. |
+| `tier2-dispatch-proof.sh` | Runs the W7 Tier-2 proof: one explicit shadow dispatch from inside the container against a tiny ready item, with redacted logs and inner-daemon evidence. **Bind-mounts the host impl-beads checkout** — it is a proof runner, not the real-work substrate. |
+| `real-work-dispatch.sh` | The W7 step-5 **real-work substrate**: dispatches one ready work-item with **no host checkout bind-mount**. It fresh-`git clone`s impl-beads (dispatcher code + the `.fabro/workflows` graph) *and* the dispatch target *inside* the container, `uv sync`s the dispatcher clone, regenerates the gitignored `.beads/metadata.json` (server-stable `project_id`), and points `dispatcher.py loop --repo` at the in-container target clone. The only host coupling is the `-e` secret set. |
 | `fabro` | The pinned fabro binary, fetched at build time from `~/.fabro/bin/fabro`. **Gitignored — never committed** (111MB blob; the version is pinned in the Dockerfile's `FABRO_VERSION` for documentation). |
 
 ## Hard constraints (proven by the spike + this build)
@@ -120,36 +121,65 @@ teardown, or as a scheduled sweep — never mid-dispatch.** See
 `research/w7-orchestrator-convergence/e2e-repo-reaper.md` for the full safety
 model and validation evidence.
 
-## `docker run` invocation (production)
+## Real-work substrate (production)
 
-The dispatcher needs the impl-beads checkout mounted and the externals injected.
-Always launch under the 1Password wrapper so the secret env values are present
-for `docker run -e VAR` to forward (docker reads the value from the wrapper
-process's env — it is never written to a file or logged):
+For routine cross-repo work the Dispatcher runs on the **real-work substrate**:
+it mounts **no host checkout**. Every git working tree the Dispatcher needs is
+fresh-`git clone`d from GitHub *inside* the container, so the only host coupling
+is the explicit `-e` secret set. Use the `real-work-dispatch.sh` helper (wired
+as `just w7-real-work-dispatch`), which clones impl-beads (the dispatcher code +
+the `.fabro/workflows/implement-work-item/` graph) and the dispatch target,
+`uv sync`s the dispatcher clone, regenerates the gitignored
+`.beads/metadata.json` in the target clone (the `project_id` is server-stable,
+so the regenerated value is identical), and dispatches one ready item:
+
+```bash
+/data/projects/1password-env-wrapper/with-livespec-env.sh -- \
+  just w7-real-work-dispatch -- --target-repo <repo-name> --item <id> --run
+```
+
+Under the hood the helper runs the container with **no `-v <host-checkout>`
+bind-mount**, only the substrate volume + the injected secrets, then clones
+fresh and points the Dispatcher at the clones:
 
 ```bash
 /data/projects/1password-env-wrapper/with-livespec-env.sh -- docker run -d \
   --name livespec-orchestrator \
   --privileged \
   --cgroupns=host \                                  # nested resource-limited Fabro sandboxes on cgroup v2
-  -v livespec-orch-varlib:/var/lib/docker \          # ext4-backed inner graph store
-  -v /data/projects/livespec-impl-beads:/workspace/livespec-impl-beads \
+  -v livespec-orch-varlib:/var/lib/docker \          # ext4-backed inner graph store (NOT host checkout state)
   -p 127.0.0.1:32276:32276 \                         # web UI / control plane, HOST LOOPBACK ONLY
   --network host \                                   # to reach the EXTERNAL family-tenant Dolt (127.0.0.1:3307)
   -e LIVESPEC_FAMILY_GITHUB_TOKEN \                  # GitHub token (clone/push/PR)
   -e ANTHROPIC_API_KEY_LIVESPEC_E2E \                # fabro LLM provider key
   -e CLAUDE_CODE_OAUTH_TOKEN \                       # model auth the dispatcher projects per-dispatch
-  -e BEADS_DOLT_PASSWORD_livespec_impl_beads \       # external tenant Dolt password
-  -e BEADS_DOLT_PASSWORD="$BEADS_DOLT_PASSWORD_livespec_impl_beads" \
+  -e BEADS_DOLT_PASSWORD_<target-tenant> \           # external tenant Dolt password (tenant DB == target repo)
+  -e BEADS_DOLT_PASSWORD="$BEADS_DOLT_PASSWORD_<target-tenant>" \
   -e HONEYCOMB_INGEST_KEY_LIVESPEC \                 # telemetry egress key
   livespec-orchestrator:dev \
-  python3 /workspace/livespec-impl-beads/.claude-plugin/scripts/bin/dispatcher.py \
-    loop --repo /workspace/livespec-impl-beads --budget 1 --mode shadow --item <id>
+  sleep infinity
+# then, INSIDE the container (the helper does this for you):
+#   git clone https://github.com/thewoolleyman/livespec-impl-beads.git /workspace/livespec-impl-beads
+#   (cd /workspace/livespec-impl-beads && uv sync --all-groups)
+#   git clone https://github.com/<org>/<target>.git /workspace/dispatch-target
+#   regenerate /workspace/dispatch-target/.beads/metadata.json  (bd init --server --external)
+#   python3 /workspace/livespec-impl-beads/.claude-plugin/scripts/bin/dispatcher.py \
+#     loop --repo /workspace/dispatch-target --budget 1 --mode autonomous --item <id>
 ```
 
-The checkout mount is intentionally read-write: after Fabro merges a PR, the
-dispatcher refreshes that primary checkout and provisions a fresh post-merge
-janitor worktree from it.
+There is **no read-write host checkout to refresh**: the Dispatcher's post-merge
+primary refresh and the post-merge janitor worktree both operate on the
+in-container *target clone* (`/workspace/dispatch-target`), which lives under
+`/workspace` — not `/tmp` — so the janitor worktree at
+`<target-clone>/worktrees/janitor-<id>` is measured by coverage (the family
+pyproject's `[tool.coverage.run]` omit excludes `/tmp/*`). The clone origins are
+**token-free URLs**; the container's `gh auth setup-git` supplies the credential
+out of band, so no token-bearing URL is ever printed or stored.
+
+> The legacy **bind-mount** invocation (`-v /data/projects/livespec-impl-beads:
+> /workspace/livespec-impl-beads` + `--repo` pointed at it) survives only in the
+> Tier-2 *proof* runner (`tier2-dispatch-proof.sh`). It is a proof harness, not
+> the production substrate; real work runs on the fresh-clone path above.
 
 > **`--network host` vs `-p`.** If you use `--network host` (to reach the
 > external family-tenant Dolt on `127.0.0.1:3307`), the `-p` publish is ignored
@@ -164,7 +194,7 @@ janitor worktree from it.
 
 | Env var | Purpose | Used by |
 |---|---|---|
-| `LIVESPEC_FAMILY_GITHUB_TOKEN` | GitHub token for clone / push / PR (`token` strategy; the entrypoint `gh auth login`s with it, then exports it as `GH_TOKEN` for the Dispatcher) | entrypoint + dispatcher |
+| `LIVESPEC_FAMILY_GITHUB_TOKEN` | GitHub token for clone / push / PR (`token` strategy; the entrypoint `gh auth login`s with it, then exports it as `GH_TOKEN` for the Dispatcher). On the real-work substrate it ALSO authenticates the in-container fresh clones (via the `gh` git credential helper; the clone origin URLs stay token-free) | entrypoint + dispatcher + in-container clones |
 | `GH_TOKEN` | conventional GitHub token name projected by the Dispatcher into the Fabro sandbox env table so the in-sandbox PR node can run `gh pr create`; do not inject it at container launch because `gh auth login --with-token` refuses to store credentials when `GH_TOKEN` is already set | dispatcher / sandbox PR node |
 | `ANTHROPIC_API_KEY_LIVESPEC_E2E` | fabro LLM-provider API key (name overridable via `FABRO_LLM_API_KEY_ENV`) | `fabro install` |
 | `CLAUDE_CODE_OAUTH_TOKEN` | model auth the dispatcher projects into each sandbox per-dispatch (run-scoped overlay) | dispatcher |
