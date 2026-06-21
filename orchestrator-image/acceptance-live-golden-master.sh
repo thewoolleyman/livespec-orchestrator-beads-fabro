@@ -72,7 +72,7 @@ HOST_FABRO_BIN="${HOST_FABRO_BIN:-$HOME/.fabro/bin/fabro}"
 # The impl-beads repo is mounted so the dispatcher code + the
 # .fabro/workflows/implement-work-item/ phase graph resolve from the package
 # root; the throwaway clone is mounted separately as the dispatch --repo.
-WORKSPACE_REPO="${WORKSPACE_REPO:-/workspace/livespec-impl-beads}"
+WORKSPACE_REPO="${WORKSPACE_REPO:-/workspace/livespec-orchestrator-beads-fabro}"
 TARGET_MOUNT="${TARGET_MOUNT:-/workspace/e2e-target}"
 TIER2_USE_HOST_NETWORK="${TIER2_USE_HOST_NETWORK:-1}"
 # Under --network host the container shares the host network namespace, so an

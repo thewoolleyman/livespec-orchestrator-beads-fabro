@@ -159,11 +159,11 @@ fresh and points the Dispatcher at the clones:
   livespec-orchestrator:dev \
   sleep infinity
 # then, INSIDE the container (the helper does this for you):
-#   git clone https://github.com/thewoolleyman/livespec-impl-beads.git /workspace/livespec-impl-beads
-#   (cd /workspace/livespec-impl-beads && uv sync --all-groups)
+#   git clone https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git /workspace/livespec-orchestrator-beads-fabro
+#   (cd /workspace/livespec-orchestrator-beads-fabro && uv sync --all-groups)
 #   git clone https://github.com/<org>/<target>.git /workspace/dispatch-target
 #   regenerate /workspace/dispatch-target/.beads/metadata.json  (bd init --server --external)
-#   python3 /workspace/livespec-impl-beads/.claude-plugin/scripts/bin/dispatcher.py \
+#   python3 /workspace/livespec-orchestrator-beads-fabro/.claude-plugin/scripts/bin/dispatcher.py \
 #     loop --repo /workspace/dispatch-target --budget 1 --mode autonomous --item <id>
 ```
 
@@ -176,8 +176,8 @@ pyproject's `[tool.coverage.run]` omit excludes `/tmp/*`). The clone origins are
 **token-free URLs**; the container's `gh auth setup-git` supplies the credential
 out of band, so no token-bearing URL is ever printed or stored.
 
-> The legacy **bind-mount** invocation (`-v /data/projects/livespec-impl-beads:
-> /workspace/livespec-impl-beads` + `--repo` pointed at it) survives only in the
+> The legacy **bind-mount** invocation (`-v /data/projects/livespec-orchestrator-beads-fabro:
+> /workspace/livespec-orchestrator-beads-fabro` + `--repo` pointed at it) survives only in the
 > Tier-2 *proof* runner (`tier2-dispatch-proof.sh`). It is a proof harness, not
 > the production substrate; real work runs on the fresh-clone path above.
 
