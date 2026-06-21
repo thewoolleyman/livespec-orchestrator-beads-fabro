@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from livespec_impl_beads.acceptance import AcceptanceConfig, run_acceptance
+from livespec_orchestrator_beads_fabro.acceptance import AcceptanceConfig, run_acceptance
 
 
 def _fixture_spec_root(*, fixture_name: str) -> Path:

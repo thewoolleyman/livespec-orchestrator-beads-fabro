@@ -1,9 +1,9 @@
 # tests/
 
 The pytest suite. Mirrors `.claude-plugin/scripts/bin/` and
-`.claude-plugin/scripts/livespec_impl_beads/` one-to-one:
+`.claude-plugin/scripts/livespec_orchestrator_beads_fabro/` one-to-one:
 `tests/bin/` covers the shebang wrappers; `tests/
-livespec_impl_beads/` mirrors the package's directory shape
+livespec_orchestrator_beads_fabro/` mirrors the package's directory shape
 (top-level `test_<module>.py` for top-level package modules,
 subdirectories for subpackages).
 

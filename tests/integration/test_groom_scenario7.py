@@ -13,7 +13,7 @@ work-item" and the contracts.md §"Gap-detectable behavior clauses" clause:
     factory.
 
 This is the top-of-pyramid behavior journey for the groom front-end's
-mechanical seam (`livespec_impl_beads.commands.groom`): it drives
+mechanical seam (`livespec_orchestrator_beads_fabro.commands.groom`): it drives
 `load_groom_context` (read-only) and `file_approved_slices` (the
 approval-time commit) through the REAL store/client seam against the
 in-memory `FakeBeadsClient` — the same backend the hermetic CI tier and
@@ -28,26 +28,26 @@ surface.
 from __future__ import annotations
 
 import pytest
-from livespec_impl_beads._beads_client import (
+from livespec_orchestrator_beads_fabro._beads_client import (
     IssueDraft,
     make_beads_client,
     reset_fake_singleton,
 )
-from livespec_impl_beads.commands.groom import (
+from livespec_orchestrator_beads_fabro.commands.groom import (
     CandidateSlice,
     file_approved_slices,
     load_groom_context,
 )
-from livespec_impl_beads.errors import (
+from livespec_orchestrator_beads_fabro.errors import (
     GroomDraftError,
     GroomTargetNotRegroomError,
     RegroomExitRefusedError,
     WorkItemNotFoundError,
 )
-from livespec_impl_beads.intake_dor import READY_LABEL
-from livespec_impl_beads.regroom import NEEDS_REGROOM_LABEL, enter, is_needs_regroom
-from livespec_impl_beads.store import materialize_work_items, read_work_items
-from livespec_impl_beads.types import StoreConfig
+from livespec_orchestrator_beads_fabro.intake_dor import READY_LABEL
+from livespec_orchestrator_beads_fabro.regroom import NEEDS_REGROOM_LABEL, enter, is_needs_regroom
+from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
+from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 
 @pytest.fixture(autouse=True)

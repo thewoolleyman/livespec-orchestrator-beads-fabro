@@ -10,7 +10,7 @@ clauses" clause (work-item livespec-impl-beads-fh7cff, gap-hvqcpz2d):
     auto-enforce a threshold and MUST NOT run as an always-on service).
 
 This is the top-of-pyramid behavior journey for the shared
-`livespec_impl_beads.calibration_analysis` primitive. It drives the pass over
+`livespec_orchestrator_beads_fabro.calibration_analysis` primitive. It drives the pass over
 a REAL on-disk Dispatcher journal seeded with the SAME flat `calibration`-stage
 records behavior 6 (`commands/_dispatcher_calibration.calibration_journal_record`)
 writes — the seam the pass reads in production — and asserts the two
@@ -30,12 +30,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from livespec_impl_beads.calibration_analysis import (
+from livespec_orchestrator_beads_fabro.calibration_analysis import (
     CalibrationProposal,
     analyze_calibration,
     load_calibration_records,
 )
-from livespec_impl_beads.commands._dispatcher_calibration import (
+from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
     CalibrationRecord,
     calibration_journal_record,
 )

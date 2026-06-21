@@ -27,7 +27,7 @@ disposition` per livespec/SPECIFICATION/contracts.md
 If `<work-item-id>` was supplied, load it from the JSONL store:
 
 ```python
-from livespec_impl_beads.store import materialize_work_items, read_work_items
+from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 from pathlib import Path
 
 ix = materialize_work_items(read_work_items(path=Path("work-items.jsonl")))
@@ -97,8 +97,8 @@ Append a new JSONL record with `status: closed`. The exact shape
 branches on the resolution choice:
 
 ```python
-from livespec_impl_beads.store import append_work_item
-from livespec_impl_beads.types import AuditRecord, WorkItem
+from livespec_orchestrator_beads_fabro.store import append_work_item
+from livespec_orchestrator_beads_fabro.types import AuditRecord, WorkItem
 from datetime import datetime, timezone
 from pathlib import Path
 

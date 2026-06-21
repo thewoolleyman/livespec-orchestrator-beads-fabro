@@ -199,7 +199,7 @@
         "scenario": "Scenario 7 — Regroom an oversized work-item"
       }
     ],
-    "reason": "Integration-tier acceptance for the groom regroom front-end's mechanical seam (livespec_impl_beads.commands.groom): the Scenario-7 journey (draft read-only via load_groom_context -> on approval file_approved_slices files the ready factory slices with dependency edges linked, routes the spec-change slice to /livespec:propose-change, and regrooms the original out via regroom.exit_regroom) is exercised through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id is the end-to-end approval journey; read-only-until-approval, the dependency-edge linkage, the all-spec-change refuse-don't-drop guarantee, and the non-regroom-target / unknown-id expected errors are sibling tests in the same module."
+    "reason": "Integration-tier acceptance for the groom regroom front-end's mechanical seam (livespec_orchestrator_beads_fabro.commands.groom): the Scenario-7 journey (draft read-only via load_groom_context -> on approval file_approved_slices files the ready factory slices with dependency edges linked, routes the spec-change slice to /livespec:propose-change, and regrooms the original out via regroom.exit_regroom) is exercised through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id is the end-to-end approval journey; read-only-until-approval, the dependency-edge linkage, the all-spec-change refuse-don't-drop guarantee, and the non-regroom-target / unknown-id expected errors are sibling tests in the same module."
   },
   {
     "heading": "## Scenario 8 — Intake Definition-of-Ready triage",
@@ -212,7 +212,7 @@
         "scenario": "Scenario 8 — Intake Definition-of-Ready triage"
       }
     ],
-    "reason": "Integration-tier acceptance for the shared intake Definition-of-Ready checklist (livespec_impl_beads.intake_dor) that all three capture front-ends call: the three Scenario-8 cases (single-acceptance->ready, epic->needs-regroom, non-verifiable-or-blocked->not-yet-actionable) are exercised through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id is the single-acceptance->ready journey; the epic->needs-regroom and non-verifiable/blocked->not-yet-actionable cases are sibling tests in the same module, with the per-gate precedence pinned by evaluate()."
+    "reason": "Integration-tier acceptance for the shared intake Definition-of-Ready checklist (livespec_orchestrator_beads_fabro.intake_dor) that all three capture front-ends call: the three Scenario-8 cases (single-acceptance->ready, epic->needs-regroom, non-verifiable-or-blocked->not-yet-actionable) are exercised through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id is the single-acceptance->ready journey; the epic->needs-regroom and non-verifiable/blocked->not-yet-actionable cases are sibling tests in the same module, with the per-gate precedence pinned by evaluate()."
   },
   {
     "heading": "## Scenario 9 — needs-regroom state and transitions",
@@ -225,7 +225,7 @@
         "scenario": "Scenario 9 — needs-regroom state and transitions"
       }
     ],
-    "reason": "Integration-tier acceptance for the needs-regroom state machine (livespec_impl_beads.regroom): the three Scenario-9 transitions are exercised through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id is the exit-by-filing-ready-slices journey; the entry-via-DoR-failure and entry-via-non-convergence-bounce transitions are sibling tests in the same module."
+    "reason": "Integration-tier acceptance for the needs-regroom state machine (livespec_orchestrator_beads_fabro.regroom): the three Scenario-9 transitions are exercised through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id is the exit-by-filing-ready-slices journey; the entry-via-DoR-failure and entry-via-non-convergence-bounce transitions are sibling tests in the same module."
   },
   {
     "heading": "## Scenario 10 — Dispatcher refuses a human-gated item",
@@ -251,7 +251,7 @@
         "scenario": "Scenario 11 — Dispatcher bounces a non-converging slice to needs-regroom"
       }
     ],
-    "reason": "Integration-tier acceptance for the Dispatcher's non-convergence bounce (work-item livespec-impl-beads-n5kina, gap-rs4tkntz): the dispatch CLI is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend), and a non-convergence terminal is read back through the SAME livespec_impl_beads.regroom primitive — proving the slice is marked needs-regroom (escalate-don't-drop, never infinite-retried) and surfaced. The bound node id is the stalled-slice bounce journey; the DOT-marker bounce, the no-bounce-on-ordinary-failure/green cases, and the predicate cases are sibling tests in the same module."
+    "reason": "Integration-tier acceptance for the Dispatcher's non-convergence bounce (work-item livespec-impl-beads-n5kina, gap-rs4tkntz): the dispatch CLI is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend), and a non-convergence terminal is read back through the SAME livespec_orchestrator_beads_fabro.regroom primitive — proving the slice is marked needs-regroom (escalate-don't-drop, never infinite-retried) and surfaced. The bound node id is the stalled-slice bounce journey; the DOT-marker bounce, the no-bounce-on-ordinary-failure/green cases, and the predicate cases are sibling tests in the same module."
   },
   {
     "heading": "## Scenario 12 — Dispatcher emits calibration telemetry",
@@ -277,7 +277,7 @@
         "scenario": "Scenario 13 — Calibration analysis pass proposes advisory thresholds"
       }
     ],
-    "reason": "Integration-tier acceptance for the periodic calibration analysis pass (livespec_impl_beads.calibration_analysis): a real on-disk Dispatcher journal seeded with behavior 6's flat calibration-stage records is read back through the production seam and analyze_calibration proposes ceiling thresholds. The bound node id is the advisory-and-never-auto-enforced guardrail (the proposal flags advisory/not-adopted and mutates no journal state); the correlation-proposes-a-ceiling Then, the not-an-always-on-service Then, the decline-on-no-signal cases, and the no-false-zero proxy handling are sibling tests in the same module."
+    "reason": "Integration-tier acceptance for the periodic calibration analysis pass (livespec_orchestrator_beads_fabro.calibration_analysis): a real on-disk Dispatcher journal seeded with behavior 6's flat calibration-stage records is read back through the production seam and analyze_calibration proposes ceiling thresholds. The bound node id is the advisory-and-never-auto-enforced guardrail (the proposal flags advisory/not-adopted and mutates no journal state); the correlation-proposes-a-ceiling Then, the not-an-always-on-service Then, the decline-on-no-signal cases, and the no-false-zero proxy handling are sibling tests in the same module."
   },
   {
     "heading": "## Scenario 14 — Fabro non-convergence routes back to the Dispatcher",

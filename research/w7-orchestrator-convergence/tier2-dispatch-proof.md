@@ -39,7 +39,7 @@ the orchestrator container with host networking by default
 (`TIER2_USE_HOST_NETWORK=1`) so that loopback still reaches the host tenant.
 This is still Docker-in-Docker, not Docker-outside-of-Docker: the host Docker
 socket is not mounted, and the script verifies that absence before dispatch.
-The runner also maps `BEADS_DOLT_PASSWORD_livespec_impl_beads` into the generic
+The runner also maps `BEADS_DOLT_PASSWORD_livespec_orchestrator_beads_fabro` into the generic
 `BEADS_DOLT_PASSWORD` process variable consumed by `bd`, without printing the
 secret value.
 It also maps `LIVESPEC_FAMILY_GITHUB_TOKEN` into the conventional `GH_TOKEN`
@@ -97,7 +97,7 @@ from the 1Password wrapper:
 - `LIVESPEC_FAMILY_GITHUB_TOKEN`
 - `ANTHROPIC_API_KEY_LIVESPEC_E2E`
 - `CLAUDE_CODE_OAUTH_TOKEN`
-- `BEADS_DOLT_PASSWORD_livespec_impl_beads`
+- `BEADS_DOLT_PASSWORD_livespec_orchestrator_beads_fabro`
 - `HONEYCOMB_INGEST_KEY_LIVESPEC`
 
 It reports only presence and byte counts for secret variables. It does not

@@ -5,7 +5,7 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
 - `conftest.py` provides the `wrapper_runner` fixture: it
   `runpy.run_path()`'s a wrapper file with a `monkeypatch`-stubbed
   `_bootstrap` (so the runtime version check is a no-op) and a
-  stubbed `livespec_impl_beads.<module>.main` (so the wrapper's
+  stubbed `livespec_orchestrator_beads_fabro.<module>.main` (so the wrapper's
   plumbing is exercised without invoking the real command), then
   asserts the wrapper raises `SystemExit` with the expected exit
   code.
@@ -23,5 +23,5 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
 Rules: keep these tests purely structural — they assert the
 wrapper's no-logic supervisor shape and exit-code threading, never
 the real command behavior (that is covered under
-`tests/livespec_impl_beads/`). Do NOT import the real
+`tests/livespec_orchestrator_beads_fabro/`). Do NOT import the real
 `commands`/`migration` `main` into a wrapper test; always stub it.

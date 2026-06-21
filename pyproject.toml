@@ -173,7 +173,7 @@ include = [".claude-plugin/scripts", "dev-tooling"]
 exclude = ["**/_vendor/**", "**/__pycache__/**"]
 # The impl package lives under `.claude-plugin/scripts`; `extraPaths` lets the
 # in-repo `dev-tooling/checks/` enforcement scripts (which import the
-# `livespec_impl_beads` store/types to read merge-evidence) resolve it the same
+# `livespec_orchestrator_beads_fabro` store/types to read merge-evidence) resolve it the same
 # way the runtime `sys.path` bootstrap does.
 extraPaths = [".claude-plugin/scripts", ".claude-plugin/scripts/_vendor"]
 pythonVersion = "3.10.16"

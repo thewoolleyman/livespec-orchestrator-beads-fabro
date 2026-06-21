@@ -7,7 +7,7 @@ allowed-tools: Bash
 # list-work-items
 
 Thin-transport pass-through. All behavior lives in
-`.claude-plugin/scripts/livespec_impl_beads/commands/list_work_items.py`.
+`.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/list_work_items.py`.
 
 ## Invocation
 

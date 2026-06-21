@@ -16,7 +16,7 @@
 #   - the e2e-repo reaper (reap-e2e-repos.sh) — swept on ENTRY (stale repos)
 #     and invoked on EXIT (teardown of THIS run's repo);
 #   - the greeting assertion in
-#     `.claude-plugin/scripts/livespec_impl_beads/acceptance.py`
+#     `.claude-plugin/scripts/livespec_orchestrator_beads_fabro/acceptance.py`
 #     (`run_live_acceptance`), driven by the thin pytest binding in
 #     `acceptance/test_beads_fabro_live_golden_master.py`.
 #

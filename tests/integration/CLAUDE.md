@@ -1,6 +1,6 @@
 # tests/integration/
 
-Integration-tier behavior journeys for the `livespec_impl_beads` package —
+Integration-tier behavior journeys for the `livespec_orchestrator_beads_fabro` package —
 tests that exercise a primitive through its REAL store/client seam against the
 in-memory `FakeBeadsClient` (the hermetic CI backend and the
 no-live-connection runtime fallback), rather than mocking the function under
@@ -11,7 +11,7 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
 
 - `test_regroom_state_machine_scenario9.py` — binds
   `SPECIFICATION/scenarios.md` "Scenario 9 — needs-regroom state and
-  transitions": the three transitions of the `livespec_impl_beads.regroom`
+  transitions": the three transitions of the `livespec_orchestrator_beads_fabro.regroom`
   state machine (enter on an intake Definition-of-Ready failure, enter on a
   Dispatcher non-convergence bounce, exit by filing `ready` replacement
   slices), plus the refuse-don't-drop guarantee and the expected-error

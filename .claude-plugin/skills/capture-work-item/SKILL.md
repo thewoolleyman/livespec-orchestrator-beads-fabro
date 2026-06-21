@@ -13,7 +13,7 @@ rule. For spec-traceable items, use `capture-impl-gaps` instead.
 ## Pre-requisites
 
 - The work-items JSONL store path is reachable.
-- `livespec_impl_beads` package on import path.
+- `livespec_orchestrator_beads_fabro` package on import path.
 
 ## Flow
 
@@ -49,10 +49,10 @@ Optional follow-ups (skip-confirmable):
 Show the user the assembled record and ask "file?". On `yes`, append:
 
 ```python
-from livespec_impl_beads._ids import new_work_item_id
-from livespec_impl_beads.commands._config import resolve_store_config
-from livespec_impl_beads.store import append_work_item
-from livespec_impl_beads.types import WorkItem
+from livespec_orchestrator_beads_fabro._ids import new_work_item_id
+from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
+from livespec_orchestrator_beads_fabro.store import append_work_item
+from livespec_orchestrator_beads_fabro.types import WorkItem
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -89,7 +89,7 @@ checklist at capture and tag the filed item `ready`, `needs-regroom`,
 or `not-yet-actionable` (SPECIFICATION/scenarios.md "Scenario 8 —
 Intake Definition-of-Ready triage"; contracts.md §"Gap-detectable
 behavior clauses"). The gate logic is the ONE shared
-`livespec_impl_beads.intake_dor` primitive — never re-derive the gates
+`livespec_orchestrator_beads_fabro.intake_dor` primitive — never re-derive the gates
 in prose here.
 
 Resolve the six gates from the inputs you already gathered plus a short
@@ -110,7 +110,7 @@ answerable from Step 1):
 Then stamp the verdict on the just-filed item:
 
 ```python
-from livespec_impl_beads.intake_dor import (
+from livespec_orchestrator_beads_fabro.intake_dor import (
     DefinitionOfReadyChecklist,
     apply_intake_dor,
 )

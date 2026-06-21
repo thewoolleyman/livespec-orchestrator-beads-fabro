@@ -22,7 +22,7 @@ import os
 from pathlib import Path
 
 import pytest
-from livespec_impl_beads.acceptance import LiveAcceptanceConfig, run_live_acceptance
+from livespec_orchestrator_beads_fabro.acceptance import LiveAcceptanceConfig, run_live_acceptance
 
 _CHECKOUT_ENV = "LIVESPEC_LIVE_CHECKOUT"
 _NAME_ENV = "LIVESPEC_LIVE_NAME"

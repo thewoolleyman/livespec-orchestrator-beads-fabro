@@ -427,7 +427,7 @@ All paths are repo-relative to livespec-impl-beads at `origin/master`
 
 ### 2.1 The fabro factory loop (the dispatcher)
 
-`.claude-plugin/scripts/livespec_impl_beads/commands/dispatcher.py`
+`.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/dispatcher.py`
 (+ `_dispatcher_engine.py`, `_dispatcher_plan.py`, `_dispatcher_io.py`):
 
 - `loop --repo <path> --budget <n> [--parallel <k>] [--mode

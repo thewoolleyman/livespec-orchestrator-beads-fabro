@@ -24,21 +24,21 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
-from livespec_impl_beads._beads_client import reset_fake_singleton
-from livespec_impl_beads.commands import dispatcher
-from livespec_impl_beads.commands._dispatcher_engine import DispatchOutcome
-from livespec_impl_beads.commands._dispatcher_plan import (
+from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
+from livespec_orchestrator_beads_fabro.commands import dispatcher
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
     human_gated_surface_detail,
     is_human_gated_item,
 )
-from livespec_impl_beads.commands.dispatcher import main
-from livespec_impl_beads.store import (
+from livespec_orchestrator_beads_fabro.commands.dispatcher import main
+from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
     materialize_work_items,
     read_work_items,
 )
-from livespec_impl_beads.types import StoreConfig, WorkItem
+from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 _FLEET_MANIFEST_TEXT = (
     "// fleet-manifest.jsonc — canned test copy\n"
@@ -80,7 +80,7 @@ def _hermetic_dispatch_env(
     for _ntfy_env in ("CLAUDE_NTFY_DISPATCHER_TOPIC", "CLAUDE_NTFY_TOPIC", "CLAUDE_NTFY_SERVER"):
         monkeypatch.delenv(_ntfy_env, raising=False)
     monkeypatch.setattr(
-        "livespec_impl_beads.commands.dispatcher._fetch_fleet_manifest_text",
+        "livespec_orchestrator_beads_fabro.commands.dispatcher._fetch_fleet_manifest_text",
         lambda: _FLEET_MANIFEST_TEXT,
     )
     reset_fake_singleton()

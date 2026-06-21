@@ -66,9 +66,12 @@ if str(_DT_VENDOR) not in sys.path:
     sys.path.insert(0, str(_DT_VENDOR))
 
 import structlog  # noqa: E402
-from livespec_impl_beads.commands._config import resolve_store_config  # noqa: E402
-from livespec_impl_beads.store import materialize_work_items, read_work_items  # noqa: E402
-from livespec_impl_beads.types import WorkItem  # noqa: E402
+from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config  # noqa: E402
+from livespec_orchestrator_beads_fabro.store import (  # noqa: E402
+    materialize_work_items,
+    read_work_items,
+)
+from livespec_orchestrator_beads_fabro.types import WorkItem  # noqa: E402
 
 __all__: list[str] = ["main"]
 
