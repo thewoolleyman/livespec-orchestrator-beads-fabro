@@ -11,7 +11,7 @@
 #
 # WHAT IS CLONED FRESH IN-CONTAINER
 # ---------------------------------
-#   1. livespec-impl-beads ITSELF — the source of the Dispatcher code AND the
+#   1. livespec-orchestrator-beads-fabro ITSELF — the source of the Dispatcher code AND the
 #      `.fabro/workflows/implement-work-item/` phase graph. The Dispatcher
 #      resolves its package root via `__file__` (dispatcher.py climbs to the
 #      repo root, then reads `.fabro/workflows/...`), so it MUST run from a real
@@ -69,12 +69,12 @@ HOST_FABRO_BIN="${HOST_FABRO_BIN:-$HOME/.fabro/bin/fabro}"
 
 # GitHub org/repo coordinates for the two in-container fresh clones.
 DISPATCHER_ORG="${DISPATCHER_ORG:-thewoolleyman}"
-DISPATCHER_REPO="${DISPATCHER_REPO:-livespec-impl-beads}"
+DISPATCHER_REPO="${DISPATCHER_REPO:-livespec-orchestrator-beads-fabro}"
 TARGET_ORG="${TARGET_ORG:-thewoolleyman}"
 TARGET_REPO="${TARGET_REPO:-}"
 
 # In-container clone venues (under /workspace, NOT /tmp — coverage omit guard).
-DISPATCHER_CLONE="${DISPATCHER_CLONE:-/workspace/livespec-impl-beads}"
+DISPATCHER_CLONE="${DISPATCHER_CLONE:-/workspace/livespec-orchestrator-beads-fabro}"
 TARGET_CLONE="${TARGET_CLONE:-/workspace/dispatch-target}"
 
 TIER2_USE_HOST_NETWORK="${TIER2_USE_HOST_NETWORK:-1}"

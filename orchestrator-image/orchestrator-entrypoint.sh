@@ -176,7 +176,7 @@ main() {
   fi
   log "no command passed; dropping to an interactive shell."
   log "  run the dispatcher with, e.g.:"
-  log "  python3 /workspace/livespec-impl-beads/.claude-plugin/scripts/bin/dispatcher.py loop --repo /workspace/livespec-impl-beads --budget 1 --mode shadow --item <id>"
+  log "  python3 /workspace/livespec-orchestrator-beads-fabro/.claude-plugin/scripts/bin/dispatcher.py loop --repo /workspace/livespec-orchestrator-beads-fabro --budget 1 --mode shadow --item <id>"
   exec bash
 }
 
