@@ -1,6 +1,6 @@
 ---
 name: capture-work-item
-description: Freeform direct filing of an impl-side work item (bugs, refactors, tactical tasks). Required heavyweight authored skill per livespec/SPECIFICATION/contracts.md §"Heavyweight authored skills (6)". Filed records carry `origin: freeform` and `gap_id: null`. Invoke as `/livespec-impl-beads:capture-work-item`.
+description: Freeform direct filing of an impl-side work item (bugs, refactors, tactical tasks). Required heavyweight authored skill per livespec/SPECIFICATION/contracts.md §"Heavyweight authored skills (6)". Filed records carry `origin: freeform` and `gap_id: null`. Invoke as `/livespec-orchestrator-beads-fabro:capture-work-item`.
 allowed-tools: Bash, Read, Grep, Write
 ---
 

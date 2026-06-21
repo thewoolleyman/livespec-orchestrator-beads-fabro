@@ -1,6 +1,6 @@
 ---
 name: detect-impl-gaps
-description: Detect spec→impl gaps mechanically via the Spec Reader and emit the current gap-id set as JSON. Required thin-transport surface per livespec/SPECIFICATION/contracts.md §"Thin-transport skills (4) — required machine query surface". Pure read-and-emit pass-through — never mutates the work-items store, never prompts the user. Invoke as `/livespec-impl-beads:detect-impl-gaps [--spec-target <path>] [--project-root <path>] [--json] [--since-version <vN>]`.
+description: Detect spec→impl gaps mechanically via the Spec Reader and emit the current gap-id set as JSON. Required thin-transport surface per livespec/SPECIFICATION/contracts.md §"Thin-transport skills (4) — required machine query surface". Pure read-and-emit pass-through — never mutates the work-items store, never prompts the user. Invoke as `/livespec-orchestrator-beads-fabro:detect-impl-gaps [--spec-target <path>] [--project-root <path>] [--json] [--since-version <vN>]`.
 allowed-tools: Bash
 ---
 

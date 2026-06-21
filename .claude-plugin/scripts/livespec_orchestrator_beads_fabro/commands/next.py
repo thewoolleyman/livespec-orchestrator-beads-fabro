@@ -1,4 +1,4 @@
-"""`/livespec-impl-beads:next` thin-transport ranker.
+"""`/livespec-orchestrator-beads-fabro:next` thin-transport ranker.
 
 CLI surface per `SPECIFICATION/contracts.md` v005 §"next":
 

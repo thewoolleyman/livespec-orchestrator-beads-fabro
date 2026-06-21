@@ -1,4 +1,4 @@
-"""CLI end-to-end harness wiring for livespec-impl-beads (mock tier).
+"""CLI end-to-end harness wiring for livespec-orchestrator-beads-fabro (mock tier).
 
 Per `livespec/SPECIFICATION/contracts.md` §"CLI end-to-end harness contract"
 (requirement 6 — single canonical implementation in `livespec-dev-tooling`;
@@ -18,7 +18,7 @@ The `real` tier (`LIVESPEC_E2E_HARNESS=real`) shells out to the actual
 `claude` binary, requires `ANTHROPIC_API_KEY`, installs the upstream
 `livespec` plugin paired in lockstep, and is NOT part of `just check`.
 
-The plugin slash-command prefix (`livespec-impl-beads`) and the skill set
+The plugin slash-command prefix (`livespec-orchestrator-beads-fabro`) and the skill set
 are discovered structurally from `<plugin>/plugin.json` `name` + the
 `skills/*/SKILL.md` layout — there is no parallel manifest (contract
 requirement 3). Every discovered skill MUST carry a fixture or the coverage
@@ -109,11 +109,11 @@ def _expected_by_prompt(*, fixtures: dict[str, FixturedSkill]) -> dict[str, tupl
 
 def _config() -> HarnessConfig:
     return HarnessConfig(
-        impl_plugin_id="livespec-impl-beads",
-        marketplace="thewoolleyman/livespec-impl-beads",
+        impl_plugin_id="livespec-orchestrator-beads-fabro",
+        marketplace="thewoolleyman/livespec-orchestrator-beads-fabro",
         enabled_plugins=(
             "livespec@livespec",
-            "livespec-impl-beads@livespec-impl-beads",
+            "livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro",
         ),
         plugin_install_dirs=(_PLUGIN_DIR,),
         fixtures_root=_FIXTURES_ROOT,
@@ -125,7 +125,7 @@ def test_cli_e2e_round_trip_against_impl_beads(*, tmp_path: Path) -> None:
     """Drive the imported harness against this plugin's own fixtures (mock tier).
 
     Asserts the full discovery → coverage-gate → per-skill orchestration loop
-    passes: every `/livespec-impl-beads:*` skill discovered structurally
+    passes: every `/livespec-orchestrator-beads-fabro:*` skill discovered structurally
     from `.claude-plugin/` carries a fixture under `tests/e2e-cli/fixtures/`,
     and each skill's mock round-trip materializes its declared expected files
     and exits 0. `run_full_round_trip` raises `CoverageGateError` (fail-closed)

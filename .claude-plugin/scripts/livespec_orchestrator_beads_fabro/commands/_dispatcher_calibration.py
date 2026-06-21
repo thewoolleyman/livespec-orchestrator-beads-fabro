@@ -1,6 +1,6 @@
 """Pure builder for the Dispatcher's per-dispatch calibration telemetry.
 
-Per livespec-impl-beads SPECIFICATION/contracts.md §"Grooming and
+Per livespec-orchestrator-beads-fabro SPECIFICATION/contracts.md §"Grooming and
 slice-size calibration" → §"Dispatcher grooming behavior" and
 §"Calibration telemetry and the single Fabro tweak", the Dispatcher MUST
 emit calibration telemetry — an outcome SIGNAL plus mechanical SIZE

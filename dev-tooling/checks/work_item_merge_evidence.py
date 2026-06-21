@@ -79,7 +79,7 @@ _NEGATIVE_EVIDENCE_RESOLUTIONS = frozenset({"wontfix", "duplicate", "no-longer-a
 
 _DEFAULT_CANONICAL_BRANCH = "master"
 _LIVESPEC_CONFIG = ".livespec.jsonc"
-_PLUGIN_BLOCK = "livespec-impl-beads"
+_PLUGIN_BLOCK = "livespec-orchestrator-beads-fabro"
 _CANONICAL_BRANCH_KEY = "canonical_branch"
 
 

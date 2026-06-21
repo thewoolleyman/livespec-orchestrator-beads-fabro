@@ -97,7 +97,7 @@ def _factory_slice(*, title: str, depends_on: tuple[str, ...] = ()) -> Candidate
         description=f"{title} body",
         acceptance="just check + the named scenario pass",
         autonomy_tier="factory",
-        repo_target="livespec-impl-beads",
+        repo_target="livespec-orchestrator-beads-fabro",
         depends_on=depends_on,
     )
 

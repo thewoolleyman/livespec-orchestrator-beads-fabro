@@ -1,4 +1,4 @@
-"""Thin-transport command entry points for livespec-impl-beads.
+"""Thin-transport command entry points for livespec-orchestrator-beads-fabro.
 
 Each public-facing slash command (`list-work-items`, `next`)
 has a Python module here with a `main()` function returning an integer

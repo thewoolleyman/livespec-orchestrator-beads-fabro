@@ -1,4 +1,4 @@
-# Per-target matrix CI for livespec-impl-beads.
+# Per-target matrix CI for livespec-orchestrator-beads-fabro.
 #
 # Generated from livespec/templates/impl-plugin/.github/workflows/
 # ci.yml.jinja at copier-copy time; re-sync via `copier update --vcs-ref=master` when
@@ -17,7 +17,7 @@
 #
 # Starter scaffold: the Python-code matrix carries only the tool-
 # backed checks (lint, format, types, coverage). The metadata matrix
-# is empty. As livespec-impl-beads populates dev-tooling/checks/
+# is empty. As livespec-orchestrator-beads-fabro populates dev-tooling/checks/
 # scripts, add the corresponding `check-<slug>` targets to the
 # appropriate matrix and to branch protection's required-status-
 # checks list.
@@ -228,7 +228,7 @@ jobs:
   # `claude -p` subprocess; real install-shape setup, real structural
   # skill discovery, the real fail-closed time-bomb coverage gate, and
   # the real per-skill orchestration loop all run). The coverage gate is
-  # fail-closed: a `/livespec-impl-beads:*` skill added without a
+  # fail-closed: a `/livespec-orchestrator-beads-fabro:*` skill added without a
   # `tests/e2e-cli/fixtures/<skill>/` directory raises CoverageGateError
   # and fails this job. The `real` tier (driving the actual `claude`
   # binary against the upstream livespec plugin paired in lockstep)

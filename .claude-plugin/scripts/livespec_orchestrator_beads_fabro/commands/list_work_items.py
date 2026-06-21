@@ -1,4 +1,4 @@
-"""`/livespec-impl-beads:list-work-items` thin-transport command.
+"""`/livespec-orchestrator-beads-fabro:list-work-items` thin-transport command.
 
 CLI surface per SPECIFICATION/contracts.md §"list-work-items":
 

@@ -53,7 +53,7 @@ single boolean — `StoreConfig.fake`:
   descriptor.
 
 `StoreConfig.fake` is resolved by `commands/_config.py` from the
-`.livespec.jsonc` `livespec-impl-beads.connection` block, OVERLAID by
+`.livespec.jsonc` `livespec-orchestrator-beads-fabro.connection` block, OVERLAID by
 the `LIVESPEC_BEADS_FAKE` environment variable (truthy `1`/`true`/`yes`/
 `on` forces the fake). The bd binary path comes from the block's
 `bd_path`, overridden by `LIVESPEC_BD_PATH`. The default CI tier and the

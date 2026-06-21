@@ -1,4 +1,4 @@
-# livespec-impl-beads
+# livespec-orchestrator-beads-fabro
 
 The **beads/Dolt-backed implementation plugin** for
 [livespec](https://github.com/thewoolleyman/livespec), and the livespec
@@ -6,7 +6,7 @@ family's current work-items backend. It is one realization of the
 abstract implementation-plugin contract livespec publishes in its
 `SPECIFICATION/contracts.md` §"Implementation-plugin contract — the
 10-skill surface": a Claude Code plugin exposing the
-`/livespec-impl-beads:*` skill surface that captures, ranks, and drives
+`/livespec-orchestrator-beads-fabro:*` skill surface that captures, ranks, and drives
 impl-side work, with work-items stored as rows in a per-repo
 beads tenant on a shared Dolt `sql-server`. The repo dogfoods livespec:
 its own spec lives at `SPECIFICATION/` and evolves through the
@@ -32,12 +32,12 @@ with livespec core and the Claude Code Driver, so install all three:
 /plugin install livespec@livespec
 /plugin marketplace add thewoolleyman/livespec-driver-claude
 /plugin install livespec@livespec-driver-claude
-/plugin marketplace add thewoolleyman/livespec-impl-beads
-/plugin install livespec-impl-beads@livespec-impl-beads
+/plugin marketplace add thewoolleyman/livespec-orchestrator-beads-fabro
+/plugin install livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro
 ```
 
 After install, restart Claude Code (or run `/reload-plugins`). The
-skills below become available with the `livespec-impl-beads:` namespace
+skills below become available with the `livespec-orchestrator-beads-fabro:` namespace
 prefix.
 
 The beads backend also needs host-level runtime that the plugin install
@@ -53,19 +53,19 @@ The plugin ships seven skills — four heavyweight authored skills and
 three thin-transport machine-query surfaces, per livespec's
 `SPECIFICATION/contracts.md`:
 
-- `/livespec-impl-beads:capture-impl-gaps` — detect spec→impl gaps and
+- `/livespec-orchestrator-beads-fabro:capture-impl-gaps` — detect spec→impl gaps and
   file gap-tied work-items with per-gap consent
-- `/livespec-impl-beads:capture-spec-drift` — detect impl→spec drift and
+- `/livespec-orchestrator-beads-fabro:capture-spec-drift` — detect impl→spec drift and
   hand each finding to `/livespec:propose-change`
-- `/livespec-impl-beads:capture-work-item` — freeform direct filing of an
+- `/livespec-orchestrator-beads-fabro:capture-work-item` — freeform direct filing of an
   impl-side work item (`origin: freeform`, `gap_id: null`)
-- `/livespec-impl-beads:implement` — drive Red→Green for a single
+- `/livespec-orchestrator-beads-fabro:implement` — drive Red→Green for a single
   work-item; verify gap-tied closure by re-running gap detection
-- `/livespec-impl-beads:detect-impl-gaps` — emit the current gap-id set
+- `/livespec-orchestrator-beads-fabro:detect-impl-gaps` — emit the current gap-id set
   as JSON (pure read-and-emit; never mutates, never prompts)
-- `/livespec-impl-beads:list-work-items` — list work-items from the
+- `/livespec-orchestrator-beads-fabro:list-work-items` — list work-items from the
   beads store
-- `/livespec-impl-beads:next` — rank the most-ripe impl-side action (pure
+- `/livespec-orchestrator-beads-fabro:next` — rank the most-ripe impl-side action (pure
   function of store state; no LLM in the ranking path)
 
 Each skill resolves livespec core's prose and config-named CLIs at

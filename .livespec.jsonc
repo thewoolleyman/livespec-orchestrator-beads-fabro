@@ -1,4 +1,4 @@
-// Project-local livespec configuration for livespec-impl-beads.
+// Project-local livespec configuration for livespec-orchestrator-beads-fabro.
 // This plugin dogfoods livespec: the SPECIFICATION/ tree at the repo
 // root is the live spec; this plugin's own impl tracking lives in a
 // per-repo beads TENANT DATABASE on the shared dolt-server (NOT in JSONL
@@ -13,8 +13,8 @@
 {
   "template": "livespec",
   "spec_root": "SPECIFICATION",
-  "implementation": { "plugin": "livespec-impl-beads" },
-  "livespec-impl-beads": {
+  "implementation": { "plugin": "livespec-orchestrator-beads-fabro" },
+  "livespec-orchestrator-beads-fabro": {
     // Substrate marker. The plaintext sibling declares "jsonl"; this
     // plugin's substrate is a beads/Dolt tenant DB.
     "format": "beads",
@@ -59,7 +59,7 @@
   // with subcommands). Paths are project-root-relative; callability is
   // verified by the `config-named-cli-callability` doctor invariant.
   "orchestrator": {
-    "name": "livespec-impl-beads",
+    "name": "livespec-orchestrator-beads-fabro",
     "spec_reader": ["python3", ".claude-plugin/scripts/bin/orchestrator.py", "spec-reader"],
     "gap_capture": ["python3", ".claude-plugin/scripts/bin/orchestrator.py", "gap-capture"],
     "drift_capture": ["python3", ".claude-plugin/scripts/bin/orchestrator.py", "drift-capture"]

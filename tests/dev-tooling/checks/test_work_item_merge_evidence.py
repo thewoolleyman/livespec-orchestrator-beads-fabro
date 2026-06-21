@@ -345,7 +345,7 @@ def test_resolve_canonical_branch_default_when_no_config(tmp_path: Path) -> None
 
 def test_resolve_canonical_branch_from_config(tmp_path: Path) -> None:
     _ = (tmp_path / ".livespec.jsonc").write_text(
-        '{"livespec-impl-beads": {"canonical_branch": "main"}}',
+        '{"livespec-orchestrator-beads-fabro": {"canonical_branch": "main"}}',
         encoding="utf-8",
     )
     assert _CHECK._resolve_canonical_branch(cwd=tmp_path) == "main"  # noqa: SLF001
@@ -363,14 +363,14 @@ def test_resolve_canonical_branch_non_object_root_defaults(tmp_path: Path) -> No
 
 def test_resolve_canonical_branch_non_dict_block_defaults(tmp_path: Path) -> None:
     _ = (tmp_path / ".livespec.jsonc").write_text(
-        '{"livespec-impl-beads": "scalar"}', encoding="utf-8"
+        '{"livespec-orchestrator-beads-fabro": "scalar"}', encoding="utf-8"
     )
     assert _CHECK._resolve_canonical_branch(cwd=tmp_path) == "master"  # noqa: SLF001
 
 
 def test_resolve_canonical_branch_empty_value_defaults(tmp_path: Path) -> None:
     _ = (tmp_path / ".livespec.jsonc").write_text(
-        '{"livespec-impl-beads": {"canonical_branch": ""}}', encoding="utf-8"
+        '{"livespec-orchestrator-beads-fabro": {"canonical_branch": ""}}', encoding="utf-8"
     )
     assert _CHECK._resolve_canonical_branch(cwd=tmp_path) == "master"  # noqa: SLF001
 
