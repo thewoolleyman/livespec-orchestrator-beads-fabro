@@ -44,10 +44,10 @@
     // committed config describes the real connection; CI and tests set
     // LIVESPEC_BEADS_FAKE=1 to force the fake.
     "connection": {
-      "tenant": "livespec-impl-beads",
-      "prefix": "livespec-impl-beads",
-      "database": "livespec-impl-beads",
-      "server_user": "livespec-impl-beads",
+      "tenant": "livespec-orch-beads-fabro",
+      "prefix": "livespec-orch-beads-fabro",
+      "database": "livespec-orch-beads-fabro",
+      "server_user": "livespec-orch-beads-fabro",
       "server_host": "127.0.0.1",
       "server_port": 3307,
       "fake": false
