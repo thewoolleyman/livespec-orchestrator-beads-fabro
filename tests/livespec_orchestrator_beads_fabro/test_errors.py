@@ -75,9 +75,9 @@ def test_beads_command_error_message_and_attrs() -> None:
 
 
 def test_beads_tenant_missing_error_message_and_attrs() -> None:
-    err = BeadsTenantMissingError(tenant="livespec-impl-beads")
-    assert err.tenant == "livespec-impl-beads"
-    assert str(err) == "beads tenant database not found: livespec-impl-beads"
+    err = BeadsTenantMissingError(tenant="livespec-orch-beads-fabro")
+    assert err.tenant == "livespec-orch-beads-fabro"
+    assert str(err) == "beads tenant database not found: livespec-orch-beads-fabro"
 
 
 def test_beads_mapping_error_message_and_attrs() -> None:

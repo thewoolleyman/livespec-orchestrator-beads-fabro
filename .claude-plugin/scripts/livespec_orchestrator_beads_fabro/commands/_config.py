@@ -48,7 +48,7 @@ _CONNECTION_KEY = "connection"
 _DEFAULT_SERVER_HOST = "127.0.0.1"
 _DEFAULT_SERVER_PORT = 3307
 _DEFAULT_BD_PATH = "bd"
-_DEFAULT_TENANT = "livespec-impl-beads"
+_DEFAULT_TENANT = "livespec-orch-beads-fabro"
 
 _ENV_BD_PATH = "LIVESPEC_BD_PATH"
 _ENV_FAKE = "LIVESPEC_BEADS_FAKE"

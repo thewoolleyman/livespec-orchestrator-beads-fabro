@@ -33,10 +33,10 @@ def test_resolve_uses_defaults_when_no_config_file(
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     monkeypatch.delenv("LIVESPEC_BD_PATH", raising=False)
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
-    assert config.tenant == "livespec-impl-beads"
-    assert config.prefix == "livespec-impl-beads"
-    assert config.database == "livespec-impl-beads"
-    assert config.server_user == "livespec-impl-beads"
+    assert config.tenant == "livespec-orch-beads-fabro"
+    assert config.prefix == "livespec-orch-beads-fabro"
+    assert config.database == "livespec-orch-beads-fabro"
+    assert config.server_user == "livespec-orch-beads-fabro"
     assert config.server_host == "127.0.0.1"
     assert config.server_port == 3307
     assert config.socket is None
@@ -210,7 +210,7 @@ def test_malformed_jsonc_falls_back_to_defaults(
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(cwd=tmp_path, body="{ this is not valid json ")
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
-    assert config.tenant == "livespec-impl-beads"
+    assert config.tenant == "livespec-orch-beads-fabro"
 
 
 def test_non_object_root_falls_back_to_defaults(
@@ -220,7 +220,7 @@ def test_non_object_root_falls_back_to_defaults(
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(cwd=tmp_path, body="[1, 2, 3]")
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
-    assert config.tenant == "livespec-impl-beads"
+    assert config.tenant == "livespec-orch-beads-fabro"
 
 
 def test_non_dict_plugin_block_falls_back_to_defaults(
@@ -230,7 +230,7 @@ def test_non_dict_plugin_block_falls_back_to_defaults(
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(cwd=tmp_path, body='{"livespec-orchestrator-beads-fabro": "scalar"}')
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
-    assert config.tenant == "livespec-impl-beads"
+    assert config.tenant == "livespec-orch-beads-fabro"
 
 
 def test_non_dict_connection_block_falls_back_to_defaults(
@@ -240,7 +240,7 @@ def test_non_dict_connection_block_falls_back_to_defaults(
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(cwd=tmp_path, body='{"livespec-orchestrator-beads-fabro": {"connection": 7}}')
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
-    assert config.tenant == "livespec-impl-beads"
+    assert config.tenant == "livespec-orch-beads-fabro"
 
 
 def test_path_args_are_accepted_and_ignored(
@@ -253,7 +253,7 @@ def test_path_args_are_accepted_and_ignored(
         cwd=tmp_path,
         work_items_arg="custom/work.jsonl",
     )
-    assert config.tenant == "livespec-impl-beads"
+    assert config.tenant == "livespec-orch-beads-fabro"
 
 
 def test_no_password_field_on_descriptor() -> None:
