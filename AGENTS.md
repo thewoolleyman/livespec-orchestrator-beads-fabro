@@ -10,15 +10,15 @@ stopping points.
 1. Confirm the primary checkout before editing:
 
    ```bash
-   git -C /data/projects/livespec-impl-beads config --get livespec.primaryPath
-   git -C /data/projects/livespec-impl-beads status --short --branch
+   git -C /data/projects/livespec-orchestrator-beads-fabro config --get livespec.primaryPath
+   git -C /data/projects/livespec-orchestrator-beads-fabro status --short --branch
    ```
 
 2. If the change will modify tracked files, create a dedicated worktree
    from the primary checkout's `master` and do all edits there:
 
    ```bash
-   mise exec -- git -C /data/projects/livespec-impl-beads worktree add -b <branch> /data/projects/<worktree> master
+   mise exec -- git -C /data/projects/livespec-orchestrator-beads-fabro worktree add -b <branch> /data/projects/<worktree> master
    ```
 
 3. Use `mise exec -- git commit ...` and `mise exec -- git push ...` so
@@ -27,7 +27,7 @@ stopping points.
    failure.
 4. Open a PR, wait for required checks, and merge through the PR using
    the repo's rebase-merge discipline.
-5. After merge, refresh `/data/projects/livespec-impl-beads` to
+5. After merge, refresh `/data/projects/livespec-orchestrator-beads-fabro` to
    `origin/master`, remove the feature worktree, delete the local
    branch, and verify the primary checkout is clean on `master`.
 

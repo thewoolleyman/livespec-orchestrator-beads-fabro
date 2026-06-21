@@ -71,7 +71,7 @@ def _record(
         spec_surface_touched=False,
         dispatch_context_size=dispatch_context_size,
         archetype="task",
-        repo="livespec-impl-beads",
+        repo="livespec-orchestrator-beads-fabro",
     )
 
 

@@ -1,4 +1,4 @@
-# lefthook.yml — livespec-impl-beads git hook configuration.
+# lefthook.yml — livespec-orchestrator-beads-fabro git hook configuration.
 #
 # Generated from livespec/templates/impl-plugin/lefthook.yml.jinja
 # at copier-copy time; re-sync via `copier update --vcs-ref=master` when livespec

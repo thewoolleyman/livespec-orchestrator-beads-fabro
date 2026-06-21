@@ -1216,7 +1216,7 @@ def _emit_calibration(  # noqa: PLR0913 — kw-only fail-open stage; each field 
 ) -> None:
     """Journal this dispatch's calibration telemetry on the existing journal (yfsv4j).
 
-    Per livespec-impl-beads SPECIFICATION/contracts.md §"Dispatcher
+    Per livespec-orchestrator-beads-fabro SPECIFICATION/contracts.md §"Dispatcher
     grooming behavior" / §"Calibration telemetry and the single Fabro
     tweak", the Dispatcher MUST emit calibration telemetry — an outcome
     signal plus mechanical size proxies — recorded on the EXISTING journal

@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Drive Red→Green for a single work-item. For gap-tied items, verify closure by re-running capture-impl-gaps in dry-run mode. Required heavyweight authored skill per livespec/SPECIFICATION/contracts.md §"Heavyweight authored skills (6)". Invoke as `/livespec-impl-beads:implement [<work-item-id>]`.
+description: Drive Red→Green for a single work-item. For gap-tied items, verify closure by re-running capture-impl-gaps in dry-run mode. Required heavyweight authored skill per livespec/SPECIFICATION/contracts.md §"Heavyweight authored skills (6)". Invoke as `/livespec-orchestrator-beads-fabro:implement [<work-item-id>]`.
 allowed-tools: Bash, Read, Grep, Glob, Edit, Write
 ---
 
@@ -34,7 +34,7 @@ ix = materialize_work_items(read_work_items(path=Path("work-items.jsonl")))
 target = ix[work_item_id]
 ```
 
-If no id was supplied, invoke `/livespec-impl-beads:next --json`,
+If no id was supplied, invoke `/livespec-orchestrator-beads-fabro:next --json`,
 parse the `work_item_ref`, and confirm with the user before
 proceeding.
 

@@ -11,10 +11,10 @@ _src_path: gh:thewoolleyman/livespec
 author_email: thewoolleyman@gmail.com
 author_name: Chad Woolley
 github_owner: thewoolleyman
-github_repo: livespec-impl-beads
+github_repo: livespec-orchestrator-beads-fabro
 livespec_release_tag: master
 plugin_description: Beads/Dolt-backed implementation plugin for livespec
-plugin_full_name: livespec-impl-beads
-plugin_namespace: livespec-impl-beads
+plugin_full_name: livespec-orchestrator-beads-fabro
+plugin_namespace: livespec-orchestrator-beads-fabro
 plugin_short_name: beads
 python_version: 3.10.16

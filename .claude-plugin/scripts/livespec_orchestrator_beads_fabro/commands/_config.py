@@ -10,7 +10,7 @@ Resolution order (later wins):
 1. Built-in defaults (`server_host=127.0.0.1`, `server_port=3307`,
    `fake=False`).
 2. The `.livespec.jsonc` connection block at `<cwd>/.livespec.jsonc`
-   under `livespec-impl-beads.connection` (and the substrate `format`
+   under `livespec-orchestrator-beads-fabro.connection` (and the substrate `format`
    marker / `tenant` key). A missing file or block falls back to
    defaults plus a placeholder tenant.
 3. Environment overlay:
@@ -42,7 +42,7 @@ from livespec_orchestrator_beads_fabro.commands import _jsonc
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 _LIVESPEC_CONFIG = ".livespec.jsonc"
-_PLUGIN_BLOCK = "livespec-impl-beads"
+_PLUGIN_BLOCK = "livespec-orchestrator-beads-fabro"
 _CONNECTION_KEY = "connection"
 
 _DEFAULT_SERVER_HOST = "127.0.0.1"
@@ -92,7 +92,7 @@ def resolve_store_config(
 
 
 def _read_connection_block(*, cwd: Path) -> dict[str, Any]:
-    """Read the `livespec-impl-beads.connection` block, or {} when absent."""
+    """Read the `livespec-orchestrator-beads-fabro.connection` block, or {} when absent."""
     config_path = cwd / _LIVESPEC_CONFIG
     if not config_path.is_file():
         return {}

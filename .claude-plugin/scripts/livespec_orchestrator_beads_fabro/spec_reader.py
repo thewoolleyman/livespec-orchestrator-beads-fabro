@@ -1,4 +1,4 @@
-"""Spec Reader adapter for livespec-impl-beads.
+"""Spec Reader adapter for livespec-orchestrator-beads-fabro.
 
 Implements the four required capabilities defined in
 livespec/SPECIFICATION/contracts.md §"Spec Reader required-capability

@@ -61,7 +61,7 @@ def test_resolve_reads_connection_block(
         cwd=tmp_path,
         body="""
         {
-          "livespec-impl-beads": {
+          "livespec-orchestrator-beads-fabro": {
             "connection": {
               "tenant": "my-tenant",
               "prefix": "my-prefix",
@@ -97,7 +97,7 @@ def test_prefix_database_user_default_to_tenant(
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(
         cwd=tmp_path,
-        body='{"livespec-impl-beads": {"connection": {"tenant": "solo"}}}',
+        body='{"livespec-orchestrator-beads-fabro": {"connection": {"tenant": "solo"}}}',
     )
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.prefix == "solo"
@@ -112,7 +112,7 @@ def test_env_bd_path_overrides_block(
     monkeypatch.setenv("LIVESPEC_BD_PATH", "/managed/bd")
     _write_config(
         cwd=tmp_path,
-        body='{"livespec-impl-beads": {"connection": {"bd_path": "/block/bd"}}}',
+        body='{"livespec-orchestrator-beads-fabro": {"connection": {"bd_path": "/block/bd"}}}',
     )
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.bd_path == "/managed/bd"
@@ -125,7 +125,7 @@ def test_empty_env_bd_path_falls_through_to_block(
     monkeypatch.setenv("LIVESPEC_BD_PATH", "")
     _write_config(
         cwd=tmp_path,
-        body='{"livespec-impl-beads": {"connection": {"bd_path": "/block/bd"}}}',
+        body='{"livespec-orchestrator-beads-fabro": {"connection": {"bd_path": "/block/bd"}}}',
     )
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.bd_path == "/block/bd"
@@ -158,7 +158,7 @@ def test_block_fake_used_when_env_unset(
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(
         cwd=tmp_path,
-        body='{"livespec-impl-beads": {"connection": {"fake": true}}}',
+        body='{"livespec-orchestrator-beads-fabro": {"connection": {"fake": true}}}',
     )
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.fake is True
@@ -171,7 +171,7 @@ def test_block_non_bool_fake_falls_back_to_false(
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(
         cwd=tmp_path,
-        body='{"livespec-impl-beads": {"connection": {"fake": "yes"}}}',
+        body='{"livespec-orchestrator-beads-fabro": {"connection": {"fake": "yes"}}}',
     )
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.fake is False
@@ -184,7 +184,7 @@ def test_non_int_server_port_falls_back_to_default(
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(
         cwd=tmp_path,
-        body='{"livespec-impl-beads": {"connection": {"server_port": "nope"}}}',
+        body='{"livespec-orchestrator-beads-fabro": {"connection": {"server_port": "nope"}}}',
     )
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.server_port == 3307
@@ -197,7 +197,7 @@ def test_empty_socket_string_reads_as_none(
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(
         cwd=tmp_path,
-        body='{"livespec-impl-beads": {"connection": {"socket": ""}}}',
+        body='{"livespec-orchestrator-beads-fabro": {"connection": {"socket": ""}}}',
     )
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.socket is None
@@ -228,7 +228,7 @@ def test_non_dict_plugin_block_falls_back_to_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
-    _write_config(cwd=tmp_path, body='{"livespec-impl-beads": "scalar"}')
+    _write_config(cwd=tmp_path, body='{"livespec-orchestrator-beads-fabro": "scalar"}')
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.tenant == "livespec-impl-beads"
 
@@ -238,7 +238,7 @@ def test_non_dict_connection_block_falls_back_to_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
-    _write_config(cwd=tmp_path, body='{"livespec-impl-beads": {"connection": 7}}')
+    _write_config(cwd=tmp_path, body='{"livespec-orchestrator-beads-fabro": {"connection": 7}}')
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.tenant == "livespec-impl-beads"
 

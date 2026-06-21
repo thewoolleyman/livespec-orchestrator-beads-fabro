@@ -1,4 +1,4 @@
-# Copier-update drift detection for livespec-impl-beads.
+# Copier-update drift detection for livespec-orchestrator-beads-fabro.
 #
 # Generated from livespec/templates/impl-plugin/.github/workflows/
 # copier-update-drift.yml.jinja at copier-copy time; re-sync via
@@ -9,7 +9,7 @@
 #   SHOULD run `copier update --dry-run` and fail or warn on detected
 #   drift.
 #
-# This workflow surfaces drift between livespec-impl-beads's
+# This workflow surfaces drift between livespec-orchestrator-beads-fabro's
 # generated content and livespec's current template. To re-sync
 # after detected drift: run `copier update --vcs-ref=master` locally
 # and resolve any 3-way merge conflicts.

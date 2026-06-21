@@ -11,7 +11,9 @@ from pathlib import Path
 
 def bootstrap() -> None:
     if sys.version_info < (3, 10):
-        sys.stderr.write("livespec-impl-beads requires Python 3.10+; install via uv.\n")
+        sys.stderr.write(
+            "livespec-orchestrator-beads-fabro requires Python 3.10+; install via uv.\n"
+        )
         raise SystemExit(127)
     bundle_scripts = Path(__file__).resolve().parent.parent
     bundle_vendor = bundle_scripts / "_vendor"

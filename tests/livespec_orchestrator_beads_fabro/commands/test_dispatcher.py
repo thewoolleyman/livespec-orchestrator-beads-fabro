@@ -573,7 +573,7 @@ def _janitor_results(*, fail_at: int | None = None) -> list[CommandResult]:
         _ok("master\nfeat/x\n"),
         _ok(remote),
         _ok(worktrees),
-        _ok("thewoolleyman/livespec-impl-beads\n"),
+        _ok("thewoolleyman/livespec-orchestrator-beads-fabro\n"),
         _ok("feat/x\nmaster\n"),
     ]
     if fail_at is not None:
@@ -638,7 +638,7 @@ def test_janitor_checks_flag_stale_branches_prs_and_worktrees(tmp_path: Path) ->
         ("no-stale-worktree", "/repo/worktrees/merged", "warn"),
     ]
     assert "git branch -d feat/x" in findings[0].message
-    delete_action = "gh api -X DELETE repos/thewoolleyman/livespec-impl-beads/git/refs/heads/feat/x"
+    delete_action = "gh api -X DELETE repos/thewoolleyman/livespec-orchestrator-beads-fabro/git/refs/heads/feat/x"
     assert delete_action in findings[1].message
     assert "git worktree remove /repo/worktrees/gone" in findings[2].message
 

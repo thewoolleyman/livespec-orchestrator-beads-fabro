@@ -1,6 +1,6 @@
 ---
 name: groom
-description: Regroom an oversized or non-converging `needs-regroom` work-item into ready, dependency-layered slices. Read-only drafting conversation — the maintainer OWNS the cut and the acceptance; the front-end drafts and files NOTHING until approval. Required heavyweight authored skill per livespec/SPECIFICATION/contracts.md §"Skills — augmented versus new" (the one new maintainer surface). Invoke as `/livespec-impl-beads:groom <work-item-id>`.
+description: Regroom an oversized or non-converging `needs-regroom` work-item into ready, dependency-layered slices. Read-only drafting conversation — the maintainer OWNS the cut and the acceptance; the front-end drafts and files NOTHING until approval. Required heavyweight authored skill per livespec/SPECIFICATION/contracts.md §"Skills — augmented versus new" (the one new maintainer surface). Invoke as `/livespec-orchestrator-beads-fabro:groom <work-item-id>`.
 allowed-tools: Bash, Read, Grep, Glob
 ---
 
@@ -26,7 +26,7 @@ new store path.
 
 - The target work-item id is at `needs-regroom` (this skill refuses any
   other target).
-- The `livespec-impl-beads` Python package is on the import path.
+- The `livespec-orchestrator-beads-fabro` Python package is on the import path.
 - `livespec` installed (a spec-change slice routes to
   `/livespec:propose-change`).
 
@@ -50,7 +50,7 @@ context = load_groom_context(path=config, item_id=item_id)
 ```
 
 Then read (read-only) the relevant spec / scenarios and the ledger
-(`/livespec-impl-beads:list-work-items --json`) for surrounding context.
+(`/livespec-orchestrator-beads-fabro:list-work-items --json`) for surrounding context.
 
 ### Step 2 — Draft the layered decomposition (READ-ONLY)
 

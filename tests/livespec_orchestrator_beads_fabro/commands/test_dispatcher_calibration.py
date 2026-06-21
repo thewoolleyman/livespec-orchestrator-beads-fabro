@@ -3,7 +3,7 @@
 Covers the pure `_dispatcher_calibration` derivation module (the outcome
 SIGNAL + mechanical SIZE PROXIES the spec enumerates) and its wiring into
 `dispatcher._dispatch_one` via `_emit_calibration`. The load-bearing
-contract under test (livespec-impl-beads SPECIFICATION/contracts.md
+contract under test (livespec-orchestrator-beads-fabro SPECIFICATION/contracts.md
 §"Dispatcher grooming behavior" / §"Calibration telemetry and the single
 Fabro tweak"): the Dispatcher MUST emit calibration telemetry — an
 outcome signal plus mechanical size proxies — recorded on the EXISTING
@@ -154,7 +154,7 @@ def test_build_calibration_record_populates_every_spec_field() -> None:
     record = build_calibration_record(
         item=item,
         outcome=_outcome(),
-        repo_name="livespec-impl-beads",
+        repo_name="livespec-orchestrator-beads-fabro",
         journal_records=(
             {"work_item_id": item.id, "stage": "pr-view"},
             {"work_item_id": item.id, "stage": "pr-view"},
@@ -179,7 +179,7 @@ def test_build_calibration_record_populates_every_spec_field() -> None:
     assert record.spec_surface_touched is True
     assert record.dispatch_context_size == 900
     assert record.archetype == "bug"
-    assert record.repo == "livespec-impl-beads"
+    assert record.repo == "livespec-orchestrator-beads-fabro"
     assert record.work_item_id == item.id
 
 

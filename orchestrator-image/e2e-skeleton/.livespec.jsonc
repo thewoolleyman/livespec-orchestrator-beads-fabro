@@ -6,8 +6,8 @@
 {
   "template": "livespec",
   "spec_root": "SPECIFICATION",
-  "implementation": { "plugin": "livespec-impl-beads" },
-  "livespec-impl-beads": {
+  "implementation": { "plugin": "livespec-orchestrator-beads-fabro" },
+  "livespec-orchestrator-beads-fabro": {
     "format": "beads",
     "connection": { "fake": false }
   }

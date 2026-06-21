@@ -1,4 +1,4 @@
-# pyproject.toml — livespec-impl-beads dev tooling configuration.
+# pyproject.toml — livespec-orchestrator-beads-fabro dev tooling configuration.
 #
 # Generated from livespec/templates/impl-plugin/pyproject.toml.jinja
 # at copier-copy time; re-sync via `copier update --vcs-ref=master` when livespec
@@ -15,7 +15,7 @@
 # contract — the 9-skill surface").
 
 [project]
-name = "livespec-impl-beads"
+name = "livespec-orchestrator-beads-fabro"
 version = "0.0.0"
 description = "Beads/Dolt-backed implementation plugin for livespec"
 requires-python = ">=3.10.16"

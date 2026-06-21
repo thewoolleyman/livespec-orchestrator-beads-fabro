@@ -25,7 +25,7 @@ htmlcov/
 
 ### UV local state
 .venv/
-livespec_impl_beads.egg-info/
+livespec_orchestrator_beads_fabro.egg-info/
 
 ### Beads / Dolt substrate
 # Per-clone bd runtime state (Dolt working copy, lockfiles, runtime

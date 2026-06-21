@@ -1,4 +1,4 @@
-# justfile — livespec-impl-beads dev-tooling task runner.
+# justfile — livespec-orchestrator-beads-fabro dev-tooling task runner.
 #
 # Generated from livespec/templates/impl-plugin/justfile.jinja at
 # copier-copy time; re-sync via `copier update --vcs-ref=master` when livespec
@@ -21,7 +21,7 @@
 #   §"Shared code sync — livespec-dev-tooling" (v094 wiring-
 #   completeness invariant) — every canonical slug emitted by
 #   `livespec_dev_tooling.canonical_checks` MUST be wired in this
-#   `check:` aggregate in alphabetical order; livespec-impl-beads-
+#   `check:` aggregate in alphabetical order; livespec-orchestrator-beads-fabro-
 #   private extras MAY follow after the canonical block. The in-repo
 #   gate `check-aggregate-completeness` enforces this on every run.
 
@@ -100,10 +100,10 @@ bootstrap:
 ensure-plugins:
     claude plugin marketplace add thewoolleyman/livespec
     claude plugin marketplace add thewoolleyman/livespec-driver-claude
-    claude plugin marketplace add thewoolleyman/livespec-impl-beads
+    claude plugin marketplace add thewoolleyman/livespec-orchestrator-beads-fabro
     claude plugin install livespec@livespec
     claude plugin install livespec@livespec-driver-claude
-    claude plugin install livespec-impl-beads@livespec-impl-beads
+    claude plugin install livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro
 
 # ---------------------------------------------------------------
 # Aggregate check — canonical full-set stamped at copier-copy time.

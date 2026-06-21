@@ -484,7 +484,7 @@ version = "0.16.0"
 source = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git?tag=v0.16.0#9f04120e5c7d20db5ddb802d91bf737b406664a4" }
 
 [[package]]
-name = "livespec-impl-beads"
+name = "livespec-orchestrator-beads-fabro"
 version = "0.0.0"
 source = { virtual = "." }
 

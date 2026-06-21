@@ -1,6 +1,6 @@
 ---
 name: list-work-items
-description: List work-items from the beads-backed work-items store. Required thin-transport surface per livespec/SPECIFICATION/contracts.md §"Thin-transport skills (3) — required machine query surface". Invoke as `/livespec-impl-beads:list-work-items [--filter <name>] [--with-gap-id <id>] [--json]`.
+description: List work-items from the beads-backed work-items store. Required thin-transport surface per livespec/SPECIFICATION/contracts.md §"Thin-transport skills (3) — required machine query surface". Invoke as `/livespec-orchestrator-beads-fabro:list-work-items [--filter <name>] [--with-gap-id <id>] [--json]`.
 allowed-tools: Bash
 ---
 
@@ -27,6 +27,6 @@ Supported flags:
 
 - User asks "what work-items are open / ready / blocked?"
 - Doctor's four work-item structural invariants invoke
-  `/livespec-impl-beads:list-work-items --json` to enumerate the
+  `/livespec-orchestrator-beads-fabro:list-work-items --json` to enumerate the
   materialized state.
 - The project-local Layer 3 loop driver inspects the queue.
