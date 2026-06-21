@@ -7,7 +7,7 @@ allowed-tools: Bash
 # detect-impl-gaps
 
 Thin-transport pass-through. All behavior lives in
-`.claude-plugin/scripts/livespec_impl_beads/commands/detect_impl_gaps.py`.
+`.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/detect_impl_gaps.py`.
 
 ## Invocation
 

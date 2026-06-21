@@ -16,8 +16,8 @@ transitions the original item out — never silently dropping it.
 This realizes SPECIFICATION/scenarios.md "Scenario 7 — Regroom an
 oversized work-item" and the contracts.md §"Gap-detectable behavior
 clauses" groom clause. The mechanical seam is
-`livespec_impl_beads.commands.groom`; the load-bearing state transition
-reuses the shared `livespec_impl_beads.regroom` primitive
+`livespec_orchestrator_beads_fabro.commands.groom`; the load-bearing state transition
+reuses the shared `livespec_orchestrator_beads_fabro.regroom` primitive
 (`exit_regroom`), and slice filing reuses `capture-work-item`'s
 `append_work_item` machinery — `groom` adds NO new ledger state and no
 new store path.
@@ -40,8 +40,8 @@ mutating anything. `load_groom_context` raises if the id is absent
 (`GroomTargetNotRegroomError`) — surface either to the user and stop.
 
 ```python
-from livespec_impl_beads.commands._config import resolve_store_config
-from livespec_impl_beads.commands.groom import load_groom_context
+from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
+from livespec_orchestrator_beads_fabro.commands.groom import load_groom_context
 from pathlib import Path
 
 config = resolve_store_config(cwd=Path.cwd(), work_items_arg=None)
@@ -80,7 +80,7 @@ ONLY after explicit approval, file the approved factory slices and
 transition the original item out of `needs-regroom`:
 
 ```python
-from livespec_impl_beads.commands.groom import CandidateSlice, file_approved_slices
+from livespec_orchestrator_beads_fabro.commands.groom import CandidateSlice, file_approved_slices
 
 result = file_approved_slices(
     path=config,

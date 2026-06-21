@@ -102,7 +102,7 @@ below is internal to this plugin.
 
 | Path | Purpose |
 |---|---|
-| `.claude-plugin/` | Plugin manifest, skills (`skills/<name>/SKILL.md`), Python (`scripts/livespec_impl_beads/` + `scripts/bin/` shims), vendored libs |
+| `.claude-plugin/` | Plugin manifest, skills (`skills/<name>/SKILL.md`), Python (`scripts/livespec_orchestrator_beads_fabro/` + `scripts/bin/` shims), vendored libs |
 | `SPECIFICATION/` | The live (dogfooded) spec for this plugin |
 | `dev-tooling/` | Standalone enforcement-suite scripts (run via `just check`) |
 | `tests/` | pytest suite mirroring the script trees |

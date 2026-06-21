@@ -10,7 +10,7 @@ transitions" and the contracts.md §"Gap-detectable behavior clauses" clause:
     dropped).
 
 This is the top-of-pyramid behavior journey for the shared
-`livespec_impl_beads.regroom` primitive: it drives `enter` / `exit_regroom` /
+`livespec_orchestrator_beads_fabro.regroom` primitive: it drives `enter` / `exit_regroom` /
 `is_needs_regroom` through the REAL store/client seam against the in-memory
 `FakeBeadsClient` — the same backend the hermetic CI tier and the
 no-live-connection runtime use, and the same boundary every other test in this
@@ -22,21 +22,21 @@ expected-error surface.
 from __future__ import annotations
 
 import pytest
-from livespec_impl_beads._beads_client import (
+from livespec_orchestrator_beads_fabro._beads_client import (
     IssueDraft,
     _build_update_argv,
     make_beads_client,
     reset_fake_singleton,
 )
-from livespec_impl_beads.errors import RegroomExitRefusedError, WorkItemNotFoundError
-from livespec_impl_beads.regroom import (
+from livespec_orchestrator_beads_fabro.errors import RegroomExitRefusedError, WorkItemNotFoundError
+from livespec_orchestrator_beads_fabro.regroom import (
     NEEDS_REGROOM_LABEL,
     READY_LABEL,
     enter,
     exit_regroom,
     is_needs_regroom,
 )
-from livespec_impl_beads.types import StoreConfig
+from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 
 @pytest.fixture(autouse=True)
@@ -278,7 +278,7 @@ def test_is_needs_regroom_treats_non_list_labels_as_label_less(
 ) -> None:
     stub = _NonListLabelsStub()
     monkeypatch.setattr(
-        "livespec_impl_beads.regroom.make_beads_client",
+        "livespec_orchestrator_beads_fabro.regroom.make_beads_client",
         lambda *, config: stub,  # noqa: ARG005
     )
     assert is_needs_regroom(path=_config(), item_id="li-malformed") is False

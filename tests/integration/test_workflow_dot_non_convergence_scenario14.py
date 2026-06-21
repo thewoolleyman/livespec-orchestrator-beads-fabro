@@ -27,7 +27,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from livespec_impl_beads.commands._dispatcher_plan import NON_CONVERGED_MARKER
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import NON_CONVERGED_MARKER
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _WORKFLOW_DOT = _REPO_ROOT / ".fabro" / "workflows" / "implement-work-item" / "workflow.fabro"

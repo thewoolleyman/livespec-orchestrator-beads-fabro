@@ -7,7 +7,7 @@ allowed-tools: Bash
 # next
 
 Thin-transport pass-through. All behavior lives in
-`.claude-plugin/scripts/livespec_impl_beads/commands/next.py`.
+`.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/next.py`.
 
 ## Invocation
 

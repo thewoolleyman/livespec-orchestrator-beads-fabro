@@ -1,6 +1,6 @@
-"""Pre-livespec_impl_beads-import bootstrap: sys.path setup + Python version check.
+"""Pre-livespec_orchestrator_beads_fabro-import bootstrap: sys.path setup + Python version check.
 
-Imported by every bin/*.py wrapper before any livespec_impl_beads import.
+Imported by every bin/*.py wrapper before any livespec_orchestrator_beads_fabro import.
 Lives under bin/ so the wrappers can `raise SystemExit(main())` per the
 shebang-wrapper contract.
 """

@@ -8,6 +8,6 @@ def test_list_work_items_wrapper_threads_exit_code(
 ) -> None:
     wrapper_runner(
         "list_work_items.py",
-        "livespec_impl_beads.commands.list_work_items",
+        "livespec_orchestrator_beads_fabro.commands.list_work_items",
         0,
     )

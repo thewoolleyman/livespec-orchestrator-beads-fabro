@@ -13,13 +13,13 @@ wrapper is a no-logic supervisor entry point of the canonical shape:
 
 ```
 #!/usr/bin/env python3
-"""Shebang wrapper for <cmd>. No logic; see livespec_impl_beads.commands.<cmd>."""
+"""Shebang wrapper for <cmd>. No logic; see livespec_orchestrator_beads_fabro.commands.<cmd>."""
 
 from _bootstrap import bootstrap
 
 bootstrap()
 
-from livespec_impl_beads.commands.<cmd> import main
+from livespec_orchestrator_beads_fabro.commands.<cmd> import main
 
 raise SystemExit(main())
 ```

@@ -33,12 +33,12 @@ def _load_check() -> ModuleType:
     return module
 
 
-# The check imports `livespec_impl_beads.*`; those resolve via the pytest
+# The check imports `livespec_orchestrator_beads_fabro.*`; those resolve via the pytest
 # pythonpath. Loading the module once at collection time is enough.
 _CHECK = _load_check()
 
-from livespec_impl_beads.store import append_work_item  # noqa: E402
-from livespec_impl_beads.types import AuditRecord, StoreConfig, WorkItem  # noqa: E402
+from livespec_orchestrator_beads_fabro.store import append_work_item  # noqa: E402
+from livespec_orchestrator_beads_fabro.types import AuditRecord, StoreConfig, WorkItem  # noqa: E402
 
 
 def _config() -> StoreConfig:
@@ -57,7 +57,7 @@ def _hermetic(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]
     monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
     monkeypatch.chdir(tmp_path)
     # Reset the store's process-singleton fake before and after each test.
-    from livespec_impl_beads._beads_client import reset_fake_singleton
+    from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 
     reset_fake_singleton()
     yield

@@ -58,7 +58,7 @@ alongside oyg's stall watchdog and h1p's failure notification).
 
 ### 2.1 The shipped 29f.2 reflection stage
 
-`.claude-plugin/scripts/livespec_impl_beads/commands/_dispatcher_reflection.py`
+`.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_reflection.py`
 (landed on master as 29f.2; wired into `dispatcher.py` at the loop and
 single-dispatch exits). Verified facts:
 

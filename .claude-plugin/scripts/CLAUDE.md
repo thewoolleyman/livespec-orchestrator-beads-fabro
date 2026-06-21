@@ -1,7 +1,7 @@
 # scripts/
 
 The plugin's shared Python surface. `bin/` carries the shebang
-wrappers Claude Code invokes; `livespec_impl_beads/` is the
+wrappers Claude Code invokes; `livespec_orchestrator_beads_fabro/` is the
 package those wrappers import; `_vendor/` carries vendored
 pure-Python libraries (read-only — no local edits, no PyPI runtime
 dependencies per `SPECIFICATION/constraints.md` §"Inherited from
@@ -22,7 +22,7 @@ respect:
 - Pyright strict mode plus the seven strict-plus diagnostics; Ruff
   rule set; 100% line + branch coverage (paired test required).
 - Domain errors vs bugs split: EXPECTED errors flow as
-  `livespec_impl_beads.errors` exceptions caught at the
+  `livespec_orchestrator_beads_fabro.errors` exceptions caught at the
   supervisor boundary; bugs raise built-in exceptions and propagate
   to the outermost supervisor.
 - No relative imports; no banned-API surface (`abc.ABC`, `pickle`,

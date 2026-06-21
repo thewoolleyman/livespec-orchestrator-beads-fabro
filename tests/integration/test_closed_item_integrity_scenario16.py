@@ -53,8 +53,8 @@ def _load_check() -> ModuleType:
 
 _CHECK = _load_check()
 
-from livespec_impl_beads.store import append_work_item  # noqa: E402
-from livespec_impl_beads.types import StoreConfig, WorkItem  # noqa: E402
+from livespec_orchestrator_beads_fabro.store import append_work_item  # noqa: E402
+from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem  # noqa: E402
 
 _GAP_ID = "gap-j2femmn7"
 _SCENARIO = 'Scenario 16 — Closed-item-integrity check rejects "closed but unproven"'
@@ -77,7 +77,7 @@ def _hermetic(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]
     monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
     monkeypatch.delenv("LIVESPEC_CLOSED_ITEM_INTEGRITY", raising=False)
     monkeypatch.chdir(tmp_path)
-    from livespec_impl_beads._beads_client import reset_fake_singleton
+    from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 
     reset_fake_singleton()
     yield

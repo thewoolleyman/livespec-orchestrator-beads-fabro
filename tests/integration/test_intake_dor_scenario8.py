@@ -15,7 +15,7 @@ triage" and the contracts.md §"Gap-detectable behavior clauses" clause:
     be filed as `ready`.
 
 This is the top-of-pyramid behavior journey for the shared
-`livespec_impl_beads.intake_dor` primitive that both capture
+`livespec_orchestrator_beads_fabro.intake_dor` primitive that both capture
 front-ends call: it drives `evaluate` / `apply_intake_dor` through the
 REAL store/client seam against the in-memory `FakeBeadsClient` — the same
 backend the hermetic CI tier and the no-live-connection runtime use, and
@@ -27,21 +27,21 @@ pin the precedence, the per-gate coverage, and the expected-error surface.
 from __future__ import annotations
 
 import pytest
-from livespec_impl_beads._beads_client import (
+from livespec_orchestrator_beads_fabro._beads_client import (
     IssueDraft,
     make_beads_client,
     reset_fake_singleton,
 )
-from livespec_impl_beads.errors import WorkItemNotFoundError
-from livespec_impl_beads.intake_dor import (
+from livespec_orchestrator_beads_fabro.errors import WorkItemNotFoundError
+from livespec_orchestrator_beads_fabro.intake_dor import (
     NOT_YET_ACTIONABLE_LABEL,
     READY_LABEL,
     DefinitionOfReadyChecklist,
     apply_intake_dor,
     evaluate,
 )
-from livespec_impl_beads.regroom import NEEDS_REGROOM_LABEL, is_needs_regroom
-from livespec_impl_beads.types import StoreConfig
+from livespec_orchestrator_beads_fabro.regroom import NEEDS_REGROOM_LABEL, is_needs_regroom
+from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 
 @pytest.fixture(autouse=True)
