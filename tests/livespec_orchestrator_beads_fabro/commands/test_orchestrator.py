@@ -31,10 +31,10 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 def _config() -> StoreConfig:
     return StoreConfig(
-        tenant="livespec-impl-beads",
-        prefix="livespec-impl-beads",
-        server_user="livespec-impl-beads",
-        database="livespec-impl-beads",
+        tenant="livespec-orch-beads-fabro",
+        prefix="livespec-orch-beads-fabro",
+        server_user="livespec-orch-beads-fabro",
+        database="livespec-orch-beads-fabro",
         bd_path="bd",
         fake=True,
     )
@@ -430,7 +430,7 @@ def test_gap_capture_human_output_names_created_and_skipped(
     rc = main(["gap-capture", "--gaps-json", str(payload), "--project-root", str(tmp_path)])
     assert rc == 0
     out = capsys.readouterr().out
-    assert "created livespec-impl-beads-" in out
+    assert "created livespec-orch-beads-fabro-" in out
     assert "(gap gap-aaa)" in out
     assert "skipped existing gap gap-aaa" in out
 

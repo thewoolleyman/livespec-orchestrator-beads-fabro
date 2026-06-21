@@ -12,6 +12,6 @@ dolt.auto-start: false
 dolt.mode: server
 dolt.server-host: 127.0.0.1
 dolt.server-port: 3307
-dolt.server-user: livespec-impl-beads
-dolt.database: livespec-impl-beads
-dolt.prefix: livespec-impl-beads
+dolt.server-user: livespec-orch-beads-fabro
+dolt.database: livespec-orch-beads-fabro
+dolt.prefix: livespec-orch-beads-fabro
