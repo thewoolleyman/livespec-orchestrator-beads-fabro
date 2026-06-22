@@ -29,4 +29,4 @@ Supported flags:
 - Doctor's four work-item structural invariants invoke
   `/livespec-orchestrator-beads-fabro:list-work-items --json` to enumerate the
   materialized state.
-- The project-local Layer 3 loop driver inspects the queue.
+- The Dispatcher polls this surface when selecting which ready work-item to dispatch next.

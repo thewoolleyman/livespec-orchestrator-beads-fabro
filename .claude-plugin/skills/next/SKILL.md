@@ -66,21 +66,9 @@ each candidate per the upstream §"Output schema".
 ## When to use
 
 - User asks "what should I work on next?"
-- livespec's resident Layer 3 loop driver (at
-  `livespec/.claude/skills/loop/SKILL.md`) composes
-  `/livespec:next` + `/livespec-orchestrator-beads-fabro:next` outputs into
-  per-iteration recommendations.
-
-Per the v089 upstream recast (livespec/SPECIFICATION/spec.md
-§"Three-layer orchestration architecture" → "Layer 3 — Cross-repo
-orchestration (livespec-resident)"), this skill does NOT carry a
-Layer 3 discoverability nudge — that contract applies only to
-/livespec:next, which is colocated with the resident Layer 3
-driver in livespec. impl-plugin repos do NOT carry their own
-Layer 3 driver, so a nudge from this skill would have no in-repo
-surface to point at. The wrapper at
-`.claude-plugin/scripts/bin/next.py` remains a pure
-thin-transport pass-through.
+- The Dispatcher (`dispatcher.py` `dispatch` / `loop`) selects dispatch
+  candidates by composing `next`'s ranking (see SPECIFICATION/contracts.md
+  §"next" and `scenarios.md` Scenario 6).
 
 ## What this skill does NOT do
 

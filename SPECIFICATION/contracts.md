@@ -160,12 +160,11 @@ materialized views.
 
 #### `next`
 
-Cross-reference: cross-side composition of impl-side `next` with
-spec-side `/livespec:next` is a Layer 3 (project-local orchestration)
-concern per `livespec/SPECIFICATION/spec.md` §"Three-layer
-orchestration architecture" → "Cross-side composition belongs at
-Layer 3". This Layer 2 surface ranks impl-side state only; it MUST NOT
-bake a cross-side weighting in.
+Cross-reference: cross-repo dispatch is the Dispatcher's concern
+(`dispatcher.py` `dispatch` / `loop`; see README §"Dispatcher and
+telemetry"). This surface ranks impl-side state only; it MUST NOT
+bake a cross-repo sequencing or cross-side weighting in — the
+Dispatcher consumes this ranking and handles sequencing externally.
 
 CLI surface: `next [--limit <count>] [--offset <count>] [--json] [--work-items-path <path>] [--project-root <path>]`.
 No `--filter` flag — the skill's job is to RANK rather than to filter.
@@ -231,8 +230,8 @@ Field semantics:
 
 - `candidates[]` — array of candidate objects. `action` MUST be one of
   `"implement"` | `"none"`. The work-items-only scoping is principled:
-  gap-detection and drift-detection are driver-side concerns the Layer 3
-  driver invokes outside of `next`'s ranking. Each candidate MUST carry
+  gap-detection and drift-detection are Dispatcher-side concerns invoked
+  outside of `next`'s ranking. Each candidate MUST carry
   `action`, `reason` (non-empty human-readable narration), `urgency`
   (one of `high`, `medium`, `low`), and `work_item_ref` (the `id` of the
   ranked work-item, or `null` for `action: "none"`). Each candidate MAY
@@ -252,28 +251,15 @@ P4 → low.
 When no items are ready, the wrapper MUST emit `candidates: []` with a
 `pagination` echoing the inputs and `has_more: false`. An empty
 `candidates` array IS the no-work signal; it does NOT degrade to any
-legacy single-object shape. The Layer 2 surface MUST NOT bake a hygiene
+legacy single-object shape. This surface MUST NOT bake a hygiene
 fallback into the emission: emission of the empty array is purely
-advisory, and any "what to do when both `/livespec:next` and
-`/livespec-orchestrator-beads-fabro:next` are quiet" handoff is a Layer 3
-(project-local orchestration) concern (per `scenarios.md` Scenario 6's
+advisory, and any empty-queue response (e.g. a hygiene pass) is a
+Dispatcher / operator concern (per `scenarios.md` Scenario 6's
 empty-queue handoff sub-step).
 
 When `offset >= total`, the wrapper MUST emit `candidates: []` and
 `has_more: false`. The wrapper MUST always emit a valid (possibly
 empty) `candidates` array.
-
-##### Layer 3 discoverability nudge — not applicable under v089 recast
-
-Under the v089 upstream recast (`livespec/SPECIFICATION/spec.md`
-§"Three-layer orchestration architecture" → "Layer 3 — Cross-repo
-orchestration (livespec-resident)"), the Layer 3 discoverability nudge
-applies only to `/livespec:next`; impl-plugin `next` skills do NOT carry
-the parallel-and-symmetric nudge contract because impl-plugin repos do
-NOT carry their own Layer 3 driver. The wrapper at
-`.claude-plugin/scripts/bin/next.py` MUST remain a pure thin-transport
-pass-through per the upstream §"Thin-transport skill doctrine" and this
-plugin's §"Thin-transport skills (4)" preamble.
 
 #### `detect-impl-gaps`
 
