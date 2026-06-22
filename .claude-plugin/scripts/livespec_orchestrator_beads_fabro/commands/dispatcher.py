@@ -400,6 +400,14 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
     items, journal = prepared
     if not args.skip_ledger_check and _ledger_blocked(items=items, journal=journal):
         return _EXIT_FAILURE
+    requested_ids = set(args.items or [])
+    if requested_ids:
+        ready_ids = {item.id for item in _ready_items(items=items, repo=repo)}
+        not_ready = requested_ids - ready_ids
+        if not_ready:
+            missing = ", ".join(sorted(not_ready))
+            _ = sys.stderr.write(f"ERROR: requested work-item(s) not in the ready set: {missing}\n")
+            return _EXIT_PRECONDITION_ERROR
     picked = _candidates(args=args, items=items, repo=repo)[: args.budget]
     journal.append(
         record={
@@ -1053,10 +1061,12 @@ def _candidates(
     repo: Path,
 ) -> list[WorkItem]:
     ranked = _ready_items(items=items, repo=repo)
+    requested = set(args.items or [])
+    if requested:
+        return [item for item in ranked if item.id in requested]
     if args.mode == "autonomous":
         return ranked
-    requested = set(args.items or [])
-    return [item for item in ranked if item.id in requested]
+    return []
 
 
 def _ready_items(*, items: list[WorkItem], repo: Path) -> list[WorkItem]:
