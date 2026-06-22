@@ -52,7 +52,7 @@
 #      for the in-sandbox PR; also authenticates the in-container fresh clones)
 #   ANTHROPIC_API_KEY_LIVESPEC_E2E
 #   CLAUDE_CODE_OAUTH_TOKEN
-#   BEADS_DOLT_PASSWORD_<target-tenant>   (tenant DB == target repo name)
+#   BEADS_DOLT_PASSWORD   (the single shared family password)
 #   HONEYCOMB_INGEST_KEY_LIVESPEC
 
 set -euo pipefail
@@ -123,8 +123,8 @@ Required env, normally supplied by:
      authenticates the in-container fresh clones via the gh credential helper)
   ANTHROPIC_API_KEY_LIVESPEC_E2E
   CLAUDE_CODE_OAUTH_TOKEN
-  BEADS_DOLT_PASSWORD_<target-tenant>   (tenant DB == --target-repo name; the
-     hyphens in the repo name become underscores in the env var name)
+  BEADS_DOLT_PASSWORD   (the single shared family password; the in-container
+     `bd` consumes it directly — no per-tenant variable)
   HONEYCOMB_INGEST_KEY_LIVESPEC
 
 The script checks only presence/byte counts for secret env vars; it never prints
@@ -151,9 +151,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# The bare BEADS_DOLT_PASSWORD the in-container `bd` consumes is derived from the
-# target tenant's scoped variable (hyphens in the repo name -> underscores).
-TENANT_PASSWORD_VAR=""
+# The in-container `bd` consumes the single shared family `BEADS_DOLT_PASSWORD`
+# directly (the dolt-server-x6byxj password collapse retired per-tenant vars).
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -203,13 +202,10 @@ preflight() {
   require_command curl
   docker info >/dev/null 2>&1 || fail "docker is not reachable from the host"
   [ -n "$TARGET_REPO" ] || fail "--target-repo <name> is required"
-  # Derive the tenant password env var name from the target repo (tenant DB ==
-  # repo name; hyphens -> underscores). NEVER print its value — byte count only.
-  TENANT_PASSWORD_VAR="BEADS_DOLT_PASSWORD_$(printf '%s' "$TARGET_REPO" | tr '-' '_')"
   require_env LIVESPEC_FAMILY_GITHUB_TOKEN
   require_env ANTHROPIC_API_KEY_LIVESPEC_E2E
   require_env CLAUDE_CODE_OAUTH_TOKEN
-  require_env "$TENANT_PASSWORD_VAR"
+  require_env BEADS_DOLT_PASSWORD
   require_env HONEYCOMB_INGEST_KEY_LIVESPEC
   if [ "$BUILD_IMAGE" -eq 1 ]; then
     stage_and_build_image
@@ -275,8 +271,7 @@ start_container() {
     -e LIVESPEC_FAMILY_GITHUB_TOKEN \
     -e ANTHROPIC_API_KEY_LIVESPEC_E2E \
     -e CLAUDE_CODE_OAUTH_TOKEN \
-    -e "$TENANT_PASSWORD_VAR" \
-    -e BEADS_DOLT_PASSWORD="${!TENANT_PASSWORD_VAR}" \
+    -e BEADS_DOLT_PASSWORD \
     -e HONEYCOMB_INGEST_KEY_LIVESPEC \
     "$IMAGE" \
     sleep infinity >/dev/null

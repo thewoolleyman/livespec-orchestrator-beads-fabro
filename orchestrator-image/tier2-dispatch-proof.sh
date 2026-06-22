@@ -61,7 +61,7 @@ Required env, normally supplied by:
     (forwarded to the Dispatcher as GH_TOKEN for in-sandbox PR creation)
   ANTHROPIC_API_KEY_LIVESPEC_E2E
   CLAUDE_CODE_OAUTH_TOKEN
-  BEADS_DOLT_PASSWORD_livespec_impl_beads
+  BEADS_DOLT_PASSWORD
   HONEYCOMB_INGEST_KEY_LIVESPEC
 
 The script checks only presence/byte counts for secret env vars; it never prints
@@ -134,7 +134,7 @@ preflight() {
   require_env LIVESPEC_FAMILY_GITHUB_TOKEN
   require_env ANTHROPIC_API_KEY_LIVESPEC_E2E
   require_env CLAUDE_CODE_OAUTH_TOKEN
-  require_env BEADS_DOLT_PASSWORD_livespec_impl_beads
+  require_env BEADS_DOLT_PASSWORD
   require_env HONEYCOMB_INGEST_KEY_LIVESPEC
   if [ "$BUILD_IMAGE" -eq 1 ]; then
     stage_and_build_image
@@ -194,8 +194,7 @@ start_container() {
     -e LIVESPEC_FAMILY_GITHUB_TOKEN \
     -e ANTHROPIC_API_KEY_LIVESPEC_E2E \
     -e CLAUDE_CODE_OAUTH_TOKEN \
-    -e BEADS_DOLT_PASSWORD_livespec_impl_beads \
-    -e BEADS_DOLT_PASSWORD="$BEADS_DOLT_PASSWORD_livespec_impl_beads" \
+    -e BEADS_DOLT_PASSWORD \
     -e HONEYCOMB_INGEST_KEY_LIVESPEC \
     "$IMAGE" \
     sleep infinity >/dev/null
