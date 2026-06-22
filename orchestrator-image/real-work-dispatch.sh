@@ -330,6 +330,10 @@ sync_dispatcher_deps() {
 # database found". `bd init --server --external` re-derives the SERVER-STABLE
 # project_id (identical across clones) and writes metadata.json; thereafter `bd`
 # resolves the family tenant from config.yaml + the BEADS_DOLT_PASSWORD env var.
+# The connection values come from the target clone's committed
+# `.beads/config.yaml` (mirrored from `.livespec.jsonc`), not from TARGET_REPO:
+# tenant database/user names and issue prefixes may be shorter than the GitHub
+# repo name.
 #
 # Two hardenings learned from in-container validation:
 #   - `bd init` silently falls to EMBEDDED mode (provisioning .beads/dolt/ +
@@ -349,6 +353,22 @@ regen_beads_metadata() {
   docker exec -w "$clone" "$CONTAINER" sh -lc '
     set -e
     [ -f .beads/config.yaml ] || { echo "ERROR: clone lacks .beads/config.yaml: $0" >&2; exit 1; }
+    read_config() {
+      awk -F ":[[:space:]]*" -v key="$1" '"'"'
+        $1 == key { print $2; found = 1; exit }
+        END { if (!found) exit 1 }
+      '"'"' .beads/config.yaml
+    }
+    server_host="$(read_config dolt.server-host)"
+    server_port="$(read_config dolt.server-port)"
+    server_user="$(read_config dolt.server-user)"
+    database="$(read_config dolt.database)"
+    prefix="$(read_config dolt.prefix)"
+    [ -n "$server_host" ] || { echo "ERROR: .beads/config.yaml lacks dolt.server-host" >&2; exit 1; }
+    [ -n "$server_port" ] || { echo "ERROR: .beads/config.yaml lacks dolt.server-port" >&2; exit 1; }
+    [ -n "$server_user" ] || { echo "ERROR: .beads/config.yaml lacks dolt.server-user" >&2; exit 1; }
+    [ -n "$database" ] || { echo "ERROR: .beads/config.yaml lacks dolt.database" >&2; exit 1; }
+    [ -n "$prefix" ] || { echo "ERROR: .beads/config.yaml lacks dolt.prefix" >&2; exit 1; }
     if [ -f .beads/metadata.json ]; then
       echo "metadata.json already present; leaving as-is"
       exit 0
@@ -359,11 +379,11 @@ regen_beads_metadata() {
     fi
     bd init \
       --server --external \
-      --server-host 127.0.0.1 \
-      --server-port 3307 \
-      --server-user "$1" \
-      --database "$1" \
-      --prefix "$1" \
+      --server-host "$server_host" \
+      --server-port "$server_port" \
+      --server-user "$server_user" \
+      --database "$database" \
+      --prefix "$prefix" \
       --skip-agents --skip-hooks --non-interactive --quiet >/dev/null 2>&1
     [ -f .beads/metadata.json ] || { echo "ERROR: bd init did not produce metadata.json" >&2; exit 1; }
     if [ -d .beads/embeddeddolt ]; then
