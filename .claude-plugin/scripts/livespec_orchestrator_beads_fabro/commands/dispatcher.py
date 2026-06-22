@@ -354,7 +354,15 @@ def _run_dispatch_command(*, args: argparse.Namespace) -> int:
     ready = _ready_items(items=items, repo=repo)
     target = next((item for item in ready if item.id == args.item), None)
     if target is None:
-        _ = sys.stderr.write(f"ERROR: work-item {args.item} is not in the ready set\n")
+        all_ids = {item.id for item in items}
+        if args.item not in all_ids:
+            msg = (
+                f"ERROR: work-item {args.item} not found in the target-tenant"
+                f" ({repo.name}); --target-repo and --item must reference the same tenant\n"
+            )
+            _ = sys.stderr.write(msg)
+        else:
+            _ = sys.stderr.write(f"ERROR: work-item {args.item} is not in the ready set\n")
         return _EXIT_PRECONDITION_ERROR
     outcome = _dispatch_one(args=args, repo=repo, item=target, journal=journal, janitor=janitor)
     _emit_outcomes(outcomes=[outcome], as_json=args.as_json)
@@ -388,6 +396,35 @@ def _run_dispatch_command(*, args: argparse.Namespace) -> int:
     return exit_code
 
 
+def _requested_items_preflight_error(
+    *,
+    requested_ids: set[str],
+    items: list[WorkItem],
+    repo: Path,
+) -> str | None:
+    """Return an operator-facing error string if a requested item fails preflight, else None.
+
+    Validates in order: (1) items absent from the target-tenant entirely →
+    target-tenant mismatch error; (2) items present in the tenant but not yet
+    ready → not-in-ready-set error. Returns None when every requested id is
+    ready and no preflight error applies.
+    """
+    all_ids = {item.id for item in items}
+    missing_from_tenant = requested_ids - all_ids
+    if missing_from_tenant:
+        missing_text = ", ".join(sorted(missing_from_tenant))
+        return (
+            f"ERROR: work-item(s) {missing_text} not found in the target-tenant "
+            f"({repo.name}); --target-repo and --item must reference the same tenant\n"
+        )
+    ready_ids = {item.id for item in _ready_items(items=items, repo=repo)}
+    not_ready = requested_ids - ready_ids
+    if not_ready:
+        missing = ", ".join(sorted(not_ready))
+        return f"ERROR: requested work-item(s) not in the ready set: {missing}\n"
+    return None
+
+
 def _run_loop_command(*, args: argparse.Namespace) -> int:
     repo = Path(args.repo)
     janitor, janitor_ok = _parse_janitor(raw=args.janitor)
@@ -402,11 +439,11 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
         return _EXIT_FAILURE
     requested_ids = set(args.items or [])
     if requested_ids:
-        ready_ids = {item.id for item in _ready_items(items=items, repo=repo)}
-        not_ready = requested_ids - ready_ids
-        if not_ready:
-            missing = ", ".join(sorted(not_ready))
-            _ = sys.stderr.write(f"ERROR: requested work-item(s) not in the ready set: {missing}\n")
+        preflight_error = _requested_items_preflight_error(
+            requested_ids=requested_ids, items=items, repo=repo
+        )
+        if preflight_error is not None:
+            _ = sys.stderr.write(preflight_error)
             return _EXIT_PRECONDITION_ERROR
     picked = _candidates(args=args, items=items, repo=repo)[: args.budget]
     journal.append(
