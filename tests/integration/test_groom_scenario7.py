@@ -23,6 +23,13 @@ approved slices `ready` with deps linked → spec-change routed → original
 regroomed-out) is the bound case; the rest pin read-only-until-approval,
 the spec-change routing, and the refuse-don't-drop / expected-error
 surface.
+
+Cross-repo filing (bd-ib-735bh2): factory slices whose `repo_target`
+differs from `local_repo` MUST NOT be filed in the local tenant; they
+are returned in `GroomResult.cross_repo_slices` with their minted id
+so the skill can route them to the appropriate repo. Local slices that
+depend (by draft-title handle) on a cross-repo blocker record the dep
+as `sibling_work_item` so the Dispatcher can gate on it.
 """
 
 from __future__ import annotations
@@ -35,6 +42,7 @@ from livespec_orchestrator_beads_fabro._beads_client import (
 )
 from livespec_orchestrator_beads_fabro.commands.groom import (
     CandidateSlice,
+    CrossRepoSlice,
     file_approved_slices,
     load_groom_context,
 )
@@ -70,6 +78,10 @@ def _config() -> StoreConfig:
     )
 
 
+_LOCAL_REPO = "livespec-orchestrator-beads-fabro"
+_CROSS_REPO = "livespec-runtime"
+
+
 def _seed_regroom_item(*, issue_id: str, title: str = "", description: str = "") -> None:
     """Create an item already at `needs-regroom` — the groom target."""
     client = make_beads_client(config=_config())
@@ -97,7 +109,18 @@ def _factory_slice(*, title: str, depends_on: tuple[str, ...] = ()) -> Candidate
         description=f"{title} body",
         acceptance="just check + the named scenario pass",
         autonomy_tier="factory",
-        repo_target="livespec-orchestrator-beads-fabro",
+        repo_target=_LOCAL_REPO,
+        depends_on=depends_on,
+    )
+
+
+def _cross_repo_slice(*, title: str, depends_on: tuple[str, ...] = ()) -> CandidateSlice:
+    return CandidateSlice(
+        title=title,
+        description=f"{title} body",
+        acceptance="done when filed in the target repo",
+        autonomy_tier="factory",
+        repo_target=_CROSS_REPO,
         depends_on=depends_on,
     )
 
@@ -139,6 +162,7 @@ def test_groom_journey_files_ready_slices_links_deps_and_regrooms_out() -> None:
     result = file_approved_slices(
         path=_config(),
         regroom_item_id="li-epic",
+        local_repo=_LOCAL_REPO,
         slices=[
             _factory_slice(title="layer-0 base slice"),
             _factory_slice(
@@ -182,6 +206,7 @@ def test_filed_factory_slices_link_their_dependency_edges() -> None:
     result = file_approved_slices(
         path=_config(),
         regroom_item_id="li-epic",
+        local_repo=_LOCAL_REPO,
         slices=[
             _factory_slice(title="base"),
             # The dependent slice names the base slice's DRAFT TITLE as a
@@ -205,6 +230,7 @@ def test_dependency_on_unknown_draft_title_is_rejected() -> None:
         file_approved_slices(
             path=_config(),
             regroom_item_id="li-epic",
+            local_repo=_LOCAL_REPO,
             slices=[_factory_slice(title="orphan", depends_on=("ghost-layer",))],
         )
 
@@ -233,6 +259,7 @@ def test_all_spec_change_decomposition_refuses_exit() -> None:
         file_approved_slices(
             path=_config(),
             regroom_item_id="li-epic",
+            local_repo=_LOCAL_REPO,
             slices=[
                 CandidateSlice(
                     title="only a spec change",
@@ -280,3 +307,123 @@ def test_groom_refuses_a_non_regroom_target() -> None:
 def test_groom_unknown_target_raises_not_found() -> None:
     with pytest.raises(WorkItemNotFoundError):
         load_groom_context(path=_config(), item_id="li-ghost")
+
+
+# --------------------------------------------------------------------------
+# Cross-repo filing (bd-ib-735bh2): one-slice/one-ledger model.
+# --------------------------------------------------------------------------
+
+
+def test_cross_repo_slice_not_filed_in_local_tenant() -> None:
+    """A slice targeting a different repo must NOT be filed in the local tenant."""
+    _seed_regroom_item(issue_id="li-epic")
+
+    result = file_approved_slices(
+        path=_config(),
+        regroom_item_id="li-epic",
+        local_repo=_LOCAL_REPO,
+        slices=[
+            _factory_slice(title="local slice"),
+            _cross_repo_slice(title="cross-repo slice"),
+        ],
+    )
+
+    # Only the local slice is filed in the local ledger.
+    assert len(result.filed_slice_ids) == 1
+    items = _all_items()
+    local_ids = [k for k in items if k != "li-epic"]
+    assert len(local_ids) == 1
+    assert READY_LABEL in _labels_of(issue_id=local_ids[0])
+
+    # The cross-repo slice is returned for external routing, not filed locally.
+    assert len(result.cross_repo_slices) == 1
+    assert isinstance(result.cross_repo_slices[0], CrossRepoSlice)
+    assert result.cross_repo_slices[0].candidate.title == "cross-repo slice"
+    assert result.cross_repo_slices[0].candidate.repo_target == _CROSS_REPO
+
+
+def test_cross_repo_slice_carries_minted_id() -> None:
+    """The returned CrossRepoSlice carries a non-empty minted id."""
+    _seed_regroom_item(issue_id="li-epic")
+
+    result = file_approved_slices(
+        path=_config(),
+        regroom_item_id="li-epic",
+        local_repo=_LOCAL_REPO,
+        slices=[
+            _factory_slice(title="local"),
+            _cross_repo_slice(title="remote"),
+        ],
+    )
+
+    assert result.cross_repo_slices[0].minted_id != ""
+
+
+def test_local_slice_dep_on_cross_repo_blocker_uses_sibling_work_item_kind() -> None:
+    """A local slice depending on a cross-repo blocker records sibling_work_item dep."""
+    _seed_regroom_item(issue_id="li-epic")
+
+    result = file_approved_slices(
+        path=_config(),
+        regroom_item_id="li-epic",
+        local_repo=_LOCAL_REPO,
+        slices=[
+            # Cross-repo blocker comes first (earlier layer).
+            _cross_repo_slice(title="cross-repo blocker"),
+            # Local slice depends on the cross-repo slice by draft-title handle.
+            _factory_slice(title="local dependent", depends_on=("cross-repo blocker",)),
+        ],
+    )
+
+    (local_id,) = result.filed_slice_ids
+    cross_slice = result.cross_repo_slices[0]
+    items = materialize_work_items(records=read_work_items(path=_config()))
+    dependent = items[local_id]
+
+    # The dep is sibling_work_item, not local, and references the cross-repo minted id.
+    assert dependent.depends_on == (
+        {
+            "kind": "sibling_work_item",
+            "repo": _CROSS_REPO,
+            "work_item_id": cross_slice.minted_id,
+        },
+    )
+
+
+def test_cross_repo_slice_still_regrooms_out_original() -> None:
+    """Original item exits needs-regroom even when some slices are cross-repo."""
+    _seed_regroom_item(issue_id="li-epic")
+
+    result = file_approved_slices(
+        path=_config(),
+        regroom_item_id="li-epic",
+        local_repo=_LOCAL_REPO,
+        slices=[
+            _factory_slice(title="local"),
+            _cross_repo_slice(title="remote"),
+        ],
+    )
+
+    assert result.regroomed_out is True
+    assert is_needs_regroom(path=_config(), item_id="li-epic") is False
+
+
+def test_empty_repo_target_on_factory_slice_raises_draft_error() -> None:
+    """A factory slice with an empty repo_target is a malformed draft."""
+    _seed_regroom_item(issue_id="li-epic")
+
+    with pytest.raises(GroomDraftError, match="empty repo_target"):
+        file_approved_slices(
+            path=_config(),
+            regroom_item_id="li-epic",
+            local_repo=_LOCAL_REPO,
+            slices=[
+                CandidateSlice(
+                    title="bad slice",
+                    description="",
+                    acceptance="done",
+                    autonomy_tier="factory",
+                    repo_target="",
+                )
+            ],
+        )

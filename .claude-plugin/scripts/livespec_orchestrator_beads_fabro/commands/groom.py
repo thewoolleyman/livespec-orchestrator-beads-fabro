@@ -23,15 +23,21 @@ load-bearing mechanical seam underneath that dialogue, in two halves:
   title/description so the draft is grounded in the real item. It mutates
   NOTHING — the draft stays read-only until the maintainer approves.
 - `file_approved_slices` — the APPROVAL-time commit: it files each
-  factory slice via the same `append_work_item` machinery the capture
-  front-ends use (tagging each `ready` and linking its dependency edges),
-  then transitions the original item OUT of `needs-regroom` via the
-  shared `regroom.exit_regroom` verb against the filed slice ids. Any
-  spec-change slice is NOT filed here — it is returned for the SKILL.md
-  prose to route to `/livespec:propose-change` (the factory never sees
-  it). The exit verb REFUSES (`RegroomExitRefusedError`) unless real
-  `ready` factory slices were filed, so an item is regroomed-OUT, never
-  silently dropped.
+  LOCAL factory slice (repo_target == local_repo) via the same
+  `append_work_item` machinery the capture front-ends use (tagging each
+  `ready` and linking its dependency edges), then transitions the original
+  item OUT of `needs-regroom` via the shared `regroom.exit_regroom` verb
+  against the filed slice ids. Cross-repo factory slices (repo_target !=
+  local_repo) are NOT filed in the local tenant — they are returned in
+  `GroomResult.cross_repo_slices` with their minted ids for the SKILL.md
+  prose to route to the target repo's groom/capture front-end (the
+  one-slice/one-ledger model). Spec-change slices are returned (not filed)
+  for the prose to route to `/livespec:propose-change`. Local slices whose
+  `depends_on` title handle resolves to a cross-repo blocker carry a
+  `sibling_work_item` dep entry so the Dispatcher can gate on it. The exit
+  verb REFUSES (`RegroomExitRefusedError`) unless real `ready` local
+  factory slices were filed, so an item is regroomed-OUT, never silently
+  dropped.
 
 Per SPECIFICATION/constraints.md §"Inherited from livespec" (the
 Result-vs-bugs split), EXPECTED failures raise the typed errors from
@@ -52,7 +58,7 @@ from livespec_orchestrator_beads_fabro._ids import new_work_item_id
 from livespec_orchestrator_beads_fabro.errors import GroomDraftError, GroomTargetNotRegroomError
 from livespec_orchestrator_beads_fabro.intake_dor import READY_LABEL
 from livespec_orchestrator_beads_fabro.store import append_work_item
-from livespec_orchestrator_beads_fabro.types import WorkItem
+from livespec_orchestrator_beads_fabro.types import DependsOnRaw, WorkItem
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsRecord
@@ -60,6 +66,7 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "CandidateSlice",
+    "CrossRepoSlice",
     "GroomContext",
     "GroomResult",
     "file_approved_slices",
@@ -113,19 +120,37 @@ class CandidateSlice:
 
 
 @dataclass(frozen=True, kw_only=True)
+class CrossRepoSlice:
+    """A factory slice targeting a different repo, returned for external routing.
+
+    Not filed in the local tenant (the one-slice/one-ledger model: each
+    slice goes into its target repo's tenant). The `minted_id` is assigned
+    at groom time so local slices that depend on this cross-repo slice can
+    reference it as a `sibling_work_item` dependency with a known id.
+    """
+
+    candidate: CandidateSlice
+    minted_id: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class GroomResult:
     """The outcome of an approved groom: what was filed, routed, and exited.
 
-    - `filed_slice_ids` — the factory slices filed `ready` into the ledger
-      (in draft order), with their dependency edges linked.
+    - `filed_slice_ids` — the local factory slices filed `ready` into the
+      ledger (in draft order), with their dependency edges linked.
     - `spec_change_slices` — the approved spec-change slices NOT filed
       here; the SKILL.md prose routes each to `/livespec:propose-change`.
+    - `cross_repo_slices` — factory slices whose `repo_target` differs from
+      `local_repo`; NOT filed in the local tenant. Returned with their
+      minted ids for the SKILL.md prose to route to the target repo.
     - `regroomed_out` — True once the original item left `needs-regroom`
       via `regroom.exit_regroom` against the filed factory slices.
     """
 
     filed_slice_ids: tuple[str, ...] = ()
     spec_change_slices: tuple[CandidateSlice, ...] = ()
+    cross_repo_slices: tuple[CrossRepoSlice, ...] = ()
     regroomed_out: bool = False
 
 
@@ -155,38 +180,64 @@ def file_approved_slices(
     path: StoreConfig,
     regroom_item_id: str,
     slices: list[CandidateSlice],
+    local_repo: str,
 ) -> GroomResult:
-    """File approved factory slices `ready`, then regroom the original OUT.
+    """File approved local factory slices `ready`, then regroom the original OUT.
 
-    Called ONLY after the maintainer approves the draft. It files each
-    factory slice (`is_spec_change == False`) via the same
-    `append_work_item` machinery the capture front-ends use — tagging each
-    `ready` and linking its `depends_on` edges — then transitions the
-    original item out of `needs-regroom` via the shared
-    `regroom.exit_regroom` verb against the filed slice ids. Spec-change
-    slices are returned (not filed) for the prose to route to
-    `/livespec:propose-change`.
+    Called ONLY after the maintainer approves the draft. For each factory
+    slice (`is_spec_change == False`):
 
-    Raises `RegroomExitRefusedError` if no factory slice was filed (an
-    all-spec-change decomposition leaves no `ready` replacement, so the
-    original stays `needs-regroom` — escalate-don't-drop). Raises
-    `WorkItemNotFoundError` if `regroom_item_id` is absent.
+    - If `repo_target == local_repo` (a LOCAL slice): file via
+      `append_work_item`, tag `ready`, link dependency edges. Local slices
+      that depend (by draft-title handle) on a cross-repo blocker carry a
+      `sibling_work_item` dep so the Dispatcher can gate on it.
+    - If `repo_target != local_repo` (a CROSS-REPO slice): mint an id but
+      do NOT file locally (the one-slice/one-ledger model). The slice is
+      returned in `GroomResult.cross_repo_slices` with its minted id for
+      the SKILL.md prose to route to the target repo.
+
+    After all slices are processed, the original item is transitioned out
+    of `needs-regroom` via `regroom.exit_regroom` against the filed LOCAL
+    slice ids.
+
+    Raises `GroomDraftError` if any factory slice has an empty `repo_target`
+    or if a `depends_on` handle names no earlier factory slice in the draft.
+    Raises `RegroomExitRefusedError` if no local factory slice was filed.
+    Raises `WorkItemNotFoundError` if `regroom_item_id` is absent.
     """
     client = make_beads_client(config=path)
     filed_ids: list[str] = []
     spec_change: list[CandidateSlice] = []
-    # Maps each filed factory slice's draft title -> its minted id, so a
-    # later slice's `depends_on` title handles resolve to real ids.
+    cross_repo: list[CrossRepoSlice] = []
+    # Maps each factory slice's draft title -> its minted id so that a later
+    # slice's `depends_on` title handles resolve to real ids. Populated for
+    # both local and cross-repo slices as they are processed in draft order.
     id_by_title: dict[str, str] = {}
+    # Maps a cross-repo slice's draft title -> its repo_target so that a
+    # local slice depending on it can emit a sibling_work_item dep entry.
+    cross_repo_title_to_repo: dict[str, str] = {}
     for candidate in slices:
         if candidate.is_spec_change:
             spec_change.append(candidate)
             continue
+        if not candidate.repo_target:
+            raise GroomDraftError(detail=f"slice {candidate.title!r} has an empty repo_target")
         slice_id = new_work_item_id(prefix=path.prefix)
-        dep_ids = _resolve_dep_ids(candidate=candidate, id_by_title=id_by_title)
+        if candidate.repo_target != local_repo:
+            # Cross-repo slice: mint id, track for dep resolution, return for
+            # external routing. NOT filed in the local tenant.
+            id_by_title[candidate.title] = slice_id
+            cross_repo_title_to_repo[candidate.title] = candidate.repo_target
+            cross_repo.append(CrossRepoSlice(candidate=candidate, minted_id=slice_id))
+            continue
+        dep_entries = _resolve_dep_entries(
+            candidate=candidate,
+            id_by_title=id_by_title,
+            cross_repo_title_to_repo=cross_repo_title_to_repo,
+        )
         append_work_item(
             path=path,
-            item=_work_item_for(candidate=candidate, slice_id=slice_id, dep_ids=dep_ids),
+            item=_work_item_for(candidate=candidate, slice_id=slice_id, dep_entries=dep_entries),
         )
         # Tag the freshly-filed factory slice `ready` so the Dispatcher can
         # drain it and so `exit_regroom`'s ready-gate accepts it as a real
@@ -198,24 +249,31 @@ def file_approved_slices(
     return GroomResult(
         filed_slice_ids=tuple(filed_ids),
         spec_change_slices=tuple(spec_change),
+        cross_repo_slices=tuple(cross_repo),
         regroomed_out=True,
     )
 
 
-def _resolve_dep_ids(
+def _resolve_dep_entries(
     *,
     candidate: CandidateSlice,
     id_by_title: dict[str, str],
-) -> tuple[str, ...]:
-    """Resolve a slice's draft-local title handles to earlier slices' minted ids.
+    cross_repo_title_to_repo: dict[str, str],
+) -> tuple[DependsOnRaw, ...]:
+    """Resolve a slice's draft-local title handles to typed dependency entries.
 
     A `depends_on` handle that does not name an EARLIER factory slice in
     the same draft is a malformed cut (the maintainer arranged a slice
     before its blocker, or pointed at a spec-change/absent title) — an
     expected authoring error surfaced as `GroomDraftError` so the
     front-end re-drafts rather than filing a dangling edge.
+
+    A handle that resolves to a cross-repo slice (tracked in
+    `cross_repo_title_to_repo`) emits a `sibling_work_item` dep entry so
+    the Dispatcher can gate on it via `resolve_ref`. All other handles emit
+    a `local` dep entry (same-tenant beads `blocks` edge).
     """
-    resolved: list[str] = []
+    resolved: list[DependsOnRaw] = []
     for handle in candidate.depends_on:
         dep_id = id_by_title.get(handle)
         if dep_id is None:
@@ -225,7 +283,11 @@ def _resolve_dep_ids(
                     f"an earlier factory slice in the approved draft"
                 )
             )
-        resolved.append(dep_id)
+        repo = cross_repo_title_to_repo.get(handle)
+        if repo is not None:
+            resolved.append({"kind": "sibling_work_item", "repo": repo, "work_item_id": dep_id})
+        else:
+            resolved.append({"kind": "local", "work_item_id": dep_id})
     return tuple(resolved)
 
 
@@ -233,14 +295,15 @@ def _work_item_for(
     *,
     candidate: CandidateSlice,
     slice_id: str,
-    dep_ids: tuple[str, ...],
+    dep_entries: tuple[DependsOnRaw, ...],
 ) -> WorkItem:
-    """Build the freeform `ready` work-item for one approved factory slice.
+    """Build the freeform `ready` work-item for one approved local factory slice.
 
     A groomed slice is freeform (the cut is the maintainer's, not tied to
     a single detected gap clause); its acceptance is folded into the
-    description so the dispatched implementer carries it. `dep_ids` is the
-    dependency-layer linkage, already resolved to earlier-filed slice ids.
+    description so the dispatched implementer carries it. `dep_entries`
+    carries the fully-typed dependency entries (local or sibling_work_item)
+    already resolved from the earlier draft slices.
     """
     description = (
         f"{candidate.description}\n\n"
@@ -248,7 +311,6 @@ def _work_item_for(
         f"Autonomy tier: {candidate.autonomy_tier}\n"
         f"Repo target: {candidate.repo_target}"
     ).strip()
-    depends_on = tuple({"kind": "local", "work_item_id": dep} for dep in dep_ids)
     return WorkItem(
         id=slice_id,
         type="task",
@@ -259,7 +321,7 @@ def _work_item_for(
         gap_id=None,
         priority=candidate.priority,
         assignee=None,
-        depends_on=depends_on,
+        depends_on=dep_entries,
         captured_at=_now_iso(),
         resolution=None,
         reason=None,
