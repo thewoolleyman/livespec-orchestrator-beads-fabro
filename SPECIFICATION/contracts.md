@@ -15,7 +15,7 @@ namespace prefix per `livespec/SPECIFICATION/contracts.md`
 §"Cross-plugin invocation"). Renaming is a major-version-bump
 operation.
 
-## The seven-skill surface
+## The eight-skill surface
 
 Every entry below is REQUIRED. The descriptions concretize each skill's
 behavior on the beads substrate; cross-boundary semantics (handoffs,
@@ -110,6 +110,37 @@ the issue's `metadata` JSON column. No second record is appended.
   `resolution: <wontfix | duplicate | spec-revised |
   no-longer-applicable | resolved-out-of-band>`, carrying a
   user-supplied `--reason`.
+
+### Operator skill (1)
+
+#### `orchestrate`
+
+Permanent minimal operator surface for cross-side work selection. The
+skill is a thin binding over `.claude-plugin/scripts/bin/orchestrate.py`
+and the shared `commands/orchestrate.py` implementation. It composes the
+existing spec-side `/livespec:next` output with this plugin's impl-side
+`next` output and emits a small `actions[]` plan. It MUST NOT duplicate
+ranking logic from either `next` surface.
+
+CLI surface:
+
+- `orchestrate plan --repo <path> [--json]`
+- `orchestrate run --repo <path> --action <action-id> [--json]`
+
+`plan` is read-only. It resolves the target repo explicitly, invokes the
+spec-side and impl-side `next` wrappers, and returns selectable action
+records. Spec actions have ids shaped as `spec:<action>:<index>` and
+carry a `/livespec:* --spec-target SPECIFICATION/` handoff. Impl actions
+have ids shaped as `impl:<work-item-id>` and are marked
+`factory_safe: true`.
+
+`run` executes only a selected impl action. It invokes the existing
+Dispatcher/Fabro loop with `--mode shadow --budget 1 --parallel 1
+--item <work-item-id> --json`, then summarizes the Dispatcher status,
+exit code, stdout JSON, stderr, and the selected work-item id. A selected
+spec action returns `status: human-gated` plus the handoff command; it
+MUST NOT mutate spec-side state directly. The surface MUST NOT create
+net-new work-items.
 
 ### Thin-transport skills (3)
 
