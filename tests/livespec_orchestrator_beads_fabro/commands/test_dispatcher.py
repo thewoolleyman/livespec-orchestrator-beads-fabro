@@ -809,7 +809,13 @@ def test_argv_builders_encode_family_discipline(tmp_path: Path) -> None:
         str(tmp_path / "janitor-co"),
     ]
     assert janitor_trust_argv() == ["mise", "trust"]
-    assert janitor_bootstrap_argv() == ["mise", "exec", "--", "just", "bootstrap"]
+    assert janitor_bootstrap_argv() == [
+        "mise",
+        "exec",
+        "--",
+        "just",
+        "install-commit-refuse-hooks",
+    ]
 
 
 def test_parse_pr_view_rejects_unusable_shapes() -> None:
@@ -1410,17 +1416,17 @@ def test_engine_degrades_when_janitor_bootstrap_fails(tmp_path: Path) -> None:
             _ok(),  # janitor-checkout-preclean
             _ok(),  # janitor-checkout-add
             _ok(),  # janitor-checkout-trust
-            _err(stderr="no bootstrap recipe"),  # janitor-checkout-bootstrap
+            _err(stderr="no hook-install recipe"),  # janitor-checkout-bootstrap
         ]
     )
     outcome, journal, _ = _dispatch(runner=runner, repo=tmp_path)
     assert (outcome.status, outcome.stage) == ("green", "janitor-env-degraded")
     assert (outcome.pr_number, outcome.merge_sha) == (7, "cafeab")
     assert "DID NOT RUN" in outcome.detail
-    assert "no bootstrap recipe" in outcome.detail
+    assert "no hook-install recipe" in outcome.detail
     assert "not a work-item failure" in outcome.detail
     bootstrap_argv, bootstrap_cwd = runner.calls[7]
-    assert bootstrap_argv == ["mise", "exec", "--", "just", "bootstrap"]
+    assert bootstrap_argv == ["mise", "exec", "--", "just", "install-commit-refuse-hooks"]
     assert bootstrap_cwd == tmp_path  # runs in plan.repo, not janitor_checkout
     assert [record["stage"] for record in journal.records][-1] == "janitor-checkout-bootstrap"
 

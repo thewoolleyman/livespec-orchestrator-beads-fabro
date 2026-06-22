@@ -65,7 +65,7 @@ acceptance-live-golden-master *ARGS:
 # First-time setup.
 # ---------------------------------------------------------------
 
-bootstrap:
+install-commit-refuse-hooks:
     # Idempotent `livespec.primaryPath` on the primary checkout's
     # git-common-dir config (per livespec/SPECIFICATION/
     # non-functional-requirements.md §"Primary-checkout commit-refuse
@@ -84,11 +84,12 @@ bootstrap:
     # delegates to lefthook at secondary worktrees via mise. The
     # commit-msg path keeps the legacy git-hook-wrapper since it
     # routes argv[1] to the v034 D3 replay-hook stage.
-    mkdir -p .git/hooks
-    cp dev-tooling/livespec-commit-refuse-hook.sh .git/hooks/pre-commit
-    cp dev-tooling/livespec-commit-refuse-hook.sh .git/hooks/pre-push
-    cp dev-tooling/git-hook-wrapper.sh .git/hooks/commit-msg
-    chmod +x .git/hooks/pre-commit .git/hooks/pre-push .git/hooks/commit-msg
+    install -D -m 755 dev-tooling/livespec-commit-refuse-hook.sh "$(git rev-parse --git-common-dir)/hooks/pre-commit"
+    install -D -m 755 dev-tooling/livespec-commit-refuse-hook.sh "$(git rev-parse --git-common-dir)/hooks/pre-push"
+    install -D -m 755 dev-tooling/git-hook-wrapper.sh "$(git rev-parse --git-common-dir)/hooks/commit-msg"
+
+bootstrap:
+    just install-commit-refuse-hooks
     just ensure-plugins
 
 # Idempotent: `claude plugin marketplace add` and `claude plugin install`
