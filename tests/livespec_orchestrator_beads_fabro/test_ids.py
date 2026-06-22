@@ -6,10 +6,10 @@ from livespec_orchestrator_beads_fabro._ids import new_work_item_id
 
 
 def test_new_work_item_id_uses_configured_prefix() -> None:
-    """bd enforces that an issue id's prefix equals the tenant DB name
-    (the `prefix == database` rule), so a hardcoded `li-` id is rejected
-    with `prefix mismatch`. The generator must mint `<prefix>-<suffix>`
-    using the configured tenant prefix.
+    """bd enforces that an issue id's prefix equals the tenant's
+    server-stored create-prefix (decoupled from the DB name), so a
+    hardcoded `li-` id is rejected with `prefix mismatch`. The generator
+    must mint `<prefix>-<suffix>` using the configured tenant prefix.
     """
     assert re.fullmatch(r"livespec-[a-z2-7]{6}", new_work_item_id(prefix="livespec")) is not None
 
