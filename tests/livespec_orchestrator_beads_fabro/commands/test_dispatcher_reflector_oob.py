@@ -64,6 +64,22 @@ def reset_auto_trip_fixture() -> None:
     reflector.reset_auto_trip()
 
 
+@pytest.fixture(autouse=True)
+def _tmp_repo_connection_config(tmp_path: Path) -> None:
+    """Give each test's `tmp_path` repo a `.livespec.jsonc` with a `prefix`.
+
+    The reflector resolves the tenant connection via
+    `resolve_store_config(cwd=repo)`, which now REQUIRES an explicit
+    `connection.prefix` (decoupled from the tenant DB name). A real governed
+    repo always carries one; this fixture mirrors that so the hermetic
+    `tmp_path` repos resolve instead of tripping the fail-open guard.
+    """
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        encoding="utf-8",
+    )
+
+
 @dataclass(kw_only=True)
 class _FakeRunner:
     """Scripted CommandRunner: returns one queued result; logs each call."""

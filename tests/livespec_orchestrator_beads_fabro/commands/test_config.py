@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
+from livespec_orchestrator_beads_fabro.errors import ConnectionPrefixMissingError
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 _CONFIG_NAME = ".livespec.jsonc"
@@ -30,11 +31,21 @@ def test_resolve_uses_defaults_when_no_config_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """With an explicit prefix supplied, the other fields take built-in defaults.
+
+    `prefix` is REQUIRED (it is decoupled from the tenant DB name), so the
+    no-config-file path is exercised by supplying the prefix via the
+    connection block while leaving every other field unset.
+    """
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     monkeypatch.delenv("LIVESPEC_BD_PATH", raising=False)
+    _write_config(
+        cwd=tmp_path,
+        body='{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+    )
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.tenant == "livespec-orch-beads-fabro"
-    assert config.prefix == "livespec-orch-beads-fabro"
+    assert config.prefix == "bd-ib"
     assert config.database == "livespec-orch-beads-fabro"
     assert config.server_user == "livespec-orch-beads-fabro"
     assert config.server_host == "127.0.0.1"
@@ -44,9 +55,49 @@ def test_resolve_uses_defaults_when_no_config_file(
     assert config.fake is False
 
 
+def test_unset_prefix_raises_actionable_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unset/empty `connection.prefix` FAILS LOUD instead of defaulting.
+
+    The bd issue-ID create-prefix is decoupled from the tenant DB name, so
+    silently defaulting `prefix` to the tenant would mint tenant-named ids
+    the server rejects. The loader raises a typed, actionable error instead.
+    """
+    monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
+    _write_config(
+        cwd=tmp_path,
+        body='{"livespec-orchestrator-beads-fabro": {"connection": {"tenant": "solo"}}}',
+    )
+    with pytest.raises(ConnectionPrefixMissingError) as excinfo:
+        _ = resolve_store_config(cwd=tmp_path, work_items_arg=None)
+    message = str(excinfo.value)
+    assert "connection.prefix is required" in message
+    assert "bd-ib" in message
+
+
+def test_empty_prefix_string_raises_actionable_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit empty-string prefix is treated as unset and FAILS LOUD."""
+    monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
+    _write_config(
+        cwd=tmp_path,
+        body='{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": ""}}}',
+    )
+    with pytest.raises(ConnectionPrefixMissingError):
+        _ = resolve_store_config(cwd=tmp_path, work_items_arg=None)
+
+
 def test_work_items_path_property_returns_self(
     tmp_path: Path,
 ) -> None:
+    _write_config(
+        cwd=tmp_path,
+        body='{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+    )
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.work_items_path is config
 
@@ -89,18 +140,22 @@ def test_resolve_reads_connection_block(
     assert config.fake is True
 
 
-def test_prefix_database_user_default_to_tenant(
+def test_database_and_user_default_to_tenant(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """prefix==database==server_user default to the tenant when unset."""
+    """database==server_user default to the tenant when unset.
+
+    They ARE the tenant identity (no decoupling), so they keep defaulting.
+    `prefix`, by contrast, is REQUIRED and supplied explicitly here.
+    """
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(
         cwd=tmp_path,
-        body='{"livespec-orchestrator-beads-fabro": {"connection": {"tenant": "solo"}}}',
+        body='{"livespec-orchestrator-beads-fabro": {"connection": {"tenant": "solo", "prefix": "bd-ib"}}}',
     )
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
-    assert config.prefix == "solo"
+    assert config.prefix == "bd-ib"
     assert config.database == "solo"
     assert config.server_user == "solo"
 
@@ -112,7 +167,7 @@ def test_env_bd_path_overrides_block(
     monkeypatch.setenv("LIVESPEC_BD_PATH", "/managed/bd")
     _write_config(
         cwd=tmp_path,
-        body='{"livespec-orchestrator-beads-fabro": {"connection": {"bd_path": "/block/bd"}}}',
+        body='{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib", "bd_path": "/block/bd"}}}',
     )
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.bd_path == "/managed/bd"
@@ -125,7 +180,7 @@ def test_empty_env_bd_path_falls_through_to_block(
     monkeypatch.setenv("LIVESPEC_BD_PATH", "")
     _write_config(
         cwd=tmp_path,
-        body='{"livespec-orchestrator-beads-fabro": {"connection": {"bd_path": "/block/bd"}}}',
+        body='{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib", "bd_path": "/block/bd"}}}',
     )
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.bd_path == "/block/bd"
@@ -138,6 +193,10 @@ def test_env_fake_truthy_forces_fake(
     truthy: str,
 ) -> None:
     monkeypatch.setenv("LIVESPEC_BEADS_FAKE", truthy)
+    _write_config(
+        cwd=tmp_path,
+        body='{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+    )
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.fake is True
 
@@ -147,6 +206,10 @@ def test_env_fake_falsy_forces_real(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "0")
+    _write_config(
+        cwd=tmp_path,
+        body='{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+    )
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.fake is False
 
@@ -158,7 +221,7 @@ def test_block_fake_used_when_env_unset(
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(
         cwd=tmp_path,
-        body='{"livespec-orchestrator-beads-fabro": {"connection": {"fake": true}}}',
+        body='{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib", "fake": true}}}',
     )
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.fake is True
@@ -171,7 +234,7 @@ def test_block_non_bool_fake_falls_back_to_false(
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(
         cwd=tmp_path,
-        body='{"livespec-orchestrator-beads-fabro": {"connection": {"fake": "yes"}}}',
+        body='{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib", "fake": "yes"}}}',
     )
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.fake is False
@@ -184,7 +247,7 @@ def test_non_int_server_port_falls_back_to_default(
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(
         cwd=tmp_path,
-        body='{"livespec-orchestrator-beads-fabro": {"connection": {"server_port": "nope"}}}',
+        body='{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib", "server_port": "nope"}}}',
     )
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.server_port == 3307
@@ -197,50 +260,64 @@ def test_empty_socket_string_reads_as_none(
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(
         cwd=tmp_path,
-        body='{"livespec-orchestrator-beads-fabro": {"connection": {"socket": ""}}}',
+        body='{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib", "socket": ""}}}',
     )
     config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
     assert config.socket is None
 
 
-def test_malformed_jsonc_falls_back_to_defaults(
+def test_malformed_jsonc_yields_no_prefix_and_raises(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Malformed JSONC falls back to an empty block, which has no prefix → raises."""
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(cwd=tmp_path, body="{ this is not valid json ")
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
-    assert config.tenant == "livespec-orch-beads-fabro"
+    with pytest.raises(ConnectionPrefixMissingError):
+        _ = resolve_store_config(cwd=tmp_path, work_items_arg=None)
 
 
-def test_non_object_root_falls_back_to_defaults(
+def test_non_object_root_yields_no_prefix_and_raises(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """A non-object JSON root falls back to an empty block → no prefix → raises."""
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(cwd=tmp_path, body="[1, 2, 3]")
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
-    assert config.tenant == "livespec-orch-beads-fabro"
+    with pytest.raises(ConnectionPrefixMissingError):
+        _ = resolve_store_config(cwd=tmp_path, work_items_arg=None)
 
 
-def test_non_dict_plugin_block_falls_back_to_defaults(
+def test_non_dict_plugin_block_yields_no_prefix_and_raises(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """A scalar plugin block falls back to an empty connection → no prefix → raises."""
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(cwd=tmp_path, body='{"livespec-orchestrator-beads-fabro": "scalar"}')
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
-    assert config.tenant == "livespec-orch-beads-fabro"
+    with pytest.raises(ConnectionPrefixMissingError):
+        _ = resolve_store_config(cwd=tmp_path, work_items_arg=None)
 
 
-def test_non_dict_connection_block_falls_back_to_defaults(
+def test_non_dict_connection_block_yields_no_prefix_and_raises(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """A scalar connection block falls back to an empty block → no prefix → raises."""
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
     _write_config(cwd=tmp_path, body='{"livespec-orchestrator-beads-fabro": {"connection": 7}}')
-    config = resolve_store_config(cwd=tmp_path, work_items_arg=None)
-    assert config.tenant == "livespec-orch-beads-fabro"
+    with pytest.raises(ConnectionPrefixMissingError):
+        _ = resolve_store_config(cwd=tmp_path, work_items_arg=None)
+
+
+def test_no_config_file_yields_no_prefix_and_raises(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An absent config file yields no prefix and FAILS LOUD."""
+    monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
+    with pytest.raises(ConnectionPrefixMissingError):
+        _ = resolve_store_config(cwd=tmp_path, work_items_arg=None)
 
 
 def test_path_args_are_accepted_and_ignored(
@@ -249,6 +326,10 @@ def test_path_args_are_accepted_and_ignored(
 ) -> None:
     """The plaintext-signature work_items_arg is a no-op here."""
     monkeypatch.delenv("LIVESPEC_BEADS_FAKE", raising=False)
+    _write_config(
+        cwd=tmp_path,
+        body='{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+    )
     config = resolve_store_config(
         cwd=tmp_path,
         work_items_arg="custom/work.jsonl",

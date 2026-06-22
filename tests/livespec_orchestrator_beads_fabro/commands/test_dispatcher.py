@@ -158,6 +158,23 @@ def fabro_dispatch_env(
     )
 
 
+@pytest.fixture(autouse=True)
+def _tmp_repo_connection_config(tmp_path: Path) -> None:
+    """Give each test's `tmp_path` a `.livespec.jsonc` with a `prefix`.
+
+    The CLI surfaces (`ledger-check` / `spec-check`) and the dispatcher
+    resolve the tenant connection via `resolve_store_config(cwd=...)`, which
+    now REQUIRES an explicit `connection.prefix` (decoupled from the tenant
+    DB name). A real governed repo always carries one; this fixture mirrors
+    that for the bare-`tmp_path` CLI tests (the `tmp_path / "repo"` dispatch
+    repos get their own copy in `_repo_with_workflow`).
+    """
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        encoding="utf-8",
+    )
+
+
 def _config() -> StoreConfig:
     return StoreConfig(
         tenant="livespec-impl-beads",
@@ -1569,6 +1586,14 @@ def test_janitor_check_cli_skips_outside_git_repo(
 def _repo_with_workflow(*, tmp_path: Path) -> tuple[Path, Path]:
     repo = tmp_path / "repo"
     repo.mkdir()
+    # The dispatcher resolves the tenant connection via
+    # resolve_store_config(cwd=repo), which REQUIRES an explicit
+    # connection.prefix (decoupled from the tenant DB name); a real governed
+    # repo always carries one, so the hermetic repo mirrors that.
+    _ = (repo / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        encoding="utf-8",
+    )
     workflow = tmp_path / "workflow.toml"
     _ = workflow.write_text(_COMMITTED_WORKFLOW_TOML, encoding="utf-8")
     return repo, workflow
@@ -1949,6 +1974,10 @@ def test_dispatch_default_workflow_materializes_from_repo_fabro_tree(
 ) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
+    _ = (repo / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        encoding="utf-8",
+    )
     item = _item()
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
@@ -2070,6 +2099,10 @@ def test_dispatch_fails_when_workflow_config_is_not_materializable(
 ) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
+    _ = (repo / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        encoding="utf-8",
+    )
     bare = tmp_path / "bare.toml"
     _ = bare.write_text("_version = 1\n", encoding="utf-8")
     item = _item()

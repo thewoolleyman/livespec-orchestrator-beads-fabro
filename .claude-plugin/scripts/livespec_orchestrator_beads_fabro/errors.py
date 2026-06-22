@@ -164,3 +164,25 @@ class GroomDraftError(Exception):
     def __init__(self, *, detail: str) -> None:
         super().__init__(f"invalid groom draft: {detail}")
         self.detail = detail
+
+
+_CONNECTION_PREFIX_MISSING_MESSAGE = (
+    "connection.prefix is required: it is bd's server-stored issue-ID "
+    "create-prefix (e.g. `bd-ib`) and may differ from the tenant DB name "
+    "— set it explicitly in `.livespec.jsonc` `connection.prefix`."
+)
+
+
+class ConnectionPrefixMissingError(Exception):
+    """The `.livespec.jsonc` connection block omitted the required `prefix`.
+
+    EXPECTED: `connection.prefix` is bd's server-stored issue-ID
+    create-prefix (e.g. `bd-ib`) and is DECOUPLED from the tenant DB name —
+    it MAY differ from it. The loader therefore refuses to default it to the
+    tenant: an unset/empty prefix would mint tenant-named ids the server
+    rejects. The maintainer surfaces this and sets `connection.prefix`
+    explicitly rather than the loader silently guessing.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(_CONNECTION_PREFIX_MISSING_MESSAGE)

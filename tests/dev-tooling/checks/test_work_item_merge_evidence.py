@@ -56,6 +56,13 @@ def _config() -> StoreConfig:
 def _hermetic(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]:
     monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
     monkeypatch.chdir(tmp_path)
+    # The check resolves the tenant connection from cwd via
+    # resolve_store_config, which REQUIRES an explicit connection.prefix
+    # (decoupled from the tenant DB name); mirror a real governed repo.
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        encoding="utf-8",
+    )
     # Reset the store's process-singleton fake before and after each test.
     from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 
@@ -340,6 +347,9 @@ def test_item_violation_unknown_resolution_falls_through(tmp_path: Path) -> None
 
 
 def test_resolve_canonical_branch_default_when_no_config(tmp_path: Path) -> None:
+    # The `_hermetic` autouse fixture writes a connection-prefix
+    # `.livespec.jsonc`; remove it to exercise the genuinely-absent-file path.
+    (tmp_path / ".livespec.jsonc").unlink()
     assert _CHECK._resolve_canonical_branch(cwd=tmp_path) == "master"  # noqa: SLF001
 
 
