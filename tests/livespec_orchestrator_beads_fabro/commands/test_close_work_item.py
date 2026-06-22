@@ -136,6 +136,13 @@ def test_main_uses_cwd_project_root_by_default(
 ) -> None:
     """With no --project-root, the wrapper resolves the store from cwd."""
     monkeypatch.chdir(tmp_path)  # type: ignore[arg-type]
+    # The wrapper resolves the tenant connection from cwd via
+    # resolve_store_config, which REQUIRES an explicit connection.prefix
+    # (decoupled from the tenant DB name); mirror a real governed repo.
+    _ = (tmp_path / ".livespec.jsonc").write_text(  # type: ignore[attr-defined]
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        encoding="utf-8",
+    )
     _seed(_open_item(id_="li-x"))
     code = main(["li-x"])
     assert code == 0

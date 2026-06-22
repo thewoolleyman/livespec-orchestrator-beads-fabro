@@ -77,6 +77,13 @@ def _hermetic(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]
     monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
     monkeypatch.delenv("LIVESPEC_CLOSED_ITEM_INTEGRITY", raising=False)
     monkeypatch.chdir(tmp_path)
+    # The check resolves the tenant connection from cwd via
+    # resolve_store_config, which REQUIRES an explicit connection.prefix
+    # (decoupled from the tenant DB name); mirror a real governed repo.
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        encoding="utf-8",
+    )
     from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 
     reset_fake_singleton()

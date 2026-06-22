@@ -45,6 +45,14 @@ def _stored_items() -> list[WorkItem]:
 
 
 def _make_spec_tree(*, root: Path) -> Path:
+    # gap-capture resolves the tenant connection via
+    # resolve_store_config(cwd=project_root), which REQUIRES an explicit
+    # connection.prefix (decoupled from the tenant DB name); a real governed
+    # repo always carries one, so the project root mirrors that.
+    _ = (root / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        encoding="utf-8",
+    )
     spec = root / "SPECIFICATION"
     (spec / "history" / "v001").mkdir(parents=True)
     (spec / "history" / "v002").mkdir()
@@ -430,7 +438,9 @@ def test_gap_capture_human_output_names_created_and_skipped(
     rc = main(["gap-capture", "--gaps-json", str(payload), "--project-root", str(tmp_path)])
     assert rc == 0
     out = capsys.readouterr().out
-    assert "created livespec-orch-beads-fabro-" in out
+    # The minted id carries the resolved `connection.prefix` (decoupled from
+    # the tenant DB name), which `_make_spec_tree` sets to `bd-ib`.
+    assert "created bd-ib-" in out
     assert "(gap gap-aaa)" in out
     assert "skipped existing gap gap-aaa" in out
 
