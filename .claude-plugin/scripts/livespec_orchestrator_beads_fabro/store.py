@@ -98,6 +98,7 @@ _LABEL_RESOLUTION = "resolution:"
 
 # Metadata keys carrying livespec fields that ride in the JSON column.
 _META_AUDIT = "audit"
+_META_NON_LOCAL_DEPENDS_ON = "non_local_depends_on"
 
 
 # --------------------------------------------------------------------------
@@ -306,11 +307,28 @@ def _work_item_labels(*, item: WorkItem) -> list[str]:
 
 
 def _work_item_metadata(*, item: WorkItem) -> dict[str, Any]:
-    """Build the metadata JSON object: the full AuditRecord (lossless)."""
+    """Build the metadata JSON object: the full AuditRecord (lossless) + non-local depends_on."""
     metadata: dict[str, Any] = {}
     if item.audit is not None:
         metadata[_META_AUDIT] = _audit_to_dict(audit=item.audit)
+    non_local = _non_local_depends_on_list(depends_on=item.depends_on)
+    if non_local:
+        metadata[_META_NON_LOCAL_DEPENDS_ON] = non_local
     return metadata
+
+
+def _non_local_depends_on_list(*, depends_on: tuple[DependsOnRaw, ...]) -> list[dict[str, Any]]:
+    """Collect non-local depends_on entries for metadata storage.
+
+    Local entries (bare strings or {"kind": "local", ...} dicts) are stored as
+    beads blocks edges. Non-local dict entries have no edge home and ride in
+    metadata so cross-repo DAGs survive the round-trip.
+    """
+    result: list[dict[str, Any]] = []
+    for raw in depends_on:
+        if isinstance(raw, dict) and raw.get("kind") != "local":
+            result.append(dict(raw))
+    return result
 
 
 def _audit_to_dict(*, audit: AuditRecord) -> dict[str, Any]:
@@ -342,7 +360,7 @@ def _record_to_work_item(*, record: BeadsRecord) -> WorkItem:
         origin = "gap-tied" if gap_id is not None else "freeform"
     resolution = _label_value(labels=labels, prefix=_LABEL_RESOLUTION)
     audit = _audit_from_metadata(record_id=issue_id, metadata=metadata)
-    depends_on = _depends_on_from_edges(record=record)
+    depends_on = _depends_on_from_edges(record=record, metadata=metadata)
     return WorkItem(
         id=issue_id,
         type=cast("Any", _require_str(record=record, key="issue_type")),
@@ -369,20 +387,24 @@ def _record_to_work_item(*, record: BeadsRecord) -> WorkItem:
     )
 
 
-def _depends_on_from_edges(*, record: BeadsRecord) -> tuple[DependsOnRaw, ...]:
-    """Reconstruct `depends_on` from the `blocks` edges as v072 typed-dicts.
+def _depends_on_from_edges(
+    *,
+    record: BeadsRecord,
+    metadata: dict[str, Any],
+) -> tuple[DependsOnRaw, ...]:
+    """Reconstruct `depends_on` from blocks edges (local) and metadata (non-local).
 
     Each `blocks` edge `{depends_on_id, type:"blocks"}` means this issue
     is blocked by `depends_on_id`, which is exactly the livespec
     `depends_on` semantics. beads `blocks` edges are intra-tenant, so the
-    only relationship ever materialized is the `local` kind (cross-tenant
-    kinds were never representable as edges). Each edge is emitted in the
-    v072 typed-dict form `{"kind": "local", "work_item_id": <dep_id>}`
-    required by livespec's `DependsOnEntry` schema and the doctor
-    `depends_on-ref-wellformedness` / `no-orphan-dependency` integrity
-    checks — the legacy bare-string form fails wellformedness on every
-    dependency edge. `_cross_repo.parse_entry` maps this typed-dict to
-    `LocalDependency`, so the `next` ranker stays unchanged.
+    only relationship ever materialized from edges is the `local` kind.
+    Each edge is emitted in the v072 typed-dict form
+    `{"kind": "local", "work_item_id": <dep_id>}` required by livespec's
+    `DependsOnEntry` schema and the doctor checks.
+
+    Non-local entries (sibling_work_item, pull_request, branch) have no
+    edge home; they are persisted in `metadata[_META_NON_LOCAL_DEPENDS_ON]`
+    by the write path and reconstructed here so cross-repo DAGs survive.
     """
     deps: list[DependsOnRaw] = []
     for edge in _edges_of(record=record):
@@ -390,6 +412,9 @@ def _depends_on_from_edges(*, record: BeadsRecord) -> tuple[DependsOnRaw, ...]:
             dep_id = edge.get("depends_on_id")
             if isinstance(dep_id, str):
                 deps.append({"kind": "local", "work_item_id": dep_id})
+    non_local_raw = metadata.get(_META_NON_LOCAL_DEPENDS_ON)
+    if isinstance(non_local_raw, list):
+        deps.extend(cast("list[DependsOnRaw]", non_local_raw))
     return tuple(deps)
 
 

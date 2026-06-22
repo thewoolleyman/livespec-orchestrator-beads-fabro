@@ -239,6 +239,48 @@ def test_depends_on_non_local_dict_emits_no_edge() -> None:
     assert record["dependencies"] == []
 
 
+def test_depends_on_non_local_dict_roundtrips_through_metadata() -> None:
+    """Non-local depends_on entries persist to metadata and round-trip on read."""
+    non_local_entry: dict[str, object] = {
+        "kind": "sibling_work_item",
+        "repo": "org/other-repo",
+        "work_item_id": "li-sibling",
+    }
+    append_work_item(
+        path=_config(),
+        item=_minimal_work_item(id_="li-x", depends_on=(non_local_entry,)),
+    )
+    record = _fake().show_issue(issue_id="li-x")
+    assert record["dependencies"] == []
+    [read_back] = list(read_work_items(path=_config()))
+    assert read_back.depends_on == (non_local_entry,)
+
+
+def test_depends_on_mixed_local_and_non_local_roundtrip() -> None:
+    """Local and non-local depends_on entries co-exist correctly after round-trip."""
+    append_work_item(path=_config(), item=_minimal_work_item(id_="li-dep"))
+    local_entry: dict[str, object] = {"kind": "local", "work_item_id": "li-dep"}
+    non_local_entry: dict[str, object] = {
+        "kind": "pull_request",
+        "repo": "org/repo",
+        "number": 42,
+    }
+    append_work_item(
+        path=_config(),
+        item=_minimal_work_item(
+            id_="li-x",
+            depends_on=(local_entry, non_local_entry),
+        ),
+    )
+    record = _fake().show_issue(issue_id="li-x")
+    assert {"depends_on_id": "li-dep", "type": EDGE_BLOCKS} in record["dependencies"]
+    assert len(record["dependencies"]) == 1
+    materialized = materialize_work_items(records=read_work_items(path=_config()))
+    assert local_entry in materialized["li-x"].depends_on
+    assert non_local_entry in materialized["li-x"].depends_on
+    assert len(materialized["li-x"].depends_on) == 2
+
+
 def test_superseded_by_maps_to_supersedes_edge_on_superseding_issue() -> None:
     append_work_item(path=_config(), item=_minimal_work_item(id_="li-new"))
     append_work_item(
