@@ -33,6 +33,7 @@ from livespec_runtime.cross_repo.errors import CrossRepoSchemaError
 from livespec_runtime.cross_repo.resolve import resolve_ref
 from livespec_runtime.cross_repo.types import (
     CrossRepoManifest,
+    CrossRepoTarget,
     DependsOnEntry,
     LocalDependency,
     RefStatus,
@@ -41,6 +42,8 @@ from livespec_runtime.cross_repo.types import (
 )
 
 from livespec_orchestrator_beads_fabro.commands import _jsonc
+from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
+from livespec_orchestrator_beads_fabro.store import read_work_items
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -126,11 +129,53 @@ def _local_lookup_for(*, index: dict[str, WorkItem]) -> Callable[[str], RefStatu
     return _lookup
 
 
+def _try_read_sibling(*, target: CrossRepoTarget) -> dict[str, WorkItem] | None:
+    if target.local_clone is None:
+        return None
+    try:
+        config = resolve_store_config(cwd=target.local_clone, work_items_arg=None)
+        return {item.id: item for item in read_work_items(path=config)}
+    except Exception:
+        return None
+
+
+def _sibling_lookup_for(*, manifest: CrossRepoManifest) -> Callable[[str, str], RefStatus] | None:
+    """Build a sibling_status_lookup from available local_clone reads.
+
+    Reads work items from each manifest target that provides a
+    `local_clone` path, tolerating any read failure per the
+    tolerate-partial-visibility contract. Returns None when no sibling
+    store is readable, which causes resolve_ref to return UNKNOWN for
+    sibling_work_item entries.
+    """
+    sibling_indices: dict[str, dict[str, WorkItem]] = {}
+    for slug, target in manifest.targets.items():
+        result = _try_read_sibling(target=target)
+        if result is not None:
+            sibling_indices[slug] = result
+    if not sibling_indices:
+        return None
+
+    def _lookup(repo: str, work_item_id: str) -> RefStatus:
+        index = sibling_indices.get(repo)
+        if index is None:
+            return RefStatus.UNKNOWN
+        record = index.get(work_item_id)
+        if record is None:
+            return RefStatus.UNKNOWN
+        if record.status == "closed":
+            return RefStatus.CLOSED
+        return RefStatus.OPEN
+
+    return _lookup
+
+
 def _entry_blocks(
     *,
     raw: object,
     index: dict[str, WorkItem],
     manifest: CrossRepoManifest,
+    sibling_status_lookup: Callable[[str, str], RefStatus] | None,
 ) -> bool:
     """Return True iff the raw entry resolves to `OPEN` via `resolve_ref`.
 
@@ -145,6 +190,7 @@ def _entry_blocks(
         entry=entry,
         manifest=manifest,
         local_status_lookup=_local_lookup_for(index=index),
+        sibling_status_lookup=sibling_status_lookup,
     )
     return status == RefStatus.OPEN
 
@@ -164,8 +210,10 @@ def is_item_ready(
     """
     if item.status != "open":
         return False
+    sibling_lookup = _sibling_lookup_for(manifest=manifest)
     return not any(
-        _entry_blocks(raw=raw, index=index, manifest=manifest) for raw in item.depends_on
+        _entry_blocks(raw=raw, index=index, manifest=manifest, sibling_status_lookup=sibling_lookup)
+        for raw in item.depends_on
     )
 
 
