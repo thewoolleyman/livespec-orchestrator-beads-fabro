@@ -12,6 +12,7 @@ from livespec_orchestrator_beads_fabro.errors import (
     BeadsConnectionError,
     BeadsMappingError,
     BeadsTenantMissingError,
+    ConnectionPrefixMissingError,
     MalformedRecordLineError,
     SchemaViolationError,
     SpecVersionNotFoundError,
@@ -85,3 +86,11 @@ def test_beads_mapping_error_message_and_attrs() -> None:
     assert err.record_id == "li-abc123"
     assert err.detail == "missing origin label"
     assert str(err) == "Could not map beads record li-abc123: missing origin label"
+
+
+def test_connection_prefix_missing_error_message_is_actionable() -> None:
+    err = ConnectionPrefixMissingError()
+    message = str(err)
+    assert "connection.prefix is required" in message
+    assert "bd-ib" in message
+    assert "tenant DB name" in message

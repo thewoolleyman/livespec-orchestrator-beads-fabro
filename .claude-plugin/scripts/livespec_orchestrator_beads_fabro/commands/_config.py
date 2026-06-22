@@ -12,7 +12,12 @@ Resolution order (later wins):
 2. The `.livespec.jsonc` connection block at `<cwd>/.livespec.jsonc`
    under `livespec-orchestrator-beads-fabro.connection` (and the substrate `format`
    marker / `tenant` key). A missing file or block falls back to
-   defaults plus a placeholder tenant.
+   defaults plus a placeholder tenant. `connection.prefix`, however, is
+   REQUIRED: it is bd's server-stored issue-ID create-prefix (e.g.
+   `bd-ib`) and is DECOUPLED from the tenant DB name, so it is never
+   defaulted — an unset/empty prefix raises `ConnectionPrefixMissingError`
+   (`database` and `server_user` still default to the tenant, which they
+   ARE).
 3. Environment overlay:
    - `LIVESPEC_BD_PATH` — absolute path to the pinned bd v1.0.5 binary
      (NEVER the mise shim). Overrides the config `bd_path`.
@@ -39,6 +44,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro.commands import _jsonc
+from livespec_orchestrator_beads_fabro.errors import ConnectionPrefixMissingError
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 _LIVESPEC_CONFIG = ".livespec.jsonc"
@@ -70,8 +76,8 @@ def resolve_store_config(
     _ = work_items_arg
     block = _read_connection_block(cwd=cwd)
     tenant = _str_or(block.get("tenant"), default=_DEFAULT_TENANT)
-    prefix = _str_or(block.get("prefix"), default=tenant)
-    database = _str_or(block.get("database"), default=prefix)
+    prefix = _require_prefix(block=block)
+    database = _str_or(block.get("database"), default=tenant)
     server_user = _str_or(block.get("server_user"), default=tenant)
     server_host = _str_or(block.get("server_host"), default=_DEFAULT_SERVER_HOST)
     server_port = _int_or(block.get("server_port"), default=_DEFAULT_SERVER_PORT)
@@ -112,6 +118,20 @@ def _read_connection_block(*, cwd: Path) -> dict[str, Any]:
     if not isinstance(connection_raw, dict):
         return {}
     return cast("dict[str, Any]", connection_raw)
+
+
+def _require_prefix(*, block: dict[str, Any]) -> str:
+    """Return the explicit `connection.prefix`, or raise if unset/empty.
+
+    `prefix` is bd's server-stored issue-ID create-prefix (e.g. `bd-ib`),
+    DECOUPLED from the tenant DB name. It is therefore NEVER defaulted to the
+    tenant: an unset/empty prefix would mint tenant-named ids the server
+    rejects, so the loader FAILS LOUD instead.
+    """
+    value = block.get("prefix")
+    if isinstance(value, str) and value != "":
+        return value
+    raise ConnectionPrefixMissingError
 
 
 def _resolve_bd_path(*, block: dict[str, Any]) -> str:

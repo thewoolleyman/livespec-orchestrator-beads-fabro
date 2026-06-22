@@ -116,6 +116,14 @@ def _item(**overrides: object) -> WorkItem:
 def _repo_with_workflow(*, tmp_path: Path) -> tuple[Path, Path]:
     repo = tmp_path / "repo"
     repo.mkdir()
+    # The dispatcher resolves the tenant connection via
+    # resolve_store_config(cwd=repo), which REQUIRES an explicit
+    # connection.prefix (decoupled from the tenant DB name); a real governed
+    # repo always carries one, so the hermetic repo mirrors that.
+    _ = (repo / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        encoding="utf-8",
+    )
     workflow = tmp_path / "workflow.toml"
     _ = workflow.write_text(_COMMITTED_WORKFLOW_TOML, encoding="utf-8")
     return repo, workflow
