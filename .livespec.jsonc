@@ -34,7 +34,12 @@
     // environment variable at bd-call time and is NEVER committed here.
     //
     // `prefix` == `tenant` == `database` is the load-bearing identity rule
-    // (the beads id prefix doubles as the tenant DB name). TCP-only (no
+    // (the beads id prefix doubles as the tenant DB name). The tenant is the
+    // ABBREVIATED `livespec-orch-beads-fabro` (25 chars), NOT the repo/plugin/
+    // package name `livespec-orchestrator-beads-fabro` (33 chars): Dolt/MySQL
+    // caps SQL usernames at 32, and one name must serve as
+    // user==database==prefix==tenant, so the 33-char name cannot be the tenant.
+    // (The git-jsonl sibling fits at 31 chars, so there tenant == repo.) TCP-only (no
     // `socket` key): the dolt socket dir is 0750 dolt:dolt and
     // untraversable by sandboxed callers, matching the family-wide
     // server-mode connection model.
