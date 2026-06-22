@@ -182,7 +182,7 @@
     "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
   },
   {
-    "heading": "## Scenario 6 — Cross-repo Layer 3 loop driver (livespec-resident)",
+    "heading": "## Scenario 6 — Cross-repo dispatch via the Dispatcher",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",

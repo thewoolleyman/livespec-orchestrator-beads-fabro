@@ -79,40 +79,33 @@ Scenario: Doctor reads spec directly and invokes the thin-transport query skills
   And in hermetic / CI contexts the in-memory fake backend stands in for a live tenant DB and satisfies the same schema
 ```
 
-## Scenario 6 — Cross-repo Layer 3 loop driver (livespec-resident)
+## Scenario 6 — Cross-repo dispatch via the Dispatcher
 
 ```gherkin
-Feature: Cross-repo Layer 3 loop driver (livespec-resident)
-  # Cross-reference: cross-side composition of impl-side `next` with
-  # spec-side `/livespec:next` is a Layer 3 (project-local orchestration)
-  # concern per `livespec/SPECIFICATION/spec.md` §"Three-layer orchestration
-  # architecture" → "Cross-side composition belongs at Layer 3". This
-  # scenario describes the Layer 3 driver's behavior; this plugin's `next`
-  # skill itself ranks impl-side state only and MUST NOT bake a cross-side
-  # weighting in. This plugin is responsible only for the impl-side `next`
-  # output schema and behavior; the composition rules and empty-queue
-  # handoff policy are entirely in scope for `livespec` and the
-  # project-local driver, not for this spec.
-  As the livespec-resident Layer 3 loop driver
-  I want to compose the spec-side and impl-side `next` outputs each iteration
-  So that cross-repo work is sequenced without the impl-side `next` baking in a cross-side weighting
+Feature: Cross-repo dispatch via the Dispatcher
+  # Cross-reference: the Dispatcher (`dispatcher.py` `dispatch` / `loop`)
+  # is the dispatch surface for routine cross-repo work — it polls the
+  # beads Ledger for ready work-items and drives each through Fabro
+  # autonomously. This plugin's `next` skill provides the impl-side ranking
+  # the Dispatcher consumes; it MUST NOT bake a cross-repo sequencing or
+  # cross-side weighting in — cross-repo sequencing and empty-queue
+  # handling are the Dispatcher's concern, not this skill's.
+  As the Dispatcher draining ready impl-side slices
+  I want to consume this plugin's `next` surface for impl-side ranking
+  So that cross-repo work is dispatched in priority order without impl-side `next` encoding cross-repo sequencing
 
-Scenario: The driver composes both sides' next at the top of each iteration
-  Given the livespec-resident cross-repo orchestration driver
-  When the driver invokes `/livespec:next --json`
-  Then it obtains a spec-side recommendation
-  When the driver invokes `/livespec-orchestrator-beads-fabro:next --json`
-  Then it obtains an impl-side recommendation
-  When the driver composes the two outputs
-  Then it produces a per-iteration action plan per the orchestration-layer rules defined in `livespec/SPECIFICATION/`
-  And gap-detection and drift-detection invocations (`/livespec-orchestrator-beads-fabro:capture-impl-gaps`, `/livespec-orchestrator-beads-fabro:capture-spec-drift`) are likewise Layer 3 driver-side concerns invoked outside `next`'s ranking — `next` ranks materialized work-items only
+Scenario: The Dispatcher consumes next for impl-side ranking
+  Given the Dispatcher is dispatching impl-side slices
+  When it invokes `/livespec-orchestrator-beads-fabro:next --json`
+  Then it obtains an impl-side ranked candidate list
+  And gap-detection and drift-detection invocations (`/livespec-orchestrator-beads-fabro:capture-impl-gaps`, `/livespec-orchestrator-beads-fabro:capture-spec-drift`) are Dispatcher-side concerns invoked outside `next`'s ranking — `next` ranks materialized work-items only
 
 Scenario: Empty-queue handoff offers a hygiene fallback
-  Given both `/livespec:next` and `/livespec-orchestrator-beads-fabro:next` emit empty `candidates: []` arrays (the no-work signal on both sides)
-  When the Layer 3 driver reaches the empty-queue handoff
-  Then it SHOULD offer the user a hygiene fallback — at minimum a `/livespec:doctor` pass and a `/livespec:critique` pass
+  Given `/livespec-orchestrator-beads-fabro:next` emits an empty `candidates: []` array (the no-work signal)
+  When the Dispatcher or operator reaches the empty-queue handoff
+  Then it SHOULD offer a hygiene fallback — at minimum a `/livespec:doctor` pass and a `/livespec:critique` pass
   And it MAY also offer `/livespec:prune-history` if `next.prune_history_threshold` would otherwise have suppressed it
-  And the hygiene fallback is a Layer 3 productivity heuristic that is NEVER baked into the Layer 2 `next` emission itself
+  And the hygiene fallback is a Dispatcher / operator concern that is NEVER baked into the `next` emission itself
 ```
 
 ## Scenario 7 — Regroom an oversized work-item
