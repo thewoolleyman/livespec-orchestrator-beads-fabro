@@ -259,3 +259,135 @@ def test_local_lookup_unknown_for_missing_id() -> None:
     item = _item(id_="li-x", depends_on=({"kind": "local", "work_item_id": "li-absent"},))
     assert is_item_ready(item=item, index={"li-x": item}, manifest=CrossRepoManifest(targets={}))
     assert RefStatus.UNKNOWN.value == "unknown"
+
+
+# ---------------------------------------------------------------------------
+# _sibling_lookup_for — unit coverage for all branches
+# ---------------------------------------------------------------------------
+
+
+def test_sibling_lookup_for_empty_manifest_returns_none() -> None:
+    """No targets → no sibling indices → None."""
+    from livespec_orchestrator_beads_fabro.commands._cross_repo import _sibling_lookup_for
+
+    assert _sibling_lookup_for(manifest=CrossRepoManifest(targets={})) is None
+
+
+def test_sibling_lookup_for_no_local_clone_returns_none() -> None:
+    """Target without local_clone is skipped; result is None when nothing readable."""
+    from livespec_orchestrator_beads_fabro.commands._cross_repo import _sibling_lookup_for
+
+    manifest = CrossRepoManifest(
+        targets={"runtime": CrossRepoTarget(github_url="https://github.com/x/y")}
+    )
+    assert _sibling_lookup_for(manifest=manifest) is None
+
+
+def test_sibling_lookup_for_config_error_tolerates_and_returns_none(tmp_path: Path) -> None:
+    """Missing prefix in sibling config raises; error is tolerated and result is None."""
+    from livespec_orchestrator_beads_fabro.commands._cross_repo import _sibling_lookup_for
+
+    manifest = CrossRepoManifest(
+        targets={
+            "runtime": CrossRepoTarget(
+                github_url="https://github.com/x/y",
+                local_clone=tmp_path,
+            )
+        }
+    )
+    assert _sibling_lookup_for(manifest=manifest) is None
+
+
+def test_sibling_lookup_for_read_error_tolerates_and_returns_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """read_work_items failure is tolerated; result is None."""
+    from livespec_orchestrator_beads_fabro.commands import _cross_repo
+    from livespec_orchestrator_beads_fabro.commands._cross_repo import _sibling_lookup_for
+    from livespec_orchestrator_beads_fabro.errors import BeadsConnectionError
+    from livespec_orchestrator_beads_fabro.types import StoreConfig
+
+    fake_config = StoreConfig(
+        tenant="t", prefix="t", server_user="t", database="t", bd_path="bd", fake=True
+    )
+    monkeypatch.setattr(_cross_repo, "resolve_store_config", lambda **_: fake_config)
+
+    def _failing_read(*, path: StoreConfig) -> None:  # noqa: ARG001
+        raise BeadsConnectionError(detail="simulated unavailable")
+
+    monkeypatch.setattr(_cross_repo, "read_work_items", _failing_read)
+    manifest = CrossRepoManifest(
+        targets={
+            "runtime": CrossRepoTarget(
+                github_url="https://github.com/x/y",
+                local_clone=tmp_path,
+            )
+        }
+    )
+    assert _sibling_lookup_for(manifest=manifest) is None
+
+
+def test_sibling_lookup_for_returns_callable_with_correct_statuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Readable clone → callable maps open→OPEN, closed→CLOSED, missing→UNKNOWN."""
+    from livespec_orchestrator_beads_fabro.commands import _cross_repo
+    from livespec_orchestrator_beads_fabro.commands._cross_repo import _sibling_lookup_for
+    from livespec_orchestrator_beads_fabro.types import StoreConfig
+
+    open_sib = _item(id_="li-sib-open")
+    closed_sib = _item(id_="li-sib-closed", status="closed")
+    fake_config = StoreConfig(
+        tenant="t", prefix="t", server_user="t", database="t", bd_path="bd", fake=True
+    )
+    monkeypatch.setattr(_cross_repo, "resolve_store_config", lambda **_: fake_config)
+    monkeypatch.setattr(_cross_repo, "read_work_items", lambda **_: iter([open_sib, closed_sib]))
+    manifest = CrossRepoManifest(
+        targets={
+            "runtime": CrossRepoTarget(
+                github_url="https://github.com/x/y",
+                local_clone=tmp_path,
+            )
+        }
+    )
+    lookup = _sibling_lookup_for(manifest=manifest)
+    assert lookup is not None
+    assert lookup("runtime", "li-sib-open") == RefStatus.OPEN
+    assert lookup("runtime", "li-sib-closed") == RefStatus.CLOSED
+    assert lookup("runtime", "li-nonexistent") == RefStatus.UNKNOWN
+    assert lookup("other-repo", "li-sib-open") == RefStatus.UNKNOWN
+
+
+# ---------------------------------------------------------------------------
+# is_item_ready — sibling_work_item: open blocks, closed satisfies
+# ---------------------------------------------------------------------------
+
+
+def test_is_item_ready_open_sibling_dep_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Open sibling_work_item dependency blocks readiness."""
+    monkeypatch.setattr(
+        _cross_repo,
+        "_sibling_lookup_for",
+        lambda **_: (lambda _r, _w: RefStatus.OPEN),
+    )
+    manifest = CrossRepoManifest(
+        targets={"runtime": CrossRepoTarget(github_url="https://github.com/x/y")}
+    )
+    entry = {"kind": "sibling_work_item", "repo": "runtime", "work_item_id": "li-sib"}
+    item = _item(id_="li-x", depends_on=(entry,))
+    assert not is_item_ready(item=item, index={"li-x": item}, manifest=manifest)
+
+
+def test_is_item_ready_closed_sibling_dep_does_not_block(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Closed sibling_work_item dependency does not block readiness."""
+    monkeypatch.setattr(
+        _cross_repo,
+        "_sibling_lookup_for",
+        lambda **_: (lambda _r, _w: RefStatus.CLOSED),
+    )
+    manifest = CrossRepoManifest(
+        targets={"runtime": CrossRepoTarget(github_url="https://github.com/x/y")}
+    )
+    entry = {"kind": "sibling_work_item", "repo": "runtime", "work_item_id": "li-sib"}
+    item = _item(id_="li-x", depends_on=(entry,))
+    assert is_item_ready(item=item, index={"li-x": item}, manifest=manifest)
