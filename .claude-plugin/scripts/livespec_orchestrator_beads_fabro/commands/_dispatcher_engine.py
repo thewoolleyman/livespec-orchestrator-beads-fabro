@@ -495,7 +495,10 @@ def _provision_janitor_checkout(
         return _merged_degraded(
             plan=plan,
             merged=merged,
-            step=(f"installing canonical hooks via `just bootstrap` in " f"{plan.repo}"),
+            step=(
+                f"installing canonical hooks via `just install-commit-refuse-hooks` in "
+                f"{plan.repo}"
+            ),
             result=bootstrap,
         )
     return None
