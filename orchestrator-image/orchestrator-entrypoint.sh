@@ -31,7 +31,7 @@
 #   FABRO_GITHUB_USERNAME          GitHub username for the token strategy
 #                                  (default: thewoolleyman)
 #   CLAUDE_CODE_OAUTH_TOKEN        model auth the dispatcher projects per-dispatch
-#   BEADS_DOLT_PASSWORD_<tenant>   external family-tenant Dolt password (dispatcher)
+#   BEADS_DOLT_PASSWORD          shared family Dolt password (dispatcher; one bare var)
 #   HONEYCOMB_INGEST_KEY_LIVESPEC  telemetry egress key (dispatcher)
 #   FABRO_PORT                     control-plane / web-UI port (default: 32276)
 #   FABRO_SKIP_LLM                 set non-empty to provision GitHub only (no LLM)
