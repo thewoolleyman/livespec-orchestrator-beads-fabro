@@ -61,6 +61,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     PrView,
     fabro_inspect_argv,
     fabro_run_argv,
+    janitor_bootstrap_argv,
     janitor_trust_argv,
     janitor_worktree_add_argv,
     janitor_worktree_remove_argv,
@@ -483,6 +484,19 @@ def _provision_janitor_checkout(
             merged=merged,
             step=f"`mise trust` inside the janitor checkout {plan.janitor_checkout}",
             result=trust,
+        )
+    bootstrap = runner.run(
+        argv=janitor_bootstrap_argv(),
+        cwd=plan.repo,
+        timeout_seconds=_GIT_TIMEOUT_SECONDS,
+    )
+    _journal_stage(journal=journal, plan=plan, stage="janitor-checkout-bootstrap", result=bootstrap)
+    if bootstrap.exit_code != 0:
+        return _merged_degraded(
+            plan=plan,
+            merged=merged,
+            step=(f"installing canonical hooks via `just bootstrap` in " f"{plan.repo}"),
+            result=bootstrap,
         )
     return None
 

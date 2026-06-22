@@ -77,6 +77,7 @@ __all__: list[str] = [
     "is_non_convergence_outcome",
     "item_sizing_warnings",
     "janitor_argv_with_default",
+    "janitor_bootstrap_argv",
     "janitor_checkout_path",
     "janitor_trust_argv",
     "janitor_worktree_add_argv",
@@ -1029,6 +1030,19 @@ def janitor_trust_argv() -> list[str]:
     exits 0, so this is safe to run unconditionally.
     """
     return ["mise", "trust"]
+
+
+def janitor_bootstrap_argv() -> list[str]:
+    """Install canonical commit-refuse hooks in the primary checkout (run with cwd=plan.repo).
+
+    Runs `just bootstrap` in the primary checkout so the canonical
+    pre-commit and pre-push hooks are present at `.git/hooks/` before
+    `just check` runs in the janitor worktree — the shared
+    `check-primary-checkout-commit-refuse-hook-installed` gate reads
+    the same hooks_dir and fails when the bootstrap step was never run.
+    Idempotent: safe to run on every dispatch.
+    """
+    return ["mise", "exec", "--", "just", "bootstrap"]
 
 
 def parse_run_id(*, output: str) -> str | None:
