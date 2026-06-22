@@ -100,15 +100,17 @@ class StoreConfig:
     (beads-schema-mapping.md §2.1):
 
     - `tenant` — the logical tenant name (the livespec-family repo).
-    - `prefix` — the beads id prefix, which by the load-bearing identity
-      rule EQUALS the tenant database name (`prefix == database`).
+    - `prefix` — the beads id prefix (bd's server-stored create-prefix),
+      DECOUPLED from the tenant database name: a short, readable alias
+      that MAY differ from it (e.g. `bd-ib`), NOT `database`.
     - `server_host` / `server_port` — TCP connection (default
       `127.0.0.1:3307`).
     - `socket` — optional unix-socket path; when set it OVERRIDES
       host/port (the §2.1 `--server-socket` semantics).
     - `server_user` — the least-privilege tenant user scoped to the DB.
     - `database` — the tenant DB selected explicitly via `--database`
-      (== `prefix`).
+      (== `tenant` == `server_user`; the load-bearing tenant identity,
+      DECOUPLED from `prefix`).
     - `bd_path` — absolute path to the pinned bd v1.0.5 binary (NEVER the
       mise shim; resolved from config/env in `commands/_config.py`).
     - `fake` — hermetic toggle. When True the store talks to an in-memory

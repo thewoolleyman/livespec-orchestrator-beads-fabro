@@ -35,7 +35,7 @@ descriptor), not a filesystem `Path`. See `types.StoreConfig`.
 FIELD MAP (authoritative detail in
 dev-tooling/implementation/research/beads-schema-mapping.md):
 
-- id ⇄ id (operator-supplied; prefix == tenant)
+- id ⇄ id (operator-supplied; prefix is the decoupled issue-prefix, e.g. bd-ib)
 - type ⇄ issue_type, status ⇄ status, title/description ⇄ identity
 - priority ⇄ priority (0 = highest on both sides)
 - assignee ⇄ assignee (first-class)
