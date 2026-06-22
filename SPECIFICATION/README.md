@@ -53,6 +53,20 @@ sub-commands:
 - `/livespec:prune-history --spec-target SPECIFICATION/`
 - `/livespec:next --spec-target SPECIFICATION/`
 
+For maintainer orchestration after bootstrap, use this plugin's
+operator surface instead of a manual handoff prompt:
+
+```text
+/livespec-orchestrator-beads-fabro:orchestrate plan --repo /path/to/repo --json
+/livespec-orchestrator-beads-fabro:orchestrate run --repo /path/to/repo --action <selected-action-id> --json
+```
+
+`plan` is read-only and composes spec-side `/livespec:next` with
+impl-side `next`. `run` requires an explicit selected action id:
+`spec:<action>:<n>` returns a human-gated `/livespec:*` handoff, while
+`impl:<work-item-id>` dispatches that existing item through
+Dispatcher/Fabro with the default small budget.
+
 This README is a placeholder — once `/livespec:seed` runs it
 will be replaced (or co-exist depending on the template's `README.md`
 slot rules).

@@ -49,8 +49,8 @@ even though the plugin is present.
 
 ## Skill surface
 
-The plugin ships seven skills — four heavyweight authored skills and
-three thin-transport machine-query surfaces, per livespec's
+The plugin ships eight skills — four heavyweight authored skills, one
+operator skill, and three thin-transport machine-query surfaces, per livespec's
 `SPECIFICATION/contracts.md`:
 
 - `/livespec-orchestrator-beads-fabro:capture-impl-gaps` — detect spec→impl gaps and
@@ -61,6 +61,9 @@ three thin-transport machine-query surfaces, per livespec's
   impl-side work item (`origin: freeform`, `gap_id: null`)
 - `/livespec-orchestrator-beads-fabro:implement` — drive Red→Green for a single
   work-item; verify gap-tied closure by re-running gap detection
+- `/livespec-orchestrator-beads-fabro:orchestrate` — the permanent minimal
+  operator surface; compose spec-side `next` and impl-side `next`, present
+  selectable actions, and run only the selected factory-safe impl action
 - `/livespec-orchestrator-beads-fabro:detect-impl-gaps` — emit the current gap-id set
   as JSON (pure read-and-emit; never mutates, never prompts)
 - `/livespec-orchestrator-beads-fabro:list-work-items` — list work-items from the
@@ -71,6 +74,51 @@ three thin-transport machine-query surfaces, per livespec's
 Each skill resolves livespec core's prose and config-named CLIs at
 runtime and reads this repo's `.livespec.jsonc` for the beads tenant
 connection block.
+
+## Using orchestrate
+
+Manual bootstrap handoff prompts are no longer the normal operating
+surface. Use `/livespec-orchestrator-beads-fabro:orchestrate` as the
+default maintainer entry point when deciding what to do next for this
+repo or another governed livespec-family repo.
+
+1. Ask for the operator plan:
+
+   ```text
+   /livespec-orchestrator-beads-fabro:orchestrate plan --repo /path/to/repo --json
+   ```
+
+   `plan` is read-only. It runs spec-side `/livespec:next` against the
+   target repo's `SPECIFICATION/`, runs this plugin's impl-side `next`,
+   and returns `actions[]`.
+
+2. Pick one action id from the returned list.
+
+   - `spec:<action>:<n>` means human-gated spec lifecycle work. The
+     result carries a `/livespec:* --spec-target SPECIFICATION/`
+     handoff; it is not factory-dispatched.
+   - `impl:<work-item-id>` means factory-safe implementation work for an
+     existing Beads item.
+
+3. Run exactly the selected action:
+
+   ```text
+   /livespec-orchestrator-beads-fabro:orchestrate run --repo /path/to/repo --action impl:<work-item-id> --json
+   ```
+
+   Impl actions dispatch through the existing Dispatcher/Fabro loop with
+   `--mode shadow --budget 1 --parallel 1 --item <work-item-id> --json`.
+   Spec actions return a `human-gated` handoff instead of mutating spec
+   state. `orchestrate` never creates new work-items and never re-ranks
+   work itself; it composes the existing `next` surfaces.
+
+If the slash skill is unavailable in a non-Claude harness, call the
+shared CLI directly:
+
+```bash
+python3 /data/projects/livespec-orchestrator-beads-fabro/.claude-plugin/scripts/bin/orchestrate.py plan --repo /path/to/repo --json
+python3 /data/projects/livespec-orchestrator-beads-fabro/.claude-plugin/scripts/bin/orchestrate.py run --repo /path/to/repo --action impl:<work-item-id> --json
+```
 
 ## Dispatcher and telemetry
 
