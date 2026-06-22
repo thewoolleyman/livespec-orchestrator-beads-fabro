@@ -115,7 +115,11 @@ Inherited (verbatim, NOT re-stated here):
   one-line invocation of the wrapper script. All logic lives in
   `.claude-plugin/scripts/bin/<skill>.py`. This is the upstream
   thin-transport doctrine, enforced here.
-- Codex support is REQUIRED as a first-class agent-runtime consideration. Codex adapters MUST be thin runtime bindings over the same wrapper CLIs, beads tenant semantics, and consent rules as the Claude Code skills; they MUST NOT copy Claude-specific `SKILL.md` bodies. Thin-transport behavior remains zero-orchestration under Codex too: ranking, listing, and formatting logic stays in the wrapper scripts. Claude-only hooks are NOT assumed to run under Codex; any Codex adapter or hook replacement MUST be manually verified before Codex support is claimed.
+- The operator skill (`orchestrate`) carries only harness binding prose
+  in SKILL.md. Deterministic planning, selected-action execution, and
+  outcome summarization live in the shared `orchestrate.py` wrapper and
+  command module so Claude Code and Codex bindings call the same logic.
+- Codex support is REQUIRED as a first-class agent-runtime consideration. Codex adapters MUST be thin runtime bindings over the same wrapper CLIs, beads tenant semantics, and consent rules as the Claude Code skills; they MUST NOT copy Claude-specific `SKILL.md` bodies. Thin-transport behavior remains zero-orchestration under Codex too: ranking, listing, and formatting logic stays in the wrapper scripts. The `orchestrate` surface is likewise a thin runtime binding over `orchestrate.py`, with user selection handled by the harness and selected impl work executed by the shared CLI. Claude-only hooks are NOT assumed to run under Codex; any Codex adapter or hook replacement MUST be manually verified before Codex support is claimed.
 - Heavyweight skills that write to the work-items store MUST
   obtain per-operation user consent before each store write, in one
   of the recognized consent forms, unless the user explicitly waived

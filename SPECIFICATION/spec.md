@@ -27,14 +27,14 @@ identical EXCEPT for this persistence substrate. The git-jsonl sibling
 commits append-only JSONL files alongside the consumer project's other
 source; this plugin keeps the same logical model (work-items, the
 latest state of each by id) but stores it as rows in a beads tenant
-DB. Everything above the store boundary — the 7-skill surface, the
+DB. Everything above the store boundary — the 8-skill surface, the
 Spec Reader, the cross-boundary handoffs, the `compat` block — is the
 same contract.
 
 ## Scope boundary
 
 The substrate is the only thing this spec describes that is unique to
-the plugin. Everything else — the names of the seven skills, the
+the plugin. Everything else — the names of the eight skills, the
 cross-boundary handoffs, the Spec Reader's required-capability surface,
 the `compat` block format, the per-plugin Persistent Agent Knowledge
 store realization slot — is FIXED by `livespec`'s published contract.
