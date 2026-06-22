@@ -127,6 +127,22 @@ CLI surface:
 - `orchestrate plan --repo <path> [--json]`
 - `orchestrate run --repo <path> --action <action-id> [--json]`
 
+Operator procedure:
+
+1. Invoke `plan --repo <path> --json`.
+2. Present the returned `actions[]` to the human operator.
+3. Invoke `run --repo <path> --action <action-id> --json` only for the
+   selected action id.
+4. Summarize the result, including `status`, Dispatcher exit code,
+   parsed Dispatcher JSON when present, stderr when non-empty, PR/run
+   fields when present, and any spec-side handoff command.
+
+This procedure supersedes manual bootstrap handoff prompts as the
+steady-state operator loop. Bootstrap prompts MAY still exist as
+historical recovery artifacts, but routine follow-on orchestration MUST
+start from `orchestrate plan` and proceed through an explicit selected
+action id.
+
 `plan` is read-only. It resolves the target repo explicitly, invokes the
 spec-side and impl-side `next` wrappers, and returns selectable action
 records. Spec actions have ids shaped as `spec:<action>:<index>` and
@@ -141,6 +157,14 @@ exit code, stdout JSON, stderr, and the selected work-item id. A selected
 spec action returns `status: human-gated` plus the handoff command; it
 MUST NOT mutate spec-side state directly. The surface MUST NOT create
 net-new work-items.
+
+Codex and other non-Claude runtimes MUST use the same Python CLI rather
+than copying Claude-specific skill prose. When the slash skill is not
+available, the required fallback is direct invocation of
+`.claude-plugin/scripts/bin/orchestrate.py plan --repo <path> --json`
+and `.claude-plugin/scripts/bin/orchestrate.py run --repo <path>
+--action <action-id> --json` under the same Beads/Dolt environment that
+the Dispatcher requires.
 
 ### Thin-transport skills (3)
 
