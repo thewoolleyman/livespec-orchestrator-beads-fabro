@@ -125,8 +125,9 @@ from pathlib import Path
 
 config = resolve_store_config(cwd=Path.cwd(), work_items_arg=None)
 item = WorkItem(
-    # bd enforces id-prefix == tenant DB name, so the id carries the
-    # configured tenant prefix (config.prefix), not a hardcoded `li-`.
+    # The id-prefix is the tenant's server-stored bd create-prefix
+    # (config.prefix), DECOUPLED from the tenant DB name — so the id
+    # carries config.prefix, not a hardcoded `li-`.
     id=new_work_item_id(prefix=config.prefix),
     type="task",
     status="open",
