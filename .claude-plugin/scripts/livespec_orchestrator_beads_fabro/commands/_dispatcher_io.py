@@ -262,6 +262,8 @@ class WatchedFabroLauncher:
         known_run_id: str | None = None
         while thread.is_alive():
             self.sleep(_WATCHDOG_POLL_INTERVAL_SECONDS)
+            if not thread.is_alive():
+                return None
             run_id = self._discover_run_id(plan=plan, runner=runner)
             known_run_id = run_id if run_id is not None else known_run_id
             samples.append(self._sample(plan=plan, runner=runner, run_id=run_id))

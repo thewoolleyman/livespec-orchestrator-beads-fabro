@@ -448,6 +448,7 @@ class _ScriptedFabroRunner:
     ps_exit: int = 0
     events_exit: int = 0
     run_done: threading.Event = field(default_factory=threading.Event)
+    run_returned: threading.Event = field(default_factory=threading.Event)
     rm_calls: list[str] = field(default_factory=list)
     _poll: int = 0
 
@@ -468,8 +469,9 @@ class _ScriptedFabroRunner:
 
     def _run(self) -> CommandResult:
         # Block until the watchdog cancels (or a healthy run completes —
-        # the test sets run_done up front for the healthy path).
+        # the healthy-path tests set run_done during or before polling).
         _ = self.run_done.wait(timeout=10.0)
+        self.run_returned.set()
         return CommandResult(exit_code=0, stdout="    Run: 01RUN\n", stderr="")
 
     def _ps(self) -> CommandResult:
@@ -523,14 +525,23 @@ def test_watched_launcher_cancels_a_confirmed_stall(
 def test_watched_launcher_lets_a_healthy_run_complete(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The run completes on its own (run_done pre-set) before the watch
-    # loop ever confirms a stall -> no cancellation, the real
-    # CommandResult flows back.
+    # The run completes on its own during the watch sleep before the
+    # would-be deciding sample. The background thread is alive at the top
+    # of the watch iteration, but the launcher must notice completion
+    # after the sleep boundary and return the real CommandResult without
+    # probing/canceling the finished run.
     monkeypatch.setenv(STALL_SECONDS_ENV_VAR, "1000")
     runner = _ScriptedFabroRunner(events_jsons=['[{"timestamp": "2026-06-13T08:00:00Z"}]'])
-    runner.run_done.set()  # the run is already finished when the loop checks
+    polls = {"n": 0}
+
+    def _sleep_then_finish(_seconds: float) -> None:
+        polls["n"] += 1
+        if polls["n"] >= 3:
+            runner.run_done.set()
+            assert runner.run_returned.wait(timeout=1.0)
+
     journal = _RecordingJournal()
-    launcher = WatchedFabroLauncher(sleep=lambda _s: None, clock=_advancing_clock())
+    launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())
     result = launcher.launch(plan=_plan(repo=tmp_path), runner=runner, journal=journal)
     assert result.stalled_run_id is None
     assert result.command.exit_code == 0
