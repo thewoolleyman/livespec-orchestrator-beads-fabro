@@ -4,12 +4,13 @@ The check validates the orchestrator plugin's Codex cross-runtime surface:
 the repo-root `.agents/plugins/marketplace.json` catalog, the nested
 `.claude-plugin/.codex-plugin/plugin.json` manifest, the FOUR thin
 wrapper-backed `.codex-plugin/skills/<op>/SKILL.md` bindings (next,
-list-work-items, detect-impl-gaps, orchestrate), and the THREE prose-backed
-heavyweight capture bindings (capture-work-item, capture-impl-gaps,
-capture-spec-drift) that read `prose/<op>.md` instead of self-invoking a
-wrapper. It also keeps the two remaining HEAVYWEIGHT ops' absence VISIBLE —
-implement and groom are pending the same shared-prose extraction, so the
-check asserts their skill dirs are ABSENT.
+list-work-items, detect-impl-gaps, orchestrate), and the FIVE prose-backed
+heavyweight bindings (capture-work-item, capture-impl-gaps,
+capture-spec-drift, implement, groom) that read `prose/<op>.md` instead of
+self-invoking a wrapper. The P3b prose extraction is complete — implement
+and groom flipped from pending to prose-backed at P3b PR-3 — so no
+heavyweight op remains pending and `_PENDING_CODEX_OPS` is empty (retained
+so a future pending op's skill dir would still be asserted ABSENT).
 
 The check is pure-filesystem (no beads / no store), so these tests build a
 COMPLETE fixture surface under `tmp_path`, monkeypatch the check module's
@@ -59,11 +60,11 @@ _PRESENT_PROSE_OPS = (
     "capture-work-item",
     "capture-impl-gaps",
     "capture-spec-drift",
-)
-_PENDING_OPS = (
     "implement",
     "groom",
 )
+# The P3b prose extraction is complete: no heavyweight op remains pending.
+_PENDING_OPS: tuple[str, ...] = ()
 
 _RESOLUTION_BLOCK = (
     "## Resolving the plugin root\n\n"
@@ -209,12 +210,14 @@ def test_present_set_is_the_four_thin_ops() -> None:
     assert set(_CHECK._PRESENT_OPS) == set(_PRESENT_OPS)  # noqa: SLF001
 
 
-def test_present_prose_set_is_the_three_capture_ops() -> None:
+def test_present_prose_set_is_the_five_heavyweight_ops() -> None:
     assert frozenset(_PRESENT_PROSE_OPS) == _CHECK._PRESENT_PROSE_OPS  # noqa: SLF001
 
 
-def test_pending_set_is_the_two_heavyweight_ops() -> None:
+def test_pending_set_is_empty() -> None:
+    """The P3b extraction is complete: no heavyweight op remains pending."""
     assert frozenset(_PENDING_OPS) == _CHECK._PENDING_CODEX_OPS  # noqa: SLF001
+    assert frozenset() == _CHECK._PENDING_CODEX_OPS  # noqa: SLF001
 
 
 # --------------------------------------------------------------------------
@@ -357,9 +360,16 @@ def test_extra_skill_dir_fails(point_at: Path) -> None:
     assert _CHECK.main() == 1
 
 
-def test_pending_op_dir_present_fails(point_at: Path) -> None:
-    """A heavyweight (P3b-pending) op shipping a Codex skill dir now is a violation."""
-    (_skills_dir(root=point_at) / "implement").mkdir()
+def test_pending_op_dir_present_fails(point_at: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The visibility mechanism still fires: a pending op shipping a Codex dir fails.
+
+    `_PENDING_CODEX_OPS` is empty now that the P3b extraction is complete, so
+    this exercises the retained mechanism against a SYNTHETIC pending op:
+    enumerate it as pending, ship its skill dir, and confirm the "must NOT ship
+    yet" assertion still trips.
+    """
+    monkeypatch.setattr(_CHECK, "_PENDING_CODEX_OPS", frozenset({"future-op"}))
+    (_skills_dir(root=point_at) / "future-op").mkdir()
     assert _CHECK.main() == 1
 
 
