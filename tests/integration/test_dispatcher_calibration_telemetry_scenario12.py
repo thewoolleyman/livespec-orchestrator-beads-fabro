@@ -51,7 +51,7 @@ from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 _FLEET_MANIFEST_TEXT = (
-    "// fleet-manifest.jsonc — canned test copy\n"
+    "// .livespec-fleet-manifest.jsonc — canned test copy\n"
     "{\n"
     '  "owner": "thewoolleyman",\n'
     '  "members": [\n'

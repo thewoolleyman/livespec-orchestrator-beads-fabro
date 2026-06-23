@@ -2184,7 +2184,7 @@ def test_fetch_fleet_manifest_text_shells_gh_api_raw(
     argv, _cwd = fake.calls[0]
     assert argv[:2] == ["gh", "api"]
     assert "Accept: application/vnd.github.raw" in argv
-    assert argv[-1] == "repos/thewoolleyman/livespec/contents/fleet-manifest.jsonc"
+    assert argv[-1] == "repos/thewoolleyman/livespec/contents/.livespec-fleet-manifest.jsonc"
 
 
 def test_fetch_fleet_manifest_text_returns_none_on_failure(

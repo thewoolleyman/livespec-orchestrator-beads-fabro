@@ -50,7 +50,7 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 # --- canned fleet manifest (mirrors test_dispatcher.py's autouse fixture) ---
 
 _FLEET_MANIFEST_TEXT = (
-    "// fleet-manifest.jsonc — canned test copy\n"
+    "// .livespec-fleet-manifest.jsonc — canned test copy\n"
     "{\n"
     '  "owner": "thewoolleyman",\n'
     '  "members": [\n'

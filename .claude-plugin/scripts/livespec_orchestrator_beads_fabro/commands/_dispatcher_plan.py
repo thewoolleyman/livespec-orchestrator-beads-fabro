@@ -191,7 +191,7 @@ class PrView:
 
 @dataclass(frozen=True, kw_only=True)
 class FleetMembers:
-    """Owner + member repo names parsed from livespec's fleet-manifest.jsonc.
+    """Owner + member repo names parsed from livespec's .livespec-fleet-manifest.jsonc.
 
     The fleet manifest (livespec non-functional-requirements.md §"Fleet
     membership contract") is the canonical family member registry; the
@@ -219,7 +219,7 @@ class SiblingClones:
 
 
 def parse_fleet_members(*, manifest_text: str) -> FleetMembers | None:
-    """Parse fleet-manifest.jsonc text into FleetMembers; None when malformed.
+    """Parse .livespec-fleet-manifest.jsonc text into FleetMembers; None when malformed.
 
     Accepts the committed shape on livespec master: a JSONC object with
     a string `owner` and a non-empty `members` list of objects each
@@ -982,7 +982,7 @@ def _sibling_clone_steps_block(*, siblings: SiblingClones) -> str:
     lines: list[str] = [
         "",
         "# --- Dispatcher-materialized sibling clones (from livespec master's",
-        "# --- fleet-manifest.jsonc): depth-1 default-branch clones so",
+        "# --- .livespec-fleet-manifest.jsonc): depth-1 default-branch clones so",
         "# --- cross-repo checks resolve every family sibling under",
         f"# --- {siblings.clones_root} inside the sandbox ---",
     ]

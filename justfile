@@ -827,15 +827,16 @@ check-pre-commit:
     # which during a Green amend is the in-progress Red commit; it would
     # otherwise reject a perfectly valid Green amend. Skip the aggregate
     # variant here (the commit-msg hook is the load-bearing per-commit
-    # verifier); pre-push + CI re-run the full no-arg aggregate against
-    # the completed Red->Green HEAD as the safety net.
+    # verifier). Also skip the same-repo live TUI picker gate here, matching
+    # the Red path above; standalone `just check`, pre-push's green-token path,
+    # and CI keep the completed Red->Green HEAD covered after the amend lands.
     head_msg=$(git log -1 --format=%B 2>/dev/null || true)
     if [[ "$impl_count" -ge 1 ]] \
         && grep -q 'TDD-Red-Test-File-Checksum:' <<< "$head_msg" \
         && ! grep -q 'TDD-Green-Verified-At:' <<< "$head_msg"; then
         echo ":: Green-amend shape detected (impl staged; HEAD carries Red-only trailers)"
-        echo ":: skipping no-arg check-red-green-replay (commit-msg replay hook verifies the Green amend)"
-        just skip="check-red-green-replay" check
+        echo ":: skipping no-arg check-red-green-replay and same-repo live TUI picker gate"
+        just skip="check-red-green-replay check-codex-skill-picker" check
         exit $?
     fi
     just check

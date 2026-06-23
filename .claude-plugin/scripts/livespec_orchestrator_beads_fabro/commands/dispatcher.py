@@ -61,7 +61,7 @@ journaled.
 
 Sandbox sibling clones: the same overlay appends one depth-1
 prepare-step clone per fleet member (from livespec master's
-fleet-manifest.jsonc, fetched host-side via `gh api` at run-config
+.livespec-fleet-manifest.jsonc, fetched host-side via `gh api` at run-config
 generation; the dispatch target is excluded) and projects the
 non-secret LIVESPEC_SIBLING_CLONES_ROOT=/workspace/siblings into the
 sandbox env table, so cross-repo checks under `just check` resolve
@@ -275,7 +275,7 @@ _HONEYCOMB_INGEST_KEY_ENV = "HONEYCOMB_INGEST_KEY_LIVESPEC"
 # bound port). Module-scoped state, started fail-open at dispatch entry.
 _OTEL_RECEIVER_HOLDER: dict[str, object] = {}
 
-# Where the canonical fleet member registry lives: fleet-manifest.jsonc
+# Where the canonical fleet member registry lives: .livespec-fleet-manifest.jsonc
 # on livespec master (livespec non-functional-requirements.md §"Fleet
 # membership contract"). Fetched HOST-SIDE at run-config generation
 # time via `gh api` raw content — the same consume-from-master pattern
@@ -283,7 +283,7 @@ _OTEL_RECEIVER_HOLDER: dict[str, object] = {}
 # This pins the manifest LOCATION, not the member list: the list itself
 # is always read fresh, and an unreachable/malformed manifest fails the
 # dispatch fast instead of falling back to a stale hardcoded set.
-_FLEET_MANIFEST_API_PATH = "repos/thewoolleyman/livespec/contents/fleet-manifest.jsonc"
+_FLEET_MANIFEST_API_PATH = "repos/thewoolleyman/livespec/contents/.livespec-fleet-manifest.jsonc"
 _FLEET_MANIFEST_FETCH_TIMEOUT_SECONDS = 60.0
 
 # In-sandbox directory the sibling clones land under; projected into
@@ -1691,7 +1691,7 @@ def _materialize_overlay(
 
 
 def _fetch_fleet_manifest_text() -> str | None:
-    """Fetch fleet-manifest.jsonc raw text from livespec master via `gh api`.
+    """Fetch .livespec-fleet-manifest.jsonc raw text from livespec master via `gh api`.
 
     HOST-SIDE read at run-config generation time (the Dispatcher's own
     environment has an authenticated `gh`; the sandbox does not).
@@ -1730,7 +1730,7 @@ def _resolve_sibling_clones(*, repo: Path) -> SiblingClones | str:
     if manifest_text is None:
         return (
             "sibling-clone provisioning refused: could not fetch "
-            f"fleet-manifest.jsonc from livespec master (`gh api "
+            f".livespec-fleet-manifest.jsonc from livespec master (`gh api "
             f"{_FLEET_MANIFEST_API_PATH}`). The sandbox provisions one "
             "depth-1 clone per fleet member so cross-repo checks resolve "
             f"siblings under {_SIBLING_CLONES_ROOT}; check `gh auth "
@@ -1739,7 +1739,7 @@ def _resolve_sibling_clones(*, repo: Path) -> SiblingClones | str:
     members = parse_fleet_members(manifest_text=manifest_text)
     if members is None:
         return (
-            "sibling-clone provisioning refused: fleet-manifest.jsonc "
+            "sibling-clone provisioning refused: .livespec-fleet-manifest.jsonc "
             "fetched from livespec master did not parse into an owner "
             "plus a non-empty members list of GitHub-slug-shaped repo "
             "names. Fix the manifest on livespec master (it is the "

@@ -24,7 +24,7 @@
 # path below to an absolute path so it resolves from outside this
 # directory, (b) APPENDS one depth-1 sibling-clone
 # [[run.prepare.steps]] block per fleet member (from livespec master's
-# fleet-manifest.jsonc, fetched host-side via `gh api`; the dispatch
+# .livespec-fleet-manifest.jsonc, fetched host-side via `gh api`; the dispatch
 # target is excluded) so cross-repo checks resolve family siblings
 # under /workspace/siblings inside the sandbox (work-item
 # livespec-impl-beads-8m2), and (c) APPENDS an
