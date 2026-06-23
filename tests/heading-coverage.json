@@ -326,5 +326,12 @@
       }
     ],
     "reason": "Integration-tier acceptance for the closed_item_integrity dev-tooling check (work-items livespec-impl-beads-fxt/xe0/oaq; gap-j2femmn7 invariant, gap-gtamowt3 + gap-3wbdenoy check): the check's main() is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend) with a fixture tests/heading-coverage.json carrying the clauses[] gap-id->scenario map. The bound node id is the case-1 finding journey (a TODO-bound closed gap-tied item surfaces a closed-item-integrity warning at exit 0 in the default warn mode); the fail-mode exit-non-zero, the missing-resolution:completed-label, the unresolvable-gap-id, and the case-2 fully-proven-no-finding cases are sibling tests in the same module. Bound at the gap-tied impl step before its own resolution:completed closure (the check is its own first subject)."
+  },
+  {
+    "heading": "## Scenario 17 — orchestrate operator-surface defaults",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Added by the orchestrate-operator-ux revise pass. The scenario pins the three orchestrate operator-surface defaults (bare-invocation walkthrough, cwd-default --repo, Markdown-default output with --json opt-in). A real integration-tier test id is populated by the governed propose-change/revise loop's resulting_files[] mechanism once the operator-surface ergonomics gain an exercising test (alongside the follow-up impl work-item that implements them)."
   }
 ]
