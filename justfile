@@ -252,6 +252,17 @@ check:
         # lever (default warn → exit 0, advisory). Not a canonical slug, so
         # it rides in the private block after the canonical set.
         check-closed-item-integrity
+        # Codex cross-runtime structural check (P3). Pure-filesystem gate
+        # validating the orchestrator plugin's Codex surface (repo-root
+        # .agents/plugins/marketplace.json catalog, nested
+        # .claude-plugin/.codex-plugin/plugin.json manifest, nine
+        # .codex-plugin/skills/<op>/SKILL.md bindings). No beads / no store,
+        # so it runs in any tier. Enforces the no-Codex-hooks contract (NO
+        # `hooks` key, no `.codex-plugin/hooks/` dir — the orchestrator's
+        # Claude surface ships no hooks, so a Codex-only guard would be
+        # asymmetric). Not a canonical slug, so it rides in the private block
+        # after the canonical set.
+        check-codex-plugin-structure
     )
     failed=()
     ran=0
@@ -429,6 +440,23 @@ check-work-item-merge-evidence:
 # connection env configured.
 check-closed-item-integrity:
     LIVESPEC_BEADS_FAKE=1 uv run python dev-tooling/checks/closed_item_integrity.py
+
+# `check-codex-plugin-structure` — Codex cross-runtime structural check (P3).
+# Validates the orchestrator plugin's Codex surface (per
+# livespec/SPECIFICATION/constraints.md §"Codex support"): the repo-root
+# .agents/plugins/marketplace.json catalog, the nested
+# .claude-plugin/.codex-plugin/plugin.json manifest (name; version in lockstep
+# with the Claude plugin.json; skills path; description SoT; NO `hooks` key),
+# and the nine .codex-plugin/skills/<op>/SKILL.md bindings (frontmatter
+# name==dir, non-empty description, NO allowed-tools; body carries the $PLUGIN_ROOT
+# resolution block + the codex-plugin-list snippet and no live ${CLAUDE_PLUGIN_ROOT}
+# token; the four wrapper-backed ops self-invoke scripts/bin/<op>.py, the five
+# heavyweight ops export PYTHONPATH onto $PLUGIN_ROOT/scripts). Pure-filesystem
+# (no beads / no store), so it runs in any tier with no live bd / dolt-server.
+# It also ENFORCES the no-Codex-hooks contract (no `.codex-plugin/hooks/` dir).
+# Not a canonical livespec-dev-tooling slug, so it is wired in the private block.
+check-codex-plugin-structure:
+    uv run python dev-tooling/checks/codex_plugin_structure.py
 
 # ---------------------------------------------------------------
 # Canonical structural checks (shared from livespec-dev-tooling).
