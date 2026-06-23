@@ -26,7 +26,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_ANSI_RE = re.compile(r"(?:\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]|\x1b[78])")
 _PICKER_QUERY = "orchestrate"
 _EXPECTED_SKILL = "orchestrate"
 _EXPECTED_PLUGIN = "livespec-orchestrator-beads-fabro"
@@ -56,7 +56,7 @@ def _squashed(*, text: str) -> str:
 
 def _has_main_prompt(*, plain: str) -> bool:
     squashed = _squashed(text=plain)
-    return "model:" in squashed and "/modeltochange" in squashed
+    return ("model:" in squashed and "/modeltochange" in squashed) or "tip:" in squashed
 
 
 def _has_trust_prompt(*, plain: str) -> bool:
@@ -100,6 +100,32 @@ def _read_until(
     raise AssertionError(f"Timed out waiting for Codex picker state. Last output:\n{tail}")
 
 
+def _read_until_quiet(*, fd: int, seen: str, quiet_seconds: float, timeout_seconds: float) -> str:
+    deadline = time.monotonic() + timeout_seconds
+    quiet_deadline = time.monotonic() + quiet_seconds
+    current = seen
+    while time.monotonic() < deadline:
+        remaining = max(0.05, min(deadline, quiet_deadline) - time.monotonic())
+        readable, _, _ = select.select([fd], [], [], min(0.25, remaining))
+        if not readable:
+            if time.monotonic() >= quiet_deadline:
+                return current
+            continue
+        try:
+            chunk = os.read(fd, 8192).decode("utf-8", errors="replace")
+        except OSError as exc:
+            tail = _plain(text=current)[-3000:]
+            raise AssertionError(f"Codex TUI exited while waiting. Last output:\n{tail}") from exc
+        current += chunk
+        if _FOREGROUND_QUERY in chunk:
+            _send(fd=fd, text=_FOREGROUND_RESPONSE)
+        if _BACKGROUND_QUERY in chunk:
+            _send(fd=fd, text=_BACKGROUND_RESPONSE)
+        quiet_deadline = time.monotonic() + quiet_seconds
+    tail = _plain(text=current)[-3000:]
+    raise AssertionError(f"Timed out waiting for Codex TUI to settle. Last output:\n{tail}")
+
+
 def _send(*, fd: int, text: str) -> None:
     os.write(fd, text.encode("utf-8"))
 
@@ -112,14 +138,47 @@ def _await_codex_prompt(*, fd: int, transcript: str) -> str:
         timeout_seconds=_CODEX_STARTUP_TIMEOUT_SECONDS,
     )
     if not _has_trust_prompt(plain=_plain(text=current)):
-        return current
+        return _read_until_quiet(
+            fd=fd,
+            seen=current,
+            quiet_seconds=1.5,
+            timeout_seconds=_CODEX_STARTUP_TIMEOUT_SECONDS,
+        )
     _send(fd=fd, text="\r")
-    return _read_until(
+    current = _read_until(
         fd=fd,
         seen=current,
         predicate=lambda plain: _has_main_prompt(plain=plain),
         timeout_seconds=_CODEX_STARTUP_TIMEOUT_SECONDS,
     )
+    return _read_until_quiet(
+        fd=fd,
+        seen=current,
+        quiet_seconds=1.5,
+        timeout_seconds=_CODEX_STARTUP_TIMEOUT_SECONDS,
+    )
+
+
+def _open_skills_menu(*, fd: int, transcript: str) -> str:
+    attempts = 3
+    last_error: AssertionError | None = None
+    current = transcript
+    for attempt_index in range(attempts):
+        if attempt_index > 0:
+            time.sleep(1)
+        _send(fd=fd, text="\x15/skills\r")
+        try:
+            return _read_until(
+                fd=fd,
+                seen=current,
+                predicate=lambda plain: "listskills" in _squashed(text=plain)
+                and "enable/disableskills" in _squashed(text=plain),
+                timeout_seconds=20,
+            )
+        except AssertionError as exc:
+            last_error = exc
+    assert last_error is not None
+    raise last_error
 
 
 def _stop_codex(*, proc: subprocess.Popen[bytes], fd: int) -> None:
@@ -164,14 +223,7 @@ def test_skills_picker_finds_orchestrate_by_short_name() -> None:
     transcript = ""
     try:
         transcript = _await_codex_prompt(fd=master_fd, transcript=transcript)
-        _send(fd=master_fd, text="/skills\r")
-        transcript = _read_until(
-            fd=master_fd,
-            seen=transcript,
-            predicate=lambda plain: "listskills" in _squashed(text=plain)
-            and "enable/disableskills" in _squashed(text=plain),
-            timeout_seconds=15,
-        )
+        transcript = _open_skills_menu(fd=master_fd, transcript=transcript)
         _send(fd=master_fd, text="\r")
         transcript = _read_until(
             fd=master_fd,
