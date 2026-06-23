@@ -181,6 +181,10 @@ jobs:
           # runs unconditionally — a Codex-surface drift fails CI on every
           # event, including doc-only PRs.
           - check-codex-plugin-structure
+          # Live Codex TUI `/skills` picker acceptance. GitHub-hosted CI skips
+          # unless an authenticated Codex runner opts in via
+          # LIVESPEC_REQUIRE_CODEX_TUI_PICKER=1; the status stays visible.
+          - check-codex-skill-picker
     steps:
       - name: Checkout
         uses: actions/checkout@v4

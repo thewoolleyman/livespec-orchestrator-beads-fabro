@@ -303,6 +303,11 @@ check:
         # asymmetric). Not a canonical slug, so it rides in the private block
         # after the canonical set.
         check-codex-plugin-structure
+        # Live Codex TUI `/skills` picker acceptance. This is intentionally a
+        # private, host-aware gate: it drives the actual Codex picker path that
+        # operators use, while CI skips unless explicitly opted into an
+        # authenticated Codex runner.
+        check-codex-skill-picker
     )
     failed=()
     ran=0
@@ -732,6 +737,22 @@ check-wrapper-shape:
 check-e2e-cli:
     uv run pytest tests/e2e-cli -v
 
+# Live Codex TUI `/skills` picker acceptance for the human discovery path:
+# `/skills` -> "List skills" -> search `orchestrate`, then require the picker
+# to render `orchestrate (livespec-orchestrator-beads-fabro)` as a Skill row.
+check-codex-skill-picker:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ "${CI:-}" == "true" && "${LIVESPEC_REQUIRE_CODEX_TUI_PICKER:-}" != "1" ]]; then
+        echo ":: check-codex-skill-picker: skipped in CI; set LIVESPEC_REQUIRE_CODEX_TUI_PICKER=1 on an authenticated Codex runner to enforce it"
+        exit 0
+    fi
+    if ! command -v codex >/dev/null 2>&1; then
+        echo ":: check-codex-skill-picker: codex CLI not found; skipping live TUI picker acceptance"
+        exit 0
+    fi
+    LIVESPEC_CODEX_SKILL_PICKER=1 uv run pytest tests/e2e-cli/test_codex_skill_picker.py -v
+
 # W7 Tier-2 containerized dispatch proof. Pass script args after `--`, e.g.:
 #   just w7-tier2-dispatch-proof -- --preflight
 #   just w7-tier2-dispatch-proof -- --run --item <tiny-ready-item>
@@ -762,12 +783,12 @@ reap-e2e-repos *ARGS:
 
 # ---------------------------------------------------------------
 # Pre-commit aggregate — Red-mode-aware. Classifies the staged
-# tree shape; in Red mode it passes `skip="check-coverage
-# check-per-file-coverage"` to `just check` so the coverage gates
-# are omitted (the commit-msg replay hook is the verifier; coverage
-# is checked at the Green amend). This is a self-contained recipe
-# argument — there is NO ambient env var (epic li-cvaudit, cvredmd).
-# Pre-push and CI keep invoking `just check` directly.
+# tree shape; in Red mode it passes a self-contained `skip=...` recipe
+# argument to `just check` so coverage and same-repo live TUI gates are
+# omitted from pre-commit. The commit-msg replay hook verifies the Red
+# leg; coverage runs at the Green amend; and pre-push / CI keep invoking
+# `just check` directly. There is NO ambient env var (epic li-cvaudit,
+# cvredmd).
 # ---------------------------------------------------------------
 
 check-pre-commit:
@@ -789,8 +810,8 @@ check-pre-commit:
     fi
     if [[ "$test_count" -eq 1 ]] && [[ "$impl_count" -eq 0 ]]; then
         echo ":: Red-mode shape detected: $test_staged"
-        echo ":: skipping coverage gates (commit-msg replay hook is the verifier; coverage runs at Green amend)"
-        just skip="check-coverage check-per-file-coverage" check
+        echo ":: skipping coverage gates and same-repo live TUI picker gate in pre-commit"
+        just skip="check-coverage check-per-file-coverage check-codex-skill-picker" check
         exit $?
     fi
     # Green-amend shape: impl staged while HEAD still carries Red-only
