@@ -56,6 +56,7 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "CODEX_FRESHNESS_MARGIN_SECONDS",
+    "CODEX_IMPLEMENTER_ADAPTER",
     "CODEX_NON_ROTATABLE_REFRESH_SENTINEL",
     "DEFAULT_SANDBOX_OTEL_ENDPOINT",
     "NON_CONVERGED_MARKER",
@@ -694,6 +695,21 @@ def cc_otel_overlay_env(
 
 CODEX_NON_ROTATABLE_REFRESH_SENTINEL = "livespec-orch-no-refresh-sentinel"
 
+# The sandbox path the projected Codex auth.json is written to. The
+# prepare step (running before the agent nodes) writes the credential
+# here, and the codex-acp child reads it via $CODEX_HOME — both inherit
+# CODEX_HOME from the container-level [environments.<id>.env] table.
+_SANDBOX_CODEX_HOME = "/workspace/.codex"
+
+# The Codex ACP adapter the implementer nodes (implement/fix/pr/review_fix)
+# run on. PINNED to @0.16.0 — the version where the non-rotatable refresh
+# sentinel's load-but-cannot-refresh behavior (project_codex_auth_snapshot)
+# was empirically verified against codex-core's AuthManager. Bumping the
+# pin requires re-verifying that the sentinel still degrades to a cached
+# access-token fall-back rather than failing the load (tracked by
+# bd-ib-ss7rkr); a silent bump could break credential projection.
+CODEX_IMPLEMENTER_ADAPTER = "npx -y @zed-industries/codex-acp@0.16.0"
+
 
 def project_codex_auth_snapshot(*, source_auth_json: str) -> str:
     """Project a non-rotatable Codex credential snapshot (pure string transform).
@@ -792,7 +808,7 @@ def _decode_codex_access_token_exp(*, source_auth_json: str) -> int:
     return exp
 
 
-def render_run_config_overlay(
+def render_run_config_overlay(  # noqa: PLR0913 — kw-only pure overlay builder; each field is an independent projection input.
     *,
     committed_text: str,
     workflow_dir: Path,
@@ -800,6 +816,7 @@ def render_run_config_overlay(
     github_token: str,
     siblings: SiblingClones | None,
     otel_env: dict[str, str] | None = None,
+    codex_auth_snapshot: str | None = None,
 ) -> str | None:
     """Render the dispatch-time run-config overlay (pure string transform).
 
@@ -831,6 +848,21 @@ def render_run_config_overlay(
     them (the sandbox ships plaintext; the host egress stage holds the
     key). Omitting `otel_env` preserves the pre-29f.3 token-only shape.
 
+    When `codex_auth_snapshot` is not None (the dual-credential
+    projection, scenarios.md Scenario 18), the overlay ALSO gains (a) an
+    extra `[[run.prepare.steps]]` block that writes the snapshot to
+    `$CODEX_HOME/auth.json` mode-600 before the agent nodes start, and
+    (b) two extra `[environments.<id>.env]` lines — `CODEX_HOME` and
+    `CODEX_AUTH_JSON`. The container-level env table is the baseline env
+    for EVERY process in the sandbox, so the prepare-step shell AND the
+    codex-acp child both inherit `CODEX_HOME`/`CODEX_AUTH_JSON`; the
+    prepare step (running before the agent nodes) materializes the file
+    the adapter reads. The snapshot is non-rotatable
+    (`project_codex_auth_snapshot` replaced the refresh token with the
+    inert sentinel upstream), so a worker cannot rotate the shared
+    credential. Omitting `codex_auth_snapshot` keeps the overlay
+    byte-identical to the Claude-OAuth-only shape.
+
     The committed file itself carries NO secret and NO `{{ env }}`
     interpolation — interpolation cannot deliver the credential to
     server-mediated runs, because the server spawns the resolving
@@ -859,9 +891,12 @@ def render_run_config_overlay(
         else f"{SIBLING_CLONES_ROOT_ENV_VAR} = {json.dumps(siblings.clones_root)}\n"
     )
     otel_env_lines = _otel_env_lines(otel_env=otel_env)
+    codex_steps = _codex_auth_prepare_steps_block(codex_auth_snapshot=codex_auth_snapshot)
+    codex_env_lines = _codex_auth_env_lines(codex_auth_snapshot=codex_auth_snapshot)
     return (
         rewritten
         + sibling_steps
+        + codex_steps
         + "\n# --- Dispatcher-materialized run-scoped credential projection"
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
         + f"[environments.{environment_id}.env]\n"
@@ -869,6 +904,51 @@ def render_run_config_overlay(
         + f"GH_TOKEN = {github_token_literal}\n"
         + sibling_env_line
         + otel_env_lines
+        + codex_env_lines
+    )
+
+
+def _codex_auth_prepare_steps_block(*, codex_auth_snapshot: str | None) -> str:
+    """Render the Codex-auth `[[run.prepare.steps]]` block (Scenario 18).
+
+    Empty string when `codex_auth_snapshot` is None (the Claude-OAuth-only
+    shape). The step runs before the agent nodes and writes the projected
+    snapshot to `$CODEX_HOME/auth.json` mode-600; both `$CODEX_HOME` and
+    `$CODEX_AUTH_JSON` are inherited from the container-level env table the
+    same overlay declares, so the shell needs no inline value. The script
+    is `json.dumps`-ed to TOML-quote it, matching the sibling-clone steps.
+    """
+    if codex_auth_snapshot is None:
+        return ""
+    script = (
+        'mkdir -p "$CODEX_HOME" && printf %s "$CODEX_AUTH_JSON" >'
+        ' "$CODEX_HOME/auth.json" && chmod 600 "$CODEX_HOME/auth.json"'
+    )
+    lines = [
+        "",
+        "# --- Dispatcher-materialized Codex credential projection: write the",
+        "# --- non-rotatable auth.json snapshot the codex-acp adapter reads ---",
+        "[[run.prepare.steps]]",
+        f"script = {json.dumps(script)}",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _codex_auth_env_lines(*, codex_auth_snapshot: str | None) -> str:
+    """Render the Codex `CODEX_HOME` / `CODEX_AUTH_JSON` env-table lines.
+
+    Empty string when `codex_auth_snapshot` is None. Each value is
+    `json.dumps`-ed so the multi-line JSON snapshot single-line-encodes
+    with `\\n` escapes (valid TOML), exactly like the CLAUDE_CODE_OAUTH_TOKEN
+    / OTel lines. These ride in the same `[environments.<id>.env]` table —
+    the container baseline env every sandbox process inherits — so the
+    prepare-step shell and the codex-acp child both see them.
+    """
+    if codex_auth_snapshot is None:
+        return ""
+    return (
+        f"CODEX_HOME = {json.dumps(_SANDBOX_CODEX_HOME)}\n"
+        f"CODEX_AUTH_JSON = {json.dumps(codex_auth_snapshot)}\n"
     )
 
 
@@ -918,12 +998,19 @@ def _sibling_clone_steps_block(*, siblings: SiblingClones) -> str:
 
 
 def fabro_run_argv(*, plan: DispatchPlan) -> list[str]:
+    # `--input acp_adapter=...` statically routes the implementer nodes
+    # (implement/fix/pr/review_fix) to the Codex ACP adapter; the review
+    # node uses its own `review_adapter` default (Slice A) and is
+    # unaffected. The dual-credential overlay projects the matching
+    # auth.json so the adapter authenticates from the host snapshot.
     return [
         plan.fabro_bin,
         "run",
         str(plan.workflow_toml),
         "--goal-file",
         str(plan.goal_file),
+        "--input",
+        f"acp_adapter={CODEX_IMPLEMENTER_ADAPTER}",
         "--no-upgrade-check",
     ]
 
