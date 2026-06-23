@@ -54,6 +54,7 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.store import WorkItemComment
 
 __all__: list[str] = [
+    "CODEX_NON_ROTATABLE_REFRESH_SENTINEL",
     "DEFAULT_SANDBOX_OTEL_ENDPOINT",
     "NON_CONVERGED_MARKER",
     "SANDBOX_OTEL_ENDPOINT_ENV_VAR",
@@ -91,6 +92,7 @@ __all__: list[str] = [
     "pr_arm_argv",
     "pr_update_branch_argv",
     "pr_view_argv",
+    "project_codex_auth_snapshot",
     "pull_primary_argv",
     "render_goal",
     "render_run_config_overlay",
@@ -684,6 +686,40 @@ def cc_otel_overlay_env(
         "OTEL_METRIC_EXPORT_INTERVAL": "10000",
         "OTEL_LOGS_EXPORT_INTERVAL": "5000",
     }
+
+
+CODEX_NON_ROTATABLE_REFRESH_SENTINEL = "livespec-orch-no-refresh-sentinel"
+
+
+def project_codex_auth_snapshot(*, source_auth_json: str) -> str:
+    """Project a non-rotatable Codex credential snapshot (pure string transform).
+
+    Realizes the `Worker credential projection` contract (scenarios.md
+    "Scenario 18 — Dispatcher projects a non-rotatable subscription
+    credential into a worker sandbox"): given the host's live
+    ChatGPT-subscription `auth.json` text, return the snapshot to write
+    into the worker sandbox's `CODEX_HOME/auth.json` with
+    `tokens.refresh_token` REPLACED by an inert sentinel. The worker runs
+    on the multi-day access token and cannot rotate the shared refresh
+    credential, so no worker can invalidate the host's or a peer worker's
+    credential. Every other field (`access_token`, `id_token`,
+    `account_id`, `auth_mode`, ...) is preserved so codex-core
+    authenticates normally.
+
+    codex-core requires `tokens.refresh_token` to be a present, non-null
+    string -- a stripped key or JSON null fails to load -- so the sentinel
+    keeps the credential loadable while being unusable for a real refresh,
+    which codex-core's AuthManager degrades to a fall-back on the cached
+    access token.
+    """
+    source: dict[str, Any] = json.loads(source_auth_json)
+    raw_tokens = source.get("tokens")
+    tokens: dict[str, Any] = (
+        dict(cast("dict[str, Any]", raw_tokens)) if isinstance(raw_tokens, dict) else {}
+    )
+    tokens["refresh_token"] = CODEX_NON_ROTATABLE_REFRESH_SENTINEL
+    projected: dict[str, Any] = {**source, "tokens": tokens}
+    return json.dumps(projected, indent=2, sort_keys=True) + "\n"
 
 
 def render_run_config_overlay(
