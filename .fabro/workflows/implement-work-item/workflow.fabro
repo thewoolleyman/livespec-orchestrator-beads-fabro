@@ -72,7 +72,7 @@ digraph ImplementWorkItem {
     implement [
         label="Implement (Red-Green-Replay)"
         backend="acp"
-        acp.command="npx -y @agentclientprotocol/claude-agent-acp"
+        acp.command="{{ inputs.acp_adapter }}"
         timeout="14400s"
         max_retries=1
         goal_gate=true
@@ -94,7 +94,7 @@ digraph ImplementWorkItem {
     fix [
         label="Fix janitor failures"
         backend="acp"
-        acp.command="npx -y @agentclientprotocol/claude-agent-acp"
+        acp.command="{{ inputs.acp_adapter }}"
         timeout="3600s"
         max_visits=3
         prompt="@prompts/fix.md"
@@ -109,7 +109,7 @@ digraph ImplementWorkItem {
     pr [
         label="Open PR + arm rebase auto-merge"
         backend="acp"
-        acp.command="npx -y @agentclientprotocol/claude-agent-acp"
+        acp.command="{{ inputs.acp_adapter }}"
         timeout="1800s"
         max_retries=1
         goal_gate=true
