@@ -354,5 +354,12 @@
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Added by the provider-subscription-worker-credential-projection revise pass (v013). This integration/consumer-tier scenario (never a unit-tier test, per the heading taxonomy's pyramid-tier requirement) binds to its real integration-tier test id via the governed propose-change/revise resulting_files[] loop once the dispatcher-codex-credential-projection and dispatcher-credential-freshness-gate impl work-items land their exercising tests."
+  },
+  {
+    "heading": "## Scenario 20 \u2014 Review gate routes a green build through advisory code review before PR",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Added by the review-gate-routing revise pass (Slice A / bd-ib-egms32). This integration/consumer-tier scenario binds to its real integration-tier test id via the governed propose-change/revise resulting_files[] loop once the review-gate routing test lands; tests/integration/test_workflow_acp_adapter_parameterized.py already pins the review node's adapter input."
   }
 ]
