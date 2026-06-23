@@ -757,6 +757,8 @@ def test_argv_builders_encode_family_discipline(tmp_path: Path) -> None:
         str(tmp_path / "wf.toml"),
         "--goal-file",
         str(tmp_path / "goal.md"),
+        "--input",
+        "acp_adapter=npx -y @zed-industries/codex-acp@0.16.0",
         "--no-upgrade-check",
     ]
     assert fabro_inspect_argv(plan=plan, run_id="01RUNID") == [

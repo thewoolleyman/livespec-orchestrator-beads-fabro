@@ -132,7 +132,7 @@ import time
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from time import sleep as _real_sleep
 from typing import cast
@@ -165,6 +165,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_sink import (
     cost_lookup_keys,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+    _FABRO_TIMEOUT_SECONDS,  # pyright: ignore[reportPrivateUsage]
     CommandRunner,
     DispatchOutcome,
     PollPolicy,
@@ -190,6 +191,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_notify import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     SiblingClones,
+    assess_codex_credential_freshness,
     build_plan,
     cc_otel_overlay_env,
     host_only_refusal_detail,
@@ -200,6 +202,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     item_sizing_warnings,
     janitor_checkout_path,
     parse_fleet_members,
+    project_codex_auth_snapshot,
     render_goal,
     render_run_config_overlay,
     resolve_sandbox_otel_endpoint,
@@ -254,6 +257,12 @@ _EXIT_PRECONDITION_ERROR = 3
 
 _OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"  # noqa: S105 - env-var NAME, not a secret value
 _GITHUB_TOKEN_ENV = "GH_TOKEN"  # noqa: S105 - env-var NAME, not a secret value
+
+# Host-side override for where the live Codex `auth.json` lives. The host
+# is the sole `codex login`+refresh owner; the Dispatcher reads its
+# auth.json directly (default `~/.codex/auth.json`) and projects a
+# non-rotatable snapshot into the sandbox. An env-var NAME, not a secret.
+_CODEX_HOME_ENV = "CODEX_HOME"
 
 # The ingest-only Honeycomb key (write-only; the management/MCP key never
 # touches this egress path, per telemetry-pipeline-architecture.md §3.4).
@@ -1631,13 +1640,20 @@ def _materialize_overlay(
     `just check` resolve family siblings inside the sandbox the same
     way livespec CI provisions them.
 
-    Finally it projects the in-sandbox Claude-Code OTel env (29f.3): the
+    It projects the in-sandbox Claude-Code OTel env (29f.3): the
     `cc_otel_overlay_env` dict carrying the correlation triple
     (`work_item_id` + `dispatch_id`) and the host-local E1 receiver
     endpoint, so CC native telemetry exports from inside the sandbox to
     the host-local enrich/receive stage. All NON-secret values — the
     Honeycomb ingest key is NOT among them (the sandbox ships plaintext;
     the host egress stage holds the key).
+
+    Finally it projects the dual-credential Codex snapshot (scenarios.md
+    Scenario 18 / Scenario 19): the host `auth.json` is read, freshness-
+    gated against the run budget, and projected non-rotatably into the
+    sandbox `$CODEX_HOME/auth.json` alongside the Claude OAuth env. A
+    missing or too-short-lived host credential refuses the dispatch here
+    with an actionable renewal message (naming `codex login`).
     """
     env_error = _check_credential_env()
     if env_error is not None:
@@ -1645,6 +1661,9 @@ def _materialize_overlay(
     siblings = _resolve_sibling_clones(repo=repo)
     if isinstance(siblings, str):
         return siblings
+    codex_snapshot = _project_codex_auth(now_epoch=int(time.time()))
+    if isinstance(codex_snapshot, _CodexProjectionRefusal):
+        return codex_snapshot.message
     otel_env = cc_otel_overlay_env(
         work_item_id=work_item_id,
         dispatch_id=dispatch_id,
@@ -1657,6 +1676,7 @@ def _materialize_overlay(
         github_token=os.environ[_GITHUB_TOKEN_ENV],
         siblings=siblings,
         otel_env=otel_env,
+        codex_auth_snapshot=codex_snapshot,
     )
     if rendered is None:
         return (
@@ -1757,6 +1777,64 @@ def _check_credential_env() -> str | None:
         f"the with-livespec-env.sh wrapper and alias the family GitHub "
         f"token into {_GITHUB_TOKEN_ENV} before dispatch."
     )
+
+
+def _read_host_codex_auth() -> str | None:
+    """Read the host's Codex `auth.json` text (the projection SOURCE).
+
+    DIRECT host-file read — the host is the sole `codex login`+refresh
+    owner; the sandbox never touches the live credential. Honors a
+    host-side `CODEX_HOME` override (default `~/.codex`). Returns the raw
+    text, or None when the file is missing/unreadable (any `OSError`), so
+    the caller renders an actionable refusal naming `codex login`.
+    """
+    home = os.environ.get(_CODEX_HOME_ENV) or str(Path.home() / ".codex")
+    try:
+        return (Path(home) / "auth.json").read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+@dataclass(frozen=True, kw_only=True)
+class _CodexProjectionRefusal:
+    """A dual-credential-projection refusal routed as data (missing/stale)."""
+
+    message: str
+
+
+def _project_codex_auth(*, now_epoch: int) -> str | _CodexProjectionRefusal:
+    """Project the host Codex credential into the dispatch sandbox snapshot.
+
+    Returns the non-rotatable `auth.json` snapshot string on success
+    (scenarios.md Scenario 18), or a `_CodexProjectionRefusal` carrying an
+    actionable message when the host credential is absent (Scenario 18
+    precondition) or too short-lived for the run budget plus margin
+    (Scenario 19). `now_epoch` is injected so the freshness gate stays
+    deterministically testable. The refusal is a distinct type so a
+    snapshot that happens to look like a message is never mistaken for one.
+    """
+    source_auth_json = _read_host_codex_auth()
+    if source_auth_json is None:
+        return _CodexProjectionRefusal(
+            message=(
+                "C-mode dispatch refused: no host Codex credential found at "
+                f"${_CODEX_HOME_ENV}/auth.json (default ~/.codex/auth.json). "
+                "The Dispatcher projects a non-rotatable snapshot of the "
+                "host credential into the sandbox; run `codex login` on the "
+                "orchestrator host before dispatch."
+            )
+        )
+    verdict = assess_codex_credential_freshness(
+        source_auth_json=source_auth_json,
+        now_epoch=now_epoch,
+        run_budget_seconds=int(_FABRO_TIMEOUT_SECONDS),
+    )
+    if not verdict.fresh_enough:
+        return _CodexProjectionRefusal(
+            message=verdict.renewal_message
+            or "C-mode dispatch refused: host Codex credential requires renewal."
+        )
+    return project_codex_auth_snapshot(source_auth_json=source_auth_json)
 
 
 def _close_item(*, repo: Path, item: WorkItem, outcome: DispatchOutcome) -> None:
