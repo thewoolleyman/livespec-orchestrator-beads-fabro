@@ -15,22 +15,22 @@ cache root carries `scripts/` directly — empirically verified: `codex
 plugin add` accepts the nested skills path and `codex exec` discovers the
 skill).
 
-SCOPE — the four THIN wrapper-backed ops plus the three PROSE-backed
-heavyweight capture ops. The four wrapper-backed ops (next,
-list-work-items, detect-impl-gaps, orchestrate) each dispatch to their
-`scripts/bin/<op>.py` reference wrapper. The three prose-backed
-heavyweight capture ops (capture-work-item, capture-impl-gaps,
-capture-spec-drift) have NO single CLI wrapper — their orchestration was
-extracted to the shared harness-neutral `.claude-plugin/prose/<op>.md`
-layer at P3b PR-2, so their Codex binding READS `prose/<op>.md` instead
-of self-invoking a wrapper. The two remaining HEAVYWEIGHT authored ops
-(implement, groom) still carry inline orchestration in their Claude
-SKILL.md with NO shared prose yet; a faithful Codex binding requires the
-same prose extraction. To keep that gap VISIBLE rather than silent, this
-check enumerates the two pending ops explicitly (`_PENDING_CODEX_OPS`)
-and ASSERTS their Codex skill dirs are ABSENT, so an improvised partial
-binding cannot land without flipping the op out of the pending set here.
-The next P3b PR flips each remaining op from pending to present.
+SCOPE — the four THIN wrapper-backed ops plus the five PROSE-backed
+heavyweight ops (all nine orchestrator ops are now Codex-covered). The
+four wrapper-backed ops (next, list-work-items, detect-impl-gaps,
+orchestrate) each dispatch to their `scripts/bin/<op>.py` reference
+wrapper. The five prose-backed heavyweight ops (capture-work-item,
+capture-impl-gaps, capture-spec-drift, implement, groom) have NO single
+CLI wrapper — their orchestration was extracted to the shared
+harness-neutral `.claude-plugin/prose/<op>.md` layer across P3b PR-2
+(the three capture ops) and P3b PR-3 (implement, groom), so their Codex
+binding READS `prose/<op>.md` instead of self-invoking a wrapper. The
+P3b prose extraction is now COMPLETE: no heavyweight op remains pending,
+so `_PENDING_CODEX_OPS` is empty. The set is retained (empty) so the
+"must NOT ship yet" visibility mechanism stays available for any future
+op added ahead of its prose extraction — an improvised partial binding
+for such an op could not land without first flipping it out of the
+pending set here.
 
 NO Codex hooks are shipped (deliberate): the orchestrator's Claude
 surface ships no hooks, so a Codex-only guard would be asymmetric; the
@@ -52,18 +52,18 @@ Assertions:
    `.claude-plugin/plugin.json` version (single artifact, versions in
    lockstep); `skills` is `./.codex-plugin/skills/`; `description` equals
    the Claude `plugin.json` description; there is NO `hooks` key.
-3. Each present op (the four wrapper-backed thin ops plus the three
-   prose-backed capture ops) ships a `SKILL.md` under
+3. Each present op (the four wrapper-backed thin ops plus the five
+   prose-backed heavyweight ops) ships a `SKILL.md` under
    `.claude-plugin/.codex-plugin/skills/<op>/` whose `---`-fenced
    frontmatter `name` matches its directory, carries a non-empty
    `description`, and carries NO `allowed-tools` key; no extra skill dirs
-   exist; and each of the two pending ops has NO skill dir.
+   exist; and any (currently none) pending op has NO skill dir.
 4. Body rules in every present SKILL.md: the body MUST carry the Codex
    core-resolution invocation `codex plugin list --json -m
    livespec-orchestrator-beads-fabro` and the `$PLUGIN_ROOT` resolution
    variable, and MUST NOT carry a live `${CLAUDE_PLUGIN_ROOT}` token. A
    wrapper-backed thin op MUST self-invoke its `scripts/bin/<op>.py`
-   wrapper; a prose-backed capture op MUST instead read its
+   wrapper; a prose-backed heavyweight op MUST instead read its
    `prose/<op>.md` artifact (where the orchestration lives).
 5. Wrapper-invocation rules in every present SKILL.md: any fenced line
    invoking a `bin/<name>.py` wrapper MUST use `$PLUGIN_ROOT`, MUST NOT
@@ -128,25 +128,24 @@ _PRESENT_OPS: dict[str, str] = {
 # orchestration lives in the shared `.claude-plugin/prose/<op>.md` artifact
 # (the P3b extraction). Their Codex binding body MUST read `prose/<op>.md`
 # instead of self-invoking a wrapper. capture-work-item, capture-impl-gaps, and
-# capture-spec-drift flipped into this set at P3b PR-2.
+# capture-spec-drift flipped into this set at P3b PR-2; implement and groom
+# flipped in at P3b PR-3 — completing the heavyweight extraction (all nine ops
+# Codex-covered).
 _PRESENT_PROSE_OPS = frozenset(
     {
         "capture-work-item",
         "capture-impl-gaps",
         "capture-spec-drift",
-    }
-)
-# The remaining HEAVYWEIGHT authored ops still carry inline orchestration in
-# their Claude SKILL.md with no shared prose yet; a faithful Codex binding
-# requires the same prose extraction. Enumerated here so their absence is
-# VISIBLE (asserted), never silent — the next P3b PR flips each into
-# `_PRESENT_PROSE_OPS`.
-_PENDING_CODEX_OPS = frozenset(
-    {
         "implement",
         "groom",
     }
 )
+# No heavyweight op remains pending: the P3b prose extraction is complete. The
+# set is retained (empty) so the "must NOT ship a Codex skill dir yet"
+# visibility mechanism below stays available for any FUTURE op added ahead of
+# its prose extraction — such an op would be enumerated here and its Codex dir
+# asserted ABSENT until the extraction lands.
+_PENDING_CODEX_OPS: frozenset[str] = frozenset()
 
 _EXPECTED_SOURCE = {"source": "local", "path": "./.claude-plugin"}
 _EXPECTED_SKILLS_PATH = "./.codex-plugin/skills/"
@@ -373,9 +372,10 @@ def main() -> int:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
     log = structlog.get_logger("codex_plugin_structure")
-    # Surface the remaining gap on every run so the op scope stays visible
-    # (constraints.md §"Codex support" gates the CLAIM of Codex support on the
-    # full surface; the last heavyweight ops land via a later P3b PR).
+    # Surface the op scope on every run for visibility (constraints.md §"Codex
+    # support" gates the CLAIM of Codex support on the full surface). All nine
+    # ops are now Codex-covered, so `pending_ops` is empty; it stays logged so a
+    # future pending op would be immediately visible here.
     log.info(
         "codex surface scope",
         present_wrapper_ops=sorted(_PRESENT_OPS),
