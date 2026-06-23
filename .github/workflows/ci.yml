@@ -80,16 +80,16 @@ jobs:
           fi
 
       # `setup` is the change-detection GATE only — it deliberately does
-      # NO uv pre-warm. The matrix jobs `needs: setup`, so any work here
-      # sits on the critical path before check-coverage (the long pole)
-      # can start. Each matrix job restores ~/.cache/uv itself (keyed on
-      # uv.lock, with the `uv-${{ runner.os }}-` prefix restore-key) and
-      # runs its own `uv sync`, so on the common unchanged-lock run the
-      # cache already exists and every job restores it in parallel with no
-      # PyPI fetch. A serial pre-warm here would only help the first run
-      # after a lock change — and the prefix restore-key already bounds
-      # that to the delta wheels — so it is not worth taxing every run's
-      # wall-clock. See livespec-dev-tooling-7us.10 (mirrors livespec #487).
+      # NO uv pre-warm. The check-python matrix jobs `needs: setup`, so
+      # any work here sits on the critical path before the matrix can
+      # start. Each matrix job restores ~/.cache/uv itself (keyed on
+      # uv.lock, with the `uv-${{ runner.os }}-` prefix
+      # restore-key) and runs its own `uv sync`, so on the common
+      # unchanged-lock run the cache already exists and every job
+      # restores it in parallel with no PyPI fetch. A serial pre-warm
+      # here would only help the first run after a lock change — and the
+      # prefix restore-key already bounds that to the delta wheels — so
+      # it is not worth taxing every run's wall-clock.
 
   check-python:
     name: ${{ matrix.target }}

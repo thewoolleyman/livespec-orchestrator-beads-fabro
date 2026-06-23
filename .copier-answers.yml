@@ -6,7 +6,7 @@
 # Re-sync via `copier update --vcs-ref=master` (a bare `copier update`
 # resolves the latest git TAG, which predates the template workflow
 # set; the family's blessed re-sync ref is master).
-_commit: v1.0.0-520-gdb90a84
+_commit: v1.0.0-633-g9a26c77
 _src_path: gh:thewoolleyman/livespec
 author_email: thewoolleyman@gmail.com
 author_name: Chad Woolley
