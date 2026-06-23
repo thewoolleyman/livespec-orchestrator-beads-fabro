@@ -338,28 +338,28 @@
     "heading": "## Worker credential projection",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "test": "TODO",
-    "reason": "Added by the provider-subscription-worker-credential-projection revise pass (v013). The provider-agnostic worker credential-projection contract (non-rotatable-by-worker, Dispatcher freshness-gate, host-sole-refresh-owner) binds to its real integration-tier test id via the governed propose-change/revise resulting_files[] loop once the dispatcher-codex-credential-projection and dispatcher-credential-freshness-gate impl work-items land their exercising tests."
+    "test": "tests.integration.test_worker_credential_projection_scenarios18_19.test_scenario18_dispatch_overlay_projects_dual_credentials",
+    "reason": "Integration-tier acceptance for the worker credential-projection contract (work-items bd-ib-di442r, bd-ib-3ti4jf, bd-ib-g7e34u): the bound node id drives the Dispatcher overlay materialization seam with injected host credential, clock, and fleet manifest, then proves the run-scoped mode-600 overlay carries both the existing Claude OAuth env and the Codex auth.json file projection materialized through a prepare step. Sibling tests in tests/integration/test_worker_credential_projection_scenarios18_19.py and tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_dual_cred.py cover stale-credential refusal, direct host auth.json read, non-rotatable snapshot projection, and Codex implementer adapter selection. The live dual-provider dispatch proof remains a provisioned-environment acceptance check because this host lacks the required Fabro LLM provider and sandbox provisioning."
   },
   {
     "heading": "## Scenario 18 \u2014 Dispatcher projects a non-rotatable subscription credential into a worker sandbox",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the provider-subscription-worker-credential-projection revise pass (v013). This integration/consumer-tier scenario (never a unit-tier test, per the heading taxonomy's pyramid-tier requirement) binds to its real integration-tier test id via the governed propose-change/revise resulting_files[] loop once the dispatcher-codex-credential-projection and dispatcher-credential-freshness-gate impl work-items land their exercising tests."
+    "test": "tests.integration.test_worker_credential_projection_scenarios18_19.test_scenario18_dispatch_overlay_projects_dual_credentials",
+    "reason": "Integration-tier acceptance for Scenario 18: the bound node id exercises the Dispatcher materialization seam and verifies a fresh host Codex credential is transformed into a non-rotatable snapshot, carried in the overlay, and written by a sandbox prepare step to `$CODEX_HOME/auth.json` while the Claude OAuth env remains present in the same overlay. Lower-level sibling tests prove the refresh token is replaced with the inert sentinel and never leaks the host refresh token. The scenario's worker-authenticates clause still needs the first live dual-provider dispatch proof in a Fabro-provisioned environment."
   },
   {
     "heading": "## Scenario 19 \u2014 Dispatcher refuses dispatch when the credential freshness gate fails",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the provider-subscription-worker-credential-projection revise pass (v013). This integration/consumer-tier scenario (never a unit-tier test, per the heading taxonomy's pyramid-tier requirement) binds to its real integration-tier test id via the governed propose-change/revise resulting_files[] loop once the dispatcher-codex-credential-projection and dispatcher-credential-freshness-gate impl work-items land their exercising tests."
+    "test": "tests.integration.test_worker_credential_projection_scenarios18_19.test_scenario19_stale_codex_credential_refuses_before_overlay",
+    "reason": "Integration-tier acceptance for Scenario 19: the bound node id drives the Dispatcher materialization seam with an injected stale host credential and proves dispatch refuses before writing the run-scoped overlay, surfacing the `codex login` renewal message instead of projecting a credential that cannot outlive the run budget. Sibling tests cover the missing-credential refusal and the pure freshness-gate boundary."
   },
   {
     "heading": "## Scenario 20 \u2014 Review gate routes a green build through advisory code review before PR",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the review-gate-routing revise pass (Slice A / bd-ib-egms32). This integration/consumer-tier scenario binds to its real integration-tier test id via the governed propose-change/revise resulting_files[] loop once the review-gate routing test lands; tests/integration/test_workflow_acp_adapter_parameterized.py already pins the review node's adapter input."
+    "test": "tests.integration.test_workflow_acp_adapter_parameterized.test_implementer_and_review_nodes_use_their_respective_inputs",
+    "reason": "Integration-tier acceptance for Scenario 20: the bound node id inspects the shipped implement-work-item Fabro graph and verifies the implementer nodes (`implement`, `fix`, `pr`, and `review_fix`) use the Codex-routable `acp_adapter` input while the review-only node uses the separate Claude `review_adapter`; sibling tests prove the review adapter is pinned through ANTHROPIC_MODEL + CLAUDE_CODE_EFFORT_LEVEL and no ACP node hard-codes the Claude adapter. The graph's approve/fix/ship-on-cap edge behavior is codified in the workflow DOT and remains subject to the first live dual-provider dispatch acceptance check."
   }
 ]
