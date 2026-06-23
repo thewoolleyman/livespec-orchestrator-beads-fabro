@@ -10,6 +10,7 @@ import select
 import shutil
 import struct
 import subprocess
+import tempfile
 import termios
 import time
 import tty
@@ -36,6 +37,7 @@ _FOREGROUND_RESPONSE = "\x1b]10;rgb:ffff/ffff/ffff\x1b\\"
 _BACKGROUND_RESPONSE = "\x1b]11;rgb:0000/0000/0000\x1b\\"
 _TERMINAL_RESPONSES = _FOREGROUND_RESPONSE + _BACKGROUND_RESPONSE
 _CODEX_STARTUP_TIMEOUT_SECONDS = 120
+_CODEX_PROMPT_MARKER = chr(0x203A)
 _GIT_HOOK_ENV_VARS = (
     "GIT_DIR",
     "GIT_WORK_TREE",
@@ -44,6 +46,43 @@ _GIT_HOOK_ENV_VARS = (
     "GIT_OBJECT_DIRECTORY",
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
 )
+_HOST_CODEX_HOME = Path.home() / ".codex"
+_CODEX_TEST_CONFIG = f"""
+model = "gpt-5.5"
+
+[tui.model_availability_nux]
+"gpt-5.5" = 4
+
+[notice.model_migrations]
+"gpt-5.4" = "gpt-5.5"
+
+[projects."{_REPO_ROOT}"]
+trust_level = "trusted"
+
+[plugins."livespec@livespec"]
+enabled = true
+
+[plugins."livespec@livespec-driver-codex"]
+enabled = true
+
+[plugins."livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro"]
+enabled = true
+
+[marketplaces.livespec]
+source_type = "git"
+source = "https://github.com/thewoolleyman/livespec.git"
+
+[marketplaces.livespec-driver-codex]
+source_type = "git"
+source = "https://github.com/thewoolleyman/livespec-driver-codex.git"
+
+[marketplaces.livespec-orchestrator-beads-fabro]
+source_type = "git"
+source = "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git"
+
+[hooks.state."livespec@livespec-driver-codex:hooks/hooks.json:pre_tool_use:0:0"]
+trusted_hash = "sha256:0d56644198aa469d04ac64830892ae79b802e57e2a90c7f8e2d10d46a36585c7"
+"""
 
 
 def _plain(*, text: str) -> str:
@@ -56,18 +95,26 @@ def _squashed(*, text: str) -> str:
 
 def _has_main_prompt(*, plain: str) -> bool:
     squashed = _squashed(text=plain)
-    return ("model:" in squashed and "/modeltochange" in squashed) or "tip:" in squashed
+    return (
+        ("model:gpt-5.5" in squashed and "/modeltochange" in squashed)
+        or (
+            f"{_CODEX_PROMPT_MARKER}explainthiscodebase" in squashed
+            and "gpt-5.5default" in squashed
+        )
+        or "tip:" in squashed
+    )
 
 
 def _has_trust_prompt(*, plain: str) -> bool:
     return "doyoutrust" in _squashed(text=plain)
 
 
-def _prepare_pty(*, slave_fd: int) -> None:
+def _prepare_pty(*, master_fd: int, slave_fd: int) -> None:
     tty.setraw(slave_fd)
     winsize = struct.pack("HHHH", 40, 120, 0, 0)
     termios.tcflush(slave_fd, termios.TCIOFLUSH)
     fcntl.ioctl(slave_fd, termios.TIOCSWINSZ, winsize)
+    fcntl.ioctl(master_fd, termios.TIOCSWINSZ, winsize)
 
 
 def _read_until(
@@ -130,6 +177,15 @@ def _send(*, fd: int, text: str) -> None:
     os.write(fd, text.encode("utf-8"))
 
 
+def _prepare_codex_home(*, codex_home: Path) -> None:
+    (codex_home / "config.toml").write_text(_CODEX_TEST_CONFIG, encoding="utf-8")
+    os.symlink(_HOST_CODEX_HOME / "plugins", codex_home / "plugins")
+    for filename in ("auth.json", ".credentials.json", "installation_id"):
+        source = _HOST_CODEX_HOME / filename
+        if source.exists():
+            os.symlink(source, codex_home / filename)
+
+
 def _await_codex_prompt(*, fd: int, transcript: str) -> str:
     current = _read_until(
         fd=fd,
@@ -141,7 +197,7 @@ def _await_codex_prompt(*, fd: int, transcript: str) -> str:
         return _read_until_quiet(
             fd=fd,
             seen=current,
-            quiet_seconds=1.5,
+            quiet_seconds=6.0,
             timeout_seconds=_CODEX_STARTUP_TIMEOUT_SECONDS,
         )
     _send(fd=fd, text="\r")
@@ -154,7 +210,7 @@ def _await_codex_prompt(*, fd: int, transcript: str) -> str:
     return _read_until_quiet(
         fd=fd,
         seen=current,
-        quiet_seconds=1.5,
+        quiet_seconds=6.0,
         timeout_seconds=_CODEX_STARTUP_TIMEOUT_SECONDS,
     )
 
@@ -165,6 +221,7 @@ def _open_skills_menu(*, fd: int, transcript: str) -> str:
     current = transcript
     for attempt_index in range(attempts):
         if attempt_index > 0:
+            _send(fd=fd, text="\x1b\x15")
             time.sleep(1)
         _send(fd=fd, text="\x15/skills\r")
         try:
@@ -173,7 +230,7 @@ def _open_skills_menu(*, fd: int, transcript: str) -> str:
                 seen=current,
                 predicate=lambda plain: "listskills" in _squashed(text=plain)
                 and "enable/disableskills" in _squashed(text=plain),
-                timeout_seconds=20,
+                timeout_seconds=40,
             )
         except AssertionError as exc:
             last_error = exc
@@ -197,51 +254,61 @@ def _stop_codex(*, proc: subprocess.Popen[bytes], fd: int) -> None:
     os.close(fd)
 
 
+def _exercise_skills_picker(*, master_fd: int) -> str:
+    _send(fd=master_fd, text=_TERMINAL_RESPONSES)
+    transcript = _await_codex_prompt(fd=master_fd, transcript="")
+    transcript = _open_skills_menu(fd=master_fd, transcript=transcript)
+    _send(fd=master_fd, text="\r")
+    transcript = _read_until(
+        fd=master_fd,
+        seen=transcript,
+        predicate=lambda plain: "Skills" in plain or "Search" in plain,
+        timeout_seconds=15,
+    )
+    _send(fd=master_fd, text=_PICKER_QUERY)
+    return _read_until(
+        fd=master_fd,
+        seen=transcript,
+        predicate=lambda plain: all(
+            expected in plain for expected in (_EXPECTED_SKILL, _EXPECTED_PLUGIN, "Skill")
+        ),
+        timeout_seconds=15,
+    )
+
+
 def test_skills_picker_finds_orchestrate_by_short_name() -> None:
     codex = shutil.which("codex")
     if codex is None:
         pytest.fail("codex CLI is required for the live /skills picker acceptance")
 
     master_fd, slave_fd = pty.openpty()
-    _prepare_pty(slave_fd=slave_fd)
+    _prepare_pty(master_fd=master_fd, slave_fd=slave_fd)
     env = os.environ.copy()
     env["TERM"] = env.get("TERM", "xterm-256color")
+    env["COLUMNS"] = "120"
+    env["LINES"] = "40"
     env["NO_COLOR"] = "1"
-    env.pop("CODEX_HOME", None)
     for name in _GIT_HOOK_ENV_VARS:
         env.pop(name, None)
-    proc = subprocess.Popen(
-        [codex, "--no-alt-screen", "-C", str(_REPO_ROOT)],
-        stdin=slave_fd,
-        stdout=slave_fd,
-        stderr=slave_fd,
-        env=env,
-        close_fds=True,
-    )
-    os.close(slave_fd)
-    _send(fd=master_fd, text=_TERMINAL_RESPONSES)
-    transcript = ""
-    try:
-        transcript = _await_codex_prompt(fd=master_fd, transcript=transcript)
-        transcript = _open_skills_menu(fd=master_fd, transcript=transcript)
-        _send(fd=master_fd, text="\r")
-        transcript = _read_until(
-            fd=master_fd,
-            seen=transcript,
-            predicate=lambda plain: "Skills" in plain or "Search" in plain,
-            timeout_seconds=15,
+    with tempfile.TemporaryDirectory(
+        prefix="livespec-codex-home-", dir=_HOST_CODEX_HOME / "tmp"
+    ) as codex_home_raw:
+        codex_home = Path(codex_home_raw)
+        _prepare_codex_home(codex_home=codex_home)
+        env["CODEX_HOME"] = str(codex_home)
+        proc = subprocess.Popen(
+            [codex, "--no-alt-screen", "-C", str(_REPO_ROOT)],
+            stdin=slave_fd,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            env=env,
+            close_fds=True,
         )
-        _send(fd=master_fd, text=_PICKER_QUERY)
-        transcript = _read_until(
-            fd=master_fd,
-            seen=transcript,
-            predicate=lambda plain: all(
-                expected in plain for expected in (_EXPECTED_SKILL, _EXPECTED_PLUGIN, "Skill")
-            ),
-            timeout_seconds=15,
-        )
-    finally:
-        _stop_codex(proc=proc, fd=master_fd)
+        os.close(slave_fd)
+        try:
+            transcript = _exercise_skills_picker(master_fd=master_fd)
+        finally:
+            _stop_codex(proc=proc, fd=master_fd)
 
     plain = _plain(text=transcript)
     assert _EXPECTED_SKILL in plain

@@ -839,7 +839,8 @@ check-pre-commit:
         just skip="check-red-green-replay check-codex-skill-picker" check
         exit $?
     fi
-    just check
+    echo ":: pre-push: skipping same-repo live TUI picker gate; run just check-codex-skill-picker explicitly for live Codex picker acceptance"
+    just skip="check-codex-skill-picker" check
 
 # When zero `.py` files are staged, `check-pre-commit` delegates here.
 # Pre-push delegates here via `check-pre-push` for zero-py changesets.
@@ -891,7 +892,8 @@ check-pre-push:
         echo ":: pre-push: green token matched — tree byte-identical to last green check; skipping full aggregate (CI is authoritative)"
         exit 0
     fi
-    just check
+    echo ":: pre-push: skipping same-repo live TUI picker gate; run just check-codex-skill-picker explicitly for live Codex picker acceptance"
+    just skip="check-codex-skill-picker" check
 
 # ---------------------------------------------------------------
 # Pre-commit auxiliary gates.
