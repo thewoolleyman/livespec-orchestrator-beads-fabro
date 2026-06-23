@@ -41,6 +41,7 @@ token present in both the dispatcher's and the server daemon's env).
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 from dataclasses import dataclass
@@ -54,15 +55,18 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.store import WorkItemComment
 
 __all__: list[str] = [
+    "CODEX_FRESHNESS_MARGIN_SECONDS",
     "CODEX_NON_ROTATABLE_REFRESH_SENTINEL",
     "DEFAULT_SANDBOX_OTEL_ENDPOINT",
     "NON_CONVERGED_MARKER",
     "SANDBOX_OTEL_ENDPOINT_ENV_VAR",
     "SIBLING_CLONES_ROOT_ENV_VAR",
+    "CodexFreshnessVerdict",
     "DispatchPlan",
     "FleetMembers",
     "PrView",
     "SiblingClones",
+    "assess_codex_credential_freshness",
     "build_plan",
     "cc_otel_overlay_env",
     "escape_minijinja_literal",
@@ -720,6 +724,72 @@ def project_codex_auth_snapshot(*, source_auth_json: str) -> str:
     tokens["refresh_token"] = CODEX_NON_ROTATABLE_REFRESH_SENTINEL
     projected: dict[str, Any] = {**source, "tokens": tokens}
     return json.dumps(projected, indent=2, sort_keys=True) + "\n"
+
+
+CODEX_FRESHNESS_MARGIN_SECONDS = 3600
+
+
+@dataclass(frozen=True, kw_only=True)
+class CodexFreshnessVerdict:
+    """Outcome of the dispatch-time Codex credential freshness gate."""
+
+    fresh_enough: bool
+    access_token_expires_at_epoch: int
+    renewal_message: str | None
+
+
+def assess_codex_credential_freshness(
+    *,
+    source_auth_json: str,
+    now_epoch: int,
+    run_budget_seconds: int,
+) -> CodexFreshnessVerdict:
+    """Decide whether the host Codex credential outlives the worker run budget.
+
+    Realizes the `Worker credential projection` freshness gate (scenarios.md
+    "Scenario 19 — Dispatcher refuses dispatch when the credential freshness
+    gate fails"): decode the ChatGPT-subscription access token's `exp` claim
+    and require it to stay valid for the full run budget plus a safety
+    margin. When it does not, the Dispatcher MUST refuse the dispatch and
+    surface the renewal message instead of projecting a credential that may
+    expire mid-run.
+    """
+    expires_at = _decode_codex_access_token_exp(source_auth_json=source_auth_json)
+    required_remaining = run_budget_seconds + CODEX_FRESHNESS_MARGIN_SECONDS
+    fresh_enough = (expires_at - now_epoch) >= required_remaining
+    renewal_message = (
+        None
+        if fresh_enough
+        else (
+            "Host Codex credential is too short-lived for the run budget; "
+            "run `codex login` on the orchestrator host to renew it."
+        )
+    )
+    return CodexFreshnessVerdict(
+        fresh_enough=fresh_enough,
+        access_token_expires_at_epoch=expires_at,
+        renewal_message=renewal_message,
+    )
+
+
+def _decode_codex_access_token_exp(*, source_auth_json: str) -> int:
+    source: dict[str, Any] = json.loads(source_auth_json)
+    raw_tokens = source.get("tokens")
+    tokens: dict[str, Any] = (
+        cast("dict[str, Any]", raw_tokens) if isinstance(raw_tokens, dict) else {}
+    )
+    access_token = tokens.get("access_token")
+    if not isinstance(access_token, str):
+        raise ValueError("auth.json tokens.access_token is missing or not a string")  # noqa: TRY003, TRY004
+    segments = access_token.split(".")
+    if len(segments) < 2:  # noqa: PLR2004
+        raise ValueError("access token is not a JWT")  # noqa: TRY003
+    padded = segments[1] + "=" * (-len(segments[1]) % 4)
+    claims: dict[str, Any] = json.loads(base64.urlsafe_b64decode(padded))
+    exp = claims.get("exp")
+    if not isinstance(exp, int):
+        raise ValueError("access token has no integer exp claim")  # noqa: TRY003, TRY004
+    return exp
 
 
 def render_run_config_overlay(
