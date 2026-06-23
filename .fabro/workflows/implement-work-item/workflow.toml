@@ -58,6 +58,12 @@ graph = "workflow.fabro"
 [run]
 goal = "Implement one ready work-item per the livespec family discipline"
 
+[run.inputs]
+# ACP coding-agent adapter for the implement/fix/pr nodes. Defaults to the
+# Claude adapter; the Dispatcher overrides it per provider via
+# `fabro run --input acp_adapter=...` to route a work-item to a Codex worker.
+acp_adapter = "npx -y @agentclientprotocol/claude-agent-acp"
+
 [run.environment]
 id = "livespec-ci"
 
