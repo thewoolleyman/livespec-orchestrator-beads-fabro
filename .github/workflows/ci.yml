@@ -172,6 +172,15 @@ jobs:
           # master pushes the range is empty.
           - check-red-green-replay
           - check-tool-backed-check-completeness
+          # check-codex-plugin-structure (P3) validates the orchestrator
+          # plugin's Codex cross-runtime surface (repo-root marketplace
+          # catalog, nested .codex-plugin/plugin.json manifest, nine
+          # .codex-plugin/skills/<op>/SKILL.md bindings) and the
+          # no-Codex-hooks contract. Pure-filesystem (no beads / no store /
+          # no .py-change gate), so it belongs in the metadata matrix that
+          # runs unconditionally — a Codex-surface drift fails CI on every
+          # event, including doc-only PRs.
+          - check-codex-plugin-structure
     steps:
       - name: Checkout
         uses: actions/checkout@v4
