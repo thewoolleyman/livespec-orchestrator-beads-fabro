@@ -1,11 +1,14 @@
 """Tests for the `codex_plugin_structure` structural check.
 
-The check validates the orchestrator plugin's Codex cross-runtime surface
-(P3a scope): the repo-root `.agents/plugins/marketplace.json` catalog, the
-nested `.claude-plugin/.codex-plugin/plugin.json` manifest, and the FOUR
-thin `.codex-plugin/skills/<op>/SKILL.md` bindings (next, list-work-items,
-detect-impl-gaps, orchestrate). It also keeps the five HEAVYWEIGHT ops'
-absence VISIBLE — they are pending the P3b shared-prose extraction, so the
+The check validates the orchestrator plugin's Codex cross-runtime surface:
+the repo-root `.agents/plugins/marketplace.json` catalog, the nested
+`.claude-plugin/.codex-plugin/plugin.json` manifest, the FOUR thin
+wrapper-backed `.codex-plugin/skills/<op>/SKILL.md` bindings (next,
+list-work-items, detect-impl-gaps, orchestrate), and the THREE prose-backed
+heavyweight capture bindings (capture-work-item, capture-impl-gaps,
+capture-spec-drift) that read `prose/<op>.md` instead of self-invoking a
+wrapper. It also keeps the two remaining HEAVYWEIGHT ops' absence VISIBLE —
+implement and groom are pending the same shared-prose extraction, so the
 check asserts their skill dirs are ABSENT.
 
 The check is pure-filesystem (no beads / no store), so these tests build a
@@ -52,10 +55,12 @@ _PRESENT_OPS = {
     "detect-impl-gaps": "detect_impl_gaps.py",
     "orchestrate": "orchestrate.py",
 }
-_PENDING_OPS = (
+_PRESENT_PROSE_OPS = (
     "capture-work-item",
     "capture-impl-gaps",
     "capture-spec-drift",
+)
+_PENDING_OPS = (
     "implement",
     "groom",
 )
@@ -78,8 +83,22 @@ def _present_body(*, op: str, script: str) -> str:
     )
 
 
+def _present_prose_body(*, op: str) -> str:
+    """A valid prose-backed Codex binding body: reads `prose/<op>.md`, no wrapper."""
+    return (
+        f"---\nname: {op}\ndescription: Thin Codex binding for {op}.\n---\n\n"
+        f"# {op} — Codex binding\n\n{_RESOLUTION_BLOCK}\n"
+        "## Invocation\n\n"
+        f'```bash\ncat "$PLUGIN_ROOT/prose/{op}.md"\n```\n'
+    )
+
+
 def _write_surface(*, root: Path) -> None:
-    """Write a fully-valid four-op Codex surface under `root` (a fake repo root)."""
+    """Write a fully-valid present-op Codex surface under `root` (a fake repo root).
+
+    Present = the four wrapper-backed thin ops plus the three prose-backed
+    heavyweight capture ops.
+    """
     claude_dir = root / ".claude-plugin"
     codex_dir = claude_dir / ".codex-plugin"
     skills_dir = codex_dir / "skills"
@@ -125,6 +144,10 @@ def _write_surface(*, root: Path) -> None:
         _ = (skills_dir / op / "SKILL.md").write_text(
             _present_body(op=op, script=script), encoding="utf-8"
         )
+
+    for op in _PRESENT_PROSE_OPS:
+        (skills_dir / op).mkdir(parents=True, exist_ok=True)
+        _ = (skills_dir / op / "SKILL.md").write_text(_present_prose_body(op=op), encoding="utf-8")
 
 
 @pytest.fixture(autouse=True)
@@ -186,7 +209,11 @@ def test_present_set_is_the_four_thin_ops() -> None:
     assert set(_CHECK._PRESENT_OPS) == set(_PRESENT_OPS)  # noqa: SLF001
 
 
-def test_pending_set_is_the_five_heavyweight_ops() -> None:
+def test_present_prose_set_is_the_three_capture_ops() -> None:
+    assert frozenset(_PRESENT_PROSE_OPS) == _CHECK._PRESENT_PROSE_OPS  # noqa: SLF001
+
+
+def test_pending_set_is_the_two_heavyweight_ops() -> None:
     assert frozenset(_PENDING_OPS) == _CHECK._PENDING_CODEX_OPS  # noqa: SLF001
 
 
@@ -423,6 +450,43 @@ def test_live_claude_token_fails(point_at: Path) -> None:
         body.replace(
             'python3 "$PLUGIN_ROOT/scripts/bin/next.py"', f'python3 "{token}/scripts/bin/next.py"'
         ),
+        encoding="utf-8",
+    )
+    assert _CHECK.main() == 1
+
+
+# --------------------------------------------------------------------------
+# Prose-backed capture ops.
+# --------------------------------------------------------------------------
+
+
+def test_prose_op_without_prose_read_fails(point_at: Path) -> None:
+    """A prose-backed capture op whose body never reads its prose/<op>.md fails."""
+    op = "capture-work-item"
+    _ = _skill(root=point_at, op=op).write_text(
+        f"---\nname: {op}\ndescription: x\n---\n\n"
+        + _RESOLUTION_BLOCK
+        + '```bash\necho "$PLUGIN_ROOT has no prose read"\n```\n',
+        encoding="utf-8",
+    )
+    assert _CHECK.main() == 1
+
+
+def test_prose_op_missing_resolution_snippet_fails(point_at: Path) -> None:
+    op = "capture-impl-gaps"
+    body = _skill(root=point_at, op=op).read_text(encoding="utf-8")
+    _ = _skill(root=point_at, op=op).write_text(
+        body.replace(f"codex plugin list --json -m {_PLUGIN_NAME}", "echo hi"), encoding="utf-8"
+    )
+    assert _CHECK.main() == 1
+
+
+def test_prose_op_live_claude_token_fails(point_at: Path) -> None:
+    op = "capture-spec-drift"
+    body = _skill(root=point_at, op=op).read_text(encoding="utf-8")
+    token = "${CLAUDE_PLUGIN" + "_ROOT}"
+    _ = _skill(root=point_at, op=op).write_text(
+        body.replace('cat "$PLUGIN_ROOT/prose/', f'cat "{token}/prose/'),
         encoding="utf-8",
     )
     assert _CHECK.main() == 1

@@ -1,107 +1,42 @@
 ---
 name: capture-spec-drift
-description: Detect impl→spec drift heuristically (LLM-driven) and hand off each finding to /livespec:propose-change with user consent. Required heavyweight authored skill per livespec/SPECIFICATION/contracts.md §"Heavyweight authored skills (6)". Invoke as `/livespec-orchestrator-beads-fabro:capture-spec-drift`.
+description: Detect impl→spec drift heuristically (LLM-driven) and hand off each finding to /livespec:propose-change with user consent. Required heavyweight authored skill per livespec/SPECIFICATION/contracts.md §"Heavyweight authored skills (5)". Invoke as `/livespec-orchestrator-beads-fabro:capture-spec-drift`.
 allowed-tools: Bash, Read, Grep, Glob, Write
 ---
 
-# capture-spec-drift
+# capture-spec-drift — Claude Code binding
 
-Asymmetric counterpart to `capture-impl-gaps`. Where impl-gap detection
-is mechanical, drift detection is heuristic — the implementation may
-have evolved beyond what the spec documents, in ways no static
-pattern-match can flag. The skill drives an LLM-assisted comparison
-between the canonical Specification (via the Spec Reader) and the
-working impl tree, surfaces each candidate finding to the user, and
-hands the confirmed findings off to `/livespec:propose-change`
-via the cross-boundary handoff (red-edge handoff 1 per
-livespec/SPECIFICATION/contracts.md §"Cross-boundary handoffs").
-
-## Pre-requisites
-
-- A `<spec-root>/` containing ratified spec content at the path
-  declared in `.livespec.jsonc` (default: `SPECIFICATION/`).
-- The consumer project's impl tree (the rest of the repo besides
-  `<spec-root>/`).
-- livespec installed and accessible — the
-  `/livespec:propose-change` cross-boundary handoff requires it.
-
-## Flow
-
-### Step 1 — Load the comparison baseline
-
-Use the Spec Reader to load the current specification:
-
-```python
-from livespec_orchestrator_beads_fabro.spec_reader import read_current_specification
-from pathlib import Path
-
-snapshot = read_current_specification(spec_root=Path("SPECIFICATION"))
-```
-
-The snapshot is the "what the project says it does." The impl tree is
-"what the project actually does." Drift is the delta.
-
-### Step 2 — Survey the impl tree
-
-Scan the consumer project's impl tree (excluding `<spec-root>/`,
-`.venv/`, `_vendor/`, generated artifacts) for:
-
-- Public API surfaces (function signatures, CLI flag declarations,
-  config schema entries, REST/gRPC endpoint definitions, etc.).
-- Behavior documented inline in code (docstrings, comments tagged
-  `# spec:`, etc.).
-- Tests that assert behavior visible to external consumers.
-
-For each candidate, ask:
-
-> Is this behavior reflected in the Specification? (yes / no / partial / skip)
-
-- `yes` — no drift; move on.
-- `no` — drift exists; behavior is not in the spec. Proceed to Step 3.
-- `partial` — drift exists; spec captures some but not all of the
-  behavior. Proceed to Step 3 with a "refinement" framing.
-- `skip` — defer judgment.
-
-### Step 3 — Per-finding propose-change handoff
-
-For each `no` / `partial` finding:
-
-1. Draft a one-sentence proposed-change framing the missing behavior.
-2. Surface it to the user with the recommended action ("file a propose-change
-   targeting `<spec-root>/`?").
-3. On consent, invoke the cross-boundary handoff:
+This file is the thin Claude Code binding for the `capture-spec-drift`
+operation of the **livespec-orchestrator-beads-fabro** plugin. The
+complete harness-neutral driving prose — the Spec Reader baseline load,
+the impl-tree survey, the per-finding consent, and the cross-boundary
+propose-change handoff — is the plugin's own artifact at
+`${CLAUDE_PLUGIN_ROOT}/prose/capture-spec-drift.md`. Read that prose file
+in full, then execute it end-to-end, binding its harness-neutral
+vocabulary to this runtime per `## Runtime bindings` below.
 
 ```bash
-/livespec:propose-change --spec-target SPECIFICATION/ --topic <slug> --body <draft>
+cat "${CLAUDE_PLUGIN_ROOT}/prose/capture-spec-drift.md"
 ```
 
-The proposed-change file lands under `<spec-root>/proposed_changes/`
-awaiting a subsequent `/livespec:revise` pass.
+This binding adds NO operation behavior of its own; all orchestration
+lives in the prose.
 
-### Step 4 — Summary
+## Runtime bindings
 
-When all candidates are processed, print a summary:
-
-- N impl behaviors surveyed
-- M classified as drift, of which K were filed as propose-changes
-- S skipped
-
-## Important properties
-
-- **LLM-assisted, user-in-the-loop** — every drift finding requires
-  explicit user consent before a propose-change is filed. The skill
-  does NOT auto-file.
-- **Read-only on the impl tree** — the skill never modifies source
-  code. Spec authorship happens through `/livespec:propose-change`,
-  not here.
-- **Spec-side write goes through the cross-boundary handoff** — this
-  plugin never writes to `<spec-root>/proposed_changes/` directly. The
-  handoff invocation is the surface contract.
-
-## What this skill does NOT do
-
-- Does NOT modify the impl tree.
-- Does NOT modify the spec tree directly. Routes through
-  `/livespec:propose-change`.
-- Does NOT detect spec→impl gaps. That's `capture-impl-gaps`.
-- Does NOT auto-accept findings. User confirms every handoff.
+- **"the propose-change operation"** — the
+  `/livespec:propose-change` skill (the cross-boundary handoff to
+  livespec core). The prose's
+  `the propose-change operation --spec-target … --topic … --body …`
+  invocation maps to
+  `/livespec:propose-change --spec-target … --topic … --body …`.
+- **"ask the user" / "confirm with the user" / "surface" / "narrate"** —
+  conversational turns in this session (the AskUserQuestion tool or plain
+  narration, as appropriate; ask one question at a time).
+- **"read `<file>`"** — the Read tool. **Python snippets** (e.g. the Spec
+  Reader `read_current_specification` call) — run via the Bash tool
+  against the bundled `livespec_orchestrator_beads_fabro` package (the
+  wrappers self-bootstrap the import path).
+- **"the `capture-impl-gaps` operation"** — the
+  `/livespec-orchestrator-beads-fabro:capture-impl-gaps` skill in this
+  plugin.

@@ -255,8 +255,9 @@ check:
         # Codex cross-runtime structural check (P3). Pure-filesystem gate
         # validating the orchestrator plugin's Codex surface (repo-root
         # .agents/plugins/marketplace.json catalog, nested
-        # .claude-plugin/.codex-plugin/plugin.json manifest, nine
-        # .codex-plugin/skills/<op>/SKILL.md bindings). No beads / no store,
+        # .claude-plugin/.codex-plugin/plugin.json manifest, the seven present
+        # .codex-plugin/skills/<op>/SKILL.md bindings — four wrapper-backed thin
+        # ops plus three prose-backed capture ops). No beads / no store,
         # so it runs in any tier. Enforces the no-Codex-hooks contract (NO
         # `hooks` key, no `.codex-plugin/hooks/` dir — the orchestrator's
         # Claude surface ships no hooks, so a Codex-only guard would be
@@ -447,12 +448,14 @@ check-closed-item-integrity:
 # .agents/plugins/marketplace.json catalog, the nested
 # .claude-plugin/.codex-plugin/plugin.json manifest (name; version in lockstep
 # with the Claude plugin.json; skills path; description SoT; NO `hooks` key),
-# and the nine .codex-plugin/skills/<op>/SKILL.md bindings (frontmatter
+# and the seven present .codex-plugin/skills/<op>/SKILL.md bindings (frontmatter
 # name==dir, non-empty description, NO allowed-tools; body carries the $PLUGIN_ROOT
 # resolution block + the codex-plugin-list snippet and no live ${CLAUDE_PLUGIN_ROOT}
-# token; the four wrapper-backed ops self-invoke scripts/bin/<op>.py, the five
-# heavyweight ops export PYTHONPATH onto $PLUGIN_ROOT/scripts). Pure-filesystem
-# (no beads / no store), so it runs in any tier with no live bd / dolt-server.
+# token; the four wrapper-backed thin ops self-invoke scripts/bin/<op>.py, the
+# three prose-backed capture ops read prose/<op>.md instead). The two remaining
+# heavyweight ops (implement, groom) are asserted ABSENT pending their own
+# prose extraction. Pure-filesystem (no beads / no store), so it runs in any tier
+# with no live bd / dolt-server.
 # It also ENFORCES the no-Codex-hooks contract (no `.codex-plugin/hooks/` dir).
 # Not a canonical livespec-dev-tooling slug, so it is wired in the private block.
 check-codex-plugin-structure:
