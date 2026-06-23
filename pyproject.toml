@@ -221,6 +221,7 @@ omit = [
     "*/site-packages/*",
     "*/__pycache__/*",
     "tests/e2e/*",
+    "tests/e2e-cli/*",
     "tests/prompts/*",
     "/tmp/*",
     "mutants/*",
@@ -261,6 +262,7 @@ exclude_also = [
 # ---------------------------------------------------------------------------
 
 [tool.livespec_dev_tooling]
+scenario_tiers = ["tests.e2e-cli", "tests.e2e", "tests.integration", "tests.consumer", "tests.prompts", "tests.bin"]
 source_trees = [".claude-plugin/scripts/livespec"]
 io_trees = [".claude-plugin/scripts/livespec/io"]
 commands_trees = [".claude-plugin/scripts/livespec/commands"]

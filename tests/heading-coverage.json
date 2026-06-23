@@ -361,5 +361,12 @@
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_workflow_acp_adapter_parameterized.test_implementer_and_review_nodes_use_their_respective_inputs",
     "reason": "Integration-tier acceptance for Scenario 20: the bound node id inspects the shipped implement-work-item Fabro graph and verifies the implementer nodes (`implement`, `fix`, `pr`, and `review_fix`) use the Codex-routable `acp_adapter` input while the review-only node uses the separate Claude `review_adapter`; sibling tests prove the review adapter is pinned through ANTHROPIC_MODEL + CLAUDE_CODE_EFFORT_LEVEL and no ACP node hard-codes the Claude adapter. The graph's approve/fix/ship-on-cap edge behavior is codified in the workflow DOT and remains subject to the first live dual-provider dispatch acceptance check."
+  },
+  {
+    "heading": "## Scenario 21 \u2014 Codex skills picker discovers orchestrate by short name",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "tests.e2e-cli.test_codex_skill_picker.test_skills_picker_finds_orchestrate_by_short_name",
+    "reason": "Top-of-pyramid live Codex TUI acceptance for the operator discovery path: starts the real Codex TUI, opens /skills, chooses List skills, searches the short name orchestrate, and requires the rendered Skill row to include the livespec-orchestrator-beads-fabro plugin context."
   }
 ]

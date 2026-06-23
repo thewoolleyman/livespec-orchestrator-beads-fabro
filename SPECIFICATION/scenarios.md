@@ -390,3 +390,24 @@ Feature: A senior-engineer review gate reviews a green build before the PR stage
     Then the run ships to the PR stage anyway
     And the still-blocking finding does not gate the change
 ```
+
+## Scenario 21 — Codex skills picker discovers orchestrate by short name
+
+```gherkin
+Feature: Codex TUI skill discoverability
+  As an operator using the Codex TUI
+  I want to find the orchestrator skill through the supported /skills picker
+  So that the installed plugin is discoverable without knowing internal
+    model-facing names
+
+Scenario: The /skills picker renders orchestrate under this plugin
+  Given the livespec-orchestrator-beads-fabro Codex plugin is installed
+  And the operator opens the Codex TUI
+  When the operator opens "/skills"
+  And chooses "List skills"
+  And searches for "orchestrate"
+  Then the picker renders "orchestrate (livespec-orchestrator-beads-fabro)"
+  And the rendered row is typed as a Skill
+  And the operator does not need to search for the colon-qualified
+    "livespec-orchestrator-beads-fabro:orchestrate" form
+```
