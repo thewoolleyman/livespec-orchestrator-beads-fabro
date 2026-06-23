@@ -161,139 +161,139 @@
     "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
   },
   {
-    "heading": "## Scenario 1 — Gap-tied fix cycle",
+    "heading": "## Scenario 1 \u2014 Gap-tied fix cycle",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
   },
   {
-    "heading": "## Scenario 4 — Freeform bug fix",
+    "heading": "## Scenario 4 \u2014 Freeform bug fix",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
   },
   {
-    "heading": "## Scenario 5 — Doctor cross-boundary read",
+    "heading": "## Scenario 5 \u2014 Doctor cross-boundary read",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
   },
   {
-    "heading": "## Scenario 6 — Cross-repo dispatch via the Dispatcher",
+    "heading": "## Scenario 6 \u2014 Cross-repo dispatch via the Dispatcher",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
   },
   {
-    "heading": "## Scenario 7 — Regroom an oversized work-item",
+    "heading": "## Scenario 7 \u2014 Regroom an oversized work-item",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_groom_scenario7.test_groom_journey_files_ready_slices_links_deps_and_regrooms_out",
     "clauses": [
       {
         "gap_id": "gap-rneqlq7j",
-        "scenario": "Scenario 7 — Regroom an oversized work-item"
+        "scenario": "Scenario 7 \u2014 Regroom an oversized work-item"
       }
     ],
     "reason": "Integration-tier acceptance for the groom regroom front-end's mechanical seam (livespec_orchestrator_beads_fabro.commands.groom): the Scenario-7 journey (draft read-only via load_groom_context -> on approval file_approved_slices files the ready factory slices with dependency edges linked, routes the spec-change slice to /livespec:propose-change, and regrooms the original out via regroom.exit_regroom) is exercised through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id is the end-to-end approval journey; read-only-until-approval, the dependency-edge linkage, the all-spec-change refuse-don't-drop guarantee, and the non-regroom-target / unknown-id expected errors are sibling tests in the same module."
   },
   {
-    "heading": "## Scenario 8 — Intake Definition-of-Ready triage",
+    "heading": "## Scenario 8 \u2014 Intake Definition-of-Ready triage",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_intake_dor_scenario8.test_single_acceptance_item_is_tagged_ready",
     "clauses": [
       {
         "gap_id": "gap-55i6toie",
-        "scenario": "Scenario 8 — Intake Definition-of-Ready triage"
+        "scenario": "Scenario 8 \u2014 Intake Definition-of-Ready triage"
       }
     ],
     "reason": "Integration-tier acceptance for the shared intake Definition-of-Ready checklist (livespec_orchestrator_beads_fabro.intake_dor) that all three capture front-ends call: the three Scenario-8 cases (single-acceptance->ready, epic->needs-regroom, non-verifiable-or-blocked->not-yet-actionable) are exercised through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id is the single-acceptance->ready journey; the epic->needs-regroom and non-verifiable/blocked->not-yet-actionable cases are sibling tests in the same module, with the per-gate precedence pinned by evaluate()."
   },
   {
-    "heading": "## Scenario 9 — needs-regroom state and transitions",
+    "heading": "## Scenario 9 \u2014 needs-regroom state and transitions",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_regroom_state_machine_scenario9.test_groom_approval_exits_needs_regroom_by_filing_ready_slices",
     "clauses": [
       {
         "gap_id": "gap-qyvkjjyg",
-        "scenario": "Scenario 9 — needs-regroom state and transitions"
+        "scenario": "Scenario 9 \u2014 needs-regroom state and transitions"
       }
     ],
     "reason": "Integration-tier acceptance for the needs-regroom state machine (livespec_orchestrator_beads_fabro.regroom): the three Scenario-9 transitions are exercised through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id is the exit-by-filing-ready-slices journey; the entry-via-DoR-failure and entry-via-non-convergence-bounce transitions are sibling tests in the same module."
   },
   {
-    "heading": "## Scenario 10 — Dispatcher refuses a human-gated item",
+    "heading": "## Scenario 10 \u2014 Dispatcher refuses a human-gated item",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_dispatcher_human_gated_scenario10.test_dispatch_surfaces_human_gated_item_without_launching_fabro",
     "clauses": [
       {
         "gap_id": "gap-dpk6g22t",
-        "scenario": "Scenario 10 — Dispatcher refuses a human-gated item"
+        "scenario": "Scenario 10 \u2014 Dispatcher refuses a human-gated item"
       }
     ],
     "reason": "Integration-tier acceptance for the Dispatcher's human-gated refusal (work-item livespec-impl-beads-cjey2z, gap-dpk6g22t): the dispatch CLI is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend) with run_dispatch recorded, proving a human-gated slice is surfaced (failed at human-gated-surfaced) and NEVER launched into a fabro sandbox, and the item is left open. The bound node id is the surface journey; the predicate, journal, and ordinary-item cases are sibling tests in the same module."
   },
   {
-    "heading": "## Scenario 11 — Dispatcher bounces a non-converging slice to needs-regroom",
+    "heading": "## Scenario 11 \u2014 Dispatcher bounces a non-converging slice to needs-regroom",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_dispatcher_non_convergence_scenario11.test_dispatch_bounces_stalled_slice_to_needs_regroom",
     "clauses": [
       {
         "gap_id": "gap-rs4tkntz",
-        "scenario": "Scenario 11 — Dispatcher bounces a non-converging slice to needs-regroom"
+        "scenario": "Scenario 11 \u2014 Dispatcher bounces a non-converging slice to needs-regroom"
       }
     ],
-    "reason": "Integration-tier acceptance for the Dispatcher's non-convergence bounce (work-item livespec-impl-beads-n5kina, gap-rs4tkntz): the dispatch CLI is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend), and a non-convergence terminal is read back through the SAME livespec_orchestrator_beads_fabro.regroom primitive — proving the slice is marked needs-regroom (escalate-don't-drop, never infinite-retried) and surfaced. The bound node id is the stalled-slice bounce journey; the DOT-marker bounce, the no-bounce-on-ordinary-failure/green cases, and the predicate cases are sibling tests in the same module."
+    "reason": "Integration-tier acceptance for the Dispatcher's non-convergence bounce (work-item livespec-impl-beads-n5kina, gap-rs4tkntz): the dispatch CLI is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend), and a non-convergence terminal is read back through the SAME livespec_orchestrator_beads_fabro.regroom primitive \u2014 proving the slice is marked needs-regroom (escalate-don't-drop, never infinite-retried) and surfaced. The bound node id is the stalled-slice bounce journey; the DOT-marker bounce, the no-bounce-on-ordinary-failure/green cases, and the predicate cases are sibling tests in the same module."
   },
   {
-    "heading": "## Scenario 12 — Dispatcher emits calibration telemetry",
+    "heading": "## Scenario 12 \u2014 Dispatcher emits calibration telemetry",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_dispatcher_calibration_telemetry_scenario12.test_terminal_run_journals_calibration_outcome_and_size_proxies",
     "clauses": [
       {
         "gap_id": "gap-ajq7ynr4",
-        "scenario": "Scenario 12 — Dispatcher emits calibration telemetry"
+        "scenario": "Scenario 12 \u2014 Dispatcher emits calibration telemetry"
       }
     ],
     "reason": "Integration-tier acceptance for the Dispatcher's calibration telemetry (work-item livespec-impl-beads-yfsv4j, gap-ajq7ynr4): the dispatch CLI is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend) to a terminal outcome, then the EXISTING on-disk Dispatcher journal (tmp/fabro-dispatch-journal.jsonl) is read back, proving a single `calibration` stage record carries the full outcome signal plus the mechanical size proxies. The bound node id is the outcome-and-size-proxies journey; the unobservable-proxy-is-null (not zero) case, the rides-the-existing-journal-with-no-new-service case, the non-convergence bounced_to_regroom case, and the journal-record-shape pin are sibling tests in the same module."
   },
   {
-    "heading": "## Scenario 13 — Calibration analysis pass proposes advisory thresholds",
+    "heading": "## Scenario 13 \u2014 Calibration analysis pass proposes advisory thresholds",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_calibration_analysis_scenario13.test_proposal_is_advisory_and_never_auto_enforced",
     "clauses": [
       {
         "gap_id": "gap-hvqcpz2d",
-        "scenario": "Scenario 13 — Calibration analysis pass proposes advisory thresholds"
+        "scenario": "Scenario 13 \u2014 Calibration analysis pass proposes advisory thresholds"
       }
     ],
     "reason": "Integration-tier acceptance for the periodic calibration analysis pass (livespec_orchestrator_beads_fabro.calibration_analysis): a real on-disk Dispatcher journal seeded with behavior 6's flat calibration-stage records is read back through the production seam and analyze_calibration proposes ceiling thresholds. The bound node id is the advisory-and-never-auto-enforced guardrail (the proposal flags advisory/not-adopted and mutates no journal state); the correlation-proposes-a-ceiling Then, the not-an-always-on-service Then, the decline-on-no-signal cases, and the no-false-zero proxy handling are sibling tests in the same module."
   },
   {
-    "heading": "## Scenario 14 — Fabro non-convergence routes back to the Dispatcher",
+    "heading": "## Scenario 14 \u2014 Fabro non-convergence routes back to the Dispatcher",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_workflow_dot_non_convergence_scenario14.test_exhausted_edge_routes_to_non_converged_not_the_human_gate",
     "clauses": [
       {
         "gap_id": "gap-f7kcvboh",
-        "scenario": "Scenario 14 — Fabro non-convergence routes back to the Dispatcher"
+        "scenario": "Scenario 14 \u2014 Fabro non-convergence routes back to the Dispatcher"
       }
     ],
     "reason": "Integration-tier acceptance for the single Fabro workflow-DOT tweak (work-item livespec-impl-beads-rw75ym, gap-f7kcvboh): the shipped .fabro/workflows/implement-work-item/workflow.fabro is read and asserted to carry the fix-loop cap (the existing janitor node-visit governor) plus a non-converged exit edge (janitor Exhausted -> the non_converged terminal command node, NOT the human gate) that routes back to the Dispatcher, within Fabro's existing DOT vocabulary and requiring no platform/setup change. The bound node id is the exit-edge-routing assertion; the cap, terminal-node, and shared-sentinel cases are sibling tests in the same module."
   },
   {
-    "heading": "## Scenario 15 — Dispatcher composes next's ranking",
+    "heading": "## Scenario 15 \u2014 Dispatcher composes next's ranking",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
@@ -307,31 +307,52 @@
     "reason": "Added by the closed-item-integrity revise pass (v007). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; the closed-item-integrity invariant's mechanical guard (the closed_item_integrity check) is not yet built, so this constraint heading binds to its real test via the governed propose-change/revise resulting_files[] loop once the gap-tied impl work-item that wires the check lands its exercising test. The clauses[] gap-id->scenario link is deferred to that implementation step (impl-beads ships no clauses[] entries or livespec_spec_clauses extractor yet; adopting the clauses[] map is itself the first implementation work-item)."
   },
   {
-    "heading": "## Scenario 16 — Closed-item-integrity check rejects \"closed but unproven\"",
+    "heading": "## Scenario 16 \u2014 Closed-item-integrity check rejects \"closed but unproven\"",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_closed_item_integrity_scenario16.test_todo_bound_scenario_warns_in_warn_mode",
     "clauses": [
       {
         "gap_id": "gap-j2femmn7",
-        "scenario": "Scenario 16 — Closed-item-integrity check rejects \"closed but unproven\""
+        "scenario": "Scenario 16 \u2014 Closed-item-integrity check rejects \"closed but unproven\""
       },
       {
         "gap_id": "gap-gtamowt3",
-        "scenario": "Scenario 16 — Closed-item-integrity check rejects \"closed but unproven\""
+        "scenario": "Scenario 16 \u2014 Closed-item-integrity check rejects \"closed but unproven\""
       },
       {
         "gap_id": "gap-3wbdenoy",
-        "scenario": "Scenario 16 — Closed-item-integrity check rejects \"closed but unproven\""
+        "scenario": "Scenario 16 \u2014 Closed-item-integrity check rejects \"closed but unproven\""
       }
     ],
     "reason": "Integration-tier acceptance for the closed_item_integrity dev-tooling check (work-items livespec-impl-beads-fxt/xe0/oaq; gap-j2femmn7 invariant, gap-gtamowt3 + gap-3wbdenoy check): the check's main() is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend) with a fixture tests/heading-coverage.json carrying the clauses[] gap-id->scenario map. The bound node id is the case-1 finding journey (a TODO-bound closed gap-tied item surfaces a closed-item-integrity warning at exit 0 in the default warn mode); the fail-mode exit-non-zero, the missing-resolution:completed-label, the unresolvable-gap-id, and the case-2 fully-proven-no-finding cases are sibling tests in the same module. Bound at the gap-tied impl step before its own resolution:completed closure (the check is its own first subject)."
   },
   {
-    "heading": "## Scenario 17 — orchestrate operator-surface defaults",
+    "heading": "## Scenario 17 \u2014 orchestrate operator-surface defaults",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Added by the orchestrate-operator-ux revise pass. The scenario pins the three orchestrate operator-surface defaults (bare-invocation walkthrough, cwd-default --repo, Markdown-default output with --json opt-in). A real integration-tier test id is populated by the governed propose-change/revise loop's resulting_files[] mechanism once the operator-surface ergonomics gain an exercising test (alongside the follow-up impl work-item that implements them)."
+  },
+  {
+    "heading": "## Worker credential projection",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "Added by the provider-subscription-worker-credential-projection revise pass (v013). The provider-agnostic worker credential-projection contract (non-rotatable-by-worker, Dispatcher freshness-gate, host-sole-refresh-owner) binds to its real integration-tier test id via the governed propose-change/revise resulting_files[] loop once the dispatcher-codex-credential-projection and dispatcher-credential-freshness-gate impl work-items land their exercising tests."
+  },
+  {
+    "heading": "## Scenario 18 \u2014 Dispatcher projects a non-rotatable subscription credential into a worker sandbox",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Added by the provider-subscription-worker-credential-projection revise pass (v013). This integration/consumer-tier scenario (never a unit-tier test, per the heading taxonomy's pyramid-tier requirement) binds to its real integration-tier test id via the governed propose-change/revise resulting_files[] loop once the dispatcher-codex-credential-projection and dispatcher-credential-freshness-gate impl work-items land their exercising tests."
+  },
+  {
+    "heading": "## Scenario 19 \u2014 Dispatcher refuses dispatch when the credential freshness gate fails",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Added by the provider-subscription-worker-credential-projection revise pass (v013). This integration/consumer-tier scenario (never a unit-tier test, per the heading taxonomy's pyramid-tier requirement) binds to its real integration-tier test id via the governed propose-change/revise resulting_files[] loop once the dispatcher-codex-credential-projection and dispatcher-credential-freshness-gate impl work-items land their exercising tests."
   }
 ]
