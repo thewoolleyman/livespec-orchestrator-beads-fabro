@@ -109,7 +109,7 @@ from livespec_runtime.cross_repo.types import CrossRepoManifest
 # Shared helpers
 # ---------------------------------------------------------------------------
 
-# Canned fleet-manifest.jsonc payload the autouse fixture serves in
+# Canned .livespec-fleet-manifest.jsonc payload the autouse fixture serves in
 # place of the real `gh api` fetch (which must never run in the
 # hermetic tier). Mirrors the committed shape on livespec master
 # (owner + classed members, `//` comments). It includes a member named
@@ -117,7 +117,7 @@ from livespec_runtime.cross_repo.types import CrossRepoManifest
 # checkout under that basename — letting dispatch-level tests assert
 # the target's own clone step is excluded from the overlay.
 _FLEET_MANIFEST_TEXT = (
-    "// fleet-manifest.jsonc — canned test copy\n"
+    "// .livespec-fleet-manifest.jsonc — canned test copy\n"
     "{\n"
     '  "owner": "thewoolleyman",\n'
     '  "members": [\n'
@@ -2172,7 +2172,7 @@ def test_fetch_fleet_manifest_text_shells_gh_api_raw(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The production fetch is a HOST-SIDE `gh api` raw-content read of
-    fleet-manifest.jsonc from livespec master at run-config generation
+    .livespec-fleet-manifest.jsonc from livespec master at run-config generation
     time — the canonical fleet member registry, fetched the same way the
     other family consumers (fleet conformance, release fan-out) consume
     it."""
@@ -2224,7 +2224,7 @@ def test_dispatch_fails_fast_when_fleet_manifest_is_unfetchable(
     assert exit_code == 1
     out = capsys.readouterr().out
     assert "run-config-overlay" in out
-    assert "fleet-manifest.jsonc" in out
+    assert ".livespec-fleet-manifest.jsonc" in out
     assert "gh api" in out
     assert _stored()[item.id].status == "open"
 
@@ -2248,7 +2248,7 @@ def test_dispatch_fails_fast_when_fleet_manifest_is_malformed(
     assert exit_code == 1
     out = capsys.readouterr().out
     assert "run-config-overlay" in out
-    assert "fleet-manifest.jsonc" in out
+    assert ".livespec-fleet-manifest.jsonc" in out
     assert _stored()[item.id].status == "open"
 
 
