@@ -167,3 +167,49 @@ def test_main_plan_emits_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]
 
     assert exit_code == 0
     assert json.loads(capsys.readouterr().out)["actions"] == []
+
+
+def test_main_plan_empty_renders_no_actions_markdown(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    runner = _Runner(results=[_ok({"candidates": []}), _ok({"candidates": []})])
+
+    exit_code = main(["plan", "--repo", str(repo)], runner=runner)
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert out.lstrip().startswith("#")
+    assert "No actions ready." in out
+
+
+def test_main_run_impl_renders_markdown_with_dispatcher_exit_code(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    runner = _Runner(results=[_ok([{"work_item_id": "bd-ib-123", "status": "green"}])])
+
+    exit_code = main(["run", "--repo", str(repo), "--action", "impl:bd-ib-123"], runner=runner)
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert out.lstrip().startswith("#")
+    assert "status: **green**" in out
+    assert "dispatcher exit code: 0" in out
+
+
+def test_main_run_spec_renders_markdown_handoff(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    runner = _Runner(results=[])
+
+    exit_code = main(["run", "--repo", str(repo), "--action", "spec:revise:0"], runner=runner)
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "status: **human-gated**" in out
+    assert "handoff: `/livespec:revise --spec-target SPECIFICATION/`" in out

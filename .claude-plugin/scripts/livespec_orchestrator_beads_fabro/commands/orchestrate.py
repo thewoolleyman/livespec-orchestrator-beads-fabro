@@ -169,19 +169,27 @@ def build_dispatcher_argv(
 def main(argv: list[str] | None = None, *, runner: CommandRunner | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
-    repo = Path(args.repo)
+    repo = _resolve_repo(repo_arg=getattr(args, "repo", None))
     if not repo.exists():
         _ = sys.stderr.write(f"ERROR: --repo does not exist: {repo}\n")
         return _EXIT_PRECONDITION_ERROR
-    if args.subcommand == "plan":
+    # Bare `orchestrate` (no subcommand) presents the read-only plan as the
+    # walkthrough entry point; the interactive select -> run loop lives in the
+    # skill/harness layer over this CLI, not in the CLI itself.
+    if args.subcommand in {None, "plan"}:
         plan = plan_actions(repo=repo, runner=runner)
-        _emit_payload(payload=plan, as_json=bool(args.as_json))
+        _emit_payload(payload=plan, as_json=bool(getattr(args, "as_json", False)))
         return 0
-    if args.subcommand == "run":
-        result = run_action(repo=repo, action_id=str(args.action), runner=runner)
-        _emit_payload(payload=result, as_json=bool(args.as_json))
-        return 0 if result["status"] in {"green", "human-gated"} else _EXIT_FAILURE
-    return _EXIT_USAGE_ERROR  # pragma: no cover - argparse requires a known subcommand.
+    result = run_action(repo=repo, action_id=str(args.action), runner=runner)
+    _emit_payload(payload=result, as_json=bool(args.as_json))
+    return 0 if result["status"] in {"green", "human-gated"} else _EXIT_FAILURE
+
+
+def _resolve_repo(*, repo_arg: str | None) -> Path:
+    """Resolve the target repo: the cwd when `--repo` is omitted, else the path."""
+    if repo_arg is None:
+        return Path.cwd()
+    return Path(repo_arg)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -209,12 +217,12 @@ class _SubprocessRunner:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="orchestrate")
-    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+    subparsers = parser.add_subparsers(dest="subcommand", required=False)
     plan = subparsers.add_parser("plan")
-    _ = plan.add_argument("--repo", dest="repo", required=True)
+    _ = plan.add_argument("--repo", dest="repo", required=False, default=None)
     _ = plan.add_argument("--json", dest="as_json", action="store_true")
     run = subparsers.add_parser("run")
-    _ = run.add_argument("--repo", dest="repo", required=True)
+    _ = run.add_argument("--repo", dest="repo", required=False, default=None)
     _ = run.add_argument("--action", dest="action", required=True)
     _ = run.add_argument("--json", dest="as_json", action="store_true")
     return parser
@@ -335,22 +343,52 @@ def _emit_payload(*, payload: dict[str, Any], as_json: bool) -> None:
 
 
 def _human_summary(*, payload: dict[str, Any]) -> str:
+    """Render a payload as human-readable Markdown.
+
+    A `plan` payload (carries `actions`) renders the selectable action
+    records; any other payload is a `run` dispatch/handoff envelope.
+    """
     if "actions" in payload:
-        actions_raw = payload["actions"]
-        if isinstance(actions_raw, list) and actions_raw:
-            actions = cast("list[object]", actions_raw)
-            return "\n".join(
-                _action_summary_id(action=cast("dict[object, object]", action))
-                for action in actions
-                if isinstance(action, dict)
-            )
-        return "No actions ready."
-    return str(payload.get("summary", payload))
+        return _plan_markdown(payload=payload)
+    return _run_markdown(payload=payload)
 
 
-def _action_summary_id(*, action: dict[object, object]) -> str:
-    action_dict = cast("dict[str, object]", action)
-    return str(action_dict.get("id", "unknown"))
+def _plan_markdown(*, payload: dict[str, Any]) -> str:
+    lines = [f"# orchestrate plan — {payload.get('repo', 'current repo')}", ""]
+    actions = cast("list[dict[str, Any]]", payload["actions"])
+    if not actions:
+        lines.append("No actions ready.")
+        return "\n".join(lines)
+    lines.extend(_plan_action_lines(action=action) for action in actions)
+    return "\n".join(lines)
+
+
+def _plan_action_lines(*, action: dict[str, Any]) -> str:
+    action_id = str(action.get("id", "unknown"))
+    urgency = str(action.get("urgency", "medium"))
+    reason = str(action.get("reason", ""))
+    head = f"- **{action_id}** ({urgency}) — {reason}"
+    detail = (
+        f"`{action['handoff']}`"
+        if action.get("kind") == "spec" and action.get("handoff")
+        else f"dispatch `{action.get('work_item_ref', '')}` (factory-safe)"
+    )
+    return f"{head}\n  - {detail}"
+
+
+def _run_markdown(*, payload: dict[str, Any]) -> str:
+    action_id = str(payload.get("action_id", "unknown"))
+    status = str(payload.get("status", "unknown"))
+    lines = [f"# orchestrate run — {action_id}", "", f"- status: **{status}**"]
+    handoff = payload.get("handoff")
+    if handoff:
+        lines.append(f"- handoff: `{handoff}`")
+    dispatcher = payload.get("dispatcher")
+    if isinstance(dispatcher, dict):
+        dispatcher_dict = cast("dict[str, Any]", dispatcher)
+        lines.append(f"- dispatcher exit code: {dispatcher_dict.get('exit_code')}")
+    lines.append(f"- {payload.get('summary', '')}")
+    return "\n".join(lines)
 
 
 def _spec_next_argv(*, repo: Path, spec_next_bin: Path) -> tuple[str, ...]:

@@ -331,8 +331,8 @@
     "heading": "## Scenario 17 \u2014 orchestrate operator-surface defaults",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the orchestrate-operator-ux revise pass. The scenario pins the three orchestrate operator-surface defaults (bare-invocation walkthrough, cwd-default --repo, Markdown-default output with --json opt-in). A real integration-tier test id is populated by the governed propose-change/revise loop's resulting_files[] mechanism once the operator-surface ergonomics gain an exercising test (alongside the follow-up impl work-item that implements them)."
+    "test": "tests.integration.test_orchestrate_operator_defaults_scenario17.test_bare_orchestrate_runs_the_plan_walkthrough_without_erroring",
+    "reason": "Integration-tier acceptance for the three orchestrate operator-surface defaults, driven through the orchestrate CLI's public main() entry point: bare orchestrate runs the read-only plan walkthrough without erroring on the missing subcommand (the bound node id; siblings cover the no-SystemExit(2) assertion explicitly); an omitted --repo resolves to the current working directory while an explicit --repo overrides and an unresolvable path is a precondition error exit 3; and console output is human-readable Markdown by default while --json renders the same payload as JSON. The spec-side and impl-side next surfaces are driven through the CLI's public runner seam so the acceptance is hermetic, and the defaults are a property of the CLI regardless of backend."
   },
   {
     "heading": "## Worker credential projection",

@@ -202,7 +202,9 @@ def test_main_plan_human_output_lists_actions(
     exit_code = orchestrate.main(["plan", "--repo", str(repo)], runner=runner)
 
     assert exit_code == 0
-    assert capsys.readouterr().out.strip() == "impl:bd-ib-123"
+    out = capsys.readouterr().out
+    assert out.lstrip().startswith("#")
+    assert "impl:bd-ib-123" in out
 
 
 def test_main_plan_human_output_handles_empty_plan(
@@ -221,7 +223,9 @@ def test_main_plan_human_output_handles_empty_plan(
     exit_code = orchestrate.main(["plan", "--repo", str(repo)], runner=runner)
 
     assert exit_code == 0
-    assert capsys.readouterr().out.strip() == "No actions ready."
+    out = capsys.readouterr().out
+    assert out.lstrip().startswith("#")
+    assert "No actions ready." in out
 
 
 def test_main_run_returns_exit_failure_for_failed_dispatch(
