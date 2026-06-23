@@ -90,6 +90,11 @@ install-commit-refuse-hooks:
 
 bootstrap:
     just install-commit-refuse-hooks
+    # Harden the beads tenant-pointer dir to owner-only on first-touch (bd
+    # recommends 0700; only the owning user's bd reads it — the Dolt server
+    # connects over TCP and never reads this dir). Guarded: repos with no beads
+    # tenant have no .beads.
+    [ -d "$(dirname "$(git rev-parse --git-common-dir)")/.beads" ] && chmod 700 "$(dirname "$(git rev-parse --git-common-dir)")/.beads" || true
     just ensure-plugins
     just ensure-codex-plugins
 
