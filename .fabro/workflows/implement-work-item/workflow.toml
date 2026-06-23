@@ -59,10 +59,25 @@ graph = "workflow.fabro"
 goal = "Implement one ready work-item per the livespec family discipline"
 
 [run.inputs]
-# ACP coding-agent adapter for the implement/fix/pr nodes. Defaults to the
-# Claude adapter; the Dispatcher overrides it per provider via
-# `fabro run --input acp_adapter=...` to route a work-item to a Codex worker.
+# ACP coding-agent adapter for the implement/fix/pr/review_fix nodes (the
+# IMPLEMENTER nodes). Defaults to the Claude adapter; the Dispatcher
+# overrides it per provider via `fabro run --input acp_adapter=...` to route
+# the implementer work to a Codex worker (Slice B / bd-ib-g7e34u wires the
+# Codex credential projection that makes that switch live).
 acp_adapter = "npx -y @agentclientprotocol/claude-agent-acp"
+
+# ACP adapter for the REVIEW node (Slice A / bd-ib-egms32) — the Claude
+# subscription, pinned to Opus 4.8 + high thinking. The model CANNOT be set
+# as a node attr or model_stylesheet: `model`/`reasoning_effort` are API-only
+# attributes fabro REJECTS on acp nodes (fabro-validate backend_valid rule).
+# The Claude ACP adapter is Claude Code under the hood, so it reads Claude
+# Code's own env — the model is pinned by prefixing ANTHROPIC_MODEL +
+# CLAUDE_CODE_EFFORT_LEVEL onto the command (fabro parses leading KEY=val
+# assignments into the child's env). KNOWN CAVEAT: some claude-code-acp
+# versions have ignored ANTHROPIC_MODEL and defaulted to haiku, so "the
+# review node actually runs on Opus 4.8" is a live acceptance check — pin a
+# recent @latest and verify the model in the run transcript.
+review_adapter = "ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL=high npx -y @zed-industries/claude-code-acp@latest"
 
 [run.environment]
 id = "livespec-ci"
