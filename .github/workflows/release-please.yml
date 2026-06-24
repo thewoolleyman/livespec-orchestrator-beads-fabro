@@ -1,0 +1,45 @@
+# release-please.yml — semver-managed plugin releases via Conventional Commits.
+#
+# On every push to master, release-please opens (or updates) a release PR
+# carrying the next-version bump per Conventional Commits -> semver (feat:
+# MINOR, fix: PATCH, feat!/BREAKING: MAJOR; chore/docs/style/refactor/perf/
+# test/build/ci/revert: no bump). Merging the release PR tags vX.Y.Z and
+# publishes a GitHub Release.
+#
+# Version source of truth: the plugin manifest .claude-plugin/plugin.json
+# $.version, bumped via the release-please-config.json extra-files JSON
+# updater -- NOT pyproject.toml (this repo ships a plugin, not a package).
+#
+# Auth: release-please MUST mint the livespec GitHub App installation token
+# (secrets APP_ID + APP_PRIVATE_KEY), NEVER the default GITHUB_TOKEN -- a
+# github-actions[bot] Release does not fire `release: published`, which would
+# silently kill the release-dispatch -> bump-pin -> pin-freshness fan-out.
+
+name: Release Please
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint App installation token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Run release-please
+        uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
