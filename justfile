@@ -95,6 +95,19 @@ bootstrap:
     # connects over TCP and never reads this dir). Guarded: repos with no beads
     # tenant have no .beads.
     [ -d "$(dirname "$(git rev-parse --git-common-dir)")/.beads" ] && chmod 700 "$(dirname "$(git rev-parse --git-common-dir)")/.beads" || true
+    # Idempotent worktree-root + mise-trust setup. Every git worktree in
+    # the fleet lives under a single per-user root, ~/.worktrees/<repo>/
+    # <branch> (per livespec/SPECIFICATION/non-functional-requirements.md
+    # §"Worktree root and mise trust"). Registering that root as one of
+    # mise's trusted_config_paths makes each freshly created worktree's
+    # .mise.toml auto-trusted, so the first `mise exec` inside it never
+    # stops on the "config not trusted" prompt — the failure that
+    # otherwise wastes a tool round-trip on every new worktree. The grep
+    # guard keeps the global ~/.config/mise/config.toml entry single on
+    # repeated bootstraps; the value is the absolute $HOME-rooted path so
+    # it resolves identically from any invocation site.
+    mkdir -p "${HOME}/.worktrees"
+    mise settings get trusted_config_paths 2>/dev/null | grep -qF "${HOME}/.worktrees" || mise settings add trusted_config_paths "${HOME}/.worktrees"
     just ensure-plugins
     just ensure-codex-plugins
 
