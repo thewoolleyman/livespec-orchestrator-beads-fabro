@@ -1,0 +1,6 @@
+# The plan front-end writes its planning thread on disk under the project
+# root: the reserved, self-sufficient handoff is the asserted artifact. The
+# thread's ledger epic anchor is a beads tenant DB write (no on-disk file,
+# like capture-work-item), so it is NOT a per-skill file assertion here —
+# the on-disk handoff below plus the exit-0 round-trip is the success signal.
+plan/harness-smoke/handoff.md

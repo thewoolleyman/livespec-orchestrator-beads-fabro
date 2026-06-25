@@ -129,8 +129,9 @@ _PRESENT_OPS: dict[str, str] = {
 # (the P3b extraction). Their Codex binding body MUST read `prose/<op>.md`
 # instead of self-invoking a wrapper. capture-work-item, capture-impl-gaps, and
 # capture-spec-drift flipped into this set at P3b PR-2; implement and groom
-# flipped in at P3b PR-3 — completing the heavyweight extraction (all nine ops
-# Codex-covered).
+# flipped in at P3b PR-3 — completing the original heavyweight extraction.
+# `plan` joined later as the sixth heavyweight op (the Planning Lane
+# realization, epic livespec-zs22).
 _PRESENT_PROSE_OPS = frozenset(
     {
         "capture-work-item",
@@ -138,6 +139,7 @@ _PRESENT_PROSE_OPS = frozenset(
         "capture-spec-drift",
         "implement",
         "groom",
+        "plan",
     }
 )
 # No heavyweight op remains pending: the P3b prose extraction is complete. The

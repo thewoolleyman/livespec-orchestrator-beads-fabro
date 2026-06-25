@@ -62,6 +62,7 @@ _PRESENT_PROSE_OPS = (
     "capture-spec-drift",
     "implement",
     "groom",
+    "plan",
 )
 # The P3b prose extraction is complete: no heavyweight op remains pending.
 _PENDING_OPS: tuple[str, ...] = ()
@@ -210,7 +211,7 @@ def test_present_set_is_the_four_thin_ops() -> None:
     assert set(_CHECK._PRESENT_OPS) == set(_PRESENT_OPS)  # noqa: SLF001
 
 
-def test_present_prose_set_is_the_five_heavyweight_ops() -> None:
+def test_present_prose_set_is_the_six_heavyweight_ops() -> None:
     assert frozenset(_PRESENT_PROSE_OPS) == _CHECK._PRESENT_PROSE_OPS  # noqa: SLF001
 
 
