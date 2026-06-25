@@ -12,9 +12,21 @@
 # the docker sandbox — local working-tree state never enters the run.
 # The sandbox clone is the secondary-worktree EQUIVALENT under the
 # family discipline: the prepare steps below provision it exactly like
-# `just bootstrap` EXCEPT `livespec.primaryPath` (deliberately unset, so
-# the commit-refuse wrapper's refuse branch never fires and the
-# Red-Green-Replay lefthook gates run on every commit).
+# `just bootstrap` EXCEPT that the commit-refuse wrapper's refuse branch
+# is DECLARED EXEMPT here so the Red-Green-Replay lefthook gates run on
+# every in-sandbox commit. The sandbox is a fresh FULL clone, so under
+# the structural commit-refuse mechanism (livespec-zs22.7.3: refuse when
+# git-dir == git-common-dir) it reads structurally as a primary checkout
+# and its refuse branch WOULD fire. The prepare step sets
+# `git config livespec.sandboxExempt true` — an explicit, declared marker
+# the hook body reads to skip the refuse branch (per livespec core
+# non-functional-requirements §"Conformance Pattern" concern #1
+# Worktree-discipline, Exemption slot). This marker is set
+# UNCONDITIONALLY and is backward-compatible: the legacy
+# `livespec.primaryPath`-based body never reads it and (with primaryPath
+# left unset) already fails open here, so setting the marker is a no-op
+# for not-yet-migrated repos and arms every dispatched sandbox for the
+# structural transition.
 #
 # CREDENTIAL CHANNEL (work-item livespec-impl-beads-am9, amended after
 # the 2026-06-12 shadow shakedown): this committed file carries NO
@@ -199,3 +211,18 @@ cp "$hook_src" "$hooks_dir/pre-commit"
 cp "$hook_src" "$hooks_dir/pre-push"
 chmod +x "$hooks_dir/pre-commit" "$hooks_dir/pre-push"
 '''
+
+[[run.prepare.steps]]
+# Declare the sandbox EXEMPT from the commit-refuse refuse branch
+# (livespec-zs22.7.3, Conformance Pattern concern #1 Worktree-discipline,
+# Exemption slot). The sandbox is a fresh FULL clone — structurally a
+# primary checkout — so the structural commit-refuse hook would refuse
+# its in-sandbox Red-Green-Replay commits. This explicit, declared marker
+# (read by the hook body via `git config --get livespec.sandboxExempt`)
+# skips the refuse branch so commits proceed; the lefthook delegation in
+# the hook body still fires the RGR gates. Set UNCONDITIONALLY and
+# backward-compatible: the legacy livespec.primaryPath-based body never
+# reads this key, so it is a harmless no-op until each repo migrates to
+# the structural body. Local config only — never leaves the ephemeral
+# sandbox (pushes carry refs, not config).
+script = "git config livespec.sandboxExempt true"
