@@ -70,6 +70,13 @@
     "reason": "Added by the grooming-and-slice-size-calibration-realization revise pass. The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; a real test id is populated by the governed propose-change/revise loop's resulting_files[] mechanism once this heading gains an exercising test."
   },
   {
+    "heading": "## Planning Lane realization",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "Added by the planning-lane-realization revise pass (epic livespec-zs22, increment 3a / work-items livespec-zs22.5 + livespec-zs22.3). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; the plan front-end's behavior is exercised by the e2e-cli fixture and the handoff self-sufficiency gate rather than a unit test, so a real test id is populated by the governed propose-change/revise resulting_files[] mechanism once this heading gains an exercising test."
+  },
+  {
     "heading": "## Beads connection model",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
