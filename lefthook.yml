@@ -16,12 +16,14 @@
 #   lefthook-must-delegate-to-just rule, enforced by
 #   dev-tooling/checks/no_direct_tool_invocation.py).
 #
-# Activation: `just bootstrap` installs the git-hook-wrapper from
-# dev-tooling/git-hook-wrapper.sh into .git/hooks/pre-commit,
-# .git/hooks/pre-push, and .git/hooks/commit-msg. The wrapper
-# invokes `mise exec lefthook -- lefthook run <hook-name> "$@"` so
-# the gate fires regardless of shell config and commit-msg argv[1]
-# (the commit-message file path) reaches the red-green-replay hook.
+# Activation: `just bootstrap` installs the structural commit-refuse
+# wrapper from dev-tooling/livespec-commit-refuse-hook.sh into
+# .git/hooks/pre-commit, .git/hooks/pre-push, and .git/hooks/commit-msg.
+# The wrapper refuses at a primary checkout (git-dir == git-common-dir,
+# unless livespec.sandboxExempt=true) then invokes
+# `mise exec -- lefthook run <hook-name> "$@"` so the gate fires
+# regardless of shell config and commit-msg argv[1] (the commit-message
+# file path) reaches the red-green-replay hook.
 
 pre-commit:
   commands:
