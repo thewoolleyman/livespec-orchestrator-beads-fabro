@@ -66,27 +66,27 @@ acceptance-live-golden-master *ARGS:
 # ---------------------------------------------------------------
 
 install-commit-refuse-hooks:
-    # Idempotent `livespec.primaryPath` on the primary checkout's
-    # git-common-dir config (per livespec/SPECIFICATION/
-    # non-functional-requirements.md §"Primary-checkout commit-refuse
-    # hook" / §"Commit-refuse hook bootstrap procedure" — family-wide
-    # invariant inherited by every livespec-impl-* sibling). The
-    # commit-refuse hook reads this config value to recognize the
-    # primary checkout and refuse commits/pushes there, forcing every
-    # edit through `git worktree add`. Targets the absolute path of
-    # the git common dir's parent so the recipe writes the right
-    # value when invoked from the primary checkout AND from secondary
-    # worktrees.
-    git config --file "$(git rev-parse --git-common-dir)/config" livespec.primaryPath "$(realpath "$(dirname "$(git rev-parse --git-common-dir)")")"
-    # Install the commit-refuse hook (vendored from livespec-dev-
-    # tooling v0.5.0 — see dev-tooling/livespec-commit-refuse-hook.sh)
-    # at pre-commit AND pre-push. Refuses at the primary checkout;
-    # delegates to lefthook at secondary worktrees via mise. The
-    # commit-msg path keeps the legacy git-hook-wrapper since it
-    # routes argv[1] to the v034 D3 replay-hook stage.
+    # Install the STRUCTURAL commit-refuse hook (vendored from
+    # livespec-dev-tooling v0.18.0 — see
+    # dev-tooling/livespec-commit-refuse-hook.sh) at pre-commit,
+    # pre-push AND commit-msg. The structural body refuses commits/
+    # pushes at a primary checkout STRUCTURALLY — it exits 1 when
+    # `git rev-parse --git-dir` equals `git rev-parse --git-common-dir`
+    # (a primary; a worktree's git-dir differs) UNLESS
+    # `git config livespec.sandboxExempt` is `true` — so it is ARMED
+    # ON INSTALL with no `livespec.primaryPath` arming step (which
+    # failed OPEN whenever its arming step was missed). Per
+    # livespec/SPECIFICATION/non-functional-requirements.md
+    # §"Primary-checkout commit-refuse hook" / §"Commit-refuse hook
+    # bootstrap procedure" (family-wide invariant). All three hooks
+    # carry the same body: it derives its hook name from
+    # `basename "$0"` and passes `"$@"` through to
+    # `lefthook run <hook-name> "$@"`, so the commit-msg argv (the
+    # message-file path the red-green-replay stage reads via `{1}`)
+    # routes correctly — no separate git-hook-wrapper at commit-msg.
     install -D -m 755 dev-tooling/livespec-commit-refuse-hook.sh "$(git rev-parse --git-common-dir)/hooks/pre-commit"
     install -D -m 755 dev-tooling/livespec-commit-refuse-hook.sh "$(git rev-parse --git-common-dir)/hooks/pre-push"
-    install -D -m 755 dev-tooling/git-hook-wrapper.sh "$(git rev-parse --git-common-dir)/hooks/commit-msg"
+    install -D -m 755 dev-tooling/livespec-commit-refuse-hook.sh "$(git rev-parse --git-common-dir)/hooks/commit-msg"
 
 bootstrap:
     just install-commit-refuse-hooks
