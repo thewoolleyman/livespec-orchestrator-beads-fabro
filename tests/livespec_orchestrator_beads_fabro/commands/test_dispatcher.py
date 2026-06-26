@@ -120,7 +120,7 @@ _FLEET_MANIFEST_TEXT = (
     "// .livespec-fleet-manifest.jsonc — canned test copy\n"
     "{\n"
     '  "owner": "thewoolleyman",\n'
-    '  "members": [\n'
+    '  "fleet": [\n'
     '    { "repo": "livespec", "class": "core" },\n'
     '    { "repo": "livespec-dev-tooling", "class": "enforcement-suite" },\n'
     '    { "repo": "repo", "class": "impl-plugin" }\n'
@@ -1048,6 +1048,24 @@ def test_parse_fleet_members_rejects_malformed_manifests() -> None:
     ]
     for manifest_text in bad_manifests:
         assert parse_fleet_members(manifest_text=manifest_text) is None
+
+
+def test_parse_fleet_members_accepts_legacy_members_key() -> None:
+    """The livespec v148 rename made `fleet` the canonical manifest key
+    (the canned `_FLEET_MANIFEST_TEXT` above mirrors it). The parser MUST
+    still accept the pre-rename `members` key as a fallback so a
+    not-yet-migrated manifest copy keeps resolving sibling clones instead
+    of failing every dispatch — the gap that the rename regressed."""
+    legacy = (
+        "{\n"
+        '  "owner": "thewoolleyman",\n'
+        '  "members": [{ "repo": "livespec", "class": "core" }]\n'
+        "}\n"
+    )
+    assert parse_fleet_members(manifest_text=legacy) == FleetMembers(
+        owner="thewoolleyman",
+        repos=("livespec",),
+    )
 
 
 def test_render_run_config_overlay_appends_sibling_clone_steps_and_env_root(

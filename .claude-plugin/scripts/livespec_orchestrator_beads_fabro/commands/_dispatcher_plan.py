@@ -222,9 +222,12 @@ def parse_fleet_members(*, manifest_text: str) -> FleetMembers | None:
     """Parse .livespec-fleet-manifest.jsonc text into FleetMembers; None when malformed.
 
     Accepts the committed shape on livespec master: a JSONC object with
-    a string `owner` and a non-empty `members` list of objects each
-    carrying a string `repo`. Owner and repo values must be
-    GitHub-slug-shaped (they are spliced into clone scripts). Any
+    a string `owner` and a non-empty `fleet` list of objects each
+    carrying a string `repo`. The livespec v148 rename made `fleet` the
+    canonical key; the pre-rename `members` key is accepted as a fallback
+    (matching livespec-dev-tooling's `(.fleet // .members)` parser) so a
+    not-yet-migrated manifest copy keeps resolving. Owner and repo values
+    must be GitHub-slug-shaped (they are spliced into clone scripts). Any
     deviation yields None — the caller refuses the dispatch with an
     actionable error rather than cloning from a guessed member list.
     """
@@ -236,7 +239,8 @@ def parse_fleet_members(*, manifest_text: str) -> FleetMembers | None:
         return None
     parsed = cast("dict[str, Any]", parsed_raw)
     owner_raw: object = parsed.get("owner")
-    members_raw: object = parsed.get("members")
+    fleet_raw: object = parsed.get("fleet")
+    members_raw: object = fleet_raw if fleet_raw is not None else parsed.get("members")
     if not isinstance(owner_raw, str) or not isinstance(members_raw, list):
         return None
     if _GITHUB_SLUG_PATTERN.match(owner_raw) is None:
