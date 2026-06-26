@@ -219,3 +219,26 @@ script = "uv run python -m livespec_dev_tooling.install_commit_refuse_hooks"
 # the structural body. Local config only — never leaves the ephemeral
 # sandbox (pushes carry refs, not config).
 script = "git config livespec.sandboxExempt true"
+
+[[run.prepare.steps]]
+# Dispatch-time baseline conformance gate — Verifier #1 (Conformance
+# Pattern concern #1 Worktree-discipline). After the canonical
+# commit-refuse hook is installed and the sandbox is declared exempt
+# above, assert the hook is ACTUALLY present at the primary's shared
+# .git/hooks via the SHARED livespec-dev-tooling Verifier (reused, not
+# re-implemented; the earlier `uv sync --all-groups` step installed
+# `livespec_dev_tooling` into the sandbox venv). A non-zero exit aborts
+# the run before any work is driven — the gate makes every dispatched
+# sandbox conformant by construction. Codified in SPECIFICATION/
+# contracts.md §"Dispatch-time baseline conformance gate".
+script = "uv run python -m livespec_dev_tooling.checks.primary_checkout_commit_refuse_hook_installed"
+
+[[run.prepare.steps]]
+# Dispatch-time baseline conformance gate — Verifier #2 (Conformance
+# Pattern concern #2 cross-harness plugin-resolution). Declaration-
+# integrity (mock) mode: reads the dispatched repo's optional
+# .livespec.jsonc `harnesses` declaration and fail-closes on a malformed
+# one. A non-zero exit aborts the run. Same SHARED Verifier the
+# commit-time and fleet-time tiers run — enforcement-in-depth, one
+# Verifier layered across the tiers.
+script = "uv run python -m livespec_dev_tooling.checks.plugin_resolution"
