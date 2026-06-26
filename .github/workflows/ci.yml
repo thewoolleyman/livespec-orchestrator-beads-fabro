@@ -198,23 +198,6 @@ jobs:
           # the other metadata entries.
           fetch-depth: 0
 
-      # The shared livespec-dev-tooling commit-refuse-hook check
-      # enforces the canonical `.git/hooks/pre-commit` AND
-      # `.git/hooks/pre-push` body on the primary checkout per
-      # livespec/SPECIFICATION/non-functional-requirements.md
-      # §"Primary-checkout commit-refuse hook" /
-      # §"Commit-refuse hook bootstrap procedure" (v095 family-wide
-      # invariant; supersedes the v091-v094 bare-flag mechanism
-      # which caused stale-on-disk-read failures at primaries).
-      # `actions/checkout` clones with empty hook bodies; install
-      # the vendored canonical hook script at both paths so the
-      # invariant is satisfied for the CI run.
-      - name: Install commit-refuse hook (satisfy hook invariant)
-        if: matrix.target == 'check-primary-checkout-commit-refuse-hook-installed'
-        run: |
-          install -m 0755 dev-tooling/livespec-commit-refuse-hook.sh .git/hooks/pre-commit
-          install -m 0755 dev-tooling/livespec-commit-refuse-hook.sh .git/hooks/pre-push
-
       - name: Install pinned binaries via mise
         uses: jdx/mise-action@v2
 
@@ -227,6 +210,22 @@ jobs:
 
       - name: Install Python dev deps via uv
         run: uv sync --all-groups
+
+      # The shared livespec-dev-tooling commit-refuse-hook check
+      # enforces the canonical `.git/hooks/pre-commit` AND
+      # `.git/hooks/pre-push` body on the primary checkout per
+      # livespec/SPECIFICATION/non-functional-requirements.md
+      # §"Primary-checkout commit-refuse hook" /
+      # §"Commit-refuse hook bootstrap procedure" (family-wide
+      # invariant). `actions/checkout` clones with empty hook bodies;
+      # install the canonical body via the livespec-dev-tooling
+      # installer module (the single wheel-shipped carrier) so the
+      # invariant is satisfied for the CI run. Runs AFTER `uv sync`
+      # because the installer IS the just-synced `livespec_dev_tooling`
+      # package.
+      - name: Install commit-refuse hook (satisfy hook invariant)
+        if: matrix.target == 'check-primary-checkout-commit-refuse-hook-installed'
+        run: just install-commit-refuse-hooks
 
       - name: just ${{ matrix.target }}
         run: just ${{ matrix.target }}

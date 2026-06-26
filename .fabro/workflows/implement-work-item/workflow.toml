@@ -190,27 +190,20 @@ script = "uv sync --all-groups"
 script = "uv run lefthook install"
 
 [[run.prepare.steps]]
-# Install the repo's canonical commit-refuse wrapper at pre-commit +
-# pre-push (it delegates to lefthook with GIT_DIR unset; with
-# livespec.primaryPath UNSET its refuse branch is dead code here, and
-# installing it satisfies the content-based
-# primary_checkout_commit_refuse_hook_installed check). DATA-DRIVEN
-# across the family: the hook source path is derived from the repo's
-# own `just bootstrap` recipe (the `cp dev-tooling/<hook>.sh ...
-# hooks/pre-commit` line), with a glob fallback over the conventional
-# vendored names. A repo that vendors no hook file fails this step
-# LOUDLY (fix: vendor the canonical hook per the family convention)
-# rather than being provisioned half-guarded.
-script = '''
-hook_src="$(sed -n 's|^[[:space:]]*cp \(dev-tooling/[^ ]*\.sh\) .*hooks/pre-commit.*$|\1|p' justfile | head -n 1)"
-if [ -z "$hook_src" ]; then for candidate in dev-tooling/livespec-commit-refuse-hook.sh dev-tooling/git-hook-wrapper.sh; do if [ -f "$candidate" ]; then hook_src="$candidate"; break; fi; done; fi
-test -n "$hook_src" || { echo "no vendored commit-refuse hook found (expected a 'cp dev-tooling/<hook>.sh ... hooks/pre-commit' bootstrap line or a conventional dev-tooling/*.sh file)" >&2; exit 1; }
-hooks_dir="$(git rev-parse --git-common-dir)/hooks"
-mkdir -p "$hooks_dir"
-cp "$hook_src" "$hooks_dir/pre-commit"
-cp "$hook_src" "$hooks_dir/pre-push"
-chmod +x "$hooks_dir/pre-commit" "$hooks_dir/pre-push"
-'''
+# Install the canonical STRUCTURAL commit-refuse hook at pre-commit,
+# pre-push AND commit-msg via the livespec-dev-tooling installer module.
+# FAMILY-UNIFORM: the canonical body ships in the wheel as
+# `livespec_dev_tooling.install_commit_refuse_hooks.CANONICAL_HOOK_BODY`
+# (no per-repo vendored `.sh` to derive or glob for), so every dispatched
+# sandbox installs the identical body the same way — this replaces the
+# old data-driven `cp dev-tooling/<hook>.sh` derivation. The prior
+# `uv sync --all-groups` step has already installed `livespec_dev_tooling`
+# into the sandbox venv, so `uv run` resolves the module. The installer
+# satisfies the content-based primary_checkout_commit_refuse_hook_installed
+# check, and the structural body's lefthook delegation fires the
+# Red-Green-Replay gates on every in-sandbox commit (the refuse branch is
+# skipped by the sandboxExempt marker set in the next step).
+script = "uv run python -m livespec_dev_tooling.install_commit_refuse_hooks"
 
 [[run.prepare.steps]]
 # Declare the sandbox EXEMPT from the commit-refuse refuse branch
