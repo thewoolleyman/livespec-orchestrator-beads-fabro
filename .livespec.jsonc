@@ -14,6 +14,10 @@
   "template": "livespec",
   "spec_root": "SPECIFICATION",
   "implementation": { "plugin": "livespec-orchestrator-beads-fabro" },
+  "harnesses": {
+    "claude": { "status": "supported", "canonical_command": "livespec-orchestrator-beads-fabro:next" },
+    "codex":  { "status": "supported", "canonical_command": "livespec-orchestrator-beads-fabro:next" }
+  },
   "livespec-orchestrator-beads-fabro": {
     // Substrate marker. The plaintext sibling declares "jsonl"; this
     // plugin's substrate is a beads/Dolt tenant DB.

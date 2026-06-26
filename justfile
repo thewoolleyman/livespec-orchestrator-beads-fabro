@@ -228,6 +228,7 @@ check:
     # the safety net.
     read -ra skip_targets <<< "{{skip}}"
     targets=(
+        check-agents-ai-references-resolve
         check-aggregate-completeness
         check-all-declared
         check-assert-never-exhaustiveness
@@ -256,6 +257,7 @@ check:
         check-no-write-direct
         check-pbt-coverage-pure-modules
         check-per-file-coverage
+        check-plugin-resolution
         check-primary-checkout-commit-refuse-hook-installed
         check-private-calls
         check-public-api-result-typed
@@ -528,6 +530,14 @@ check-codex-plugin-structure:
 # Wired in alphabetical order to match the aggregate above.
 # ---------------------------------------------------------------
 
+# Static check that every `.ai/<topic>.md` reference in an AGENTS.md
+# (any directory level) resolves to an existing file. Shipped by
+# livespec-dev-tooling (>=v0.21.0, from livespec b288fdb); enforces
+# the fleet agent-instruction `.ai/` convention so a dangling
+# progressive-disclosure reference fails CI.
+check-agents-ai-references-resolve:
+    uv run python -m livespec_dev_tooling.checks.agents_ai_references_resolve
+
 # In-repo gate for the wiring-completeness invariant
 # (SPECIFICATION/contracts.md v094 §"Shared code sync —
 # livespec-dev-tooling"). Parses the local `justfile`'s `check:`
@@ -676,6 +686,13 @@ check-per-file-coverage:
     # explicitly so the vendored-tree exclusion takes effect.
     uv run pytest -n auto --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
     uv run python -m livespec_dev_tooling.checks.per_file_coverage
+
+# Shared baseline Verifier: validates this repo's harness-conformance
+# declaration against the plugin-resolution invariant. Shipped by
+# livespec-dev-tooling (>=v0.21.0); with `harnesses` declared in
+# .livespec.jsonc it runs the mock-mode declaration-integrity pass.
+check-plugin-resolution:
+    uv run python -m livespec_dev_tooling.checks.plugin_resolution
 
 # Family-wide commit-refuse hook invariant per livespec/SPECIFICATION/
 # non-functional-requirements.md §"Primary-checkout commit-refuse hook"
