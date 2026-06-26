@@ -56,6 +56,12 @@
     "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
   },
   {
+    "heading": "## Interactive dialogue ownership (orchestrator-side)",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "tests.livespec_orchestrator_beads_fabro.test_interactive_dialogue_ownership.test_consent_dialogue_skills_carry_no_driver_dependency"
+  },
+  {
     "heading": "## Store-write consent discipline",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
