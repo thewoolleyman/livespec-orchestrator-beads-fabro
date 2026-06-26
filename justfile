@@ -66,27 +66,27 @@ acceptance-live-golden-master *ARGS:
 # ---------------------------------------------------------------
 
 install-commit-refuse-hooks:
-    # Install the STRUCTURAL commit-refuse hook (vendored from
-    # livespec-dev-tooling v0.18.0 — see
-    # dev-tooling/livespec-commit-refuse-hook.sh) at pre-commit,
-    # pre-push AND commit-msg. The structural body refuses commits/
-    # pushes at a primary checkout STRUCTURALLY — it exits 1 when
+    # Install the STRUCTURAL commit-refuse hook at pre-commit, pre-push
+    # AND commit-msg via the livespec-dev-tooling installer module —
+    # the SINGLE canonical-body carrier (the body ships in the wheel as
+    # `livespec_dev_tooling.install_commit_refuse_hooks.CANONICAL_HOOK_BODY`,
+    # so there is no per-repo vendored `.sh` copy to drift). The installer
+    # resolves `git rev-parse --git-common-dir` and writes all three hooks
+    # into the primary's shared `.git/hooks/`. The installed body refuses
+    # commits/pushes at a primary checkout STRUCTURALLY — it exits 1 when
     # `git rev-parse --git-dir` equals `git rev-parse --git-common-dir`
     # (a primary; a worktree's git-dir differs) UNLESS
     # `git config livespec.sandboxExempt` is `true` — so it is ARMED
     # ON INSTALL with no `livespec.primaryPath` arming step (which
-    # failed OPEN whenever its arming step was missed). Per
-    # livespec/SPECIFICATION/non-functional-requirements.md
-    # §"Primary-checkout commit-refuse hook" / §"Commit-refuse hook
-    # bootstrap procedure" (family-wide invariant). All three hooks
-    # carry the same body: it derives its hook name from
-    # `basename "$0"` and passes `"$@"` through to
+    # failed OPEN whenever its arming step was missed). It derives its
+    # hook name from `basename "$0"` and passes `"$@"` through to
     # `lefthook run <hook-name> "$@"`, so the commit-msg argv (the
     # message-file path the red-green-replay stage reads via `{1}`)
-    # routes correctly — no separate git-hook-wrapper at commit-msg.
-    install -D -m 755 dev-tooling/livespec-commit-refuse-hook.sh "$(git rev-parse --git-common-dir)/hooks/pre-commit"
-    install -D -m 755 dev-tooling/livespec-commit-refuse-hook.sh "$(git rev-parse --git-common-dir)/hooks/pre-push"
-    install -D -m 755 dev-tooling/livespec-commit-refuse-hook.sh "$(git rev-parse --git-common-dir)/hooks/commit-msg"
+    # routes correctly. Per livespec/SPECIFICATION/
+    # non-functional-requirements.md §"Primary-checkout commit-refuse
+    # hook" / §"Commit-refuse hook bootstrap procedure" (family-wide
+    # invariant).
+    uv run python -m livespec_dev_tooling.install_commit_refuse_hooks
 
 bootstrap:
     just install-commit-refuse-hooks

@@ -17,11 +17,13 @@
 #   dev-tooling/checks/no_direct_tool_invocation.py).
 #
 # Activation: `just bootstrap` installs the structural commit-refuse
-# wrapper from dev-tooling/livespec-commit-refuse-hook.sh into
-# .git/hooks/pre-commit, .git/hooks/pre-push, and .git/hooks/commit-msg.
-# The wrapper refuses at a primary checkout (git-dir == git-common-dir,
-# unless livespec.sandboxExempt=true) then invokes
-# `mise exec -- lefthook run <hook-name> "$@"` so the gate fires
+# wrapper into .git/hooks/pre-commit, .git/hooks/pre-push, and
+# .git/hooks/commit-msg via the livespec-dev-tooling installer module
+# (`uv run python -m livespec_dev_tooling.install_commit_refuse_hooks`;
+# the canonical body is the wheel-shipped CANONICAL_HOOK_BODY, not a
+# per-repo vendored `.sh`). The wrapper refuses at a primary checkout
+# (git-dir == git-common-dir, unless livespec.sandboxExempt=true) then
+# invokes `mise exec -- lefthook run <hook-name> "$@"` so the gate fires
 # regardless of shell config and commit-msg argv[1] (the commit-message
 # file path) reaches the red-green-replay hook.
 
