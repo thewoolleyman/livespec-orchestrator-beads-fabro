@@ -3,9 +3,8 @@
 Covers the pure `_dispatcher_calibration` derivation module (the outcome
 SIGNAL + mechanical SIZE PROXIES the spec enumerates) and its wiring into
 `dispatcher._dispatch_one` via `_emit_calibration`. The load-bearing
-contract under test (livespec-orchestrator-beads-fabro SPECIFICATION/contracts.md
-§"Dispatcher grooming behavior" / §"Calibration telemetry and the single
-Fabro tweak"): the Dispatcher MUST emit calibration telemetry — an
+contract under test (livespec-orchestrator-beads-fabro SPECIFICATION/contracts.md):
+the Dispatcher MUST emit calibration telemetry — an
 outcome signal plus mechanical size proxies — recorded on the EXISTING
 journal so it rides the journal → Honeycomb leg, with NO new always-on
 service. The wiring stage is FAIL-OPEN: a probe error never crashes the

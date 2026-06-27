@@ -1,9 +1,8 @@
 """`close-work-item` — the atomic close + `resolution:completed` wrapper.
 
 The "pit of success" for the closed-item-integrity invariant
-(SPECIFICATION/constraints.md §"Closed-item integrity"; the
-implementation-approach note in contracts.md §"Closed-item-integrity
-check"). The two-step close recipe codified in §"Closed-item integrity"
+(SPECIFICATION/constraints.md; the
+implementation-approach note in contracts.md). The two-step close recipe codified in
 (`bd close --reason …` THEN `bd update --add-label
 resolution:completed`) can be half-done — an item closed without the
 label is "closed but unproven" and is FORBIDDEN. This wrapper makes the
@@ -23,7 +22,7 @@ In two halves, mirroring the other front-ends:
 - `main` — the thin CLI surface (`close-work-item <id> [--reason …]
   [--project-root …]`) skills and recipes shell to.
 
-Per SPECIFICATION/constraints.md §"Inherited from livespec" (the
+Per SPECIFICATION/constraints.md (the
 Result-vs-bugs split), the one EXPECTED misuse — closing an id that was
 never filed — raises the typed `WorkItemNotFoundError`; genuine bugs
 propagate as raised built-in exceptions.

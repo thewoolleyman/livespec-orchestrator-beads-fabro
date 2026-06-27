@@ -1,6 +1,6 @@
 """CLI end-to-end harness wiring for livespec-orchestrator-beads-fabro (mock tier).
 
-Per `livespec/SPECIFICATION/contracts.md` §"CLI end-to-end harness contract"
+Per `livespec/SPECIFICATION/contracts.md`
 (requirement 6 — single canonical implementation in `livespec-dev-tooling`;
 requirement 7 — consumer obligations), this repo consumes the imported
 `test_workflow_full_round_trip` entry point from

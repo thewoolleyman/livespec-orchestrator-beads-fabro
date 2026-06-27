@@ -35,7 +35,7 @@ the `bd ... --json` issue object: `id`, `title`, `description`, `status`,
 `dependencies` (a list of `{depends_on_id, type}` edge records). The store
 layer owns the field map from this dict onto `WorkItem`.
 
-Per SPECIFICATION/constraints.md §"Inherited from livespec" (the
+Per SPECIFICATION/constraints.md (the
 Result-vs-bugs split), EXPECTED backend failures raise the typed
 `Beads*Error` classes from `errors.py`; genuine bugs propagate as raised
 built-in exceptions.

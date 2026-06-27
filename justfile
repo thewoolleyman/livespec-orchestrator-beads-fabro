@@ -328,6 +328,13 @@ check:
         # operators use, while CI skips unless explicitly opted into an
         # authenticated Codex runner.
         check-codex-skill-picker
+        # livespec core's doctor STATIC phase (reference-discipline +
+        # out-of-band invariants) against THIS repo's SPECIFICATION/ tree,
+        # wired fleet-wide per livespec epic livespec-6jfq. Not a canonical
+        # livespec-dev-tooling slug and not a tool-backed slug, so it rides as
+        # the LAST entry of the private block (placing it among/before the
+        # canonical slugs would break aggregate_completeness).
+        check-doctor-static
     )
     failed=()
     ran=0
@@ -524,6 +531,31 @@ check-closed-item-integrity:
 # Not a canonical livespec-dev-tooling slug, so it is wired in the private block.
 check-codex-plugin-structure:
     uv run python dev-tooling/checks/codex_plugin_structure.py
+
+# livespec core's doctor STATIC phase (reference-discipline + out-of-band
+# invariants) against THIS repo's SPECIFICATION/ tree, wired fleet-wide per
+# livespec epic livespec-6jfq. core ships the checker: doctor_static.py is
+# self-contained (vendored deps + bare python3), so it runs under plain
+# python3 and NEVER `uv run`. Resolve core's plugin root via
+# LIVESPEC_CORE_PLUGIN_ROOT (CI sets it to a livespec checkout at this repo's
+# .livespec.jsonc compat.pinned tag) → else the installed livespec@livespec
+# plugin cache (local dev). The two reference-discipline checks
+# (no-cross-spec-reference, no-spec-section-citation-in-code) are pure reads;
+# doctor-out-of-band-edits is self-healing — on a drifted tree it writes a
+# history backfill into the worktree and fails, and committing that backfill
+# heals the track; on a clean tree it never fires.
+check-doctor-static:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    core_root="${LIVESPEC_CORE_PLUGIN_ROOT:-}"
+    if [ -z "$core_root" ]; then
+      core_root="$(python3 -c 'import json, pathlib; print(json.loads((pathlib.Path.home() / ".claude" / "plugins" / "installed_plugins.json").read_text(encoding="utf-8"))["plugins"]["livespec@livespec"][0]["installPath"])' 2>/dev/null || true)"
+    fi
+    if [ -z "$core_root" ] || [ ! -f "$core_root/scripts/bin/doctor_static.py" ]; then
+      echo "livespec core not found. Set LIVESPEC_CORE_PLUGIN_ROOT to a livespec checkout's .claude-plugin, or install the livespec@livespec plugin (claude plugin install livespec@livespec)." >&2
+      exit 1
+    fi
+    python3 "$core_root/scripts/bin/doctor_static.py" --project-root .
 
 # ---------------------------------------------------------------
 # Canonical structural checks (shared from livespec-dev-tooling).

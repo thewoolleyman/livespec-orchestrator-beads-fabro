@@ -1,6 +1,6 @@
 """Stable-format ID generation for work-items.
 
-Per SPECIFICATION/contracts.md §"Work-item beads-issue mapping" and the
+Per SPECIFICATION/contracts.md and the
 beads connection model, every record minted by this plugin is stored as
 an issue in the per-repo beads tenant. bd enforces that an issue id's
 PREFIX equals the tenant's server-stored create-prefix; an id whose

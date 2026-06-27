@@ -1,6 +1,6 @@
 """`/livespec-orchestrator-beads-fabro:detect-impl-gaps` thin-transport command.
 
-CLI surface per SPECIFICATION/contracts.md §"detect-impl-gaps":
+CLI surface per SPECIFICATION/contracts.md:
 
   detect-impl-gaps [--spec-target <path>] [--project-root <path>] [--json]
                    [--since-version <vN>]

@@ -6,8 +6,7 @@ side-effecting execution of these argvs lives in `_dispatcher_engine`
 (sequencing) and `_dispatcher_io` (the subprocess seam).
 
 The argv builders encode the Architecture C dispatch discipline
-(livespec non-functional-requirements.md §"Orchestrator-internal
-Dispatcher guidance" + livespec/tmp/fabro-architecture-c-design.md):
+(livespec non-functional-requirements.md + livespec/tmp/fabro-architecture-c-design.md):
 `fabro run` executes from the target repo's PRIMARY checkout and Fabro
 clones fresh inside its docker sandbox (the host owns no git working
 state — no worktree prep, no reaping), the work publishes under
@@ -193,8 +192,8 @@ class PrView:
 class FleetMembers:
     """Owner + member repo names parsed from livespec's .livespec-fleet-manifest.jsonc.
 
-    The fleet manifest (livespec non-functional-requirements.md §"Fleet
-    membership contract") is the canonical family member registry; the
+    The fleet manifest (livespec non-functional-requirements.md) is the
+    canonical family member registry; the
     `class` field of each member is irrelevant here — every member gets
     a sandbox sibling clone, so any future cross-repo check resolves.
     """
@@ -517,7 +516,7 @@ def host_only_refusal_detail(*, item_id: str) -> str:
 def is_human_gated_item(*, item: WorkItem) -> bool:
     """Recognise the explicit human-gated routing marker on a work-item.
 
-    Per SPECIFICATION/contracts.md §"Dispatcher grooming behavior" and
+    Per SPECIFICATION/contracts.md and
     SPECIFICATION/scenarios.md "Scenario 10 — Dispatcher refuses a
     human-gated item": a `human-gated` (spec-change) slice MUST reach the
     maintainer, never the factory. The Dispatcher reads this predicate
@@ -577,7 +576,7 @@ class _NonConvergenceOutcome(Protocol):
 def is_non_convergence_outcome(*, outcome: _NonConvergenceOutcome) -> bool:
     """Recognise a non-convergence terminal the Dispatcher must bounce (n5kina).
 
-    Per SPECIFICATION/contracts.md §"Dispatcher grooming behavior" and
+    Per SPECIFICATION/contracts.md and
     SPECIFICATION/scenarios.md "Scenario 11 — Dispatcher bounces a
     non-converging slice to needs-regroom": a dispatched slice that will
     not converge through the janitor gate within the bounded fix-loop cap

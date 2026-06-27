@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Open or resume a durable, multi-session planning thread in `plan/<topic>/` (reasoning + a self-sufficient handoff), anchor a ledger epic, route matured pieces to the spec lifecycle or the ledger, and archive on close. Required heavyweight authored skill per livespec/SPECIFICATION/contracts.md §"Heavyweight authored skills (6)"; the Orchestrator-Plane realization of the Planning Lane. Invoke bare as `/livespec-orchestrator-beads-fabro:plan` to create or resume interactively, or `/livespec-orchestrator-beads-fabro:plan <slug>` to resume an existing thread strictly.
+description: Open or resume a durable, multi-session planning thread in `plan/<topic>/` (reasoning + a self-sufficient handoff), anchor a ledger epic, route matured pieces to the spec lifecycle or the ledger, and archive on close. Required heavyweight authored skill per livespec/SPECIFICATION/contracts.md; the Orchestrator-Plane realization of the Planning Lane. Invoke bare as `/livespec-orchestrator-beads-fabro:plan` to create or resume interactively, or `/livespec-orchestrator-beads-fabro:plan <slug>` to resume an existing thread strictly.
 allowed-tools: Bash, Read, Grep, Glob, Write
 ---
 

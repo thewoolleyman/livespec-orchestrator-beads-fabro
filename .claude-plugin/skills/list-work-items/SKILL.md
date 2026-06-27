@@ -1,6 +1,6 @@
 ---
 name: list-work-items
-description: List work-items from the beads-backed work-items store. Required thin-transport surface per livespec/SPECIFICATION/contracts.md §"Thin-transport skills (3) — required machine query surface". Invoke as `/livespec-orchestrator-beads-fabro:list-work-items [--filter <name>] [--with-gap-id <id>] [--json]`.
+description: List work-items from the beads-backed work-items store. Required thin-transport surface per livespec/SPECIFICATION/contracts.md. Invoke as `/livespec-orchestrator-beads-fabro:list-work-items [--filter <name>] [--with-gap-id <id>] [--json]`.
 allowed-tools: Bash
 ---
 

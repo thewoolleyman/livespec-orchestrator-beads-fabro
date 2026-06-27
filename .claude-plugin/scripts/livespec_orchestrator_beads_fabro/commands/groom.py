@@ -1,9 +1,9 @@
 """`groom` — the agent-drafts / human-approves regroom front-end.
 
 The one new maintainer surface the grooming realization adds
-(SPECIFICATION/contracts.md §"Skills — augmented versus new"; the
+(SPECIFICATION/contracts.md; the
 journey in SPECIFICATION/scenarios.md "Scenario 7 — Regroom an oversized
-work-item"; the normative clause in §"Gap-detectable behavior clauses"):
+work-item"; the normative clause in SPECIFICATION/contracts.md):
 
     Given a `needs-regroom` item, the groom regroom front-end MUST produce
     a READ-ONLY drafted decomposition (candidate slices pre-filled with
@@ -39,7 +39,7 @@ load-bearing mechanical seam underneath that dialogue, in two halves:
   factory slices were filed, so an item is regroomed-OUT, never silently
   dropped.
 
-Per SPECIFICATION/constraints.md §"Inherited from livespec" (the
+Per SPECIFICATION/constraints.md (the
 Result-vs-bugs split), EXPECTED failures raise the typed errors from
 `errors.py` (`WorkItemNotFoundError`, `GroomTargetNotRegroomError`,
 `RegroomExitRefusedError`); genuine bugs propagate as raised built-in

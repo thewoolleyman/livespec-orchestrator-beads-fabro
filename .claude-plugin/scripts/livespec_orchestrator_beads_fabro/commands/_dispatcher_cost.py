@@ -28,7 +28,7 @@ does not surface a usage struct from the agent, so fabro has nothing to
 price and `total_usd_micros` stays null. A populated field would need a
 fabro upgrade or a server-side change — a USER / infra decision, NOT a
 host-side code fix — so 5v9 implements the warranted path: the
-fail-closed gate (preconditions.md leg (b), §"Fail-closed means").
+fail-closed gate (preconditions.md leg (b)).
 
 The canonical observable-cost source is therefore `fabro ps -a --json`
 (matched on the engine's already-parsed run id), NOT `fabro inspect`.
@@ -37,8 +37,8 @@ real `total_usd_micros` as an observable cost the moment fabro starts
 populating it (forward-compat, no gate change), and reports
 `observable=False` whenever the field is null / absent / unparseable.
 
-`cost_gate_decision` is the fail-closed rule (preconditions.md
-§"Fail-closed means"): in `autonomous` (unattended) mode an unobservable
+`cost_gate_decision` is the fail-closed rule (preconditions.md): in `autonomous`
+(unattended) mode an unobservable
 cost is itself a cap-accounting failure — the loop REFUSES to keep
 picking rather than burning spend cost-blind; in `shadow` mode (an
 explicit `--item` dispatch with a human present) a `warn` suffices. An
@@ -105,7 +105,7 @@ _DEFAULT_MAX_SESSION_USD = 100.0
 
 # The mode in which the dark-cost condition is a hard refusal. In
 # `shadow` (explicit `--item`, human present) the same condition is a
-# warn — preconditions.md §"Fail-closed means".
+# warn — preconditions.md.
 _AUTONOMOUS_MODE = "autonomous"
 
 # The cost-mode lever (`LIVESPEC_COST_MODE`): the NAME of an env var, not a
@@ -189,7 +189,7 @@ def observe_run_cost(*, ps_json: str, run_id: str) -> CostObservation:
 
 
 def cost_gate_decision(*, mode: str, observation: CostObservation) -> CostGateDecision:
-    """The fail-closed cost gate (preconditions.md §"Fail-closed means").
+    """The fail-closed cost gate (preconditions.md).
 
     Autonomous (unattended) mode + an unobservable cost ⇒ REFUSE: the
     loop must stop picking rather than burn spend cost-blind. Shadow mode
@@ -384,7 +384,7 @@ def gate_wave(  # noqa: PLR0913 — kw-only post-verdict gate/reporter; each fie
     a run has a derived cost it becomes the observed cost — so the common
     path is now OBSERVABLE and 5v9's autonomous fail-closed refusal NO
     LONGER fires, activating the (previously dormant) `cap_value_decision`.
-    Per `cc-otel-gap-analysis.md` §"Conclusion 9", CC-token-derived cost is
+    Per `cc-otel-gap-analysis.md`, CC-token-derived cost is
     the primary signal; fabro's `total_usd_micros` (read from `ps_json`) is
     corroboration, used only when no derived cost is present. The
     fail-closed branch STILL fires (in `enforce` mode) when cost is
@@ -497,7 +497,7 @@ def _observe_with_derived(
     """The per-run cost observation, CC-token-derived cost PRIMARY (efj).
 
     When a CC-token-derived cost is present for the run it is the observed
-    cost (the primary signal per `cc-otel-gap-analysis.md` §"Conclusion 9")
+    cost (the primary signal per `cc-otel-gap-analysis.md`)
     — so the common path is OBSERVABLE and the autonomous fail-closed
     refusal no longer fires. Absent a derived cost, falls back to fabro's
     `total_usd_micros` from `fabro ps -a --json` (corroboration); a null

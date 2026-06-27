@@ -1,7 +1,6 @@
 """`orchestrator spec-reader` subcommand — expose the spec BY CATEGORY.
 
-Per livespec/SPECIFICATION/contracts.md §"Orchestrator CLI contract —
-the three named CLIs", the spec-reader CLI's one normative property is
+Per livespec/SPECIFICATION/contracts.md, the spec-reader CLI's one normative property is
 category exposure: it MUST expose spec content by template category
 (spec / contracts / constraints / scenarios / …) so a consumer can
 tell what is a scenario — it categorizes, never conceals. Every file

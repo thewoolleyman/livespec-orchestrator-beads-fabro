@@ -1,7 +1,7 @@
 """Integration-tier acceptance for the `groom` regroom front-end.
 
 Binds SPECIFICATION/scenarios.md "Scenario 7 — Regroom an oversized
-work-item" and the contracts.md §"Gap-detectable behavior clauses" clause:
+work-item" and the contracts.md clause:
 
     Given a `needs-regroom` item, the groom regroom front-end MUST produce
     a READ-ONLY drafted decomposition (candidate slices pre-filled with

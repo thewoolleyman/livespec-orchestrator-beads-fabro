@@ -9,7 +9,7 @@ per-node `usage` or token count is populated anywhere — so per-run cost
 is FUNDAMENTALLY UNOBSERVABLE at dispatch time in this fabro version.
 
 The warranted path is therefore the fail-closed gate (preconditions.md
-leg (b), §"Fail-closed means"): in `autonomous` (unattended) mode an
+leg (b)): in `autonomous` (unattended) mode an
 unobservable cost is itself a cap-accounting failure and the loop must
 REFUSE to keep picking; in `shadow` mode (a human is present) a warn
 suffices. The extractor is the observable-cost seam; when fabro starts

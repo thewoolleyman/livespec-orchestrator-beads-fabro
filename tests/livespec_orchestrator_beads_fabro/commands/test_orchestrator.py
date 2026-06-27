@@ -1,7 +1,6 @@
 """Tests for the `orchestrator` contract CLI (spec-reader / gap-capture / drift-capture).
 
-Per livespec/SPECIFICATION/contracts.md §"Orchestrator CLI contract —
-the three named CLIs" and §"CLI shape conventions". The hermetic
+Per livespec/SPECIFICATION/contracts.md. The hermetic
 `FakeBeadsClient` is the backend (autouse fixture sets
 `LIVESPEC_BEADS_FAKE=1` and resets the singleton); injected reference
 CLIs are exercised through real subprocesses built from

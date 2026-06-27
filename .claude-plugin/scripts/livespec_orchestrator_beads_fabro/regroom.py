@@ -1,7 +1,7 @@
 """The `needs-regroom` state machine — the shared grooming-lifecycle primitive.
 
 `needs-regroom` is the one new ledger state the grooming realization adds
-(SPECIFICATION/contracts.md §"Skills — augmented versus new"). Beads' status
+(SPECIFICATION/contracts.md). Beads' status
 enum is fixed, so the custom state is realized as a beads LABEL
 (`needs-regroom`) carried on the work-item, applied and cleared through the
 `BeadsClient` seam — the same encoding the store layer uses for the other
@@ -9,8 +9,7 @@ bridge-owned flags (`origin:` / `gap-id:` / `resolution:`).
 
 This module is the SHARED primitive the grooming front-ends consume; it owns
 the three transitions of SPECIFICATION/scenarios.md "Scenario 9 — needs-regroom
-state and transitions" and the normative clause in contracts.md
-§"Gap-detectable behavior clauses":
+state and transitions" and the normative clause in contracts.md:
 
     An item MUST enter `needs-regroom` on an intake Definition-of-Ready
     failure and MUST enter `needs-regroom` on a Dispatcher non-convergence
@@ -39,7 +38,7 @@ API (every verb keyword-only, per the family keyword-only-args rule):
 - `is_needs_regroom(*, path, item_id)` — predicate over the item's
   current labels.
 
-Per SPECIFICATION/constraints.md §"Inherited from livespec" (the
+Per SPECIFICATION/constraints.md (the
 Result-vs-bugs split), EXPECTED failures raise the typed errors from
 `errors.py` (`WorkItemNotFoundError`, `RegroomExitRefusedError`); genuine
 bugs propagate as raised built-in exceptions.

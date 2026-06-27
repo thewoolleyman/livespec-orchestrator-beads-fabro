@@ -8,8 +8,7 @@ re-implement them identically here. They are now re-exported from the
 runtime package so the single canonical definition is the source of
 record; every existing call site that imports them from
 `livespec_orchestrator_beads_fabro.types` keeps working unchanged. The work-item
-schema is codified by SPECIFICATION/contracts.md §"Work-item
-beads-issue mapping"; the runtime model carries the unified 16-field
+schema is codified by SPECIFICATION/contracts.md; the runtime model carries the unified 16-field
 shape (beads' historical record MINUS the append-only `supersedes`
 pointer, which the unified model adds defaulted `None` — beads is
 inherently one-record-per-id and never populates it).
@@ -17,7 +16,7 @@ inherently one-record-per-id and never populates it).
 The Spec Reader return types (`SpecSnapshot`/`SpecDiff`/`FileDiff`) and
 the beads-tenant connection descriptor (`StoreConfig`) are NOT part of
 the shared lift — they stay LOCAL here (per
-SPECIFICATION/contracts.md §"Spec Reader internal API" and the beads
+SPECIFICATION/contracts.md and the beads
 connection model).
 """
 
@@ -56,7 +55,7 @@ class SpecSnapshot:
     `version` is the snapshot's vNNN integer (1-indexed). For the live
     specification (the top-level spec_root tree), `version` is the latest
     history version the snapshot corresponds to per
-    SPECIFICATION/contracts.md §"Spec Reader internal API" capability 3.
+    SPECIFICATION/contracts.md capability 3.
     """
 
     version: int

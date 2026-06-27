@@ -2,7 +2,7 @@
 """work_item_merge_evidence — beads-private merge-evidence static check.
 
 Ports the spec'd `work_item_merge_evidence` static check
-(SPECIFICATION/contracts.md §"`work_item_merge_evidence` static check")
+(SPECIFICATION/contracts.md)
 onto the beads substrate. Where the plaintext sibling walks JSONL records,
 this walks every materialized work-item from the configured store
 descriptor — reading the `AuditRecord` from each closed issue's `metadata`

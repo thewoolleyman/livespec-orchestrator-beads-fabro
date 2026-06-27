@@ -1,9 +1,8 @@
 """Spec Reader adapter for livespec-orchestrator-beads-fabro.
 
 Implements the four required capabilities defined in
-livespec/SPECIFICATION/contracts.md §"Spec Reader required-capability
-surface" and concretized for this plugin in SPECIFICATION/contracts.md
-§"Spec Reader internal API".
+livespec/SPECIFICATION/contracts.md and concretized for this plugin in
+SPECIFICATION/contracts.md.
 
 This v001 implementation is a thin file pass-through: every read goes
 straight to the filesystem; no caching, no section-level indexing, no

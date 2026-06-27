@@ -21,8 +21,7 @@ seam. Public package layout:
   `needs-regroom` / `not-yet-actionable`.
 - `livespec_orchestrator_beads_fabro.spec_reader` — Spec Reader adapter implementing
   the four required capabilities defined in
-  livespec/SPECIFICATION/contracts.md
-  §"Spec Reader required-capability surface".
+  livespec/SPECIFICATION/contracts.md.
 - `livespec_orchestrator_beads_fabro.errors` — exception types for the expected-error
   surface, including the beads backend errors (`BeadsConnectionError`,
   `BeadsCommandError`, `BeadsTenantMissingError`, `BeadsMappingError`).

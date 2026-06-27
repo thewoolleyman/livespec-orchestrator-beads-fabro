@@ -1,7 +1,6 @@
 """`orchestrator gap-capture` subcommand — write detected gaps to the Ledger.
 
-Per livespec/SPECIFICATION/contracts.md §"Orchestrator CLI contract —
-the three named CLIs", gap-capture is a CAPTURE interface: detection
+Per livespec/SPECIFICATION/contracts.md, gap-capture is a CAPTURE interface: detection
 (mechanical / LLM / human) happens upstream at the orchestrator's
 private choice — usually LLM-driven — and the resulting gap findings
 arrive here as a JSON payload. This subcommand writes each finding as

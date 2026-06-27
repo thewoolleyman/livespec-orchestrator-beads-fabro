@@ -1,7 +1,7 @@
 """Integration-tier acceptance for the Dispatcher's calibration telemetry.
 
 Binds SPECIFICATION/scenarios.md "Scenario 12 — Dispatcher emits calibration
-telemetry" and the contracts.md §"Dispatcher grooming behavior" clause:
+telemetry" and the contracts.md clause:
 
     The Dispatcher MUST emit calibration telemetry: an outcome signal plus
     mechanical size proxies recorded on the EXISTING Dispatcher journal (the
@@ -24,8 +24,8 @@ EXISTING one, and the dispatch process terminates with a verdict).
 The hermetic green outcome carries NO PR number, so the `gh pr view` diff-size
 probe short-circuits to `None` (no network IO) — the calibration stage stays a
 pure read against the in-memory tenant and the on-disk journal. Per the heading
-taxonomy's pyramid-tier requirement (livespec/SPECIFICATION/constraints.md
-§"Heading taxonomy"), this binds at the integration tier, never a unit-tier
+taxonomy's pyramid-tier requirement (livespec/SPECIFICATION/constraints.md),
+this binds at the integration tier, never a unit-tier
 test.
 """
 
@@ -66,8 +66,7 @@ _COMMITTED_WORKFLOW_TOML = (
 )
 
 # The exact field set the spec's two enumerated lists require on the
-# calibration record (contracts.md §"Dispatcher grooming behavior" /
-# §"Calibration telemetry and the single Fabro tweak"). The journal record
+# calibration record (contracts.md). The journal record
 # carries `stage` plus these, one sibling key each.
 _OUTCOME_SIGNAL_FIELDS = (
     "converged",

@@ -1,7 +1,7 @@
 """Integration-tier acceptance for the Dispatcher's human-gated refusal.
 
 Binds SPECIFICATION/scenarios.md "Scenario 10 — Dispatcher refuses a
-human-gated item" and the contracts.md §"Dispatcher grooming behavior" clause:
+human-gated item" and the contracts.md clause:
 
     The Dispatcher MUST refuse to auto-dispatch a `human-gated` (spec-change)
     item — it surfaces it for the maintainer instead.

@@ -1,8 +1,7 @@
 """Integration-tier acceptance for the Dispatcher's non-convergence bounce.
 
 Binds SPECIFICATION/scenarios.md "Scenario 11 — Dispatcher bounces a
-non-converging slice to needs-regroom" and the contracts.md §"Dispatcher
-grooming behavior" clause:
+non-converging slice to needs-regroom" and the contracts.md clause:
 
     On factory NON-CONVERGENCE (a dispatched slice that will not converge
     through the janitor gate) the Dispatcher MUST mark the item `needs-regroom`

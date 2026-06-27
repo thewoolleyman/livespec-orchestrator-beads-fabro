@@ -1,6 +1,6 @@
 """`dispatcher` — the thin Dispatcher of the Beads/Dolt + Fabro orchestrator.
 
-Per livespec spec.md §"Contract + reference implementations architecture"
+Per livespec spec.md
 (orchestrator-internal decomposition: Ledger / Loop / Dispatcher) and the
 Dispatcher guidance in livespec non-functional-requirements.md, this CLI
 polls the beads Ledger for ready work-items, invokes the Fabro Loop (the
@@ -276,8 +276,8 @@ _HONEYCOMB_INGEST_KEY_ENV = "HONEYCOMB_INGEST_KEY_LIVESPEC"
 _OTEL_RECEIVER_HOLDER: dict[str, object] = {}
 
 # Where the canonical fleet member registry lives: .livespec-fleet-manifest.jsonc
-# on livespec master (livespec non-functional-requirements.md §"Fleet
-# membership contract"). Fetched HOST-SIDE at run-config generation
+# on livespec master (livespec non-functional-requirements.md). Fetched
+# HOST-SIDE at run-config generation
 # time via `gh api` raw content — the same consume-from-master pattern
 # the other family consumers (fleet conformance, release fan-out) use.
 # This pins the manifest LOCATION, not the member list: the list itself
@@ -818,7 +818,7 @@ def _derived_costs(
     (`<base>-otel-cost.json`) and, for each green outcome, looks the
     accumulated micro-USD up by the work-item id (the `work.item.id`
     correlation key CC spans carry — the join key per
-    `cc-otel-gap-analysis.md` §"Conclusion 9"). A work-item with no accrued
+    `cc-otel-gap-analysis.md`). A work-item with no accrued
     cost (no CC telemetry arrived) is OMITTED, so `gate_wave` falls back to
     5v9's fabro / fail-closed path for it — the gate is never blinded. The
     read goes through `CostSink`, which is fail-open (a missing / corrupt
@@ -1272,9 +1272,8 @@ def _emit_calibration(  # noqa: PLR0913 — kw-only fail-open stage; each field 
 ) -> None:
     """Journal this dispatch's calibration telemetry on the existing journal (yfsv4j).
 
-    Per livespec-orchestrator-beads-fabro SPECIFICATION/contracts.md §"Dispatcher
-    grooming behavior" / §"Calibration telemetry and the single Fabro
-    tweak", the Dispatcher MUST emit calibration telemetry — an outcome
+    Per livespec-orchestrator-beads-fabro SPECIFICATION/contracts.md, the
+    Dispatcher MUST emit calibration telemetry — an outcome
     signal plus mechanical size proxies — recorded on the EXISTING journal
     so it rides the journal → Honeycomb leg, with NO new always-on service.
     This stage runs AFTER the `outcome` record, gathers the already-observed
@@ -1467,7 +1466,7 @@ def _host_only_refusal(*, item: WorkItem, journal: JournalFile) -> DispatchOutco
 def _human_gated_surface(*, item: WorkItem, journal: JournalFile) -> DispatchOutcome | None:
     """Refuse to auto-dispatch a human-gated item, surfacing it instead (cjey2z).
 
-    Per SPECIFICATION/contracts.md §"Dispatcher grooming behavior" and
+    Per SPECIFICATION/contracts.md and
     SPECIFICATION/scenarios.md "Scenario 10 — Dispatcher refuses a
     human-gated item": the Dispatcher MUST refuse to auto-dispatch a
     `human-gated` (spec-change) item and MUST surface it for the
@@ -1505,7 +1504,7 @@ def _bounce_non_convergence_to_regroom(
 ) -> None:
     """Mark a non-converging slice `needs-regroom` and surface it (n5kina).
 
-    Per SPECIFICATION/contracts.md §"Dispatcher grooming behavior" and
+    Per SPECIFICATION/contracts.md and
     SPECIFICATION/scenarios.md "Scenario 11 — Dispatcher bounces a
     non-converging slice to needs-regroom": when a dispatched slice will
     not converge through the janitor gate within the bounded fix-loop cap,
