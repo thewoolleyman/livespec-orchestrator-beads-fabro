@@ -1,6 +1,6 @@
 ---
 name: next
-description: Rank the most-ripe impl-side action from the beads-backed work-items store. Required thin-transport surface per livespec/SPECIFICATION/contracts.md §"Thin-transport skills (3) — required machine query surface". Pure function of file state; no LLM in the ranking path. Invoke as `/livespec-orchestrator-beads-fabro:next [--limit <count>] [--offset <count>] [--json]`.
+description: Rank the most-ripe impl-side action from the beads-backed work-items store. Required thin-transport surface per livespec/SPECIFICATION/contracts.md. Pure function of file state; no LLM in the ranking path. Invoke as `/livespec-orchestrator-beads-fabro:next [--limit <count>] [--offset <count>] [--json]`.
 allowed-tools: Bash
 ---
 
@@ -30,9 +30,7 @@ Supported flags:
 
 ## Output schema
 
-Per livespec/SPECIFICATION/contracts.md §"Implementation-plugin
-contract — the 10-skill surface" → next and v005 §"next" → "Output
-schema":
+Per livespec/SPECIFICATION/contracts.md and v005:
 
 ```json
 {
@@ -61,18 +59,18 @@ the wrapper emits `candidates: []` with `has_more: false`.
 
 The `priority` and `origin` fields are impl-beads-specific
 extensions; the cross-plugin contract permits additional fields on
-each candidate per the upstream §"Output schema".
+each candidate per the upstream output schema.
 
 ## When to use
 
 - User asks "what should I work on next?"
 - The Dispatcher (`dispatcher.py` `dispatch` / `loop`) selects dispatch
   candidates by composing `next`'s ranking (see SPECIFICATION/contracts.md
-  §"next" and `scenarios.md` Scenario 6).
+  and `scenarios.md` Scenario 6).
 
 ## What this skill does NOT do
 
 - It does NOT mutate any state. Read-only by contract.
 - It does NOT invoke an LLM. The ranking is deterministic per the
   algorithm documented in
-  livespec-orchestrator-beads-fabro/SPECIFICATION/contracts.md §"next".
+  livespec-orchestrator-beads-fabro/SPECIFICATION/contracts.md.

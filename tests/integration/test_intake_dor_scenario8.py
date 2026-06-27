@@ -1,7 +1,7 @@
 """Integration-tier acceptance for the intake Definition-of-Ready checklist.
 
 Binds SPECIFICATION/scenarios.md "Scenario 8 — Intake Definition-of-Ready
-triage" and the contracts.md §"Gap-detectable behavior clauses" clause:
+triage" and the contracts.md clause:
 
     The `capture-work-item` and `capture-impl-gaps` capture front-ends
     MUST run the intake Definition-of-Ready checklist over the six gates

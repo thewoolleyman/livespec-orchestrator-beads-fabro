@@ -1,7 +1,7 @@
 """Integration-tier acceptance for the `needs-regroom` state machine.
 
 Binds SPECIFICATION/scenarios.md "Scenario 9 — needs-regroom state and
-transitions" and the contracts.md §"Gap-detectable behavior clauses" clause:
+transitions" and the contracts.md clause:
 
     An item MUST enter `needs-regroom` on an intake Definition-of-Ready
     failure and MUST enter `needs-regroom` on a Dispatcher non-convergence

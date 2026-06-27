@@ -20,8 +20,8 @@ NOT execute: the engine's stall branch is driven by injecting a fake
 in `_dispatcher_watchdog`. No test launches a real fabro run.
 
 `JournalFile` is the structured iteration journal the Dispatcher
-guidance requires (livespec non-functional-requirements.md
-§"Orchestrator-internal Dispatcher guidance"): append-only JSONL, one
+guidance requires (livespec non-functional-requirements.md):
+append-only JSONL, one
 record per engine stage / loop event, machine-readable for post-hoc
 audit. Appends are lock-serialized so parallel dispatch threads cannot
 interleave lines.

@@ -1,6 +1,6 @@
 ---
 name: groom
-description: Regroom an oversized or non-converging `needs-regroom` work-item into ready, dependency-layered slices. Read-only drafting conversation — the maintainer OWNS the cut and the acceptance; the front-end drafts and files NOTHING until approval. Required heavyweight authored skill per livespec/SPECIFICATION/contracts.md §"Skills — augmented versus new" (the one new maintainer surface). Invoke as `/livespec-orchestrator-beads-fabro:groom <work-item-id>`.
+description: Regroom an oversized or non-converging `needs-regroom` work-item into ready, dependency-layered slices. Read-only drafting conversation — the maintainer OWNS the cut and the acceptance; the front-end drafts and files NOTHING until approval. Required heavyweight authored skill per livespec/SPECIFICATION/contracts.md (the one new maintainer surface). Invoke as `/livespec-orchestrator-beads-fabro:groom <work-item-id>`.
 allowed-tools: Bash, Read, Grep, Glob
 ---
 

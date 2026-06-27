@@ -1,8 +1,7 @@
 """Dispatch engine: sequence one work-item through the Fabro Loop.
 
 The engine owns the per-item lifecycle the family discipline prescribes
-(livespec non-functional-requirements.md §"Orchestrator-internal
-Dispatcher guidance", Architecture C shape per
+(livespec non-functional-requirements.md, Architecture C shape per
 livespec/tmp/fabro-architecture-c-design.md):
 
   Fabro run from the target repo's PRIMARY checkout (Fabro clones fresh

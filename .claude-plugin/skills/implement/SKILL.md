@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Drive Red→Green for a single work-item. For gap-tied items, verify closure by re-running capture-impl-gaps in dry-run mode. Required heavyweight authored skill per livespec/SPECIFICATION/contracts.md §"Heavyweight authored skills (5)". Invoke as `/livespec-orchestrator-beads-fabro:implement [<work-item-id>]`.
+description: Drive Red→Green for a single work-item. For gap-tied items, verify closure by re-running capture-impl-gaps in dry-run mode. Required heavyweight authored skill per livespec/SPECIFICATION/contracts.md. Invoke as `/livespec-orchestrator-beads-fabro:implement [<work-item-id>]`.
 allowed-tools: Bash, Read, Grep, Glob, Edit, Write
 ---
 

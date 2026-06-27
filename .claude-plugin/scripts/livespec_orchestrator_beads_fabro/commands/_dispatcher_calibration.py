@@ -1,8 +1,6 @@
 """Pure builder for the Dispatcher's per-dispatch calibration telemetry.
 
-Per livespec-orchestrator-beads-fabro SPECIFICATION/contracts.md §"Grooming and
-slice-size calibration" → §"Dispatcher grooming behavior" and
-§"Calibration telemetry and the single Fabro tweak", the Dispatcher MUST
+Per livespec-orchestrator-beads-fabro SPECIFICATION/contracts.md, the Dispatcher MUST
 emit calibration telemetry — an outcome SIGNAL plus mechanical SIZE
 PROXIES — recorded on the EXISTING Dispatcher journal (the journal →
 Honeycomb leg already designed in the operability preconditions), with NO
@@ -162,7 +160,7 @@ def outcome_class(*, outcome: DispatchOutcome) -> str:
 def bounced_to_regroom(*, outcome: DispatchOutcome) -> bool:
     """Whether this dispatch is a non-convergence bounce back to `needs-regroom`.
 
-    Per §"Dispatcher grooming behavior", factory non-convergence routes
+    Per SPECIFICATION/contracts.md, factory non-convergence routes
     the item to `needs-regroom`. The mechanical signal for that is a
     `stalled-no-progress` terminal — the watchdog-confirmed non-convergence
     the Dispatcher escalates rather than infinite-retries.

@@ -1,7 +1,6 @@
 """`orchestrator drift-capture` subcommand — route drift to propose-change.
 
-Per livespec/SPECIFICATION/contracts.md §"Orchestrator CLI contract —
-the three named CLIs", drift-capture is a CAPTURE interface: the
+Per livespec/SPECIFICATION/contracts.md, drift-capture is a CAPTURE interface: the
 spec-reader CLI and the propose-change CLI are injected as references,
 and impl → spec drift findings are ROUTED to propose-change. Filing is
 a machine path; acceptance stays human (the propose-change/revise gate

@@ -1,9 +1,8 @@
 """`orchestrator` — the one orchestrator-side contract CLI binary.
 
-Per livespec/SPECIFICATION/contracts.md §"Orchestrator CLI contract —
-the three named CLIs" and §"CLI shape conventions" (one binary per
+Per livespec/SPECIFICATION/contracts.md (one binary per
 side with subcommands; `--json` everywhere; stdin/stdout plus files
-for payloads; the §"Lifecycle exit-code table" codes; explicit
+for payloads; the exit-code table codes; explicit
 project-root addressing), this module carries the three orchestrator
 CLIs the consuming project's `.livespec.jsonc` `orchestrator` section
 names in argv form:

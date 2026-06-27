@@ -1,6 +1,6 @@
 """`/livespec-orchestrator-beads-fabro:next` thin-transport ranker.
 
-CLI surface per `SPECIFICATION/contracts.md` v005 §"next":
+CLI surface per `SPECIFICATION/contracts.md` v005:
 
   next [--limit <count>] [--offset <count>] [--json]
        [--work-items-path <path>] [--project-root <path>]
@@ -16,8 +16,7 @@ exit `2` with a usage error.
 
 The ranker is a pure function of work-items JSONL state plus the
 cross-repo manifest at `<project-root>/.livespec.jsonc`. Per
-`livespec/SPECIFICATION/contracts.md` v072 §"Implementation-plugin
-contract — the 10-skill surface" → "next", the ranker MUST consult
+`livespec/SPECIFICATION/contracts.md` v072, the ranker MUST consult
 `livespec_runtime.cross_repo.resolve_ref` for every candidate's
 `depends_on` entries and MUST exclude any candidate with at least
 one entry resolving to `RefStatus.OPEN`. Excluded candidates are

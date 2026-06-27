@@ -48,7 +48,7 @@ dev-tooling/implementation/research/beads-schema-mapping.md):
 - depends_on (local) ⇄ `blocks` edges; superseded_by ⇄ `supersedes` edge
 - epic linkage ⇄ parent-child (`--parent`)
 
-Per SPECIFICATION/constraints.md §"Inherited from livespec" (the
+Per SPECIFICATION/constraints.md (the
 Result-vs-bugs split), EXPECTED backend failures raise the typed
 `Beads*Error` classes; a beads record that violates the assumed schema
 raises `BeadsMappingError`. Genuine bugs propagate as built-in

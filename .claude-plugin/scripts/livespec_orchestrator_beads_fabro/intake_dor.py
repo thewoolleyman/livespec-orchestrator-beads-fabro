@@ -3,8 +3,7 @@
 The grooming realization gives every capture front-end one intake gate so
 that only autonomously-dispatchable work reaches the factory
 (SPECIFICATION/scenarios.md "Scenario 8 — Intake Definition-of-Ready
-triage"; the normative clause in contracts.md §"Gap-detectable behavior
-clauses"):
+triage"; the normative clause in contracts.md):
 
     The `capture-work-item` and `capture-impl-gaps` capture front-ends
     MUST run the intake Definition-of-Ready checklist over the six gates
@@ -56,7 +55,7 @@ The verdict and its tagging (per the clause's precedence):
   facet, which is itself a judgement call. It is never silently filed
   `ready`.
 
-Per SPECIFICATION/constraints.md §"Inherited from livespec" (the
+Per SPECIFICATION/constraints.md (the
 Result-vs-bugs split), the expected failure of stamping a phantom id
 raises `WorkItemNotFoundError` (from `regroom`'s `_assert_present`);
 genuine bugs propagate as raised built-in exceptions.

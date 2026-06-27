@@ -3,8 +3,7 @@
 This is the grooming realization's calibration leg (behavior 7,
 SPECIFICATION/scenarios.md "Scenario 13 — Calibration analysis pass proposes
 advisory thresholds"), the authoritative normative clause being
-contracts.md §"Grooming and slice-size calibration" → "Gap-detectable
-behavior clauses":
+contracts.md:
 
     A periodic calibration analysis pass MUST correlate run outcomes against
     the recorded mechanical size proxies and MUST propose ceiling thresholds
@@ -29,8 +28,7 @@ Two design commitments hold the spec's guardrails:
     `adopted` is `False` by construction; adoption is a separate maintainer
     act this module never performs. Nothing here flags, blocks, or routes a
     work-item — it only proposes numbers a maintainer MAY later wire into the
-    intake size-gate (which itself stays advisory per
-    §"Gate type determines hard versus advisory").
+    intake size-gate (which itself stays advisory).
   * **On-demand, not a daemon.** The entry point is a synchronous pure
     function a maintainer (or a periodic invocation) calls over an
     already-accumulated journal. There is no loop, no scheduler, no

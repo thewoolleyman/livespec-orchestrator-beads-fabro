@@ -1,8 +1,7 @@
 """Integration-tier acceptance for the periodic calibration analysis pass.
 
 Binds SPECIFICATION/scenarios.md "Scenario 13 — Calibration analysis pass
-proposes advisory thresholds" and the contracts.md §"Gap-detectable behavior
-clauses" clause (work-item livespec-impl-beads-fh7cff, gap-hvqcpz2d):
+proposes advisory thresholds" and the contracts.md clause (work-item livespec-impl-beads-fh7cff, gap-hvqcpz2d):
 
     A periodic calibration analysis pass MUST correlate run outcomes against
     the recorded mechanical size proxies and MUST propose ceiling thresholds

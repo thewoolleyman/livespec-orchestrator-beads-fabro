@@ -1,7 +1,7 @@
 """Integration-tier acceptance for the Fabro workflow-DOT non-convergence exit.
 
 Binds SPECIFICATION/scenarios.md "Scenario 14 — Fabro non-convergence routes
-back to the Dispatcher" and the contracts.md §"Gap-detectable behavior clauses"
+back to the Dispatcher" and the contracts.md
 clause (work-item livespec-impl-beads-rw75ym, gap-f7kcvboh):
 
     The single Fabro workflow-DOT tweak MUST stay within Fabro's existing DOT

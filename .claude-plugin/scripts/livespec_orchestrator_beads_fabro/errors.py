@@ -1,6 +1,6 @@
 """Exception types for the expected-error surface of livespec-orchestrator-beads-fabro.
 
-Per SPECIFICATION/constraints.md §"Inherited from livespec" (the
+Per SPECIFICATION/constraints.md (the
 Result-vs-bugs split), these are the EXPECTED errors the substrate or
 external input can produce. Each carries enough context for the calling
 skill to surface a clear narration to the user.

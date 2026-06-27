@@ -15,7 +15,7 @@ The correlation key is `work.item.id`, falling back to
 `livespec.dispatch.id` — NOT `fabro.run_id`. CC spans carry `work.item.id`
 + `livespec.dispatch.id` (stamped via `OTEL_RESOURCE_ATTRIBUTES` in the
 sandbox overlay, `_dispatcher_plan.cc_otel_overlay_env`); they do NOT
-carry `fabro.run_id` (per `cc-otel-gap-analysis.md` §"Conclusion 9": the
+carry `fabro.run_id` (per `cc-otel-gap-analysis.md`: the
 join key is `work.item.id` / `livespec.dispatch.id`). The dispatcher's
 cost gate then looks the derived cost up by `work_item_id`.
 

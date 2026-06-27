@@ -2,8 +2,8 @@
 """closed_item_integrity — beads-private closed-item-integrity static check.
 
 Mechanical guard for the closed-item-integrity invariant
-(SPECIFICATION/constraints.md §"Closed-item integrity" and contracts.md
-§"Closed-item-integrity check"). A closed gap-tied work-item must mean
+(SPECIFICATION/constraints.md and contracts.md). A closed gap-tied
+work-item must mean
 "proven", not merely "status flipped": it MUST carry the
 `resolution:completed` label AND its acceptance scenario MUST be bound to
 a real integration-tier-or-above test in `tests/heading-coverage.json`
@@ -29,7 +29,7 @@ The check REUSES existing primitives and introduces NO new gap-id logic:
 gap-ids ride the shared `livespec_spec_clauses` extractor's derivation
 (the same `clauses[]` `gap_id` values that map carries), the `clauses[]`
 map is read from `tests/heading-coverage.json` (the contract livespec
-core's constraints.md §"Heading taxonomy" defines), and closed gap-tied
+core's constraints.md defines), and closed gap-tied
 items are read through the existing beads store reader. In hermetic mode
 (`LIVESPEC_BEADS_FAKE` truthy, the default `just check` tier) the tenant
 is empty, so the enumeration yields nothing and the check passes

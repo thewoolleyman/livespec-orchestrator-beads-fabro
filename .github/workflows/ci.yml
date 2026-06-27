@@ -138,6 +138,41 @@ jobs:
         if: needs.setup.outputs.py_changed == 'true'
         run: just ${{ matrix.target }}
 
+  # livespec core's doctor STATIC phase (reference-discipline + out-of-band
+  # invariants), wired fleet-wide per livespec epic livespec-6jfq. core ships
+  # the checker (doctor_static.py — self-contained, bare python3); this job
+  # checks core out at the tag THIS repo pins (.livespec.jsonc compat.pinned)
+  # and points the recipe at it via LIVESPEC_CORE_PLUGIN_ROOT. Its OWN job
+  # (not the matrix) because it needs a second checkout — livespec core —
+  # that no other target does.
+  check-doctor-static:
+    name: check-doctor-static
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pinned binaries via mise
+        uses: jdx/mise-action@v2
+
+      - name: Resolve pinned livespec core ref (.livespec.jsonc compat.pinned)
+        id: corepin
+        run: |
+          pinned="$(grep -oE '"pinned"[[:space:]]*:[[:space:]]*"[^"]*"' .livespec.jsonc | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)".*/\1/')"
+          echo "ref=${pinned:-master}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout livespec core at the pinned ref
+        uses: actions/checkout@v4
+        with:
+          repository: thewoolleyman/livespec
+          ref: ${{ steps.corepin.outputs.ref }}
+          path: .livespec-core
+
+      - name: just check-doctor-static
+        env:
+          LIVESPEC_CORE_PLUGIN_ROOT: ${{ github.workspace }}/.livespec-core/.claude-plugin
+        run: just check-doctor-static
+
   # Metadata matrix runs unconditionally to preserve the repo-metadata
   # safety net. check-aggregate-completeness is the wiring-completeness
   # gate (epic li-univck) — verifies the justfile `check:` aggregate
@@ -317,7 +352,7 @@ jobs:
   # repo-agnostic, driven by $REPO/$RUN_ID from the workflow env.
   export-telemetry:
     name: export-telemetry
-    needs: [setup, check-python, check-metadata, e2e-cli, acceptance]
+    needs: [setup, check-python, check-doctor-static, check-metadata, e2e-cli, acceptance]
     if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'merge_group') }}
     runs-on: ubuntu-latest
     permissions:

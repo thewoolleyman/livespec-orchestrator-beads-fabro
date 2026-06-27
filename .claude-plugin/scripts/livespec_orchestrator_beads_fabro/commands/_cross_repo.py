@@ -1,7 +1,6 @@
 """Cross-repo manifest + dependency-entry helpers shared by next + list-work-items.
 
-Per `livespec/SPECIFICATION/contracts.md` v072 §"Cross-repo dependency
-awareness" — the impl-beads consumers MUST call
+Per `livespec/SPECIFICATION/contracts.md` v072 — the impl-beads consumers MUST call
 `livespec_runtime.cross_repo.resolve_ref` for every typed `depends_on`
 entry and treat `OPEN` as a blocking state. This module bundles:
 

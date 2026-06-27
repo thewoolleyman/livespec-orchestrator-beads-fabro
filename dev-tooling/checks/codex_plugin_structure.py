@@ -3,7 +3,7 @@
 
 Validates the orchestrator plugin's Codex surface, the cross-runtime
 sibling of its Claude `.claude-plugin/` surface (per
-livespec/SPECIFICATION/constraints.md §"Codex support" — Codex adapters
+livespec/SPECIFICATION/constraints.md — Codex adapters
 are thin runtime bindings over the same wrapper CLIs, beads tenant
 semantics, and consent rules as the Claude skills, and MUST NOT copy
 Claude-specific SKILL.md bodies). The orchestrator's payload (`scripts/`,
@@ -374,8 +374,8 @@ def main() -> int:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
     log = structlog.get_logger("codex_plugin_structure")
-    # Surface the op scope on every run for visibility (constraints.md §"Codex
-    # support" gates the CLAIM of Codex support on the full surface). All nine
+    # Surface the op scope on every run for visibility (constraints.md
+    # gates the CLAIM of Codex support on the full surface). All nine
     # ops are now Codex-covered, so `pending_ops` is empty; it stays logged so a
     # future pending op would be immediately visible here.
     log.info(

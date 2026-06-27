@@ -1,8 +1,8 @@
 """Mechanical, fail-open loop-exit reflection stage (NO LLM).
 
 Per the loop-reflection-gate epic decisions (research/loop-reflection-gate/
-best-practices-and-design.md §3 option (b), §6, and §"Where multi-task
-loops should reflect"; cc-otel-gap-analysis.md §1.6 + §3.5), this stage
+best-practices-and-design.md §3 option (b), §6;
+cc-otel-gap-analysis.md §1.6 + §3.5), this stage
 runs AFTER the loop's exit code / verdict has been computed in
 `dispatcher._run_loop_command` (and the single-dispatch sibling). It is a
 purely DETERMINISTIC scan of the wave's `DispatchOutcome`s plus the

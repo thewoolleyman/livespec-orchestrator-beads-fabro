@@ -1,6 +1,6 @@
 ---
 name: capture-spec-drift
-description: Detect impl→spec drift heuristically (LLM-driven) and hand off each finding to /livespec:propose-change with user consent. Required heavyweight authored skill per livespec/SPECIFICATION/contracts.md §"Heavyweight authored skills (5)". Invoke as `/livespec-orchestrator-beads-fabro:capture-spec-drift`.
+description: Detect impl→spec drift heuristically (LLM-driven) and hand off each finding to /livespec:propose-change with user consent. Required heavyweight authored skill per livespec/SPECIFICATION/contracts.md. Invoke as `/livespec-orchestrator-beads-fabro:capture-spec-drift`.
 allowed-tools: Bash, Read, Grep, Glob, Write
 ---
 
