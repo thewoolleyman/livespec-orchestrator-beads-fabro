@@ -34,22 +34,12 @@ recognizes its fingerprint via substring match. To change the body,
 edit the `livespec_dev_tooling` source upstream and bump the pin here —
 never re-vendor a local copy.
 
-## Vendored scripts
-
-- `git-hook-wrapper.sh` — the legacy lefthook-only dispatcher (no
-  refuse branch). RETAINED as the family-template artifact, but NO
-  LONGER installed by any path: the structural body installed by the
-  module above serves all three hooks, including commit-msg.
-
-Rules an agent editing this tree must follow:
+## Rules for editing this tree
 
 - `--no-auto-install` on every `lefthook run` invocation is
   load-bearing: omitting it lets lefthook auto-sync `.git/hooks/`
   against its own standard wrapper, clobbering the installed hook to
   `<name>.old` and silently disabling the gate. Never remove it.
-- Keep any portable `#!/bin/sh` script here portable; do NOT add
-  bashisms or hard-code interpreter paths other than the mise/git
-  invocations shown.
 - Do NOT weaken the refuse-at-primary branch: it lives in
   `livespec_dev_tooling.install_commit_refuse_hooks.CANONICAL_HOOK_BODY`
   upstream — its marker comment, the `git rev-parse --git-common-dir`
