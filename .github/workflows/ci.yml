@@ -255,12 +255,18 @@ jobs:
       # invariant). `actions/checkout` clones with empty hook bodies;
       # install the canonical body via the livespec-dev-tooling
       # installer module (the single wheel-shipped carrier) so the
-      # invariant is satisfied for the CI run. Runs AFTER `uv sync`
-      # because the installer IS the just-synced `livespec_dev_tooling`
-      # package.
-      - name: Install commit-refuse hook (satisfy hook invariant)
+      # invariant is satisfied for the CI run. The SAME verifier also
+      # validates the worktree-discipline pack (worktree-lib.sh +
+      # branch-protection.sh + the two `.just` fragments), so install
+      # the pack here too — otherwise the verifier's pack arm would skip
+      # (zero pack files present) instead of validating byte-identity.
+      # Runs AFTER `uv sync` because the installers ARE the just-synced
+      # `livespec_dev_tooling` package.
+      - name: Install commit-refuse hook + worktree pack (satisfy hook invariant)
         if: matrix.target == 'check-primary-checkout-commit-refuse-hook-installed'
-        run: just install-commit-refuse-hooks
+        run: |
+          just install-commit-refuse-hooks
+          just install-worktree-pack
 
       - name: just ${{ matrix.target }}
         run: just ${{ matrix.target }}

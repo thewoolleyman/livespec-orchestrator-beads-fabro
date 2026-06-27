@@ -1,5 +1,20 @@
 ### Project ignores
 tmp/
+
+# Worktree-discipline pack — installed from the livespec-dev-tooling package
+# (the single canonical source) via `just install-worktree-pack` / bootstrap,
+# NOT tracked here. The from-package installer writes byte-identical copies
+# into dev-tooling/ at bootstrap, mirroring how the commit-refuse hooks are
+# installed into the untracked .git/hooks/ dir. The pack is four files: the
+# two executable shell scripts plus the `worktree.just` and
+# `branch-protection.just` recipe fragments the root justfile `import?`s. The
+# per-ecosystem dev-tooling/worktree-hydrate.sh stub stays TRACKED (it is not
+# part of the package pack).
+/dev-tooling/worktree-lib.sh
+/dev-tooling/branch-protection.sh
+/dev-tooling/worktree.just
+/dev-tooling/branch-protection.just
+
 # The pinned fabro binary is fetched into the orchestrator-image build context
 # at build time (orchestrator-image/build-and-verify.sh copies it from
 # ~/.fabro/bin/fabro) — a 111MB blob, never committed. The version is pinned in

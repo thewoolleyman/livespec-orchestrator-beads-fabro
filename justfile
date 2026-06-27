@@ -62,6 +62,90 @@ acceptance-live-golden-master *ARGS:
     bash orchestrator-image/acceptance-live-golden-master.sh {{ARGS}}
 
 # ---------------------------------------------------------------
+# Worktree-discipline recipes (the Worktree Discipline Pack).
+#
+# The four `just worktree-{create,hydrate,land,reap}` lifecycle recipes are
+# SINGLE-SOURCED from the livespec-dev-tooling package's canonical
+# `worktree.just` fragment, installed into `dev-tooling/worktree.just` by
+# `just install-worktree-pack` (run from `bootstrap` and CI) and IMPORTED
+# here — so this repo no longer copies the recipe text into its own justfile.
+# The recipes are ecosystem-neutral one-line pass-throughs onto the portable,
+# ecosystem-neutral worktree core (dev-tooling/worktree-lib.sh), which they
+# call DIRECTLY. The CORE is the single source of truth for the lifecycle
+# (create / hydrate / land / reap) and the primary-vs-linked detection; the
+# recipes carry NO logic of their own — they only forward arguments. `just`
+# and `lefthook` are mandated non-functionally across the fleet + adopters
+# (the Conformance Pattern: Installer = a `just` recipe; commit gate wired via
+# `lefthook → just check`); they never enter livespec core's public functional
+# surface or the /livespec:* skills. Where this repo's ecosystem (python) has a
+# native tool, expose it as a STRICT PASS-THROUGH wrapper onto these recipes —
+# never an alternative runner: e.g. rust `cargo xtask worktree create` →
+# `just worktree-create`; javascript package.json
+# `"wt:create": "just worktree-create"`. Keeping the logic in the core — not
+# in any wrapper — is what stops ecosystems from drifting; the drift workflow
+# + `copier update` exist to catch any divergence.
+#
+# Hydration is the python-profile specialization in
+# dev-tooling/worktree-hydrate.sh, which the core's `create`/`hydrate` verbs
+# invoke automatically.
+#
+# OPTIONAL import (`import?`, NOT plain `import`): `dev-tooling/worktree.just`
+# is gitignored + installed (written by `install-worktree-pack`, never
+# tracked-committed), so it is ABSENT in a fresh clone until `just bootstrap`
+# runs. A plain `import` of a missing file makes `just` fail to parse the
+# ENTIRE justfile — which would brick `just bootstrap` on a fresh clone. The
+# optional `import?` silently no-ops while the file is absent (the worktree-*
+# recipes simply aren't available until `install-worktree-pack` materializes
+# the fragment) and resolves once installed.
+# ---------------------------------------------------------------
+
+import? 'dev-tooling/worktree.just'
+
+# ---------------------------------------------------------------
+# Server-side worktree discipline: GitHub branch protection.
+#
+# The local commit-refuse hook (the structural canonical body installed at
+# .git/hooks from the shared livespec-dev-tooling package) blocks commits on the
+# primary checkout, but it is LOCALLY BYPASSABLE (`--no-verify`, or simply never
+# installed). Branch protection is
+# the server-enforced backstop: the default branch advances only via PR/merge;
+# direct + force pushes are rejected by GitHub itself.
+#
+# The two `protect-default-branch` (INSTALLER) and `check-branch-protection`
+# (VERIFIER / "tripwire") recipes are SINGLE-SOURCED from the livespec-dev-tooling
+# package's canonical `branch-protection.just` fragment, installed into
+# `dev-tooling/branch-protection.just` by `just install-worktree-pack` (run from
+# `bootstrap` and CI) and IMPORTED here — so this repo no longer copies the recipe
+# text into its own justfile. Both recipes are ecosystem-neutral one-line
+# pass-throughs onto the portable, ecosystem-neutral dev-tooling/branch-protection.sh
+# (the single source of truth) — `just` is the mandated runner and the recipes
+# carry no logic of their own, exactly like the worktree-* recipes above.
+#
+# `protect-default-branch` (the INSTALLER) establishes baseline protection on a
+# fresh repo (requires an admin-scoped gh token); it is idempotent and
+# non-weakening — it leaves an existing, possibly richer, protection untouched
+# unless FORCE=1. `check-branch-protection` (the VERIFIER / "tripwire") asserts
+# protection is present and is fail-closed, but capability-aware: it SKIPs with
+# a NAMED notice when it cannot read protection (no gh / no admin token /
+# non-GitHub origin) so it never makes `just check` flaky, and honours the
+# LIVESPEC_BRANCH_PROTECTION_CHECK severity lever (fail [default] | warn | skip).
+# The authoritative bite belongs to the Fleet-time conformance/orchestrator
+# tier, where an admin token exists.
+#
+# OPTIONAL import (`import?`, NOT plain `import`): `dev-tooling/branch-protection.just`
+# is gitignored + installed (written by `install-worktree-pack`, never
+# tracked-committed), so it is ABSENT in a fresh clone until `just bootstrap`
+# runs. A plain `import` of a missing file makes `just` fail to parse the
+# ENTIRE justfile — which would brick `just bootstrap` on a fresh clone. The
+# optional `import?` silently no-ops while the file is absent (the
+# protect-default-branch / check-branch-protection recipes simply aren't
+# available until `install-worktree-pack` materializes the fragment) and
+# resolves once installed.
+# ---------------------------------------------------------------
+
+import? 'dev-tooling/branch-protection.just'
+
+# ---------------------------------------------------------------
 # First-time setup.
 # ---------------------------------------------------------------
 
@@ -88,8 +172,43 @@ install-commit-refuse-hooks:
     # invariant).
     uv run python -m livespec_dev_tooling.install_commit_refuse_hooks
 
+install-worktree-pack:
+    # Install the canonical worktree-discipline PACK (worktree-lib.sh +
+    # branch-protection.sh + the worktree.just / branch-protection.just
+    # recipe fragments) by REUSING the shared livespec-dev-tooling
+    # installer module — the SINGLE canonical source of all four bodies
+    # (pinned in pyproject.toml). NOT a repo-vendored copy: there is
+    # exactly ZERO drift-prone pack copy in this repo. This is the
+    # Installer slot for the pack facet of the Worktree-discipline
+    # concern, mirroring `install-commit-refuse-hooks` exactly: `bootstrap`
+    # delegates to it, and CI runs it before the
+    # `check-primary-checkout-commit-refuse-hook-installed` verifier so the
+    # verifier VALIDATES the installed pack (byte-identical to the package
+    # source) rather than skipping it. The installer writes the two shell
+    # scripts into `dev-tooling/` with the executable bit and the two
+    # `.just` fragments the root justfile `import?`s; all four are
+    # gitignored (installed, not tracked), exactly as the commit-refuse
+    # hooks are installed into the untracked `.git/hooks/` dir. Idempotent.
+    uv run python -m livespec_dev_tooling.install_worktree_pack
+
 bootstrap:
     just install-commit-refuse-hooks
+    # Install the worktree-discipline PACK (worktree-lib.sh +
+    # branch-protection.sh + the worktree.just / branch-protection.just
+    # recipe fragments) from the shared livespec-dev-tooling package — the
+    # single canonical source — into `dev-tooling/`. The installer writes
+    # the two scripts executable; all four pack files are gitignored
+    # (installed, not tracked), so a fresh clone materializes them here on
+    # first bootstrap exactly as the commit-refuse hooks are installed above.
+    just install-worktree-pack
+    # Ensure the remaining per-ecosystem worktree helper stays executable.
+    # worktree-hydrate.sh is the one TRACKED dev-tooling shell script (the
+    # ecosystem-specific hydration stub); the pack scripts above are written
+    # +chmod'd by `install-worktree-pack`. git tracks the executable bit, but
+    # this idempotent chmod is defense-in-depth — the worktree-hydrate recipe
+    # invokes the script directly (./…), and a non-executable helper would
+    # silently no-op.
+    chmod +x dev-tooling/worktree-hydrate.sh
     # Harden the beads tenant-pointer dir to owner-only on first-touch (bd
     # recommends 0700; only the owning user's bd reads it — the Dolt server
     # connects over TCP and never reads this dir). Guarded: repos with no beads
