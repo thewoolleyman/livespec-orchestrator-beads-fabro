@@ -749,6 +749,24 @@ def test_render_goal_includes_item_fields_and_optional_gap(tmp_path: Path) -> No
     assert "Gap id" not in without_gap
 
 
+def test_render_goal_anchors_repo_to_sandbox_cwd_not_host_path(tmp_path: Path) -> None:
+    """The brief must never present `repo` as a path the sandbox agent cds into.
+
+    Every ACP node runs with cwd = the Fabro sandbox clone; the `repo`
+    argument is the Dispatcher's HOST-side checkout (e.g.
+    `/workspace/dispatch-target`), which does NOT exist inside the sandbox.
+    A bare `Repo: <path>` line let the PR-stage agent honor that wrong path
+    and report "no committed work to PR" (the intermittent livespec-vtxt
+    PR-stage failure: n70w succeeded on the same repo/path minutes earlier).
+    The brief keeps the path for provenance but frames it unmistakably as
+    NOT a cd target, anchoring the agent to its current working directory.
+    """
+    goal = render_goal(item=_item(), repo=tmp_path, branch="feat/t")
+    assert str(tmp_path) in goal  # path retained for provenance/debugging
+    assert "CURRENT WORKING DIRECTORY" in goal
+    assert "NEVER cd to this path" in goal
+
+
 def test_argv_builders_encode_family_discipline(tmp_path: Path) -> None:
     plan = _plan(repo=tmp_path)
     assert fabro_run_argv(plan=plan) == [

@@ -328,7 +328,16 @@ def render_goal(
     gap_line = f"Gap id: {item.gap_id}\n" if item.gap_id is not None else ""
     base = (
         f"Work-item: {item.id}\n"
-        f"Repo: {repo}\n"
+        # The agent runs inside the Fabro sandbox's OWN fresh clone (cwd),
+        # NOT this path: `repo` is the Dispatcher's host-side checkout (e.g.
+        # /workspace/dispatch-target) and does not exist in the sandbox. A
+        # bare `Repo: <path>` line let the PR-stage agent cd to the missing
+        # host path and report "no committed work" (livespec-vtxt). Keep the
+        # path for provenance but frame it unmistakably as NOT a cd target.
+        f"Repo (target repository; you are ALREADY inside its isolated Fabro "
+        f"sandbox clone — run every git/gh command in your CURRENT WORKING "
+        f"DIRECTORY and NEVER cd to this path: it is the dispatcher's "
+        f"host-side checkout and does NOT exist inside your sandbox): {repo}\n"
         f"Publish branch (push HEAD to this exact ref at the PR stage): {branch}\n"
         f"Priority: P{item.priority}  Type: {item.type}\n"
         f"{gap_line}"
