@@ -165,7 +165,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_sink import (
     cost_lookup_keys,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
-    _FABRO_TIMEOUT_SECONDS,  # pyright: ignore[reportPrivateUsage]
     CommandRunner,
     DispatchOutcome,
     PollPolicy,
@@ -190,6 +189,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_notify import (
     terminal_events,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
+    CODEX_FRESHNESS_RUN_BUDGET_SECONDS,
     SiblingClones,
     assess_codex_credential_freshness,
     build_plan,
@@ -1826,7 +1826,7 @@ def _project_codex_auth(*, now_epoch: int) -> str | _CodexProjectionRefusal:
     verdict = assess_codex_credential_freshness(
         source_auth_json=source_auth_json,
         now_epoch=now_epoch,
-        run_budget_seconds=int(_FABRO_TIMEOUT_SECONDS),
+        run_budget_seconds=CODEX_FRESHNESS_RUN_BUDGET_SECONDS,
     )
     if not verdict.fresh_enough:
         return _CodexProjectionRefusal(
