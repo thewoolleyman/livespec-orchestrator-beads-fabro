@@ -55,6 +55,7 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "CODEX_FRESHNESS_MARGIN_SECONDS",
+    "CODEX_FRESHNESS_RUN_BUDGET_SECONDS",
     "CODEX_IMPLEMENTER_ADAPTER",
     "CODEX_NON_ROTATABLE_REFRESH_SENTINEL",
     "DEFAULT_SANDBOX_OTEL_ENDPOINT",
@@ -755,6 +756,24 @@ def project_codex_auth_snapshot(*, source_auth_json: str) -> str:
 
 
 CODEX_FRESHNESS_MARGIN_SECONDS = 3600
+
+# The freshness gate's run budget: the realistic maximum wall-clock a single
+# dispatch can run. The gate requires the projected Codex credential to outlive
+# this budget plus CODEX_FRESHNESS_MARGIN_SECONDS before dispatch (Scenario 19).
+#
+# Anchored to the Fabro `implement` node's per-turn ceiling
+# (.fabro/workflows/implement-work-item/workflow.fabro, timeout="14400s" = 4h):
+# implement is the dominant leg of a run, while the downstream janitor/review/pr
+# nodes are sub-hour ceilings that realistically take minutes, comfortably
+# absorbed by the 1h margin. Observed real dispatches run ~30-45min, so 4h
+# carries ~5-8x slack; the gate thus requires the token to outlive 5h total.
+#
+# DELIBERATELY DECOUPLED from `_dispatcher_engine._FABRO_TIMEOUT_SECONDS`
+# (54000s = 15h). That 15h value is a coarse subprocess CEILING / defense-in-depth
+# backstop, NOT an expected run length; wiring it in as the freshness run budget
+# demanded the token outlive 15h + 1h = 16h, so a host Codex token (minted ~18h,
+# dropping below 16h within ~2h) was refused for nearly every unattended dispatch.
+CODEX_FRESHNESS_RUN_BUDGET_SECONDS = 14400
 
 
 @dataclass(frozen=True, kw_only=True)

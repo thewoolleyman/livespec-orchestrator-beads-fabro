@@ -233,6 +233,28 @@ def test_project_codex_auth_projects_snapshot_when_fresh(
     assert "host-refresh-token" not in result
 
 
+def test_project_codex_auth_accepts_token_outliving_a_realistic_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A credential good for hours past any realistic run is NOT refused.
+
+    Regression for the freshness gate wiring the 15h `_FABRO_TIMEOUT_SECONDS`
+    subprocess CEILING in as the run budget: that demanded the token outlive
+    ~16h (15h + the 1h margin), so it refused nearly every host Codex token
+    (minted ~18h, dropping below 16h within ~2h) even though a real dispatch
+    runs ~30-45min. The gate must size against a REALISTIC run budget, so a
+    token with 6h of life left — far more than any real run needs — projects
+    the snapshot (Scenario 18) instead of refusing it (Scenario 19).
+    """
+    now = 1_000_000
+    six_hours = 6 * 3600
+    monkeypatch.setattr(
+        dispatcher, "_read_host_codex_auth", lambda: _auth_json_with_exp(exp=now + six_hours)
+    )
+    result = _project_codex_auth(now_epoch=now)
+    assert isinstance(result, str)
+
+
 # ---------------------------------------------------------------------------
 # _materialize_overlay — the wired codex projection
 # ---------------------------------------------------------------------------
