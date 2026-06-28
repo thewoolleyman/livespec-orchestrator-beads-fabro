@@ -54,6 +54,15 @@
 #   CLAUDE_CODE_OAUTH_TOKEN
 #   BEADS_DOLT_PASSWORD   (the single shared family password)
 #   HONEYCOMB_INGEST_KEY_LIVESPEC
+#
+# Plus ONE host credential FILE (not an env var):
+#   ~/.codex/auth.json  (or $CODEX_HOME/auth.json) — the Codex subscription
+#     credential. ONLY this file is projected into the container (via stdin, into
+#     an otherwise-empty in-container ~/.codex); the rest of ~/.codex
+#     (config.toml, MCP servers, history) is deliberately NOT carried, so it
+#     cannot skew the sandboxed run. The in-container Dispatcher then projects a
+#     non-rotatable snapshot of it into the inner Fabro sandbox (scenarios.md
+#     Scenario 18/19).
 
 set -euo pipefail
 
@@ -187,6 +196,16 @@ require_env() {
   printf '%s present (%s bytes)\n' "$name" "$(printf '%s' "$value" | wc -c | tr -d ' ')"
 }
 
+# The Codex subscription credential is a host FILE, not an env var. Probe by
+# byte count only (never echo the contents). It is the projection SOURCE the
+# in-container Dispatcher reads; ONLY this file (not the rest of ~/.codex) is
+# carried into the container.
+require_codex_auth_file() {
+  local src="${CODEX_HOME:-$HOME/.codex}/auth.json"
+  [ -f "$src" ] || fail "host Codex credential not found: $src (run 'codex login' on the host before dispatch)"
+  printf 'host Codex auth.json present (%s bytes)\n' "$(wc -c < "$src" | tr -d ' ')"
+}
+
 stage_and_build_image() {
   log "staging Fabro binary and building $IMAGE"
   [ -x "$HOST_FABRO_BIN" ] || fail "fabro binary not found at $HOST_FABRO_BIN"
@@ -207,6 +226,7 @@ preflight() {
   require_env CLAUDE_CODE_OAUTH_TOKEN
   require_env BEADS_DOLT_PASSWORD
   require_env HONEYCOMB_INGEST_KEY_LIVESPEC
+  require_codex_auth_file
   if [ "$BUILD_IMAGE" -eq 1 ]; then
     stage_and_build_image
   elif docker image inspect "$IMAGE" >/dev/null 2>&1; then
@@ -408,6 +428,25 @@ provision_clones() {
   regen_beads_metadata "$TARGET_CLONE" "$TARGET_REPO"
 }
 
+# Project ONLY the host Codex auth credential into the orchestrator container so
+# the in-container Dispatcher can read it as its projection SOURCE. We carry ONLY
+# ~/.codex/auth.json — NEVER the whole ~/.codex (its config.toml / MCP servers /
+# history would change the sandboxed agent's behavior and invalidate the run) —
+# and via STDIN (never env / argv / a directory bind-mount), into an otherwise-
+# empty in-container ~/.codex. The Dispatcher then emits a non-rotatable snapshot
+# of it into the inner Fabro sandbox (scenarios.md Scenario 18/19). The file is
+# written 0600 (umask 077); its contents are never echoed.
+provision_codex_auth() {
+  local src="${CODEX_HOME:-$HOME/.codex}/auth.json"
+  log "projecting host Codex auth.json (credential only) into $CONTAINER ~/.codex"
+  [ -f "$src" ] || fail "host Codex credential not found: $src (run 'codex login' on the host)"
+  docker exec -i "$CONTAINER" sh -lc 'umask 077; mkdir -p "$HOME/.codex"; cat > "$HOME/.codex/auth.json"' < "$src" \
+    || fail "failed to project Codex auth.json into the container"
+  docker exec "$CONTAINER" sh -lc 'test -s "$HOME/.codex/auth.json"' \
+    || fail "Codex auth.json projection produced an empty in-container file"
+  printf 'host Codex auth.json projected (%s bytes, credential only)\n' "$(wc -c < "$src" | tr -d ' ')"
+}
+
 run_dispatch() {
   log "running one real-work dispatch (mode=$MODE) against $TARGET_ORG/$TARGET_REPO item $ITEM_ID"
   docker exec "$CONTAINER" mkdir -p "$(dirname "$JOURNAL_PATH")"
@@ -456,4 +495,5 @@ fi
 start_container
 prove_inner_daemon
 provision_clones
+provision_codex_auth
 run_dispatch
