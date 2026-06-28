@@ -191,44 +191,27 @@ install-worktree-pack:
     # hooks are installed into the untracked `.git/hooks/` dir. Idempotent.
     uv run python -m livespec_dev_tooling.install_worktree_pack
 
+# First-touch setup — a THIN delegator to the shipped LOCAL first-touch
+# reconcile verb (`livespec_dev_tooling.fleet.local_reconcile`), the
+# generalized successor to this recipe's former inline steps (livespec-zs22.8
+# M5), PLUS the member-specific worktree-pack tail the verb does not cover.
+# Reuse-first: NO copied logic — the verb walks the LOCAL obligation partition
+# (`contract.LOCAL_OBLIGATION_ROWS`): mise trust/install, uv sync, the
+# structural commit-refuse hooks (subsuming `lefthook install`), the advisory
+# `refs/notes/*` refspec, the worktree-root mise-trust entry, the beads
+# tenant-dir hardening, the beads-runtime detect-and-guide probes, and
+# project-scoped Claude/Codex plugin registration via THIS repo's own
+# `ensure-plugins` / `ensure-codex-plugins` recipes. The verb resolves the
+# target checkout worktree-safely via `git rev-parse --git-common-dir`. The
+# TAIL below installs the worktree-discipline pack (worktree-lib.sh +
+# branch-protection.sh + the `.just` recipe fragments) and keeps the tracked
+# worktree-hydrate.sh executable — neither is a verb obligation row, so both
+# MUST survive the rewire. The verb's uv-sync row precedes the tail's `uv run`,
+# so the venv is ready.
 bootstrap:
-    just install-commit-refuse-hooks
-    # Install the worktree-discipline PACK (worktree-lib.sh +
-    # branch-protection.sh + the worktree.just / branch-protection.just
-    # recipe fragments) from the shared livespec-dev-tooling package — the
-    # single canonical source — into `dev-tooling/`. The installer writes
-    # the two scripts executable; all four pack files are gitignored
-    # (installed, not tracked), so a fresh clone materializes them here on
-    # first bootstrap exactly as the commit-refuse hooks are installed above.
+    uv run python -m livespec_dev_tooling.fleet.local_reconcile
     just install-worktree-pack
-    # Ensure the remaining per-ecosystem worktree helper stays executable.
-    # worktree-hydrate.sh is the one TRACKED dev-tooling shell script (the
-    # ecosystem-specific hydration stub); the pack scripts above are written
-    # +chmod'd by `install-worktree-pack`. git tracks the executable bit, but
-    # this idempotent chmod is defense-in-depth — the worktree-hydrate recipe
-    # invokes the script directly (./…), and a non-executable helper would
-    # silently no-op.
     chmod +x dev-tooling/worktree-hydrate.sh
-    # Harden the beads tenant-pointer dir to owner-only on first-touch (bd
-    # recommends 0700; only the owning user's bd reads it — the Dolt server
-    # connects over TCP and never reads this dir). Guarded: repos with no beads
-    # tenant have no .beads.
-    [ -d "$(dirname "$(git rev-parse --git-common-dir)")/.beads" ] && chmod 700 "$(dirname "$(git rev-parse --git-common-dir)")/.beads" || true
-    # Idempotent worktree-root + mise-trust setup. Every git worktree in
-    # the fleet lives under a single per-user root, ~/.worktrees/<repo>/
-    # <branch> (per livespec/SPECIFICATION/non-functional-requirements.md
-    # §"Worktree root and mise trust"). Registering that root as one of
-    # mise's trusted_config_paths makes each freshly created worktree's
-    # .mise.toml auto-trusted, so the first `mise exec` inside it never
-    # stops on the "config not trusted" prompt — the failure that
-    # otherwise wastes a tool round-trip on every new worktree. The grep
-    # guard keeps the global ~/.config/mise/config.toml entry single on
-    # repeated bootstraps; the value is the absolute $HOME-rooted path so
-    # it resolves identically from any invocation site.
-    mkdir -p "${HOME}/.worktrees"
-    mise settings get trusted_config_paths 2>/dev/null | grep -qF "${HOME}/.worktrees" || mise settings add trusted_config_paths "${HOME}/.worktrees"
-    just ensure-plugins
-    just ensure-codex-plugins
 
 # Idempotent: `claude plugin marketplace add` and `claude plugin install`
 # both exit 0 when the target is already present. livespec@livespec is
