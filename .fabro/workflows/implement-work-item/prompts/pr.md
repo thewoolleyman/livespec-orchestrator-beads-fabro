@@ -5,6 +5,17 @@ as a PR per the family merge discipline. You are on a Fabro-managed run
 branch — its name is run-internal and MUST NOT be published; the PR
 rides a feature branch named after the work-item instead.
 
+## Where you are
+
+You are in the SAME isolated Fabro sandbox clone the implement/janitor
+stages produced the committed work in — your CURRENT WORKING DIRECTORY
+is that clone. Run every `git` and `gh` command here, in the current
+directory. The assignment below may mention a `Repo:` path: that is the
+dispatcher's host-side checkout, it does NOT exist in this sandbox, and
+you must NEVER `cd` to it or treat the absence of any such path as
+"no committed work". The committed work is reachable as
+`git log --oneline origin/master..HEAD` from where you already are.
+
 ## Your assignment (for the PR description)
 
 {{ goal }}
