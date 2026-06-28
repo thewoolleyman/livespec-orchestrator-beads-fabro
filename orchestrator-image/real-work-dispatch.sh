@@ -344,7 +344,7 @@ sync_dispatcher_deps() {
     'mise trust >/dev/null 2>&1 || true; uv sync --all-groups' 2>&1 | redact
 }
 
-# Regenerate the gitignored .beads/metadata.json inside a CLONE. A fresh clone
+# Regenerate the gitignored .beads/metadata.json for a CLONE. A fresh clone
 # carries the committed .beads/config.yaml (server endpoint) but NOT
 # metadata.json, and `bd list` without metadata.json fails with "no beads
 # database found". `bd init --server --external` re-derives the SERVER-STABLE
@@ -355,24 +355,34 @@ sync_dispatcher_deps() {
 # tenant database/user names and issue prefixes may be shorter than the GitHub
 # repo name.
 #
-# Two hardenings learned from in-container validation:
-#   - `bd init` silently falls to EMBEDDED mode (provisioning .beads/dolt/ +
-#     .beads/embeddeddolt/) if the .beads/ dir already carries embedded-store
-#     artifacts. A truly fresh clone has only config.yaml + .gitignore tracked,
-#     so we assert no embedded store is present before init and treat its
-#     appearance as a hard failure (it would shadow the family tenant with an
-#     empty local store).
-#   - `bd init` AUTO-COMMITS its tracked .beads changes onto the clone's master
-#     (leaving it `ahead 1` of origin/master), which would later break the
-#     dispatcher's post-merge `git pull --ff-only origin master`. The
-#     gitignored metadata.json survives a hard reset, so we drop that auto-commit
-#     by resetting the clone to origin/master after init.
+# We derive metadata.json in a NON-GIT SCRATCH DIR, then copy ONLY metadata.json
+# into the clone. Running `bd init` INSIDE the git checkout makes bd derive a
+# dolt-over-git remote from the repo's GitHub origin and attempt
+# `dolt clone git+https://github.com/<org>/<repo>.git`, which fails for any
+# tenant whose SQL user cannot access that remote (observed for the `livespec`
+# tenant: "Access denied for user '<tenant>'@'%' to database ''"). A non-git
+# scratch dir has no origin, so bd init adopts the server-stable identity
+# cleanly; the project_id is server-stable, so the scratch-derived metadata.json
+# is identical to one derived in place. This matches the livespec ".beads regen"
+# guidance: NEVER run `bd init` inside a primary checkout or worktree (it also
+# auto-commits and clobbers .beads). The scratch-dir method sidesteps both the
+# git-remote misbehavior and the auto-commit, so no post-init `git reset` of the
+# clone is needed.
 regen_beads_metadata() {
   local clone="$1" tenant="$2"
-  log "regenerating .beads/metadata.json in $clone (tenant $tenant; project_id is server-stable)"
+  log "regenerating .beads/metadata.json for $clone via a non-git scratch dir (tenant $tenant; project_id is server-stable)"
   docker exec -w "$clone" "$CONTAINER" sh -lc '
     set -e
-    [ -f .beads/config.yaml ] || { echo "ERROR: clone lacks .beads/config.yaml: $0" >&2; exit 1; }
+    clone="$0"
+    [ -f .beads/config.yaml ] || { echo "ERROR: clone lacks .beads/config.yaml: $clone" >&2; exit 1; }
+    if [ -f .beads/metadata.json ]; then
+      echo "metadata.json already present; leaving as-is"
+      exit 0
+    fi
+    if [ -d .beads/embeddeddolt ] || [ -d .beads/dolt ]; then
+      echo "ERROR: clone .beads/ already carries an embedded Dolt store; refusing (would shadow the family tenant): $clone" >&2
+      exit 1
+    fi
     read_config() {
       awk -F ":[[:space:]]*" -v key="$1" '"'"'
         $1 == key { print $2; found = 1; exit }
@@ -384,37 +394,38 @@ regen_beads_metadata() {
     server_user="$(read_config dolt.server-user)"
     database="$(read_config dolt.database)"
     prefix="$(read_config dolt.prefix)"
-    [ -n "$server_host" ] || { echo "ERROR: .beads/config.yaml lacks dolt.server-host" >&2; exit 1; }
-    [ -n "$server_port" ] || { echo "ERROR: .beads/config.yaml lacks dolt.server-port" >&2; exit 1; }
-    [ -n "$server_user" ] || { echo "ERROR: .beads/config.yaml lacks dolt.server-user" >&2; exit 1; }
-    [ -n "$database" ] || { echo "ERROR: .beads/config.yaml lacks dolt.database" >&2; exit 1; }
-    [ -n "$prefix" ] || { echo "ERROR: .beads/config.yaml lacks dolt.prefix" >&2; exit 1; }
-    if [ -f .beads/metadata.json ]; then
-      echo "metadata.json already present; leaving as-is"
-      exit 0
+    for v in "$server_host" "$server_port" "$server_user" "$database" "$prefix"; do
+      [ -n "$v" ] || { echo "ERROR: .beads/config.yaml is missing a dolt.* connection key" >&2; exit 1; }
+    done
+    # Non-git scratch dir: no git origin, so bd init adopts the server identity
+    # instead of attempting a dolt-over-git clone of the repo remote.
+    scratch="$(mktemp -d)"
+    mkdir -p "$scratch/.beads"
+    cp .beads/config.yaml "$scratch/.beads/config.yaml"
+    (
+      cd "$scratch"
+      bd init --server --external \
+        --server-host "$server_host" \
+        --server-port "$server_port" \
+        --server-user "$server_user" \
+        --database "$database" \
+        --prefix "$prefix" \
+        --skip-agents --skip-hooks --non-interactive --quiet >/dev/null 2>&1
+    )
+    if [ ! -f "$scratch/.beads/metadata.json" ]; then
+      echo "ERROR: bd init did not produce metadata.json in the scratch dir" >&2
+      rm -rf "$scratch"; exit 1
     fi
-    if [ -d .beads/embeddeddolt ] || [ -d .beads/dolt ]; then
-      echo "ERROR: .beads/ already carries an embedded Dolt store; refusing to init (would shadow the family tenant): $0" >&2
-      exit 1
+    # `.beads/embeddeddolt` is the embedded-fallback signal (no server reached);
+    # `.beads/dolt` is a NORMAL server-mode working dir and is expected here.
+    if [ -d "$scratch/.beads/embeddeddolt" ]; then
+      echo "ERROR: bd init fell to EMBEDDED mode in the scratch dir (no server reached; would shadow the family tenant)" >&2
+      rm -rf "$scratch"; exit 1
     fi
-    bd init \
-      --server --external \
-      --server-host "$server_host" \
-      --server-port "$server_port" \
-      --server-user "$server_user" \
-      --database "$database" \
-      --prefix "$prefix" \
-      --skip-agents --skip-hooks --non-interactive --quiet >/dev/null 2>&1
-    [ -f .beads/metadata.json ] || { echo "ERROR: bd init did not produce metadata.json" >&2; exit 1; }
-    if [ -d .beads/embeddeddolt ]; then
-      echo "ERROR: bd init fell to EMBEDDED mode (empty local store would shadow the family tenant): $0" >&2
-      exit 1
-    fi
-    # Drop the bd-init auto-commit so the clone matches origin/master; the
-    # gitignored metadata.json survives the reset.
-    git reset --hard origin/master >/dev/null 2>&1 || true
-    [ -f .beads/metadata.json ] || { echo "ERROR: metadata.json lost after reset" >&2; exit 1; }
-    echo "metadata.json regenerated; clone reset to origin/master"
+    cp "$scratch/.beads/metadata.json" .beads/metadata.json
+    rm -rf "$scratch"
+    [ -f .beads/metadata.json ] || { echo "ERROR: metadata.json was not copied into the clone" >&2; exit 1; }
+    echo "metadata.json regenerated via scratch dir and copied into the clone"
   ' "$clone" "$tenant" 2>&1 | redact
 }
 

@@ -45,3 +45,22 @@ def test_codex_auth_projects_only_the_credential_not_the_whole_codex_home() -> N
     assert '-v "$HOME/.codex' not in text
     assert ":/root/.codex" not in text
     assert "-e CODEX" not in text
+
+
+def test_beads_metadata_regen_uses_a_non_git_scratch_dir_not_the_clone() -> None:
+    """metadata.json is derived in a non-git scratch dir, then copied in.
+
+    Running `bd init` inside the cloned git checkout makes bd derive a
+    dolt-over-git remote from the repo origin and attempt a `dolt clone` that
+    fails for tenants whose SQL user cannot access it (observed for `livespec`).
+    A non-git scratch dir has no origin, so bd init adopts the server identity.
+    """
+    text = _SCRIPT.read_text(encoding="utf-8")
+
+    # bd init runs against a fresh scratch dir, and only metadata.json is copied
+    # into the clone.
+    assert 'scratch="$(mktemp -d)"' in text
+    assert 'cp "$scratch/.beads/metadata.json" .beads/metadata.json' in text
+    # The old in-clone behavior (auto-commit then reset) is gone: regen must not
+    # reset the clone to origin/master anymore.
+    assert "git reset --hard origin/master" not in text
