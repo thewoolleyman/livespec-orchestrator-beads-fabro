@@ -40,52 +40,60 @@ red-green-replay; co-edit `tests/heading-coverage.json` for any
    `/livespec:propose-change` findings payload for `01`. The
    `impl_followups[].id_hint`s are the `spec_commitment_hint` values each
    groom child carries.
-4. `research/03-code-slices.md` — the code-slice breakdown (S1-S7). The
-   `groom` gate cuts this into ready children of `bd-ib-vvrxcb`
-   (AUTO-CUT).
-5. Cross-repo design of record (authoritative on any conflict):
+4. `research/03-code-slices.md` — the code-slice breakdown (S1-S7),
+   cut into ready children of `bd-ib-vvrxcb` (DONE; ids below).
+5. `research/04-implement-findings.md` — **the concrete resume guide for
+   the implement phase**: the verified v0.5.0 runtime API, the re-vendor
+   mechanics, the verified-uniform 244-test breakage + its single root
+   cause, the store-adapter design, the `_cross_repo.py` shrink, the
+   sibling-UNKNOWN consolidation, the legacy-status read note, and the
+   red-green-replay approach for the foundational S1+S2 PR. **Start the
+   implement phase here.**
+6. Cross-repo design of record (authoritative on any conflict):
    `/data/projects/livespec/plan/work-item-state-machine/research/`
    {02-design.md, 03-decision-log.md, 04-slice-plan.md}.
-6. L0 worked example (full propose-change→revise→groom→implement→release):
+7. L0 worked example (full propose-change→revise→groom→implement→release):
    `/data/projects/livespec-runtime/plan/work-item-state-machine/`.
 
 ## State as of this handoff
 
 - ✅ Epic `bd-ib-vvrxcb` anchored (prose-linked to `livespec-35s3zo`; no
   typed cross-tenant `depends_on`).
-- ✅ Thread + research drafts (`00`-`03`) committed.
-- ⏳ `revise` (ratify) — NOT yet run.
-- ⏳ `groom` (cut) — NOT yet run.
-- ⏳ implement (S1-S7) — NOT yet started.
-- ⏳ release — NOT yet cut.
+- ✅ Thread + research drafts committed (PR #201).
+- ✅ **`revise` (ratify) DONE** — history **v020**, `contracts.md` +
+  `scenarios.md` + `tests/heading-coverage.json` ratified (PR #202; core
+  revise CLI with `--post-step-doctor`, all checks green). **Do NOT
+  re-run propose-change / revise.**
+- ✅ **`groom` (cut) DONE** — S1-S7 filed as `ready` children of
+  `bd-ib-vvrxcb`, parent-linked + dep-layered, each carrying its
+  `spec_commitment_hint`. **Do NOT re-file.** Ids:
+  S1 `bd-ib-ojlmr6` · S2 `bd-ib-7mounw` · S3 `bd-ib-dnw2ei` ·
+  S4 `bd-ib-3wjakl` · S5 `bd-ib-6gwl23` · S6 `bd-ib-6zndit` ·
+  S7 `bd-ib-jysmuu`.
+- ⏳ **implement (S1-S7) — NOT yet started** (scoped; see
+  `research/04-implement-findings.md`).
+- ⏳ release — NOT yet cut (S7).
 - L0 (livespec-runtime v0.5.0) is DONE — the artifact this track vendors.
 
-## Next action — run `propose-change` against `contracts.md`
+## Next action — implement S1+S2 (the coordinated foundation PR)
 
-Drive the L1a spec change into `SPECIFICATION/contracts.md` (+
-`scenarios.md` + `tests/heading-coverage.json`):
+Execute the implement phase per **`research/04-implement-findings.md`**
+(the concrete, verified resume guide). Start with the coordinated
+**S1+S2** PR (re-vendor v0.5.0 + the `_cross_repo.py` shrink + the beads
+custom-status/2-step/rank/policy store adapter + the uniform
+`priority→rank` construction sweep across ~6 product modules + ~17 test
+files), which is irreducibly one green PR (re-vendor breaks the build
+until the adapter is migrated; the breakage is a verified-uniform
+`priority`-keyword `TypeError`). Then S3 (dispatcher valves), S4
+(lane/rank), S5 (rebalance-ranks), S6 (doctor invariants), and S7 (cut
+the release). Status is derived from the ledger (`bd children
+bd-ib-vvrxcb`); close each child via the `implement` freeform path as its
+PR merges, carrying merge-evidence in the `AuditRecord`.
 
-1. In a fresh worktree off `master`, run the core propose-change CLI with
-   the findings payload:
-   ```bash
-   python3 <livespec-core-plugin>/scripts/bin/propose_change.py \
-     work-item-state-machine \
-     --findings-json plan/work-item-state-machine/research/02-propose-change-findings.json \
-     --project-root . --author wism-l1a-beads-fabro
-   ```
-   (resolves the active livespec core plugin root; writes
-   `SPECIFICATION/proposed_changes/work-item-state-machine.md`).
-2. Then `revise` (AUTO-RATIFY): assemble the revise-json with one `accept`
-   decision per proposal whose `resulting_files[]` carry the FULL updated
-   `contracts.md` + `scenarios.md` + `tests/heading-coverage.json`
-   content (the deltas in `01-spec-deltas.md`), and invoke the core
-   revise CLI with `--post-step-doctor`. This cuts the next `vNNN`
-   history snapshot and applies the edits.
-3. Then `groom` (AUTO-CUT): file S1-S7 as ready children of `bd-ib-vvrxcb`
-   per `03-code-slices.md` (Option A: `capture-work-item` `append_work_item`
-   with explicit `spec_commitment_hint` + parent-child + `depends_on`
-   edges).
-4. Then implement S1-S7 (red-green-replay) and cut the release.
+Discipline (non-negotiable): worktree → PR → rebase-merge; `mise exec --
+git`; never `--no-verify`; halt + report on any hook failure; product
+`.py` follows red-green-replay; keep per-file 100% coverage. The spec
+already landed (v020) — implement slices change NO `## ` heading, so no
+further `heading-coverage.json` co-edit is required.
 
-Each milestone (ratified; groomed; implemented; released) is reported to
-the coordinator.
+Each milestone (implemented; released) is reported to the coordinator.
