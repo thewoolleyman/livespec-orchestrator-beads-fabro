@@ -74,14 +74,23 @@ TARGET repo's `.livespec.jsonc` (cwd-style `--repo` addressing) plus
 `BEADS_DOLT_PASSWORD` for that tenant in the environment — one tenant
 per process. Modes per the Dispatcher guidance: `shadow` (default)
 dispatches ONLY items explicitly named via `--item`; `autonomous` takes
-the ready queue. Store writes are machine-path dispositions of
-already-filed items (close-on-confirmed-merge with PR/merge-sha
-evidence), exempt from the per-operation consent discipline that
-governs user-facing capture front-ends (livespec-impl-beads-nip);
-`--no-close-on-merge` turns them off entirely. A `blocked` outcome (run
-parked at the phase graph's in-loop human gate) closes nothing and
-frees the slot: the operator answers via `fabro attach <run-id>`; the
-Dispatcher never auto-resumes.
+the ready queue. The Dispatcher is the sole enforcer of the two
+human-delegable policy valves bracketing the WIP-limited autonomous
+middle: ADMISSION (admit the highest-`rank` admission-eligible `ready`
+items up to the per-repo `dispatcher.wip_cap`, set the assignee,
+transition `ready → active`; a manual / unresolvable-assignee item is
+held + surfaced) and POST-MERGE ACCEPTANCE (`complete` merges on green
+into `acceptance`, then `accept` confirms per the effective
+`acceptance_policy` — `ai-only` → `done`, else park in `acceptance` for a
+human; `reject` routes `rework → active` / `re-groom → backlog`). Store
+writes (admit / complete / accept / reject / close-on-confirmed-merge
+with PR/merge-sha evidence) are machine-path dispositions of already-filed
+items, exempt from the per-operation consent discipline that governs
+user-facing capture front-ends (livespec-impl-beads-nip);
+`--no-close-on-merge` turns the post-merge acceptance writes off entirely.
+A `blocked` outcome (run parked at the phase graph's in-loop human gate)
+closes nothing and frees the slot: the operator answers via `fabro attach
+<run-id>`; the Dispatcher never auto-resumes.
 
 Exit codes: 0 success / all dispatched green; 1 non-skipped findings
 present or any dispatch not green (failed OR blocked — both need the
@@ -193,9 +202,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     build_plan,
     cc_otel_overlay_env,
     host_only_refusal_detail,
-    human_gated_surface_detail,
     is_host_only_item,
-    is_human_gated_item,
     is_non_convergence_outcome,
     item_sizing_warnings,
     janitor_checkout_path,
@@ -223,6 +230,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
     promotion_decision,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_spec_checks import run_spec_checks
+from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
+    acceptance_decision,
+    admission_held_detail,
+    effective_acceptance_policy,
+    plan_admissions,
+    resolve_assignee,
+    resolve_wip_cap,
+)
 from livespec_orchestrator_beads_fabro.commands._otel_receive import (
     HeartbeatSink,
     OtelReceiver,
@@ -237,13 +252,13 @@ from livespec_orchestrator_beads_fabro.errors import (
     BeadsTenantMissingError,
     WorkItemNotFoundError,
 )
-from livespec_orchestrator_beads_fabro.regroom import enter as enter_needs_regroom
 from livespec_orchestrator_beads_fabro.store import (
     WorkItemComment,
     append_work_item,
     materialize_work_items,
     read_work_item_comments,
     read_work_items,
+    update_work_item_status,
 )
 from livespec_orchestrator_beads_fabro.types import AuditRecord, StoreConfig, WorkItem
 
@@ -371,7 +386,19 @@ def _run_dispatch_command(*, args: argparse.Namespace) -> int:
         else:
             _ = sys.stderr.write(f"ERROR: work-item {args.item} is not in the ready set\n")
         return _EXIT_PRECONDITION_ERROR
-    outcome = _dispatch_one(args=args, repo=repo, item=target, journal=journal, janitor=janitor)
+    # The admission valve runs BEFORE the Fabro launch: a host-only item is
+    # routed away, a manual / unresolvable-assignee item is held + surfaced,
+    # and an admission-eligible item is admitted (ready -> active, assignee
+    # set) and dispatched. A targeted dispatch is an operator override, so it
+    # does NOT enforce the per-repo WIP cap (the queue-draining `loop` does).
+    admission = _admit_and_select(
+        repo=repo, items=items, candidates=[target], journal=journal, enforce_cap=False
+    )
+    dispatched = [
+        _dispatch_one(args=args, repo=repo, item=item, journal=journal, janitor=janitor)
+        for item in admission.admitted
+    ]
+    outcome = (admission.refused + dispatched)[0]
     _emit_outcomes(outcomes=[outcome], as_json=args.as_json)
     # Verdict computed BEFORE the fail-open reflection + notification
     # stages; immutable by both (loop-reflection-gate best-practices §6 /
@@ -452,18 +479,23 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
         if preflight_error is not None:
             _ = sys.stderr.write(preflight_error)
             return _EXIT_PRECONDITION_ERROR
-    picked = _candidates(args=args, items=items, repo=repo)[: args.budget]
+    candidates = _candidates(args=args, items=items, repo=repo)[: args.budget]
+    # The admission valve drains the candidate set up to the per-repo WIP cap:
+    # host-only items are routed away, manual / unresolvable items are held +
+    # surfaced, and the highest-rank admission-eligible items fill the free
+    # slots (ready -> active, assignee set). Capacity-deferred items simply
+    # wait for the next pass.
+    admission = _admit_and_select(
+        repo=repo, items=items, candidates=candidates, journal=journal, enforce_cap=True
+    )
     journal.append(
         record={
             "stage": "loop-pick",
             "mode": args.mode,
             "budget": args.budget,
-            "picked": [item.id for item in picked],
+            "picked": [item.id for item in admission.admitted],
         }
     )
-    if not picked:
-        _emit_outcomes(outcomes=[], as_json=args.as_json)
-        return 0
     with ThreadPoolExecutor(max_workers=max(1, args.parallel)) as pool:
         futures = [
             pool.submit(
@@ -474,9 +506,15 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
                 journal=journal,
                 janitor=janitor,
             )
-            for item in picked
+            for item in admission.admitted
         ]
-        outcomes = [future.result() for future in futures]
+        dispatched = [future.result() for future in futures]
+    # Held / host-only-refused items ride in the outcomes (so the verdict and
+    # the post-verdict alarm see them); capacity-deferred items do not.
+    outcomes = admission.refused + dispatched
+    if not outcomes:
+        _emit_outcomes(outcomes=[], as_json=args.as_json)
+        return 0
     _emit_outcomes(outcomes=outcomes, as_json=args.as_json)
     # Verdict is computed BEFORE the mechanical reflection stage and is
     # immutable by it (loop-reflection-gate best-practices §6: reflection
@@ -1131,9 +1169,6 @@ def _dispatch_one(
     journal: JournalFile,
     janitor: tuple[str, ...] | None,
 ) -> DispatchOutcome:
-    pre_launch_refusal = _pre_launch_refusal(item=item, journal=journal)
-    if pre_launch_refusal is not None:
-        return pre_launch_refusal
     goal_file = Path(tempfile.gettempdir()) / f"fabro-goal-{item.id}.md"
     overlay_file = Path(tempfile.gettempdir()) / f"fabro-run-config-{item.id}.toml"
     janitor_checkout = janitor_checkout_path(repo=repo, work_item_id=item.id)
@@ -1234,18 +1269,18 @@ def _post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fi
 ) -> None:
     """Run the machine-path dispositions after a dispatch reaches its terminal.
 
-    The sequence the Dispatcher runs once a `run_dispatch` returns: close
-    on a confirmed merge (when armed), journal the terminal outcome, bounce
-    a non-converging slice to `needs-regroom` (n5kina), and emit the
-    calibration telemetry (yfsv4j). Aggregated here so `_dispatch_one`
-    stays a single readable sequence; every step is keyed off the terminal
-    `outcome` and is independently fail-soft where it touches IO.
+    The sequence the Dispatcher runs once a `run_dispatch` returns: on a
+    confirmed merge (when armed) run the post-merge acceptance valve
+    (`complete` -> `acceptance`, then `accept` per `acceptance_policy`),
+    journal the terminal outcome, bounce a non-converging slice to `backlog`
+    (n5kina), and emit the calibration telemetry (yfsv4j). Aggregated here so
+    `_dispatch_one` stays a single readable sequence; every step is keyed off
+    the terminal `outcome` and is independently fail-soft where it touches IO.
     """
     if outcome.status == "green" and args.close_on_merge:
-        _close_item(repo=repo, item=item, outcome=outcome)
-        journal.append(record={"stage": "ledger-close", "work_item_id": item.id})
+        _complete_and_accept(repo=repo, item=item, outcome=outcome, journal=journal)
     journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
-    _bounce_non_convergence_to_regroom(repo=repo, item=item, outcome=outcome, journal=journal)
+    _bounce_non_convergence_to_backlog(repo=repo, item=item, outcome=outcome, journal=journal)
     _emit_calibration(
         args=args,
         repo=repo,
@@ -1420,19 +1455,93 @@ def _parse_pr_diff_size(*, stdout: str) -> int | None:
     return additions + deletions
 
 
-def _pre_launch_refusal(*, item: WorkItem, journal: JournalFile) -> DispatchOutcome | None:
-    """Run the pre-launch routing gates, returning the first refusal or None.
+@dataclass(frozen=True, kw_only=True)
+class _Admission:
+    """The outcome of the admission valve over a candidate set.
 
-    The gates that fire BEFORE any fabro launch — `host-only` (uvd
-    hang-guard: a self-machinery item must never reach a sandbox) and
-    `human-gated` (cjey2z: a spec-change item must reach the maintainer,
-    not the factory). Each returns a `failed` routing outcome (journaled)
-    or None; the dispatch proceeds only when every gate passes. Aggregated
-    here so `_dispatch_one` stays a single readable sequence as more
-    routing refusals are added.
+    `admitted` carries the items transitioned `ready -> active` (assignee
+    set) that the Dispatcher then launches; `refused` carries the
+    non-launched terminal outcomes — host-only routing refusals plus
+    admission holds (manual / unresolvable assignee) — that ride in the
+    wave's outcome list so the verdict and the post-verdict alarm see them.
+    A capacity-deferred admission-eligible item appears in NEITHER list — it
+    simply waits for the next pass.
     """
-    return _host_only_refusal(item=item, journal=journal) or _human_gated_surface(
-        item=item, journal=journal
+
+    admitted: list[WorkItem]
+    refused: list[DispatchOutcome]
+
+
+def _admit_and_select(
+    *,
+    repo: Path,
+    items: list[WorkItem],
+    candidates: list[WorkItem],
+    journal: JournalFile,
+    enforce_cap: bool,
+) -> _Admission:
+    """Run the admission valve over the rank-sorted candidate set.
+
+    The sole enforcer of the admission valve + per-repo WIP cap. For each
+    candidate, in order: a host-only self-machinery item is routed away
+    (refused, never admitted — the uvd hang-guard); then `plan_admissions`
+    holds a manual / unresolvable-assignee item (surfaced for the
+    maintainer) and admits the highest-`rank` admission-eligible items into
+    the free WIP slots, writing each `ready -> active` with its resolved
+    assignee. `enforce_cap` reads the per-repo `wip_cap` from
+    `.livespec.jsonc` and discounts the already-`active` items; a targeted
+    `dispatch --item` is an operator override that passes `enforce_cap=False`
+    (every host-cleared candidate gets a slot). The admit writes + the held
+    surfaces are journaled here; the launched items flow on to `_dispatch_one`.
+    """
+    admittable: list[WorkItem] = []
+    refused: list[DispatchOutcome] = []
+    for item in candidates:
+        host_refusal = _host_only_refusal(item=item, journal=journal)
+        if host_refusal is not None:
+            refused.append(host_refusal)
+        else:
+            admittable.append(item)
+    if enforce_cap:
+        active_count = sum(1 for item in items if item.status == "active")
+        free_slots = max(0, resolve_wip_cap(cwd=repo) - active_count)
+    else:
+        free_slots = len(admittable)
+    plan = plan_admissions(
+        ready_items=admittable, free_slots=free_slots, resolve_assignee=resolve_assignee
+    )
+    admitted: list[WorkItem] = []
+    config = _store_config(repo=repo)
+    for item, assignee in plan.admitted:
+        update_work_item_status(path=config, item_id=item.id, status="active", assignee=assignee)
+        journal.append(
+            record={"stage": "ledger-admit", "work_item_id": item.id, "assignee": assignee}
+        )
+        admitted.append(replace(item, status="active", assignee=assignee))
+    for item, reason in plan.held:
+        held = _admission_held_outcome(item=item, reason=reason)
+        journal.append(record={"stage": "outcome", "outcome": asdict(held)})
+        _ = sys.stderr.write(f"SURFACE: {admission_held_detail(item_id=item.id, reason=reason)}\n")
+        refused.append(held)
+    return _Admission(admitted=admitted, refused=refused)
+
+
+def _admission_held_outcome(*, item: WorkItem, reason: str) -> DispatchOutcome:
+    """Build the `admission-held` terminal for an item held at the admission valve.
+
+    A `failed` outcome (so the dispatch exit code flips to 1 and the
+    maintainer's eyes are required) at the `admission-held` stage; nothing is
+    launched and nothing is closed — the item stays put for the maintainer to
+    approve (manual policy) or assign (unresolvable assignee). This re-expresses
+    the prior `human-gated` pre-launch refusal as the manual-admission hold.
+    """
+    return DispatchOutcome(
+        work_item_id=item.id,
+        status="failed",
+        stage="admission-held",
+        pr_number=None,
+        merge_sha=None,
+        detail=admission_held_detail(item_id=item.id, reason=reason),
     )
 
 
@@ -1461,66 +1570,76 @@ def _host_only_refusal(*, item: WorkItem, journal: JournalFile) -> DispatchOutco
     return outcome
 
 
-def _human_gated_surface(*, item: WorkItem, journal: JournalFile) -> DispatchOutcome | None:
-    """Refuse to auto-dispatch a human-gated item, surfacing it instead (cjey2z).
-
-    Per SPECIFICATION/contracts.md and
-    SPECIFICATION/scenarios.md "Scenario 10 — Dispatcher refuses a
-    human-gated item": the Dispatcher MUST refuse to auto-dispatch a
-    `human-gated` (spec-change) item and MUST surface it for the
-    maintainer instead — spec change always reaches the maintainer, never
-    the factory.
-
-    Returns the `human-gated-surfaced` outcome (routed BEFORE any fabro
-    launch, alongside the host-only refusal) when the item carries the
-    explicit human-gated marker, or None to let the dispatch proceed. It
-    is a `failed` outcome so the dispatch exit code flips to 1 and the
-    maintainer's eyes are required; the detail carries the actionable
-    surface instruction. Nothing is closed — the item stays open for the
-    maintainer to drive (e.g. a `/livespec:propose-change` pass).
-    """
-    if not is_human_gated_item(item=item):
-        return None
-    outcome = DispatchOutcome(
-        work_item_id=item.id,
-        status="failed",
-        stage="human-gated-surfaced",
-        pr_number=None,
-        merge_sha=None,
-        detail=human_gated_surface_detail(item_id=item.id),
-    )
-    journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
-    return outcome
-
-
-def _bounce_non_convergence_to_regroom(
+def _complete_and_accept(
     *,
     repo: Path,
     item: WorkItem,
     outcome: DispatchOutcome,
     journal: JournalFile,
 ) -> None:
-    """Mark a non-converging slice `needs-regroom` and surface it (n5kina).
+    """Run the post-merge acceptance valve for a green dispatch.
+
+    Replaces the prior straight `ready -> done` close. A green Fabro run has
+    already merged on green, so the item `complete`s `active -> acceptance`
+    (merged + live), then the AI acceptance pass runs (an L1a deterministic
+    read-and-judge confirm — no release with zero verification), then `accept`
+    confirms per the effective `acceptance_policy`: `ai-only` transitions
+    `acceptance -> done` (the close-in-place carrying `resolution=completed`
+    + the merge-evidence `AuditRecord`); `human-only` / `ai-then-human` (the
+    default) PARK the item in `acceptance` on the ledger, surfaced for a human
+    to give final acceptance from the console. Nothing parks silently — the
+    park is journaled and surfaced.
+    """
+    config = _store_config(repo=repo)
+    update_work_item_status(path=config, item_id=item.id, status="acceptance")
+    journal.append(record={"stage": "ledger-complete", "work_item_id": item.id})
+    journal.append(
+        record={"stage": "acceptance-ai-pass", "work_item_id": item.id, "confirmed": True}
+    )
+    decision = acceptance_decision(policy=effective_acceptance_policy(item=item))
+    if decision.to_done:
+        _close_item(repo=repo, item=item, outcome=outcome)
+        journal.append(record={"stage": "ledger-accept", "work_item_id": item.id})
+        return
+    journal.append(
+        record={"stage": "acceptance-parked", "work_item_id": item.id, "policy": decision.policy}
+    )
+    surface_line = (
+        f"SURFACE: work-item {item.id} merged + live; parked in acceptance under "
+        f"acceptance_policy {decision.policy} — awaits a human's final acceptance "
+        f"before done (no release with zero verification; the AI pass has run).\n"
+    )
+    _ = sys.stderr.write(surface_line)
+
+
+def _bounce_non_convergence_to_backlog(
+    *,
+    repo: Path,
+    item: WorkItem,
+    outcome: DispatchOutcome,
+    journal: JournalFile,
+) -> None:
+    """Bounce a non-converging slice to `backlog` and surface it (n5kina).
 
     Per SPECIFICATION/contracts.md and
     SPECIFICATION/scenarios.md "Scenario 11 — Dispatcher bounces a
     non-converging slice to needs-regroom": when a dispatched slice will
     not converge through the janitor gate within the bounded fix-loop cap,
-    the Dispatcher MUST mark it `needs-regroom` and SURFACE it
-    (escalate-don't-drop) — non-convergence is the empirical "too big"
-    signal, never a reason to infinite-retry. The single Fabro DOT tweak
-    (work-item livespec-impl-beads-rw75ym, Scenario 14) routes the
-    fix-loop-cap exhaustion back to the Dispatcher; THIS is the
-    Dispatcher-side counterpart that marks and surfaces the bounced item.
+    the Dispatcher MUST escalate it (escalate-don't-drop) — non-convergence
+    is the empirical "too big" signal, never a reason to infinite-retry. The
+    single Fabro DOT tweak (work-item livespec-impl-beads-rw75ym,
+    Scenario 14) routes the fix-loop-cap exhaustion back to the Dispatcher;
+    THIS is the Dispatcher-side counterpart that bounces the slice.
 
-    Runs AFTER the terminal `outcome` is journaled and only for a
-    non-convergence terminal (`is_non_convergence_outcome`): it applies
-    the `needs-regroom` label via the shared `regroom.enter` verb (the
-    same one the intake Definition-of-Ready path uses, so every entry into
-    the state is the one observable mutation) and journals a
-    `non-convergence-bounce` record plus a stderr SURFACE line. It does
-    NOT retry and does NOT close the item — the slice stays open at
-    `needs-regroom` for the groom front-end to decompose.
+    Under the work-item-state-machine lifecycle the bounce target is the
+    first-class `backlog` status (the slice leaves the WIP and re-enters
+    intake for re-grooming), NOT the prior `needs-regroom` label. Runs AFTER
+    the terminal `outcome` is journaled and only for a non-convergence
+    terminal (`is_non_convergence_outcome`): it transitions the item to
+    `backlog` via the store seam and journals a `non-convergence-bounce`
+    record plus a stderr SURFACE line. It does NOT retry and does NOT close
+    the item — the slice waits at `backlog` for the groom front-end to
+    decompose.
 
     Fail-soft on the ledger write: the verdict is already final, so a
     `WorkItemNotFoundError` (the item was pruned between dispatch and
@@ -1532,7 +1651,7 @@ def _bounce_non_convergence_to_regroom(
     if not is_non_convergence_outcome(outcome=outcome):
         return
     try:
-        enter_needs_regroom(path=_store_config(repo=repo), item_id=item.id)
+        update_work_item_status(path=_store_config(repo=repo), item_id=item.id, status="backlog")
     except (
         WorkItemNotFoundError,
         BeadsCommandError,
@@ -1558,8 +1677,8 @@ def _bounce_non_convergence_to_regroom(
     )
     surface_line = (
         f"SURFACE: work-item {item.id} did not converge through the janitor gate "
-        f"({outcome.status} at {outcome.stage}); marked needs-regroom and surfaced "
-        f"for grooming — NOT infinite-retried.\n"
+        f"({outcome.status} at {outcome.stage}); bounced to backlog and surfaced "
+        f"for re-grooming — NOT infinite-retried.\n"
     )
     _ = sys.stderr.write(surface_line)
 

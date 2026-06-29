@@ -153,21 +153,24 @@ class BeadsClient(Protocol):
         """Create an issue with an operator-supplied id; return the id."""
         ...
 
-    def update_issue(
+    def update_issue(  # noqa: PLR0913 — kw-only partial-update verb; each field is an independent optional mutation.
         self,
         *,
         issue_id: str,
         status: str | None = None,
+        assignee: str | None = None,
         parent_id: str | None = None,
         add_labels: list[str] | None = None,
         remove_labels: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        """Mutate an existing issue's status / parent / labels / metadata.
+        """Mutate an existing issue's status / assignee / parent / labels / metadata.
 
-        `remove_labels` maps onto `bd update --remove-label` (repeatable);
-        it is the seam the regroom state machine uses to CLEAR the
-        `needs-regroom` label when an item is regroomed out. Removing a
+        `assignee` maps onto `bd update --assignee` — the seam the admission
+        valve uses to set the doer when it transitions a ready item to
+        `active`. `remove_labels` maps onto `bd update --remove-label`
+        (repeatable); it is the seam the regroom state machine uses to CLEAR
+        the `needs-regroom` label when an item is regroomed out. Removing a
         label the issue does not carry is a no-op (bd is idempotent here).
         """
         ...
@@ -299,11 +302,12 @@ class FakeBeadsClient:
         self._issues[draft.issue_id] = record
         return draft.issue_id
 
-    def update_issue(
+    def update_issue(  # noqa: PLR0913 — kw-only partial-update verb; each field is an independent optional mutation.
         self,
         *,
         issue_id: str,
         status: str | None = None,
+        assignee: str | None = None,
         parent_id: str | None = None,
         add_labels: list[str] | None = None,
         remove_labels: list[str] | None = None,
@@ -317,6 +321,8 @@ class FakeBeadsClient:
             )
         if status is not None:
             record["status"] = status
+        if assignee is not None:
+            record["assignee"] = assignee
         if parent_id is not None:
             record["parent_id"] = parent_id
         if add_labels is not None:
@@ -538,11 +544,12 @@ class ShellBeadsClient:
         self._run_void(verb_args=_build_create_argv(draft=draft))
         return draft.issue_id
 
-    def update_issue(
+    def update_issue(  # noqa: PLR0913 — kw-only partial-update verb; each field is an independent optional mutation.
         self,
         *,
         issue_id: str,
         status: str | None = None,
+        assignee: str | None = None,
         parent_id: str | None = None,
         add_labels: list[str] | None = None,
         remove_labels: list[str] | None = None,
@@ -551,6 +558,7 @@ class ShellBeadsClient:
         verb_args = _build_update_argv(
             issue_id=issue_id,
             status=status,
+            assignee=assignee,
             parent_id=parent_id,
             add_labels=add_labels,
             remove_labels=remove_labels,
@@ -653,7 +661,7 @@ def _build_create_argv(*, draft: IssueDraft) -> list[str]:
     return argv
 
 
-def _build_update_argv(
+def _build_update_argv(  # noqa: PLR0913 — kw-only argv builder mirroring update_issue's optional fields.
     *,
     issue_id: str,
     status: str | None,
@@ -661,6 +669,7 @@ def _build_update_argv(
     add_labels: list[str] | None,
     metadata: dict[str, Any] | None,
     remove_labels: list[str] | None = None,
+    assignee: str | None = None,
 ) -> list[str]:
     """Build the `bd update <id> ...` verb argv (pure; fully covered).
 
@@ -669,11 +678,14 @@ def _build_update_argv(
     labels, e.g. `resolution:completed`), so each label is emitted as a
     `--add-label <label>` pair. Label REMOVALS use the symmetric repeatable
     `--remove-label` flag (the regroom state machine clears `needs-regroom`
-    this way).
+    this way). `--assignee` sets the doer (the admission valve's
+    `ready -> active` transition).
     """
     argv: list[str] = ["update", issue_id]
     if status is not None:
         argv.extend(["--status", status])
+    if assignee is not None:
+        argv.extend(["--assignee", assignee])
     if parent_id is not None:
         argv.extend(["--parent", parent_id])
     if add_labels is not None:

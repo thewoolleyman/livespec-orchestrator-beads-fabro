@@ -78,6 +78,10 @@ def _item(**overrides: object) -> WorkItem:
         reason=None,
         audit=None,
         superseded_by=None,
+        # Admission-eligible by default so a dispatched item flows through the
+        # admission valve (ready -> active); the WIP-cap / hold cases override.
+        admission_policy="auto",
+        acceptance_policy="ai-only",
     )
     return replace(base, **overrides)
 

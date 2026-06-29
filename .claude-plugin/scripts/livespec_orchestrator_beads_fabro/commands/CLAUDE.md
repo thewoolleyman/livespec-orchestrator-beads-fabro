@@ -40,24 +40,33 @@ public module per query-only skill:
   stale-cleanup checks (no-stale-merged-branch /
   no-stale-merged-pr-branch / no-stale-worktree) against the repo's
   git/gh state; `dispatch`/`loop` drive ready work-items
-  through the `.fabro/workflows/implement-work-item/` phase graph
-  (Fabro sandbox run, guarded by a coarse wall-clock progress watchdog
-  that `fabro rm -f`-es a sustained-no-progress run and reports a
-  distinct `stalled-no-progress` outcome → auto-merge confirmation →
-  post-merge janitor in a fresh detached worktree of merged master,
-  with provisioning failures classified as janitor-env-degraded rather
-  than work-item failures → Ledger close + journal). Bodies live in the
-  `_dispatcher_*` private helpers (`_dispatcher_ledger_checks.py`,
-  `_dispatcher_spec_checks.py`, `_dispatcher_spec_commitments.py`,
-  `_dispatcher_janitor_checks.py`, `_dispatcher_plan.py`,
-  `_dispatcher_engine.py`, `_dispatcher_io.py`, `_dispatcher_notify.py`,
+  through the admission valve + the `.fabro/workflows/implement-work-item/`
+  phase graph (admission: admit the highest-`rank` admission-eligible
+  `ready` items up to the per-repo `dispatcher.wip_cap`, set the assignee,
+  transition `ready → active`; a manual / unresolvable-assignee item is
+  held + surfaced → Fabro sandbox run, guarded by a coarse wall-clock
+  progress watchdog that `fabro rm -f`-es a sustained-no-progress run and
+  reports a distinct `stalled-no-progress` outcome → auto-merge
+  confirmation → post-merge janitor in a fresh detached worktree of merged
+  master, with provisioning failures classified as janitor-env-degraded
+  rather than work-item failures → the post-merge acceptance valve
+  (`complete` → `acceptance`, then `accept` per the effective
+  `acceptance_policy`: `ai-only` → `done`, else park in `acceptance`) +
+  journal; a non-convergence terminal bounces the slice to `backlog`).
+  Bodies live in the `_dispatcher_*` private helpers
+  (`_dispatcher_ledger_checks.py`, `_dispatcher_spec_checks.py`,
+  `_dispatcher_spec_commitments.py`, `_dispatcher_janitor_checks.py`,
+  `_dispatcher_plan.py`, `_dispatcher_valves.py` — the pure admission /
+  acceptance planning layer (WIP-cap read, `plan_admissions`,
+  `acceptance_decision`, `reject_routing`), `_dispatcher_engine.py`,
+  `_dispatcher_io.py`, `_dispatcher_notify.py`,
   `_dispatcher_reflection.py`, `_dispatcher_watchdog.py`,
   `_dispatcher_cost.py` — the fail-closed cost-observability seam
   (work-item 5v9: `total_usd_micros` is null on every fabro run in
   v0.254.0, so autonomous mode refuses to keep picking on unobservable
   cost; the seam y0m's spend cap builds on). Its Ledger
-  writes are machine-path dispositions of already-filed items
-  (close-on-confirmed-merge).
+  writes (admit / complete / accept / reject / close-on-confirmed-merge)
+  are machine-path dispositions of already-filed items.
 - `rebalance_ranks.py` — the orchestrator-PRIVATE, on-demand bulk
   `rank` re-key (NOT a contract CLI and NOT a skill surface; never
   auto-fires). `rebalanced(items)` orders by the canonical

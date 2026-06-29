@@ -37,6 +37,7 @@ from livespec_orchestrator_beads_fabro.store import (
     read_work_items,
     register_custom_statuses,
     update_work_item_rank,
+    update_work_item_status,
 )
 from livespec_orchestrator_beads_fabro.types import AuditRecord, StoreConfig, WorkItem
 from livespec_runtime.work_items.rank import BOTTOM_SENTINEL
@@ -162,6 +163,19 @@ def test_update_work_item_rank_rekeys_in_place_leaving_other_fields() -> None:
     assert read_back.assignee == "alice"
     assert read_back.gap_id == "G1"
     assert read_back.status == "ready"
+
+
+def test_update_work_item_status_transitions_and_sets_assignee_in_place() -> None:
+    """The Dispatcher's admit/complete/bounce in-place status (+ assignee) write."""
+    append_work_item(path=_config(), item=_minimal_work_item(id_="li-st", status="ready"))
+    # admit: ready -> active + assignee.
+    update_work_item_status(path=_config(), item_id="li-st", status="active", assignee="fabro")
+    [read_back] = list(read_work_items(path=_config()))
+    assert (read_back.status, read_back.assignee) == ("active", "fabro")
+    # complete: active -> acceptance (no assignee change).
+    update_work_item_status(path=_config(), item_id="li-st", status="acceptance")
+    [read_back] = list(read_work_items(path=_config()))
+    assert (read_back.status, read_back.assignee) == ("acceptance", "fabro")
 
 
 def test_legacy_rank_less_record_reads_bottom_sentinel(

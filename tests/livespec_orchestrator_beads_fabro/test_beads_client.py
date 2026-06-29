@@ -362,6 +362,24 @@ def test_build_update_argv_full() -> None:
     assert "--metadata" in argv
 
 
+def test_build_update_argv_includes_assignee() -> None:
+    # The admission valve's ready -> active transition sets the doer via
+    # `bd update --assignee`.
+    argv = _build_update_argv(
+        issue_id="li-a",
+        status="active",
+        parent_id=None,
+        add_labels=None,
+        metadata=None,
+        assignee="fabro",
+    )
+    assert argv[:2] == ["update", "li-a"]
+    assert "--status" in argv
+    assert "active" in argv
+    assignee_index = argv.index("--assignee")
+    assert argv[assignee_index + 1] == "fabro"
+
+
 def test_build_update_argv_repeats_add_label_per_label() -> None:
     argv = _build_update_argv(
         issue_id="li-a",

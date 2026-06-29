@@ -1,19 +1,18 @@
-"""Integration-tier acceptance for the Dispatcher's human-gated refusal.
+"""Integration-tier acceptance for the Dispatcher's manual-admission hold.
 
 Binds SPECIFICATION/scenarios.md "Scenario 10 — Dispatcher refuses a
-human-gated item" and the contracts.md clause:
+human-gated item". Under the work-item-state-machine lifecycle the prior
+`human-gated` text marker is REPLACED by the first-class `admission_policy`
+field (per SPECIFICATION/contracts.md): a spec-change / risky item is held at
+the admission valve as `admission_policy=manual` (the safe default via
+inherit) and surfaced for the maintainer to approve into `ready`, rather than
+auto-dispatched into a Fabro sandbox. This is the realization of Scenario 10's
+"spec change always reaches the maintainer, never the factory".
 
-    The Dispatcher MUST refuse to auto-dispatch a `human-gated` (spec-change)
-    item — it surfaces it for the maintainer instead.
-
-This is the top-of-pyramid behavior journey for the Dispatcher's human-gated
-gate: it drives the real `dispatcher.main(["dispatch", ...])` CLI through the
-REAL store/client seam against the in-memory `FakeBeadsClient` (the hermetic CI
+It drives the real `dispatcher.main(["dispatch", ...])` CLI through the REAL
+store/client seam against the in-memory `FakeBeadsClient` (the hermetic CI
 backend), with `run_dispatch` replaced by a recording stand-in so the test can
-prove NO fabro run was launched for a human-gated item. The marker rides in the
-work-item's title/description — the only field-space the `WorkItem` schema
-exposes without a cross-repo contracts.md change (the mapped beads record drops
-unrecognised labels), the same encoding the sibling `host-only` gate uses.
+prove NO fabro run was launched for a held item.
 """
 
 from __future__ import annotations
@@ -27,11 +26,7 @@ import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 from livespec_orchestrator_beads_fabro.commands import dispatcher
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
-from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
-    DispatchPlan,
-    human_gated_surface_detail,
-    is_human_gated_item,
-)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
@@ -67,7 +62,7 @@ def _hermetic_dispatch_env(
     isolation: every case starts against an empty in-memory tenant and the
     singleton is dropped afterwards so nothing leaks between cases.
     """
-    scratch = tmp_path_factory.mktemp("fabro-human-gated")
+    scratch = tmp_path_factory.mktemp("fabro-admission-held")
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
     monkeypatch.setenv("GH_TOKEN", "test-github-token")
@@ -75,7 +70,7 @@ def _hermetic_dispatch_env(
     # the only seam that flips the dispatcher onto the in-memory tenant.
     monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
     # The dispatcher's fail-open terminal-failure alarm POSTs to ntfy on a
-    # non-green outcome; scrub the topic so a surface/bounce test never fires a
+    # non-green outcome; scrub the topic so a held-item test never fires a
     # real network request (the host carries a live topic).
     for _ntfy_env in ("CLAUDE_NTFY_DISPATCHER_TOPIC", "CLAUDE_NTFY_TOPIC", "CLAUDE_NTFY_SERVER"):
         monkeypatch.delenv(_ntfy_env, raising=False)
@@ -117,6 +112,11 @@ def _item(**overrides: object) -> WorkItem:
         reason=None,
         audit=None,
         superseded_by=None,
+        # No explicit admission_policy -> inherits the safe default `manual`,
+        # so the default factory item is HELD at the admission valve; the
+        # admitted-item case overrides with admission_policy="auto".
+        admission_policy=None,
+        acceptance_policy="ai-only",
     )
     return replace(base, **overrides)
 
@@ -145,9 +145,9 @@ def _stored() -> dict[str, WorkItem]:
 class _RecordingRunDispatch:
     """run_dispatch stand-in: records each call and returns a green outcome.
 
-    The human-gated case asserts it was NEVER called (`calls == []` proves no
-    fabro launch — the whole point); the ordinary-item case asserts it WAS
-    called, so the single shared body is genuinely exercised.
+    The held case asserts it was NEVER called (`calls == []` proves no fabro
+    launch — the whole point); the admitted case asserts it WAS called, so the
+    single shared body is genuinely exercised.
     """
 
     calls: list[str] = field(default_factory=list)
@@ -167,58 +167,20 @@ class _RecordingRunDispatch:
 
 
 # ---------------------------------------------------------------------------
-# Pure predicate: is_human_gated_item
+# Scenario 10: a manual-admission (spec-change) slice is held + surfaced for
+# the maintainer rather than dispatched into the factory.
 # ---------------------------------------------------------------------------
 
 
-def test_is_human_gated_item_false_for_ordinary_item() -> None:
-    assert is_human_gated_item(item=_item()) is False
-
-
-def test_is_human_gated_item_true_for_marker_in_title() -> None:
-    assert is_human_gated_item(item=_item(title="[human-gated] revise the spec")) is True
-
-
-def test_is_human_gated_item_true_for_underscore_marker_in_description() -> None:
-    assert is_human_gated_item(item=_item(description="Spec change. human_gated.")) is True
-
-
-def test_is_human_gated_item_is_case_insensitive() -> None:
-    assert is_human_gated_item(item=_item(description="Autonomy tier: HUMAN-GATED")) is True
-
-
-def test_is_human_gated_item_does_not_match_substring_of_other_words() -> None:
-    assert is_human_gated_item(item=_item(description="superhuman-gatedness nonsense")) is False
-    assert (
-        is_human_gated_item(item=_item(description="a human gated the release manually")) is False
-    )
-
-
-def test_human_gated_surface_detail_is_actionable() -> None:
-    detail = human_gated_surface_detail(item_id="livespec-impl-beads-spec1")
-    assert "livespec-impl-beads-spec1" in detail
-    assert "human-gated" in detail
-    # The maintainer must learn it should be SURFACED (driven by hand), not
-    # auto-dispatched to the factory.
-    assert "maintainer" in detail.lower()
-    assert "propose-change" in detail
-
-
-# ---------------------------------------------------------------------------
-# Scenario 10: a human-gated slice is surfaced rather than dispatched.
-# ---------------------------------------------------------------------------
-
-
-def test_dispatch_surfaces_human_gated_item_without_launching_fabro(
+def test_dispatch_holds_manual_admission_item_without_launching_fabro(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
-    item = _item(
-        title="Revise the §Boundary rule",
-        description="Spec-change slice, autonomy tier human-gated.",
-    )
+    # No explicit admission_policy -> effective `manual`: a spec-change slice
+    # the maintainer must approve, never auto-dispatched.
+    item = _item(title="Revise the boundary rule", description="Spec-change slice.")
     append_work_item(path=_config(), item=item)
     recording = _RecordingRunDispatch()
     monkeypatch.setattr(dispatcher, "run_dispatch", recording)
@@ -238,23 +200,23 @@ def test_dispatch_surfaces_human_gated_item_without_launching_fabro(
 
     # Non-zero exit so the maintainer's eyes are required.
     assert exit_code == 1
-    # run_dispatch (the fabro launch) was never reached — spec change never
-    # reaches the factory.
+    # run_dispatch (the fabro launch) was never reached — a manual-admission
+    # item never reaches the factory.
     assert recording.calls == []
     payload = json.loads(capsys.readouterr().out)
     assert payload[0]["status"] == "failed"
-    assert payload[0]["stage"] == "human-gated-surfaced"
-    assert "human-gated" in payload[0]["detail"]
-    # The item is NOT closed — it stays open for the maintainer to drive.
+    assert payload[0]["stage"] == "admission-held"
+    assert "manual" in payload[0]["detail"]
+    # The item is NOT admitted — it stays `ready` for the maintainer to approve.
     assert _stored()[item.id].status == "ready"
 
 
-def test_dispatch_journals_human_gated_surface(
+def test_dispatch_journals_admission_held(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
-    item = _item(title="human-gated spec-change slice")
+    item = _item()
     append_work_item(path=_config(), item=item)
     recording = _RecordingRunDispatch()
     monkeypatch.setattr(dispatcher, "run_dispatch", recording)
@@ -269,18 +231,18 @@ def test_dispatch_journals_human_gated_surface(
     outcome_record = next(
         json.loads(line)
         for line in journal_text.splitlines()
-        if json.loads(line)["stage"] == "outcome"
+        if json.loads(line).get("stage") == "outcome"
     )
-    assert outcome_record["outcome"]["stage"] == "human-gated-surfaced"
+    assert outcome_record["outcome"]["stage"] == "admission-held"
 
 
-def test_dispatch_does_not_surface_ordinary_item(
+def test_dispatch_admits_auto_item(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Guard against over-broad matching: an ordinary item still dispatches."""
+    """Guard against over-broad holding: an auto-admission item still dispatches."""
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
-    item = _item(description="A perfectly ordinary impl task, no markers.")
+    item = _item(admission_policy="auto")
     append_work_item(path=_config(), item=item)
     recording = _RecordingRunDispatch()
     monkeypatch.setattr(dispatcher, "run_dispatch", recording)
@@ -300,3 +262,5 @@ def test_dispatch_does_not_surface_ordinary_item(
 
     assert exit_code == 0
     assert recording.calls == [item.id]
+    # Admitted: the item was transitioned ready -> active before the launch.
+    assert _stored()[item.id].status == "active"

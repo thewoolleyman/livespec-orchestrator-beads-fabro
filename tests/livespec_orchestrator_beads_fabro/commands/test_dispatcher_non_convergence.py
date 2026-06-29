@@ -1,13 +1,13 @@
 """Unit coverage for the Dispatcher's non-convergence bounce fail-soft path.
 
-The integration-tier journey (the marked-and-surfaced behavior bound to
+The integration-tier journey (the bounced-and-surfaced behavior bound to
 SPECIFICATION/scenarios.md "Scenario 11 — Dispatcher bounces a non-converging
 slice to needs-regroom") lives in
 `tests/integration/test_dispatcher_non_convergence_scenario11.py`. This module
 covers the fail-soft branch that integration cannot reach hermetically: a
-ledger-write failure during the bounce (the verdict is already final, so the
-write error is journaled as `non-convergence-bounce-error` and swallowed — the
-dispatch never crashes on the escalation write).
+ledger-write failure during the bounce-to-backlog (the verdict is already
+final, so the write error is journaled as `non-convergence-bounce-error` and
+swallowed — the dispatch never crashes on the escalation write).
 """
 
 from __future__ import annotations
@@ -74,13 +74,13 @@ def test_bounce_failsoft_journals_error_when_ledger_write_raises(
     def _raise(**_kwargs: object) -> None:
         raise WorkItemNotFoundError(item_id=item.id)
 
-    # The bounce resolves the store config and applies the label; force the
-    # label write to fail (the item vanished between dispatch and bounce).
+    # The bounce resolves the store config and transitions to backlog; force
+    # the status write to fail (the item vanished between dispatch and bounce).
     monkeypatch.setattr(dispatcher, "_store_config", lambda *, repo: repo)
-    monkeypatch.setattr(dispatcher, "enter_needs_regroom", _raise)
+    monkeypatch.setattr(dispatcher, "update_work_item_status", _raise)
 
     # Must NOT raise — the verdict is already final.
-    dispatcher._bounce_non_convergence_to_regroom(  # noqa: SLF001 — fail-soft branch under test
+    dispatcher._bounce_non_convergence_to_backlog(  # noqa: SLF001 — fail-soft branch under test
         repo=tmp_path,
         item=item,
         outcome=_stalled_outcome(item_id=item.id),
