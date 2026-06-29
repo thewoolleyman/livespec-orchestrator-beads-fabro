@@ -9,7 +9,9 @@ CLI surface per SPECIFICATION/contracts.md:
 Filters:
 
 - `--filter=gap-tied` / `--filter=freeform` — origin filter
-- `--filter=blocked` — status == "blocked"
+- `--filter=blocked` — renders in the `blocked` lane (stored `blocked`, OR
+  stored `ready` with an open dependency rendered as `blocked:dependency`),
+  via `lifecycle.lane_of`
 - `--filter=ready` — renders in the `ready` lane (stored `ready` AND every
   depends_on item resolves closed), via `lifecycle.is_item_ready`
 - `--filter=closed` — status == "done"
@@ -27,7 +29,11 @@ Output:
   includes the optional `spec_commitment_hint` field (string or
   `null`) — the pairing surface livespec's
   `unresolved-spec-commitment` doctor invariant matches against
-  per livespec PC #4 sub-proposal 3.
+  per livespec PC #4 sub-proposal 3 — plus two computed flat keys,
+  `lane` (the rendered lane via `lifecycle.lane_of`) and `lane_reason`
+  (the rendered blocked reason: `needs-human` / `infra-external` /
+  `dependency`, else `null`), so the console consumes the lane directly
+  rather than re-deriving it from the raw status.
 """
 
 import argparse
@@ -39,7 +45,7 @@ from pathlib import Path
 from typing import Literal
 
 from livespec_runtime.cross_repo.types import CrossRepoManifest
-from livespec_runtime.work_items.lifecycle import is_item_ready
+from livespec_runtime.work_items.lifecycle import is_item_ready, lane_of
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
@@ -82,7 +88,11 @@ def main(argv: list[str] | None = None) -> int:
         manifest=manifest,
     )
     if args.as_json:
-        _write_json(items=filtered)
+        _write_json(
+            items=filtered,
+            index={item.id: item for item in materialized},
+            manifest=manifest,
+        )
     else:
         _write_human(items=filtered)
     return 0
@@ -124,7 +134,8 @@ def _filter_by_name(
         "all": lambda _item, _ix: True,
         "gap-tied": lambda item, _ix: item.origin == "gap-tied",
         "freeform": lambda item, _ix: item.origin == "freeform",
-        "blocked": lambda item, _ix: item.status == "blocked",
+        "blocked": lambda item, ix: lane_of(item=item, index=ix, manifest=manifest).name
+        == "blocked",
         "ready": lambda item, ix: is_item_ready(item=item, index=ix, manifest=manifest),
         "closed": lambda item, _ix: item.status == "done",
     }
@@ -132,8 +143,13 @@ def _filter_by_name(
     return [item for item in materialized if predicate(item, index)]
 
 
-def _write_json(*, items: list[WorkItem]) -> None:
-    payload = [_work_item_to_dict(item=item) for item in items]
+def _write_json(
+    *,
+    items: list[WorkItem],
+    index: dict[str, WorkItem],
+    manifest: CrossRepoManifest,
+) -> None:
+    payload = [_work_item_to_dict(item=item, index=index, manifest=manifest) for item in items]
     _ = sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
@@ -147,7 +163,12 @@ def _write_human(*, items: list[WorkItem]) -> None:
         _ = sys.stdout.write(line)
 
 
-def _work_item_to_dict(*, item: WorkItem) -> dict[str, object]:
+def _work_item_to_dict(
+    *,
+    item: WorkItem,
+    index: dict[str, WorkItem],
+    manifest: CrossRepoManifest,
+) -> dict[str, object]:
     payload = asdict(item)
     payload["depends_on"] = list(item.depends_on)
     if item.audit is not None:
@@ -156,4 +177,11 @@ def _work_item_to_dict(*, item: WorkItem) -> dict[str, object]:
             "commits": list(item.audit.commits),
             "files_changed": list(item.audit.files_changed),
         }
+    # The two computed flat keys (consume-don't-recompute): the console reads
+    # `lane`/`lane_reason` directly off the JSON view rather than re-deriving a
+    # lane from the raw status, so the shared `lane_of` authority is the single
+    # place "open dependency" / "stored blocked" is resolved into a rendered lane.
+    lane = lane_of(item=item, index=index, manifest=manifest)
+    payload["lane"] = lane.name
+    payload["lane_reason"] = lane.reason
     return payload
