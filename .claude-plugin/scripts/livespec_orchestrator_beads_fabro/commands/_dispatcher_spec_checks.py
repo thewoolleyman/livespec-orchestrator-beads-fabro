@@ -9,7 +9,7 @@ source recoverable at livespec commit 682bf9cc under
 trio lives in the sibling `_dispatcher_ledger_checks.py`; this module
 carries the rest:
 
-- `no-stalled-epic` (severity `fail`) — an open/in_progress epic whose
+- `no-stalled-epic` (severity `fail`) — a live (non-`done`) epic whose
   non-empty `depends_on` resolves entirely closed is a data-model
   contradiction: the aggregated work is complete but the epic record
   was never transitioned. Unparseable, missing, or `unknown`-resolving
@@ -90,7 +90,7 @@ def _check_stalled_epics(
     index = {item.id: item for item in items}
     findings: list[LedgerFinding] = []
     for item in items:
-        if item.type != "epic" or item.status not in ("open", "in_progress"):
+        if item.type != "epic" or item.status == "done":
             continue
         if not item.depends_on:
             continue
@@ -117,9 +117,7 @@ def _check_stale_gap_tied(*, items: list[WorkItem], spec_root: Path) -> list[Led
     open_gap_tied = [
         item
         for item in items
-        if item.origin == "gap-tied"
-        and item.status in ("open", "in_progress")
-        and item.gap_id is not None
+        if item.origin == "gap-tied" and item.status != "done" and item.gap_id is not None
     ]
     if not open_gap_tied:
         return []
@@ -186,7 +184,7 @@ def _status_lookup(*, index: dict[str, WorkItem]) -> Callable[[str], RefStatus]:
         record = index.get(work_item_id)
         if record is None:
             return RefStatus.UNKNOWN
-        if record.status == "closed":
+        if record.status == "done":
             return RefStatus.CLOSED
         return RefStatus.OPEN
 

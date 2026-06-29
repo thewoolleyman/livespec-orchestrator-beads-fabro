@@ -68,7 +68,7 @@ def run_ledger_checks(*, items: list[WorkItem]) -> list[LedgerFinding]:
     dispatch from.
     """
     index = {item.id: item for item in items}
-    active = [item for item in items if item.status != "closed"]
+    active = [item for item in items if item.status != "done"]
     findings: list[LedgerFinding] = []
     findings.extend(_check_ref_wellformedness(active=active))
     findings.extend(_check_orphan_dependencies(active=active, index=index))

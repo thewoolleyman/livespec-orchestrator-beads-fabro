@@ -10,7 +10,6 @@ process-singleton fake makes the seeded writes visible to `main`.
 import json
 
 import pytest
-from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands.list_work_items import main
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import AuditRecord, StoreConfig, WorkItem
@@ -28,24 +27,20 @@ def _config() -> StoreConfig:
 
 
 def _seed(item: WorkItem) -> None:
-    # `append_work_item` creates an OPEN issue (and closes in place for the
-    # `closed` case). Intermediate lifecycle statuses (`blocked`,
-    # `in_progress`, `deferred`) are reached by a subsequent status
-    # transition in the tenant — modelled here via the same fake client the
-    # store talks to.
+    # `append_work_item` now sets the work-item's status during the write
+    # (2-step `bd create` + `bd update --status` for live states; close-in-place
+    # for `done`), so no follow-up status transition is needed here.
     append_work_item(path=_config(), item=item)
-    if item.status not in ("open", "closed"):
-        make_beads_client(config=_config()).update_issue(issue_id=item.id, status=item.status)
 
 
 def _item(
     *,
     id_: str,
-    status: str = "open",
+    status: str = "ready",
     origin: str = "freeform",
     gap_id: str | None = None,
     depends_on: tuple[str, ...] = (),
-    priority: int = 2,
+    rank: str = "a2",
     spec_commitment_hint: str | None = None,
 ) -> WorkItem:
     return WorkItem(
@@ -56,12 +51,12 @@ def _item(
         description="d",
         origin=origin,  # type: ignore[arg-type]
         gap_id=gap_id,
-        priority=priority,
+        rank=rank,
         assignee=None,
         depends_on=depends_on,
         captured_at="2026-05-19T00:00:00Z",
-        resolution="completed" if status == "closed" else None,
-        reason="done" if status == "closed" else None,
+        resolution="completed" if status == "done" else None,
+        reason="done" if status == "done" else None,
         audit=AuditRecord(
             verification_timestamp="2026-05-19T01:00:00Z",
             commits=("c",),
@@ -69,7 +64,7 @@ def _item(
             merge_sha="abc123",
             pr_number=None,
         )
-        if status == "closed"
+        if status == "done"
         else None,
         superseded_by=None,
         spec_commitment_hint=spec_commitment_hint,
@@ -160,7 +155,7 @@ def test_main_filter_ready_does_not_exclude_missing_local_dep(
 def test_main_filter_ready_includes_closed_deps(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _seed(_item(id_="li-a", status="closed"))
+    _seed(_item(id_="li-a", status="done"))
     _seed(_item(id_="li-b", depends_on=("li-a",)))
     rc = main(["--filter=ready"])
     captured = capsys.readouterr()
@@ -172,7 +167,7 @@ def test_main_filter_closed(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _seed(_item(id_="li-a"))
-    _seed(_item(id_="li-b", status="closed"))
+    _seed(_item(id_="li-b", status="done"))
     rc = main(["--filter=closed"])
     captured = capsys.readouterr()
     assert "li-b" in captured.out
@@ -195,7 +190,7 @@ def test_main_with_gap_id_filter(
 def test_main_json_output_with_audit(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _seed(_item(id_="li-a", status="closed"))
+    _seed(_item(id_="li-a", status="done"))
     rc = main(["--json"])
     captured = capsys.readouterr()
     assert rc == 0
@@ -294,8 +289,8 @@ def test_main_with_spec_commitment_hint_filter_combines_with_filter_name(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Hint filter composes with --filter (intersect, not union)."""
-    _seed(_item(id_="li-open", status="open", spec_commitment_hint="topic-x"))
-    _seed(_item(id_="li-closed", status="closed", spec_commitment_hint="topic-x"))
+    _seed(_item(id_="li-open", status="ready", spec_commitment_hint="topic-x"))
+    _seed(_item(id_="li-closed", status="done", spec_commitment_hint="topic-x"))
     rc = main(["--filter=closed", "--with-spec-commitment-hint", "topic-x"])
     captured = capsys.readouterr()
     assert rc == 0

@@ -3,15 +3,17 @@
 The work-item MODEL (`WorkItem`, `AuditRecord`) and its schema
 enums/aliases (`WorkItemStatus`/`WorkItemType`/`Origin`/`Resolution`/
 `DependsOnRaw`) are the SHARED surface published by
-`livespec_runtime.work_items.types` at runtime v0.4.0 — beads used to
+`livespec_runtime.work_items.types` at runtime v0.5.0 — beads used to
 re-implement them identically here. They are now re-exported from the
 runtime package so the single canonical definition is the source of
 record; every existing call site that imports them from
 `livespec_orchestrator_beads_fabro.types` keeps working unchanged. The work-item
-schema is codified by SPECIFICATION/contracts.md; the runtime model carries the unified 16-field
-shape (beads' historical record MINUS the append-only `supersedes`
-pointer, which the unified model adds defaulted `None` — beads is
-inherently one-record-per-id and never populates it).
+schema is codified by SPECIFICATION/contracts.md; the runtime model carries the unified 20-field
+shape — the 7-state `status`, the required non-null `rank` ordering key
+(the prior `priority: int` is REMOVED), the `admission_policy` /
+`acceptance_policy` / `blocked_reason` policy fields, and the append-only
+`supersedes` pointer (which beads, inherently one-record-per-id, never
+populates).
 
 The Spec Reader return types (`SpecSnapshot`/`SpecDiff`/`FileDiff`) and
 the beads-tenant connection descriptor (`StoreConfig`) are NOT part of

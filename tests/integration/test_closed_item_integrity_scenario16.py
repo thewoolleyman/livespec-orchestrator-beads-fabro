@@ -113,7 +113,7 @@ def _write_coverage(*, test_node: str) -> None:
 def _item(
     *,
     id_: str,
-    status: str = "closed",
+    status: str = "done",
     origin: str = "gap-tied",
     gap_id: str | None = _GAP_ID,
     resolution: str | None = "completed",
@@ -126,7 +126,7 @@ def _item(
         description="d",
         origin=origin,  # type: ignore[arg-type]
         gap_id=gap_id,
-        priority=1,
+        rank="a1",
         assignee=None,
         depends_on=(),
         captured_at="2026-06-20T00:00:00Z",
@@ -212,7 +212,7 @@ def test_open_gap_tied_item_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
     governs CLOSED items only."""
     monkeypatch.setenv("LIVESPEC_CLOSED_ITEM_INTEGRITY", "fail")
     _write_coverage(test_node="TODO")
-    _seed(_item(id_="li-open", status="open", resolution=None))
+    _seed(_item(id_="li-open", status="ready", resolution=None))
     assert _CHECK.main() == 0
 
 

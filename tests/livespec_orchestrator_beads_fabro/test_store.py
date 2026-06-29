@@ -35,8 +35,10 @@ from livespec_orchestrator_beads_fabro.store import (
     materialize_work_items,
     read_work_item_comments,
     read_work_items,
+    register_custom_statuses,
 )
 from livespec_orchestrator_beads_fabro.types import AuditRecord, StoreConfig, WorkItem
+from livespec_runtime.work_items.rank import BOTTOM_SENTINEL
 from livespec_runtime.work_items.store import WorkItemStore
 
 
@@ -61,7 +63,7 @@ def _fake() -> FakeBeadsClient:
 def _minimal_work_item(
     *,
     id_: str = "li-aaa111",
-    status: str = "open",
+    status: str = "ready",
     origin: str = "freeform",
     gap_id: str | None = None,
     resolution: str | None = None,
@@ -70,8 +72,11 @@ def _minimal_work_item(
     depends_on: tuple[object, ...] = (),
     superseded_by: str | None = None,
     spec_commitment_hint: str | None = None,
-    priority: int = 2,
+    rank: str = "a0",
     assignee: str | None = None,
+    admission_policy: str | None = None,
+    acceptance_policy: str | None = None,
+    blocked_reason: str | None = None,
 ) -> WorkItem:
     return WorkItem(
         id=id_,
@@ -81,7 +86,7 @@ def _minimal_work_item(
         description="d",
         origin=origin,  # type: ignore[arg-type]
         gap_id=gap_id,
-        priority=priority,
+        rank=rank,
         assignee=assignee,
         depends_on=depends_on,
         captured_at="2026-05-19T00:00:00Z",
@@ -90,6 +95,9 @@ def _minimal_work_item(
         audit=audit,
         superseded_by=superseded_by,
         spec_commitment_hint=spec_commitment_hint,
+        admission_policy=admission_policy,  # type: ignore[arg-type]
+        acceptance_policy=acceptance_policy,  # type: ignore[arg-type]
+        blocked_reason=blocked_reason,  # type: ignore[arg-type]
     )
 
 
@@ -102,7 +110,7 @@ def test_read_work_items_empty_tenant_yields_nothing() -> None:
     assert list(read_work_items(path=_config())) == []
 
 
-def test_append_then_read_open_work_item_roundtrips() -> None:
+def test_append_then_read_ready_work_item_roundtrips() -> None:
     item = _minimal_work_item()
     append_work_item(path=_config(), item=item)
     [read_back] = list(read_work_items(path=_config()))
@@ -129,12 +137,87 @@ def test_spec_commitment_hint_maps_to_native_spec_id() -> None:
     assert read_back.spec_commitment_hint == "topic-x"
 
 
-def test_assignee_and_priority_roundtrip() -> None:
-    item = _minimal_work_item(id_="li-pa", priority=0, assignee="alice")
+def test_assignee_and_rank_roundtrip() -> None:
+    item = _minimal_work_item(id_="li-pa", rank="a5", assignee="alice")
     append_work_item(path=_config(), item=item)
+    record = _fake().show_issue(issue_id="li-pa")
+    assert record["metadata"]["rank"] == "a5"
     [read_back] = list(read_work_items(path=_config()))
-    assert read_back.priority == 0
+    assert read_back.rank == "a5"
     assert read_back.assignee == "alice"
+
+
+def test_legacy_rank_less_record_reads_bottom_sentinel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A legacy beads issue whose metadata lacks `rank` reads back the bottom
+    sentinel, so it sorts strictly after every real key without making the
+    domain `WorkItem.rank` nullable."""
+    _install_stub(monkeypatch=monkeypatch, records=[_raw_work_item(metadata={})])
+    [read_back] = list(read_work_items(path=_config()))
+    assert read_back.rank == BOTTOM_SENTINEL
+
+
+def test_policy_fields_round_trip_via_labels() -> None:
+    item = _minimal_work_item(
+        id_="li-pol",
+        status="blocked",
+        admission_policy="manual",
+        acceptance_policy="ai-then-human",
+        blocked_reason="needs-human",
+    )
+    append_work_item(path=_config(), item=item)
+    record = _fake().show_issue(issue_id="li-pol")
+    assert "admission:manual" in record["labels"]
+    assert "acceptance:ai-then-human" in record["labels"]
+    assert "blocked-reason:needs-human" in record["labels"]
+    [read_back] = list(read_work_items(path=_config()))
+    assert read_back.admission_policy == "manual"
+    assert read_back.acceptance_policy == "ai-then-human"
+    assert read_back.blocked_reason == "needs-human"
+
+
+def test_absent_policy_labels_read_back_none() -> None:
+    """A WorkItem with no policy fields writes no policy labels and reads None."""
+    append_work_item(path=_config(), item=_minimal_work_item(id_="li-nopol"))
+    record = _fake().show_issue(issue_id="li-nopol")
+    assert not any(
+        label.startswith(("admission:", "acceptance:", "blocked-reason:"))
+        for label in record["labels"]
+    )
+    [read_back] = list(read_work_items(path=_config()))
+    assert read_back.admission_policy is None
+    assert read_back.acceptance_policy is None
+    assert read_back.blocked_reason is None
+
+
+def test_append_lands_custom_status_via_two_step() -> None:
+    """A non-done create is a 2-step path: `bd create` lands `open`, then the
+    status is set to the custom livespec state."""
+    append_work_item(path=_config(), item=_minimal_work_item(id_="li-bk", status="backlog"))
+    record = _fake().show_issue(issue_id="li-bk")
+    assert record["status"] == "backlog"
+    [read_back] = list(read_work_items(path=_config()))
+    assert read_back.status == "backlog"
+
+
+def test_done_maps_to_beads_closed_and_back() -> None:
+    """livespec `done` is the one adapter name-mapping: it writes beads
+    `closed` and reads back `done`."""
+    append_work_item(path=_config(), item=_minimal_work_item(id_="li-d", status="ready"))
+    append_work_item(
+        path=_config(),
+        item=_minimal_work_item(id_="li-d", status="done", resolution="completed", reason="ship"),
+    )
+    record = _fake().show_issue(issue_id="li-d")
+    assert record["status"] == "closed"
+    [read_back] = list(read_work_items(path=_config()))
+    assert read_back.status == "done"
+
+
+def test_register_custom_statuses_provisions_the_tenant() -> None:
+    register_custom_statuses(path=_config())
+    assert _fake().custom_statuses_registered is True
 
 
 def test_audit_maps_to_metadata_losslessly() -> None:
@@ -147,7 +230,7 @@ def test_audit_maps_to_metadata_losslessly() -> None:
     )
     item = _minimal_work_item(
         id_="li-zzz999",
-        status="closed",
+        status="done",
         resolution="completed",
         reason="done",
         audit=audit,
@@ -174,7 +257,7 @@ def test_audit_with_null_pr_number_roundtrips() -> None:
     )
     item = _minimal_work_item(
         id_="li-merge8",
-        status="closed",
+        status="done",
         resolution="completed",
         audit=audit,
     )
@@ -185,10 +268,11 @@ def test_audit_with_null_pr_number_roundtrips() -> None:
     assert read_back.audit.pr_number is None
 
 
-def test_work_item_without_audit_has_empty_metadata() -> None:
+def test_work_item_without_audit_has_rank_only_metadata() -> None:
     append_work_item(path=_config(), item=_minimal_work_item(id_="li-noaudit"))
     record = _fake().show_issue(issue_id="li-noaudit")
-    assert record["metadata"] == {}
+    # `rank` always rides in metadata; with no audit, that is all it carries.
+    assert record["metadata"] == {"rank": "a0"}
     [read_back] = list(read_work_items(path=_config()))
     assert read_back.audit is None
 
@@ -333,7 +417,7 @@ def test_depends_on_local_dict_with_non_string_id_emits_no_edge() -> None:
 
 
 def test_close_in_place_mutates_existing_record_no_second_record() -> None:
-    open_item = _minimal_work_item(id_="li-a", status="open")
+    open_item = _minimal_work_item(id_="li-a", status="ready")
     append_work_item(path=_config(), item=open_item)
     audit = AuditRecord(
         verification_timestamp="2026-05-19T02:00:00Z",
@@ -344,7 +428,7 @@ def test_close_in_place_mutates_existing_record_no_second_record() -> None:
     )
     closure = _minimal_work_item(
         id_="li-a",
-        status="closed",
+        status="done",
         resolution="completed",
         reason="shipped",
         audit=audit,
@@ -361,7 +445,7 @@ def test_close_in_place_mutates_existing_record_no_second_record() -> None:
 
 
 def test_close_in_place_reads_back_resolution_and_audit() -> None:
-    append_work_item(path=_config(), item=_minimal_work_item(id_="li-a", status="open"))
+    append_work_item(path=_config(), item=_minimal_work_item(id_="li-a", status="ready"))
     audit = AuditRecord(
         verification_timestamp="2026-05-19T02:00:00Z",
         commits=(),
@@ -372,7 +456,7 @@ def test_close_in_place_reads_back_resolution_and_audit() -> None:
         path=_config(),
         item=_minimal_work_item(
             id_="li-a",
-            status="closed",
+            status="done",
             resolution="spec-revised",
             reason="superseded by spec",
             audit=audit,
@@ -380,7 +464,7 @@ def test_close_in_place_reads_back_resolution_and_audit() -> None:
     )
     materialized = materialize_work_items(records=read_work_items(path=_config()))
     closed = materialized["li-a"]
-    assert closed.status == "closed"
+    assert closed.status == "done"
     assert closed.resolution == "spec-revised"
     assert closed.reason == "superseded by spec"
     assert closed.audit is not None
@@ -388,10 +472,10 @@ def test_close_in_place_reads_back_resolution_and_audit() -> None:
 
 
 def test_close_in_place_without_resolution_adds_no_resolution_label() -> None:
-    append_work_item(path=_config(), item=_minimal_work_item(id_="li-a", status="open"))
+    append_work_item(path=_config(), item=_minimal_work_item(id_="li-a", status="ready"))
     append_work_item(
         path=_config(),
-        item=_minimal_work_item(id_="li-a", status="closed", reason="admin close"),
+        item=_minimal_work_item(id_="li-a", status="done", reason="admin close"),
     )
     record = _fake().show_issue(issue_id="li-a")
     assert not any(label.startswith("resolution:") for label in record["labels"])
@@ -410,7 +494,7 @@ def test_append_born_closed_item_for_absent_id_creates_then_closes() -> None:
         path=_config(),
         item=_minimal_work_item(
             id_="li-born",
-            status="closed",
+            status="done",
             resolution="completed",
             reason="done at birth",
             audit=audit,
@@ -549,25 +633,6 @@ def test_non_string_required_field_raises_mapping_error(
     with pytest.raises(BeadsMappingError) as excinfo:
         list(read_work_items(path=_config()))
     assert "title" in excinfo.value.detail
-
-
-def test_non_int_priority_raises_mapping_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _install_stub(monkeypatch=monkeypatch, records=[_raw_work_item(priority="high")])
-    with pytest.raises(BeadsMappingError) as excinfo:
-        list(read_work_items(path=_config()))
-    assert "priority" in excinfo.value.detail
-
-
-def test_bool_priority_raises_mapping_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """`True` is an int subclass but must NOT satisfy the integer priority."""
-    _install_stub(monkeypatch=monkeypatch, records=[_raw_work_item(priority=True)])
-    with pytest.raises(BeadsMappingError) as excinfo:
-        list(read_work_items(path=_config()))
-    assert "priority" in excinfo.value.detail
 
 
 def test_non_string_optional_field_raises_mapping_error(

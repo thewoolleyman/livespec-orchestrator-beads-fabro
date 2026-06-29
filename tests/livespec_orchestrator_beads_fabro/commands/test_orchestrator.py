@@ -372,11 +372,13 @@ def test_gap_capture_creates_gap_tied_work_items(
     assert out["skipped_existing"] == []
     items = {item.gap_id: item for item in _stored_items()}
     assert items["gap-aaa"].origin == "gap-tied"
-    assert items["gap-aaa"].priority == 1
     assert items["gap-aaa"].title == "First gap"
     assert "captured against spec version v002" in items["gap-aaa"].description
-    assert items["gap-bbb"].priority == 2
-    assert items["gap-bbb"].status == "open"
+    # Freshly captured gaps land in `backlog` (raw intake) carrying
+    # filing-order `rank`s (gap-aaa filed before gap-bbb).
+    assert items["gap-aaa"].status == "backlog"
+    assert items["gap-bbb"].status == "backlog"
+    assert items["gap-aaa"].rank < items["gap-bbb"].rank
 
 
 def test_gap_capture_skips_existing_and_payload_duplicates(

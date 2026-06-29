@@ -104,12 +104,12 @@ def _item(**overrides: object) -> WorkItem:
     base = WorkItem(
         id="livespec-impl-beads-t1",
         type="task",
-        status="open",
+        status="ready",
         title="A ready task",
         description="Do the thing.",
         origin="freeform",
         gap_id=None,
-        priority=2,
+        rank="a2",
         assignee=None,
         depends_on=(),
         captured_at="2026-06-11T00:00:00Z",
@@ -246,7 +246,7 @@ def test_dispatch_surfaces_human_gated_item_without_launching_fabro(
     assert payload[0]["stage"] == "human-gated-surfaced"
     assert "human-gated" in payload[0]["detail"]
     # The item is NOT closed — it stays open for the maintainer to drive.
-    assert _stored()[item.id].status == "open"
+    assert _stored()[item.id].status == "ready"
 
 
 def test_dispatch_journals_human_gated_surface(

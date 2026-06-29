@@ -340,7 +340,7 @@ def render_goal(
         f"DIRECTORY and NEVER cd to this path: it is the dispatcher's "
         f"host-side checkout and does NOT exist inside your sandbox): {repo}\n"
         f"Publish branch (push HEAD to this exact ref at the PR stage): {branch}\n"
-        f"Priority: P{item.priority}  Type: {item.type}\n"
+        f"Rank: {item.rank}  Type: {item.type}\n"
         f"{gap_line}"
         f"Title: {item.title}\n"
         "\n"

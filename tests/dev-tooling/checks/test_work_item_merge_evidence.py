@@ -84,7 +84,7 @@ def _item(
     *,
     id_: str,
     type_: str = "task",
-    status: str = "closed",
+    status: str = "done",
     resolution: str | None = "completed",
     audit: AuditRecord | None = None,
     depends_on: tuple[str, ...] = (),
@@ -97,7 +97,7 @@ def _item(
         description="d",
         origin="freeform",
         gap_id=None,
-        priority=2,
+        rank="a2",
         assignee=None,
         depends_on=depends_on,
         captured_at="2026-05-19T00:00:00Z",
@@ -131,7 +131,7 @@ def test_empty_tenant_passes_trivially() -> None:
 
 def test_open_work_item_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
     _force_reachable(monkeypatch=monkeypatch, reachable=False)
-    _seed(_item(id_="li-open", status="open", resolution=None))
+    _seed(_item(id_="li-open", status="ready", resolution=None))
     assert _CHECK.main() == 0
 
 
@@ -210,7 +210,7 @@ def test_closed_without_resolution_fails() -> None:
 
 
 def test_epic_with_all_children_closed_passes() -> None:
-    _seed(_item(id_="li-child", status="closed", resolution="wontfix", audit=None))
+    _seed(_item(id_="li-child", status="done", resolution="wontfix", audit=None))
     _seed(
         _item(
             id_="li-epic",
@@ -224,7 +224,7 @@ def test_epic_with_all_children_closed_passes() -> None:
 
 
 def test_epic_with_open_child_fails() -> None:
-    _seed(_item(id_="li-child", status="open", resolution=None, audit=None))
+    _seed(_item(id_="li-child", status="ready", resolution=None, audit=None))
     _seed(
         _item(
             id_="li-epic",
@@ -261,12 +261,12 @@ def test_epic_violation_skips_non_local_kind_child_entry() -> None:
     epic = WorkItem(
         id="li-epic",
         type="epic",
-        status="closed",
+        status="done",
         title="t",
         description="d",
         origin="freeform",
         gap_id=None,
-        priority=2,
+        rank="a2",
         assignee=None,
         depends_on=({"kind": "cross-repo", "ref": "sibling#li-x"},),
         captured_at="2026-05-19T00:00:00Z",
@@ -286,16 +286,16 @@ def test_epic_violation_resolves_typed_dict_local_child() -> None:
     id from that shape (not only the legacy bare string) so a non-closed child
     still fails the closed-epic gate.
     """
-    open_child = _item(id_="li-child", status="open", resolution=None, audit=None)
+    open_child = _item(id_="li-child", status="ready", resolution=None, audit=None)
     epic = WorkItem(
         id="li-epic",
         type="epic",
-        status="closed",
+        status="done",
         title="t",
         description="d",
         origin="freeform",
         gap_id=None,
-        priority=2,
+        rank="a2",
         assignee=None,
         depends_on=({"kind": "local", "work_item_id": "li-child"},),
         captured_at="2026-05-19T00:00:00Z",

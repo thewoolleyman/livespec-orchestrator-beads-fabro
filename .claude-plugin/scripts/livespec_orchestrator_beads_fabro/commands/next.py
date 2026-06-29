@@ -27,20 +27,19 @@ Algorithm:
 1. Load the cross-repo manifest from `<project-root>/.livespec.jsonc`
    (empty manifest when the file or `cross_repo_targets` block is
    absent).
-2. Identify ready items: status == "open" AND no `depends_on` entry
-   resolves to `OPEN` via `resolve_ref`. Missing local references
+2. Identify ready items via the shared `lifecycle.is_item_ready`: the
+   item renders in the `ready` lane (stored status `ready` AND no
+   `depends_on` entry resolves to `OPEN`). Missing local references
    resolve to `UNKNOWN` and therefore do NOT exclude (the doctor's
    `no-orphan-dependency` invariant is the right surface for that).
-3. Score by:
-   a. priority (lower number = more urgent),
-   b. origin (gap-tied beats freeform at the same priority),
-   c. captured_at (oldest first),
-   d. id (lexicographic tiebreaker).
+3. Score by the canonical `lifecycle.ready_sort_key` = `(rank, id)`:
+   the fractional `rank` is the sole ordering authority, with `id` as
+   the deterministic tie-break.
 4. Enumerate ALL ready items in ranked order as candidates.
 5. Apply `--offset` then `--limit` to produce the returned slice.
 6. Emit a `{candidates[], pagination}` envelope. Each candidate
    carries `action`, `reason`, `urgency`, and `work_item_ref`,
-   plus impl-beads-specific `priority` and `origin` fields
+   plus impl-beads-specific `rank` and `origin` fields
    (the cross-plugin contract permits additional fields).
 
 Empty `candidates[]` IS the no-work signal — the wrapper MUST NOT
@@ -55,13 +54,10 @@ from pathlib import Path
 from typing import Any
 
 from livespec_runtime.cross_repo.types import CrossRepoManifest
+from livespec_runtime.work_items.lifecycle import is_item_ready, ready_sort_key
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
-from livespec_orchestrator_beads_fabro.commands._cross_repo import (
-    is_item_ready,
-    load_manifest,
-    ready_sort_key,
-)
+from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
 from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
@@ -116,10 +112,10 @@ def rank_candidates(
     - `action` — always `"implement"` (the only non-`none` action this
       ranker emits; `none` is signaled via an empty candidates list).
     - `work_item_ref` — the `id` of the ranked work-item.
-    - `urgency` — derived from `priority` (P0 → high; P1-P2 → medium;
-      P3+ → low).
+    - `urgency` — uniform `"medium"` (the ranked position is the urgency
+      signal now that `priority` is gone).
     - `reason` — a one-line human narration.
-    - `priority` — the work-item's numeric priority (impl-beads
+    - `rank` — the work-item's fractional ordering key (impl-beads
       field; the cross-plugin contract permits additional fields).
     - `origin` — one of `"gap-tied"` or `"freeform"` (impl-beads
       field; the cross-plugin contract permits additional fields).
@@ -176,23 +172,15 @@ def _candidate_for(*, item: WorkItem) -> dict[str, Any]:
     return {
         "action": "implement",
         "work_item_ref": item.id,
-        "urgency": _urgency_for(priority=item.priority),
-        "reason": (f"ranked ready item (priority P{item.priority}, origin {item.origin})"),
-        "priority": item.priority,
+        # `rank` is the sole ordering authority now; relative position in the
+        # ranked list IS the urgency signal, so every ready candidate carries
+        # a uniform `medium` urgency (the prior priority-derived high/low
+        # tiering is gone with the `priority` field).
+        "urgency": "medium",
+        "reason": (f"ranked ready item (rank {item.rank}, origin {item.origin})"),
+        "rank": item.rank,
         "origin": item.origin,
     }
-
-
-_URGENCY_HIGH_THRESHOLD = 0
-_URGENCY_MEDIUM_THRESHOLD = 2
-
-
-def _urgency_for(*, priority: int) -> str:
-    if priority <= _URGENCY_HIGH_THRESHOLD:
-        return "high"
-    if priority <= _URGENCY_MEDIUM_THRESHOLD:
-        return "medium"
-    return "low"
 
 
 def _load_work_items(*, path: StoreConfig) -> list[WorkItem]:

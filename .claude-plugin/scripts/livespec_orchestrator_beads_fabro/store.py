@@ -8,9 +8,12 @@ the wrappers and thin-transport commands do not change:
 
 - `read_work_items(*, path)` — list every issue in the tenant and map
   each onto a `WorkItem`.
-- `append_work_item(*, path, item)` — create a new issue, OR, when the
-  item carries a `closed` status against an already-present id, mutate it
-  in place (close + resolution label + audit metadata). NO second record.
+- `append_work_item(*, path, item)` — create a new issue (2-step: `bd
+  create` + `bd update --status <state>`), OR, when the item carries a
+  `done` status against an already-present id, mutate it in place (close +
+  resolution label + audit metadata). NO second record.
+- `register_custom_statuses(*, path)` — per-tenant bootstrap registering
+  the 5 custom livespec statuses (idempotent).
 
 `materialize_work_items` is no longer defined here: the canonical
 keyword-only head reduction is the SHARED
@@ -36,12 +39,19 @@ FIELD MAP (authoritative detail in
 dev-tooling/implementation/research/beads-schema-mapping.md):
 
 - id ⇄ id (operator-supplied; prefix is the decoupled issue-prefix, e.g. bd-ib)
-- type ⇄ issue_type, status ⇄ status, title/description ⇄ identity
-- priority ⇄ priority (0 = highest on both sides)
+- type ⇄ issue_type, title/description ⇄ identity
+- status ⇄ status: the 5 custom states + `blocked` map by the SAME name;
+  only `done` ⇄ `closed` is translated (the one adapter name-mapping).
+- rank ⇄ `metadata.rank` (sole ordering authority; a rank-less legacy
+  issue reads back the bottom sentinel). `priority` is REMOVED as a logical
+  field — the native `priority` column survives harmlessly but is no longer
+  read into the materialized record.
 - assignee ⇄ assignee (first-class)
 - captured_at ⇄ created_at
 - origin ⇄ label `origin:<value>`; gap_id ⇄ label `gap-id:<id>`
 - resolution ⇄ label `resolution:<enum>`
+- admission_policy / acceptance_policy / blocked_reason ⇄ labels
+  `admission:<v>` / `acceptance:<v>` / `blocked-reason:<v>` (absent → None)
 - reason ⇄ close_reason
 - audit (whole AuditRecord) ⇄ metadata JSON (lossless)
 - spec_commitment_hint ⇄ native `spec_id`
@@ -61,6 +71,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
+from livespec_runtime.work_items.rank import BOTTOM_SENTINEL
 from livespec_runtime.work_items.reduce import materialize_work_items
 from livespec_runtime.work_items.store import WorkItemStore
 
@@ -88,6 +99,7 @@ __all__ = [
     "materialize_work_items",
     "read_work_item_comments",
     "read_work_items",
+    "register_custom_statuses",
 ]
 
 # Label prefixes that carry livespec-side enum/flag fields with no native
@@ -95,10 +107,44 @@ __all__ = [
 _LABEL_ORIGIN = "origin:"
 _LABEL_GAP_ID = "gap-id:"
 _LABEL_RESOLUTION = "resolution:"
+_LABEL_ADMISSION = "admission:"
+_LABEL_ACCEPTANCE = "acceptance:"
+_LABEL_BLOCKED_REASON = "blocked-reason:"
 
 # Metadata keys carrying livespec fields that ride in the JSON column.
 _META_AUDIT = "audit"
 _META_NON_LOCAL_DEPENDS_ON = "non_local_depends_on"
+_META_RANK = "rank"
+
+# The one adapter status name-mapping: livespec `done` is beads' built-in
+# `closed` (native closure: `closed_at`, `bd close`, done-hiding). Every
+# other livespec state maps to a beads status of the SAME name (5 custom +
+# the reused built-in `blocked`), so only this pair needs translation.
+_LIVESPEC_DONE = "done"
+_BEADS_CLOSED = "closed"
+
+
+def _beads_status_for(*, status: str) -> str:
+    """Map a livespec status onto its beads status (`done` → `closed`)."""
+    return _BEADS_CLOSED if status == _LIVESPEC_DONE else status
+
+
+def _livespec_status_for(*, status: str) -> str:
+    """Map a beads status onto its livespec status (`closed` → `done`)."""
+    return _LIVESPEC_DONE if status == _BEADS_CLOSED else status
+
+
+def _rank_from_metadata(*, metadata: dict[str, Any]) -> str:
+    """Read `rank` from the metadata JSON, substituting the bottom sentinel.
+
+    A legacy issue written before `rank` existed has no `metadata.rank`; it
+    reads back through `rank.BOTTOM_SENTINEL` so it sorts strictly after
+    every real key WITHOUT making the domain `WorkItem.rank` nullable.
+    """
+    value = metadata.get(_META_RANK)
+    if isinstance(value, str) and value != "":
+        return value
+    return BOTTOM_SENTINEL
 
 
 # --------------------------------------------------------------------------
@@ -178,26 +224,42 @@ def append_work_item(*, path: StoreConfig, item: WorkItem) -> None:
     """Create a new issue, or close an existing one in place.
 
     A closure in the JSONL world was a SECOND appended record carrying
-    the same id with `status="closed"`. Here that becomes an IN-PLACE
-    mutation: when `item.status == "closed"` AND an issue with `item.id`
+    the same id with `status="done"`. Here that becomes an IN-PLACE
+    mutation: when `item.status == "done"` AND an issue with `item.id`
     already exists in the tenant, we do NOT create a second issue.
     Instead we:
 
-    1. `bd close <id> --reason <reason>` (sets closed status + close_reason),
+    1. `bd close <id> --reason <reason>` (sets beads `closed` ≡ livespec
+       `done`, plus `close_reason`),
     2. `bd update <id>` to add the `resolution:<enum>` label, and
     3. write the full `AuditRecord` (lossless) into the metadata JSON
        column.
 
-    Every other append is a fresh `bd create` with the field map applied,
-    followed by `bd dep add` edges for `depends_on` (blocks) and
-    `superseded_by` (supersedes). This whole semantic shift is contained
-    here; the command/skill layer is unaffected.
+    Every other append is a fresh 2-step `bd create` (lands `open`) +
+    `bd update --status <state>` (the custom livespec status), followed by
+    `bd dep add` edges for `depends_on` (blocks) and `superseded_by`
+    (supersedes). This whole semantic shift is contained here; the
+    command/skill layer is unaffected.
     """
     client = make_beads_client(config=path)
-    if item.status == "closed" and client.exists(issue_id=item.id):
+    if item.status == _LIVESPEC_DONE and client.exists(issue_id=item.id):
         _close_in_place(client=client, item=item)
         return
     _create_work_item(client=client, item=item)
+
+
+def register_custom_statuses(*, path: StoreConfig) -> None:
+    """Provision the tenant's five custom livespec statuses (idempotent).
+
+    A per-tenant bootstrap step: `bd create` cannot land directly in a
+    custom status, so the 2-step `append_work_item` path depends on the
+    custom statuses already being registered on the tenant. Delegates to
+    the client seam's `register_custom_statuses` verb (a real
+    `bd config set status.custom` against the live tenant; a recorded no-op
+    against the in-memory fake).
+    """
+    client = make_beads_client(config=path)
+    client.register_custom_statuses()
 
 
 class BeadsWorkItemStore:
@@ -243,7 +305,9 @@ def _create_work_item(*, client: BeadsClient, item: WorkItem) -> None:
             issue_type=item.type,
             title=item.title,
             description=item.description,
-            priority=item.priority,
+            # `priority` is the beads-native column only; the logical model
+            # dropped it for `rank` (persisted in metadata), so the draft
+            # uses IssueDraft's neutral default rather than sourcing it here.
             assignee=item.assignee,
             created_at=item.captured_at,
             labels=_work_item_labels(item=item),
@@ -255,10 +319,14 @@ def _create_work_item(*, client: BeadsClient, item: WorkItem) -> None:
         )
     )
     _add_dependency_edges(client=client, item=item)
-    # An append that arrives already-closed for a NOT-yet-present id (rare:
-    # a fresh record born closed) still needs its closed status reflected.
-    if item.status == "closed":
+    # `bd create` cannot land directly in a custom status, so every initial
+    # write is 2-step: the create above lands `open`, then the status is set
+    # to the real livespec state. A record born already-`done` takes the
+    # in-place close path instead (which sets beads `closed`).
+    if item.status == _LIVESPEC_DONE:
         _close_in_place(client=client, item=item)
+    else:
+        client.update_issue(issue_id=item.id, status=_beads_status_for(status=item.status))
 
 
 def _add_dependency_edges(*, client: BeadsClient, item: WorkItem) -> None:
@@ -297,18 +365,36 @@ def _close_in_place(*, client: BeadsClient, item: WorkItem) -> None:
 
 
 def _work_item_labels(*, item: WorkItem) -> list[str]:
-    """Build the label set carrying origin / gap-id / resolution."""
+    """Build the label set carrying origin / gap-id / resolution / policy fields.
+
+    The `admission_policy` / `acceptance_policy` / `blocked_reason` fields
+    follow the blessed optional-on-read pattern: a `None` value writes NO
+    label (it reads back `None` = inherit / system default), so only a set
+    policy materializes a `admission:` / `acceptance:` / `blocked-reason:`
+    label.
+    """
     labels: list[str] = [f"{_LABEL_ORIGIN}{item.origin}"]
     if item.gap_id is not None:
         labels.append(f"{_LABEL_GAP_ID}{item.gap_id}")
     if item.resolution is not None:
         labels.append(f"{_LABEL_RESOLUTION}{item.resolution}")
+    if item.admission_policy is not None:
+        labels.append(f"{_LABEL_ADMISSION}{item.admission_policy}")
+    if item.acceptance_policy is not None:
+        labels.append(f"{_LABEL_ACCEPTANCE}{item.acceptance_policy}")
+    if item.blocked_reason is not None:
+        labels.append(f"{_LABEL_BLOCKED_REASON}{item.blocked_reason}")
     return labels
 
 
 def _work_item_metadata(*, item: WorkItem) -> dict[str, Any]:
-    """Build the metadata JSON object: the full AuditRecord (lossless) + non-local depends_on."""
-    metadata: dict[str, Any] = {}
+    """Build the metadata JSON object: rank + the full AuditRecord + non-local depends_on.
+
+    `rank` is the sole ordering authority and a strictly-required non-null
+    field, so it is ALWAYS written into `metadata.rank` (both on create and
+    on the in-place close, which re-writes metadata).
+    """
+    metadata: dict[str, Any] = {_META_RANK: item.rank}
     if item.audit is not None:
         metadata[_META_AUDIT] = _audit_to_dict(audit=item.audit)
     non_local = _non_local_depends_on_list(depends_on=item.depends_on)
@@ -364,12 +450,17 @@ def _record_to_work_item(*, record: BeadsRecord) -> WorkItem:
     return WorkItem(
         id=issue_id,
         type=cast("Any", _require_str(record=record, key="issue_type")),
-        status=cast("Any", _require_str(record=record, key="status")),
+        # Map the beads status back to its livespec name (`closed` → `done`);
+        # the 5 custom statuses + the reused `blocked` pass through.
+        status=cast("Any", _livespec_status_for(status=_require_str(record=record, key="status"))),
         title=_require_str(record=record, key="title"),
         description=_optional_str(record=record, key="description") or "",
         origin=cast("Any", origin),
         gap_id=gap_id,
-        priority=_require_int(record=record, key="priority"),
+        # `rank` is read from `metadata.rank`; a legacy rank-less issue reads
+        # back the bottom sentinel (the native `priority` column is no longer
+        # mapped into the logical record).
+        rank=_rank_from_metadata(metadata=metadata),
         assignee=_optional_str(record=record, key="assignee"),
         depends_on=depends_on,
         captured_at=_require_str(record=record, key="created_at"),
@@ -384,6 +475,11 @@ def _record_to_work_item(*, record: BeadsRecord) -> WorkItem:
         # supersedes edge on the superseding issue.
         superseded_by=None,
         spec_commitment_hint=_optional_str(record=record, key="spec_id"),
+        # Policy fields read back from their labels; an absent label is the
+        # blessed `None` (inherit / system default).
+        admission_policy=cast("Any", _label_value(labels=labels, prefix=_LABEL_ADMISSION)),
+        acceptance_policy=cast("Any", _label_value(labels=labels, prefix=_LABEL_ACCEPTANCE)),
+        blocked_reason=cast("Any", _label_value(labels=labels, prefix=_LABEL_BLOCKED_REASON)),
     )
 
 
@@ -527,16 +623,6 @@ def _optional_str(*, record: BeadsRecord, key: str) -> str | None:
         raise BeadsMappingError(
             record_id=str(record.get("id", "<unknown>")),
             detail=f"field {key!r} must be a string or null (got {type(value).__name__})",
-        )
-    return value
-
-
-def _require_int(*, record: BeadsRecord, key: str) -> int:
-    value = record.get(key)
-    if not isinstance(value, int) or isinstance(value, bool):
-        raise BeadsMappingError(
-            record_id=str(record.get("id", "<unknown>")),
-            detail=f"field {key!r} must be an integer (got {type(value).__name__})",
         )
     return value
 

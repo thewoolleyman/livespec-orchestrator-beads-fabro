@@ -65,12 +65,12 @@ def _item(**overrides: object) -> WorkItem:
     base = WorkItem(
         id="livespec-impl-beads-t1",
         type="task",
-        status="open",
+        status="ready",
         title="A ready task",
         description="Do the thing.",
         origin="freeform",
         gap_id=None,
-        priority=2,
+        rank="a2",
         assignee=None,
         depends_on=(),
         captured_at="2026-06-11T00:00:00Z",
@@ -126,13 +126,13 @@ def test_loop_autonomous_with_item_dispatches_requested_not_top_ranked(
 ) -> None:
     """loop --mode autonomous --item <id> dispatches exactly the requested item.
 
-    When two items are ready, a-1 (priority=1) ranks first and b-2
-    (priority=2) ranks second.  Passing --item b-2 must dispatch b-2, not
+    When two items are ready, a-1 (rank="a1") ranks first and b-2
+    (rank="a2") ranks second.  Passing --item b-2 must dispatch b-2, not
     drain the top-ranked a-1 — the bug this test pins.
     """
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
-    high_priority = _item(id="a-1", priority=1)
-    requested = _item(id="b-2", priority=2)
+    high_priority = _item(id="a-1", rank="a1")
+    requested = _item(id="b-2", rank="a2")
     append_work_item(path=_config(), item=high_priority)
     append_work_item(path=_config(), item=requested)
     recording = _RecordingRunDispatch()
@@ -168,7 +168,7 @@ def test_loop_autonomous_with_item_not_ready_exits_precondition_error(
     fail clearly rather than silently dispatching nothing (exit 0).
     """
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
-    closed_item = _item(id="closed-item", status="closed", resolution="completed")
+    closed_item = _item(id="closed-item", status="done", resolution="completed")
     append_work_item(path=_config(), item=closed_item)
     recording = _RecordingRunDispatch()
     monkeypatch.setattr(dispatcher, "run_dispatch", recording)
@@ -203,7 +203,7 @@ def test_loop_shadow_with_item_not_ready_exits_precondition_error(
     also fail clearly, consistent with the dispatch subcommand's contract.
     """
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
-    closed_item = _item(id="closed-item", status="closed", resolution="completed")
+    closed_item = _item(id="closed-item", status="done", resolution="completed")
     append_work_item(path=_config(), item=closed_item)
     recording = _RecordingRunDispatch()
     monkeypatch.setattr(dispatcher, "run_dispatch", recording)

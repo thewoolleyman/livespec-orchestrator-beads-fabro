@@ -10,8 +10,9 @@ Filters:
 
 - `--filter=gap-tied` / `--filter=freeform` — origin filter
 - `--filter=blocked` — status == "blocked"
-- `--filter=ready` — status == "open" AND every depends_on item is closed
-- `--filter=closed` — status == "closed"
+- `--filter=ready` — renders in the `ready` lane (stored `ready` AND every
+  depends_on item resolves closed), via `lifecycle.is_item_ready`
+- `--filter=closed` — status == "done"
 - `--filter=all` (default)
 
 `--with-gap-id=<id>` filters to exact gap_id match (combinable with --filter).
@@ -38,9 +39,10 @@ from pathlib import Path
 from typing import Literal
 
 from livespec_runtime.cross_repo.types import CrossRepoManifest
+from livespec_runtime.work_items.lifecycle import is_item_ready
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
-from livespec_orchestrator_beads_fabro.commands._cross_repo import is_item_ready, load_manifest
+from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
 from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
@@ -124,7 +126,7 @@ def _filter_by_name(
         "freeform": lambda item, _ix: item.origin == "freeform",
         "blocked": lambda item, _ix: item.status == "blocked",
         "ready": lambda item, ix: is_item_ready(item=item, index=ix, manifest=manifest),
-        "closed": lambda item, _ix: item.status == "closed",
+        "closed": lambda item, _ix: item.status == "done",
     }
     predicate = predicates[name]
     return [item for item in materialized if predicate(item, index)]
@@ -141,10 +143,7 @@ def _write_human(*, items: list[WorkItem]) -> None:
         return
     for item in items:
         gap_marker = f" gap={item.gap_id}" if item.gap_id is not None else ""
-        line = (
-            f"{item.id}  [{item.status}/P{item.priority}/{item.origin}{gap_marker}]"
-            f"  {item.title}\n"
-        )
+        line = f"{item.id}  [{item.status}/{item.origin}{gap_marker}]  {item.title}\n"
         _ = sys.stdout.write(line)
 
 
