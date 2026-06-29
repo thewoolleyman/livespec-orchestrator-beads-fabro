@@ -1,0 +1,27 @@
+livespec-orchestrator-beads-fabro — third-party notices
+=======================================================
+
+This product includes third-party code, carried verbatim, as noted
+below. It rides along inside the vendored `livespec_runtime` package
+(copied source-only into `.claude-plugin/scripts/_vendor/`); the
+attribution below mirrors `livespec_runtime`'s own NOTICES entry.
+
+
+fractional-indexing-python
+--------------------------
+File:     .claude-plugin/scripts/_vendor/livespec_runtime/work_items/_fractional_indexing.py
+Upstream: https://github.com/httpie/fractional-indexing-python
+Commit:   a4f9e2d334c0d51b743b34012d2d1f35465e96e9 (2024-04-19)
+Licence:  CC0 1.0 Universal (public domain dedication)
+
+The official Python port of rocicorp/fractional-indexing (the Figma /
+David-Greenspan fractional-indexing scheme). Vendored verbatim
+(byte-faithful, attribution header prepended) inside `livespec_runtime`,
+which has no vendoring machinery and is itself copied source-only into
+every consumer's `_vendor/` tree, so the single ported file rides along
+automatically. Exposed to livespec call sites only through the
+keyword-only wrapper `livespec_runtime.work_items.rank`.
+
+CC0 1.0 is a public-domain dedication: attribution is courteous, not
+required. The full dedication text accompanies the upstream repository
+(its `LICENCE` file).

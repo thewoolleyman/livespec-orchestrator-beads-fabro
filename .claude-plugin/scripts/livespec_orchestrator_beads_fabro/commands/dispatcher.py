@@ -137,12 +137,10 @@ from pathlib import Path
 from time import sleep as _real_sleep
 from typing import cast
 
+from livespec_runtime.work_items.lifecycle import is_item_ready, ready_sort_key
+
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
-from livespec_orchestrator_beads_fabro.commands._cross_repo import (
-    is_item_ready,
-    load_manifest,
-    ready_sort_key,
-)
+from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
     build_calibration_record,
     calibration_journal_record,
@@ -1121,7 +1119,7 @@ def _ready_items(*, items: list[WorkItem], repo: Path) -> list[WorkItem]:
     ready = [item for item in items if is_item_ready(item=item, index=index, manifest=manifest)]
     # Compose the single canonical ranking authority so the Dispatcher's
     # drain order never diverges from what `next` advertises (i3jiny):
-    # (priority, gap-tied-before-freeform, FIFO captured_at, id).
+    # (rank, id) — the fractional rank is the sole ordering key.
     return sorted(ready, key=ready_sort_key)
 
 
@@ -1851,7 +1849,7 @@ def _close_item(*, repo: Path, item: WorkItem, outcome: DispatchOutcome) -> None
     )
     closed = replace(
         item,
-        status="closed",
+        status="done",
         resolution="completed",
         reason=f"Fabro dispatch landed PR #{outcome.pr_number} ({outcome.detail})",
         audit=audit,

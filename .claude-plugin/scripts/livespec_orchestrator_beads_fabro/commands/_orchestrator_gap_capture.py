@@ -30,6 +30,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, cast
 
+from livespec_runtime.work_items.rank import key_between
+
 from livespec_orchestrator_beads_fabro._ids import new_work_item_id
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._orchestrator_shared import (
@@ -76,12 +78,19 @@ def run_gap_capture(
     seen = _open_gap_ids(config=config)
     created: list[dict[str, str]] = []
     skipped: list[str] = []
+    # Each freshly-filed gap-tied item gets a `rank` appended below the last
+    # one minted in this pass (threaded `key_between`), so a multi-gap
+    # capture lands its items in stable filing order; cross-pass global
+    # ordering is the `rebalance-ranks` command's job.
+    prev_rank: str | None = None
     for gap in gaps:
         if gap.gap_id in seen:
             skipped.append(gap.gap_id)
             continue
         seen.add(gap.gap_id)
-        item = _work_item_for(gap=gap, config=config, spec_version=spec_version)
+        rank = key_between(a=prev_rank, b=None)
+        prev_rank = rank
+        item = _work_item_for(gap=gap, config=config, spec_version=spec_version, rank=rank)
         if not dry_run:
             append_work_item(path=config, item=item)
         created.append({"id": item.id, "gap_id": gap.gap_id})
@@ -128,20 +137,24 @@ def _validate_gap(*, entry: object, index: int) -> GapFinding:
 
 def _open_gap_ids(*, config: StoreConfig) -> set[str]:
     items = materialize_work_items(records=read_work_items(path=config)).values()
-    return {item.gap_id for item in items if item.gap_id is not None and item.status != "closed"}
+    return {item.gap_id for item in items if item.gap_id is not None and item.status != "done"}
 
 
-def _work_item_for(*, gap: GapFinding, config: StoreConfig, spec_version: int) -> WorkItem:
+def _work_item_for(
+    *, gap: GapFinding, config: StoreConfig, spec_version: int, rank: str
+) -> WorkItem:
     description = f"{gap.description}\n\n(captured against spec version v{spec_version:03d})"
     return WorkItem(
         id=new_work_item_id(prefix=config.prefix),
         type="task",
-        status="open",
+        # Freshly captured gaps are raw intake: they land in `backlog` and
+        # reach `ready` only after the grooming / Definition-of-Ready gate.
+        status="backlog",
         title=gap.title,
         description=description.strip(),
         origin="gap-tied",
         gap_id=gap.gap_id,
-        priority=gap.priority,
+        rank=rank,
         assignee=None,
         depends_on=(),
         captured_at=_now_iso(),

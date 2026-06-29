@@ -277,6 +277,26 @@ def test_list_issues_passes_limit_zero_for_unbounded_enumeration() -> None:
     assert captured["verb_args"] == ["list", "--status", "all", "--limit", "0", "--json"]
 
 
+def test_register_custom_statuses_emits_config_set_argv() -> None:
+    """The shell client registers the 5 custom statuses via the verified
+    `bd config set status.custom` CSV form. Capture the `verb_args` handed
+    to `_run_void` (no subprocess)."""
+    captured: dict[str, list[str]] = {}
+
+    class _Recording(ShellBeadsClient):
+        def _run_void(self, *, verb_args: list[str]) -> None:
+            captured["verb_args"] = verb_args
+
+    client = _Recording(config=_config())
+    client.register_custom_statuses()
+    assert captured["verb_args"] == [
+        "config",
+        "set",
+        "status.custom",
+        "backlog,pending-approval,ready:active,active:wip,acceptance:wip",
+    ]
+
+
 def test_build_create_argv_full_field_set() -> None:
     draft = _draft(
         issue_id="li-a",

@@ -67,9 +67,13 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
 
 - `_config.py` — store-path / project-root resolution
   (`resolve_store_config`).
-- `_cross_repo.py` — cross-repo manifest loading and the
-  `is_item_ready` readiness predicate; consults
-  `livespec_runtime.cross_repo.resolve_ref` for `depends_on` gating.
+- `_cross_repo.py` — cross-repo manifest loading (`load_manifest`) and
+  raw `depends_on` entry parsing (`parse_entry`). The readiness predicate
+  (`is_item_ready`), the canonical `ready_sort_key` (= `(rank, id)`), and
+  `lane_of` now live in the shared
+  `livespec_runtime.work_items.lifecycle` (pure functions over an
+  in-memory `index: dict[str, WorkItem]`); callers (`next`,
+  `list-work-items`, the Dispatcher) import them from there.
 - `_jsonc.py` — JSONC parsing for `.livespec.jsonc`.
 
 Rules an agent editing this tree must follow:

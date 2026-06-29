@@ -52,6 +52,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
+from livespec_runtime.work_items.rank import key_between
+
 from livespec_orchestrator_beads_fabro import regroom
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro._ids import new_work_item_id
@@ -209,6 +211,10 @@ def file_approved_slices(
     filed_ids: list[str] = []
     spec_change: list[CandidateSlice] = []
     cross_repo: list[CrossRepoSlice] = []
+    # Each filed local slice gets a `rank` appended below the previous one
+    # (threaded `key_between`), so the dependency-layered draft order becomes
+    # the ready-lane drain order.
+    prev_rank: str | None = None
     # Maps each factory slice's draft title -> its minted id so that a later
     # slice's `depends_on` title handles resolve to real ids. Populated for
     # both local and cross-repo slices as they are processed in draft order.
@@ -235,9 +241,13 @@ def file_approved_slices(
             id_by_title=id_by_title,
             cross_repo_title_to_repo=cross_repo_title_to_repo,
         )
+        rank = key_between(a=prev_rank, b=None)
+        prev_rank = rank
         append_work_item(
             path=path,
-            item=_work_item_for(candidate=candidate, slice_id=slice_id, dep_entries=dep_entries),
+            item=_work_item_for(
+                candidate=candidate, slice_id=slice_id, dep_entries=dep_entries, rank=rank
+            ),
         )
         # Tag the freshly-filed factory slice `ready` so the Dispatcher can
         # drain it and so `exit_regroom`'s ready-gate accepts it as a real
@@ -296,6 +306,7 @@ def _work_item_for(
     candidate: CandidateSlice,
     slice_id: str,
     dep_entries: tuple[DependsOnRaw, ...],
+    rank: str,
 ) -> WorkItem:
     """Build the freeform `ready` work-item for one approved local factory slice.
 
@@ -303,7 +314,9 @@ def _work_item_for(
     a single detected gap clause); its acceptance is folded into the
     description so the dispatched implementer carries it. `dep_entries`
     carries the fully-typed dependency entries (local or sibling_work_item)
-    already resolved from the earlier draft slices.
+    already resolved from the earlier draft slices. `rank` is the slice's
+    fractional ordering key (the maintainer-approved cut IS the grooming
+    gate, so a filed slice lands directly in `ready`).
     """
     description = (
         f"{candidate.description}\n\n"
@@ -314,12 +327,12 @@ def _work_item_for(
     return WorkItem(
         id=slice_id,
         type="task",
-        status="open",
+        status="ready",
         title=candidate.title,
         description=description,
         origin="freeform",
         gap_id=None,
-        priority=candidate.priority,
+        rank=rank,
         assignee=None,
         depends_on=dep_entries,
         captured_at=_now_iso(),

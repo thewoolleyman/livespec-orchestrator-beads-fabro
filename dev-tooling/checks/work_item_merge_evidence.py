@@ -10,7 +10,7 @@ column through the same beads client the runtime uses. In hermetic mode
 (`LIVESPEC_BEADS_FAKE` truthy, the default `just check` tier) the tenant is
 empty, so the walk yields nothing and the check passes trivially.
 
-Rules, for each work-item with `status == "closed"`:
+Rules, for each work-item with `status == "done"` (beads `closed`):
 
 - resolution in {completed, spec-revised, resolved-out-of-band}: REQUIRE a
   non-null `AuditRecord`, REQUIRE non-empty `merge_sha`, REQUIRE
@@ -181,7 +181,7 @@ def _epic_violation(*, item: WorkItem, index: dict[str, WorkItem]) -> str | None
         if child_id is None:
             continue
         child = index.get(child_id)
-        if child is not None and child.status != "closed":
+        if child is not None and child.status != "done":
             return f"closed epic has non-closed child {child_id!r}"
     return None
 
@@ -221,7 +221,7 @@ def main() -> int:
     index = materialize_work_items(records=read_work_items(path=config.work_items_path))
     violations: list[tuple[str, str]] = []
     for item in index.values():
-        if item.status != "closed":
+        if item.status != "done":
             continue
         message = _item_violation(
             cwd=cwd, item=item, index=index, canonical_branch=canonical_branch

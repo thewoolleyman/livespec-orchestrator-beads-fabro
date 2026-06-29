@@ -108,7 +108,7 @@ def _write_coverage(*, test_node: str, gap_id: str = _GAP_ID, scenario: str = _S
 def _item(
     *,
     id_: str,
-    status: str = "closed",
+    status: str = "done",
     origin: str = "gap-tied",
     gap_id: str | None = _GAP_ID,
     resolution: str | None = "completed",
@@ -121,7 +121,7 @@ def _item(
         description="d",
         origin=origin,  # type: ignore[arg-type]
         gap_id=gap_id,
-        priority=1,
+        rank="a1",
         assignee=None,
         depends_on=(),
         captured_at="2026-06-20T00:00:00Z",
@@ -160,7 +160,7 @@ def test_empty_tenant_passes_trivially_in_fail_mode(monkeypatch: pytest.MonkeyPa
 def test_open_gap_tied_item_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LIVESPEC_CLOSED_ITEM_INTEGRITY", "fail")
     _ = _write_coverage(test_node="TODO")
-    _seed(_item(id_="li-open", status="open", resolution=None))
+    _seed(_item(id_="li-open", status="ready", resolution=None))
     assert _CHECK.main() == 0
 
 

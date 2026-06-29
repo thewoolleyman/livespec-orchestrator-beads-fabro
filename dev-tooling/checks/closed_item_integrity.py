@@ -196,8 +196,8 @@ def _scenario_test_index(*, entries: list[Any]) -> dict[str, str]:
 def offender_reason(*, item: WorkItem, clause_map: dict[str, ScenarioBinding]) -> str | None:
     """Return why a closed gap-tied item is closed-but-unproven, or None.
 
-    The caller has already filtered to `status == "closed"` and
-    `origin == "gap-tied"`. An item is an offender when it lacks the
+    The caller has already filtered to `status == "done"` (beads `closed`)
+    and `origin == "gap-tied"`. An item is an offender when it lacks the
     `resolution:completed` label, when its gap-id has no resolvable
     `clauses[]` scenario link, or when that scenario is still `TODO`-bound.
     """
@@ -217,9 +217,7 @@ def offender_reason(*, item: WorkItem, clause_map: dict[str, ScenarioBinding]) -
 
 
 def _closed_gap_tied(*, index: dict[str, WorkItem]) -> list[WorkItem]:
-    return [
-        item for item in index.values() if item.status == "closed" and item.origin == "gap-tied"
-    ]
+    return [item for item in index.values() if item.status == "done" and item.origin == "gap-tied"]
 
 
 def main() -> int:

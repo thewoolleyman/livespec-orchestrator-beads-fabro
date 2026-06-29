@@ -41,12 +41,12 @@ def _open_item(
     return WorkItem(
         id=id_,
         type="feature",  # type: ignore[arg-type]
-        status="open",
+        status="ready",
         title="t",
         description="d",
         origin=origin,  # type: ignore[arg-type]
         gap_id=gap_id,
-        priority=1,
+        rank="a1",
         assignee=None,
         depends_on=(),
         captured_at="2026-06-20T00:00:00Z",
@@ -73,7 +73,7 @@ def _reload(item_id: str) -> WorkItem | None:
 def test_close_completed_sets_closed_and_resolution() -> None:
     _seed(_open_item(id_="li-x"))
     closed = close_completed(path=_config(), item_id="li-x", reason="done")
-    assert closed.status == "closed"
+    assert closed.status == "done"
     assert closed.resolution == "completed"
     assert closed.reason == "done"
 
@@ -85,7 +85,7 @@ def test_close_completed_persists_resolution_label() -> None:
     _ = close_completed(path=_config(), item_id="li-x", reason="done")
     reloaded = _reload("li-x")
     assert reloaded is not None
-    assert reloaded.status == "closed"
+    assert reloaded.status == "done"
     assert reloaded.resolution == "completed"
 
 

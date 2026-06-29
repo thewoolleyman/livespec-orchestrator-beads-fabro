@@ -74,21 +74,43 @@ BeadsRecord = dict[str, Any]
 DependencyEdge = dict[str, Any]
 
 
+# The native beads `--priority` column value the bridge writes for a
+# WorkItem-sourced create. `rank` (in `metadata.rank`) is the sole logical
+# ordering authority now; the native int column is decorative (no longer
+# read into the materialized record), so it defaults to a neutral mid value
+# and is only set explicitly where a beads-native priority is meaningful
+# (e.g. the reflector's severity → priority map).
+_DEFAULT_NATIVE_PRIORITY = 2
+
+# The five custom livespec statuses a tenant MUST register before any issue
+# can carry one, in the `bd config set status.custom` CSV form (verified
+# against the pinned beads source): `name[:category]`, where the absent
+# category is `unspecified`. `ready` is the sole `active`-category status so
+# native `bd ready` surfaces the admission-eligible set.
+_STATUS_CUSTOM = "backlog,pending-approval,ready:active,active:wip,acceptance:wip"
+
+
 @dataclass(frozen=True, kw_only=True)
 class IssueDraft:
     """The full field set for a `bd create` — bundled so the create verb
     takes one keyword argument instead of eleven (the family `max-args`
     rule caps a `def` at six). Every field maps onto a `bd create` flag
     per the FIELD MAP (see `_build_create_argv`).
+
+    `priority` is the beads-NATIVE int column, decoupled from the logical
+    work-item model (which dropped `priority` for the `rank` ordering key).
+    It defaults to a neutral value so a WorkItem-sourced create need not
+    supply one; the reflector's OOB-finding path still sets it explicitly
+    from its severity map.
     """
 
     issue_id: str
     issue_type: str
     title: str
     description: str
-    priority: int
     assignee: str | None
     created_at: str
+    priority: int = _DEFAULT_NATIVE_PRIORITY
     labels: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     spec_id: str | None = None
@@ -162,6 +184,17 @@ class BeadsClient(Protocol):
         """Append a comment to an issue (`bd comment <id> <body>`)."""
         ...
 
+    def register_custom_statuses(self) -> None:
+        """Register the five livespec custom statuses on the tenant.
+
+        Per-tenant provisioning that MUST run before any issue can carry a
+        custom status (`backlog`/`pending-approval`/`ready`/`active`/
+        `acceptance`); the closure path reuses beads' built-in `closed`.
+        Idempotent. A no-op against the in-memory fake (which stores
+        whatever status string it is handed).
+        """
+        ...
+
 
 # Dependency-edge type constants (the `--type` values `bd dep add` accepts).
 EDGE_BLOCKS = "blocks"
@@ -186,6 +219,7 @@ class FakeBeadsClient:
     def __init__(self) -> None:
         self._issues: dict[str, BeadsRecord] = {}
         self._comments: dict[str, list[BeadsRecord]] = {}
+        self.custom_statuses_registered: bool = False
 
     def list_issues(self) -> list[BeadsRecord]:
         return [dict(record) for record in self._issues.values()]
@@ -334,6 +368,15 @@ class FakeBeadsClient:
             "created_at": None,
         }
         self._comments.setdefault(issue_id, []).append(record)
+
+    def register_custom_statuses(self) -> None:
+        """Record that custom-status registration ran.
+
+        The in-memory tenant stores whatever status string it is handed, so
+        no real status config is needed; the flag lets a hermetic test
+        assert the bootstrap path invoked registration.
+        """
+        self.custom_statuses_registered = True
 
 
 class ShellBeadsClient:
@@ -537,6 +580,15 @@ class ShellBeadsClient:
         seam as an argv element).
         """
         self._run_void(verb_args=["comment", issue_id, body])
+
+    def register_custom_statuses(self) -> None:
+        """Register the five custom statuses via `bd config set status.custom`.
+
+        Idempotent per-tenant provisioning. The `status.custom` value is the
+        verified CSV form (`name[:category]`); `bd` upserts the configured
+        set, so re-running is a safe no-op.
+        """
+        self._run_void(verb_args=["config", "set", "status.custom", _STATUS_CUSTOM])
 
 
 def _coerce_record_list(*, parsed: Any) -> list[BeadsRecord]:

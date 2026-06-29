@@ -191,12 +191,12 @@ def _item(**overrides: object) -> WorkItem:
     base = WorkItem(
         id="livespec-impl-beads-t1",
         type="task",
-        status="open",
+        status="ready",
         title="A ready task",
         description="Do the thing.",
         origin="freeform",
         gap_id=None,
-        priority=2,
+        rank="a2",
         assignee=None,
         depends_on=(),
         captured_at="2026-06-11T00:00:00Z",
@@ -303,7 +303,7 @@ def test_ledger_checks_pass_on_clean_items() -> None:
     items = [
         _item(),
         _item(id="b-2", depends_on=("livespec-impl-beads-t1",), gap_id="gap-1"),
-        _item(id="b-3", status="closed", gap_id="gap-1"),
+        _item(id="b-3", status="done", gap_id="gap-1"),
     ]
     assert run_ledger_checks(items=items) == []
 
@@ -335,7 +335,7 @@ def test_ledger_checks_flag_duplicate_gap_ids_sorted() -> None:
 
 
 def test_ledger_checks_ignore_closed_items() -> None:
-    items = [_item(status="closed", depends_on=("nope-99", {"bad": True}))]
+    items = [_item(status="done", depends_on=("nope-99", {"bad": True}))]
     assert run_ledger_checks(items=items) == []
 
 
@@ -475,14 +475,14 @@ def test_collect_obligations_empty_without_history(tmp_path: Path) -> None:
 
 def test_spec_checks_flag_stalled_epics() -> None:
     items = [
-        _item(id="dep-1", status="closed"),
-        _item(id="dep-2", status="closed"),
+        _item(id="dep-1", status="done"),
+        _item(id="dep-2", status="done"),
         _item(
             id="epic-stalled",
             type="epic",
             depends_on=("dep-1", {"kind": "local", "work_item_id": "dep-2"}),
         ),
-        _item(id="epic-rolling", type="epic", status="in_progress", depends_on=("dep-1",)),
+        _item(id="epic-rolling", type="epic", status="active", depends_on=("dep-1",)),
     ]
     findings = run_spec_checks(items=items, spec_root=Path("/nonexistent"), manifest=_manifest())
     stalled = [finding for finding in findings if finding.check == "no-stalled-epic"]
@@ -490,13 +490,13 @@ def test_spec_checks_flag_stalled_epics() -> None:
         ("epic-rolling", "fail"),
         ("epic-stalled", "fail"),
     ]
-    assert "still open" in stalled[1].message
+    assert "still ready" in stalled[1].message
 
 
 def test_spec_checks_epic_not_stalled_when_any_dep_unresolved_or_open() -> None:
     items = [
         _item(id="dep-open"),
-        _item(id="dep-closed", status="closed"),
+        _item(id="dep-closed", status="done"),
         _item(id="epic-open-dep", type="epic", depends_on=("dep-open", "dep-closed")),
         _item(id="epic-missing-dep", type="epic", depends_on=("ghost-1",)),
         _item(id="epic-bad-dep", type="epic", depends_on=({"bogus": True},)),
@@ -508,7 +508,7 @@ def test_spec_checks_epic_not_stalled_when_any_dep_unresolved_or_open() -> None:
             ),
         ),
         _item(id="epic-empty", type="epic"),
-        _item(id="epic-closed", type="epic", status="closed", depends_on=("dep-closed",)),
+        _item(id="epic-closed", type="epic", status="done", depends_on=("dep-closed",)),
         _item(id="task-done-deps", depends_on=("dep-closed",)),
     ]
     findings = run_spec_checks(items=items, spec_root=Path("/nonexistent"), manifest=_manifest())
@@ -529,8 +529,8 @@ def test_spec_checks_warn_only_for_stale_gap_tied_items(tmp_path: Path) -> None:
     fresh_gap = detect_rules(spec_root=spec)[0].gap_id
     items = [
         _item(id="g-fresh", origin="gap-tied", gap_id=fresh_gap),
-        _item(id="g-stale", origin="gap-tied", gap_id="gap-gone1234", status="in_progress"),
-        _item(id="g-closed", origin="gap-tied", gap_id="gap-gone1234", status="closed"),
+        _item(id="g-stale", origin="gap-tied", gap_id="gap-gone1234", status="active"),
+        _item(id="g-closed", origin="gap-tied", gap_id="gap-gone1234", status="done"),
         _item(id="g-none", origin="gap-tied", gap_id=None),
         _item(id="f-free", gap_id="gap-gone1234"),
     ]
@@ -1748,7 +1748,7 @@ def test_dispatch_green_closes_item_and_journals(
     payload = json.loads(capsys.readouterr().out)
     assert payload[0]["status"] == "green"
     stored = _stored()[item.id]
-    assert (stored.status, stored.resolution) == ("closed", "completed")
+    assert (stored.status, stored.resolution) == ("done", "completed")
     assert stored.audit is not None
     assert (stored.audit.merge_sha, stored.audit.pr_number) == ("feed01", 11)
     goal_text = (tmp_path / f"fabro-goal-{item.id}.md").read_text(encoding="utf-8")
@@ -1879,7 +1879,7 @@ def test_dispatch_green_without_sha_closes_without_audit(
         main(["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]) == 0
     )
     stored = _stored()[item.id]
-    assert (stored.status, stored.audit) == ("closed", None)
+    assert (stored.status, stored.audit) == ("done", None)
 
 
 def test_dispatch_failed_outcome_leaves_item_open(
@@ -1904,7 +1904,7 @@ def test_dispatch_failed_outcome_leaves_item_open(
     )
     assert exit_code == 1
     assert "failed at fabro-run" in capsys.readouterr().out
-    assert _stored()[item.id].status == "open"
+    assert _stored()[item.id].status == "ready"
 
 
 def test_dispatch_no_close_on_merge_flag(
@@ -1929,7 +1929,7 @@ def test_dispatch_no_close_on_merge_flag(
         ]
     )
     assert exit_code == 0
-    assert _stored()[item.id].status == "open"
+    assert _stored()[item.id].status == "ready"
 
 
 def test_dispatch_rejects_not_ready_item(
@@ -2098,7 +2098,7 @@ def test_dispatch_blocked_outcome_surfaces_and_leaves_item_open(
     out = capsys.readouterr().out
     assert "blocked at fabro-run" in out
     assert "fabro attach 01RUNBLOCKED" in out
-    assert _stored()[item.id].status == "open"
+    assert _stored()[item.id].status == "ready"
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
     assert '"blocked"' in journal_text
     assert "ledger-close" not in journal_text
@@ -2132,7 +2132,7 @@ def test_dispatch_fails_fast_when_oauth_token_env_is_absent_or_empty(
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
     assert main(base) == 1
     assert "with-livespec-env.sh" in capsys.readouterr().out
-    assert _stored()[item.id].status == "open"
+    assert _stored()[item.id].status == "ready"
 
 
 def test_dispatch_fails_fast_when_github_token_env_is_absent_or_empty(
@@ -2165,7 +2165,7 @@ def test_dispatch_fails_fast_when_github_token_env_is_absent_or_empty(
     monkeypatch.setenv("GH_TOKEN", "")
     assert main(base) == 1
     assert "with-livespec-env.sh" in capsys.readouterr().out
-    assert _stored()[item.id].status == "open"
+    assert _stored()[item.id].status == "ready"
 
 
 def test_dispatch_fails_when_workflow_config_is_not_materializable(
@@ -2188,7 +2188,7 @@ def test_dispatch_fails_when_workflow_config_is_not_materializable(
     assert exit_code == 1
     out = capsys.readouterr().out
     assert "run-config-overlay" in out
-    assert _stored()[item.id].status == "open"
+    assert _stored()[item.id].status == "ready"
 
 
 @dataclass(kw_only=True)
@@ -2262,7 +2262,7 @@ def test_dispatch_fails_fast_when_fleet_manifest_is_unfetchable(
     assert "run-config-overlay" in out
     assert ".livespec-fleet-manifest.jsonc" in out
     assert "gh api" in out
-    assert _stored()[item.id].status == "open"
+    assert _stored()[item.id].status == "ready"
 
 
 def test_dispatch_fails_fast_when_fleet_manifest_is_malformed(
@@ -2285,7 +2285,7 @@ def test_dispatch_fails_fast_when_fleet_manifest_is_malformed(
     out = capsys.readouterr().out
     assert "run-config-overlay" in out
     assert ".livespec-fleet-manifest.jsonc" in out
-    assert _stored()[item.id].status == "open"
+    assert _stored()[item.id].status == "ready"
 
 
 def test_dispatch_custom_journal_path(
@@ -2333,8 +2333,8 @@ def test_loop_shadow_dispatches_named_items_within_budget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
-    first = _item(id="a-1", priority=1)
-    second = _item(id="b-2", priority=2)
+    first = _item(id="a-1", rank="a1")
+    second = _item(id="b-2", rank="a2")
     append_work_item(path=_config(), item=first)
     append_work_item(path=_config(), item=second)
     fake = _FakeRunDispatch(outcomes={"a-1": _green_outcome(item_id="a-1")})
@@ -2374,8 +2374,8 @@ def test_loop_autonomous_parallel_mixed_outcomes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
-    first = _item(id="a-1", priority=1)
-    second = _item(id="b-2", priority=2)
+    first = _item(id="a-1", rank="a1")
+    second = _item(id="b-2", rank="a2")
     append_work_item(path=_config(), item=first)
     append_work_item(path=_config(), item=second)
     failed = DispatchOutcome(
@@ -2667,7 +2667,7 @@ def test_dispatch_fails_at_ledger_comments_stage_when_read_raises(
     out = capsys.readouterr().out
     assert "ledger-comments" in out
     assert "BeadsCommandError" in out
-    assert _stored()[item.id].status == "open"
+    assert _stored()[item.id].status == "ready"
 
 
 def test_dispatch_warns_on_oversized_item_without_blocking(
@@ -2721,7 +2721,7 @@ def test_loop_runs_reflection_stage_after_dispatch(
     monkeypatch.setenv("LIVESPEC_REFLECTION", "observe")
     _dispatcher_reflection.reset_auto_trip()
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
-    item = _item(id="a-1", priority=1)
+    item = _item(id="a-1", rank="a1")
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={"a-1": _green_outcome(item_id="a-1")})
     monkeypatch.setattr(dispatcher, "run_dispatch", fake)
@@ -2766,7 +2766,7 @@ def test_loop_reflection_failure_never_changes_verdict(
     monkeypatch.setenv("LIVESPEC_REFLECTION", "observe")
     _dispatcher_reflection.reset_auto_trip()
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
-    item = _item(id="a-1", priority=1)
+    item = _item(id="a-1", rank="a1")
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={"a-1": _green_outcome(item_id="a-1")})
     monkeypatch.setattr(dispatcher, "run_dispatch", fake)
@@ -2824,47 +2824,28 @@ def test_dispatch_runs_reflection_stage(
 # Dispatcher drain order composes the `next` ranking authority (i3jiny).
 #
 # The `next` ranker and the Fabro Dispatcher share the readiness filter
-# (`_cross_repo.is_item_ready`) but historically DIVERGED on sort: `next`
-# ranked `(priority, origin_rank, captured_at, id)` while `_ready_items`
-# dropped the gap-tied preference and the FIFO `captured_at` ordering,
-# sorting only `(priority, id)`. Under the dark factory's concurrency cap +
-# budget + merge backpressure, drain ORDER decides which ready items run, so
-# the Dispatcher silently starved gap-tied and older work relative to the
-# policy `next` advertises as authoritative. Both now compose the single
-# shared `_cross_repo.ready_sort_key`.
+# (`lifecycle.is_item_ready`) AND the canonical ranking key
+# (`lifecycle.ready_sort_key` = `(rank, id)`). If they diverged on sort,
+# then under the dark factory's concurrency cap + budget + merge
+# backpressure the drain ORDER (which decides which ready items run) would
+# silently starve work relative to the policy `next` advertises as
+# authoritative. Composing the one shared `ready_sort_key` keeps them
+# identical by construction.
 # ---------------------------------------------------------------------------
 
 
 def test_ready_items_drain_order_equals_next_ranking(tmp_path: Path) -> None:
-    # Equal-priority, mixed-origin, differing-captured_at fixture constructed
-    # so the OLD `(priority, id)` sort orders them DIFFERENTLY from the
-    # canonical `(priority, origin_rank, captured_at, id)` ranking.
+    # Distinct ranks (NOT id-sorted) so the assertion proves the order is
+    # driven by `rank`, not by insertion or id order, on BOTH surfaces.
     fixture = [
-        _item(
-            id="li-aaa",
-            origin="freeform",
-            gap_id=None,
-            captured_at="2026-06-15T00:00:00Z",
-        ),
-        _item(
-            id="li-bbb",
-            origin="gap-tied",
-            gap_id="G1",
-            captured_at="2026-06-10T00:00:00Z",
-        ),
-        _item(
-            id="li-ccc",
-            origin="freeform",
-            gap_id=None,
-            captured_at="2026-06-01T00:00:00Z",
-        ),
+        _item(id="li-aaa", rank="a3"),
+        _item(id="li-bbb", rank="a1"),
+        _item(id="li-ccc", rank="a2"),
     ]
     # tmp_path has no `.livespec.jsonc`, so `_ready_items` sees an empty
-    # cross-repo manifest and every open, dependency-free item is ready.
+    # cross-repo manifest and every ready, dependency-free item is ready.
     drain_order = [item.id for item in _ready_items(items=fixture, repo=tmp_path)]
     next_order = [c["work_item_ref"] for c in next_command.rank_candidates(items=fixture)]
     assert drain_order == next_order
-    # Pin the canonical order explicitly: gap-tied first, then freeform FIFO
-    # by captured_at (oldest first). The OLD `(priority, id)` sort would have
-    # produced `["li-aaa", "li-bbb", "li-ccc"]`.
+    # Pin the canonical (rank, id) order explicitly.
     assert drain_order == ["li-bbb", "li-ccc", "li-aaa"]

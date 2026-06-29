@@ -57,10 +57,10 @@ def close_completed(*, path: StoreConfig, item_id: str, reason: str | None = Non
     """Close `item_id` AND apply `resolution:completed` atomically.
 
     Reads the existing work-item, builds a closed copy carrying
-    `status="closed"`, `resolution="completed"`, and the close `reason`
+    `status="done"`, `resolution="completed"`, and the close `reason`
     (falling back to the item's existing reason when none is supplied),
     and persists it through `append_work_item` — which routes the
-    status-`closed` mutation of an existing id to the store's in-place
+    status-`done` mutation of an existing id to the store's in-place
     close + `resolution:completed` label write. The close and the label
     land in the SAME store operation, so an item can never be left
     "closed without the resolution:completed label".
@@ -75,7 +75,7 @@ def close_completed(*, path: StoreConfig, item_id: str, reason: str | None = Non
         raise WorkItemNotFoundError(item_id=item_id)
     closed = dataclasses.replace(
         existing,
-        status="closed",
+        status="done",
         resolution=_RESOLUTION_COMPLETED,
         reason=reason if reason is not None else existing.reason,
     )

@@ -96,12 +96,12 @@ def _item(**overrides: object) -> WorkItem:
     base = WorkItem(
         id="livespec-impl-beads-t1",
         type="task",
-        status="open",
+        status="ready",
         title="A ready task",
         description="Do the thing.",
         origin="freeform",
         gap_id=None,
-        priority=2,
+        rank="a2",
         assignee=None,
         depends_on=(),
         captured_at="2026-06-11T00:00:00Z",
@@ -237,7 +237,7 @@ def test_dispatch_refuses_host_only_item_without_launching_fabro(
     assert payload[0]["stage"] == "host-only-refused"
     assert "host-only" in payload[0]["detail"]
     # The item is NOT closed — it stays open for host-routing.
-    assert _stored()[item.id].status == "open"
+    assert _stored()[item.id].status == "ready"
 
 
 def test_dispatch_journals_host_only_refusal(

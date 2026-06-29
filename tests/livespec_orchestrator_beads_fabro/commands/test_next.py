@@ -42,10 +42,10 @@ def _seed(item: WorkItem) -> None:
 def _item(
     *,
     id_: str,
-    priority: int = 2,
+    rank: str = "a2",
     origin: str = "freeform",
     captured_at: str = "2026-05-19T00:00:00Z",
-    status: str = "open",
+    status: str = "ready",
     depends_on: tuple[str, ...] = (),
 ) -> WorkItem:
     return WorkItem(
@@ -56,7 +56,7 @@ def _item(
         description="d",
         origin=origin,  # type: ignore[arg-type]
         gap_id="G1" if origin == "gap-tied" else None,
-        priority=priority,
+        rank=rank,
         assignee=None,
         depends_on=depends_on,
         captured_at=captured_at,
@@ -76,34 +76,38 @@ def test_rank_candidates_no_items_returns_empty_list() -> None:
     assert rank_candidates(items=[]) == []
 
 
-def test_rank_candidates_picks_highest_priority_first() -> None:
-    items = [_item(id_="li-a", priority=3), _item(id_="li-b", priority=1)]
+def test_rank_candidates_picks_lowest_rank_first() -> None:
+    items = [_item(id_="li-a", rank="a3"), _item(id_="li-b", rank="a1")]
     result = rank_candidates(items=items)
     assert [c["work_item_ref"] for c in result] == ["li-b", "li-a"]
 
 
-def test_rank_candidates_gap_tied_beats_freeform_at_same_priority() -> None:
+def test_rank_candidates_rank_dominates_origin() -> None:
+    """`rank` is the sole ordering authority — a lower-rank freeform item
+    precedes a higher-rank gap-tied item (origin no longer affects order)."""
     items = [
-        _item(id_="li-a", priority=2, origin="freeform"),
-        _item(id_="li-b", priority=2, origin="gap-tied"),
+        _item(id_="li-a", rank="a1", origin="freeform"),
+        _item(id_="li-b", rank="a2", origin="gap-tied"),
     ]
     result = rank_candidates(items=items)
-    assert [c["work_item_ref"] for c in result] == ["li-b", "li-a"]
+    assert [c["work_item_ref"] for c in result] == ["li-a", "li-b"]
 
 
-def test_rank_candidates_oldest_first_at_same_priority_origin() -> None:
+def test_rank_candidates_rank_dominates_captured_at() -> None:
+    """A newer item with a lower rank precedes an older item with a higher
+    rank — `captured_at` no longer affects ordering."""
     items = [
-        _item(id_="li-newer", priority=2, captured_at="2026-05-19T02:00:00Z"),
-        _item(id_="li-older", priority=2, captured_at="2026-05-19T01:00:00Z"),
+        _item(id_="li-newer", rank="a1", captured_at="2026-05-19T02:00:00Z"),
+        _item(id_="li-older", rank="a2", captured_at="2026-05-19T01:00:00Z"),
     ]
     result = rank_candidates(items=items)
-    assert [c["work_item_ref"] for c in result] == ["li-older", "li-newer"]
+    assert [c["work_item_ref"] for c in result] == ["li-newer", "li-older"]
 
 
 def test_rank_candidates_id_tiebreaker() -> None:
     items = [
-        _item(id_="li-zzz", priority=2, captured_at="t"),
-        _item(id_="li-aaa", priority=2, captured_at="t"),
+        _item(id_="li-zzz", rank="a2"),
+        _item(id_="li-aaa", rank="a2"),
     ]
     result = rank_candidates(items=items)
     assert [c["work_item_ref"] for c in result] == ["li-aaa", "li-zzz"]
@@ -115,8 +119,8 @@ def test_rank_candidates_excludes_blocked_status() -> None:
     assert [c["work_item_ref"] for c in result] == ["li-b"]
 
 
-def test_rank_candidates_excludes_closed_status() -> None:
-    items = [_item(id_="li-a", status="closed"), _item(id_="li-b")]
+def test_rank_candidates_excludes_done_status() -> None:
+    items = [_item(id_="li-a", status="done"), _item(id_="li-b")]
     result = rank_candidates(items=items)
     assert [c["work_item_ref"] for c in result] == ["li-b"]
 
@@ -130,9 +134,9 @@ def test_rank_candidates_unresolved_dependency_excludes_item() -> None:
     assert [c["work_item_ref"] for c in result] == ["li-blocker"]
 
 
-def test_rank_candidates_closed_dependency_unblocks_item() -> None:
+def test_rank_candidates_done_dependency_unblocks_item() -> None:
     items = [
-        _item(id_="li-done", status="closed"),
+        _item(id_="li-done", status="done"),
         _item(id_="li-ready", depends_on=("li-done",)),
     ]
     result = rank_candidates(items=items)
@@ -147,33 +151,25 @@ def test_rank_candidates_missing_local_dependency_does_not_exclude() -> None:
 
 
 def test_rank_candidates_carries_required_envelope_fields() -> None:
-    items = [_item(id_="li-x", priority=0, origin="gap-tied")]
+    items = [_item(id_="li-x", rank="a0", origin="gap-tied")]
     candidates = rank_candidates(items=items)
     assert len(candidates) == 1
     candidate = candidates[0]
     assert candidate["action"] == "implement"
     assert candidate["work_item_ref"] == "li-x"
-    assert candidate["urgency"] == "high"
+    assert candidate["urgency"] == "medium"
     assert isinstance(candidate["reason"], str)
     assert candidate["reason"]
     # impl-beads-specific fields MAY ride along (contract permits)
-    assert candidate["priority"] == 0
+    assert candidate["rank"] == "a0"
     assert candidate["origin"] == "gap-tied"
 
 
-def test_rank_candidates_urgency_high_for_p0() -> None:
-    items = [_item(id_="li-x", priority=0)]
-    assert rank_candidates(items=items)[0]["urgency"] == "high"
-
-
-def test_rank_candidates_urgency_medium_for_p2() -> None:
-    items = [_item(id_="li-x", priority=2)]
+def test_rank_candidates_urgency_is_uniformly_medium() -> None:
+    """`urgency` is uniform `medium` now that `priority` tiering is gone; the
+    ranked position is the urgency signal."""
+    items = [_item(id_="li-x", rank="a0")]
     assert rank_candidates(items=items)[0]["urgency"] == "medium"
-
-
-def test_rank_candidates_urgency_low_for_p4() -> None:
-    items = [_item(id_="li-x", priority=4)]
-    assert rank_candidates(items=items)[0]["urgency"] == "low"
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +186,7 @@ def test_build_envelope_no_items_emits_empty_candidates_with_pagination() -> Non
 
 
 def test_build_envelope_applies_limit() -> None:
-    items = [_item(id_=f"li-{i:02d}", priority=i) for i in range(10)]
+    items = [_item(id_=f"li-{i:02d}", rank=f"a{i}") for i in range(10)]
     envelope = build_envelope(items=items, offset=0, limit=3)
     candidates = envelope["candidates"]
     assert isinstance(candidates, list)
@@ -200,11 +196,11 @@ def test_build_envelope_applies_limit() -> None:
 
 
 def test_build_envelope_applies_offset() -> None:
-    items = [_item(id_=f"li-{i:02d}", priority=i) for i in range(5)]
+    items = [_item(id_=f"li-{i:02d}", rank=f"a{i}") for i in range(5)]
     envelope = build_envelope(items=items, offset=2, limit=2)
     candidates = envelope["candidates"]
     assert isinstance(candidates, list)
-    # priority order p0..p4 → offset 2 skips li-00, li-01 → emits li-02, li-03
+    # rank order a0..a4 → offset 2 skips li-00, li-01 → emits li-02, li-03
     assert [c["work_item_ref"] for c in candidates] == ["li-02", "li-03"]
     assert envelope["pagination"] == {
         "offset": 2,
@@ -215,7 +211,7 @@ def test_build_envelope_applies_offset() -> None:
 
 
 def test_build_envelope_has_more_false_when_slice_reaches_end() -> None:
-    items = [_item(id_=f"li-{i:02d}", priority=i) for i in range(3)]
+    items = [_item(id_=f"li-{i:02d}", rank=f"a{i}") for i in range(3)]
     envelope = build_envelope(items=items, offset=0, limit=5)
     pagination = envelope["pagination"]
     assert pagination == {"offset": 0, "limit": 5, "total": 3, "has_more": False}
@@ -300,7 +296,7 @@ def test_main_limit_applied_in_json(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     for i in range(7):
-        _seed(_item(id_=f"li-{i:02d}", priority=i))
+        _seed(_item(id_=f"li-{i:02d}", rank=f"a{i}"))
     rc = main(["--json", "--limit", "3"])
     captured = capsys.readouterr()
     assert rc == 0
@@ -315,7 +311,7 @@ def test_main_offset_applied_in_json(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     for i in range(5):
-        _seed(_item(id_=f"li-{i:02d}", priority=i))
+        _seed(_item(id_=f"li-{i:02d}", rank=f"a{i}"))
     rc = main(["--json", "--offset", "2", "--limit", "2"])
     captured = capsys.readouterr()
     assert rc == 0

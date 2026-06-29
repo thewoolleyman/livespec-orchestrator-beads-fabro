@@ -1,49 +1,22 @@
-"""Tests for the cross-repo manifest + dep-entry helpers."""
+"""Tests for the cross-repo manifest + dep-entry helpers.
+
+The readiness predicate (`is_item_ready`), the canonical ranking key
+(`ready_sort_key`), and the sibling-lookup helpers RELOCATED to the shared
+`livespec_runtime.work_items.lifecycle` module (vendored; covered by its own
+upstream tests). What remains in `_cross_repo` — and is exercised here — is
+the `.livespec.jsonc` manifest loader and the raw-entry parser.
+"""
 
 from pathlib import Path
 
-import pytest
 from livespec_orchestrator_beads_fabro.commands import _cross_repo
-from livespec_orchestrator_beads_fabro.commands._cross_repo import (
-    is_item_ready,
-    load_manifest,
-    parse_entry,
-)
-from livespec_orchestrator_beads_fabro.types import WorkItem
+from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest, parse_entry
 from livespec_runtime.cross_repo.types import (
     BranchDependency,
-    CrossRepoManifest,
-    CrossRepoTarget,
     LocalDependency,
     PullRequestDependency,
-    RefStatus,
     SiblingWorkItemDependency,
 )
-
-
-def _item(
-    *,
-    id_: str,
-    status: str = "open",
-    depends_on: tuple[object, ...] = (),
-) -> WorkItem:
-    return WorkItem(
-        id=id_,
-        type="task",
-        status=status,  # type: ignore[arg-type]
-        title=id_,
-        description="d",
-        origin="freeform",
-        gap_id=None,
-        priority=2,
-        assignee=None,
-        depends_on=depends_on,  # type: ignore[arg-type]
-        captured_at="2026-05-19T00:00:00Z",
-        resolution=None,
-        reason=None,
-        audit=None,
-        superseded_by=None,
-    )
 
 
 def test_load_manifest_returns_empty_when_file_absent(tmp_path: Path) -> None:
@@ -141,253 +114,8 @@ def test_parse_entry_non_str_non_dict_returns_none() -> None:
     assert parse_entry(raw=42) is None
 
 
-def test_is_item_ready_open_with_no_deps() -> None:
-    item = _item(id_="li-x")
-    assert is_item_ready(item=item, index={"li-x": item}, manifest=CrossRepoManifest(targets={}))
-
-
-def test_is_item_ready_closed_item_is_never_ready() -> None:
-    item = _item(id_="li-x", status="closed")
-    assert not is_item_ready(
-        item=item, index={"li-x": item}, manifest=CrossRepoManifest(targets={})
-    )
-
-
-def test_is_item_ready_open_local_dep_blocks() -> None:
-    blocker = _item(id_="li-blocker")
-    blocked = _item(id_="li-blocked", depends_on=("li-blocker",))
-    index = {item.id: item for item in (blocker, blocked)}
-    assert not is_item_ready(item=blocked, index=index, manifest=CrossRepoManifest(targets={}))
-
-
-def test_is_item_ready_closed_local_dep_does_not_block() -> None:
-    blocker = _item(id_="li-done", status="closed")
-    blocked = _item(id_="li-ready", depends_on=("li-done",))
-    index = {item.id: item for item in (blocker, blocked)}
-    assert is_item_ready(item=blocked, index=index, manifest=CrossRepoManifest(targets={}))
-
-
-def test_is_item_ready_typed_local_dep_blocks_when_open() -> None:
-    blocker = _item(id_="li-blocker")
-    blocked = _item(
-        id_="li-blocked",
-        depends_on=({"kind": "local", "work_item_id": "li-blocker"},),
-    )
-    index = {item.id: item for item in (blocker, blocked)}
-    assert not is_item_ready(item=blocked, index=index, manifest=CrossRepoManifest(targets={}))
-
-
-def test_is_item_ready_typed_local_dep_passes_when_closed() -> None:
-    blocker = _item(id_="li-done", status="closed")
-    blocked = _item(
-        id_="li-ready",
-        depends_on=({"kind": "local", "work_item_id": "li-done"},),
-    )
-    index = {item.id: item for item in (blocker, blocked)}
-    assert is_item_ready(item=blocked, index=index, manifest=CrossRepoManifest(targets={}))
-
-
-def test_is_item_ready_unparseable_entry_blocks() -> None:
-    item = _item(id_="li-x", depends_on=({"kind": "unknown"},))
-    assert not is_item_ready(
-        item=item, index={"li-x": item}, manifest=CrossRepoManifest(targets={})
-    )
-
-
-def test_is_item_ready_unknown_kind_with_empty_manifest_does_not_block() -> None:
-    """Non-local kind whose `repo` is not in the manifest resolves to UNKNOWN."""
-    entry = {"kind": "pull_request", "repo": "runtime", "number": 1}
-    item = _item(id_="li-x", depends_on=(entry,))
-    assert is_item_ready(
-        item=item,
-        index={"li-x": item},
-        manifest=CrossRepoManifest(targets={}),
-    )
-
-
-def test_is_item_ready_open_pr_dep_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
-    """When the manifest has the repo and the gh provider returns OPEN, exclude."""
-
-    def _fake_pr_state(*, github_url: str, number: int) -> str | None:
-        _ = github_url
-        _ = number
-        return "OPEN"
-
-    from livespec_runtime.cross_repo.providers import github as gh
-
-    monkeypatch.setattr(gh, "query_pull_request_state", _fake_pr_state)
-    manifest = CrossRepoManifest(
-        targets={
-            "runtime": CrossRepoTarget(github_url="https://github.com/x/y"),
-        },
-    )
-    entry = {"kind": "pull_request", "repo": "runtime", "number": 1}
-    item = _item(id_="li-x", depends_on=(entry,))
-    assert not is_item_ready(item=item, index={"li-x": item}, manifest=manifest)
-
-
-def test_is_item_ready_merged_pr_dep_does_not_block(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _fake_pr_state(*, github_url: str, number: int) -> str | None:
-        _ = github_url
-        _ = number
-        return "MERGED"
-
-    from livespec_runtime.cross_repo.providers import github as gh
-
-    monkeypatch.setattr(gh, "query_pull_request_state", _fake_pr_state)
-    manifest = CrossRepoManifest(
-        targets={
-            "runtime": CrossRepoTarget(github_url="https://github.com/x/y"),
-        },
-    )
-    entry = {"kind": "pull_request", "repo": "runtime", "number": 1}
-    item = _item(id_="li-x", depends_on=(entry,))
-    assert is_item_ready(item=item, index={"li-x": item}, manifest=manifest)
-
-
 def test_module_public_api() -> None:
     assert set(_cross_repo.__all__) == {
-        "is_item_ready",
         "load_manifest",
         "parse_entry",
-        "ready_sort_key",
     }
-
-
-def test_local_lookup_unknown_for_missing_id() -> None:
-    """The local lookup returns UNKNOWN when an id is absent — covers the missing-id branch."""
-    item = _item(id_="li-x", depends_on=({"kind": "local", "work_item_id": "li-absent"},))
-    assert is_item_ready(item=item, index={"li-x": item}, manifest=CrossRepoManifest(targets={}))
-    assert RefStatus.UNKNOWN.value == "unknown"
-
-
-# ---------------------------------------------------------------------------
-# _sibling_lookup_for — unit coverage for all branches
-# ---------------------------------------------------------------------------
-
-
-def test_sibling_lookup_for_empty_manifest_returns_none() -> None:
-    """No targets → no sibling indices → None."""
-    from livespec_orchestrator_beads_fabro.commands._cross_repo import _sibling_lookup_for
-
-    assert _sibling_lookup_for(manifest=CrossRepoManifest(targets={})) is None
-
-
-def test_sibling_lookup_for_no_local_clone_returns_none() -> None:
-    """Target without local_clone is skipped; result is None when nothing readable."""
-    from livespec_orchestrator_beads_fabro.commands._cross_repo import _sibling_lookup_for
-
-    manifest = CrossRepoManifest(
-        targets={"runtime": CrossRepoTarget(github_url="https://github.com/x/y")}
-    )
-    assert _sibling_lookup_for(manifest=manifest) is None
-
-
-def test_sibling_lookup_for_config_error_tolerates_and_returns_none(tmp_path: Path) -> None:
-    """Missing prefix in sibling config raises; error is tolerated and result is None."""
-    from livespec_orchestrator_beads_fabro.commands._cross_repo import _sibling_lookup_for
-
-    manifest = CrossRepoManifest(
-        targets={
-            "runtime": CrossRepoTarget(
-                github_url="https://github.com/x/y",
-                local_clone=tmp_path,
-            )
-        }
-    )
-    assert _sibling_lookup_for(manifest=manifest) is None
-
-
-def test_sibling_lookup_for_read_error_tolerates_and_returns_none(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """read_work_items failure is tolerated; result is None."""
-    from livespec_orchestrator_beads_fabro.commands import _cross_repo
-    from livespec_orchestrator_beads_fabro.commands._cross_repo import _sibling_lookup_for
-    from livespec_orchestrator_beads_fabro.errors import BeadsConnectionError
-    from livespec_orchestrator_beads_fabro.types import StoreConfig
-
-    fake_config = StoreConfig(
-        tenant="t", prefix="t", server_user="t", database="t", bd_path="bd", fake=True
-    )
-    monkeypatch.setattr(_cross_repo, "resolve_store_config", lambda **_: fake_config)
-
-    def _failing_read(*, path: StoreConfig) -> None:  # noqa: ARG001
-        raise BeadsConnectionError(detail="simulated unavailable")
-
-    monkeypatch.setattr(_cross_repo, "read_work_items", _failing_read)
-    manifest = CrossRepoManifest(
-        targets={
-            "runtime": CrossRepoTarget(
-                github_url="https://github.com/x/y",
-                local_clone=tmp_path,
-            )
-        }
-    )
-    assert _sibling_lookup_for(manifest=manifest) is None
-
-
-def test_sibling_lookup_for_returns_callable_with_correct_statuses(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Readable clone → callable maps open→OPEN, closed→CLOSED, missing→UNKNOWN."""
-    from livespec_orchestrator_beads_fabro.commands import _cross_repo
-    from livespec_orchestrator_beads_fabro.commands._cross_repo import _sibling_lookup_for
-    from livespec_orchestrator_beads_fabro.types import StoreConfig
-
-    open_sib = _item(id_="li-sib-open")
-    closed_sib = _item(id_="li-sib-closed", status="closed")
-    fake_config = StoreConfig(
-        tenant="t", prefix="t", server_user="t", database="t", bd_path="bd", fake=True
-    )
-    monkeypatch.setattr(_cross_repo, "resolve_store_config", lambda **_: fake_config)
-    monkeypatch.setattr(_cross_repo, "read_work_items", lambda **_: iter([open_sib, closed_sib]))
-    manifest = CrossRepoManifest(
-        targets={
-            "runtime": CrossRepoTarget(
-                github_url="https://github.com/x/y",
-                local_clone=tmp_path,
-            )
-        }
-    )
-    lookup = _sibling_lookup_for(manifest=manifest)
-    assert lookup is not None
-    assert lookup("runtime", "li-sib-open") == RefStatus.OPEN
-    assert lookup("runtime", "li-sib-closed") == RefStatus.CLOSED
-    assert lookup("runtime", "li-nonexistent") == RefStatus.UNKNOWN
-    assert lookup("other-repo", "li-sib-open") == RefStatus.UNKNOWN
-
-
-# ---------------------------------------------------------------------------
-# is_item_ready — sibling_work_item: open blocks, closed satisfies
-# ---------------------------------------------------------------------------
-
-
-def test_is_item_ready_open_sibling_dep_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Open sibling_work_item dependency blocks readiness."""
-    monkeypatch.setattr(
-        _cross_repo,
-        "_sibling_lookup_for",
-        lambda **_: (lambda _r, _w: RefStatus.OPEN),
-    )
-    manifest = CrossRepoManifest(
-        targets={"runtime": CrossRepoTarget(github_url="https://github.com/x/y")}
-    )
-    entry = {"kind": "sibling_work_item", "repo": "runtime", "work_item_id": "li-sib"}
-    item = _item(id_="li-x", depends_on=(entry,))
-    assert not is_item_ready(item=item, index={"li-x": item}, manifest=manifest)
-
-
-def test_is_item_ready_closed_sibling_dep_does_not_block(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Closed sibling_work_item dependency does not block readiness."""
-    monkeypatch.setattr(
-        _cross_repo,
-        "_sibling_lookup_for",
-        lambda **_: (lambda _r, _w: RefStatus.CLOSED),
-    )
-    manifest = CrossRepoManifest(
-        targets={"runtime": CrossRepoTarget(github_url="https://github.com/x/y")}
-    )
-    entry = {"kind": "sibling_work_item", "repo": "runtime", "work_item_id": "li-sib"}
-    item = _item(id_="li-x", depends_on=(entry,))
-    assert is_item_ready(item=item, index={"li-x": item}, manifest=manifest)
