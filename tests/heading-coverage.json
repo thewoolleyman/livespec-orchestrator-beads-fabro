@@ -388,5 +388,61 @@
     "spec_file": "scenarios.md",
     "test": "tests.e2e-cli.test_codex_skill_picker.test_skills_picker_finds_orchestrate_by_short_name",
     "reason": "Top-of-pyramid live Codex TUI acceptance for the operator discovery path: starts the real Codex TUI, opens /skills, chooses List skills, searches the short name orchestrate, and requires the rendered Skill row to include the livespec-orchestrator-beads-fabro plugin context."
+  },
+  {
+    "heading": "## Dispatcher admission, WIP cap, and post-merge acceptance",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). Realizes the two human-delegable valves (admission ready->active; acceptance acceptance->done) + the per-repo WIP cap for the Beads/Fabro Dispatcher. The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; the valve/WIP/acceptance behaviors are exercised by Scenarios 22-25 (integration-tier against the FakeBeadsClient), bound via the governed propose-change/revise resulting_files[] loop once the implement slice lands them."
+  },
+  {
+    "heading": "## Scenario 22 \u2014 Dispatcher admits the highest-rank ready item up to the per-repo WIP cap",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it."
+  },
+  {
+    "heading": "## Scenario 23 \u2014 Dispatcher holds a manual-admission item until approved",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it."
+  },
+  {
+    "heading": "## Scenario 24 \u2014 complete merges on green into the acceptance state",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it."
+  },
+  {
+    "heading": "## Scenario 25 \u2014 accept confirms post-ship per acceptance_policy",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it."
+  },
+  {
+    "heading": "## Scenario 26 \u2014 list-work-items emits lane and lane_reason",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it."
+  },
+  {
+    "heading": "## Scenario 27 \u2014 next ranks ready items by rank",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it."
+  },
+  {
+    "heading": "## Scenario 28 \u2014 append_work_item registers and lands a custom status in two steps",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it."
   }
 ]
