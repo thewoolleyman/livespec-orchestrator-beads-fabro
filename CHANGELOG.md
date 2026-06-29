@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.2.0...v0.3.0) (2026-06-29)
+
+
+### Features
+
+* **dispatcher:** admission valve + WIP cap + post-merge acceptance valves ([da61be6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/da61be6d05a2bdf36eec32a99516fe036ee55f99))
+* **plan:** add the plan skill (Planning Lane realization) (livespec-zs22.5) ([bb4a20b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bb4a20bd3e9248ea893947186150dad6d704d5b5))
+* **work-items:** adopt v0.5.0 rank/7-state model + beads store adapter ([dfbb21e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/dfbb21e80a22b698a9cc83e7d4a57d8a7c26c72f))
+* **work-items:** doctor work-item-state invariants (rank/assignee/blocked-reason) ([8bb59d5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8bb59d570bc0baedb267eebaabca6d6da909d524))
+* **work-items:** list-work-items emits lane/lane_reason + filter=blocked lane semantics ([da3c46c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/da3c46c3ec5319d9462201aab18ba19a305dc9ee))
+* **work-items:** rebalance-ranks command + legacy-seed backfill primitive ([5d49d2b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5d49d2bc08f75c67686319dfd8c1f280c827bd74))
+
+
+### Bug Fixes
+
+* **dispatch:** anchor the run brief's repo line to the sandbox cwd ([e0baa28](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e0baa281337588d8c024b5cb46f9c4f5931e6d97))
+* **dispatch:** size the Codex freshness gate to a realistic run budget ([7945c7e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7945c7e7d48cc0a648f6c47878f65037b4d3fe27))
+* read fleet manifest 'fleet' key with legacy 'members' fallback ([e979d41](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e979d410566be9e8732e109efd30ecf52c4586e9))
+
 ## [0.2.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.1.0...v0.2.0) (2026-06-24)
 
 
