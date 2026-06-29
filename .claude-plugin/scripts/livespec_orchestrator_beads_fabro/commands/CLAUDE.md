@@ -58,6 +58,16 @@ public module per query-only skill:
   cost; the seam y0m's spend cap builds on). Its Ledger
   writes are machine-path dispositions of already-filed items
   (close-on-confirmed-merge).
+- `rebalance_ranks.py` — the orchestrator-PRIVATE, on-demand bulk
+  `rank` re-key (NOT a contract CLI and NOT a skill surface; never
+  auto-fires). `rebalanced(items)` orders by the canonical
+  `ready_sort_key` and assigns evenly-spaced fresh keys via
+  `livespec_runtime.work_items.rank.n_keys_between` (order-preserving;
+  compacts fragmented keys), and `main` walks the live (non-`done`)
+  heads through it and writes each changed key back via the store's
+  `update_work_item_rank`. `legacy_seed(rows)` is the one-time L2 backfill
+  primitive (legacy `priority → captured_at → id` seed order); it is
+  reused by the fleet's L2 migration, not by `main`.
 
 Each public module exports `main(argv=None) -> int` (the supervisor
 the wrapper calls) plus its named helpers, all enumerated in

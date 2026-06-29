@@ -100,6 +100,7 @@ __all__ = [
     "read_work_item_comments",
     "read_work_items",
     "register_custom_statuses",
+    "update_work_item_rank",
 ]
 
 # Label prefixes that carry livespec-side enum/flag fields with no native
@@ -246,6 +247,20 @@ def append_work_item(*, path: StoreConfig, item: WorkItem) -> None:
         _close_in_place(client=client, item=item)
         return
     _create_work_item(client=client, item=item)
+
+
+def update_work_item_rank(*, path: StoreConfig, item: WorkItem) -> None:
+    """Re-key an existing item's `rank` IN PLACE (metadata.rank).
+
+    The bulk `rebalance-ranks` re-key path: unlike `append_work_item`
+    (which CREATES a fresh issue, or closes one in place), this mutates an
+    EXISTING issue's `metadata.rank` without re-creating it. It rewrites
+    the FULL metadata object reconstructed from `item` (rank PLUS any
+    `AuditRecord`), so a re-key never drops the audit a closed-then-reopened
+    or evidence-carrying issue holds. The status/labels/edges are untouched.
+    """
+    client = make_beads_client(config=path)
+    client.update_issue(issue_id=item.id, metadata=_work_item_metadata(item=item))
 
 
 def register_custom_statuses(*, path: StoreConfig) -> None:
