@@ -70,30 +70,72 @@ red-green-replay; co-edit `tests/heading-coverage.json` for any
   S1 `bd-ib-ojlmr6` · S2 `bd-ib-7mounw` · S3 `bd-ib-dnw2ei` ·
   S4 `bd-ib-3wjakl` · S5 `bd-ib-6gwl23` · S6 `bd-ib-6zndit` ·
   S7 `bd-ib-jysmuu`.
-- ⏳ **implement (S1-S7) — NOT yet started** (scoped; see
-  `research/04-implement-findings.md`).
+- ✅ **implement S1 + S2 DONE** — the coordinated foundation PR merged to
+  `master` as **`dfbb21e`** (PR #203; rebase-merge landed the re-vendor
+  chore `6d5cbd5` + the `feat(work-items)` commit). Duplicate PR #200
+  closed. The build is green at 100% coverage on the new v0.5.0
+  rank/7-state model. Ledger children **S1 `bd-ib-ojlmr6` and S2
+  `bd-ib-7mounw` are CLOSED** (`status=done`, `resolution=completed`,
+  `AuditRecord.merge_sha=dfbb21e…`). Their deps cleared, so **S3
+  `bd-ib-dnw2ei`, S4 `bd-ib-3wjakl`, and S6 `bd-ib-6zndit` are now
+  READY** (largely parallel); S5 `bd-ib-6gwl23` waits on S4; S7
+  `bd-ib-jysmuu` (release) waits on S1-S6.
+- ⏳ **implement S3-S6 — NOT yet started.**
 - ⏳ release — NOT yet cut (S7).
 - L0 (livespec-runtime v0.5.0) is DONE — the artifact this track vendors.
 
-## Next action — implement S1+S2 (the coordinated foundation PR)
+### Critical note for S3+ implementers — repo vs. live-tenant schema skew
 
-Execute the implement phase per **`research/04-implement-findings.md`**
-(the concrete, verified resume guide). Start with the coordinated
-**S1+S2** PR (re-vendor v0.5.0 + the `_cross_repo.py` shrink + the beads
-custom-status/2-step/rank/policy store adapter + the uniform
-`priority→rank` construction sweep across ~6 product modules + ~17 test
-files), which is irreducibly one green PR (re-vendor breaks the build
-until the adapter is migrated; the breakage is a verified-uniform
-`priority`-keyword `TypeError`). Then S3 (dispatcher valves), S4
-(lane/rank), S5 (rebalance-ranks), S6 (doctor invariants), and S7 (cut
-the release). Status is derived from the ledger (`bd children
-bd-ib-vvrxcb`); close each child via the `implement` freeform path as its
-PR merges, carrying merge-evidence in the `AuditRecord`.
+`master` now carries the **post-migration** L1a code (rank, 7-state,
+`done`↔`closed`). The **live beads tenant is still PRE-migration**
+(legacy `open`/`in_progress`/`closed`/`deferred`, `priority`, no `rank`) —
+the fleet's L2 status migration has NOT run. The released code is
+designed to run against the tenant only AFTER L2 (lockstep — decisions
+37/46). The post-migration READ path tolerates legacy rows (a legacy
+`open` passes through as `open`; a rank-less row reads `BOTTOM_SENTINEL`),
+and `bd close` is schema-agnostic, which is how S1/S2 were closed above.
+S3-S6 are hermetic (`FakeBeadsClient`, new-schema fixtures) so they are
+unaffected; just do NOT assume the live tenant matches the new schema.
+
+## Next action — implement S3 (dispatcher valves + WIP cap + acceptance)
+
+S3-S6 are additive on the S1+S2 foundation. Recommended order: **S3, then
+S4, then S6** (all unblocked, largely parallel), then **S5** (after S4),
+then **S7** (release). Per slice, per `research/04-implement-findings.md`:
+
+- **S3 `bd-ib-dnw2ei`** — `## Dispatcher admission, WIP cap, and
+  post-merge acceptance` + Scenarios 22-25. `dispatcher.py` +
+  `_dispatcher_engine.py`: `dispatcher.wip_cap` (default 5); admit
+  highest-`rank` ready item when `count(active) < cap`, set `assignee`;
+  hold `admission_policy=manual`; `complete`=merge→`acceptance`;
+  `accept` per `acceptance_policy`; `reject`=revert/fix-forward.
+  Re-express Scenario-10 human-gated as `admission_policy=manual` and
+  Scenario-11 non-convergence as bounce-to-`backlog`.
+- **S4 `bd-ib-3wjakl`** — lane emission + next rank (Scenarios 26-27):
+  `list_work_items.py` add flat `lane`/`lane_reason` keys via
+  `lifecycle.lane_of`; refine `--filter=ready/blocked` to lane semantics.
+- **S6 `bd-ib-6zndit`** — doctor rank/assignee/blocked invariants.
+- **S5 `bd-ib-6gwl23`** — `rebalance-ranks` command (`rank.n_keys_between`)
+  + the legacy-seed entry path for L2's backfill.
+- **S7 `bd-ib-jysmuu`** — cut the release (release-please opens the PR;
+  merge + tag). This release is what L2 + the console consume.
+
+Close each child via the freeform close path as its PR merges, carrying
+merge-evidence in the `AuditRecord` (see the S1/S2 close: a small script
+through the store seam, run from the repo root under
+`with-livespec-env.sh`, builds the closure WorkItem with
+`status="done"`, `resolution="completed"`, and an `AuditRecord` whose
+`merge_sha` is the squashed/rebased merge commit on `master`).
 
 Discipline (non-negotiable): worktree → PR → rebase-merge; `mise exec --
 git`; never `--no-verify`; halt + report on any hook failure; product
-`.py` follows red-green-replay; keep per-file 100% coverage. The spec
-already landed (v020) — implement slices change NO `## ` heading, so no
-further `heading-coverage.json` co-edit is required.
+`.py` follows red-green-replay; keep per-file 100% coverage. The
+host-only `check-codex-skill-picker` gate may fail locally on a "trust
+hooks" Codex-TUI prompt — it is skipped in pre-commit/pre-push/CI, so run
+the full aggregate as `just skip="check-codex-skill-picker" check` when
+validating locally. The spec already landed (v020) — implement slices
+change NO `## ` heading, so no further `heading-coverage.json` co-edit is
+required (the L1a Scenario 22-28 heading-coverage entries are TODO-bound
+warnings, expected until their acceptance tests land in S3-S6).
 
 Each milestone (implemented; released) is reported to the coordinator.
