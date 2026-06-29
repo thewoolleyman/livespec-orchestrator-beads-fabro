@@ -109,6 +109,11 @@ def _item(**overrides: object) -> WorkItem:
         reason=None,
         audit=None,
         superseded_by=None,
+        # Admission-eligible by default so a non-host-only item dispatches; the
+        # host-only refusal is checked BEFORE admission, so a host-only item is
+        # still routed away (never admitted) regardless of this policy.
+        admission_policy="auto",
+        acceptance_policy="ai-only",
     )
     return replace(base, **overrides)
 

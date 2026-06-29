@@ -251,27 +251,27 @@
     "heading": "## Scenario 10 \u2014 Dispatcher refuses a human-gated item",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "tests.integration.test_dispatcher_human_gated_scenario10.test_dispatch_surfaces_human_gated_item_without_launching_fabro",
+    "test": "tests.integration.test_dispatcher_human_gated_scenario10.test_dispatch_holds_manual_admission_item_without_launching_fabro",
     "clauses": [
       {
         "gap_id": "gap-dpk6g22t",
         "scenario": "Scenario 10 \u2014 Dispatcher refuses a human-gated item"
       }
     ],
-    "reason": "Integration-tier acceptance for the Dispatcher's human-gated refusal (work-item livespec-impl-beads-cjey2z, gap-dpk6g22t): the dispatch CLI is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend) with run_dispatch recorded, proving a human-gated slice is surfaced (failed at human-gated-surfaced) and NEVER launched into a fabro sandbox, and the item is left open. The bound node id is the surface journey; the predicate, journal, and ordinary-item cases are sibling tests in the same module."
+    "reason": "Integration-tier acceptance for Scenario 10's realization under the work-item-state-machine lifecycle (epic bd-ib-vvrxcb, slice bd-ib-dnw2ei, gap-dpk6g22t): the prior human-gated text marker is replaced by the first-class admission_policy field, so a spec-change / risky item is HELD at the admission valve as admission_policy=manual and surfaced for the maintainer, never launched into a fabro sandbox. The dispatch CLI is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend) with run_dispatch recorded; the bound node id is the manual-hold journey (item stays ready, failed at admission-held); the journal and admits-auto-item cases are sibling tests in the same module."
   },
   {
     "heading": "## Scenario 11 \u2014 Dispatcher bounces a non-converging slice to needs-regroom",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "tests.integration.test_dispatcher_non_convergence_scenario11.test_dispatch_bounces_stalled_slice_to_needs_regroom",
+    "test": "tests.integration.test_dispatcher_non_convergence_scenario11.test_dispatch_bounces_stalled_slice_to_backlog",
     "clauses": [
       {
         "gap_id": "gap-rs4tkntz",
         "scenario": "Scenario 11 \u2014 Dispatcher bounces a non-converging slice to needs-regroom"
       }
     ],
-    "reason": "Integration-tier acceptance for the Dispatcher's non-convergence bounce (work-item livespec-impl-beads-n5kina, gap-rs4tkntz): the dispatch CLI is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend), and a non-convergence terminal is read back through the SAME livespec_orchestrator_beads_fabro.regroom primitive \u2014 proving the slice is marked needs-regroom (escalate-don't-drop, never infinite-retried) and surfaced. The bound node id is the stalled-slice bounce journey; the DOT-marker bounce, the no-bounce-on-ordinary-failure/green cases, and the predicate cases are sibling tests in the same module."
+    "reason": "Integration-tier acceptance for the Dispatcher's non-convergence bounce (slice bd-ib-dnw2ei, gap-rs4tkntz): under the work-item-state-machine lifecycle the bounce target is the first-class backlog status (the slice leaves the WIP for re-grooming), not the prior needs-regroom label. The dispatch CLI is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend); the bound node id is the stalled-slice bounce-to-backlog journey; the DOT-marker bounce, the no-bounce-on-ordinary-failure/green cases, and the predicate cases are sibling tests in the same module."
   },
   {
     "heading": "## Scenario 12 \u2014 Dispatcher emits calibration telemetry",
@@ -393,36 +393,36 @@
     "heading": "## Dispatcher admission, WIP cap, and post-merge acceptance",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "test": "TODO",
-    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). Realizes the two human-delegable valves (admission ready->active; acceptance acceptance->done) + the per-repo WIP cap for the Beads/Fabro Dispatcher. The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; the valve/WIP/acceptance behaviors are exercised by Scenarios 22-25 (integration-tier against the FakeBeadsClient), bound via the governed propose-change/revise resulting_files[] loop once the implement slice lands them."
+    "test": "tests.integration.test_dispatcher_admission_acceptance_scenarios22_25.test_loop_admits_highest_rank_up_to_wip_cap",
+    "reason": "Integration-tier acceptance for the two human-delegable valves + the per-repo WIP cap (epic bd-ib-vvrxcb, slice bd-ib-dnw2ei). The bound node id drives the loop admission valve (admit highest-rank ready items up to wip_cap, set assignee, ready -> active) through the real store/client seam against the in-memory FakeBeadsClient; the manual-admission hold (Scenario 23), the complete-merges-on-green-into-acceptance (Scenario 24), and the accept-per-acceptance_policy + reject routing (Scenario 25) are bound by their own scenario headings in the same module."
   },
   {
     "heading": "## Scenario 22 \u2014 Dispatcher admits the highest-rank ready item up to the per-repo WIP cap",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it."
+    "test": "tests.integration.test_dispatcher_admission_acceptance_scenarios22_25.test_loop_admits_highest_rank_up_to_wip_cap",
+    "reason": "Integration-tier acceptance for the admission valve + per-repo WIP cap (slice bd-ib-dnw2ei): with wip_cap=2 and three admission-eligible ready items ranked a0/a1/a2, the loop admits a0 and a1 (sets an assignee, transitions each to active) and leaves a2 at ready (capacity-deferred). Driven through the real dispatcher loop CLI + store/client seam against the in-memory FakeBeadsClient with run_dispatch recorded."
   },
   {
     "heading": "## Scenario 23 \u2014 Dispatcher holds a manual-admission item until approved",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it."
+    "test": "tests.integration.test_dispatcher_admission_acceptance_scenarios22_25.test_loop_holds_manual_admission_item",
+    "reason": "Integration-tier acceptance for the manual-admission hold (slice bd-ib-dnw2ei): a ready item whose effective admission_policy is manual is not transitioned to active and is surfaced for the maintainer to approve. Driven through the real dispatcher loop CLI + store/client seam against the in-memory FakeBeadsClient with run_dispatch recorded (never launched)."
   },
   {
     "heading": "## Scenario 24 \u2014 complete merges on green into the acceptance state",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it."
+    "test": "tests.integration.test_dispatcher_admission_acceptance_scenarios22_25.test_complete_merges_on_green_into_acceptance",
+    "reason": "Integration-tier acceptance for complete merges-on-green into acceptance (slice bd-ib-dnw2ei): a green dispatch transitions the active item to the observable acceptance state (merged + live) rather than straight to done. Driven through the real dispatch CLI + store/client seam against the in-memory FakeBeadsClient; the journal shows ledger-complete + acceptance-ai-pass and no ledger-accept under the default ai-then-human policy."
   },
   {
     "heading": "## Scenario 25 \u2014 accept confirms post-ship per acceptance_policy",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it."
+    "test": "tests.integration.test_dispatcher_admission_acceptance_scenarios22_25.test_accept_ai_then_human_parks_until_human",
+    "reason": "Integration-tier acceptance for accept-per-acceptance_policy (slice bd-ib-dnw2ei): ai-then-human parks the merged item in acceptance until a human confirms; the bound node id is the ai-then-human park journey. The ai-only-confirms-to-done case and the reject routing (rework -> active; re-groom -> backlog, exercised through the real store seam + the pure reject_routing) are sibling tests in the same module."
   },
   {
     "heading": "## Scenario 26 \u2014 list-work-items emits lane and lane_reason",

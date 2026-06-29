@@ -4,17 +4,18 @@ Binds SPECIFICATION/scenarios.md "Scenario 11 — Dispatcher bounces a
 non-converging slice to needs-regroom" and the contracts.md clause:
 
     On factory NON-CONVERGENCE (a dispatched slice that will not converge
-    through the janitor gate) the Dispatcher MUST mark the item `needs-regroom`
-    and SURFACE it (escalate-don't-drop), never infinite-retry.
+    through the janitor gate) the Dispatcher MUST bounce the item and SURFACE
+    it (escalate-don't-drop), never infinite-retry.
 
-This is the top-of-pyramid behavior journey: it drives the real
-`dispatcher.main(["dispatch", ...])` CLI through the REAL store/client seam
-against the in-memory `FakeBeadsClient` (the hermetic CI backend), with
-`run_dispatch` replaced by a stand-in that returns a non-convergence terminal.
-The test then reads the tenant back through the SAME `livespec_orchestrator_beads_fabro.regroom`
-primitive the Dispatcher uses, proving the bounced item carries the
-`needs-regroom` label (marked, never dropped) and that an ordinary failure /
-green run does NOT bounce.
+Under the work-item-state-machine lifecycle the bounce target is the
+first-class `backlog` status (the slice leaves the WIP for re-grooming), NOT
+the prior `needs-regroom` label. This is the top-of-pyramid behavior journey:
+it drives the real `dispatcher.main(["dispatch", ...])` CLI through the REAL
+store/client seam against the in-memory `FakeBeadsClient` (the hermetic CI
+backend), with `run_dispatch` replaced by a stand-in that returns a
+non-convergence terminal. The test then reads the tenant back through the
+store, proving the bounced item is at `backlog` (bounced, never dropped) and
+that an ordinary failure / green run does NOT bounce.
 """
 
 from __future__ import annotations
@@ -35,8 +36,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     is_non_convergence_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
-from livespec_orchestrator_beads_fabro.regroom import is_needs_regroom
-from livespec_orchestrator_beads_fabro.store import append_work_item
+from livespec_orchestrator_beads_fabro.store import (
+    append_work_item,
+    materialize_work_items,
+    read_work_items,
+)
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 _FLEET_MANIFEST_TEXT = (
@@ -110,8 +114,16 @@ def _item(**overrides: object) -> WorkItem:
         reason=None,
         audit=None,
         superseded_by=None,
+        # Admission-eligible so the slice is admitted (ready -> active) and
+        # reaches a terminal the bounce can act on.
+        admission_policy="auto",
+        acceptance_policy="ai-only",
     )
     return replace(base, **overrides)
+
+
+def _stored() -> dict[str, WorkItem]:
+    return materialize_work_items(records=read_work_items(path=_config()))
 
 
 def _repo_with_workflow(*, tmp_path: Path) -> tuple[Path, Path]:
@@ -191,11 +203,11 @@ def test_non_convergence_false_for_green() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Scenario 11: a non-converging slice is marked needs-regroom and surfaced.
+# Scenario 11: a non-converging slice is bounced to backlog and surfaced.
 # ---------------------------------------------------------------------------
 
 
-def test_dispatch_bounces_stalled_slice_to_needs_regroom(
+def test_dispatch_bounces_stalled_slice_to_backlog(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -219,16 +231,16 @@ def test_dispatch_bounces_stalled_slice_to_needs_regroom(
 
     # Non-green terminal -> non-zero exit (the maintainer's eyes are required).
     assert exit_code == 1
-    # The slice was marked needs-regroom through the SAME primitive the
-    # intake / groom paths use — escalate-don't-drop, not infinite-retry.
-    assert is_needs_regroom(path=_config(), item_id=item.id) is True
+    # The slice was bounced out of the WIP to `backlog` — escalate-don't-drop,
+    # not infinite-retry.
+    assert _stored()[item.id].status == "backlog"
     # And surfaced to stderr.
     err = capsys.readouterr().err
-    assert "needs-regroom" in err
+    assert "backlog" in err
     assert item.id in err
 
 
-def test_dispatch_bounces_dot_non_converged_slice_to_needs_regroom(
+def test_dispatch_bounces_dot_non_converged_slice_to_backlog(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -250,7 +262,7 @@ def test_dispatch_bounces_dot_non_converged_slice_to_needs_regroom(
     )
 
     assert exit_code == 1
-    assert is_needs_regroom(path=_config(), item_id=item.id) is True
+    assert _stored()[item.id].status == "backlog"
     # The bounce is journaled (the escalation is observable).
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
     stages = [json.loads(line).get("stage") for line in journal_text.splitlines()]
@@ -261,7 +273,7 @@ def test_dispatch_does_not_bounce_ordinary_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A one-off failure (not non-convergence) is NOT bounced to needs-regroom."""
+    """A one-off failure (not non-convergence) is NOT bounced to backlog."""
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     item = _item()
     append_work_item(path=_config(), item=item)
@@ -280,14 +292,16 @@ def test_dispatch_does_not_bounce_ordinary_failure(
     )
 
     assert exit_code == 1
-    assert is_needs_regroom(path=_config(), item_id=item.id) is False
+    # Not bounced: an ordinary failure leaves the admitted slice in the WIP
+    # (`active`), not at `backlog`.
+    assert _stored()[item.id].status == "active"
 
 
 def test_dispatch_does_not_bounce_green_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A converged (green) run is never bounced to needs-regroom."""
+    """A converged (green) run is never bounced to backlog."""
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     item = _item()
     append_work_item(path=_config(), item=item)
@@ -315,4 +329,5 @@ def test_dispatch_does_not_bounce_green_run(
     )
 
     assert exit_code == 0
-    assert is_needs_regroom(path=_config(), item_id=item.id) is False
+    # Green + --no-close-on-merge: admitted (active), never bounced to backlog.
+    assert _stored()[item.id].status == "active"

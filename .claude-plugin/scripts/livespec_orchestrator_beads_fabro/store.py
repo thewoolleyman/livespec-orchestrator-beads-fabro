@@ -101,6 +101,7 @@ __all__ = [
     "read_work_items",
     "register_custom_statuses",
     "update_work_item_rank",
+    "update_work_item_status",
 ]
 
 # Label prefixes that carry livespec-side enum/flag fields with no native
@@ -261,6 +262,35 @@ def update_work_item_rank(*, path: StoreConfig, item: WorkItem) -> None:
     """
     client = make_beads_client(config=path)
     client.update_issue(issue_id=item.id, metadata=_work_item_metadata(item=item))
+
+
+def update_work_item_status(
+    *,
+    path: StoreConfig,
+    item_id: str,
+    status: str,
+    assignee: str | None = None,
+) -> None:
+    """Transition an existing item's `status` (and optional `assignee`) IN PLACE.
+
+    The Dispatcher's non-terminal lifecycle write seam — the `ready -> active`
+    admit (which also sets the `assignee`), the `active -> acceptance`
+    complete, the `acceptance -> active`/`backlog` reject routing, and the
+    non-convergence bounce to `backlog`. Unlike `append_work_item` (which
+    CREATES a fresh issue or CLOSES one in place) this mutates an EXISTING
+    non-`done` issue's status without re-creating it, mirroring
+    `update_work_item_rank`'s in-place shape. The `done` terminal is NOT
+    routed here — a `done` transition carries `resolution` + the
+    `AuditRecord` and goes through `append_work_item`'s close-in-place path;
+    so the livespec status maps straight onto its beads name (no `done`
+    arm is reachable here).
+    """
+    client = make_beads_client(config=path)
+    client.update_issue(
+        issue_id=item_id,
+        status=_beads_status_for(status=status),
+        assignee=assignee,
+    )
 
 
 def register_custom_statuses(*, path: StoreConfig) -> None:

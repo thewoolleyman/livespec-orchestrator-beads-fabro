@@ -204,6 +204,12 @@ def _item(**overrides: object) -> WorkItem:
         reason=None,
         audit=None,
         superseded_by=None,
+        # Admission-eligible + autonomously acceptable by default so a green
+        # dispatch flows admit (ready -> active) -> complete (-> acceptance) ->
+        # accept (ai-only -> done); cases that exercise the admission hold or
+        # the human-confirm park override these.
+        admission_policy="auto",
+        acceptance_policy="ai-only",
     )
     return replace(base, **overrides)
 
@@ -1755,24 +1761,30 @@ def test_dispatch_green_closes_item_and_journals(
     assert "A ready task" in goal_text
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
     stages = [json.loads(line)["stage"] for line in journal_text.splitlines()]
-    # The dispatch opens by journaling the per-dispatch correlation id
+    # The admission valve fires first (`ledger-admit`: ready -> active +
+    # assignee), then the dispatch journals the per-dispatch correlation id
     # (29f.3 — projected into the sandbox's CC OTel OTEL_RESOURCE_ATTRIBUTES
-    # so telemetry joins to this dispatch). After `outcome` come the
-    # post-verdict fail-open stages. First comes yfsv4j's `calibration`
-    # record (the per-dispatch outcome signal + mechanical size proxies on
-    # the existing journal — here the merged-PR diff-size probe returns None
-    # because `gh pr view` fails on the hermetic non-repo, but the record is
-    # still journaled). Then y0m's cost-gate (here `cost-gate-error` because
-    # no `fabro` binary is on the hermetic PATH — the gate fails open and
-    # never changes the verdict), then ddu's staged-self-update gate (here
+    # so telemetry joins to this dispatch). On a green run the post-merge
+    # acceptance valve runs: `ledger-complete` (active -> acceptance) then the
+    # `acceptance-ai-pass` confirm then `ledger-accept` (ai-only -> done; the
+    # default factory item is ai-only). After `outcome` come the post-verdict
+    # fail-open stages. First comes yfsv4j's `calibration` record (the
+    # per-dispatch outcome signal + mechanical size proxies on the existing
+    # journal — here the merged-PR diff-size probe returns None because `gh pr
+    # view` fails on the hermetic non-repo, but the record is still
+    # journaled). Then y0m's cost-gate (here `cost-gate-error` because no
+    # `fabro` binary is on the hermetic PATH — the gate fails open and never
+    # changes the verdict), then ddu's staged-self-update gate (here
     # `self-update-skipped`: the green outcome has a PR, but `gh pr view`
     # fails on the hermetic non-repo so the merged-file list is empty — NOT a
     # self-merge), then the mechanical reflection stage at the default
-    # `observe` lever (work-item 29f.2). The ledger-close precedes the
-    # post-verdict stages.
+    # `observe` lever (work-item 29f.2).
     assert stages == [
+        "ledger-admit",
         "dispatch-id",
-        "ledger-close",
+        "ledger-complete",
+        "acceptance-ai-pass",
+        "ledger-accept",
         "outcome",
         "calibration",
         "cost-gate-error",
@@ -1904,7 +1916,7 @@ def test_dispatch_failed_outcome_leaves_item_open(
     )
     assert exit_code == 1
     assert "failed at fabro-run" in capsys.readouterr().out
-    assert _stored()[item.id].status == "ready"
+    assert _stored()[item.id].status == "active"
 
 
 def test_dispatch_no_close_on_merge_flag(
@@ -1929,7 +1941,7 @@ def test_dispatch_no_close_on_merge_flag(
         ]
     )
     assert exit_code == 0
-    assert _stored()[item.id].status == "ready"
+    assert _stored()[item.id].status == "active"
 
 
 def test_dispatch_rejects_not_ready_item(
@@ -2098,10 +2110,12 @@ def test_dispatch_blocked_outcome_surfaces_and_leaves_item_open(
     out = capsys.readouterr().out
     assert "blocked at fabro-run" in out
     assert "fabro attach 01RUNBLOCKED" in out
-    assert _stored()[item.id].status == "ready"
+    assert _stored()[item.id].status == "active"
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
     assert '"blocked"' in journal_text
-    assert "ledger-close" not in journal_text
+    # A blocked outcome never completes/accepts — no acceptance transition.
+    assert "ledger-accept" not in journal_text
+    assert "ledger-complete" not in journal_text
 
 
 def test_dispatch_fails_fast_when_oauth_token_env_is_absent_or_empty(
@@ -2129,10 +2143,18 @@ def test_dispatch_fails_fast_when_oauth_token_env_is_absent_or_empty(
     assert "run-config-overlay" in out
     assert "CLAUDE_CODE_OAUTH_TOKEN" in out
     assert "with-livespec-env.sh" in out
+    # The admission valve transitioned the item to active before the overlay
+    # materialization refused (the launch never happened — there is nothing to
+    # project), so it stays in the WIP for the operator to retry under the env
+    # wrapper. The empty-string form of "absent" refuses identically; a fresh
+    # ready item proves it (the first item is now active, no longer admittable).
+    assert _stored()[item.id].status == "active"
+    item2 = _item(id="livespec-impl-beads-t2")
+    append_work_item(path=_config(), item=item2)
+    base2 = ["dispatch", "--repo", str(repo), "--item", item2.id, "--workflow", str(workflow)]
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
-    assert main(base) == 1
+    assert main(base2) == 1
     assert "with-livespec-env.sh" in capsys.readouterr().out
-    assert _stored()[item.id].status == "ready"
 
 
 def test_dispatch_fails_fast_when_github_token_env_is_absent_or_empty(
@@ -2162,10 +2184,15 @@ def test_dispatch_fails_fast_when_github_token_env_is_absent_or_empty(
     assert "run-config-overlay" in out
     assert "GH_TOKEN" in out
     assert "with-livespec-env.sh" in out
+    # Admission moved the item to active before the overlay refused; a fresh
+    # ready item proves the empty-string form refuses identically.
+    assert _stored()[item.id].status == "active"
+    item2 = _item(id="livespec-impl-beads-t2")
+    append_work_item(path=_config(), item=item2)
+    base2 = ["dispatch", "--repo", str(repo), "--item", item2.id, "--workflow", str(workflow)]
     monkeypatch.setenv("GH_TOKEN", "")
-    assert main(base) == 1
+    assert main(base2) == 1
     assert "with-livespec-env.sh" in capsys.readouterr().out
-    assert _stored()[item.id].status == "ready"
 
 
 def test_dispatch_fails_when_workflow_config_is_not_materializable(
@@ -2188,7 +2215,7 @@ def test_dispatch_fails_when_workflow_config_is_not_materializable(
     assert exit_code == 1
     out = capsys.readouterr().out
     assert "run-config-overlay" in out
-    assert _stored()[item.id].status == "ready"
+    assert _stored()[item.id].status == "active"
 
 
 @dataclass(kw_only=True)
@@ -2262,7 +2289,7 @@ def test_dispatch_fails_fast_when_fleet_manifest_is_unfetchable(
     assert "run-config-overlay" in out
     assert ".livespec-fleet-manifest.jsonc" in out
     assert "gh api" in out
-    assert _stored()[item.id].status == "ready"
+    assert _stored()[item.id].status == "active"
 
 
 def test_dispatch_fails_fast_when_fleet_manifest_is_malformed(
@@ -2285,7 +2312,7 @@ def test_dispatch_fails_fast_when_fleet_manifest_is_malformed(
     out = capsys.readouterr().out
     assert "run-config-overlay" in out
     assert ".livespec-fleet-manifest.jsonc" in out
-    assert _stored()[item.id].status == "ready"
+    assert _stored()[item.id].status == "active"
 
 
 def test_dispatch_custom_journal_path(
@@ -2667,7 +2694,7 @@ def test_dispatch_fails_at_ledger_comments_stage_when_read_raises(
     out = capsys.readouterr().out
     assert "ledger-comments" in out
     assert "BeadsCommandError" in out
-    assert _stored()[item.id].status == "ready"
+    assert _stored()[item.id].status == "active"
 
 
 def test_dispatch_warns_on_oversized_item_without_blocking(
