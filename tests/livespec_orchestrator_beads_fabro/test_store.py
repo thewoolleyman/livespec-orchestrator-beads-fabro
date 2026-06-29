@@ -36,6 +36,7 @@ from livespec_orchestrator_beads_fabro.store import (
     read_work_item_comments,
     read_work_items,
     register_custom_statuses,
+    update_work_item_rank,
 )
 from livespec_orchestrator_beads_fabro.types import AuditRecord, StoreConfig, WorkItem
 from livespec_runtime.work_items.rank import BOTTOM_SENTINEL
@@ -145,6 +146,22 @@ def test_assignee_and_rank_roundtrip() -> None:
     [read_back] = list(read_work_items(path=_config()))
     assert read_back.rank == "a5"
     assert read_back.assignee == "alice"
+
+
+def test_update_work_item_rank_rekeys_in_place_leaving_other_fields() -> None:
+    """`rebalance-ranks` re-keys metadata.rank in place; status/labels/assignee untouched."""
+    append_work_item(
+        path=_config(),
+        item=_minimal_work_item(
+            id_="li-rk", rank="a2", assignee="alice", origin="gap-tied", gap_id="G1"
+        ),
+    )
+    update_work_item_rank(path=_config(), item=_minimal_work_item(id_="li-rk", rank="a8"))
+    [read_back] = list(read_work_items(path=_config()))
+    assert read_back.rank == "a8"
+    assert read_back.assignee == "alice"
+    assert read_back.gap_id == "G1"
+    assert read_back.status == "ready"
 
 
 def test_legacy_rank_less_record_reads_bottom_sentinel(
