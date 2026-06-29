@@ -42,6 +42,7 @@ def _item(
     depends_on: tuple[str, ...] = (),
     rank: str = "a2",
     spec_commitment_hint: str | None = None,
+    blocked_reason: str | None = None,
 ) -> WorkItem:
     return WorkItem(
         id=id_,
@@ -68,6 +69,7 @@ def _item(
         else None,
         superseded_by=None,
         spec_commitment_hint=spec_commitment_hint,
+        blocked_reason=blocked_reason,  # type: ignore[arg-type]
     )
 
 
@@ -316,3 +318,63 @@ def test_main_with_spec_commitment_hint_filter_combines_with_gap_id(
     assert rc == 0
     assert "li-a" in captured.out
     assert "li-b" not in captured.out
+
+
+# -- lane / lane_reason emission (Scenario 26 — L1a/S4) ------------------
+
+
+def _by_id(payload: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+    return {str(entry["id"]): entry for entry in payload}
+
+
+def test_main_json_emits_lane_active_with_null_reason(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An active item emits lane 'active' and lane_reason null (Scenario 26)."""
+    _seed(_item(id_="li-active", status="active"))
+    rc = main(["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    entry = _by_id(json.loads(captured.out))["li-active"]
+    assert entry.get("lane") == "active"
+    assert entry.get("lane_reason") is None
+
+
+def test_main_json_emits_lane_blocked_dependency_for_ready_with_open_dep(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A stored-ready item with an open dependency renders lane blocked:dependency."""
+    _seed(_item(id_="li-dep"))
+    _seed(_item(id_="li-ready", status="ready", depends_on=("li-dep",)))
+    rc = main(["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    entry = _by_id(json.loads(captured.out))["li-ready"]
+    assert entry.get("lane") == "blocked"
+    assert entry.get("lane_reason") == "dependency"
+
+
+def test_main_json_emits_lane_blocked_needs_human_for_stored_blocked(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A stored blocked item carries its stored blocked_reason as lane_reason."""
+    _seed(_item(id_="li-blk", status="blocked", blocked_reason="needs-human"))
+    rc = main(["--json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    entry = _by_id(json.loads(captured.out))["li-blk"]
+    assert entry.get("lane") == "blocked"
+    assert entry.get("lane_reason") == "needs-human"
+
+
+def test_main_filter_blocked_includes_ready_with_open_dependency(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--filter=blocked` is lane semantics: a ready item with an open dep matches."""
+    _seed(_item(id_="li-dep"))
+    _seed(_item(id_="li-ready", status="ready", depends_on=("li-dep",)))
+    rc = main(["--filter=blocked"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "li-ready" in captured.out
+    assert "li-dep" not in captured.out
