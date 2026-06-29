@@ -34,3 +34,12 @@ Current checks:
   as the plaintext sibling's JSONL-shaped equivalent; epics exempt
   (child-closure checked instead). Passes trivially when the store is
   empty (the hermetic-fake default tier).
+- `work_item_state_invariants.py` — the beads-private work-item-state
+  doctor check (SPECIFICATION/contracts.md §"Work-item beads-issue
+  mapping" invariants block; L1a slice S6). Walks every materialized
+  work-item and emits the fail-soft non-sentinel-`rank` + rank-key-length
+  WARNINGS for live heads (advisory, exit 0) plus the hard
+  `active ⟹ assignee` and stored
+  `blocked ⟹ blocked_reason ∈ {needs-human, infra-external}` ERRORS
+  (exit non-zero). No git / network I/O; passes trivially on the empty
+  hermetic-fake tenant.
