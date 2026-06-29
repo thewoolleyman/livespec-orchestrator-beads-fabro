@@ -402,6 +402,12 @@ check:
         # JSONL-shaped equivalent; epics exempt. Not a canonical slug, so it
         # rides in the private block after the canonical set.
         check-work-item-merge-evidence
+        # Beads-private work-item-state invariants doctor check (L1a S6):
+        # fail-soft non-sentinel-rank + rank-key-length WARNINGS plus the hard
+        # active⟹assignee / blocked⟹blocked_reason ERRORS, over the store
+        # (hermetic fake in the default tier → empty tenant → passes trivially).
+        # Not a canonical slug, so it rides in the private block.
+        check-work-item-state-invariants
         # Beads-private closed-item-integrity static check
         # (SPECIFICATION/contracts.md §"Closed-item-integrity check").
         # Enumerates every closed gap-tied work-item via the store
@@ -597,6 +603,21 @@ check-coverage:
 # real closures runs out-of-band with the connection env configured.
 check-work-item-merge-evidence:
     LIVESPEC_BEADS_FAKE=1 uv run python dev-tooling/checks/work_item_merge_evidence.py
+
+# `check-work-item-state-invariants` — beads-private work-item-state doctor
+# check (SPECIFICATION/contracts.md §"Work-item beads-issue mapping" invariants
+# block; L1a slice S6). Walks every materialized work-item and applies the
+# fail-soft non-sentinel-`rank` + rank-key-length WARNINGS (advisory, exit 0)
+# for live heads plus the hard `active ⟹ assignee` and stored
+# `blocked ⟹ blocked_reason ∈ {needs-human, infra-external}` ERRORS (exit
+# non-zero). Like the merge-evidence sibling, the aggregate run forces the
+# hermetic empty tenant (LIVESPEC_BEADS_FAKE=1), so this never requires a live
+# bd / dolt-server: the fake tenant is empty, the walk yields nothing, and the
+# check passes trivially. A live-tier audit of real heads runs out-of-band with
+# the connection env configured. Not a canonical livespec-dev-tooling slug, so
+# it is wired in the private block.
+check-work-item-state-invariants:
+    LIVESPEC_BEADS_FAKE=1 uv run python dev-tooling/checks/work_item_state_invariants.py
 
 # `check-closed-item-integrity` — beads-private closed-item-integrity static
 # check (SPECIFICATION/contracts.md §"Closed-item-integrity check"). Enumerates
