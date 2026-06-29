@@ -14,6 +14,27 @@ typed cross-tenant `depends_on`).
 > (`open`/`priority`/no-`rank`); the 7-state shape lands at the L2
 > migration.
 
+## ✅ STATUS: L1a COMPLETE (2026-06-29)
+
+All seven slices are merged and their ledger children closed
+(`status=done`, `resolution=completed`), and the L1a release is cut:
+
+- ✅ **S1** `bd-ib-ojlmr6` (revendor-runtime-v050) — merge `dfbb21e` (PR #203).
+- ✅ **S2** `bd-ib-7mounw` (beads-custom-status-encoding) — merge `dfbb21e` (PR #203).
+- ✅ **S3** `bd-ib-dnw2ei` (dispatcher-valves-wip-cap) — merge `da61be6` (PR #210).
+- ✅ **S4** `bd-ib-3wjakl` (lane-emission-and-rank-next) — merge `da3c46c` (PR #206).
+- ✅ **S5** `bd-ib-6gwl23` (rebalance-ranks-command) — merge `5d49d2b` (PR #208).
+- ✅ **S6** `bd-ib-6zndit` (doctor-rank-invariants) — merge `8bb59d5` (PR #207).
+- ✅ **S7** `bd-ib-jysmuu` (cut-l1a-release) — **release v0.3.0** cut by
+  release-please (PR #168, merge `9cf1de2`). This release is the L1a exit
+  gate that L2 + the console consume.
+
+The epic `bd-ib-vvrxcb` is **closed** (`status=done`, `resolution=completed`;
+all 7 children done). **This thread is done** — the sections below are the
+historical resume guide kept for the record; nothing remains to implement.
+The live beads tenant is still PRE-migration (legacy
+`open`/`priority`/no-`rank`); the 7-state status migration is L2's concern.
+
 ## Autonomy posture
 
 The design is LOCKED (decisions 1-46). This track **AUTO-PROCEEDS** — it
