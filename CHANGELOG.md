@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.3.1...v0.3.2) (2026-06-30)
+
+
+### Bug Fixes
+
+* **dispatcher:** project LIVESPEC_CORE_PLUGIN_ROOT into the sandbox env so fleet janitors resolve core ([d62499b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d62499be673abd8939d0f0cbfd498174c3d8615f))
+
 ## [0.3.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.3.0...v0.3.1) (2026-06-30)
 
 
