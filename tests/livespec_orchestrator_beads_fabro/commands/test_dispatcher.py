@@ -1044,6 +1044,13 @@ _DEV_TOOLING_CLONE_STEP_LINE = (
 
 _SIBLING_ENV_LINE = 'LIVESPEC_SIBLING_CLONES_ROOT = "/workspace/siblings"'
 
+# The console's `check-doctor-static` resolves livespec CORE inside the Fabro
+# sandbox via this projected env key, valued at the in-sandbox core-sibling
+# clone path (`<clones_root>/livespec/.claude-plugin`).
+_CORE_PLUGIN_ROOT_ENV_LINE = (
+    'LIVESPEC_CORE_PLUGIN_ROOT = "/workspace/siblings/livespec/.claude-plugin"'
+)
+
 
 def test_parse_fleet_members_reads_owner_and_member_repos() -> None:
     members = parse_fleet_members(manifest_text=_FLEET_MANIFEST_TEXT)
@@ -1134,6 +1141,56 @@ def test_render_run_config_overlay_without_siblings_appends_no_clone_steps(
     assert rendered is not None
     assert "[[run.prepare.steps]]" not in rendered
     assert "LIVESPEC_SIBLING_CLONES_ROOT" not in rendered
+
+
+def test_render_run_config_overlay_projects_core_plugin_root(tmp_path: Path) -> None:
+    """The overlay MUST project LIVESPEC_CORE_PLUGIN_ROOT at the in-sandbox
+    core-sibling clone path.
+
+    The sandbox is spawned with a fail-closed env allowlist
+    (fabro-server/src/spawn_env.rs) and carries no installed-plugin registry,
+    so a fleet repo whose janitor resolves the livespec CORE plugin (the
+    console's `check-doctor-static`) has no way to find core unless the overlay
+    projects LIVESPEC_CORE_PLUGIN_ROOT — the SAME container-level env-table
+    mechanism that carries GH_TOKEN. The value is derived from the siblings
+    clones root (`<clones_root>/livespec/.claude-plugin`), and the key lands
+    INSIDE [environments.<id>.env] alongside the credential so it reaches every
+    node's `just check` subprocesses.
+    """
+    overlay_token = "test-oauth-token"
+    rendered = render_run_config_overlay(
+        committed_text=_COMMITTED_WORKFLOW_TOML,
+        workflow_dir=tmp_path,
+        token=overlay_token,
+        github_token=_FAKE_GITHUB_TOKEN,
+        siblings=_SIBLINGS,
+    )
+    assert rendered is not None
+    env_table_at = rendered.index("[environments.livespec-ci.env]")
+    assert _CORE_PLUGIN_ROOT_ENV_LINE in rendered
+    assert rendered.index(_CORE_PLUGIN_ROOT_ENV_LINE) > env_table_at
+
+
+def test_render_run_config_overlay_without_core_sibling_omits_core_plugin_root(
+    tmp_path: Path,
+) -> None:
+    """No `livespec` core sibling cloned → no core-plugin-root projection (the
+    derived path would not resolve), mirroring the sibling-clones-root guard."""
+    siblings = SiblingClones(
+        owner="thewoolleyman",
+        repos=("livespec-dev-tooling",),
+        clones_root="/workspace/siblings",
+    )
+    overlay_token = "test-oauth-token"
+    rendered = render_run_config_overlay(
+        committed_text=_COMMITTED_WORKFLOW_TOML,
+        workflow_dir=tmp_path,
+        token=overlay_token,
+        github_token=_FAKE_GITHUB_TOKEN,
+        siblings=siblings,
+    )
+    assert rendered is not None
+    assert "LIVESPEC_CORE_PLUGIN_ROOT" not in rendered
 
 
 # ---------------------------------------------------------------------------

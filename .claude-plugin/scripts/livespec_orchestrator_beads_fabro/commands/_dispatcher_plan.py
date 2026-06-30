@@ -109,6 +109,17 @@ __all__: list[str] = [
 # Dispatcher's overlay projects it into the sandbox env table.
 SIBLING_CLONES_ROOT_ENV_VAR = "LIVESPEC_SIBLING_CLONES_ROOT"
 
+# The env-var a fleet repo's janitor reads to resolve the livespec CORE plugin
+# inside the Fabro sandbox (the console's `check-doctor-static`). The sandbox
+# spawns with a fail-closed env allowlist (fabro-server/src/spawn_env.rs) and
+# carries no installed-plugin registry, so without this projection a
+# CORE-dependent `just check` cannot find core. The Dispatcher's overlay
+# projects it at the in-sandbox core-sibling clone path
+# (`<clones_root>/livespec/.claude-plugin`); `_CORE_SIBLING_SLUG` is the livespec
+# CORE repo's clone slug.
+CORE_PLUGIN_ROOT_ENV_VAR = "LIVESPEC_CORE_PLUGIN_ROOT"
+_CORE_SIBLING_SLUG = "livespec"
+
 # The lever that overrides where the in-sandbox Claude-Code OTel export
 # ships (29f.3). It points at the host-local E1 OTLP receiver (29f.7),
 # NOT Honeycomb — the sandbox ships PLAINTEXT and the host-local egress
@@ -867,6 +878,7 @@ def render_run_config_overlay(  # noqa: PLR0913 — kw-only pure overlay builder
         if siblings is None
         else f"{SIBLING_CLONES_ROOT_ENV_VAR} = {json.dumps(siblings.clones_root)}\n"
     )
+    core_plugin_env_line = _core_plugin_env_line(siblings=siblings)
     otel_env_lines = _otel_env_lines(otel_env=otel_env)
     codex_steps = _codex_auth_prepare_steps_block(codex_auth_snapshot=codex_auth_snapshot)
     codex_env_lines = _codex_auth_env_lines(codex_auth_snapshot=codex_auth_snapshot)
@@ -880,9 +892,28 @@ def render_run_config_overlay(  # noqa: PLR0913 — kw-only pure overlay builder
         + f"CLAUDE_CODE_OAUTH_TOKEN = {token_literal}\n"
         + f"GH_TOKEN = {github_token_literal}\n"
         + sibling_env_line
+        + core_plugin_env_line
         + otel_env_lines
         + codex_env_lines
     )
+
+
+def _core_plugin_env_line(*, siblings: SiblingClones | None) -> str:
+    """Project LIVESPEC_CORE_PLUGIN_ROOT at the in-sandbox core-sibling clone.
+
+    A fleet repo whose janitor resolves the livespec CORE plugin (the console's
+    `check-doctor-static`) cannot find core inside the sandbox: the worker env
+    is a fail-closed allowlist and the container carries no installed-plugin
+    registry. So the overlay projects CORE's location as a container-level env
+    key — the SAME mechanism that carries GH_TOKEN — valued at the cloned core
+    sibling's plugin root (`<clones_root>/livespec/.claude-plugin`). Returns the
+    empty string when no core sibling is cloned (the derived path would not
+    resolve), mirroring the sibling-clones-root guard.
+    """
+    if siblings is None or _CORE_SIBLING_SLUG not in siblings.repos:
+        return ""
+    core_plugin_root = f"{siblings.clones_root}/{_CORE_SIBLING_SLUG}/.claude-plugin"
+    return f"{CORE_PLUGIN_ROOT_ENV_VAR} = {json.dumps(core_plugin_root)}\n"
 
 
 def _codex_auth_prepare_steps_block(*, codex_auth_snapshot: str | None) -> str:
