@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.3.2...v0.4.0) (2026-06-30)
+
+
+### Features
+
+* **token:** mint a GitHub App installation token in tested Python ([c1b0877](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c1b0877649fab1299d1b16c063f3d6cac305e6bd))
+* **token:** wire the App-token CLI into the orchestrator entrypoint ([3ddde18](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3ddde180be08059c74f71f2b34c0d08aa759cf05))
+
 ## [0.3.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.3.1...v0.3.2) (2026-06-30)
 
 
