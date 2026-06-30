@@ -307,6 +307,22 @@ destructive_cli_allowlist = [
     "research/w7-orchestrator-convergence/e2e-repo-reaper.md",
 ]
 
+# Path-prefix allowlist for the `tests_no_subprocess_spawn` check: tests
+# whose repo-root-relative POSIX path starts with one of these entries
+# genuinely need a real Python subprocess (no in-process `main()` can
+# stand in) and MUST scrub `COVERAGE_PROCESS_START` + `COV_CORE_*` from
+# the child env so the child does not self-instrument and race.
+# - test_host_side_self_contained_import.py spawns a fresh `-S` (no-site)
+#   interpreter to prove the host-side dispatcher import path resolves
+#   from `_vendor/` alone (the flattened plugin cache); `-S` + the
+#   restricted sys.path it asserts cannot be reproduced in-process.
+#
+# This key MUST stay above the `[[...mirror_pairings]]` array-of-tables
+# below (same TOML attachment reason as `destructive_cli_allowlist`).
+subprocess_spawn_allowlist = [
+    "tests/bin/test_host_side_self_contained_import.py",
+]
+
 [[tool.livespec_dev_tooling.mirror_pairings]]
 source_tree = ".claude-plugin/scripts/livespec"
 test_tree = "tests/livespec"

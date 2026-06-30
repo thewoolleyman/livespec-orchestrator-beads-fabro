@@ -19,9 +19,21 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   via `monkeypatch.setattr(sys, "version_info", ...)`; the exit-127
   path is reached by monkeypatching rather than a coverage pragma
   (pragma exclusions on `bin/*.py` are forbidden).
+- `test_host_side_self_contained_import.py` — the end-to-end
+  counterpart of `test_bootstrap.py`: it spawns a `-S` (no-site)
+  subprocess that runs the real bootstrap and imports the host-side
+  dispatcher surface, asserting the path the bootstrap builds
+  (`scripts/` + `scripts/_vendor/`, no site-packages) resolves every
+  import. It guards plugin self-containment from the flattened cache —
+  an unvendored host-side dependency (e.g. `typing_extensions`) trips
+  it. The real modules are imported only inside the isolated
+  subprocess, never in-process, so the structural rule below holds.
 
 Rules: keep these tests purely structural — they assert the
 wrapper's no-logic supervisor shape and exit-code threading, never
 the real command behavior (that is covered under
 `tests/livespec_orchestrator_beads_fabro/`). Do NOT import the real
 `commands`/`migration` `main` into a wrapper test; always stub it.
+(`test_host_side_self_contained_import.py` is the one exception that
+imports real modules — but only inside an isolated `-S` subprocess,
+to verify import *resolution* from the vendored tree, not behavior.)

@@ -14,6 +14,15 @@
 //   never drift between core and impl-beads; the vendored copy is
 //   byte-identical to core's source and is pinned to it by the
 //   detect-impl-gaps gap-id parity test.
+// - typing_extensions, the single-file PyPI distribution copied into
+//   .claude-plugin/scripts/_vendor/typing_extensions.py. The host-side
+//   dispatcher import path needs `assert_never` (resolve.py) and
+//   `override` (_otel_receive.py); on Python 3.10 (requires-python
+//   >= 3.10.16) those live only in typing_extensions, not stdlib
+//   typing. Vendoring lets the flattened plugin cache satisfy the
+//   imports with no `uv sync` and no apt python3-typing-extensions
+//   (the adopter / fleet-member path). PSF-2.0; see NOTICES. The
+//   tests/bin/test_host_side_self_contained_import.py -S probe pins it.
 //
 // Validated by `just check-vendor-manifest`: every entry must have
 // a non-empty upstream_url, a non-empty upstream_ref, and a
@@ -33,6 +42,12 @@
       "upstream_url": "https://github.com/thewoolleyman/livespec",
       "upstream_ref": "b3ac52b:dev-tooling/spec_clauses.py",
       "vendored_at": "2026-06-19T18:50:00Z"
+    },
+    {
+      "name": "typing_extensions",
+      "upstream_url": "https://github.com/python/typing_extensions",
+      "upstream_ref": "4.15.0",
+      "vendored_at": "2026-06-30T03:21:25Z"
     }
   ]
 }
