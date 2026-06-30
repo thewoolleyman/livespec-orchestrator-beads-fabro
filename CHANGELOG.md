@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.3.0...v0.3.1) (2026-06-30)
+
+
+### Bug Fixes
+
+* **dispatcher:** make self-update + fleet-manifest projection clean no-ops on a read-only cache ([a0e4f45](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a0e4f45a13398afc3e8aa14b2743b7800c523d8c))
+* **dispatcher:** resolve Fabro workflow + bin from the plugin root; ship workflow in payload ([be34561](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/be34561a31548e4bd34950b79973e575b5411625))
+
 ## [0.3.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.2.0...v0.3.0) (2026-06-29)
 
 
