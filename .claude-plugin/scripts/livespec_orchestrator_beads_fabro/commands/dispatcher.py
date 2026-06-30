@@ -1001,16 +1001,33 @@ def _resolve_merged_paths(*, repo: Path, runner: ShellCommandRunner) -> tuple[st
     return parse_pr_files(stdout=files.stdout) if files.exit_code == 0 else ()
 
 
+def _plugin_root() -> Path:
+    """The plugin root, resolving in BOTH the source tree and the flattened cache.
+
+    In source this module lives at
+    `.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/dispatcher.py`,
+    so the plugin root is `parents[3]` (the `.claude-plugin/` dir). The Claude
+    install flattens that dir to the cache root and exports
+    `CLAUDE_PLUGIN_ROOT`; when that env var is set and non-empty it wins. Both
+    the `.fabro/` workflow payload and the `scripts/bin/` wrappers ship UNDER
+    this root, so a cache-installed plugin resolves them with no repo checkout
+    present.
+    """
+    env_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
+    if env_root:
+        return Path(env_root)
+    return Path(__file__).resolve().parents[3]
+
+
 def _candidate_dispatcher_bin() -> Path:
     """The just-pulled primary's own `bin/dispatcher.py` (the canary target).
 
-    Resolved off this module's location (the same package-root walk
-    `_workflow_toml` uses): after `_post_merge` pulls the primary, this
-    path holds the STAGED new dispatcher code, which the canary
-    self-checks before it can take over the loop.
+    Resolved off the plugin root (the same anchor `_workflow_toml` uses):
+    after `_post_merge` pulls the primary, this path holds the STAGED new
+    dispatcher code, which the canary self-checks before it can take over the
+    loop.
     """
-    package_root = Path(__file__).resolve().parents[4]
-    return package_root / ".claude-plugin" / "scripts" / "bin" / "dispatcher.py"
+    return _plugin_root() / "scripts" / "bin" / "dispatcher.py"
 
 
 def _self_update_after_merge(  # noqa: PLR0913 — kw-only fail-open stage; each field is an independent caller input.
@@ -2024,8 +2041,7 @@ def _emit_outcomes(*, outcomes: list[DispatchOutcome], as_json: bool) -> None:
 def _workflow_toml(*, args: argparse.Namespace) -> Path:
     if args.workflow is not None:
         return Path(args.workflow)
-    package_root = Path(__file__).resolve().parents[4]
-    return package_root / ".fabro" / "workflows" / "implement-work-item" / "workflow.toml"
+    return _plugin_root() / ".fabro" / "workflows" / "implement-work-item" / "workflow.toml"
 
 
 def _journal_path(*, args: argparse.Namespace, repo: Path) -> Path:

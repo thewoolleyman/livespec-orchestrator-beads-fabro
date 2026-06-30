@@ -298,10 +298,22 @@ target_dirs = [".claude-plugin/scripts", "dev-tooling", "tests"]
 # orchestrator-image/ scripts are already outside its reach; these entries
 # document the exemption and keep it intact if a script is ever relocated.)
 #
+# The Fabro workflow `prompts/` directory is agent-INSTRUCTION prose, not
+# executable tooling: it legitimately names destructive CLIs as PROHIBITIONS
+# ("Never run `bd init`") and prescribed remedies, so the literal token
+# appears without ever being an invocation. The directory entered this scan's
+# reach when the workflow payload was relocated INTO the plugin root
+# (`.claude-plugin/.fabro/`, Slice 1 of orchestrator-plugin-self-containment).
+# Only the prose prompts are exempt; the sibling `workflow.toml` /
+# `workflow.fabro` graph (which carries the real `script=` / `acp.command=`
+# tooling) stays under the scan, so a destructive CLI added to an actual
+# workflow node still fails the check.
+#
 # This key MUST stay above the `[[...mirror_pairings]]` array-of-tables below:
 # in TOML a bare key after an array-of-tables header attaches to that sub-table,
 # not the parent.
 destructive_cli_allowlist = [
+    ".claude-plugin/.fabro/workflows/implement-work-item/prompts/",
     "orchestrator-image/acceptance-live-golden-master.sh",
     "orchestrator-image/reap-e2e-repos.sh",
     "research/w7-orchestrator-convergence/e2e-repo-reaper.md",

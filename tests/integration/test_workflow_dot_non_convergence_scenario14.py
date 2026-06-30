@@ -11,7 +11,7 @@ clause (work-item livespec-impl-beads-rw75ym, gap-f7kcvboh):
     any Fabro platform or setup change.
 
 The acceptance target is the SHIPPED workflow graph at
-`.fabro/workflows/implement-work-item/workflow.fabro`: the test reads it and
+`.claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro`: the test reads it and
 asserts (1) the fix-loop CAP is the existing janitor visit-count governor, (2)
 a `non_converged` terminal node exists within the existing DOT node vocabulary
 (a plain command node, like `abandon`), (3) the janitor's exhausted edge routes
@@ -30,7 +30,14 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import NON_CONVERGED_MARKER
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_WORKFLOW_DOT = _REPO_ROOT / ".fabro" / "workflows" / "implement-work-item" / "workflow.fabro"
+_WORKFLOW_DOT = (
+    _REPO_ROOT
+    / ".claude-plugin"
+    / ".fabro"
+    / "workflows"
+    / "implement-work-item"
+    / "workflow.fabro"
+)
 
 
 def _dot_text() -> str:

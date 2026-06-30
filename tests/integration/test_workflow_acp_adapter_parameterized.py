@@ -16,7 +16,7 @@ import re
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_WORKFLOW_DIR = _REPO_ROOT / ".fabro" / "workflows" / "implement-work-item"
+_WORKFLOW_DIR = _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item"
 _WORKFLOW_DOT = _WORKFLOW_DIR / "workflow.fabro"
 _WORKFLOW_TOML = _WORKFLOW_DIR / "workflow.toml"
 _CLAUDE_ADAPTER = "npx -y @agentclientprotocol/claude-agent-acp"
