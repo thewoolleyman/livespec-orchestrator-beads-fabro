@@ -90,6 +90,13 @@
     "reason": "Added by the dispatch-time-baseline-gate revise pass (epic livespec-zs22, increment 5 Conformance Pattern / work-item livespec-zs22.7.7 M6-f). Realizes the Conformance Pattern's dispatch-time tier: the Dispatcher's Fabro prepare chain installs the baseline Mechanism + Exemption and then runs the baseline Verifiers (commit-refuse-hook-installed + plugin-resolution) before driving any work, aborting on violation. The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; the gate's behavior is enforced by the Fabro prepare chain (.fabro/workflows/implement-work-item/workflow.toml) rather than a unit test, so a real test id is populated by the governed propose-change/revise resulting_files[] mechanism once this heading gains an exercising test."
   },
   {
+    "heading": "## Self-contained plugin dispatch",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "Added by the self-contained-plugin-dispatch revise pass (v021). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; this contract is enforced by the dispatcher's plugin-root workflow resolution plus the implement-work-item workflow payload shipped under the plugin root (.claude-plugin/), not a unit test, so a real test id is populated by the governed propose-change/revise resulting_files[] mechanism once this heading gains an exercising test."
+  },
+  {
     "heading": "## Beads connection model",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
