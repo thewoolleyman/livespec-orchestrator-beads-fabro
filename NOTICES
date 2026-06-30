@@ -2,9 +2,10 @@ livespec-orchestrator-beads-fabro — third-party notices
 =======================================================
 
 This product includes third-party code, carried verbatim, as noted
-below. It rides along inside the vendored `livespec_runtime` package
-(copied source-only into `.claude-plugin/scripts/_vendor/`); the
-attribution below mirrors `livespec_runtime`'s own NOTICES entry.
+below, source-only under `.claude-plugin/scripts/_vendor/`. Some of it
+rides along inside the vendored `livespec_runtime` package (the
+attribution there mirrors `livespec_runtime`'s own NOTICES entry);
+some is vendored directly as a single top-level module.
 
 
 fractional-indexing-python
@@ -25,3 +26,24 @@ keyword-only wrapper `livespec_runtime.work_items.rank`.
 CC0 1.0 is a public-domain dedication: attribution is courteous, not
 required. The full dedication text accompanies the upstream repository
 (its `LICENCE` file).
+
+
+typing_extensions
+-----------------
+File:     .claude-plugin/scripts/_vendor/typing_extensions.py
+Upstream: https://github.com/python/typing_extensions
+Version:  4.15.0 (PyPI typing_extensions-4.15.0; git tag 4.15.0)
+Licence:  PSF-2.0 (Python Software Foundation License, version 2)
+
+The `typing_extensions` backport module, vendored directly as a single
+top-level module (an attribution header is prepended; the body below it
+is a byte-faithful copy of the upstream 4.15.0 distribution). The
+host-side dispatcher import path needs `assert_never`
+(cross_repo/resolve.py) and `override` (commands/_otel_receive.py); on
+the Python 3.10 target (requires-python >= 3.10.16) both live only in
+typing_extensions, not stdlib `typing`. Vendoring lets the flattened
+plugin cache satisfy those imports with no `uv sync` and no apt
+`python3-typing-extensions`.
+
+PSF-2.0 is an OSI-approved permissive licence; its full text accompanies
+the upstream repository (its `LICENSE` file).
