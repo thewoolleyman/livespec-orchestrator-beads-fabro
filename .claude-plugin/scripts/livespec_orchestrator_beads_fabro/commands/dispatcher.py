@@ -294,8 +294,10 @@ _OTEL_RECEIVER_HOLDER: dict[str, object] = {}
 # time via `gh api` raw content — the same consume-from-master pattern
 # the other family consumers (fleet conformance, release fan-out) use.
 # This pins the manifest LOCATION, not the member list: the list itself
-# is always read fresh, and an unreachable/malformed manifest fails the
-# dispatch fast instead of falling back to a stale hardcoded set.
+# is always read fresh. An unreachable/absent manifest renders an EMPTY
+# sibling projection (the non-fleet adopter path); a present-but-malformed
+# manifest fails the dispatch fast rather than falling back to a stale
+# hardcoded set.
 _FLEET_MANIFEST_API_PATH = "repos/thewoolleyman/livespec/contents/.livespec-fleet-manifest.jsonc"
 _FLEET_MANIFEST_FETCH_TIMEOUT_SECONDS = 60.0
 
@@ -932,6 +934,12 @@ def _read_derived_reports(
 
 _CANARY_TIMEOUT_SECONDS = 300.0
 _PR_FILES_PROBE_TIMEOUT_SECONDS = 60.0
+_CHECKOUT_PROBE_TIMEOUT_SECONDS = 60.0
+
+# The slug the self-update canary requires the promotion target's `origin`
+# to carry: the candidate must be a checkout of THIS orchestrator, never a
+# stray sibling repo the plugin happens to sit inside.
+_ORCHESTRATOR_REPO_SLUG = "livespec-orchestrator-beads-fabro"
 
 
 def _self_update_after_verdict(
@@ -1030,6 +1038,36 @@ def _candidate_dispatcher_bin() -> Path:
     return _plugin_root() / "scripts" / "bin" / "dispatcher.py"
 
 
+def _is_writable_orchestrator_checkout(*, root: Path, runner: ShellCommandRunner) -> bool:
+    """True only when `root` is inside a git work-tree whose origin is this orchestrator.
+
+    The post-merge self-update can PROMOTE a self-merge only into a
+    writable checkout of the orchestrator itself. A flattened, read-only
+    plugin cache (the adopter / self-contained-dispatch install) has no
+    `.git` at all, so `git rev-parse --is-inside-work-tree` exits non-zero
+    there and this returns False — the self-update stage then SKIPS
+    cleanly rather than attempting a promotion it could never land. A
+    work-tree whose `origin` is some OTHER repo (the plugin vendored
+    inside an unrelated checkout) also returns False, so a stray sibling
+    repo is never mistaken for the promotion target. The probe is a cheap,
+    read-only, bounded `git` read — NEVER the fabro canary (the
+    self-machinery hang-guard).
+    """
+    inside = runner.run(
+        argv=["git", "-C", str(root), "rev-parse", "--is-inside-work-tree"],
+        cwd=Path.cwd(),
+        timeout_seconds=_CHECKOUT_PROBE_TIMEOUT_SECONDS,
+    )
+    if inside.exit_code != 0 or inside.stdout.strip() != "true":
+        return False
+    origin = runner.run(
+        argv=["git", "-C", str(root), "remote", "get-url", "origin"],
+        cwd=Path.cwd(),
+        timeout_seconds=_CHECKOUT_PROBE_TIMEOUT_SECONDS,
+    )
+    return origin.exit_code == 0 and _ORCHESTRATOR_REPO_SLUG in origin.stdout
+
+
 def _self_update_after_merge(  # noqa: PLR0913 — kw-only fail-open stage; each field is an independent caller input.
     *,
     work_item_id: str,
@@ -1046,8 +1084,11 @@ def _self_update_after_merge(  # noqa: PLR0913 — kw-only fail-open stage; each
     The dispatcher-self-update hazard: `_post_merge` pulls the target
     repo's primary, and when the target IS impl-beads itself that pull
     swaps the running dispatcher's code. This stage, run AFTER a confirmed
-    merge, gates the swap: when the merge touched the dispatcher's OWN
-    scripts (`is_self_merge`), it CANARIES the staged candidate (the
+    merge, FIRST skips cleanly when there is no writable orchestrator
+    checkout to promote into (a read-only plugin cache — the
+    self-contained-dispatch / adopter path), then gates the swap: when the
+    merge touched the dispatcher's OWN scripts (`is_self_merge`), it
+    CANARIES the staged candidate (the
     candidate's own cheap, side-effect-free `ledger-check` self-check —
     NEVER a real fabro run, per the self-machinery hang-guard) and only
     PROMOTES it to the active pinned copy on a passing canary; a failing
@@ -1097,7 +1138,26 @@ def _self_update(  # noqa: PLR0913 — kw-only fail-open stage body; each field 
     runner: ShellCommandRunner,
     poster: NotifyPoster,
 ) -> None:
-    """The self-update body wrapped fail-open by `_self_update_after_merge`."""
+    """The self-update body wrapped fail-open by `_self_update_after_merge`.
+
+    Read-only-cache guard FIRST (the self-contained-dispatch / adopter
+    path): when there is no writable orchestrator checkout to promote into
+    — the flattened plugin cache has no `.git` — record a CLEAN
+    `self-update-skipped` (the writable-checkout reason) and return,
+    instead of attempting a never-landable promotion and leaning on the
+    fail-open `0jxs` supervisor to swallow the resulting error. The
+    fail-open backstop stays; this guard just removes a never-applicable
+    code path from hiding behind it.
+    """
+    if not _is_writable_orchestrator_checkout(root=_plugin_root(), runner=ShellCommandRunner()):
+        journal.append(
+            record={
+                "stage": "self-update-skipped",
+                "work_item_id": work_item_id,
+                "reason": "no writable orchestrator checkout to promote (read-only plugin cache)",
+            }
+        )
+        return
     if not is_self_merge(merged_paths=merged_paths):
         journal.append(
             record={
@@ -1828,8 +1888,9 @@ def _fetch_fleet_manifest_text() -> str | None:
 
     HOST-SIDE read at run-config generation time (the Dispatcher's own
     environment has an authenticated `gh`; the sandbox does not).
-    Returns the raw JSONC text, or None on any failure — the caller
-    renders the actionable refusal.
+    Returns the raw JSONC text, or None on any failure (no `gh`, no
+    manifest, a non-fleet adopter) — the caller renders an EMPTY sibling
+    projection so the dispatch proceeds.
     """
     result = ShellCommandRunner().run(
         argv=[
@@ -1852,23 +1913,26 @@ def _resolve_sibling_clones(*, repo: Path) -> SiblingClones | str:
 
     Returns the plan (fleet members minus the dispatch target, keyed by
     the `--repo` basename — primary checkouts are named after their
-    repo), or an actionable error string routed as data (the dispatch
-    fails at the `run-config-overlay` stage). Failing fast beats
-    silently dispatching without sibling clones: that would reintroduce
-    the in-sandbox `:no-justfile-resolved` aggregate failure for every
-    cross-repo check, and a hardcoded fallback list would rot as the
-    fleet changes.
+    repo). When NO fleet manifest is present/fetchable (no `gh`, a
+    non-fleet adopter), returns an EMPTY plan so the dispatch PROCEEDS
+    with no sibling clones — the projection is OPTIONAL for adopters per
+    the self-contained plugin dispatch contract. When a manifest IS
+    present but MALFORMED, returns an actionable error string routed as
+    data (the dispatch fails at the `run-config-overlay` stage): a broken
+    fleet member registry is a real config error worth refusing, and a
+    hardcoded fallback list would rot as the fleet changes.
     """
     manifest_text = _fetch_fleet_manifest_text()
     if manifest_text is None:
-        return (
-            "sibling-clone provisioning refused: could not fetch "
-            f".livespec-fleet-manifest.jsonc from livespec master (`gh api "
-            f"{_FLEET_MANIFEST_API_PATH}`). The sandbox provisions one "
-            "depth-1 clone per fleet member so cross-repo checks resolve "
-            f"siblings under {_SIBLING_CLONES_ROOT}; check `gh auth "
-            "status` and network reachability, then retry the dispatch."
-        )
+        # No fleet manifest is present/fetchable — no `gh`, or a non-fleet
+        # adopter consuming the self-contained plugin. That is NOT a
+        # dispatch-blocking condition: render an EMPTY sibling set so the
+        # dispatch PROCEEDS with no sibling clones (the projection is
+        # optional for adopters), rather than refusing. A fleet member's
+        # dispatcher host has an authenticated `gh`, so it still fetches
+        # the manifest and gets the full projection below. `owner` is
+        # never spliced when `repos` is empty.
+        return SiblingClones(owner="", repos=(), clones_root=_SIBLING_CLONES_ROOT)
     members = parse_fleet_members(manifest_text=manifest_text)
     if members is None:
         return (
