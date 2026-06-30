@@ -2263,33 +2263,45 @@ def test_fetch_fleet_manifest_text_returns_none_on_failure(
     assert _real_fetch_fleet_manifest_text() is None
 
 
-def test_dispatch_fails_fast_when_fleet_manifest_is_unfetchable(
+def test_dispatch_proceeds_with_empty_siblings_when_fleet_manifest_is_unfetchable(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An unfetchable fleet manifest refuses the dispatch with an
-    actionable error: dispatching without sibling clones would
-    reintroduce the in-sandbox `:no-justfile-resolved` aggregate failure
-    for every cross-repo check, and silently falling back to a hardcoded
-    member list would rot as the fleet changes."""
+    """An unfetchable fleet manifest (no `gh`, a non-fleet adopter) renders
+    an EMPTY sibling projection and the dispatch PROCEEDS — the projection
+    is OPTIONAL per the self-contained plugin dispatch contract
+    (SPECIFICATION/contracts.md). The pre-v021 behavior refused the
+    dispatch here; that invariant is RETIRED — only a present-but-MALFORMED
+    manifest still refuses (see the sibling test below)."""
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     item = _item()
     append_work_item(path=_config(), item=item)
-    monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={}))
+    fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
+    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
     monkeypatch.setattr(
         "livespec_orchestrator_beads_fabro.commands.dispatcher._fetch_fleet_manifest_text",
         lambda: None,
     )
     exit_code = main(
-        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+        [
+            "dispatch",
+            "--repo",
+            str(repo),
+            "--item",
+            item.id,
+            "--workflow",
+            str(workflow),
+            "--no-close-on-merge",
+        ]
     )
-    assert exit_code == 1
+    # The dispatch ran (it was NOT refused for the missing manifest).
+    assert exit_code == 0
     out = capsys.readouterr().out
-    assert "run-config-overlay" in out
-    assert ".livespec-fleet-manifest.jsonc" in out
-    assert "gh api" in out
-    assert _stored()[item.id].status == "active"
+    assert "sibling-clone provisioning refused" not in out
+    # The materialized overlay carries an EMPTY sibling set — no per-member
+    # depth-1 clone steps were appended.
+    assert "git clone --quiet --depth 1" not in fake.overlay_texts[0]
 
 
 def test_dispatch_fails_fast_when_fleet_manifest_is_malformed(
