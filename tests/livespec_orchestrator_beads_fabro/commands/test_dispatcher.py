@@ -1193,6 +1193,49 @@ def test_render_run_config_overlay_without_core_sibling_omits_core_plugin_root(
     assert "LIVESPEC_CORE_PLUGIN_ROOT" not in rendered
 
 
+def test_committed_implement_workflow_overlay_carries_full_fleet_sandbox_env() -> None:
+    """Factory-artifact guard: the SHIPPED implement-work-item workflow's
+    materialized run-config overlay MUST carry EVERY env key a fleet repo's
+    sandbox janitor needs.
+
+    The hermetic and live golden masters don't exercise this seam — the live
+    fixture's `just check` is core-independent (the Slice-6 / VP4 residual gap) —
+    so a missing sandbox-env projection sails through them. This deterministic
+    test binds the REAL committed workflow artifact to overlay completeness: it
+    fails on a pre-fix overlay that omits LIVESPEC_CORE_PLUGIN_ROOT (the gap that
+    broke the console's E-3a dispatch in the sandbox janitor), and guards against
+    dropping ANY required key as the fleet janitor's needs grow.
+    """
+    repo_root = Path(__file__).resolve().parents[3]
+    workflow_toml = (
+        repo_root
+        / ".claude-plugin"
+        / ".fabro"
+        / "workflows"
+        / "implement-work-item"
+        / "workflow.toml"
+    )
+    overlay_token = "test-oauth-token"
+    rendered = render_run_config_overlay(
+        committed_text=workflow_toml.read_text(encoding="utf-8"),
+        workflow_dir=workflow_toml.parent,
+        token=overlay_token,
+        github_token=_FAKE_GITHUB_TOKEN,
+        siblings=_SIBLINGS,
+    )
+    assert rendered is not None
+    env_table_at = rendered.index("[environments.livespec-ci.env]")
+    required_sandbox_env_keys = (
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "GH_TOKEN",
+        "LIVESPEC_SIBLING_CLONES_ROOT",
+        "LIVESPEC_CORE_PLUGIN_ROOT",
+    )
+    for key in required_sandbox_env_keys:
+        assert f"{key} = " in rendered, f"overlay missing required sandbox env key: {key}"
+        assert rendered.index(f"{key} = ") > env_table_at
+
+
 # ---------------------------------------------------------------------------
 # Engine
 # ---------------------------------------------------------------------------

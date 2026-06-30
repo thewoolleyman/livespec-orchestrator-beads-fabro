@@ -2,16 +2,36 @@
 #
 # The production implement-work-item Fabro workflow runs `mise exec -- just
 # check` as the janitor hard gate (and the lefthook pre-commit delegates to it
-# too). It is deliberately LIGHTWEIGHT: it runs the skeleton's pytest suite and
-# nothing else — NO ruff/pyright/coverage/AST checks, NO red-green-replay.
+# too). It is deliberately LIGHTWEIGHT: it runs the skeleton's pytest suite plus
+# a livespec CORE-plugin reachability probe — NO ruff/pyright/coverage/AST
+# checks, NO red-green-replay.
+#
+# The CORE probe makes the LIVE golden master a real e2e guard for the sandbox
+# env projection: it MIRRORS the dependency a real fleet janitor (the console's
+# `check-doctor-static`) has on the livespec CORE plugin, so the dispatch only
+# succeeds when the Dispatcher's overlay projects LIVESPEC_CORE_PLUGIN_ROOT at
+# the in-sandbox core-sibling clone. Without that projection this gate fails IN
+# THE SANDBOX exactly like the console's E-3a janitor failure — the gap the
+# overlay fix closed, and that the hermetic + previously-core-independent live
+# golden masters could not catch.
 
 default:
     @just --list
 
-# Janitor hard gate + pre-commit body: the skeleton's pytest suite. Green on the
-# seeded tree (sanity test) and green once the agent adds greet + its test.
+# Janitor hard gate + pre-commit body: the skeleton's pytest suite, then a
+# livespec CORE-plugin reachability probe (see the header note). Green on the
+# seeded tree (sanity test), green once the agent adds greet + its test, and
+# green only when CORE is reachable via the overlay-projected env.
 check:
+    #!/usr/bin/env bash
+    set -euo pipefail
     uv run pytest -q
+    core_root="${LIVESPEC_CORE_PLUGIN_ROOT:-}"
+    if [ -z "$core_root" ] || [ ! -f "$core_root/scripts/bin/doctor_static.py" ]; then
+      echo "livespec CORE plugin not reachable via LIVESPEC_CORE_PLUGIN_ROOT='${core_root}'." >&2
+      echo "The Dispatcher overlay must project it into the sandbox env (the GH_TOKEN mechanism)." >&2
+      exit 1
+    fi
 
 # Referenced by lefthook pre-commit; a no-op autofix placeholder (the skeleton
 # ships no linter, so there is nothing to autofix). Kept so `lefthook install`'s
