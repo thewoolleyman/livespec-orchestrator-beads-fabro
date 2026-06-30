@@ -29,6 +29,44 @@ from the orchestrator source (it clones the TARGET repo itself).
 
 **Verdict:** ACHIEVABLE-WITH-WORK; no hard architectural blocker.
 
+## Reframe (session 8): the console unblock flows through the host enabled-plugin path; Slice 4 is a follow-on
+
+**Bottom line.** The epic's blocker is **E-3a** — `orchestrate run` from the
+**ENABLED PLUGIN** fails with **dispatcher exit 3, "workflow config does not
+exist"**. That failure is the **HOST-SIDE dispatcher reading the
+enabled-plugin cache** and not finding the Fabro workflow there. **Slices
+1 + 2 + 3 fix exactly that:** the host dispatcher now resolves the workflow
+from the **plugin-root payload** (`_plugin_root()`), runs on **stdlib +
+vendored deps** (no apt/uv), and carries **cache-safe guards** (no write to
+a read-only cache; empty sibling projection without a fleet manifest).
+
+**Therefore the console unblock is:**
+
+1. **Land Slices 1 + 2 + 3** — PRs #217, #219 **merged**; #220
+   **auto-merging**.
+2. **Cut release `0.3.1`** by merging release-please **PR #218** (it carries
+   Slices 1 + 2 + 3).
+3. **Refresh the orchestrator plugin cache to `0.3.1`** in the console
+   session. **This cache refresh IS the actual unblock step.** The prior
+   handoff DEPRIORITIZED the cache refresh under the wrong assumption that it
+   "doesn't fix dispatch" — **that note is CORRECTED:** the cache refresh is
+   precisely what swaps the console off the stale (pre-self-containment)
+   plugin onto the fixed one whose host-side dispatcher resolves the
+   plugin-root workflow.
+4. **Resume the console E-3a → E-3b → E-4** from the fixed enabled plugin.
+
+**CAVEAT.** Refreshing an *enabled* plugin cache may require a client-side
+`/plugin update` **+ restart** (the same limitation seen with the openbrain
+pin). Flag this as possibly **maintainer / console-session-side**, not work
+a dispatched agent can necessarily complete unattended.
+
+**Slice 4 is NOT on the console critical path.** Slice 4 (#3,
+`real-work-dispatch.sh` off clone-A) targets the **UNATTENDED containerized
+substrate**, which **already worked** — its clone-A ships `.fabro/` at the
+repo root, so the source-mode factory the fleet runs today is unaffected by
+the cache-install gap. Slice 4 is **reclassified a FOLLOW-ON** (see its
+design-gap note under NEXT ACTION).
+
 ## Read-first chain (open these, in order)
 
 1. **`research/01-design.md`** (this thread) — the full design, the
@@ -103,49 +141,76 @@ from the orchestrator source (it clones the TARGET repo itself).
 
 ## NEXT ACTION
 
-Clause #6 (the contract) has **already LANDED** on `master` (commit
-`b84cc98`, v021). What remains is the **implementation** of #1–#5, groomed
-into the dependency-ordered slices below and driven through the normal
-worktree → PR → rebase-merge flow.
+Clause #6 (the contract) LANDED on `master` (commit `b84cc98`, v021), and
+the host-side implementation (#1 + #2 + #4) has now LANDED too: **Slice 1
+and Slice 2 are MERGED; Slice 3 is auto-merging.** The console unblock
+(Reframe above) is now **release + cache refresh**, not more dispatcher
+code. What remains as code is **Slice 4 (#3, the containerized substrate)**
+— reclassified a FOLLOW-ON, NOT on the console critical path — and **Slice 6
+(the enabled-plugin acceptance, VP4 residual)**, which pairs with it.
 
-**Recommended slice / dependency order:**
+**Recommended slice / dependency order (progress marked):**
 
-- **Slice 1 (ATOMIC #1 + #2).** Relocate
-  `.fabro/workflows/implement-work-item/` (`workflow.toml` +
-  `workflow.fabro` + `prompts/`, **as a unit**) →
-  `.claude-plugin/.fabro/…` **and** re-anchor both resolvers
-  (`_workflow_toml`, `_candidate_dispatcher_bin`) to the plugin root
-  (`__file__`-relative `parents[3]`; optional `$CLAUDE_PLUGIN_ROOT`
-  override; **keep** the `--workflow` seam), dropping the now-wrong
-  `.claude-plugin` segment in `_candidate_dispatcher_bin`; update the two
-  integration tests (`test_workflow_dot_non_convergence_scenario14.py`,
-  `test_workflow_acp_adapter_parameterized.py`). **#1 and #2 MUST land in
-  ONE PR** — any intermediate `master` where the resolver and the workflow
-  location disagree breaks the source-mode factory the fleet runs today.
-- **Slice 2 (PREREQ, parallel with Slice 1).** Vendor `typing_extensions`
-  into `scripts/_vendor/` + `NOTICES.md` entry + a clean `python3 -S`
-  import-regression test (only `scripts/` + `_vendor/` on the path). Keep
-  `livespec_runtime` unmodified.
-- **Slice 3 (#4, after Slice 1).** Read-only-cache guards: make the
-  post-merge self-update an explicit `self-update-skipped` no-op when
-  there is no writable orchestrator checkout, and render an empty
-  fleet-manifest sibling projection for non-fleet adopters. (Shares
-  `dispatcher.py` with Slice 1 — sequence after it.)
-- **Slice 4 (#3, after Slices 1 + 2).** Retire clone-A in
-  `real-work-dispatch.sh` (run the dispatcher from the enabled plugin
-  cache), drop/guard the in-container `uv sync`, and update the cosmetic
+- **Slice 1 (ATOMIC #1 + #2) — MERGED, PR #217 (commit `be34561`).**
+  Relocated `.fabro/workflows/implement-work-item/` (`workflow.toml` +
+  `workflow.fabro` + `prompts/`, as a unit) → `.claude-plugin/.fabro/…` so
+  the payload ships under the plugin root, **and** re-anchored both
+  resolvers (`_workflow_toml`, `_candidate_dispatcher_bin`) through a new
+  **`_plugin_root()` helper** (`CLAUDE_PLUGIN_ROOT` env override →
+  `__file__`-relative `parents[3]`), keeping the `--workflow` seam; updated
+  the two integration tests
+  (`test_workflow_dot_non_convergence_scenario14.py`,
+  `test_workflow_acp_adapter_parameterized.py`). #1 + #2 landed in ONE PR
+  as required.
+- **Slice 2 (PREREQ) — MERGED, PR #219 (commit `10f820d`).** Vendored
+  `typing_extensions 4.15.0` (PSF-2.0) at
+  `.claude-plugin/scripts/_vendor/typing_extensions.py`, recorded in
+  `.vendor.jsonc` + `NOTICES.md`, with a clean `-S` no-site
+  import-regression test
+  (`tests/bin/test_host_side_self_contained_import.py`).
+  `livespec_runtime` left unmodified. **Mechanism note:** `_vendor/*.py` is
+  excluded from the `red_green_replay` impl-prefixes, so this landed as a
+  **single `build(deps):` commit with `TDD-Suite-Green-*` trailers** — the
+  correct ritual for a vendoring change, NOT the `fix:` + Red→Green 2-step.
+- **Slice 3 (#4) — PR #220 (commit `6017f19`), AUTO-MERGING.**
+  Read-only-cache guards: added `_is_writable_orchestrator_checkout` plus a
+  `self-update-skipped` clean no-op (the fail-open `0jxs` supervisor is
+  KEPT), and made `_resolve_sibling_clones` return empty when there is no
+  manifest. **IMPORTANT — invariant retirement:** this RETIRED the pre-v021
+  invariant "refuse dispatch on an unfetchable fleet manifest" (its test was
+  repurposed →
+  `test_dispatch_proceeds_with_empty_siblings_when_fleet_manifest_is_unfetchable`),
+  because the v021 contract clause `## Self-contained plugin dispatch`
+  mandates the **empty projection** for non-fleet adopters. A
+  **malformed** manifest still refuses.
+- **Slice 4 (#3) — FOLLOW-ON, NOT on the console critical path. Do NOT
+  dispatch blindly (see design-gap note below).** Retire clone-A in
+  `real-work-dispatch.sh` (run the dispatcher from the released plugin
+  payload), drop/guard the in-container `uv sync`, and update the cosmetic
   `orchestrator-entrypoint.sh:179` hint. KEEP the dispatch-TARGET host
   clone and Fabro's in-sandbox target clone. Leave `tier2-dispatch-proof.sh`
   and `acceptance-live-golden-master.sh` source-mode.
+
+  > **Slice-4 design-gap note (why this is a focused design pass, not an
+  > auto-merging slice agent).** `real-work-dispatch.sh`'s clone-A
+  > provisions **MORE than the dispatcher code** — it also supplies the
+  > orchestrator's own `.beads/config.yaml` tenant config + `metadata.json`
+  > regen (via `bd init`) + (formerly) `uv sync`. The orchestrator image
+  > bakes in **NO plugin payload** (it is a generic `gh`/`mise`/`fabro`
+  > toolchain image). So moving Slice 4 off clone-A needs a real design
+  > choice: **how the container consumes the released plugin payload AND
+  > provisions the orchestrator's tenant config without a full source
+  > clone.** This deserves a focused design pass. **Slice 6 pairs with it.**
 - **Slice 5 (#6) — DONE.** The `## Self-contained plugin dispatch`
   contract clause LANDED on `master` (commit `b84cc98`, v021). The
   parallel branch `spec-self-contained-plugin-dispatch` (a divergent
   re-take of the same v021 work, branched from `01f2493` before the clause
   landed) is **superseded** — abandon/clean it up rather than merge it.
-- **Slice 6 (FOLLOW-UP, VP4 residual).** Migrate/extend the golden-master
-  acceptance to prove the **enabled-plugin / flattened-cache** dispatch
-  path — the current golden master proves only the source-mount path. File
-  as a paired acceptance work-item.
+- **Slice 6 (FOLLOW-ON, VP4 residual) — pairs with Slice 4.** Migrate/extend
+  the golden-master acceptance to prove the **enabled-plugin /
+  flattened-cache** dispatch path end-to-end — the current golden master
+  proves only the source-mount path. File as a paired acceptance work-item
+  alongside the Slice-4 design pass.
 
 When the ledger machinery is healthy, **`groom`** #1–#5 into the slices
 above (#6 already ratified), then **implement** each ready slice. If the
@@ -161,6 +226,38 @@ thread fixes**, so filing now would be filing through a broken path.
 **Until then, this markdown thread is the durable record**; the design in
 `research/01-design.md` is complete enough to anchor the epic and groom
 the slices the moment the machinery is healthy.
+
+## Side-findings (non-blocking, for later)
+
+Surfaced while landing Slices 1–3; none block the console unblock. Logged
+here so they are not re-discovered cold.
+
+- **CORE `propose_change.py` / `revise.py` resolve a RELATIVE `--spec-target`
+  verbatim against cwd** (not joined to `--project-root`) — a cross-repo
+  footgun. Workaround: **pass an ABSOLUTE `--spec-target`.** Candidate
+  CORE-tenant work-item.
+- **CORE `doctor_static.py` accepts only `--project-root`, not
+  `--spec-target`** — asymmetric with the propose/revise surface above.
+- **The local Codex TUI sits on a "Hooks need review — 4 hooks new/changed"
+  trust prompt** that blocks `check-codex-skill-picker` locally. That check
+  is **skip-by-default in CI / pre-commit / pre-push** (CI self-skips), so it
+  does **not** block merges. Environmental, not a repo defect.
+
+## Worktrees pending reap
+
+Merged feature worktrees under `~/.worktrees/livespec-orchestrator-beads-fabro/`
+to reap **once no agent is active** (use the repo reaper, e.g.
+`just reap-stale-worktrees`, not hand-deletion):
+
+- `spec-self-contained-plugin-dispatch` — PR #215
+- `docs-self-containment-verification` — PR #216
+- `slice1-plugin-root-resolver` — PR #217
+- `slice2-vendor-typing-extensions` — PR #219
+- `slice3-readonly-cache-guards` — PR #220
+
+**Also:** release-please **PR #218 ("release 0.3.1") is OPEN** and should be
+merged (it is App-authored) to **cut the release that carries Slices 1 + 2 +
+3** — the prerequisite for the console cache refresh in the Reframe above.
 
 ## Working discipline (non-negotiable)
 
