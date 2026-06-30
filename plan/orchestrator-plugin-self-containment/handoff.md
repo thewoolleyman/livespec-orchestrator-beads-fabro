@@ -35,7 +35,12 @@ from the orchestrator source (it clones the TARGET repo itself).
    verified change set, the per-change drift/refinement notes, the
    verified-symbol index, and the four open verification points for the
    implementer. This is the authoritative design of record.
-2. The live code surfaces it cites, in
+2. **`research/02-verification.md`** (this thread) — the read-only
+   verification pass (against `01f2493`) that ANSWERED the four open
+   points: VP1/VP2/VP4 confirmed the design; **VP3 corrected it** (change
+   #5 — `typing_extensions` must be vendored). Read it paired with the
+   design doc.
+3. The live code surfaces it cites, in
    `/data/projects/livespec-orchestrator-beads-fabro`:
    - `.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/dispatcher.py`
      — `_workflow_toml` (~`:2024`), `_candidate_dispatcher_bin` (~`:1004`),
@@ -47,10 +52,19 @@ from the orchestrator source (it clones the TARGET repo itself).
      `:473` (KEEP the TARGET clone; replace the orchestrator clone).
    - `.fabro/workflows/implement-work-item/` — the workflow payload to
      relocate INTO `.claude-plugin/`.
-3. `SPECIFICATION/contracts.md` — H2 homes for clause #6 (lines `:882`,
-   `:916`).
+4. `SPECIFICATION/contracts.md` — the LANDED clause #6
+   (`## Self-contained plugin dispatch`, ~line `:918` on `master` at
+   `b84cc98`).
 
 ## The change set (full detail in `research/01-design.md`)
+
+> **A read-only verification pass (`research/02-verification.md`, against
+> `01f2493`) corrected the change set.** VP1/VP2/VP4 confirmed the design;
+> **VP3 falsified #5** — the host-side dispatcher has one unvendored
+> third-party import (`typing_extensions`) that MUST be vendored, so #5 is
+> now a **PREREQ slice**, not "no dependency change". #6 (the contract
+> clause) has **already LANDED on `master`** (commit `b84cc98`, v021). The
+> dependency-ordered slice plan is in **NEXT ACTION** below.
 
 1. **Ship `.fabro/workflows/implement-work-item/` INSIDE
    `.claude-plugin/`** so it installs under the plugin root. Update the
@@ -73,30 +87,71 @@ from the orchestrator source (it clones the TARGET repo itself).
    an explicit no-op when there is no writable orchestrator checkout) and
    make the **fleet-manifest sibling-clone projection optional/empty** for
    non-fleet adopters.
-5. **No dependency change, no sandbox change** (`_bootstrap.py` +
-   `_vendor/` + stdlib satisfy the host-side dispatcher imports from the
-   flattened payload).
+5. **Vendor `typing_extensions`** (CORRECTED — was "no dependency
+   change"). The host-side dispatcher reaches one unvendored third-party
+   import: `typing_extensions` (`assert_never` via
+   `_vendor/livespec_runtime/cross_repo/resolve.py:38`; `override` via
+   `commands/_otel_receive.py:70`). A stdlib swap is unsafe on the target
+   Python 3.10.16. Vendor it into `scripts/_vendor/` + a `NOTICES.md`
+   entry; keep `livespec_runtime` unmodified. **PREREQ slice.** (See
+   `research/02-verification.md` VP3.)
 6. **Codify the contract** in `SPECIFICATION/contracts.md`: the Fabro
    workflow ships in the plugin payload; the dispatcher resolves it via
    the plugin root — making fleet == adopter consumption the documented
-   contract.
+   contract. **LANDED** on `master` (commit `b84cc98`, v021;
+   `## Self-contained plugin dispatch`).
 
 ## NEXT ACTION
 
-Drive the change set through the orchestrator's own lifecycle:
+Clause #6 (the contract) has **already LANDED** on `master` (commit
+`b84cc98`, v021). What remains is the **implementation** of #1–#5, groomed
+into the dependency-ordered slices below and driven through the normal
+worktree → PR → rebase-merge flow.
 
-1. **`/livespec:propose-change`** against this repo's `SPECIFICATION/` for
-   **clause #6** (the Fabro workflow ships in the plugin payload; the
-   dispatcher resolves it via the plugin root; fleet == adopter
-   consumption). Then **`/livespec:revise`** to ratify it (co-edit
-   `tests/heading-coverage.json` if it adds/renames a `## ` heading).
-2. **`groom`** the change set into ledger work-items for **#1–#5**
-   (slices: packaging move + test fixups; resolver re-anchor; factory
-   shell off the source clone; self-update/fleet-manifest guards). Layer
-   dependencies so the resolver re-anchor (#2) and the packaging move (#1)
-   land before the factory shell change (#3) is validated end-to-end.
-3. **implement** each ready slice through the normal worktree → PR →
-   rebase-merge flow.
+**Recommended slice / dependency order:**
+
+- **Slice 1 (ATOMIC #1 + #2).** Relocate
+  `.fabro/workflows/implement-work-item/` (`workflow.toml` +
+  `workflow.fabro` + `prompts/`, **as a unit**) →
+  `.claude-plugin/.fabro/…` **and** re-anchor both resolvers
+  (`_workflow_toml`, `_candidate_dispatcher_bin`) to the plugin root
+  (`__file__`-relative `parents[3]`; optional `$CLAUDE_PLUGIN_ROOT`
+  override; **keep** the `--workflow` seam), dropping the now-wrong
+  `.claude-plugin` segment in `_candidate_dispatcher_bin`; update the two
+  integration tests (`test_workflow_dot_non_convergence_scenario14.py`,
+  `test_workflow_acp_adapter_parameterized.py`). **#1 and #2 MUST land in
+  ONE PR** — any intermediate `master` where the resolver and the workflow
+  location disagree breaks the source-mode factory the fleet runs today.
+- **Slice 2 (PREREQ, parallel with Slice 1).** Vendor `typing_extensions`
+  into `scripts/_vendor/` + `NOTICES.md` entry + a clean `python3 -S`
+  import-regression test (only `scripts/` + `_vendor/` on the path). Keep
+  `livespec_runtime` unmodified.
+- **Slice 3 (#4, after Slice 1).** Read-only-cache guards: make the
+  post-merge self-update an explicit `self-update-skipped` no-op when
+  there is no writable orchestrator checkout, and render an empty
+  fleet-manifest sibling projection for non-fleet adopters. (Shares
+  `dispatcher.py` with Slice 1 — sequence after it.)
+- **Slice 4 (#3, after Slices 1 + 2).** Retire clone-A in
+  `real-work-dispatch.sh` (run the dispatcher from the enabled plugin
+  cache), drop/guard the in-container `uv sync`, and update the cosmetic
+  `orchestrator-entrypoint.sh:179` hint. KEEP the dispatch-TARGET host
+  clone and Fabro's in-sandbox target clone. Leave `tier2-dispatch-proof.sh`
+  and `acceptance-live-golden-master.sh` source-mode.
+- **Slice 5 (#6) — DONE.** The `## Self-contained plugin dispatch`
+  contract clause LANDED on `master` (commit `b84cc98`, v021). The
+  parallel branch `spec-self-contained-plugin-dispatch` (a divergent
+  re-take of the same v021 work, branched from `01f2493` before the clause
+  landed) is **superseded** — abandon/clean it up rather than merge it.
+- **Slice 6 (FOLLOW-UP, VP4 residual).** Migrate/extend the golden-master
+  acceptance to prove the **enabled-plugin / flattened-cache** dispatch
+  path — the current golden master proves only the source-mount path. File
+  as a paired acceptance work-item.
+
+When the ledger machinery is healthy, **`groom`** #1–#5 into the slices
+above (#6 already ratified), then **implement** each ready slice. If the
+spec clause ever needs amendment, drive it via **`/livespec:propose-change`**
++ **`/livespec:revise`** (co-edit `tests/heading-coverage.json` on any
+`## ` heading change).
 
 **Ledger anchoring (why no epic yet).** The formal ledger epic + the
 work-items for #1–#5 should be **anchored once the orchestrator

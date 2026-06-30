@@ -201,6 +201,15 @@ Recommended resolution order (capture, implementer confirms):
 This single anchor change removes BOTH the over-climb and the missing
 `.fabro/`, and needs no `CLAUDE_PLUGIN_ROOT` export.
 
+**REFINEMENT — #1 and #2 MUST land in ONE atomic PR.** The `.fabro/`
+relocation (#1) and the resolver re-anchor (#2) are a single indivisible
+slice: any intermediate `master` state where the resolver and the
+workflow location **disagree** — resolver re-anchored to `parents[3]`
+while `.fabro/` is still at the repo root, or `.fabro/` moved into
+`.claude-plugin/` while the resolver still walks `parents[4]` — breaks the
+**source-mode factory the fleet runs today**. They cannot be split across
+PRs; the slice is correct only as the atomic pair.
+
 ### 3. Point the factory at the enabled plugin, not a source clone
 
 `orchestrator-image/real-work-dispatch.sh` clones the orchestrator
@@ -252,15 +261,34 @@ The fleet-manifest sibling-clone projection — `_resolve_sibling_clones`
 sibling clones to project). Render an empty `siblings` cleanly rather
 than refusing the dispatch.
 
-### 5. No dependency change, no sandbox change
+### 5. Vendor `typing_extensions`; no sandbox change
 
-The dispatcher's imports are satisfied from the flattened payload:
-`_bootstrap.py` (`scripts/bin/_bootstrap.py`) inserts `scripts/` and
-`scripts/_vendor/` onto `sys.path`; `_vendor/` carries `livespec_runtime/`
-and `livespec_spec_clauses.py`. No new runtime dependency is introduced,
-and the Fabro sandbox image is untouched. (Implementer verifies no
-non-vendored third-party import remains on the host-side dispatcher path —
-see the `uv sync` note under change #3.)
+**CORRECTED by `research/02-verification.md` VP3 — the prior "no
+dependency change" claim was FALSIFIED.** The host-side dispatcher's
+imports are *almost* satisfied from the flattened payload: `_bootstrap.py`
+(`scripts/bin/_bootstrap.py`) inserts `scripts/` and `scripts/_vendor/`
+onto `sys.path`, and `_vendor/` carries `livespec_runtime/` and
+`livespec_spec_clauses.py`. But the dispatcher's import path reaches
+**exactly one** unvendored third-party module — `typing_extensions` —
+from two sites:
+
+- `scripts/_vendor/livespec_runtime/cross_repo/resolve.py:38`
+  (`assert_never`, via `dispatcher.py:149`), and
+- `commands/_otel_receive.py:70` (`override`, via `dispatcher.py:241`).
+
+A clean `python3 -S` probe (only `scripts/` + `_vendor/` on the path)
+fails `ModuleNotFoundError: typing_extensions`. A stdlib swap is unsafe:
+the target is Python **3.10.16**, where `assert_never` is 3.11+ and
+`override` is 3.12+. It is masked today only because the orchestrator
+image apt-installs `python3-typing-extensions` (`Dockerfile:41`) — the gap
+is precisely the flattened-cache adopter host.
+
+**Fix:** vendor `typing_extensions` into `scripts/_vendor/` with a
+`NOTICES.md` entry; keep the vendored `livespec_runtime` **unmodified**
+(its top-level `typing_extensions` import resolves once `_vendor/` is on
+`sys.path`). The Fabro sandbox image stays untouched. This is a **PREREQ
+slice**, not a no-op — see `research/02-verification.md` VP3 and the
+`uv sync` note under change #3.
 
 ### 6. Codify the contract
 
@@ -284,10 +312,25 @@ is also reasonable. Any new/renamed `## ` heading co-edits
 sandbox already needs nothing from the orchestrator source; the
 absolute-graph overlay already decouples the workflow from a repo-root
 location; `parents[3]` already names the plugin root in both layouts. The
-work is host-side packaging (#1, #3), path-resolution (#2), defensive
-guards for the read-only-cache world (#4), and the contract clause (#6).
+work is host-side packaging (#1, #3), path-resolution (#2), the
+`typing_extensions` vendoring prereq (#5, per `research/02-verification.md`
+VP3), defensive guards for the read-only-cache world (#4), and the
+contract clause (#6).
 
-## Open verification points for the implementer (do NOT assume)
+**Follow-up acceptance gap (VP4 residual).** After #1–#5 land, the
+source-mount golden-master acceptance still proves **only** the
+source-mount dispatch path — **not** the enabled-plugin / flattened-cache
+path. A separate follow-up acceptance work-item MUST migrate or extend the
+golden master to end-to-end exercise "fleet == adopter" dispatch **from
+the installed cache**, or the very path this thread makes correct stays
+unexercised by CI. See `research/02-verification.md` VP4.
+
+## Open verification points for the implementer (NOW ANSWERED)
+
+> All four are resolved in `research/02-verification.md` (verified against
+> `01f2493`). VP1, VP2, VP4 **confirmed** the design; VP3 **corrected** it
+> (change #5 — `typing_extensions` must be vendored). Retained below for
+> the question→answer trail.
 
 1. Does Fabro accept a `workflow.toml` whose `.fabro/` is **not** at the
    invocation repo root, given the absolute-graph overlay? (change #1)
