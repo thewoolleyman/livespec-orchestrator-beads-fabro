@@ -69,7 +69,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, cast, get_args
 
 from livespec_runtime.work_items.rank import BOTTOM_SENTINEL
 from livespec_runtime.work_items.reduce import materialize_work_items
@@ -86,6 +86,7 @@ from livespec_orchestrator_beads_fabro.types import (
     AuditRecord,
     DependsOnRaw,
     WorkItem,
+    WorkItemStatus,
 )
 
 if TYPE_CHECKING:
@@ -93,6 +94,7 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__ = [
+    "ALLOWED_BEADS_STATUSES",
     "BeadsWorkItemStore",
     "WorkItemComment",
     "append_work_item",
@@ -134,6 +136,22 @@ def _beads_status_for(*, status: str) -> str:
 def _livespec_status_for(*, status: str) -> str:
     """Map a beads status onto its livespec status (`closed` → `done`)."""
     return _LIVESPEC_DONE if status == _BEADS_CLOSED else status
+
+
+# The set of statuses beads legitimately stores for a livespec work-item:
+# the canonical 7-state lifecycle projected through the adapter's single
+# rename (`done` → `closed`), i.e.
+# {backlog, pending-approval, ready, active, acceptance, blocked, closed}.
+# DERIVED from the `WorkItemStatus` Literal so the 7-state model stays the
+# single source of truth — never hand-typed; if the lifecycle gains or
+# drops a state, this set tracks it automatically. A stored status outside
+# this set (beads' native `open`/`deferred`, or an ad-hoc
+# `bd update --status foo`) is out-of-lifecycle: `lane_of` parks it in an
+# unknown lane where it never dispatches. The `status-conformance`
+# ledger/doctor gate flags exactly that.
+ALLOWED_BEADS_STATUSES: frozenset[str] = frozenset(
+    _beads_status_for(status=status) for status in get_args(WorkItemStatus)
+)
 
 
 def _rank_from_metadata(*, metadata: dict[str, Any]) -> str:

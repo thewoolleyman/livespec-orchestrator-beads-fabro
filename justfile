@@ -408,6 +408,15 @@ check:
         # (hermetic fake in the default tier → empty tenant → passes trivially).
         # Not a canonical slug, so it rides in the private block.
         check-work-item-state-invariants
+        # Beads-private status-conformance doctor check (bd-ib-2wq). Wires the
+        # Dispatcher's `status-conformance` Ledger invariant into the aggregate:
+        # every LIVE (non-done) work-item's stored beads status must be one of
+        # ALLOWED_BEADS_STATUSES (the 7-state lifecycle projected through
+        # done→closed, DERIVED from the WorkItemStatus Literal). Reuses the same
+        # Ledger-check registry the Dispatcher's pre-gate runs, so there is ONE
+        # source of truth. Hermetic fake in the default tier → empty tenant →
+        # passes trivially. Not a canonical slug, so it rides in the private block.
+        check-status-conformance
         # Beads-private closed-item-integrity static check
         # (SPECIFICATION/contracts.md §"Closed-item-integrity check").
         # Enumerates every closed gap-tied work-item via the store
@@ -618,6 +627,22 @@ check-work-item-merge-evidence:
 # it is wired in the private block.
 check-work-item-state-invariants:
     LIVESPEC_BEADS_FAKE=1 uv run python dev-tooling/checks/work_item_state_invariants.py
+
+# `check-status-conformance` — beads-private status-conformance doctor check
+# (bd-ib-2wq). Wires the Dispatcher's `status-conformance` Ledger invariant
+# (commands/_dispatcher_ledger_checks.py) into `just check` / `/livespec:doctor`
+# so it fires from the aggregate, not only at dispatch time. FAILS (exit 1) when
+# any LIVE (non-done) work-item's stored beads status is outside
+# ALLOWED_BEADS_STATUSES — the 7-state lifecycle projected through the adapter's
+# done→closed rename, DERIVED from the WorkItemStatus Literal (never hand-typed),
+# naming the offending id(s) + status. Like the state-invariants sibling, the
+# aggregate run forces the hermetic empty tenant (LIVESPEC_BEADS_FAKE=1), so it
+# never requires a live bd / dolt-server: the fake tenant is empty, the walk
+# yields nothing, and the check passes trivially. A live-tier audit of real heads
+# runs out-of-band with the connection env configured. Not a canonical slug, so
+# it is wired in the private block.
+check-status-conformance:
+    LIVESPEC_BEADS_FAKE=1 uv run python dev-tooling/checks/status_conformance.py
 
 # `check-closed-item-integrity` — beads-private closed-item-integrity static
 # check (SPECIFICATION/contracts.md §"Closed-item-integrity check"). Enumerates
