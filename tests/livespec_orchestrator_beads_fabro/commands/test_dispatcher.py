@@ -340,6 +340,21 @@ def test_ledger_checks_flag_duplicate_gap_ids_sorted() -> None:
     assert "a-1, z-2" in findings[0].message
 
 
+def test_ledger_checks_flag_out_of_lifecycle_live_status() -> None:
+    items = [
+        _item(id="bad-open", status="open"),
+        _item(id="bad-deferred", status="deferred"),
+        _item(id="closed-deferred", status="done"),
+    ]
+    findings = run_ledger_checks(items=items)
+    assert [(finding.check, finding.item_id) for finding in findings] == [
+        ("work-item-status-lifecycle", "bad-deferred"),
+        ("work-item-status-lifecycle", "bad-open"),
+    ]
+    assert "status 'deferred' is outside the livespec lifecycle" in findings[0].message
+    assert "status 'open' is outside the livespec lifecycle" in findings[1].message
+
+
 def test_ledger_checks_ignore_closed_items() -> None:
     items = [_item(status="done", depends_on=("nope-99", {"bad": True}))]
     assert run_ledger_checks(items=items) == []
