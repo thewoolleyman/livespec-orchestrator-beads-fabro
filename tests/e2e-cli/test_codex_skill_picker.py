@@ -79,9 +79,6 @@ source = "https://github.com/thewoolleyman/livespec-driver-codex.git"
 [marketplaces.livespec-orchestrator-beads-fabro]
 source_type = "git"
 source = "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git"
-
-[hooks.state."livespec@livespec-driver-codex:hooks/hooks.json:pre_tool_use:0:0"]
-trusted_hash = "sha256:0d56644198aa469d04ac64830892ae79b802e57e2a90c7f8e2d10d46a36585c7"
 """
 
 
@@ -297,7 +294,7 @@ def test_skills_picker_finds_orchestrate_by_short_name() -> None:
         _prepare_codex_home(codex_home=codex_home)
         env["CODEX_HOME"] = str(codex_home)
         proc = subprocess.Popen(
-            [codex, "--no-alt-screen", "-C", str(_REPO_ROOT)],
+            [codex, "--no-alt-screen", "--dangerously-bypass-hook-trust", "-C", str(_REPO_ROOT)],
             stdin=slave_fd,
             stdout=slave_fd,
             stderr=slave_fd,
