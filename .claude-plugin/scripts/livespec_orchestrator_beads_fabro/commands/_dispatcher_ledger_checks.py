@@ -4,11 +4,14 @@ Re-homes the dispatch-safety subset of the six work-item integrity
 invariants that livespec PR #396 retired from core's doctor when v103
 made work-items orchestrator-private (tracked as livespec-impl-beads-e6x;
 source recoverable at livespec commit 682bf9cc under
-`.claude-plugin/scripts/livespec/doctor/static/`). The three re-homed
+`.claude-plugin/scripts/livespec/doctor/static/`). The re-homed
 here are exactly the ones that are pure functions of the work-item rows
 the Dispatcher already loads, and that make dispatching UNSAFE when
 violated:
 
+- `work-item-status-lifecycle` — every live row carries one of the
+  seven livespec lifecycle states; beads' extra built-ins/customs must
+  not silently park dispatchable work in an unknown lane.
 - `depends-on-ref-wellformedness` — every `depends_on` entry on a
   non-closed item parses to a typed entry (`parse_entry` returning
   `None` means the readiness predicate silently treats the row as
@@ -49,6 +52,17 @@ __all__: list[str] = [
 # spec tree, failed git/gh probe) and never affect the exit code.
 Severity = Literal["fail", "warn", "skipped"]
 
+_ALLOWED_LIVE_STATUSES = frozenset(
+    (
+        "backlog",
+        "pending-approval",
+        "ready",
+        "active",
+        "acceptance",
+        "blocked",
+    )
+)
+
 
 @dataclass(frozen=True, kw_only=True)
 class LedgerFinding:
@@ -61,7 +75,7 @@ class LedgerFinding:
 
 
 def run_ledger_checks(*, items: list[WorkItem]) -> list[LedgerFinding]:
-    """Run the three dispatch-safety Ledger checks over the tenant rows.
+    """Run the dispatch-safety Ledger checks over the tenant rows.
 
     Returns findings sorted by (check, item_id) so output is stable for
     journaling and tests. An empty list means the Ledger is safe to
@@ -70,10 +84,26 @@ def run_ledger_checks(*, items: list[WorkItem]) -> list[LedgerFinding]:
     index = {item.id: item for item in items}
     active = [item for item in items if item.status != "done"]
     findings: list[LedgerFinding] = []
+    findings.extend(_check_lifecycle_statuses(active=active))
     findings.extend(_check_ref_wellformedness(active=active))
     findings.extend(_check_orphan_dependencies(active=active, index=index))
     findings.extend(_check_duplicate_gap_ids(active=active))
     return sorted(findings, key=lambda finding: (finding.check, finding.item_id))
+
+
+def _check_lifecycle_statuses(*, active: list[WorkItem]) -> list[LedgerFinding]:
+    findings: list[LedgerFinding] = []
+    for item in active:
+        if item.status in _ALLOWED_LIVE_STATUSES:
+            continue
+        findings.append(
+            LedgerFinding(
+                check="work-item-status-lifecycle",
+                item_id=item.id,
+                message=f"status {item.status!r} is outside the livespec lifecycle",
+            )
+        )
+    return findings
 
 
 def _check_ref_wellformedness(*, active: list[WorkItem]) -> list[LedgerFinding]:
