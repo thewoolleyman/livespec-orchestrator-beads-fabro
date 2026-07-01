@@ -34,6 +34,7 @@ from livespec_orchestrator_beads_fabro._beads_client import (
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
     BeadsConnectionError,
+    BeadsCredentialMissingError,
     BeadsMappingError,
     BeadsTenantMissingError,
 )
@@ -68,6 +69,15 @@ def _draft(**overrides: object) -> IssueDraft:
     }
     base.update(overrides)
     return IssueDraft(**base)  # type: ignore[arg-type]
+
+
+@pytest.fixture(autouse=True)
+def _tenant_password_present(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default the tenant secret present for the whole module, modelling a
+    normally-wrapped environment, so every ShellBeadsClient test that reaches
+    `_invoke` clears its credential guard. The guard's own test deletes it.
+    """
+    monkeypatch.setenv("BEADS_DOLT_PASSWORD", "test-secret")
 
 
 # --------------------------------------------------------------------------
@@ -524,6 +534,21 @@ def test_run_void_builds_argv_and_runs(monkeypatch: pytest.MonkeyPatch) -> None:
     assert seen[0][0] == "/managed/bd"
     assert "dep" in seen[0]
     assert "add" in seen[0]
+
+
+def test_invoke_raises_credential_error_when_password_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`_invoke`'s secondary guard: an in-process caller that reached the beads
+    seam without `BEADS_DOLT_PASSWORD` gets an actionable typed error naming the
+    missing var — never a raw backend auth failure — and never shells out.
+    """
+    monkeypatch.delenv("BEADS_DOLT_PASSWORD", raising=False)
+    client = ShellBeadsClient(config=_config())
+    with pytest.raises(BeadsCredentialMissingError) as excinfo:
+        client.list_issues()
+    assert excinfo.value.variable == "BEADS_DOLT_PASSWORD"
+    assert "credential_wrapper" in str(excinfo.value)
 
 
 # --------------------------------------------------------------------------
