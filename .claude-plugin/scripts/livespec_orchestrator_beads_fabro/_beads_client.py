@@ -44,6 +44,7 @@ built-in exceptions.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, cast
@@ -51,6 +52,7 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
     BeadsConnectionError,
+    BeadsCredentialMissingError,
     BeadsMappingError,
     BeadsTenantMissingError,
 )
@@ -425,6 +427,13 @@ class ShellBeadsClient:
         _ = self._invoke(argv=self._build_argv(verb_args=verb_args))
 
     def _invoke(self, *, argv: list[str]) -> subprocess.CompletedProcess[str]:
+        # Secondary guard for in-process callers that bypass the bin/*.py
+        # credential self-heal (which re-execs through the project's
+        # configured credential_wrapper). A real `bd` call needs the tenant
+        # password; without it, surface an actionable typed error naming the
+        # missing var + the remedy rather than a raw backend auth failure.
+        if not os.environ.get("BEADS_DOLT_PASSWORD"):
+            raise BeadsCredentialMissingError(variable="BEADS_DOLT_PASSWORD")
         try:
             # argv[0] is the pinned bd binary's absolute path from config;
             # the verb/flag args are bridge-constructed (never raw user

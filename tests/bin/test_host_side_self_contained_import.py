@@ -73,6 +73,11 @@ def test_host_side_dispatcher_imports_resolve_without_site_packages(
         for key, value in os.environ.items()
         if key not in _scrubbed and not key.startswith("COV_CORE_")
     }
+    # The real `bootstrap()` now runs the credential self-heal, which requires
+    # the tenant secret to be present (else it exits 3 before the imports run).
+    # This guard is about import resolution, not credentials, so supply a
+    # placeholder secret so the self-heal proceeds to the import phase.
+    env["BEADS_DOLT_PASSWORD"] = "test-not-a-real-secret"
     result = subprocess.run(
         [
             sys.executable,

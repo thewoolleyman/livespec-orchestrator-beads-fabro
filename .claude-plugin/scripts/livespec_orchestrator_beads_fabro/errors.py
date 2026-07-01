@@ -201,3 +201,25 @@ class AppTokenMintError(Exception):
     def __init__(self, *, detail: str) -> None:
         super().__init__(f"GitHub App installation-token mint failed: {detail}")
         self.detail = detail
+
+
+_CREDENTIAL_MISSING_MESSAGE_TEMPLATE = (
+    "required secret env var {variable} is absent; run under your project's "
+    "configured credential_wrapper (e.g. with-<project>-env.sh -- ...)."
+)
+
+
+class BeadsCredentialMissingError(Exception):
+    """The tenant-password secret was absent when a real `bd` call was attempted.
+
+    EXPECTED: an in-process library caller reached the beads seam WITHOUT the
+    `BEADS_DOLT_PASSWORD` secret — i.e. the store was driven directly rather
+    than through a `bin/` CLI, so the bin chokepoint's credential self-heal
+    (which re-execs through the configured `credential_wrapper`) never ran. The
+    caller surfaces this actionable message rather than letting `bd` fail with a
+    raw tenant auth error that names neither the missing var nor the remedy.
+    """
+
+    def __init__(self, *, variable: str) -> None:
+        super().__init__(_CREDENTIAL_MISSING_MESSAGE_TEMPLATE.format(variable=variable))
+        self.variable = variable
