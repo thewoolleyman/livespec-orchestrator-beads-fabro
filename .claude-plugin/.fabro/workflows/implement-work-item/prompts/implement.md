@@ -33,6 +33,9 @@ constraints.
   publishes) is the prescribed remedy, not a violation.
 - Never run `bd init`. Never write to any `.beads/` directory.
 - Do NOT push or open a PR in this stage — a later stage owns that.
+- SCOPE-MINIMALISM: edit ONLY what the work-item requires. Do NOT touch
+  unrelated files, unrelated docs, or adjacent cleanup that is not necessary
+  to satisfy the assignment and its acceptance criteria.
 - Python style (when the repo is Python): keyword-only arguments
   (`*` separator) on every `def`; `kw_only=True` dataclasses; pyright
   strict must stay clean; expected errors ride dry-python/returns
