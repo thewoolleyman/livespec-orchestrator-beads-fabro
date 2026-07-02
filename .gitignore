@@ -20,6 +20,10 @@ tmp/
 # ~/.fabro/bin/fabro) — a 111MB blob, never committed. The version is pinned in
 # orchestrator-image/Dockerfile's FABRO_VERSION.
 orchestrator-image/fabro
+# The plugin scripts tree is staged into the build context the same way (the
+# build scripts copy .claude-plugin/scripts to orchestrator-image/plugin-scripts
+# so the image can carry the mint-app-token CLI); never committed.
+orchestrator-image/plugin-scripts/
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 .claude/worktrees/

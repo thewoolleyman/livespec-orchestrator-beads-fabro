@@ -134,6 +134,16 @@ VOLUME /var/lib/docker
 #     loopback only (-p 127.0.0.1:32276:32276) behind dev-token auth. ---
 EXPOSE 32276
 
+# --- Plugin payload (the .claude-plugin/scripts tree: bin/ wrappers, the
+#     livespec_orchestrator_beads_fabro package, and the vendored runtime).
+#     Staged into the build context as `plugin-scripts` by the build scripts
+#     (the context is orchestrator-image/, not the repo root). Carries the
+#     mint-app-token CLI the entrypoint's provision_github runs BEFORE any
+#     in-container clone exists; LIVESPEC_MINT_APP_TOKEN_BIN pins the baked
+#     location. Code only — the image stays secret-free. ---
+COPY plugin-scripts /opt/livespec-orchestrator/scripts
+ENV LIVESPEC_MINT_APP_TOKEN_BIN=/opt/livespec-orchestrator/scripts/bin/mint_app_token.py
+
 # --- Entrypoint supervisor: starts dockerd -> waits for the socket ->
 #     provisions ~/.fabro/settings.toml + the headless fabro server (LLM +
 #     GitHub, non-interactive) -> execs the dispatcher (or a passed command). ---

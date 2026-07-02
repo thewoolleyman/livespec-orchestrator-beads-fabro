@@ -42,6 +42,7 @@ cleanup() {
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
   docker volume rm "$VARLIB_VOL" >/dev/null 2>&1 || true
   rm -f "$HERE/fabro" || true
+  rm -rf "$HERE/plugin-scripts" || true
 }
 trap cleanup EXIT
 
@@ -58,6 +59,12 @@ chmod +x "$HERE/fabro"
 # Build.
 # --------------------------------------------------------------------------
 log "building $IMAGE"
+# Stage the plugin scripts tree (mint-app-token CLI + package + vendored
+# runtime) into the build context; the Dockerfile bakes it at
+# /opt/livespec-orchestrator/scripts for the entrypoint's github provisioning.
+rm -rf "$HERE/plugin-scripts"
+cp -R "$HERE/../.claude-plugin/scripts" "$HERE/plugin-scripts"
+find "$HERE/plugin-scripts" -type d -name __pycache__ -prune -exec rm -rf {} +
 docker build -t "$IMAGE" "$HERE"
 
 # --------------------------------------------------------------------------

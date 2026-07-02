@@ -209,6 +209,7 @@ cleanup() {
   fi
   if [ -n "$SCRATCH_DIR" ]; then rm -rf "$SCRATCH_DIR" 2>/dev/null || true; fi
   rm -f "$HERE/fabro" 2>/dev/null || true
+  rm -rf "$HERE/plugin-scripts" 2>/dev/null || true
   exit "$rc"
 }
 trap cleanup EXIT
@@ -219,6 +220,12 @@ stage_and_build_image() {
   cp "$HOST_FABRO_BIN" "$HERE/fabro"
   chmod +x "$HERE/fabro"
   "$HERE/fabro" version | head -1
+  # Stage the plugin scripts tree (mint-app-token CLI + package + vendored
+  # runtime) into the build context; the Dockerfile bakes it at
+  # /opt/livespec-orchestrator/scripts for the entrypoint's github provisioning.
+  rm -rf "$HERE/plugin-scripts"
+  cp -R "$HERE/../.claude-plugin/scripts" "$HERE/plugin-scripts"
+  find "$HERE/plugin-scripts" -type d -name __pycache__ -prune -exec rm -rf {} +
   docker build -t "$IMAGE" "$HERE"
 }
 
