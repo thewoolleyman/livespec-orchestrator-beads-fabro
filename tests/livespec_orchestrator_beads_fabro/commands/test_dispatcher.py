@@ -794,6 +794,18 @@ def test_render_goal_includes_item_fields_and_optional_gap(tmp_path: Path) -> No
     assert "Gap id" not in without_gap
 
 
+def test_render_goal_includes_optional_spec_id(tmp_path: Path) -> None:
+    with_spec_id = render_goal(
+        item=_item(spec_commitment_hint="spec-topic-9"),
+        repo=tmp_path,
+        branch="feat/t",
+    )
+    assert "Spec id: spec-topic-9" in with_spec_id
+
+    without_spec_id = render_goal(item=_item(), repo=tmp_path, branch="feat/t")
+    assert "Spec id" not in without_spec_id
+
+
 def test_render_goal_includes_acceptance_criteria_and_notes_when_present(tmp_path: Path) -> None:
     goal = render_goal(
         item=_item(
