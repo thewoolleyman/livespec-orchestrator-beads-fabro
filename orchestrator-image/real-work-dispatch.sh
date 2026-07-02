@@ -454,6 +454,14 @@ provision_clones() {
   clone_in_container "$DISPATCHER_ORG" "$DISPATCHER_REPO" "$DISPATCHER_CLONE"
   sync_dispatcher_deps
   clone_in_container "$TARGET_ORG" "$TARGET_REPO" "$TARGET_CLONE"
+  # mise-trust the TARGET clone too (the dispatcher clone gets it in
+  # sync_dispatcher_deps): the post-merge `pull-primary` stage runs
+  # `mise exec -- git ...` with the target clone as cwd, and an untrusted
+  # .mise.toml fails that stage AFTER a successful merge (first observed on
+  # the console idgql3 App-token validation dispatch: PR merged, then
+  # pull-primary died on "Config files ... are not trusted").
+  docker exec -w "$TARGET_CLONE" "$CONTAINER" sh -lc \
+    'mise trust >/dev/null 2>&1 || true'
   # The target ledger is the family tenant named after the target repo. The
   # dispatcher resolves the ledger against the target clone's cwd, so its
   # metadata.json must exist.
