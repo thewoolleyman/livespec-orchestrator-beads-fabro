@@ -49,7 +49,7 @@
     "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
   },
   {
-    "heading": "## The eight-skill surface",
+    "heading": "## The skill surface",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
@@ -242,40 +242,40 @@
     "reason": "Integration-tier acceptance for the shared intake Definition-of-Ready checklist (livespec_orchestrator_beads_fabro.intake_dor) that all three capture front-ends call: the three Scenario-8 cases (single-acceptance->ready, epic->needs-regroom, non-verifiable-or-blocked->not-yet-actionable) are exercised through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id is the single-acceptance->ready journey; the epic->needs-regroom and non-verifiable/blocked->not-yet-actionable cases are sibling tests in the same module, with the per-gate precedence pinned by evaluate()."
   },
   {
-    "heading": "## Scenario 9 \u2014 needs-regroom state and transitions",
+    "heading": "## Scenario 9 \u2014 backlog bounce state and transitions",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_regroom_state_machine_scenario9.test_groom_approval_exits_needs_regroom_by_filing_ready_slices",
     "clauses": [
       {
         "gap_id": "gap-qyvkjjyg",
-        "scenario": "Scenario 9 \u2014 needs-regroom state and transitions"
+        "scenario": "Scenario 9 \u2014 backlog bounce state and transitions"
       }
     ],
     "reason": "Integration-tier acceptance for the needs-regroom state machine (livespec_orchestrator_beads_fabro.regroom): the three Scenario-9 transitions are exercised through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id is the exit-by-filing-ready-slices journey; the entry-via-DoR-failure and entry-via-non-convergence-bounce transitions are sibling tests in the same module."
   },
   {
-    "heading": "## Scenario 10 \u2014 Dispatcher refuses a human-gated item",
+    "heading": "## Scenario 10 \u2014 Dispatcher holds a manual-admission spec-change item",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_dispatcher_human_gated_scenario10.test_dispatch_holds_manual_admission_item_without_launching_fabro",
     "clauses": [
       {
         "gap_id": "gap-dpk6g22t",
-        "scenario": "Scenario 10 \u2014 Dispatcher refuses a human-gated item"
+        "scenario": "Scenario 10 \u2014 Dispatcher holds a manual-admission spec-change item"
       }
     ],
     "reason": "Integration-tier acceptance for Scenario 10's realization under the work-item-state-machine lifecycle (epic bd-ib-vvrxcb, slice bd-ib-dnw2ei, gap-dpk6g22t): the prior human-gated text marker is replaced by the first-class admission_policy field, so a spec-change / risky item is HELD at the admission valve as admission_policy=manual and surfaced for the maintainer, never launched into a fabro sandbox. The dispatch CLI is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend) with run_dispatch recorded; the bound node id is the manual-hold journey (item stays ready, failed at admission-held); the journal and admits-auto-item cases are sibling tests in the same module."
   },
   {
-    "heading": "## Scenario 11 \u2014 Dispatcher bounces a non-converging slice to needs-regroom",
+    "heading": "## Scenario 11 \u2014 Dispatcher bounces a non-converging slice to backlog",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_dispatcher_non_convergence_scenario11.test_dispatch_bounces_stalled_slice_to_backlog",
     "clauses": [
       {
         "gap_id": "gap-rs4tkntz",
-        "scenario": "Scenario 11 \u2014 Dispatcher bounces a non-converging slice to needs-regroom"
+        "scenario": "Scenario 11 \u2014 Dispatcher bounces a non-converging slice to backlog"
       }
     ],
     "reason": "Integration-tier acceptance for the Dispatcher's non-convergence bounce (slice bd-ib-dnw2ei, gap-rs4tkntz): under the work-item-state-machine lifecycle the bounce target is the first-class backlog status (the slice leaves the WIP for re-grooming), not the prior needs-regroom label. The dispatch CLI is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend); the bound node id is the stalled-slice bounce-to-backlog journey; the DOT-marker bounce, the no-bounce-on-ordinary-failure/green cases, and the predicate cases are sibling tests in the same module."
@@ -404,7 +404,7 @@
     "reason": "Integration-tier acceptance for the two human-delegable valves + the per-repo WIP cap (epic bd-ib-vvrxcb, slice bd-ib-dnw2ei). The bound node id drives the loop admission valve (admit highest-rank ready items up to wip_cap, set assignee, ready -> active) through the real store/client seam against the in-memory FakeBeadsClient; the manual-admission hold (Scenario 23), the complete-merges-on-green-into-acceptance (Scenario 24), and the accept-per-acceptance_policy + reject routing (Scenario 25) are bound by their own scenario headings in the same module."
   },
   {
-    "heading": "## Scenario 22 \u2014 Dispatcher admits the highest-rank ready item up to the per-repo WIP cap",
+    "heading": "## Scenario 22 \u2014 Dispatcher admits the top-ranked ready item up to the per-repo WIP cap",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_dispatcher_admission_acceptance_scenarios22_25.test_loop_admits_highest_rank_up_to_wip_cap",
@@ -451,5 +451,26 @@
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it."
+  },
+  {
+    "heading": "## Scenario 29 \u2014 Factory GitHub App token on the dispatch path",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Added by the v023 revise pass (claude-fable-5 critique follow-up): acceptance scenarios for the v022 factory GitHub App auth MUSTs (fail-closed refusal without App env + credential_wrapper, first-class remint across long operations, ephemeral-only sandbox token projection). Will be bound to an integration/consumer-tier test exercising the Dispatcher's token-provider and refusal seams against hermetic fakes, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implementing work-item binds it."
+  },
+  {
+    "heading": "## Scenario 30 \u2014 Dispatch-time baseline conformance gate",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Added by the v023 revise pass (claude-fable-5 critique follow-up): acceptance scenarios for the dispatch-time baseline conformance gate (green provisioning path + abort-on-Verifier-failure before any work is driven). The gate's behavior lives in the Fabro prepare chain (.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml); it will be bound to an integration/consumer-tier test exercising the prepare-chain gating, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implementing work-item binds it."
+  },
+  {
+    "heading": "## Scenario 31 \u2014 orchestrate human valve actions",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Added by the v023 revise pass (claude-fable-5 critique): the newly-specified orchestrate run human-valve action ids (approve:<id> admits a held manual item; accept:<id> confirms acceptance -> done; reject:<id>:rework / reject:<id>:regroom route out of acceptance) are the published console-facing surface for the two human valves and are not yet implemented. Will be bound to an integration/consumer-tier test driving orchestrate's public main() against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implementing work-item binds it."
   }
 ]
