@@ -31,9 +31,6 @@ Ask the user (one question at a time):
 1. **Title** — one-line summary.
 2. **Description** — multi-line free-form (markdown permitted).
 3. **Type** — one of `bug`, `feature`, `task`, `chore`, `epic`.
-4. **Priority** — integer 0–4 (default 2). Re-state semantics if asked:
-   0 critical, 1 high, 2 medium, 3 low, 4 backlog.
-
 Optional follow-ups (skip-confirmable):
 
 - **Assignee** — string or null (default null).
@@ -60,10 +57,12 @@ from livespec_orchestrator_beads_fabro._ids import new_work_item_id
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import WorkItem
+from livespec_runtime.work_items.rank import key_between
 from datetime import datetime, timezone
 from pathlib import Path
 
 config = resolve_store_config(cwd=Path.cwd(), work_items_arg=None)
+rank = key_between(a=None, b=None)
 item = WorkItem(
     # The id-prefix is the tenant's server-stored bd create-prefix
     # (config.prefix), DECOUPLED from the tenant DB name — so the id
@@ -75,7 +74,7 @@ item = WorkItem(
     description=description,
     origin="freeform",
     gap_id=None,
-    priority=priority,
+    rank=rank,
     assignee=assignee,
     depends_on=tuple(depends_on),
     captured_at=datetime.now(tz=timezone.utc).isoformat(),
