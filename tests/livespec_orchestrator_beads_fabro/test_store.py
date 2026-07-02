@@ -79,6 +79,8 @@ def _minimal_work_item(
     admission_policy: str | None = None,
     acceptance_policy: str | None = None,
     blocked_reason: str | None = None,
+    acceptance_criteria: str | None = None,
+    notes: str | None = None,
 ) -> WorkItem:
     return WorkItem(
         id=id_,
@@ -97,6 +99,8 @@ def _minimal_work_item(
         audit=audit,
         superseded_by=superseded_by,
         spec_commitment_hint=spec_commitment_hint,
+        acceptance_criteria=acceptance_criteria,
+        notes=notes,
         admission_policy=admission_policy,  # type: ignore[arg-type]
         acceptance_policy=acceptance_policy,  # type: ignore[arg-type]
         blocked_reason=blocked_reason,  # type: ignore[arg-type]
@@ -137,6 +141,26 @@ def test_spec_commitment_hint_maps_to_native_spec_id() -> None:
     assert record["spec_id"] == "topic-x"
     [read_back] = list(read_work_items(path=_config()))
     assert read_back.spec_commitment_hint == "topic-x"
+
+
+def test_acceptance_criteria_roundtrips() -> None:
+    item = _minimal_work_item(
+        id_="li-ac",
+        acceptance_criteria="Run just check and verify the new goal section.",
+    )
+    append_work_item(path=_config(), item=item)
+    [read_back] = list(read_work_items(path=_config()))
+    assert read_back.acceptance_criteria == item.acceptance_criteria
+
+
+def test_notes_roundtrips() -> None:
+    item = _minimal_work_item(
+        id_="li-notes",
+        notes="Do not edit the phase prompts in this slice.",
+    )
+    append_work_item(path=_config(), item=item)
+    [read_back] = list(read_work_items(path=_config()))
+    assert read_back.notes == item.notes
 
 
 def test_assignee_and_rank_roundtrip() -> None:

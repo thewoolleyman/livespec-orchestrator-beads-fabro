@@ -379,6 +379,12 @@ def render_goal(
     (bn4 finding (c): the description-only brief silently dropped them).
     """
     gap_line = f"Gap id: {item.gap_id}\n" if item.gap_id is not None else ""
+    acceptance_line = (
+        f"\nAcceptance criteria:\n{item.acceptance_criteria}\n"
+        if item.acceptance_criteria is not None
+        else ""
+    )
+    notes_line = f"\nNotes:\n{item.notes}\n" if item.notes is not None else ""
     base = (
         f"Work-item: {item.id}\n"
         # The agent runs inside the Fabro sandbox's OWN fresh clone (cwd),
@@ -398,6 +404,8 @@ def render_goal(
         "\n"
         "Description:\n"
         f"{item.description}\n"
+        f"{acceptance_line}"
+        f"{notes_line}"
     )
     # Escape AFTER assembly so EVERY interpolated field (title,
     # description, comments, repo path) is neutralized in one place: the
