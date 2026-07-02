@@ -20,22 +20,27 @@ import sys
 from pathlib import Path
 from typing import cast
 
-# The tenant secret every beads-backed orchestrator CLI needs at call time.
+# The tenant secret every beads-backed orchestrator CLI needs at call time —
+# the DEFAULT `required` set; wrappers with a different secret surface pass
+# their own (see `bootstrap`).
 _REQUIRED_CREDENTIALS = ("BEADS_DOLT_PASSWORD",)
 _LIVESPEC_CONFIG_FILENAME = ".livespec.jsonc"
 _CREDENTIAL_FAIL_EXIT = 3
 
 
-def bootstrap(*, extra_required: tuple[str, ...] = ()) -> None:
+def bootstrap(*, required: tuple[str, ...] = _REQUIRED_CREDENTIALS) -> None:
     """Set up sys.path, then run the credential self-heal chokepoint.
 
-    `extra_required` names ADDITIONAL secret env vars this specific bin
-    wrapper needs beyond the tenant-wide `BEADS_DOLT_PASSWORD` — e.g. the
-    Dispatcher requires the GitHub App env (GITHUB_APP_ID +
-    GITHUB_PRIVATE_KEY) so factory GitHub auth resolves ONLY through the
-    governed project's credential_wrapper (github-app-auth Pillar 2:
-    missing secrets re-exec through the wrapper when one is configured,
-    and FAIL CLOSED when none is — never a fleet fallback).
+    `required` names the secret env vars THIS bin wrapper needs at call
+    time; the default is the tenant-wide `BEADS_DOLT_PASSWORD` every
+    beads-touching CLI consumes. The Dispatcher requires the tenant secret
+    PLUS the GitHub App env (GITHUB_APP_ID + GITHUB_PRIVATE_KEY); the
+    mint-app-token CLI requires the App env ALONE (a GitHub token mint has
+    no business demanding the Dolt password). Either way the set resolves
+    ONLY through the governed project's credential_wrapper
+    (github-app-auth Pillar 2: missing secrets re-exec through the wrapper
+    when one is configured, and FAIL CLOSED when none is — never a fleet
+    fallback).
     """
     if sys.version_info < (3, 10):
         sys.stderr.write(
@@ -48,7 +53,7 @@ def bootstrap(*, extra_required: tuple[str, ...] = ()) -> None:
         path_str = str(path)
         if path_str not in sys.path:
             sys.path.insert(0, path_str)
-    _self_heal_credentials(extra_required=extra_required)
+    _self_heal_credentials(required=required)
 
 
 def _read_credential_wrapper() -> list[str]:
@@ -82,14 +87,13 @@ def _read_credential_wrapper() -> list[str]:
     return [str(token) for token in cast("list[object]", raw_wrapper)]
 
 
-def _self_heal_credentials(*, extra_required: tuple[str, ...] = ()) -> None:
+def _self_heal_credentials(*, required: tuple[str, ...] = _REQUIRED_CREDENTIALS) -> None:
     """Decide-and-perform the credential self-heal at the bin chokepoint.
 
     The pure decision lives in the vendored `livespec_runtime.credentials`;
     this thin performer supplies the live inputs (parsed wrapper, environ,
     interpreter, argv) and carries out the prescribed impure act.
-    `extra_required` extends the tenant-wide required set with the calling
-    wrapper's own secrets (see `bootstrap`).
+    `required` is the calling wrapper's own secret set (see `bootstrap`).
     """
     # Deferred imports: the vendored tree is on sys.path only AFTER
     # `bootstrap()`'s inserts run.
@@ -103,7 +107,7 @@ def _self_heal_credentials(*, extra_required: tuple[str, ...] = ()) -> None:
     from typing_extensions import assert_never
 
     decision = decide_credentials(
-        required=(*_REQUIRED_CREDENTIALS, *extra_required),
+        required=required,
         credential_wrapper=_read_credential_wrapper(),
         environ=os.environ,
         executable=sys.executable,

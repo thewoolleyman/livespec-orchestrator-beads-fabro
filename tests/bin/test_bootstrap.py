@@ -192,11 +192,12 @@ def test_self_heal_reexecs_sets_sentinel_and_calls_execvp(
     assert recorded["args"] == list(reexec_argv)
 
 
-def test_self_heal_threads_extra_required_into_the_decision(
+def test_self_heal_threads_the_required_override_into_the_decision(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """`extra_required` extends the tenant-wide set (the Dispatcher's GitHub
-    App env rides through the SAME credential_wrapper self-heal, per
+    """`required` names the calling wrapper's OWN secret set (the Dispatcher
+    adds the GitHub App env to the tenant secret; the mint CLI needs the App
+    env ALONE — all riding the SAME credential_wrapper self-heal, per
     github-app-auth Pillar 2)."""
     monkeypatch.chdir(tmp_path)
     seen: dict[str, object] = {}
@@ -208,12 +209,27 @@ def test_self_heal_threads_extra_required_into_the_decision(
     monkeypatch.setattr("livespec_runtime.credentials.decide_credentials", _record)
     bootstrap_module = _import_bootstrap()
     bootstrap_module._self_heal_credentials(  # type: ignore[attr-defined]  # noqa: SLF001
-        extra_required=("GITHUB_APP_ID", "GITHUB_PRIVATE_KEY")
+        required=("GITHUB_APP_ID", "GITHUB_PRIVATE_KEY")
     )
-    assert seen["required"] == (
-        "BEADS_DOLT_PASSWORD",
-        "GITHUB_APP_ID",
-        "GITHUB_PRIVATE_KEY",
+    assert seen["required"] == ("GITHUB_APP_ID", "GITHUB_PRIVATE_KEY")
+
+
+def test_bootstrap_required_override_drops_the_tenant_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A wrapper that never touches the ledger (the mint-app-token CLI) MUST
+    proceed on its own secret set alone: with the App env present and the
+    tenant secret ABSENT, bootstrap(required=<app env>) returns instead of
+    exiting — the entrypoint's github provisioning must not demand the Dolt
+    password."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("BEADS_DOLT_PASSWORD", raising=False)
+    monkeypatch.delenv(CREDENTIAL_REEXEC_SENTINEL, raising=False)
+    monkeypatch.setenv("GITHUB_APP_ID", "42")
+    monkeypatch.setenv("GITHUB_PRIVATE_KEY", "stub-pem")
+    bootstrap_module = _import_bootstrap()
+    bootstrap_module.bootstrap(  # type: ignore[attr-defined]
+        required=("GITHUB_APP_ID", "GITHUB_PRIVATE_KEY")
     )
 
 
@@ -232,11 +248,11 @@ def test_bootstrap_fails_when_secret_and_wrapper_absent(
     assert excinfo.value.code == _EXIT_CODE_CREDENTIAL_FAIL
 
 
-def test_bootstrap_fails_when_an_extra_required_secret_is_absent(
+def test_bootstrap_fails_when_a_required_override_secret_is_absent(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Integration: a present tenant secret does NOT satisfy a wrapper that
-    also requires the GitHub App env — absent extras still fail closed
+    """Integration: a present tenant secret does NOT satisfy a wrapper whose
+    required set names the GitHub App env — absent members still fail closed
     (exit 3) when no credential_wrapper is configured to re-exec through.
     """
     monkeypatch.chdir(tmp_path)
@@ -247,6 +263,6 @@ def test_bootstrap_fails_when_an_extra_required_secret_is_absent(
     bootstrap_module = _import_bootstrap()
     with pytest.raises(SystemExit) as excinfo:
         bootstrap_module.bootstrap(  # type: ignore[attr-defined]
-            extra_required=("GITHUB_APP_ID", "GITHUB_PRIVATE_KEY")
+            required=("BEADS_DOLT_PASSWORD", "GITHUB_APP_ID", "GITHUB_PRIVATE_KEY")
         )
     assert excinfo.value.code == _EXIT_CODE_CREDENTIAL_FAIL
