@@ -1,8 +1,25 @@
 # Handoff — orchestrator-plugin-self-containment (livespec-orchestrator-beads-fabro)
 
-**Thread:** `plan/orchestrator-plugin-self-containment/`
+**Thread:** `plan/orchestrator-plugin-self-containment/` (ARCHIVED)
 **Repo:** `/data/projects/livespec-orchestrator-beads-fabro`
 **Scope:** markdown/docs-only planning thread (no product `.py`).
+
+## ✅ STATUS: CLOSED — ARCHIVED (2026-07-02)
+
+The thread's objective LANDED. The self-contained-dispatch contract is
+codified (`## Self-contained plugin dispatch`, v021 commit `b84cc98`;
+extended v022 `0fb3f24` with factory GitHub App auth) and implemented:
+Slices 1+2+3 merged (PRs #217/#219/#220, released **0.3.1** `52af5e2`),
+and the Slice-4 substance landed afterwards — the orchestrator image now
+**bakes the plugin scripts payload** (`6601a9d`) and
+`real-work-dispatch.sh` no longer clones the orchestrator source
+(clone-A retired); releases 0.3.2 / 0.4.0 followed. No ledger epic was
+ever anchored (the capture path was affected by the same staleness this
+thread fixed); the remaining residual — the enabled-plugin / real-path
+E2E acceptance (Slice 6) — is now **ledger-tracked as epic `bd-ib-mxr`**
+(first slice `bd-ib-cyv` closed), so this markdown thread is no longer
+the durable record. The "worktrees pending reap" below were reaped.
+Everything below is the historical record, kept verbatim.
 
 > **Status is read LIVE — never a checkbox queue here.** This thread has
 > **no ledger epic yet** (see "Ledger anchoring" below): the formal epic +
