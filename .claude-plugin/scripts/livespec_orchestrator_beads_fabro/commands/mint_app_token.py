@@ -1,11 +1,18 @@
-"""`mint-app-token` — thin CLI over the GitHub App installation-token mint.
+"""`mint-app-token` — thin CLI over the vendored fleet GitHub App-token primitive.
 
-The mint logic (RS256 JWT signing, installation discovery, token exchange, error
-railway) lives in `commands/_app_token.py`. `orchestrator-entrypoint.sh` is thin
-glue that runs `GH_TOKEN="$(mint-app-token.py)"`.
+Resolution is FAIL-CLOSED per the github-app-auth design record (Pillar 2 —
+tenant-scoped resolution): the credential env (GITHUB_APP_ID +
+GITHUB_PRIVATE_KEY, optional GITHUB_APP_INSTALLATION_ID / GITHUB_API_URL) is
+injected ONLY by the calling tenant's credential_wrapper, and there is NO
+fleet-PAT fallback — the retired LIVESPEC_FAMILY_GITHUB_TOKEN is never read.
+All signing / mint / caching logic lives in the vendored
+`livespec_runtime.github_auth`; this CLI only wires env → config → provider
+→ stdout, so `orchestrator-entrypoint.sh` stays branch-free glue running
+`GH_TOKEN="$(mint_app_token.py)"`-shaped captures.
 
-SECRET HYGIENE: only the token is written to stdout (for capture); diagnostics go
-to stderr; env carries the inputs so no secret ever lands in argv.
+SECRET HYGIENE: only the token is written to stdout (for capture);
+diagnostics go to stderr; env carries the inputs so no secret ever lands in
+argv.
 """
 
 from __future__ import annotations
@@ -13,11 +20,9 @@ from __future__ import annotations
 import os
 import sys
 
-from livespec_orchestrator_beads_fabro.commands._app_token import (
-    DEFAULT_API,
-    resolve_github_token,
-)
-from livespec_orchestrator_beads_fabro.errors import AppTokenMintError
+from livespec_runtime.github_auth.config import load_github_app_config
+from livespec_runtime.github_auth.errors import GithubAppAuthError
+from livespec_runtime.github_auth.provider import InstallationTokenProvider
 
 __all__: list[str] = ["main"]
 
@@ -25,28 +30,25 @@ _EXIT_MINT_FAILED = 3
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Resolve the factory GitHub credential from env, print the token to stdout.
+    """Mint a GitHub App installation token from env; print it to stdout.
 
-    Prefers a GitHub App installation token (minted from GITHUB_APP_ID +
-    GITHUB_PRIVATE_KEY), falling back to the LIVESPEC_FAMILY_GITHUB_TOKEN PAT only
-    when no App is configured. `argv` is accepted for parity with the other
-    command mains (no flags today). The (non-secret) source is logged to stderr;
-    only the token is written to stdout for `GH_TOKEN="$(...)"` capture.
+    `argv` is accepted for parity with the other command mains (no flags
+    today). Every EXPECTED failure — missing/empty App env (including the
+    no-fallback refusal when only the retired fleet PAT is present), a bad
+    key, an App API rejection — surfaces the actionable
+    `GithubAppAuthError` detail on stderr and exits 3. The (non-secret)
+    source is logged to stderr; only the token is written to stdout for
+    `GH_TOKEN="$(...)"` capture.
     """
     _ = argv
     try:
-        resolved = resolve_github_token(
-            app_id=os.environ.get("GITHUB_APP_ID", "").strip(),
-            private_key_pem=os.environ.get("GITHUB_PRIVATE_KEY", ""),
-            pat=os.environ.get("LIVESPEC_FAMILY_GITHUB_TOKEN", ""),
-            api_url=os.environ.get("GITHUB_API_URL", DEFAULT_API),
-            installation_id=os.environ.get("GITHUB_APP_INSTALLATION_ID"),
-        )
-    except AppTokenMintError as exc:
-        _ = sys.stderr.write(f"ERROR: {exc}\n")
+        config = load_github_app_config(environ=os.environ)
+        token = InstallationTokenProvider(config=config).token()
+    except GithubAppAuthError as exc:
+        _ = sys.stderr.write(f"ERROR: {exc.detail}\n")
         return _EXIT_MINT_FAILED
-    _ = sys.stderr.write(f"github-token source: {resolved.source}\n")
-    _ = sys.stdout.write(resolved.token)
+    _ = sys.stderr.write("github-token source: github-app-installation-token\n")
+    _ = sys.stdout.write(token)
     return 0
 
 

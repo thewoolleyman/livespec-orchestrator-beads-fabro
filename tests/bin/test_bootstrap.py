@@ -52,7 +52,9 @@ def test_bootstrap_inserts_paths_when_missing(monkeypatch: pytest.MonkeyPatch) -
     # Neutralize the credential self-heal so this test isolates the sys.path
     # behavior (raising=False so the same file passes at the Red commit, when
     # the performer attribute does not yet exist on the master module).
-    monkeypatch.setattr(bootstrap_module, "_self_heal_credentials", lambda: None, raising=False)
+    monkeypatch.setattr(
+        bootstrap_module, "_self_heal_credentials", lambda **_kwargs: None, raising=False
+    )
     fresh_path: list[str] = ["/usr/lib/python3.10"]
     monkeypatch.setattr(sys, "path", fresh_path)
     monkeypatch.setattr(sys, "version_info", (3, 12, 0, "final", 0))
@@ -65,7 +67,9 @@ def test_bootstrap_skips_paths_already_present(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bootstrap_module = _import_bootstrap()
-    monkeypatch.setattr(bootstrap_module, "_self_heal_credentials", lambda: None, raising=False)
+    monkeypatch.setattr(
+        bootstrap_module, "_self_heal_credentials", lambda **_kwargs: None, raising=False
+    )
     seeded_path: list[str] = [str(_BUNDLE_SCRIPTS), str(_BUNDLE_VENDOR), "/usr/lib/python3.10"]
     monkeypatch.setattr(sys, "path", seeded_path)
     monkeypatch.setattr(sys, "version_info", (3, 12, 0, "final", 0))
@@ -188,6 +192,31 @@ def test_self_heal_reexecs_sets_sentinel_and_calls_execvp(
     assert recorded["args"] == list(reexec_argv)
 
 
+def test_self_heal_threads_extra_required_into_the_decision(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`extra_required` extends the tenant-wide set (the Dispatcher's GitHub
+    App env rides through the SAME credential_wrapper self-heal, per
+    github-app-auth Pillar 2)."""
+    monkeypatch.chdir(tmp_path)
+    seen: dict[str, object] = {}
+
+    def _record(**kwargs: object) -> Proceed:
+        seen.update(kwargs)
+        return Proceed()
+
+    monkeypatch.setattr("livespec_runtime.credentials.decide_credentials", _record)
+    bootstrap_module = _import_bootstrap()
+    bootstrap_module._self_heal_credentials(  # type: ignore[attr-defined]  # noqa: SLF001
+        extra_required=("GITHUB_APP_ID", "GITHUB_PRIVATE_KEY")
+    )
+    assert seen["required"] == (
+        "BEADS_DOLT_PASSWORD",
+        "GITHUB_APP_ID",
+        "GITHUB_PRIVATE_KEY",
+    )
+
+
 def test_bootstrap_fails_when_secret_and_wrapper_absent(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -200,4 +229,24 @@ def test_bootstrap_fails_when_secret_and_wrapper_absent(
     bootstrap_module = _import_bootstrap()
     with pytest.raises(SystemExit) as excinfo:
         bootstrap_module.bootstrap()  # type: ignore[attr-defined]
+    assert excinfo.value.code == _EXIT_CODE_CREDENTIAL_FAIL
+
+
+def test_bootstrap_fails_when_an_extra_required_secret_is_absent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Integration: a present tenant secret does NOT satisfy a wrapper that
+    also requires the GitHub App env — absent extras still fail closed
+    (exit 3) when no credential_wrapper is configured to re-exec through.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("BEADS_DOLT_PASSWORD", "test-not-a-real-secret")
+    monkeypatch.delenv("GITHUB_APP_ID", raising=False)
+    monkeypatch.delenv("GITHUB_PRIVATE_KEY", raising=False)
+    monkeypatch.delenv(CREDENTIAL_REEXEC_SENTINEL, raising=False)
+    bootstrap_module = _import_bootstrap()
+    with pytest.raises(SystemExit) as excinfo:
+        bootstrap_module.bootstrap(  # type: ignore[attr-defined]
+            extra_required=("GITHUB_APP_ID", "GITHUB_PRIVATE_KEY")
+        )
     assert excinfo.value.code == _EXIT_CODE_CREDENTIAL_FAIL

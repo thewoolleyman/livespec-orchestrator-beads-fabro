@@ -26,7 +26,17 @@ _LIVESPEC_CONFIG_FILENAME = ".livespec.jsonc"
 _CREDENTIAL_FAIL_EXIT = 3
 
 
-def bootstrap() -> None:
+def bootstrap(*, extra_required: tuple[str, ...] = ()) -> None:
+    """Set up sys.path, then run the credential self-heal chokepoint.
+
+    `extra_required` names ADDITIONAL secret env vars this specific bin
+    wrapper needs beyond the tenant-wide `BEADS_DOLT_PASSWORD` — e.g. the
+    Dispatcher requires the GitHub App env (GITHUB_APP_ID +
+    GITHUB_PRIVATE_KEY) so factory GitHub auth resolves ONLY through the
+    governed project's credential_wrapper (github-app-auth Pillar 2:
+    missing secrets re-exec through the wrapper when one is configured,
+    and FAIL CLOSED when none is — never a fleet fallback).
+    """
     if sys.version_info < (3, 10):
         sys.stderr.write(
             "livespec-orchestrator-beads-fabro requires Python 3.10+; install via uv.\n"
@@ -38,7 +48,7 @@ def bootstrap() -> None:
         path_str = str(path)
         if path_str not in sys.path:
             sys.path.insert(0, path_str)
-    _self_heal_credentials()
+    _self_heal_credentials(extra_required=extra_required)
 
 
 def _read_credential_wrapper() -> list[str]:
@@ -72,12 +82,14 @@ def _read_credential_wrapper() -> list[str]:
     return [str(token) for token in cast("list[object]", raw_wrapper)]
 
 
-def _self_heal_credentials() -> None:
+def _self_heal_credentials(*, extra_required: tuple[str, ...] = ()) -> None:
     """Decide-and-perform the credential self-heal at the bin chokepoint.
 
     The pure decision lives in the vendored `livespec_runtime.credentials`;
     this thin performer supplies the live inputs (parsed wrapper, environ,
     interpreter, argv) and carries out the prescribed impure act.
+    `extra_required` extends the tenant-wide required set with the calling
+    wrapper's own secrets (see `bootstrap`).
     """
     # Deferred imports: the vendored tree is on sys.path only AFTER
     # `bootstrap()`'s inserts run.
@@ -91,7 +103,7 @@ def _self_heal_credentials() -> None:
     from typing_extensions import assert_never
 
     decision = decide_credentials(
-        required=_REQUIRED_CREDENTIALS,
+        required=(*_REQUIRED_CREDENTIALS, *extra_required),
         credential_wrapper=_read_credential_wrapper(),
         environ=os.environ,
         executable=sys.executable,
@@ -105,7 +117,7 @@ def _self_heal_credentials() -> None:
             raise SystemExit(_CREDENTIAL_FAIL_EXIT)
         case Reexec(argv=reexec_argv):
             _ = sys.stderr.write(
-                "livespec: BEADS_DOLT_PASSWORD absent; re-invoking under credential_wrapper\n"
+                "livespec: required credential env absent; re-invoking under credential_wrapper\n"
             )
             os.environ[CREDENTIAL_REEXEC_SENTINEL] = "1"
             os.execvp(reexec_argv[0], list(reexec_argv))  # noqa: S606

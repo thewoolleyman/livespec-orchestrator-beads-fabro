@@ -1,10 +1,11 @@
 """Static guard: the entrypoint's GitHub provisioning is thin glue, no logic.
 
-All credential logic (App JWT signing, installation-token exchange, App-vs-PAT
-choice) lives in the tested Python CLI `commands/mint_app_token.py`. The shell
-entrypoint may ONLY invoke that CLI and export its output. These assertions pin
-that invariant so logic cannot silently creep back into shell, mirroring
-`test_real_work_dispatch_script.py`.
+All credential logic (App JWT signing, installation-token exchange, the
+fail-closed no-fleet-fallback boundary) lives in the tested Python CLI
+`commands/mint_app_token.py` over the vendored `livespec_runtime.github_auth`.
+The shell entrypoint may ONLY invoke that CLI and `gh auth login` with its
+output. These assertions pin that invariant so logic cannot silently creep
+back into shell, mirroring `test_real_work_dispatch_script.py`.
 """
 
 from pathlib import Path
@@ -19,10 +20,14 @@ def test_entrypoint_delegates_credential_resolution_to_the_python_cli() -> None:
     assert "mint_app_token.py" in text
 
 
-def test_entrypoint_exports_the_resolved_token() -> None:
+def test_entrypoint_logs_gh_in_but_never_exports_a_static_token() -> None:
+    """`gh auth login` bootstraps fabro + the initial clones; a once-at-start
+    `export GH_TOKEN` is FORBIDDEN (github-app-auth Pillar 1) — it would
+    expire after ~1 hour while the Dispatcher's provider re-mints per
+    subprocess instead."""
     text = _ENTRYPOINT.read_text(encoding="utf-8")
-    assert 'export GH_TOKEN="$token"' in text
     assert "gh auth login --with-token" in text
+    assert "export GH_TOKEN" not in text
 
 
 def test_entrypoint_carries_no_token_minting_logic() -> None:
@@ -32,8 +37,11 @@ def test_entrypoint_carries_no_token_minting_logic() -> None:
         assert forbidden not in text, f"token logic leaked into shell: {forbidden}"
 
 
-def test_entrypoint_does_not_branch_credential_source_in_shell() -> None:
-    """The App-vs-PAT decision is the CLI's job; the shell must not re-branch it."""
+def test_entrypoint_never_references_the_retired_fleet_pat() -> None:
+    """The fleet PAT is retired (github-app-auth Pillar 2): the App env via
+    the dispatch target's credential_wrapper is the SOLE credential source,
+    and no PAT fallback branch may reappear in shell."""
     text = _ENTRYPOINT.read_text(encoding="utf-8")
-    # The old shell guard that branched on the PAT must be gone.
-    assert 'if [ -z "${LIVESPEC_FAMILY_GITHUB_TOKEN' not in text
+    assert "LIVESPEC_FAMILY_GITHUB_TOKEN" not in text
+    assert "GITHUB_APP_ID" in text
+    assert "GITHUB_PRIVATE_KEY" in text

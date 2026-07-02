@@ -54,11 +54,12 @@ Options:
                       Ignored when TIER2_USE_HOST_NETWORK=1.
   --poll-attempts N    Dispatcher PR poll attempts. Default: 3.
 
-Required env, normally supplied by:
-  /data/projects/1password-env-wrapper/with-livespec-env.sh -- <command>
+Required env, normally supplied by the dispatch TARGET's credential_wrapper
+(fleet targets: /data/projects/1password-env-wrapper/with-livespec-env.sh):
 
-  LIVESPEC_FAMILY_GITHUB_TOKEN
-    (forwarded to the Dispatcher as GH_TOKEN for in-sandbox PR creation)
+  GITHUB_APP_ID + GITHUB_PRIVATE_KEY
+    (the GitHub App credential; the Dispatcher's provider mints installation
+     tokens on demand — no fleet PAT, no once-at-start export)
   ANTHROPIC_API_KEY_LIVESPEC_E2E
   CLAUDE_CODE_OAUTH_TOKEN
   BEADS_DOLT_PASSWORD
@@ -131,7 +132,8 @@ preflight() {
   [ -f "$MOUNT_REPO/.livespec.jsonc" ] || fail "MOUNT_REPO lacks .livespec.jsonc: $MOUNT_REPO"
   [ -f "$MOUNT_REPO/.beads/config.yaml" ] || fail "MOUNT_REPO lacks .beads/config.yaml: $MOUNT_REPO"
   [ -f "$MOUNT_REPO/.beads/metadata.json" ] || fail "MOUNT_REPO lacks .beads/metadata.json: $MOUNT_REPO"
-  require_env LIVESPEC_FAMILY_GITHUB_TOKEN
+  require_env GITHUB_APP_ID
+  require_env GITHUB_PRIVATE_KEY
   require_env ANTHROPIC_API_KEY_LIVESPEC_E2E
   require_env CLAUDE_CODE_OAUTH_TOKEN
   require_env BEADS_DOLT_PASSWORD
@@ -191,7 +193,10 @@ start_container() {
     -v "$MOUNT_REPO:$WORKSPACE_REPO" \
     "${publish_args[@]}" \
     -e FABRO_PORT="$FABRO_PORT" \
-    -e LIVESPEC_FAMILY_GITHUB_TOKEN \
+    -e GITHUB_APP_ID \
+    -e GITHUB_PRIVATE_KEY \
+    -e GITHUB_APP_INSTALLATION_ID \
+    -e GITHUB_API_URL \
     -e ANTHROPIC_API_KEY_LIVESPEC_E2E \
     -e CLAUDE_CODE_OAUTH_TOKEN \
     -e BEADS_DOLT_PASSWORD \
@@ -230,7 +235,7 @@ run_dispatch() {
   docker exec \
     -w "$WORKSPACE_REPO" \
     "$CONTAINER" \
-    sh -lc 'export GH_TOKEN="$LIVESPEC_FAMILY_GITHUB_TOKEN"; exec python3 "$1/.claude-plugin/scripts/bin/dispatcher.py" \
+    sh -lc 'exec python3 "$1/.claude-plugin/scripts/bin/dispatcher.py" \
       loop \
       --repo "$1" \
       --budget 1 \

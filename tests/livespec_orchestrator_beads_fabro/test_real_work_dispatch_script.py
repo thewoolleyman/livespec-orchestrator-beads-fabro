@@ -47,6 +47,25 @@ def test_codex_auth_projects_only_the_credential_not_the_whole_codex_home() -> N
     assert "-e CODEX" not in text
 
 
+def test_dispatch_script_resolves_github_auth_via_app_env_never_the_fleet_pat() -> None:
+    """github-app-auth Pillars 1+2 pinned at the shell layer.
+
+    The dispatch TARGET's credential_wrapper injects the GitHub App env
+    (GITHUB_APP_ID + GITHUB_PRIVATE_KEY); the script requires and forwards
+    THAT, never the retired fleet PAT (LIVESPEC_FAMILY_GITHUB_TOKEN), and
+    never bakes a once-at-start `export GH_TOKEN=...` into the dispatcher
+    invocation — the in-container provider re-mints per subprocess.
+    """
+    text = _SCRIPT.read_text(encoding="utf-8")
+
+    assert "require_env GITHUB_APP_ID" in text
+    assert "require_env GITHUB_PRIVATE_KEY" in text
+    assert "-e GITHUB_APP_ID" in text
+    assert "-e GITHUB_PRIVATE_KEY" in text
+    assert "LIVESPEC_FAMILY_GITHUB_TOKEN" not in text
+    assert "export GH_TOKEN=" not in text
+
+
 def test_beads_metadata_regen_uses_a_non_git_scratch_dir_not_the_clone() -> None:
     """metadata.json is derived in a non-git scratch dir, then copied in.
 

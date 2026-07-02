@@ -42,7 +42,8 @@ run-config overlay materialized under the temp dir is the RUN-SCOPED
 credential projection (per the family-secrets scoped
 transient-materialization rule): it appends an
 `[environments.<id>.env]` table carrying the CLAUDE_CODE_OAUTH_TOKEN
-and GH_TOKEN values read from the Dispatcher's process environment, is
+value read from the Dispatcher's process environment plus a GH_TOKEN
+freshly minted from the GitHub App installation-token provider, is
 written mode-600, and is deleted when the run returns. The committed workflow
 config carries NO secret VALUE and NO `{{ env }}` interpolation —
 interpolation can NOT deliver credentials to server-mediated runs (do
@@ -52,12 +53,15 @@ fabro-server spawns with a fail-closed env allowlist
 resolver and the LITERAL `{{ env.X }}` string flows into the sandbox
 (proven empirically 2026-06-12: API 401 with the token present in
 both the dispatcher's and the server daemon's env). The Dispatcher is
-invoked under the with-livespec-env.sh wrapper (the livespec
-1Password Environment carries CLAUDE_CODE_OAUTH_TOKEN, and the
-orchestrator projects the family GitHub token as GH_TOKEN) and refuses to
-dispatch when either variable is absent or empty — there would be
-nothing to project. Token values are never logged, echoed, or
-journaled.
+invoked under the dispatch TARGET's configured credential_wrapper
+(which injects CLAUDE_CODE_OAUTH_TOKEN plus the GitHub App env —
+GITHUB_APP_ID + GITHUB_PRIVATE_KEY; per the github-app-auth design
+there is NO fleet-PAT fallback) and refuses to dispatch when a
+credential is absent — there would be nothing to project. The engine's
+subprocess runner re-resolves GH_TOKEN from the caching provider
+before EVERY command, so the ~76-minute merge-poll and any >1-hour
+operation re-mint transparently instead of dying on a once-at-start
+export. Token values are never logged, echoed, or journaled.
 
 Sandbox sibling clones: the same overlay appends one depth-1
 prepare-step clone per fleet member (from livespec master's
@@ -146,6 +150,9 @@ from pathlib import Path
 from time import sleep as _real_sleep
 from typing import cast
 
+from livespec_runtime.github_auth.config import load_github_app_config
+from livespec_runtime.github_auth.errors import GithubAppAuthError
+from livespec_runtime.github_auth.provider import InstallationTokenProvider
 from livespec_runtime.work_items.lifecycle import is_item_ready, ready_sort_key
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
@@ -178,6 +185,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     run_dispatch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
+    GITHUB_TOKEN_ENV_VAR,
+    GithubTokenEnvRunner,
     JournalFile,
     ShellCommandRunner,
     WatchedFabroLauncher,
@@ -269,7 +278,7 @@ _EXIT_USAGE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 3
 
 _OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"  # noqa: S105 - env-var NAME, not a secret value
-_GITHUB_TOKEN_ENV = "GH_TOKEN"  # noqa: S105 - env-var NAME, not a secret value
+_GITHUB_TOKEN_ENV = GITHUB_TOKEN_ENV_VAR  # single-sourced from _dispatcher_io
 
 # Host-side override for where the live Codex `auth.json` lives. The host
 # is the sole `codex login`+refresh owner; the Dispatcher reads its
@@ -1275,12 +1284,25 @@ def _dispatch_one(
     journal.append(
         record={"stage": "dispatch-id", "work_item_id": item.id, "dispatch_id": dispatch_id}
     )
+    token_supplier = _github_token_supplier()
+    if isinstance(token_supplier, str):
+        outcome = DispatchOutcome(
+            work_item_id=item.id,
+            status="failed",
+            stage="github-app-auth",
+            pr_number=None,
+            merge_sha=None,
+            detail=token_supplier,
+        )
+        journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
+        return outcome
     overlay_error = _materialize_overlay(
         committed=_workflow_toml(args=args),
         overlay=overlay_file,
         repo=repo,
         work_item_id=item.id,
         dispatch_id=dispatch_id,
+        token=token_supplier,
     )
     if overlay_error is not None:
         outcome = DispatchOutcome(
@@ -1299,7 +1321,11 @@ def _dispatch_one(
     try:
         outcome = run_dispatch(
             plan=plan,
-            runner=ShellCommandRunner(),
+            # Pillar 1 (first-class remint): the decorator re-resolves
+            # GH_TOKEN from the caching provider before EVERY engine
+            # subprocess, so the ~76-min merge-poll and the post-merge
+            # git/janitor legs never ride an expired once-at-start token.
+            runner=GithubTokenEnvRunner(inner=ShellCommandRunner(), token=token_supplier),
             journal=journal,
             sleep=_real_sleep,
             poll=PollPolicy(
@@ -1813,6 +1839,7 @@ def _materialize_overlay(
     repo: Path,
     work_item_id: str,
     dispatch_id: str,
+    token: Callable[[], str],
 ) -> str | None:
     """Write the uncommitted mode-600 run-config overlay.
 
@@ -1821,10 +1848,14 @@ def _materialize_overlay(
     `run-config-overlay` stage). The overlay is the RUN-SCOPED
     credential projection: the committed config (graph path absolutized)
     plus an appended env table carrying the CLAUDE_CODE_OAUTH_TOKEN
-    and GH_TOKEN values read from this process's environment. Fabro `{{ env }}`
-    interpolation is NOT usable here (see the module docstring), so the
-    value MUST be materialized. The token never reaches a log, journal,
-    or argv; the overlay file is deleted when the run returns.
+    value read from this process's environment and a GH_TOKEN freshly
+    minted from the App installation-token provider (`token` is the
+    provider's accessor — the sandbox receives an ephemeral installation
+    token, never the durable App key and never a fleet PAT). Fabro
+    `{{ env }}` interpolation is NOT usable here (see the module
+    docstring), so the value MUST be materialized. The token never
+    reaches a log, journal, or argv; the overlay file is deleted when
+    the run returns.
 
     The overlay ALSO provisions the sandbox sibling clones: one depth-1
     prepare-step clone per fleet member (minus the dispatch target,
@@ -1851,6 +1882,13 @@ def _materialize_overlay(
     env_error = _check_credential_env()
     if env_error is not None:
         return env_error
+    try:
+        github_token = token()
+    except GithubAppAuthError as error:
+        return f"C-mode dispatch refused: GitHub App token mint failed: {error.detail}"
+    # Refresh the ambient GH_TOKEN so the host-side `gh api` fleet-manifest
+    # fetch below runs on a currently-valid installation token too.
+    os.environ[_GITHUB_TOKEN_ENV] = github_token
     siblings = _resolve_sibling_clones(repo=repo)
     if isinstance(siblings, str):
         return siblings
@@ -1866,7 +1904,7 @@ def _materialize_overlay(
         committed_text=committed.read_text(encoding="utf-8"),
         workflow_dir=committed.parent.resolve(),
         token=os.environ[_OAUTH_TOKEN_ENV],
-        github_token=os.environ[_GITHUB_TOKEN_ENV],
+        github_token=github_token,
         siblings=siblings,
         otel_env=otel_env,
         codex_auth_snapshot=codex_snapshot,
@@ -1949,30 +1987,47 @@ def _resolve_sibling_clones(*, repo: Path) -> SiblingClones | str:
     )
 
 
-def _check_credential_env() -> str | None:
-    """Fail fast when a required sandbox credential is absent.
+def _github_token_supplier() -> Callable[[], str] | str:
+    """Resolve the App-token supplier from the wrapper-injected env (fail-closed).
 
-    Returns None when both credentials are present, or an actionable
-    error naming the missing env var(s). The Dispatcher's process env is
-    the SOURCE of the run-scoped overlay projection, so an absent or
-    empty variable means there is nothing to project. Values are never
-    logged.
+    Returns the caching `InstallationTokenProvider`'s `token` accessor
+    (Pillar 1: callable at any time by any factory process; re-mints
+    transparently past the 55-minute horizon), or the actionable refusal
+    detail when the GitHub App env (GITHUB_APP_ID + GITHUB_PRIVATE_KEY)
+    is absent. The dispatch TARGET's configured credential_wrapper is
+    the ONLY credential source (Pillar 2): a missing App env is a hard
+    refusal routed as data at the `github-app-auth` stage — NEVER a
+    silent fall-through to a fleet PAT or an ambient `gh` login.
     """
-    missing = [
-        name for name in (_OAUTH_TOKEN_ENV, _GITHUB_TOKEN_ENV) if os.environ.get(name, "") == ""
-    ]
-    if not missing:
+    try:
+        config = load_github_app_config(environ=os.environ)
+    except GithubAppAuthError as error:
+        return f"C-mode dispatch refused: {error.detail}"
+    return InstallationTokenProvider(config=config).token
+
+
+def _check_credential_env() -> str | None:
+    """Fail fast when the sandbox model credential is absent.
+
+    Returns None when CLAUDE_CODE_OAUTH_TOKEN is present, or an
+    actionable error naming it. The Dispatcher's process env is the
+    SOURCE of the run-scoped overlay projection, so an absent or empty
+    variable means there is nothing to project. The GitHub credential is
+    NOT env-sourced here — it is minted per-dispatch by the App
+    installation-token provider (`_github_token_supplier`). Values are
+    never logged.
+    """
+    if os.environ.get(_OAUTH_TOKEN_ENV, "") != "":
         return None
-    missing_text = ", ".join(missing)
     return (
-        f"C-mode dispatch refused: {missing_text} is not set in the "
+        f"C-mode dispatch refused: {_OAUTH_TOKEN_ENV} is not set in the "
         f"Dispatcher's process environment. The run-config overlay "
-        f"projects these variables into the sandbox env table (fabro "
-        f"'{{{{ env.* }}}}' interpolation cannot deliver them — the "
+        f"projects it into the sandbox env table (fabro "
+        f"'{{{{ env.* }}}}' interpolation cannot deliver it — the "
         f"server-spawned worker env is allowlist-scrubbed), so an absent "
         f"variable leaves nothing to project. Invoke the Dispatcher under "
-        f"the with-livespec-env.sh wrapper and alias the family GitHub "
-        f"token into {_GITHUB_TOKEN_ENV} before dispatch."
+        f"the dispatch target's configured credential_wrapper (e.g. "
+        f"with-livespec-env.sh)."
     )
 
 

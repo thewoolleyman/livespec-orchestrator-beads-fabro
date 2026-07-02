@@ -35,12 +35,15 @@
 #
 # TOKEN THREADING
 # ---------------
-# Host-side create/clone/delete use LIVESPEC_E2E_GITHUB_TOKEN directly. For the
-# in-sandbox push/PR/merge legs the orchestrator entrypoint `gh auth login`s
-# from LIVESPEC_FAMILY_GITHUB_TOKEN and the dispatcher projects it as GH_TOKEN
-# into the Fabro sandbox; so for a LIVE run targeting the `livespec-e2e` org we
-# alias LIVESPEC_FAMILY_GITHUB_TOKEN := LIVESPEC_E2E_GITHUB_TOKEN for the
-# container invocation. Anthropic / Claude / Honeycomb legs are unchanged.
+# Host-side create/clone/delete use LIVESPEC_E2E_GITHUB_TOKEN directly (a
+# dedicated e2e credential — NOT the retired fleet PAT, which no dispatch
+# path reads anymore). The in-container legs (entrypoint gh-auth, dispatcher
+# provider, sandbox GH_TOKEN projection) mint GitHub App installation tokens
+# from the forwarded GITHUB_APP_ID + GITHUB_PRIVATE_KEY env (github-app-auth
+# Pillars 1+2). A LIVE run against the `livespec-e2e` org therefore requires
+# a GitHub App installation covering the throwaway repos in that org — set
+# GITHUB_APP_INSTALLATION_ID to pin it when the App has multiple
+# installations. Anthropic / Claude / Honeycomb legs are unchanged.
 #
 # SECRET HYGIENE (non-negotiable): tokens flow via env / stdin only; this
 # script never echoes a secret, never prints `git remote -v` / URLs, redacts
@@ -51,7 +54,10 @@
 #   /data/projects/1password-env-wrapper/with-livespec-env.sh -- \
 #     bash orchestrator-image/acceptance-live-golden-master.sh --run
 #
-#   LIVESPEC_E2E_GITHUB_TOKEN        org-scoped fine-grained token (livespec-e2e)
+#   LIVESPEC_E2E_GITHUB_TOKEN        org-scoped fine-grained token (livespec-e2e;
+#                                    host-side repo create/clone/delete only)
+#   GITHUB_APP_ID + GITHUB_PRIVATE_KEY  GitHub App env for the in-container legs
+#                                    (installation must cover the e2e org)
 #   ANTHROPIC_API_KEY_LIVESPEC_E2E   Fabro LLM key
 #   CLAUDE_CODE_OAUTH_TOKEN          model auth the dispatcher projects per-dispatch
 #   HONEYCOMB_INGEST_KEY_LIVESPEC    telemetry egress key
@@ -120,7 +126,9 @@ Options:
   --poll-attempts N Dispatcher PR-merge poll attempts. Default: 80.
 
 Required env (normally from /data/projects/1password-env-wrapper/with-livespec-env.sh):
-  LIVESPEC_E2E_GITHUB_TOKEN
+  LIVESPEC_E2E_GITHUB_TOKEN   (host-side repo create/clone/delete)
+  GITHUB_APP_ID + GITHUB_PRIVATE_KEY  (in-container App-token mint; the App's
+                              installation must cover the livespec-e2e org)
   ANTHROPIC_API_KEY_LIVESPEC_E2E
   CLAUDE_CODE_OAUTH_TOKEN
   HONEYCOMB_INGEST_KEY_LIVESPEC
@@ -229,6 +237,8 @@ preflight() {
   [ -f "$REPO_ROOT/orchestrator-image/e2e-skeleton/pyproject.toml" ] \
     || fail "throwaway-repo skeleton template missing: orchestrator-image/e2e-skeleton/"
   require_env LIVESPEC_E2E_GITHUB_TOKEN
+  require_env GITHUB_APP_ID
+  require_env GITHUB_PRIVATE_KEY
   require_env ANTHROPIC_API_KEY_LIVESPEC_E2E
   require_env CLAUDE_CODE_OAUTH_TOKEN
   require_env HONEYCOMB_INGEST_KEY_LIVESPEC
@@ -369,8 +379,9 @@ start_container() {
   else
     publish_args=(-p "127.0.0.1:${HOST_PUBLISH_PORT}:${FABRO_PORT}")
   fi
-  # LIVESPEC_FAMILY_GITHUB_TOKEN is aliased to the e2e token so the entrypoint's
-  # gh-auth + the dispatcher's GH_TOKEN projection target the livespec-e2e org.
+  # The GitHub App env is forwarded so the entrypoint's gh-auth + the
+  # dispatcher's provider mint installation tokens (the App's installation
+  # must cover the livespec-e2e org; no fleet-PAT path remains).
   docker run -d --name "$CONTAINER" \
     --privileged \
     --cgroupns=host \
@@ -380,7 +391,10 @@ start_container() {
     -v "$CLONE_DIR:$TARGET_MOUNT" \
     "${publish_args[@]}" \
     -e FABRO_PORT="$FABRO_PORT" \
-    -e LIVESPEC_FAMILY_GITHUB_TOKEN="$LIVESPEC_E2E_GITHUB_TOKEN" \
+    -e GITHUB_APP_ID \
+    -e GITHUB_PRIVATE_KEY \
+    -e GITHUB_APP_INSTALLATION_ID \
+    -e GITHUB_API_URL \
     -e ANTHROPIC_API_KEY_LIVESPEC_E2E \
     -e CLAUDE_CODE_OAUTH_TOKEN \
     -e HONEYCOMB_INGEST_KEY_LIVESPEC \
@@ -397,9 +411,8 @@ trust_mounts() {
   # Wire gh as git's credential helper in the orchestrator container so the
   # Dispatcher's POST-MERGE `git -C <throwaway-mount> pull --ff-only origin
   # master` authenticates against the token-free `origin` URL. The entrypoint
-  # already `gh auth login`ed with the e2e token (aliased via
-  # LIVESPEC_FAMILY_GITHUB_TOKEN); `gh auth setup-git` makes raw `git` reuse that
-  # stored credential. Run #6 confirmed the PR genuinely MERGED and only this
+  # already `gh auth login`ed with a minted App installation token;
+  # `gh auth setup-git` makes raw `git` reuse that stored credential. Run #6 confirmed the PR genuinely MERGED and only this
   # post-merge pull failed ("could not read Username") — this closes that gap.
   docker exec "$CONTAINER" sh -lc 'gh auth setup-git' >/dev/null 2>&1 \
     || printf 'WARNING: gh auth setup-git failed; the post-merge pull may need credentials\n' >&2
@@ -430,7 +443,7 @@ run_dispatch() {
   docker exec \
     -w "$TARGET_MOUNT" \
     "$CONTAINER" \
-    sh -lc 'export GH_TOKEN="$LIVESPEC_FAMILY_GITHUB_TOKEN"; exec python3 "$1/.claude-plugin/scripts/bin/dispatcher.py" \
+    sh -lc 'exec python3 "$1/.claude-plugin/scripts/bin/dispatcher.py" \
       loop \
       --repo "$2" \
       --budget 1 \

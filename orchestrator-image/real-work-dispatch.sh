@@ -44,12 +44,17 @@
 # never echoes a secret, never prints `git remote -v` / a token-bearing URL /
 # env, and redacts long opaque token-shaped runs in any captured output.
 #
-# Required env, normally supplied by:
-#   /data/projects/1password-env-wrapper/with-livespec-env.sh -- <command>
+# Required env, normally supplied by the dispatch TARGET's credential_wrapper
+# (the fleet's is /data/projects/1password-env-wrapper/with-livespec-env.sh;
+# an adopter target injects its own App env via its own wrapper — fail-closed,
+# no fleet fallback):
 #
-#   LIVESPEC_FAMILY_GITHUB_TOKEN
-#     (the entrypoint gh-auth's with it; forwarded to the Dispatcher as GH_TOKEN
-#      for the in-sandbox PR; also authenticates the in-container fresh clones)
+#   GITHUB_APP_ID + GITHUB_PRIVATE_KEY
+#     (the GitHub App credential; the entrypoint mints an installation token
+#      to gh-auth the container, and the in-container Dispatcher's provider
+#      re-mints on demand — for the in-sandbox PR leg, the merge-poll, and
+#      the in-container fresh clones. The retired fleet PAT is NEVER read.)
+#   GITHUB_APP_INSTALLATION_ID / GITHUB_API_URL (optional; forwarded when set)
 #   ANTHROPIC_API_KEY_LIVESPEC_E2E
 #   CLAUDE_CODE_OAUTH_TOKEN
 #   BEADS_DOLT_PASSWORD   (the single shared family password)
@@ -124,12 +129,14 @@ Options:
                       Ignored when TIER2_USE_HOST_NETWORK=1.
   --poll-attempts N    Dispatcher PR-merge poll attempts. Default: 80.
 
-Required env, normally supplied by:
-  /data/projects/1password-env-wrapper/with-livespec-env.sh -- <command>
+Required env, normally supplied by the dispatch TARGET's credential_wrapper
+(fleet targets: /data/projects/1password-env-wrapper/with-livespec-env.sh;
+adopter targets inject their own GitHub App env — fail-closed, no fleet
+fallback):
 
-  LIVESPEC_FAMILY_GITHUB_TOKEN
-    (forwarded to the Dispatcher as GH_TOKEN for in-sandbox PR creation; also
-     authenticates the in-container fresh clones via the gh credential helper)
+  GITHUB_APP_ID + GITHUB_PRIVATE_KEY
+    (the GitHub App credential; installation tokens are minted in-container
+     on demand — never a fleet PAT, never a once-at-start export)
   ANTHROPIC_API_KEY_LIVESPEC_E2E
   CLAUDE_CODE_OAUTH_TOKEN
   BEADS_DOLT_PASSWORD   (the single shared family password; the in-container
@@ -221,7 +228,11 @@ preflight() {
   require_command curl
   docker info >/dev/null 2>&1 || fail "docker is not reachable from the host"
   [ -n "$TARGET_REPO" ] || fail "--target-repo <name> is required"
-  require_env LIVESPEC_FAMILY_GITHUB_TOKEN
+  # The GitHub App env comes from the dispatch TARGET's credential_wrapper
+  # (fail-closed: absence means the operator is not running under the
+  # target's wrapper — there is NO fleet-PAT fallback).
+  require_env GITHUB_APP_ID
+  require_env GITHUB_PRIVATE_KEY
   require_env ANTHROPIC_API_KEY_LIVESPEC_E2E
   require_env CLAUDE_CODE_OAUTH_TOKEN
   require_env BEADS_DOLT_PASSWORD
@@ -288,7 +299,10 @@ start_container() {
     -v "$VARLIB_VOL:/var/lib/docker" \
     "${publish_args[@]}" \
     -e FABRO_PORT="$FABRO_PORT" \
-    -e LIVESPEC_FAMILY_GITHUB_TOKEN \
+    -e GITHUB_APP_ID \
+    -e GITHUB_PRIVATE_KEY \
+    -e GITHUB_APP_INSTALLATION_ID \
+    -e GITHUB_API_URL \
     -e ANTHROPIC_API_KEY_LIVESPEC_E2E \
     -e CLAUDE_CODE_OAUTH_TOKEN \
     -e BEADS_DOLT_PASSWORD \
@@ -315,9 +329,9 @@ prove_inner_daemon() {
 }
 
 # Fresh-clone a GitHub repo INSIDE the container from a TOKEN-FREE origin URL.
-# The container entrypoint already `gh auth login`ed from
-# LIVESPEC_FAMILY_GITHUB_TOKEN and wired `gh auth setup-git`, so raw `git clone`
-# of an https://github.com/<org>/<repo>.git URL authenticates with the stored
+# The container entrypoint already `gh auth login`ed with a freshly minted App
+# installation token and wired `gh auth setup-git`, so raw `git clone` of an
+# https://github.com/<org>/<repo>.git URL authenticates with the stored
 # credential — the URL itself carries NO token (secret hygiene).
 clone_in_container() {
   local org="$1" repo="$2" dest="$3"
@@ -466,11 +480,13 @@ run_dispatch() {
   # impl-beads clone, so its package-root resolution (the .fabro/workflows graph,
   # via __file__) points at the clone. `--repo` is the FRESH target clone:
   # ledger resolution, post-merge primary refresh, and the janitor worktree all
-  # key off it. GH_TOKEN is projected for the in-sandbox PR leg only.
+  # key off it. NO GH_TOKEN export: the Dispatcher's App-token provider mints
+  # per subprocess from the forwarded GITHUB_APP_* env (Pillar 1 — a static
+  # export would expire mid-merge-poll).
   docker exec \
     -w "$TARGET_CLONE" \
     "$CONTAINER" \
-    sh -lc 'export GH_TOKEN="$LIVESPEC_FAMILY_GITHUB_TOKEN"; exec python3 "$1/.claude-plugin/scripts/bin/dispatcher.py" \
+    sh -lc 'exec python3 "$1/.claude-plugin/scripts/bin/dispatcher.py" \
       loop \
       --repo "$2" \
       --budget 1 \
