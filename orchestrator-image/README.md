@@ -19,7 +19,7 @@ credential is injected at `docker run` time.
 | File | Purpose |
 |---|---|
 | `Dockerfile` | `ubuntu:24.04` base (glibc 2.39 — the fabro v0.254.0 hard floor) + inner `docker.io` + content-pinned `bd` v1.0.5 / `dolt` v2.1.4 + `uv` + `gh` + `mise` + `libatomic1` + the COPYed pinned `fabro` binary; `VOLUME /var/lib/docker`; `EXPOSE 32276`. |
-| `orchestrator-entrypoint.sh` | Supervisor: start dockerd → wait for socket → provision headless fabro (gh auth + `fabro install --non-interactive` + bind `0.0.0.0:32276`) → exec the dispatcher (or a passed command). |
+| `orchestrator-entrypoint.sh` | Supervisor: start dockerd → wait for socket → provision headless fabro (gh auth with a minted App token + hand-written settings with the native GitHub App integration + dev-token server credentials, listening on `0.0.0.0:32276`) → exec the dispatcher (or a passed command). |
 | `build-and-verify.sh` | Stages the fabro binary, builds the image, runs the privileged container with an ext4-backed volume + injected secrets, and runs tier-1 verification. |
 | `tier2-dispatch-proof.sh` | Runs the W7 Tier-2 proof: one explicit shadow dispatch from inside the container against a tiny ready item, with redacted logs and inner-daemon evidence. **Bind-mounts the host impl-beads checkout** — it is a proof runner, not the real-work substrate. |
 | `real-work-dispatch.sh` | The W7 step-5 **real-work substrate**: dispatches one ready work-item with **no host checkout bind-mount**. It fresh-`git clone`s impl-beads (dispatcher code + the `.fabro/workflows` graph) *and* the dispatch target *inside* the container, `uv sync`s the dispatcher clone, regenerates the gitignored `.beads/metadata.json` (server-stable `project_id`), and points `dispatcher.py loop --repo` at the in-container target clone. The only host coupling is the `-e` secret set. |
@@ -198,7 +198,7 @@ out of band, so no token-bearing URL is ever printed or stored.
 | `GITHUB_APP_ID` + `GITHUB_PRIVATE_KEY` | the GitHub App credential (livespec-pr-bot for the fleet; adopters bring their own App), injected by the dispatch TARGET's credential_wrapper on the host and forwarded in. The SOLE GitHub credential source — there is NO fleet-PAT fallback (fail-closed per the github-app-auth design). The entrypoint mints an installation token to `gh auth login` the container (which also authenticates the in-container fresh clones via the `gh` git credential helper; clone origin URLs stay token-free); the Dispatcher's caching provider re-mints before EVERY subprocess so the ~76-minute merge-poll and any >1-hour operation survive token expiry | entrypoint + dispatcher + in-container clones |
 | `GITHUB_APP_INSTALLATION_ID` / `GITHUB_API_URL` | optional: pin the App installation (multi-install Apps) / override the API root (GitHub Enterprise) | entrypoint + dispatcher |
 | `GH_TOKEN` | conventional GitHub token name the Dispatcher populates with freshly minted installation tokens — refreshed per subprocess in its own env and projected into the Fabro sandbox env table so the in-sandbox PR node can run `gh pr create`; never injected at container launch (`gh auth login --with-token` refuses to store credentials when `GH_TOKEN` is already set, and a launch-time value would expire mid-run) | dispatcher / sandbox PR node |
-| `ANTHROPIC_API_KEY_LIVESPEC_E2E` | fabro LLM-provider API key (name overridable via `FABRO_LLM_API_KEY_ENV`) | `fabro install` |
+| `ANTHROPIC_API_KEY_LIVESPEC_E2E` | fabro LLM-provider API key (name overridable via `FABRO_LLM_API_KEY_ENV`; exported as `ANTHROPIC_API_KEY` into the fabro server's env) | fabro server |
 | `CLAUDE_CODE_OAUTH_TOKEN` | model auth the dispatcher projects into each sandbox per-dispatch (run-scoped overlay) | dispatcher |
 | `BEADS_DOLT_PASSWORD_<tenant>` | external family-tenant Dolt password (tenant DB == repo name) | dispatcher / `bd` |
 | `BEADS_DOLT_PASSWORD` | generic password name consumed by `bd`; set from the tenant-scoped variable at `docker run` time | `bd` |
@@ -236,8 +236,8 @@ browser.
     jq -r '.servers["http://127.0.0.1:32276"].token' ~/.fabro/auth.json
     ```
 
-    For the containerized orchestrator the entrypoint's `fabro install`
-    provisions it; retrieve it from the running container the same way, e.g.
+    For the containerized orchestrator the entrypoint's hand-provisioning
+    generates it; retrieve it from the running container the same way, e.g.
     `docker exec <name> jq -r '.servers["http://127.0.0.1:32276"].token' /root/.fabro/auth.json`
     (the server side also persists it under `~/.fabro/storage/`). Note:
     `fabro server start` prints `Auth: dev-token` but does **not** print the

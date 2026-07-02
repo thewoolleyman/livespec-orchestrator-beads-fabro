@@ -12,10 +12,10 @@
 #        - `gh auth login --with-token`  (GitHub token leg — fabro's `token`
 #          strategy reads the token from the gh CLI's stored oauth token, NOT a
 #          GITHUB_TOKEN env var directly; proven 2026-06-15);
-#        - `fabro install --non-interactive` (LLM provider + GitHub + dev-token,
-#          writes ~/.fabro/settings.toml and STARTS the server);
-#        - rewrite [server.listen] to 0.0.0.0:<port> and restart so a published
-#          port is reachable from outside the container;
+#        - hand-provision the fabro server (settings.toml with dev-token auth
+#          + the native GitHub App integration, generated server credentials,
+#          LLM key via env) and START it — `fabro install` is NOT used because
+#          its GitHub step rejects short-lived App installation tokens;
 #   4. exec the passed command (the dispatcher loop), or drop to a shell.
 #
 # SECRET HYGIENE (non-negotiable): every credential arrives via env at
@@ -39,8 +39,6 @@
 #   FABRO_LLM_API_KEY_ENV          name of the env var holding the LLM API key
 #                                  (default: ANTHROPIC_API_KEY_LIVESPEC_E2E)
 #   FABRO_LLM_PROVIDER             fabro LLM provider (default: anthropic)
-#   FABRO_GITHUB_USERNAME          GitHub username for the token strategy
-#                                  (default: thewoolleyman)
 #   CLAUDE_CODE_OAUTH_TOKEN        model auth the dispatcher projects per-dispatch
 #   BEADS_DOLT_PASSWORD          shared family Dolt password (dispatcher; one bare var)
 #   HONEYCOMB_INGEST_KEY_LIVESPEC  telemetry egress key (dispatcher)
@@ -64,7 +62,6 @@ FABRO_PORT="${FABRO_PORT:-32276}"
 FABRO_BIN="${FABRO_BIN:-/usr/local/bin/fabro}"
 FABRO_LLM_PROVIDER="${FABRO_LLM_PROVIDER:-anthropic}"
 FABRO_LLM_API_KEY_ENV="${FABRO_LLM_API_KEY_ENV:-ANTHROPIC_API_KEY_LIVESPEC_E2E}"
-FABRO_GITHUB_USERNAME="${FABRO_GITHUB_USERNAME:-thewoolleyman}"
 
 # --------------------------------------------------------------------------
 # 1 + 2. Inner dockerd, then block on a healthy daemon.
@@ -101,13 +98,13 @@ provision_github() {
   # mint a GitHub App installation token and log gh in with it. The CLI is
   # FAIL-CLOSED (github-app-auth Pillar 2): the App env is the SOLE credential
   # source — there is NO fleet-PAT fallback. It prints ONLY the token to stdout
-  # (its source is logged to stderr). Fabro's GitHub `token` strategy reads the
-  # gh CLI's stored oauth token, so we log gh in; the token is piped via stdin
-  # — never placed in argv or echoed. Deliberately NO static token export here:
-  # a once-at-start export would expire after ~1 hour (Pillar 1); the
-  # Dispatcher's provider re-mints per subprocess instead, and the stored gh
-  # credential minted here only bootstraps `fabro install` + the initial
-  # in-container clones.
+  # (its source is logged to stderr); the token is piped via stdin — never
+  # placed in argv or echoed. The stored gh credential bootstraps the initial
+  # in-container clones (`gh auth setup-git`); fabro itself authenticates via
+  # its native GitHub App integration (see provision_fabro), NOT via gh.
+  # Deliberately NO static token export here: a once-at-start export would
+  # expire after ~1 hour (Pillar 1); the Dispatcher's provider re-mints per
+  # subprocess instead.
   local token
   token="$(python3 "$MINT_APP_TOKEN_BIN")" \
     || die "could not mint a GitHub App installation token (the dispatch target's credential_wrapper must inject GITHUB_APP_ID + GITHUB_PRIVATE_KEY; there is no fleet-PAT fallback)"
@@ -118,53 +115,81 @@ provision_github() {
 }
 
 provision_fabro() {
-  local web_url="http://127.0.0.1:${FABRO_PORT}"
-  log "running fabro install (non-interactive: LLM + GitHub + dev-token) ..."
+  # Hand-provision the fabro server — deliberately NOT `fabro install`:
+  # install's GitHub step VALIDATES a static gh token and rejects App
+  # installation tokens (ghs_*) by design, while fabro NATIVELY supports
+  # GitHub App auth via [server.integrations.github] strategy="app" +
+  # app_id with the private key in the GITHUB_APP_PRIVATE_KEY env — fabro
+  # then mints and refreshes its OWN installation tokens for its git legs
+  # (the github-app-auth Pillar 1 shape at the fabro layer). So the
+  # entrypoint writes the non-secret settings plus generated server
+  # credentials directly and starts the server:
+  #   - settings.toml: dev-token auth, 0.0.0.0:$FABRO_PORT listen (a
+  #     published docker port must be reachable from outside the
+  #     container; the HOST port stays loopback-bound per README), the
+  #     GitHub App integration (app_id only — never a key);
+  #   - storage/server.env (0600): generated FABRO_DEV_TOKEN +
+  #     SESSION_SECRET — the dev token gates the control plane;
+  #   - auth.json (0600): the same dev token for the CLI;
+  #   - GITHUB_APP_PRIVATE_KEY + ANTHROPIC_API_KEY (from the env var named
+  #     by FABRO_LLM_API_KEY_ENV, unless FABRO_SKIP_LLM) exported into the
+  #     server's process env — env only, never argv, never a settings key.
+  log "hand-provisioning fabro (dev-token auth + GitHub App integration) ..."
+  [ -n "${GITHUB_APP_ID:-}" ] || die "GITHUB_APP_ID is empty; the dispatch target's credential_wrapper must inject it"
+  local dev_token session_secret
+  dev_token="fabro_dev_$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  session_secret="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  mkdir -p "$HOME/.fabro/storage"
+  (
+    umask 077
+    printf 'FABRO_DEV_TOKEN=%s\nSESSION_SECRET=%s\n' "$dev_token" "$session_secret" \
+      > "$HOME/.fabro/storage/server.env"
+    printf '{"servers":{"http://127.0.0.1:%s":{"kind":"dev-token","token":"%s","logged_in_at":"%s"}}}\n' \
+      "$FABRO_PORT" "$dev_token" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      > "$HOME/.fabro/auth.json"
+  )
+  cat > "$HOME/.fabro/settings.toml" <<SETTINGS
+_version = 1
 
-  # The LLM API key is read from the env var NAMED by FABRO_LLM_API_KEY_ENV and
-  # piped to fabro via --llm-api-key-stdin so it never appears in argv. If the
-  # operator opts out of an LLM provider (FABRO_SKIP_LLM), the GitHub-only
-  # install path is used.
-  if [ -n "${FABRO_SKIP_LLM:-}" ]; then
-    log "FABRO_SKIP_LLM set — provisioning GitHub only (no LLM provider)."
-    "$FABRO_BIN" install --non-interactive \
-      --skip-llm \
-      --github-strategy token \
-      --github-username "$FABRO_GITHUB_USERNAME" \
-      --web-url "$web_url" \
-      --overwrite-settings \
-      --no-upgrade-check \
-      || die "fabro install (github-only) failed"
-  else
+[cli.target]
+type = "http"
+url = "http://127.0.0.1:${FABRO_PORT}"
+
+[server.api]
+url = "http://127.0.0.1:${FABRO_PORT}/api/v1"
+
+[server.auth]
+methods = ["dev-token"]
+
+[server.integrations.github]
+strategy = "app"
+app_id = "${GITHUB_APP_ID}"
+
+[server.listen]
+address = "0.0.0.0:${FABRO_PORT}"
+type = "tcp"
+
+[server.web]
+enabled = true
+url = "http://127.0.0.1:${FABRO_PORT}"
+SETTINGS
+  export GITHUB_APP_PRIVATE_KEY="$GITHUB_PRIVATE_KEY"
+  if [ -z "${FABRO_SKIP_LLM:-}" ]; then
     local key_value="${!FABRO_LLM_API_KEY_ENV:-}"
     if [ -z "$key_value" ]; then
       die "LLM key env '$FABRO_LLM_API_KEY_ENV' is empty; set it or pass FABRO_SKIP_LLM=1"
     fi
-    printf '%s' "$key_value" | "$FABRO_BIN" install --non-interactive \
-      --llm-provider "$FABRO_LLM_PROVIDER" \
-      --llm-api-key-stdin \
-      --github-strategy token \
-      --github-username "$FABRO_GITHUB_USERNAME" \
-      --web-url "$web_url" \
-      --overwrite-settings \
-      --no-upgrade-check \
-      || die "fabro install failed"
+    # fabro's LLM provider resolves ANTHROPIC_API_KEY from the server's
+    # process env (no on-disk vault write needed).
+    export ANTHROPIC_API_KEY="$key_value"
+  else
+    log "FABRO_SKIP_LLM set — no LLM provider env exported."
   fi
-  log "fabro install complete; settings.toml written."
+  "$FABRO_BIN" server start --no-upgrade-check || die "fabro server start failed"
+  log "fabro server provisioned; settings.toml written."
 }
 
-bind_server_externally() {
-  # fabro install writes [server.listen] address = "127.0.0.1:<port>". For a
-  # published docker port to reach the server we must bind 0.0.0.0 inside the
-  # container. Rewrite the listen address (a non-secret structural key) and
-  # restart the server. The control plane is still protected by dev-token auth;
-  # the README requires the HOST port be bound to loopback only.
-  local settings="${HOME}/.fabro/settings.toml"
-  [ -f "$settings" ] || die "expected ${settings} after fabro install"
-  log "binding fabro server to 0.0.0.0:${FABRO_PORT} (in-container) ..."
-  # Only the listen address line is touched; nothing secret is read or written.
-  sed -i -E "s|^address = \"127\\.0\\.0\\.1:[0-9]+\"|address = \"0.0.0.0:${FABRO_PORT}\"|" "$settings"
-  "$FABRO_BIN" server restart --no-upgrade-check >/dev/null 2>&1 || "$FABRO_BIN" server start --no-upgrade-check >/dev/null 2>&1 || true
+wait_for_fabro_web() {
   # Verify reachability (status code only — never the response body / token).
   local deadline=$((SECONDS + 30))
   while [ "$SECONDS" -lt "$deadline" ]; do
@@ -189,7 +214,7 @@ main() {
   else
     provision_github
     provision_fabro
-    bind_server_externally
+    wait_for_fabro_web
   fi
 
   if [ "$#" -gt 0 ]; then
