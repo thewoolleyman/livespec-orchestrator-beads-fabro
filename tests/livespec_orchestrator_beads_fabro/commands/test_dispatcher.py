@@ -956,6 +956,27 @@ def test_parse_pr_view_records_only_required_terminal_check_failures() -> None:
     assert view.terminal_required_check_failures == ("check-coverage", "startup")
 
 
+def test_parse_pr_view_reads_connection_shaped_status_check_rollup() -> None:
+    view = parse_pr_view(
+        stdout=json.dumps(
+            {
+                "number": 7,
+                "statusCheckRollup": {
+                    "nodes": [
+                        {
+                            "name": "check-coverage",
+                            "isRequired": True,
+                            "conclusion": "FAILURE",
+                        }
+                    ]
+                },
+            }
+        )
+    )
+    assert view is not None
+    assert view.terminal_required_check_failures == ("check-coverage",)
+
+
 def test_parse_run_id_reads_the_cli_run_line() -> None:
     output = "Preparing sandbox\n    Run: 01KTVX6AV677VBWPG63ERB4VH0\nmore output\n"
     assert parse_run_id(output=output) == "01KTVX6AV677VBWPG63ERB4VH0"

@@ -1363,29 +1363,31 @@ def parse_pr_view(*, stdout: str) -> PrView | None:
     rollup_raw: object = parsed.get("statusCheckRollup")
     if isinstance(rollup_raw, list):
         rollup_items_raw = cast("list[object]", rollup_raw)
-        rollup_items = [
-            cast("dict[str, Any]", item_raw)
-            for item_raw in rollup_items_raw
-            if isinstance(item_raw, dict)
-        ]
-        for item in rollup_items:
-            if item.get("required") is not True and item.get("isRequired") is not True:
-                continue
-            conclusion_raw: object = item.get("conclusion")
-            if not isinstance(conclusion_raw, str):
-                continue
-            if conclusion_raw.lower() not in {
-                "failure",
-                "cancelled",
-                "timed_out",
-                "action_required",
-                "startup_failure",
-            }:
-                continue
-            name_raw: object = item.get("name", item.get("context"))
-            terminal_failures.append(
-                name_raw if isinstance(name_raw, str) and name_raw else "unknown"
-            )
+    elif isinstance(rollup_raw, dict):
+        nodes_raw: object = cast("dict[str, Any]", rollup_raw).get("nodes")
+        rollup_items_raw = cast("list[object]", nodes_raw) if isinstance(nodes_raw, list) else []
+    else:
+        rollup_items_raw = []
+    for item in (
+        cast("dict[str, Any]", item_raw)
+        for item_raw in rollup_items_raw
+        if isinstance(item_raw, dict)
+    ):
+        if item.get("required") is not True and item.get("isRequired") is not True:
+            continue
+        conclusion_raw: object = item.get("conclusion")
+        if not isinstance(conclusion_raw, str):
+            continue
+        if conclusion_raw.lower() not in {
+            "failure",
+            "cancelled",
+            "timed_out",
+            "action_required",
+            "startup_failure",
+        }:
+            continue
+        name_raw: object = item.get("name", item.get("context"))
+        terminal_failures.append(name_raw if isinstance(name_raw, str) and name_raw else "unknown")
     return PrView(
         number=number_raw,
         state=state,
