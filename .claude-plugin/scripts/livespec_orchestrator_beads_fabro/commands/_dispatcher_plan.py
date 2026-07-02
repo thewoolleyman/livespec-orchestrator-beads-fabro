@@ -1343,6 +1343,17 @@ def parse_run_status(*, stdout: str) -> str | None:
     return None
 
 
+_TERMINAL_CHECK_CONCLUSIONS = frozenset(
+    {
+        "failure",
+        "cancelled",
+        "timed_out",
+        "action_required",
+        "startup_failure",
+    }
+)
+
+
 def parse_pr_view(*, stdout: str) -> PrView | None:
     """Parse `gh pr view --json` output; None when the shape is unusable."""
     try:
@@ -1355,47 +1366,53 @@ def parse_pr_view(*, stdout: str) -> PrView | None:
     number_raw: object = parsed.get("number")
     if not isinstance(number_raw, int):
         return None
+    terminal_failures = tuple(
+        name
+        for item in _status_check_rollup_items(rollup_raw=parsed.get("statusCheckRollup"))
+        if isinstance(item, dict)
+        for name in [_terminal_required_check_failure_name(item=cast("dict[str, Any]", item))]
+        if name is not None
+    )
     state_raw: object = parsed.get("state")
-    state = state_raw if isinstance(state_raw, str) else "UNKNOWN"
     merge_state_raw: object = parsed.get("mergeStateStatus")
-    merge_state = merge_state_raw if isinstance(merge_state_raw, str) else "UNKNOWN"
-    terminal_failures: list[str] = []
-    rollup_raw: object = parsed.get("statusCheckRollup")
-    if isinstance(rollup_raw, list):
-        rollup_items_raw = cast("list[object]", rollup_raw)
-    elif isinstance(rollup_raw, dict):
-        nodes_raw: object = cast("dict[str, Any]", rollup_raw).get("nodes")
-        rollup_items_raw = cast("list[object]", nodes_raw) if isinstance(nodes_raw, list) else []
-    else:
-        rollup_items_raw = []
-    for item in (
-        cast("dict[str, Any]", item_raw)
-        for item_raw in rollup_items_raw
-        if isinstance(item_raw, dict)
-    ):
-        if item.get("required") is not True and item.get("isRequired") is not True:
-            continue
-        conclusion_raw: object = item.get("conclusion")
-        if not isinstance(conclusion_raw, str):
-            continue
-        if conclusion_raw.lower() not in {
-            "failure",
-            "cancelled",
-            "timed_out",
-            "action_required",
-            "startup_failure",
-        }:
-            continue
-        name_raw: object = item.get("name", item.get("context"))
-        terminal_failures.append(name_raw if isinstance(name_raw, str) and name_raw else "unknown")
     return PrView(
         number=number_raw,
-        state=state,
+        state=state_raw if isinstance(state_raw, str) else "UNKNOWN",
         auto_merge_armed=parsed.get("autoMergeRequest") is not None,
-        merge_state_status=merge_state,
+        merge_state_status=merge_state_raw if isinstance(merge_state_raw, str) else "UNKNOWN",
         merge_sha=_merge_sha_of(parsed=parsed),
-        terminal_required_check_failures=tuple(terminal_failures),
+        terminal_required_check_failures=terminal_failures,
     )
+
+
+def _status_check_rollup_items(*, rollup_raw: object) -> list[object]:
+    if isinstance(rollup_raw, list):
+        return cast("list[object]", rollup_raw)
+    if not isinstance(rollup_raw, dict):
+        return []
+    rollup = cast("dict[str, Any]", rollup_raw)
+    nodes_raw: object = rollup.get("nodes")
+    if isinstance(nodes_raw, list):
+        return cast("list[object]", nodes_raw)
+    contexts_raw: object = rollup.get("contexts")
+    if not isinstance(contexts_raw, dict):  # pragma: no cover - defensive malformed gh JSON
+        return []
+    context_nodes_raw: object = cast("dict[str, Any]", contexts_raw).get("nodes")
+    if isinstance(context_nodes_raw, list):
+        return cast("list[object]", context_nodes_raw)
+    return []  # pragma: no cover - defensive malformed gh JSON
+
+
+def _terminal_required_check_failure_name(*, item: dict[str, Any]) -> str | None:
+    if item.get("required") is not True and item.get("isRequired") is not True:
+        return None
+    conclusion_raw: object = item.get("conclusion")
+    if not isinstance(conclusion_raw, str):
+        return None
+    if conclusion_raw.lower() not in _TERMINAL_CHECK_CONCLUSIONS:
+        return None
+    name_raw: object = item.get("name", item.get("context"))
+    return name_raw if isinstance(name_raw, str) and name_raw else "unknown"
 
 
 def _merge_sha_of(*, parsed: dict[str, Any]) -> str | None:
