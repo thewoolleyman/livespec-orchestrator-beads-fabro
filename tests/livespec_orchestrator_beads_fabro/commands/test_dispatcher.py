@@ -291,6 +291,7 @@ def _pr_json(
     armed: bool = True,
     merge_state: str = "CLEAN",
     sha: str | None = None,
+    checks: list[dict[str, object]] | None = None,
 ) -> str:
     return json.dumps(
         {
@@ -299,6 +300,7 @@ def _pr_json(
             "autoMergeRequest": {"enabledAt": "now"} if armed else None,
             "mergeStateStatus": merge_state,
             "mergeCommit": {"oid": sha} if sha is not None else None,
+            "statusCheckRollup": checks if checks is not None else [],
         }
     )
 
@@ -830,6 +832,7 @@ def test_argv_builders_encode_family_discipline(tmp_path: Path) -> None:
     ]
     assert pr_view_argv(plan=plan)[:3] == ["gh", "pr", "view"]
     assert pr_view_argv(plan=plan)[3] == "feat/x-1"
+    assert "statusCheckRollup" in pr_view_argv(plan=plan)[5]
     assert pr_arm_argv(plan=plan, number=7) == [
         "gh",
         "pr",
@@ -922,17 +925,35 @@ def test_parse_pr_view_reads_fields_and_defaults() -> None:
     assert full is not None
     assert (full.number, full.state, full.auto_merge_armed) == (7, "MERGED", True)
     assert full.merge_sha == "abc123"
+    assert full.terminal_required_check_failures == ()
     sparse = parse_pr_view(stdout=json.dumps({"number": 3}))
     assert sparse is not None
     assert (sparse.state, sparse.merge_state_status) == ("UNKNOWN", "UNKNOWN")
     assert sparse.auto_merge_armed is False
     assert sparse.merge_sha is None
+    assert sparse.terminal_required_check_failures == ()
     weird = parse_pr_view(stdout=json.dumps({"number": 3, "mergeCommit": {"oid": ""}}))
     assert weird is not None
     assert weird.merge_sha is None
     nonsense = parse_pr_view(stdout=json.dumps({"number": 3, "mergeCommit": "abc"}))
     assert nonsense is not None
     assert nonsense.merge_sha is None
+
+
+def test_parse_pr_view_records_only_required_terminal_check_failures() -> None:
+    view = parse_pr_view(
+        stdout=_pr_json(
+            checks=[
+                {"name": "check-coverage", "isRequired": True, "conclusion": "FAILURE"},
+                {"name": "lint", "required": True, "conclusion": "success"},
+                {"name": "docs", "isRequired": False, "conclusion": "failure"},
+                {"name": "slow-ci", "isRequired": True, "status": "IN_PROGRESS"},
+                {"context": "startup", "isRequired": True, "conclusion": "startup_failure"},
+            ]
+        )
+    )
+    assert view is not None
+    assert view.terminal_required_check_failures == ("check-coverage", "startup")
 
 
 def test_parse_run_id_reads_the_cli_run_line() -> None:
@@ -1503,7 +1524,19 @@ def test_engine_updates_branch_when_behind_then_merges(tmp_path: Path) -> None:
         queue=[
             _ok(),
             _ok(stdout=_pr_json(armed=True)),
-            _ok(stdout=_pr_json(armed=True, merge_state="BEHIND")),
+            _ok(
+                stdout=_pr_json(
+                    armed=True,
+                    merge_state="BEHIND",
+                    checks=[
+                        {
+                            "name": "check-coverage",
+                            "isRequired": True,
+                            "status": "IN_PROGRESS",
+                        }
+                    ],
+                )
+            ),
             _ok(),
             _ok(stdout=_pr_json(state="MERGED", sha="cafe04")),
             *_post_merge_green_tail(),
@@ -1514,6 +1547,69 @@ def test_engine_updates_branch_when_behind_then_merges(tmp_path: Path) -> None:
     assert naps == [0.5]
     update_call = runner.calls[3][0]
     assert update_call == ["gh", "pr", "update-branch", "7"]
+
+
+def test_engine_fails_fast_when_required_check_terminally_fails(tmp_path: Path) -> None:
+    runner = _FakeRunner(
+        queue=[
+            _ok(),
+            _ok(stdout=_pr_json(armed=True)),
+            _ok(
+                stdout=_pr_json(
+                    armed=True,
+                    merge_state="BLOCKED",
+                    checks=[
+                        {
+                            "name": "check-coverage",
+                            "isRequired": True,
+                            "conclusion": "failure",
+                        },
+                        {"name": "docs", "isRequired": False, "conclusion": "failure"},
+                    ],
+                )
+            ),
+        ]
+    )
+    outcome, journal, naps = _dispatch(runner=runner, repo=tmp_path, attempts=80)
+    assert (outcome.status, outcome.stage) == ("failed", "merge-poll")
+    assert outcome.pr_number == 7
+    assert "check-coverage" in outcome.detail
+    assert "docs" not in outcome.detail
+    assert naps == []
+    assert [record["stage"] for record in journal.records] == ["fabro-run", "pr-view", "pr-view"]
+
+
+def test_engine_keeps_polling_when_required_checks_are_pending(tmp_path: Path) -> None:
+    runner = _FakeRunner(
+        queue=[
+            _ok(),
+            _ok(stdout=_pr_json(armed=True)),
+            _ok(
+                stdout=_pr_json(
+                    armed=True,
+                    merge_state="BLOCKED",
+                    checks=[{"name": "check-coverage", "isRequired": True, "status": "QUEUED"}],
+                )
+            ),
+            _ok(
+                stdout=_pr_json(
+                    armed=True,
+                    merge_state="BLOCKED",
+                    checks=[
+                        {
+                            "name": "check-coverage",
+                            "isRequired": True,
+                            "status": "IN_PROGRESS",
+                        }
+                    ],
+                )
+            ),
+        ]
+    )
+    outcome, _, naps = _dispatch(runner=runner, repo=tmp_path, attempts=2)
+    assert (outcome.status, outcome.stage) == ("failed", "merge-poll")
+    assert outcome.detail == "PR did not reach MERGED within the poll budget"
+    assert naps == [0.5]
 
 
 def test_engine_poll_budget_exhaustion_keeps_pr_number(tmp_path: Path) -> None:

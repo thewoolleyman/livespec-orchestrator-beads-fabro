@@ -269,8 +269,10 @@ def run_dispatch(
     if view is None:
         return _failed(plan=plan, stage="pr-view", detail="no PR found for branch")
     merged = _await_merge(plan=plan, runner=runner, journal=journal, sleep=sleep, poll=poll)
-    if merged is None:
-        return DispatchOutcome(
+    if isinstance(merged, DispatchOutcome):
+        outcome = merged
+    elif merged is None:
+        outcome = DispatchOutcome(
             work_item_id=plan.work_item_id,
             status="failed",
             stage="merge-poll",
@@ -278,7 +280,9 @@ def run_dispatch(
             merge_sha=None,
             detail="PR did not reach MERGED within the poll budget",
         )
-    return _post_merge(plan=plan, runner=runner, journal=journal, merged=merged)
+    else:
+        outcome = _post_merge(plan=plan, runner=runner, journal=journal, merged=merged)
+    return outcome
 
 
 def _blocked_outcome(
@@ -351,7 +355,7 @@ def _await_merge(
     journal: JournalWriter,
     sleep: SleepFn,
     poll: PollPolicy,
-) -> PrView | None:
+) -> PrView | DispatchOutcome | None:
     for attempt in range(poll.attempts):
         view = _view_pr(plan=plan, runner=runner, journal=journal)
         if view is not None and view.state == "MERGED":
@@ -363,6 +367,16 @@ def _await_merge(
                 timeout_seconds=_GH_TIMEOUT_SECONDS,
             )
             _journal_stage(journal=journal, plan=plan, stage="pr-update-branch", result=update)
+        elif view is not None and view.terminal_required_check_failures:
+            checks = ", ".join(view.terminal_required_check_failures)
+            return DispatchOutcome(
+                work_item_id=plan.work_item_id,
+                status="failed",
+                stage="merge-poll",
+                pr_number=view.number,
+                merge_sha=view.merge_sha,
+                detail=f"required check failed terminally: {checks}",
+            )
         if attempt + 1 < poll.attempts:
             sleep(poll.interval_seconds)
     return None
