@@ -72,6 +72,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     janitor_argv_with_default,
     janitor_bootstrap_argv,
     janitor_checkout_path,
+    janitor_core_clone_argv,
+    janitor_core_ref_from_config,
     janitor_trust_argv,
     janitor_worktree_add_argv,
     janitor_worktree_remove_argv,
@@ -242,11 +244,21 @@ class _FakeRunner:
     queue: list[CommandResult]
     calls: list[tuple[list[str], Path]] = field(default_factory=list)
     timeouts: list[float] = field(default_factory=list)
+    envs: list[dict[str, str] | None] = field(default_factory=list)
 
-    def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+    ) -> CommandResult:
         assert timeout_seconds > 0
+        _ = env
         self.calls.append((argv, cwd))
         self.timeouts.append(timeout_seconds)
+        self.envs.append(env)
         return self.queue.pop(0)
 
 
@@ -263,10 +275,10 @@ def _ok(stdout: str = "") -> CommandResult:
 
 
 def _post_merge_green_tail() -> list[CommandResult]:
-    """The seven all-green post-merge results: pull-primary, then the
-    janitor-checkout lifecycle (preclean, add, trust, bootstrap, janitor run,
-    remove)."""
-    return [_ok() for _ in range(7)]
+    """The eight all-green post-merge results: pull-primary, then the
+    janitor-checkout lifecycle (preclean, add, trust, bootstrap, core clone,
+    janitor run, remove)."""
+    return [_ok() for _ in range(8)]
 
 
 def _err(stderr: str = "boom") -> CommandResult:
@@ -867,6 +879,36 @@ def test_argv_builders_encode_family_discipline(tmp_path: Path) -> None:
         "just",
         "install-commit-refuse-hooks",
     ]
+    assert janitor_core_clone_argv(plan=plan) == [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        "master",
+        "https://github.com/thewoolleyman/livespec.git",
+        str(tmp_path / "janitor-co" / ".livespec-core"),
+    ]
+
+
+def test_janitor_core_ref_from_config_reads_compat_pin(tmp_path: Path) -> None:
+    assert (
+        janitor_core_ref_from_config(
+            config_text='{ "livespec-orchestrator-beads-fabro": { "compat": { "pinned": "v1" } } }'
+        )
+        == "v1"
+    )
+    assert janitor_core_ref_from_config(config_text="{}") == "master"
+    assert janitor_core_ref_from_config(config_text="not-jsonc") == "master"
+    assert janitor_core_ref_from_config(config_text="[]") == "master"
+    assert (
+        janitor_core_ref_from_config(
+            config_text='{ "livespec-orchestrator-beads-fabro": { "compat": { "pinned": "" } } }'
+        )
+        == "master"
+    )
+    assert dispatcher._janitor_core_ref(repo=tmp_path / "missing-config") == "master"  # pyright: ignore[reportPrivateUsage]  # noqa: SLF001
 
 
 def test_parse_pr_view_rejects_unusable_shapes() -> None:
@@ -1285,6 +1327,7 @@ def test_engine_green_runs_janitor_in_fresh_checkout(tmp_path: Path) -> None:
             _ok(),  # janitor-checkout-add
             _ok(),  # janitor-checkout-trust
             _ok(),  # janitor-checkout-bootstrap
+            _ok(),  # janitor-core-provision
             _ok(),  # janitor-post-merge
             _ok(),  # janitor-checkout-remove
         ]
@@ -1309,6 +1352,7 @@ def test_engine_green_runs_janitor_in_fresh_checkout(tmp_path: Path) -> None:
         "janitor-checkout-add",
         "janitor-checkout-trust",
         "janitor-checkout-bootstrap",
+        "janitor-core-provision",
         "janitor-post-merge",
         "janitor-checkout-remove",
     ]
@@ -1327,7 +1371,10 @@ def test_engine_green_runs_janitor_in_fresh_checkout(tmp_path: Path) -> None:
     assert add_cwd == tmp_path
     remove_argv = ["git", "-C", str(tmp_path), "worktree", "remove", "--force", str(checkout)]
     assert runner.calls[4][0] == remove_argv
-    assert runner.calls[9][0] == remove_argv
+    assert runner.calls[10][0] == remove_argv
+    assert runner.envs[9] == {
+        "LIVESPEC_CORE_PLUGIN_ROOT": str(checkout / ".livespec-core" / ".claude-plugin")
+    }
 
 
 def test_engine_fails_when_fabro_run_fails_and_trims_detail(tmp_path: Path) -> None:
@@ -1487,7 +1534,7 @@ def test_engine_poll_budget_exhaustion_keeps_pr_number(tmp_path: Path) -> None:
 def test_engine_post_merge_failures_carry_merge_evidence(tmp_path: Path) -> None:
     cases = [
         (["pull broke"], "pull-primary"),
-        ([None, None, None, None, None, "janitor broke"], "janitor-post-merge"),
+        ([None, None, None, None, None, None, "janitor broke"], "janitor-post-merge"),
     ]
     for tail_specs, stage in cases:
         tail = [_ok() if spec is None else _err(stderr=spec) for spec in tail_specs]
@@ -1515,6 +1562,7 @@ def test_engine_janitor_red_keeps_checkout_for_diagnosis(tmp_path: Path) -> None
             _ok(),  # janitor-checkout-add
             _ok(),  # janitor-checkout-trust
             _ok(),  # janitor-checkout-bootstrap
+            _ok(),  # janitor-core-provision
             _err(stderr="2 failed, 1 passed"),  # janitor red in the fresh checkout
         ]
     )
@@ -1527,7 +1575,7 @@ def test_engine_janitor_red_keeps_checkout_for_diagnosis(tmp_path: Path) -> None
     assert "2 failed, 1 passed" in outcome.detail
     # A red checkout is PRESERVED (no remove after the janitor ran):
     # the working tree is the diagnosis evidence.
-    assert len(runner.calls) == 9
+    assert len(runner.calls) == 10
     assert [record["stage"] for record in journal.records][-1] == "janitor-post-merge"
 
 
@@ -1600,6 +1648,29 @@ def test_engine_degrades_when_janitor_bootstrap_fails(tmp_path: Path) -> None:
     assert [record["stage"] for record in journal.records][-1] == "janitor-checkout-bootstrap"
 
 
+def test_engine_degrades_when_janitor_core_provisioning_fails(tmp_path: Path) -> None:
+    runner = _FakeRunner(
+        queue=[
+            _ok(),
+            _ok(stdout=_pr_json(armed=True)),
+            _ok(stdout=_pr_json(state="MERGED", sha="cafec0")),
+            _ok(),  # pull-primary
+            _ok(),  # janitor-checkout-preclean
+            _ok(),  # janitor-checkout-add
+            _ok(),  # janitor-checkout-trust
+            _ok(),  # janitor-checkout-bootstrap
+            _err(stderr="core clone failed"),  # janitor-core-provision
+        ]
+    )
+    outcome, journal, _ = _dispatch(runner=runner, repo=tmp_path)
+    assert (outcome.status, outcome.stage) == ("green", "janitor-env-degraded")
+    assert (outcome.pr_number, outcome.merge_sha) == (7, "cafec0")
+    assert "provisioning livespec core" in outcome.detail
+    assert "core clone failed" in outcome.detail
+    assert len(runner.calls) == 9
+    assert [record["stage"] for record in journal.records][-1] == "janitor-core-provision"
+
+
 def test_engine_janitor_checkout_falls_back_to_origin_master_without_sha(
     tmp_path: Path,
 ) -> None:
@@ -1613,6 +1684,7 @@ def test_engine_janitor_checkout_falls_back_to_origin_master_without_sha(
             _ok(),  # janitor-checkout-add
             _ok(),  # janitor-checkout-trust
             _ok(),  # janitor-checkout-bootstrap
+            _ok(),  # janitor-core-provision
             _ok(),  # janitor-post-merge
             _ok(),  # janitor-checkout-remove
         ]
@@ -1635,6 +1707,7 @@ def test_engine_runs_configured_janitor_in_fresh_checkout(tmp_path: Path) -> Non
             _ok(),  # janitor-checkout-add
             _ok(),  # janitor-checkout-trust
             _ok(),  # janitor-checkout-bootstrap
+            _ok(),  # janitor-core-provision
             _ok(),  # janitor-post-merge
             _ok(),  # janitor-checkout-remove
         ]
@@ -1687,8 +1760,15 @@ def test_github_token_env_runner_refreshes_gh_token_before_each_run(
 
     @dataclass
     class _RecordingRunner:
-        def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
-            _ = (argv, cwd, timeout_seconds)
+        def run(
+            self,
+            *,
+            argv: list[str],
+            cwd: Path,
+            timeout_seconds: float,
+            env: dict[str, str] | None = None,
+        ) -> CommandResult:
+            _ = (argv, cwd, timeout_seconds, env)
             seen_tokens.append(os.environ.get("GH_TOKEN"))
             return CommandResult(exit_code=0, stdout="ok", stderr="")
 
@@ -1708,9 +1788,14 @@ def test_github_token_env_runner_fails_closed_on_refresh_error(tmp_path: Path) -
     @dataclass
     class _MustNotRun:
         def run(  # pragma: no cover - reaching this body is the failure being tested
-            self, *, argv: list[str], cwd: Path, timeout_seconds: float
+            self,
+            *,
+            argv: list[str],
+            cwd: Path,
+            timeout_seconds: float,
+            env: dict[str, str] | None = None,
         ) -> CommandResult:
-            _ = (argv, cwd, timeout_seconds)
+            _ = (argv, cwd, timeout_seconds, env)
             raise AssertionError("inner runner must not run on a refresh failure")
 
     def _raising_token() -> str:
@@ -2436,8 +2521,16 @@ class _FakeManifestRunner:
     result: CommandResult
     calls: list[tuple[list[str], Path]] = field(default_factory=list)
 
-    def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+    ) -> CommandResult:
         assert timeout_seconds > 0
+        _ = env
         self.calls.append((argv, cwd))
         return self.result
 

@@ -108,6 +108,7 @@ class ShellCommandRunner:
         argv: list[str],
         cwd: Path,
         timeout_seconds: float,
+        env: dict[str, str] | None = None,
     ) -> CommandResult:
         try:
             completed = subprocess.run(  # noqa: S603 - argvs are Dispatcher-built, never shell
@@ -117,6 +118,7 @@ class ShellCommandRunner:
                 text=True,
                 timeout=timeout_seconds,
                 check=False,
+                env=None if env is None else {**os.environ, **env},
             )
         except subprocess.TimeoutExpired as exc:
             return CommandResult(
@@ -156,6 +158,7 @@ class GithubTokenEnvRunner:
         argv: list[str],
         cwd: Path,
         timeout_seconds: float,
+        env: dict[str, str] | None = None,
     ) -> CommandResult:
         try:
             os.environ[GITHUB_TOKEN_ENV_VAR] = self.token()
@@ -165,7 +168,8 @@ class GithubTokenEnvRunner:
                 stdout="",
                 stderr=f"GitHub App token refresh failed (fail-closed): {error.detail}",
             )
-        return self.inner.run(argv=argv, cwd=cwd, timeout_seconds=timeout_seconds)
+        merged_env = {**(env or {}), GITHUB_TOKEN_ENV_VAR: os.environ[GITHUB_TOKEN_ENV_VAR]}
+        return self.inner.run(argv=argv, cwd=cwd, timeout_seconds=timeout_seconds, env=merged_env)
 
 
 @dataclass(frozen=True, kw_only=True)

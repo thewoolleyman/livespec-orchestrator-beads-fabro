@@ -56,11 +56,13 @@ from pathlib import Path
 from typing import Protocol
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
+    CORE_PLUGIN_ROOT_ENV_VAR,
     DispatchPlan,
     PrView,
     fabro_inspect_argv,
     fabro_run_argv,
     janitor_bootstrap_argv,
+    janitor_core_clone_argv,
     janitor_trust_argv,
     janitor_worktree_add_argv,
     janitor_worktree_remove_argv,
@@ -131,6 +133,7 @@ class CommandRunner(Protocol):
         argv: list[str],
         cwd: Path,
         timeout_seconds: float,
+        env: dict[str, str] | None = None,
     ) -> CommandResult:
         """Run argv in cwd, returning the completed result (never raising
         for non-zero exits; timeouts surface as non-zero results)."""
@@ -397,6 +400,7 @@ def _post_merge(
         argv=list(plan.janitor),
         cwd=plan.janitor_checkout,
         timeout_seconds=_JANITOR_TIMEOUT_SECONDS,
+        env={CORE_PLUGIN_ROOT_ENV_VAR: str(plan.janitor_core_checkout / ".claude-plugin")},
     )
     _journal_stage(journal=journal, plan=plan, stage="janitor-post-merge", result=janitor)
     if janitor.exit_code != 0:
@@ -499,6 +503,22 @@ def _provision_janitor_checkout(
                 f"{plan.repo}"
             ),
             result=bootstrap,
+        )
+    core = runner.run(
+        argv=janitor_core_clone_argv(plan=plan),
+        cwd=plan.janitor_checkout,
+        timeout_seconds=_GIT_TIMEOUT_SECONDS,
+    )
+    _journal_stage(journal=journal, plan=plan, stage="janitor-core-provision", result=core)
+    if core.exit_code != 0:
+        return _merged_degraded(
+            plan=plan,
+            merged=merged,
+            step=(
+                f"provisioning livespec core at {plan.janitor_core_checkout} "
+                f"(ref {plan.janitor_core_ref})"
+            ),
+            result=core,
         )
     return None
 
