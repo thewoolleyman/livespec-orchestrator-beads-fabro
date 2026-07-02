@@ -35,7 +35,8 @@ you must NEVER `cd` to it or treat the absence of any such path as
    the needs-human protocol below.
 3. Open the PR against master with
    `gh pr create --head feat/<work-item-id>` — title from the
-   work-item, body summarizing the change and naming the work-item id.
+   work-item, body drafted from the work-item acceptance criteria in
+   the assignment above, and including the work-item id.
    The body MUST end with the line:
 
    🤖 Generated with [Claude Code](https://claude.com/claude-code)

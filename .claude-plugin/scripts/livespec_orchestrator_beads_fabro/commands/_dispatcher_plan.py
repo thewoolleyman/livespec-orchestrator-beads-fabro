@@ -379,6 +379,9 @@ def render_goal(
     (bn4 finding (c): the description-only brief silently dropped them).
     """
     gap_line = f"Gap id: {item.gap_id}\n" if item.gap_id is not None else ""
+    spec_line = (
+        f"Spec id: {item.spec_commitment_hint}\n" if item.spec_commitment_hint is not None else ""
+    )
     acceptance_line = (
         f"\nAcceptance criteria:\n{item.acceptance_criteria}\n"
         if item.acceptance_criteria is not None
@@ -400,6 +403,7 @@ def render_goal(
         f"Publish branch (push HEAD to this exact ref at the PR stage): {branch}\n"
         f"Rank: {item.rank}  Type: {item.type}\n"
         f"{gap_line}"
+        f"{spec_line}"
         f"Title: {item.title}\n"
         "\n"
         "Description:\n"
