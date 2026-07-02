@@ -117,17 +117,23 @@ hashing; shape `gap-<8-char-base32-suffix>`). Then:
 2. Otherwise, ask the user to confirm title + description (auto-drafted
    from the rule text). Defaults are pre-filled; the user accepts or
    edits.
-3. On confirm, append a new work-item JSONL record:
+3. On confirm, append a new work-item JSONL record. Initialize `prev_rank` once before the per-gap filing pass; each newly filed item threads the prior value through `key_between(a=prev_rank, b=None)` so multi-item passes preserve filing order.
 
 ```python
 from livespec_orchestrator_beads_fabro._ids import new_work_item_id
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import WorkItem
+from livespec_runtime.work_items.rank import key_between
 from datetime import datetime, timezone
 from pathlib import Path
 
 config = resolve_store_config(cwd=Path.cwd(), work_items_arg=None)
+prev_rank: str | None = None
+
+# Inside each confirmed filing:
+rank = key_between(a=prev_rank, b=None)
+prev_rank = rank
 item = WorkItem(
     # The id-prefix is the tenant's server-stored bd create-prefix
     # (config.prefix), DECOUPLED from the tenant DB name — so the id
@@ -139,7 +145,7 @@ item = WorkItem(
     description=user_confirmed_description,
     origin="gap-tied",
     gap_id=gap_id,
-    priority=2,
+    rank=rank,
     assignee=None,
     depends_on=(),
     captured_at=datetime.now(tz=timezone.utc).isoformat(),

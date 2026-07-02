@@ -126,7 +126,7 @@ closing_record = WorkItem(
     description=target.description,
     origin=target.origin,
     gap_id=target.gap_id,
-    priority=target.priority,
+    rank=target.rank,
     assignee=target.assignee,
     depends_on=target.depends_on,
     captured_at=datetime.now(tz=timezone.utc).isoformat(),
