@@ -207,6 +207,7 @@ class PrView:
     auto_merge_armed: bool
     merge_state_status: str
     merge_sha: str | None
+    terminal_required_check_failures: tuple[str, ...]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -1198,7 +1199,7 @@ def pr_view_argv(*, plan: DispatchPlan) -> list[str]:
         "view",
         plan.branch,
         "--json",
-        "number,state,autoMergeRequest,mergeStateStatus,mergeCommit",
+        "number,state,autoMergeRequest,mergeStateStatus,mergeCommit,statusCheckRollup",
     ]
 
 
@@ -1358,12 +1359,40 @@ def parse_pr_view(*, stdout: str) -> PrView | None:
     state = state_raw if isinstance(state_raw, str) else "UNKNOWN"
     merge_state_raw: object = parsed.get("mergeStateStatus")
     merge_state = merge_state_raw if isinstance(merge_state_raw, str) else "UNKNOWN"
+    terminal_failures: list[str] = []
+    rollup_raw: object = parsed.get("statusCheckRollup")
+    if isinstance(rollup_raw, list):
+        rollup_items_raw = cast("list[object]", rollup_raw)
+        rollup_items = [
+            cast("dict[str, Any]", item_raw)
+            for item_raw in rollup_items_raw
+            if isinstance(item_raw, dict)
+        ]
+        for item in rollup_items:
+            if item.get("required") is not True and item.get("isRequired") is not True:
+                continue
+            conclusion_raw: object = item.get("conclusion")
+            if not isinstance(conclusion_raw, str):
+                continue
+            if conclusion_raw.lower() not in {
+                "failure",
+                "cancelled",
+                "timed_out",
+                "action_required",
+                "startup_failure",
+            }:
+                continue
+            name_raw: object = item.get("name", item.get("context"))
+            terminal_failures.append(
+                name_raw if isinstance(name_raw, str) and name_raw else "unknown"
+            )
     return PrView(
         number=number_raw,
         state=state,
         auto_merge_armed=parsed.get("autoMergeRequest") is not None,
         merge_state_status=merge_state,
         merge_sha=_merge_sha_of(parsed=parsed),
+        terminal_required_check_failures=tuple(terminal_failures),
     )
 
 
