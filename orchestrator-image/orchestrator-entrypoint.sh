@@ -25,11 +25,17 @@
 #
 # Injected externals (env — see README.md "Injectable externals"):
 #   GITHUB_APP_ID + GITHUB_PRIVATE_KEY  GitHub App (livespec-pr-bot; adopters set
-#                                  their own) — PREFERRED GH_TOKEN source: a
-#                                  PR-capable installation token resolved by the
-#                                  tested Python CLI (commands/mint_app_token.py).
-#   LIVESPEC_FAMILY_GITHUB_TOKEN   GitHub PAT — FALLBACK GH_TOKEN when no App is
-#                                  configured (cannot open PRs on some repos)
+#                                  their own) — the SOLE GitHub credential
+#                                  source, injected by the dispatch target's
+#                                  credential_wrapper on the host and forwarded
+#                                  in. Installation tokens are minted on demand
+#                                  by the tested Python CLI
+#                                  (commands/mint_app_token.py) and re-minted by
+#                                  the Dispatcher's provider; there is NO
+#                                  fleet-PAT fallback (fail-closed per the
+#                                  github-app-auth design).
+#   GITHUB_APP_INSTALLATION_ID     optional installation pin (multi-install Apps)
+#   GITHUB_API_URL                 optional API root override (GitHub Enterprise)
 #   FABRO_LLM_API_KEY_ENV          name of the env var holding the LLM API key
 #                                  (default: ANTHROPIC_API_KEY_LIVESPEC_E2E)
 #   FABRO_LLM_PROVIDER             fabro LLM provider (default: anthropic)
@@ -47,10 +53,11 @@ log() { printf '[entrypoint] %s\n' "$*" >&2; }
 die() { printf '[entrypoint] FATAL: %s\n' "$*" >&2; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# The tested Python CLI that resolves the factory GitHub credential (App
-# installation token preferred, PAT fallback). ALL credential logic lives in
-# Python (commands/mint_app_token.py); this script only invokes it. Overridable
-# for layouts where the plugin payload is not the entrypoint's sibling.
+# The tested Python CLI that mints the factory GitHub credential (a GitHub App
+# installation token; fail-closed — NO PAT fallback). ALL credential logic
+# lives in Python (commands/mint_app_token.py); this script only invokes it.
+# Overridable for layouts where the plugin payload is not the entrypoint's
+# sibling.
 MINT_APP_TOKEN_BIN="${LIVESPEC_MINT_APP_TOKEN_BIN:-${SCRIPT_DIR}/../.claude-plugin/scripts/bin/mint_app_token.py}"
 
 FABRO_PORT="${FABRO_PORT:-32276}"
@@ -91,24 +98,22 @@ wait_for_docker() {
 # --------------------------------------------------------------------------
 provision_github() {
   # Thin glue ONLY (no credential logic — that lives in the tested Python CLI):
-  # resolve the factory GitHub credential, then log gh in and export GH_TOKEN.
-  # The CLI prefers a GitHub App installation token (PR-capable on every repo the
-  # App is installed on) and falls back to the LIVESPEC_FAMILY_GITHUB_TOKEN PAT
-  # only when no App is configured; it prints ONLY the token to stdout (its
-  # source is logged to stderr). Fabro's GitHub `token` strategy reads the gh
-  # CLI's stored oauth token, so we log gh in first; the token is piped via stdin
-  # — never placed in argv or echoed.
+  # mint a GitHub App installation token and log gh in with it. The CLI is
+  # FAIL-CLOSED (github-app-auth Pillar 2): the App env is the SOLE credential
+  # source — there is NO fleet-PAT fallback. It prints ONLY the token to stdout
+  # (its source is logged to stderr). Fabro's GitHub `token` strategy reads the
+  # gh CLI's stored oauth token, so we log gh in; the token is piped via stdin
+  # — never placed in argv or echoed. Deliberately NO static token export here:
+  # a once-at-start export would expire after ~1 hour (Pillar 1); the
+  # Dispatcher's provider re-mints per subprocess instead, and the stored gh
+  # credential minted here only bootstraps `fabro install` + the initial
+  # in-container clones.
   local token
   token="$(python3 "$MINT_APP_TOKEN_BIN")" \
-    || die "could not resolve a GitHub credential (set GITHUB_APP_ID + GITHUB_PRIVATE_KEY or LIVESPEC_FAMILY_GITHUB_TOKEN)"
+    || die "could not mint a GitHub App installation token (the dispatch target's credential_wrapper must inject GITHUB_APP_ID + GITHUB_PRIVATE_KEY; there is no fleet-PAT fallback)"
   log "authenticating gh CLI (token via stdin) ..."
   printf '%s' "$token" | gh auth login --with-token \
     || die "gh auth login failed (bad/expired credential?)"
-  # Export only after `gh auth login`: if GH_TOKEN is present during login, the
-  # gh CLI treats it as the active auth source and refuses to store credentials.
-  # The Dispatcher later materializes GH_TOKEN into the Fabro sandbox env table
-  # so the in-sandbox PR node can run `gh pr create`.
-  export GH_TOKEN="$token"
   log "gh CLI authenticated."
 }
 

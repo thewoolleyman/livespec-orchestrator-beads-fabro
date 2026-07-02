@@ -30,6 +30,7 @@ interleave lines.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import threading
 import time
@@ -37,6 +38,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+
+from livespec_runtime.github_auth.errors import GithubAppAuthError
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
@@ -68,11 +71,18 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
 from livespec_orchestrator_beads_fabro.commands._otel_receive import HeartbeatSink
 
 __all__: list[str] = [
+    "GITHUB_TOKEN_ENV_VAR",
+    "GithubTokenEnvRunner",
     "JournalFile",
     "ShellCommandRunner",
     "WatchedFabroLauncher",
     "utc_now_iso",
 ]
+
+# The env var name `gh` (and the `gh auth git-credential` helper raw `git`
+# uses) reads its token from; the run-config overlay projects the SAME name
+# into the sandbox env table. A NAME, never a secret value.
+GITHUB_TOKEN_ENV_VAR = "GH_TOKEN"  # noqa: S105 - env-var NAME, not a secret value
 
 # Engine-side timeouts mirrored here (the launcher owns the `fabro run`
 # subprocess ceiling — bn4's coarse 15h timeout, which COEXISTS with the
@@ -119,6 +129,43 @@ class ShellCommandRunner:
             stdout=completed.stdout,
             stderr=completed.stderr,
         )
+
+
+@dataclass(frozen=True, kw_only=True)
+class GithubTokenEnvRunner:
+    """CommandRunner decorator: refresh `GH_TOKEN` before EVERY command.
+
+    Pillar 1 of the github-app-auth design (first-class remint): every
+    subprocess the engine spawns — each `gh pr view`/`gh pr merge` of the
+    ~76-minute merge-poll, the post-merge `git` refresh, the janitor, the
+    `fabro run` — inherits a currently-valid App installation token via
+    `os.environ`, because `token` is the caching provider's accessor and
+    re-mints transparently past its 55-minute horizon. No once-at-start
+    `export GH_TOKEN=...` remains to expire mid-run. A refresh failure
+    (`GithubAppAuthError`) fails CLOSED as a non-zero `CommandResult`
+    routed as engine data — never a fallback credential, and the token
+    value itself never reaches argv, logs, or the journal.
+    """
+
+    inner: CommandRunner
+    token: Callable[[], str]
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+    ) -> CommandResult:
+        try:
+            os.environ[GITHUB_TOKEN_ENV_VAR] = self.token()
+        except GithubAppAuthError as error:
+            return CommandResult(
+                exit_code=1,
+                stdout="",
+                stderr=f"GitHub App token refresh failed (fail-closed): {error.detail}",
+            )
+        return self.inner.run(argv=argv, cwd=cwd, timeout_seconds=timeout_seconds)
 
 
 @dataclass(frozen=True, kw_only=True)

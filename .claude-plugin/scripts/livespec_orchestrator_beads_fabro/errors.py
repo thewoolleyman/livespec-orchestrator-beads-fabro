@@ -188,21 +188,6 @@ class ConnectionPrefixMissingError(Exception):
         super().__init__(_CONNECTION_PREFIX_MISSING_MESSAGE)
 
 
-class AppTokenMintError(Exception):
-    """Minting a GitHub App installation token failed for an EXPECTED reason.
-
-    EXPECTED: missing App credentials, a private key openssl cannot load, the
-    GitHub App API rejecting the JWT or returning no token, or an ambiguous
-    installation set (the App is installed more than once and no installation
-    was pinned). The caller (the orchestrator entrypoint's thin glue) surfaces
-    this and falls back to the PAT or aborts; it is not a plugin bug.
-    """
-
-    def __init__(self, *, detail: str) -> None:
-        super().__init__(f"GitHub App installation-token mint failed: {detail}")
-        self.detail = detail
-
-
 _CREDENTIAL_MISSING_MESSAGE_TEMPLATE = (
     "required secret env var {variable} is absent; run under your project's "
     "configured credential_wrapper (e.g. with-<project>-env.sh -- ...)."

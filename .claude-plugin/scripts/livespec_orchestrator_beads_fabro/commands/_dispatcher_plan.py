@@ -18,8 +18,10 @@ The run-config helper (`render_run_config_overlay`) materializes the
 RUN-SCOPED credential projection (the family-secrets scoped
 transient-materialization rule): the committed config carries NO
 secret, and the rendered overlay appends an `[environments.<id>.env]`
-table carrying the CLAUDE_CODE_OAUTH_TOKEN and GH_TOKEN values the caller
-read from the Dispatcher's process environment, alongside the `graph`
+table carrying the caller-supplied CLAUDE_CODE_OAUTH_TOKEN value (read
+from the Dispatcher's process environment) and GH_TOKEN value (a fresh
+App installation token minted by the caller's provider — never a fleet
+PAT), alongside the `graph`
 path rewritten absolute so the overlay resolves from outside the workflow
 directory. The same overlay provisions the sandbox sibling clones:
 per-fleet-member depth-1 `[[run.prepare.steps]]` clone blocks plus the
@@ -816,8 +818,9 @@ def render_run_config_overlay(  # noqa: PLR0913 — kw-only pure overlay builder
     `[[run.prepare.steps]]` blocks (when `siblings` is not None) so
     cross-repo checks resolve family siblings inside the sandbox, and
     (c) an appended `[environments.<id>.env]` table carrying the
-    CLAUDE_CODE_OAUTH_TOKEN and GH_TOKEN values read from the Dispatcher's
-    process environment plus the NON-secret `LIVESPEC_SIBLING_CLONES_ROOT` key.
+    caller-supplied CLAUDE_CODE_OAUTH_TOKEN (read from the Dispatcher's
+    process environment) and GH_TOKEN (a freshly minted App installation
+    token) plus the NON-secret `LIVESPEC_SIBLING_CLONES_ROOT` key.
     The non-secret key rides in the credential table because TOML
     forbids a second declaration of the same table and this appended
     table is the single `[environments.<id>.env]` declaration point —

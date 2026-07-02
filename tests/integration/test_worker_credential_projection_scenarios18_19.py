@@ -73,7 +73,6 @@ def _workflow_toml(*, tmp_path: Path) -> Path:
 @pytest.fixture(autouse=True)
 def _dispatcher_projection_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _FAKE_CLAUDE_TOKEN)
-    monkeypatch.setenv("GH_TOKEN", _FAKE_GITHUB_TOKEN)
     monkeypatch.setattr(dispatcher, "_fetch_fleet_manifest_text", lambda: _FLEET_MANIFEST_TEXT)
 
 
@@ -94,6 +93,7 @@ def test_scenario18_dispatch_overlay_projects_dual_credentials(
         repo=tmp_path / "repo",
         work_item_id="bd-ib-webwai",
         dispatch_id="dispatch-1",
+        token=lambda: _FAKE_GITHUB_TOKEN,
     )
 
     assert error is None
@@ -124,6 +124,7 @@ def test_scenario19_stale_codex_credential_refuses_before_overlay(
         repo=tmp_path / "repo",
         work_item_id="bd-ib-webwai",
         dispatch_id="dispatch-1",
+        token=lambda: _FAKE_GITHUB_TOKEN,
     )
 
     assert error is not None

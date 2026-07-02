@@ -42,7 +42,10 @@ def _cross_tenant_env(
     scratch = tmp_path_factory.mktemp("fabro-cross-tenant")
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
-    monkeypatch.setenv("GH_TOKEN", "test-github-token")
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands.dispatcher._github_token_supplier",
+        lambda: (lambda: "test-github-token"),
+    )
     monkeypatch.setattr(
         "livespec_orchestrator_beads_fabro.commands.dispatcher._fetch_fleet_manifest_text",
         lambda: _FLEET_MANIFEST_TEXT,

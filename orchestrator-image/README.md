@@ -150,7 +150,8 @@ fresh and points the Dispatcher at the clones:
   -v livespec-orch-varlib:/var/lib/docker \          # ext4-backed inner graph store (NOT host checkout state)
   -p 127.0.0.1:32276:32276 \                         # web UI / control plane, HOST LOOPBACK ONLY
   --network host \                                   # to reach the EXTERNAL family-tenant Dolt (127.0.0.1:3307)
-  -e LIVESPEC_FAMILY_GITHUB_TOKEN \                  # GitHub token (clone/push/PR)
+  -e GITHUB_APP_ID \                                 # GitHub App id (token mint; clone/push/PR)
+  -e GITHUB_PRIVATE_KEY \                            # GitHub App private key PEM (token mint)
   -e ANTHROPIC_API_KEY_LIVESPEC_E2E \                # fabro LLM provider key
   -e CLAUDE_CODE_OAUTH_TOKEN \                       # model auth the dispatcher projects per-dispatch
   -e BEADS_DOLT_PASSWORD_<target-tenant> \           # external tenant Dolt password (tenant DB == target repo)
@@ -194,8 +195,9 @@ out of band, so no token-bearing URL is ever printed or stored.
 
 | Env var | Purpose | Used by |
 |---|---|---|
-| `LIVESPEC_FAMILY_GITHUB_TOKEN` | GitHub token for clone / push / PR (`token` strategy; the entrypoint `gh auth login`s with it, then exports it as `GH_TOKEN` for the Dispatcher). On the real-work substrate it ALSO authenticates the in-container fresh clones (via the `gh` git credential helper; the clone origin URLs stay token-free) | entrypoint + dispatcher + in-container clones |
-| `GH_TOKEN` | conventional GitHub token name projected by the Dispatcher into the Fabro sandbox env table so the in-sandbox PR node can run `gh pr create`; do not inject it at container launch because `gh auth login --with-token` refuses to store credentials when `GH_TOKEN` is already set | dispatcher / sandbox PR node |
+| `GITHUB_APP_ID` + `GITHUB_PRIVATE_KEY` | the GitHub App credential (livespec-pr-bot for the fleet; adopters bring their own App), injected by the dispatch TARGET's credential_wrapper on the host and forwarded in. The SOLE GitHub credential source — there is NO fleet-PAT fallback (fail-closed per the github-app-auth design). The entrypoint mints an installation token to `gh auth login` the container (which also authenticates the in-container fresh clones via the `gh` git credential helper; clone origin URLs stay token-free); the Dispatcher's caching provider re-mints before EVERY subprocess so the ~76-minute merge-poll and any >1-hour operation survive token expiry | entrypoint + dispatcher + in-container clones |
+| `GITHUB_APP_INSTALLATION_ID` / `GITHUB_API_URL` | optional: pin the App installation (multi-install Apps) / override the API root (GitHub Enterprise) | entrypoint + dispatcher |
+| `GH_TOKEN` | conventional GitHub token name the Dispatcher populates with freshly minted installation tokens — refreshed per subprocess in its own env and projected into the Fabro sandbox env table so the in-sandbox PR node can run `gh pr create`; never injected at container launch (`gh auth login --with-token` refuses to store credentials when `GH_TOKEN` is already set, and a launch-time value would expire mid-run) | dispatcher / sandbox PR node |
 | `ANTHROPIC_API_KEY_LIVESPEC_E2E` | fabro LLM-provider API key (name overridable via `FABRO_LLM_API_KEY_ENV`) | `fabro install` |
 | `CLAUDE_CODE_OAUTH_TOKEN` | model auth the dispatcher projects into each sandbox per-dispatch (run-scoped overlay) | dispatcher |
 | `BEADS_DOLT_PASSWORD_<tenant>` | external family-tenant Dolt password (tenant DB == repo name) | dispatcher / `bd` |

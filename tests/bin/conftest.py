@@ -30,10 +30,12 @@ def wrapper_runner(*, monkeypatch: pytest.MonkeyPatch) -> Callable[[str, str, in
 
     def _run(wrapper_filename: str, main_module: str, expected_exit: int) -> None:
         wrapper_path = _BIN_DIR / wrapper_filename
+        # `**_kwargs` so wrappers that pass `extra_required=...` (the
+        # Dispatcher's GitHub App env) run against the same stub.
         monkeypatch.setitem(
             sys.modules,
             "_bootstrap",
-            _stub_module(name="_bootstrap", bootstrap=lambda: None),
+            _stub_module(name="_bootstrap", bootstrap=lambda **_kwargs: None),
         )
         monkeypatch.setitem(
             sys.modules,

@@ -29,6 +29,7 @@ than work-item failures, per livespec-impl-beads-cgd), and the
 """
 
 import json
+import os
 import re
 import stat
 import sys
@@ -49,6 +50,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     run_dispatch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
+    GithubTokenEnvRunner,
     JournalFile,
     ShellCommandRunner,
     _decode,  # pyright: ignore[reportPrivateUsage]
@@ -92,6 +94,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_spec_commitments imp
 from livespec_orchestrator_beads_fabro.commands.detect_impl_gaps import detect_rules
 from livespec_orchestrator_beads_fabro.commands.dispatcher import (
     _fetch_fleet_manifest_text,  # pyright: ignore[reportPrivateUsage]
+    _github_token_supplier,  # pyright: ignore[reportPrivateUsage]
     _ready_items,  # pyright: ignore[reportPrivateUsage]
     main,
 )
@@ -104,6 +107,7 @@ from livespec_orchestrator_beads_fabro.store import (
 )
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 from livespec_runtime.cross_repo.types import CrossRepoManifest
+from livespec_runtime.github_auth.errors import GithubAppAuthError
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -128,12 +132,12 @@ _FLEET_MANIFEST_TEXT = (
     "}\n"
 )
 
-# The `_fetch_fleet_manifest_text` import above binds the production
-# function object at import time, BEFORE the autouse fixture swaps the
-# dispatcher module attribute for the canned text — so the real fetch
-# implementation stays directly testable (with a scripted runner
-# stand-in).
+# The `_fetch_fleet_manifest_text` / `_github_token_supplier` imports above
+# bind the production function objects at import time, BEFORE the autouse
+# fixture swaps the dispatcher module attributes for canned stand-ins — so
+# the real implementations stay directly testable.
 _real_fetch_fleet_manifest_text = _fetch_fleet_manifest_text
+_real_github_token_supplier = _github_token_supplier
 
 
 @pytest.fixture(autouse=True)
@@ -144,15 +148,20 @@ def fabro_dispatch_env(
     """Hermetic C-mode dispatch environment for every test: an obviously
     fake CLAUDE_CODE_OAUTH_TOKEN in the process env (the Dispatcher
     fail-fasts without one, and projects the value into the run-config
-    overlay's env table at dispatch), a canned fleet-manifest fetch (the
-    production one shells out to `gh api`, which must never happen in
-    the hermetic tier), plus a per-test temp dir so parallel
-    pytest-xdist workers never collide on the dispatcher's goal/overlay
-    temp files."""
+    overlay's env table at dispatch), a canned GitHub App token supplier
+    (the production one resolves GITHUB_APP_ID + GITHUB_PRIVATE_KEY from
+    the wrapper-injected env and mints over the network, which must never
+    happen in the hermetic tier), a canned fleet-manifest fetch (the
+    production one shells out to `gh api`), plus a per-test temp dir so
+    parallel pytest-xdist workers never collide on the dispatcher's
+    goal/overlay temp files."""
     scratch = tmp_path_factory.mktemp("fabro-dispatch")
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
-    monkeypatch.setenv("GH_TOKEN", "test-github-token")
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands.dispatcher._github_token_supplier",
+        lambda: (lambda: "test-github-token"),
+    )
     monkeypatch.setattr(
         "livespec_orchestrator_beads_fabro.commands.dispatcher._fetch_fleet_manifest_text",
         lambda: _FLEET_MANIFEST_TEXT,
@@ -1667,6 +1676,64 @@ def test_decode_handles_bytes_str_and_none() -> None:
     assert _decode(raw=None) == ""
 
 
+def test_github_token_env_runner_refreshes_gh_token_before_each_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pillar 1 (first-class remint): EVERY delegated command sees the
+    supplier's CURRENT token in GH_TOKEN — a fresh value per call, never a
+    once-at-start export that could expire mid-merge-poll."""
+    monkeypatch.setenv("GH_TOKEN", "seed-to-restore")
+    seen_tokens: list[str | None] = []
+
+    @dataclass
+    class _RecordingRunner:
+        def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
+            _ = (argv, cwd, timeout_seconds)
+            seen_tokens.append(os.environ.get("GH_TOKEN"))
+            return CommandResult(exit_code=0, stdout="ok", stderr="")
+
+    minted = iter(["ghs_tok-1", "ghs_tok-2"])
+    runner = GithubTokenEnvRunner(inner=_RecordingRunner(), token=lambda: next(minted))
+    first = runner.run(argv=["gh", "pr", "view"], cwd=tmp_path, timeout_seconds=1.0)
+    second = runner.run(argv=["gh", "pr", "view"], cwd=tmp_path, timeout_seconds=1.0)
+    assert (first.exit_code, second.exit_code) == (0, 0)
+    assert first.stdout == "ok"
+    assert seen_tokens == ["ghs_tok-1", "ghs_tok-2"]
+
+
+def test_github_token_env_runner_fails_closed_on_refresh_error(tmp_path: Path) -> None:
+    """A mint failure never runs the command and never falls back — it is
+    routed as a non-zero CommandResult carrying the actionable detail."""
+
+    @dataclass
+    class _MustNotRun:
+        def run(  # pragma: no cover - reaching this body is the failure being tested
+            self, *, argv: list[str], cwd: Path, timeout_seconds: float
+        ) -> CommandResult:
+            _ = (argv, cwd, timeout_seconds)
+            raise AssertionError("inner runner must not run on a refresh failure")
+
+    def _raising_token() -> str:
+        raise GithubAppAuthError(detail="mint exploded")
+
+    runner = GithubTokenEnvRunner(inner=_MustNotRun(), token=_raising_token)
+    result = runner.run(argv=["gh", "pr", "view"], cwd=tmp_path, timeout_seconds=1.0)
+    assert result.exit_code == 1
+    assert "fail-closed" in result.stderr
+    assert "mint exploded" in result.stderr
+
+
+def test_github_token_supplier_returns_a_provider_accessor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With the App env present the REAL supplier resolves the config and
+    hands back the caching provider's `token` accessor (no mint yet)."""
+    monkeypatch.setenv("GITHUB_APP_ID", "42")
+    monkeypatch.setenv("GITHUB_PRIVATE_KEY", "stub-pem")
+    supplier = _real_github_token_supplier()
+    assert callable(supplier)
+
+
 def test_journal_file_appends_jsonl_with_timestamps(tmp_path: Path) -> None:
     journal = JournalFile(path=tmp_path / "nested" / "journal.jsonl")
     journal.append(record={"stage": "one"})
@@ -2273,17 +2340,19 @@ def test_dispatch_fails_fast_when_oauth_token_env_is_absent_or_empty(
     assert "with-livespec-env.sh" in capsys.readouterr().out
 
 
-def test_dispatch_fails_fast_when_github_token_env_is_absent_or_empty(
+def test_dispatch_fails_closed_when_github_app_env_is_absent(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A missing GH_TOKEN refuses dispatch before Fabro launches.
+    """A missing GitHub App env refuses dispatch before Fabro launches.
 
-    The PR node runs inside the Fabro sandbox, so the Dispatcher's
-    per-run overlay must project the GitHub token into that sandbox env
-    table. Absence would let implement/janitor succeed and fail only at
-    `gh pr create`, the W7 5qv failure class.
+    The dispatch TARGET's credential_wrapper is the ONLY GitHub
+    credential source (github-app-auth Pillar 2): with GITHUB_APP_ID +
+    GITHUB_PRIVATE_KEY absent the dispatch fails CLOSED at the
+    `github-app-auth` stage — and a still-present retired fleet PAT
+    (LIVESPEC_FAMILY_GITHUB_TOKEN) must NOT rescue it, nor leak into
+    the refusal output.
     """
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     item = _item()
@@ -2293,22 +2362,48 @@ def test_dispatch_fails_fast_when_github_token_env_is_absent_or_empty(
         "run_dispatch",
         _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)}),
     )
+    # Un-stub the supplier: exercise the REAL fail-closed resolution.
+    monkeypatch.setattr(dispatcher, "_github_token_supplier", _real_github_token_supplier)
+    monkeypatch.delenv("GITHUB_APP_ID", raising=False)
+    monkeypatch.delenv("GITHUB_PRIVATE_KEY", raising=False)
+    monkeypatch.setenv("LIVESPEC_FAMILY_GITHUB_TOKEN", "github_pat_retired")
     base = ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
-    monkeypatch.delenv("GH_TOKEN")
+    assert main(base) == 1
+    out = capsys.readouterr().out
+    assert "github-app-auth" in out
+    assert "GITHUB_APP_ID" in out
+    assert "credential_wrapper" in out
+    assert "github_pat_retired" not in out
+    # Admission moved the item to active before the refusal (parity with
+    # the other pre-launch refusal paths).
+    assert _stored()[item.id].status == "active"
+
+
+def test_dispatch_routes_a_mint_failure_as_overlay_refusal(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A supplier whose MINT fails (config present, App API rejecting)
+    refuses at the run-config-overlay stage with the actionable detail."""
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    monkeypatch.setattr(
+        dispatcher,
+        "run_dispatch",
+        _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)}),
+    )
+
+    def _raising_token() -> str:
+        raise GithubAppAuthError(detail="the App API rejected the JWT")
+
+    monkeypatch.setattr(dispatcher, "_github_token_supplier", lambda: _raising_token)
+    base = ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     assert main(base) == 1
     out = capsys.readouterr().out
     assert "run-config-overlay" in out
-    assert "GH_TOKEN" in out
-    assert "with-livespec-env.sh" in out
-    # Admission moved the item to active before the overlay refused; a fresh
-    # ready item proves the empty-string form refuses identically.
-    assert _stored()[item.id].status == "active"
-    item2 = _item(id="livespec-impl-beads-t2")
-    append_work_item(path=_config(), item=item2)
-    base2 = ["dispatch", "--repo", str(repo), "--item", item2.id, "--workflow", str(workflow)]
-    monkeypatch.setenv("GH_TOKEN", "")
-    assert main(base2) == 1
-    assert "with-livespec-env.sh" in capsys.readouterr().out
+    assert "the App API rejected the JWT" in out
 
 
 def test_dispatch_fails_when_workflow_config_is_not_materializable(

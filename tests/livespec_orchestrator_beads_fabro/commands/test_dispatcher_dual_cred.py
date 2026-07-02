@@ -268,7 +268,6 @@ def test_materialize_overlay_refuses_on_stale_host_credential(
     _ = committed.write_text(_COMMITTED_WORKFLOW_TOML, encoding="utf-8")
     overlay = tmp_path / "overlay.toml"
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _FAKE_TOKEN)
-    monkeypatch.setenv("GH_TOKEN", _FAKE_GITHUB_TOKEN)
     monkeypatch.setattr(dispatcher, "_fetch_fleet_manifest_text", lambda: _FLEET_MANIFEST_TEXT)
     # Far-future clock makes any real-world `exp` look stale.
     far_future = 32_000_000_000
@@ -282,6 +281,7 @@ def test_materialize_overlay_refuses_on_stale_host_credential(
         repo=tmp_path / "repo",
         work_item_id="wi-1",
         dispatch_id="disp-1",
+        token=lambda: _FAKE_GITHUB_TOKEN,
     )
     assert error is not None
     assert "codex login" in error
@@ -296,7 +296,6 @@ def test_materialize_overlay_refuses_on_missing_host_credential(
     _ = committed.write_text(_COMMITTED_WORKFLOW_TOML, encoding="utf-8")
     overlay = tmp_path / "overlay.toml"
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _FAKE_TOKEN)
-    monkeypatch.setenv("GH_TOKEN", _FAKE_GITHUB_TOKEN)
     monkeypatch.setattr(dispatcher, "_fetch_fleet_manifest_text", lambda: _FLEET_MANIFEST_TEXT)
     monkeypatch.setattr(dispatcher, "_read_host_codex_auth", lambda: None)
     error = _materialize_overlay(
@@ -305,6 +304,7 @@ def test_materialize_overlay_refuses_on_missing_host_credential(
         repo=tmp_path / "repo",
         work_item_id="wi-1",
         dispatch_id="disp-1",
+        token=lambda: _FAKE_GITHUB_TOKEN,
     )
     assert error is not None
     assert "codex login" in error
@@ -319,7 +319,6 @@ def test_materialize_overlay_writes_codex_projection_when_fresh(
     _ = committed.write_text(_COMMITTED_WORKFLOW_TOML, encoding="utf-8")
     overlay = tmp_path / "overlay.toml"
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _FAKE_TOKEN)
-    monkeypatch.setenv("GH_TOKEN", _FAKE_GITHUB_TOKEN)
     monkeypatch.setattr(dispatcher, "_fetch_fleet_manifest_text", lambda: _FLEET_MANIFEST_TEXT)
     now = 1_700_000_000
     far_future = now + 100 * 365 * 24 * 3600
@@ -333,6 +332,7 @@ def test_materialize_overlay_writes_codex_projection_when_fresh(
         repo=tmp_path / "repo",
         work_item_id="wi-1",
         dispatch_id="disp-1",
+        token=lambda: _FAKE_GITHUB_TOKEN,
     )
     assert error is None
     rendered = overlay.read_text(encoding="utf-8")
