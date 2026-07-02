@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import stat
@@ -10,6 +11,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
+from livespec_orchestrator_beads_fabro.commands import dispatcher
+from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     CommandRunner,
@@ -24,6 +28,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     build_plan,
     janitor_checkout_path,
 )
+from livespec_orchestrator_beads_fabro.store import (
+    append_work_item,
+    materialize_work_items,
+    read_work_items,
+)
+from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -100,10 +110,159 @@ def test_real_post_merge_janitor_provisions_livespec_core(
     assert "janitor-post-merge" in stages
 
 
+def test_real_dispatch_reaches_done_after_post_merge_janitor_and_acceptance(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = _target_repo(tmp_path=tmp_path)
+    core_remote = _core_remote(tmp_path=tmp_path)
+    tool_bin = _tool_bin(tmp_path=tmp_path)
+    _configure_full_dispatch_env(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        target=target,
+        core_remote=core_remote,
+        tool_bin=tool_bin,
+    )
+    item = _ready_ai_accepted_item()
+
+    try:
+        result = _run_full_dispatch(target=target, item=item)
+    finally:
+        reset_fake_singleton()
+
+    assert result.exit_code == 0
+    assert result.stored.status == "done"
+    assert result.stored.resolution == "completed"
+    assert result.stored.audit is not None
+    assert result.stored.audit.merge_sha == _head(repo=target)
+    assert result.stored.audit.pr_number == 104
+    stages = [record["stage"] for record in result.records]
+    assert stages.index("janitor-post-merge") < stages.index("ledger-complete")
+    assert stages.index("ledger-complete") < stages.index("acceptance-ai-pass")
+    assert stages.index("acceptance-ai-pass") < stages.index("ledger-accept")
+    outcome = next(record["outcome"] for record in result.records if record["stage"] == "outcome")
+    assert (outcome["status"], outcome["stage"]) == ("green", "done")
+
+
+@dataclass(frozen=True, kw_only=True)
+class _FullDispatchResult:
+    exit_code: int
+    stored: WorkItem
+    records: list[dict[str, object]]
+
+
+def _configure_full_dispatch_env(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    target: Path,
+    core_remote: Path,
+    tool_bin: Path,
+) -> None:
+    git_config = tmp_path / "gitconfig"
+    git_config.write_text(
+        f'[url "file://{core_remote}"]\n'
+        "    insteadOf = https://github.com/thewoolleyman/livespec.git\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PATH", f"{tool_bin}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(git_config))
+    monkeypatch.setenv("TEST_MERGE_SHA", _head(repo=target))
+    monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
+    monkeypatch.delenv("LIVESPEC_CORE_PLUGIN_ROOT", raising=False)
+    for ntfy_env in ("CLAUDE_NTFY_DISPATCHER_TOPIC", "CLAUDE_NTFY_TOPIC", "CLAUDE_NTFY_SERVER"):
+        monkeypatch.delenv(ntfy_env, raising=False)
+    monkeypatch.setattr(dispatcher, "_github_token_supplier", lambda: (lambda: "test-gh-token"))
+    monkeypatch.setattr(dispatcher, "_fetch_fleet_manifest_text", lambda: None)
+    monkeypatch.setattr(dispatcher, "_ensure_otel_receiver", lambda **_: None)
+    monkeypatch.setattr(dispatcher, "WatchedFabroLauncher", lambda **_: _MergedFabroLauncher())
+    reset_fake_singleton()
+
+
+def _run_full_dispatch(*, target: Path, item: WorkItem) -> _FullDispatchResult:
+    config = resolve_store_config(cwd=target, work_items_arg=None)
+    journal_path = target / "tmp" / "fabro-dispatch-journal.jsonl"
+    append_work_item(path=config, item=item)
+    exit_code = dispatcher.main(
+        [
+            "dispatch",
+            "--repo",
+            str(target),
+            "--item",
+            item.id,
+            "--workflow",
+            str(target / "workflow.toml"),
+            "--journal",
+            str(journal_path),
+            "--poll-attempts",
+            "1",
+        ]
+    )
+    return _FullDispatchResult(
+        exit_code=exit_code,
+        stored=_stored_item(config=config, item_id=item.id),
+        records=_journal_records(journal_path=journal_path),
+    )
+
+
+def _stored_item(*, config: StoreConfig, item_id: str) -> WorkItem:
+    return materialize_work_items(records=read_work_items(path=config))[item_id]
+
+
+def _journal_records(*, journal_path: Path) -> list[dict[str, object]]:
+    return [
+        json.loads(line)
+        for line in journal_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def _ready_ai_accepted_item() -> WorkItem:
+    return WorkItem(
+        id="bd-ib-mxr.1",
+        type="task",
+        status="ready",
+        title="Drive full dispatch acceptance",
+        description="Exercise the real post-merge janitor and acceptance path.",
+        origin="freeform",
+        gap_id=None,
+        rank="a2",
+        assignee=None,
+        depends_on=(),
+        captured_at="2026-07-02T00:00:00Z",
+        resolution=None,
+        reason=None,
+        audit=None,
+        superseded_by=None,
+        admission_policy="auto",
+        acceptance_policy="ai-only",
+    )
+
+
 def _target_repo(*, tmp_path: Path) -> Path:
     source = Path(__file__).resolve().parents[2] / "orchestrator-image" / "e2e-skeleton"
     target = tmp_path / "target"
     shutil.copytree(source, target, ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache"))
+    (target / ".livespec.jsonc").write_text(
+        """{
+  "template": "livespec",
+  "spec_root": "SPECIFICATION",
+  "implementation": { "plugin": "livespec-orchestrator-beads-fabro" },
+  "livespec-orchestrator-beads-fabro": {
+    "format": "beads",
+    "connection": { "fake": false, "prefix": "bd-ib" }
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    (target / "workflow.toml").write_text(
+        '[workflow]\ngraph = "graph.toml"\n\n[run.environment]\nid = "fabro-sandbox"\n',
+        encoding="utf-8",
+    )
     with (target / "justfile").open("a", encoding="utf-8") as handle:
         _ = handle.write("\ninstall-commit-refuse-hooks:\n    @just bootstrap\n")
     _git(target, "init", "-b", "master")

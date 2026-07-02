@@ -175,6 +175,9 @@ def _repo_with_workflow(*, tmp_path: Path) -> tuple[Path, Path]:
     return repo, workflow
 
 
+# Backstopped by test_real_dispatch_reaches_done_after_post_merge_janitor_and_acceptance:
+# this helper remains a fast-path calibration stub, not coverage for the
+# real post-merge janitor / ledger-complete / accept execution path.
 def _green_no_pr(*, work_item_id: str) -> DispatchOutcome:
     """A converged terminal that never opened a PR.
 

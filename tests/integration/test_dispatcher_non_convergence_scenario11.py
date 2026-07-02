@@ -300,6 +300,9 @@ def test_dispatch_does_not_bounce_ordinary_failure(
     assert _stored()[item.id].status == "active"
 
 
+# Backstopped by test_real_dispatch_reaches_done_after_post_merge_janitor_and_acceptance:
+# this case only proves green terminals are not bounced; the real
+# post-merge janitor / ledger-complete / accept path is execution-tested there.
 def test_dispatch_does_not_bounce_green_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
