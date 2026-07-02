@@ -46,6 +46,9 @@ dev-tooling/implementation/research/beads-schema-mapping.md):
   issue reads back the bottom sentinel). `priority` is REMOVED as a logical
   field — the native `priority` column survives harmlessly but is no longer
   read into the materialized record.
+- acceptance_criteria / notes ⇄ native beads JSON fields when present; writes
+  also carry them in metadata so bridge-authored records round-trip through
+  the current client seam.
 - assignee ⇄ assignee (first-class)
 - captured_at ⇄ created_at
 - origin ⇄ label `origin:<value>`; gap_id ⇄ label `gap-id:<id>`
@@ -117,7 +120,9 @@ _LABEL_BLOCKED_REASON = "blocked-reason:"
 
 # Metadata keys carrying livespec fields that ride in the JSON column.
 _META_AUDIT = "audit"
+_META_ACCEPTANCE_CRITERIA = "acceptance_criteria"
 _META_NON_LOCAL_DEPENDS_ON = "non_local_depends_on"
+_META_NOTES = "notes"
 _META_RANK = "rank"
 
 # The one adapter status name-mapping: livespec `done` is beads' built-in
@@ -460,6 +465,10 @@ def _work_item_metadata(*, item: WorkItem) -> dict[str, Any]:
     metadata: dict[str, Any] = {_META_RANK: item.rank}
     if item.audit is not None:
         metadata[_META_AUDIT] = _audit_to_dict(audit=item.audit)
+    if item.acceptance_criteria is not None:
+        metadata[_META_ACCEPTANCE_CRITERIA] = item.acceptance_criteria
+    if item.notes is not None:
+        metadata[_META_NOTES] = item.notes
     non_local = _non_local_depends_on_list(depends_on=item.depends_on)
     if non_local:
         metadata[_META_NON_LOCAL_DEPENDS_ON] = non_local
@@ -510,6 +519,7 @@ def _record_to_work_item(*, record: BeadsRecord) -> WorkItem:
     resolution = _label_value(labels=labels, prefix=_LABEL_RESOLUTION)
     audit = _audit_from_metadata(record_id=issue_id, metadata=metadata)
     depends_on = _depends_on_from_edges(record=record, metadata=metadata)
+    content_fields = {**metadata, **record}
     return WorkItem(
         id=issue_id,
         type=cast("Any", _require_str(record=record, key="issue_type")),
@@ -538,6 +548,8 @@ def _record_to_work_item(*, record: BeadsRecord) -> WorkItem:
         # supersedes edge on the superseding issue.
         superseded_by=None,
         spec_commitment_hint=_optional_str(record=record, key="spec_id"),
+        acceptance_criteria=_optional_str(record=content_fields, key=_META_ACCEPTANCE_CRITERIA),
+        notes=_optional_str(record=content_fields, key=_META_NOTES),
         # Policy fields read back from their labels; an absent label is the
         # blessed `None` (inherit / system default).
         admission_policy=cast("Any", _label_value(labels=labels, prefix=_LABEL_ADMISSION)),

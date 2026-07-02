@@ -794,6 +794,26 @@ def test_render_goal_includes_item_fields_and_optional_gap(tmp_path: Path) -> No
     assert "Gap id" not in without_gap
 
 
+def test_render_goal_includes_acceptance_criteria_and_notes_when_present(tmp_path: Path) -> None:
+    goal = render_goal(
+        item=_item(
+            acceptance_criteria="Run just check.",
+            notes="Prompt files are audit-only in this slice.",
+        ),
+        repo=tmp_path,
+        branch="feat/t",
+    )
+    assert "Description:\nDo the thing." in goal
+    assert "Acceptance criteria:\nRun just check." in goal
+    assert "Notes:\nPrompt files are audit-only in this slice." in goal
+
+
+def test_render_goal_omits_acceptance_criteria_and_notes_when_absent(tmp_path: Path) -> None:
+    goal = render_goal(item=_item(), repo=tmp_path, branch="feat/t")
+    assert "Acceptance criteria:" not in goal
+    assert "Notes:" not in goal
+
+
 def test_render_goal_anchors_repo_to_sandbox_cwd_not_host_path(tmp_path: Path) -> None:
     """The brief must never present `repo` as a path the sandbox agent cds into.
 
