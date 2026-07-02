@@ -33,6 +33,7 @@ from livespec_orchestrator_beads_fabro.commands.dispatcher import (
 # commands/dispatcher.py` → parents[3] is the `.claude-plugin/` dir.
 _PLUGIN_ROOT = Path(dispatcher.__file__).resolve().parents[3]
 _WORKFLOW_SUBPATH = (".fabro", "workflows", "implement-work-item", "workflow.toml")
+_PROMPTS_DIR = _PLUGIN_ROOT / ".fabro" / "workflows" / "implement-work-item" / "prompts"
 
 
 def test_workflow_toml_resolves_from_plugin_root(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -83,3 +84,16 @@ def test_candidate_dispatcher_bin_honors_env_override(
     """The canary bin honors CLAUDE_PLUGIN_ROOT in the flattened install cache."""
     monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(tmp_path))
     assert _candidate_dispatcher_bin() == tmp_path / "scripts" / "bin" / "dispatcher.py"
+
+
+def test_implement_and_review_prompts_enforce_scope_and_acceptance() -> None:
+    """The shipped prompts carry the stage-consumption discipline."""
+    implement_text = (_PROMPTS_DIR / "implement.md").read_text(encoding="utf-8")
+    review_text = (_PROMPTS_DIR / "review.md").read_text(encoding="utf-8")
+
+    assert "SCOPE-MINIMALISM" in implement_text
+    assert "edit ONLY what the work-item requires" in implement_text
+    assert "unrelated files, unrelated docs" in implement_text
+    assert "acceptance criteria" in review_text
+    assert "satisfies the work-item" in review_text
+    assert "minimal scope" in review_text
