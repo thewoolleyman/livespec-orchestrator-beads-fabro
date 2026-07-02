@@ -66,6 +66,17 @@ def test_dispatch_script_resolves_github_auth_via_app_env_never_the_fleet_pat() 
     assert "export GH_TOKEN=" not in text
 
 
+def test_target_clone_is_mise_trusted_before_dispatch() -> None:
+    """The post-merge pull-primary stage runs `mise exec` with the TARGET
+    clone as cwd; a fresh clone's .mise.toml is untrusted in-container, so
+    the provisioning step must `mise trust` it (the dispatcher clone gets
+    the same treatment in sync_dispatcher_deps)."""
+    text = _SCRIPT.read_text(encoding="utf-8")
+
+    assert text.count("mise trust") >= 2
+    assert '-w "$TARGET_CLONE" "$CONTAINER" sh -lc \\\n    \'mise trust' in text
+
+
 def test_beads_metadata_regen_uses_a_non_git_scratch_dir_not_the_clone() -> None:
     """metadata.json is derived in a non-git scratch dir, then copied in.
 
