@@ -60,6 +60,7 @@ __all__: list[str] = [
     "CODEX_FRESHNESS_RUN_BUDGET_SECONDS",
     "CODEX_IMPLEMENTER_ADAPTER",
     "CODEX_NON_ROTATABLE_REFRESH_SENTINEL",
+    "CORE_PLUGIN_ROOT_ENV_VAR",
     "DEFAULT_SANDBOX_OTEL_ENDPOINT",
     "NON_CONVERGED_MARKER",
     "SANDBOX_OTEL_ENDPOINT_ENV_VAR",
@@ -85,6 +86,9 @@ __all__: list[str] = [
     "janitor_argv_with_default",
     "janitor_bootstrap_argv",
     "janitor_checkout_path",
+    "janitor_core_checkout_path",
+    "janitor_core_clone_argv",
+    "janitor_core_ref_from_config",
     "janitor_trust_argv",
     "janitor_worktree_add_argv",
     "janitor_worktree_remove_argv",
@@ -140,6 +144,8 @@ SANDBOX_OTEL_ENDPOINT_ENV_VAR = "LIVESPEC_SANDBOX_OTEL_ENDPOINT"
 DEFAULT_SANDBOX_OTEL_ENDPOINT = "http://172.17.0.1:4318"
 
 _DEFAULT_JANITOR: tuple[str, ...] = ("mise", "exec", "--", "just", "check")
+_DEFAULT_JANITOR_CORE_REPO_URL = "https://github.com/thewoolleyman/livespec.git"
+_DEFAULT_JANITOR_CORE_REF = "master"
 
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
 _RUN_ID_RE = re.compile(r"Run:\s*([0-9A-Za-z-]+)")
@@ -187,6 +193,9 @@ class DispatchPlan:
     fabro_bin: str
     janitor: tuple[str, ...]
     janitor_checkout: Path
+    janitor_core_checkout: Path
+    janitor_core_repo_url: str
+    janitor_core_ref: str
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -284,6 +293,8 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
     fabro_bin: str,
     janitor: tuple[str, ...] | None,
     janitor_checkout: Path,
+    janitor_core_repo_url: str = _DEFAULT_JANITOR_CORE_REPO_URL,
+    janitor_core_ref: str = _DEFAULT_JANITOR_CORE_REF,
 ) -> DispatchPlan:
     """Resolve the per-item dispatch plan (publish branch, argv config)."""
     return DispatchPlan(
@@ -295,6 +306,9 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
         fabro_bin=fabro_bin,
         janitor=janitor_argv_with_default(janitor=janitor),
         janitor_checkout=janitor_checkout,
+        janitor_core_checkout=janitor_core_checkout_path(janitor_checkout=janitor_checkout),
+        janitor_core_repo_url=janitor_core_repo_url,
+        janitor_core_ref=janitor_core_ref,
     )
 
 
@@ -319,6 +333,32 @@ def janitor_checkout_path(*, repo: Path, work_item_id: str) -> Path:
     `git worktree add` creates the missing parent dirs itself.
     """
     return repo / "worktrees" / f"janitor-{work_item_id}"
+
+
+def janitor_core_checkout_path(*, janitor_checkout: Path) -> Path:
+    """Livespec core clone provisioned inside the fresh janitor checkout."""
+    return janitor_checkout / ".livespec-core"
+
+
+def janitor_core_ref_from_config(*, config_text: str) -> str:
+    """Resolve the livespec core ref pinned by the target repo config."""
+    try:
+        parsed_raw: object = _jsonc.loads(text=config_text)
+    except _jsonc.JsoncParseError:
+        return _DEFAULT_JANITOR_CORE_REF
+    if not isinstance(parsed_raw, dict):
+        return _DEFAULT_JANITOR_CORE_REF
+    parsed = cast("dict[str, object]", parsed_raw)
+    plugin_raw: object = parsed.get("livespec-orchestrator-beads-fabro")
+    if not isinstance(plugin_raw, dict):
+        return _DEFAULT_JANITOR_CORE_REF
+    compat_raw: object = cast("dict[str, object]", plugin_raw).get("compat")
+    if not isinstance(compat_raw, dict):
+        return _DEFAULT_JANITOR_CORE_REF
+    pinned_raw: object = cast("dict[str, object]", compat_raw).get("pinned")
+    if not isinstance(pinned_raw, str) or pinned_raw.strip() == "":
+        return _DEFAULT_JANITOR_CORE_REF
+    return pinned_raw.strip()
 
 
 def render_goal(
@@ -1222,6 +1262,21 @@ def janitor_worktree_remove_argv(*, plan: DispatchPlan) -> list[str]:
         "remove",
         "--force",
         str(plan.janitor_checkout),
+    ]
+
+
+def janitor_core_clone_argv(*, plan: DispatchPlan) -> list[str]:
+    """Clone livespec core inside the fresh janitor checkout."""
+    return [
+        "git",
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--branch",
+        plan.janitor_core_ref,
+        plan.janitor_core_repo_url,
+        str(plan.janitor_core_checkout),
     ]
 
 

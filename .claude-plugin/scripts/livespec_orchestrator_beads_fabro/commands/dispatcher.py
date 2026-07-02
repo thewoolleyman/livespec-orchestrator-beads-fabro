@@ -215,6 +215,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     is_non_convergence_outcome,
     item_sizing_warnings,
     janitor_checkout_path,
+    janitor_core_ref_from_config,
     parse_fleet_members,
     project_codex_auth_snapshot,
     render_goal,
@@ -1237,6 +1238,13 @@ def _candidates(
     return []
 
 
+def _janitor_core_ref(*, repo: Path) -> str:
+    config = repo / ".livespec.jsonc"
+    if not config.exists():
+        return janitor_core_ref_from_config(config_text="{}")
+    return janitor_core_ref_from_config(config_text=config.read_text(encoding="utf-8"))
+
+
 def _ready_items(*, items: list[WorkItem], repo: Path) -> list[WorkItem]:
     index = {item.id: item for item in items}
     manifest = load_manifest(project_root=repo)
@@ -1266,6 +1274,7 @@ def _dispatch_one(
         fabro_bin=args.fabro_bin,
         janitor=janitor,
         janitor_checkout=janitor_checkout,
+        janitor_core_ref=_janitor_core_ref(repo=repo),
     )
     _warn_item_sizing(item=item, journal=journal)
     comments = _read_dispatch_comments(repo=repo, item=item)
