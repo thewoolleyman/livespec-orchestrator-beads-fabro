@@ -140,7 +140,7 @@ item = WorkItem(
     # carries config.prefix, not a hardcoded `li-`.
     id=new_work_item_id(prefix=config.prefix),
     type="task",
-    status="open",
+    status="pending-approval",
     title=user_confirmed_title,
     description=user_confirmed_description,
     origin="gap-tied",
@@ -160,16 +160,15 @@ append_work_item(path=config, item=item)
 #### Intake Definition-of-Ready (per filed gap)
 
 Every capture front-end MUST run the intake Definition-of-Ready
-checklist at capture and tag the filed item `ready`, `needs-regroom`,
-or `not-yet-actionable` (SPECIFICATION/scenarios.md "Scenario 8 —
-Intake Definition-of-Ready triage"; contracts.md §"Gap-detectable
-behavior clauses"). The gate logic is the ONE shared
-`livespec_orchestrator_beads_fabro.intake_dor` primitive — never re-derive the gates
-in prose here.
+checklist at capture and route the filed item into its lifecycle state
+(SPECIFICATION/scenarios.md "Scenario 8 — Intake Definition-of-Ready
+triage"; contracts.md §"Gap-detectable behavior clauses"). The gate
+logic is the ONE shared `livespec_orchestrator_beads_fabro.intake_dor`
+primitive — never re-derive the gates in prose here.
 
 Immediately after filing each gap-tied item, resolve the six gates from
 the gap context (the rule text usually names a single coherent "done"
-and a repo target) plus a short confirmation, then stamp the verdict:
+and a repo target) plus a short confirmation, then route the item:
 
 ```python
 from livespec_orchestrator_beads_fabro.intake_dor import (
@@ -189,15 +188,18 @@ verdict = apply_intake_dor(
         above_floor=above_floor,
     ),
 )
-# verdict is one of "ready" / "needs-regroom" / "not-yet-actionable".
+# verdict is one of "pending-approval" / "ready" / "backlog" / "blocked".
 ```
 
-Narrate the verdict: `ready` is dispatch-eligible; `needs-regroom`
-surfaces the item for grooming (the `groom <id>` operation, via the
-shared `regroom.enter`) instead of filing it `ready`;
-`not-yet-actionable` means the acceptance needs a human judgement call,
-an unresolved blocker remains, or a dispatch facet is missing — it MUST
-NOT be filed `ready`.
+Narrate the verdict: `pending-approval` is DoR-passing and waiting for
+the admission valve; `ready` is DoR-passing and approved onward because
+the effective `admission_policy` is `auto` and no dependency edge blocks
+dispatch; `backlog` is epic-shaped and waiting for decomposition;
+`blocked` means the acceptance needs a human judgement call or a dispatch
+facet is missing and carries `blocked_reason: needs-human`. If unresolved
+blockers exist, keep their dependency edges linked in `depends_on`; linked
+blockers derive the dependency lane and MUST NOT be bypassed by direct
+`ready` routing.
 
 ### Step 4 — Summary
 

@@ -374,10 +374,11 @@ def test_gap_capture_creates_gap_tied_work_items(
     assert items["gap-aaa"].origin == "gap-tied"
     assert items["gap-aaa"].title == "First gap"
     assert "captured against spec version v002" in items["gap-aaa"].description
-    # Freshly captured gaps land in `backlog` (raw intake) carrying
-    # filing-order `rank`s (gap-aaa filed before gap-bbb).
-    assert items["gap-aaa"].status == "backlog"
-    assert items["gap-bbb"].status == "backlog"
+    # Freshly captured gaps are routed through the shared intake DoR
+    # primitive, so DoR-passing manual-admission gaps land pending approval
+    # while preserving filing-order `rank`s (gap-aaa filed before gap-bbb).
+    assert items["gap-aaa"].status == "pending-approval"
+    assert items["gap-bbb"].status == "pending-approval"
     assert items["gap-aaa"].rank < items["gap-bbb"].rank
 
 

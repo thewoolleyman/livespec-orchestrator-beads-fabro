@@ -58,7 +58,7 @@ from livespec_orchestrator_beads_fabro import regroom
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro._ids import new_work_item_id
 from livespec_orchestrator_beads_fabro.errors import GroomDraftError, GroomTargetNotRegroomError
-from livespec_orchestrator_beads_fabro.intake_dor import READY_LABEL
+from livespec_orchestrator_beads_fabro.regroom import READY_LABEL
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import DependsOnRaw, WorkItem
 

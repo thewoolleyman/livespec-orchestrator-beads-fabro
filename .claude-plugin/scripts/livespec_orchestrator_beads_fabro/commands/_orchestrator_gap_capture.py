@@ -41,6 +41,10 @@ from livespec_orchestrator_beads_fabro.commands._orchestrator_shared import (
     require_str,
     resolve_spec_version,
 )
+from livespec_orchestrator_beads_fabro.intake_dor import (
+    DefinitionOfReadyChecklist,
+    apply_intake_dor,
+)
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
     materialize_work_items,
@@ -93,6 +97,7 @@ def run_gap_capture(
         item = _work_item_for(gap=gap, config=config, spec_version=spec_version, rank=rank)
         if not dry_run:
             append_work_item(path=config, item=item)
+            _route_gap_intake(config=config, item_id=item.id)
         created.append({"id": item.id, "gap_id": gap.gap_id})
     _emit(
         spec_version=spec_version,
@@ -147,9 +152,9 @@ def _work_item_for(
     return WorkItem(
         id=new_work_item_id(prefix=config.prefix),
         type="task",
-        # Freshly captured gaps are raw intake: they land in `backlog` and
-        # reach `ready` only after the grooming / Definition-of-Ready gate.
-        status="backlog",
+        # Gap capture files through the shared intake DoR router immediately
+        # after creation; this initial state is only the create-time shell.
+        status="pending-approval",
         title=gap.title,
         description=description.strip(),
         origin="gap-tied",
@@ -163,6 +168,22 @@ def _work_item_for(
         audit=None,
         superseded_by=None,
         spec_commitment_hint=None,
+    )
+
+
+def _route_gap_intake(*, config: StoreConfig, item_id: str) -> None:
+    """Run the shared intake DoR router for a freshly filed gap item."""
+    _ = apply_intake_dor(
+        path=config,
+        item_id=item_id,
+        checklist=DefinitionOfReadyChecklist(
+            single_coherent_done=True,
+            autonomously_verifiable=True,
+            autonomy_tiered=True,
+            dependency_linked=True,
+            repo_targeted=True,
+            above_floor=True,
+        ),
     )
 
 
