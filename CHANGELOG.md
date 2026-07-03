@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.8.0...v0.8.1) (2026-07-03)
+
+
+### Bug Fixes
+
+* detect dispatcher self-update short paths ([190c68a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/190c68a9ec5356c02a49bd2653a3a97eef3135ce))
+* preserve dispatcher self-update prefix matching ([51a46c8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/51a46c84a60a7a5c2b61a02cb93201f22a22f5e9))
+
 ## [0.8.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.7.0...v0.8.0) (2026-07-03)
 
 
