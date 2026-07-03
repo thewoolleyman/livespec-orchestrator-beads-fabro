@@ -500,7 +500,7 @@ _HOST_ONLY_MARKER_RE = re.compile(r"(?<![\w-])host[-_]only(?![\w-])", re.IGNOREC
 # cap without converging. The terminal node exits non-zero (no outgoing
 # edge), so the run ends non-green and the Dispatcher's engine surfaces
 # this marker in the failed outcome's detail; `is_non_convergence_outcome`
-# matches it to drive the n5kina bounce-to-`needs-regroom`. Keeping the
+# matches it to drive the n5kina bounce-to-`backlog`. Keeping the
 # sentinel here makes the DOT-side producer and the Dispatcher-side
 # consumer share ONE literal (the DOT references this exact string).
 NON_CONVERGED_MARKER = "LIVESPEC_NON_CONVERGED"
@@ -600,11 +600,11 @@ def is_non_convergence_outcome(*, outcome: _NonConvergenceOutcome) -> bool:
 
     Per SPECIFICATION/contracts.md and
     SPECIFICATION/scenarios.md "Scenario 11 — Dispatcher bounces a
-    non-converging slice to needs-regroom": a dispatched slice that will
+    non-converging slice to backlog": a dispatched slice that will
     not converge through the janitor gate within the bounded fix-loop cap
-    MUST be marked `needs-regroom` and surfaced, never infinite-retried.
+    MUST be bounced to `backlog` and surfaced, never infinite-retried.
     The Dispatcher reads this predicate AFTER the terminal outcome to
-    decide whether to bounce the item to `needs-regroom`.
+    decide whether to bounce the item to `backlog`.
 
     Two mechanical signals mark non-convergence, both already produced by
     the existing dispatch path:

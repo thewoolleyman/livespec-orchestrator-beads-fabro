@@ -190,7 +190,7 @@ def _to_observation(*, record: dict[str, object]) -> _Observation:
     """Reduce one `calibration` journal record to a correlatable observation.
 
     A run is `non_converged` when it did not converge OR it bounced back to
-    `needs-regroom` (the empirical "too big" signal). Each numeric proxy is
+    `backlog` (the empirical "too big" signal). Each numeric proxy is
     carried only when its recorded value is a usable `int` — a `None` (the
     Dispatcher's unobservable marker) or a non-numeric is omitted so the proxy
     simply has one fewer sample, never a false zero pulling the cutoff down.

@@ -120,35 +120,32 @@ class WorkItemNotFoundError(Exception):
         self.item_id = item_id
 
 
-class RegroomExitRefusedError(Exception):
-    """A `needs-regroom` exit was refused because no `ready` replacement slices were filed.
+class GroomExitRefusedError(Exception):
+    """A backlog groom exit was refused because no replacement slices were filed.
 
-    EXPECTED: the regroom contract is that an item leaves `needs-regroom`
-    ONLY by being decomposed into `ready` replacement slices — the original
-    is regroomed-OUT, never silently dropped. An exit attempt that names no
-    replacement slice, or names ids that are not present-and-`ready`, is
-    refused here so the label is never cleared on an item that would then
-    vanish with nothing filed in its place.
+    EXPECTED: the groom contract is that a backlog decomposition target is
+    disposed only after approved replacement slices are filed. An exit attempt
+    that names no replacement slice is refused so the original backlog item is
+    never silently dropped.
     """
 
     def __init__(self, *, item_id: str, detail: str) -> None:
-        super().__init__(f"refusing to exit needs-regroom for {item_id}: {detail}")
+        super().__init__(f"refusing to regroom-out backlog item {item_id}: {detail}")
         self.item_id = item_id
         self.detail = detail
 
 
-class GroomTargetNotRegroomError(Exception):
-    """The `groom` front-end was pointed at an item not at `needs-regroom`.
+class GroomTargetNotBacklogError(Exception):
+    """The `groom` front-end was pointed at an item not in backlog.
 
     EXPECTED: grooming is the agent-drafts / human-approves surface for a
-    `needs-regroom` item. Pointing `groom` at a `ready`, closed, or
-    already-groomed item is an expected misuse the front-end surfaces
-    rather than drafting a decomposition for an item that does not need
-    one.
+    backlog item needing decomposition. Pointing `groom` at a `ready`, closed,
+    or already-groomed item is an expected misuse the front-end surfaces rather
+    than drafting a decomposition for an item that does not need one.
     """
 
     def __init__(self, *, item_id: str) -> None:
-        super().__init__(f"groom target is not at needs-regroom: {item_id}")
+        super().__init__(f"groom target is not in backlog: {item_id}")
         self.item_id = item_id
 
 

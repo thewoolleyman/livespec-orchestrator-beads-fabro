@@ -81,7 +81,7 @@ _PENDING_APPROVAL_STATUS = "pending-approval"
 _READY_STATUS = "ready"
 _BACKLOG_STATUS = "backlog"
 _BLOCKED_STATUS = "blocked"
-_RETIRED_INTAKE_LABELS = ["ready", "needs-regroom", "not-yet-actionable"]
+_RETIRED_INTAKE_LABELS = ["not-yet-actionable"]
 
 
 @dataclass(frozen=True, kw_only=True)

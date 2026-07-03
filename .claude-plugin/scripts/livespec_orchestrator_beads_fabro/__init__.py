@@ -12,13 +12,13 @@ seam. Public package layout:
   `FakeBeadsClient`), selected by `make_beads_client(*, config)`.
 - `livespec_orchestrator_beads_fabro.store` — the store primitives (read /
   append / materialize for work-items) over the beads tenant.
-- `livespec_orchestrator_beads_fabro.regroom` — the `needs-regroom` state machine, the
-  shared grooming-lifecycle primitive (enter / exit / query) the capture
-  front-ends, Dispatcher, and `groom` front-end consume.
+- `livespec_orchestrator_beads_fabro.regroom` — backlog groom-out helpers used by
+  the `groom` front-end to validate decomposition targets and explicitly
+  dispose the original item after replacement slices are filed.
 - `livespec_orchestrator_beads_fabro.intake_dor` — the intake Definition-of-Ready
   checklist, the shared capture-time triage primitive (evaluate / apply)
-  every capture front-end calls to tag a filed item `ready` /
-  `needs-regroom` / `not-yet-actionable`.
+  every capture front-end calls to route a filed item into the seven-state
+  lifecycle.
 - `livespec_orchestrator_beads_fabro.spec_reader` — Spec Reader adapter implementing
   the four required capabilities defined in
   livespec/SPECIFICATION/contracts.md.
