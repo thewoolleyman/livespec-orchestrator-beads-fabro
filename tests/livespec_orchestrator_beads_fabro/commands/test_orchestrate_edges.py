@@ -232,7 +232,7 @@ def test_run_human_valve_action_reject_regroom_refuses_when_revert_fails(
     assert updates == []
 
 
-def test_run_human_valve_action_reject_regroom_without_audit_keeps_legacy_backlog_route(
+def test_run_human_valve_action_reject_regroom_without_audit_refuses_before_backlog(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = tmp_path / "repo"
@@ -244,9 +244,10 @@ def test_run_human_valve_action_reject_regroom_without_audit_keeps_legacy_backlo
         repo=repo, action_id="reject:bd-ib-123:regroom", runner=runner
     )
 
-    assert result["status"] == "green"
+    assert result["status"] == "failed"
+    assert result["domain_error"] == "missing-merge-evidence"
     assert runner.calls == []
-    assert updates == [("bd-ib-123", "backlog", None)]
+    assert updates == []
 
 
 def test_plan_records_failed_next_sources(tmp_path: Path) -> None:
