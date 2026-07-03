@@ -158,10 +158,10 @@ def outcome_class(*, outcome: DispatchOutcome) -> str:
 
 
 def bounced_to_regroom(*, outcome: DispatchOutcome) -> bool:
-    """Whether this dispatch is a non-convergence bounce back to `needs-regroom`.
+    """Whether this dispatch is a non-convergence bounce back to `backlog`.
 
     Per SPECIFICATION/contracts.md, factory non-convergence routes
-    the item to `needs-regroom`. The mechanical signal for that is a
+    the item to `backlog`. The mechanical signal for that is a
     `stalled-no-progress` terminal — the watchdog-confirmed non-convergence
     the Dispatcher escalates rather than infinite-retries.
     """

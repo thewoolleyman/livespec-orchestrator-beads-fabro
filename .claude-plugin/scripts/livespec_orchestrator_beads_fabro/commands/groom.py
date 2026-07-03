@@ -1,49 +1,19 @@
-"""`groom` — the agent-drafts / human-approves regroom front-end.
+"""`groom` — the agent-drafts / human-approves backlog decomposition front-end.
 
-The one new maintainer surface the grooming realization adds
-(SPECIFICATION/contracts.md; the
-journey in SPECIFICATION/scenarios.md "Scenario 7 — Regroom an oversized
-work-item"; the normative clause in SPECIFICATION/contracts.md):
+The grooming contract targets ordinary `backlog` items in the seven-state
+lifecycle: intake-routed epics and Dispatcher non-convergence bounces. The
+draft remains read-only until maintainer approval. On approval, local factory
+slices are filed through the same store + intake Definition-of-Ready routing
+used by capture front-ends, while spec-change and cross-repo slices are returned
+for the prose layer to route to their target operations.
 
-    Given a `needs-regroom` item, the groom regroom front-end MUST produce
-    a READ-ONLY drafted decomposition (candidate slices pre-filled with
-    acceptance / autonomy tier / dependency links / repo target / scope
-    and arranged into dependency layers) and MUST file nothing until the
-    maintainer approves; on approval it MUST file the approved slices via
-    `capture-work-item` with dependency edges linked, and MUST route any
-    spec-change slice to `/livespec:propose-change` rather than to the
-    factory.
+The original backlog item is never silently dropped. Once at least one local
+factory slice is filed, it is explicitly closed as no longer applicable with a
+reason naming the replacement slices.
 
-The skill is heavyweight: the read-only scoping conversation and the
-draft itself are the LLM-driven SKILL.md dialogue. This module is the
-load-bearing mechanical seam underneath that dialogue, in two halves:
-
-- `load_groom_context` — the READ-ONLY entry: it confirms the target is
-  actually at `needs-regroom` (refusing otherwise) and returns the item's
-  title/description so the draft is grounded in the real item. It mutates
-  NOTHING — the draft stays read-only until the maintainer approves.
-- `file_approved_slices` — the APPROVAL-time commit: it files each
-  LOCAL factory slice (repo_target == local_repo) via the same
-  `append_work_item` machinery the capture front-ends use (tagging each
-  `ready` and linking its dependency edges), then transitions the original
-  item OUT of `needs-regroom` via the shared `regroom.exit_regroom` verb
-  against the filed slice ids. Cross-repo factory slices (repo_target !=
-  local_repo) are NOT filed in the local tenant — they are returned in
-  `GroomResult.cross_repo_slices` with their minted ids for the SKILL.md
-  prose to route to the target repo's groom/capture front-end (the
-  one-slice/one-ledger model). Spec-change slices are returned (not filed)
-  for the prose to route to `/livespec:propose-change`. Local slices whose
-  `depends_on` title handle resolves to a cross-repo blocker carry a
-  `sibling_work_item` dep entry so the Dispatcher can gate on it. The exit
-  verb REFUSES (`RegroomExitRefusedError`) unless real `ready` local
-  factory slices were filed, so an item is regroomed-OUT, never silently
-  dropped.
-
-Per SPECIFICATION/constraints.md (the
-Result-vs-bugs split), EXPECTED failures raise the typed errors from
-`errors.py` (`WorkItemNotFoundError`, `GroomTargetNotRegroomError`,
-`RegroomExitRefusedError`); genuine bugs propagate as raised built-in
-exceptions.
+Expected failures raise typed errors from `errors.py` (`WorkItemNotFoundError`,
+`GroomTargetNotBacklogError`, `GroomExitRefusedError`, `GroomDraftError`);
+genuine bugs propagate as built-in exceptions.
 """
 
 from __future__ import annotations
@@ -57,8 +27,11 @@ from livespec_runtime.work_items.rank import key_between
 from livespec_orchestrator_beads_fabro import regroom
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro._ids import new_work_item_id
-from livespec_orchestrator_beads_fabro.errors import GroomDraftError, GroomTargetNotRegroomError
-from livespec_orchestrator_beads_fabro.regroom import READY_LABEL
+from livespec_orchestrator_beads_fabro.errors import GroomDraftError
+from livespec_orchestrator_beads_fabro.intake_dor import (
+    DefinitionOfReadyChecklist,
+    apply_intake_dor,
+)
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import DependsOnRaw, WorkItem
 
@@ -82,9 +55,9 @@ _DEFAULT_PRIORITY = 2
 class GroomContext:
     """The read-only scoping context a groom draft is grounded in.
 
-    Returned by `load_groom_context` after confirming the target is at
-    `needs-regroom`. Carries only what the draft needs; the front-end's
-    dialogue reads the spec / scenarios / ledger separately (read-only).
+    Returned by `load_groom_context` after confirming the target is in
+    `backlog`. Carries only what the draft needs; the front-end's dialogue
+    reads the spec / scenarios / ledger separately (read-only).
     """
 
     item_id: str
@@ -97,8 +70,8 @@ class CandidateSlice:
     """One drafted candidate slice in the layered decomposition.
 
     The maintainer-approved shape: every field the intake Definition-of-
-    Ready checklist gates on is pre-filled, so a filed factory slice is
-    `ready` by construction. `is_spec_change` marks a human-gated
+    Ready checklist gates on is pre-filled, so a filed factory slice can be
+    routed through the shared intake primitive. `is_spec_change` marks a human-gated
     spec-change slice that routes to `/livespec:propose-change` instead of
     being filed into the factory ledger.
 
@@ -139,15 +112,16 @@ class CrossRepoSlice:
 class GroomResult:
     """The outcome of an approved groom: what was filed, routed, and exited.
 
-    - `filed_slice_ids` — the local factory slices filed `ready` into the
-      ledger (in draft order), with their dependency edges linked.
+    - `filed_slice_ids` — the local factory slices filed and then routed by
+      the intake Definition-of-Ready primitive (in draft order), with their
+      dependency edges linked.
     - `spec_change_slices` — the approved spec-change slices NOT filed
       here; the SKILL.md prose routes each to `/livespec:propose-change`.
     - `cross_repo_slices` — factory slices whose `repo_target` differs from
       `local_repo`; NOT filed in the local tenant. Returned with their
       minted ids for the SKILL.md prose to route to the target repo.
-    - `regroomed_out` — True once the original item left `needs-regroom`
-      via `regroom.exit_regroom` against the filed factory slices.
+    - `regroomed_out` — True once the original backlog item is explicitly
+      closed against the filed factory slices.
     """
 
     filed_slice_ids: tuple[str, ...] = ()
@@ -157,18 +131,13 @@ class GroomResult:
 
 
 def load_groom_context(*, path: StoreConfig, item_id: str) -> GroomContext:
-    """Read the `needs-regroom` target read-only, refusing a non-regroom id.
+    """Read the backlog target read-only, refusing any other lifecycle state.
 
-    The READ-ONLY entry point: it confirms `item_id` is present (raising
-    `WorkItemNotFoundError` otherwise, via the shared regroom predicate)
-    and is actually at `needs-regroom` (raising
-    `GroomTargetNotRegroomError` otherwise — grooming a `ready` or
-    already-groomed item is an expected misuse the front-end surfaces,
-    not a silent no-op). Mutates nothing; the draft stays read-only until
+    The READ-ONLY entry point: it confirms `item_id` is present and currently
+    in `backlog`. Mutates nothing; the draft stays read-only until
     `file_approved_slices` is called on approval.
     """
-    if not regroom.is_needs_regroom(path=path, item_id=item_id):
-        raise GroomTargetNotRegroomError(item_id=item_id)
+    regroom.require_backlog_target(path=path, item_id=item_id)
     record = make_beads_client(config=path).show_issue(issue_id=item_id)
     return GroomContext(
         item_id=item_id,
@@ -184,30 +153,29 @@ def file_approved_slices(
     slices: list[CandidateSlice],
     local_repo: str,
 ) -> GroomResult:
-    """File approved local factory slices `ready`, then regroom the original OUT.
+    """File approved local factory slices through intake, then close the original.
 
     Called ONLY after the maintainer approves the draft. For each factory
     slice (`is_spec_change == False`):
 
     - If `repo_target == local_repo` (a LOCAL slice): file via
-      `append_work_item`, tag `ready`, link dependency edges. Local slices
-      that depend (by draft-title handle) on a cross-repo blocker carry a
-      `sibling_work_item` dep so the Dispatcher can gate on it.
+      `append_work_item`, route through the intake DoR primitive, and link
+      dependency edges. Local slices that depend (by draft-title handle) on a
+      cross-repo blocker carry a `sibling_work_item` dep so the Dispatcher can
+      gate on it.
     - If `repo_target != local_repo` (a CROSS-REPO slice): mint an id but
       do NOT file locally (the one-slice/one-ledger model). The slice is
       returned in `GroomResult.cross_repo_slices` with its minted id for
       the SKILL.md prose to route to the target repo.
 
-    After all slices are processed, the original item is transitioned out
-    of `needs-regroom` via `regroom.exit_regroom` against the filed LOCAL
-    slice ids.
+    After all slices are processed, the original backlog item is explicitly
+    closed against the filed LOCAL slice ids.
 
     Raises `GroomDraftError` if any factory slice has an empty `repo_target`
     or if a `depends_on` handle names no earlier factory slice in the draft.
-    Raises `RegroomExitRefusedError` if no local factory slice was filed.
+    Raises `GroomExitRefusedError` if no local factory slice was filed.
     Raises `WorkItemNotFoundError` if `regroom_item_id` is absent.
     """
-    client = make_beads_client(config=path)
     filed_ids: list[str] = []
     spec_change: list[CandidateSlice] = []
     cross_repo: list[CrossRepoSlice] = []
@@ -249,13 +217,10 @@ def file_approved_slices(
                 candidate=candidate, slice_id=slice_id, dep_entries=dep_entries, rank=rank
             ),
         )
-        # Tag the freshly-filed factory slice `ready` so the Dispatcher can
-        # drain it and so `exit_regroom`'s ready-gate accepts it as a real
-        # replacement (the same readiness tag the intake checklist applies).
-        client.update_issue(issue_id=slice_id, add_labels=[READY_LABEL])
+        _route_approved_slice_intake(path=path, item_id=slice_id)
         filed_ids.append(slice_id)
         id_by_title[candidate.title] = slice_id
-    regroom.exit_regroom(path=path, item_id=regroom_item_id, ready_slice_ids=filed_ids)
+    regroom.close_regroomed_out(path=path, item_id=regroom_item_id, replacement_slice_ids=filed_ids)
     return GroomResult(
         filed_slice_ids=tuple(filed_ids),
         spec_change_slices=tuple(spec_change),
@@ -308,15 +273,15 @@ def _work_item_for(
     dep_entries: tuple[DependsOnRaw, ...],
     rank: str,
 ) -> WorkItem:
-    """Build the freeform `ready` work-item for one approved local factory slice.
+    """Build the freeform work-item for one approved local factory slice.
 
     A groomed slice is freeform (the cut is the maintainer's, not tied to
     a single detected gap clause); its acceptance is folded into the
     description so the dispatched implementer carries it. `dep_entries`
     carries the fully-typed dependency entries (local or sibling_work_item)
-    already resolved from the earlier draft slices. `rank` is the slice's
-    fractional ordering key (the maintainer-approved cut IS the grooming
-    gate, so a filed slice lands directly in `ready`).
+    already resolved from the earlier draft slices. The initial status is the
+    capture-style shell; `_route_approved_slice_intake` moves it through A1
+    lifecycle routing after creation.
     """
     description = (
         f"{candidate.description}\n\n"
@@ -327,7 +292,7 @@ def _work_item_for(
     return WorkItem(
         id=slice_id,
         type="task",
-        status="ready",
+        status="pending-approval",
         title=candidate.title,
         description=description,
         origin="freeform",
@@ -341,6 +306,23 @@ def _work_item_for(
         audit=None,
         superseded_by=None,
         spec_commitment_hint=None,
+        admission_policy="auto",
+    )
+
+
+def _route_approved_slice_intake(*, path: StoreConfig, item_id: str) -> None:
+    """Route a freshly filed approved slice through the shared intake primitive."""
+    _ = apply_intake_dor(
+        path=path,
+        item_id=item_id,
+        checklist=DefinitionOfReadyChecklist(
+            single_coherent_done=True,
+            autonomously_verifiable=True,
+            autonomy_tiered=True,
+            dependency_linked=True,
+            repo_targeted=True,
+            above_floor=True,
+        ),
     )
 
 

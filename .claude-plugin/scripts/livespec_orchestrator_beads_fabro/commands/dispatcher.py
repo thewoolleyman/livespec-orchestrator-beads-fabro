@@ -1735,7 +1735,7 @@ def _bounce_non_convergence_to_backlog(
 
     Per SPECIFICATION/contracts.md and
     SPECIFICATION/scenarios.md "Scenario 11 — Dispatcher bounces a
-    non-converging slice to needs-regroom": when a dispatched slice will
+    non-converging slice to backlog": when a dispatched slice will
     not converge through the janitor gate within the bounded fix-loop cap,
     the Dispatcher MUST escalate it (escalate-don't-drop) — non-convergence
     is the empirical "too big" signal, never a reason to infinite-retry. The
@@ -1745,7 +1745,7 @@ def _bounce_non_convergence_to_backlog(
 
     Under the work-item-state-machine lifecycle the bounce target is the
     first-class `backlog` status (the slice leaves the WIP and re-enters
-    intake for re-grooming), NOT the prior `needs-regroom` label. Runs AFTER
+    intake for re-grooming), not a separate regroom label. Runs AFTER
     the terminal `outcome` is journaled and only for a non-convergence
     terminal (`is_non_convergence_outcome`): it transitions the item to
     `backlog` via the store seam and journals a `non-convergence-bounce`

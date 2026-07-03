@@ -171,8 +171,8 @@ class BeadsClient(Protocol):
         `assignee` maps onto `bd update --assignee` — the seam the admission
         valve uses to set the doer when it transitions a ready item to
         `active`. `remove_labels` maps onto `bd update --remove-label`
-        (repeatable); it is the seam the regroom state machine uses to CLEAR
-        the `needs-regroom` label when an item is regroomed out. Removing a
+        (repeatable); it is the seam used by lifecycle routing to clear retired labels and
+        policy labels when an item changes state. Removing a
         label the issue does not carry is a no-op (bd is idempotent here).
         """
         ...
@@ -686,9 +686,9 @@ def _build_update_argv(  # noqa: PLR0913 — kw-only argv builder mirroring upda
     repeatable `--add-label` flag (the in-place close path only ever adds
     labels, e.g. `resolution:completed`), so each label is emitted as a
     `--add-label <label>` pair. Label REMOVALS use the symmetric repeatable
-    `--remove-label` flag (the regroom state machine clears `needs-regroom`
-    this way). `--assignee` sets the doer (the admission valve's
-    `ready -> active` transition).
+    `--remove-label` flag (the lifecycle router clears retired labels this way).
+    `--assignee` sets the doer (the admission valve's `ready -> active`
+    transition).
     """
     argv: list[str] = ["update", issue_id]
     if status is not None:

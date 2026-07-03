@@ -1,9 +1,9 @@
-"""Integration-tier acceptance for the `groom` regroom front-end.
+"""Integration-tier acceptance for the `groom` backlog-decomposition front-end.
 
 Binds SPECIFICATION/scenarios.md "Scenario 7 — Regroom an oversized
 work-item" and the contracts.md clause:
 
-    Given a `needs-regroom` item, the groom regroom front-end MUST produce
+    Given a `backlog` item, the groom front-end MUST produce
     a READ-ONLY drafted decomposition (candidate slices pre-filled with
     acceptance / autonomy tier / dependency links / repo target / scope
     and arranged into dependency layers) and MUST file nothing until the
@@ -19,8 +19,8 @@ approval-time commit) through the REAL store/client seam against the
 in-memory `FakeBeadsClient` — the same backend the hermetic CI tier and
 the no-live-connection runtime use, and the same boundary every other
 test in this repo mocks. The Scenario-7 journey (draft read-only → file
-approved slices `ready` with deps linked → spec-change routed → original
-regroomed-out) is the bound case; the rest pin read-only-until-approval,
+approved slices through intake routing with deps linked → spec-change routed
+→ original regroomed-out) is the bound case; the rest pin read-only-until-approval,
 the spec-change routing, and the refuse-don't-drop / expected-error
 surface.
 
@@ -48,15 +48,9 @@ from livespec_orchestrator_beads_fabro.commands.groom import (
 )
 from livespec_orchestrator_beads_fabro.errors import (
     GroomDraftError,
-    GroomTargetNotRegroomError,
-    RegroomExitRefusedError,
+    GroomExitRefusedError,
+    GroomTargetNotBacklogError,
     WorkItemNotFoundError,
-)
-from livespec_orchestrator_beads_fabro.regroom import (
-    NEEDS_REGROOM_LABEL,
-    READY_LABEL,
-    enter,
-    is_needs_regroom,
 )
 from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 from livespec_orchestrator_beads_fabro.types import StoreConfig
@@ -86,8 +80,8 @@ _LOCAL_REPO = "livespec-orchestrator-beads-fabro"
 _CROSS_REPO = "livespec-runtime"
 
 
-def _seed_regroom_item(*, issue_id: str, title: str = "", description: str = "") -> None:
-    """Create an item already at `needs-regroom` — the groom target."""
+def _seed_backlog_item(*, issue_id: str, title: str = "", description: str = "") -> None:
+    """Create an item already in `backlog` — the groom target."""
     client = make_beads_client(config=_config())
     _ = client.create_issue(
         draft=IssueDraft(
@@ -104,7 +98,7 @@ def _seed_regroom_item(*, issue_id: str, title: str = "", description: str = "")
             parent_id=None,
         )
     )
-    enter(path=_config(), item_id=issue_id)
+    client.update_issue(issue_id=issue_id, status="backlog")
 
 
 def _factory_slice(*, title: str, depends_on: tuple[str, ...] = ()) -> CandidateSlice:
@@ -140,13 +134,17 @@ def _labels_of(*, issue_id: str) -> list[str]:
     return [label for label in raw if isinstance(label, str)]
 
 
+def _item_status(*, issue_id: str) -> str:
+    return materialize_work_items(records=read_work_items(path=_config()))[issue_id].status
+
+
 # --------------------------------------------------------------------------
 # Scenario 7: An oversized item is regroomed into ready slices and drained.
 # --------------------------------------------------------------------------
 
 
 def test_groom_journey_files_ready_slices_links_deps_and_regrooms_out() -> None:
-    _seed_regroom_item(
+    _seed_backlog_item(
         issue_id="li-epic", title="Oversized epic", description="More than one done."
     )
 
@@ -157,7 +155,7 @@ def test_groom_journey_files_ready_slices_links_deps_and_regrooms_out() -> None:
     assert context.description == "More than one done."
     # Nothing was filed by reading the draft context — still just the epic.
     assert set(_all_items()) == {"li-epic"}
-    assert is_needs_regroom(path=_config(), item_id="li-epic") is True
+    assert _item_status(issue_id="li-epic") == "backlog"
 
     # 2. The maintainer approves a two-layer decomposition: a base factory
     #    slice and a second factory slice depending on it (by its draft
@@ -190,22 +188,29 @@ def test_groom_journey_files_ready_slices_links_deps_and_regrooms_out() -> None:
     assert result.spec_change_slices[0].title == "spec-change slice"
     assert result.regroomed_out is True
 
-    # Each filed factory slice is tagged `ready` and is in the ledger.
+    # Each filed factory slice is in the ledger and was routed by the shared
+    # intake DoR path: the independent slice reaches ready through auto
+    # admission, while the dependent slice stays out of direct ready routing.
     items = materialize_work_items(records=read_work_items(path=_config()))
-    for slice_id in result.filed_slice_ids:
-        assert slice_id in items
-        assert READY_LABEL in _labels_of(issue_id=slice_id)
+    base_id, dependent_id = result.filed_slice_ids
+    assert items[base_id].status == "ready"
+    assert items[dependent_id].status == "pending-approval"
+    assert "ready" not in _labels_of(issue_id=base_id)
+    assert "ready" not in _labels_of(issue_id=dependent_id)
     # The spec-change slice was never filed into the factory ledger.
     assert all(items[k].title != "spec-change slice" for k in items if k != "li-epic")
 
-    # The original item is regroomed OUT — needs-regroom cleared, not dropped.
-    assert is_needs_regroom(path=_config(), item_id="li-epic") is False
+    # The original item is regroomed OUT — explicitly closed, not dropped.
     assert "li-epic" in items  # still present in the ledger (never deleted)
-    assert NEEDS_REGROOM_LABEL not in _labels_of(issue_id="li-epic")
+    assert items["li-epic"].status == "done"
+    assert items["li-epic"].resolution == "no-longer-applicable"
+    assert items["li-epic"].reason is not None
+    assert base_id in items["li-epic"].reason
+    assert dependent_id in items["li-epic"].reason
 
 
 def test_filed_factory_slices_link_their_dependency_edges() -> None:
-    _seed_regroom_item(issue_id="li-epic")
+    _seed_backlog_item(issue_id="li-epic")
 
     result = file_approved_slices(
         path=_config(),
@@ -228,7 +233,7 @@ def test_filed_factory_slices_link_their_dependency_edges() -> None:
 
 def test_dependency_on_unknown_draft_title_is_rejected() -> None:
     """A handle that names no earlier factory slice is a malformed cut."""
-    _seed_regroom_item(issue_id="li-epic")
+    _seed_backlog_item(issue_id="li-epic")
 
     with pytest.raises(GroomDraftError, match="not an earlier factory slice"):
         file_approved_slices(
@@ -245,21 +250,21 @@ def test_dependency_on_unknown_draft_title_is_rejected() -> None:
 
 
 def test_load_groom_context_is_read_only() -> None:
-    _seed_regroom_item(issue_id="li-epic")
+    _seed_backlog_item(issue_id="li-epic")
     before = set(_all_items())
 
     _ = load_groom_context(path=_config(), item_id="li-epic")
 
-    # No new items; the target is untouched and still needs-regroom.
+    # No new items; the target is untouched and still backlog.
     assert set(_all_items()) == before
-    assert is_needs_regroom(path=_config(), item_id="li-epic") is True
+    assert _item_status(issue_id="li-epic") == "backlog"
 
 
 def test_all_spec_change_decomposition_refuses_exit() -> None:
     """An all-spec-change cut files no factory slice → exit is refused (don't-drop)."""
-    _seed_regroom_item(issue_id="li-epic")
+    _seed_backlog_item(issue_id="li-epic")
 
-    with pytest.raises(RegroomExitRefusedError):
+    with pytest.raises(GroomExitRefusedError):
         file_approved_slices(
             path=_config(),
             regroom_item_id="li-epic",
@@ -276,8 +281,8 @@ def test_all_spec_change_decomposition_refuses_exit() -> None:
             ],
         )
 
-    # The original is NOT dropped — it stays needs-regroom.
-    assert is_needs_regroom(path=_config(), item_id="li-epic") is True
+    # The original is NOT dropped — it stays backlog.
+    assert _item_status(issue_id="li-epic") == "backlog"
 
 
 # --------------------------------------------------------------------------
@@ -285,7 +290,7 @@ def test_all_spec_change_decomposition_refuses_exit() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_groom_refuses_a_non_regroom_target() -> None:
+def test_groom_refuses_a_non_backlog_target() -> None:
     client = make_beads_client(config=_config())
     _ = client.create_issue(
         draft=IssueDraft(
@@ -296,14 +301,15 @@ def test_groom_refuses_a_non_regroom_target() -> None:
             priority=2,
             assignee=None,
             created_at="2026-06-19T00:00:00Z",
-            labels=[READY_LABEL],
+            labels=[],
             metadata={},
             spec_id=None,
             parent_id=None,
         )
     )
+    client.update_issue(issue_id="li-ready", status="ready")
 
-    with pytest.raises(GroomTargetNotRegroomError) as excinfo:
+    with pytest.raises(GroomTargetNotBacklogError) as excinfo:
         load_groom_context(path=_config(), item_id="li-ready")
     assert excinfo.value.item_id == "li-ready"
 
@@ -320,7 +326,7 @@ def test_groom_unknown_target_raises_not_found() -> None:
 
 def test_cross_repo_slice_not_filed_in_local_tenant() -> None:
     """A slice targeting a different repo must NOT be filed in the local tenant."""
-    _seed_regroom_item(issue_id="li-epic")
+    _seed_backlog_item(issue_id="li-epic")
 
     result = file_approved_slices(
         path=_config(),
@@ -337,7 +343,7 @@ def test_cross_repo_slice_not_filed_in_local_tenant() -> None:
     items = _all_items()
     local_ids = [k for k in items if k != "li-epic"]
     assert len(local_ids) == 1
-    assert READY_LABEL in _labels_of(issue_id=local_ids[0])
+    assert _item_status(issue_id=local_ids[0]) == "ready"
 
     # The cross-repo slice is returned for external routing, not filed locally.
     assert len(result.cross_repo_slices) == 1
@@ -348,7 +354,7 @@ def test_cross_repo_slice_not_filed_in_local_tenant() -> None:
 
 def test_cross_repo_slice_carries_minted_id() -> None:
     """The returned CrossRepoSlice carries a non-empty minted id."""
-    _seed_regroom_item(issue_id="li-epic")
+    _seed_backlog_item(issue_id="li-epic")
 
     result = file_approved_slices(
         path=_config(),
@@ -365,7 +371,7 @@ def test_cross_repo_slice_carries_minted_id() -> None:
 
 def test_local_slice_dep_on_cross_repo_blocker_uses_sibling_work_item_kind() -> None:
     """A local slice depending on a cross-repo blocker records sibling_work_item dep."""
-    _seed_regroom_item(issue_id="li-epic")
+    _seed_backlog_item(issue_id="li-epic")
 
     result = file_approved_slices(
         path=_config(),
@@ -395,8 +401,8 @@ def test_local_slice_dep_on_cross_repo_blocker_uses_sibling_work_item_kind() -> 
 
 
 def test_cross_repo_slice_still_regrooms_out_original() -> None:
-    """Original item exits needs-regroom even when some slices are cross-repo."""
-    _seed_regroom_item(issue_id="li-epic")
+    """Original backlog item is disposed even when some slices are cross-repo."""
+    _seed_backlog_item(issue_id="li-epic")
 
     result = file_approved_slices(
         path=_config(),
@@ -409,12 +415,12 @@ def test_cross_repo_slice_still_regrooms_out_original() -> None:
     )
 
     assert result.regroomed_out is True
-    assert is_needs_regroom(path=_config(), item_id="li-epic") is False
+    assert _item_status(issue_id="li-epic") == "done"
 
 
 def test_empty_repo_target_on_factory_slice_raises_draft_error() -> None:
     """A factory slice with an empty repo_target is a malformed draft."""
-    _seed_regroom_item(issue_id="li-epic")
+    _seed_backlog_item(issue_id="li-epic")
 
     with pytest.raises(GroomDraftError, match="empty repo_target"):
         file_approved_slices(
