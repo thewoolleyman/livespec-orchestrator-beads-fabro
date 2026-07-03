@@ -248,3 +248,15 @@ Three failure modes that cost dispatched agents real time:
 config) use `chore(...)` / `docs(...)` / `chore(spec):` subjects and skip the
 ritual entirely. Always use `mise exec -- git ...` so the hooks fire; never
 pass `--no-verify`.
+
+## Working with the maintainer (repo-additive)
+
+- **Spell out "Definition-of-Ready" in full** — the acronym "DoR" is BANNED
+  (maintainer-declared 2026-07-04: non-intuitive, carries no meaning). Never
+  use it in any prose, document, work-item, commit, or report; always write
+  "Definition-of-Ready". (Quoting pre-existing text verbatim for mechanical
+  replacement targeting is the only exception.)
+- **Maintainer-facing documents must explain their own notation.** Define
+  every symbol before or beside its first use (an arrow, a column, a tally),
+  make headings match their content, and write complete sentences over
+  compressed fragments.

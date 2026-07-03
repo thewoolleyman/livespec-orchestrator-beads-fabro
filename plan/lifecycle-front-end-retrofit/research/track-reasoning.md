@@ -47,7 +47,7 @@ One epic + three slices, filed 2026-07-03 through the consented
 `capture-work-item` store seam (`append_work_item`):
 
 - **`bd-ib-ew7bdv`** — the epic anchor for this thread.
-- **`bd-ib-r3vsnd` (A1)** — intake-DoR lifecycle-state routing; retire
+- **`bd-ib-r3vsnd` (A1)** — intake Definition-of-Ready lifecycle-state routing; retire
   label stamps; fix the hardcoded gap-capture status.
 - **`bd-ib-h2tnil` (A2)** — groom re-expression to backlog-STATUS
   targeting; retire the needs-regroom label machinery. `blocks`-edge
@@ -69,7 +69,7 @@ any point), never hand-coded inline in the planning session.
   their acceptance is autonomously verifiable (tests + `just check` +
   the red-green-replay protocol), so no human acceptance valve is
   required per-slice. The epic carries no policy overrides.
-- **Intake-DoR label stamps**: applied to the three slices (verdict
+- **Intake Definition-of-Ready label stamps**: applied to the three slices (verdict
   `ready` — all six gates genuinely pass; A2's blocker is LINKED, which
   is what the gate asks). Deliberately NOT applied to the epic: the
   honest verdict for an epic is the `needs-regroom` LABEL, but that
@@ -94,7 +94,7 @@ approval-model finding was resolved toward valve-side admission but the
 conditional "approved on into `ready` when … `auto`" routing language
 survived. Filed as a proposed change (see
 `SPECIFICATION/proposed_changes/`) recommending: `pending-approval →
-ready` is the structural grooming gate only — a DoR-passing item
+ready` is the structural grooming gate only — an item that passes the Definition-of-Ready checklist
 proceeds to `ready` regardless of admission policy, and ALL human
 permission is exercised at the admission valve (matches Scenario 23/31
 and "the human's explicit admission IS the approval act").
