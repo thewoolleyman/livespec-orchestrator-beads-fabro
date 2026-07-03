@@ -70,6 +70,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from enum import Enum
+from fnmatch import fnmatchcase
 from typing import Any, cast
 
 __all__: list[str] = [
@@ -104,6 +105,15 @@ DISPATCHER_SCRIPT_PREFIXES: tuple[str, ...] = (
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/",
     ".claude-plugin/scripts/bin/",
     ".claude-plugin/scripts/_bootstrap.py",
+)
+
+_DISPATCHER_SCRIPT_PATTERNS: tuple[str, ...] = (
+    ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/*",
+    ".claude-plugin/scripts/bin/*",
+    ".claude-plugin/scripts/_bootstrap.py",
+    "commands/_dispatcher_*.py",
+    "commands/dispatcher.py",
+    "dispatcher.py",
 )
 
 # The alarm class a failed-canary self-update breach fires through h1p's
@@ -206,13 +216,7 @@ def _path_is_dispatcher_code(*, path: str) -> bool:
     normalized = path.strip()
     if normalized == "":
         return False
-    for prefix in DISPATCHER_SCRIPT_PREFIXES:
-        if prefix.endswith("/"):
-            if normalized.startswith(prefix):
-                return True
-        elif normalized == prefix:
-            return True
-    return False
+    return any(fnmatchcase(normalized, pattern) for pattern in _DISPATCHER_SCRIPT_PATTERNS)
 
 
 def canary_self_check_argv(*, candidate_bin: str, scratch_root: str) -> list[str]:
