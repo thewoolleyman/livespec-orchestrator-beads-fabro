@@ -105,3 +105,18 @@ is filed, not self-revised.
 
 Draft disposition table (read-only until maintainer approval):
 `research/backlog-retriage-draft.md` in this thread.
+
+## SUPERSEDED — the proposal recommendation above was rejected (2026-07-04)
+
+The proposed-change recommendation recorded above ("`pending-approval →
+ready` is the structural grooming gate only … ALL human permission is
+exercised at the admission valve") was REJECTED by the maintainer — it
+resolved the seam in the OPPOSITE direction from the locked cross-repo
+design of record (repo `thewoolleyman/livespec`,
+`plan/archive/work-item-state-machine/research/03-decision-log.md`,
+decisions 26/32: approval IS the `pending-approval → ready` transition;
+the admission valve is mechanical). The rejection is snapshotted at
+`SPECIFICATION/history/v027/`; the intent-preserving replacement is
+`SPECIFICATION/proposed_changes/approval-is-the-pending-approval-to-ready-transition.md`.
+This section is retained unedited above as the historical record of what
+the track reasoned at filing time — do not act on its recommendation.
