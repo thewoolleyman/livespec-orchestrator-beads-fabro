@@ -2,7 +2,7 @@
 #
 # Step 1 of the W7 orchestrator-convergence epic (livespec-impl-beads-8bc).
 # Builds the PRODUCTION orchestrator image from the known-good DinD recipe the
-# step-0 spike proved (research/w7-orchestrator-convergence/dind-spike.md). The
+# step-0 spike proved (archive/research/w7-orchestrator-convergence/dind-spike.md). The
 # container runs an *inner* dockerd; Fabro spawns its sandboxes on that inner
 # daemon, fully decoupled from the host daemon (DinD, not DooD — no host socket
 # is ever mounted). An ephemeral in-container Dolt sql-server is available for a

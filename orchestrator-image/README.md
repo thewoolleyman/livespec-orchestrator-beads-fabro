@@ -10,7 +10,7 @@ supervisor entrypoint that brings up dockerd + a headless fabro server, then
 hands off to the dispatcher.
 
 The recipe is derived from the step-0 DinD spike
-(`../research/archive/w7-orchestrator-convergence/dind-spike.md`) — read it for the
+(`../archive/research/w7-orchestrator-convergence/dind-spike.md`) — read it for the
 constraint rationale. The image is **secret-free by construction**; every
 credential is injected at `docker run` time.
 
@@ -83,7 +83,7 @@ Run against a deliberately tiny ready item:
   bash orchestrator-image/tier2-dispatch-proof.sh --run --item <tiny-ready-item>
 ```
 
-See `research/archive/w7-orchestrator-convergence/tier2-dispatch-proof.md` for the
+See `archive/research/w7-orchestrator-convergence/tier2-dispatch-proof.md` for the
 evidence checklist and Codex/runtime classification.
 
 When `TIER2_USE_HOST_NETWORK=1` (the default for that helper), the helper runs
@@ -118,7 +118,7 @@ age):
 
 **Run it only at boundaries — session-start, post-confirmed-merge, deliberate
 teardown, or as a scheduled sweep — never mid-dispatch.** See
-`research/archive/w7-orchestrator-convergence/e2e-repo-reaper.md` for the full safety
+`archive/research/w7-orchestrator-convergence/e2e-repo-reaper.md` for the full safety
 model and validation evidence.
 
 ## Real-work substrate (production)

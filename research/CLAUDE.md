@@ -24,13 +24,14 @@ Subdirectories group docs by topic. As of writing:
   modules (`_otel_receive.py`, `_otel_scrub.py`,
   `_dispatcher_cost_pricing.py`, `_dispatcher_heartbeat_probe.py`)
   cite these docs as design-of-record.
-- `archive/` — completed research topics, moved here WHOLE (one
-  subdirectory per topic) once their work-items close; the research
-  analogue of `plan/archive/<topic>/`. Archived files are frozen
-  historical evidence — do not edit; they remain citable at their
-  archived paths. Currently: `w7-orchestrator-convergence/` (the W7
-  containerized-dispatch convergence runbooks + completion
-  sentinels).
+Completed research topics are moved WHOLE (one subdirectory per
+topic) to the top-level `archive/research/<topic>/` once their
+work-items close. The former repo-local `research/archive/<topic>/`
+home is RETIRED in favor of that fleet-wide top-level location.
+Archived files are frozen historical evidence — do not edit; they
+remain citable at their archived paths (e.g.
+`archive/research/w7-orchestrator-convergence/`,
+`archive/research/context-completeness/`).
 
 ## What this directory is NOT
 
