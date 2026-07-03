@@ -25,7 +25,21 @@ prose, so resolve it explicitly, once, in this order:
 ```bash
 PLUGIN_ROOT="$LIVESPEC_ORCH_PLUGIN_ROOT"
 if [ -z "$PLUGIN_ROOT" ] && [ -d "./.claude-plugin/scripts/bin" ]; then
-  PLUGIN_ROOT="$(pwd)/.claude-plugin"
+  CANDIDATE_PLUGIN_ROOT="$(pwd)/.claude-plugin"
+  if [ -f "$CANDIDATE_PLUGIN_ROOT/plugin.json" ] && python3 - "$CANDIDATE_PLUGIN_ROOT/plugin.json" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as f:
+        data = json.load(f)
+except Exception:
+    sys.exit(1)
+sys.exit(0 if data.get("name") == "livespec-orchestrator-beads-fabro" else 1)
+PY
+  then
+    PLUGIN_ROOT="$CANDIDATE_PLUGIN_ROOT"
+  fi
 fi
 if [ -z "$PLUGIN_ROOT" ]; then
   PLUGIN_ROOT="$(codex plugin list --json -m livespec-orchestrator-beads-fabro 2>/dev/null | python3 -c 'import json, sys
