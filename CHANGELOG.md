@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.8.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.7.0...v0.8.0) (2026-07-03)
+
+
+### Features
+
+* add orchestrate human valve action coverage ([a8d4e18](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a8d4e18218c75966214f314047b10c1852216975))
+
+
+### Bug Fixes
+
+* require regroom merge evidence ([c8c4087](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c8c40877714d294ddff675f570352c2e127029b7))
+* require regroom reject to revert merge ([9f7db0e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9f7db0eebe3220be840f2dabdf42612a31ed7681))
+
 ## [0.7.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.6.1...v0.7.0) (2026-07-03)
 
 
