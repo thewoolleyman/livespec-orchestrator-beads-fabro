@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import orchestrate
 from livespec_orchestrator_beads_fabro.commands.orchestrate import CommandRun
+from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 
 class _Runner:
@@ -31,6 +32,174 @@ class _Completed:
 
 def _run(*, stdout: str, returncode: int = 0, stderr: str = "") -> CommandRun:
     return CommandRun(argv=("cmd",), returncode=returncode, stdout=stdout, stderr=stderr)
+
+
+def _store_config() -> StoreConfig:
+    return StoreConfig(
+        tenant="tenant",
+        prefix="bd-ib",
+        server_user="tenant",
+        database="tenant",
+        bd_path="bd",
+        fake=True,
+    )
+
+
+def _item(**overrides: object) -> WorkItem:
+    base = WorkItem(
+        id="bd-ib-123",
+        type="task",
+        status="ready",
+        title="A ready task",
+        description="Do the thing.",
+        origin="freeform",
+        gap_id=None,
+        rank="a2",
+        assignee=None,
+        depends_on=(),
+        captured_at="2026-06-11T00:00:00Z",
+        resolution=None,
+        reason=None,
+        audit=None,
+        superseded_by=None,
+    )
+    return replace(base, **overrides)
+
+
+def _wip_cap(value: int) -> object:
+    def resolve(*, cwd: Path) -> int:
+        _ = cwd
+        return value
+
+    return resolve
+
+
+def _no_assignee(*, item: WorkItem) -> str | None:
+    _ = item
+    value: str | None = None
+    return value
+
+
+def _install_valve_store(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    items: list[WorkItem],
+) -> list[tuple[str, str, str | None]]:
+    updates: list[tuple[str, str, str | None]] = []
+    config = _store_config()
+
+    def fake_resolve_store_config(*, cwd: Path, work_items_arg: str | None) -> StoreConfig:
+        _ = cwd
+        _ = work_items_arg
+        return config
+
+    def fake_read_work_items(*, path: StoreConfig) -> list[WorkItem]:
+        assert path is config
+        return items
+
+    def fake_update_work_item_status(
+        *,
+        path: StoreConfig,
+        item_id: str,
+        status: str,
+        assignee: str | None = None,
+    ) -> None:
+        assert path is config
+        updates.append((item_id, status, assignee))
+
+    monkeypatch.setattr(orchestrate, "resolve_store_config", fake_resolve_store_config)
+    monkeypatch.setattr(orchestrate, "read_work_items", fake_read_work_items)
+    monkeypatch.setattr(orchestrate, "update_work_item_status", fake_update_work_item_status)
+    return updates
+
+
+def test_run_human_valve_action_accept_success_updates_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    updates = _install_valve_store(monkeypatch, items=[_item(status="acceptance")])
+
+    result = orchestrate.run_human_valve_action(repo=repo, action_id="accept:bd-ib-123")
+
+    assert result["status"] == "green"
+    assert updates == [("bd-ib-123", "done", None)]
+
+
+def test_run_human_valve_action_refuses_malformed_action(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    result = orchestrate.run_human_valve_action(repo=repo, action_id="approve:")
+
+    assert result == {
+        "action_id": "approve:",
+        "kind": "human-valve",
+        "status": "failed",
+        "domain_error": "invalid-action-id",
+        "summary": "Unsupported human valve action id.",
+    }
+
+
+def test_run_human_valve_action_refuses_missing_item(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    updates = _install_valve_store(monkeypatch, items=[_item(id="bd-ib-other")])
+
+    result = orchestrate.run_human_valve_action(repo=repo, action_id="accept:bd-ib-123")
+
+    assert result["status"] == "failed"
+    assert result["domain_error"] == "work-item-not-found"
+    assert "work_item_ref" not in result
+    assert updates == []
+
+
+def test_run_human_valve_action_approve_refuses_non_ready(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    updates = _install_valve_store(monkeypatch, items=[_item(status="backlog")])
+
+    result = orchestrate.run_human_valve_action(repo=repo, action_id="approve:bd-ib-123")
+
+    assert result["status"] == "failed"
+    assert result["domain_error"] == "invalid-source-state"
+    assert "expected ready" in result["summary"]
+    assert updates == []
+
+
+def test_run_human_valve_action_approve_refuses_auto_policy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    updates = _install_valve_store(monkeypatch, items=[_item(admission_policy="auto")])
+
+    result = orchestrate.run_human_valve_action(repo=repo, action_id="approve:bd-ib-123")
+
+    assert result["status"] == "failed"
+    assert result["domain_error"] == "invalid-source-state"
+    assert "effective-manual" in result["summary"]
+    assert updates == []
+
+
+def test_run_human_valve_action_approve_refuses_unresolvable_assignee(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    updates = _install_valve_store(monkeypatch, items=[_item(admission_policy="manual")])
+    monkeypatch.setattr(orchestrate, "resolve_wip_cap", _wip_cap(5))
+    monkeypatch.setattr(orchestrate, "resolve_assignee", _no_assignee)
+
+    result = orchestrate.run_human_valve_action(repo=repo, action_id="approve:bd-ib-123")
+
+    assert result["status"] == "failed"
+    assert result["domain_error"] == "unresolvable-assignee"
+    assert updates == []
 
 
 def test_plan_records_failed_next_sources(tmp_path: Path) -> None:

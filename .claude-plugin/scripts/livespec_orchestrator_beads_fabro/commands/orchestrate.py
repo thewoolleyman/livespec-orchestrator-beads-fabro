@@ -18,12 +18,22 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
+from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
+    effective_admission_policy,
+    resolve_assignee,
+    resolve_wip_cap,
+)
+from livespec_orchestrator_beads_fabro.store import read_work_items, update_work_item_status
+from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
+
 __all__: list[str] = [
     "CommandRun",
     "build_dispatcher_argv",
     "main",
     "plan_actions",
     "run_action",
+    "run_human_valve_action",
 ]
 
 
@@ -44,6 +54,8 @@ class CommandRunner(Protocol):
 _EXIT_FAILURE = 1
 _EXIT_USAGE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 3
+_PARTS_ACTION_REF = 2
+_PARTS_REJECT = 3
 _SPEC_NEXT_BIN_ENV = "LIVESPEC_SPEC_NEXT_BIN"
 
 
@@ -109,12 +121,17 @@ def run_action(
             "handoff": _spec_handoff(action=action_name),
             "summary": "Spec-side action requires an explicit livespec lifecycle command.",
         }
+    if _is_human_valve_action(action_id=action_id):
+        return run_human_valve_action(repo=repo, action_id=action_id)
     if not action_id.startswith("impl:"):
         return {
             "action_id": action_id,
             "kind": "unknown",
             "status": "failed",
-            "summary": "Unsupported action id; expected 'impl:<id>' or 'spec:<action>:<index>'.",
+            "summary": (
+                "Unsupported action id; expected 'impl:<id>', 'spec:<action>:<index>', "
+                "'approve:<id>', 'accept:<id>', or 'reject:<id>:rework|regroom'."
+            ),
         }
     work_item_ref = action_id.removeprefix("impl:")
     resolved_runner = _SubprocessRunner() if runner is None else runner
@@ -140,6 +157,198 @@ def run_action(
         },
         "summary": _dispatch_summary(status=status, work_item_ref=work_item_ref),
     }
+
+
+def run_human_valve_action(*, repo: Path, action_id: str) -> dict[str, Any]:
+    parsed = _parse_human_valve_action(action_id=action_id)
+    if parsed is None:
+        return _valve_refusal(
+            action_id=action_id,
+            domain_error="invalid-action-id",
+            summary="Unsupported human valve action id.",
+        )
+    action, item_id, reject_kind = parsed
+    config = resolve_store_config(cwd=repo, work_items_arg=None)
+    items = list(read_work_items(path=config))
+    item = _find_item(items=items, item_id=item_id)
+    if item is None:
+        return _valve_refusal(
+            action_id=action_id,
+            domain_error="work-item-not-found",
+            summary=f"work-item not found: {item_id}",
+        )
+    if action == "approve":
+        return _approve_item(repo=repo, config=config, items=items, item=item, action_id=action_id)
+    if action == "accept":
+        return _accept_item(config=config, item=item, action_id=action_id)
+    return _reject_item(
+        config=config,
+        item=item,
+        action_id=action_id,
+        reject_kind=cast("str", reject_kind),
+    )
+
+
+def _is_human_valve_action(*, action_id: str) -> bool:
+    return action_id.startswith(("approve:", "accept:", "reject:"))
+
+
+def _parse_human_valve_action(*, action_id: str) -> tuple[str, str, str | None] | None:
+    parts = action_id.split(":")
+    if len(parts) == _PARTS_ACTION_REF and parts[0] in {"approve", "accept"} and parts[1] != "":
+        return (parts[0], parts[1], None)
+    if (
+        len(parts) == _PARTS_REJECT
+        and parts[0] == "reject"
+        and parts[1] != ""
+        and parts[2] in {"rework", "regroom"}
+    ):
+        return (parts[0], parts[1], parts[2])
+    return None
+
+
+def _find_item(*, items: list[WorkItem], item_id: str) -> WorkItem | None:
+    for item in items:
+        if item.id == item_id:
+            return item
+    return None
+
+
+def _approve_item(
+    *,
+    repo: Path,
+    config: StoreConfig,
+    items: list[WorkItem],
+    item: WorkItem,
+    action_id: str,
+) -> dict[str, Any]:
+    if item.status != "ready":
+        return _invalid_source_state(action_id=action_id, item=item, expected="ready")
+    if effective_admission_policy(item=item) != "manual":
+        return _valve_refusal(
+            action_id=action_id,
+            work_item_id=item.id,
+            domain_error="invalid-source-state",
+            summary="approve requires an effective-manual ready item.",
+        )
+    active_count = sum(1 for candidate in items if candidate.status == "active")
+    wip_cap = resolve_wip_cap(cwd=repo)
+    if active_count >= wip_cap:
+        return _valve_refusal(
+            action_id=action_id,
+            work_item_id=item.id,
+            domain_error="wip-cap-exhausted",
+            summary=f"approve refused: active WIP {active_count} has reached cap {wip_cap}.",
+        )
+    assignee = resolve_assignee(item=item)
+    if assignee is None:
+        return _valve_refusal(
+            action_id=action_id,
+            work_item_id=item.id,
+            domain_error="unresolvable-assignee",
+            summary="approve refused: work-item assignee could not be resolved.",
+        )
+    update_work_item_status(path=config, item_id=item.id, status="active", assignee=assignee)
+    return _valve_success(
+        action_id=action_id,
+        work_item_id=item.id,
+        stage="human-valve-approve",
+        target_status="active",
+        assignee=assignee,
+        summary=f"Approved {item.id}: ready -> active.",
+    )
+
+
+def _accept_item(*, config: StoreConfig, item: WorkItem, action_id: str) -> dict[str, Any]:
+    if item.status != "acceptance":
+        return _invalid_source_state(action_id=action_id, item=item, expected="acceptance")
+    update_work_item_status(path=config, item_id=item.id, status="done")
+    return _valve_success(
+        action_id=action_id,
+        work_item_id=item.id,
+        stage="human-valve-accept",
+        target_status="done",
+        assignee=None,
+        summary=f"Accepted {item.id}: acceptance -> done.",
+    )
+
+
+def _reject_item(
+    *,
+    config: StoreConfig,
+    item: WorkItem,
+    action_id: str,
+    reject_kind: str,
+) -> dict[str, Any]:
+    if item.status != "acceptance":
+        return _invalid_source_state(action_id=action_id, item=item, expected="acceptance")
+    target_status = "active" if reject_kind == "rework" else "backlog"
+    update_work_item_status(path=config, item_id=item.id, status=target_status)
+    return _valve_success(
+        action_id=action_id,
+        work_item_id=item.id,
+        stage=f"human-valve-reject-{reject_kind}",
+        target_status=target_status,
+        assignee=None,
+        summary=f"Rejected {item.id}: acceptance -> {target_status}.",
+    )
+
+
+def _invalid_source_state(*, action_id: str, item: WorkItem, expected: str) -> dict[str, Any]:
+    return _valve_refusal(
+        action_id=action_id,
+        work_item_id=item.id,
+        domain_error="invalid-source-state",
+        summary=(
+            f"{action_id} expected {expected} source state for {item.id}; " f"found {item.status}."
+        ),
+    )
+
+
+def _valve_success(
+    *,
+    action_id: str,
+    work_item_id: str,
+    stage: str,
+    target_status: str,
+    assignee: str | None,
+    summary: str,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "action_id": action_id,
+        "kind": "human-valve",
+        "work_item_ref": work_item_id,
+        "status": "green",
+        "target_status": target_status,
+        "journal": _valve_journal(stage=stage, work_item_id=work_item_id),
+        "summary": summary,
+    }
+    if assignee is not None:
+        payload["assignee"] = assignee
+    return payload
+
+
+def _valve_refusal(
+    *,
+    action_id: str,
+    domain_error: str,
+    summary: str,
+    work_item_id: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "action_id": action_id,
+        "kind": "human-valve",
+        "status": "failed",
+        "domain_error": domain_error,
+        "summary": summary,
+    }
+    if work_item_id is not None:
+        payload["work_item_ref"] = work_item_id
+    return payload
+
+
+def _valve_journal(*, stage: str, work_item_id: str) -> dict[str, str]:
+    return {"actor": "operator", "stage": stage, "work_item_id": work_item_id}
 
 
 def build_dispatcher_argv(
