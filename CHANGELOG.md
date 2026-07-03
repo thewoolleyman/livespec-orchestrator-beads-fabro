@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.6.0...v0.6.1) (2026-07-03)
+
+
+### Bug Fixes
+
+* route intake dor into lifecycle states ([ac0b477](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ac0b477df4668701d0977b40f0e8480f95ac42bf))
+
 ## [0.6.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.5.0...v0.6.0) (2026-07-03)
 
 
