@@ -5,14 +5,16 @@ triage" and the contracts.md clause:
 
     The `capture-work-item` and `capture-impl-gaps` capture front-ends
     MUST run the intake Definition-of-Ready checklist over the six gates
-    at capture and MUST tag the resulting item `ready`, `needs-regroom`,
-    or `not-yet-actionable` accordingly — a single-coherent-done,
-    autonomously-verifiable, autonomy-tiered, dependency-linked,
-    repo-targeted, above-floor item is tagged `ready`; an item with more
-    than one coherent "done" (an epic) MUST be tagged `needs-regroom`; an
-    item whose acceptance is not autonomously verifiable, or that has
-    unresolved blockers, MUST be tagged `not-yet-actionable` and MUST NOT
-    be filed as `ready`.
+    at capture and MUST route the resulting item into its lifecycle state
+    accordingly — a single-coherent-done, autonomously-verifiable,
+    autonomy-tiered, dependency-linked, repo-targeted, above-floor item
+    lands in `pending-approval` (approved on into `ready` when its
+    effective `admission_policy` is `auto`); an item with more than one
+    coherent "done" (an epic) MUST land in `backlog`; an item whose
+    acceptance is not autonomously verifiable MUST land in `blocked` with
+    `blocked_reason: needs-human`; an item with unresolved blockers is
+    filed with its dependency edges linked and MUST NOT land directly in
+    `ready`.
 
 This is the top-of-pyramid behavior journey for the shared
 `livespec_orchestrator_beads_fabro.intake_dor` primitive that both capture
@@ -28,20 +30,19 @@ from __future__ import annotations
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import (
+    EDGE_BLOCKS,
     IssueDraft,
     make_beads_client,
     reset_fake_singleton,
 )
 from livespec_orchestrator_beads_fabro.errors import WorkItemNotFoundError
 from livespec_orchestrator_beads_fabro.intake_dor import (
-    NOT_YET_ACTIONABLE_LABEL,
-    READY_LABEL,
     DefinitionOfReadyChecklist,
     apply_intake_dor,
     evaluate,
 )
-from livespec_orchestrator_beads_fabro.regroom import NEEDS_REGROOM_LABEL, is_needs_regroom
-from livespec_orchestrator_beads_fabro.types import StoreConfig
+from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
+from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 
 @pytest.fixture(autouse=True)
@@ -69,7 +70,7 @@ def _config() -> StoreConfig:
     )
 
 
-def _seed_issue(*, issue_id: str) -> None:
+def _seed_issue(*, issue_id: str, labels: list[str] | None = None) -> None:
     """Create an issue directly through the client seam (the capture front-end's filing).
 
     The intake checklist stamps a verdict on an ALREADY-filed item, so each
@@ -85,7 +86,7 @@ def _seed_issue(*, issue_id: str) -> None:
             priority=2,
             assignee=None,
             created_at="2026-06-19T00:00:00Z",
-            labels=[],
+            labels=list(labels) if labels is not None else [],
             metadata={},
             spec_id=None,
             parent_id=None,
@@ -93,11 +94,16 @@ def _seed_issue(*, issue_id: str) -> None:
     )
 
 
-def _labels_of(*, issue_id: str) -> list[str]:
-    record = make_beads_client(config=_config()).show_issue(issue_id=issue_id)
-    raw = record["labels"]
-    assert isinstance(raw, list)
-    return [label for label in raw if isinstance(label, str)]
+def _item(*, issue_id: str) -> WorkItem:
+    return materialize_work_items(records=read_work_items(path=_config()))[issue_id]
+
+
+def _link_dependency(*, item_id: str, blocker_id: str) -> None:
+    make_beads_client(config=_config()).add_dependency(
+        from_id=item_id,
+        to_id=blocker_id,
+        edge_type=EDGE_BLOCKS,
+    )
 
 
 def _ready_checklist() -> DefinitionOfReadyChecklist:
@@ -113,28 +119,36 @@ def _ready_checklist() -> DefinitionOfReadyChecklist:
 
 
 # --------------------------------------------------------------------------
-# Scenario: A single-acceptance item is tagged ready.
+# Scenario: A single-acceptance item lands pending-approval.
 # --------------------------------------------------------------------------
 
 
-def test_single_acceptance_item_is_tagged_ready() -> None:
-    _seed_issue(issue_id="li-ready")
+def test_single_acceptance_item_lands_pending_approval() -> None:
+    _seed_issue(issue_id="li-pending")
+
+    verdict = apply_intake_dor(path=_config(), item_id="li-pending", checklist=_ready_checklist())
+
+    assert verdict == "pending-approval"
+    item = _item(issue_id="li-pending")
+    assert item.status == "pending-approval"
+    assert item.blocked_reason is None
+
+
+def test_auto_admission_single_acceptance_item_lands_ready() -> None:
+    _seed_issue(issue_id="li-ready", labels=["admission:auto"])
 
     verdict = apply_intake_dor(path=_config(), item_id="li-ready", checklist=_ready_checklist())
 
     assert verdict == "ready"
-    labels = _labels_of(issue_id="li-ready")
-    assert READY_LABEL in labels
-    assert NEEDS_REGROOM_LABEL not in labels
-    assert NOT_YET_ACTIONABLE_LABEL not in labels
+    assert _item(issue_id="li-ready").status == "ready"
 
 
 # --------------------------------------------------------------------------
-# Scenario: An epic is tagged needs-regroom.
+# Scenario: An epic lands backlog.
 # --------------------------------------------------------------------------
 
 
-def test_epic_is_tagged_needs_regroom() -> None:
+def test_epic_lands_backlog() -> None:
     _seed_issue(issue_id="li-epic")
 
     verdict = apply_intake_dor(
@@ -151,20 +165,16 @@ def test_epic_is_tagged_needs_regroom() -> None:
         ),
     )
 
-    assert verdict == "needs-regroom"
-    # Entry is via the SHARED regroom.enter verb — the `needs-regroom` label.
-    assert is_needs_regroom(path=_config(), item_id="li-epic") is True
-    labels = _labels_of(issue_id="li-epic")
-    assert NEEDS_REGROOM_LABEL in labels
-    assert READY_LABEL not in labels
+    assert verdict == "backlog"
+    assert _item(issue_id="li-epic").status == "backlog"
 
 
 # --------------------------------------------------------------------------
-# Scenario: A non-autonomously-verifiable or blocked item is not-yet-actionable.
+# Scenario: A non-autonomously-verifiable item is blocked for human input.
 # --------------------------------------------------------------------------
 
 
-def test_non_autonomously_verifiable_item_is_not_yet_actionable() -> None:
+def test_non_autonomously_verifiable_item_is_blocked_needs_human() -> None:
     _seed_issue(issue_id="li-judgement")
 
     verdict = apply_intake_dor(
@@ -181,33 +191,28 @@ def test_non_autonomously_verifiable_item_is_not_yet_actionable() -> None:
         ),
     )
 
-    assert verdict == "not-yet-actionable"
-    labels = _labels_of(issue_id="li-judgement")
-    assert NOT_YET_ACTIONABLE_LABEL in labels
-    # The hard invariant: a not-yet-actionable item is NEVER filed `ready`.
-    assert READY_LABEL not in labels
+    assert verdict == "blocked"
+    item = _item(issue_id="li-judgement")
+    assert item.status == "blocked"
+    assert item.blocked_reason == "needs-human"
 
 
-def test_blocked_item_is_not_yet_actionable() -> None:
-    _seed_issue(issue_id="li-blocked")
+def test_linked_dependency_item_keeps_edges_and_does_not_land_ready() -> None:
+    _seed_issue(issue_id="li-blocker")
+    _seed_issue(issue_id="li-dependent", labels=["admission:auto"])
+    _link_dependency(item_id="li-dependent", blocker_id="li-blocker")
 
     verdict = apply_intake_dor(
         path=_config(),
-        item_id="li-blocked",
-        # Has an unresolved blocker (dependencies not linked).
-        checklist=DefinitionOfReadyChecklist(
-            single_coherent_done=True,
-            autonomously_verifiable=True,
-            autonomy_tiered=True,
-            dependency_linked=False,
-            repo_targeted=True,
-            above_floor=True,
-        ),
+        item_id="li-dependent",
+        # The blocker is unresolved, but its dependency edge is linked.
+        checklist=_ready_checklist(),
     )
 
-    assert verdict == "not-yet-actionable"
-    assert NOT_YET_ACTIONABLE_LABEL in _labels_of(issue_id="li-blocked")
-    assert READY_LABEL not in _labels_of(issue_id="li-blocked")
+    item = _item(issue_id="li-dependent")
+    assert verdict == "pending-approval"
+    assert item.status == "pending-approval"
+    assert item.depends_on == ({"kind": "local", "work_item_id": "li-blocker"},)
 
 
 # --------------------------------------------------------------------------
@@ -216,20 +221,20 @@ def test_blocked_item_is_not_yet_actionable() -> None:
 
 
 def test_evaluate_all_gates_pass_is_ready() -> None:
-    assert evaluate(checklist=_ready_checklist()) == "ready"
+    assert evaluate(checklist=_ready_checklist()) == "pending-approval"
 
 
 @pytest.mark.parametrize(
     ("gate", "expected"),
     [
-        # An epic short-circuits to needs-regroom even if other gates also fail.
-        ("single_coherent_done", "needs-regroom"),
+        # An epic short-circuits to backlog even if other gates also fail.
+        ("single_coherent_done", "backlog"),
         # Each remaining ready-gate failure, on its own, blocks `ready`.
-        ("autonomously_verifiable", "not-yet-actionable"),
-        ("dependency_linked", "not-yet-actionable"),
-        ("autonomy_tiered", "not-yet-actionable"),
-        ("repo_targeted", "not-yet-actionable"),
-        ("above_floor", "not-yet-actionable"),
+        ("autonomously_verifiable", "blocked"),
+        ("dependency_linked", "blocked"),
+        ("autonomy_tiered", "blocked"),
+        ("repo_targeted", "blocked"),
+        ("above_floor", "blocked"),
     ],
 )
 def test_evaluate_each_failing_gate_blocks_ready(gate: str, expected: str) -> None:
@@ -240,8 +245,8 @@ def test_evaluate_each_failing_gate_blocks_ready(gate: str, expected: str) -> No
     assert evaluate(checklist=checklist) == expected
 
 
-def test_evaluate_epic_precedes_not_yet_actionable() -> None:
-    """An epic that is ALSO non-verifiable surfaces for grooming, not as blocked."""
+def test_evaluate_epic_precedes_blocked() -> None:
+    """An epic that is ALSO non-verifiable surfaces for decomposition, not as blocked."""
     checklist = DefinitionOfReadyChecklist(
         single_coherent_done=False,
         autonomously_verifiable=False,
@@ -250,7 +255,7 @@ def test_evaluate_epic_precedes_not_yet_actionable() -> None:
         repo_targeted=False,
         above_floor=False,
     )
-    assert evaluate(checklist=checklist) == "needs-regroom"
+    assert evaluate(checklist=checklist) == "backlog"
 
 
 # --------------------------------------------------------------------------

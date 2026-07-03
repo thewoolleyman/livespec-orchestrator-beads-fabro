@@ -94,19 +94,18 @@ Print the assigned id back to the user.
 ### Step 3 — Run the intake Definition-of-Ready checklist
 
 Every capture front-end MUST run the intake Definition-of-Ready
-checklist at capture and tag the filed item `ready`, `needs-regroom`,
-or `not-yet-actionable` (SPECIFICATION/scenarios.md "Scenario 8 —
-Intake Definition-of-Ready triage"; contracts.md §"Gap-detectable
-behavior clauses"). The gate logic is the ONE shared
-`livespec_orchestrator_beads_fabro.intake_dor` primitive — never re-derive the gates
-in prose here.
+checklist at capture and route the filed item into its lifecycle state
+(SPECIFICATION/scenarios.md "Scenario 8 — Intake Definition-of-Ready
+triage"; contracts.md §"Gap-detectable behavior clauses"). The gate
+logic is the ONE shared `livespec_orchestrator_beads_fabro.intake_dor`
+primitive — never re-derive the gates in prose here.
 
 Resolve the six gates from the inputs you already gathered plus a short
 confirmation dialogue (one question at a time; many gates are already
 answerable from Step 1):
 
 - `single_coherent_done` — does the item describe exactly ONE coherent
-  "done"? (more than one ⇒ an epic ⇒ `needs-regroom`)
+  "done"? (more than one means an epic routed to `backlog`)
 - `autonomously_verifiable` — can the acceptance be checked WITHOUT a
   human judgement call?
 - `autonomy_tiered` — does the item carry an explicit autonomy tier?
@@ -116,7 +115,7 @@ answerable from Step 1):
 - `above_floor` — is it above the size floor (worth a discrete
   dispatch)?
 
-Then stamp the verdict on the just-filed item:
+Then route the just-filed item:
 
 ```python
 from livespec_orchestrator_beads_fabro.intake_dor import (
@@ -136,18 +135,21 @@ verdict = apply_intake_dor(
         above_floor=above_floor,
     ),
 )
-# verdict is one of "ready" / "needs-regroom" / "not-yet-actionable".
+# verdict is one of "pending-approval" / "ready" / "backlog" / "blocked".
 ```
 
 Narrate the verdict to the user:
 
-- `ready` — eligible for autonomous dispatch.
-- `needs-regroom` — an epic; surfaced for grooming (run the `groom`
-  operation), NOT filed `ready`. The label is applied via the shared
-  `regroom.enter` verb.
-- `not-yet-actionable` — its acceptance needs a human judgement call, it
-  has an unresolved blocker, or it is missing a dispatch facet; it is
-  NOT auto-dispatched and MUST NOT be filed `ready`.
+- `pending-approval` — DoR-passing and waiting for the admission valve.
+- `ready` — DoR-passing and approved onward because the effective
+  `admission_policy` is `auto` and no dependency edge blocks dispatch.
+- `backlog` — epic-shaped and waiting for decomposition.
+- `blocked` — not autonomously verifiable or missing a dispatch facet;
+  carries `blocked_reason: needs-human` and MUST NOT be filed `ready`.
+
+If the item has unresolved blockers, make sure the dependency edges are
+linked in `depends_on`; linked blockers derive the dependency lane and
+MUST NOT be bypassed by direct `ready` routing.
 
 ## Important properties
 

@@ -1,27 +1,26 @@
-"""The intake Definition-of-Ready checklist — the shared capture-time triage.
+"""The intake Definition-of-Ready checklist — shared capture-time routing.
 
-The grooming realization gives every capture front-end one intake gate so
-that only autonomously-dispatchable work reaches the factory
-(SPECIFICATION/scenarios.md "Scenario 8 — Intake Definition-of-Ready
-triage"; the normative clause in contracts.md):
+The capture front-ends use one intake gate so newly filed work-items enter
+their lifecycle state consistently (SPECIFICATION/scenarios.md "Scenario 8 —
+Intake Definition-of-Ready triage"; the normative clause in contracts.md):
 
     The `capture-work-item` and `capture-impl-gaps` capture front-ends
     MUST run the intake Definition-of-Ready checklist over the six gates
-    at capture and MUST tag the resulting item `ready`, `needs-regroom`,
-    or `not-yet-actionable` accordingly — a single-coherent-done,
-    autonomously-verifiable, autonomy-tiered, dependency-linked,
-    repo-targeted, above-floor item is tagged `ready`; an item with more
-    than one coherent "done" (an epic) MUST be tagged `needs-regroom`; an
-    item whose acceptance is not autonomously verifiable, or that has
-    unresolved blockers, MUST be tagged `not-yet-actionable` and MUST NOT
-    be filed as `ready`.
+    at capture and MUST route the resulting item into its lifecycle state
+    accordingly — a single-coherent-done, autonomously-verifiable,
+    autonomy-tiered, dependency-linked, repo-targeted, above-floor item
+    lands in `pending-approval` (approved on into `ready` when its
+    effective `admission_policy` is `auto`); an item with more than one
+    coherent "done" (an epic) MUST land in `backlog`; an item whose
+    acceptance is not autonomously verifiable MUST land in `blocked` with
+    `blocked_reason: needs-human`; an item with unresolved blockers is
+    filed with its dependency edges linked and MUST NOT land directly in
+    `ready`.
 
-This module is the ONE shared primitive both front-ends call — the
-gate logic lives here once, never duplicated. A front-end's
-SKILL.md gathers the six checklist answers from the capture dialogue,
-files the item through the normal store path, and then calls
-`apply_intake_dor` to evaluate the verdict and stamp the tag on the
-filed item.
+This module is the ONE shared primitive both front-ends call. A front-end's
+prose gathers the six checklist answers from the capture dialogue, files the
+item through the normal store path, and then calls `apply_intake_dor` to
+evaluate the verdict and route the filed item through the store/client seam.
 
 The six gates (each a boolean the capture dialogue resolves):
 
@@ -36,29 +35,22 @@ The six gates (each a boolean the capture dialogue resolves):
 - `above_floor` — the item is above the size floor (not too small to be
   worth a discrete dispatch).
 
-The verdict and its tagging (per the clause's precedence):
+The verdict and routing precedence:
 
-- A non-autonomously-verifiable item, OR one with unresolved blockers, is
-  `not-yet-actionable` — it needs a human judgement call or a blocker
-  cleared before the factory can touch it, so it MUST NOT be filed
-  `ready`. This is the hardest invariant and is checked FIRST.
-- An item with more than one coherent "done" (an epic) is `needs-regroom`
-  — it is surfaced for grooming via the shared `regroom.enter` verb (the
-  same single entry the Dispatcher non-convergence bounce uses), never
-  filed `ready`.
-- An item that clears all six gates is `ready` — eligible for autonomous
-  dispatch.
-- Any other gate failure (a single-done, verifiable, unblocked item that
-  is nonetheless missing its autonomy tier, dependency links, repo
-  target, or sits below the size floor) is `not-yet-actionable`: it is
-  not dispatchable as-filed and needs a maintainer to fill in the missing
-  facet, which is itself a judgement call. It is never silently filed
-  `ready`.
+- An item with more than one coherent "done" (an epic) is `backlog` so it
+  can be decomposed before dispatch.
+- A non-autonomously-verifiable item, or a single-slice item missing another
+  dispatch facet, is `blocked` with `blocked_reason: needs-human`.
+- An item that clears all six gates is `pending-approval`; if its effective
+  `admission_policy` is `auto` and it has no dependency edges, the primitive
+  approves it onward into `ready`.
+- A filed item with dependency edges stays out of direct `ready` routing even
+  when its effective admission policy is `auto`; the dependency lane is
+  derived from those linked edges.
 
-Per SPECIFICATION/constraints.md (the
-Result-vs-bugs split), the expected failure of stamping a phantom id
-raises `WorkItemNotFoundError` (from `regroom`'s `_assert_present`);
-genuine bugs propagate as raised built-in exceptions.
+Per SPECIFICATION/constraints.md (the Result-vs-bugs split), routing a phantom
+id raises `WorkItemNotFoundError`; genuine bugs propagate as raised built-in
+exceptions.
 """
 
 from __future__ import annotations
@@ -66,35 +58,30 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-from livespec_orchestrator_beads_fabro import regroom
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.errors import WorkItemNotFoundError
+from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
-    "NOT_YET_ACTIONABLE_LABEL",
-    "READY_LABEL",
     "DefinitionOfReadyChecklist",
     "Verdict",
     "apply_intake_dor",
     "evaluate",
 ]
 
-Verdict = Literal["ready", "needs-regroom", "not-yet-actionable"]
+Verdict = Literal["pending-approval", "ready", "backlog", "blocked"]
 
-# The readiness tag the checklist stamps on an autonomously-dispatchable
-# slice. Shared with `regroom.READY_LABEL` (the `exit_regroom` gate looks
-# for this exact label on replacement slices), so it is re-exported from
-# the one canonical definition rather than re-spelled here.
-READY_LABEL = regroom.READY_LABEL
-
-# The tag for an item the factory must NOT auto-dispatch — its acceptance
-# needs a human judgement call, it has an unresolved blocker, or it is
-# missing a dispatch facet. A bare label (no `key:value`) because its
-# presence IS the state, the same encoding `needs-regroom` uses.
-NOT_YET_ACTIONABLE_LABEL = "not-yet-actionable"
+_AUTO_ADMISSION = "auto"
+_BLOCKED_REASON_NEEDS_HUMAN = "needs-human"
+_BLOCKED_REASON_LABEL = f"blocked-reason:{_BLOCKED_REASON_NEEDS_HUMAN}"
+_PENDING_APPROVAL_STATUS = "pending-approval"
+_READY_STATUS = "ready"
+_BACKLOG_STATUS = "backlog"
+_BLOCKED_STATUS = "blocked"
+_RETIRED_INTAKE_LABELS = ["ready", "needs-regroom", "not-yet-actionable"]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -116,32 +103,23 @@ class DefinitionOfReadyChecklist:
 
 
 def evaluate(*, checklist: DefinitionOfReadyChecklist) -> Verdict:
-    """Map the six checklist gates onto the intake verdict.
+    """Map the six checklist gates onto the intake lifecycle verdict.
 
-    Pure function — no I/O. The precedence:
-
-    1. An epic (more than one coherent "done") is `needs-regroom` FIRST —
-       decomposition is the actionable next step, and per-slice
-       verifiability/deps/tier/repo get resolved during grooming, so an
-       epic is surfaced for grooming even if other gates also fail.
-    2. Otherwise, a non-autonomously-verifiable item OR one with
-       unresolved blockers (its dependencies are not linked) is
-       `not-yet-actionable` — it needs a human judgement call or a blocker
-       cleared, so it MUST NOT fall through to `ready`.
-    3. Otherwise, an item that clears the remaining `ready` gates
-       (autonomy-tiered, repo-targeted, above-floor) is `ready`.
-    4. Any other gate failure leaves a single-done, verifiable, unblocked
-       item that is missing a dispatch facet — `not-yet-actionable`, never
-       silently `ready`.
+    Pure function — no I/O and no admission-policy lookup. Auto-admission and
+    dependency-edge handling are applied by `apply_intake_dor`, because they
+    depend on the filed work-item's current store record.
     """
     if not checklist.single_coherent_done:
-        return "needs-regroom"
-    # An unlinked dependency is an unresolved blocker for triage purposes.
-    if not checklist.autonomously_verifiable or not checklist.dependency_linked:
-        return "not-yet-actionable"
-    if checklist.autonomy_tiered and checklist.repo_targeted and checklist.above_floor:
-        return "ready"
-    return "not-yet-actionable"
+        return _BACKLOG_STATUS
+    if (
+        not checklist.autonomously_verifiable
+        or not checklist.dependency_linked
+        or not checklist.autonomy_tiered
+        or not checklist.repo_targeted
+        or not checklist.above_floor
+    ):
+        return _BLOCKED_STATUS
+    return _PENDING_APPROVAL_STATUS
 
 
 def apply_intake_dor(
@@ -150,32 +128,36 @@ def apply_intake_dor(
     item_id: str,
     checklist: DefinitionOfReadyChecklist,
 ) -> Verdict:
-    """Evaluate the checklist and stamp the verdict tag on a filed item.
-
-    The shared call every capture front-end makes AFTER filing the item:
-    it evaluates the six gates, then applies the resulting tag to
-    `item_id` through the store/client seam:
-
-    - `needs-regroom` is applied via the shared `regroom.enter` verb (the
-      one observable entry mutation, shared with the Dispatcher
-      non-convergence bounce).
-    - `ready` / `not-yet-actionable` are applied as the corresponding
-      bare label.
-
-    Returns the `Verdict` so the front-end can narrate the outcome to the
-    user. Raises `WorkItemNotFoundError` if `item_id` is not present in
-    the tenant (the expected failure of stamping a phantom id).
-    """
-    verdict = evaluate(checklist=checklist)
-    if verdict == "needs-regroom":
-        regroom.enter(path=path, item_id=item_id)
-        return verdict
-    label = READY_LABEL if verdict == "ready" else NOT_YET_ACTIONABLE_LABEL
+    """Evaluate the checklist and route a filed item into its lifecycle state."""
     client = make_beads_client(config=path)
     if not client.exists(issue_id=item_id):
-        # The same phantom-id guarantee the regroom verbs give: a triage
-        # against an id that was never filed is an expected failure the
-        # caller surfaces, not a silent no-op mutating nothing.
         raise WorkItemNotFoundError(item_id=item_id)
-    client.update_issue(issue_id=item_id, add_labels=[label])
+
+    item = materialize_work_items(records=read_work_items(path=path))[item_id]
+    verdict = evaluate(checklist=checklist)
+    status = _routed_status(verdict=verdict, has_dependencies=bool(item.depends_on))
+    if (
+        status == _PENDING_APPROVAL_STATUS
+        and item.admission_policy == _AUTO_ADMISSION
+        and not item.depends_on
+    ):
+        status = _READY_STATUS
+
+    add_labels = [_BLOCKED_REASON_LABEL] if status == _BLOCKED_STATUS else []
+    remove_labels = list(_RETIRED_INTAKE_LABELS)
+    if status != _BLOCKED_STATUS:
+        remove_labels.append(_BLOCKED_REASON_LABEL)
+    client.update_issue(
+        issue_id=item_id,
+        status=status,
+        add_labels=add_labels,
+        remove_labels=remove_labels,
+    )
+    return status
+
+
+def _routed_status(*, verdict: Verdict, has_dependencies: bool) -> Verdict:
+    """Keep linked dependencies out of direct `ready` routing."""
+    if has_dependencies and verdict == _PENDING_APPROVAL_STATUS:
+        return _PENDING_APPROVAL_STATUS
     return verdict
