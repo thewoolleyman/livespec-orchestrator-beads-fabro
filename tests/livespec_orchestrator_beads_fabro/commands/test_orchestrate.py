@@ -16,7 +16,7 @@ from livespec_orchestrator_beads_fabro.commands.orchestrate import (
     plan_actions,
     run_action,
 )
-from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
+from livespec_orchestrator_beads_fabro.types import AuditRecord, StoreConfig, WorkItem
 
 
 class _Runner:
@@ -64,6 +64,16 @@ def _item(**overrides: object) -> WorkItem:
         superseded_by=None,
     )
     return replace(base, **overrides)
+
+
+def _audit(*, merge_sha: str = "abc123", pr_number: int | None = 7) -> AuditRecord:
+    return AuditRecord(
+        verification_timestamp="2026-06-11T01:00:00Z",
+        commits=(),
+        files_changed=(),
+        merge_sha=merge_sha,
+        pr_number=pr_number,
+    )
 
 
 def _wip_cap(value: int) -> object:
@@ -340,6 +350,24 @@ def test_run_action_reject_routes_acceptance_item(
         "stage": stage,
         "work_item_id": "bd-ib-123",
     }
+
+
+def test_run_action_reject_regroom_reverts_merged_change_before_backlog(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    updates = _install_valve_store(
+        monkeypatch,
+        items=[_item(status="acceptance", audit=_audit(merge_sha="feed01"))],
+    )
+    runner = _Runner(results=[CommandRun(argv=("git",), returncode=0, stdout="", stderr="")])
+
+    result = run_action(repo=repo, action_id="reject:bd-ib-123:regroom", runner=runner)
+
+    assert result["status"] == "green"
+    assert runner.calls == [("git", "revert", "--no-edit", "feed01")]
+    assert updates == [{"item_id": "bd-ib-123", "status": "backlog", "assignee": None}]
 
 
 def test_run_action_reject_refuses_non_acceptance_item(
