@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.5.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.4.0...v0.5.0) (2026-07-03)
+
+
+### Features
+
+* route factory GitHub auth through the target credential_wrapper App-token provider ([296dadd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/296dadd5af595d8af3bf26735d9b859f646b0357))
+* self-heal beads CLI credentials via credential_wrapper re-exec ([860f671](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/860f67162245e80c4a2f01d345c1b13f9a0bab5a))
+
+
+### Bug Fixes
+
+* derive + wire the status-conformance doctor gate ([cbc3399](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cbc33991dd8e65159ded7c3e1c5f890b48fcdb06))
+* enforce lifecycle status ledger invariant ([53fff0d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/53fff0da20203d452679bc6f21937077526bde1f))
+* fail fast on terminal merge checks ([65b84dd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/65b84dd1572be84cc03396097f4cf671a9c52fe1))
+* map beads acceptance and notes ([1485fb1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1485fb188bad12c65df80ece6db802f41c1f7a4d))
+* parse connection shaped PR checks ([9ebb43b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9ebb43b99b776e8783a68d57e39cb2cbc2b8ba48))
+* parse context shaped PR checks ([5b1f68c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5b1f68c0635dac4fda57e23784b29889d9f560c3))
+* per-wrapper required-credential sets so the mint CLI needs no tenant secret ([ceecd34](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ceecd34ece9eaf2e3f1db25dcb385ec6e3011683))
+* provision core for post-merge janitor ([b87201d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b87201d66550f164990559abc0984c1396c84d9a))
+* render spec id in dispatch goal ([2fd4efd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2fd4efd91ce920eb610f2f175d7113406fa75825))
+
 ## [0.4.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.3.2...v0.4.0) (2026-06-30)
 
 
