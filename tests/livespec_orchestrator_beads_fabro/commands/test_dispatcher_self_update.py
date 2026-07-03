@@ -123,6 +123,10 @@ def test_self_merge_when_a_path_touches_the_dispatcher_command_package() -> None
     assert is_self_merge(merged_paths=_SELF_MERGE_PATHS) is True
 
 
+def test_self_merge_when_a_short_path_touches_dispatcher_engine() -> None:
+    assert is_self_merge(merged_paths=("commands/_dispatcher_engine.py",)) is True
+
+
 def test_self_merge_when_a_path_touches_the_bin_wrapper() -> None:
     assert is_self_merge(merged_paths=(".claude-plugin/scripts/bin/dispatcher.py",)) is True
 
