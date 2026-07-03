@@ -2,20 +2,53 @@
 
 **DRAFT ONLY — no status writes until the maintainer approves this
 table.** Drawn from the LIVE ledger 2026-07-03 (`bd list --status
-backlog` via the wrapper): 24 items at `backlog`, of which 4 are this
-track's own (epic `bd-ib-ew7bdv` + slices, listed last). The console
-session agent is consolidating items on this tenant — re-read live state
-before executing any approved disposition; this table records the
-reasoning, the ledger records the truth.
+backlog` via the wrapper): 24 items were at `backlog` at drawing time —
+the 20 pre-existing items in the table below (the operative part of
+this draft), plus this track's own epic and three slices, which have
+since CLOSED and need no disposition (see the final section). The
+console session agent is consolidating items on this tenant — re-read
+live state before executing any approved disposition; this table
+records the reasoning, the ledger records the truth.
 
-Disposition vocabulary (the 7-state lifecycle):
+## How to read the disposition table
 
-- **→ pending-approval** — DoR-passing: one coherent done, autonomously
-  verifiable, repo-targeted, above floor, blockers linked-or-none.
-- **stays backlog** — genuinely groom-shaped (epic / multiple dones /
-  oversized) or explicitly deferred by the maintainer.
-- **→ blocked** — not autonomously actionable; carries
-  `blocked_reason: needs-human` or `infra-external`.
+Every item in this table currently has status `backlog` — the first of
+the seven lifecycle states (`backlog`, `pending-approval`, `ready`,
+`active`, `acceptance`, `blocked`, `done`). Most of them were filed
+BEFORE the intake Definition-of-Ready routing existed, when the capture
+code hardcoded every new item to `backlog` regardless of its shape. The
+re-triage asks one question per item: knowing what we now know, is
+`backlog` actually the right state for this item?
+
+For an item sitting at `backlog`, only three answers are possible, so
+the table's "Disposition" column has exactly three values — the other
+four lifecycle states are deliberately unreachable by a triage
+(`ready` requires transiting `pending-approval`, the structural
+grooming gate; `active`, `acceptance`, and `done` are execution states
+that only the Dispatcher and the valve actions may set). An arrow
+("→ X") means "change this item's stored status to X"; "stays" means
+no write at all.
+
+- **→ pending-approval** — the item passes the intake
+  Definition-of-Ready checklist: it has exactly one coherent "done",
+  its acceptance is autonomously verifiable by the factory, it names
+  its target repo, it is above the size floor, and its blockers are
+  either linked as dependency edges or absent. Under the new intake
+  routing this item would never have been filed at `backlog`; moving
+  it to `pending-approval` puts it where the lifecycle expects it,
+  one step short of dispatch eligibility.
+- **stays backlog** — `backlog` is the decomposition state, and this
+  item genuinely needs decomposition: it is an epic, or it bundles
+  more than one coherent "done", or the maintainer has explicitly
+  deferred it. The correct next step for these is a `groom` pass that
+  cuts them into slices, not a status change.
+- **→ blocked** — the item cannot be worked autonomously no matter how
+  it is groomed, because it waits on something outside the factory's
+  reach: a human act (`blocked_reason: needs-human`, e.g. provisioning
+  a GitHub App in org settings) or an external fix
+  (`blocked_reason: infra-external`, e.g. an upstream bug in a tool we
+  consume). Parking it at `blocked` keeps it out of every dispatch
+  query until someone explicitly unblocks it.
 
 ## Pre-existing items (20)
 
@@ -45,14 +78,14 @@ Disposition vocabulary (the 7-state lifecycle):
 Tally: 11 → pending-approval · 6 stay backlog · 3 → blocked
 (2 `needs-human`, 1 `infra-external`).
 
-## This track's items (4) — managed by the track, listed for completeness
+## This track's items (4) — OVERTAKEN: all closed, no disposition needed
 
-| Item | Type | Disposition | Why |
-|---|---|---|---|
-| `bd-ib-ew7bdv` | epic | stays backlog | This thread's epic anchor; closes when A1–A3 land. |
-| `bd-ib-r3vsnd` (A1) | task | → ready at dispatch | DoR-passing, admission `auto`; status flipped via the sanctioned interim mechanism when dispatched (first in sequence). |
-| `bd-ib-h2tnil` (A2) | task | → ready after A1 closes | `blocks`-edge on A1; flipped only once A1 is done. |
-| `bd-ib-q3x6va` (A3) | task | → ready at dispatch | Independent of A1/A2; flipped when its dispatch slot opens. |
+At drawing time these four sat at `backlog` alongside the rest. They
+were this track's own epic (`bd-ib-ew7bdv`) and its three slices
+(`bd-ib-r3vsnd`, `bd-ib-h2tnil`, `bd-ib-q3x6va`), which the track
+dispatched and closed on 2026-07-03 — all four are now `done` in the
+ledger and are NOT part of the disposition decision above. They are
+kept here only so the "24 items at drawing time" count stays honest.
 
 ## Execution note (post-approval)
 

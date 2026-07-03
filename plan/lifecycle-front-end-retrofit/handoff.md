@@ -17,9 +17,9 @@ and can then execute the next actions without consulting chat history.
 Epic **`bd-ib-ew7bdv`** closed `resolution:completed` 2026-07-03; all
 three slices factory-landed and closed:
 
-- A1 `bd-ib-r3vsnd` — PR #264 (`ac0b477`): intake-DoR routes filed
-  items into lifecycle STATES; label stamps retired; gap-capture
-  hardcode fixed.
+- A1 `bd-ib-r3vsnd` — PR #264 (`ac0b477`): the intake
+  Definition-of-Ready checklist routes filed items into lifecycle
+  STATES; label stamps retired; gap-capture hardcode fixed.
 - A2 `bd-ib-h2tnil` — PR #266 (`bcc06f9`): groom targets
   `backlog`-STATUS items; `needs-regroom` label machinery deleted.
 - A3 `bd-ib-q3x6va` — PR #270 (`4000048`): `orchestrate run` valve
@@ -46,9 +46,9 @@ cd /data/projects/livespec-orchestrator-beads-fabro
   `SPECIFICATION/` and accepts or rejects the proposal. Do not
   self-revise from a track session.
 - If accepted: verify whether the capture routing needs a follow-up
-  (an effective-`manual` DoR-passing item would then also proceed to
-  `ready` instead of resting at `pending-approval`); file any follow-up
-  via `capture-work-item`.
+  (an effective-`manual` item that passes the Definition-of-Ready
+  checklist would then also proceed to `ready` instead of resting at
+  `pending-approval`); file any follow-up via `capture-work-item`.
 
 ## Open gate 2 — Workstream C: backlog re-triage execution (maintainer)
 
