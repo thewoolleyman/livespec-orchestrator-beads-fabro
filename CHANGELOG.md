@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.6.1...v0.7.0) (2026-07-03)
+
+
+### Features
+
+* route groom through backlog lifecycle ([bcc06f9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bcc06f9b1802011e8d2f81f3967b7bc108015834))
+
 ## [0.6.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.6.0...v0.6.1) (2026-07-03)
 
 
