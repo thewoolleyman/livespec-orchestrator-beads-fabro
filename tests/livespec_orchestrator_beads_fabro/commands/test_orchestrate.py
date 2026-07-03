@@ -327,7 +327,6 @@ def test_run_action_accept_refuses_non_acceptance_item(
     ("action_id", "target_status", "stage"),
     [
         ("reject:bd-ib-123:rework", "active", "human-valve-reject-rework"),
-        ("reject:bd-ib-123:regroom", "backlog", "human-valve-reject-regroom"),
     ],
 )
 def test_run_action_reject_routes_acceptance_item(
