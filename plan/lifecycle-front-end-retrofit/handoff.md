@@ -35,20 +35,42 @@ cd /data/projects/livespec-orchestrator-beads-fabro
   bd show bd-ib-ew7bdv bd-ib-r3vsnd bd-ib-h2tnil bd-ib-q3x6va --json
 ```
 
-## Open gate 1 — Workstream B: proposal ratification (maintainer)
+## Open gate 1 — Workstream B: replacement-proposal ratification (maintainer)
 
-- Artifact:
-  `SPECIFICATION/proposed_changes/pending-approval-to-ready-structural-gate-ownership.md`
-  — `pending-approval → ready` is the structural grooming gate only;
-  all human permission at the admission valve (Scenarios 23/31
-  unchanged).
+Gate 1's first leg is EXECUTED (2026-07-04): the maintainer REJECTED
+the original proposal
+`pending-approval-to-ready-structural-gate-ownership` — it completed
+the v020-Scenario-23/v023 drift toward valve-side approval, the
+opposite of the locked cross-repo design of record (repo
+`thewoolleyman/livespec`, `plan/archive/work-item-state-machine/`,
+decisions 26/32: approval IS the `pending-approval → ready`
+transition; the admission valve is mechanical). The rejection was
+executed via `/livespec:revise` — revision
+`SPECIFICATION/history/v027/` (a pure-reject snapshot, spec files
+byte-identical to v026; the rejected proposal and its
+rejection-revision file are archived there).
+
+- NEW gate-1 artifact awaiting ratification:
+  `SPECIFICATION/proposed_changes/approval-is-the-pending-approval-to-ready-transition.md`
+  — approval IS the `pending-approval → ready` transition (manual: a
+  human's explicit `approve`; auto: automatic at capture/groom time);
+  the admission valve (`ready → active`) is purely mechanical;
+  Scenarios 10/23/31/33 re-expressed; a new ratified `## Work-item
+  state semantics` section carries the maintainer's verbatim
+  rationale plus intent-preservation clauses; the dropped
+  "`admission_policy` governs only the `approve` routing" invariant
+  is ratified doctor-checkable.
 - Next action: the MAINTAINER runs `/livespec:revise` against
-  `SPECIFICATION/` and accepts or rejects the proposal. Do not
+  `SPECIFICATION/` and accepts or rejects the replacement. Do not
   self-revise from a track session.
-- If accepted: verify whether the capture routing needs a follow-up
-  (an effective-`manual` item that passes the Definition-of-Ready
-  checklist would then also proceed to `ready` instead of resting at
-  `pending-approval`); file any follow-up via `capture-work-item`.
+- At ratification: the `tests/heading-coverage.json` co-edit MUST
+  land via the revise `resulting_files[]` mechanism (one added
+  contracts.md H2; three retitled scenarios.md H2s), and the
+  maintainer authorizes filing the implementation rework slice (the
+  A3 `approve:` valve action re-targets to `pending-approval →
+  ready`; the Dispatcher's manual-admission surface point moves to
+  `pending-approval`) — see the proposal's "Implementation impact"
+  paragraph.
 
 ## Open gate 2 — Workstream C: backlog re-triage execution (maintainer)
 
@@ -71,8 +93,9 @@ cd /data/projects/livespec-orchestrator-beads-fabro
    mechanism rationale.
 2. `plan/lifecycle-front-end-retrofit/research/backlog-retriage-draft.md`
    — the gate-2 disposition table.
-3. `SPECIFICATION/proposed_changes/pending-approval-to-ready-structural-gate-ownership.md`
-   — the gate-1 proposal.
+3. `SPECIFICATION/proposed_changes/approval-is-the-pending-approval-to-ready-transition.md`
+   — the gate-1 replacement proposal (the original was rejected at
+   `SPECIFICATION/history/v027/`).
 
 ## Close-out condition
 
