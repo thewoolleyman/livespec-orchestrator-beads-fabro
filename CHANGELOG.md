@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.5.0...v0.6.0) (2026-07-03)
+
+
+### Features
+
+* add migrate tenant command ([e3cb24e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e3cb24e218103720606718014854a01582e11c45))
+
 ## [0.5.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.4.0...v0.5.0) (2026-07-03)
 
 
