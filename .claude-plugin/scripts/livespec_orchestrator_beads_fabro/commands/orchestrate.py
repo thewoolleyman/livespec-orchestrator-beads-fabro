@@ -311,7 +311,12 @@ def _revert_merged_change(
 ) -> dict[str, Any] | None:
     merge_sha = item.audit.merge_sha if item.audit is not None else None
     if not merge_sha:
-        return None
+        return _valve_refusal(
+            action_id=action_id,
+            work_item_id=item.id,
+            domain_error="missing-merge-evidence",
+            summary="reject:regroom refused: no merged change recorded to revert.",
+        )
     resolved_runner = _SubprocessRunner() if runner is None else runner
     result = resolved_runner(argv=("git", "revert", "--no-edit", merge_sha), cwd=repo)
     if result.returncode == 0:
