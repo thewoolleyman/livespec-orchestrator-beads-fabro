@@ -220,9 +220,9 @@ bootstrap:
 # exposes the /livespec:* commands — both are required for the
 # spec-side surface.
 ensure-plugins:
-    claude plugin marketplace add --scope project thewoolleyman/livespec
-    claude plugin marketplace add --scope project thewoolleyman/livespec-driver-claude
-    claude plugin marketplace add --scope project thewoolleyman/livespec-orchestrator-beads-fabro
+    claude plugin marketplace add --scope project thewoolleyman/livespec@release
+    claude plugin marketplace add --scope project thewoolleyman/livespec-driver-claude@release
+    claude plugin marketplace add --scope project thewoolleyman/livespec-orchestrator-beads-fabro@release
     claude plugin install -s project livespec@livespec
     claude plugin install -s project livespec@livespec-driver-claude
     claude plugin install -s project livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro
@@ -239,9 +239,9 @@ ensure-codex-plugins:
         echo "codex CLI not found; skipping host-wide Codex plugin install." >&2
         exit 0
     fi
-    codex plugin marketplace add thewoolleyman/livespec
-    codex plugin marketplace add thewoolleyman/livespec-driver-codex
-    codex plugin marketplace add thewoolleyman/livespec-orchestrator-beads-fabro
+    codex plugin marketplace add thewoolleyman/livespec --ref release
+    codex plugin marketplace add thewoolleyman/livespec-driver-codex --ref release
+    codex plugin marketplace add thewoolleyman/livespec-orchestrator-beads-fabro --ref release
     codex plugin marketplace upgrade livespec
     codex plugin marketplace upgrade livespec-driver-codex
     codex plugin marketplace upgrade livespec-orchestrator-beads-fabro
