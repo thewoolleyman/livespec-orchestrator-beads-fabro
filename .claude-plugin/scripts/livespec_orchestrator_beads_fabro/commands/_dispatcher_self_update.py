@@ -108,9 +108,6 @@ DISPATCHER_SCRIPT_PREFIXES: tuple[str, ...] = (
 )
 
 _DISPATCHER_SCRIPT_PATTERNS: tuple[str, ...] = (
-    ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/*",
-    ".claude-plugin/scripts/bin/*",
-    ".claude-plugin/scripts/_bootstrap.py",
     "commands/_dispatcher_*.py",
     "commands/dispatcher.py",
     "dispatcher.py",
@@ -216,6 +213,12 @@ def _path_is_dispatcher_code(*, path: str) -> bool:
     normalized = path.strip()
     if normalized == "":
         return False
+    for prefix in DISPATCHER_SCRIPT_PREFIXES:
+        if prefix.endswith("/"):
+            if normalized.startswith(prefix):
+                return True
+        elif normalized == prefix:
+            return True
     return any(fnmatchcase(normalized, pattern) for pattern in _DISPATCHER_SCRIPT_PATTERNS)
 
 
