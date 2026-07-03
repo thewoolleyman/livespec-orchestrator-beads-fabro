@@ -122,7 +122,7 @@ def run_action(
             "summary": "Spec-side action requires an explicit livespec lifecycle command.",
         }
     if _is_human_valve_action(action_id=action_id):
-        return run_human_valve_action(repo=repo, action_id=action_id)
+        return run_human_valve_action(repo=repo, action_id=action_id, runner=runner)
     if not action_id.startswith("impl:"):
         return {
             "action_id": action_id,
@@ -159,7 +159,9 @@ def run_action(
     }
 
 
-def run_human_valve_action(*, repo: Path, action_id: str) -> dict[str, Any]:
+def run_human_valve_action(
+    *, repo: Path, action_id: str, runner: CommandRunner | None = None
+) -> dict[str, Any]:
     parsed = _parse_human_valve_action(action_id=action_id)
     if parsed is None:
         return _valve_refusal(
@@ -182,10 +184,12 @@ def run_human_valve_action(*, repo: Path, action_id: str) -> dict[str, Any]:
     if action == "accept":
         return _accept_item(config=config, item=item, action_id=action_id)
     return _reject_item(
+        repo=repo,
         config=config,
         item=item,
         action_id=action_id,
         reject_kind=cast("str", reject_kind),
+        runner=runner,
     )
 
 
@@ -275,14 +279,22 @@ def _accept_item(*, config: StoreConfig, item: WorkItem, action_id: str) -> dict
 
 def _reject_item(
     *,
+    repo: Path,
     config: StoreConfig,
     item: WorkItem,
     action_id: str,
     reject_kind: str,
+    runner: CommandRunner | None,
 ) -> dict[str, Any]:
     if item.status != "acceptance":
         return _invalid_source_state(action_id=action_id, item=item, expected="acceptance")
     target_status = "active" if reject_kind == "rework" else "backlog"
+    if reject_kind == "regroom":
+        revert_refusal = _revert_merged_change(
+            repo=repo, item=item, action_id=action_id, runner=runner
+        )
+        if revert_refusal is not None:
+            return revert_refusal
     update_work_item_status(path=config, item_id=item.id, status=target_status)
     return _valve_success(
         action_id=action_id,
@@ -291,6 +303,24 @@ def _reject_item(
         target_status=target_status,
         assignee=None,
         summary=f"Rejected {item.id}: acceptance -> {target_status}.",
+    )
+
+
+def _revert_merged_change(
+    *, repo: Path, item: WorkItem, action_id: str, runner: CommandRunner | None
+) -> dict[str, Any] | None:
+    merge_sha = item.audit.merge_sha if item.audit is not None else None
+    if not merge_sha:
+        return None
+    resolved_runner = _SubprocessRunner() if runner is None else runner
+    result = resolved_runner(argv=("git", "revert", "--no-edit", merge_sha), cwd=repo)
+    if result.returncode == 0:
+        return None
+    return _valve_refusal(
+        action_id=action_id,
+        work_item_id=item.id,
+        domain_error="revert-failed",
+        summary=f"reject:regroom refused: git revert {merge_sha} failed: {result.stderr}",
     )
 
 

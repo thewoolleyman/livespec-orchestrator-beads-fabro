@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from livespec_orchestrator_beads_fabro.commands import orchestrate
 from livespec_orchestrator_beads_fabro.commands.orchestrate import CommandRun
-from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
+from livespec_orchestrator_beads_fabro.types import AuditRecord, StoreConfig, WorkItem
 
 
 class _Runner:
@@ -64,6 +64,16 @@ def _item(**overrides: object) -> WorkItem:
         superseded_by=None,
     )
     return replace(base, **overrides)
+
+
+def _audit(*, merge_sha: str = "abc123", pr_number: int | None = 7) -> AuditRecord:
+    return AuditRecord(
+        verification_timestamp="2026-06-11T01:00:00Z",
+        commits=(),
+        files_changed=(),
+        merge_sha=merge_sha,
+        pr_number=pr_number,
+    )
 
 
 def _wip_cap(value: int) -> object:
@@ -200,6 +210,43 @@ def test_run_human_valve_action_approve_refuses_unresolvable_assignee(
     assert result["status"] == "failed"
     assert result["domain_error"] == "unresolvable-assignee"
     assert updates == []
+
+
+def test_run_human_valve_action_reject_regroom_refuses_when_revert_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    updates = _install_valve_store(
+        monkeypatch, items=[_item(status="acceptance", audit=_audit(merge_sha="badc0de"))]
+    )
+    runner = _Runner(results=[CommandRun(argv=("git",), returncode=1, stdout="", stderr="boom")])
+
+    result = orchestrate.run_human_valve_action(
+        repo=repo, action_id="reject:bd-ib-123:regroom", runner=runner
+    )
+
+    assert result["status"] == "failed"
+    assert result["domain_error"] == "revert-failed"
+    assert runner.calls == [("git", "revert", "--no-edit", "badc0de")]
+    assert updates == []
+
+
+def test_run_human_valve_action_reject_regroom_without_audit_keeps_legacy_backlog_route(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    updates = _install_valve_store(monkeypatch, items=[_item(status="acceptance")])
+    runner = _Runner(results=[])
+
+    result = orchestrate.run_human_valve_action(
+        repo=repo, action_id="reject:bd-ib-123:regroom", runner=runner
+    )
+
+    assert result["status"] == "green"
+    assert runner.calls == []
+    assert updates == [("bd-ib-123", "backlog", None)]
 
 
 def test_plan_records_failed_next_sources(tmp_path: Path) -> None:
