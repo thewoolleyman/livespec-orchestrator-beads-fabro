@@ -34,6 +34,7 @@ from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
     materialize_work_items,
     read_work_item_comments,
+    read_work_item_native_priorities,
     read_work_items,
     register_custom_statuses,
     update_work_item_rank,
@@ -688,6 +689,15 @@ def test_non_string_required_field_raises_mapping_error(
     with pytest.raises(BeadsMappingError) as excinfo:
         list(read_work_items(path=_config()))
     assert "title" in excinfo.value.detail
+
+
+def test_native_priority_reader_rejects_non_int_priority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_stub(monkeypatch=monkeypatch, records=[_raw_work_item(priority=True)])
+    with pytest.raises(BeadsMappingError) as excinfo:
+        _ = read_work_item_native_priorities(path=_config())
+    assert "priority" in excinfo.value.detail
 
 
 def test_non_string_optional_field_raises_mapping_error(

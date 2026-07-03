@@ -485,62 +485,62 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "spec.md",
     "test": "TODO",
-    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); test id populated as the clause->scenario->test binding lands."
+    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); integration-tier test id populated as the clause->scenario->test binding lands."
   },
   {
     "heading": "## Full autonomous mode",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
-    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); test id populated as the clause->scenario->test binding lands."
+    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); integration-tier test id populated as the clause->scenario->test binding lands."
   },
   {
     "heading": "## Full autonomous mode constraints",
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "test": "TODO",
-    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); test id populated as the clause->scenario->test binding lands."
+    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); integration-tier test id populated as the clause->scenario->test binding lands."
   },
   {
     "heading": "## Scenario 33 — Full autonomous mode auto-admits a manual item",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); test id populated as the clause->scenario->test binding lands."
+    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); integration-tier test id populated as the clause->scenario->test binding lands."
   },
   {
     "heading": "## Scenario 34 — Full autonomous mode auto-accepts an ai-then-human item",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); test id populated as the clause->scenario->test binding lands."
+    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); integration-tier test id populated as the clause->scenario->test binding lands."
   },
   {
     "heading": "## Scenario 35 — Full autonomous mode resolves a needs-human block",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); test id populated as the clause->scenario->test binding lands."
+    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); integration-tier test id populated as the clause->scenario->test binding lands."
   },
   {
     "heading": "## Scenario 36 — Full autonomous mode still escalates the truly-unresolvable",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); test id populated as the clause->scenario->test binding lands."
+    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); integration-tier test id populated as the clause->scenario->test binding lands."
   },
   {
     "heading": "## Scenario 37 — Full autonomous mode is default-off and explicitly armed",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); test id populated as the clause->scenario->test binding lands."
+    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); integration-tier test id populated as the clause->scenario->test binding lands."
   },
   {
     "heading": "## Scenario 38 — capture-spec-drift surfaces ledger intent missing from spec",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "capture-spec-drift ledger-intent scan scenario; test pending (li follow-up)"
+    "reason": "capture-spec-drift ledger-intent scan scenario; integration-tier test pending (li follow-up)"
   }
 ]

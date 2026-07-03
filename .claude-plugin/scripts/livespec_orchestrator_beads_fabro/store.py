@@ -103,6 +103,7 @@ __all__ = [
     "append_work_item",
     "materialize_work_items",
     "read_work_item_comments",
+    "read_work_item_native_priorities",
     "read_work_items",
     "register_custom_statuses",
     "update_work_item_rank",
@@ -187,6 +188,28 @@ def read_work_items(*, path: StoreConfig) -> Iterator[WorkItem]:
     client = make_beads_client(config=path)
     for record in client.list_issues():
         yield _record_to_work_item(record=record)
+
+
+def read_work_item_native_priorities(*, path: StoreConfig) -> dict[str, int]:
+    """Return beads-native priority values keyed by work-item id.
+
+    `WorkItem` deliberately no longer exposes logical `priority`; this
+    narrow migration helper reads the raw native column only for the
+    one-time legacy rank seed ordering. Malformed records raise through
+    the same mapping-error path as normal materialization.
+    """
+    client = make_beads_client(config=path)
+    priorities: dict[str, int] = {}
+    for record in client.list_issues():
+        issue_id = _require_str(record=record, key="id")
+        priority = record.get("priority")
+        if not isinstance(priority, int) or isinstance(priority, bool):
+            raise BeadsMappingError(
+                record_id=issue_id,
+                detail="priority must be an integer",
+            )
+        priorities[issue_id] = priority
+    return priorities
 
 
 @dataclass(frozen=True, kw_only=True)
