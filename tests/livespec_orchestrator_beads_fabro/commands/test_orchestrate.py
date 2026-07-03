@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands import orchestrate
 from livespec_orchestrator_beads_fabro.commands.orchestrate import (
     CommandRun,
     build_dispatcher_argv,
@@ -13,6 +16,7 @@ from livespec_orchestrator_beads_fabro.commands.orchestrate import (
     plan_actions,
     run_action,
 )
+from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 
 class _Runner:
@@ -28,6 +32,83 @@ class _Runner:
 
 def _ok(payload: object, *, argv: tuple[str, ...] = ("cmd",)) -> CommandRun:
     return CommandRun(argv=argv, returncode=0, stdout=json.dumps(payload), stderr="")
+
+
+def _store_config() -> StoreConfig:
+    return StoreConfig(
+        tenant="tenant",
+        prefix="bd-ib",
+        server_user="tenant",
+        database="tenant",
+        bd_path="bd",
+        fake=True,
+    )
+
+
+def _item(**overrides: object) -> WorkItem:
+    base = WorkItem(
+        id="bd-ib-123",
+        type="task",
+        status="ready",
+        title="A ready task",
+        description="Do the thing.",
+        origin="freeform",
+        gap_id=None,
+        rank="a2",
+        assignee=None,
+        depends_on=(),
+        captured_at="2026-06-11T00:00:00Z",
+        resolution=None,
+        reason=None,
+        audit=None,
+        superseded_by=None,
+    )
+    return replace(base, **overrides)
+
+
+def _wip_cap(value: int) -> object:
+    def resolve(*, cwd: Path) -> int:
+        _ = cwd
+        return value
+
+    return resolve
+
+
+def _install_valve_store(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    items: list[WorkItem],
+) -> list[dict[str, Any]]:
+    updates: list[dict[str, Any]] = []
+    config = _store_config()
+
+    def fake_resolve_store_config(*, cwd: Path, work_items_arg: str | None) -> StoreConfig:
+        _ = cwd
+        _ = work_items_arg
+        return config
+
+    def fake_read_work_items(*, path: StoreConfig) -> list[WorkItem]:
+        assert path is config
+        return items
+
+    def fake_update_work_item_status(
+        *,
+        path: StoreConfig,
+        item_id: str,
+        status: str,
+        assignee: str | None = None,
+    ) -> None:
+        assert path is config
+        updates.append({"item_id": item_id, "status": status, "assignee": assignee})
+
+    monkeypatch.setattr(
+        orchestrate, "resolve_store_config", fake_resolve_store_config, raising=False
+    )
+    monkeypatch.setattr(orchestrate, "read_work_items", fake_read_work_items, raising=False)
+    monkeypatch.setattr(
+        orchestrate, "update_work_item_status", fake_update_work_item_status, raising=False
+    )
+    return updates
 
 
 def test_plan_actions_composes_spec_and_impl_next_candidates(tmp_path: Path) -> None:
@@ -156,6 +237,123 @@ def test_run_action_surfaces_spec_actions_as_human_handoff(tmp_path: Path) -> No
     assert result["status"] == "human-gated"
     assert result["handoff"] == "/livespec:revise --spec-target SPECIFICATION/"
     assert runner.calls == []
+
+
+def test_run_action_approve_admits_manual_ready_item(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    updates = _install_valve_store(
+        monkeypatch,
+        items=[_item(admission_policy="manual"), _item(id="bd-ib-active", status="active")],
+    )
+    monkeypatch.setattr(orchestrate, "resolve_wip_cap", _wip_cap(2), raising=False)
+
+    result = run_action(repo=repo, action_id="approve:bd-ib-123", runner=_Runner(results=[]))
+
+    assert result["status"] == "green"
+    assert updates == [{"item_id": "bd-ib-123", "status": "active", "assignee": "fabro"}]
+    assert result["journal"] == {
+        "actor": "operator",
+        "stage": "human-valve-approve",
+        "work_item_id": "bd-ib-123",
+    }
+
+
+def test_run_action_approve_refuses_when_wip_cap_full(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    updates = _install_valve_store(
+        monkeypatch,
+        items=[_item(admission_policy="manual"), _item(id="bd-ib-active", status="active")],
+    )
+    monkeypatch.setattr(orchestrate, "resolve_wip_cap", _wip_cap(1), raising=False)
+
+    result = run_action(repo=repo, action_id="approve:bd-ib-123", runner=_Runner(results=[]))
+
+    assert result["status"] == "failed"
+    assert result["kind"] == "human-valve"
+    assert result["domain_error"] == "wip-cap-exhausted"
+    assert updates == []
+
+
+def test_run_action_accept_transitions_acceptance_item_to_done(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    updates = _install_valve_store(monkeypatch, items=[_item(status="acceptance")])
+
+    result = run_action(repo=repo, action_id="accept:bd-ib-123", runner=_Runner(results=[]))
+
+    assert result["status"] == "green"
+    assert updates == [{"item_id": "bd-ib-123", "status": "done", "assignee": None}]
+    assert result["journal"] == {
+        "actor": "operator",
+        "stage": "human-valve-accept",
+        "work_item_id": "bd-ib-123",
+    }
+
+
+def test_run_action_accept_refuses_non_acceptance_item(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    updates = _install_valve_store(monkeypatch, items=[_item(status="active")])
+
+    result = run_action(repo=repo, action_id="accept:bd-ib-123", runner=_Runner(results=[]))
+
+    assert result["status"] == "failed"
+    assert result["domain_error"] == "invalid-source-state"
+    assert "expected acceptance" in result["summary"]
+    assert updates == []
+
+
+@pytest.mark.parametrize(
+    ("action_id", "target_status", "stage"),
+    [
+        ("reject:bd-ib-123:rework", "active", "human-valve-reject-rework"),
+        ("reject:bd-ib-123:regroom", "backlog", "human-valve-reject-regroom"),
+    ],
+)
+def test_run_action_reject_routes_acceptance_item(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    action_id: str,
+    target_status: str,
+    stage: str,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    updates = _install_valve_store(monkeypatch, items=[_item(status="acceptance")])
+
+    result = run_action(repo=repo, action_id=action_id, runner=_Runner(results=[]))
+
+    assert result["status"] == "green"
+    assert updates == [{"item_id": "bd-ib-123", "status": target_status, "assignee": None}]
+    assert result["journal"] == {
+        "actor": "operator",
+        "stage": stage,
+        "work_item_id": "bd-ib-123",
+    }
+
+
+def test_run_action_reject_refuses_non_acceptance_item(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    updates = _install_valve_store(monkeypatch, items=[_item(status="ready")])
+
+    result = run_action(repo=repo, action_id="reject:bd-ib-123:rework", runner=_Runner(results=[]))
+
+    assert result["status"] == "failed"
+    assert result["domain_error"] == "invalid-source-state"
+    assert updates == []
 
 
 def test_main_plan_emits_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
