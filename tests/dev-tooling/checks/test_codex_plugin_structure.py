@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -71,6 +73,24 @@ _RESOLUTION_BLOCK = (
     "## Resolving the plugin root\n\n"
     "```bash\n"
     'PLUGIN_ROOT="$LIVESPEC_ORCH_PLUGIN_ROOT"\n'
+    'if [ -z "$PLUGIN_ROOT" ] && [ -d "./.claude-plugin/scripts/bin" ]; then\n'
+    '  CANDIDATE_PLUGIN_ROOT="$(pwd)/.claude-plugin"\n'
+    '  if [ -f "$CANDIDATE_PLUGIN_ROOT/plugin.json" ] && '
+    "python3 - \"$CANDIDATE_PLUGIN_ROOT/plugin.json\" <<'PY'\n"
+    "import json\n"
+    "import sys\n"
+    "\n"
+    "try:\n"
+    '    with open(sys.argv[1], encoding="utf-8") as f:\n'
+    "        data = json.load(f)\n"
+    "except Exception:\n"
+    "    sys.exit(1)\n"
+    f'sys.exit(0 if data.get("name") == "{_PLUGIN_NAME}" else 1)\n'
+    "PY\n"
+    "  then\n"
+    '    PLUGIN_ROOT="$CANDIDATE_PLUGIN_ROOT"\n'
+    "  fi\n"
+    "fi\n"
     f"codex plugin list --json -m {_PLUGIN_NAME}\n"
     "```\n"
 )
@@ -191,11 +211,63 @@ def _skill(*, root: Path, op: str) -> Path:
     return _skills_dir(root=root) / op / "SKILL.md"
 
 
+def _live_next_skill() -> Path:
+    return _REPO_ROOT / ".claude-plugin" / ".codex-plugin" / "skills" / "next" / "SKILL.md"
+
+
 def _rewrite_json(*, path: Path, mutate: object) -> None:
     data = json.loads(path.read_text(encoding="utf-8"))
     assert callable(mutate)
     mutate(data)
     _ = path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def _extract_resolution_script(*, skill: Path) -> str:
+    text = skill.read_text(encoding="utf-8")
+    start = text.index('PLUGIN_ROOT="$LIVESPEC_ORCH_PLUGIN_ROOT"')
+    end = text.index('if [ -z "$PLUGIN_ROOT" ] || [ ! -d "$PLUGIN_ROOT/scripts/bin" ]; then')
+    return text[start:end] + 'printf "%s" "$PLUGIN_ROOT"\n'
+
+
+def _write_fake_codex(*, bin_dir: Path, installed_root: Path) -> None:
+    bin_dir.mkdir(parents=True)
+    codex = bin_dir / "codex"
+    _ = codex.write_text(
+        "#!/usr/bin/env bash\n"
+        "cat <<JSON\n"
+        '{"installed":[{"pluginId":"'
+        f"{_PLUGIN_NAME}@{_PLUGIN_NAME}"
+        '","source":{"path":"'
+        f"{installed_root}"
+        '"}}]}\n'
+        "JSON\n",
+        encoding="utf-8",
+    )
+    codex.chmod(0o755)
+
+
+def _write_plugin_candidate(*, root: Path, name: str, with_orchestrator_wrapper: bool) -> None:
+    plugin_root = root / ".claude-plugin"
+    bin_dir = plugin_root / "scripts" / "bin"
+    bin_dir.mkdir(parents=True)
+    _ = (plugin_root / "plugin.json").write_text(json.dumps({"name": name}), encoding="utf-8")
+    if with_orchestrator_wrapper:
+        _ = (bin_dir / "orchestrate.py").write_text("# wrapper\n", encoding="utf-8")
+
+
+def _resolve_skill_root(*, skill: Path, cwd: Path, fake_bin: Path) -> str:
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env.pop("LIVESPEC_ORCH_PLUGIN_ROOT", None)
+    result = subprocess.run(
+        ["bash", "-c", _extract_resolution_script(skill=skill)],
+        cwd=cwd,
+        env=env,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    return result.stdout
 
 
 # --------------------------------------------------------------------------
@@ -219,6 +291,44 @@ def test_pending_set_is_empty() -> None:
     """The P3b extraction is complete: no heavyweight op remains pending."""
     assert frozenset(_PENDING_OPS) == _CHECK._PENDING_CODEX_OPS  # noqa: SLF001
     assert frozenset() == _CHECK._PENDING_CODEX_OPS  # noqa: SLF001
+
+
+def test_codex_resolution_skips_core_like_cwd(tmp_path: Path) -> None:
+    core_like = tmp_path / "core-like"
+    installed_root = tmp_path / "installed"
+    fake_bin = tmp_path / "bin"
+    (installed_root / "scripts" / "bin").mkdir(parents=True)
+    _write_plugin_candidate(root=core_like, name="livespec", with_orchestrator_wrapper=False)
+    _write_fake_codex(bin_dir=fake_bin, installed_root=installed_root)
+
+    resolved = _resolve_skill_root(
+        skill=_live_next_skill(),
+        cwd=core_like,
+        fake_bin=fake_bin,
+    )
+
+    assert resolved == str(installed_root)
+
+
+def test_codex_resolution_accepts_orchestrator_plugin_cwd(tmp_path: Path) -> None:
+    orchestrator_like = tmp_path / "orchestrator-like"
+    installed_root = tmp_path / "installed"
+    fake_bin = tmp_path / "bin"
+    (installed_root / "scripts" / "bin").mkdir(parents=True)
+    _write_plugin_candidate(
+        root=orchestrator_like,
+        name=_PLUGIN_NAME,
+        with_orchestrator_wrapper=True,
+    )
+    _write_fake_codex(bin_dir=fake_bin, installed_root=installed_root)
+
+    resolved = _resolve_skill_root(
+        skill=_live_next_skill(),
+        cwd=orchestrator_like,
+        fake_bin=fake_bin,
+    )
+
+    assert resolved == str(orchestrator_like / ".claude-plugin")
 
 
 # --------------------------------------------------------------------------
