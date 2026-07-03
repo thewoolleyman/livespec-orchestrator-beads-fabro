@@ -23,7 +23,7 @@ name: copier-update-drift
 
 # Bootstrap note (2026-05-19): triggers reduced to workflow_dispatch only
 # until livespec publishes a release tag this repo can pin against
-# (Phase E of research/workflow-processes/multi-repo-split-execution-plan.md).
+# (Phase E of livespec core's archive/research/workflow-processes/multi-repo-split-execution-plan.md).
 # Once a real release tag exists and .copier-answers.yml's compat.pinned is
 # updated to a real value, restore the original pull_request + push +
 # schedule trigger block from livespec/templates/impl-plugin/.github/

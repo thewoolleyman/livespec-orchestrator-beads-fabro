@@ -316,7 +316,7 @@ destructive_cli_allowlist = [
     ".claude-plugin/.fabro/workflows/implement-work-item/prompts/",
     "orchestrator-image/acceptance-live-golden-master.sh",
     "orchestrator-image/reap-e2e-repos.sh",
-    "research/archive/w7-orchestrator-convergence/e2e-repo-reaper.md",
+    "archive/research/w7-orchestrator-convergence/e2e-repo-reaper.md",
 ]
 
 # Path-prefix allowlist for the `tests_no_subprocess_spawn` check: tests
