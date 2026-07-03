@@ -19,7 +19,8 @@ instead.
 
 ## Pre-requisites
 
-- The work-items JSONL store path is reachable.
+- The work-items store (the resolved beads tenant connection) is
+  reachable.
 - `livespec_orchestrator_beads_fabro` package on import path.
 
 ## Flow
@@ -34,7 +35,8 @@ Ask the user (one question at a time):
 Optional follow-ups (skip-confirmable):
 
 - **Assignee** — string or null (default null).
-- **Depends-on** — comma-separated `li-` ids; empty list permitted.
+- **Depends-on** — comma-separated work-item ids (the tenant's
+  configured `<prefix>-XXXXXX` form); empty list permitted.
 - **Spec-commitment-hint** — string `id_hint` or null (default null).
   Supplied via `--spec-commitment-hint <id_hint>` when the work-item
   is being filed in response to a spec-side
@@ -69,7 +71,7 @@ item = WorkItem(
     # carries config.prefix, not a hardcoded `li-`.
     id=new_work_item_id(prefix=config.prefix),
     type=type_,
-    status="open",
+    status="backlog",
     title=title,
     description=description,
     origin="freeform",
