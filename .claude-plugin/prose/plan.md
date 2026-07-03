@@ -123,8 +123,8 @@ may happen this invocation; ask the user which, one at a time:
   - *becomes spec* → hand off to the `propose-change` operation
     (cross-boundary, human-accepts).
   - *becomes ledger work* → file it via the `capture-work-item`
-    operation as a CHILD of the thread's epic anchor (`depends_on` /
-    parent link as appropriate). Routing ripe work into the ledger is
+    operation as a CHILD of the thread's epic anchor (linked via
+    `depends_on`). Routing ripe work into the ledger is
     the second of the two one-directional seams; it always goes through
     `capture-work-item`, never a direct store write. The planning
     session **FILES** ripe work; it does **NOT** hand-code the
