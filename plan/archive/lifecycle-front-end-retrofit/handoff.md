@@ -1,5 +1,19 @@
 # lifecycle-front-end-retrofit — handoff
 
+**THREAD CLOSED 2026-07-03 — epic `bd-ib-ew7bdv` closed
+`resolution:completed`; archived per the plan lifecycle.** All three
+slices landed factory-side: A1 `bd-ib-r3vsnd` (PR #264, `ac0b477`), A2
+`bd-ib-h2tnil` (PR #266, `bcc06f9`), A3 `bd-ib-q3x6va` (PR #270,
+`4000048`). Two maintainer gates were deliberately left open at close
+(follow-ons, not epic scope): (1) the Workstream C disposition table
+(`research/backlog-retriage-draft.md`) awaits approval before any
+status writes; (2) the Workstream B proposal
+(`SPECIFICATION/proposed_changes/pending-approval-to-ready-structural-gate-ownership.md`)
+awaits ratification via `/livespec:revise`. The interim status-flip
+mechanism this thread used is obsolete now that A3's valve actions
+exist. The remainder of this file is the as-closed handoff, kept for
+the record.
+
 Single resumable execution-coordination point for this thread. A fresh
 session should read THIS file, then the read-first chain below, and can
 then execute the next action without consulting chat history.
