@@ -29,6 +29,7 @@ from livespec_orchestrator_beads_fabro.commands._config import resolve_store_con
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflector_oob import (
     _BUDGET_EXCEEDED_MESSAGE,  # pyright: ignore[reportPrivateUsage]
+    GitPrLessonsProposer,
     LessonProposal,
     RecordingLessonsProposer,
     ReflectorFinding,
@@ -967,3 +968,11 @@ def test_run_pass_aborts_when_budget_exceeded_midpass(
         rec.get("reason") for rec in journal.records if rec.get("stage") == "reflector-oob-error"
     ]
     assert any(_BUDGET_EXCEEDED_MESSAGE in str(r) for r in reasons)
+
+
+def test_git_pr_lessons_proposer_defaults_to_top_level_lessons_path() -> None:
+    # The lessons digest lives at the TOP-LEVEL loop-reflection-gate/ home
+    # (moved out of research/, livespec-gt7crt); construction crosses no
+    # runner seam, so no queued results are needed.
+    proposer = GitPrLessonsProposer(runner=_FakeRunner(queue=[]))
+    assert proposer.lessons_path == Path("loop-reflection-gate/lessons.md")

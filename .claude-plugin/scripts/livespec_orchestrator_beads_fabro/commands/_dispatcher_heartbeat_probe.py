@@ -7,7 +7,7 @@ commit / wedged ACP turn produces ZERO spans for the whole hang (the
 run. CC's metrics heartbeat exports on a SHORT interval and keeps
 advancing while an agent turn is genuinely alive, so it is a finer,
 earlier liveness signal than coarse event-stream timestamps (design
-`research/loop-reflection-gate/telemetry-pipeline-architecture.md`
+`loop-reflection-gate/telemetry-pipeline-architecture.md`
 §4.3 / §4.4).
 
 This module adds two seams, both feeding the EXISTING `decide_stall`

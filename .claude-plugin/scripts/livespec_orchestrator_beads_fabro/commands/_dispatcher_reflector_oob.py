@@ -685,7 +685,7 @@ class GitPrLessonsProposer:
     """
 
     runner: CommandRunner
-    lessons_path: Path = Path("research/loop-reflection-gate/lessons.md")
+    lessons_path: Path = Path("loop-reflection-gate/lessons.md")
     branch_prefix: str = "reflector-lesson"
 
     def propose(self, *, proposal: LessonProposal, repo: Path) -> str | None:

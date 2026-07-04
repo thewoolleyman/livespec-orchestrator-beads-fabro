@@ -3,7 +3,7 @@
 Single source of truth for the family's OTel egress hygiene, lifted out
 of `_dispatcher_reflection` so the SAME policy is reused by the reflection
 emitter AND the host-local enrich/scrub stage (`_otel_enrich`). Per
-`research/loop-reflection-gate/telemetry-pipeline-architecture.md` §3.4
+`loop-reflection-gate/telemetry-pipeline-architecture.md` §3.4
 (decision 9) and `cc-otel-gap-analysis.md` §3.6, every span that egresses
 toward Honeycomb passes through this discipline:
 

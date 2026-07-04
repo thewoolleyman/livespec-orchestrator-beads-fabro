@@ -12,18 +12,15 @@ when the thread's epic closes.
 
 ## What lives here
 
-Subdirectories group docs by topic. As of writing:
+Subdirectories group docs by topic. This directory is currently
+EMPTY of topics: its last resident, `loop-reflection-gate/`, moved
+WHOLE to the top-level `loop-reflection-gate/` home (epic
+`livespec-gt7crt`, livespec tenant) because its docs are live
+operational surface — cited as design-of-record by shipping code —
+not completed research. The directory itself remains pending the
+`retire-research-dirs` epic's disposition of the fleet's `research/`
+convention; do not delete it out-of-band.
 
-- `loop-reflection-gate/` — best-practices survey + design docs for
-  the fabro factory loop's eval/audit/reflection gate, plus the
-  human-ratified `lessons.md` digest. **LOAD-BEARING — do not move or
-  archive without a coordinated code change:** the out-of-band
-  reflector's default lessons path is
-  `research/loop-reflection-gate/lessons.md`
-  (`commands/_dispatcher_reflector_oob.py`), and the telemetry
-  modules (`_otel_receive.py`, `_otel_scrub.py`,
-  `_dispatcher_cost_pricing.py`, `_dispatcher_heartbeat_probe.py`)
-  cite these docs as design-of-record.
 Completed research topics are moved WHOLE (one subdirectory per
 topic) to the top-level `archive/research/<topic>/` once their
 work-items close. The former repo-local `research/archive/<topic>/`
