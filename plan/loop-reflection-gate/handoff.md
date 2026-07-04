@@ -4,7 +4,10 @@ Thread state: **LIVE** — opened 2026-07-04 to drive the
 reflection-gate's remaining work; resequenced SPEC-FIRST later the
 same day after a plan-accuracy review found the original next action
 (groom the consumer item directly) skipped the spec lane for behavior
-the spec owns.
+the spec owns. The spec-first gate is now DONE: `/livespec:revise`
+landed SPECIFICATION v030 (2026-07-04), accepting both proposals this
+thread owned; the thread advances to updating and grooming `.10` TO
+those accepted clauses.
 
 Resume command:
 `/livespec-orchestrator-beads-fabro:plan loop-reflection-gate`
@@ -56,11 +59,11 @@ cd /data/projects/livespec-orchestrator-beads-fabro
 - `livespec-impl-beads-29f.10` (backlog) — Lessons brief-injection
   consumer (epic decision 7). The proposer half opens the
   ratification PR; NO code reads the merged
-  `loop-reflection-gate/lessons.md` yet. Its spec contract is now the
-  PENDING proposed change
-  `SPECIFICATION/proposed_changes/lessons-brief-injection.md`
-  (front-matter commitment `lessons-brief-injection-consumer`); the
-  item implements TO those clauses once revise accepts them.
+  `loop-reflection-gate/lessons.md` yet. Its spec contract LANDED in
+  SPECIFICATION v030: `contracts.md` §"Dispatch-brief lessons
+  injection" plus Scenarios 39–40 in `scenarios.md` (front-matter
+  commitment `lessons-brief-injection-consumer`). The item implements
+  TO those accepted clauses.
 - `bd-ib-umno37` (backlog) — post-verdict fail-open stages (cost
   gate, reflection, calibration, self-update canary) ride the ambient
   `GH_TOKEN` instead of the provider accessor; wrap their runners so
@@ -76,9 +79,16 @@ cd /data/projects/livespec-orchestrator-beads-fabro
 
 ## Read-first chain
 
-1. `SPECIFICATION/proposed_changes/lessons-brief-injection.md` — the
-   pending spec contract for the injection consumer (clauses +
-   scenarios + the impl-followup commitment pairing `.10`).
+1. `SPECIFICATION/contracts.md` §"Dispatch-brief lessons injection"
+   and `SPECIFICATION/scenarios.md` Scenarios 39–40 — the LANDED spec
+   contract for the injection consumer (clauses + scenarios). The
+   accept record (decision + rationale + resulting files) is
+   `SPECIFICATION/history/v030/proposed_changes/lessons-brief-injection-revision.md`;
+   the impl-followup commitment `lessons-brief-injection-consumer`
+   pairing `.10` is the front-matter
+   `spec_commitments.impl_followups[].id_hint` of the paired original
+   proposal
+   `SPECIFICATION/history/v030/proposed_changes/lessons-brief-injection.md`.
 2. `loop-reflection-gate/best-practices-and-design.md` — the gate's
    design-of-record and the epic's ratified brainstorm decisions.
 3. `loop-reflection-gate/lessons.md` — the human-ratification
@@ -87,32 +97,43 @@ cd /data/projects/livespec-orchestrator-beads-fabro
 
 ## Next action
 
-From a fresh worktree (cut per Binding constraints), run
-`/livespec:revise`. No `--spec-target` argument is needed (the main
-spec root resolves from `.livespec.jsonc`), and no pre-reading of
-the queue is needed either: revise itself enumerates and processes
-whatever is pending under `SPECIFICATION/proposed_changes/`. This
-thread's stake in that queue is the `lessons-brief-injection`
-contract and the `claude-fable-5-critique` normative-force
-correction it spawned; do not rely on any count of queued proposals
-written here (a concurrent session already processed one within
-hours of this handoff's first cut). The revise pass MUST co-edit
-`tests/heading-coverage.json` for every `## ` heading it adds
-(including the new contracts section and the new scenarios, whose
-numbers are finalized at revise).
+The spec-first gate is complete. `/livespec:revise` landed
+SPECIFICATION v030 (2026-07-04), accepting BOTH proposals this thread
+owned and finalizing scenario numbers against what actually landed:
+
+- `lessons-brief-injection` (accept) → `contracts.md`
+  §"Dispatch-brief lessons injection" + Scenarios 39 (ratified lesson
+  injects) and 40 (unratified / absent / unmerged / unreadable never
+  alter briefs).
+- `claude-fable-5-critique` (accept) → BCP14 restatement of the
+  no-root-research-tree invariant in `contracts.md` §"The
+  `plan/<topic>/` thread store" + Scenario 41.
+
+The out-of-scope `orchestrate-plan-surfaces-unarchived-plan-threads`
+proposal was left pending, untouched, for its own thread (it still
+claims a Scenario 39 provisionally — that renumbers when IT lands,
+since 39–41 are now taken).
+
+**The next action is to update `.10`** so the impl item cites the
+landed contract instead of the epic-description sketch. This is a
+beads write; run from a fresh worktree per Binding constraints, and
+edit the item via the wrapper (`… bd update livespec-impl-beads-29f.10 …`):
+
+- Pair it to the spec commitment via
+  `spec_commitment_hint: lessons-brief-injection-consumer`.
+- Cite `contracts.md` §"Dispatch-brief lessons injection" and
+  Scenarios 39–40 (SPECIFICATION v030) in its description/notes,
+  replacing the epic-description sketch.
+- Stamp its missing `origin:` label (filing hygiene).
 
 Then, in order, in later invocations of this thread:
 
-1. **Update `.10`** — cite the accepted contracts.md section and the
-   landed scenario numbers, pair it to the spec commitment via
-   `spec_commitment_hint: lessons-brief-injection-consumer`, and
-   stamp its missing `origin:` label (filing hygiene).
-2. **Groom `.10`** via
+1. **Groom `.10`** via
    `/livespec-orchestrator-beads-fabro:groom livespec-impl-beads-29f.10`.
    Groomed slices land at `pending-approval`; the maintainer's
    approval is the `pending-approval → ready` transition — slices are
    NOT dispatchable straight out of grooming.
-3. **Dispatch factory-side** — the Dispatcher drains `ready` items
+2. **Dispatch factory-side** — the Dispatcher drains `ready` items
    (or an operator runs `orchestrate`); never inline in a planning
    session.
 
