@@ -1,10 +1,13 @@
 # lifecycle-front-end-retrofit — handoff
 
-Thread state: **LIVE — two open maintainer gates.** Workstream A is
-complete and its epic is closed, but per maintainer direction
-(2026-07-03) a thread with open gates stays under `plan/`; the earlier
-archive was premature and has been reverted. Re-archive ONLY after BOTH
-gates below are executed.
+Thread state: **BOTH GATES EXECUTED 2026-07-04 — nothing blocks the
+re-archive.** Gate 1 (proposal ratification) and gate 2 (backlog
+re-triage) are both executed and recorded below; the authorized rework
+slice is merged, released (v0.9.0), and accepted `done`. The one
+remaining act for this thread is the close-out itself: a docs-only PR
+moving `plan/lifecycle-front-end-retrofit/` to
+`plan/archive/lifecycle-front-end-retrofit/` (this handoff is the
+final note recording both gate outcomes).
 
 Resume command:
 `/livespec-orchestrator-beads-fabro:plan lifecycle-front-end-retrofit`
@@ -35,7 +38,7 @@ cd /data/projects/livespec-orchestrator-beads-fabro
   bd show bd-ib-ew7bdv bd-ib-r3vsnd bd-ib-h2tnil bd-ib-q3x6va --json
 ```
 
-## Open gate 1 — Workstream B: replacement-proposal ratification (maintainer)
+## Gate 1 — Workstream B: replacement-proposal ratification (EXECUTED 2026-07-04)
 
 Gate 1's first leg is EXECUTED (2026-07-04): the maintainer REJECTED
 the original proposal
@@ -122,23 +125,33 @@ rejection-revision file are archived there).
   3. Scenario 10/23 heading-coverage `reason` texts still narrate
      hold-at-valve — accurate for the shipped tests until the
      rework slice lands; refreshed then.
-- Next action: fresh independent Fable RE-VERIFICATION #4 (fleet
-  standing rule: no-blockers verdict required before ratification).
-  Only then the MAINTAINER runs `/livespec:revise` against
-  `SPECIFICATION/` and accepts or rejects the replacement. Do not
-  self-revise from a track session.
-- At ratification: the `tests/heading-coverage.json` co-edit MUST
-  land via the revise `resulting_files[]` mechanism (one added
-  contracts.md H2; three retitled scenarios.md H2s; the refreshed
-  entry reasons above), and the maintainer authorizes filing the
-  implementation rework slice with the expanded scope: (a) the A3
-  `approve:` valve action re-targets to `pending-approval → ready`
-  (the Dispatcher's manual-admission surface point moves to
-  `pending-approval`); (b) the `set-admission:` / `set-acceptance:`
-  policy-edit actions are implemented (a store-seam policy updater
-  mirroring `update_work_item_status`) — see the proposal's
-  "Implementation impact" paragraph. The revise pass itself files
-  nothing; the rework slice is a separate post-ratification act.
+- **GATE 1 FULLY EXECUTED 2026-07-04.** After five verification
+  passes (the final one returning no blockers on the four-times-
+  amended proposal), the maintainer RATIFIED the replacement. The
+  accept revise cut `SPECIFICATION/history/v029/` and landed via
+  PR #303 (merge `b55ecc1`): all 46 replace-edits applied
+  (exactly-one-match asserted per target), the new "## Work-item
+  state semantics" section with the intent-preservation clauses,
+  the `admission_policy` invariant, the policy-edit operator
+  actions, and the `tests/heading-coverage.json` co-edit (new
+  entry with tier-acknowledging TODO reason; three retitled
+  scenario headings + Scenario 10's `clauses[].scenario`;
+  Scenario 31 / Dispatcher-admission reasons refreshed; Scenario
+  10/23 test bindings kept for the rework slice). `just check`
+  green (54 targets).
+- **Rework slice EXECUTED.** `bd-ib-7cpgeh` ("Rework approve: to
+  pending-approval→ready + implement set-admission:/set-acceptance:
+  policy-edit actions") — filed via the consented capture seam on
+  the ratification authorization, routed `ready` by the intake
+  Definition-of-Ready checklist (admission `auto`), factory-
+  dispatched (`orchestrate run --action impl:bd-ib-7cpgeh`), merged
+  green via PR #305 (merge `9503866`, released as v0.9.0), AI
+  acceptance pass run, parked at `acceptance`, and human-leg
+  accepted to `done` via `orchestrate run --action
+  accept:bd-ib-7cpgeh` (journaled) on the directive's "merge and
+  closure" authorization. The pass-3 follow-up candidate (3) —
+  Scenario 10/23 heading-coverage reasons — was resolved by the
+  slice itself (it re-bound the scenario tests).
 - Verifier advisory 6 (the `livespec_runtime` invariant gloss
   divergence) is RESOLVED as moot by the second amendment: the
   proposal now keeps the "(the structural grooming gate)" gloss
@@ -146,19 +159,31 @@ rejection-revision file are archived there).
   ratified twin (repo `thewoolleyman/livespec-runtime`) — no
   runtime-side follow-up is needed for this gloss.
 
-## Open gate 2 — Workstream C: backlog re-triage execution (maintainer)
+## Gate 2 — Workstream C: backlog re-triage (EXECUTED 2026-07-04)
 
-- Artifact: `research/backlog-retriage-draft.md` in this thread — the
-  DRAFT per-item disposition table (drawn 2026-07-03: 11 →
-  pending-approval / 6 stay backlog / 3 → blocked). NO status writes
-  have been made.
-- Next action: the MAINTAINER approves (or edits) the table. Only
-  then execute the approved dispositions ONE item at a time,
-  re-reading each item's live state first (a console session
-  consolidates items on this tenant; the draft's reasoning holds, the
-  ledger holds the truth). Use the store seam / `bd update`, and set
-  `blocked_reason` on items routed to `blocked`. Where a disposition
-  is an admission decision, prefer the A3 valve actions.
+The maintainer approved execute-as-drafted (including the two flagged
+items: `bd-ib-cur` with the auto-normalize choice fixed in its journal
+comment; `bd-ib-webwai` newly unblocked). Executed one item at a time,
+re-reading each item's live state first — all 20 table premises held
+(every item still `backlog`), so there were ZERO skips:
+
+- 10 → `pending-approval`: `bd-ib-3m44nx`, `bd-ib-9ch`, `bd-ib-cur`,
+  `bd-ib-h55`, `bd-ib-hkzcfb`, `bd-ib-ls32yb`, `bd-ib-mwz`,
+  `bd-ib-umno37`, `bd-ib-v5n`, `bd-ib-webwai`.
+- 3 → `blocked`: `bd-ib-ss7rkr` + `bd-ib-w4iaaf`
+  (`blocked-reason:needs-human`), `livespec-impl-beads-zsl`
+  (`blocked-reason:infra-external`).
+- 7 stay `backlog` (no writes): `bd-ib-82a`, `bd-ib-k5p`,
+  `bd-ib-un226z`, `bd-ib-z2ctra`, `livespec-impl-beads-29f`,
+  `livespec-impl-beads-bqq`, `livespec-impl-beads-zbl`.
+
+Every write is journaled as a comment on the item naming the actor
+and the table's reason. Note: the draft's summary tally line said
+"11 → pending-approval · 6 stay backlog", but its table rows
+enumerate 10 → pending-approval and 7 stays — the per-row
+dispositions are the approved record and were executed as drafted;
+the tally line simply miscounted. See the execution record appended
+to `research/backlog-retriage-draft.md`.
 
 ## Read-first chain
 
@@ -167,8 +192,9 @@ rejection-revision file are archived there).
    mechanism rationale.
 2. `plan/lifecycle-front-end-retrofit/research/backlog-retriage-draft.md`
    — the gate-2 disposition table.
-3. `SPECIFICATION/proposed_changes/approval-is-the-pending-approval-to-ready-transition.md`
-   — the gate-1 replacement proposal (the original was rejected at
+3. `SPECIFICATION/history/v029/proposed_changes/approval-is-the-pending-approval-to-ready-transition.md`
+   — the gate-1 replacement proposal, RATIFIED at v029 with its accept
+   revision file beside it (the original was rejected at
    `SPECIFICATION/history/v027/`).
 
 ## Close-out condition
