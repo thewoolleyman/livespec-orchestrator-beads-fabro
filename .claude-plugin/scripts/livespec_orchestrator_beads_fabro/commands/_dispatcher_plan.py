@@ -124,6 +124,12 @@ SIBLING_CLONES_ROOT_ENV_VAR = "LIVESPEC_SIBLING_CLONES_ROOT"
 # (`<clones_root>/livespec/.claude-plugin`); `_CORE_SIBLING_SLUG` is the livespec
 # CORE repo's clone slug.
 CORE_PLUGIN_ROOT_ENV_VAR = "LIVESPEC_CORE_PLUGIN_ROOT"
+
+# Factory dispatch makes undeterminable plugin currency fail hard inside every
+# sandbox, matching livespec core Design D2. This is non-secret policy, not a
+# credential.
+CURRENCY_GATE_ENV_VAR = "LIVESPEC_CURRENCY_GATE"
+CURRENCY_GATE_ENV_VALUE = "fail"
 _CORE_SIBLING_SLUG = "livespec"
 
 # The lever that overrides where the in-sandbox Claude-Code OTel export
@@ -934,6 +940,7 @@ def render_run_config_overlay(  # noqa: PLR0913 — kw-only pure overlay builder
         if siblings is None
         else f"{SIBLING_CLONES_ROOT_ENV_VAR} = {json.dumps(siblings.clones_root)}\n"
     )
+    currency_gate_env_line = f"{CURRENCY_GATE_ENV_VAR} = {json.dumps(CURRENCY_GATE_ENV_VALUE)}\n"
     core_plugin_env_line = _core_plugin_env_line(siblings=siblings)
     otel_env_lines = _otel_env_lines(otel_env=otel_env)
     codex_steps = _codex_auth_prepare_steps_block(codex_auth_snapshot=codex_auth_snapshot)
@@ -949,6 +956,7 @@ def render_run_config_overlay(  # noqa: PLR0913 — kw-only pure overlay builder
         + f"GH_TOKEN = {github_token_literal}\n"
         + sibling_env_line
         + core_plugin_env_line
+        + currency_gate_env_line
         + otel_env_lines
         + codex_env_lines
     )
