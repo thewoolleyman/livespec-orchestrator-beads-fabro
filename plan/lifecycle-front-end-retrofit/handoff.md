@@ -67,20 +67,43 @@ rejection-revision file are archived there).
   no-surprise-transitions rule (a policy edit never moves an item
   between states; a `manual → auto` flip on a `pending-approval`
   item still requires an explicit `approve:<id>`).
-- Next action: the MAINTAINER runs `/livespec:revise` against
+- AMENDED 2026-07-04 per the independent Fable verification (3
+  blockers, all fixed in the proposal text): the missed risk-dial
+  drift carrier ("admission + reversibility" → "the `approve` gate +
+  reversibility"); Scenario 10's Feature stanza now fully specified;
+  the maintainer quote made byte-exact to the transcript (capital
+  "Piling", with a do-not-correct note). The verifier's advisories
+  are folded into the same amendment: a drift-residue sweep (new
+  proposal section I — enumeration counts, "two human valves"
+  phrasing, machine-path verb lists, groom-output texts), the
+  ratification payload now explicitly spans contracts.md,
+  scenarios.md, spec.md, AND constraints.md plus the
+  heading-coverage co-edit (Scenario 31's stale entry reason
+  refreshed; Scenarios 10/23 test bindings kept or TODO'd, never
+  renamed to not-yet-existing tests), and the implementation-impact
+  paragraph now states the revise pass files nothing.
+- Next action: independent Fable RE-VERIFICATION (fleet standing
+  rule: no-blockers verdict required before ratification). Only
+  then the MAINTAINER runs `/livespec:revise` against
   `SPECIFICATION/` and accepts or rejects the replacement. Do not
   self-revise from a track session.
 - At ratification: the `tests/heading-coverage.json` co-edit MUST
   land via the revise `resulting_files[]` mechanism (one added
-  contracts.md H2; three retitled scenarios.md H2s), and the
-  maintainer authorizes filing the implementation rework slice with
-  the expanded scope: (a) the A3 `approve:` valve action re-targets
-  to `pending-approval → ready` (the Dispatcher's manual-admission
-  surface point moves to `pending-approval`); (b) the
-  `set-admission:` / `set-acceptance:` policy-edit actions are
-  implemented (a store-seam policy updater mirroring
-  `update_work_item_status`) — see the proposal's "Implementation
-  impact" paragraph.
+  contracts.md H2; three retitled scenarios.md H2s; the refreshed
+  entry reasons above), and the maintainer authorizes filing the
+  implementation rework slice with the expanded scope: (a) the A3
+  `approve:` valve action re-targets to `pending-approval → ready`
+  (the Dispatcher's manual-admission surface point moves to
+  `pending-approval`); (b) the `set-admission:` / `set-acceptance:`
+  policy-edit actions are implemented (a store-seam policy updater
+  mirroring `update_work_item_status`) — see the proposal's
+  "Implementation impact" paragraph. The revise pass itself files
+  nothing; the rework slice is a separate post-ratification act.
+- Possible follow-up (verifier advisory 6, OUT of this repo's
+  scope): the shared `livespec_runtime` work-items invariant gloss
+  diverges from the restored semantics; if confirmed after
+  ratification, propose the fix in the runtime's owning repo
+  (`thewoolleyman/livespec-runtime`), not here.
 
 ## Open gate 2 — Workstream C: backlog re-triage execution (maintainer)
 
