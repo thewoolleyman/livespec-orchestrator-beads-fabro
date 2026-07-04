@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.8.2...v0.9.0) (2026-07-04)
+
+
+### Features
+
+* align orchestrate approval policy actions ([9503866](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/950386661a994fe6ed719cfb5edd4f20c5f03513))
+
 ## [0.8.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.8.1...v0.8.2) (2026-07-04)
 
 
