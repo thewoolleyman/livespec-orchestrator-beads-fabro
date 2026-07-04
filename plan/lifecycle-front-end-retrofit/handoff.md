@@ -95,7 +95,26 @@ rejection-revision file are archived there).
   `clauses[].scenario` string; new I11 sharpens the Scenario 35/37
   "collapsed valve" / "human-delegable valves" narrative residue to
   gate-vocabulary.
-- Next action: fresh independent Fable RE-VERIFICATION #3 (fleet
+- THIRD AMENDMENT 2026-07-04 per verification pass #3 (one minor
+  blocker + one advisory, both fixed): new I12 rewords the two
+  surviving valve-vocabulary sentences in the `orchestrate` "Human
+  valve actions" paragraph ("human-TRIGGERED valve commands" →
+  "human-TRIGGERED operator commands"; "The valve-action behavior"
+  → "The operator-action behavior"), and B4 now also rewords its
+  adjacent gloss to "(the authoritative gate + valve contract is
+  §…)".
+- Post-ratification follow-up candidates recorded by pass #3
+  (deliberately NOT folded into the proposal):
+  1. Surface names retaining "valve" as NAMING — the contracts
+     "Human valve actions" label, Scenario 31's H2/Feature line,
+     and the "operator valve surface" phrase — eligible for a
+     rename in a follow-up, deliberately not churned now.
+  2. §"Consent boundary" machine-path list stays cross-referenced
+     rather than extended.
+  3. Scenario 10/23 heading-coverage `reason` texts still narrate
+     hold-at-valve — accurate for the shipped tests until the
+     rework slice lands; refreshed then.
+- Next action: fresh independent Fable RE-VERIFICATION #4 (fleet
   standing rule: no-blockers verdict required before ratification).
   Only then the MAINTAINER runs `/livespec:revise` against
   `SPECIFICATION/` and accepts or rejects the replacement. Do not
