@@ -94,6 +94,7 @@ def resolve_store_config(
         server_port=server_port,
         socket=socket,
         fake=fake,
+        repo_root=cwd,
     )
 
 

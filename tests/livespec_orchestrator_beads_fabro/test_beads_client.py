@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -519,6 +520,46 @@ def test_run_json_builds_argv_and_parses(monkeypatch: pytest.MonkeyPatch) -> Non
     # connection flags are appended (they belong to `bd`'s `init` verb).
     assert seen[0] == ["/managed/bd", "list", "--status", "all", "--limit", "0", "--json"]
     assert "--server" not in seen[0]
+
+
+def test_run_json_invokes_bd_from_config_repo_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    beads_dir = tmp_path / ".beads"
+    beads_dir.mkdir()
+    _ = (beads_dir / "config.yaml").write_text(
+        "dolt.server-user: t-user\n" "dolt.database: t\n",
+        encoding="utf-8",
+    )
+    client = ShellBeadsClient(config=_config(repo_root=tmp_path))
+    seen: list[Path | None] = []
+
+    def _fake_run(argv: list[str], **kw: object) -> subprocess.CompletedProcess[str]:
+        _ = argv
+        cwd = kw.get("cwd")
+        seen.append(cwd if isinstance(cwd, Path) else None)
+        return subprocess.CompletedProcess(args=argv, returncode=0, stdout="[]", stderr="")
+
+    monkeypatch.setattr("livespec_orchestrator_beads_fabro._beads_client.subprocess.run", _fake_run)
+    _ = client.list_issues()
+    assert seen == [tmp_path]
+
+
+def test_run_json_rejects_repo_root_with_mismatched_beads_tenant(tmp_path: Path) -> None:
+    beads_dir = tmp_path / ".beads"
+    beads_dir.mkdir()
+    _ = (beads_dir / "config.yaml").write_text(
+        "dolt.server-user: other-user\n" "dolt.database: other-db\n",
+        encoding="utf-8",
+    )
+    client = ShellBeadsClient(config=_config(repo_root=tmp_path))
+
+    with pytest.raises(BeadsConnectionError) as excinfo:
+        _ = client.list_issues()
+    message = str(excinfo.value)
+    assert "does not match resolved StoreConfig" in message
+    assert "dolt.database=other-db" in message
 
 
 def test_run_void_builds_argv_and_runs(monkeypatch: pytest.MonkeyPatch) -> None:
