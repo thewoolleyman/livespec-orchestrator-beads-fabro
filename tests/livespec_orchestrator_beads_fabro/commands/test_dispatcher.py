@@ -1207,6 +1207,7 @@ _DEV_TOOLING_CLONE_STEP_LINE = (
 )
 
 _SIBLING_ENV_LINE = 'LIVESPEC_SIBLING_CLONES_ROOT = "/workspace/siblings"'
+_CURRENCY_GATE_ENV_LINE = 'LIVESPEC_CURRENCY_GATE = "fail"'
 
 # The console's `check-doctor-static` resolves livespec CORE inside the Fabro
 # sandbox via this projected env key, valued at the in-sandbox core-sibling
@@ -1389,15 +1390,16 @@ def test_committed_implement_workflow_overlay_carries_full_fleet_sandbox_env() -
     )
     assert rendered is not None
     env_table_at = rendered.index("[environments.livespec-ci.env]")
-    required_sandbox_env_keys = (
-        "CLAUDE_CODE_OAUTH_TOKEN",
-        "GH_TOKEN",
-        "LIVESPEC_SIBLING_CLONES_ROOT",
-        "LIVESPEC_CORE_PLUGIN_ROOT",
+    required_sandbox_env_lines = (
+        _FAKE_TOKEN_LINE,
+        _FAKE_GITHUB_TOKEN_LINE,
+        _SIBLING_ENV_LINE,
+        _CORE_PLUGIN_ROOT_ENV_LINE,
+        _CURRENCY_GATE_ENV_LINE,
     )
-    for key in required_sandbox_env_keys:
-        assert f"{key} = " in rendered, f"overlay missing required sandbox env key: {key}"
-        assert rendered.index(f"{key} = ") > env_table_at
+    for line in required_sandbox_env_lines:
+        assert line in rendered, f"overlay missing required sandbox env line: {line}"
+        assert rendered.index(line) > env_table_at
 
 
 # ---------------------------------------------------------------------------
