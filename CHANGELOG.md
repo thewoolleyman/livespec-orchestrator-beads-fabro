@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.9.0...v0.9.1) (2026-07-04)
+
+
+### Bug Fixes
+
+* project currency gate into dispatch overlay ([1e3df57](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1e3df57dbfee4c3e00a6b030b7392978b59c4a43))
+
 ## [0.9.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.8.2...v0.9.0) (2026-07-04)
 
 
