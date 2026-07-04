@@ -126,6 +126,12 @@ edit the item via the wrapper (`… bd update livespec-impl-beads-29f.10 …`):
   replacing the epic-description sketch.
 - Stamp its missing `origin:` label (filing hygiene).
 
+Scope this pass to the `.10` update ALONE: do NOT groom or dispatch
+(those are the sequenced later steps below), and do NOT touch
+`bd-ib-umno37` or any sibling item beyond the opportunistic
+origin-label hygiene noted below. One action per pass keeps the thread
+auditable.
+
 Then, in order, in later invocations of this thread:
 
 1. **Groom `.10`** via
