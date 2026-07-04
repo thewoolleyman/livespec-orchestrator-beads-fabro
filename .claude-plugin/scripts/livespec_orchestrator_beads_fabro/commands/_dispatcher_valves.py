@@ -5,12 +5,12 @@ the two human-delegable policy valves that bracket the WIP-limited autonomous
 middle of the work-item lifecycle, per the admission / WIP-cap / post-merge
 acceptance contract in SPECIFICATION/contracts.md:
 
-- **Admission (`ready -> active`).** When a WIP slot frees, the Dispatcher
-  admits the highest-`rank` admission-eligible `ready` item — eligible =
-  effective `admission_policy == "auto"` AND a resolvable assignee — sets its
-  `assignee`, and transitions it to `active`. A `manual` (or `None` ->
-  inherit -> `manual`) item is HELD at the valve (surfaced for the maintainer
-  to approve), never auto-admitted. The per-repo WIP cap
+- **Approval (`pending-approval -> ready`) + admission (`ready -> active`).**
+  The Dispatcher surfaces effective-`manual` `pending-approval` items for a
+  human `approve:` and auto-approves only effective-`auto` items into `ready`.
+  Once an item is `ready`, admission is mechanical: when a WIP slot frees, the
+  Dispatcher admits the highest-`rank` ready item with a resolvable assignee,
+  sets its `assignee`, and transitions it to `active`. The per-repo WIP cap
   (`livespec-orchestrator-beads-fabro.dispatcher.wip_cap` in `.livespec.jsonc`,
   default 5) bounds how many items are driven into `active` at once.
 - **Post-merge acceptance (`acceptance -> done`).** `complete` merges on
@@ -103,13 +103,16 @@ _WIP_CAP_KEY = "wip_cap"
 class AdmissionPlan:
     """The admission decision over a rank-sorted ready candidate set.
 
-    `admitted` carries each `(item, assignee)` to drive `ready -> active`;
-    `held` carries each `(item, reason)` the maintainer must act on (a
-    `manual-admission` approval or an `unresolvable-assignee` assignment).
+    `approved` carries each effective-`auto` pending item to drive
+    `pending-approval -> ready`; `admitted` carries each `(item, assignee)` to
+    drive `ready -> active`; `held` carries each `(item, reason)` the
+    maintainer must act on (a `manual-admission` approval or an
+    `unresolvable-assignee` assignment).
     A capacity-deferred admission-eligible item (one beyond the free WIP
     slots) appears in NEITHER list — it simply waits for the next pass.
     """
 
+    approved: tuple[WorkItem, ...]
     admitted: tuple[tuple[WorkItem, str], ...]
     held: tuple[tuple[WorkItem, str], ...]
 
@@ -190,29 +193,35 @@ def plan_admissions(
     free_slots: int,
     resolve_assignee: Callable[..., str | None],
 ) -> AdmissionPlan:
-    """Plan which rank-sorted ready items to admit, hold, or defer.
+    """Plan which rank-sorted candidates to approve, admit, hold, or defer.
 
-    `ready_items` MUST already be in admission order (highest-rank first);
-    `free_slots` is the number of WIP slots available (`wip_cap -
-    active_count`, floored at 0). Each item resolves to exactly one of:
+    `ready_items` MUST already be in dispatch order and may contain `ready`
+    items plus `pending-approval` items whose dependencies are clear. Each item
+    resolves to exactly one of:
 
-    - HELD with `manual-admission` — effective `admission_policy != "auto"`
-      (the safe default), surfaced for an explicit human approval.
-    - HELD with `unresolvable-assignee` — `auto`, but `resolve_assignee`
-      returns `None` (no assignee to drive the work).
-    - ADMITTED — `auto` + resolvable + a free slot remains.
-    - DEFERRED (in neither list) — `auto` + resolvable but no free slot left;
-      it waits for the next pass.
+    - HELD with `manual-admission` — a `pending-approval` item whose effective
+      `admission_policy != "auto"`, surfaced for explicit human approval.
+    - APPROVED — a `pending-approval` item whose effective policy is `auto`; it
+      moves to `ready` and may also be admitted in the same pass if capacity is
+      available.
+    - HELD with `unresolvable-assignee` — approved/ready, but
+      `resolve_assignee` returns `None` (no assignee to drive the work).
+    - ADMITTED — ready + resolvable + a free slot remains.
+    - DEFERRED (in neither admitted nor held) — ready + resolvable but no free
+      slot left; it waits at `ready` for the next pass.
 
-    Holds are independent of capacity (a manual item is always surfaced);
-    only admissions consume the free slots, filling them highest-rank first.
+    `admission_policy` gates only the pending approval transition. Once an item
+    is `ready`, admission to `active` is mechanical.
     """
+    approved: list[WorkItem] = []
     admitted: list[tuple[WorkItem, str]] = []
     held: list[tuple[WorkItem, str]] = []
     for item in ready_items:
-        if effective_admission_policy(item=item) != _AUTO_ADMISSION:
-            held.append((item, _HELD_MANUAL))
-            continue
+        if item.status == "pending-approval":
+            if effective_admission_policy(item=item) != _AUTO_ADMISSION:
+                held.append((item, _HELD_MANUAL))
+                continue
+            approved.append(item)
         assignee = resolve_assignee(item=item)
         if assignee is None:
             held.append((item, _HELD_UNRESOLVABLE))
@@ -220,7 +229,7 @@ def plan_admissions(
         if len(admitted) >= free_slots:
             continue
         admitted.append((item, assignee))
-    return AdmissionPlan(admitted=tuple(admitted), held=tuple(held))
+    return AdmissionPlan(approved=tuple(approved), admitted=tuple(admitted), held=tuple(held))
 
 
 def acceptance_decision(*, policy: str) -> AcceptanceDecision:
@@ -259,10 +268,10 @@ def admission_held_detail(*, item_id: str, reason: str) -> str:
     """
     if reason == _HELD_MANUAL:
         return (
-            f"admission held: work-item {item_id} has effective admission_policy "
-            "manual and has not been explicitly approved by a human — it is "
-            "surfaced for the maintainer to approve into ready, never "
-            "auto-dispatched (risky/irreversible work is held at admission)."
+            f"approval held: work-item {item_id} has effective admission_policy "
+            "manual and rests at pending-approval until a human explicitly "
+            "approves it into ready; the Dispatcher never auto-approves "
+            "risky/irreversible work."
         )
     return (
         f"admission held: work-item {item_id} could not be admitted because its "

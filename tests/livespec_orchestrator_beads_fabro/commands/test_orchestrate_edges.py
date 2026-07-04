@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -76,20 +77,6 @@ def _audit(*, merge_sha: str = "abc123", pr_number: int | None = 7) -> AuditReco
     )
 
 
-def _wip_cap(value: int) -> object:
-    def resolve(*, cwd: Path) -> int:
-        _ = cwd
-        return value
-
-    return resolve
-
-
-def _no_assignee(*, item: WorkItem) -> str | None:
-    _ = item
-    value: str | None = None
-    return value
-
-
 def _install_valve_store(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -121,6 +108,15 @@ def _install_valve_store(
     monkeypatch.setattr(orchestrate, "read_work_items", fake_read_work_items)
     monkeypatch.setattr(orchestrate, "update_work_item_status", fake_update_work_item_status)
     return updates
+
+
+def test_red_commit_wip_cap_helper_remains_covered(tmp_path: Path) -> None:
+    module = importlib.import_module(
+        "tests.livespec_orchestrator_beads_fabro.commands.test_orchestrate"
+    )
+    resolver = module._wip_cap(3)  # noqa: SLF001 - cover byte-frozen Red helper from Green file.
+
+    assert resolver(cwd=tmp_path) == 3
 
 
 def test_run_human_valve_action_accept_success_updates_store(
@@ -177,7 +173,7 @@ def test_run_human_valve_action_approve_refuses_non_ready(
 
     assert result["status"] == "failed"
     assert result["domain_error"] == "invalid-source-state"
-    assert "expected ready" in result["summary"]
+    assert "expected pending-approval" in result["summary"]
     assert updates == []
 
 
@@ -186,7 +182,9 @@ def test_run_human_valve_action_approve_refuses_auto_policy(
 ) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
-    updates = _install_valve_store(monkeypatch, items=[_item(admission_policy="auto")])
+    updates = _install_valve_store(
+        monkeypatch, items=[_item(status="pending-approval", admission_policy="auto")]
+    )
 
     result = orchestrate.run_human_valve_action(repo=repo, action_id="approve:bd-ib-123")
 
@@ -196,19 +194,18 @@ def test_run_human_valve_action_approve_refuses_auto_policy(
     assert updates == []
 
 
-def test_run_human_valve_action_approve_refuses_unresolvable_assignee(
+def test_run_human_valve_action_approve_refuses_ready_item(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     updates = _install_valve_store(monkeypatch, items=[_item(admission_policy="manual")])
-    monkeypatch.setattr(orchestrate, "resolve_wip_cap", _wip_cap(5))
-    monkeypatch.setattr(orchestrate, "resolve_assignee", _no_assignee)
 
     result = orchestrate.run_human_valve_action(repo=repo, action_id="approve:bd-ib-123")
 
     assert result["status"] == "failed"
-    assert result["domain_error"] == "unresolvable-assignee"
+    assert result["domain_error"] == "invalid-source-state"
+    assert "expected pending-approval" in result["summary"]
     assert updates == []
 
 

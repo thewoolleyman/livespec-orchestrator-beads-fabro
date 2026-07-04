@@ -37,6 +37,7 @@ from livespec_orchestrator_beads_fabro.store import (
     read_work_item_native_priorities,
     read_work_items,
     register_custom_statuses,
+    update_work_item_policy,
     update_work_item_rank,
     update_work_item_status,
 )
@@ -201,6 +202,25 @@ def test_update_work_item_status_transitions_and_sets_assignee_in_place() -> Non
     update_work_item_status(path=_config(), item_id="li-st", status="acceptance")
     [read_back] = list(read_work_items(path=_config()))
     assert (read_back.status, read_back.assignee) == ("acceptance", "fabro")
+
+
+def test_update_work_item_policy_noop_leaves_item_unchanged() -> None:
+    append_work_item(
+        path=_config(),
+        item=_minimal_work_item(
+            id_="li-pol-noop",
+            admission_policy="manual",
+            acceptance_policy="ai-then-human",
+        ),
+    )
+
+    update_work_item_policy(path=_config(), item_id="li-pol-noop")
+
+    [read_back] = list(read_work_items(path=_config()))
+    assert (read_back.admission_policy, read_back.acceptance_policy) == (
+        "manual",
+        "ai-then-human",
+    )
 
 
 def test_legacy_rank_less_record_reads_bottom_sentinel(

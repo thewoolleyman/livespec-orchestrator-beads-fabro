@@ -4,7 +4,7 @@ Binds SPECIFICATION/scenarios.md "Scenario 10 — Dispatcher refuses a
 human-gated item". Under the work-item-state-machine lifecycle the prior
 `human-gated` text marker is REPLACED by the first-class `admission_policy`
 field (per SPECIFICATION/contracts.md): a spec-change / risky item is held at
-the admission valve as `admission_policy=manual` (the safe default via
+`pending-approval` as `admission_policy=manual` (the safe default via
 inherit) and surfaced for the maintainer to approve into `ready`, rather than
 auto-dispatched into a Fabro sandbox. This is the realization of Scenario 10's
 "spec change always reaches the maintainer, never the factory".
@@ -102,7 +102,7 @@ def _item(**overrides: object) -> WorkItem:
     base = WorkItem(
         id="livespec-impl-beads-t1",
         type="task",
-        status="ready",
+        status="pending-approval",
         title="A ready task",
         description="Do the thing.",
         origin="freeform",
@@ -183,7 +183,11 @@ def test_dispatch_holds_manual_admission_item_without_launching_fabro(
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     # No explicit admission_policy -> effective `manual`: a spec-change slice
     # the maintainer must approve, never auto-dispatched.
-    item = _item(title="Revise the boundary rule", description="Spec-change slice.")
+    item = _item(
+        status="pending-approval",
+        title="Revise the boundary rule",
+        description="Spec-change slice.",
+    )
     append_work_item(path=_config(), item=item)
     recording = _RecordingRunDispatch()
     monkeypatch.setattr(dispatcher, "run_dispatch", recording)
@@ -210,8 +214,8 @@ def test_dispatch_holds_manual_admission_item_without_launching_fabro(
     assert payload[0]["status"] == "failed"
     assert payload[0]["stage"] == "admission-held"
     assert "manual" in payload[0]["detail"]
-    # The item is NOT admitted — it stays `ready` for the maintainer to approve.
-    assert _stored()[item.id].status == "ready"
+    # The item is NOT approved or admitted; it stays `pending-approval`.
+    assert _stored()[item.id].status == "pending-approval"
 
 
 def test_dispatch_journals_admission_held(
@@ -219,7 +223,7 @@ def test_dispatch_journals_admission_held(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
-    item = _item()
+    item = _item(status="pending-approval")
     append_work_item(path=_config(), item=item)
     recording = _RecordingRunDispatch()
     monkeypatch.setattr(dispatcher, "run_dispatch", recording)

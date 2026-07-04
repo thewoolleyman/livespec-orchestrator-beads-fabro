@@ -19,12 +19,12 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
-from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
-    effective_admission_policy,
-    resolve_assignee,
-    resolve_wip_cap,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import effective_admission_policy
+from livespec_orchestrator_beads_fabro.store import (
+    read_work_items,
+    update_work_item_policy,
+    update_work_item_status,
 )
-from livespec_orchestrator_beads_fabro.store import read_work_items, update_work_item_status
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 __all__: list[str] = [
@@ -130,7 +130,9 @@ def run_action(
             "status": "failed",
             "summary": (
                 "Unsupported action id; expected 'impl:<id>', 'spec:<action>:<index>', "
-                "'approve:<id>', 'accept:<id>', or 'reject:<id>:rework|regroom'."
+                "'approve:<id>', 'accept:<id>', 'reject:<id>:rework|regroom', "
+                "'set-admission:<id>:auto|manual', or "
+                "'set-acceptance:<id>:ai-only|human-only|ai-then-human'."
             ),
         }
     work_item_ref = action_id.removeprefix("impl:")
@@ -169,7 +171,7 @@ def run_human_valve_action(
             domain_error="invalid-action-id",
             summary="Unsupported human valve action id.",
         )
-    action, item_id, reject_kind = parsed
+    action, item_id, action_value = parsed
     config = resolve_store_config(cwd=repo, work_items_arg=None)
     items = list(read_work_items(path=config))
     item = _find_item(items=items, item_id=item_id)
@@ -180,21 +182,31 @@ def run_human_valve_action(
             summary=f"work-item not found: {item_id}",
         )
     if action == "approve":
-        return _approve_item(repo=repo, config=config, items=items, item=item, action_id=action_id)
+        return _approve_item(config=config, item=item, action_id=action_id)
     if action == "accept":
         return _accept_item(config=config, item=item, action_id=action_id)
+    if action in {"set-admission", "set-acceptance"}:
+        return _set_policy(
+            config=config,
+            item=item,
+            action_id=action_id,
+            action=action,
+            value=cast("str", action_value),
+        )
     return _reject_item(
         repo=repo,
         config=config,
         item=item,
         action_id=action_id,
-        reject_kind=cast("str", reject_kind),
+        reject_kind=cast("str", action_value),
         runner=runner,
     )
 
 
 def _is_human_valve_action(*, action_id: str) -> bool:
-    return action_id.startswith(("approve:", "accept:", "reject:"))
+    return action_id.startswith(
+        ("approve:", "accept:", "reject:", "set-admission:", "set-acceptance:")
+    )
 
 
 def _parse_human_valve_action(*, action_id: str) -> tuple[str, str, str | None] | None:
@@ -206,6 +218,20 @@ def _parse_human_valve_action(*, action_id: str) -> tuple[str, str, str | None] 
         and parts[0] == "reject"
         and parts[1] != ""
         and parts[2] in {"rework", "regroom"}
+    ):
+        return (parts[0], parts[1], parts[2])
+    if (
+        len(parts) == _PARTS_REJECT
+        and parts[0] == "set-admission"
+        and parts[1] != ""
+        and parts[2] in {"auto", "manual"}
+    ):
+        return (parts[0], parts[1], parts[2])
+    if (
+        len(parts) == _PARTS_REJECT
+        and parts[0] == "set-acceptance"
+        and parts[1] != ""
+        and parts[2] in {"ai-only", "human-only", "ai-then-human"}
     ):
         return (parts[0], parts[1], parts[2])
     return None
@@ -220,46 +246,56 @@ def _find_item(*, items: list[WorkItem], item_id: str) -> WorkItem | None:
 
 def _approve_item(
     *,
-    repo: Path,
     config: StoreConfig,
-    items: list[WorkItem],
     item: WorkItem,
     action_id: str,
 ) -> dict[str, Any]:
-    if item.status != "ready":
-        return _invalid_source_state(action_id=action_id, item=item, expected="ready")
+    if item.status != "pending-approval":
+        return _invalid_source_state(action_id=action_id, item=item, expected="pending-approval")
     if effective_admission_policy(item=item) != "manual":
         return _valve_refusal(
             action_id=action_id,
             work_item_id=item.id,
             domain_error="invalid-source-state",
-            summary="approve requires an effective-manual ready item.",
+            summary="approve requires an effective-manual pending-approval item.",
         )
-    active_count = sum(1 for candidate in items if candidate.status == "active")
-    wip_cap = resolve_wip_cap(cwd=repo)
-    if active_count >= wip_cap:
-        return _valve_refusal(
-            action_id=action_id,
-            work_item_id=item.id,
-            domain_error="wip-cap-exhausted",
-            summary=f"approve refused: active WIP {active_count} has reached cap {wip_cap}.",
-        )
-    assignee = resolve_assignee(item=item)
-    if assignee is None:
-        return _valve_refusal(
-            action_id=action_id,
-            work_item_id=item.id,
-            domain_error="unresolvable-assignee",
-            summary="approve refused: work-item assignee could not be resolved.",
-        )
-    update_work_item_status(path=config, item_id=item.id, status="active", assignee=assignee)
+    update_work_item_status(path=config, item_id=item.id, status="ready")
     return _valve_success(
         action_id=action_id,
         work_item_id=item.id,
         stage="human-valve-approve",
-        target_status="active",
-        assignee=assignee,
-        summary=f"Approved {item.id}: ready -> active.",
+        target_status="ready",
+        assignee=None,
+        summary=f"Approved {item.id}: pending-approval -> ready.",
+    )
+
+
+def _set_policy(
+    *,
+    config: StoreConfig,
+    item: WorkItem,
+    action_id: str,
+    action: str,
+    value: str,
+) -> dict[str, Any]:
+    admission_policy = value if action == "set-admission" else None
+    acceptance_policy = value if action == "set-acceptance" else None
+    update_work_item_policy(
+        path=config,
+        item_id=item.id,
+        admission_policy=admission_policy,
+        acceptance_policy=acceptance_policy,
+    )
+    return _valve_success(
+        action_id=action_id,
+        work_item_id=item.id,
+        stage=f"human-valve-{action}",
+        target_status=item.status,
+        assignee=item.assignee,
+        summary=(
+            f"Updated {item.id}: {action.removeprefix('set-')} policy -> {value}; "
+            "status unchanged."
+        ),
     )
 
 
