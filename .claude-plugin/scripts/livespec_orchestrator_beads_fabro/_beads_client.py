@@ -210,7 +210,6 @@ EDGE_PARENT_CHILD = "parent-child"
 # `["update", <id>]` is the bare verb+id with no mutating flags; an argv of
 # this length carries nothing to update, so the shell client skips the call.
 _UPDATE_ARGV_NO_OP_LENGTH = 2
-_BEADS_CONFIG_PATH = Path(".beads/config.yaml")
 
 
 class FakeBeadsClient:
@@ -458,22 +457,40 @@ class ShellBeadsClient:
         return completed  # pragma: no cover
 
     def _assert_repo_root_matches_config(self, *, repo_root: Path) -> None:
-        entries = _read_beads_config(repo_root=repo_root)
         expected = {
             "dolt.server-user": self._config.server_user,
             "dolt.database": self._config.database,
         }
-        observed = {key: entries.get(key, "") for key in expected}
+        observed = {
+            key: self._read_bd_config_value(repo_root=repo_root, key=key) for key in expected
+        }
         if observed == expected:
             return
         observed_text = ", ".join(f"{key}={observed[key]}" for key in sorted(observed))
         expected_text = ", ".join(f"{key}={expected[key]}" for key in sorted(expected))
         raise BeadsConnectionError(
             detail=(
-                f"{repo_root / _BEADS_CONFIG_PATH} does not match resolved StoreConfig "
+                f"bd config in {repo_root} does not match resolved StoreConfig "
                 f"({observed_text}; expected {expected_text})"
             )
         )
+
+    def _read_bd_config_value(self, *, repo_root: Path, key: str) -> str:
+        argv = [self._config.bd_path, "config", "get", key]
+        try:
+            completed = subprocess.run(  # noqa: S603  # pragma: no cover
+                argv,
+                capture_output=True,
+                text=True,
+                check=False,
+                cwd=repo_root,
+            )
+        except FileNotFoundError as exc:  # pragma: no cover
+            raise BeadsConnectionError(
+                detail=f"bd binary not found at {self._config.bd_path}"
+            ) from exc
+        self._raise_for_status(completed=completed, argv=argv)  # pragma: no cover
+        return completed.stdout.strip()
 
     def _raise_for_status(
         self,
@@ -630,14 +647,6 @@ class ShellBeadsClient:
         set, so re-running is a safe no-op.
         """
         self._run_void(verb_args=["config", "set", "status.custom", _STATUS_CUSTOM])
-
-
-def _read_beads_config(*, repo_root: Path) -> dict[str, str]:
-    lines = (repo_root / _BEADS_CONFIG_PATH).read_text(encoding="utf-8").splitlines()
-    pairs = [
-        line.split(":", maxsplit=1) for line in lines if ":" in line and not line.startswith("#")
-    ]
-    return {key.strip(): value.strip() for key, value in pairs}
 
 
 def _coerce_record_list(*, parsed: Any) -> list[BeadsRecord]:

@@ -526,35 +526,45 @@ def test_run_json_invokes_bd_from_config_repo_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    beads_dir = tmp_path / ".beads"
-    beads_dir.mkdir()
-    _ = (beads_dir / "config.yaml").write_text(
-        "dolt.server-user: t-user\n" "dolt.database: t\n",
-        encoding="utf-8",
-    )
     client = ShellBeadsClient(config=_config(repo_root=tmp_path))
-    seen: list[Path | None] = []
+    seen: list[tuple[list[str], Path | None]] = []
 
     def _fake_run(argv: list[str], **kw: object) -> subprocess.CompletedProcess[str]:
-        _ = argv
         cwd = kw.get("cwd")
-        seen.append(cwd if isinstance(cwd, Path) else None)
+        seen.append((argv, cwd if isinstance(cwd, Path) else None))
+        if argv == ["/managed/bd", "config", "get", "dolt.server-user"]:
+            return subprocess.CompletedProcess(
+                args=argv, returncode=0, stdout="t-user\n", stderr=""
+            )
+        if argv == ["/managed/bd", "config", "get", "dolt.database"]:
+            return subprocess.CompletedProcess(args=argv, returncode=0, stdout="t\n", stderr="")
         return subprocess.CompletedProcess(args=argv, returncode=0, stdout="[]", stderr="")
 
     monkeypatch.setattr("livespec_orchestrator_beads_fabro._beads_client.subprocess.run", _fake_run)
     _ = client.list_issues()
-    assert seen == [tmp_path]
+    assert seen == [
+        (["/managed/bd", "config", "get", "dolt.server-user"], tmp_path),
+        (["/managed/bd", "config", "get", "dolt.database"], tmp_path),
+        (["/managed/bd", "list", "--status", "all", "--limit", "0", "--json"], tmp_path),
+    ]
 
 
-def test_run_json_rejects_repo_root_with_mismatched_beads_tenant(tmp_path: Path) -> None:
-    beads_dir = tmp_path / ".beads"
-    beads_dir.mkdir()
-    _ = (beads_dir / "config.yaml").write_text(
-        "dolt.server-user: other-user\n" "dolt.database: other-db\n",
-        encoding="utf-8",
-    )
+def test_run_json_rejects_repo_root_with_mismatched_beads_tenant(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     client = ShellBeadsClient(config=_config(repo_root=tmp_path))
 
+    def _fake_run(argv: list[str], **_kw: object) -> subprocess.CompletedProcess[str]:
+        values = {
+            ("/managed/bd", "config", "get", "dolt.server-user"): "other-user\n",
+            ("/managed/bd", "config", "get", "dolt.database"): "other-db\n",
+        }
+        return subprocess.CompletedProcess(
+            args=argv, returncode=0, stdout=values[tuple(argv)], stderr=""
+        )
+
+    monkeypatch.setattr("livespec_orchestrator_beads_fabro._beads_client.subprocess.run", _fake_run)
     with pytest.raises(BeadsConnectionError) as excinfo:
         _ = client.list_issues()
     message = str(excinfo.value)
