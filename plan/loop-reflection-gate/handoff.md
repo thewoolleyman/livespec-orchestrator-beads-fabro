@@ -87,10 +87,16 @@ cd /data/projects/livespec-orchestrator-beads-fabro
 
 ## Next action
 
-Run `/livespec:revise` to process the pending proposed-changes queue
-(three pending as of 2026-07-04: the approval-model replacement, the
-orchestrate-plan-thread surfacing, and this thread's
-`lessons-brief-injection`). The revise pass MUST co-edit
+From a fresh worktree (cut per Binding constraints), run
+`/livespec:revise`. No `--spec-target` argument is needed (the main
+spec root resolves from `.livespec.jsonc`), and no pre-reading of
+the queue is needed either: revise itself enumerates and processes
+whatever is pending under `SPECIFICATION/proposed_changes/`. This
+thread's stake in that queue is the `lessons-brief-injection`
+contract and the `claude-fable-5-critique` normative-force
+correction it spawned; do not rely on any count of queued proposals
+written here (a concurrent session already processed one within
+hours of this handoff's first cut). The revise pass MUST co-edit
 `tests/heading-coverage.json` for every `## ` heading it adds
 (including the new contracts section and the new scenarios, whose
 numbers are finalized at revise).
