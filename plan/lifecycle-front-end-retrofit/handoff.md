@@ -103,6 +103,14 @@ rejection-revision file are archived there).
   → "The operator-action behavior"), and B4 now also rewords its
   adjacent gloss to "(the authoritative gate + valve contract is
   §…)".
+- FOURTH AMENDMENT 2026-07-04 per verification pass #4 (one minor
+  blocker, applied by the overseer inline): new I13 rewords the
+  unparenthesized twin of B4's gloss — the §"Dispatcher grooming
+  behavior" closing sentence "The authoritative valve contract is
+  §…" becomes "The authoritative gate + valve contract is §…".
+  Next action: fresh independent re-verification pass #5 (scoped);
+  only after a no-blockers verdict does the maintainer-authorized
+  ratification chain run.
 - Post-ratification follow-up candidates recorded by pass #3
   (deliberately NOT folded into the proposal):
   1. Surface names retaining "valve" as NAMING — the contracts
