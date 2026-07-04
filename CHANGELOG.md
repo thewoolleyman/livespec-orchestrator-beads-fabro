@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.8.1...v0.8.2) (2026-07-04)
+
+
+### Bug Fixes
+
+* dispatcher lessons_path moves to top-level loop-reflection-gate/ (livespec-gt7crt) ([c15f973](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c15f97339f115134d7fd8249d4d2d71a76b72387))
+
 ## [0.8.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.8.0...v0.8.1) (2026-07-03)
 
 
