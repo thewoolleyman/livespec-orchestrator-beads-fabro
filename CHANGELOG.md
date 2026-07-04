@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.9.1...v0.9.2) (2026-07-04)
+
+
+### Bug Fixes
+
+* route shell beads commands through target repo ([e2d86c4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e2d86c4838d321d58b2eb5ff11098c9f4eca0e2e))
+* validate beads tenant through target repo ([7ebe4e6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7ebe4e640b84ca89904418480ce6222b6b8318dc))
+
 ## [0.9.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.9.0...v0.9.1) (2026-07-04)
 
 
