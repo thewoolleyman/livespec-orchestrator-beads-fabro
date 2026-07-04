@@ -4,9 +4,12 @@ Thread state: **LIVE** — opened 2026-07-04 to drive the
 reflection-gate's remaining work; resequenced SPEC-FIRST later the
 same day after a plan-accuracy review found the original next action
 (groom the consumer item directly) skipped the spec lane for behavior
-the spec owns. The spec-first gate is now DONE: `/livespec:revise`
-landed SPECIFICATION v030 (2026-07-04), accepting both proposals this
-thread owned; the thread advances to updating and grooming `.10` TO
+the spec owns. The spec-first gate AND the `.10` update pass are both
+DONE: `/livespec:revise` landed SPECIFICATION v030 (2026-07-04,
+accepting both proposals this thread owned), and the `.10` update pass
+(2026-07-04) paired the impl item to the landed contract
+(`spec_commitment_hint` + notes/description now cite Scenarios 39–40;
+`origin:freeform` stamped). The thread advances to GROOMING `.10` TO
 those accepted clauses.
 
 Resume command:
@@ -61,16 +64,20 @@ cd /data/projects/livespec-orchestrator-beads-fabro
   ratification PR; NO code reads the merged
   `loop-reflection-gate/lessons.md` yet. Its spec contract LANDED in
   SPECIFICATION v030: `contracts.md` §"Dispatch-brief lessons
-  injection" plus Scenarios 39–40 in `scenarios.md` (front-matter
-  commitment `lessons-brief-injection-consumer`). The item implements
-  TO those accepted clauses.
-- `bd-ib-umno37` (backlog) — post-verdict fail-open stages (cost
+  injection" plus Scenarios 39–40 in `scenarios.md`. The item is now
+  PAIRED to that contract (`spec_commitment_hint:
+  lessons-brief-injection-consumer` — surfaced on the beads-native
+  record as `spec_id`; its notes + description cite the landed clauses;
+  `origin:freeform` stamped) and awaits grooming TO those accepted
+  clauses.
+- `bd-ib-umno37` (ready) — post-verdict fail-open stages (cost
   gate, reflection, calibration, self-update canary) ride the ambient
   `GH_TOKEN` instead of the provider accessor; wrap their runners so
   first-class remint holds across the whole dispatch lifetime. Its
   spec contract already landed (SPECIFICATION v024 §"Self-contained
   plugin dispatch"). Independent hardening; no sequencing coupling to
-  `.10`; dispatches whenever admitted.
+  `.10`; it is already `ready`, so the factory drains it on its own —
+  this thread owes it nothing.
 - Cross-tenant, READ-ONLY context: `livespec-dev-tooling-e60`
   (livespec-dev-tooling tenant) — the observability umbrella that
   consumes this pipeline's enriched telemetry. This thread reads its
@@ -78,6 +85,11 @@ cd /data/projects/livespec-orchestrator-beads-fabro
   sessions.
 
 ## Read-first chain
+
+All paths below are repo-root-relative (from
+`/data/projects/livespec-orchestrator-beads-fabro/`), NOT relative to
+this handoff's directory — the `loop-reflection-gate/` entries live at
+the repo TOP LEVEL, not under `plan/`.
 
 1. `SPECIFICATION/contracts.md` §"Dispatch-brief lessons injection"
    and `SPECIFICATION/scenarios.md` Scenarios 39–40 — the LANDED spec
@@ -97,62 +109,56 @@ cd /data/projects/livespec-orchestrator-beads-fabro
 
 ## Next action
 
-The spec-first gate is complete. `/livespec:revise` landed
-SPECIFICATION v030 (2026-07-04), accepting BOTH proposals this thread
-owned and finalizing scenario numbers against what actually landed:
+The spec-first gate AND the `.10` update pass are both complete:
 
-- `lessons-brief-injection` (accept) → `contracts.md`
-  §"Dispatch-brief lessons injection" + Scenarios 39 (ratified lesson
-  injects) and 40 (unratified / absent / unmerged / unreadable never
-  alter briefs).
-- `claude-fable-5-critique` (accept) → BCP14 restatement of the
-  no-root-research-tree invariant in `contracts.md` §"The
-  `plan/<topic>/` thread store" + Scenario 41.
+- `/livespec:revise` landed SPECIFICATION v030 (2026-07-04), accepting
+  BOTH proposals this thread owned: `lessons-brief-injection` →
+  `contracts.md` §"Dispatch-brief lessons injection" + Scenarios 39
+  (ratified lesson injects) and 40 (unratified / absent / unmerged /
+  unreadable never alter briefs); `claude-fable-5-critique` → BCP14
+  restatement of the no-root-research-tree invariant in `contracts.md`
+  §"The `plan/<topic>/` thread store" + Scenario 41.
+- The `.10` update pass (2026-07-04) paired
+  `livespec-impl-beads-29f.10` to the landed contract:
+  `spec_commitment_hint: lessons-brief-injection-consumer`, its notes +
+  description now cite `contracts.md` §"Dispatch-brief lessons
+  injection" and Scenarios 39–40, and the missing `origin:freeform`
+  label is stamped. The epic-description sketch no longer stands in for
+  the contract.
 
 The out-of-scope `orchestrate-plan-surfaces-unarchived-plan-threads`
-proposal was left pending, untouched, for its own thread (it still
+proposal remains pending, untouched, for its own thread (it still
 claims a Scenario 39 provisionally — that renumbers when IT lands,
 since 39–41 are now taken).
 
-**The next action is to update `.10`** so the impl item cites the
-landed contract instead of the epic-description sketch. This is a
-beads write; run from a fresh worktree per Binding constraints, and
-edit the item via the wrapper (`… bd update livespec-impl-beads-29f.10 …`):
+**The next action is to groom `.10`** via
+`/livespec-orchestrator-beads-fabro:groom livespec-impl-beads-29f.10`.
+Groom TO the landed clauses — Scenarios 39–40 are the authoritative
+acceptance. Groomed slices land at `pending-approval`; the maintainer's
+approval is the `pending-approval → ready` transition — slices are NOT
+dispatchable straight out of grooming.
 
-- Pair it to the spec commitment via
-  `spec_commitment_hint: lessons-brief-injection-consumer`.
-- Cite `contracts.md` §"Dispatch-brief lessons injection" and
-  Scenarios 39–40 (SPECIFICATION v030) in its description/notes,
-  replacing the epic-description sketch.
-- Stamp its missing `origin:` label (filing hygiene).
+Scope the grooming pass to `.10` ALONE: do NOT dispatch (that is the
+sequenced later step below), and do NOT touch `bd-ib-umno37` or any
+sibling item beyond opportunistic origin-label hygiene. One action per
+pass keeps the thread auditable.
 
-Scope this pass to the `.10` update ALONE: do NOT groom or dispatch
-(those are the sequenced later steps below), and do NOT touch
-`bd-ib-umno37` or any sibling item beyond the opportunistic
-origin-label hygiene noted below. One action per pass keeps the thread
-auditable.
+Then, in a later invocation of this thread:
 
-Then, in order, in later invocations of this thread:
-
-1. **Groom `.10`** via
-   `/livespec-orchestrator-beads-fabro:groom livespec-impl-beads-29f.10`.
-   Groomed slices land at `pending-approval`; the maintainer's
-   approval is the `pending-approval → ready` transition — slices are
-   NOT dispatchable straight out of grooming.
-2. **Dispatch factory-side** — the Dispatcher drains `ready` items
-   (or an operator runs `orchestrate`); never inline in a planning
-   session.
+1. **Dispatch factory-side** — once the maintainer approves the groomed
+   `.10` slices to `ready`, the Dispatcher drains them (or an operator
+   runs `orchestrate`); never inline in a planning session.
 
 ## Hygiene and coordination notes
 
-- `bd-ib-umno37` carries a stale pre-lifecycle `ready` LABEL while
-  its authoritative STATUS is `backlog`; the 7-state lifecycle
-  ignores the label. Cleanup belongs to the backlog retriage owned by
-  the `lifecycle-front-end-retrofit` thread — do not let the label
-  masquerade as an admission.
-- Sibling origin-labeling is inconsistent (`.8` carries
-  `origin:freeform`, `.4` and `.10` carry none); fix opportunistically
-  when an item is next written, not as standalone churn.
+- `bd-ib-umno37` is now at status `ready` and its `ready` label
+  agrees — the earlier pre-lifecycle STATUS-vs-label discrepancy has
+  resolved, so the backlog-retriage caveat this note once carried is
+  obsolete. It is independent hardening the factory drains on its own;
+  no action owed by this thread.
+- Sibling origin-labeling is inconsistent (`.8` and `.10` carry
+  `origin:freeform`, `.4` carries none); fix opportunistically when an
+  item is next written, not as standalone churn.
 
 ## Close-out condition
 
