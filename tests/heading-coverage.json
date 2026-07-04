@@ -549,5 +549,33 @@
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "capture-spec-drift ledger-intent scan scenario; integration-tier test pending (li follow-up)"
+  },
+  {
+    "heading": "## Dispatch-brief lessons injection",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "Dispatch-brief lessons-injection consumer contract (reflection gate's human-ratified lessons loop); integration-tier test id populated when work-item livespec-impl-beads-29f.10 lands its clause->scenario->test binding."
+  },
+  {
+    "heading": "## Scenario 39 \u2014 Ratified lesson injects into dispatch briefs",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified-lesson injection scenario; integration-tier test id populated when the lessons-brief-injection consumer (livespec-impl-beads-29f.10) lands."
+  },
+  {
+    "heading": "## Scenario 40 \u2014 Unratified or absent lessons never alter briefs",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Never-inject (absent / placeholder / unmerged / unreadable fail-open) scenario; integration-tier test id populated when the lessons-brief-injection consumer (livespec-impl-beads-29f.10) lands."
+  },
+  {
+    "heading": "## Scenario 41 \u2014 standalone analysis lands in a plan thread, not a root research tree",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Analysis-placement scenario for the no-root-research-tree invariant (normative restatement in contracts.md \u00a7\"The plan/<topic>/ thread store\"); integration-tier test id populated as the enforcing structural gate binds."
   }
 ]
