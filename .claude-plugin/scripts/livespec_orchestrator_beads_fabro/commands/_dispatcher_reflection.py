@@ -1,6 +1,6 @@
 """Mechanical, fail-open loop-exit reflection stage (NO LLM).
 
-Per the loop-reflection-gate epic decisions (research/loop-reflection-gate/
+Per the loop-reflection-gate epic decisions (loop-reflection-gate/
 best-practices-and-design.md §3 option (b), §6;
 cc-otel-gap-analysis.md §1.6 + §3.5), this stage
 runs AFTER the loop's exit code / verdict has been computed in

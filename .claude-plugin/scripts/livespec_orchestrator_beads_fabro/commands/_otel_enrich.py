@@ -1,7 +1,7 @@
 """Host-local OTLP enrich/scrub stage — the 29f pipeline data plane (E1).
 
 The CORE new artifact of the 29f telemetry leg, per
-`research/loop-reflection-gate/telemetry-pipeline-architecture.md` §3
+`loop-reflection-gate/telemetry-pipeline-architecture.md` §3
 (the RECOMMENDATION in §3.2: a custom host-local OTLP processor, a small
 stdlib-first Python service, NOT an off-the-shelf otelcol collector). This
 module is the AUGMENT + SCRUB chokepoint between the local span files the

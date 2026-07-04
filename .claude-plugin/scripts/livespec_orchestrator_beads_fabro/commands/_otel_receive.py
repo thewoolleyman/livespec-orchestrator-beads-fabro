@@ -2,7 +2,7 @@
 
 The live-ingest layer the 29f.5 file-tail DATA plane (`_otel_enrich`, PR
 #39) was deferred from, per
-`research/loop-reflection-gate/telemetry-pipeline-architecture.md` §3.2
+`loop-reflection-gate/telemetry-pipeline-architecture.md` §3.2
 (custom host-local OTLP processor, NOT otelcol) and §4.4 (the
 metrics-heartbeat-vs-spans liveness subtlety). Two coupled pieces:
 

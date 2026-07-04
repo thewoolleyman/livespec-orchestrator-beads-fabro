@@ -8,7 +8,7 @@ is UNOBSERVABLE, and today it is always unobservable because fabro's
 `total_usd_micros` is null on every run. Claude-Code emits per-API-call
 token counts on its TRACE spans but NO `cost_usd` ATTRIBUTE on the span
 (cost is a metric, not a span attribute — see
-`research/loop-reflection-gate/cc-otel-gap-analysis.md`), so the host DERIVES cost from the tokens
+`loop-reflection-gate/cc-otel-gap-analysis.md`), so the host DERIVES cost from the tokens
 x the published per-model price.
 
 Per the user-ratified 2026-06-13 direction (which SUPERSEDES the efj bd
