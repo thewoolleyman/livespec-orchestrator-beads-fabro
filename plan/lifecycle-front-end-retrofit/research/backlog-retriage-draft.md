@@ -93,5 +93,37 @@ Approved dispositions should be executed via the store seam
 (`update_work_item_status`) or `bd update --status`, one item at a time,
 re-reading each item's live state first (the consolidation session may
 have moved it). `blocked` items additionally need their
-`blocked_reason` set (`needs-human` / `infra-external`). No writes have
-been performed for anything in this table.
+`blocked_reason` set (`needs-human` / `infra-external`).
+
+## Execution record (2026-07-04)
+
+The maintainer approved execute-as-drafted (recorded by the overseer),
+INCLUDING the two flagged items: `bd-ib-cur` with the auto-normalize
+choice (open→backlog normalized at the conformance gate — fixed in the
+item's journal comment) and `bd-ib-webwai` (newly unblocked). The
+lifecycle-front-end-retrofit track session executed the table via
+`bd update --status` under the credential wrapper, ONE item at a time,
+re-reading each item's live state first. All 20 rows' premises held
+(every item still `backlog` at execution time), so there were ZERO
+skips. Executed writes, all journaled as comments naming the actor and
+the row's reason:
+
+- 10 → `pending-approval`: `bd-ib-3m44nx`, `bd-ib-9ch`, `bd-ib-cur`,
+  `bd-ib-h55`, `bd-ib-hkzcfb`, `bd-ib-ls32yb`, `bd-ib-mwz`,
+  `bd-ib-umno37`, `bd-ib-v5n`, `bd-ib-webwai`.
+- 3 → `blocked`: `bd-ib-ss7rkr` (`blocked-reason:needs-human`),
+  `bd-ib-w4iaaf` (`blocked-reason:needs-human`),
+  `livespec-impl-beads-zsl` (`blocked-reason:infra-external`).
+- 7 stay `backlog`, no writes: `bd-ib-82a`, `bd-ib-k5p`,
+  `bd-ib-un226z`, `bd-ib-z2ctra`, `livespec-impl-beads-29f`,
+  `livespec-impl-beads-bqq`, `livespec-impl-beads-zbl`.
+
+Tally-line correction: the draft's summary line above says "11 →
+pending-approval · 6 stay backlog · 3 → blocked", but the table rows
+enumerate 10 → pending-approval and 7 stays. The per-row dispositions
+are the approved record and were executed exactly as drafted; the
+summary line simply miscounted. Under the v029-ratified approval
+model, the 10 items now resting at `pending-approval` await the
+maintainer's explicit `approve:<id>` (or a `set-admission:<id>:auto`
+policy edit) through the `orchestrate run` operator surface — both
+shipped with rework slice `bd-ib-7cpgeh` (PR #305, v0.9.0).
