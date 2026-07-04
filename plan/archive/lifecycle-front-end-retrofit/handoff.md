@@ -1,19 +1,25 @@
 # lifecycle-front-end-retrofit — handoff
 
-Thread state: **BOTH GATES EXECUTED 2026-07-04 — nothing blocks the
-re-archive.** Gate 1 (proposal ratification) and gate 2 (backlog
-re-triage) are both executed and recorded below; the authorized rework
-slice is merged, released (v0.9.0), and accepted `done`. The one
-remaining act for this thread is the close-out itself: a docs-only PR
-moving `plan/lifecycle-front-end-retrofit/` to
-`plan/archive/lifecycle-front-end-retrofit/` (this handoff is the
-final note recording both gate outcomes).
+Thread state: **CLOSED — archived 2026-07-04 with both maintainer
+gates executed and verified.** Final record:
 
-Resume command:
+- **Gate 1 (ratification):** the approval-model replacement proposal
+  was RATIFIED as `SPECIFICATION/history/v029/` (PR #303, merge
+  `b55ecc1`) after five independent verification passes; the
+  authorized rework slice `bd-ib-7cpgeh` factory-landed via PR #305
+  (merge `9503866`, released v0.9.0) and was accepted to `done`
+  through the `orchestrate run` `accept:` valve action.
+- **Gate 2 (re-triage):** executed as drafted with zero skips —
+  10 → `pending-approval`, 3 → `blocked` (2 `needs-human`,
+  1 `infra-external`), 7 stay `backlog`; every write journaled. The
+  draft's summary tally line miscounted (said 11/6/3); the table
+  ROWS (10/7/3) are the approved record and were executed exactly as
+  drafted — the correction is documented in the execution record
+  appended to `research/backlog-retriage-draft.md`.
+
+This thread is archived; nothing remains to execute. Historical
+resume command (for reading only):
 `/livespec-orchestrator-beads-fabro:plan lifecycle-front-end-retrofit`
-
-A fresh session should read THIS file, then the read-first chain below,
-and can then execute the next actions without consulting chat history.
 
 ## Workstream A — COMPLETE (record)
 
