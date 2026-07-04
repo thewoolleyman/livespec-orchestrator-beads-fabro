@@ -23,6 +23,7 @@ connection model).
 """
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from livespec_runtime.work_items.types import (
     AuditRecord,
@@ -114,6 +115,8 @@ class StoreConfig:
       DECOUPLED from `prefix`).
     - `bd_path` — absolute path to the pinned bd v1.0.5 binary (NEVER the
       mise shim; resolved from config/env in `commands/_config.py`).
+    - `repo_root` — the repository root whose `.beads/config.yaml` must
+      route per-command `bd` auto-discovery.
     - `fake` — hermetic toggle. When True the store talks to an in-memory
       `FakeBeadsClient` (the default CI tier and the no-live-connection
       runtime fallback); when False it shells out to `bd` over the live
@@ -142,6 +145,7 @@ class StoreConfig:
     server_port: int = 3307
     socket: str | None = None
     fake: bool = False
+    repo_root: Path | None = None
 
     @property
     def work_items_path(self) -> "StoreConfig":
