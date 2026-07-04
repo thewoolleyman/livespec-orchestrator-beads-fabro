@@ -155,7 +155,6 @@ below is internal to this plugin.
 | `dev-tooling/` | Standalone enforcement-suite scripts (run via `just check`) |
 | `tests/` | pytest suite mirroring the script trees |
 | `loop-reflection-gate/` | Reflection-gate design-of-record docs (29f telemetry pipeline architecture, best-practices survey) + the human-ratified `lessons.md` digest — LOAD-BEARING paths cited by shipping code |
-| `research/` | Standalone-research tree; currently empty of topics pending the `retire-research-dirs` epic |
 | `.beads/`, `.fabro/` | Beads tenant pointer files and the Fabro workflow graph |
 | `.livespec.jsonc` | Single wiring table — substrate marker, beads connection block, `compat` pin, the three orchestrator CLIs |
 | `pyproject.toml`, `justfile`, `lefthook.yml`, `.mise.toml`, `.vendor.jsonc` | Toolchain configuration |
