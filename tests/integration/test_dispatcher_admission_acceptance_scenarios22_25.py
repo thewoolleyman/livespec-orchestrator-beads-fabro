@@ -98,7 +98,7 @@ def _item(**overrides: object) -> WorkItem:
     base = WorkItem(
         id="bd-ib-s1",
         type="task",
-        status="ready",
+        status="pending-approval",
         title="A dispatched slice",
         description="Implement the slice.",
         origin="freeform",
@@ -204,7 +204,7 @@ def test_loop_holds_manual_admission_item(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path, wip_cap=5)
-    item = _item(id="bd-ib-manual", admission_policy="manual")
+    item = _item(id="bd-ib-manual", status="pending-approval", admission_policy="manual")
     append_work_item(path=_config(), item=item)
     calls: list[str] = []
     monkeypatch.setattr(dispatcher, "run_dispatch", _green_recording(calls))
@@ -226,11 +226,11 @@ def test_loop_holds_manual_admission_item(
     # The held item rides in the outcomes as a non-green terminal.
     assert exit_code == 1
     assert calls == []
-    # Not admitted: it stays ready for the maintainer to approve.
-    assert _stored()[item.id].status == "ready"
+    # Not admitted: it stays pending-approval for the maintainer to approve.
+    assert _stored()[item.id].status == "pending-approval"
     # Surfaced for the maintainer (stderr) and journaled.
     err = capsys.readouterr().err
-    assert "admission held" in err
+    assert "approval held" in err
     assert item.id in err
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
     stages = [json.loads(line).get("stage") for line in journal_text.splitlines()]

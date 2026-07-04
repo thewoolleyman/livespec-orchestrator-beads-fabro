@@ -121,6 +121,49 @@ def _install_valve_store(
     return updates
 
 
+def _install_policy_store(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    items: list[WorkItem],
+) -> list[dict[str, Any]]:
+    updates: list[dict[str, Any]] = []
+    config = _store_config()
+
+    def fake_resolve_store_config(*, cwd: Path, work_items_arg: str | None) -> StoreConfig:
+        _ = cwd
+        _ = work_items_arg
+        return config
+
+    def fake_read_work_items(*, path: StoreConfig) -> list[WorkItem]:
+        assert path is config
+        return items
+
+    def fake_update_work_item_policy(
+        *,
+        path: StoreConfig,
+        item_id: str,
+        admission_policy: str | None = None,
+        acceptance_policy: str | None = None,
+    ) -> None:
+        assert path is config
+        updates.append(
+            {
+                "item_id": item_id,
+                "admission_policy": admission_policy,
+                "acceptance_policy": acceptance_policy,
+            }
+        )
+
+    monkeypatch.setattr(
+        orchestrate, "resolve_store_config", fake_resolve_store_config, raising=False
+    )
+    monkeypatch.setattr(orchestrate, "read_work_items", fake_read_work_items, raising=False)
+    monkeypatch.setattr(
+        orchestrate, "update_work_item_policy", fake_update_work_item_policy, raising=False
+    )
+    return updates
+
+
 def test_plan_actions_composes_spec_and_impl_next_candidates(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -249,21 +292,20 @@ def test_run_action_surfaces_spec_actions_as_human_handoff(tmp_path: Path) -> No
     assert runner.calls == []
 
 
-def test_run_action_approve_admits_manual_ready_item(
+def test_run_action_approve_authorizes_manual_pending_item(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     updates = _install_valve_store(
         monkeypatch,
-        items=[_item(admission_policy="manual"), _item(id="bd-ib-active", status="active")],
+        items=[_item(status="pending-approval", admission_policy="manual")],
     )
-    monkeypatch.setattr(orchestrate, "resolve_wip_cap", _wip_cap(2), raising=False)
 
     result = run_action(repo=repo, action_id="approve:bd-ib-123", runner=_Runner(results=[]))
 
     assert result["status"] == "green"
-    assert updates == [{"item_id": "bd-ib-123", "status": "active", "assignee": "fabro"}]
+    assert updates == [{"item_id": "bd-ib-123", "status": "ready", "assignee": None}]
     assert result["journal"] == {
         "actor": "operator",
         "stage": "human-valve-approve",
@@ -271,23 +313,71 @@ def test_run_action_approve_admits_manual_ready_item(
     }
 
 
-def test_run_action_approve_refuses_when_wip_cap_full(
+def test_run_action_approve_is_not_blocked_by_full_wip_cap(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     updates = _install_valve_store(
         monkeypatch,
-        items=[_item(admission_policy="manual"), _item(id="bd-ib-active", status="active")],
+        items=[
+            _item(status="pending-approval", admission_policy="manual"),
+            _item(id="bd-ib-active", status="active"),
+        ],
     )
     monkeypatch.setattr(orchestrate, "resolve_wip_cap", _wip_cap(1), raising=False)
 
     result = run_action(repo=repo, action_id="approve:bd-ib-123", runner=_Runner(results=[]))
 
-    assert result["status"] == "failed"
-    assert result["kind"] == "human-valve"
-    assert result["domain_error"] == "wip-cap-exhausted"
-    assert updates == []
+    assert result["status"] == "green"
+    assert updates == [{"item_id": "bd-ib-123", "status": "ready", "assignee": None}]
+
+
+def test_run_action_set_admission_edits_policy_without_touching_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    updates = _install_policy_store(
+        monkeypatch,
+        items=[_item(status="pending-approval", admission_policy="manual")],
+    )
+
+    result = run_action(
+        repo=repo, action_id="set-admission:bd-ib-123:auto", runner=_Runner(results=[])
+    )
+
+    assert result["status"] == "green"
+    assert updates == [
+        {"item_id": "bd-ib-123", "admission_policy": "auto", "acceptance_policy": None}
+    ]
+    assert result["target_status"] == "pending-approval"
+    assert result["journal"] == {
+        "actor": "operator",
+        "stage": "human-valve-set-admission",
+        "work_item_id": "bd-ib-123",
+    }
+
+
+def test_run_action_set_acceptance_edits_policy_without_touching_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    updates = _install_policy_store(
+        monkeypatch,
+        items=[_item(status="acceptance", acceptance_policy="ai-then-human")],
+    )
+
+    result = run_action(
+        repo=repo, action_id="set-acceptance:bd-ib-123:human-only", runner=_Runner(results=[])
+    )
+
+    assert result["status"] == "green"
+    assert updates == [
+        {"item_id": "bd-ib-123", "admission_policy": None, "acceptance_policy": "human-only"}
+    ]
+    assert result["target_status"] == "acceptance"
 
 
 def test_run_action_accept_transitions_acceptance_item_to_done(

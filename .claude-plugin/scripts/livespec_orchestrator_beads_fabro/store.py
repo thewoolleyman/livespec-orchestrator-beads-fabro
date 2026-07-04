@@ -106,6 +106,7 @@ __all__ = [
     "read_work_item_native_priorities",
     "read_work_items",
     "register_custom_statuses",
+    "update_work_item_policy",
     "update_work_item_rank",
     "update_work_item_status",
 ]
@@ -337,6 +338,38 @@ def update_work_item_status(
         status=_beads_status_for(status=status),
         assignee=assignee,
     )
+
+
+def update_work_item_policy(
+    *,
+    path: StoreConfig,
+    item_id: str,
+    admission_policy: str | None = None,
+    acceptance_policy: str | None = None,
+) -> None:
+    """Edit policy labels on an existing item without changing its status.
+
+    The operator policy-edit seam behind `orchestrate run`
+    `set-admission:<id>:...` / `set-acceptance:<id>:...`. The write is
+    label-only: it removes the previous label for each named policy field,
+    adds the replacement label, and deliberately sends no status or assignee
+    mutation so a policy edit cannot surprise-transition the item.
+    """
+    remove_labels: list[str] = []
+    add_labels: list[str] = []
+    if admission_policy is not None:
+        remove_labels.extend(f"{_LABEL_ADMISSION}{value}" for value in ("auto", "manual"))
+        add_labels.append(f"{_LABEL_ADMISSION}{admission_policy}")
+    if acceptance_policy is not None:
+        remove_labels.extend(
+            f"{_LABEL_ACCEPTANCE}{value}" for value in ("ai-only", "human-only", "ai-then-human")
+        )
+        add_labels.append(f"{_LABEL_ACCEPTANCE}{acceptance_policy}")
+    client = make_beads_client(config=path)
+    if remove_labels:
+        client.update_issue(issue_id=item_id, remove_labels=remove_labels)
+    if add_labels:
+        client.update_issue(issue_id=item_id, add_labels=add_labels)
 
 
 def register_custom_statuses(*, path: StoreConfig) -> None:

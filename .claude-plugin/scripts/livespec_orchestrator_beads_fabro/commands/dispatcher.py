@@ -150,6 +150,7 @@ from pathlib import Path
 from time import sleep as _real_sleep
 from typing import cast
 
+from livespec_runtime.cross_repo.types import CrossRepoManifest
 from livespec_runtime.github_auth.config import load_github_app_config
 from livespec_runtime.github_auth.errors import GithubAppAuthError
 from livespec_runtime.github_auth.provider import InstallationTokenProvider
@@ -1248,11 +1249,27 @@ def _janitor_core_ref(*, repo: Path) -> str:
 def _ready_items(*, items: list[WorkItem], repo: Path) -> list[WorkItem]:
     index = {item.id: item for item in items}
     manifest = load_manifest(project_root=repo)
-    ready = [item for item in items if is_item_ready(item=item, index=index, manifest=manifest)]
+    ready = [
+        item for item in items if _is_dispatch_candidate(item=item, index=index, manifest=manifest)
+    ]
     # Compose the single canonical ranking authority so the Dispatcher's
     # drain order never diverges from what `next` advertises (i3jiny):
     # (rank, id) — the fractional rank is the sole ordering key.
     return sorted(ready, key=ready_sort_key)
+
+
+def _is_dispatch_candidate(
+    *,
+    item: WorkItem,
+    index: dict[str, WorkItem],
+    manifest: CrossRepoManifest,
+) -> bool:
+    if is_item_ready(item=item, index=index, manifest=manifest):
+        return True
+    if item.status != "pending-approval":
+        return False
+    ready_projection = replace(item, status="ready")
+    return is_item_ready(item=ready_projection, index=index, manifest=manifest)
 
 
 def _dispatch_one(
@@ -1594,13 +1611,13 @@ def _admit_and_select(
 ) -> _Admission:
     """Run the admission valve over the rank-sorted candidate set.
 
-    The sole enforcer of the admission valve + per-repo WIP cap. For each
-    candidate, in order: a host-only self-machinery item is routed away
+    The sole enforcer of the approval/admission valve + per-repo WIP cap. For
+    each candidate, in order: a host-only self-machinery item is routed away
     (refused, never admitted — the uvd hang-guard); then `plan_admissions`
-    holds a manual / unresolvable-assignee item (surfaced for the
-    maintainer) and admits the highest-`rank` admission-eligible items into
-    the free WIP slots, writing each `ready -> active` with its resolved
-    assignee. `enforce_cap` reads the per-repo `wip_cap` from
+    holds a manual pending item, auto-approves an auto pending item into
+    `ready`, holds an unresolvable-assignee item, and admits the highest-`rank`
+    ready items into the free WIP slots, writing each `ready -> active` with
+    its resolved assignee. `enforce_cap` reads the per-repo `wip_cap` from
     `.livespec.jsonc` and discounts the already-`active` items; a targeted
     `dispatch --item` is an operator override that passes `enforce_cap=False`
     (every host-cleared candidate gets a slot). The admit writes + the held
@@ -1624,12 +1641,19 @@ def _admit_and_select(
     )
     admitted: list[WorkItem] = []
     config = _store_config(repo=repo)
+    approved_ids = {item.id for item in plan.approved}
+    for item in plan.approved:
+        update_work_item_status(path=config, item_id=item.id, status="ready")
+        journal.append(record={"stage": "ledger-approve", "work_item_id": item.id})
     for item, assignee in plan.admitted:
-        update_work_item_status(path=config, item_id=item.id, status="active", assignee=assignee)
+        journal_item = replace(item, status="ready") if item.id in approved_ids else item
+        update_work_item_status(
+            path=config, item_id=journal_item.id, status="active", assignee=assignee
+        )
         journal.append(
             record={"stage": "ledger-admit", "work_item_id": item.id, "assignee": assignee}
         )
-        admitted.append(replace(item, status="active", assignee=assignee))
+        admitted.append(replace(journal_item, status="active", assignee=assignee))
     for item, reason in plan.held:
         held = _admission_held_outcome(item=item, reason=reason)
         journal.append(record={"stage": "outcome", "outcome": asdict(held)})
@@ -1643,9 +1667,9 @@ def _admission_held_outcome(*, item: WorkItem, reason: str) -> DispatchOutcome:
 
     A `failed` outcome (so the dispatch exit code flips to 1 and the
     maintainer's eyes are required) at the `admission-held` stage; nothing is
-    launched and nothing is closed — the item stays put for the maintainer to
-    approve (manual policy) or assign (unresolvable assignee). This re-expresses
-    the prior `human-gated` pre-launch refusal as the manual-admission hold.
+    launched and nothing is closed — a manual item stays at `pending-approval`
+    for the maintainer to approve, while an unresolvable item stays put until
+    assignment is fixed.
     """
     return DispatchOutcome(
         work_item_id=item.id,
