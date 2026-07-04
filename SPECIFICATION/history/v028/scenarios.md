@@ -1,0 +1,744 @@
+# scenarios.md — livespec-orchestrator-beads-fabro
+
+End-to-end behavioral journeys illustrating the plugin's intended use
+across the workflow loops defined in `livespec/SPECIFICATION/`. They are
+now expressed in Gherkin `Given` / `When` / `Then` form (matching the
+house style `livespec` core uses in its own `SPECIFICATION/scenarios.md`),
+but they remain reader-facing journeys an agent or contributor follows —
+not the pytest test cases (those live under `tests/`).
+
+## Scenario 1 — Gap-tied fix cycle
+
+```gherkin
+Feature: Gap-tied fix cycle
+  As an agent maintaining an impl against a freshly-revised spec
+  I want the gap-tied work to be detected, ranked, implemented, and closed
+  So that a new spec MUST clause becomes honored impl with a verified audit trail
+
+Scenario: A new MUST clause is detected, filed, implemented, and closed in place
+  Given a consumer project has a fresh `livespec` revision (vNNN+1)
+  And that revision introduced a new MUST clause not yet honored in the impl
+  When the user invokes `/livespec-orchestrator-beads-fabro:capture-impl-gaps`
+  Then the skill loads the rule set via the Spec Reader
+  And walks each rule against the impl
+  And surfaces uncaptured gaps one at a time
+  When the user consents to file a gap
+  Then the skill creates a beads issue via the 2-step append carrying the `origin:gap-tied` label
+  And the `gap-id:<stable-id>` label
+  And the intake Definition-of-Ready routes it (a DoR-passing item lands `pending-approval`, approved into `ready` when its effective admission_policy is `auto`)
+  And the user-confirmed title and description
+  When the user invokes `/livespec-orchestrator-beads-fabro:next`
+  Then the ranker reads the materialized work-items back from `bd`
+  And surfaces the newly-filed gap-tied item as the recommendation (the top-ranked `ready` item — earliest `rank`)
+  When the user invokes `/livespec-orchestrator-beads-fabro:implement` for that work-item
+  Then the skill walks Red → Green → closure
+  And at closure re-runs `capture-impl-gaps` in dry-run mode
+  And confirms the `gap_id` is no longer detected
+  And closes the issue IN PLACE with `bd close --reason …`
+  And `bd update` sets the `resolution:completed` label
+  And the `AuditRecord` (`verification_timestamp`, `commits`, `files_changed`, `merge_sha`, optional `pr_number`) is written into the issue's `metadata` column
+```
+
+## Scenario 4 — Freeform bug fix
+
+```gherkin
+Feature: Freeform bug fix
+  As a user who spots a bug unrelated to any open gap
+  I want to file it as a freeform work-item and fix it
+  So that it closes without any gap re-detection
+
+Scenario: A freeform bug is filed, implemented, and closed
+  Given the user spots a bug unrelated to any open gap
+  When the user invokes `/livespec-orchestrator-beads-fabro:capture-work-item`
+  And supplies title, description, and `type: bug`
+  Then the skill creates a beads issue carrying the `origin:freeform` label and no `gap-id:` label
+  When the user invokes `/livespec-orchestrator-beads-fabro:implement` for that item
+  Then Red → Green proceeds normally
+  And at closure the skill takes the freeform path
+  And closes the issue IN PLACE with `resolution:completed` and the user-supplied `--reason` (`bd close --reason`, `bd update` for the resolution label)
+  And no `gap_id` re-detection runs
+```
+
+## Scenario 5 — Doctor cross-boundary read
+
+```gherkin
+Feature: Doctor cross-boundary read
+  As a user running doctor in a consumer project
+  I want doctor's cross-boundary phase to read this plugin's query surfaces
+  So that the work-item structural invariants are evaluated deterministically
+
+Scenario: Doctor reads spec directly and invokes the thin-transport query skills
+  Given the user invokes `/livespec:doctor` in a consumer project
+  When doctor's static phase runs
+  Then it reads `<spec-root>/` directly
+  When doctor's cross-boundary phase runs
+  Then it invokes `/livespec-orchestrator-beads-fabro:list-work-items --json` for the work-item structural invariants
+  And the invocation reads the tenant DB through `bd`
+  And completes deterministically with the contract-mandated JSON schema
+  And a missing or malformed plugin surface fires a `fail` finding (no silent skips)
+  And in hermetic / CI contexts the in-memory fake backend stands in for a live tenant DB and satisfies the same schema
+```
+
+## Scenario 6 — Cross-repo dispatch via the Dispatcher
+
+```gherkin
+Feature: Cross-repo dispatch via the Dispatcher
+  # Cross-reference: the Dispatcher (`dispatcher.py` `dispatch` / `loop`)
+  # is the dispatch surface for routine cross-repo work — it polls the
+  # beads Ledger for ready work-items and drives each through Fabro
+  # autonomously. This plugin's `next` skill provides the impl-side ranking
+  # the Dispatcher consumes; it MUST NOT bake a cross-repo sequencing or
+  # cross-side weighting in — cross-repo sequencing and empty-queue
+  # handling are the Dispatcher's concern, not this skill's.
+  As the Dispatcher draining ready impl-side slices
+  I want to consume this plugin's `next` surface for impl-side ranking
+  So that cross-repo work is dispatched in rank order without impl-side `next` encoding cross-repo sequencing
+
+Scenario: The Dispatcher consumes next for impl-side ranking
+  Given the Dispatcher is dispatching impl-side slices
+  When it invokes `/livespec-orchestrator-beads-fabro:next --json`
+  Then it obtains an impl-side ranked candidate list
+  And gap-detection and drift-detection invocations (`/livespec-orchestrator-beads-fabro:capture-impl-gaps`, `/livespec-orchestrator-beads-fabro:capture-spec-drift`) are Dispatcher-side concerns invoked outside `next`'s ranking — `next` ranks materialized work-items only
+
+Scenario: Empty-queue handoff offers a hygiene fallback
+  Given `/livespec-orchestrator-beads-fabro:next` emits an empty `candidates: []` array (the no-work signal)
+  When the Dispatcher or operator reaches the empty-queue handoff
+  Then it SHOULD offer a hygiene fallback — at minimum a `/livespec:doctor` pass and a `/livespec:critique` pass
+  And it MAY also offer `/livespec:prune-history` if `next.prune_history_threshold` would otherwise have suppressed it
+  And the hygiene fallback is a Dispatcher / operator concern that is NEVER baked into the `next` emission itself
+```
+
+## Scenario 7 — Regroom an oversized work-item
+
+```gherkin
+Feature: Regroom an oversized work-item
+  # Cross-reference: the grooming PATTERN this scenario realizes is
+  # repo-agnostic non-functional guidance in `livespec`'s
+  # `non-functional-requirements.md`; the realization shown here (the
+  # groom front-end, the `backlog` bounce, the per-slice fields, the
+  # calibration journal fields) is this orchestrator's own, codified in
+  # §"Grooming and slice-size calibration" of `contracts.md`.
+  As a maintainer with an oversized or non-converging work-item
+  I want to regroom it into ready slices via the groom front-end
+  So that the Dispatcher can drain the slices by dependency layer
+
+Scenario: An oversized item is regroomed into ready slices and drained
+  Given an item sits in `backlog` needing re-decomposition — either an intake-routed epic (more than one coherent "done") or a Dispatcher non-convergence bounce (a dispatched slice that would not converge through the janitor gate, bounced and surfaced rather than infinite-retried)
+  When the maintainer runs the groom front-end (`groom <id>`)
+  Then it reads the item, the relevant spec / scenarios, and the ledger
+  And DRAFTS candidate slices read-only — each pre-filled with acceptance / autonomy tier / dependency links / repo target / scope, arranged into dependency layers
+  When the maintainer edits the cut / acceptance / deps / tiers and approves (or sends it back to re-draft; the maintainer OWNS the cut and the acceptance, the front-end only drafts)
+  Then on approval the front-end files the approved slices via `capture-work-item` with dependency edges linked
+  And routes any spec-change slice to `/livespec:propose-change` instead of the factory
+  And the Dispatcher then drains the resulting `ready` slices by dependency layer, re-running `just check` + `/livespec:doctor` + the named scenarios after each layer converges before the next layer dispatches
+```
+
+## Scenario 8 — Intake Definition-of-Ready triage
+
+```gherkin
+Feature: Intake Definition-of-Ready triage
+  As a capture front-end running the intake Definition-of-Ready checklist
+  I want to route each captured item into its lifecycle state
+  So that only autonomously-dispatchable work reaches the factory
+
+Scenario: A single-acceptance item is routed toward ready
+  Given a freshly-described single-acceptance item with one coherent "done", autonomously verifiable, autonomy-tiered, dependency-linked, repo-targeted, and above the size floor
+  When it is filed via a capture front-end running the intake Definition-of-Ready checklist
+  Then it lands in `pending-approval` and is approved into `ready` when its effective admission_policy is `auto`
+  And it is eligible for autonomous dispatch
+
+Scenario: An epic lands in backlog
+  Given a described epic with more than one coherent "done"
+  When it is filed via a capture front-end
+  Then it lands in `backlog` for decomposition
+  And it is surfaced for grooming rather than filed as `ready`
+
+Scenario: A non-autonomously-verifiable or blocked item does not reach ready
+  Given an item whose acceptance is not autonomously verifiable (it needs a human judgement call) OR that has open blockers
+  When it is filed via a capture front-end
+  Then a not-autonomously-verifiable item lands in `blocked` with `blocked_reason: needs-human`
+  And an item with open blockers carries its dependency edges (deriving the `blocked:dependency` lane)
+  And it is not auto-dispatched
+```
+
+## Scenario 9 — backlog bounce state and transitions
+
+```gherkin
+Feature: backlog bounce state and transitions
+  As the grooming realization
+  I want every path into and out of the backlog re-decomposition state to be observable
+  So that an oversized item is always surfaced, never silently dropped
+
+Scenario: An intake Definition-of-Ready epic failure enters backlog
+  Given an intake Definition-of-Ready epic failure (more than one coherent "done")
+  When capture runs
+  Then the item is at `backlog`
+  And it is surfaced
+
+Scenario: A non-converging dispatched slice enters backlog
+  Given a dispatched slice that will not converge through the janitor gate
+  When the Dispatcher bounces it
+  Then the item is at `backlog`
+  And it is surfaced
+
+Scenario: A groomed-and-approved item transitions out of backlog
+  Given a `backlog` item the maintainer has groomed and approved
+  When the groom front-end files the approved slices
+  Then the slices are `ready`
+  And the original item is regroomed-out (not silently dropped)
+```
+
+## Scenario 10 — Dispatcher holds a manual-admission spec-change item
+
+```gherkin
+Feature: Dispatcher holds a manual-admission spec-change item
+  As the Dispatcher draining ready slices
+  I want to hold at the admission valve any spec-change item whose effective admission_policy is manual
+  So that spec change always reaches the maintainer instead of the factory
+
+Scenario: A manual-admission spec-change slice is surfaced rather than dispatched
+  Given a `ready` slice whose effective admission_policy is `manual` (the spec-change / risky autonomy tier)
+  When the Dispatcher reaches it in the dependency-layer drain
+  Then it is surfaced to the maintainer
+  And it is not auto-dispatched into a Fabro sandbox
+```
+
+## Scenario 11 — Dispatcher bounces a non-converging slice to backlog
+
+```gherkin
+Feature: Dispatcher bounces a non-converging slice to backlog
+  As the Dispatcher observing a slice that will not converge
+  I want to bounce it to backlog and surface it
+  So that an empirically-too-big slice is escalated, never infinite-retried
+
+Scenario: A non-converging slice is bounced to backlog and surfaced
+  Given a dispatched slice that repeatedly fails the janitor gate (`just check` + `/livespec:doctor`) and will not converge within the fix-loop cap
+  When the Dispatcher observes non-convergence
+  Then the item is bounced to `backlog`
+  And it is surfaced to the maintainer
+  And it is never infinite-retried
+```
+
+## Scenario 12 — Dispatcher emits calibration telemetry
+
+```gherkin
+Feature: Dispatcher emits calibration telemetry
+  As the Dispatcher recording a terminal Fabro run
+  I want to write an outcome signal plus mechanical size proxies onto the existing journal
+  So that calibration can correlate size against convergence without any new always-on service
+
+Scenario: A terminal run writes outcome and size proxies onto the existing journal
+  Given a dispatched slice whose Fabro run reaches a terminal outcome
+  When the Dispatcher records the run
+  Then an outcome signal (converged?; fix-loop count; outcome class; wall-clock and token/cost; bounced-to-regroom?) is written onto the EXISTING Dispatcher journal record
+  And mechanical size proxies (acceptance count; merged-PR diff size; dependency fan-out; spec surface touched; dispatch context size; archetype; repo) are written onto the same record
+  And no new always-on service is started
+```
+
+## Scenario 13 — Calibration analysis pass proposes advisory thresholds
+
+```gherkin
+Feature: Calibration analysis pass proposes advisory thresholds
+  As the periodic calibration analysis pass
+  I want to correlate outcomes against size proxies and propose ceiling thresholds
+  So that the intake size-gate gains advisory numbers a maintainer may later adopt
+
+Scenario: The analysis pass proposes thresholds that stay advisory until adopted
+  Given an accumulated journal of run outcomes and size proxies
+  When the periodic calibration analysis pass runs
+  Then it correlates outcomes against size proxies and proposes ceiling thresholds
+  And the proposed thresholds remain advisory (the intake size-gate flags oversized items only advisorily) until a maintainer adopts them
+  And they are never auto-enforced
+```
+
+## Scenario 14 — Fabro non-convergence routes back to the Dispatcher
+
+```gherkin
+Feature: Fabro non-convergence routes back to the Dispatcher
+  As the single Fabro workflow-DOT tweak
+  I want a fix-loop cap plus a non-converged exit edge within the existing DOT vocabulary
+  So that a non-converging slice routes back to the Dispatcher with no Fabro platform change
+
+Scenario: A non-converged Fabro run routes control back to the Dispatcher
+  Given a Fabro workflow whose DOT carries a fix-loop cap and a "non-converged" exit edge within the existing DOT vocabulary
+  When a dispatched slice hits the fix-loop cap (`max_node_visits` governor) without converging
+  Then the "non-converged" exit edge routes control back to the Dispatcher (which bounces the item to `backlog`)
+  And no Fabro platform or setup change was required
+```
+
+## Scenario 15 — Dispatcher composes next's ranking
+
+```gherkin
+Feature: Dispatcher composes next's ranking
+  As the Dispatcher choosing which ready slice to dispatch
+  I want to compose `next`'s ranking rather than re-rank inline
+  So that `next` remains the single ranking authority
+
+Scenario: The Dispatcher selects via next's ranking
+  # Already-satisfied: this behavior is already implemented per in-flight
+  # work-item `livespec-impl-beads-i3jiny`, so it is documented and
+  # scenario-covered but is NOT a fresh gap.
+  Given the Dispatcher must choose which `ready` slice to dispatch
+  When it selects the next item
+  Then it composes `next`'s ranking (the single ranking authority) rather than re-ranking inline
+```
+
+## Scenario 16 — Closed-item-integrity check rejects "closed but unproven"
+
+```gherkin
+Feature: Closed-item-integrity check rejects "closed but unproven"
+  As the maintainer trusting that a closed gap-tied item is proven
+  I want the closed_item_integrity check wired into just check
+  So that a closed gap-tied item whose acceptance scenario is unbound, or which lacks the resolution:completed label, surfaces mechanically rather than passing CI green
+
+Scenario: A closed-but-unproven gap-tied item surfaces a finding
+  Given a gap-tied work-item is closed and its `gap-id` resolves through the `clauses[]` map to an acceptance scenario whose `tests/heading-coverage.json` entry is still bound to the `TODO` sentinel (or the item lacks the `resolution:completed` label)
+  When the `closed_item_integrity` check runs as part of `just check`
+  Then it emits a `closed-item-integrity` finding naming that item
+  And the finding is a warning in `warn` mode (the default, exit 0) and an error in `fail` mode (`LIVESPEC_CLOSED_ITEM_INTEGRITY=fail`, exit non-zero)
+
+Scenario: A fully-proven closed gap-tied item emits no finding
+  Given a gap-tied work-item is closed, carries the `resolution:completed` label, and its `gap-id` resolves through the `clauses[]` map to an acceptance scenario whose `tests/heading-coverage.json` entry binds to a real integration-tier test node id (not `TODO`)
+  When the `closed_item_integrity` check runs
+  Then it emits NO finding for that item
+```
+
+## Scenario 17 — orchestrate operator-surface defaults
+
+```gherkin
+Feature: orchestrate operator surface defaults to the ergonomic path
+  As an operator working inside a governed repo
+  I want bare `orchestrate`, a cwd-default repo, and Markdown output
+  So that the everyday cross-side selection loop needs no boilerplate
+  while scripts and the Dispatcher keep a fully specified invocation
+
+Scenario: A bare orchestrate invocation walks the operator through the choices
+  Given a governed repo whose spec-side and impl-side `next` surfaces are reachable
+  When the operator invokes `orchestrate` with no subcommand
+  Then the surface presents an interactive walkthrough of the available `actions[]`
+  And it does NOT error on a missing subcommand
+  And selecting an action composes the same read-only plan -> select -> run flow without introducing new ranking logic
+
+Scenario: An omitted --repo resolves to the current working directory's repo
+  Given the operator's current working directory is inside a governed repo
+  When the operator invokes `orchestrate plan` without `--repo`
+  Then the surface resolves the target repo to that current-directory repo
+  And an explicit `--repo <path>` still overrides the default when supplied
+
+Scenario: Console output is Markdown by default and JSON only with --json
+  Given any `orchestrate plan` or `orchestrate run` invocation
+  When the operator omits `--json`
+  Then the surface renders human-readable Markdown
+  And passing `--json` renders the same payload as machine-readable JSON
+```
+
+## Scenario 18 — Dispatcher projects a non-rotatable subscription credential into a worker sandbox
+
+```gherkin
+Feature: Dispatcher projects a non-rotatable subscription credential
+  As the Dispatcher running a worker on a provider subscription
+  I want to project a credential the worker cannot rotate
+  So that no worker can invalidate the shared credential for the host or peers
+
+Scenario: A dispatched worker receives a non-rotatable credential snapshot
+  Given the orchestrator host holds a valid provider-subscription credential whose usable lifetime exceeds the worker run budget
+  When the Dispatcher dispatches a ready work-item to a worker sandbox
+  Then the Dispatcher projects a non-rotatable credential snapshot into the sandbox such that the worker cannot rotate the shared refresh credential
+  And the worker authenticates its coding-agent runtime from that projected snapshot
+  And no refresh performed or attempted inside the sandbox invalidates the host's or any peer worker's credential
+```
+
+## Scenario 19 — Dispatcher refuses dispatch when the credential freshness gate fails
+
+```gherkin
+Feature: Dispatcher freshness-gates subscription-credentialed dispatch
+  As the Dispatcher protecting unattended runs
+  I want to refuse dispatch when the credential cannot outlive the run
+  So that a worker never starts on a credential that may expire mid-run
+
+Scenario: A too-short-lived credential refuses dispatch with a renewal message
+  Given the host provider-subscription credential's usable lifetime does NOT exceed the worker run budget
+  When the Dispatcher considers dispatching a ready work-item
+  Then the Dispatcher refuses the dispatch
+  And the Dispatcher surfaces that the host credential requires renewal rather than projecting a credential that may expire mid-run
+```
+
+## Scenario 20 — Review gate routes a green build through advisory code review before PR
+
+```gherkin
+Feature: A senior-engineer review gate reviews a green build before the PR stage
+  As the Dispatcher running an unattended implementation loop
+  I want a code-review gate between a green janitor and the PR stage
+  So that correctness and design defects the mechanical check suite cannot
+    catch are surfaced, without ever blocking a mechanically-valid change
+
+  Background:
+    Given the janitor gate (the mechanical check suite) is green
+
+  Scenario: An approved review proceeds to the PR stage
+    When the review gate reviews the change and raises no blocking findings
+    Then the run proceeds to the PR stage
+
+  Scenario: A blocking finding routes back to the implementer and re-validates
+    Given the review gate raised at least one blocking finding
+    And the review fix-round budget is not yet exhausted
+    When the implementer addresses or rejects each blocking finding with a rationale
+    Then the change is re-validated by the janitor and reviewed again
+
+  Scenario: A capped-out review ships rather than starving a valid change
+    Given the review gate has reached its review fix-round cap
+    And the review gate still raises a blocking finding
+    Then the run ships to the PR stage anyway
+    And the still-blocking finding does not gate the change
+```
+
+## Scenario 21 — Codex skills picker discovers orchestrate by short name
+
+```gherkin
+Feature: Codex TUI skill discoverability
+  As an operator using the Codex TUI
+  I want to find the orchestrator skill through the supported /skills picker
+  So that the installed plugin is discoverable without knowing internal
+    model-facing names
+
+Scenario: The /skills picker renders orchestrate under this plugin
+  Given the livespec-orchestrator-beads-fabro Codex plugin is installed
+  And the operator opens the Codex TUI
+  When the operator opens "/skills"
+  And chooses "List skills"
+  And searches for "orchestrate"
+  Then the picker renders "orchestrate (livespec-orchestrator-beads-fabro)"
+  And the rendered row is typed as a Skill
+  And the operator does not need to search for the colon-qualified
+    "livespec-orchestrator-beads-fabro:orchestrate" form
+```
+
+## Scenario 22 — Dispatcher admits the top-ranked ready item up to the per-repo WIP cap
+
+```gherkin
+Feature: Dispatcher admission valve with a per-repo WIP cap
+  As the Dispatcher enforcing the admission valve
+  I want to admit the top-ranked (earliest-rank) admission-eligible ready item when a slot frees
+  So that work flows up to the per-repo WIP cap and no further
+
+Scenario: Admission fills slots in rank order until the cap is reached
+  Given a per-repo wip_cap of 2
+  And three admission-eligible ready items with ranks "a0", "a1", "a2"
+  When the Dispatcher runs with no active items
+  Then it admits the items with ranks "a0" and "a1" first
+  And it sets an assignee on each admitted item
+  And it transitions each admitted item to active
+  And it does not admit the item with rank "a2" until an active slot frees
+```
+
+## Scenario 23 — Dispatcher holds a manual-admission item until approved
+
+```gherkin
+Feature: Manual admission policy holds an item at the admission valve
+  As the Dispatcher enforcing safe-by-default admission
+  I want to refuse to admit an item whose effective admission_policy is manual
+  So that risky or irreversible work waits for an explicit human approval
+
+Scenario: A manual-admission item is surfaced rather than admitted
+  Given a ready item whose effective admission_policy is manual
+  And no human has explicitly admitted it through the operator valve surface
+  When the Dispatcher reaches it with a free WIP slot
+  Then it does not transition the item to active
+  And it surfaces the item for the maintainer to approve
+```
+
+## Scenario 24 — complete merges on green into the acceptance state
+
+```gherkin
+Feature: Post-merge acceptance — complete merges on green
+  As the Dispatcher completing an active item
+  I want complete to merge on green and move the item to the acceptance state
+  So that acceptance verifies the shipped, observable artifact
+
+Scenario: complete ships on green into acceptance, not straight to done
+  Given an active item whose pre-merge just check floor has passed green
+  When the doer declares the implementation complete
+  Then the change is merged on green via gh pr merge --rebase --auto
+  And the item transitions to the acceptance state
+  And the item does not transition straight to done
+```
+
+## Scenario 25 — accept confirms post-ship per acceptance_policy
+
+```gherkin
+Feature: Post-merge acceptance — accept honors acceptance_policy
+  As the acceptance valve confirming a shipped change
+  I want accept to honor the item's effective acceptance_policy
+  So that no change reaches done without at least one AI verification pass
+
+Scenario: ai-then-human parks in acceptance until a human confirms
+  Given an item in the acceptance state whose effective acceptance_policy is ai-then-human
+  When the AI acceptance pass verifies the shipped artifact and surfaces findings
+  Then the item parks in the acceptance state on the ledger
+  And it transitions to done only after a human confirms from the console (the `orchestrate run accept:<id>` valve action)
+
+Scenario: reject from acceptance routes by corrective kind
+  Given an item in the acceptance state
+  When the reviewer rejects it for rework
+  Then the item transitions to active for a fix-forward patch
+  And when the reviewer instead rejects it for re-grooming
+  Then the merged change is reverted and the item transitions to backlog
+```
+
+## Scenario 26 — list-work-items emits lane and lane_reason
+
+```gherkin
+Feature: list-work-items emits the derived lane and lane_reason
+  As a consumer of list-work-items --json
+  I want each item to carry a computed lane and lane_reason
+  So that the console consumes the lane instead of re-deriving it
+
+Scenario: lane and lane_reason are computed from lane_of
+  Given a stored ready item with an open dependency
+  And a stored blocked item whose blocked_reason is needs-human
+  And a stored active item
+  When list-work-items --json is run
+  Then the ready-with-open-dependency item emits lane "blocked" and lane_reason "dependency"
+  And the stored blocked item emits lane "blocked" and lane_reason "needs-human"
+  And the active item emits lane "active" and lane_reason null
+```
+
+## Scenario 27 — next ranks ready items by rank
+
+```gherkin
+Feature: next ranks ready items by the rank ordering authority
+  As the single ranking authority the Dispatcher composes
+  I want next to order ready items by rank then id
+  So that the pull order is the deterministic rank order
+
+Scenario: ready candidates are returned in rank order
+  Given ready items with ranks "a2", "a0", "a1"
+  When next is run
+  Then the candidates are returned in the order ranked "a0", "a1", "a2"
+  And ties are broken by id lexicographic order
+```
+
+## Scenario 28 — append_work_item registers and lands a custom status in two steps
+
+```gherkin
+Feature: 2-step append into a beads custom status
+  As the beads store adapter writing a work-item
+  I want to create then update because bd create cannot land a custom status
+  So that an item filed into backlog carries the correct lifecycle status
+
+Scenario: a file create lands open then updates to a custom status
+  Given a tenant with the 5 custom statuses registered
+  When append_work_item files a new item whose initial state is backlog
+  Then bd create lands the issue with status open
+  And bd update sets the issue status to the custom backlog status
+```
+
+## Scenario 29 — Factory GitHub App token on the dispatch path
+
+```gherkin
+Feature: Factory GitHub App installation-token authentication
+  As the Dispatcher running the self-contained dispatch path
+  I want every automated GitHub operation to authenticate with a freshly-minted App installation token
+  So that no dispatch path depends on a fleet PAT or an ambient gh login
+
+Scenario: Dispatch refuses fail-closed when no App environment is resolvable
+  Given the App environment (GITHUB_APP_ID + GITHUB_PRIVATE_KEY) is absent
+  And the dispatch target repo has no credential_wrapper to re-exec through
+  When a dispatch is attempted
+  Then the Dispatcher refuses with an actionable diagnostic
+  And it does not fall through to a fleet credential or an ambient gh login
+
+Scenario: A credential-seam refusal names the missing variable and the target's own wrapper
+  Given a dispatch target whose configured credential_wrapper omits one of the required per-dispatch credentials (App environment, tenant store secret, or the engine LLM credential)
+  When the consuming seam on the dispatch path reaches the absent variable
+  Then the seam fails closed naming the specific missing variable
+  And the diagnostic names the dispatch target's own configured credential_wrapper as the corrective injection path, never a fleet wrapper
+
+Scenario: A long merge-poll survives token expiry via first-class remint
+  Given a merge-poll that outlives a single installation token's roughly one-hour validity
+  When the Dispatcher spawns each polling subprocess
+  Then each subprocess resolves a currently-valid token from the caching provider
+  And the operation survives the token expiry transparently
+
+Scenario: The sandbox receives only an ephemeral installation token
+  Given a dispatched Fabro worker sandbox
+  When the sandbox environment table is materialized
+  Then it carries a freshly-minted EPHEMERAL installation token
+  And neither the durable App private key nor any long-lived personal access token is projected
+```
+
+## Scenario 30 — Dispatch-time baseline conformance gate
+
+```gherkin
+Feature: Dispatch-time baseline conformance gate
+  As the Dispatcher's Fabro prepare chain
+  I want to provision each sandbox to the baseline profile and gate on the shared Verifiers
+  So that every dispatched sandbox is conformant by construction
+
+Scenario: A conformant sandbox proceeds to work
+  Given the prepare chain installed the canonical commit-refuse hook and declared the sandbox exemption marker
+  When the baseline Verifiers run over the provisioned sandbox
+  And every Verifier exits zero
+  Then the work-item is driven
+
+Scenario: A baseline violation aborts the dispatch before work is driven
+  Given a provisioned sandbox where a baseline Verifier exits non-zero
+  When the prepare chain gates on the Verifiers
+  Then the run aborts before any work is driven
+  And the baseline violation surfaces as a failed dispatch rather than silently non-conformant work
+```
+
+## Scenario 31 — orchestrate human valve actions
+
+```gherkin
+Feature: orchestrate human valve actions
+  As the operator (or the console acting on the operator's behalf)
+  I want approve, accept, and reject valve commands on the orchestrate run surface
+  So that the two human valves are commanded through the plugin's published surface, never a direct ledger write
+
+Scenario: approve admits a held manual-admission item
+  Given a ready item whose effective admission_policy is manual, held at the admission valve
+  When the operator invokes `orchestrate run --action approve:<work-item-id>`
+  Then the item's assignee is set and it transitions to active, subject to the per-repo WIP cap
+  And the journal records the actor
+
+Scenario: accept confirms a parked item to done
+  Given an item parked in the acceptance state awaiting the human leg of its acceptance_policy
+  When the operator invokes `orchestrate run --action accept:<work-item-id>`
+  Then the item transitions to done
+
+Scenario: reject routes by corrective kind
+  Given an item in the acceptance state
+  When the operator invokes `orchestrate run --action reject:<work-item-id>:rework`
+  Then the item transitions to active for a fix-forward patch
+  And when the operator instead invokes `orchestrate run --action reject:<work-item-id>:regroom`
+  Then the merged change is reverted and the item transitions to backlog
+```
+
+## Scenario 32 — Adopter-target dispatch compatibility
+
+```gherkin
+Feature: Adopter-target dispatch compatibility
+  As the Dispatcher driving an adopter repo (not a fleet member)
+  I want per-tenant engine identity, target-toolchain workflows, and default-branch awareness
+  So that an adopter dispatch succeeds without fleet-specific assumptions
+
+Scenario: Preflight verifies the serving App reaches the target repo
+  Given an adopter target repo the fleet's shared Fabro server App cannot reach
+  When the dispatch preflight runs against the serving Fabro server
+  Then it refuses before launching with a diagnostic naming the per-tenant server requirement (the target tenant's own App identity)
+  And the diagnostic surfaces the App workflows read-write grant among the App-installation requirements
+
+Scenario: A target-local workflow supplies the target's toolchain facts
+  Given an adopter repo carrying its own .fabro/workflows/implement-work-item workflow
+  And the dispatch is invoked with the --workflow override pointing at it
+  Then the prepare steps run the target repo's own toolchain facts
+  And no fleet-toolchain prepare constant (uv / lefthook / livespec_dev_tooling) is assumed for the target
+
+Scenario: Pull-primary resolves the target's default branch
+  Given a target repo whose default branch is main
+  When the post-merge janitor's pull-primary stage refreshes the primary checkout
+  Then it resolves the target repo's default branch and pulls that ref
+  And it never hardcodes master
+```
+
+## Scenario 33 — Full autonomous mode auto-admits a manual item
+
+```gherkin
+Feature: Full autonomous mode collapses the admission valve
+  As an operator running unattended under full autonomous mode
+  I want manual-admission items admitted without a human approval
+  So that routine admission decisions do not block an autonomous run
+
+Scenario: A manual-admission item is auto-admitted under autonomous mode
+  Given full autonomous mode is enabled for the invocation via `orchestrate run --mode autonomous`
+  And a ready item whose stored admission_policy is manual, with dependencies clear and an assignee resolvable
+  When the Dispatcher passes the admission valve with a free WIP slot
+  Then it treats the item's effective admission_policy as auto and admits it to active
+  And it journals the auto-admission with the item id and the collapsed valve
+```
+
+## Scenario 34 — Full autonomous mode auto-accepts an ai-then-human item
+
+```gherkin
+Feature: Full autonomous mode collapses the acceptance valve
+  As an operator running unattended under full autonomous mode
+  I want ai-then-human items accepted on a passing AI pass without the human leg
+  So that post-merge acceptance does not park waiting for a human
+
+Scenario: An ai-then-human item is accepted by the AI pass alone
+  Given full autonomous mode is enabled for the invocation
+  And an item parked in acceptance whose acceptance_policy is ai-then-human
+  When the AI acceptance pass confirms against the merged ref and telemetry
+  Then the item transitions to done without the human accept action
+  And at least one AI pass has run, preserving no-release-with-zero-verification
+  And the auto-acceptance is journaled
+```
+
+## Scenario 35 — Full autonomous mode resolves a needs-human block
+
+```gherkin
+Feature: Full autonomous mode resolves needs-human escalations
+  As an operator running unattended under full autonomous mode
+  I want the engine to resolve blocked_reason needs-human items it can
+  So that resolvable escalations do not stall the run
+
+Scenario: A resolvable needs-human item is LLM-resolved and returned to its path
+  Given full autonomous mode is enabled for the invocation
+  And an item with blocked_reason needs-human whose decision the LLM can confidently resolve
+  When the engine evaluates the block
+  Then it resolves the decision and routes the item back onto its normal path
+  And it journals the resolution with the item id and the collapsed valve
+```
+
+## Scenario 36 — Full autonomous mode still escalates the truly-unresolvable
+
+```gherkin
+Feature: Full autonomous mode never guesses a truly-unresolvable decision
+  As an operator relying on the mode's safety floor
+  I want decisions the LLM cannot confidently resolve to still reach a human
+  So that autonomous mode is never a silent wrong decision
+
+Scenario: A truly-unresolvable decision escalates even under autonomous mode
+  Given full autonomous mode is enabled for the invocation
+  And a decision the LLM cannot confidently resolve, or which policy marks human-only
+  When the engine evaluates it
+  Then it does not auto-resolve the decision
+  And the item remains blocked with blocked_reason needs-human and is surfaced to a human
+  And the escalation is queryable from the journal
+```
+
+## Scenario 37 — Full autonomous mode is default-off and explicitly armed
+
+```gherkin
+Feature: Full autonomous mode is dangerous, default-off, and explicit
+  As a maintainer
+  I want autonomous mode disabled unless I explicitly and knowingly arm it
+  So that a dangerous override is never entered by accident
+
+Scenario: Without the explicit opt-in the run stays interactive
+  Given dispatcher.autonomous_mode is unset or false and no `--mode autonomous` flag is passed
+  When an orchestrate run starts
+  Then full autonomous mode is not active and the human-delegable valves keep their normal policies
+
+Scenario: Arming the mode requires an explicit dangerous-mode acknowledgement
+  Given an operator requests `orchestrate run --mode autonomous`
+  When the run arms full autonomous mode
+  Then the dangerous mode is surfaced explicitly and the arming does not persist beyond the invocation
+```
+
+## Scenario 38 — capture-spec-drift surfaces ledger intent missing from spec
+
+```gherkin
+Feature: Ledger-intent drift surfaces missing spec behavior
+  As a maintainer keeping the spec honest against the Ledger
+  I want work-item intent that never made it into the spec surfaced as drift
+  So that decisions recorded only in work-items still reach the spec
+
+Scenario: A recent work-item's intent absent from the spec becomes a drift finding
+  Given a recent Ledger work-item whose description encodes a behavior not present in the current spec
+  When capture-spec-drift runs, optionally scoped by --since-version
+  Then it surfaces a ledger-intent drift finding
+  And on user consent it hands off to /livespec:propose-change
+  And it never mutates the work-item or writes spec-side state directly
+```
