@@ -213,19 +213,15 @@ bootstrap:
     just install-worktree-pack
     chmod +x dev-tooling/worktree-hydrate.sh
 
-# Idempotent: `claude plugin marketplace add` and `claude plugin install`
-# both exit 0 when the target is already present. livespec@livespec is
-# the core artifact carrier (prose + reference CLIs);
-# livespec@livespec-driver-claude is the Claude Code Driver that
-# exposes the /livespec:* commands — both are required for the
-# spec-side surface.
+# The standard shared derive-from-settings wrapper: reads the committed
+# `.claude/settings.json` (`extraKnownMarketplaces` incl. ref, `enabledPlugins`)
+# at runtime and issues the marketplace add / install / update commands for
+# exactly what it finds — one source of truth, recipe-content drift structurally
+# impossible. Registers this repo's full project-scope Claude plugin set
+# (livespec core, the Claude Driver, and this orchestrator plugin) so the
+# spec-side surface is present.
 ensure-plugins:
-    claude plugin marketplace add --scope project thewoolleyman/livespec@release
-    claude plugin marketplace add --scope project thewoolleyman/livespec-driver-claude@release
-    claude plugin marketplace add --scope project thewoolleyman/livespec-orchestrator-beads-fabro@release
-    claude plugin install -s project livespec@livespec
-    claude plugin install -s project livespec@livespec-driver-claude
-    claude plugin install -s project livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro
+    mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins
 
 # Idempotent host-wide Codex plugin provisioning. Codex does not support
 # project-scoped plugin enablement, so these registrations intentionally land in
