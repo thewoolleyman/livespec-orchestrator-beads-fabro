@@ -82,9 +82,22 @@ rejection-revision file are archived there).
   refreshed; Scenarios 10/23 test bindings kept or TODO'd, never
   renamed to not-yet-existing tests), and the implementation-impact
   paragraph now states the revise pass files nothing.
-- Next action: independent Fable RE-VERIFICATION (fleet standing
-  rule: no-blockers verdict required before ratification). Only
-  then the MAINTAINER runs `/livespec:revise` against
+- SECOND AMENDMENT 2026-07-04 per re-verification #2 (which
+  confirmed all 35 replace-targets, the byte-exact quote, and model
+  fidelity; 2 minor blockers + 3 advisories remained, all fixed):
+  Scenario 7's "into ready slices" / drain lines added to the I10
+  groom-output sweep; D2 now also rewords "which valve was
+  collapsed" to "which gate was collapsed"; section F reverted to
+  keep the invariant gloss "(the structural grooming gate)"
+  byte-verbatim per the design record and the livespec-runtime twin
+  (the proposal holds itself to its own byte-fidelity standard);
+  the heading-coverage co-edit now also covers Scenario 10's
+  `clauses[].scenario` string; new I11 sharpens the Scenario 35/37
+  "collapsed valve" / "human-delegable valves" narrative residue to
+  gate-vocabulary.
+- Next action: fresh independent Fable RE-VERIFICATION #3 (fleet
+  standing rule: no-blockers verdict required before ratification).
+  Only then the MAINTAINER runs `/livespec:revise` against
   `SPECIFICATION/` and accepts or rejects the replacement. Do not
   self-revise from a track session.
 - At ratification: the `tests/heading-coverage.json` co-edit MUST
@@ -99,11 +112,12 @@ rejection-revision file are archived there).
   mirroring `update_work_item_status`) — see the proposal's
   "Implementation impact" paragraph. The revise pass itself files
   nothing; the rework slice is a separate post-ratification act.
-- Possible follow-up (verifier advisory 6, OUT of this repo's
-  scope): the shared `livespec_runtime` work-items invariant gloss
-  diverges from the restored semantics; if confirmed after
-  ratification, propose the fix in the runtime's owning repo
-  (`thewoolleyman/livespec-runtime`), not here.
+- Verifier advisory 6 (the `livespec_runtime` invariant gloss
+  divergence) is RESOLVED as moot by the second amendment: the
+  proposal now keeps the "(the structural grooming gate)" gloss
+  byte-verbatim, matching both the design record and the runtime's
+  ratified twin (repo `thewoolleyman/livespec-runtime`) — no
+  runtime-side follow-up is needed for this gloss.
 
 ## Open gate 2 — Workstream C: backlog re-triage execution (maintainer)
 
