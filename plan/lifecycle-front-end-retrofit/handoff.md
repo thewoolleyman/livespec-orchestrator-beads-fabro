@@ -59,18 +59,28 @@ rejection-revision file are archived there).
   state semantics` section carries the maintainer's verbatim
   rationale plus intent-preservation clauses; the dropped
   "`admission_policy` governs only the `approve` routing" invariant
-  is ratified doctor-checkable.
+  is ratified doctor-checkable. Per maintainer approval 2026-07-04
+  the proposal ALSO carries the policy-edit operator actions
+  `set-admission:<id>:auto|manual` and
+  `set-acceptance:<id>:ai-only|human-only|ai-then-human` on the
+  `orchestrate` human-valve surface, governed by the
+  no-surprise-transitions rule (a policy edit never moves an item
+  between states; a `manual → auto` flip on a `pending-approval`
+  item still requires an explicit `approve:<id>`).
 - Next action: the MAINTAINER runs `/livespec:revise` against
   `SPECIFICATION/` and accepts or rejects the replacement. Do not
   self-revise from a track session.
 - At ratification: the `tests/heading-coverage.json` co-edit MUST
   land via the revise `resulting_files[]` mechanism (one added
   contracts.md H2; three retitled scenarios.md H2s), and the
-  maintainer authorizes filing the implementation rework slice (the
-  A3 `approve:` valve action re-targets to `pending-approval →
-  ready`; the Dispatcher's manual-admission surface point moves to
-  `pending-approval`) — see the proposal's "Implementation impact"
-  paragraph.
+  maintainer authorizes filing the implementation rework slice with
+  the expanded scope: (a) the A3 `approve:` valve action re-targets
+  to `pending-approval → ready` (the Dispatcher's manual-admission
+  surface point moves to `pending-approval`); (b) the
+  `set-admission:` / `set-acceptance:` policy-edit actions are
+  implemented (a store-seam policy updater mirroring
+  `update_work_item_status`) — see the proposal's "Implementation
+  impact" paragraph.
 
 ## Open gate 2 — Workstream C: backlog re-triage execution (maintainer)
 
