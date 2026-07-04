@@ -51,9 +51,11 @@ two facets:
   carries the topic, so the filenames do not repeat it). A young thread
   MAY be research-only (no handoff yet).
 
-The broader `research/` tree stays for standalone analysis that is not
-an active planning thread. Archived threads live under
-`plan/archive/<topic>/`.
+There is NO root `research/` tree: standalone analysis lives in a plan
+thread (or, once the thread closes, under `plan/archive/`), and a
+living reference document lives in `docs/`, `.ai/`, or a dedicated
+top-level topic directory (precedent: `loop-reflection-gate/`).
+Archived threads live under `plan/archive/<topic>/`.
 
 ## Flow
 
@@ -176,8 +178,9 @@ git mv plan/<topic>/ plan/archive/<topic>/
 
 Reopening the epic unarchives it (move back). Nothing is lost — the
 archived thread stays under `plan/archive/` and in git history; to keep
-a research note as living reference, copy it to `research/`
-deliberately. In spirit this is `prune-history` for planning threads:
+a research note as living reference, move it to `docs/`, `.ai/`, or a
+dedicated top-level topic directory deliberately. In spirit this is
+`prune-history` for planning threads:
 the active view stays clean, completed threads move aside rather than
 getting deleted.
 
