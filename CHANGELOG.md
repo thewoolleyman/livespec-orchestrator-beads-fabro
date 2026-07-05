@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.9.3...v0.9.4) (2026-07-05)
+
+
+### Bug Fixes
+
+* make the fabro_bin default a smart resolver (home path, else PATH lookup) ([a2ac042](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a2ac0429fb0917fd5146f35467607231f279e703))
+
 ## [0.9.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.9.2...v0.9.3) (2026-07-05)
 
 
