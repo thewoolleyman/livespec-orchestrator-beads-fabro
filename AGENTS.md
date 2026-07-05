@@ -260,3 +260,14 @@ pass `--no-verify`.
   every symbol before or beside its first use (an arrow, a column, a tally),
   make headings match their content, and write complete sentences over
   compressed fragments.
+- **Drive authorized work to completion; do not over-ask** (maintainer-declared
+  2026-07-06). When the maintainer names a goal and says to finish or continue
+  it ("get this entire track finished", "continue", "don't hold it"), execute
+  the WHOLE arc — implement, dispatch, merge, iterate, archive — without pausing
+  to confirm each already-authorized step. Ask ONLY for input the maintainer
+  alone can give: irreversible/destructive actions, or genuinely ambiguous
+  requirements that cannot be settled from the code, spec, or context. An
+  operator-flow step that says "present options and let the user select" is
+  satisfied by a standing directive once the goal is named — do not re-prompt.
+  Surface real blockers and true judgment calls; drop routine "should I
+  proceed?" confirmations. Default to acting, then reporting outcomes.
