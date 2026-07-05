@@ -37,13 +37,17 @@ other way — env is highest-priority):
    priority (mirrors `LIVESPEC_BD_PATH`). A non-empty value wins outright.
 2. The `.livespec.jsonc` `livespec-orchestrator-beads-fabro.dispatcher`
    block's `fabro_bin` key, when non-empty.
-3. The built-in default `$HOME/.fabro/bin/fabro`, computed AT CALL TIME so a
-   test that monkeypatches `Path.home()` observes the redirected home.
+3. The built-in default, resolved AT CALL TIME across BOTH deploy envs: the
+   absolute `$HOME/.fabro/bin/fabro` when it exists and is executable, else a
+   `PATH` lookup (`shutil.which("fabro")`), else the concrete home-path string.
 
-An ABSOLUTE default is deliberate: the fleet credential wrapper re-execs
-under a sanitized `PATH` (secure_path) that excludes `~/.local/bin`, so a
-bare `fabro` lookup fails even though the binary is present; the absolute
-`$HOME/.fabro/bin/fabro` resolves because the wrapper PRESERVES `HOME`.
+The default probes the absolute home path before a bare `PATH` lookup because
+the two envs that run with no explicit `--fabro-bin` disagree: the fleet
+credential wrapper sanitizes `PATH` (secure_path, no `~/.local/bin`) but
+PRESERVES `HOME`, so on the host the absolute `$HOME/.fabro/bin/fabro`
+resolves where a bare `fabro` lookup fails; the orchestrator container instead
+carries `fabro` at `/usr/local/bin/fabro` ON `PATH` with no `~/.fabro`, which
+the `shutil.which` fallback finds.
 
 The function signature keeps the plaintext sibling's
 `work_items_arg` parameter (`resolve_store_config(*, cwd,
@@ -56,6 +60,7 @@ signature only for call-site compatibility.
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 from typing import Any, cast
 
@@ -121,7 +126,8 @@ def resolve_fabro_bin(*, cwd: Path) -> str:
 
     Precedence: a non-empty `LIVESPEC_FABRO_BIN` env value wins outright; else
     the `.livespec.jsonc` `dispatcher.fabro_bin` key, when non-empty; else the
-    call-time default `$HOME/.fabro/bin/fabro`.
+    call-time default from `_default_fabro_bin` (absolute home path, else a
+    `PATH` lookup, else the concrete home-path string).
     """
     env_value = os.environ.get(_ENV_FABRO_BIN)
     if env_value is not None and env_value != "":
@@ -195,13 +201,31 @@ def _resolve_bd_path(*, block: dict[str, Any]) -> str:
 
 
 def _default_fabro_bin() -> str:
-    """The absolute default `fabro` path, computed AT CALL TIME.
+    """The default `fabro` path, resolved AT CALL TIME across BOTH deploy envs.
 
-    Computed at call time (not import time) so a test that monkeypatches
-    `Path.home()` observes the redirected home rather than a value frozen at
-    module import.
+    Two environments run the Dispatcher with no explicit `--fabro-bin`:
+
+    - Host-under-wrapper: the fleet credential wrapper sanitizes `PATH`
+      (secure_path, no `~/.local/bin`) but PRESERVES `HOME`, so the binary at
+      `$HOME/.fabro/bin/fabro` resolves by absolute path where a bare `fabro`
+      PATH lookup would fail.
+    - Orchestrator container (dark factory): `fabro` lives at
+      `/usr/local/bin/fabro` ON `PATH`, and `$HOME/.fabro/bin/fabro` is absent.
+
+    So the default probes the absolute home path FIRST (fixes the host bug),
+    then falls back to a `PATH` lookup (works in the container). When neither
+    resolves it returns the concrete home-path string so the preflight error
+    names a real, actionable target rather than a bare name. Computed at call
+    time (not import time) so a test that monkeypatches `Path.home()` /
+    `shutil.which` observes the redirected values.
     """
-    return str(Path.home() / ".fabro" / "bin" / "fabro")
+    home_candidate = Path.home() / ".fabro" / "bin" / "fabro"
+    if home_candidate.is_file() and os.access(home_candidate, os.X_OK):
+        return str(home_candidate)
+    found = shutil.which("fabro")
+    if found is not None:
+        return found
+    return str(home_candidate)
 
 
 def _resolve_fake(*, block: dict[str, Any]) -> bool:
