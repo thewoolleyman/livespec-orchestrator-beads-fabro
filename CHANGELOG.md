@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.9.4...v0.9.5) (2026-07-05)
+
+
+### Bug Fixes
+
+* surface adopter wrapper credentials ([944c92a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/944c92a92bfb924462935cac3920eadaddce8e5a))
+
 ## [0.9.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.9.3...v0.9.4) (2026-07-05)
 
 

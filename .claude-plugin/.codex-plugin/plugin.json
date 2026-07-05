@@ -1,6 +1,6 @@
 {
   "name": "livespec-orchestrator-beads-fabro",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "description": "Beads/Dolt-backed implementation plugin for livespec. Exposes /livespec-orchestrator-beads-fabro:capture-impl-gaps, /livespec-orchestrator-beads-fabro:capture-spec-drift, /livespec-orchestrator-beads-fabro:capture-work-item, /livespec-orchestrator-beads-fabro:detect-impl-gaps, /livespec-orchestrator-beads-fabro:implement, /livespec-orchestrator-beads-fabro:list-work-items, /livespec-orchestrator-beads-fabro:next, /livespec-orchestrator-beads-fabro:orchestrate.",
   "skills": "./.codex-plugin/skills/"
 }
