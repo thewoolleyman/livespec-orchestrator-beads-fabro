@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.9.6...v0.10.0) (2026-07-05)
+
+
+### Features
+
+* ratified-lessons reader for dispatch-brief injection (S1) ([a8a74f7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a8a74f7d5ea55b839d79178e3279ee1ab9107429))
+
 ## [0.9.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.9.5...v0.9.6) (2026-07-05)
 
 
