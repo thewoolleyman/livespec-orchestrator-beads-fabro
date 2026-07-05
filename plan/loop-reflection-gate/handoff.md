@@ -1,16 +1,15 @@
 # loop-reflection-gate — handoff
 
 Thread state: **LIVE** — opened 2026-07-04 to drive the
-reflection-gate's remaining work; resequenced SPEC-FIRST later the
-same day after a plan-accuracy review found the original next action
-(groom the consumer item directly) skipped the spec lane for behavior
-the spec owns. The spec-first gate AND the `.10` update pass are both
-DONE: `/livespec:revise` landed SPECIFICATION v030 (2026-07-04,
-accepting both proposals this thread owned), and the `.10` update pass
-(2026-07-04) paired the impl item to the landed contract
-(`spec_commitment_hint` + notes/description now cite Scenarios 39–40;
-`origin:freeform` stamped). The thread advances to GROOMING `.10` TO
-those accepted clauses.
+reflection-gate's remaining work; resequenced SPEC-FIRST later that day
+after a plan-accuracy review found the original next action (groom the
+consumer item directly) skipped the spec lane for behavior the spec
+owns. Spec-first gate, `.10` update, and grooming are all DONE:
+`/livespec:revise` landed SPECIFICATION v030 (2026-07-04); the `.10`
+update paired the impl item to the landed contract; and grooming
+(2026-07-05) decomposed `.10` into two factory slices (S1 reader → S2
+inject) and regroomed the original out. The thread advances to
+DISPATCHING that groomed factory work.
 
 Resume command:
 `/livespec-orchestrator-beads-fabro:plan loop-reflection-gate`
@@ -35,8 +34,10 @@ precedent).
 
 Epic `livespec-impl-beads-29f` (this repo's tenant) — "Reflection
 gate realization — Honeycomb-backed eval/audit loop for the
-dispatcher". Its eight original children are complete; the epic stays
-OPEN because this thread added a ninth child (`.10`, below).
+dispatcher". Its eight original children are complete; the ninth child
+`.10` was groomed into two slices (S1 `bd-ib-nznswb`, S2
+`bd-ib-zwl7w3`, both linked under the epic) and regroomed out. The epic
+stays OPEN until those two slices land and close.
 
 Anchor deviation, consciously accepted: this thread ADOPTED the
 existing implementation epic as its anchor instead of filing a
@@ -54,30 +55,37 @@ equivalent raw read from the repo root:
 ```bash
 cd /data/projects/livespec-orchestrator-beads-fabro
 /data/projects/1password-env-wrapper/with-livespec-env.sh \
-  bd show livespec-impl-beads-29f livespec-impl-beads-29f.10 bd-ib-umno37 --json
+  bd show livespec-impl-beads-29f bd-ib-nznswb bd-ib-zwl7w3 bd-ib-umno37 --json
 ```
 
 ## Work this thread drives
 
-- `livespec-impl-beads-29f.10` (backlog) — Lessons brief-injection
-  consumer (epic decision 7). The proposer half opens the
-  ratification PR; NO code reads the merged
-  `loop-reflection-gate/lessons.md` yet. Its spec contract LANDED in
-  SPECIFICATION v030: `contracts.md` §"Dispatch-brief lessons
-  injection" plus Scenarios 39–40 in `scenarios.md`. The item is now
-  PAIRED to that contract (`spec_commitment_hint:
-  lessons-brief-injection-consumer` — surfaced on the beads-native
-  record as `spec_id`; its notes + description cite the landed clauses;
-  `origin:freeform` stamped) and awaits grooming TO those accepted
-  clauses.
+- `bd-ib-nznswb` — **Lessons consumer S1: ratified-lessons reader**
+  (layer 0). A pure extractor over the committed
+  `loop-reflection-gate/lessons.md` (extract ratified text under
+  `## Lessons`; return empty for absent / placeholder-only /
+  unreadable — fail-open). Child of epic `livespec-impl-beads-29f`;
+  `origin:freeform`. Status is DERIVED — as of grooming it auto-readied
+  to `ready` (see Next action). No blocking dependency (the epic edge is
+  parent-child, which the store does not treat as blocking).
+- `bd-ib-zwl7w3` — **Lessons consumer S2: inject into the dispatch
+  brief** (layer 1). Wires the S1 reader into `render_goal`
+  (`_dispatcher_plan.py`), reading lessons from the DISPATCHER'S OWN
+  working tree (not `render_goal`'s target `repo`) and injecting a
+  delimited lessons section into the pre-escape assembly; brief is
+  byte-identical when there are no ratified lessons. Child of the epic;
+  `origin:freeform`; carries `spec_commitment_hint:
+  lessons-brief-injection-consumer` (the v030 pairing, moved here from
+  the regroomed-out `.10`). Has a `blocks` edge to S1, so it stays
+  gated until S1 closes. Acceptance: Scenarios 39–40.
 - `bd-ib-umno37` (ready) — post-verdict fail-open stages (cost
   gate, reflection, calibration, self-update canary) ride the ambient
   `GH_TOKEN` instead of the provider accessor; wrap their runners so
   first-class remint holds across the whole dispatch lifetime. Its
   spec contract already landed (SPECIFICATION v024 §"Self-contained
   plugin dispatch"). Independent hardening; no sequencing coupling to
-  `.10`; it is already `ready`, so the factory drains it on its own —
-  this thread owes it nothing.
+  the consumer slices; it is already `ready`, so the factory drains it
+  on its own — this thread owes it nothing.
 - Cross-tenant, READ-ONLY context: `livespec-dev-tooling-e60`
   (livespec-dev-tooling tenant) — the observability umbrella that
   consumes this pipeline's enriched telemetry. This thread reads its
@@ -93,11 +101,12 @@ the repo TOP LEVEL, not under `plan/`.
 
 1. `SPECIFICATION/contracts.md` §"Dispatch-brief lessons injection"
    and `SPECIFICATION/scenarios.md` Scenarios 39–40 — the LANDED spec
-   contract for the injection consumer (clauses + scenarios). The
-   accept record (decision + rationale + resulting files) is
+   contract for the injection consumer (clauses + scenarios), the
+   authoritative acceptance both slices implement TO. The accept record
+   (decision + rationale + resulting files) is
    `SPECIFICATION/history/v030/proposed_changes/lessons-brief-injection-revision.md`;
    the impl-followup commitment `lessons-brief-injection-consumer`
-   pairing `.10` is the front-matter
+   (now paired on S2 `bd-ib-zwl7w3`) is the front-matter
    `spec_commitments.impl_followups[].id_hint` of the paired original
    proposal
    `SPECIFICATION/history/v030/proposed_changes/lessons-brief-injection.md`.
@@ -109,62 +118,50 @@ the repo TOP LEVEL, not under `plan/`.
 
 ## Next action
 
-The spec-first gate AND the `.10` update pass are both complete:
+Grooming is complete. `.10` was decomposed (2026-07-05) into two
+factory slices, both children of the epic:
 
-- `/livespec:revise` landed SPECIFICATION v030 (2026-07-04), accepting
-  BOTH proposals this thread owned: `lessons-brief-injection` →
-  `contracts.md` §"Dispatch-brief lessons injection" + Scenarios 39
-  (ratified lesson injects) and 40 (unratified / absent / unmerged /
-  unreadable never alter briefs); `claude-fable-5-critique` → BCP14
-  restatement of the no-root-research-tree invariant in `contracts.md`
-  §"The `plan/<topic>/` thread store" + Scenario 41.
-- The `.10` update pass (2026-07-04) paired
-  `livespec-impl-beads-29f.10` to the landed contract:
-  `spec_commitment_hint: lessons-brief-injection-consumer`, its notes +
-  description now cite `contracts.md` §"Dispatch-brief lessons
-  injection" and Scenarios 39–40, and the missing `origin:freeform`
-  label is stamped. The epic-description sketch no longer stands in for
-  the contract.
+- **S1 `bd-ib-nznswb`** (ratified-lessons reader) — `ready`.
+- **S2 `bd-ib-zwl7w3`** (inject into brief) — `pending-approval`,
+  blocked by a `blocks` edge to S1; carries the v030
+  `spec_commitment_hint`.
 
-The out-of-scope `orchestrate-plan-surfaces-unarchived-plan-threads`
-proposal remains pending, untouched, for its own thread (it still
-claims a Scenario 39 provisionally — that renumbers when IT lands,
-since 39–41 are now taken).
+Note on the ready gate: the earlier claim that groomed slices always
+land at `pending-approval` for a maintainer approval was too broad. This
+repo runs `admission:auto`, and intake-DoR (`intake_dor.py`) auto-promotes
+a DEPENDENCY-FREE auto-admission slice straight to `ready`. So S1 (no
+blocking dep) is `ready` and factory-dispatchable WITHOUT further
+approval — the maintainer confirmed 2026-07-05 to leave it ready and keep
+the work moving. S2 stayed `pending-approval` because it carries a
+blocking dep on S1.
 
-**The next action is to groom `.10`** via
-`/livespec-orchestrator-beads-fabro:groom livespec-impl-beads-29f.10`.
-Groom TO the landed clauses — Scenarios 39–40 are the authoritative
-acceptance. Groomed slices land at `pending-approval`; the maintainer's
-approval is the `pending-approval → ready` transition — slices are NOT
-dispatchable straight out of grooming.
+**The next action is to DISPATCH the ready factory work** — never inline
+in a planning session. Either the Dispatcher drains `ready` items on its
+own, or an operator runs the `orchestrate` operation
+(`/livespec-orchestrator-beads-fabro:orchestrate`) to dispatch S1
+(`bd-ib-nznswb`) now. Then, in order:
 
-Scope the grooming pass to `.10` ALONE: do NOT dispatch (that is the
-sequenced later step below), and do NOT touch `bd-ib-umno37` or any
-sibling item beyond opportunistic origin-label hygiene. One action per
-pass keeps the thread auditable.
-
-Then, in a later invocation of this thread:
-
-1. **Dispatch factory-side** — once the maintainer approves the groomed
-   `.10` slices to `ready`, the Dispatcher drains them (or an operator
-   runs `orchestrate`); never inline in a planning session.
+1. **After S1 lands + closes**, its `blocks` edge to S2 resolves. Move
+   S2 (`bd-ib-zwl7w3`) `pending-approval → ready` (the maintainer
+   approval / re-admission), then dispatch it the same way.
+2. **When S1 and S2 both close** (the consumer is built), the epic's
+   remaining consumer work is done — proceed to Close-out.
 
 ## Hygiene and coordination notes
 
-- `bd-ib-umno37` is now at status `ready` and its `ready` label
-  agrees — the earlier pre-lifecycle STATUS-vs-label discrepancy has
-  resolved, so the backlog-retriage caveat this note once carried is
-  obsolete. It is independent hardening the factory drains on its own;
-  no action owed by this thread.
-- Sibling origin-labeling is inconsistent (`.8` and `.10` carry
-  `origin:freeform`, `.4` carries none); fix opportunistically when an
-  item is next written, not as standalone churn.
+- `bd-ib-umno37` is at status `ready` and its `ready` label agrees —
+  the earlier pre-lifecycle STATUS-vs-label discrepancy resolved. It is
+  independent hardening the factory drains on its own; no action owed by
+  this thread.
+- Origin-labeling: the groomed slices S1/S2 both carry `origin:freeform`.
+  Sibling `.4` still carries none; fix opportunistically when it is next
+  written, not as standalone churn.
 
 ## Close-out condition
 
-When `livespec-impl-beads-29f.10` (and any slices groomed from it)
-land and close, and epic `livespec-impl-beads-29f` closes, archive
-this thread via a docs-only PR
+When both groomed slices (`bd-ib-nznswb`, `bd-ib-zwl7w3`) land and
+close, and epic `livespec-impl-beads-29f` closes, archive this thread
+via a docs-only PR
 (`git mv plan/loop-reflection-gate/ plan/archive/loop-reflection-gate/`)
 with a final handoff note recording the outcome.
 
