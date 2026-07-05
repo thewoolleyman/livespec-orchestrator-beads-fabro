@@ -901,13 +901,15 @@ def test_argv_builders_encode_family_discipline(tmp_path: Path) -> None:
         "mise",
         "exec",
         "--",
-        "git",
-        "-C",
+        "sh",
+        "-lc",
+        (
+            'branch="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null '
+            '|| printf master)"; branch="${branch#origin/}"; '
+            'git -C "$1" pull --ff-only origin "$branch"'
+        ),
+        "pull-primary",
         str(tmp_path),
-        "pull",
-        "--ff-only",
-        "origin",
-        "master",
     ]
     assert janitor_worktree_add_argv(plan=plan, ref="cafe01") == [
         "git",
