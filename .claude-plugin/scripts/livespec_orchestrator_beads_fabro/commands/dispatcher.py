@@ -203,6 +203,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_checks import
     LedgerFinding,
     run_ledger_checks,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_lessons import (
+    read_ratified_lessons,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_notify import (
     HttpNotifyPoster,
     NotifyEvent,
@@ -1417,7 +1420,14 @@ def _dispatch_one(
         )
         journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
         return outcome
-    goal_text = render_goal(item=item, repo=repo, branch=plan.branch, comments=comments)
+    # Lessons are read host-side from `repo` (the dispatcher's operative
+    # checkout, where the reflector maintains loop-reflection-gate/lessons.md),
+    # exactly like `comments` above; only committed content is read, so an
+    # unmerged reflector proposal never influences a brief.
+    lessons = read_ratified_lessons(lessons_root=repo)
+    goal_text = render_goal(
+        item=item, repo=repo, branch=plan.branch, comments=comments, lessons=lessons
+    )
     _ = goal_file.write_text(goal_text, encoding="utf-8")
     started_at = time.monotonic()
     try:

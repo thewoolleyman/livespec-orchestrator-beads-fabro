@@ -374,6 +374,7 @@ def render_goal(
     repo: Path,
     branch: str,
     comments: tuple[WorkItemComment, ...] = (),
+    lessons: str = "",
 ) -> str:
     """Render the per-item brief delivered to the phase graph as the run goal.
 
@@ -417,19 +418,31 @@ def render_goal(
         f"{acceptance_line}"
         f"{notes_line}"
     )
-    # Escape AFTER assembly so EVERY interpolated field (title,
-    # description, comments, repo path) is neutralized in one place: the
-    # whole rendered goal is what flows into fabro's MiniJinja-templated
-    # graph `goal` attribute and prompts (work-item livespec-impl-beads-ajv).
+    # Ratified lessons (the S1 read side) inject in a clearly delimited
+    # section BEFORE escaping, so escape_minijinja_literal neutralizes the
+    # human-merged lesson text like every other interpolated field. Empty
+    # lessons leave the brief byte-identical (no heading or placeholder
+    # bleed-through), matching the fail-open contract.
+    body = base
+    if lessons:
+        body += (
+            "\nRatified lessons (human-merged via loop-reflection-gate/"
+            "lessons.md; treat as standing guidance for this dispatch):\n"
+            f"{lessons}\n"
+        )
+    # Escape AFTER assembly so EVERY interpolated field (title, description,
+    # lessons, comments, repo path) is neutralized in one place: the whole
+    # rendered goal is what flows into fabro's MiniJinja-templated graph
+    # `goal` attribute and prompts (work-item livespec-impl-beads-ajv).
     if not comments:
-        return escape_minijinja_literal(text=base)
+        return escape_minijinja_literal(text=body)
     lines = [
         "",
         "Ledger comments (operator riders appended after filing; treat them as part of the brief):",
     ]
     for index, comment in enumerate(comments, start=1):
         lines.append(f"[{index}] {_comment_entry(comment=comment)}")
-    return escape_minijinja_literal(text=base + "\n".join(lines) + "\n")
+    return escape_minijinja_literal(text=body + "\n".join(lines) + "\n")
 
 
 def escape_minijinja_literal(*, text: str) -> str:
