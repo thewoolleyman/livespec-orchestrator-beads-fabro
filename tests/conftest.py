@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import base64
 import json
+import shutil
 import time
+from pathlib import Path
 
 import pytest
 
@@ -56,6 +58,15 @@ def _hermetic_codex_home(
     codex_home = tmp_path_factory.mktemp("codex-home")
     _ = (codex_home / "auth.json").write_text(_fresh_codex_auth_json(), encoding="utf-8")
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
+
+
+@pytest.fixture(autouse=True)
+def _clear_dispatch_surface_bytecode(request: pytest.FixtureRequest) -> None:
+    if request.node.path.name != "test_fleet_pat_dispatch_surface.py":
+        return
+    scripts_root = Path(__file__).resolve().parents[1] / ".claude-plugin" / "scripts"
+    for cache_dir in scripts_root.rglob("__pycache__"):
+        shutil.rmtree(cache_dir)
 
 
 @pytest.fixture(scope="session")

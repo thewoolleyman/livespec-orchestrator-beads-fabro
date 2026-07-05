@@ -4,7 +4,7 @@ Resolution is FAIL-CLOSED per the github-app-auth design record (Pillar 2 —
 tenant-scoped resolution): the credential env (GITHUB_APP_ID +
 GITHUB_PRIVATE_KEY, optional GITHUB_APP_INSTALLATION_ID / GITHUB_API_URL) is
 injected ONLY by the calling tenant's credential_wrapper, and there is NO
-fleet-PAT fallback — the retired LIVESPEC_FAMILY_GITHUB_TOKEN is never read.
+retired fleet-PAT fallback.
 All signing / mint / caching logic lives in the vendored
 `livespec_runtime.github_auth`; this CLI only wires env → config → provider
 → stdout, so `orchestrator-entrypoint.sh` stays branch-free glue running

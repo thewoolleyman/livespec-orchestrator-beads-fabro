@@ -442,6 +442,11 @@ check:
         # operators use, while CI skips unless explicitly opted into an
         # authenticated Codex runner.
         check-codex-skill-picker
+        # Tree-wide dispatch-surface guard for the retired fleet PAT env name.
+        # Existing per-file tests pin known removals; this aggregate check
+        # closes the gap for brand-new dispatch scripts and unguarded workflow
+        # env forwards.
+        check-no-fleet-pat-dispatch-surface
         # livespec core's doctor STATIC phase (reference-discipline +
         # out-of-band invariants) against THIS repo's SPECIFICATION/ tree,
         # wired fleet-wide per livespec epic livespec-6jfq. Not a canonical
@@ -972,6 +977,21 @@ check-codex-skill-picker:
         exit 0
     fi
     LIVESPEC_CODEX_SKILL_PICKER=1 uv run pytest tests/e2e-cli/test_codex_skill_picker.py -v
+
+# Tree-wide dispatch-surface guard for the retired fleet PAT env name. The
+# allowlisted historical/negative-assertion material lives outside these
+# dispatch surfaces (tests, SPECIFICATION/history, and archived research), so
+# this can fail on any tracked hit under the surfaces without path exceptions.
+check-no-fleet-pat-dispatch-surface:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    token='LIVESPEC_FAMILY_GITHUB_TOKEN'
+    hits="$(git grep -n -F "$token" -- orchestrator-image .claude-plugin/scripts .claude-plugin/.fabro .github/workflows || true)"
+    if [[ -n "$hits" ]]; then
+        printf 'ERROR: retired fleet PAT env name found in dispatch surface(s):\n' >&2
+        printf '%s\n' "$hits" >&2
+        exit 1
+    fi
 
 # W7 Tier-2 containerized dispatch proof. Pass script args after `--`, e.g.:
 #   just w7-tier2-dispatch-proof -- --preflight
