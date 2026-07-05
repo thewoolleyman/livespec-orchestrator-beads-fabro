@@ -64,11 +64,20 @@ class _FakeRunner:
     stdout: str = ""
     exit_code: int = 0
     calls: list[list[str]] = field(default_factory=list)
+    envs: list[dict[str, str] | None] = field(default_factory=list)
 
-    def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+    ) -> CommandResult:
         assert timeout_seconds > 0
         assert isinstance(cwd, Path)
         self.calls.append(argv)
+        self.envs.append(env)
         return CommandResult(exit_code=self.exit_code, stdout=self.stdout, stderr="")
 
 
@@ -76,8 +85,15 @@ class _FakeRunner:
 class _RaisingRunner:
     """A runner whose probe raises — drives the fail-open supervisor branch."""
 
-    def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
-        _ = (argv, cwd, timeout_seconds)
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+    ) -> CommandResult:
+        _ = (argv, cwd, timeout_seconds, env)
         raise RuntimeError("probe blew up")
 
 
@@ -412,6 +428,25 @@ def test_emit_calibration_appends_one_calibration_record(tmp_path: Path) -> None
     assert record["dispatch_context_size"] == 321
     assert record["wall_clock_seconds"] == 7.0
     assert record["repo"] == tmp_path.name
+
+
+def test_emit_calibration_refreshes_github_token_before_diff_probe(tmp_path: Path) -> None:
+    """The post-verdict calibration diff probe uses the provider accessor."""
+    runner = _FakeRunner(stdout='{"additions": 10, "deletions": 5}')
+    _emit_calibration(
+        args=_args(journal=tmp_path / "journal.jsonl"),
+        repo=tmp_path,
+        item=_item(),
+        outcome=_outcome(),
+        journal=_RecordingJournal(),
+        wall_clock_seconds=7.0,
+        dispatch_context_size=321,
+        runner=runner,
+        token_supplier=lambda: "fresh-calibration-token",
+    )
+    env = runner.envs[0]
+    assert env is not None
+    assert env["GH_TOKEN"] == "fresh-calibration-token"
 
 
 def test_emit_calibration_failed_outcome_skips_diff_probe(tmp_path: Path) -> None:

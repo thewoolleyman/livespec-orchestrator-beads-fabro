@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands import dispatcher
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost import (
     CostGateDecision,
     cap_value_decision,
@@ -79,8 +80,17 @@ class _FakeRunner:
     raises: Exception | None = None
     calls: list[dict[str, object]] = field(default_factory=list)
 
-    def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
-        self.calls.append({"argv": argv, "cwd": cwd, "timeout_seconds": timeout_seconds})
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+    ) -> CommandResult:
+        self.calls.append(
+            {"argv": argv, "cwd": cwd, "timeout_seconds": timeout_seconds, "env": env}
+        )
         if self.raises is not None:
             raise self.raises
         return CommandResult(exit_code=self.exit_code, stdout=self.stdout, stderr="")
@@ -395,6 +405,26 @@ def test_cost_gate_after_verdict_refusal_fires_spend_cap_breach_alarm(
     assert "item-aaa" in body
     assert "spend-cap-breach" in body
     assert "notify-sent" in [r.get("stage") for r in journal.records]
+
+
+def test_cost_gate_after_verdict_refreshes_github_token_before_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The post-verdict cost probe must not inherit a stale ambient GH_TOKEN."""
+    journal = _RecordingJournal()
+    runner = _FakeRunner(stdout=_PS_JSON_NULL, exit_code=0)
+    monkeypatch.setattr(dispatcher, "ShellCommandRunner", lambda: runner)
+    monkeypatch.setattr(
+        dispatcher, "_github_token_supplier", lambda: lambda: "fresh-post-verdict-token"
+    )
+    _cost_gate_after_verdict(
+        args=_args(mode="shadow"),
+        repo=Path("/x"),
+        outcomes=[_green("item-aaa")],
+        journal=journal,
+        poster=_RecordingPoster(),
+    )
+    assert runner.calls[0]["env"]["GH_TOKEN"] == "fresh-post-verdict-token"
 
 
 def test_cost_gate_after_verdict_is_fail_open_on_runner_exception() -> None:

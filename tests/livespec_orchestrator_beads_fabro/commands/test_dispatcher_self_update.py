@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands import dispatcher
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
@@ -71,21 +72,35 @@ class _RecordingJournal:
 class _ScriptedRunner:
     """A `CommandRunner` that replays one canned result and records the argv."""
 
-    result: CommandResult
+    results: list[CommandResult]
     seen_argv: list[list[str]] = field(default_factory=list)
 
-    def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
-        _ = (cwd, timeout_seconds)
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+    ) -> CommandResult:
+        _ = (cwd, timeout_seconds, env)
         self.seen_argv.append(list(argv))
-        return self.result
+        return self.results.pop(0)
 
 
 @dataclass(kw_only=True)
 class _RaisingRunner:
     """A `CommandRunner` that raises — drives the fail-open supervisor."""
 
-    def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
-        _ = (argv, cwd, timeout_seconds)
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+    ) -> CommandResult:
+        _ = (argv, cwd, timeout_seconds, env)
         raise RuntimeError("canary subprocess blew up")
 
 
@@ -240,7 +255,17 @@ def test_promotion_decision_keeps_and_alarms_on_fail() -> None:
 def test_wiring_promotes_on_passing_canary_and_does_not_alarm() -> None:
     journal = _RecordingJournal()
     poster = _RecordingPoster()
-    runner = _ScriptedRunner(result=CommandResult(exit_code=0, stdout="[]", stderr=""))
+    runner = _ScriptedRunner(
+        results=[
+            CommandResult(exit_code=0, stdout="true\n", stderr=""),
+            CommandResult(
+                exit_code=0,
+                stdout="https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+                stderr="",
+            ),
+            CommandResult(exit_code=0, stdout="[]", stderr=""),
+        ],
+    )
     _self_update_after_merge(
         work_item_id="livespec-impl-beads-ddu",
         merged_paths=_SELF_MERGE_PATHS,
@@ -252,12 +277,10 @@ def test_wiring_promotes_on_passing_canary_and_does_not_alarm() -> None:
         poster=poster,
     )
     # The canary ran (the candidate's ledger-check, never fabro).
-    assert runner.seen_argv == [
-        canary_self_check_argv(
-            candidate_bin="/pin/candidate/bin/dispatcher.py",
-            scratch_root="/tmp/canary-scratch",
-        )
-    ]
+    assert runner.seen_argv[-1] == canary_self_check_argv(
+        candidate_bin="/pin/candidate/bin/dispatcher.py",
+        scratch_root="/tmp/canary-scratch",
+    )
     # Promotion was journaled, no alarm fired.
     stages = [record["stage"] for record in journal.records]
     assert "self-update-promoted" in stages
@@ -273,7 +296,17 @@ def test_wiring_keeps_last_known_good_and_alarms_on_failing_canary(
     monkeypatch.setenv("CLAUDE_NTFY_DISPATCHER_TOPIC", "livespec-dispatcher-test")
     journal = _RecordingJournal()
     poster = _RecordingPoster()
-    runner = _ScriptedRunner(result=CommandResult(exit_code=1, stdout="", stderr="boom"))
+    runner = _ScriptedRunner(
+        results=[
+            CommandResult(exit_code=0, stdout="true\n", stderr=""),
+            CommandResult(
+                exit_code=0,
+                stdout="https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+                stderr="",
+            ),
+            CommandResult(exit_code=1, stdout="", stderr="boom"),
+        ],
+    )
     _self_update_after_merge(
         work_item_id="livespec-impl-beads-ddu",
         merged_paths=_SELF_MERGE_PATHS,
@@ -302,7 +335,16 @@ def test_wiring_keeps_last_known_good_and_alarms_on_failing_canary(
 def test_wiring_skips_when_the_merge_is_not_a_self_merge() -> None:
     journal = _RecordingJournal()
     poster = _RecordingPoster()
-    runner = _ScriptedRunner(result=CommandResult(exit_code=0, stdout="", stderr=""))
+    runner = _ScriptedRunner(
+        results=[
+            CommandResult(exit_code=0, stdout="true\n", stderr=""),
+            CommandResult(
+                exit_code=0,
+                stdout="https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+                stderr="",
+            ),
+        ],
+    )
     _self_update_after_merge(
         work_item_id="livespec-impl-beads-ddu",
         merged_paths=_NON_SELF_MERGE_PATHS,
@@ -314,7 +356,13 @@ def test_wiring_skips_when_the_merge_is_not_a_self_merge() -> None:
         poster=poster,
     )
     # Not a self-merge: the canary never ran, nothing promoted, no alarm.
-    assert runner.seen_argv == []
+    assert (
+        canary_self_check_argv(
+            candidate_bin="/pin/candidate/bin/dispatcher.py",
+            scratch_root="/tmp/canary-scratch",
+        )
+        not in runner.seen_argv
+    )
     stages = [record["stage"] for record in journal.records]
     assert "self-update-skipped" in stages
     assert "self-update-promoted" not in stages
@@ -432,10 +480,19 @@ class _QueueRunner:
 
     results: list[CommandResult]
     seen_argv: list[list[str]] = field(default_factory=list)
+    seen_envs: list[dict[str, str] | None] = field(default_factory=list)
 
-    def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+    ) -> CommandResult:
         _ = (cwd, timeout_seconds)
         self.seen_argv.append(list(argv))
+        self.seen_envs.append(env)
         return self.results.pop(0)
 
 
@@ -514,6 +571,72 @@ def test_after_verdict_skips_non_green_and_pr_less_outcomes() -> None:
     assert journal.records == []
 
 
+def test_after_verdict_refreshes_github_token_for_self_update_subprocesses(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The self-update PR probe and canary do not inherit stale GH_TOKEN."""
+    monkeypatch.setenv("CLAUDE_NTFY_DISPATCHER_TOPIC", "livespec-dispatcher-test")
+    self_merge_files = json.dumps(
+        {
+            "files": [
+                {
+                    "path": ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/dispatcher.py"
+                }
+            ]
+        }
+    )
+    runner = _QueueRunner(
+        results=[
+            CommandResult(exit_code=0, stdout="feat/ddu\n", stderr=""),
+            CommandResult(exit_code=0, stdout=self_merge_files, stderr=""),
+            CommandResult(exit_code=0, stdout="true\n", stderr=""),
+            CommandResult(
+                exit_code=0,
+                stdout="https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+                stderr="",
+            ),
+            CommandResult(exit_code=1, stdout="", stderr="canary crashed"),
+        ]
+    )
+    minted = iter(["tok-1", "tok-2", "tok-3", "tok-4", "tok-5"])
+    _self_update_after_verdict(
+        outcomes=[_outcome(status="green", pr_number=42)],
+        repo=tmp_path,
+        journal=_RecordingJournal(),
+        runner=runner,
+        poster=_RecordingPoster(),
+        token_supplier=lambda: next(minted),
+    )
+    assert all(env is not None for env in runner.seen_envs)
+    assert [env["GH_TOKEN"] for env in runner.seen_envs if env is not None] == [
+        "tok-1",
+        "tok-2",
+        "tok-3",
+        "tok-4",
+        "tok-5",
+    ]
+
+
+def test_after_verdict_default_runner_fails_closed_on_github_supplier_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unresolvable provider accessor never falls back to ambient GH_TOKEN."""
+    runner = _QueueRunner(results=[])
+    monkeypatch.setattr(dispatcher, "ShellCommandRunner", lambda: runner)
+    monkeypatch.setattr(dispatcher, "_github_token_supplier", lambda: "missing app env")
+    journal = _RecordingJournal()
+    _self_update_after_verdict(
+        outcomes=[_outcome(status="green", pr_number=42)],
+        repo=tmp_path,
+        journal=journal,
+        poster=_RecordingPoster(),
+    )
+    assert runner.seen_argv == []
+    assert [record["stage"] for record in journal.records] == ["self-update-skipped"]
+
+
 def test_after_verdict_runs_the_gate_for_a_green_pr_self_merge(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -535,6 +658,12 @@ def test_after_verdict_runs_the_gate_for_a_green_pr_self_merge(
         results=[
             CommandResult(exit_code=0, stdout="feat/ddu\n", stderr=""),
             CommandResult(exit_code=0, stdout=self_merge_files, stderr=""),
+            CommandResult(exit_code=0, stdout="true\n", stderr=""),
+            CommandResult(
+                exit_code=0,
+                stdout="https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+                stderr="",
+            ),
             CommandResult(exit_code=1, stdout="", stderr="canary crashed"),
         ]
     )
