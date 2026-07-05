@@ -347,19 +347,59 @@ def test_no_password_field_on_descriptor() -> None:
     assert not any("password" in name.lower() for name in field_names)
 
 
-def test_resolve_fabro_bin_defaults_to_home_dot_fabro(
+_CONFIG_SHUTIL_WHICH = "livespec_orchestrator_beads_fabro.commands._config.shutil.which"
+
+
+def test_default_fabro_bin_prefers_existing_home_binary(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """With no env and no config key, fabro_bin defaults to `$HOME/.fabro/bin/fabro`.
+    """Default (a): an existing, executable `$HOME/.fabro/bin/fabro` is used.
 
-    `Path.home` is monkeypatched to prove the default is computed AT CALL TIME
-    (a redirected home is honored, not a value frozen at module import).
+    The host-under-wrapper case. `Path.home` is monkeypatched (proving call-time
+    resolution); the tmp home binary is a real chmod-0o755 file; `shutil.which`
+    is stubbed to a sentinel to prove the PATH fallback is NOT consulted once
+    the absolute home binary resolves.
+    """
+    monkeypatch.delenv("LIVESPEC_FABRO_BIN", raising=False)
+    home = tmp_path / "home"
+    fabro = home / ".fabro" / "bin" / "fabro"
+    fabro.parent.mkdir(parents=True)
+    _ = fabro.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fabro.chmod(0o755)
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setattr(_CONFIG_SHUTIL_WHICH, lambda _name: "/sentinel/should/not/be/used")
+    assert resolve_fabro_bin(cwd=tmp_path) == str(fabro)
+
+
+def test_default_fabro_bin_falls_back_to_path_lookup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default (b): with no home binary, a PATH lookup (shutil.which) supplies it.
+
+    The orchestrator-container case: `$HOME/.fabro/bin/fabro` is absent but
+    `fabro` is on PATH (e.g. /usr/local/bin/fabro).
+    """
+    monkeypatch.delenv("LIVESPEC_FABRO_BIN", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)  # tmp_path has no .fabro/bin/fabro
+    monkeypatch.setattr(_CONFIG_SHUTIL_WHICH, lambda _name: "/usr/local/bin/fabro")
+    assert resolve_fabro_bin(cwd=tmp_path) == "/usr/local/bin/fabro"
+
+
+def test_default_fabro_bin_returns_concrete_home_path_when_unresolvable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default (c): with neither a home binary nor a PATH hit, the concrete home path.
+
+    A concrete (not bare-name) path so the downstream preflight error names a
+    real, actionable target.
     """
     monkeypatch.delenv("LIVESPEC_FABRO_BIN", raising=False)
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    result = resolve_fabro_bin(cwd=tmp_path)
-    assert result == str(tmp_path / ".fabro" / "bin" / "fabro")
+    monkeypatch.setattr(_CONFIG_SHUTIL_WHICH, lambda _name: None)
+    assert resolve_fabro_bin(cwd=tmp_path) == str(tmp_path / ".fabro" / "bin" / "fabro")
 
 
 def test_resolve_fabro_bin_uses_dispatcher_config_key(
