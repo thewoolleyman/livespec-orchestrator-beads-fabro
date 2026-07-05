@@ -16,7 +16,10 @@ from dataclasses import fields
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
+from livespec_orchestrator_beads_fabro.commands._config import (
+    resolve_fabro_bin,
+    resolve_store_config,
+)
 from livespec_orchestrator_beads_fabro.errors import ConnectionPrefixMissingError
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
@@ -342,3 +345,44 @@ def test_no_password_field_on_descriptor() -> None:
     field_names = {field.name for field in fields(StoreConfig)}
     assert "password" not in field_names
     assert not any("password" in name.lower() for name in field_names)
+
+
+def test_resolve_fabro_bin_defaults_to_home_dot_fabro(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With no env and no config key, fabro_bin defaults to `$HOME/.fabro/bin/fabro`.
+
+    `Path.home` is monkeypatched to prove the default is computed AT CALL TIME
+    (a redirected home is honored, not a value frozen at module import).
+    """
+    monkeypatch.delenv("LIVESPEC_FABRO_BIN", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    result = resolve_fabro_bin(cwd=tmp_path)
+    assert result == str(tmp_path / ".fabro" / "bin" / "fabro")
+
+
+def test_resolve_fabro_bin_uses_dispatcher_config_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With no env override, the `dispatcher.fabro_bin` config key is used."""
+    monkeypatch.delenv("LIVESPEC_FABRO_BIN", raising=False)
+    _write_config(
+        cwd=tmp_path,
+        body='{"livespec-orchestrator-beads-fabro": {"dispatcher": {"fabro_bin": "/opt/fabro/bin/fabro"}}}',
+    )
+    assert resolve_fabro_bin(cwd=tmp_path) == "/opt/fabro/bin/fabro"
+
+
+def test_env_fabro_bin_beats_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-empty `LIVESPEC_FABRO_BIN` env value wins over the config key."""
+    monkeypatch.setenv("LIVESPEC_FABRO_BIN", "/env/fabro/bin/fabro")
+    _write_config(
+        cwd=tmp_path,
+        body='{"livespec-orchestrator-beads-fabro": {"dispatcher": {"fabro_bin": "/config/fabro/bin/fabro"}}}',
+    )
+    assert resolve_fabro_bin(cwd=tmp_path) == "/env/fabro/bin/fabro"

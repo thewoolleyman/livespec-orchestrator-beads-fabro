@@ -126,7 +126,7 @@ def test_dispatch_command_arms_receiver_at_entry(
     recorder = _Recorder()
     monkeypatch.setattr(_ENSURE_TARGET, recorder)
     missing = tmp_path / "does-not-exist"
-    args = argparse.Namespace(repo=str(missing), janitor=None, journal=None)
+    args = argparse.Namespace(repo=str(missing), janitor=None, journal=None, fabro_bin=None)
     # A missing repo short-circuits AFTER the arming line; the arming still ran.
     rc = _run_dispatch_command(args=args)
     assert rc == _EXIT_PRECONDITION_ERROR
@@ -140,7 +140,7 @@ def test_loop_command_arms_receiver_at_entry(
     recorder = _Recorder()
     monkeypatch.setattr(_ENSURE_TARGET, recorder)
     missing = tmp_path / "does-not-exist"
-    args = argparse.Namespace(repo=str(missing), janitor=None, journal=None)
+    args = argparse.Namespace(repo=str(missing), janitor=None, journal=None, fabro_bin=None)
     rc = _run_loop_command(args=args)
     assert rc == _EXIT_PRECONDITION_ERROR
     assert recorder.calls == [missing]
