@@ -1251,13 +1251,15 @@ def pull_primary_argv(*, plan: DispatchPlan) -> list[str]:
         "mise",
         "exec",
         "--",
-        "git",
-        "-C",
+        "sh",
+        "-lc",
+        (
+            'branch="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null '
+            '|| printf master)"; branch="${branch#origin/}"; '
+            'git -C "$1" pull --ff-only origin "$branch"'
+        ),
+        "pull-primary",
         str(plan.repo),
-        "pull",
-        "--ff-only",
-        "origin",
-        "master",
     ]
 
 
