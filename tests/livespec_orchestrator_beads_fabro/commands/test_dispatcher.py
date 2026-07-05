@@ -826,6 +826,28 @@ def test_render_goal_omits_acceptance_criteria_and_notes_when_absent(tmp_path: P
     assert "Notes:" not in goal
 
 
+def test_render_goal_injects_ratified_lessons_when_present(tmp_path: Path) -> None:
+    # Scenario 39: a ratified lesson reaches the composed brief in a clearly
+    # delimited lessons section.
+    goal = render_goal(
+        item=_item(),
+        repo=tmp_path,
+        branch="feat/t",
+        lessons="Prefer explicit kw-only args in new dispatcher helpers.",
+    )
+    assert "Ratified lessons" in goal
+    assert "Prefer explicit kw-only args in new dispatcher helpers." in goal
+
+
+def test_render_goal_leaves_brief_unchanged_without_lessons(tmp_path: Path) -> None:
+    # Scenario 40: empty lessons leave the brief byte-identical to one composed
+    # with no lessons at all — no heading or placeholder bleed-through.
+    without = render_goal(item=_item(), repo=tmp_path, branch="feat/t")
+    with_empty = render_goal(item=_item(), repo=tmp_path, branch="feat/t", lessons="")
+    assert with_empty == without
+    assert "Ratified lessons" not in with_empty
+
+
 def test_render_goal_anchors_repo_to_sandbox_cwd_not_host_path(tmp_path: Path) -> None:
     """The brief must never present `repo` as a path the sandbox agent cds into.
 
