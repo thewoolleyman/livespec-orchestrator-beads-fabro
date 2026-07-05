@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.9.5...v0.9.6) (2026-07-05)
+
+
+### Bug Fixes
+
+* guard dispatch surfaces from retired fleet pat ([150349c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/150349cfc0d5960e4cb36809b19cbfa5bf8aa01b))
+
 ## [0.9.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.9.4...v0.9.5) (2026-07-05)
 
 
