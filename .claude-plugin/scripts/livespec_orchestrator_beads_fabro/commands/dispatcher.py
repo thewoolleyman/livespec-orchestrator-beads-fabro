@@ -53,11 +53,12 @@ fabro-server spawns with a fail-closed env allowlist
 resolver and the LITERAL `{{ env.X }}` string flows into the sandbox
 (proven empirically 2026-06-12: API 401 with the token present in
 both the dispatcher's and the server daemon's env). The Dispatcher is
-invoked under the dispatch TARGET's configured credential_wrapper
-(which injects CLAUDE_CODE_OAUTH_TOKEN plus the GitHub App env —
-GITHUB_APP_ID + GITHUB_PRIVATE_KEY; per the github-app-auth design
-there is NO fleet-PAT fallback) and refuses to dispatch when a
-credential is absent — there would be nothing to project. The engine's
+invoked under the dispatch TARGET's configured credential_wrapper, which
+must inject the full per-wrapper set: GITHUB_APP_ID, GITHUB_PRIVATE_KEY,
+BEADS_DOLT_PASSWORD, and CLAUDE_CODE_OAUTH_TOKEN. Per the
+github-app-auth design there is NO fleet-PAT fallback, and the
+Dispatcher refuses to dispatch when a credential is absent — there
+would be nothing to project. The engine's
 subprocess runner re-resolves GH_TOKEN from the caching provider
 before EVERY command, so the ~76-minute merge-poll and any >1-hour
 operation re-mint transparently instead of dying on a once-at-start
@@ -253,6 +254,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     resolve_assignee,
     resolve_wip_cap,
 )
+from livespec_orchestrator_beads_fabro.commands._jsonc import JsoncParseError, loads
 from livespec_orchestrator_beads_fabro.commands._otel_receive import (
     HeartbeatSink,
     OtelReceiver,
@@ -289,6 +291,12 @@ _EXIT_PRECONDITION_ERROR = 3
 _PATH_SEPARATORS: tuple[str, ...] = tuple(sep for sep in (os.sep, os.altsep) if sep)
 
 _OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"  # noqa: S105 - env-var NAME, not a secret value
+_DISPATCH_REQUIRED_CREDENTIALS = (
+    "GITHUB_APP_ID",
+    "GITHUB_PRIVATE_KEY",
+    "BEADS_DOLT_PASSWORD",
+    _OAUTH_TOKEN_ENV,
+)
 _GITHUB_TOKEN_ENV = GITHUB_TOKEN_ENV_VAR  # single-sourced from _dispatcher_io
 
 # Host-side override for where the live Codex `auth.json` lives. The host
@@ -1980,7 +1988,7 @@ def _materialize_overlay(
     missing or too-short-lived host credential refuses the dispatch here
     with an actionable renewal message (naming `codex login`).
     """
-    env_error = _check_credential_env()
+    env_error = _check_credential_env(repo=repo)
     if env_error is not None:
         return env_error
     try:
@@ -2107,16 +2115,52 @@ def _github_token_supplier() -> Callable[[], str] | str:
     return InstallationTokenProvider(config=config).token
 
 
-def _check_credential_env() -> str | None:
+def _dispatch_required_credentials_text() -> str:
+    return ", ".join(_DISPATCH_REQUIRED_CREDENTIALS)
+
+
+def _read_dispatch_target_credential_wrapper(*, repo: Path) -> tuple[str, ...]:
+    config_path = repo / ".livespec.jsonc"
+    try:
+        data = loads(text=config_path.read_text(encoding="utf-8"))
+    except (OSError, JsoncParseError):
+        return ()
+    if not isinstance(data, dict):
+        return ()
+    mapping = cast(dict[str, object], data)
+    wrapper = mapping.get("credential_wrapper")
+    if not isinstance(wrapper, list):
+        return ()
+    wrapper_parts = cast(list[object], wrapper)
+    parts: list[str] = []
+    for part in wrapper_parts:
+        if not isinstance(part, str):
+            return ()
+        parts.append(part)
+    return tuple(parts)
+
+
+def _credential_wrapper_text(*, repo: Path) -> str:
+    wrapper = _read_dispatch_target_credential_wrapper(repo=repo)
+    if not wrapper:
+        return f"no credential_wrapper configured in {repo / '.livespec.jsonc'}"
+    return repr(list(wrapper))
+
+
+def _check_credential_env(*, repo: Path) -> str | None:
     """Fail fast when the sandbox model credential is absent.
 
     Returns None when CLAUDE_CODE_OAUTH_TOKEN is present, or an
     actionable error naming it. The Dispatcher's process env is the
     SOURCE of the run-scoped overlay projection, so an absent or empty
-    variable means there is nothing to project. The GitHub credential is
-    NOT env-sourced here — it is minted per-dispatch by the App
-    installation-token provider (`_github_token_supplier`). Values are
-    never logged.
+    variable means there is nothing to project. The dispatch target's
+    credential_wrapper must inject the full per-wrapper credential set:
+    GITHUB_APP_ID, GITHUB_PRIVATE_KEY, BEADS_DOLT_PASSWORD, and
+    CLAUDE_CODE_OAUTH_TOKEN. The GitHub credential is minted
+    per-dispatch by the App installation-token provider
+    (`_github_token_supplier`), but the refusal enumerates the whole
+    wrapper contract up front so adopters do not discover credentials
+    one failure at a time. Values are never logged.
     """
     if os.environ.get(_OAUTH_TOKEN_ENV, "") != "":
         return None
@@ -2127,8 +2171,10 @@ def _check_credential_env() -> str | None:
         f"'{{{{ env.* }}}}' interpolation cannot deliver it — the "
         f"server-spawned worker env is allowlist-scrubbed), so an absent "
         f"variable leaves nothing to project. Invoke the Dispatcher under "
-        f"the dispatch target's configured credential_wrapper (e.g. "
-        f"with-livespec-env.sh)."
+        f"the dispatch target's configured credential_wrapper "
+        f"{_credential_wrapper_text(repo=repo)}. That wrapper must inject "
+        f"the full per-wrapper credential set: "
+        f"{_dispatch_required_credentials_text()}."
     )
 
 

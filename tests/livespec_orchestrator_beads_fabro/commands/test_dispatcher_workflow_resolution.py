@@ -26,6 +26,8 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands import dispatcher
 from livespec_orchestrator_beads_fabro.commands.dispatcher import (
     _candidate_dispatcher_bin,  # pyright: ignore[reportPrivateUsage]
+    _credential_wrapper_text,  # pyright: ignore[reportPrivateUsage]
+    _read_dispatch_target_credential_wrapper,  # pyright: ignore[reportPrivateUsage]
     _workflow_toml,  # pyright: ignore[reportPrivateUsage]
 )
 
@@ -97,3 +99,42 @@ def test_implement_and_review_prompts_enforce_scope_and_acceptance() -> None:
     assert "acceptance criteria" in review_text
     assert "satisfies the work-item" in review_text
     assert "minimal scope" in review_text
+
+
+def test_dispatch_target_credential_wrapper_reads_configured_prefix(tmp_path: Path) -> None:
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        '{"credential_wrapper": ["/opt/openbrain/with-openbrain-env.sh", "--"]}',
+        encoding="utf-8",
+    )
+
+    assert _read_dispatch_target_credential_wrapper(repo=tmp_path) == (
+        "/opt/openbrain/with-openbrain-env.sh",
+        "--",
+    )
+    assert "/opt/openbrain/with-openbrain-env.sh" in _credential_wrapper_text(repo=tmp_path)
+
+
+def test_dispatch_target_credential_wrapper_falls_back_for_missing_config(
+    tmp_path: Path,
+) -> None:
+    assert _read_dispatch_target_credential_wrapper(repo=tmp_path) == ()
+    assert "no credential_wrapper configured" in _credential_wrapper_text(repo=tmp_path)
+
+
+@pytest.mark.parametrize(
+    "config_text",
+    [
+        "{not-json",
+        "[]",
+        '{"credential_wrapper": "not-a-list"}',
+        '{"credential_wrapper": ["/opt/openbrain/with-openbrain-env.sh", 42]}',
+    ],
+)
+def test_dispatch_target_credential_wrapper_rejects_unusable_config_shapes(
+    config_text: str,
+    tmp_path: Path,
+) -> None:
+    _ = (tmp_path / ".livespec.jsonc").write_text(config_text, encoding="utf-8")
+
+    assert _read_dispatch_target_credential_wrapper(repo=tmp_path) == ()
+    assert "no credential_wrapper configured" in _credential_wrapper_text(repo=tmp_path)

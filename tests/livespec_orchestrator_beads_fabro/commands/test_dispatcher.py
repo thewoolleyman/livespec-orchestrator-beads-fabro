@@ -2568,9 +2568,19 @@ def test_dispatch_fails_fast_when_oauth_token_env_is_absent_or_empty(
     """A missing CLAUDE_CODE_OAUTH_TOKEN refuses the dispatch outright:
     the Dispatcher's process env is the SOURCE of the run-scoped overlay
     projection, so absence means there is nothing to project into the
-    sandbox. The error names the with-livespec-env.sh wrapper as the
-    fix."""
+    sandbox. The error names the dispatch target's configured wrapper
+    and the full per-wrapper credential set as the fix."""
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    target_wrapper = "/opt/openbrain/with-openbrain-env.sh"
+    _ = (repo / ".livespec.jsonc").write_text(
+        json.dumps(
+            {
+                "credential_wrapper": [target_wrapper, "--"],
+                "livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}},
+            }
+        ),
+        encoding="utf-8",
+    )
     item = _item()
     append_work_item(path=_config(), item=item)
     monkeypatch.setattr(
@@ -2583,8 +2593,12 @@ def test_dispatch_fails_fast_when_oauth_token_env_is_absent_or_empty(
     assert main(base) == 1
     out = capsys.readouterr().out
     assert "run-config-overlay" in out
+    assert "GITHUB_APP_ID" in out
+    assert "GITHUB_PRIVATE_KEY" in out
+    assert "BEADS_DOLT_PASSWORD" in out
     assert "CLAUDE_CODE_OAUTH_TOKEN" in out
-    assert "with-livespec-env.sh" in out
+    assert target_wrapper in out
+    assert "with-livespec-env.sh" not in out
     # The admission valve transitioned the item to active before the overlay
     # materialization refused (the launch never happened — there is nothing to
     # project), so it stays in the WIP for the operator to retry under the env
@@ -2596,7 +2610,10 @@ def test_dispatch_fails_fast_when_oauth_token_env_is_absent_or_empty(
     base2 = ["dispatch", "--repo", str(repo), "--item", item2.id, "--workflow", str(workflow)]
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
     assert main(base2) == 1
-    assert "with-livespec-env.sh" in capsys.readouterr().out
+    out2 = capsys.readouterr().out
+    assert "CLAUDE_CODE_OAUTH_TOKEN" in out2
+    assert target_wrapper in out2
+    assert "with-livespec-env.sh" not in out2
 
 
 def test_dispatch_fails_closed_when_github_app_env_is_absent(
