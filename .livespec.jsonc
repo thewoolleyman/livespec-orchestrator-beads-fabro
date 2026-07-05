@@ -71,6 +71,14 @@
       "server_port": 3307,
       "fake": false
     }
+    // Optional per-repo Dispatcher block. The Dispatcher resolves its `fabro`
+    // engine binary by the precedence: the LIVESPEC_FABRO_BIN environment
+    // variable (highest) > this block's `dispatcher.fabro_bin` key > the
+    // built-in default `$HOME/.fabro/bin/fabro`. No live value is committed
+    // here: the absolute default is correct and portable (the fleet credential
+    // wrapper sanitizes PATH but preserves HOME, so an absolute path resolves
+    // where a bare `fabro` lookup would fail). To override, add a
+    // "dispatcher": { "fabro_bin": "/abs/path/to/fabro" } block.
   },
   // The three orchestrator-side contract CLIs, named in argv form per
   // livespec/SPECIFICATION/contracts.md §"Orchestrator CLI contract — the

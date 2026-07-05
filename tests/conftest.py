@@ -56,3 +56,35 @@ def _hermetic_codex_home(
     codex_home = tmp_path_factory.mktemp("codex-home")
     _ = (codex_home / "auth.json").write_text(_fresh_codex_auth_json(), encoding="utf-8")
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
+
+
+@pytest.fixture(scope="session")
+def _fabro_stub_bin(tmp_path_factory: pytest.TempPathFactory) -> str:
+    """A real, executable throwaway `fabro` binary shared across the suite.
+
+    The Dispatcher preflight (`_fabro_preflight_error`) refuses BEFORE
+    admission when the resolved `fabro` engine binary is not an existing
+    executable. The real default is the host's `$HOME/.fabro/bin/fabro`, which
+    is absent on CI — so without a hermetic override EVERY dispatch/loop test
+    that omits an explicit `--fabro-bin` would refuse at preflight. This
+    session-scoped stub is a genuine chmod-0o755 file so the preflight's
+    is_file + X_OK check passes.
+    """
+    stub_dir = tmp_path_factory.mktemp("fabro-stub-bin")
+    stub = stub_dir / "fabro"
+    _ = stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    stub.chmod(0o755)
+    return str(stub)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_fabro_bin(monkeypatch: pytest.MonkeyPatch, _fabro_stub_bin: str) -> None:
+    """Point `LIVESPEC_FABRO_BIN` at a resolvable stub for every test.
+
+    Keeps the dispatch/loop suite hermetic against the new engine-binary
+    preflight: dispatch/loop tests that omit `--fabro-bin` resolve to this
+    absolute stub and pass preflight rather than refusing on a machine without
+    the real `$HOME/.fabro/bin/fabro`. Tests asserting the refusal / default
+    paths override it explicitly (an explicit `--fabro-bin`, or `delenv`).
+    """
+    monkeypatch.setenv("LIVESPEC_FABRO_BIN", _fabro_stub_bin)

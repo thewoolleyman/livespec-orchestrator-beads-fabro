@@ -138,6 +138,7 @@ fail-closed-when-unobservable behavior 5v9 built stays the live path.
 import argparse
 import json
 import os
+import shutil
 import sys
 import tempfile
 import threading
@@ -156,7 +157,10 @@ from livespec_runtime.github_auth.errors import GithubAppAuthError
 from livespec_runtime.github_auth.provider import InstallationTokenProvider
 from livespec_runtime.work_items.lifecycle import is_item_ready, ready_sort_key
 
-from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
+from livespec_orchestrator_beads_fabro.commands._config import (
+    resolve_fabro_bin,
+    resolve_store_config,
+)
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
     build_calibration_record,
@@ -279,6 +283,11 @@ _EXIT_FAILURE = 1
 _EXIT_USAGE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 3
 
+# The active platform's path separators (os.altsep is None on POSIX). Built as
+# a tuple of the truthy separators so the "does this string carry a directory
+# component" test is a single `any(...)` with no unreachable `os.altsep` arc.
+_PATH_SEPARATORS: tuple[str, ...] = tuple(sep for sep in (os.sep, os.altsep) if sep)
+
 _OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"  # noqa: S105 - env-var NAME, not a secret value
 _GITHUB_TOKEN_ENV = GITHUB_TOKEN_ENV_VAR  # single-sourced from _dispatcher_io
 
@@ -374,11 +383,70 @@ def _emit_check_findings(*, findings: list[LedgerFinding], as_json: bool, label:
     return _EXIT_FAILURE if actionable else 0
 
 
-def _run_dispatch_command(*, args: argparse.Namespace) -> int:
-    repo = Path(args.repo)
+def _resolve_fabro_bin_for(*, args: argparse.Namespace, repo: Path) -> str:
+    """The effective `fabro` binary for this run: explicit flag wins, else resolve.
+
+    An explicit `--fabro-bin <path>` (non-None) is an operator override and is
+    returned verbatim; None (the flag's default) defers to
+    `resolve_fabro_bin`'s env > config > absolute-default precedence.
+    """
+    if args.fabro_bin is not None:
+        return cast("str", args.fabro_bin)
+    return resolve_fabro_bin(cwd=repo)
+
+
+def _fabro_preflight_error(*, fabro_bin: str) -> str | None:
+    """Return an operator-facing ERROR string when `fabro_bin` is unresolvable, else None.
+
+    A value carrying a directory component (a path separator) is resolvable
+    only if it names an existing executable file; a bare name is resolvable
+    only if it is found on `PATH` (`shutil.which`). The error names every
+    corrective knob so the operator can fix the misconfiguration in place.
+    """
+    if any(sep in fabro_bin for sep in _PATH_SEPARATORS):
+        resolvable = Path(fabro_bin).is_file() and os.access(fabro_bin, os.X_OK)
+    else:
+        resolvable = shutil.which(fabro_bin) is not None
+    if resolvable:
+        return None
+    return (
+        f"ERROR: fabro engine binary not resolvable: {fabro_bin!r}; set --fabro-bin,"
+        " the LIVESPEC_FABRO_BIN env var, or the .livespec.jsonc"
+        " dispatcher.fabro_bin key to an absolute path"
+        " (default: $HOME/.fabro/bin/fabro)\n"
+    )
+
+
+def _dispatch_preamble(
+    *, args: argparse.Namespace, repo: Path
+) -> tuple[tuple[str, ...] | None, int | None]:
+    """Shared dispatch/loop entry validation: janitor spec + fabro engine binary.
+
+    Returns `(janitor, None)` to proceed (the parsed janitor override to thread
+    downstream), or `(None, exit_code)` to short-circuit the command:
+    `_EXIT_USAGE_ERROR` for a malformed `--janitor`, `_EXIT_PRECONDITION_ERROR`
+    for an unresolvable fabro engine binary. The fabro check runs BEFORE the
+    caller arms the receiver, prepares the store, or admits anything, so a
+    misconfigured engine binary refuses with ZERO side effects and provably
+    before admission (ready -> active) rather than stranding an item at active.
+    Sets `args.fabro_bin` to the resolved path as a side effect.
+    """
     janitor, janitor_ok = _parse_janitor(raw=args.janitor)
     if not janitor_ok:
-        return _EXIT_USAGE_ERROR
+        return None, _EXIT_USAGE_ERROR
+    args.fabro_bin = _resolve_fabro_bin_for(args=args, repo=repo)
+    fabro_error = _fabro_preflight_error(fabro_bin=args.fabro_bin)
+    if fabro_error is not None:
+        _ = sys.stderr.write(fabro_error)
+        return None, _EXIT_PRECONDITION_ERROR
+    return janitor, None
+
+
+def _run_dispatch_command(*, args: argparse.Namespace) -> int:
+    repo = Path(args.repo)
+    janitor, preamble_exit = _dispatch_preamble(args=args, repo=repo)
+    if preamble_exit is not None:
+        return preamble_exit
     _ = _ensure_otel_receiver(args=args, repo=repo)
     prepared = _prepare(args=args, repo=repo)
     if prepared is None:
@@ -474,9 +542,9 @@ def _requested_items_preflight_error(
 
 def _run_loop_command(*, args: argparse.Namespace) -> int:
     repo = Path(args.repo)
-    janitor, janitor_ok = _parse_janitor(raw=args.janitor)
-    if not janitor_ok:
-        return _EXIT_USAGE_ERROR
+    janitor, preamble_exit = _dispatch_preamble(args=args, repo=repo)
+    if preamble_exit is not None:
+        return preamble_exit
     _ = _ensure_otel_receiver(args=args, repo=repo)
     prepared = _prepare(args=args, repo=repo)
     if prepared is None:
@@ -2360,7 +2428,11 @@ def _build_parser() -> argparse.ArgumentParser:
 def _add_dispatch_common(*, parser: argparse.ArgumentParser) -> None:
     _ = parser.add_argument("--repo", dest="repo", required=True)
     _ = parser.add_argument("--workflow", dest="workflow", default=None)
-    _ = parser.add_argument("--fabro-bin", dest="fabro_bin", default="fabro")
+    # Default None (NOT the bare name "fabro"): a None sentinel means "not
+    # explicitly passed -> resolve from LIVESPEC_FABRO_BIN / the .livespec.jsonc
+    # dispatcher.fabro_bin key / the absolute default at command entry". An
+    # explicit `--fabro-bin <path>` still wins over resolution.
+    _ = parser.add_argument("--fabro-bin", dest="fabro_bin", default=None)
     _ = parser.add_argument("--janitor", dest="janitor", default=None)
     _ = parser.add_argument("--journal", dest="journal", default=None)
     _ = parser.add_argument("--poll-attempts", dest="poll_attempts", type=int, default=80)

@@ -29,6 +29,22 @@ The tenant PASSWORD is never resolved here: the shell backend reads
 `BEADS_DOLT_PASSWORD` from the environment at `bd`-call time. It is never
 stored on the descriptor.
 
+`resolve_fabro_bin` resolves the Dispatcher's `fabro` engine binary by the
+same env > config > default precedence (later listed wins the tie-break the
+other way — env is highest-priority):
+
+1. `LIVESPEC_FABRO_BIN` — an absolute path to the `fabro` binary. Highest
+   priority (mirrors `LIVESPEC_BD_PATH`). A non-empty value wins outright.
+2. The `.livespec.jsonc` `livespec-orchestrator-beads-fabro.dispatcher`
+   block's `fabro_bin` key, when non-empty.
+3. The built-in default `$HOME/.fabro/bin/fabro`, computed AT CALL TIME so a
+   test that monkeypatches `Path.home()` observes the redirected home.
+
+An ABSOLUTE default is deliberate: the fleet credential wrapper re-execs
+under a sanitized `PATH` (secure_path) that excludes `~/.local/bin`, so a
+bare `fabro` lookup fails even though the binary is present; the absolute
+`$HOME/.fabro/bin/fabro` resolves because the wrapper PRESERVES `HOME`.
+
 The function signature keeps the plaintext sibling's
 `work_items_arg` parameter (`resolve_store_config(*, cwd,
 work_items_arg)`) so the command call sites do not change. The
@@ -50,6 +66,7 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig
 _LIVESPEC_CONFIG = ".livespec.jsonc"
 _PLUGIN_BLOCK = "livespec-orchestrator-beads-fabro"
 _CONNECTION_KEY = "connection"
+_DISPATCHER_KEY = "dispatcher"
 
 _DEFAULT_SERVER_HOST = "127.0.0.1"
 _DEFAULT_SERVER_PORT = 3307
@@ -58,6 +75,7 @@ _DEFAULT_TENANT = "livespec-orch-beads-fabro"
 
 _ENV_BD_PATH = "LIVESPEC_BD_PATH"
 _ENV_FAKE = "LIVESPEC_BEADS_FAKE"
+_ENV_FABRO_BIN = "LIVESPEC_FABRO_BIN"
 
 _TRUTHY = frozenset({"1", "true", "yes", "on"})
 
@@ -98,8 +116,42 @@ def resolve_store_config(
     )
 
 
+def resolve_fabro_bin(*, cwd: Path) -> str:
+    """Resolve the Dispatcher's `fabro` engine binary path (env > config > default).
+
+    Precedence: a non-empty `LIVESPEC_FABRO_BIN` env value wins outright; else
+    the `.livespec.jsonc` `dispatcher.fabro_bin` key, when non-empty; else the
+    call-time default `$HOME/.fabro/bin/fabro`.
+    """
+    env_value = os.environ.get(_ENV_FABRO_BIN)
+    if env_value is not None and env_value != "":
+        return env_value
+    block = _read_dispatcher_block(cwd=cwd)
+    configured = _str_or(block.get("fabro_bin"), default="")
+    if configured != "":
+        return configured
+    return _default_fabro_bin()
+
+
 def _read_connection_block(*, cwd: Path) -> dict[str, Any]:
     """Read the `livespec-orchestrator-beads-fabro.connection` block, or {} when absent."""
+    return _read_plugin_sub_block(cwd=cwd, key=_CONNECTION_KEY)
+
+
+def _read_dispatcher_block(*, cwd: Path) -> dict[str, Any]:
+    """Read the `livespec-orchestrator-beads-fabro.dispatcher` block, or {} when absent."""
+    return _read_plugin_sub_block(cwd=cwd, key=_DISPATCHER_KEY)
+
+
+def _read_plugin_sub_block(*, cwd: Path, key: str) -> dict[str, Any]:
+    """Read a named sub-block of the `livespec-orchestrator-beads-fabro` block.
+
+    Returns `{}` for every off-happy-path shape (absent config file, malformed
+    JSONC, non-object root, non-dict plugin block, non-dict / absent sub-block)
+    so each caller applies its own defaults. Shared by the connection and
+    dispatcher readers so the JSONC -> plugin-block -> sub-block traversal is
+    single-sourced rather than duplicated per sub-block.
+    """
     config_path = cwd / _LIVESPEC_CONFIG
     if not config_path.is_file():
         return {}
@@ -115,10 +167,10 @@ def _read_connection_block(*, cwd: Path) -> dict[str, Any]:
     if not isinstance(plugin_block_raw, dict):
         return {}
     plugin_block = cast("dict[str, Any]", plugin_block_raw)
-    connection_raw = plugin_block.get(_CONNECTION_KEY)
-    if not isinstance(connection_raw, dict):
+    sub_block_raw = plugin_block.get(key)
+    if not isinstance(sub_block_raw, dict):
         return {}
-    return cast("dict[str, Any]", connection_raw)
+    return cast("dict[str, Any]", sub_block_raw)
 
 
 def _require_prefix(*, block: dict[str, Any]) -> str:
@@ -140,6 +192,16 @@ def _resolve_bd_path(*, block: dict[str, Any]) -> str:
     if env_value is not None and env_value != "":
         return env_value
     return _str_or(block.get("bd_path"), default=_DEFAULT_BD_PATH)
+
+
+def _default_fabro_bin() -> str:
+    """The absolute default `fabro` path, computed AT CALL TIME.
+
+    Computed at call time (not import time) so a test that monkeypatches
+    `Path.home()` observes the redirected home rather than a value frozen at
+    module import.
+    """
+    return str(Path.home() / ".fabro" / "bin" / "fabro")
 
 
 def _resolve_fake(*, block: dict[str, Any]) -> bool:
