@@ -44,15 +44,16 @@
 # CLAUDE_CODE_OAUTH_TOKEN value read from the Dispatcher's process
 # environment and a GH_TOKEN freshly minted from the GitHub App
 # installation-token provider (github-app-auth Pillars 1+2: the dispatch
-# TARGET's credential_wrapper injects GITHUB_APP_ID + GITHUB_PRIVATE_KEY;
-# no fleet-PAT fallback) — the run-scoped credential projection per the
+# TARGET's credential_wrapper injects the full per-wrapper set: GITHUB_APP_ID,
+# GITHUB_PRIVATE_KEY, BEADS_DOLT_PASSWORD, and CLAUDE_CODE_OAUTH_TOKEN; no
+# fleet-PAT fallback) — the run-scoped credential projection per the
 # family-secrets scoped transient-materialization rule — plus the NON-secret
 # LIVESPEC_SIBLING_CLONES_ROOT key (it rides in the same appended table because
 # TOML forbids declaring that table twice, and the environment env table is the
 # container-level channel that reaches every node's subprocesses, including
 # `just check` and `gh pr create`). The Dispatcher is invoked under the
-# dispatch target's credential_wrapper (e.g. with-livespec-env.sh) and
-# refuses to dispatch when a credential is absent,
+# dispatch target's own configured credential_wrapper from the target repo's
+# .livespec.jsonc and refuses to dispatch when a credential is absent,
 # and fails fast when the fleet manifest is unreachable or malformed.
 # WHY NOT `{{ env }}` INTERPOLATION (do not re-attempt it): fabro
 # resolves interpolations in the WORKER process, which fabro-server
