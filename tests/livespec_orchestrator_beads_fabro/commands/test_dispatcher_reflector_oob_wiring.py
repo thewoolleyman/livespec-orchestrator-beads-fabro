@@ -42,10 +42,19 @@ def reset_auto_trip_fixture() -> None:
 @dataclass(kw_only=True)
 class _FakeRunner:
     calls: list[list[str]] = field(default_factory=list)
+    envs: list[dict[str, str] | None] = field(default_factory=list)
 
-    def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+    ) -> CommandResult:
         _ = (cwd, timeout_seconds)
         self.calls.append(argv)
+        self.envs.append(env)
         return CommandResult(exit_code=0, stdout="", stderr="")
 
 
@@ -108,6 +117,28 @@ def test_armed_runs_the_reflector_through_the_injected_seams(
     assert any(Path(call[0]).name == "claude" and call[1] == "-p" for call in runner.calls)
 
 
+def test_reflector_after_verdict_refreshes_github_token_before_subprocess(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The OOB reflector runner uses the provider accessor when armed."""
+    monkeypatch.setenv(_LEVER_ENV, "observe")
+    monkeypatch.setenv(_MCP_ENV, "hcmk-secret")
+    journal_path = tmp_path / "j.jsonl"
+    runner = _FakeRunner()
+    _reflector_oob_after_verdict(
+        args=_args(journal=journal_path),
+        repo=tmp_path,
+        journal=JournalFile(path=journal_path),
+        runner=runner,
+        token_supplier=lambda: "fresh-reflector-token",
+        lessons_proposer=RecordingLessonsProposer(),
+        spawn=_sync_spawn(),
+    )
+    env = runner.envs[0]
+    assert env is not None
+    assert env["GH_TOKEN"] == "fresh-reflector-token"
+
+
 def test_reflector_after_verdict_never_raises(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -116,8 +147,15 @@ def test_reflector_after_verdict_never_raises(
 
     @dataclass(kw_only=True)
     class _Boom:
-        def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
-            _ = (argv, cwd, timeout_seconds)
+        def run(
+            self,
+            *,
+            argv: list[str],
+            cwd: Path,
+            timeout_seconds: float,
+            env: dict[str, str] | None = None,
+        ) -> CommandResult:
+            _ = (argv, cwd, timeout_seconds, env)
             raise RuntimeError("claude exploded")
 
     journal = JournalFile(path=tmp_path / "j.jsonl")

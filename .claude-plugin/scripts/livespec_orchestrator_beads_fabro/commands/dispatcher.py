@@ -636,12 +636,13 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
     return exit_code
 
 
-def _reflector_oob_after_verdict(
+def _reflector_oob_after_verdict(  # noqa: PLR0913 — kw-only fail-open stage; seams are independently injectable.
     *,
     args: argparse.Namespace,
     repo: Path,
     journal: JournalFile,
     runner: CommandRunner | None = None,
+    token_supplier: Callable[[], str] | None = None,
     lessons_proposer: LessonsProposer | None = None,
     spawn: Callable[[Callable[[], None]], None] | None = None,
 ) -> None:
@@ -673,7 +674,7 @@ def _reflector_oob_after_verdict(
     daemon thread. The OOB reflector writes its own verdict spans to a
     journal-sibling file the enrich stage forwards.
     """
-    resolved_runner = runner if runner is not None else ShellCommandRunner()
+    resolved_runner = _post_verdict_runner(runner=runner, token_supplier=token_supplier)
     resolved_proposer = (
         lessons_proposer
         if lessons_proposer is not None
@@ -766,6 +767,40 @@ def _alarm_on_terminal_failure(
     )
 
 
+def _github_token_error_supplier(*, detail: str) -> Callable[[], str]:
+    """Adapt an accessor-resolution failure to the runner's fail-closed seam."""
+
+    def _raise_github_token_error() -> str:
+        raise GithubAppAuthError(detail=detail)
+
+    return _raise_github_token_error
+
+
+def _post_verdict_runner(
+    *,
+    runner: CommandRunner | None,
+    token_supplier: Callable[[], str] | None = None,
+) -> CommandRunner:
+    """Resolve the post-verdict subprocess runner with first-class remint.
+
+    Production default runners must refresh `GH_TOKEN` through the provider
+    accessor before spawning. Injected runners keep their historic behavior
+    unless the test or caller explicitly passes a supplier to prove wrapping.
+    """
+    resolved_runner: CommandRunner = runner if runner is not None else ShellCommandRunner()
+    resolved_supplier = token_supplier
+    if resolved_supplier is None and runner is None:
+        supplier_or_error = _github_token_supplier()
+        resolved_supplier = (
+            _github_token_error_supplier(detail=supplier_or_error)
+            if isinstance(supplier_or_error, str)
+            else supplier_or_error
+        )
+    if resolved_supplier is None:
+        return resolved_runner
+    return GithubTokenEnvRunner(inner=resolved_runner, token=resolved_supplier)
+
+
 _FABRO_PS_PROBE_TIMEOUT_SECONDS = 60.0
 
 # The merged-PR diff-size probe budget (the calibration size proxy): a
@@ -779,13 +814,14 @@ _PR_DIFF_PROBE_TIMEOUT_SECONDS = 60.0
 _SPEND_CAP_BREACH_CLASS = "spend-cap-breach"
 
 
-def _cost_gate_after_verdict(
+def _cost_gate_after_verdict(  # noqa: PLR0913 — kw-only fail-open stage; seams are independently injectable.
     *,
     args: argparse.Namespace,
     repo: Path,
     outcomes: list[DispatchOutcome],
     journal: JournalFile,
-    runner: ShellCommandRunner | None = None,
+    runner: CommandRunner | None = None,
+    token_supplier: Callable[[], str] | None = None,
     poster: NotifyPoster | None = None,
 ) -> None:
     """Run the fail-closed cost gate after the verdict is computed (y0m).
@@ -813,7 +849,7 @@ def _cost_gate_after_verdict(
             repo=repo,
             outcomes=outcomes,
             journal=journal,
-            runner=runner if runner is not None else ShellCommandRunner(),
+            runner=_post_verdict_runner(runner=runner, token_supplier=token_supplier),
             poster=poster if poster is not None else HttpNotifyPoster(),
         )
     except Exception as exc:
@@ -834,7 +870,7 @@ def _cost_gate(
     repo: Path,
     outcomes: list[DispatchOutcome],
     journal: JournalFile,
-    runner: ShellCommandRunner,
+    runner: CommandRunner,
     poster: NotifyPoster,
 ) -> None:
     """The cost-gate / cost-reporter body wrapped fail-open by `_cost_gate_after_verdict`.
@@ -1034,7 +1070,8 @@ def _self_update_after_verdict(
     repo: Path,
     outcomes: list[DispatchOutcome],
     journal: JournalFile,
-    runner: ShellCommandRunner | None = None,
+    runner: CommandRunner | None = None,
+    token_supplier: Callable[[], str] | None = None,
     poster: NotifyPoster | None = None,
 ) -> None:
     """Run the staged-self-update gate after the verdict is final (work-item ddu).
@@ -1055,7 +1092,7 @@ def _self_update_after_verdict(
     `bin/dispatcher.py`; the canary scratch root is a throwaway temp dir.
     `runner` / `poster` are injectable for the hermetic test tier.
     """
-    resolved_runner = runner if runner is not None else ShellCommandRunner()
+    resolved_runner = _post_verdict_runner(runner=runner, token_supplier=token_supplier)
     resolved_poster = poster if poster is not None else HttpNotifyPoster()
     for outcome in outcomes:
         if outcome.status != "green" or outcome.pr_number is None:
@@ -1073,7 +1110,7 @@ def _self_update_after_verdict(
         )
 
 
-def _resolve_merged_paths(*, repo: Path, runner: ShellCommandRunner) -> tuple[str, ...]:
+def _resolve_merged_paths(*, repo: Path, runner: CommandRunner) -> tuple[str, ...]:
     """Read the merged PR's changed paths; () on any unobservable signal.
 
     The publish branch is `feat/<work-item-id>` but the merge is already
@@ -1125,7 +1162,7 @@ def _candidate_dispatcher_bin() -> Path:
     return _plugin_root() / "scripts" / "bin" / "dispatcher.py"
 
 
-def _is_writable_orchestrator_checkout(*, root: Path, runner: ShellCommandRunner) -> bool:
+def _is_writable_orchestrator_checkout(*, root: Path, runner: CommandRunner) -> bool:
     """True only when `root` is inside a git work-tree whose origin is this orchestrator.
 
     The post-merge self-update can PROMOTE a self-merge only into a
@@ -1163,7 +1200,7 @@ def _self_update_after_merge(  # noqa: PLR0913 — kw-only fail-open stage; each
     scratch_root: str,
     repo: Path,
     journal: JournalFile,
-    runner: ShellCommandRunner | None = None,
+    runner: CommandRunner | None = None,
     poster: NotifyPoster | None = None,
 ) -> None:
     """Stage + canary a self-merge before it can take over (work-item ddu).
@@ -1222,7 +1259,7 @@ def _self_update(  # noqa: PLR0913 — kw-only fail-open stage body; each field 
     scratch_root: str,
     repo: Path,
     journal: JournalFile,
-    runner: ShellCommandRunner,
+    runner: CommandRunner,
     poster: NotifyPoster,
 ) -> None:
     """The self-update body wrapped fail-open by `_self_update_after_merge`.
@@ -1236,7 +1273,7 @@ def _self_update(  # noqa: PLR0913 — kw-only fail-open stage body; each field 
     fail-open backstop stays; this guard just removes a never-applicable
     code path from hiding behind it.
     """
-    if not _is_writable_orchestrator_checkout(root=_plugin_root(), runner=ShellCommandRunner()):
+    if not _is_writable_orchestrator_checkout(root=_plugin_root(), runner=runner):
         journal.append(
             record={
                 "stage": "self-update-skipped",
@@ -1458,6 +1495,7 @@ def _dispatch_one(
         journal=journal,
         wall_clock_seconds=time.monotonic() - started_at,
         dispatch_context_size=len(goal_text),
+        token_supplier=token_supplier,
     )
     return outcome
 
@@ -1471,6 +1509,7 @@ def _post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fi
     journal: JournalFile,
     wall_clock_seconds: float,
     dispatch_context_size: int,
+    token_supplier: Callable[[], str],
 ) -> None:
     """Run the machine-path dispositions after a dispatch reaches its terminal.
 
@@ -1494,6 +1533,7 @@ def _post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fi
         journal=journal,
         wall_clock_seconds=wall_clock_seconds,
         dispatch_context_size=dispatch_context_size,
+        token_supplier=token_supplier,
     )
 
 
@@ -1506,7 +1546,8 @@ def _emit_calibration(  # noqa: PLR0913 — kw-only fail-open stage; each field 
     journal: JournalFile,
     wall_clock_seconds: float,
     dispatch_context_size: int,
-    runner: ShellCommandRunner | None = None,
+    runner: CommandRunner | None = None,
+    token_supplier: Callable[[], str] | None = None,
 ) -> None:
     """Journal this dispatch's calibration telemetry on the existing journal (yfsv4j).
 
@@ -1526,7 +1567,7 @@ def _emit_calibration(  # noqa: PLR0913 — kw-only fail-open stage; each field 
     swallowed — it never crashes the (already-final) dispatch verdict.
     `runner` is injectable for the hermetic test tier.
     """
-    resolved_runner = runner if runner is not None else ShellCommandRunner()
+    resolved_runner = _post_verdict_runner(runner=runner, token_supplier=token_supplier)
     try:
         record = build_calibration_record(
             item=item,
@@ -1609,7 +1650,7 @@ def _merged_pr_diff_size(
     *,
     repo: Path,
     outcome: DispatchOutcome,
-    runner: ShellCommandRunner,
+    runner: CommandRunner,
 ) -> int | None:
     """The merged-PR diff size (additions + deletions), or None when unobservable.
 
