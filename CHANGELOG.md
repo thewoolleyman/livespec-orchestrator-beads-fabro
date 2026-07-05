@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.11.1...v0.11.2) (2026-07-05)
+
+
+### Bug Fixes
+
+* resolve pull-primary default branch ([a7218b4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a7218b49443a9dd58e0ea0a55cfefc861b114055))
+
 ## [0.11.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.11.0...v0.11.1) (2026-07-05)
 
 
