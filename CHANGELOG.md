@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.10.0...v0.11.0) (2026-07-05)
+
+
+### Features
+
+* inject ratified lessons into the dispatch brief (S2) ([71e137c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/71e137ce649cc7da430b846e136511d4a1f184f0))
+
 ## [0.10.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.9.6...v0.10.0) (2026-07-05)
 
 
