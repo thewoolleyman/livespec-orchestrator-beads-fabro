@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.11.0...v0.11.1) (2026-07-05)
+
+
+### Bug Fixes
+
+* refresh post-verdict github tokens ([dea771f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/dea771fd09c7a4ae9df98f048e10cc951e076e07))
+
 ## [0.11.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.10.0...v0.11.0) (2026-07-05)
 
 
