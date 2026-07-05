@@ -60,6 +60,8 @@
 #                                    (installation must cover the e2e org)
 #   ANTHROPIC_API_KEY_LIVESPEC_E2E   Fabro LLM key
 #   CLAUDE_CODE_OAUTH_TOKEN          model auth the dispatcher projects per-dispatch
+#   ~/.codex/auth.json               Codex subscription credential the dispatcher
+#                                    snapshots into worker `$CODEX_HOME/auth.json`
 #   HONEYCOMB_INGEST_KEY_LIVESPEC    telemetry egress key
 
 set -euo pipefail
@@ -131,6 +133,7 @@ Required env (normally from /data/projects/1password-env-wrapper/with-livespec-e
                               installation must cover the livespec-e2e org)
   ANTHROPIC_API_KEY_LIVESPEC_E2E
   CLAUDE_CODE_OAUTH_TOKEN
+  ~/.codex/auth.json           (or $CODEX_HOME/auth.json)
   HONEYCOMB_INGEST_KEY_LIVESPEC
 
 Secret env presence is checked by byte count only; values are never printed.
@@ -152,6 +155,12 @@ require_env() {
   local value="${!name:-}"
   [ -n "$value" ] || fail "required env var is not set: $name"
   printf '%s present (%s bytes)\n' "$name" "$(printf '%s' "$value" | wc -c | tr -d ' ')"
+}
+
+require_codex_auth_file() {
+  local src="${CODEX_HOME:-$HOME/.codex}/auth.json"
+  [ -f "$src" ] || fail "host Codex credential not found: $src (run 'codex login' on the host before dispatch)"
+  printf 'CODEX auth.json present (%s bytes)\n' "$(wc -c < "$src" | tr -d ' ')"
 }
 
 while [ "$#" -gt 0 ]; do
@@ -249,6 +258,7 @@ preflight() {
   require_env ANTHROPIC_API_KEY_LIVESPEC_E2E
   require_env CLAUDE_CODE_OAUTH_TOKEN
   require_env HONEYCOMB_INGEST_KEY_LIVESPEC
+  require_codex_auth_file
   if [ "$BUILD_IMAGE" -eq 1 ]; then
     stage_and_build_image
   elif docker image inspect "$IMAGE" >/dev/null 2>&1; then
@@ -425,6 +435,21 @@ trust_mounts() {
     || printf 'WARNING: gh auth setup-git failed; the post-merge pull may need credentials\n' >&2
 }
 
+# The live proof must provide the DISPATCHER host with the same Codex credential
+# it snapshots into the worker overlay. Here the dispatcher host is the
+# orchestrator container, so copy ONLY the host auth.json into an otherwise-empty
+# in-container ~/.codex. Never bind-mount the whole host ~/.codex: config.toml,
+# MCP servers, and history would change agent behavior and invalidate the proof.
+provision_codex_auth() {
+  local src="${CODEX_HOME:-$HOME/.codex}/auth.json"
+  log "projecting host Codex auth.json (credential only) into $CONTAINER ~/.codex"
+  [ -f "$src" ] || fail "host Codex credential not found: $src (run 'codex login' on the host)"
+  docker exec -i "$CONTAINER" sh -lc 'umask 077; mkdir -p "$HOME/.codex"; cat > "$HOME/.codex/auth.json"' < "$src" \
+    || fail "failed to project Codex auth.json into the orchestrator container"
+  docker exec "$CONTAINER" sh -lc 'test -s "$HOME/.codex/auth.json"' \
+    || fail "projected Codex auth.json is missing inside the orchestrator container"
+}
+
 # Capture the target work-item id from the embedded ledger (host-side read).
 target_item_id() {
   (cd "$CLONE_DIR" && bd list --status open --json 2>/dev/null | jq -r '.[0].id')
@@ -534,6 +559,7 @@ main() {
   create_and_seed_repo
   start_container
   trust_mounts
+  provision_codex_auth
   local item_id
   item_id="$(target_item_id)"
   if [ -z "$item_id" ] || [ "$item_id" = "null" ]; then
