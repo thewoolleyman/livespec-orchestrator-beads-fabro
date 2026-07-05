@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.9.2...v0.9.3) (2026-07-05)
+
+
+### Bug Fixes
+
+* resolve fabro_bin from config/env with absolute-path default and preflight-refuse before admission ([d0b5eef](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d0b5eefa5ca2881d1c3969b87987435b425d40af))
+
 ## [0.9.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.9.1...v0.9.2) (2026-07-04)
 
 
