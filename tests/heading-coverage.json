@@ -355,11 +355,11 @@
     "reason": "Integration-tier acceptance for the closed_item_integrity dev-tooling check (work-items livespec-impl-beads-fxt/xe0/oaq; gap-j2femmn7 invariant, gap-gtamowt3 + gap-3wbdenoy check): the check's main() is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend) with a fixture tests/heading-coverage.json carrying the clauses[] gap-id->scenario map. The bound node id is the case-1 finding journey (a TODO-bound closed gap-tied item surfaces a closed-item-integrity warning at exit 0 in the default warn mode); the fail-mode exit-non-zero, the missing-resolution:completed-label, the unresolvable-gap-id, and the case-2 fully-proven-no-finding cases are sibling tests in the same module. Bound at the gap-tied impl step before its own resolution:completed closure (the check is its own first subject)."
   },
   {
-    "heading": "## Scenario 17 \u2014 orchestrate operator-surface defaults",
+    "heading": "## Scenario 17 \u2014 drive operator-surface defaults",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "tests.integration.test_orchestrate_operator_defaults_scenario17.test_bare_orchestrate_runs_the_plan_walkthrough_without_erroring",
-    "reason": "Integration-tier acceptance for the three orchestrate operator-surface defaults, driven through the orchestrate CLI's public main() entry point: bare orchestrate runs the read-only plan walkthrough without erroring on the missing subcommand (the bound node id; siblings cover the no-SystemExit(2) assertion explicitly); an omitted --repo resolves to the current working directory while an explicit --repo overrides and an unresolvable path is a precondition error exit 3; and console output is human-readable Markdown by default while --json renders the same payload as JSON. The spec-side and impl-side next surfaces are driven through the CLI's public runner seam so the acceptance is hermetic, and the defaults are a property of the CLI regardless of backend."
+    "test": "TODO",
+    "reason": "Rebind pending the orchestrate->drive rename impl follow-up (proposal orchestrate-to-drive-rename-and-next-asymmetry, Change F/J): Scenario 17 was re-scoped to drive and its bare-orchestrate-walkthrough sub-scenario RETIRED, so the prior bound test (test_bare_orchestrate_runs_the_plan_walkthrough_without_erroring) no longer describes a live scenario. The real integration-tier node id for the surviving cwd-default + Markdown-default drive defaults is populated when the drive-rename impl follow-up binds it via the governed resulting_files[] loop."
   },
   {
     "heading": "## Worker credential projection",
@@ -390,7 +390,7 @@
     "reason": "Integration-tier acceptance for Scenario 20: the bound node id inspects the shipped implement-work-item Fabro graph and verifies the implementer nodes (`implement`, `fix`, `pr`, and `review_fix`) use the Codex-routable `acp_adapter` input while the review-only node uses the separate Claude `review_adapter`; sibling tests prove the review adapter is pinned through ANTHROPIC_MODEL + CLAUDE_CODE_EFFORT_LEVEL and no ACP node hard-codes the Claude adapter. The graph's approve/fix/ship-on-cap edge behavior is codified in the workflow DOT and remains subject to the first live dual-provider dispatch acceptance check."
   },
   {
-    "heading": "## Scenario 21 \u2014 Codex skills picker discovers orchestrate by short name",
+    "heading": "## Scenario 21 \u2014 Codex skills picker discovers drive by short name",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.e2e-cli.test_codex_skill_picker.test_skills_picker_finds_orchestrate_by_short_name",
@@ -481,7 +481,7 @@
     "reason": "Added by the github-app-auth-adopter-dispatch revise pass (maintainer-ordered spec wave, openbrain adopter dogfood 2026-07-03): per-tenant engine identity + App-reach/workflows-grant preflight, target-local workflow with target-toolchain prepare steps, and default-branch pull-primary resolution. Will be bound to integration/consumer-tier tests exercising the dispatcher preflight, workflow-override, and janitor default-branch seams against hermetic fakes, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node ids populated via the governed propose-change/revise resulting_files[] loop when the implementing work-items (bd-ib-z2ctra, bd-ib-hkzcfb, bd-ib-w4iaaf) bind them."
   },
   {
-    "heading": "## Scenario 31 \u2014 orchestrate human valve actions",
+    "heading": "## Scenario 31 \u2014 drive human valve actions",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_orchestrate_human_valve_scenario31::test_approve_authorizes_pending_manual_item_into_ready",
