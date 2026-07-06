@@ -22,8 +22,9 @@ spec_commitments:
         exercising tests (`tests/integration/test_orchestrate_*` and
         `tests/**/*orchestrate*`) to their `drive` equivalents and rebind the
         `tests/heading-coverage.json` entries for Scenarios 17 / 21 / 31 to the renamed
-        test node ids. Update the `SPECIFICATION/README.md` orientation references
-        (the operator-skill line and the two invocation examples) as a ride-along.
+        test node ids. (The `SPECIFICATION/README.md` orientation references are NOT an
+        impl follow-up: README is a governed, revise-tracked spec target amended in this
+        same revise pass — see Proposed Change K below.)
         Cross-repo rename blast radius (the `livespec-driver-claude` /
         `livespec-driver-codex` bindings and the `livespec-console-beads-fabro`
         Scenario 11 reference to "the `orchestrate` action surface") is carried by the
@@ -38,6 +39,7 @@ spec_commitments:
 - SPECIFICATION/scenarios.md
 - SPECIFICATION/constraints.md
 - SPECIFICATION/spec.md
+- SPECIFICATION/README.md
 
 ### Summary
 
@@ -348,6 +350,27 @@ Scenario: a manual → auto flip on a pending-approval item does not approve it
 - `## Scenario 31 — orchestrate human valve actions` -> `## Scenario 31 — drive human valve actions`. Same treatment as Scenario 21 — the valve-action behavior survives; the `test` node id is renamed by the impl follow-up.
 
 No other `tests/heading-coverage.json` entries change (Scenarios 33 and 37 keep their headings; the retired `#### orchestrate` and `#### next` contract subsections are H4, which the H2-only heading-coverage map does not track).
+
+**K. Orientation-doc amendments — `SPECIFICATION/README.md`.** README is a governed, revise-tracked spec file (its orientation prose is snapshotted into `history/vNNN/README.md` and was co-amended in past revise passes, e.g. commit `6df3ef8`), so it MUST be amended in THIS revise pass and included in the revise payload's `resulting_files[]` alongside the other target files (and snapshotted into the new `history/vNNN/`). Its three surviving `orchestrate` references MUST be updated:
+
+- **Skill-surface line (§"Required content").** The line "  one operator skill: orchestrate; three thin-transport skills:" MUST become "  one operator skill: drive; three thin-transport skills:". (The `plan` in the preceding heavyweight-skill list — "…groom, plan;" — is the `/livespec-orchestrator-beads-fabro:plan` planning-thread skill, NOT `orchestrate plan`, and MUST be left unchanged.)
+
+- **Invocation examples (§"Lifecycle").** Inside the ```` ```text ```` fenced block, the two lines
+
+````text
+/livespec-orchestrator-beads-fabro:orchestrate plan --repo /path/to/repo --json
+/livespec-orchestrator-beads-fabro:orchestrate run --repo /path/to/repo --action <selected-action-id> --json
+````
+
+  MUST be replaced with the single line
+
+````text
+/livespec-orchestrator-beads-fabro:drive --repo /path/to/repo --action <selected-action-id> --json
+````
+
+  The `orchestrate plan` example MUST be DROPPED entirely — there is NO `drive plan` equivalent (the two-`next` composition role relocates to the not-yet-shipped `needs-attention` read surface); do NOT invent an invalid `drive plan` command.
+
+- **Description paragraph (§"Lifecycle").** The paragraph "`plan` is read-only and composes spec-side `/livespec:next` with impl-side `next`. `run` requires an explicit selected action id: `spec:<action>:<n>` returns a human-gated `/livespec:*` handoff, while `impl:<work-item-id>` dispatches that existing item through Dispatcher/Fabro with the default small budget." MUST be replaced with: "`drive` is a pure executor of the operator action-id grammar: it executes exactly one selected action and composes/ranks nothing. An `impl:<work-item-id>` action dispatches that existing item through Dispatcher/Fabro with the default small budget; the human valve/policy actions (`approve:` / `accept:` / `reject:` / `set-admission:` / `set-acceptance:`) apply the corresponding ledger disposition. Spec-side `/livespec:*` handoffs are NOT `drive`-executable — composing what needs attention across spec, impl, and plan belongs to the separate `needs-attention` read surface, not `drive`." This removes the two-`next` composition description and the `spec:<action>:<n>` handoff — the exact anti-pattern this proposal forbids (per §"`drive`" and §"`next`").
 
 ### Interaction with the pending `orchestrate-plan-surfaces-unarchived-plan-threads` proposal
 
