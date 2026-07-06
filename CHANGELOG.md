@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.11.2...v0.12.0) (2026-07-06)
+
+
+### Features
+
+* rename orchestrate operator to drive ([e0eabb2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e0eabb22aebadd190f92399cc72840e881c2acfc))
+
 ## [0.11.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.11.1...v0.11.2) (2026-07-05)
 
 
