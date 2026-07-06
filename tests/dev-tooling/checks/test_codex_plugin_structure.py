@@ -2,9 +2,9 @@
 
 The check validates the orchestrator plugin's Codex cross-runtime surface:
 the repo-root `.agents/plugins/marketplace.json` catalog, the nested
-`.claude-plugin/.codex-plugin/plugin.json` manifest, the FOUR thin
+`.claude-plugin/.codex-plugin/plugin.json` manifest, the SIX thin
 wrapper-backed `.codex-plugin/skills/<op>/SKILL.md` bindings (next,
-list-work-items, detect-impl-gaps, drive), and the FIVE prose-backed
+list-work-items, list-plan-threads, detect-impl-gaps, needs-attention, drive), and the FIVE prose-backed
 heavyweight bindings (capture-work-item, capture-impl-gaps,
 capture-spec-drift, implement, groom) that read `prose/<op>.md` instead of
 self-invoking a wrapper. The P3b prose extraction is complete — implement
@@ -55,7 +55,9 @@ _VERSION = "0.1.0"
 _PRESENT_OPS = {
     "next": "next.py",
     "list-work-items": "list_work_items.py",
+    "list-plan-threads": "list_plan_threads.py",
     "detect-impl-gaps": "detect_impl_gaps.py",
+    "needs-attention": "needs_attention.py",
     "drive": "drive.py",
 }
 _PRESENT_PROSE_OPS = (
@@ -118,7 +120,7 @@ def _present_prose_body(*, op: str) -> str:
 def _write_surface(*, root: Path) -> None:
     """Write a fully-valid present-op Codex surface under `root` (a fake repo root).
 
-    Present = the four wrapper-backed thin ops plus the three prose-backed
+    Present = the six wrapper-backed thin ops plus the three prose-backed
     heavyweight capture ops.
     """
     claude_dir = root / ".claude-plugin"
@@ -279,7 +281,7 @@ def test_valid_surface_passes() -> None:
     assert _CHECK.main() == 0
 
 
-def test_present_set_is_the_four_thin_ops() -> None:
+def test_present_set_is_the_six_thin_ops() -> None:
     assert set(_CHECK._PRESENT_OPS) == set(_PRESENT_OPS)  # noqa: SLF001
 
 
