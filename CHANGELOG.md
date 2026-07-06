@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.12.0...v0.13.0) (2026-07-06)
+
+
+### Features
+
+* add plan thread listing primitive ([cc093ea](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cc093ea41c990f4d8da1a6ae3c974740e17655c9))
+
 ## [0.12.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.11.2...v0.12.0) (2026-07-06)
 
 
