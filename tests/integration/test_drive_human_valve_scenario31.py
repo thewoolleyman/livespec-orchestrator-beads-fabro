@@ -1,7 +1,7 @@
-"""Integration-tier acceptance for Scenario 31 orchestrate operator actions.
+"""Integration-tier acceptance for Scenario 31 drive operator actions.
 
-Binds SPECIFICATION/scenarios.md "Scenario 31 — orchestrate human valve actions"
-through the public `orchestrate.run_action` surface and the real store/client
+Binds SPECIFICATION/scenarios.md "Scenario 31 — drive human valve actions"
+through the public `drive.run_action` surface and the real store/client
 seam against the in-memory `FakeBeadsClient`. The cases pin the ratified
 approval model: `approve:<id>` is the human approval act
 `pending-approval -> ready`, and policy-edit actions change only labels, never
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
-from livespec_orchestrator_beads_fabro.commands.orchestrate import run_action
+from livespec_orchestrator_beads_fabro.commands.drive import run_action
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
     materialize_work_items,

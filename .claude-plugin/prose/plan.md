@@ -132,7 +132,7 @@ may happen this invocation; ask the user which, one at a time:
     session **FILES** ripe work; it does **NOT** hand-code the
     implementation inline. Ready, factory-safe implementation is built
     **factory-side** under the janitor gate — the Dispatcher drains
-    `ready` items, or an operator runs the `orchestrate` operation —
+    `ready` items, or an operator runs the `drive` operation —
     never inline in the planning session (that is the retired
     inline-overseer anti-pattern).
 - **Close the thread** → archive it (Step 5).
@@ -224,5 +224,5 @@ the reserved `handoff.md`, and it archives on close).
 - Does NOT dispatch work — the Dispatcher drains `ready` items.
 - Does NOT implement work inline — a planning session FILES ripe work
   and never hand-codes its implementation; ready, factory-safe
-  implementation is built factory-side (the Dispatcher / `orchestrate`)
+  implementation is built factory-side (the Dispatcher / `drive`)
   under the janitor gate.

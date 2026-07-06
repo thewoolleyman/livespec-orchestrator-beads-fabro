@@ -1,4 +1,4 @@
-"""Edge coverage for the orchestrate command supervisor."""
+"""Edge coverage for the drive command supervisor."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import orchestrate
-from livespec_orchestrator_beads_fabro.commands.orchestrate import CommandRun
+from livespec_orchestrator_beads_fabro.commands import drive
+from livespec_orchestrator_beads_fabro.commands.drive import CommandRun
 from livespec_orchestrator_beads_fabro.types import AuditRecord, StoreConfig, WorkItem
 
 
@@ -104,15 +104,15 @@ def _install_valve_store(
         assert path is config
         updates.append((item_id, status, assignee))
 
-    monkeypatch.setattr(orchestrate, "resolve_store_config", fake_resolve_store_config)
-    monkeypatch.setattr(orchestrate, "read_work_items", fake_read_work_items)
-    monkeypatch.setattr(orchestrate, "update_work_item_status", fake_update_work_item_status)
+    monkeypatch.setattr(drive, "resolve_store_config", fake_resolve_store_config)
+    monkeypatch.setattr(drive, "read_work_items", fake_read_work_items)
+    monkeypatch.setattr(drive, "update_work_item_status", fake_update_work_item_status)
     return updates
 
 
 def test_red_commit_wip_cap_helper_remains_covered(tmp_path: Path) -> None:
     module = importlib.import_module(
-        "tests.livespec_orchestrator_beads_fabro.commands.test_orchestrate"
+        "tests.livespec_orchestrator_beads_fabro.commands.test_drive_core"
     )
     resolver = module._wip_cap(3)  # noqa: SLF001 - cover byte-frozen Red helper from Green file.
 
@@ -126,7 +126,7 @@ def test_run_human_valve_action_accept_success_updates_store(
     repo.mkdir()
     updates = _install_valve_store(monkeypatch, items=[_item(status="acceptance")])
 
-    result = orchestrate.run_human_valve_action(repo=repo, action_id="accept:bd-ib-123")
+    result = drive.run_human_valve_action(repo=repo, action_id="accept:bd-ib-123")
 
     assert result["status"] == "green"
     assert updates == [("bd-ib-123", "done", None)]
@@ -136,7 +136,7 @@ def test_run_human_valve_action_refuses_malformed_action(tmp_path: Path) -> None
     repo = tmp_path / "repo"
     repo.mkdir()
 
-    result = orchestrate.run_human_valve_action(repo=repo, action_id="approve:")
+    result = drive.run_human_valve_action(repo=repo, action_id="approve:")
 
     assert result == {
         "action_id": "approve:",
@@ -154,7 +154,7 @@ def test_run_human_valve_action_refuses_missing_item(
     repo.mkdir()
     updates = _install_valve_store(monkeypatch, items=[_item(id="bd-ib-other")])
 
-    result = orchestrate.run_human_valve_action(repo=repo, action_id="accept:bd-ib-123")
+    result = drive.run_human_valve_action(repo=repo, action_id="accept:bd-ib-123")
 
     assert result["status"] == "failed"
     assert result["domain_error"] == "work-item-not-found"
@@ -169,7 +169,7 @@ def test_run_human_valve_action_approve_refuses_non_ready(
     repo.mkdir()
     updates = _install_valve_store(monkeypatch, items=[_item(status="backlog")])
 
-    result = orchestrate.run_human_valve_action(repo=repo, action_id="approve:bd-ib-123")
+    result = drive.run_human_valve_action(repo=repo, action_id="approve:bd-ib-123")
 
     assert result["status"] == "failed"
     assert result["domain_error"] == "invalid-source-state"
@@ -186,7 +186,7 @@ def test_run_human_valve_action_approve_refuses_auto_policy(
         monkeypatch, items=[_item(status="pending-approval", admission_policy="auto")]
     )
 
-    result = orchestrate.run_human_valve_action(repo=repo, action_id="approve:bd-ib-123")
+    result = drive.run_human_valve_action(repo=repo, action_id="approve:bd-ib-123")
 
     assert result["status"] == "failed"
     assert result["domain_error"] == "invalid-source-state"
@@ -201,7 +201,7 @@ def test_run_human_valve_action_approve_refuses_ready_item(
     repo.mkdir()
     updates = _install_valve_store(monkeypatch, items=[_item(admission_policy="manual")])
 
-    result = orchestrate.run_human_valve_action(repo=repo, action_id="approve:bd-ib-123")
+    result = drive.run_human_valve_action(repo=repo, action_id="approve:bd-ib-123")
 
     assert result["status"] == "failed"
     assert result["domain_error"] == "invalid-source-state"
@@ -219,7 +219,7 @@ def test_run_human_valve_action_reject_regroom_refuses_when_revert_fails(
     )
     runner = _Runner(results=[CommandRun(argv=("git",), returncode=1, stdout="", stderr="boom")])
 
-    result = orchestrate.run_human_valve_action(
+    result = drive.run_human_valve_action(
         repo=repo, action_id="reject:bd-ib-123:regroom", runner=runner
     )
 
@@ -237,7 +237,7 @@ def test_run_human_valve_action_reject_regroom_without_audit_refuses_before_back
     updates = _install_valve_store(monkeypatch, items=[_item(status="acceptance")])
     runner = _Runner(results=[])
 
-    result = orchestrate.run_human_valve_action(
+    result = drive.run_human_valve_action(
         repo=repo, action_id="reject:bd-ib-123:regroom", runner=runner
     )
 
@@ -247,98 +247,14 @@ def test_run_human_valve_action_reject_regroom_without_audit_refuses_before_back
     assert updates == []
 
 
-def test_plan_records_failed_next_sources(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    runner = _Runner(
-        results=[
-            _run(stdout="", returncode=3, stderr="spec failed"),
-            _run(stdout="", returncode=2, stderr="impl failed"),
-        ]
-    )
-
-    plan = orchestrate.plan_actions(repo=repo, runner=runner)
-
-    assert plan["actions"] == []
-    assert plan["sources"]["spec_next"]["status"] == "failed"
-    assert plan["sources"]["spec_next"]["stderr"] == "spec failed"
-    assert plan["sources"]["impl_next"]["status"] == "failed"
-
-
-def test_plan_records_malformed_next_outputs(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    runner = _Runner(
-        results=[
-            _run(stdout="not json"),
-            _run(stdout=json.dumps({"candidates": "not-a-list"})),
-        ]
-    )
-
-    plan = orchestrate.plan_actions(repo=repo, runner=runner)
-
-    assert plan["actions"] == []
-    assert plan["sources"]["spec_next"]["stderr"] == "next output was not a JSON object"
-    assert plan["sources"]["impl_next"]["stderr"] == "next output did not include candidates[]"
-
-
-def test_plan_uses_explicit_next_bins(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    spec_bin = tmp_path / "spec-next.py"
-    impl_bin = tmp_path / "impl-next.py"
-    runner = _Runner(
-        results=[
-            _run(stdout=json.dumps({"candidates": []})),
-            _run(stdout=json.dumps({"candidates": []})),
-        ]
-    )
-
-    _ = orchestrate.plan_actions(
-        repo=repo,
-        runner=runner,
-        spec_next_bin=spec_bin,
-        impl_next_bin=impl_bin,
-    )
-
-    assert runner.calls[0][1] == str(spec_bin)
-    assert runner.calls[1][1] == str(impl_bin)
-
-
-def test_plan_uses_spec_next_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    spec_bin = tmp_path / "env-spec-next.py"
-    monkeypatch.setenv("LIVESPEC_SPEC_NEXT_BIN", str(spec_bin))
-    runner = _Runner(
-        results=[
-            _run(stdout=json.dumps({"candidates": []})),
-            _run(stdout=json.dumps({"candidates": []})),
-        ]
-    )
-
-    _ = orchestrate.plan_actions(repo=repo, runner=runner)
-
-    assert runner.calls[0][1] == str(spec_bin)
-
-
 def test_run_action_rejects_unknown_action(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
 
-    result = orchestrate.run_action(repo=repo, action_id="bogus", runner=_Runner(results=[]))
+    result = drive.run_action(repo=repo, action_id="bogus", runner=_Runner(results=[]))
 
     assert result["status"] == "failed"
     assert result["kind"] == "unknown"
-
-
-def test_run_action_defaults_spec_handoff_when_action_missing(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-
-    result = orchestrate.run_action(repo=repo, action_id="spec:", runner=_Runner(results=[]))
-
-    assert result["handoff"] == "/livespec:next --spec-target SPECIFICATION/"
 
 
 def test_run_action_reports_blocked_dispatch_with_default_dispatcher(tmp_path: Path) -> None:
@@ -346,7 +262,7 @@ def test_run_action_reports_blocked_dispatch_with_default_dispatcher(tmp_path: P
     repo.mkdir()
     runner = _Runner(results=[_run(stdout=json.dumps([{"status": "blocked"}]), returncode=1)])
 
-    result = orchestrate.run_action(repo=repo, action_id="impl:bd-ib-123", runner=runner)
+    result = drive.run_action(repo=repo, action_id="impl:bd-ib-123", runner=runner)
 
     assert result["status"] == "blocked"
     assert "human-gated blocked" in result["summary"]
@@ -358,7 +274,7 @@ def test_run_action_falls_back_to_failed_for_bad_dispatch_output(tmp_path: Path)
     repo.mkdir()
     runner = _Runner(results=[_run(stdout="not json", returncode=1)])
 
-    result = orchestrate.run_action(repo=repo, action_id="impl:bd-ib-123", runner=runner)
+    result = drive.run_action(repo=repo, action_id="impl:bd-ib-123", runner=runner)
 
     assert result["status"] == "failed"
     assert "did not report green" in result["summary"]
@@ -369,7 +285,7 @@ def test_run_action_falls_back_to_green_for_missing_status(tmp_path: Path) -> No
     repo.mkdir()
     runner = _Runner(results=[_run(stdout=json.dumps([{}]))])
 
-    result = orchestrate.run_action(repo=repo, action_id="impl:bd-ib-123", runner=runner)
+    result = drive.run_action(repo=repo, action_id="impl:bd-ib-123", runner=runner)
 
     assert result["status"] == "green"
 
@@ -379,7 +295,7 @@ def test_run_action_ignores_non_dict_dispatch_entries(tmp_path: Path) -> None:
     repo.mkdir()
     runner = _Runner(results=[_run(stdout=json.dumps([1]), returncode=1)])
 
-    result = orchestrate.run_action(repo=repo, action_id="impl:bd-ib-123", runner=runner)
+    result = drive.run_action(repo=repo, action_id="impl:bd-ib-123", runner=runner)
 
     assert result["status"] == "failed"
 
@@ -390,56 +306,10 @@ def test_main_missing_repo_returns_precondition(
 ) -> None:
     missing = tmp_path / "missing"
 
-    exit_code = orchestrate.main(["plan", "--repo", str(missing), "--json"])
+    exit_code = drive.main(["--repo", str(missing), "--action", "impl:bd-ib-123", "--json"])
 
     assert exit_code == 3
     assert "does not exist" in capsys.readouterr().err
-
-
-def test_main_plan_human_output_lists_actions(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    runner = _Runner(
-        results=[
-            _run(stdout=json.dumps({"candidates": []})),
-            _run(
-                stdout=json.dumps(
-                    {"candidates": [{"work_item_ref": "bd-ib-123", "reason": "ready"}]}
-                )
-            ),
-        ]
-    )
-
-    exit_code = orchestrate.main(["plan", "--repo", str(repo)], runner=runner)
-
-    assert exit_code == 0
-    out = capsys.readouterr().out
-    assert out.lstrip().startswith("#")
-    assert "impl:bd-ib-123" in out
-
-
-def test_main_plan_human_output_handles_empty_plan(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    runner = _Runner(
-        results=[
-            _run(stdout=json.dumps({"candidates": []})),
-            _run(stdout=json.dumps({"candidates": []})),
-        ]
-    )
-
-    exit_code = orchestrate.main(["plan", "--repo", str(repo)], runner=runner)
-
-    assert exit_code == 0
-    out = capsys.readouterr().out
-    assert out.lstrip().startswith("#")
-    assert "No actions ready." in out
 
 
 def test_main_run_returns_exit_failure_for_failed_dispatch(
@@ -450,8 +320,8 @@ def test_main_run_returns_exit_failure_for_failed_dispatch(
     repo.mkdir()
     runner = _Runner(results=[_run(stdout="not json", returncode=1)])
 
-    exit_code = orchestrate.main(
-        ["run", "--repo", str(repo), "--action", "impl:bd-ib-123"],
+    exit_code = drive.main(
+        ["--repo", str(repo), "--action", "impl:bd-ib-123"],
         runner=runner,
     )
 
@@ -459,27 +329,20 @@ def test_main_run_returns_exit_failure_for_failed_dispatch(
     assert "did not report green" in capsys.readouterr().out
 
 
-def test_main_run_json_returns_success_for_human_gated_spec(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-
-    exit_code = orchestrate.main(
-        ["run", "--repo", str(repo), "--action", "spec:unknown:0", "--json"],
-        runner=_Runner(results=[]),
+def test_red_commit_runner_helper_remains_covered() -> None:
+    module = importlib.import_module("tests.livespec_orchestrator_beads_fabro.commands.test_drive")
+    runner = module._Runner(  # noqa: SLF001 - cover byte-frozen Red helper.
+        results=[CommandRun(argv=("cmd",), returncode=0, stdout="[]", stderr="")]
     )
 
-    assert exit_code == 0
-    assert json.loads(capsys.readouterr().out)["handoff"] == (
-        "/livespec:next --spec-target SPECIFICATION/"
-    )
+    result = runner(argv=("cmd",), cwd=None)
+
+    assert result.returncode == 0
+    assert runner.calls == [("cmd",)]
 
 
-def test_plan_without_injected_runner_uses_subprocess_runner(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
+def test_run_action_without_injected_runner_uses_subprocess_runner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -490,11 +353,33 @@ def test_plan_without_injected_runner_uses_subprocess_runner(
         assert kwargs["cwd"] == repo
         assert kwargs["check"] is False
         assert kwargs["capture_output"] is True
-        return _Completed(returncode=0, stdout=json.dumps({"candidates": []}), stderr="")
+        return _Completed(returncode=0, stdout=json.dumps([{"status": "green"}]), stderr="")
 
-    monkeypatch.setattr(orchestrate.subprocess, "run", fake_run)
+    monkeypatch.setattr(drive.subprocess, "run", fake_run)
 
-    plan = orchestrate.plan_actions(repo=repo)
+    result = drive.run_action(repo=repo, action_id="impl:bd-ib-123")
 
-    assert plan["actions"] == []
-    assert len(calls) == 2
+    assert result["status"] == "green"
+    assert calls[0][0][0] == "python3"
+
+
+def test_main_without_action_reports_usage(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        drive.main([])
+
+    assert exc_info.value.code == 2
+    assert "the following arguments are required: --action" in capsys.readouterr().err
+
+
+def test_main_unknown_action_renders_markdown_without_dispatcher(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    exit_code = drive.main(["--repo", str(repo), "--action", "bogus"])
+
+    assert exit_code == 1
+    out = capsys.readouterr().out
+    assert "# drive" in out
+    assert "dispatcher exit code" not in out

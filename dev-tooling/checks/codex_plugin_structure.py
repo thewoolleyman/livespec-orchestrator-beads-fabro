@@ -18,7 +18,7 @@ skill).
 SCOPE — the four THIN wrapper-backed ops plus the five PROSE-backed
 heavyweight ops (all nine orchestrator ops are now Codex-covered). The
 four wrapper-backed ops (next, list-work-items, detect-impl-gaps,
-orchestrate) each dispatch to their `scripts/bin/<op>.py` reference
+drive) each dispatch to their `scripts/bin/<op>.py` reference
 wrapper. The five prose-backed heavyweight ops (capture-work-item,
 capture-impl-gaps, capture-spec-drift, implement, groom) have NO single
 CLI wrapper — their orchestration was extracted to the shared
@@ -122,7 +122,7 @@ _PRESENT_OPS: dict[str, str] = {
     "next": "next.py",
     "list-work-items": "list_work_items.py",
     "detect-impl-gaps": "detect_impl_gaps.py",
-    "orchestrate": "orchestrate.py",
+    "drive": "drive.py",
 }
 # The PRESENT (heavyweight, prose-backed) ops have NO single CLI wrapper; their
 # orchestration lives in the shared `.claude-plugin/prose/<op>.md` artifact

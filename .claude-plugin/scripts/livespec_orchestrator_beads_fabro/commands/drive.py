@@ -1,17 +1,9 @@
-"""Minimal cross-side orchestrate operator surface.
-
-`orchestrate plan` composes the existing spec-side `next` wrapper with
-this plugin's impl-side `next` wrapper and emits user-selectable action
-records. `orchestrate run` executes only selected impl actions through
-the existing Dispatcher/Fabro path; spec-side actions are surfaced as
-human handoffs and never mutate spec state directly.
-"""
+"""Minimal action-id executor for the drive operator surface."""
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -31,7 +23,6 @@ __all__: list[str] = [
     "CommandRun",
     "build_dispatcher_argv",
     "main",
-    "plan_actions",
     "run_action",
     "run_human_valve_action",
 ]
@@ -52,51 +43,9 @@ class CommandRunner(Protocol):
 
 
 _EXIT_FAILURE = 1
-_EXIT_USAGE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 3
 _PARTS_ACTION_REF = 2
 _PARTS_REJECT = 3
-_SPEC_NEXT_BIN_ENV = "LIVESPEC_SPEC_NEXT_BIN"
-
-
-def plan_actions(
-    *,
-    repo: Path,
-    runner: CommandRunner | None = None,
-    spec_next_bin: Path | None = None,
-    impl_next_bin: Path | None = None,
-) -> dict[str, Any]:
-    """Build a deterministic action plan from spec-side and impl-side `next`."""
-    resolved_runner = _SubprocessRunner() if runner is None else runner
-    spec_result = _load_next(
-        argv=_spec_next_argv(repo=repo, spec_next_bin=_resolve_spec_next_bin(spec_next_bin)),
-        runner=resolved_runner,
-        repo=repo,
-    )
-    impl_result = _load_next(
-        argv=_impl_next_argv(repo=repo, impl_next_bin=_resolve_impl_next_bin(impl_next_bin)),
-        runner=resolved_runner,
-        repo=repo,
-    )
-    spec_actions = [
-        _spec_action(candidate=candidate, index=index)
-        for index, candidate in enumerate(spec_result.candidates)
-    ]
-    impl_actions = [_impl_action(candidate=candidate) for candidate in impl_result.candidates]
-    actions = spec_actions + impl_actions
-    return {
-        "repo": str(repo),
-        "actions": actions,
-        "summary": {
-            "spec_actions": len(spec_actions),
-            "impl_actions": len(impl_actions),
-            "total_actions": len(actions),
-        },
-        "sources": {
-            "spec_next": spec_result.source,
-            "impl_next": impl_result.source,
-        },
-    }
 
 
 def run_action(
@@ -106,21 +55,7 @@ def run_action(
     runner: CommandRunner | None = None,
     dispatcher_bin: Path | None = None,
 ) -> dict[str, Any]:
-    """Run one selected action.
-
-    Only `impl:<work-item-id>` actions are executed. Spec-side actions
-    return a handoff envelope so the operator can invoke the appropriate
-    `/livespec:*` lifecycle command.
-    """
-    if action_id.startswith("spec:"):
-        action_name = _action_id_part(action_id=action_id, index=1, default="next")
-        return {
-            "action_id": action_id,
-            "kind": "spec",
-            "status": "human-gated",
-            "handoff": _spec_handoff(action=action_name),
-            "summary": "Spec-side action requires an explicit livespec lifecycle command.",
-        }
+    """Run one selected action-id."""
     if _is_human_valve_action(action_id=action_id):
         return run_human_valve_action(repo=repo, action_id=action_id, runner=runner)
     if not action_id.startswith("impl:"):
@@ -129,8 +64,8 @@ def run_action(
             "kind": "unknown",
             "status": "failed",
             "summary": (
-                "Unsupported action id; expected 'impl:<id>', 'spec:<action>:<index>', "
-                "'approve:<id>', 'accept:<id>', 'reject:<id>:rework|regroom', "
+                "Unsupported action id; expected 'impl:<id>', 'approve:<id>', "
+                "'accept:<id>', 'reject:<id>:rework|regroom', "
                 "'set-admission:<id>:auto|manual', or "
                 "'set-acceptance:<id>:ai-only|human-only|ai-then-human'."
             ),
@@ -449,20 +384,17 @@ def build_dispatcher_argv(
 def main(argv: list[str] | None = None, *, runner: CommandRunner | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
-    repo = _resolve_repo(repo_arg=getattr(args, "repo", None))
+    if args.retired_subcommand is not None:
+        parser.error(f"invalid choice: {args.retired_subcommand!r}")
+    if args.action is None:
+        parser.error("the following arguments are required: --action")
+    repo = _resolve_repo(repo_arg=args.repo)
     if not repo.exists():
         _ = sys.stderr.write(f"ERROR: --repo does not exist: {repo}\n")
         return _EXIT_PRECONDITION_ERROR
-    # Bare `orchestrate` (no subcommand) presents the read-only plan as the
-    # walkthrough entry point; the interactive select -> run loop lives in the
-    # skill/harness layer over this CLI, not in the CLI itself.
-    if args.subcommand in {None, "plan"}:
-        plan = plan_actions(repo=repo, runner=runner)
-        _emit_payload(payload=plan, as_json=bool(getattr(args, "as_json", False)))
-        return 0
-    result = run_action(repo=repo, action_id=str(args.action), runner=runner)
-    _emit_payload(payload=result, as_json=bool(args.as_json))
-    return 0 if result["status"] in {"green", "human-gated"} else _EXIT_FAILURE
+    result = run_action(repo=repo, action_id=args.action, runner=runner)
+    _emit_payload(payload=result, as_json=args.as_json)
+    return 0 if result["status"] == "green" else _EXIT_FAILURE
 
 
 def _resolve_repo(*, repo_arg: str | None) -> Path:
@@ -470,12 +402,6 @@ def _resolve_repo(*, repo_arg: str | None) -> Path:
     if repo_arg is None:
         return Path.cwd()
     return Path(repo_arg)
-
-
-@dataclass(frozen=True, kw_only=True)
-class _NextResult:
-    candidates: list[dict[str, Any]]
-    source: dict[str, Any]
 
 
 class _SubprocessRunner:
@@ -496,87 +422,12 @@ class _SubprocessRunner:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="orchestrate")
-    subparsers = parser.add_subparsers(dest="subcommand", required=False)
-    plan = subparsers.add_parser("plan")
-    _ = plan.add_argument("--repo", dest="repo", required=False, default=None)
-    _ = plan.add_argument("--json", dest="as_json", action="store_true")
-    run = subparsers.add_parser("run")
-    _ = run.add_argument("--repo", dest="repo", required=False, default=None)
-    _ = run.add_argument("--action", dest="action", required=True)
-    _ = run.add_argument("--json", dest="as_json", action="store_true")
+    parser = argparse.ArgumentParser(prog="drive")
+    _ = parser.add_argument("retired_subcommand", nargs="?")
+    _ = parser.add_argument("--repo", dest="repo", required=False, default=None)
+    _ = parser.add_argument("--action", dest="action", required=False, default=None)
+    _ = parser.add_argument("--json", dest="as_json", action="store_true")
     return parser
-
-
-def _load_next(
-    *,
-    argv: tuple[str, ...],
-    runner: CommandRunner,
-    repo: Path,
-) -> _NextResult:
-    result = runner(argv=argv, cwd=repo)
-    source: dict[str, Any] = {
-        "argv": list(argv),
-        "exit_code": result.returncode,
-    }
-    if result.returncode != 0:
-        source["status"] = "failed"
-        source["stderr"] = result.stderr
-        return _NextResult(candidates=[], source=source)
-    parsed = _parse_json_object_or_array(text=result.stdout)
-    if not isinstance(parsed, dict):
-        source["status"] = "failed"
-        source["stderr"] = "next output was not a JSON object"
-        return _NextResult(candidates=[], source=source)
-    parsed_dict = cast("dict[str, object]", parsed)
-    candidates_raw = parsed_dict.get("candidates", [])
-    if not isinstance(candidates_raw, list):
-        source["status"] = "failed"
-        source["stderr"] = "next output did not include candidates[]"
-        return _NextResult(candidates=[], source=source)
-    source["status"] = "ok"
-    candidates = cast("list[object]", candidates_raw)
-    source["candidate_count"] = len(candidates)
-    return _NextResult(
-        candidates=[
-            cast("dict[str, Any]", candidate)
-            for candidate in candidates
-            if isinstance(candidate, dict)
-        ],
-        source=source,
-    )
-
-
-def _spec_action(*, candidate: dict[str, Any], index: int) -> dict[str, Any]:
-    action = str(candidate.get("action", "next"))
-    return {
-        "id": f"spec:{action}:{index}",
-        "kind": "spec",
-        "action": action,
-        "urgency": str(candidate.get("urgency", "medium")),
-        "reason": str(candidate.get("reason", "spec-side candidate")),
-        "target": candidate.get("target"),
-        "handoff": _spec_handoff(action=action),
-        "factory_safe": False,
-    }
-
-
-def _impl_action(*, candidate: dict[str, Any]) -> dict[str, Any]:
-    work_item_ref = str(candidate.get("work_item_ref", ""))
-    return {
-        "id": f"impl:{work_item_ref}",
-        "kind": "impl",
-        "action": "dispatch",
-        "work_item_ref": work_item_ref,
-        "urgency": str(candidate.get("urgency", "medium")),
-        "reason": str(candidate.get("reason", "ready impl work-item")),
-        "factory_safe": True,
-    }
-
-
-def _spec_handoff(*, action: str) -> str:
-    command = action if action in {"critique", "next", "propose-change", "revise"} else "next"
-    return f"/livespec:{command} --spec-target SPECIFICATION/"
 
 
 def _dispatch_status(*, returncode: int, parsed: object) -> str:
@@ -608,13 +459,6 @@ def _parse_json_object_or_array(*, text: str) -> object:
         return None
 
 
-def _action_id_part(*, action_id: str, index: int, default: str) -> str:
-    parts = action_id.split(":")
-    if len(parts) > index and parts[index]:
-        return parts[index]
-    return default
-
-
 def _emit_payload(*, payload: dict[str, Any], as_json: bool) -> None:
     if as_json:
         _ = sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
@@ -623,88 +467,20 @@ def _emit_payload(*, payload: dict[str, Any], as_json: bool) -> None:
 
 
 def _human_summary(*, payload: dict[str, Any]) -> str:
-    """Render a payload as human-readable Markdown.
-
-    A `plan` payload (carries `actions`) renders the selectable action
-    records; any other payload is a `run` dispatch/handoff envelope.
-    """
-    if "actions" in payload:
-        return _plan_markdown(payload=payload)
+    """Render a drive result as human-readable Markdown."""
     return _run_markdown(payload=payload)
-
-
-def _plan_markdown(*, payload: dict[str, Any]) -> str:
-    lines = [f"# orchestrate plan — {payload.get('repo', 'current repo')}", ""]
-    actions = cast("list[dict[str, Any]]", payload["actions"])
-    if not actions:
-        lines.append("No actions ready.")
-        return "\n".join(lines)
-    lines.extend(_plan_action_lines(action=action) for action in actions)
-    return "\n".join(lines)
-
-
-def _plan_action_lines(*, action: dict[str, Any]) -> str:
-    action_id = str(action.get("id", "unknown"))
-    urgency = str(action.get("urgency", "medium"))
-    reason = str(action.get("reason", ""))
-    head = f"- **{action_id}** ({urgency}) — {reason}"
-    detail = (
-        f"`{action['handoff']}`"
-        if action.get("kind") == "spec" and action.get("handoff")
-        else f"dispatch `{action.get('work_item_ref', '')}` (factory-safe)"
-    )
-    return f"{head}\n  - {detail}"
 
 
 def _run_markdown(*, payload: dict[str, Any]) -> str:
     action_id = str(payload.get("action_id", "unknown"))
     status = str(payload.get("status", "unknown"))
-    lines = [f"# orchestrate run — {action_id}", "", f"- status: **{status}**"]
-    handoff = payload.get("handoff")
-    if handoff:
-        lines.append(f"- handoff: `{handoff}`")
+    lines = [f"# drive — {action_id}", "", f"- status: **{status}**"]
     dispatcher = payload.get("dispatcher")
     if isinstance(dispatcher, dict):
         dispatcher_dict = cast("dict[str, Any]", dispatcher)
         lines.append(f"- dispatcher exit code: {dispatcher_dict.get('exit_code')}")
     lines.append(f"- {payload.get('summary', '')}")
     return "\n".join(lines)
-
-
-def _spec_next_argv(*, repo: Path, spec_next_bin: Path) -> tuple[str, ...]:
-    return (
-        "python3",
-        str(spec_next_bin),
-        "--project-root",
-        str(repo),
-        "--spec-target",
-        str(repo / "SPECIFICATION"),
-    )
-
-
-def _impl_next_argv(*, repo: Path, impl_next_bin: Path) -> tuple[str, ...]:
-    return (
-        "python3",
-        str(impl_next_bin),
-        "--project-root",
-        str(repo),
-        "--json",
-    )
-
-
-def _resolve_spec_next_bin(spec_next_bin: Path | None) -> Path:
-    if spec_next_bin is not None:
-        return spec_next_bin
-    env_value = os.environ.get(_SPEC_NEXT_BIN_ENV)
-    if env_value:
-        return Path(env_value)
-    return Path("/data/projects/livespec/.claude-plugin/scripts/bin/next.py")
-
-
-def _resolve_impl_next_bin(impl_next_bin: Path | None) -> Path:
-    if impl_next_bin is not None:
-        return impl_next_bin
-    return _scripts_root() / "bin" / "next.py"
 
 
 def _resolve_dispatcher_bin(dispatcher_bin: Path | None) -> Path:

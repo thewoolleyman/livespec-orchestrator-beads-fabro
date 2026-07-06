@@ -349,7 +349,7 @@ def update_work_item_policy(
 ) -> None:
     """Edit policy labels on an existing item without changing its status.
 
-    The operator policy-edit seam behind `orchestrate run`
+    The operator policy-edit seam behind `drive --action`
     `set-admission:<id>:...` / `set-acceptance:<id>:...`. The write is
     label-only: it removes the previous label for each named policy field,
     adds the replacement label, and deliberately sends no status or assignee
