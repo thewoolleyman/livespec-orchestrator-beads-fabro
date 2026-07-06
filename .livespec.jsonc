@@ -37,7 +37,7 @@
       // contract-version-compatibility invariant fires `warn` against
       // "master" pins; that is expected during bootstrap.
       "livespec": ">=0.1.0,<1.0.0",
-      "pinned": "v0.6.6"
+      "pinned": "v0.6.7"
     },
     // Per-repo beads tenant CONNECTION block. These keys are read by
     // commands/_config.py and overlaid by the LIVESPEC_BD_PATH /
