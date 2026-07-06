@@ -104,10 +104,10 @@ local Codex marketplace registration used for testing MUST be removed afterward
 unless you explicitly ask to keep it.
 
 The Codex TUI picker displays skills by short name with the plugin as context.
-In `/skills` → `List skills` (or the `@` picker), search `orchestrate`; the
-row renders as `orchestrate (livespec-orchestrator-beads-fabro)` with kind
+In `/skills` → `List skills` (or the `@` picker), search `drive`; the
+row renders as `drive (livespec-orchestrator-beads-fabro)` with kind
 `Skill`. The colon-qualified form
-`livespec-orchestrator-beads-fabro:orchestrate` is still valid for prompt /
+`livespec-orchestrator-beads-fabro:drive` is still valid for prompt /
 `codex exec` name selection and model-visible skill references, but it is not
 the picker row operators should expect.
 

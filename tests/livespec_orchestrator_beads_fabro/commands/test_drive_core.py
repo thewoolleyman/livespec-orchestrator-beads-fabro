@@ -1,4 +1,4 @@
-"""Tests for the minimal orchestrate operator surface."""
+"""Tests for the minimal drive operator surface."""
 
 from __future__ import annotations
 
@@ -8,12 +8,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import orchestrate
-from livespec_orchestrator_beads_fabro.commands.orchestrate import (
+from livespec_orchestrator_beads_fabro.commands import drive
+from livespec_orchestrator_beads_fabro.commands.drive import (
     CommandRun,
     build_dispatcher_argv,
     main,
-    plan_actions,
     run_action,
 )
 from livespec_orchestrator_beads_fabro.types import AuditRecord, StoreConfig, WorkItem
@@ -111,12 +110,10 @@ def _install_valve_store(
         assert path is config
         updates.append({"item_id": item_id, "status": status, "assignee": assignee})
 
+    monkeypatch.setattr(drive, "resolve_store_config", fake_resolve_store_config, raising=False)
+    monkeypatch.setattr(drive, "read_work_items", fake_read_work_items, raising=False)
     monkeypatch.setattr(
-        orchestrate, "resolve_store_config", fake_resolve_store_config, raising=False
-    )
-    monkeypatch.setattr(orchestrate, "read_work_items", fake_read_work_items, raising=False)
-    monkeypatch.setattr(
-        orchestrate, "update_work_item_status", fake_update_work_item_status, raising=False
+        drive, "update_work_item_status", fake_update_work_item_status, raising=False
     )
     return updates
 
@@ -154,77 +151,12 @@ def _install_policy_store(
             }
         )
 
+    monkeypatch.setattr(drive, "resolve_store_config", fake_resolve_store_config, raising=False)
+    monkeypatch.setattr(drive, "read_work_items", fake_read_work_items, raising=False)
     monkeypatch.setattr(
-        orchestrate, "resolve_store_config", fake_resolve_store_config, raising=False
-    )
-    monkeypatch.setattr(orchestrate, "read_work_items", fake_read_work_items, raising=False)
-    monkeypatch.setattr(
-        orchestrate, "update_work_item_policy", fake_update_work_item_policy, raising=False
+        drive, "update_work_item_policy", fake_update_work_item_policy, raising=False
     )
     return updates
-
-
-def test_plan_actions_composes_spec_and_impl_next_candidates(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    runner = _Runner(
-        results=[
-            _ok(
-                {
-                    "candidates": [
-                        {
-                            "action": "revise",
-                            "urgency": "high",
-                            "reason": "pending proposal",
-                            "target": "proposed_changes/a.md",
-                        }
-                    ]
-                }
-            ),
-            _ok(
-                {
-                    "candidates": [
-                        {
-                            "action": "implement",
-                            "work_item_ref": "bd-ib-123",
-                            "urgency": "medium",
-                            "reason": "ready item",
-                        }
-                    ]
-                }
-            ),
-        ]
-    )
-
-    plan = plan_actions(repo=repo, runner=runner)
-
-    assert [action["id"] for action in plan["actions"]] == [
-        "spec:revise:0",
-        "impl:bd-ib-123",
-    ]
-    assert plan["summary"] == {
-        "spec_actions": 1,
-        "impl_actions": 1,
-        "total_actions": 2,
-    }
-    assert plan["actions"][0]["handoff"] == "/livespec:revise --spec-target SPECIFICATION/"
-    assert plan["actions"][1]["factory_safe"] is True
-
-
-def test_plan_actions_surfaces_spec_only_candidates(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    runner = _Runner(
-        results=[
-            _ok({"candidates": [{"action": "critique", "urgency": "low", "reason": "hygiene"}]}),
-            _ok({"candidates": []}),
-        ]
-    )
-
-    plan = plan_actions(repo=repo, runner=runner)
-
-    assert [action["kind"] for action in plan["actions"]] == ["spec"]
-    assert plan["summary"]["impl_actions"] == 0
 
 
 def test_build_dispatcher_argv_uses_shadow_loop_for_selected_impl_item(tmp_path: Path) -> None:
@@ -280,18 +212,6 @@ def test_run_action_dispatches_selected_impl_item(tmp_path: Path) -> None:
     ]
 
 
-def test_run_action_surfaces_spec_actions_as_human_handoff(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    runner = _Runner(results=[])
-
-    result = run_action(repo=repo, action_id="spec:revise:0", runner=runner)
-
-    assert result["status"] == "human-gated"
-    assert result["handoff"] == "/livespec:revise --spec-target SPECIFICATION/"
-    assert runner.calls == []
-
-
 def test_run_action_approve_authorizes_manual_pending_item(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -325,7 +245,7 @@ def test_run_action_approve_is_not_blocked_by_full_wip_cap(
             _item(id="bd-ib-active", status="active"),
         ],
     )
-    monkeypatch.setattr(orchestrate, "resolve_wip_cap", _wip_cap(1), raising=False)
+    monkeypatch.setattr(drive, "resolve_wip_cap", _wip_cap(1), raising=False)
 
     result = run_action(repo=repo, action_id="approve:bd-ib-123", runner=_Runner(results=[]))
 
@@ -473,32 +393,6 @@ def test_run_action_reject_refuses_non_acceptance_item(
     assert updates == []
 
 
-def test_main_plan_emits_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    runner = _Runner(results=[_ok({"candidates": []}), _ok({"candidates": []})])
-
-    exit_code = main(["plan", "--repo", str(repo), "--json"], runner=runner)
-
-    assert exit_code == 0
-    assert json.loads(capsys.readouterr().out)["actions"] == []
-
-
-def test_main_plan_empty_renders_no_actions_markdown(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    runner = _Runner(results=[_ok({"candidates": []}), _ok({"candidates": []})])
-
-    exit_code = main(["plan", "--repo", str(repo)], runner=runner)
-
-    assert exit_code == 0
-    out = capsys.readouterr().out
-    assert out.lstrip().startswith("#")
-    assert "No actions ready." in out
-
-
 def test_main_run_impl_renders_markdown_with_dispatcher_exit_code(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -506,25 +400,10 @@ def test_main_run_impl_renders_markdown_with_dispatcher_exit_code(
     repo.mkdir()
     runner = _Runner(results=[_ok([{"work_item_id": "bd-ib-123", "status": "green"}])])
 
-    exit_code = main(["run", "--repo", str(repo), "--action", "impl:bd-ib-123"], runner=runner)
+    exit_code = main(["--repo", str(repo), "--action", "impl:bd-ib-123"], runner=runner)
 
     assert exit_code == 0
     out = capsys.readouterr().out
     assert out.lstrip().startswith("#")
     assert "status: **green**" in out
     assert "dispatcher exit code: 0" in out
-
-
-def test_main_run_spec_renders_markdown_handoff(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    runner = _Runner(results=[])
-
-    exit_code = main(["run", "--repo", str(repo), "--action", "spec:revise:0"], runner=runner)
-
-    assert exit_code == 0
-    out = capsys.readouterr().out
-    assert "status: **human-gated**" in out
-    assert "handoff: `/livespec:revise --spec-target SPECIFICATION/`" in out

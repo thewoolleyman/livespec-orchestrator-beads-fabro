@@ -28,8 +28,8 @@ pytestmark = pytest.mark.skipif(
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ANSI_RE = re.compile(r"(?:\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]|\x1b[78])")
-_PICKER_QUERY = "orchestrate"
-_EXPECTED_SKILL = "orchestrate"
+_PICKER_QUERY = "drive"
+_EXPECTED_SKILL = "drive"
 _EXPECTED_PLUGIN = "livespec-orchestrator-beads-fabro"
 _FOREGROUND_QUERY = "\x1b]10;?\x1b\\"
 _BACKGROUND_QUERY = "\x1b]11;?\x1b\\"
@@ -273,7 +273,7 @@ def _exercise_skills_picker(*, master_fd: int) -> str:
     )
 
 
-def test_skills_picker_finds_orchestrate_by_short_name() -> None:
+def test_skills_picker_finds_drive_by_short_name() -> None:
     codex = shutil.which("codex")
     if codex is None:
         pytest.fail("codex CLI is required for the live /skills picker acceptance")

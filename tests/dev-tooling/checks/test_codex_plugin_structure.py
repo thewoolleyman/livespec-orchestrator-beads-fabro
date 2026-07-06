@@ -4,7 +4,7 @@ The check validates the orchestrator plugin's Codex cross-runtime surface:
 the repo-root `.agents/plugins/marketplace.json` catalog, the nested
 `.claude-plugin/.codex-plugin/plugin.json` manifest, the FOUR thin
 wrapper-backed `.codex-plugin/skills/<op>/SKILL.md` bindings (next,
-list-work-items, detect-impl-gaps, orchestrate), and the FIVE prose-backed
+list-work-items, detect-impl-gaps, drive), and the FIVE prose-backed
 heavyweight bindings (capture-work-item, capture-impl-gaps,
 capture-spec-drift, implement, groom) that read `prose/<op>.md` instead of
 self-invoking a wrapper. The P3b prose extraction is complete — implement
@@ -56,7 +56,7 @@ _PRESENT_OPS = {
     "next": "next.py",
     "list-work-items": "list_work_items.py",
     "detect-impl-gaps": "detect_impl_gaps.py",
-    "orchestrate": "orchestrate.py",
+    "drive": "drive.py",
 }
 _PRESENT_PROSE_OPS = (
     "capture-work-item",
@@ -252,7 +252,7 @@ def _write_plugin_candidate(*, root: Path, name: str, with_orchestrator_wrapper:
     bin_dir.mkdir(parents=True)
     _ = (plugin_root / "plugin.json").write_text(json.dumps({"name": name}), encoding="utf-8")
     if with_orchestrator_wrapper:
-        _ = (bin_dir / "orchestrate.py").write_text("# wrapper\n", encoding="utf-8")
+        _ = (bin_dir / "drive.py").write_text("# wrapper\n", encoding="utf-8")
 
 
 def _resolve_skill_root(*, skill: Path, cwd: Path, fake_bin: Path) -> str:

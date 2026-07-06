@@ -967,8 +967,8 @@ check-e2e-cli:
     uv run pytest tests/e2e-cli -v
 
 # Live Codex TUI `/skills` picker acceptance for the human discovery path:
-# `/skills` -> "List skills" -> search `orchestrate`, then require the picker
-# to render `orchestrate (livespec-orchestrator-beads-fabro)` as a Skill row.
+# `/skills` -> "List skills" -> search `drive`, then require the picker
+# to render `drive (livespec-orchestrator-beads-fabro)` as a Skill row.
 check-codex-skill-picker:
     #!/usr/bin/env bash
     set -euo pipefail
