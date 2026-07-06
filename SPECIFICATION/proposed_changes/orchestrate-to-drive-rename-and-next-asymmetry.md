@@ -160,7 +160,10 @@ action (`impl:<work-item-id>`, marked `factory_safe: true`) it invokes
 the existing Dispatcher/Fabro loop with `--mode shadow --budget 1
 --parallel 1 --item <work-item-id> --json`, then summarizes the
 Dispatcher status, exit code, stdout JSON, stderr, and the selected
-work-item id.
+work-item id. The `factory_safe` marking itself is produced by whichever
+surface emits the action-id (the `needs-attention`/`drive` action-id
+coordination defined by the broader epic), not by `drive`; it is
+forward-referenced here rather than defined by this section.
 
 **Human valve actions.** `drive` additionally accepts the five human
 operator action ids (the two human-delegable gate commands, the
@@ -169,9 +172,9 @@ corrective `reject:`, and the two policy edits) —
 effective-`manual` item from `pending-approval` to `ready`; admission to
 `active` then follows mechanically when a WIP slot frees, dependencies
 are clear, and an assignee resolves), `accept:<work-item-id>` (the human
-leg of post-merge acceptance: `acceptance -> done`),
+leg of post-merge acceptance: `acceptance → done`),
 `reject:<work-item-id>:rework` / `reject:<work-item-id>:regroom`
-(`acceptance -> active` fix-forward; `acceptance -> backlog` with the
+(`acceptance → active` fix-forward; `acceptance → backlog` with the
 merged change reverted), and the two policy-edit actions
 `set-admission:<work-item-id>:auto|manual` and
 `set-acceptance:<work-item-id>:ai-only|human-only|ai-then-human`. A
