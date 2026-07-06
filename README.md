@@ -49,8 +49,8 @@ even though the plugin is present.
 
 ## Skill surface
 
-The plugin ships eight skills — four heavyweight authored skills, one
-operator skill, and three thin-transport machine-query surfaces, per livespec's
+The plugin ships eleven skills — six heavyweight authored skills, one
+operator skill, and four thin-transport machine-query surfaces, per livespec's
 `SPECIFICATION/contracts.md`:
 
 - `/livespec-orchestrator-beads-fabro:capture-impl-gaps` — detect spec→impl gaps and
@@ -61,6 +61,12 @@ operator skill, and three thin-transport machine-query surfaces, per livespec's
   impl-side work item (`origin: freeform`, `gap_id: null`)
 - `/livespec-orchestrator-beads-fabro:implement` — drive Red→Green for a single
   work-item; verify gap-tied closure by re-running gap detection
+- `/livespec-orchestrator-beads-fabro:groom` — regroom an oversized or
+  non-converging `needs-regroom` work-item into ready, dependency-layered
+  slices (read-only draft; the maintainer owns the cut and acceptance)
+- `/livespec-orchestrator-beads-fabro:plan` — open or resume a durable planning
+  thread in `plan/<topic>/`, anchor a ledger epic, and route matured pieces to
+  the spec lifecycle or the ledger
 - `/livespec-orchestrator-beads-fabro:drive` — execute one selected action-id:
   `impl:<work-item-id>` dispatch, human valve actions, or policy edits
 - `/livespec-orchestrator-beads-fabro:detect-impl-gaps` — emit the current gap-id set
@@ -69,6 +75,9 @@ operator skill, and three thin-transport machine-query surfaces, per livespec's
   beads store
 - `/livespec-orchestrator-beads-fabro:next` — rank the most-ripe impl-side action (pure
   function of store state; no LLM in the ranking path)
+- `/livespec-orchestrator-beads-fabro:list-plan-threads` — enumerate the open
+  (unarchived) plan threads under `plan/` (pure read-and-emit; sibling of
+  `list-work-items`)
 
 Each skill resolves livespec core's prose and config-named CLIs at
 runtime and reads this repo's `.livespec.jsonc` for the beads tenant
