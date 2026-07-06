@@ -582,7 +582,7 @@
     "heading": "## Scenario 42 \u2014 list-plan-threads enumerates unarchived plan threads",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the list-plan-threads-thin-transport-primitive revise pass (OR2 spec sub-slice). The new list-plan-threads thin-transport primitive's unarchived-visible / archived-invisible enumeration, lexicographic ordering, read-only guarantee, and degrade-on-missing behavior are ratified in Scenario 42; the real integration-tier test node id is bound by the declared impl follow-up list-plan-threads-primitive via the governed propose-change/revise resulting_files[] loop."
+    "test": "tests.integration.test_list_plan_threads_scenario42::test_scenario42_list_plan_threads_enumerates_unarchived_plan_threads",
+    "reason": "Covers the ratified unarchived-visible / archived-invisible enumeration, lexicographic ordering, JSON shape, and read-only behavior; the companion missing-plan test in the same file covers degrade-on-missing."
   }
 ]

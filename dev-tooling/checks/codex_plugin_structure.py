@@ -15,10 +15,10 @@ cache root carries `scripts/` directly — empirically verified: `codex
 plugin add` accepts the nested skills path and `codex exec` discovers the
 skill).
 
-SCOPE — the four THIN wrapper-backed ops plus the five PROSE-backed
+SCOPE — the six THIN wrapper-backed ops plus the five PROSE-backed
 heavyweight ops (all nine orchestrator ops are now Codex-covered). The
-four wrapper-backed ops (next, list-work-items, detect-impl-gaps,
-drive) each dispatch to their `scripts/bin/<op>.py` reference
+six wrapper-backed ops (next, list-work-items, list-plan-threads,
+detect-impl-gaps, needs-attention, drive) each dispatch to their `scripts/bin/<op>.py` reference
 wrapper. The five prose-backed heavyweight ops (capture-work-item,
 capture-impl-gaps, capture-spec-drift, implement, groom) have NO single
 CLI wrapper — their orchestration was extracted to the shared
@@ -115,13 +115,15 @@ _CODEX_DIR = _CLAUDE_DIR / ".codex-plugin"
 _CODEX_MANIFEST = _CODEX_DIR / "plugin.json"
 _SKILLS_DIR = _CODEX_DIR / "skills"
 
-# The four PRESENT (thin, wrapper-backed) ops each dispatch to a
+# The six PRESENT (thin, wrapper-backed) ops each dispatch to a
 # `scripts/bin/<op>.py` CLI. Their Codex binding body MUST self-invoke that
 # wrapper.
 _PRESENT_OPS: dict[str, str] = {
     "next": "next.py",
     "list-work-items": "list_work_items.py",
+    "list-plan-threads": "list_plan_threads.py",
     "detect-impl-gaps": "detect_impl_gaps.py",
+    "needs-attention": "needs_attention.py",
     "drive": "drive.py",
 }
 # The PRESENT (heavyweight, prose-backed) ops have NO single CLI wrapper; their
