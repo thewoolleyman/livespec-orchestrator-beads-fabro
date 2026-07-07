@@ -20,6 +20,7 @@ from livespec_runtime.needs_attention import HygieneScanFinding, compose_needs_a
 __all__: list[str] = [
     "CommandResult",
     "GitWorktree",
+    "detect_stale_worktrees",
     "main",
     "run",
     "scan_hygiene",
@@ -101,6 +102,60 @@ def stale_worktree_findings(*, context: _ScanContext) -> list[HygieneScanFinding
         if finding is not None:
             findings.append(finding)
     return findings
+
+
+def detect_stale_worktrees(
+    *,
+    repo_path: Path,
+    runner: CommandRunner | None = None,
+) -> list[GitWorktree]:
+    """Return the stale worktree CANDIDATE set for `repo_path`.
+
+    This is the shared DETECTION seam a cross-repo reaper consumes.
+    Unlike `scan_hygiene`, it runs ONLY the stale-worktree predicate —
+    never the primary-health, stale-branch, or stale-PR findings — and
+    it does not require the caller to build the private `_ScanContext`.
+
+    A candidate is a NON-PRIMARY worktree that is safe to remove by ANY
+    of three signals (a true SUPERSET of "safe to remove"):
+
+      * prunable — its gitdir is gone (the `prunable` marker in
+        `git worktree list --porcelain`);
+      * clean AND its HEAD is an ancestor of `origin/HEAD` — a normal
+        fast-forward / merge-commit merge;
+      * clean AND its branch was pushed (upstream config or a
+        remote-tracking ref) AND its origin branch is now gone
+        (`git ls-remote --heads origin <branch>` empty) — the
+        rebase-merge orphan signal this fleet needs, since rebase
+        rewrites SHAs so a rebase-merged HEAD is not a literal ancestor
+        of `origin/HEAD`. If `ls-remote` errors (no origin, network
+        failure) done-ness is UNDETERMINED and the worktree is NOT a
+        candidate (conservative, matching the reaper).
+
+    The returned records are `GitWorktree`s (path, head, branch,
+    detached, prunable_reason) in `git worktree list` order.
+
+    Detection vs. action boundary: this returns the CANDIDATE set and
+    EXCLUDES only the primary checkout. It deliberately does NOT apply
+    the reaper's action-layer safety — no live-process-lock skip, no
+    current-working-directory skip, no detached-HEAD skip. Detection
+    answers "is this worktree safe to remove?"; the consuming reaper
+    layers "should I remove it right now, from where I stand?" on top.
+    """
+    context = _build_context(
+        repo_path=repo_path,
+        repo_name=None,
+        now=None,
+        stale_days=_DEFAULT_STALE_DAYS,
+        runner=runner or _run_command,
+    )
+    candidates: list[GitWorktree] = []
+    for worktree in _worktrees(context=context):
+        if worktree.path == context.primary_path:
+            continue
+        if _stale_worktree_finding(context=context, worktree=worktree) is not None:
+            candidates.append(worktree)
+    return candidates
 
 
 def _build_context(
@@ -207,20 +262,95 @@ def _stale_worktree_finding(
             summary=f"Prune stale worktree metadata for {label} ({worktree.prunable_reason}).",
             command=f"git -C {_quote(context.primary_path)} worktree prune -v",
         )
-    if _worktree_is_clean(worktree=worktree, runner=context.runner) and _head_is_merged(
-        context=context,
-        head=worktree.head,
-    ):
+    if not _worktree_is_clean(worktree=worktree, runner=context.runner):
+        return None
+    remove_command = (
+        f"git -C {_quote(context.primary_path)} worktree remove {_quote(worktree.path)}"
+    )
+    if _head_is_merged(context=context, head=worktree.head):
         return HygieneScanFinding(
             type="stale-worktree",
             resource=label,
             path=label,
             summary=f"Remove clean worktree {label}; its HEAD is merged into {context.base_ref}.",
-            command=(
-                f"git -C {_quote(context.primary_path)} " f"worktree remove {_quote(worktree.path)}"
+            command=remove_command,
+        )
+    if _branch_was_rebase_merged(context=context, worktree=worktree):
+        return HygieneScanFinding(
+            type="stale-worktree",
+            resource=label,
+            path=label,
+            summary=(
+                f"Remove clean worktree {label}; its branch {worktree.branch} was pushed and "
+                f"its origin branch is gone (rebase-merged, so its HEAD is not an ancestor of "
+                f"{context.base_ref})."
             ),
+            command=remove_command,
         )
     return None
+
+
+def _branch_was_rebase_merged(*, context: _ScanContext, worktree: GitWorktree) -> bool:
+    """Return True if `worktree`'s branch shows the rebase-merge orphan signal.
+
+    The signal (ported faithfully from the core reaper's
+    `dev-tooling/reap_stale_worktrees.py`) is: the branch carries local
+    evidence of ever having been pushed AND its remote branch is now
+    absent. This fleet merges by rebase, which rewrites SHAs, so a
+    rebase-merged branch's HEAD is NOT a literal ancestor of
+    `origin/HEAD` and the ancestor test (`_head_is_merged`) misses it.
+    Pushed-then-remote-gone is the reliable substitute. A detached
+    worktree (no branch) can never match.
+    """
+    branch = worktree.branch
+    if branch is None:
+        return False
+    if not _branch_was_pushed(context=context, branch=branch):
+        return False
+    return _branch_is_done(context=context, branch=branch)
+
+
+def _branch_was_pushed(*, context: _ScanContext, branch: str) -> bool:
+    """Return True if `branch` carries local evidence of ever having been pushed.
+
+    Either signal suffices: upstream config (`branch.<name>.merge`,
+    written by `git push -u` and surviving `fetch --prune`) or a
+    remote-tracking ref (`refs/remotes/origin/<name>`, written by a
+    plain push and lingering until `fetch --prune`). A branch with
+    NEITHER signal was never pushed — its worktree is in-progress work,
+    not a rebase-merged orphan.
+    """
+    upstream = _git(
+        repo_path=context.primary_path,
+        argv=["config", "--get", f"branch.{branch}.merge"],
+        runner=context.runner,
+    )
+    if upstream.returncode == 0 and upstream.stdout.strip() != "":
+        return True
+    tracking = _git(
+        repo_path=context.primary_path,
+        argv=["rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}"],
+        runner=context.runner,
+    )
+    return tracking.returncode == 0
+
+
+def _branch_is_done(*, context: _ScanContext, branch: str) -> bool:
+    """Return True if `branch`'s remote head is ABSENT on origin.
+
+    Pushed-then-remote-gone is the reliable rebase-merge signal (the
+    remote branch is deleted on merge). If `git ls-remote` errors (no
+    `origin`, network failure) done-ness is UNDETERMINED and this
+    returns False so the caller never flags on an ambiguous signal.
+    """
+    result = _git(
+        repo_path=context.primary_path,
+        argv=["ls-remote", "--heads", "origin", branch],
+        runner=context.runner,
+    )
+    if result.returncode != 0:
+        return False
+    return result.stdout.strip() == ""
 
 
 def _worktree_is_clean(*, worktree: GitWorktree, runner: CommandRunner) -> bool:
