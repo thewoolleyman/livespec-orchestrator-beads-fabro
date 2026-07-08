@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.7...v0.13.8) (2026-07-08)
+
+
+### Bug Fixes
+
+* unshadow Fabro's fresh sandbox token by projecting GITHUB_TOKEN ([06da7b8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/06da7b8114dd6d302ebaf2ffb5e97f70b17c2b07))
+
 ## [0.13.7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.6...v0.13.7) (2026-07-08)
 
 
