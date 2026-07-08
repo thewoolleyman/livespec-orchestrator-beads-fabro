@@ -42,8 +42,12 @@ run-config overlay materialized under the temp dir is the RUN-SCOPED
 credential projection (per the family-secrets scoped
 transient-materialization rule): it appends an
 `[environments.<id>.env]` table carrying the CLAUDE_CODE_OAUTH_TOKEN
-value read from the Dispatcher's process environment plus a GH_TOKEN
-freshly minted from the GitHub App installation-token provider, is
+value read from the Dispatcher's process environment plus a GITHUB_TOKEN
+freshly minted from the GitHub App installation-token provider (the FULL
+name, not the short GH_TOKEN — see render_run_config_overlay: gh prefers
+GH_TOKEN, and fabro re-projects its own re-minted token per exec under
+GITHUB_TOKEN, so a projected GH_TOKEN would shadow fabro's fresh value
+and expire past the ~60-min TTL at a long run's publish node), is
 written mode-600, and is deleted when the run returns. The committed workflow
 config carries NO secret VALUE and NO `{{ env }}` interpolation —
 interpolation can NOT deliver credentials to server-mediated runs (do
@@ -2016,10 +2020,12 @@ def _materialize_overlay(
     `run-config-overlay` stage). The overlay is the RUN-SCOPED
     credential projection: the committed config (graph path absolutized)
     plus an appended env table carrying the CLAUDE_CODE_OAUTH_TOKEN
-    value read from this process's environment and a GH_TOKEN freshly
+    value read from this process's environment and a GITHUB_TOKEN freshly
     minted from the App installation-token provider (`token` is the
     provider's accessor — the sandbox receives an ephemeral installation
-    token, never the durable App key and never a fleet PAT). Fabro
+    token, never the durable App key and never a fleet PAT; projected
+    under GITHUB_TOKEN, not GH_TOKEN, so fabro's per-exec re-mint is not
+    shadowed). Fabro
     `{{ env }}` interpolation is NOT usable here (see the module
     docstring), so the value MUST be materialized. The token never
     reaches a log, journal, or argv; the overlay file is deleted when

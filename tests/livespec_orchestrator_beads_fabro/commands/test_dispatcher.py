@@ -1170,14 +1170,17 @@ def test_parse_run_status_rejects_unusable_shapes() -> None:
 # argvs, and the committed config stay token-free).
 _FAKE_TOKEN_LINE = 'CLAUDE_CODE_OAUTH_TOKEN = "test-oauth-token"'
 _FAKE_GITHUB_TOKEN = "test-github-token"
-_FAKE_GITHUB_TOKEN_LINE = 'GH_TOKEN = "test-github-token"'
+# Projected under the FULL name GITHUB_TOKEN, never the short GH_TOKEN:
+# gh/git prefer GH_TOKEN, so a projected GH_TOKEN would shadow Fabro's
+# fresh per-exec GITHUB_TOKEN and go stale past the ~60-min token TTL.
+_FAKE_GITHUB_TOKEN_LINE = 'GITHUB_TOKEN = "test-github-token"'
 
 # The dead interpolation channel: fabro resolves {{ env.* }} in the
 # server-spawned WORKER, whose env is a fail-closed allowlist
 # (fabro-server/src/spawn_env.rs), so this literal must never appear in
 # a materialized overlay — it would flow through to the sandbox as-is.
 _ENV_INTERPOLATION_LITERAL = "{{ env.CLAUDE_CODE_OAUTH_TOKEN }}"
-_GH_ENV_INTERPOLATION_LITERAL = "{{ env.GH_TOKEN }}"
+_GH_ENV_INTERPOLATION_LITERAL = "{{ env.GITHUB_TOKEN }}"
 
 _COMMITTED_WORKFLOW_TOML = (
     "_version = 1\n"

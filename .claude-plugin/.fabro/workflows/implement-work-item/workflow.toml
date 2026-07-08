@@ -42,8 +42,13 @@
 # livespec-impl-beads-8m2), and (c) APPENDS an
 # [environments.livespec-ci.env] table carrying the real
 # CLAUDE_CODE_OAUTH_TOKEN value read from the Dispatcher's process
-# environment and a GH_TOKEN freshly minted from the GitHub App
-# installation-token provider (github-app-auth Pillars 1+2: the dispatch
+# environment and a GITHUB_TOKEN freshly minted from the GitHub App
+# installation-token provider (the FULL name GITHUB_TOKEN, never the
+# short GH_TOKEN: gh/git prefer GH_TOKEN, and fabro re-projects its own
+# re-minted token per exec under GITHUB_TOKEN, so a projected GH_TOKEN
+# would shadow fabro's fresh value and expire past the ~60-min TTL at a
+# long run's publish node — the github-app-auth Pillar-1 anti-pattern)
+# (github-app-auth Pillars 1+2: the dispatch
 # TARGET's credential_wrapper injects the full per-wrapper set: GITHUB_APP_ID,
 # GITHUB_PRIVATE_KEY, BEADS_DOLT_PASSWORD, and CLAUDE_CODE_OAUTH_TOKEN; no
 # fleet-PAT fallback) — the run-scoped credential projection per the
@@ -134,7 +139,7 @@ memory = "8GB"
 
 # NOTE: deliberately NO [environments.livespec-ci.env] table here. The
 # Dispatcher's per-dispatch overlay APPENDS that table carrying the
-# real CLAUDE_CODE_OAUTH_TOKEN and GH_TOKEN values plus the non-secret
+# real CLAUDE_CODE_OAUTH_TOKEN and GITHUB_TOKEN values plus the non-secret
 # LIVESPEC_SIBLING_CLONES_ROOT key at dispatch time (TOML forbids
 # duplicate table declarations, so this committed file must not declare
 # it — which is also why the non-secret key lives in the appended

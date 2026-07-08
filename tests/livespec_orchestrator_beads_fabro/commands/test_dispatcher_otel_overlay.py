@@ -161,9 +161,16 @@ def test_render_run_config_overlay_projects_otel_env(tmp_path: Path) -> None:
     assert rendered is not None
     env_table = rendered.split("[environments.livespec-ci.env]", 1)[1]
     # The token still projects; the OTel keys ride in the SAME table (TOML
-    # forbids declaring [environments.<id>.env] twice).
+    # forbids declaring [environments.<id>.env] twice). The GitHub token
+    # projects under the FULL name GITHUB_TOKEN (never the short GH_TOKEN):
+    # gh and git-via-gh prefer GH_TOKEN over GITHUB_TOKEN, so a projected
+    # GH_TOKEN would SHADOW Fabro's fresh per-exec GITHUB_TOKEN and go stale
+    # past the ~60-min installation-token TTL. GITHUB_TOKEN agrees with
+    # Fabro's own name, so Fabro's per-exec `export GITHUB_TOKEN=<fresh>`
+    # overwrites this bootstrap value at the (post-TTL) publish node.
     assert 'CLAUDE_CODE_OAUTH_TOKEN = "test-oauth-token"' in env_table
-    assert 'GH_TOKEN = "test-github-token"' in env_table
+    assert 'GITHUB_TOKEN = "test-github-token"' in env_table
+    assert "GH_TOKEN = " not in env_table
     assert 'CLAUDE_CODE_ENABLE_TELEMETRY = "1"' in env_table
     assert 'OTEL_EXPORTER_OTLP_ENDPOINT = "http://172.17.0.1:4318"' in env_table
     assert 'OTEL_EXPORTER_OTLP_PROTOCOL = "http/json"' in env_table
@@ -186,7 +193,8 @@ def test_render_run_config_overlay_otel_env_is_optional(tmp_path: Path) -> None:
     )
     assert rendered is not None
     assert 'CLAUDE_CODE_OAUTH_TOKEN = "test-oauth-token"' in rendered
-    assert 'GH_TOKEN = "test-github-token"' in rendered
+    assert 'GITHUB_TOKEN = "test-github-token"' in rendered
+    assert "GH_TOKEN = " not in rendered
     assert "OTEL_EXPORTER_OTLP_ENDPOINT" not in rendered
     assert "CLAUDE_CODE_ENABLE_TELEMETRY" not in rendered
 
