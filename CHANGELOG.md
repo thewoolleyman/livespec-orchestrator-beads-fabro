@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.0...v0.13.1) (2026-07-08)
+
+
+### Bug Fixes
+
+* **needs-attention:** invoke spec-next cross-plane instead of emitting a pointer ([c39ed04](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c39ed0411ab82eb56eaa8e546d320c4243caceb9))
+
 ## [0.13.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.12.0...v0.13.0) (2026-07-06)
 
 
