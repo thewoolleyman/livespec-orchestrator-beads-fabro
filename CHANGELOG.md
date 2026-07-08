@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.2...v0.13.3) (2026-07-08)
+
+
+### Bug Fixes
+
+* **needs-attention:** honor configured spec next argv ([506614d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/506614dab339bdf3c83e44bf8857e5f2595b0d1c))
+
 ## [0.13.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.1...v0.13.2) (2026-07-08)
 
 
