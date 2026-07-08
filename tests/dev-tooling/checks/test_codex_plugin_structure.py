@@ -71,31 +71,17 @@ _PRESENT_PROSE_OPS = (
 # The P3b prose extraction is complete: no heavyweight op remains pending.
 _PENDING_OPS: tuple[str, ...] = ()
 
-_RESOLUTION_BLOCK = (
-    "## Resolving the plugin root\n\n"
-    "```bash\n"
-    'PLUGIN_ROOT="$LIVESPEC_ORCH_PLUGIN_ROOT"\n'
-    'if [ -z "$PLUGIN_ROOT" ] && [ -d "./.claude-plugin/scripts/bin" ]; then\n'
-    '  CANDIDATE_PLUGIN_ROOT="$(pwd)/.claude-plugin"\n'
-    '  if [ -f "$CANDIDATE_PLUGIN_ROOT/plugin.json" ] && '
-    "python3 - \"$CANDIDATE_PLUGIN_ROOT/plugin.json\" <<'PY'\n"
-    "import json\n"
-    "import sys\n"
-    "\n"
-    "try:\n"
-    '    with open(sys.argv[1], encoding="utf-8") as f:\n'
-    "        data = json.load(f)\n"
-    "except Exception:\n"
-    "    sys.exit(1)\n"
-    f'sys.exit(0 if data.get("name") == "{_PLUGIN_NAME}" else 1)\n'
-    "PY\n"
-    "  then\n"
-    '    PLUGIN_ROOT="$CANDIDATE_PLUGIN_ROOT"\n'
-    "  fi\n"
-    "fi\n"
-    f"codex plugin list --json -m {_PLUGIN_NAME}\n"
-    "```\n"
-)
+
+def _live_resolution_block() -> str:
+    text = (
+        _REPO_ROOT / ".claude-plugin" / ".codex-plugin" / "skills" / "next" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    fence_start = text.index("```bash\n", text.index("## Resolving the plugin root"))
+    fence_end = text.index("```\n", fence_start) + len("```\n")
+    return "## Resolving the plugin root\n\n" + text[fence_start:fence_end]
+
+
+_RESOLUTION_BLOCK = _live_resolution_block()
 
 
 def _present_body(*, op: str, script: str) -> str:
@@ -226,9 +212,16 @@ def _rewrite_json(*, path: Path, mutate: object) -> None:
 
 def _extract_resolution_script(*, skill: Path) -> str:
     text = skill.read_text(encoding="utf-8")
-    start = text.index('PLUGIN_ROOT="$LIVESPEC_ORCH_PLUGIN_ROOT"')
+    start = text.index('PLUGIN_ROOT="${LIVESPEC_ORCH_PLUGIN_ROOT:-}"')
     end = text.index('if [ -z "$PLUGIN_ROOT" ] || [ ! -d "$PLUGIN_ROOT/scripts/bin" ]; then')
     return text[start:end] + 'printf "%s" "$PLUGIN_ROOT"\n'
+
+
+def _extract_full_resolution_script(*, skill: Path) -> str:
+    text = skill.read_text(encoding="utf-8")
+    start = text.index('PLUGIN_ROOT="${LIVESPEC_ORCH_PLUGIN_ROOT:-}"')
+    end = text.index("```\n", start)
+    return text[start:end]
 
 
 def _write_fake_codex(*, bin_dir: Path, installed_root: Path) -> None:
@@ -257,12 +250,21 @@ def _write_plugin_candidate(*, root: Path, name: str, with_orchestrator_wrapper:
         _ = (bin_dir / "drive.py").write_text("# wrapper\n", encoding="utf-8")
 
 
-def _resolve_skill_root(*, skill: Path, cwd: Path, fake_bin: Path) -> str:
+def _resolve_skill_root(
+    *,
+    skill: Path,
+    cwd: Path,
+    fake_bin: Path | None = None,
+    env_overrides: dict[str, str] | None = None,
+) -> str:
     env = os.environ.copy()
-    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    if fake_bin is not None:
+        env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
     env.pop("LIVESPEC_ORCH_PLUGIN_ROOT", None)
+    if env_overrides is not None:
+        env.update(env_overrides)
     result = subprocess.run(
-        ["bash", "-c", _extract_resolution_script(skill=skill)],
+        ["/bin/bash", "-c", _extract_resolution_script(skill=skill)],
         cwd=cwd,
         env=env,
         check=True,
@@ -270,6 +272,22 @@ def _resolve_skill_root(*, skill: Path, cwd: Path, fake_bin: Path) -> str:
         capture_output=True,
     )
     return result.stdout
+
+
+def _run_full_resolution(
+    *, skill: Path, cwd: Path, env_overrides: dict[str, str]
+) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env.pop("LIVESPEC_ORCH_PLUGIN_ROOT", None)
+    env.update(env_overrides)
+    return subprocess.run(
+        ["/bin/bash", "-c", _extract_full_resolution_script(skill=skill)],
+        cwd=cwd,
+        env=env,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
 
 
 # --------------------------------------------------------------------------
@@ -310,6 +328,85 @@ def test_codex_resolution_skips_core_like_cwd(tmp_path: Path) -> None:
     )
 
     assert resolved == str(installed_root)
+
+
+def test_codex_resolution_uses_installed_cache_when_path_omits_codex(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    home = tmp_path / "home"
+    installed_root = home / ".codex" / "plugins" / "cache" / _PLUGIN_NAME / _PLUGIN_NAME / "0.13.8"
+    project.mkdir()
+    (installed_root / "scripts" / "bin").mkdir(parents=True)
+
+    resolved = _resolve_skill_root(
+        skill=_live_next_skill(),
+        cwd=project,
+        env_overrides={
+            "HOME": str(home),
+            "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        },
+    )
+
+    assert resolved == str(installed_root)
+
+
+def test_codex_resolution_uses_injected_plugin_root_inside_wrapper(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    injected_root = tmp_path / "injected"
+    project.mkdir()
+    (injected_root / "scripts" / "bin").mkdir(parents=True)
+
+    resolved = _resolve_skill_root(
+        skill=_live_next_skill(),
+        cwd=project,
+        env_overrides={
+            "HOME": str(tmp_path / "home"),
+            "LIVESPEC_ORCH_PLUGIN_ROOT": str(injected_root),
+            "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        },
+    )
+
+    assert resolved == str(injected_root)
+
+
+def test_codex_resolution_diagnostics_distinguish_missing_cache_and_codex(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = _run_full_resolution(
+        skill=_live_next_skill(),
+        cwd=project,
+        env_overrides={"HOME": str(tmp_path / "home"), "PATH": "/usr/bin:/bin"},
+    )
+
+    assert result.returncode == 1
+    assert "cache root not found" in result.stderr
+    assert "codex executable not found" in result.stderr
+    assert "plugin root not found" in result.stderr
+
+
+def test_codex_resolution_diagnostics_distinguish_plugin_not_installed(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    home = tmp_path / "home"
+    fake_bin = tmp_path / "bin"
+    project.mkdir()
+    fake_bin.mkdir()
+    codex = fake_bin / "codex"
+    codex.write_text(
+        "#!/usr/bin/env bash\n" "cat <<'JSON'\n" '{"installed":[]}\n' "JSON\n",
+        encoding="utf-8",
+    )
+    codex.chmod(0o755)
+
+    result = _run_full_resolution(
+        skill=_live_next_skill(),
+        cwd=project,
+        env_overrides={"HOME": str(home), "PATH": f"{fake_bin}:/usr/bin:/bin"},
+    )
+
+    assert result.returncode == 1
+    assert "cache root not found" in result.stderr
+    assert "plugin not installed according to" in result.stderr
+    assert "codex executable not found" not in result.stderr
 
 
 def test_codex_resolution_accepts_orchestrator_plugin_cwd(tmp_path: Path) -> None:
@@ -556,7 +653,7 @@ def test_frontmatter_allowed_tools_fails(point_at: Path) -> None:
 def test_missing_resolution_snippet_fails(point_at: Path) -> None:
     body = _skill(root=point_at, op="next").read_text(encoding="utf-8")
     _ = _skill(root=point_at, op="next").write_text(
-        body.replace(f"codex plugin list --json -m {_PLUGIN_NAME}", "echo hi"), encoding="utf-8"
+        body.replace(f"plugin list --json -m {_PLUGIN_NAME}", "echo hi"), encoding="utf-8"
     )
     assert _CHECK.main() == 1
 
@@ -612,7 +709,7 @@ def test_prose_op_missing_resolution_snippet_fails(point_at: Path) -> None:
     op = "capture-impl-gaps"
     body = _skill(root=point_at, op=op).read_text(encoding="utf-8")
     _ = _skill(root=point_at, op=op).write_text(
-        body.replace(f"codex plugin list --json -m {_PLUGIN_NAME}", "echo hi"), encoding="utf-8"
+        body.replace(f"plugin list --json -m {_PLUGIN_NAME}", "echo hi"), encoding="utf-8"
     )
     assert _CHECK.main() == 1
 
