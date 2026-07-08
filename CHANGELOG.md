@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.8...v0.13.9) (2026-07-08)
+
+
+### Bug Fixes
+
+* repair codex plugin root resolver ([e17495a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e17495a12425f3ddb758bea2acc505d1a68c7867))
+
 ## [0.13.8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.7...v0.13.8) (2026-07-08)
 
 
