@@ -356,13 +356,20 @@ def _resolve_core_plugin_root(*, project_root: Path, bases: CoreRootBases) -> Pa
 
 
 def _resolve_spec_next_command(*, project_root: Path, bases: CoreRootBases) -> list[str] | None:
-    """The runnable spec-`next` argv (token-substituted), or None if CORE is unresolvable."""
+    """The runnable spec-`next` argv (token-substituted), or None if unresolvable."""
+    configured = _read_spec_clis_next_argv(project_root=project_root)
+    if configured is not None and not _argv_uses_plugin_root_placeholder(argv=configured):
+        return configured
     core_root = _resolve_core_plugin_root(project_root=project_root, bases=bases)
     if core_root is None:
         return None
-    configured = _read_spec_clis_next_argv(project_root=project_root)
     template = configured if configured is not None else list(_DEFAULT_SPEC_NEXT_ARGV)
     return [element.replace(_PLUGIN_ROOT_PLACEHOLDER, str(core_root)) for element in template]
+
+
+def _argv_uses_plugin_root_placeholder(*, argv: list[str]) -> bool:
+    """Whether argv still needs CORE plugin-root discovery for token substitution."""
+    return any(_PLUGIN_ROOT_PLACEHOLDER in element for element in argv)
 
 
 def _default_core_root_bases() -> CoreRootBases:  # pragma: no cover
