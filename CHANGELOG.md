@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.4...v0.13.5) (2026-07-08)
+
+
+### Bug Fixes
+
+* fail fast on active real-work container ([fe48615](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fe4861576d08465df7e9d6390ac1057da028defb))
+
 ## [0.13.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.3...v0.13.4) (2026-07-08)
 
 
