@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.1...v0.13.2) (2026-07-08)
+
+
+### Bug Fixes
+
+* **codex:** require binding cwd plugin identity ([bd8ca1a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bd8ca1a323a87eb53c6185edba6cbd2519449c8c))
+
 ## [0.13.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.0...v0.13.1) (2026-07-08)
 
 
