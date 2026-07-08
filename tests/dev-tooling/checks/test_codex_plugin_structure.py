@@ -333,6 +333,19 @@ def test_codex_resolution_accepts_orchestrator_plugin_cwd(tmp_path: Path) -> Non
     assert resolved == str(orchestrator_like / ".claude-plugin")
 
 
+def test_codex_bindings_must_validate_cwd_plugin_identity(point_at: Path) -> None:
+    body = _skill(root=point_at, op="next").read_text(encoding="utf-8")
+    _ = _skill(root=point_at, op="next").write_text(
+        body.replace(
+            f'sys.exit(0 if data.get("name") == "{_PLUGIN_NAME}" else 1)',
+            "sys.exit(0)",
+        ),
+        encoding="utf-8",
+    )
+
+    assert _CHECK.main() == 1
+
+
 # --------------------------------------------------------------------------
 # Marketplace catalog.
 # --------------------------------------------------------------------------

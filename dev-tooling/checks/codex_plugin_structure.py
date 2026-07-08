@@ -154,6 +154,7 @@ _PENDING_CODEX_OPS: frozenset[str] = frozenset()
 _EXPECTED_SOURCE = {"source": "local", "path": "./.claude-plugin"}
 _EXPECTED_SKILLS_PATH = "./.codex-plugin/skills/"
 _CODEX_RESOLUTION_SNIPPET = f"codex plugin list --json -m {_PLUGIN_NAME}"
+_CWD_PLUGIN_IDENTITY_SNIPPET = f'data.get("name") == "{_PLUGIN_NAME}"'
 _PLUGIN_ROOT_VAR = "$PLUGIN_ROOT"
 
 _WRAPPER_INVOCATION_RE = re.compile(r"bin/[a-z_]+\.py\b")
@@ -331,6 +332,8 @@ def _binding_body_violations(*, name: str, text: str, prose_backed: bool) -> lis
         out.append(f"{where}: body MUST carry the resolution snippet {_CODEX_RESOLUTION_SNIPPET!r}")
     if _PLUGIN_ROOT_VAR not in text:
         out.append(f"{where}: body MUST carry the {_PLUGIN_ROOT_VAR} resolution variable")
+    if _CWD_PLUGIN_IDENTITY_SNIPPET not in text:
+        out.append(f"{where}: cwd dogfood shortcut MUST validate plugin manifest name")
     if _DRIVER_ROOT_TOKEN in text:
         out.append(f"{where}: body MUST NOT carry a live {_DRIVER_ROOT_TOKEN} token")
     if prose_backed:
