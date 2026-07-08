@@ -94,3 +94,19 @@ def test_beads_metadata_regen_uses_a_non_git_scratch_dir_not_the_clone() -> None
     # The old in-clone behavior (auto-commit then reset) is gone: regen must not
     # reset the clone to origin/master anymore.
     assert "git reset --hard origin/master" not in text
+
+
+def test_running_dispatch_container_is_never_force_removed_by_newcomer() -> None:
+    """Concurrent launches fail fast instead of killing in-flight dispatches."""
+    text = _SCRIPT.read_text(encoding="utf-8")
+
+    assert "CONTAINER_STARTED=0" in text
+    assert "remove_stale_dispatch_container" in text
+    assert "docker container inspect -f '{{.State.Running}}'" in text
+    assert 'fail "container already running: $CONTAINER"' in text
+    assert 'if [ "$CONTAINER_STARTED" -eq 1 ]; then' in text
+    assert 'docker rm -f "$CONTAINER" >/dev/null 2>&1 || true' in text
+    assert (
+        'docker rm -f "$CONTAINER" >/dev/null 2>&1 || true\n  docker volume rm "$VARLIB_VOL"'
+        not in text
+    )

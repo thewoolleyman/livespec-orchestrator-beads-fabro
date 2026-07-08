@@ -105,6 +105,8 @@ ITEM_ID=""
 RUN_DISPATCH=0
 BUILD_IMAGE=0
 KEEP_CONTAINER=0
+CONTAINER_STARTED=0
+VARLIB_VOLUME_CREATED=0
 
 usage() {
   cat <<'USAGE'
@@ -158,8 +160,12 @@ redact() {
 
 cleanup() {
   if [ "$KEEP_CONTAINER" -eq 0 ]; then
-    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
-    docker volume rm "$VARLIB_VOL" >/dev/null 2>&1 || true
+    if [ "$CONTAINER_STARTED" -eq 1 ]; then
+      docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+    fi
+    if [ "$VARLIB_VOLUME_CREATED" -eq 1 ]; then
+      docker volume rm "$VARLIB_VOL" >/dev/null 2>&1 || true
+    fi
   else
     printf 'kept container=%s volume=%s\n' "$CONTAINER" "$VARLIB_VOL" >&2
   fi
@@ -281,11 +287,23 @@ wait_for_container() {
     || fail "fabro settings were not provisioned"
 }
 
+remove_stale_dispatch_container() {
+  local running
+  if ! running="$(docker container inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)"; then
+    return 0
+  fi
+  if [ "$running" = "true" ]; then
+    fail "container already running: $CONTAINER"
+  fi
+  docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+}
+
 start_container() {
   log "starting $CONTAINER from $IMAGE (NO host checkout bind-mount)"
-  docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  remove_stale_dispatch_container
   docker volume rm "$VARLIB_VOL" >/dev/null 2>&1 || true
   docker volume create "$VARLIB_VOL" >/dev/null
+  VARLIB_VOLUME_CREATED=1
   local network_args=()
   local publish_args=()
   if [ "$TIER2_USE_HOST_NETWORK" = "1" ]; then
@@ -316,6 +334,7 @@ start_container() {
     -e HONEYCOMB_INGEST_KEY_LIVESPEC \
     "$IMAGE" \
     sleep infinity >/dev/null
+  CONTAINER_STARTED=1
   wait_for_container
 }
 
