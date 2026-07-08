@@ -16,8 +16,9 @@ Codex does NOT textually substitute a plugin-root token into SKILL
 prose, so resolve it explicitly, once, in this order:
 
 1. If `LIVESPEC_ORCH_PLUGIN_ROOT` is set and non-empty, use it.
-2. Else if `./.claude-plugin/scripts/bin` exists under the cwd
-   (dogfood / dev checkout), use `$(pwd)/.claude-plugin`.
+2. Else if `./.claude-plugin/scripts/bin` exists under the cwd AND
+   `./.claude-plugin` validates as this orchestrator plugin checkout
+   (matching plugin manifest name), use `$(pwd)/.claude-plugin`.
 3. Else resolve the installed plugin's `source.path` from
    `codex plugin list --json -m livespec-orchestrator-beads-fabro`.
 
