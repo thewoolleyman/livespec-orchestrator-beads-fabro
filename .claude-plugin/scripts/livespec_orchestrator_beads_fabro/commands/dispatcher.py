@@ -463,7 +463,11 @@ def _run_dispatch_command(*, args: argparse.Namespace) -> int:
     if prepared is None:
         return _EXIT_PRECONDITION_ERROR
     items, journal = prepared
-    if not args.skip_ledger_check and _ledger_blocked(items=items, journal=journal):
+    if not args.skip_ledger_check and _ledger_blocked_after_normalization(
+        items=items,
+        config=_store_config(repo=repo),
+        journal=journal,
+    ):
         return _EXIT_FAILURE
     ready = _ready_items(items=items, repo=repo)
     target = next((item for item in ready if item.id == args.item), None)
@@ -561,7 +565,11 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
     if prepared is None:
         return _EXIT_PRECONDITION_ERROR
     items, journal = prepared
-    if not args.skip_ledger_check and _ledger_blocked(items=items, journal=journal):
+    if not args.skip_ledger_check and _ledger_blocked_after_normalization(
+        items=items,
+        config=_store_config(repo=repo),
+        journal=journal,
+    ):
         return _EXIT_FAILURE
     requested_ids = set(args.items or [])
     if requested_ids:
@@ -2308,6 +2316,62 @@ def _close_item(*, repo: Path, item: WorkItem, outcome: DispatchOutcome) -> None
         audit=audit,
     )
     append_work_item(path=_store_config(repo=repo), item=closed)
+
+
+_BEADS_NATIVE_OPEN = "open"
+_LIVESPEC_BACKLOG = "backlog"
+
+
+def _normalize_native_open_statuses(
+    *,
+    items: list[WorkItem],
+    config: StoreConfig,
+    journal: JournalFile,
+) -> list[WorkItem]:
+    normalized: list[dict[str, str]] = []
+    result: list[WorkItem] = []
+    for item in items:
+        stored_status = str(item.status)
+        if stored_status != _BEADS_NATIVE_OPEN:
+            result.append(item)
+            continue
+        update_work_item_status(path=config, item_id=item.id, status=_LIVESPEC_BACKLOG)
+        result.append(replace(item, status=_LIVESPEC_BACKLOG))
+        normalized.append(
+            {
+                "item_id": item.id,
+                "from": _BEADS_NATIVE_OPEN,
+                "to": _LIVESPEC_BACKLOG,
+                "reason": "beads-native intake default",
+            }
+        )
+    if normalized:
+        _append_normalization_note(journal=journal, normalized=normalized)
+    return result
+
+
+def _append_normalization_note(
+    *,
+    journal: JournalFile,
+    normalized: list[dict[str, str]],
+) -> None:
+    line = json.dumps(
+        {"stage": "status-normalization", "normalized": normalized},
+        sort_keys=True,
+    )
+    journal.path.parent.mkdir(parents=True, exist_ok=True)
+    with journal.path.open("a", encoding="utf-8") as handle:
+        _ = handle.write(f"{line}\n")
+
+
+def _ledger_blocked_after_normalization(
+    *,
+    items: list[WorkItem],
+    config: StoreConfig,
+    journal: JournalFile,
+) -> bool:
+    items[:] = _normalize_native_open_statuses(items=items, config=config, journal=journal)
+    return _ledger_blocked(items=items, journal=journal)
 
 
 def _ledger_blocked(*, items: list[WorkItem], journal: JournalFile) -> bool:

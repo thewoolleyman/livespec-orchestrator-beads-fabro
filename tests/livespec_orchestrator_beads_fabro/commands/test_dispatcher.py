@@ -379,6 +379,82 @@ def test_ledger_checks_flag_out_of_lifecycle_live_status() -> None:
     assert "status 'open' is outside the livespec lifecycle" in findings[1].message
 
 
+def test_dispatch_gate_auto_normalizes_beads_native_open(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+    items = [
+        _item(id="native-open", status="open"),
+        _item(id="bad-deferred", status="deferred"),
+    ]
+
+    def fake_update_work_item_status(
+        *,
+        path: StoreConfig,
+        item_id: str,
+        status: str,
+        assignee: str | None = None,
+    ) -> None:
+        assert path.prefix == "bd-ib"
+        assert assignee is None
+        calls.append((item_id, status))
+
+    def fake_read_work_items(*, path: StoreConfig) -> object:
+        _ = path
+        return iter(items)
+
+    monkeypatch.setattr(dispatcher, "read_work_items", fake_read_work_items)
+    monkeypatch.setattr(dispatcher, "update_work_item_status", fake_update_work_item_status)
+    monkeypatch.setattr(dispatcher, "_ensure_otel_receiver", lambda **_: None)
+    workflow = tmp_path / "workflow.toml"
+    workflow.write_text("[workflow]\n", encoding="utf-8")
+    journal = tmp_path / "journal.jsonl"
+
+    exit_code = main(
+        [
+            "dispatch",
+            "--repo",
+            str(tmp_path),
+            "--workflow",
+            str(workflow),
+            "--fabro-bin",
+            sys.executable,
+            "--journal",
+            str(journal),
+            "--item",
+            "native-open",
+        ]
+    )
+
+    assert exit_code == 1
+    assert calls == [("native-open", "backlog")]
+    records = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
+    assert records[0] == {
+        "stage": "status-normalization",
+        "normalized": [
+            {
+                "from": "open",
+                "item_id": "native-open",
+                "reason": "beads-native intake default",
+                "to": "backlog",
+            }
+        ],
+    }
+    assert records[1]["stage"] == "ledger-check"
+    assert records[1]["findings"] == [
+        {
+            "check": "status-conformance",
+            "item_id": "bad-deferred",
+            "message": (
+                "status 'deferred' is outside the livespec lifecycle "
+                "(allowed: acceptance, active, backlog, blocked, closed, pending-approval, ready)"
+            ),
+            "severity": "fail",
+        }
+    ]
+
+
 def test_ledger_checks_ignore_closed_items() -> None:
     items = [_item(status="done", depends_on=("nope-99", {"bad": True}))]
     assert run_ledger_checks(items=items) == []
