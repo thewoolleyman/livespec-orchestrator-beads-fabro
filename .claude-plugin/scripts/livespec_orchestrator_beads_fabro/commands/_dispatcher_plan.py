@@ -19,9 +19,10 @@ RUN-SCOPED credential projection (the family-secrets scoped
 transient-materialization rule): the committed config carries NO
 secret, and the rendered overlay appends an `[environments.<id>.env]`
 table carrying the caller-supplied CLAUDE_CODE_OAUTH_TOKEN value (read
-from the Dispatcher's process environment) and GH_TOKEN value (a fresh
-App installation token minted by the caller's provider — never a fleet
-PAT), alongside the `graph`
+from the Dispatcher's process environment) and GITHUB_TOKEN value (a
+fresh App installation token minted by the caller's provider — never a
+fleet PAT; the FULL name GITHUB_TOKEN, not the short GH_TOKEN, so Fabro's
+per-exec re-minted GITHUB_TOKEN is not shadowed), alongside the `graph`
 path rewritten absolute so the overlay resolves from outside the workflow
 directory. The same overlay provisions the sandbox sibling clones:
 per-fleet-member depth-1 `[[run.prepare.steps]]` clone blocks plus the
@@ -891,9 +892,18 @@ def render_run_config_overlay(  # noqa: PLR0913 — kw-only pure overlay builder
     cross-repo checks resolve family siblings inside the sandbox, and
     (c) an appended `[environments.<id>.env]` table carrying the
     caller-supplied CLAUDE_CODE_OAUTH_TOKEN (read from the Dispatcher's
-    process environment) and GH_TOKEN (a freshly minted App installation
-    token) plus the NON-secret `LIVESPEC_SIBLING_CLONES_ROOT` key.
-    The non-secret key rides in the credential table because TOML
+    process environment) and GITHUB_TOKEN (a freshly minted App
+    installation token) plus the NON-secret `LIVESPEC_SIBLING_CLONES_ROOT`
+    key. The GitHub token is projected under the FULL name GITHUB_TOKEN,
+    never the short GH_TOKEN: gh and git-via-gh prefer GH_TOKEN over
+    GITHUB_TOKEN, and Fabro re-projects its OWN freshly-re-minted token
+    per exec under the name GITHUB_TOKEN (a `export GITHUB_TOKEN=<fresh>`
+    prefix). Projecting a static GH_TOKEN here would SHADOW that fresh
+    value and go stale past the ~60-min installation-token TTL (the
+    github-app-auth Pillar-1 anti-pattern); projecting GITHUB_TOKEN
+    instead lets Fabro's per-exec re-mint OVERWRITE this bootstrap value
+    at long-running nodes (the publish node of a >60-min run). The
+    non-secret key rides in the credential table because TOML
     forbids a second declaration of the same table and this appended
     table is the single `[environments.<id>.env]` declaration point —
     the committed file deliberately carries none; the table maps to
@@ -966,7 +976,7 @@ def render_run_config_overlay(  # noqa: PLR0913 — kw-only pure overlay builder
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
         + f"[environments.{environment_id}.env]\n"
         + f"CLAUDE_CODE_OAUTH_TOKEN = {token_literal}\n"
-        + f"GH_TOKEN = {github_token_literal}\n"
+        + f"GITHUB_TOKEN = {github_token_literal}\n"
         + sibling_env_line
         + core_plugin_env_line
         + currency_gate_env_line
@@ -982,7 +992,7 @@ def _core_plugin_env_line(*, siblings: SiblingClones | None) -> str:
     `check-doctor-static`) cannot find core inside the sandbox: the worker env
     is a fail-closed allowlist and the container carries no installed-plugin
     registry. So the overlay projects CORE's location as a container-level env
-    key — the SAME mechanism that carries GH_TOKEN — valued at the cloned core
+    key — the SAME mechanism that carries GITHUB_TOKEN — valued at the cloned core
     sibling's plugin root (`<clones_root>/livespec/.claude-plugin`). Returns the
     empty string when no core sibling is cloned (the derived path would not
     resolve), mirroring the sibling-clones-root guard.
