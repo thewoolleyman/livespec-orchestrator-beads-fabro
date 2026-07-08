@@ -437,6 +437,12 @@ check:
         # asymmetric). Not a canonical slug, so it rides in the private block
         # after the canonical set.
         check-codex-plugin-structure
+        # Fabro sandbox image freshness guard (bd-ib-mwz). The sandbox image
+        # is published by livespec-dev-tooling, but shared pin-autodiscovery
+        # does not yet rewrite workflow.toml docker image refs. This local
+        # check forces that image tag to match the existing
+        # livespec-dev-tooling bump-pin surface.
+        check-fabro-sandbox-image-pin-freshness
         # Live Codex TUI `/skills` picker acceptance. This is intentionally a
         # private, host-aware gate: it drives the actual Codex picker path that
         # operators use, while CI skips unless explicitly opted into an
@@ -681,6 +687,15 @@ check-closed-item-integrity:
 # Not a canonical livespec-dev-tooling slug, so it is wired in the private block.
 check-codex-plugin-structure:
     uv run python dev-tooling/checks/codex_plugin_structure.py
+
+# `check-fabro-sandbox-image-pin-freshness` - Fabro sandbox docker-image pin
+# guard (bd-ib-mwz). The sandbox image is published by livespec-dev-tooling, so
+# the committed workflow.toml docker tag must match the repo's existing
+# livespec-dev-tooling tag in pyproject.toml. This gives bump-pin /
+# pin-freshness PRs a mechanical gate for the otherwise-manual docker image
+# pin until shared pin-autodiscovery covers workflow.toml image references.
+check-fabro-sandbox-image-pin-freshness:
+    uv run python dev-tooling/checks/fabro_sandbox_image_pin_freshness.py
 
 # livespec core's doctor STATIC phase (reference-discipline + out-of-band
 # invariants) against THIS repo's SPECIFICATION/ tree, wired fleet-wide per
