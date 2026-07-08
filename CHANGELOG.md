@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.5...v0.13.6) (2026-07-08)
+
+
+### Bug Fixes
+
+* guard Fabro sandbox image pin freshness ([4926b65](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4926b65dde741361a310052b72c61c3ffac4393d))
+
 ## [0.13.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.4...v0.13.5) (2026-07-08)
 
 
