@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.3...v0.13.4) (2026-07-08)
+
+
+### Bug Fixes
+
+* normalize beads open before ledger gate ([843b0c9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/843b0c994f28ca90639c2cf551aaa054aea3484d))
+
 ## [0.13.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.2...v0.13.3) (2026-07-08)
 
 
