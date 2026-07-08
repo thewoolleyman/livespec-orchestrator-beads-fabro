@@ -153,7 +153,9 @@ _PENDING_CODEX_OPS: frozenset[str] = frozenset()
 
 _EXPECTED_SOURCE = {"source": "local", "path": "./.claude-plugin"}
 _EXPECTED_SKILLS_PATH = "./.codex-plugin/skills/"
-_CODEX_RESOLUTION_SNIPPET = f"codex plugin list --json -m {_PLUGIN_NAME}"
+_CODEX_RESOLUTION_SNIPPET = f"plugin list --json -m {_PLUGIN_NAME}"
+_CODEX_CACHE_SNIPPET = f".codex/plugins/cache/{_PLUGIN_NAME}/{_PLUGIN_NAME}"
+_CODEX_LOOKUP_SNIPPETS = ("command -v codex", "$HOME/.local/bin/codex", "$HOME/.bun/bin/codex")
 _CWD_PLUGIN_IDENTITY_SNIPPET = f'data.get("name") == "{_PLUGIN_NAME}"'
 _PLUGIN_ROOT_VAR = "$PLUGIN_ROOT"
 
@@ -181,7 +183,6 @@ def _frontmatter_block(*, text: str) -> str | None:
 
 
 def _read_json(*, path: Path) -> tuple[Any, str | None]:
-    """Parse a JSON file; return (parsed_or_None, error_message_or_None)."""
     try:
         return json.loads(path.read_text(encoding="utf-8")), None
     except (OSError, ValueError) as exc:
@@ -189,7 +190,6 @@ def _read_json(*, path: Path) -> tuple[Any, str | None]:
 
 
 def _str_field(*, parsed: Any, key: str) -> str | None:
-    """Return `parsed[key]` if `parsed` is a dict and the value is a str, else None."""
     if isinstance(parsed, dict):
         value = cast("dict[str, Any]", parsed).get(key)
         if isinstance(value, str):
@@ -207,7 +207,6 @@ def _claude_meta() -> tuple[str | None, str | None]:
 
 
 def _marketplace_violations(*, codex_description: str | None) -> list[str]:
-    """Validate the repo-root marketplace catalog."""
     out: list[str] = []
     marketplace, err = _read_json(path=_MARKETPLACE)
     if err is not None or not isinstance(marketplace, dict):
@@ -235,7 +234,6 @@ def _marketplace_violations(*, codex_description: str | None) -> list[str]:
 def _manifest_violations(
     *, claude_description: str | None, claude_version: str | None
 ) -> list[str]:
-    """Validate the Codex plugin manifest against the Claude manifest + layout."""
     out: list[str] = []
     plugin, err = _read_json(path=_CODEX_MANIFEST)
     if err is not None or not isinstance(plugin, dict):
@@ -257,7 +255,6 @@ def _manifest_violations(
 
 
 def _hooks_dir_violations() -> list[str]:
-    """The no-guard contract also forbids a `.codex-plugin/hooks/` directory."""
     if (_CODEX_DIR / "hooks").exists():
         return [".codex-plugin/hooks/ MUST NOT exist (the Codex surface ships no hooks)"]
     return []
@@ -319,7 +316,9 @@ def _frontmatter_violations(*, name: str, text: str) -> list[str]:
     return out
 
 
-def _binding_body_violations(*, name: str, text: str, prose_backed: bool) -> list[str]:
+def _binding_body_violations(  # noqa: C901, PLR0912
+    *, name: str, text: str, prose_backed: bool
+) -> list[str]:
     """Resolution-snippet presence, the live-token ban, and the dispatch target.
 
     A wrapper-backed thin op MUST self-invoke its `scripts/bin/<op>.py` CLI; a
@@ -330,6 +329,11 @@ def _binding_body_violations(*, name: str, text: str, prose_backed: bool) -> lis
     where = f".codex-plugin/skills/{name}/SKILL.md"
     if _CODEX_RESOLUTION_SNIPPET not in text:
         out.append(f"{where}: body MUST carry the resolution snippet {_CODEX_RESOLUTION_SNIPPET!r}")
+    if _CODEX_CACHE_SNIPPET not in text:
+        out.append(f"{where}: body MUST check the deterministic Codex cache path first")
+    for snippet in _CODEX_LOOKUP_SNIPPETS:
+        if snippet not in text:
+            out.append(f"{where}: body MUST check Codex executable lookup path {snippet!r}")
     if _PLUGIN_ROOT_VAR not in text:
         out.append(f"{where}: body MUST carry the {_PLUGIN_ROOT_VAR} resolution variable")
     if _CWD_PLUGIN_IDENTITY_SNIPPET not in text:
