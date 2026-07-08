@@ -16,6 +16,7 @@ self-heals instead of failing deep in the beads backend with a raw auth error.
 """
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import cast
@@ -103,12 +104,14 @@ def _self_heal_credentials(*, required: tuple[str, ...] = _REQUIRED_CREDENTIALS)
         Proceed,
         Reexec,
         decide_credentials,
+        wrapper_launch_failure,
     )
     from typing_extensions import assert_never
 
+    credential_wrapper = _read_credential_wrapper()
     decision = decide_credentials(
         required=required,
-        credential_wrapper=_read_credential_wrapper(),
+        credential_wrapper=credential_wrapper,
         environ=os.environ,
         executable=sys.executable,
         argv=sys.argv,
@@ -124,6 +127,23 @@ def _self_heal_credentials(*, required: tuple[str, ...] = _REQUIRED_CREDENTIALS)
                 "livespec: required credential env absent; re-invoking under credential_wrapper\n"
             )
             os.environ[CREDENTIAL_REEXEC_SENTINEL] = "1"
-            os.execvp(reexec_argv[0], list(reexec_argv))  # noqa: S606
+            completed = subprocess.run(  # noqa: S603
+                list(reexec_argv), capture_output=True, check=False
+            )
+            stdout = completed.stdout or b""
+            stderr = completed.stderr or b""
+            if stdout:
+                _ = sys.stdout.buffer.write(stdout)
+                _ = sys.stdout.flush()
+            if completed.returncode != 0 and not stdout:
+                fail = wrapper_launch_failure(
+                    required=required,
+                    credential_wrapper=credential_wrapper,
+                )
+                _ = sys.stderr.write(fail.message + "\n")
+            elif stderr:
+                _ = sys.stderr.buffer.write(stderr)
+                _ = sys.stderr.flush()
+            raise SystemExit(completed.returncode)
         case _:
             assert_never(decision)
