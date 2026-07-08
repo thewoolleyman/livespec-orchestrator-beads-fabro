@@ -4,18 +4,20 @@ Covers both branches of `sys.version_info < (3, 10)` via
 `monkeypatch.setattr`, the "path already in sys.path" branch, the
 `_read_credential_wrapper` config-read (every fail-open branch + the happy
 path), and the `_self_heal_credentials` performer's three decision arms
-(Proceed returns, Fail exits 3, Reexec sets the sentinel + calls execvp).
+(Proceed returns, Fail exits 3, Reexec supervises the wrapped subprocess).
 
 The pure `decide_credentials` brain is exhaustively tested in
 livespec-runtime; here we only test the thin bin-side performer, so each
 decision arm is driven by monkeypatching `decide_credentials` to return the
-chosen variant and `os.execvp` so a test never really re-execs.
+chosen variant and `subprocess.run` so a test never really re-execs.
 """
 
 import importlib
 import os
+import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from livespec_runtime.credentials import (
@@ -138,7 +140,7 @@ def test_read_credential_wrapper_returns_configured_tokens(
 
 # --------------------------------------------------------------------------
 # _self_heal_credentials — the thin bin-side performer over the three
-# CredentialDecision variants. The decision is monkeypatched; `os.execvp`
+# CredentialDecision variants. The decision is monkeypatched; `subprocess.run`
 # is stubbed so a test never really re-execs the process.
 # --------------------------------------------------------------------------
 
@@ -168,8 +170,10 @@ def test_self_heal_fails_exits_three_and_writes_message(
     assert "secret absent and no wrapper" in capsys.readouterr().err
 
 
-def test_self_heal_reexecs_sets_sentinel_and_calls_execvp(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def test_self_heal_reexec_supervises_subprocess_and_propagates_output_and_exit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv(CREDENTIAL_REEXEC_SENTINEL, raising=False)
@@ -180,16 +184,99 @@ def test_self_heal_reexecs_sets_sentinel_and_calls_execvp(
     )
     recorded: dict[str, object] = {}
 
-    def _fake_execvp(file: str, args: list[str]) -> None:
-        recorded["file"] = file
+    def _fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
         recorded["args"] = args
+        recorded["kwargs"] = kwargs
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=17,
+            stdout=b'{"ok": false}\n',
+            stderr=b"wrapped cli stderr\n",
+        )
 
-    monkeypatch.setattr(os, "execvp", _fake_execvp)
+    monkeypatch.setattr(
+        os, "execvp", Mock(side_effect=AssertionError("blind execvp must not be used"))
+    )
+    monkeypatch.setattr(subprocess, "run", _fake_run)
     bootstrap_module = _import_bootstrap()
-    bootstrap_module._self_heal_credentials()  # type: ignore[attr-defined]  # noqa: SLF001
+    with pytest.raises(SystemExit) as excinfo:
+        bootstrap_module._self_heal_credentials()  # type: ignore[attr-defined]  # noqa: SLF001
     assert os.environ[CREDENTIAL_REEXEC_SENTINEL] == "1"
-    assert recorded["file"] == "/usr/local/bin/with-livespec-env.sh"
     assert recorded["args"] == list(reexec_argv)
+    assert recorded["kwargs"] == {"capture_output": True, "check": False}
+    assert excinfo.value.code == 17
+    captured = capsys.readouterr()
+    assert captured.out == '{"ok": false}\n'
+    assert "wrapped cli stderr" in captured.err
+    assert "credential_wrapper could not run" not in captured.err
+
+
+def test_self_heal_reexec_structural_wrapper_failure_prints_clean_fail_message(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv(CREDENTIAL_REEXEC_SENTINEL, raising=False)
+    reexec_argv = ("/usr/local/bin/with-livespec-env.sh", "--", "/usr/bin/python3", "next.py")
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        '{"credential_wrapper": ["/usr/local/bin/with-livespec-env.sh", "--"]}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "livespec_runtime.credentials.decide_credentials",
+        lambda **_kwargs: Reexec(argv=reexec_argv),
+    )
+
+    def _fake_run(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=1,
+            stdout=b"",
+            stderr=b"sudo: The 'no new privileges' flag is set\n",
+        )
+
+    monkeypatch.setattr(
+        os, "execvp", Mock(side_effect=AssertionError("blind execvp must not be used"))
+    )
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    bootstrap_module = _import_bootstrap()
+    with pytest.raises(SystemExit) as excinfo:
+        bootstrap_module._self_heal_credentials()  # type: ignore[attr-defined]  # noqa: SLF001
+    assert excinfo.value.code == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "credential_wrapper could not run in this environment" in captured.err
+    assert "sudo:" not in captured.err
+
+
+def test_self_heal_reexec_zero_exit_with_empty_output_exits_zero_without_hint(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv(CREDENTIAL_REEXEC_SENTINEL, raising=False)
+    reexec_argv = ("/usr/local/bin/with-livespec-env.sh", "--", "/usr/bin/python3", "next.py")
+    monkeypatch.setattr(
+        "livespec_runtime.credentials.decide_credentials",
+        lambda **_kwargs: Reexec(argv=reexec_argv),
+    )
+
+    def _fake_run(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(
+        os, "execvp", Mock(side_effect=AssertionError("blind execvp must not be used"))
+    )
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    bootstrap_module = _import_bootstrap()
+    with pytest.raises(SystemExit) as excinfo:
+        bootstrap_module._self_heal_credentials()  # type: ignore[attr-defined]  # noqa: SLF001
+    assert excinfo.value.code == 0
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "credential_wrapper could not run" not in captured.err
 
 
 def test_self_heal_threads_the_required_override_into_the_decision(
