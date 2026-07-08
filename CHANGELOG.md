@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.6...v0.13.7) (2026-07-08)
+
+
+### Bug Fixes
+
+* supervise credential wrapper reexec ([e0b8a5b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e0b8a5b4fb56f561923e9df31e388903a0cfcf51))
+
 ## [0.13.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.5...v0.13.6) (2026-07-08)
 
 
