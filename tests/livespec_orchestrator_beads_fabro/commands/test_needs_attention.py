@@ -550,6 +550,19 @@ def test_resolve_spec_next_command_none_when_core_unresolvable(tmp_path) -> None
     assert _resolve_spec_next_command(project_root=project, bases=_empty_bases(tmp_path)) is None
 
 
+def test_resolve_spec_next_command_uses_absolute_config_without_core(tmp_path) -> None:
+    project = tmp_path / "governed"
+    project.mkdir()
+    _ = (project / ".livespec.jsonc").write_text(
+        '{"spec_clis": {"next": ["python3", "/portable/core/next.py"]}}',
+        encoding="utf-8",
+    )
+
+    command = _resolve_spec_next_command(project_root=project, bases=_empty_bases(tmp_path))
+
+    assert command == ["python3", "/portable/core/next.py"]
+
+
 def test_resolve_spec_next_command_substitutes_default_template(tmp_path) -> None:
     workspace = tmp_path / "ws"
     sibling = _plant_next(workspace / "livespec" / ".claude-plugin")
