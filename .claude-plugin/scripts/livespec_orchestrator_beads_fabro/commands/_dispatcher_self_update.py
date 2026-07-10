@@ -70,7 +70,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
-from typing import Any, Final, Literal, cast
+from typing import Any, Final, cast
 
 __all__: list[str] = [
     "DISPATCHER_SCRIPT_PREFIXES",
@@ -119,7 +119,11 @@ _DISPATCHER_SCRIPT_PATTERNS: tuple[str, ...] = (
 SELF_UPDATE_BREACH_CLASS = "self-update-canary-failed"
 
 
-CanaryVerdictValue = Literal["pass", "fail"]
+@dataclass(frozen=True, kw_only=True, slots=True)
+class CanaryVerdictValue:
+    """Enum-like verdict value without subclassing."""
+
+    value: str
 
 
 class CanaryVerdict:
@@ -133,8 +137,8 @@ class CanaryVerdict:
     safe; keep the last-known-good pinned copy and ALARM.
     """
 
-    PASS: Final = "pass"  # noqa: S105 - canary verdict label, not a secret value
-    FAIL: Final = "fail"
+    PASS: Final = CanaryVerdictValue(value="pass")
+    FAIL: Final = CanaryVerdictValue(value="fail")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -271,7 +275,7 @@ def promotion_decision(*, verdict: CanaryVerdictValue) -> PromotionDecision:
     human sees the refused self-update. The reason is a leak-free scalar
     for the journal / alarm body.
     """
-    if verdict == CanaryVerdict.PASS:
+    if verdict is CanaryVerdict.PASS:
         return PromotionDecision(
             promote=True,
             alarm=False,

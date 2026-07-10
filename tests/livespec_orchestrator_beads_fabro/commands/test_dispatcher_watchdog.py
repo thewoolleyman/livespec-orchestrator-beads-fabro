@@ -276,6 +276,8 @@ def _sample(*, epoch: float | None, observed_at: float) -> LivenessSample:
 
 
 def test_decide_stall_continues_when_progress_is_made() -> None:
+    assert StallVerdict.CONTINUE.value == "continue"
+    assert StallVerdict.STALLED.value == "stalled-no-progress"
     # The event timestamp advanced across the window -> healthy -> CONTINUE.
     samples = (
         _sample(epoch=100.0, observed_at=0.0),

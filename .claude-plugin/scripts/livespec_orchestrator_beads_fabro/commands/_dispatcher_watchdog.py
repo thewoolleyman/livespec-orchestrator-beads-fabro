@@ -56,7 +56,7 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Final, Literal, Protocol, cast
+from typing import Any, Final, Protocol, cast
 
 __all__: list[str] = [
     "DEFAULT_STALL_SECONDS",
@@ -137,7 +137,11 @@ class LivenessProbe(Protocol):
         ...
 
 
-StallVerdictValue = Literal["continue", "stalled-no-progress"]
+@dataclass(frozen=True, kw_only=True, slots=True)
+class StallVerdictValue:
+    """Enum-like watchdog verdict value without subclassing."""
+
+    value: str
 
 
 class StallVerdict:
@@ -150,8 +154,8 @@ class StallVerdict:
     for the FULL stall window: a confirmed deadlock, cancel the run.
     """
 
-    CONTINUE: Final = "continue"
-    STALLED: Final = "stalled-no-progress"
+    CONTINUE: Final = StallVerdictValue(value="continue")
+    STALLED: Final = StallVerdictValue(value="stalled-no-progress")
 
 
 def resolve_stall_seconds(*, environ: dict[str, str] | None = None) -> float:
