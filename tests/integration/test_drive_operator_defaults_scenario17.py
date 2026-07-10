@@ -30,7 +30,7 @@ def test_omitted_repo_resolves_to_the_current_working_directory(
     monkeypatch.chdir(tmp_path)
     runner = _Runner(results=[_ok([{"status": "green"}])])
 
-    exit_code = main(["--action", "impl:bd-ib-123"], runner=runner)
+    exit_code = main(argv=["--action", "impl:bd-ib-123"], runner=runner)
 
     assert exit_code == 0
     assert runner.calls[0][4] == str(tmp_path)
@@ -47,7 +47,7 @@ def test_explicit_repo_overrides_the_cwd_default(
     monkeypatch.chdir(cwd)
     runner = _Runner(results=[_ok([{"status": "green"}])])
 
-    exit_code = main(["--repo", str(override), "--action", "impl:bd-ib-123"], runner=runner)
+    exit_code = main(argv=["--repo", str(override), "--action", "impl:bd-ib-123"], runner=runner)
 
     assert exit_code == 0
     assert runner.calls[0][4] == str(override)
@@ -59,7 +59,7 @@ def test_unresolvable_repo_is_a_precondition_error_naming_the_path(
 ) -> None:
     missing = tmp_path / "does-not-exist"
 
-    exit_code = main(["--repo", str(missing), "--action", "impl:bd-ib-123", "--json"])
+    exit_code = main(argv=["--repo", str(missing), "--action", "impl:bd-ib-123", "--json"])
 
     assert exit_code == 3
     err = capsys.readouterr().err
@@ -74,7 +74,7 @@ def test_markdown_is_default_and_json_is_explicit(
     repo.mkdir()
 
     exit_code = main(
-        ["--repo", str(repo), "--action", "impl:bd-ib-123"],
+        argv=["--repo", str(repo), "--action", "impl:bd-ib-123"],
         runner=_Runner(results=[_ok([{"status": "green"}])]),
     )
 
@@ -84,7 +84,7 @@ def test_markdown_is_default_and_json_is_explicit(
     assert "status: **green**" in out
 
     exit_code = main(
-        ["--repo", str(repo), "--action", "impl:bd-ib-123", "--json"],
+        argv=["--repo", str(repo), "--action", "impl:bd-ib-123", "--json"],
         runner=_Runner(results=[_ok([{"status": "green"}])]),
     )
 

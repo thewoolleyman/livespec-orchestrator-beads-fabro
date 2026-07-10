@@ -37,12 +37,12 @@ _TOKEN_PATTERN = re.compile(
 def _strip_line_comments(*, text: str) -> str:
     """Remove `//` line comments while preserving any `//` inside JSON strings."""
 
-    def _replace(match: re.Match[str]) -> str:
+    def _replace(*, match: re.Match[str]) -> str:
         if match.group("string") is not None:
             return match.group("string")
         return ""
 
-    return _TOKEN_PATTERN.sub(_replace, text)
+    return _TOKEN_PATTERN.sub(lambda match: _replace(match=match), text)
 
 
 def loads(*, text: str) -> Any:

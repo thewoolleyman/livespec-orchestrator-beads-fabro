@@ -53,13 +53,13 @@ from livespec_orchestrator_beads_fabro.spec_reader import (
 # test pins the vendored copy to its core source so the derivation
 # can never silently drift between repos. `RuleMatch` is re-exported
 # so existing importers of `detect_impl_gaps.RuleMatch` keep working.
-__all__ = ["RuleMatch", "detect_rules", "main"]
+__all__: list[str] = ["RuleMatch", "detect_rules", "main"]
 
 _EXIT_USAGE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 3
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(*, argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="detect-impl-gaps")
     _ = parser.add_argument(
         "--spec-target",

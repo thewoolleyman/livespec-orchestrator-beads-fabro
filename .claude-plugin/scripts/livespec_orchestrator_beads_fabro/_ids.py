@@ -28,6 +28,8 @@ backend-coupled PREFIX minting (the decoupled issue-prefix carried on
 
 from livespec_runtime.work_items.reduce import random_id_suffix
 
+__all__: list[str] = ["new_work_item_id"]
+
 
 def new_work_item_id(*, prefix: str) -> str:
     """Return a fresh `<prefix>-XXXXXX` work-item identifier.

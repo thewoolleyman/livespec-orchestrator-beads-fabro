@@ -29,7 +29,7 @@ __all__: list[str] = ["main"]
 _EXIT_MINT_FAILED = 3
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(*, argv: list[str] | None = None) -> int:
     """Mint a GitHub App installation token from env; print it to stdout.
 
     `argv` is accepted for parity with the other command mains (no flags

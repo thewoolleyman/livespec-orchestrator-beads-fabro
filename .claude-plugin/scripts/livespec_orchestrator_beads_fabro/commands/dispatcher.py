@@ -154,7 +154,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from time import sleep as _real_sleep
-from typing import cast
+from typing import Protocol, cast
 
 from livespec_runtime.cross_repo.types import CrossRepoManifest
 from livespec_runtime.github_auth.config import load_github_app_config
@@ -343,7 +343,7 @@ _FLEET_MANIFEST_FETCH_TIMEOUT_SECONDS = 60.0
 _SIBLING_CLONES_ROOT = "/workspace/siblings"
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(*, argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.subcommand == "ledger-check":
@@ -651,6 +651,10 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
     return exit_code
 
 
+class _ReflectorSpawn(Protocol):
+    def __call__(self, *, body: Callable[[], None]) -> None: ...
+
+
 def _reflector_oob_after_verdict(  # noqa: PLR0913 — kw-only fail-open stage; seams are independently injectable.
     *,
     args: argparse.Namespace,
@@ -659,7 +663,7 @@ def _reflector_oob_after_verdict(  # noqa: PLR0913 — kw-only fail-open stage; 
     runner: CommandRunner | None = None,
     token_supplier: Callable[[], str] | None = None,
     lessons_proposer: LessonsProposer | None = None,
-    spawn: Callable[[Callable[[], None]], None] | None = None,
+    spawn: _ReflectorSpawn | None = None,
 ) -> None:
     """Fire the out-of-band LLM reflector as the 5th post-verdict stage (29f.4).
 
@@ -707,10 +711,10 @@ def _reflector_oob_after_verdict(  # noqa: PLR0913 — kw-only fail-open stage; 
         )
 
     resolved_spawn = spawn if spawn is not None else _default_reflector_spawn()
-    resolved_spawn(_body)
+    resolved_spawn(body=_body)
 
 
-def _default_reflector_spawn() -> Callable[[Callable[[], None]], None]:
+def _default_reflector_spawn() -> _ReflectorSpawn:
     """Pick the daemon-thread spawn for the OOB reflector by lever state (29f.8 gap 2).
 
     OFF (default): the fire-and-forget daemon — the body short-circuits, so it
@@ -723,7 +727,7 @@ def _default_reflector_spawn() -> Callable[[Callable[[], None]], None]:
         return _spawn_daemon
     budget = resolve_reflector_budget_seconds(environ=dict(os.environ))
     join_timeout = budget + _REFLECTOR_JOIN_MARGIN
-    return lambda body: _spawn_daemon_joining(body, join_timeout=join_timeout)
+    return lambda body: _spawn_daemon_joining(body=body, join_timeout=join_timeout)
 
 
 # Margin added to the stage budget for the lever-armed JOIN, so the join waits
@@ -732,13 +736,13 @@ def _default_reflector_spawn() -> Callable[[Callable[[], None]], None]:
 _REFLECTOR_JOIN_MARGIN = 30.0
 
 
-def _spawn_daemon(body: Callable[[], None]) -> None:
+def _spawn_daemon(*, body: Callable[[], None]) -> None:
     """Run `body` in a fire-and-forget daemon thread (never blocks the loop)."""
     thread = threading.Thread(target=body, name="reflector-oob", daemon=True)
     thread.start()
 
 
-def _spawn_daemon_joining(body: Callable[[], None], *, join_timeout: float) -> None:
+def _spawn_daemon_joining(*, body: Callable[[], None], join_timeout: float) -> None:
     """Run `body` in a daemon thread and JOIN it up to `join_timeout` (29f.8 gap 2).
 
     The thread stays a daemon (a process exit still reaps it), but the JOIN

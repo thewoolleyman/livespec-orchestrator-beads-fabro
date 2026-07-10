@@ -69,7 +69,7 @@ _DEFAULT_LIMIT = 5
 _DEFAULT_OFFSET = 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(*, argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="next")
     _ = parser.add_argument("--json", dest="as_json", action="store_true")
     _ = parser.add_argument("--limit", dest="limit_raw", default=str(_DEFAULT_LIMIT))

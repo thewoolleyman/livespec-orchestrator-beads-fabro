@@ -19,7 +19,7 @@ def test_scenario42_json_lists_unarchived_threads_in_lexicographic_order(
     _ = (plan / "archive" / "old-topic").mkdir(parents=True)
     before = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*"))
 
-    rc = main(["--json", "--project-root", str(tmp_path)])
+    rc = main(argv=["--json", "--project-root", str(tmp_path)])
 
     after = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*"))
     captured = capsys.readouterr()
@@ -34,7 +34,7 @@ def test_scenario42_missing_plan_directory_degrades_to_empty_json(
     tmp_path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    rc = main(["--json", "--project-root", str(tmp_path)])
+    rc = main(argv=["--json", "--project-root", str(tmp_path)])
 
     captured = capsys.readouterr()
     assert rc == 0
@@ -49,7 +49,7 @@ def test_human_output_emits_one_topic_per_line(
     _ = (plan / "beta-topic").mkdir(parents=True)
     _ = (plan / "alpha-topic").mkdir()
 
-    rc = main(["--project-root", str(tmp_path)])
+    rc = main(argv=["--project-root", str(tmp_path)])
 
     captured = capsys.readouterr()
     assert rc == 0

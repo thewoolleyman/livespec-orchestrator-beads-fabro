@@ -400,7 +400,7 @@ def test_main_run_impl_renders_markdown_with_dispatcher_exit_code(
     repo.mkdir()
     runner = _Runner(results=[_ok([{"work_item_id": "bd-ib-123", "status": "green"}])])
 
-    exit_code = main(["--repo", str(repo), "--action", "impl:bd-ib-123"], runner=runner)
+    exit_code = main(argv=["--repo", str(repo), "--action", "impl:bd-ib-123"], runner=runner)
 
     assert exit_code == 0
     out = capsys.readouterr().out

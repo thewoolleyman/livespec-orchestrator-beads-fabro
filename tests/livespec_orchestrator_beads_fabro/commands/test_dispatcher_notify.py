@@ -409,7 +409,7 @@ def test_dispatch_failed_outcome_journals_notify_and_keeps_exit_code(
     )
     monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={item.id: failed}))
     exit_code = dispatcher.main(
-        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
     assert exit_code == 1
     _ = capsys.readouterr()
@@ -447,7 +447,7 @@ def test_dispatch_failed_exit_code_unchanged_when_notify_raises(
     )
     monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={item.id: failed}))
     exit_code = dispatcher.main(
-        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
     assert exit_code == 1
     _ = capsys.readouterr()
@@ -479,7 +479,7 @@ def test_loop_non_green_wave_alarms_with_loop_summary(
     )
     monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={item.id: blocked}))
     exit_code = dispatcher.main(
-        [
+        argv=[
             "loop",
             "--repo",
             str(repo),
@@ -516,7 +516,7 @@ def test_loop_all_green_wave_fires_no_alarm(
         _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)}),
     )
     exit_code = dispatcher.main(
-        [
+        argv=[
             "loop",
             "--repo",
             str(repo),

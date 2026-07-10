@@ -237,7 +237,7 @@ def test_build_envelope_offset_past_total_returns_empty_with_has_more_false() ->
 def test_main_empty_store_emits_empty_envelope_json(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    rc = main(["--json"])
+    rc = main(argv=["--json"])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -253,7 +253,7 @@ def test_main_empty_store_emits_empty_envelope_json(
 def test_main_empty_store_human_output_says_no_work(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    rc = main([])
+    rc = main(argv=[])
     captured = capsys.readouterr()
     assert rc == 0
     # Human-readable no-work signal — no JSON, no legacy "none" action.
@@ -264,7 +264,7 @@ def test_main_json_output_envelope_shape(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _seed(_item(id_="li-x"))
-    rc = main(["--json"])
+    rc = main(argv=["--json"])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -285,7 +285,7 @@ def test_main_human_output_lists_each_candidate(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _seed(_item(id_="li-x"))
-    rc = main([])
+    rc = main(argv=[])
     captured = capsys.readouterr()
     assert rc == 0
     assert "li-x" in captured.out
@@ -297,7 +297,7 @@ def test_main_limit_applied_in_json(
 ) -> None:
     for i in range(7):
         _seed(_item(id_=f"li-{i:02d}", rank=f"a{i}"))
-    rc = main(["--json", "--limit", "3"])
+    rc = main(argv=["--json", "--limit", "3"])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -312,7 +312,7 @@ def test_main_offset_applied_in_json(
 ) -> None:
     for i in range(5):
         _seed(_item(id_=f"li-{i:02d}", rank=f"a{i}"))
-    rc = main(["--json", "--offset", "2", "--limit", "2"])
+    rc = main(argv=["--json", "--offset", "2", "--limit", "2"])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -323,7 +323,7 @@ def test_main_offset_applied_in_json(
 def test_main_invalid_limit_zero_exits_2(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    rc = main(["--limit", "0"])
+    rc = main(argv=["--limit", "0"])
     captured = capsys.readouterr()
     assert rc == 2
     assert "limit" in captured.err.lower()
@@ -332,7 +332,7 @@ def test_main_invalid_limit_zero_exits_2(
 def test_main_invalid_limit_negative_exits_2(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    rc = main(["--limit", "-1"])
+    rc = main(argv=["--limit", "-1"])
     captured = capsys.readouterr()
     assert rc == 2
     assert "limit" in captured.err.lower()
@@ -341,7 +341,7 @@ def test_main_invalid_limit_negative_exits_2(
 def test_main_invalid_limit_nonint_exits_2(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    rc = main(["--limit", "abc"])
+    rc = main(argv=["--limit", "abc"])
     captured = capsys.readouterr()
     assert rc == 2
     assert "limit" in captured.err.lower()
@@ -350,7 +350,7 @@ def test_main_invalid_limit_nonint_exits_2(
 def test_main_invalid_offset_negative_exits_2(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    rc = main(["--offset", "-1"])
+    rc = main(argv=["--offset", "-1"])
     captured = capsys.readouterr()
     assert rc == 2
     assert "offset" in captured.err.lower()
@@ -359,7 +359,7 @@ def test_main_invalid_offset_negative_exits_2(
 def test_main_invalid_offset_nonint_exits_2(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    rc = main(["--offset", "xyz"])
+    rc = main(argv=["--offset", "xyz"])
     captured = capsys.readouterr()
     assert rc == 2
     assert "offset" in captured.err.lower()
@@ -370,7 +370,7 @@ def test_main_offset_zero_is_valid(
 ) -> None:
     """`--offset 0` is the documented default; it MUST be accepted."""
     _seed(_item(id_="li-x"))
-    rc = main(["--json", "--offset", "0"])
+    rc = main(argv=["--json", "--offset", "0"])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)

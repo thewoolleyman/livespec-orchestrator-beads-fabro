@@ -96,7 +96,7 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient, BeadsRecord
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
-__all__ = [
+__all__: list[str] = [
     "ALLOWED_BEADS_STATUSES",
     "BeadsWorkItemStore",
     "WorkItemComment",

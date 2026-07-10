@@ -1,7 +1,7 @@
 """Integration-tier acceptance for the Dispatcher admission + acceptance valves.
 
 Binds SPECIFICATION/scenarios.md Scenarios 22-25 through the real
-`dispatcher.main([...])` CLI + the real store/client seam against the
+`dispatcher.main(argv=[...])` CLI + the real store/client seam against the
 in-memory `FakeBeadsClient` (the hermetic CI backend), with `run_dispatch`
 replaced by a recording stand-in so no fabro sandbox launches:
 
@@ -169,7 +169,7 @@ def test_loop_admits_highest_rank_up_to_wip_cap(
     monkeypatch.setattr(dispatcher, "run_dispatch", _green_recording(calls))
 
     exit_code = main(
-        [
+        argv=[
             "loop",
             "--repo",
             str(repo),
@@ -210,7 +210,7 @@ def test_loop_holds_manual_admission_item(
     monkeypatch.setattr(dispatcher, "run_dispatch", _green_recording(calls))
 
     exit_code = main(
-        [
+        argv=[
             "loop",
             "--repo",
             str(repo),
@@ -254,7 +254,7 @@ def test_complete_merges_on_green_into_acceptance(
     monkeypatch.setattr(dispatcher, "run_dispatch", _green_recording([]))
 
     exit_code = main(
-        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
 
     assert exit_code == 0
@@ -286,7 +286,7 @@ def test_accept_ai_then_human_parks_until_human(
     monkeypatch.setattr(dispatcher, "run_dispatch", _green_recording([]))
 
     exit_code = main(
-        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
 
     assert exit_code == 0
@@ -305,7 +305,7 @@ def test_accept_ai_only_confirms_to_done(
     monkeypatch.setattr(dispatcher, "run_dispatch", _green_recording([]))
 
     exit_code = main(
-        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
 
     assert exit_code == 0

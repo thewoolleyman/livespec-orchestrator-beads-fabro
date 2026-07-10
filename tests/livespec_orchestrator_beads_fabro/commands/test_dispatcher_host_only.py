@@ -225,7 +225,7 @@ def test_dispatch_refuses_host_only_item_without_launching_fabro(
     recording = _RecordingRunDispatch()
     monkeypatch.setattr(dispatcher, "run_dispatch", recording)
     exit_code = main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(repo),
@@ -258,7 +258,7 @@ def test_dispatch_journals_host_only_refusal(
     recording = _RecordingRunDispatch()
     monkeypatch.setattr(dispatcher, "run_dispatch", recording)
     exit_code = main(
-        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
     assert exit_code == 1
     assert recording.calls == []
@@ -282,7 +282,7 @@ def test_dispatch_does_not_refuse_ordinary_item(
     recording = _RecordingRunDispatch()
     monkeypatch.setattr(dispatcher, "run_dispatch", recording)
     exit_code = main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(repo),

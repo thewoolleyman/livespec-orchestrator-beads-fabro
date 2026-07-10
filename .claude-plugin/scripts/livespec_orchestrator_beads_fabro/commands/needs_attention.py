@@ -42,7 +42,7 @@ __all__: list[str] = [
 _PLUGIN_NAME = "livespec-orchestrator-beads-fabro"
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(*, argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="needs-attention")
     _ = parser.add_argument("--json", dest="as_json", action="store_true")
     _ = parser.add_argument("--project-root", dest="project_root", default=None)
@@ -213,7 +213,7 @@ def _spec_output_from_candidate(*, candidate: object, project_root: Path) -> Spe
         # (see `_plan_threads`) but names the ACTUAL ranked op — revise /
         # propose-change / critique / prune-history — never `next`, so a human
         # runs the recommended spec action directly instead of re-ranking.
-        command=f"codex exec livespec:{action} --project-root {_quote(project_root)}",
+        command=f"codex exec livespec:{action} --project-root {_quote(path=project_root)}",
     )
 
 
@@ -528,7 +528,7 @@ def _plan_threads(*, project_root: Path) -> list[PlanThreadOutput]:
             summary=f"Review plan thread {topic}.",
             command=(
                 f"codex exec {_PLUGIN_NAME}:plan "
-                f"--project-root {_quote(project_root)} {shlex.quote(topic)}"
+                f"--project-root {_quote(path=project_root)} {shlex.quote(topic)}"
             ),
         )
         for topic in list_plan_threads(project_root=project_root)
@@ -537,8 +537,8 @@ def _plan_threads(*, project_root: Path) -> list[PlanThreadOutput]:
 
 def _drive_command(*, project_root: Path, action_id: str) -> str:
     return (
-        f"python3 {_quote(_wrapper_path(name='drive.py'))} "
-        f"--repo {_quote(project_root)} --action {shlex.quote(action_id)} --json"
+        f"python3 {_quote(path=_wrapper_path(name='drive.py'))} "
+        f"--repo {_quote(path=project_root)} --action {shlex.quote(action_id)} --json"
     )
 
 
@@ -546,5 +546,5 @@ def _wrapper_path(*, name: str) -> Path:
     return Path(__file__).parents[2] / "bin" / name
 
 
-def _quote(path: Path) -> str:
+def _quote(*, path: Path) -> str:
     return shlex.quote(str(path))

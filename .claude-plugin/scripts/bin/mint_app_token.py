@@ -3,6 +3,8 @@
 
 from _bootstrap import bootstrap
 
+__all__: list[str] = []
+
 # A GitHub App token mint needs the App env ALONE — never the Dolt tenant
 # secret (the entrypoint's github provisioning runs in contexts that do not
 # carry it). Self-heal still routes through the project's credential_wrapper.

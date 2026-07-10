@@ -412,7 +412,7 @@ def test_dispatch_gate_auto_normalizes_beads_native_open(
     journal = tmp_path / "journal.jsonl"
 
     exit_code = main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(tmp_path),
@@ -2123,9 +2123,9 @@ def test_ledger_check_clean_human_and_json(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    assert main(["ledger-check"]) == 0
+    assert main(argv=["ledger-check"]) == 0
     assert "(no ledger findings)" in capsys.readouterr().out
-    assert main(["ledger-check", "--project-root", str(tmp_path), "--json"]) == 0
+    assert main(argv=["ledger-check", "--project-root", str(tmp_path), "--json"]) == 0
     assert json.loads(capsys.readouterr().out) == []
 
 
@@ -2134,10 +2134,10 @@ def test_ledger_check_reports_findings(
     tmp_path: Path,
 ) -> None:
     append_work_item(path=_config(), item=_item(depends_on=("ghost-1",)))
-    assert main(["ledger-check", "--project-root", str(tmp_path)]) == 1
+    assert main(argv=["ledger-check", "--project-root", str(tmp_path)]) == 1
     out = capsys.readouterr().out
     assert "no-orphan-dependency" in out
-    assert main(["ledger-check", "--project-root", str(tmp_path), "--json"]) == 1
+    assert main(argv=["ledger-check", "--project-root", str(tmp_path), "--json"]) == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload[0]["check"] == "no-orphan-dependency"
     assert payload[0]["severity"] == "fail"
@@ -2154,11 +2154,11 @@ def test_spec_check_cli_skips_without_spec_tree(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    assert main(["spec-check"]) == 0
+    assert main(argv=["spec-check"]) == 0
     out = capsys.readouterr().out
     assert "SKIPPED" in out
     assert "no-stale-gap-tied" in out
-    assert main(["spec-check", "--project-root", str(tmp_path), "--json"]) == 0
+    assert main(argv=["spec-check", "--project-root", str(tmp_path), "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert {entry["severity"] for entry in payload} == {"skipped"}
 
@@ -2172,12 +2172,12 @@ def test_spec_check_cli_reports_findings(
         path=_config(),
         item=_item(id="g-stale", origin="gap-tied", gap_id="gap-gone1234"),
     )
-    assert main(["spec-check", "--project-root", str(tmp_path)]) == 1
+    assert main(argv=["spec-check", "--project-root", str(tmp_path)]) == 1
     out = capsys.readouterr().out
     assert "WARN  no-stale-gap-tied  g-stale" in out
     assert "FAIL  unresolved-spec-commitment  hint-filed" in out
     exit_code = main(
-        ["spec-check", "--project-root", str(tmp_path), "--spec-root", str(spec), "--json"]
+        argv=["spec-check", "--project-root", str(tmp_path), "--spec-root", str(spec), "--json"]
     )
     assert exit_code == 1
     payload = json.loads(capsys.readouterr().out)
@@ -2196,11 +2196,11 @@ def test_janitor_check_cli_skips_outside_git_repo(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    assert main(["janitor-check"]) == 0
+    assert main(argv=["janitor-check"]) == 0
     out = capsys.readouterr().out
     assert "SKIPPED" in out
     assert "no-stale-worktree" in out
-    assert main(["janitor-check", "--repo", str(tmp_path), "--json"]) == 0
+    assert main(argv=["janitor-check", "--repo", str(tmp_path), "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert {entry["severity"] for entry in payload} == {"skipped"}
 
@@ -2284,7 +2284,7 @@ def test_dispatch_green_closes_item_and_journals(
         lambda: str(tmp_path),
     )
     exit_code = main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(repo),
@@ -2351,7 +2351,7 @@ def test_dispatch_materializes_mode600_overlay_and_cleans_up(
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
     monkeypatch.setattr(dispatcher, "run_dispatch", fake)
     exit_code = main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(repo),
@@ -2401,7 +2401,7 @@ def test_dispatch_overlay_provisions_sibling_clones_for_fleet(
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
     monkeypatch.setattr(dispatcher, "run_dispatch", fake)
     exit_code = main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(repo),
@@ -2433,7 +2433,8 @@ def test_dispatch_green_without_sha_closes_without_audit(
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id, sha=None)})
     monkeypatch.setattr(dispatcher, "run_dispatch", fake)
     assert (
-        main(["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]) == 0
+        main(argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)])
+        == 0
     )
     stored = _stored()[item.id]
     assert (stored.status, stored.audit) == ("done", None)
@@ -2457,7 +2458,7 @@ def test_dispatch_failed_outcome_leaves_item_open(
     )
     monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={item.id: failed}))
     exit_code = main(
-        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
     assert exit_code == 1
     assert "failed at fabro-run" in capsys.readouterr().out
@@ -2474,7 +2475,7 @@ def test_dispatch_no_close_on_merge_flag(
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
     monkeypatch.setattr(dispatcher, "run_dispatch", fake)
     exit_code = main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(repo),
@@ -2504,11 +2505,12 @@ def test_dispatch_rejects_not_ready_item(
         _FakeRunDispatch(outcomes={}),
     )
     exit_code = main(
-        ["dispatch", "--repo", str(repo), "--item", "blocked-2", "--workflow", str(workflow)]
+        argv=["dispatch", "--repo", str(repo), "--item", "blocked-2", "--workflow", str(workflow)]
     )
     assert exit_code == 3
     assert (
-        main(["dispatch", "--repo", str(repo), "--item", "ghost", "--workflow", str(workflow)]) == 3
+        main(argv=["dispatch", "--repo", str(repo), "--item", "ghost", "--workflow", str(workflow)])
+        == 3
     )
 
 
@@ -2516,7 +2518,7 @@ def test_dispatch_precondition_failures(tmp_path: Path) -> None:
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     assert (
         main(
-            [
+            argv=[
                 "dispatch",
                 "--repo",
                 str(tmp_path / "nope"),
@@ -2530,7 +2532,7 @@ def test_dispatch_precondition_failures(tmp_path: Path) -> None:
     )
     assert (
         main(
-            [
+            argv=[
                 "dispatch",
                 "--repo",
                 str(repo),
@@ -2547,9 +2549,9 @@ def test_dispatch_precondition_failures(tmp_path: Path) -> None:
 def test_dispatch_bad_janitor_is_usage_error(tmp_path: Path) -> None:
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     base = ["dispatch", "--repo", str(repo), "--item", "x", "--workflow", str(workflow)]
-    assert main([*base, "--janitor", "not json"]) == 2
-    assert main([*base, "--janitor", '{"a": 1}']) == 2
-    assert main([*base, "--janitor", '["ok", 1]']) == 2
+    assert main(argv=[*base, "--janitor", "not json"]) == 2
+    assert main(argv=[*base, "--janitor", '{"a": 1}']) == 2
+    assert main(argv=[*base, "--janitor", '["ok", 1]']) == 2
 
 
 def test_dispatch_passes_custom_janitor_through(
@@ -2562,7 +2564,7 @@ def test_dispatch_passes_custom_janitor_through(
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
     monkeypatch.setattr(dispatcher, "run_dispatch", fake)
     exit_code = main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(repo),
@@ -2593,12 +2595,12 @@ def test_dispatch_ledger_gate_blocks_and_skip_flag_bypasses(
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
     monkeypatch.setattr(dispatcher, "run_dispatch", fake)
     base = ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
-    assert main(base) == 1
+    assert main(argv=base) == 1
     err = capsys.readouterr().err
     assert "pre-dispatch ledger checks failed" in err
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
     assert "ledger-check" in journal_text
-    assert main([*base, "--skip-ledger-check", "--no-close-on-merge"]) == 0
+    assert main(argv=[*base, "--skip-ledger-check", "--no-close-on-merge"]) == 0
 
 
 def test_dispatch_default_workflow_materializes_from_repo_fabro_tree(
@@ -2615,7 +2617,9 @@ def test_dispatch_default_workflow_materializes_from_repo_fabro_tree(
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
     monkeypatch.setattr(dispatcher, "run_dispatch", fake)
-    exit_code = main(["dispatch", "--repo", str(repo), "--item", item.id, "--no-close-on-merge"])
+    exit_code = main(
+        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--no-close-on-merge"]
+    )
     assert exit_code == 0
     plan = fake.seen[0]["plan"]
     assert isinstance(plan, DispatchPlan)
@@ -2649,7 +2653,7 @@ def test_dispatch_blocked_outcome_surfaces_and_leaves_item_open(
     )
     monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={item.id: blocked}))
     exit_code = main(
-        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
     assert exit_code == 1
     out = capsys.readouterr().out
@@ -2693,7 +2697,7 @@ def test_dispatch_fails_fast_when_oauth_token_env_is_absent_or_empty(
     )
     base = ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN")
-    assert main(base) == 1
+    assert main(argv=base) == 1
     out = capsys.readouterr().out
     assert "run-config-overlay" in out
     assert "GITHUB_APP_ID" in out
@@ -2712,7 +2716,7 @@ def test_dispatch_fails_fast_when_oauth_token_env_is_absent_or_empty(
     append_work_item(path=_config(), item=item2)
     base2 = ["dispatch", "--repo", str(repo), "--item", item2.id, "--workflow", str(workflow)]
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
-    assert main(base2) == 1
+    assert main(argv=base2) == 1
     out2 = capsys.readouterr().out
     assert "CLAUDE_CODE_OAUTH_TOKEN" in out2
     assert target_wrapper in out2
@@ -2747,7 +2751,7 @@ def test_dispatch_fails_closed_when_github_app_env_is_absent(
     monkeypatch.delenv("GITHUB_PRIVATE_KEY", raising=False)
     monkeypatch.setenv("LIVESPEC_FAMILY_GITHUB_TOKEN", "github_pat_retired")
     base = ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
-    assert main(base) == 1
+    assert main(argv=base) == 1
     out = capsys.readouterr().out
     assert "github-app-auth" in out
     assert "GITHUB_APP_ID" in out
@@ -2779,7 +2783,7 @@ def test_dispatch_routes_a_mint_failure_as_overlay_refusal(
 
     monkeypatch.setattr(dispatcher, "_github_token_supplier", lambda: _raising_token)
     base = ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
-    assert main(base) == 1
+    assert main(argv=base) == 1
     out = capsys.readouterr().out
     assert "run-config-overlay" in out
     assert "the App API rejected the JWT" in out
@@ -2801,7 +2805,9 @@ def test_dispatch_fails_when_workflow_config_is_not_materializable(
     item = _item()
     append_work_item(path=_config(), item=item)
     monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={}))
-    exit_code = main(["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(bare)])
+    exit_code = main(
+        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(bare)]
+    )
     assert exit_code == 1
     out = capsys.readouterr().out
     assert "run-config-overlay" in out
@@ -2882,7 +2888,7 @@ def test_dispatch_proceeds_with_empty_siblings_when_fleet_manifest_is_unfetchabl
         lambda: None,
     )
     exit_code = main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(repo),
@@ -2916,7 +2922,7 @@ def test_dispatch_fails_fast_when_fleet_manifest_is_malformed(
         lambda: "not a fleet manifest {{",
     )
     exit_code = main(
-        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
     assert exit_code == 1
     out = capsys.readouterr().out
@@ -2936,7 +2942,7 @@ def test_dispatch_custom_journal_path(
     monkeypatch.setattr(dispatcher, "run_dispatch", fake)
     journal_path = tmp_path / "elsewhere.jsonl"
     exit_code = main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(repo),
@@ -2959,7 +2965,9 @@ def test_loop_shadow_requires_explicit_items(
 ) -> None:
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     append_work_item(path=_config(), item=_item())
-    exit_code = main(["loop", "--repo", str(repo), "--budget", "5", "--workflow", str(workflow)])
+    exit_code = main(
+        argv=["loop", "--repo", str(repo), "--budget", "5", "--workflow", str(workflow)]
+    )
     assert exit_code == 0
     assert "(nothing dispatched)" in capsys.readouterr().out
 
@@ -2977,7 +2985,7 @@ def test_loop_shadow_dispatches_named_items_within_budget(
     fake = _FakeRunDispatch(outcomes={"a-1": _green_outcome(item_id="a-1")})
     monkeypatch.setattr(dispatcher, "run_dispatch", fake)
     exit_code = main(
-        [
+        argv=[
             "loop",
             "--repo",
             str(repo),
@@ -3026,7 +3034,7 @@ def test_loop_autonomous_parallel_mixed_outcomes(
     fake = _FakeRunDispatch(outcomes={"a-1": _green_outcome(item_id="a-1"), "b-2": failed})
     monkeypatch.setattr(dispatcher, "run_dispatch", fake)
     exit_code = main(
-        [
+        argv=[
             "loop",
             "--repo",
             str(repo),
@@ -3051,13 +3059,21 @@ def test_loop_precondition_usage_and_ledger_gate(
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     assert (
         main(
-            ["loop", "--repo", str(tmp_path / "nope"), "--budget", "1", "--workflow", str(workflow)]
+            argv=[
+                "loop",
+                "--repo",
+                str(tmp_path / "nope"),
+                "--budget",
+                "1",
+                "--workflow",
+                str(workflow),
+            ]
         )
         == 3
     )
     assert (
         main(
-            [
+            argv=[
                 "loop",
                 "--repo",
                 str(repo),
@@ -3072,7 +3088,9 @@ def test_loop_precondition_usage_and_ledger_gate(
         == 2
     )
     append_work_item(path=_config(), item=_item(id="orphaned-9", depends_on=("ghost-7",)))
-    assert main(["loop", "--repo", str(repo), "--budget", "1", "--workflow", str(workflow)]) == 1
+    assert (
+        main(argv=["loop", "--repo", str(repo), "--budget", "1", "--workflow", str(workflow)]) == 1
+    )
 
 
 def test_loop_parallel_floor_of_one(
@@ -3085,7 +3103,7 @@ def test_loop_parallel_floor_of_one(
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
     monkeypatch.setattr(dispatcher, "run_dispatch", fake)
     exit_code = main(
-        [
+        argv=[
             "loop",
             "--repo",
             str(repo),
@@ -3258,7 +3276,7 @@ def test_dispatch_goal_text_carries_ledger_comments(
         lambda: str(tmp_path),
     )
     exit_code = main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(repo),
@@ -3298,7 +3316,7 @@ def test_dispatch_fails_at_ledger_comments_stage_when_read_raises(
         _boom,
     )
     exit_code = main(
-        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
     assert exit_code == 1
     out = capsys.readouterr().out
@@ -3320,7 +3338,7 @@ def test_dispatch_warns_on_oversized_item_without_blocking(
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
     monkeypatch.setattr(dispatcher, "run_dispatch", fake)
     exit_code = main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(repo),
@@ -3363,7 +3381,7 @@ def test_loop_runs_reflection_stage_after_dispatch(
     fake = _FakeRunDispatch(outcomes={"a-1": _green_outcome(item_id="a-1")})
     monkeypatch.setattr(dispatcher, "run_dispatch", fake)
     exit_code = main(
-        [
+        argv=[
             "loop",
             "--repo",
             str(repo),
@@ -3414,7 +3432,7 @@ def test_loop_reflection_failure_never_changes_verdict(
     monkeypatch.setattr(dispatcher, "reflect", _boom)
     with pytest.raises(RuntimeError, match="reflection blew up"):
         _ = main(
-            [
+            argv=[
                 "loop",
                 "--repo",
                 str(repo),
@@ -3441,7 +3459,7 @@ def test_dispatch_runs_reflection_stage(
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
     monkeypatch.setattr(dispatcher, "run_dispatch", fake)
     exit_code = main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(repo),

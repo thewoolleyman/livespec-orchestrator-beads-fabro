@@ -54,7 +54,7 @@ _EXIT_PRECONDITION_ERROR = 3
 _EXIT_VALIDATION_ERROR = 4
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(*, argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     project_root = Path(args.project_root) if args.project_root is not None else Path.cwd()

@@ -10,3 +10,5 @@ Per SPECIFICATION/constraints.md,
 thin-transport SKILL.md files MUST NOT accrete orchestration logic — all
 behavior lives here in the Python module.
 """
+
+__all__: list[str] = []

@@ -21,6 +21,8 @@ import sys
 from pathlib import Path
 from typing import cast
 
+__all__: list[str] = ["bootstrap"]
+
 # The tenant secret every beads-backed orchestrator CLI needs at call time —
 # the DEFAULT `required` set; wrappers with a different secret surface pass
 # their own (see `bootstrap`).

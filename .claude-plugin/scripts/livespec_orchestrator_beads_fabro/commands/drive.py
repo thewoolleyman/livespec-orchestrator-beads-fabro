@@ -72,7 +72,7 @@ def run_action(
         }
     work_item_ref = action_id.removeprefix("impl:")
     resolved_runner = _SubprocessRunner() if runner is None else runner
-    resolved_dispatcher = _resolve_dispatcher_bin(dispatcher_bin)
+    resolved_dispatcher = _resolve_dispatcher_bin(dispatcher_bin=dispatcher_bin)
     argv = build_dispatcher_argv(
         repo=repo,
         dispatcher_bin=resolved_dispatcher,
@@ -381,7 +381,7 @@ def build_dispatcher_argv(
     )
 
 
-def main(argv: list[str] | None = None, *, runner: CommandRunner | None = None) -> int:
+def main(*, argv: list[str] | None = None, runner: CommandRunner | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.retired_subcommand is not None:
@@ -483,7 +483,7 @@ def _run_markdown(*, payload: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _resolve_dispatcher_bin(dispatcher_bin: Path | None) -> Path:
+def _resolve_dispatcher_bin(*, dispatcher_bin: Path | None) -> Path:
     if dispatcher_bin is not None:
         return dispatcher_bin
     return _scripts_root() / "bin" / "dispatcher.py"

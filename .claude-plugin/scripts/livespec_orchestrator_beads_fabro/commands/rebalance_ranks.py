@@ -85,7 +85,7 @@ def legacy_seed(*, rows: list[LegacySeedRow]) -> list[tuple[str, str]]:
     return [(row.work_item_id, key) for row, key in zip(ordered, keys, strict=True)]
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(*, argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="rebalance-ranks")
     _ = parser.add_argument("--work-items-path", dest="work_items_path", default=None)
     _ = parser.add_argument("--project-root", dest="project_root", default=None)

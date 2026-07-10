@@ -52,10 +52,12 @@ from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
 from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
+__all__: list[str] = ["main"]
+
 FilterChoice = Literal["all", "gap-tied", "freeform", "blocked", "ready", "closed"]
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(*, argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="list-work-items")
     _ = parser.add_argument(
         "--filter",

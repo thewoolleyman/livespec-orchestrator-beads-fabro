@@ -110,7 +110,7 @@ def test_loop_refuses_before_admission_on_unresolvable_fabro(
     needed on `tmp_path`; the explicit flag overrides the hermetic env stub.
     """
     rc = main(
-        [
+        argv=[
             "loop",
             "--repo",
             str(tmp_path),
@@ -128,7 +128,7 @@ def test_loop_refuses_before_admission_on_unresolvable_fabro(
 def test_dispatch_refuses_before_admission_on_unresolvable_fabro(tmp_path: Path) -> None:
     """`dispatch` with an unresolvable explicit --fabro-bin refuses at preflight (exit 3)."""
     rc = main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(tmp_path),

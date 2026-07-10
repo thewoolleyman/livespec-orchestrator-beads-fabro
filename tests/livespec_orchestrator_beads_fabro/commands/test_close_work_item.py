@@ -115,7 +115,7 @@ def test_close_completed_missing_id_raises() -> None:
 
 def test_main_closes_and_reports(capsys: pytest.CaptureFixture[str]) -> None:
     _seed(_open_item(id_="li-x"))
-    code = main(["li-x", "--reason", "shipped"])
+    code = main(argv=["li-x", "--reason", "shipped"])
     assert code == 0
     out = capsys.readouterr().out
     assert "closed li-x resolution:completed" in out
@@ -125,7 +125,7 @@ def test_main_closes_and_reports(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_main_missing_id_exits_not_found(capsys: pytest.CaptureFixture[str]) -> None:
-    code = main(["li-absent"])
+    code = main(argv=["li-absent"])
     assert code == 3
     err = capsys.readouterr().err
     assert "work-item not found" in err
@@ -144,6 +144,6 @@ def test_main_uses_cwd_project_root_by_default(
         encoding="utf-8",
     )
     _seed(_open_item(id_="li-x"))
-    code = main(["li-x"])
+    code = main(argv=["li-x"])
     assert code == 0
     assert "closed li-x" in capsys.readouterr().out

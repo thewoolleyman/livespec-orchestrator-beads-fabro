@@ -66,7 +66,7 @@ def test_drive_has_no_plan_entry_point(tmp_path: Path, capsys: pytest.CaptureFix
     repo.mkdir()
 
     with pytest.raises(SystemExit) as exc_info:
-        drive.main(["plan", "--repo", str(repo), "--json"])
+        drive.main(argv=["plan", "--repo", str(repo), "--json"])
 
     assert exc_info.value.code == 2
     assert "invalid choice" in capsys.readouterr().err
