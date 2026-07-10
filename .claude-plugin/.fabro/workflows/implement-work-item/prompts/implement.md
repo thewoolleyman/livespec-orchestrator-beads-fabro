@@ -36,6 +36,18 @@ constraints.
 - SCOPE-MINIMALISM: edit ONLY what the work-item requires. Do NOT touch
   unrelated files, unrelated docs, or adjacent cleanup that is not necessary
   to satisfy the assignment and its acceptance criteria.
+- ACCEPTANCE-CRITERIA SCOPE — downstream review is NOT yours to run.
+  Satisfy only the acceptance conditions you can verify YOURSELF in this
+  sandbox: the code/behavior change, its tests, and a green `mise exec --
+  just check`. An acceptance line that names a DOWNSTREAM gate — an
+  "independent"/"external"/"adversarial" reviewer, a separate NO-BLOCKERS
+  review "before acceptance", a human sign-off, a ratification step — is
+  handled AFTER this stage by a later `review` node and by the external
+  overseer; it is NOT your job. Do the implementation those criteria
+  describe, but NEVER spawn a reviewer, run an adversarial review, or block
+  waiting on one. If the only acceptance work left is such a downstream
+  review gate, you are DONE — end with a success outcome, not the
+  needs-human protocol.
 - Python style (when the repo is Python): keyword-only arguments
   (`*` separator) on every `def`; `kw_only=True` dataclasses; pyright
   strict must stay clean; expected errors ride dry-python/returns
