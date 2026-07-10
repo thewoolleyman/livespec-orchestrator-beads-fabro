@@ -1,11 +1,12 @@
 # Autonomous-mode MVP — orchestrator plan handoff
 
-**Status:** round 1 of the overall plan's fable-review LOOP is done (2026-07-10:
-Step-0 validation NO-BLOCKERS, then this plan REVISED per its findings — full
-verdict: `livespec/plan/autonomous-mode/research/step0-fable-verdict.md`). The
-loop is still OPEN: O1 MUST NOT start until the overall plan's Step-0 gate is
-met — a FRESH Fable session review finds nothing blocking AND the MAINTAINER
-certifies (loop state: `livespec/plan/autonomous-mode/handoff.md`).
+**Status:** the overall plan's fable-review LOOP is OPEN — O1 MUST NOT start
+until the loop exits: a FRESH Fable session review finds nothing blocking AND
+the MAINTAINER certifies. The AUTHORITATIVE loop state (rounds run, fixes
+landed, certification) lives in `livespec/plan/autonomous-mode/handoff.md`;
+per-round records accumulate there under `research/` (round 1, 2026-07-10:
+Step-0 validation NO-BLOCKERS, then this plan REVISED per its findings —
+`research/step0-fable-verdict.md`).
 First-drafted 2026-07-10 from a repo survey.
 
 **Repo:** `thewoolleyman/livespec-orchestrator-beads-fabro` · **Role:** the
@@ -55,8 +56,10 @@ truly-unresolvable BY DESIGN, not by low confidence. Respect the existing fail-c
 cost gate (autonomous + unobservable cost ⇒ refuse).
 
 ## Track, don't fold
-`plan/fabro-token-refresh/` (active infra: 60-min App-token TTL kills long runs) — a
-robustness precondition for the overall I2 live exercise, no shared code with O2.
+`plan/fabro-token-refresh/` (active infra: the 60-min App-token TTL that killed
+long runs; fix VALIDATED LIVE 2026-07-10, landing sequence pending maintainer
+decisions in that thread's handoff) — a robustness precondition for the overall
+I2 live exercise until production fabro carries the fix; no shared code with O2.
 Open bugs to sequence around: `bd-ib-18r` (blocked as first-class outcome), `bd-ib-6vu`
 (parked-run credential re-projection).
 

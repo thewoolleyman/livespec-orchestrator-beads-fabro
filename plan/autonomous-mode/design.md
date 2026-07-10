@@ -156,7 +156,9 @@ below and recorded in
   inherits.
 - TDD Red-Green-Replay per the repo's Python ritual; worktree → PR → merge per slice.
 - **Gate:** O1. **Done:** scenarios 33-37 pass with live evidence; merged slices;
-  a real `drive --mode autonomous` run auto-resolves at least one manual admission,
+  a real autonomous-mode run — on whichever mode-bearing surface O1's contract
+  pins (`drive --mode autonomous` per v032's current wording, or the dispatcher
+  `loop` subcommand) — auto-resolves at least one manual admission,
   one `ai-then-human` acceptance, and one `needs-human` block, and escalates a
   planted truly-unresolvable item — every decision journaled.
 
@@ -173,10 +175,15 @@ O1 is the single source of truth for how the console's toggle reaches a
 - `bd-ib-82a` (feature, backlog) — THE engine; the whole O-track. Refresh its stale
   spec pointer (cites orchestrator v025; spec is v032).
 - `plan/fabro-token-refresh/` (active, infra) — the Fabro GitHub-App installation
-  token 60-minute TTL kills long factory runs at the publish/PR node. A long
-  autonomous run must be able to publish. No shared code surface with gate-resolution;
-  TRACK as a robustness precondition for the overall plan's I2 live exercise, do not
-  fold into O2.
+  token 60-minute TTL killed long factory runs at the publish/PR node. STATE
+  MOVED 2026-07-10: the fix is VALIDATED LIVE (gh-free publish via GitHub
+  REST/GraphQL proven end-to-end on console PR #136; a genuine >60-min run
+  pushed green past the TTL) but NOT YET LANDED in production fabro — the
+  landing sequence (upstream fabro PR, production pin, PR #136 cleanup) awaits
+  maintainer decisions recorded in that thread's handoff. A long autonomous run
+  must be able to publish, so it REMAINS a robustness precondition for the
+  overall plan's I2 live exercise until production fabro carries the fix. No
+  shared code surface with gate-resolution; TRACK, do not fold into O2.
 - Related open robustness bugs to sequence around (not part of O2's design):
   `bd-ib-18r` (blocked must be first-class outcome, not failed-and-exit), `bd-ib-6vu`
   (parked-run resume must re-project credentials) — both matter for unattended runs.
