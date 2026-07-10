@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.10](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.9...v0.13.10) (2026-07-10)
+
+
+### Bug Fixes
+
+* burn down phase1 mechanical warnings ([6ee0118](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6ee011860a01c5d7e58ec32306152d806411cecb))
+
 ## [0.13.9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.8...v0.13.9) (2026-07-08)
 
 
