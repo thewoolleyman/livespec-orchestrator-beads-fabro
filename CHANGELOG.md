@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.16...v0.14.0) (2026-07-10)
+
+
+### Features
+
+* arm full autonomous mode via two-factor loop opt-in (bd-ib-82a.1) ([580c55b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/580c55b8280494c3ce9496b36dcc9bbcd3aed75a))
+
 ## [0.13.16](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.15...v0.13.16) (2026-07-10)
 
 
