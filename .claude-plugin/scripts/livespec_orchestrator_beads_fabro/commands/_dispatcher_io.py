@@ -323,7 +323,7 @@ class WatchedFabroLauncher:
                 # no stall is decidable; keep waiting (a never-resolving
                 # `fabro ps` is "no signal", never a stall).
                 continue
-            if decide_stall(samples=tuple(samples), stall_seconds=stall_seconds) is (
+            if decide_stall(samples=tuple(samples), stall_seconds=stall_seconds) == (
                 StallVerdict.STALLED
             ):
                 self._cancel(plan=plan, runner=runner, journal=journal, run_id=known_run_id)

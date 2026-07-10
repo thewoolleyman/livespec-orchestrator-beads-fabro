@@ -69,9 +69,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from enum import Enum
 from fnmatch import fnmatchcase
-from typing import Any, cast
+from typing import Any, Final, Literal, cast
 
 __all__: list[str] = [
     "DISPATCHER_SCRIPT_PREFIXES",
@@ -120,7 +119,10 @@ _DISPATCHER_SCRIPT_PATTERNS: tuple[str, ...] = (
 SELF_UPDATE_BREACH_CLASS = "self-update-canary-failed"
 
 
-class CanaryVerdict(Enum):
+CanaryVerdictValue = Literal["pass", "fail"]
+
+
+class CanaryVerdict:
     """The canary's pass/fail decision over the candidate self-check.
 
     `PASS` — the candidate dispatcher's self-check ran clean (exit 0): its
@@ -131,8 +133,8 @@ class CanaryVerdict(Enum):
     safe; keep the last-known-good pinned copy and ALARM.
     """
 
-    PASS = "pass"  # noqa: S105 - canary verdict label, not a secret value
-    FAIL = "fail"
+    PASS: Final = "pass"  # noqa: S105 - canary verdict label, not a secret value
+    FAIL: Final = "fail"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -248,7 +250,7 @@ def canary_self_check_argv(*, candidate_bin: str, scratch_root: str) -> list[str
     ]
 
 
-def canary_verdict(*, exit_code: int) -> CanaryVerdict:
+def canary_verdict(*, exit_code: int) -> CanaryVerdictValue:
     """Map a candidate self-check exit code to the canary verdict.
 
     Exit 0 -> `PASS` (the candidate ran clean). ANY non-zero exit ->
@@ -260,7 +262,7 @@ def canary_verdict(*, exit_code: int) -> CanaryVerdict:
     return CanaryVerdict.PASS if exit_code == 0 else CanaryVerdict.FAIL
 
 
-def promotion_decision(*, verdict: CanaryVerdict) -> PromotionDecision:
+def promotion_decision(*, verdict: CanaryVerdictValue) -> PromotionDecision:
     """Decide promotion from the canary verdict. Fail-closed on FAIL.
 
     `PASS` -> promote the candidate, no alarm (the new version is safe to
@@ -269,7 +271,7 @@ def promotion_decision(*, verdict: CanaryVerdict) -> PromotionDecision:
     human sees the refused self-update. The reason is a leak-free scalar
     for the journal / alarm body.
     """
-    if verdict is CanaryVerdict.PASS:
+    if verdict == CanaryVerdict.PASS:
         return PromotionDecision(
             promote=True,
             alarm=False,

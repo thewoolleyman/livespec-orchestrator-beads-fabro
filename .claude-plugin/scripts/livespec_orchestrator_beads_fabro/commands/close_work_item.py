@@ -103,7 +103,3 @@ def main(*, argv: list[str] | None = None) -> int:
         return _EXIT_NOT_FOUND
     _ = write_stdout(text=f"closed {closed.id} resolution:{_RESOLUTION_COMPLETED}\n")
     return 0
-
-
-if __name__ == "__main__":  # pragma: no cover
-    raise SystemExit(main())

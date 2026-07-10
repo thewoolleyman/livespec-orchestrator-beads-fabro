@@ -67,7 +67,6 @@ from dataclasses import dataclass
 from typing import Any, Protocol, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
-from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import parse_run_id_for_work_item
 
 
 class JournalWriter(Protocol):
@@ -396,117 +395,19 @@ def gate_wave(  # noqa: PLR0913 — kw-only post-verdict gate/reporter; each fie
     (the dispatcher's live wiring passes `os.environ`) the caps resolve from
     it and the cap-value comparison runs.
     """
-    refusals: list[str] = []
-    session_usd_micros = 0
-    derived = derived_cost_micros_by_work_item or {}
-    enforcing = cost_mode == COST_MODE_ENFORCE
-    per_run_cap = resolve_per_run_cap_usd(environ=environ) if environ is not None else None
-    per_session_cap = resolve_per_session_cap_usd(environ=environ) if environ is not None else None
-    for outcome in outcomes:
-        if outcome.status != "green":
-            continue
-        run_id = parse_run_id_for_work_item(ps_json=ps_json, work_item_id=outcome.work_item_id)
-        if run_id is None:
-            journal.append(
-                record={
-                    "stage": "cost-gate-skipped",
-                    "work_item_id": outcome.work_item_id,
-                    "reason": "could not resolve the run id from `fabro ps -a --json`",
-                }
-            )
-            continue
-        observation = _observe_with_derived(
-            ps_json=ps_json,
-            run_id=run_id,
-            derived_micros=derived.get(outcome.work_item_id),
-        )
-        usd_micros = observation.usd_micros
-        if usd_micros is not None:
-            # The running per-session total accumulates the observed cost in
-            # BOTH modes (report needs the cumulative spend for its summary;
-            # enforce needs it for the cap comparison).
-            session_usd_micros += usd_micros
-        # In `report` mode (the default) the cost is derived + journaled but
-        # NEVER refused / capped — the verdict is a non-refusing `report`.
-        # In `enforce` mode the original two-layer fail-closed verdict runs:
-        # the cap-VALUE path (y0m) when the cost is OBSERVED and the caps are
-        # resolved (environ supplied), else 5v9's unobservable gate. The
-        # explicit non-None checks narrow the optional cost + caps for the
-        # type checker.
-        if not enforcing:
-            decision = _report_decision(run_id=run_id, observation=observation)
-        elif usd_micros is not None and per_run_cap is not None and per_session_cap is not None:
-            decision = cap_value_decision(
-                run_id=run_id,
-                usd_micros=usd_micros,
-                per_run_cap_usd=per_run_cap,
-                session_usd_micros_after=session_usd_micros,
-                per_session_cap_usd=per_session_cap,
-            )
-        else:
-            decision = cost_gate_decision(mode=mode, observation=observation)
-        journal.append(
-            record={
-                "stage": "cost-gate",
-                "work_item_id": outcome.work_item_id,
-                "run_id": run_id,
-                "observable": observation.observable,
-                "usd_micros": observation.usd_micros,
-                "session_usd_micros": session_usd_micros,
-                "refuse": decision.refuse,
-                "severity": decision.severity,
-                "reason": decision.reason,
-            }
-        )
-        if decision.refuse:
-            refusals.append(outcome.work_item_id)
-    return tuple(refusals)
-
-
-def _report_decision(*, run_id: str, observation: CostObservation) -> CostGateDecision:
-    """The report-mode verdict: never refuse, never cap (subscription model).
-
-    The derived cost is OBSERVABILITY, not a gate: this always returns
-    `refuse=False` with a `report` severity, so report mode can never
-    short-circuit dispatch — neither the 5v9 unobservable refusal nor the
-    y0m cap-breach refusal fires. The reason carries only the run id + the
-    derived micro-USD (or the dark condition), leak-free.
-    """
-    if observation.observable:
-        return CostGateDecision(
-            refuse=False,
-            severity="report",
-            reason=(
-                f"run {run_id} cost reported "
-                f"({observation.usd_micros} usd_micros); report-only, never enforced"
-            ),
-        )
-    return CostGateDecision(
-        refuse=False,
-        severity="report",
-        reason=(
-            f"run {run_id} cost is unobservable (no CC token telemetry / fabro "
-            f"total_usd_micros null); report-only, never enforced"
-        ),
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_wave import (
+        gate_wave_refusals,
     )
 
-
-def _observe_with_derived(
-    *, ps_json: str, run_id: str, derived_micros: int | None
-) -> CostObservation:
-    """The per-run cost observation, CC-token-derived cost PRIMARY (efj).
-
-    When a CC-token-derived cost is present for the run it is the observed
-    cost (the primary signal per `cc-otel-gap-analysis.md`)
-    — so the common path is OBSERVABLE and the autonomous fail-closed
-    refusal no longer fires. Absent a derived cost, falls back to fabro's
-    `total_usd_micros` from `fabro ps -a --json` (corroboration); a null
-    field there leaves the cost UNOBSERVABLE, the genuinely-dark condition
-    5v9's fail-closed gate still fires on.
-    """
-    if derived_micros is not None:
-        return CostObservation(run_id=run_id, usd_micros=derived_micros, observable=True)
-    return observe_run_cost(ps_json=ps_json, run_id=run_id)
+    return gate_wave_refusals(
+        mode=mode,
+        outcomes=outcomes,
+        ps_json=ps_json,
+        journal=journal,
+        environ=environ,
+        derived_cost_micros_by_work_item=derived_cost_micros_by_work_item,
+        cost_mode=cost_mode,
+    )
 
 
 def _resolve_cap(*, environ: dict[str, str], name: str, default: float) -> float:
