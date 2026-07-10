@@ -1,7 +1,10 @@
 # Autonomous-mode MVP — orchestrator plan handoff
 
-**Status:** DRAFT — awaiting the overall Step-0 multi-model (Fable) validation pass
-before implementation. First-drafted 2026-07-10 from a repo survey.
+**Status:** Step 0 PASSED (2026-07-10, independent Fable validation, NO-BLOCKERS)
+and this plan REVISED per its findings (full verdict:
+`livespec/plan/autonomous-mode/research/step0-fable-verdict.md`). O1 may start
+once the overall plan's Fable certification is recorded. First-drafted
+2026-07-10 from a repo survey.
 
 **Repo:** `thewoolleyman/livespec-orchestrator-beads-fabro` · **Role:** the
 Orchestrator-Plane decision engine (the LLM gate-resolver). Driven from the delegate
@@ -22,12 +25,18 @@ a post-verdict observer, not a resolver. One backlog item tracks the whole build
 `bd-ib-82a` "Implement full autonomous mode engine" (`depends_on: []`, no slices).
 
 ## Steps (design.md §3)
-- **O1** spec currency + PUBLISH the arming/audit contract (the contract-first
-  deliverable that unblocks console C3): confirm v032 internal consistency, confirm
-  the truly-unresolvable set includes the core irreducible touchpoints (drift-accept /
-  spec-change / regroom), and pin how the console's persistent intent reaches a
-  per-invocation `drive --mode autonomous` launch (the persistence-model seam). Route
-  any real change via propose-change → Fable review → revise.
+- **O1** publish the arming/audit contract + execute the Step-0 spec fixes (the
+  contract-first deliverable that unblocks console C3). Two REQUIRED deliverables
+  (design.md §3 has the full text): (1) the irreducible-touchpoints
+  propose-change — Step 0 verified the v032 spec does NOT protect the
+  design-human-gated decisions and its `manual`-admission collapse would
+  auto-admit a spec-change slice; the change names the set (drift-accept /
+  spec-change / regroom), splits design-gated `manual` from routine `manual`,
+  and reconciles the `human-only`-acceptance carve-out; (2) the arming contract
+  pinning the `dispatcher.autonomous_mode` key's disposition versus the
+  console's intent block, the loop launcher's identity, and whether `drive` or
+  the dispatcher `loop` carries `--mode autonomous`. Route via propose-change →
+  independent Fable review → revise.
 - **O2** implement `bd-ib-82a` in slices: `dispatcher.autonomous_mode` config key +
   `drive --mode autonomous` gate-collapse (admission→auto, acceptance→ai-only) + the
   NEW LLM `needs-human` resolution stage (route resolved back onto path) +
@@ -50,8 +59,10 @@ Open bugs to sequence around: `bd-ib-18r` (blocked as first-class outcome), `bd-
 (parked-run credential re-projection).
 
 ## Next action
-After overall Step 0 passes NO-BLOCKERS, start O1: validate v032 currency and publish
-the arming/audit contract; then groom `bd-ib-82a` into slices for O2. Refresh
+Step 0 passed NO-BLOCKERS and this plan carries its findings. Once the overall
+plan's Fable certification is recorded
+(`livespec/plan/autonomous-mode/handoff.md` names it), start O1: file the two
+required deliverables above, then groom `bd-ib-82a` into slices for O2. Refresh
 `bd-ib-82a`'s stale spec pointer (cites v025; spec is v032).
 
 ## Pointers
