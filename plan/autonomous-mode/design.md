@@ -179,8 +179,9 @@ O1 is the single source of truth for how the console's toggle reaches a
   MOVED 2026-07-10: the fix is VALIDATED LIVE (gh-free publish via GitHub
   REST/GraphQL proven end-to-end on console PR #136; a genuine >60-min run
   pushed green past the TTL) but NOT YET LANDED in production fabro — the
-  landing sequence (upstream fabro PR, production pin, PR #136 cleanup) awaits
-  maintainer decisions recorded in that thread's handoff. A long autonomous run
+  landing sequence (upstream fabro PR, production pin) awaits maintainer
+  decisions recorded in that thread's handoff (its third question, PR #136
+  cleanup, resolved by event: the validation vehicle auto-merged 2026-07-10). A long autonomous run
   must be able to publish, so it REMAINS a robustness precondition for the
   overall plan's I2 live exercise until production fabro carries the fix. No
   shared code surface with gate-resolution; TRACK, do not fold into O2.
