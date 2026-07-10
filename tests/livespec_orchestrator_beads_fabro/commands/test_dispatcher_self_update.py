@@ -211,10 +211,12 @@ def test_canary_self_check_argv_runs_candidate_ledger_check_against_scratch() ->
 
 
 def test_canary_verdict_pass_on_clean_exit() -> None:
+    assert CanaryVerdict.PASS.value == "pass"
     assert canary_verdict(exit_code=0) is CanaryVerdict.PASS
 
 
 def test_canary_verdict_fail_on_nonzero_exit() -> None:
+    assert CanaryVerdict.FAIL.value == "fail"
     assert canary_verdict(exit_code=1) is CanaryVerdict.FAIL
 
 
