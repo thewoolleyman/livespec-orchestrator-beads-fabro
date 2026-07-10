@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.16](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.15...v0.13.16) (2026-07-10)
+
+
+### Bug Fixes
+
+* route cli writes through io seam ([833287f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/833287f0e2226957405adaa937de7bc5ecfdcbd0))
+
 ## [0.13.15](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.14...v0.13.15) (2026-07-10)
 
 
