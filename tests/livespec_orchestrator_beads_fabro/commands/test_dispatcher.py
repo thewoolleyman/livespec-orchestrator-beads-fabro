@@ -100,7 +100,7 @@ from livespec_orchestrator_beads_fabro.commands.dispatcher import (
     _ready_items,  # pyright: ignore[reportPrivateUsage]
     main,
 )
-from livespec_orchestrator_beads_fabro.errors import BeadsCommandError
+from livespec_orchestrator_beads_fabro.errors import BeadsCommandError, WorkItemNotFoundError
 from livespec_orchestrator_beads_fabro.store import (
     WorkItemComment,
     append_work_item,
@@ -2635,11 +2635,21 @@ def test_dispatch_default_workflow_materializes_from_repo_fabro_tree(
     assert _ENV_INTERPOLATION_LITERAL not in overlay_text
 
 
-def test_dispatch_blocked_outcome_surfaces_and_leaves_item_open(
+def test_dispatch_blocked_outcome_bounces_item_to_backlog(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """A run parked at the in-loop human gate bounces its item to `backlog`.
+
+    The dark factory is unattended (no `fabro attach` answerer), so a
+    `blocked` terminal must not strand the item `active`. Mirroring the
+    non-convergence bounce, the Dispatcher transitions the item to the
+    seven-state lifecycle's regroom-equivalent `backlog` status, journals a
+    `blocked-bounce` record carrying the outcome detail (the `fabro attach`
+    hint + why it parked), and surfaces it on stderr — the item leaves the
+    WIP for re-grooming instead of hanging.
+    """
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     item = _item()
     append_work_item(path=_config(), item=item)
@@ -2656,15 +2666,66 @@ def test_dispatch_blocked_outcome_surfaces_and_leaves_item_open(
         argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
     assert exit_code == 1
-    out = capsys.readouterr().out
+    captured = capsys.readouterr()
+    out = captured.out
+    err = captured.err
     assert "blocked at fabro-run" in out
     assert "fabro attach 01RUNBLOCKED" in out
-    assert _stored()[item.id].status == "active"
+    # The item is bounced to backlog (regroom-equivalent), NOT left active.
+    assert _stored()[item.id].status == "backlog"
+    # The bounce surfaces on stderr and preserves the `fabro attach` hint so a
+    # future interactive mode / regrooming human sees why the run parked.
+    assert "bounced to backlog" in err
+    assert "fabro attach 01RUNBLOCKED" in err
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
     assert '"blocked"' in journal_text
+    assert '"blocked-bounce"' in journal_text
     # A blocked outcome never completes/accepts — no acceptance transition.
     assert "ledger-accept" not in journal_text
     assert "ledger-complete" not in journal_text
+
+
+def test_bounce_blocked_failsoft_journals_error_when_ledger_write_raises(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A ledger-write failure during the blocked bounce is journaled, never raised.
+
+    The verdict is already final, so a `WorkItemNotFoundError` (the item was
+    pruned between dispatch and bounce) is journaled as `blocked-bounce-error`
+    and swallowed — the dispatch never crashes on the escalation write.
+    """
+    item = _item()
+    journal = _RecordingJournal()
+
+    def _raise(**_kwargs: object) -> None:
+        raise WorkItemNotFoundError(item_id=item.id)
+
+    monkeypatch.setattr(dispatcher, "_store_config", lambda *, repo: repo)
+    monkeypatch.setattr(dispatcher, "update_work_item_status", _raise)
+
+    blocked = DispatchOutcome(
+        work_item_id=item.id,
+        status="blocked",
+        stage="fabro-run",
+        pr_number=None,
+        merge_sha=None,
+        detail="run 01X parked at a human gate; answer with `fabro attach 01X`",
+    )
+    # Must NOT raise — the verdict is already final.
+    dispatcher._bounce_blocked(  # noqa: SLF001 — fail-soft branch under test
+        repo=tmp_path,
+        item=item,
+        outcome=blocked,
+        journal=journal,
+    )
+
+    error_records = [r for r in journal.records if r.get("stage") == "blocked-bounce-error"]
+    assert len(error_records) == 1
+    assert error_records[0]["work_item_id"] == item.id
+    assert error_records[0]["reason"] == "WorkItemNotFoundError"
+    # The success-path bounce record is NOT written when the status write failed.
+    assert not any(r.get("stage") == "blocked-bounce" for r in journal.records)
 
 
 def test_dispatch_fails_fast_when_oauth_token_env_is_absent_or_empty(

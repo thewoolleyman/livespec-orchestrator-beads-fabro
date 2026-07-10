@@ -1551,6 +1551,7 @@ def _post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fi
         _complete_and_accept(repo=repo, item=item, outcome=outcome, journal=journal)
     journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
     _bounce_non_convergence_to_backlog(repo=repo, item=item, outcome=outcome, journal=journal)
+    _bounce_blocked(repo=repo, item=item, outcome=outcome, journal=journal)
     _emit_calibration(
         args=args,
         repo=repo,
@@ -1958,6 +1959,77 @@ def _bounce_non_convergence_to_backlog(
         f"SURFACE: work-item {item.id} did not converge through the janitor gate "
         f"({outcome.status} at {outcome.stage}); bounced to backlog and surfaced "
         f"for re-grooming — NOT infinite-retried.\n"
+    )
+    _ = sys.stderr.write(surface_line)
+
+
+def _bounce_blocked(
+    *,
+    repo: Path,
+    item: WorkItem,
+    outcome: DispatchOutcome,
+    journal: JournalFile,
+) -> None:
+    """Bounce a human-gate-parked run to `backlog` and surface it.
+
+    The dark factory is UNATTENDED by construction: neither the
+    `drive --action impl:` path nor the autonomous Dispatcher loop runs a
+    `fabro attach` answerer, so a run that returns `blocked` at its in-loop
+    human gate (`_blocked_outcome`, a needs-human terminal) would otherwise
+    strand its item `active` with nobody to answer the gate — the item hangs
+    and needs manual reconciliation. Mirroring
+    `_bounce_non_convergence_to_backlog`, this routes the blocked terminal's
+    item to the seven-state lifecycle's regroom-equivalent `backlog` status
+    (there is no separate regroom label — a `backlog` item leaves the WIP and
+    re-enters intake for re-grooming / human attention) and surfaces it, so
+    the unattended factory does not hang.
+
+    Runs AFTER the terminal `outcome` is journaled and only for the `blocked`
+    terminal. It carries the blocked outcome's `detail` — which holds the
+    `fabro attach <run-id>` hint and WHY the run parked — into the journaled
+    reason and the stderr SURFACE line, so a future interactive mode can still
+    surface the attach hint and the human who later regrooms the `backlog`
+    item sees why it parked. It does NOT retry and does NOT close the item.
+
+    Fail-soft on the ledger write with the same exception set as the
+    non-convergence bounce: the verdict is already final, so a
+    `WorkItemNotFoundError` (the item was pruned between dispatch and bounce)
+    or a beads command/connection failure is journaled as
+    `blocked-bounce-error` and swallowed — the dispatch never crashes on the
+    escalation write. A genuine bug still propagates.
+    """
+    if outcome.status != "blocked":
+        return
+    try:
+        update_work_item_status(path=_store_config(repo=repo), item_id=item.id, status="backlog")
+    except (
+        WorkItemNotFoundError,
+        BeadsCommandError,
+        BeadsConnectionError,
+        BeadsMappingError,
+        BeadsTenantMissingError,
+    ) as exc:
+        journal.append(
+            record={
+                "stage": "blocked-bounce-error",
+                "work_item_id": item.id,
+                "reason": f"{type(exc).__name__}",
+            }
+        )
+        return
+    journal.append(
+        record={
+            "stage": "blocked-bounce",
+            "work_item_id": item.id,
+            "outcome_stage": outcome.stage,
+            "outcome_status": outcome.status,
+            "reason": outcome.detail,
+        }
+    )
+    surface_line = (
+        f"SURFACE: work-item {item.id} parked at the in-loop human gate "
+        f"({outcome.detail}); bounced to backlog and surfaced for re-grooming "
+        f"— the unattended factory does not answer the gate.\n"
     )
     _ = sys.stderr.write(surface_line)
 
