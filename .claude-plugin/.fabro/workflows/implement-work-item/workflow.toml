@@ -113,7 +113,7 @@ provider = "docker"
 #   sha-<short>  — per master-build (mutable; tracks HEAD)
 #   v<X.Y.Z>     — per release tag (immutable)
 #
-# CURRENT PIN: v0.35.3 (matches the livespec-dev-tooling bump-pin surface).
+# CURRENT PIN: v0.36.2 (matches the livespec-dev-tooling bump-pin surface).
 #
 # PIN SURFACE NOTE: shared pin_autodiscovery does not yet cover workflow.toml
 # docker images. This repo's private
@@ -131,7 +131,7 @@ provider = "docker"
 # only `provider = "docker"` + `[image] docker = "..."` — never an
 # `[env]` table (the Dispatcher's per-dispatch overlay owns that block;
 # TOML forbids duplicate table declarations).
-docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:v0.35.3"
+docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:v0.36.2"
 
 [environments.livespec-ci.resources]
 cpu = 4
