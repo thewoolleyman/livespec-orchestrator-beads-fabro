@@ -2,8 +2,9 @@
 
 import argparse
 import json
-import sys
 from pathlib import Path
+
+from livespec_orchestrator_beads_fabro.io import write_stdout
 
 __all__: list[str] = ["build_envelope", "list_plan_threads", "main"]
 
@@ -18,10 +19,10 @@ def main(*, argv: list[str] | None = None) -> int:
     project_root = Path(args.project_root) if args.project_root is not None else Path.cwd()
     topics = list_plan_threads(project_root=project_root)
     if args.as_json:
-        _ = sys.stdout.write(json.dumps(build_envelope(topics=topics), sort_keys=True) + "\n")
+        _ = write_stdout(text=json.dumps(build_envelope(topics=topics), sort_keys=True) + "\n")
     else:
         for topic in topics:
-            _ = sys.stdout.write(f"{topic}\n")
+            _ = write_stdout(text=f"{topic}\n")
     return 0
 
 

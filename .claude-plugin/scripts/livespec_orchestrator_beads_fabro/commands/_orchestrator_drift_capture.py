@@ -26,7 +26,6 @@ version, which is echoed in the result envelope for provenance.
 
 import json
 import subprocess
-import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,6 +39,7 @@ from livespec_orchestrator_beads_fabro.commands._orchestrator_shared import (
     require_str,
     resolve_spec_version,
 )
+from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 
 __all__: list[str] = ["DriftFinding", "run_drift_capture", "validate_drifts"]
 
@@ -165,8 +165,8 @@ def _route_one(
         )
     if completed.returncode != 0:
         detail = completed.stderr.strip()
-        _ = sys.stderr.write(
-            f"ERROR: propose-change {drift.topic!r} exited {completed.returncode}: {detail}\n",
+        _ = write_stderr(
+            text=f"ERROR: propose-change {drift.topic!r} exited {completed.returncode}: {detail}\n",
         )
     return completed.returncode
 
@@ -186,9 +186,9 @@ def _emit(
             "routed": routed,
             "failed": failed,
         }
-        _ = sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
         return
     verb = "would route" if dry_run else "routed"
     for entry in routed:
         status = "ok" if entry["exit_code"] == 0 else f"FAILED (exit {entry['exit_code']})"
-        _ = sys.stdout.write(f"{verb} {entry['topic']}: {status}\n")
+        _ = write_stdout(text=f"{verb} {entry['topic']}: {status}\n")

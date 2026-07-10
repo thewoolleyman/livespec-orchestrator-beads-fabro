@@ -15,12 +15,12 @@ keys for every live head using the legacy beads-native
 from __future__ import annotations
 
 import argparse
-import sys
 from dataclasses import replace
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands.rebalance_ranks import LegacySeedRow, legacy_seed
+from livespec_orchestrator_beads_fabro.io import write_stdout
 from livespec_orchestrator_beads_fabro.store import (
     materialize_work_items,
     read_work_item_native_priorities,
@@ -87,7 +87,7 @@ def main(*, argv: list[str] | None = None) -> int:
     project_root = Path(args.project_root) if args.project_root is not None else Path.cwd()
     config = resolve_store_config(cwd=project_root, work_items_arg=args.work_items_path)
     rekeyed = migrate_tenant(config=config)
-    _ = sys.stdout.write(
-        f"migrate-tenant: statuses registered; re-keyed {rekeyed} live work-item(s)\n"
+    _ = write_stdout(
+        text=f"migrate-tenant: statuses registered; re-keyed {rekeyed} live work-item(s)\n"
     )
     return 0

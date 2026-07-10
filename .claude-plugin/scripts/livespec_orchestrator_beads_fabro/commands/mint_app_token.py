@@ -18,11 +18,12 @@ argv.
 from __future__ import annotations
 
 import os
-import sys
 
 from livespec_runtime.github_auth.config import load_github_app_config
 from livespec_runtime.github_auth.errors import GithubAppAuthError
 from livespec_runtime.github_auth.provider import InstallationTokenProvider
+
+from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 
 __all__: list[str] = ["main"]
 
@@ -45,10 +46,10 @@ def main(*, argv: list[str] | None = None) -> int:
         config = load_github_app_config(environ=os.environ)
         token = InstallationTokenProvider(config=config).token()
     except GithubAppAuthError as exc:
-        _ = sys.stderr.write(f"ERROR: {exc.detail}\n")
+        _ = write_stderr(text=f"ERROR: {exc.detail}\n")
         return _EXIT_MINT_FAILED
-    _ = sys.stderr.write("github-token source: github-app-installation-token\n")
-    _ = sys.stdout.write(token)
+    _ = write_stderr(text="github-token source: github-app-installation-token\n")
+    _ = write_stdout(text=token)
     return 0
 
 

@@ -144,7 +144,6 @@ import argparse
 import json
 import os
 import shutil
-import sys
 import tempfile
 import threading
 import time
@@ -276,6 +275,7 @@ from livespec_orchestrator_beads_fabro.errors import (
     BeadsTenantMissingError,
     WorkItemNotFoundError,
 )
+from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 from livespec_orchestrator_beads_fabro.store import (
     WorkItemComment,
     append_work_item,
@@ -386,14 +386,14 @@ def _emit_check_findings(*, findings: list[LedgerFinding], as_json: bool, label:
     """Emit check findings (JSON array or human lines); exit 1 on non-skipped."""
     if as_json:
         payload = [asdict(finding) for finding in findings]
-        _ = sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
     else:
         for finding in findings:
             severity = finding.severity.upper()
             line = f"{severity}  {finding.check}  {finding.item_id}  {finding.message}\n"
-            _ = sys.stdout.write(line)
+            _ = write_stdout(text=line)
         if not findings:
-            _ = sys.stdout.write(f"(no {label} findings)\n")
+            _ = write_stdout(text=f"(no {label} findings)\n")
     actionable = any(finding.severity != "skipped" for finding in findings)
     return _EXIT_FAILURE if actionable else 0
 
@@ -452,7 +452,7 @@ def _dispatch_preamble(
     args.fabro_bin = _resolve_fabro_bin_for(args=args, repo=repo)
     fabro_error = _fabro_preflight_error(fabro_bin=args.fabro_bin)
     if fabro_error is not None:
-        _ = sys.stderr.write(fabro_error)
+        _ = write_stderr(text=fabro_error)
         return None, _EXIT_PRECONDITION_ERROR
     return janitor, None
 
@@ -482,9 +482,9 @@ def _run_dispatch_command(*, args: argparse.Namespace) -> int:
                 f"ERROR: work-item {args.item} not found in the target-tenant"
                 f" ({repo.name}); --target-repo and --item must reference the same tenant\n"
             )
-            _ = sys.stderr.write(msg)
+            _ = write_stderr(text=msg)
         else:
-            _ = sys.stderr.write(f"ERROR: work-item {args.item} is not in the ready set\n")
+            _ = write_stderr(text=f"ERROR: work-item {args.item} is not in the ready set\n")
         return _EXIT_PRECONDITION_ERROR
     # The admission valve runs BEFORE the Fabro launch: a host-only item is
     # routed away, a manual / unresolvable-assignee item is held + surfaced,
@@ -581,7 +581,7 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
             requested_ids=requested_ids, items=items, repo=repo
         )
         if preflight_error is not None:
-            _ = sys.stderr.write(preflight_error)
+            _ = write_stderr(text=preflight_error)
             return _EXIT_PRECONDITION_ERROR
     candidates = _candidates(args=args, items=items, repo=repo)[: args.budget]
     # The admission valve drains the candidate set up to the per-repo WIP cap:
@@ -1350,7 +1350,7 @@ def _prepare(
     repo: Path,
 ) -> tuple[list[WorkItem], JournalFile] | None:
     if not repo.is_dir() or not _workflow_toml(args=args).is_file():
-        _ = sys.stderr.write("ERROR: --repo or workflow config does not exist\n")
+        _ = write_stderr(text="ERROR: --repo or workflow config does not exist\n")
         return None
     journal = JournalFile(path=_journal_path(args=args, repo=repo))
     return _load_items(repo=repo), journal
@@ -1801,7 +1801,7 @@ def _admit_and_select(
     for item, reason in plan.held:
         held = _admission_held_outcome(item=item, reason=reason)
         journal.append(record={"stage": "outcome", "outcome": asdict(held)})
-        _ = sys.stderr.write(f"SURFACE: {admission_held_detail(item_id=item.id, reason=reason)}\n")
+        _ = write_stderr(text=f"SURFACE: {admission_held_detail(item_id=item.id, reason=reason)}\n")
         refused.append(held)
     return _Admission(admitted=admitted, refused=refused)
 
@@ -1889,7 +1889,7 @@ def _complete_and_accept(
         f"acceptance_policy {decision.policy} — awaits a human's final acceptance "
         f"before done (no release with zero verification; the AI pass has run).\n"
     )
-    _ = sys.stderr.write(surface_line)
+    _ = write_stderr(text=surface_line)
 
 
 def _bounce_non_convergence_to_backlog(
@@ -1960,7 +1960,7 @@ def _bounce_non_convergence_to_backlog(
         f"({outcome.status} at {outcome.stage}); bounced to backlog and surfaced "
         f"for re-grooming — NOT infinite-retried.\n"
     )
-    _ = sys.stderr.write(surface_line)
+    _ = write_stderr(text=surface_line)
 
 
 def _bounce_blocked(
@@ -2031,7 +2031,7 @@ def _bounce_blocked(
         f"({outcome.detail}); bounced to backlog and surfaced for re-grooming "
         f"— the unattended factory does not answer the gate.\n"
     )
-    _ = sys.stderr.write(surface_line)
+    _ = write_stderr(text=surface_line)
 
 
 def _warn_item_sizing(*, item: WorkItem, journal: JournalFile) -> None:
@@ -2053,7 +2053,7 @@ def _warn_item_sizing(*, item: WorkItem, journal: JournalFile) -> None:
         }
     )
     for warning in warnings:
-        _ = sys.stderr.write(f"WARN: item-sizing {item.id}: {warning}\n")
+        _ = write_stderr(text=f"WARN: item-sizing {item.id}: {warning}\n")
 
 
 def _read_dispatch_comments(
@@ -2472,10 +2472,10 @@ def _ledger_blocked(*, items: list[WorkItem], journal: JournalFile) -> bool:
 
 def _write_findings(*, findings: list[LedgerFinding]) -> None:
     for finding in findings:
-        _ = sys.stderr.write(
-            f"LEDGER: {finding.check}  {finding.item_id}  {finding.message}\n",
+        _ = write_stderr(
+            text=f"LEDGER: {finding.check}  {finding.item_id}  {finding.message}\n",
         )
-    _ = sys.stderr.write("ERROR: pre-dispatch ledger checks failed; dispatch blocked\n")
+    _ = write_stderr(text="ERROR: pre-dispatch ledger checks failed; dispatch blocked\n")
 
 
 def _load_items(*, repo: Path) -> list[WorkItem]:
@@ -2490,15 +2490,15 @@ def _store_config(*, repo: Path) -> StoreConfig:
 def _emit_outcomes(*, outcomes: list[DispatchOutcome], as_json: bool) -> None:
     if as_json:
         payload = [asdict(outcome) for outcome in outcomes]
-        _ = sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
         return
     if not outcomes:
-        _ = sys.stdout.write("(nothing dispatched)\n")
+        _ = write_stdout(text="(nothing dispatched)\n")
         return
     for outcome in outcomes:
         pr_part = f" PR#{outcome.pr_number}" if outcome.pr_number is not None else ""
         line = f"{outcome.work_item_id}  {outcome.status} at {outcome.stage}{pr_part}"
-        _ = sys.stdout.write(f"{line}  {outcome.detail}\n")
+        _ = write_stdout(text=f"{line}  {outcome.detail}\n")
 
 
 def _workflow_toml(*, args: argparse.Namespace) -> Path:
@@ -2632,12 +2632,12 @@ def _parse_janitor(*, raw: str | None) -> tuple[tuple[str, ...] | None, bool]:
     except json.JSONDecodeError:
         parsed_raw = None
     if not isinstance(parsed_raw, list):
-        _ = sys.stderr.write("ERROR: --janitor must be a JSON array of strings\n")
+        _ = write_stderr(text="ERROR: --janitor must be a JSON array of strings\n")
         return None, False
     parts: list[str] = []
     for part in cast("list[object]", parsed_raw):
         if not isinstance(part, str):
-            _ = sys.stderr.write("ERROR: --janitor must be a JSON array of strings\n")
+            _ = write_stderr(text="ERROR: --janitor must be a JSON array of strings\n")
             return None, False
         parts.append(part)
     return tuple(parts), True

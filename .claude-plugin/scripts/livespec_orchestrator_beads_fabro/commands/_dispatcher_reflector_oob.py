@@ -74,7 +74,6 @@ import hashlib
 import json
 import os
 import shutil
-import sys
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -94,6 +93,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
 )
 from livespec_orchestrator_beads_fabro.commands._otel_scrub import attr as _attr
 from livespec_orchestrator_beads_fabro.commands._otel_scrub import scrub as _scrub
+from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
@@ -1141,7 +1141,7 @@ def _emit_summary(*, report: ReflectorReport) -> None:
         lines.append(f"reflector-oob [{finding.severity}] {finding.category}: {finding.subject}")
     if report.lesson_proposed:
         lines.append("reflector-oob: proposed a lesson via PR (merge to ratify)")
-    _ = sys.stderr.write("\n".join(lines) + "\n")
+    _ = write_stderr(text="\n".join(lines) + "\n")
 
 
 def _record_error(*, journal: JournalWriter, exc: Exception) -> None:
@@ -1149,7 +1149,7 @@ def _record_error(*, journal: JournalWriter, exc: Exception) -> None:
     _AUTO_TRIP.consecutive_errors += 1
     reason = f"{type(exc).__name__}: {exc}"
     journal.append(record={"stage": "reflector-oob-error", "reason": reason})
-    _ = sys.stderr.write(f"WARN: out-of-band reflector error (fail-open): {reason}\n")
+    _ = write_stderr(text=f"WARN: out-of-band reflector error (fail-open): {reason}\n")
     if _AUTO_TRIP.consecutive_errors >= _AUTO_TRIP_THRESHOLD:
         _AUTO_TRIP.tripped = True
         journal.append(

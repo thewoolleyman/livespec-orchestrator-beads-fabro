@@ -32,12 +32,12 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.errors import WorkItemNotFoundError
+from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
     materialize_work_items,
@@ -99,9 +99,9 @@ def main(*, argv: list[str] | None = None) -> int:
     try:
         closed = close_completed(path=config, item_id=args.work_item_id, reason=args.reason)
     except WorkItemNotFoundError as exc:
-        _ = sys.stderr.write(f"ERROR: {exc}\n")
+        _ = write_stderr(text=f"ERROR: {exc}\n")
         return _EXIT_NOT_FOUND
-    _ = sys.stdout.write(f"closed {closed.id} resolution:{_RESOLUTION_COMPLETED}\n")
+    _ = write_stdout(text=f"closed {closed.id} resolution:{_RESOLUTION_COMPLETED}\n")
     return 0
 
 
