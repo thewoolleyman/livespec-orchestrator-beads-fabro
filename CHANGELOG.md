@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.11](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.10...v0.13.11) (2026-07-10)
+
+
+### Bug Fixes
+
+* restore strict shared wrapper_shape gate; revert B1 fork ([a8a69f0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a8a69f0a14b763796e72064de8f5bf938f57b155))
+
 ## [0.13.10](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.9...v0.13.10) (2026-07-10)
 
 
