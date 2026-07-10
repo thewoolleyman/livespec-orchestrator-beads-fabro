@@ -22,6 +22,7 @@ from hypothesis import strategies as st
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_ACCEPTANCE_POLICY,
     DEFAULT_ADMISSION_POLICY,
+    DEFAULT_AUTONOMOUS_MODE,
     DEFAULT_DOER,
     DEFAULT_WIP_CAP,
     acceptance_decision,
@@ -31,6 +32,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     plan_admissions,
     reject_routing,
     resolve_assignee,
+    resolve_autonomous_mode_permission,
     resolve_wip_cap,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -132,6 +134,44 @@ def test_resolve_wip_cap_defaults_when_value_invalid(tmp_path: Path, raw: str) -
         text=f'{{"livespec-orchestrator-beads-fabro": {{"dispatcher": {{"wip_cap": {raw}}}}}}}',
     )
     assert resolve_wip_cap(cwd=cwd) == DEFAULT_WIP_CAP
+
+
+# ---------------------------------------------------------------------------
+# resolve_autonomous_mode_permission (Scenario 37 — the persistent factor)
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_autonomous_mode_defaults_false_when_no_config(tmp_path: Path) -> None:
+    assert resolve_autonomous_mode_permission(cwd=tmp_path) is DEFAULT_AUTONOMOUS_MODE
+
+
+def test_resolve_autonomous_mode_reads_true(tmp_path: Path) -> None:
+    cwd = _write_config(
+        tmp_path=tmp_path,
+        text='{"livespec-orchestrator-beads-fabro": {"dispatcher": {"autonomous_mode": true}}}',
+    )
+    assert resolve_autonomous_mode_permission(cwd=cwd) is True
+
+
+@pytest.mark.parametrize("raw", ["false", '"true"', "1", "0", "null"])
+def test_resolve_autonomous_mode_only_boolean_true_enables(tmp_path: Path, raw: str) -> None:
+    # A dangerous, default-off override: only an explicit boolean `true` arms
+    # the persistent factor; a truthy int or the string "true" stays False.
+    cwd = _write_config(
+        tmp_path=tmp_path,
+        text=f'{{"livespec-orchestrator-beads-fabro": {{"dispatcher": {{"autonomous_mode": {raw}}}}}}}',
+    )
+    assert resolve_autonomous_mode_permission(cwd=cwd) is False
+
+
+def test_resolve_autonomous_mode_read_does_not_persist(tmp_path: Path) -> None:
+    # Scenario 37 "does not persist": the permission read NEVER mutates config.
+    text = '{"livespec-orchestrator-beads-fabro": {"dispatcher": {"autonomous_mode": true}}}'
+    cwd = _write_config(tmp_path=tmp_path, text=text)
+    before = (cwd / ".livespec.jsonc").read_text(encoding="utf-8")
+    _ = resolve_autonomous_mode_permission(cwd=cwd)
+    _ = resolve_autonomous_mode_permission(cwd=cwd)
+    assert (cwd / ".livespec.jsonc").read_text(encoding="utf-8") == before
 
 
 # ---------------------------------------------------------------------------

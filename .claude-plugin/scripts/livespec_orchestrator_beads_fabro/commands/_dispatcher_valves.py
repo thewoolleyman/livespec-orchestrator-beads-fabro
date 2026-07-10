@@ -45,6 +45,7 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "DEFAULT_ACCEPTANCE_POLICY",
     "DEFAULT_ADMISSION_POLICY",
+    "DEFAULT_AUTONOMOUS_MODE",
     "DEFAULT_DOER",
     "DEFAULT_WIP_CAP",
     "AcceptanceDecision",
@@ -56,6 +57,7 @@ __all__: list[str] = [
     "plan_admissions",
     "reject_routing",
     "resolve_assignee",
+    "resolve_autonomous_mode_permission",
     "resolve_wip_cap",
 ]
 
@@ -74,6 +76,11 @@ DEFAULT_DOER = "fabro"
 # acceptance after the AI pass (per SPECIFICATION/contracts.md).
 DEFAULT_ADMISSION_POLICY = "manual"
 DEFAULT_ACCEPTANCE_POLICY = "ai-then-human"
+
+# Full autonomous mode is a DANGEROUS, DEFAULT-OFF override: the persistent
+# `dispatcher.autonomous_mode` permission defaults to `False`, so an
+# unconfigured repo never carries the persistent arming factor.
+DEFAULT_AUTONOMOUS_MODE = False
 
 # The one admission policy that auto-admits without a human in the loop.
 _AUTO_ADMISSION = "auto"
@@ -97,6 +104,7 @@ _LIVESPEC_CONFIG = ".livespec.jsonc"
 _PLUGIN_BLOCK = "livespec-orchestrator-beads-fabro"
 _DISPATCHER_KEY = "dispatcher"
 _WIP_CAP_KEY = "wip_cap"
+_AUTONOMOUS_MODE_KEY = "autonomous_mode"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -143,6 +151,27 @@ def resolve_wip_cap(*, cwd: Path) -> int:
     if isinstance(value, int) and not isinstance(value, bool) and value > 0:
         return value
     return DEFAULT_WIP_CAP
+
+
+def resolve_autonomous_mode_permission(*, cwd: Path) -> bool:
+    """Read the persistent `dispatcher.autonomous_mode` permission (default False).
+
+    The permission lives at
+    `livespec-orchestrator-beads-fabro.dispatcher.autonomous_mode` in
+    `.livespec.jsonc`, sibling to `dispatcher.wip_cap`. Only an explicit
+    boolean `true` enables it; a missing file/block/key, a parse error, or any
+    non-`true` value (including a truthy int or the string `"true"`) reads back
+    as `DEFAULT_AUTONOMOUS_MODE` (False) — the safe default of a dangerous,
+    default-off override (the read never raises). This is only the PERSISTENT
+    factor; arming ALSO requires the per-run `--mode autonomous` opt-in
+    (`_dispatcher_autonomous.decide_arming`).
+    """
+    value = _read_nested_config_value(
+        cwd=cwd, keys=(_PLUGIN_BLOCK, _DISPATCHER_KEY, _AUTONOMOUS_MODE_KEY)
+    )
+    if value is True:
+        return True
+    return DEFAULT_AUTONOMOUS_MODE
 
 
 def _read_nested_config_value(*, cwd: Path, keys: tuple[str, ...]) -> object:
