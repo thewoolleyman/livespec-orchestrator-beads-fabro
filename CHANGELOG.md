@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.14.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.14.0...v0.14.1) (2026-07-10)
+
+
+### Bug Fixes
+
+* avoid duplicate otel error replies ([50fa105](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/50fa10540649a89969570a98ab2fd4c79fe946ea))
+* clear phase-1 structural warnings ([3d395fa](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3d395fa18a6a1feec2a711b77889edc36661bbdf))
+* preserve verdict value contracts ([c85147c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c85147c5f92b1c76ca28695e7e7dd4b314047120))
+
 ## [0.14.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.16...v0.14.0) (2026-07-10)
 
 
