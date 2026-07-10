@@ -5,13 +5,13 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, cast
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import effective_admission_policy
+from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 from livespec_orchestrator_beads_fabro.store import (
     read_work_items,
     update_work_item_policy,
@@ -390,7 +390,7 @@ def main(*, argv: list[str] | None = None, runner: CommandRunner | None = None) 
         parser.error("the following arguments are required: --action")
     repo = _resolve_repo(repo_arg=args.repo)
     if not repo.exists():
-        _ = sys.stderr.write(f"ERROR: --repo does not exist: {repo}\n")
+        _ = write_stderr(text=f"ERROR: --repo does not exist: {repo}\n")
         return _EXIT_PRECONDITION_ERROR
     result = run_action(repo=repo, action_id=args.action, runner=runner)
     _emit_payload(payload=result, as_json=args.as_json)
@@ -461,9 +461,9 @@ def _parse_json_object_or_array(*, text: str) -> object:
 
 def _emit_payload(*, payload: dict[str, Any], as_json: bool) -> None:
     if as_json:
-        _ = sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
         return
-    _ = sys.stdout.write(_human_summary(payload=payload) + "\n")
+    _ = write_stdout(text=_human_summary(payload=payload) + "\n")
 
 
 def _human_summary(*, payload: dict[str, Any]) -> str:

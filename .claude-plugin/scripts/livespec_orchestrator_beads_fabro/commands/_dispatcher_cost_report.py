@@ -44,7 +44,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -58,6 +57,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_pricing import 
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_sink import CostReport
 from livespec_orchestrator_beads_fabro.commands._otel_scrub import attr as _attr
+from livespec_orchestrator_beads_fabro.io import write_stderr
 
 __all__: list[str] = [
     "CostReportItem",
@@ -214,7 +214,7 @@ def _default_tag(*, model_basis: str) -> str:
 
 
 def _emit_summary(*, items: tuple[CostReportItem, ...]) -> None:
-    _ = sys.stderr.write("\n".join(cost_report_summary_lines(items=items)) + "\n")
+    _ = write_stderr(text="\n".join(cost_report_summary_lines(items=items)) + "\n")
 
 
 def _emit_spans(

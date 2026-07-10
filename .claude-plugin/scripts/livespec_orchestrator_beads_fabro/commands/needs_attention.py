@@ -6,7 +6,6 @@ import argparse
 import json
 import shlex
 import subprocess
-import sys
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -29,6 +28,7 @@ from livespec_orchestrator_beads_fabro.commands._config import resolve_store_con
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
 from livespec_orchestrator_beads_fabro.commands.list_plan_threads import list_plan_threads
 from livespec_orchestrator_beads_fabro.commands.next import rank_candidates
+from livespec_orchestrator_beads_fabro.io import write_stdout
 from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -59,9 +59,9 @@ def main(*, argv: list[str] | None = None) -> int:
         include_hygiene=not args.skip_hygiene,
     )
     if args.as_json:
-        _ = sys.stdout.write(render_json(attention=attention))
+        _ = write_stdout(text=render_json(attention=attention))
     else:
-        _ = sys.stdout.write(render_markdown(attention=attention))
+        _ = write_stdout(text=render_markdown(attention=attention))
     return 0
 
 

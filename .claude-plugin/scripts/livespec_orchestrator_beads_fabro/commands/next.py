@@ -49,7 +49,6 @@ the wrapper emits `candidates: []` with `has_more: false`.
 
 import argparse
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +57,7 @@ from livespec_runtime.work_items.lifecycle import is_item_ready, ready_sort_key
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
+from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
@@ -93,7 +93,7 @@ def main(*, argv: list[str] | None = None) -> int:
     ranked = rank_candidates(items=materialized, manifest=manifest)
     envelope = _slice_envelope(ranked=ranked, offset=offset, limit=limit)
     if args.as_json:
-        _ = sys.stdout.write(json.dumps(envelope, indent=2, sort_keys=True) + "\n")
+        _ = write_stdout(text=json.dumps(envelope, indent=2, sort_keys=True) + "\n")
     else:
         sliced = ranked[offset : offset + limit]
         _write_human(candidates=sliced)
@@ -200,8 +200,8 @@ def _parse_positive_int(*, raw: str, flag: str) -> int | None:
     """
     parsed = _parse_int_or_none(raw=raw)
     if parsed is None or parsed < 1:
-        _ = sys.stderr.write(
-            f"ERROR: {flag} requires a positive integer (got '{raw}').\n",
+        _ = write_stderr(
+            text=f"ERROR: {flag} requires a positive integer (got '{raw}').\n",
         )
         return None
     return parsed
@@ -211,8 +211,8 @@ def _parse_non_negative_int(*, raw: str, flag: str) -> int | None:
     """Parse a CLI integer that MUST be `>= 0`. Returns None on invalid input."""
     parsed = _parse_int_or_none(raw=raw)
     if parsed is None or parsed < 0:
-        _ = sys.stderr.write(
-            f"ERROR: {flag} requires a non-negative integer (got '{raw}').\n",
+        _ = write_stderr(
+            text=f"ERROR: {flag} requires a non-negative integer (got '{raw}').\n",
         )
         return None
     return parsed
@@ -234,11 +234,11 @@ def _parse_int_or_none(*, raw: str) -> int | None:
 
 def _write_human(*, candidates: list[dict[str, Any]]) -> None:
     if not candidates:
-        _ = sys.stdout.write("No candidates ready (queue empty or all blocked)\n")
+        _ = write_stdout(text="No candidates ready (queue empty or all blocked)\n")
         return
     for candidate in candidates:
         line = (
             f"{candidate['action']}  {candidate['work_item_ref']}"
             f"  [{candidate['urgency']}]  {candidate['reason']}\n"
         )
-        _ = sys.stdout.write(line)
+        _ = write_stdout(text=line)

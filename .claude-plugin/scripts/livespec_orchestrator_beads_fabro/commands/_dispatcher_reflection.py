@@ -67,7 +67,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -83,6 +82,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Dispat
 # policy"). This module consumes `attr` (which itself scrubs string values
 # via the shared `scrub` + credential-URL regex).
 from livespec_orchestrator_beads_fabro.commands._otel_scrub import attr as _attr
+from livespec_orchestrator_beads_fabro.io import write_stderr
 
 __all__: list[str] = [
     "ReflectionFinding",
@@ -347,7 +347,7 @@ def _record_reflection_error(*, journal: JournalWriter, exc: Exception) -> None:
     _AUTO_TRIP.consecutive_errors += 1
     reason = f"{type(exc).__name__}: {exc}"
     journal.append(record={"stage": "reflection-error", "reason": reason})
-    _ = sys.stderr.write(f"WARN: reflection error (fail-open, verdict unchanged): {reason}\n")
+    _ = write_stderr(text=f"WARN: reflection error (fail-open, verdict unchanged): {reason}\n")
     if _AUTO_TRIP.consecutive_errors >= _AUTO_TRIP_THRESHOLD:
         _AUTO_TRIP.tripped = True
         journal.append(
@@ -361,7 +361,7 @@ def _record_reflection_error(*, journal: JournalWriter, exc: Exception) -> None:
             f"WARN: reflection auto-tripped after {_AUTO_TRIP.consecutive_errors} consecutive "
             "errors; disabled for the rest of this process (cycle LIVESPEC_REFLECTION)\n"
         )
-        _ = sys.stderr.write(trip_msg)
+        _ = write_stderr(text=trip_msg)
 
 
 def _run_reflection(
@@ -535,7 +535,7 @@ def _emit_summary(*, report: ReflectionReport) -> None:
     for finding in report.findings:
         prefix = f"reflection [{finding.severity}] {finding.category} (x{finding.count})"
         lines.append(f"{prefix}: {finding.subject}")
-    _ = sys.stderr.write("\n".join(lines) + "\n")
+    _ = write_stderr(text="\n".join(lines) + "\n")
 
 
 def _emit_spans(*, report: ReflectionReport, spans_path: Path) -> None:

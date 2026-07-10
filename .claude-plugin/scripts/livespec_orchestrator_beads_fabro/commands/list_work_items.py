@@ -38,7 +38,6 @@ Output:
 
 import argparse
 import json
-import sys
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
@@ -49,6 +48,7 @@ from livespec_runtime.work_items.lifecycle import is_item_ready, lane_of
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
+from livespec_orchestrator_beads_fabro.io import write_stdout
 from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
@@ -152,17 +152,17 @@ def _write_json(
     manifest: CrossRepoManifest,
 ) -> None:
     payload = [_work_item_to_dict(item=item, index=index, manifest=manifest) for item in items]
-    _ = sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
 def _write_human(*, items: list[WorkItem]) -> None:
     if not items:
-        _ = sys.stdout.write("(no work-items)\n")
+        _ = write_stdout(text="(no work-items)\n")
         return
     for item in items:
         gap_marker = f" gap={item.gap_id}" if item.gap_id is not None else ""
         line = f"{item.id}  [{item.status}/{item.origin}{gap_marker}]  {item.title}\n"
-        _ = sys.stdout.write(line)
+        _ = write_stdout(text=line)
 
 
 def _work_item_to_dict(

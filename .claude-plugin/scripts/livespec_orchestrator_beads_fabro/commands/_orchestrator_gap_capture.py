@@ -25,7 +25,6 @@ within one payload.
 """
 
 import json
-import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, cast
@@ -45,6 +44,7 @@ from livespec_orchestrator_beads_fabro.intake_dor import (
     DefinitionOfReadyChecklist,
     apply_intake_dor,
 )
+from livespec_orchestrator_beads_fabro.io import write_stdout
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
     materialize_work_items,
@@ -206,10 +206,10 @@ def _emit(
             "created": created,
             "skipped_existing": skipped,
         }
-        _ = sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
         return
     verb = "would create" if dry_run else "created"
     for entry in created:
-        _ = sys.stdout.write(f"{verb} {entry['id']} (gap {entry['gap_id']})\n")
+        _ = write_stdout(text=f"{verb} {entry['id']} (gap {entry['gap_id']})\n")
     for gap_id in skipped:
-        _ = sys.stdout.write(f"skipped existing gap {gap_id}\n")
+        _ = write_stdout(text=f"skipped existing gap {gap_id}\n")

@@ -33,7 +33,6 @@ expected-error → exit-code mapping.
 """
 
 import argparse
-import sys
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._orchestrator_drift_capture import run_drift_capture
@@ -46,6 +45,7 @@ from livespec_orchestrator_beads_fabro.commands._orchestrator_shared import (
     parse_cli_argv,
 )
 from livespec_orchestrator_beads_fabro.commands._orchestrator_spec_reader import run_spec_reader
+from livespec_orchestrator_beads_fabro.io import write_stderr
 
 __all__: list[str] = ["main"]
 
@@ -65,13 +65,13 @@ def main(*, argv: list[str] | None = None) -> int:
     try:
         return _dispatch(args=args, context=context)
     except PayloadMissingError as exc:
-        _ = sys.stderr.write(f"ERROR: {exc}\n")
+        _ = write_stderr(text=f"ERROR: {exc}\n")
         return _EXIT_PRECONDITION_ERROR
     except PayloadInvalidError as exc:
-        _ = sys.stderr.write(f"ERROR: {exc}\n")
+        _ = write_stderr(text=f"ERROR: {exc}\n")
         return _EXIT_VALIDATION_ERROR
     except InjectedCliError as exc:
-        _ = sys.stderr.write(f"ERROR: {exc}\n")
+        _ = write_stderr(text=f"ERROR: {exc}\n")
         return _EXIT_PRECONDITION_ERROR
 
 

@@ -24,7 +24,6 @@ Two pure entry points back it:
 """
 
 import argparse
-import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -32,6 +31,7 @@ from livespec_runtime.work_items.lifecycle import ready_sort_key
 from livespec_runtime.work_items.rank import n_keys_between
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
+from livespec_orchestrator_beads_fabro.io import write_stdout
 from livespec_orchestrator_beads_fabro.store import (
     materialize_work_items,
     read_work_items,
@@ -93,7 +93,7 @@ def main(*, argv: list[str] | None = None) -> int:
     project_root = Path(args.project_root) if args.project_root is not None else Path.cwd()
     config = resolve_store_config(cwd=project_root, work_items_arg=args.work_items_path)
     rekeyed = _rebalance_live(config=config)
-    _ = sys.stdout.write(f"rebalance-ranks: re-keyed {rekeyed} live work-item(s)\n")
+    _ = write_stdout(text=f"rebalance-ranks: re-keyed {rekeyed} live work-item(s)\n")
     return 0
 
 

@@ -64,18 +64,17 @@ def main() -> int:
     command = _command_of(payload=payload)
     if not command or not should_block(command=command):
         return 0
-    sys.stdout.write(
-        json.dumps(
-            {
-                "decision": "block",
-                "reason": _REASON,
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "deny",
-                    "permissionDecisionReason": _REASON,
-                },
-            }
-        )
+    json.dump(
+        {
+            "decision": "block",
+            "reason": _REASON,
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": _REASON,
+            },
+        },
+        sys.stdout,
     )
     return 0
 

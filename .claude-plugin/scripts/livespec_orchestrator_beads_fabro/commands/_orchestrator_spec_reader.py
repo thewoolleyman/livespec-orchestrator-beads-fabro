@@ -16,9 +16,9 @@ excludes `history/` and `proposed_changes/`.
 """
 
 import json
-import sys
 from pathlib import Path, PurePosixPath
 
+from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 from livespec_orchestrator_beads_fabro.spec_reader import read_current_specification
 
 __all__: list[str] = ["categorize", "run_spec_reader"]
@@ -29,7 +29,7 @@ _EXIT_PRECONDITION_ERROR = 3
 def run_spec_reader(*, spec_root: Path, category: str | None, as_json: bool) -> int:
     """Run the spec-reader subcommand against `spec_root`."""
     if not spec_root.is_dir():
-        _ = sys.stderr.write(f"ERROR: spec tree not found: {spec_root}\n")
+        _ = write_stderr(text=f"ERROR: spec tree not found: {spec_root}\n")
         return _EXIT_PRECONDITION_ERROR
     snapshot = read_current_specification(spec_root=spec_root)
     categories = categorize(files=snapshot.files)
@@ -37,7 +37,7 @@ def run_spec_reader(*, spec_root: Path, category: str | None, as_json: bool) -> 
         categories = {name: files for name, files in categories.items() if name == category}
     if as_json:
         payload = {"version": snapshot.version, "categories": categories}
-        _ = sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
     else:
         _write_human(version=snapshot.version, categories=categories)
     return 0
@@ -59,11 +59,11 @@ def _category_for(*, path: str) -> str:
 
 
 def _write_human(*, version: int, categories: dict[str, dict[str, str]]) -> None:
-    _ = sys.stdout.write(f"spec version: v{version:03d}\n")
+    _ = write_stdout(text=f"spec version: v{version:03d}\n")
     if not categories:
-        _ = sys.stdout.write("(no spec files)\n")
+        _ = write_stdout(text="(no spec files)\n")
         return
     for name in sorted(categories):
-        _ = sys.stdout.write(f"category: {name}\n")
+        _ = write_stdout(text=f"category: {name}\n")
         for path in sorted(categories[name]):
-            _ = sys.stdout.write(f"  {path}\n")
+            _ = write_stdout(text=f"  {path}\n")

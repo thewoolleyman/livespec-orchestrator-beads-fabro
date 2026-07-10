@@ -35,12 +35,12 @@ prompts, no spec modifications.
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 from livespec_spec_clauses import RuleMatch, extract_rules_from_file
 
 from livespec_orchestrator_beads_fabro.errors import SpecVersionNotFoundError
+from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 from livespec_orchestrator_beads_fabro.spec_reader import (
     read_current_specification,
     read_specification_history,
@@ -104,13 +104,13 @@ def main(*, argv: list[str] | None = None) -> int:
                 " accepted forms are 'v<N>' or '<N>' where N is a",
                 " positive integer.\n",
             ]
-            _ = sys.stderr.write("".join(parts))
+            _ = write_stderr(text="".join(parts))
             return _EXIT_USAGE_ERROR
         since_version = parsed
     try:
         rules = detect_rules(spec_root=spec_root, since_version=since_version)
     except SpecVersionNotFoundError as exc:
-        _ = sys.stderr.write(f"ERROR: {exc}\n")
+        _ = write_stderr(text=f"ERROR: {exc}\n")
         return _EXIT_PRECONDITION_ERROR
     if args.as_json:
         _write_json(rules=rules)
@@ -193,13 +193,13 @@ def _files_changed_since(*, spec_root: Path, since_version: int) -> set[str]:
 
 def _write_json(*, rules: list[RuleMatch]) -> None:
     payload = {"gap_ids": [rule.gap_id for rule in rules]}
-    _ = sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
 def _write_human(*, rules: list[RuleMatch]) -> None:
     if not rules:
-        _ = sys.stdout.write("(no rules detected)\n")
+        _ = write_stdout(text="(no rules detected)\n")
         return
     for rule in rules:
         line = f"{rule.spec_file} > {rule.heading_path}  [{rule.gap_id}]  {rule.line_text}\n"
-        _ = sys.stdout.write(line)
+        _ = write_stdout(text=line)

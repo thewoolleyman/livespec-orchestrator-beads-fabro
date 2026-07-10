@@ -6,6 +6,7 @@ from pathlib import Path
 from livespec_dev_tooling.checks import (
     all_declared,
     keyword_only_args,
+    no_write_direct,
     private_calls,
     wrapper_shape,
 )
@@ -18,6 +19,7 @@ def test_phase1_mechanical_checks_have_no_newly_covered_warnings(capsys) -> None
         keyword_only_args.main,
         all_declared.main,
         private_calls.main,
+        no_write_direct.main,
     )
 
     for check in checks:

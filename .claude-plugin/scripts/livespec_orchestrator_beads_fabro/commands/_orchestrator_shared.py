@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.spec_reader import current_specification_version
 
 __all__: list[str] = [
@@ -89,8 +90,8 @@ def parse_cli_argv(*, raw: str, flag: str) -> list[str] | None:
     argv = as_non_empty_str_list(value=parsed)
     if argv is not None:
         return argv
-    _ = sys.stderr.write(
-        f"ERROR: {flag} requires a JSON array of non-empty strings (got {raw!r}).\n",
+    _ = write_stderr(
+        text=f"ERROR: {flag} requires a JSON array of non-empty strings (got {raw!r}).\n",
     )
     return None
 
