@@ -11,6 +11,7 @@ created_at: 2026-07-10T00:00:00Z
 - SPECIFICATION/spec.md
 - SPECIFICATION/contracts.md
 - SPECIFICATION/constraints.md
+- SPECIFICATION/scenarios.md
 
 ### Summary
 
@@ -28,7 +29,11 @@ truly-unresolvable BY DESIGN (not by low confidence), splits the collapse's
 routine-`manual` auto-approval from the design-gated `manual` tier so a
 spec-change slice is never auto-admitted, and reconciles the blanket "treat
 every item's effective `acceptance_policy` as `ai-only`" with Scenario 36's
-`human-only` carve-out. It changes no `## ` (H2) heading, so no
+`human-only` carve-out. It also closes two residual `manual` ↔ spec-change
+conflations that survive elsewhere in `contracts.md` (§"Dispatcher grooming
+behavior" and §"The four maintainer touchpoints") and adds a `scenarios.md`
+Scenario-36 case for a design-human-gated decision escalating by design even at
+high LLM confidence. It changes no `## ` (H2) heading, so no
 `tests/heading-coverage.json` co-edit is required.
 
 ### Motivation
@@ -63,12 +68,13 @@ both are closed here. The impl follow-up is the existing O2 engine item
 ### Proposed Changes
 
 All target text below is quoted verbatim from the live spec at
-`origin/master` (v032, release 0.13.12). Nine edits across three files; no `## `
+`origin/master` (v032, release 0.13.12). Twelve edits across four files; no `## `
 (H2) heading is added, changed, or removed. This proposal is DISJOINT from its
 sibling `autonomous-mode-arming-and-audit-contract`: where both touch `spec.md`
-§"Full autonomous mode" and `contracts.md` §"Full autonomous mode" they target
-different, non-overlapping verbatim strings, so the two may be revised in either
-order.
+§"Full autonomous mode", `contracts.md` §"Full autonomous mode", and
+`scenarios.md` they target different, non-overlapping verbatim strings (this
+proposal's Scenario 36 vs the sibling's Scenarios 33/37), so the two may be
+revised in either order.
 
 **A. `SPECIFICATION/spec.md` §"Terminology" — refine the truly-unresolvable
 definition and name the design-gated set.** Replace the verbatim block:
@@ -284,3 +290,53 @@ with:
 >   verification" floor of `contracts.md` §"Post-merge acceptance
 >   (`acceptance → done`)" MUST hold — every acceptance carries at least one
 >   AI pass even under the mode.
+
+**J. `SPECIFICATION/contracts.md` §"Dispatcher grooming behavior" — fix the
+residual `manual` ↔ spec-change conflation parenthetical.** Replace the verbatim
+sentence:
+
+> The Dispatcher MUST NOT auto-approve (`pending-approval → ready`) any item whose effective `admission_policy` is `manual` (the first-class realization of the prior `human-gated` spec-change marker) — it surfaces the resting item for the maintainer's explicit `approve` instead of advancing it (the authoritative gate + valve contract is §"Dispatcher admission, WIP cap, and post-merge acceptance").
+
+with:
+
+> The Dispatcher MUST NOT auto-approve (`pending-approval → ready`) any item whose effective `admission_policy` is `manual` (the first-class realization of the risky/irreversible human gate — the prior `host-only` / `human-gated` lineage; a spec-change decision is human-gated by ROUTING to `/livespec:propose-change` rather than by resting here, per the intake autonomy-tier rule "spec-change is human-gated … and routes to `/livespec:propose-change` / `/livespec:revise`") — it surfaces the resting item for the maintainer's explicit `approve` instead of advancing it (the authoritative gate + valve contract is §"Dispatcher admission, WIP cap, and post-merge acceptance").
+
+**K. `SPECIFICATION/contracts.md` §"The four maintainer touchpoints" — fix the
+"spec-change / risky tier" conflation in the Dispatch touchpoint.** Replace the
+verbatim fragment:
+
+> (effective `admission_policy` `manual`, the spec-change / risky tier)
+
+with:
+
+> (effective `admission_policy` `manual`, the risky/irreversible tier — a spec-change decision is human-gated by routing to `/livespec:propose-change`, not by resting here)
+
+**L. `SPECIFICATION/scenarios.md` Scenario 36 — add a second Gherkin scenario
+for a design-human-gated decision escalating by design.** Replace the verbatim
+block:
+
+> Scenario: A truly-unresolvable decision escalates even under autonomous mode
+>   Given full autonomous mode is enabled for the invocation
+>   And a decision the LLM cannot confidently resolve, or which policy marks human-only
+>   When the engine evaluates it
+>   Then it does not auto-resolve the decision
+>   And the item remains blocked with blocked_reason needs-human and is surfaced to a human
+>   And the escalation is queryable from the journal
+
+with:
+
+> Scenario: A truly-unresolvable decision escalates even under autonomous mode
+>   Given full autonomous mode is enabled for the invocation
+>   And a decision the LLM cannot confidently resolve, or which policy marks human-only
+>   When the engine evaluates it
+>   Then it does not auto-resolve the decision
+>   And the item remains blocked with blocked_reason needs-human and is surfaced to a human
+>   And the escalation is queryable from the journal
+>
+> Scenario: A design-human-gated decision escalates by design even at high confidence
+>   Given full autonomous mode is enabled for the invocation
+>   And a design-human-gated decision — a drift acceptance, a spec-change, or a regroom/backlog-bounce — that the LLM could resolve with high confidence
+>   When the engine evaluates it
+>   Then it does not auto-resolve the decision because the design reserves it to a human
+>   And the decision is left on its human path — a spec-change to `/livespec:propose-change`, a drift acceptance to the Spec-Plane revise path, a bounce resting in backlog — and surfaced to a human
+>   And the escalation is queryable from the journal

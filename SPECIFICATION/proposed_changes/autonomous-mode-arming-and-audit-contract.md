@@ -84,9 +84,10 @@ All target text below is quoted verbatim from the live spec at `origin/master`
 (v032, release 0.13.12). Six edits across three files; no `## ` (H2) heading is
 added, changed, or removed. This proposal is DISJOINT from its sibling
 `autonomous-mode-irreducible-human-touchpoints`: where both touch `spec.md`
-§"Full autonomous mode" and `contracts.md` §"Full autonomous mode" they target
-different, non-overlapping verbatim strings, so the two may be revised in either
-order.
+§"Full autonomous mode", `contracts.md` §"Full autonomous mode", and
+`scenarios.md` they target different, non-overlapping verbatim strings (this
+proposal's Scenarios 33/37 vs the sibling's Scenario 36), so the two may be
+revised in either order.
 
 **A. `SPECIFICATION/spec.md` §"Full autonomous mode" — correct the wire-surface
 pointer sentence.** Replace the verbatim paragraph:
@@ -208,15 +209,17 @@ with:
 >   MUST require an explicit per-invocation `--mode autonomous` opt-in on the
 >   `loop` subcommand; it MUST NOT arm the mode from the permission key alone.
 
-**E. `SPECIFICATION/scenarios.md` Scenario 33 — correct the arming surface.**
-Replace the verbatim line (two leading spaces preserved; the only change is
-`drive` → `loop`):
+**E. `SPECIFICATION/scenarios.md` Scenario 33 — correct the arming surface and
+qualify the auto-admitted item as routine (not design-human-gated).** Replace the
+verbatim block (two leading spaces preserved on each Gherkin line):
 
 >   Given full autonomous mode is enabled for the invocation via `drive --mode autonomous`
+>   And a `pending-approval` item whose stored admission_policy is manual, with dependencies clear and an assignee resolvable
 
 with:
 
 >   Given full autonomous mode is enabled for the invocation via `loop --mode autonomous`
+>   And a routine `pending-approval` item (risky/irreversible tier, not a design-human-gated decision) whose stored admission_policy is manual, with dependencies clear and an assignee resolvable
 
 **F. `SPECIFICATION/scenarios.md` Scenario 37 — correct the arming surface.**
 Replace the verbatim line (two leading spaces preserved; the only change is
