@@ -3,8 +3,6 @@
 
 from _bootstrap import bootstrap
 
-__all__: list[str] = []
-
 # The Dispatcher's factory GitHub auth resolves ONLY via the governed
 # project's credential_wrapper into the App-token provider (github-app-auth
 # Pillars 1+2), so the App env joins the tenant secret in the self-heal set.
