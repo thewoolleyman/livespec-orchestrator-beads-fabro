@@ -1,159 +1,176 @@
-# Handoff — fabro-token-refresh (livespec-orchestrator-beads-fabro) — 🔵 DIAGNOSED (root cause empirically pinned; fix design is the next step)
+# Handoff — fabro-token-refresh — ✅ FIX VALIDATED LIVE; landing sequence + decisions pending
 
 **Thread:** `plan/fabro-token-refresh/` · **Ledger anchor:** epic **TO BE FILED**
-in the `livespec-orchestrator-beads-fabro` beads tenant (`bd-ib-*`) — the epic
-anchor is deferred to a wrapper-enabled session (this diagnosis was captured from
-an unwrapped session; anchor via the `capture-work-item` seam, not a raw `bd`
-write).
+(beads is healthy — see the `/dev/tcp` note below; anchor via `capture-work-item`
+under `/data/projects/1password-env-wrapper/with-livespec-env.sh --`).
 
-> Status is derived from the ledger, never stored here. Run all ledger/git ops
-> under `/data/projects/1password-env-wrapper/with-livespec-env.sh -- …`.
+> The long-run publish bug is SOLVED and proven in a real >60-min-equivalent run
+> (PR #136 created gh-free). What remains is a coupled *landing sequence*, gated
+> on the decisions below. Run all ledger/git ops under the env wrapper.
 
-## Purpose
+---
 
-Make long factory runs (>60 min) stop dying at the publish node with
-`Invalid username or token`. This is the GitHub-App installation-token 60-min
-TTL biting the in-sandbox push/PR node on any run whose work exceeds the TTL
-(a cold Rust `cargo` build, e.g. `livespec-console-beads-fabro` at ~67 min).
+## ⛔ DECISIONS FOR THE MAINTAINER (resolve these first)
 
-## ROOT CAUSE — empirically confirmed (supersedes the old "Route A vs B" question)
+1. **Open the upstream fabro PR?** The fix is two small changes to `fabro-sh/fabro`
+   (see "The fix"). They're validated and ready to extract onto a clean branch off
+   fabro `main`. Opening a PR into the upstream is **outward-facing** — needs your
+   go. (The OTLP-export capability is a SEPARATE upstream PR — see follow-ups.)
+2. **Production-fabro sequencing (the coupling).** The gh-free `pr.md` **cannot
+   merge until production fabro carries the two fixes** — otherwise every PR-create
+   fails `Resource not accessible`. Pick: **(a)** wait for the upstream PR to
+   merge + a fabro release, then bump our pin; or **(b)** pin production to a
+   custom fork build now (build the fork binary + set `FABRO_VERSION`/image).
+3. **PR #136 cleanup.** The validation created a real (trivial doc) PR on
+   `livespec-console-beads-fabro` (`feat/livespec-console-beads-fabro-6tn`,
+   rebase auto-merge armed). Let it merge, or close it?
+4. **Fleet-wide gh removal (task #8) scope now or later?** The sandbox publish is
+   now gh-free; the HOST dispatcher still uses `gh` (merge-poll `gh pr view`,
+   arming fallback) + adopters. Open the plan thread now or defer?
 
-Confirmed two ways: (1) two independent fabro-source reads (quote-backed), and
-(2) a **live instrumented fabro run** whose `cred-lifecycle:` spans captured the
-exact credential flow. It is a **two-token problem**, and fabro **bypasses its
-own refresh-capable machinery** for the external-agent path:
+---
 
-1. **cred_variant=App** — the creds ARE a GitHub App installation token
-   (mintable/refreshable). This is **NOT a static-cred / provisioning problem**;
-   fabro *can* mint fresh tokens.
-2. **Token #1 — the clone-URL token.** fabro mints an App token and bakes it into
-   the sandbox git `origin` URL (`x-access-token:<tok>@github.com`) **once at
-   clone** (`fabro-github` `resolve_authenticated_url`, called from
-   `fabro-sandbox/src/docker.rs:~620`). Span: `token_expires_at` = mint + **60
-   min**. It is only ever refreshed by fabro's OWN native push
-   (`git_push_via_exec` → `refresh_push_credentials`, reached solely via
-   `git_push_ref` at `fabro-workflow/src/lifecycle/git.rs:~310`) — which the
-   **external Codex ACP agent bypasses** (it runs `git push`/`gh` in its own
-   shell). So for the agent, the clone-URL token is never refreshed.
-3. **Token #2 — the ACP env token.** The Codex ACP process env is **frozen at
-   process spawn** (`acp.rs` `resolve_launch_env`; span:
-   `acp_launch_env{refresh_managed=false, "frozen at process spawn"}`). fabro's
-   own code documents this via the `GithubTokenRefreshLimited` notice.
-4. **fabro's refresh machinery is not even wired in this run.** The
-   `built sandbox token source` / `current_token` / `projected GITHUB_TOKEN`
-   spans **never fire** — because `build_sandbox_env`
-   (`fabro-workflow/src/pipeline/initialize.rs:90`) **returns early**
-   (`github_permissions` empty) *before* the `App → Mintable` construction at
-   line 104. So no managed `GitHubTokenSource` is built, `refresh_managed=false`,
-   and the agent falls back to the **dispatcher's static overlay `GITHUB_TOKEN`**
-   (projected by `_dispatcher_plan.py:~979`) for `gh`, plus the static clone-URL
-   token for `git`. **Both static, both stale at >60 min.**
+## ✅ STATUS — the fix is FULLY VALIDATED
 
-**Net:** fabro owns an App minter capable of fresh tokens on demand, but delivers
-only *frozen static* tokens to a long-running external ACP agent. On a >60-min
-run both tokens are expired at push → publish fails. (Independently observed as a
-real 93-min run that died at the pr node with `Invalid username or token`.)
+Live proof (`livespec-console-beads-fabro`, image `livespec-orchestrator:dev`
+carrying the fixed fabro): **PR #136** —
+`https://github.com/thewoolleyman/livespec-console-beads-fabro/pull/136` —
+created **gh-free** via GitHub REST (`POST /pulls`) + GraphQL
+(`enablePullRequestAutoMerge`, `mergeMethod: REBASE`, armed), on the
+`feat/<work-item-id>` branch, with **zero `gh`**, **no** `Resource not accessible`,
+pr node `status="succeeded"`. All family conventions preserved; complete
+workflow control retained (agent-owned publish). Codex followed the REST prompt
+flawlessly (used python3 when `jq` was absent).
 
-## FIX DIRECTION — a fabro architectural improvement (upstream-worthy)
+Earlier proof of Token #1: a genuine >60-min run pushed green past the 60-min TTL.
 
-The robust, general fix is **fabro-side**: for external-ACP stages with mintable
-creds, fabro should install a **git credential helper + a `gh` credential in the
-sandbox that call back to fabro's App minter on demand**, so the agent's
-`git push`/`gh` obtain a *fresh* token at push time regardless of run length.
-This solves it for any external agent, not just ours.
+---
 
-- Merely requesting `github_permissions` (so `build_sandbox_env` builds a
-  Mintable source) is **necessary but not sufficient** — the ACP env is still
-  frozen at process spawn; a long-lived process needs on-demand refresh (the
-  helper), not a one-shot fresher launch env.
-- Alternative: route the publish through fabro's own refreshing native push. Less
-  general (our pr node also arms auto-merge + writes a custom body).
-- **Our-side lever:** the dispatcher's overlay `GITHUB_TOKEN` is also static;
-  whatever lands, our projection should stop being what the agent's `gh` leans on.
+## THE FIX — three coupled pieces
 
-This is the "unanticipated but in-scope fabro improvement" the maintainer
-flagged: fabro's `GithubTokenRefreshLimited` notice *documents* the limitation
-but leaves it unsolved, while fabro already has the minter to solve it.
+1. **fabro: node-entry credential refresh** (`fabro-workflow/src/handler/llm/acp.rs`,
+   in `run_turn`, before the ACP process spawns): call
+   `sandbox.refresh_push_credentials().await`, **warn-and-continue** (mirror the
+   existing pattern at `fabro-sandbox/src/sandbox.rs:~1172`, never `?`-propagate).
+   Keeps the `origin` token fresh past the 60-min TTL. VALIDATED (git push).
+2. **fabro: broaden the clone/origin token scope** — `fabro-github/src/lib.rs`
+   `resolve_clone_credentials_with_expiry` (v0.254.0 line ~1107; on `main` it is
+   `resolve_clone_credentials` ~line 1054): change the mint permissions from
+   `{ "contents": "write" }` to `{ "contents": "write", "pull_requests": "write" }`
+   (the exact pair fabro already uses for its own PR ops). Lets the fresh origin
+   token create PRs. The node-entry refresh inherits it (same
+   `resolve_authenticated_url` path). VALIDATED (PR #136 via REST).
+3. **orchestrator: gh-free `pr.md`** (`.claude-plugin/.fabro/workflows/
+   implement-work-item/prompts/pr.md`): agent extracts the token from `origin`
+   and publishes via token + REST/GraphQL (no `gh`); preserves `feat/<id>` branch,
+   work-item body, Claude-Code footer, rebase auto-merge; python3 fallback if `jq`
+   absent. On branch **`feat/gh-free-token-rest-publish`** (+ 4 stale-`GH_TOKEN`
+   comment fixes). VALIDATED.
 
-## REPRODUCTION TOOLING (built + ready)
+---
 
-- **Instrumented fabro fork** at `/home/ubuntu/.worktrees/fabro/instrument-v0254`
-  (v0.254.0 + `cred-lifecycle:` tracing spans + an OTLP-export capability in a new
-  `fabro-cli/src/otel.rs`, honoring standard `OTEL_*`, defaulting `http/json`).
-  The OTLP-export piece is a clean, separable, **upstream-worthy** change on its
-  own. `cargo check -p fabro-cli` is clean.
-- **Build** (glibc floor matters — host glibc 2.42 would break on the image's
-  2.39): built in a `rust:1-bookworm` (glibc 2.36) container →
-  `target-glibc239/release/fabro` (max GLIBC 2.35).
-- **Injected image** `livespec-orchestrator:dev` (instrumented binary + a
-  `FABRO_LOG=warn,fabro_workflow=info,fabro_sandbox=info,fabro_github=info`
-  FROM-override layer). Rebuild the CLEAN `:dev` from the pinned binary when done.
-- **Run it:** reset a console item to `ready` (`bd update <id> --status ready`)
-  and dispatch UNDER THE WRAPPER, **without `--build-image`** (that would restage
-  the stock binary):
-  `real-work-dispatch.sh --target-repo livespec-console-beads-fabro --item <id> --run --keep-container`.
-- **Read spans:** fabro logs to `/root/.fabro/storage/logs/server.log` +
-  per-run `/root/.fabro/storage/scratch/<ULID>/runtime/server.log` (NOT
-  `~/.fabro/logs/`):
-  `docker exec livespec-orch-realwork sh -lc 'grep -rh "cred-lifecycle:" /root/.fabro/storage 2>/dev/null'`.
+## ARTIFACTS — exactly where everything is
 
-## NEXT ACTION (execute from this file alone)
+- **Instrumented fabro fork build:** `~/.worktrees/fabro/instrument-v0254`
+  (detached at v0.254.0). Contains: piece #1 (acp.rs), piece #2 (lib.rs token
+  scope), PLUS debug instrumentation (`cred-lifecycle:` spans) and an OTLP-export
+  capability (`fabro-cli/src/otel.rs`). Built binary:
+  `target-glibc239/release/fabro` (glibc 2.35; built in a `rust:1-bookworm`
+  container because the host glibc 2.42 is too new for the image's 2.39).
+- **Image `livespec-orchestrator:dev`** = that binary + `FABRO_LOG` layer. Rebuild
+  recipe: stage `$BIN`→`orchestrator-image/fabro`, copy plugin-scripts, `docker
+  build`, then a `FROM ... ENV FABRO_LOG=...` layer (see git history of this
+  session / the acceptance script). Rebuild the CLEAN `:dev` from the pinned
+  binary when done.
+- **gh-free `pr.md` change:** branch `feat/gh-free-token-rest-publish`, worktree
+  `~/.worktrees/livespec-orchestrator-beads-fabro/gh-free-publish`. Committed
+  locally? NO — the commit was blocked because that worktree is off OLD master
+  (`51fd8bf`, stale `livespec-fabro-sandbox:v0.34.2`). **Current master
+  (`85de452`) already has `v0.35.3`** — so **rebase that branch onto current
+  master**, then the commit/push passes.
+- **For the upstream fabro PR:** extract ONLY pieces #1 + #2 onto a clean branch
+  off fabro `main`. STRIP the debug `cred-lifecycle:` spans and the OTLP export
+  (OTLP is its own separate upstream PR). Piece #1 = the refresh block in
+  `run_turn`; piece #2 = the one-line permission literal.
 
-1. **Design the fabro credential-helper improvement** (the fix above). Decide
-   helper-callback transport (sandbox → fabro server mint endpoint) and how `gh`
-   consumes it. SURFACE the design to the maintainer before implementing — it is
-   an outward-facing upstream fabro change.
-2. (Optional, confirmatory) Capture the **publish-path spans** from the still-Up
-   `livespec-orch-realwork` run at ~67 min: confirm the push reuses the stale
-   `token_fp=4668325a…` after its 22:59 expiry.
-3. Anchor the ledger epic (wrapper-enabled), file dependency-layered slices,
-   prose-link `bd-ib-4sy` / `bd-ib-6vu` / `bd-ib-un226z` + the `livespec-nrdk`
-   candidate slice.
-4. Land the **OTLP-export** change as its own upstream fabro PR (separable from
-   the credential fix). Coordinate with the `codex-factory-telemetry` plan thread.
-5. **Live-exercise:** the acceptance bar is a genuine **>60-min factory run that
-   pushes green** (cold Rust build). No short-run substitute.
+---
 
-## Read-first chain
+## REMAINING WORK (in dependency order)
 
-1. THIS handoff.
-2. `live-adversarial-review-prompt.md` (sibling) — the live-reviewer attack points.
-3. The instrumented fork diff at `/home/ubuntu/.worktrees/fabro/instrument-v0254`
-   (`git diff` — the `cred-lifecycle:` sites + `otel.rs`).
-4. fabro source sites cited above: `fabro-workflow/src/pipeline/initialize.rs:90`,
-   `.../handler/llm/acp.rs`, `.../lifecycle/git.rs`, `fabro-github/src/lib.rs`
-   (`resolve_authenticated_url`), `fabro-sandbox/src/docker.rs`.
-5. The checkpoint-timeout precedent PR #552 (fork branch
-   `feat/configurable-checkpoint-commit-timeout`) — the model for a cross-fork
-   upstream fabro fix + its livespec-side wiring.
+1. **Rebase `feat/gh-free-token-rest-publish` onto current master** + commit/push +
+   open PR — HELD (do not merge) until production fabro has the fixes (decision #2).
+2. **Upstream fabro PR** (pieces #1+#2), pending decision #1. Model: the #552
+   checkpoint-timeout cross-fork PR.
+3. **Production fabro pin** → a build with the fixes (decision #2).
+4. **Durable stale-sandbox delivery fix (task #9).** ROOT CAUSE: fabro reads every
+   `@prompts/*.md` ONCE at `fabro run` submit and bundles the *content* into the
+   run manifest (`fabro-manifest/src/lib.rs:399`); the sandbox renders from the
+   manifest, never re-reading disk — so patching a running container is too late,
+   and a stale plugin clone runs silently. FIX (dispatcher): fail-closed on
+   workflow-clone drift (verify the plugin-root clone is at its pinned ref / not
+   dirty — same discipline as the plugin currency gate) + record prompt provenance
+   (path + checksum) in the journal. `--workflow`/`CLAUDE_PLUGIN_ROOT` already
+   exist as the supported dev/validation override.
+5. **Fleet-wide gh removal (task #8)** — host dispatcher + adopters (decision #4).
+6. **Minor follow-ups:** `jq` missing in the sandbox image (agent fell back to
+   python3 — add `jq` or standardize on python3); `dolt-backup.service` failing
+   (tenant users lack `DOLT_BACKUP` grant — file a work-item); set `LIVESPEC_BD_PATH`
+   to the pinned `bd` (falls back to the mise shim); add the `/dev/tcp` gotcha to
+   `AGENTS.md` (below).
+
+---
+
+## HOW TO RE-VALIDATE (reproduction recipe — proven)
+
+Deliver an uncommitted local `pr.md` WITHOUT a release (fabro freezes prompts at
+submit, so it must be in place *before* `fabro run` submits):
+- Mount the local worktree + set `CLAUDE_PLUGIN_ROOT` on the `docker run` in a
+  **scratch copy** of `real-work-dispatch.sh` (NEVER edit-and-revert the live
+  script — reverting mid-run corrupts bash's byte-offset re-read and the dispatch
+  dies silently): `-v <worktree>:/mnt/ghfree:ro -e
+  CLAUDE_PLUGIN_ROOT=/mnt/ghfree/.claude-plugin`.
+- Use a SHORT work item (the REST-publish correctness is run-length-independent;
+  the >60-min part only ever tested Token #1). Reset it to `ready`; ensure it
+  yields a non-empty diff.
+- Dispatch WITHOUT `--build-image` (that restages the stock binary and destroys
+  the fix). `--keep-container`.
+- Read spans/logs in the container at `/root/.fabro/storage` (per-run
+  `scratch/<ULID>/runtime/server.log`), NOT `~/.fabro/logs/`.
+
+---
+
+## KEY LEARNINGS (hard-won this session — don't relearn)
+
+- **fabro freezes `@prompts` at `fabro run` submit** into the manifest bundle
+  (`fabro-manifest/src/lib.rs:399`). Patching a running container's prompt file
+  does nothing. This caused a whole misdiagnosis ("Codex won't follow instructions")
+  — Codex was simply given the OLD prompt. **Codex follows the prompt correctly.**
+- **`/dev/tcp` loopback probes read FALSE `CLOSED`** in the agent Bash sandbox
+  (verified: 3307, 22, 5432 all read CLOSED though all listening). NEVER use for
+  liveness. The ledger (`doltdb.service`, pid ~1134, `127.0.0.1:3307`) is healthy
+  and enabled-at-boot; ledger/commit failures are almost always the **missing env
+  wrapper**, not a down server. Use `sudo ss -ltnp | grep 3307` + a wrapped
+  `bd list`. (Route this into `AGENTS.md`.)
+- **The token had two scopes/lifetimes:** origin token (git, refreshable via the
+  node-entry fix) vs env `GITHUB_TOKEN` (broader but frozen at ACP launch). Neither
+  was both fresh AND `pull_requests`-capable on a long run — hence the two-part fix.
+- **Don't edit-and-revert a live `real-work-dispatch.sh`** — drive from a scratch copy.
+- **glibc:** build the fork binary in a `bookworm` (glibc 2.36) container; the host
+  (2.42) is too new for the image (2.39).
+
+---
+
+## RELATED WORK / SUPERSEDED
+
+- The 0.13.8 `GH_TOKEN`→`GITHUB_TOKEN` rename is INEFFECTIVE for this bug (the
+  failing push/PR-create don't read that env var); harmless, kept. 4 stale
+  sandbox-projection comments fixed on the gh-free branch.
+- Codex-telemetry gap plan: PR #389 (separate thread `codex-factory-telemetry`).
+- Sibling of the checkpoint-timeout fix (fabro PR #552) — same "make the factory
+  robust for long-running Rust repos" family.
 
 ## Standing disciplines
-
-- Repo mutations: worktree → PR → rebase-merge; `mise exec -- git`; NEVER
-  `--no-verify`; product `.py` uses Red-Green-Replay; doc-only plan edits use
-  `docs(plan): …`; run ledger/git ops under the env wrapper.
-- **Secrets probe-only** (`printenv NAME | wc -c`); NEVER echo a token; the
-  subject IS a live GitHub credential — on any accidental exposure, ROTATE. The
-  instrumentation logs only a non-reversible `token_fp` + expiry, never the token.
-- **"Done means exercised live":** a >60-min factory run that pushes green.
-- Verify sub-agent claims against ground truth; never trust a self-summary.
-- Route through upstream fabro (cross-fork): drive from `/data/projects/fabro`;
-  SURFACE before opening the PR (outward-facing).
-
-## Autonomy posture
-
-No standing auto-accept. Proceed through design + anchoring autonomously, but HALT
-+ report on the credential-helper design decision, opening any upstream fabro PR
-(outward-facing), any new external dependency, or any irreversible act.
-
-## Relationship to other work
-
-- Sibling of the checkpoint-timeout fix (PR #552, `bd-ib-6ka`) — same "make the
-  factory robust for long-running Rust repos" family; DISTINCT bug.
-- The `codex-factory-telemetry` plan thread (PR #389) shares the OTLP-export
-  enabler: it makes fabro's spans observable in Honeycomb. Coordinate naming +
-  receiver protocol.
-- The 0.13.8 `GH_TOKEN`→`GITHUB_TOKEN` rename is INEFFECTIVE for this bug (the
-  failing push doesn't read that env var); harmless, kept. 4 stale sandbox-token
-  comments remain to clean (acceptance-live-golden-master.sh:41,329;
-  e2e-skeleton/justfile:32; test_dispatcher.py:1423).
+Worktree → PR → rebase-merge; `mise exec -- git`; NEVER `--no-verify`; ledger/git
+under the env wrapper; secrets probe-only (instrumentation logs only a non-secret
+`token_fp` + expiry, never the token); "done means exercised live"; SURFACE before
+opening the upstream fabro PR (outward-facing).
