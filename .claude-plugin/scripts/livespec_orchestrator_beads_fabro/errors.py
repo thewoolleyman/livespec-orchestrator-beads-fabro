@@ -16,6 +16,23 @@ discipline on self.args during super().__init__().
 
 from pathlib import Path
 
+__all__: list[str] = [
+    "BeadsCommandError",
+    "BeadsConnectionError",
+    "BeadsCredentialMissingError",
+    "BeadsMappingError",
+    "BeadsTenantMissingError",
+    "ConnectionPrefixMissingError",
+    "GroomDraftError",
+    "GroomExitRefusedError",
+    "GroomTargetNotBacklogError",
+    "MalformedRecordLineError",
+    "SchemaViolationError",
+    "SpecVersionNotFoundError",
+    "StoreFileMissingError",
+    "WorkItemNotFoundError",
+]
+
 
 class StoreFileMissingError(Exception):
     """The configured JSONL store file did not exist on disk."""

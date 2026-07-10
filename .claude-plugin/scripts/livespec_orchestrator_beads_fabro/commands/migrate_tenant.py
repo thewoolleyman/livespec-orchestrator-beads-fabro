@@ -72,7 +72,7 @@ def _legacy_rows(*, items: list[WorkItem], priorities: dict[str, int]) -> list[L
     ]
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(*, argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="migrate-tenant",
         description=(

@@ -315,15 +315,15 @@ class OtelReceiver:
             # Silence the default stderr access-log spam; the receiver is
             # fail-open and journals nothing per request.
             @override
-            def log_message(self, format: str, *args: object) -> None:
-                _ = (format, args)
+            def log_message(self, /, *args: object) -> None:  # type: ignore[override]
+                _ = args
 
             def do_POST(self) -> None:  # noqa: N802 — BaseHTTPRequestHandler API name.
-                receiver._handle_post(handler=self)  # noqa: SLF001 — closure over its owning receiver
+                receiver.handle_post(handler=self)
 
         return _Handler
 
-    def _handle_post(self, *, handler: BaseHTTPRequestHandler) -> None:
+    def handle_post(self, *, handler: BaseHTTPRequestHandler) -> None:
         """Route + handle one POST, fully fail-open (never raises / 500s)."""
         try:
             self._route(handler=handler)

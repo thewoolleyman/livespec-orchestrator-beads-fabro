@@ -187,7 +187,7 @@ def _run_full_dispatch(*, target: Path, item: WorkItem) -> _FullDispatchResult:
     journal_path = target / "tmp" / "fabro-dispatch-journal.jsonl"
     append_work_item(path=config, item=item)
     exit_code = dispatcher.main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(target),

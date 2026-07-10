@@ -110,7 +110,7 @@ def test_loop_with_item_absent_from_tenant_emits_target_tenant_mismatch_error(
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     # Tenant is empty: foreign-item-xyz belongs to a different tenant.
     exit_code = main(
-        [
+        argv=[
             "loop",
             "--repo",
             str(repo),
@@ -145,7 +145,7 @@ def test_dispatch_with_item_absent_from_tenant_emits_target_tenant_mismatch_erro
     # simply got the wrong --item, not an empty tenant.
     append_work_item(path=_config(), item=_item(id="correct-tenant-item"))
     exit_code = main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(repo),

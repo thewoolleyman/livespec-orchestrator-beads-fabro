@@ -76,7 +76,7 @@ def _item(
 def test_main_empty_store_prints_no_items(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    rc = main([])
+    rc = main(argv=[])
     captured = capsys.readouterr()
     assert rc == 0
     assert "(no work-items)" in captured.out
@@ -87,7 +87,7 @@ def test_main_lists_all_human(
 ) -> None:
     _seed(_item(id_="li-a", origin="gap-tied", gap_id="G1"))
     _seed(_item(id_="li-b"))
-    rc = main([])
+    rc = main(argv=[])
     captured = capsys.readouterr()
     assert rc == 0
     assert "li-a" in captured.out
@@ -100,7 +100,7 @@ def test_main_filter_gap_tied(
 ) -> None:
     _seed(_item(id_="li-a", origin="gap-tied", gap_id="G1"))
     _seed(_item(id_="li-b"))
-    rc = main(["--filter=gap-tied"])
+    rc = main(argv=["--filter=gap-tied"])
     captured = capsys.readouterr()
     assert "li-a" in captured.out
     assert "li-b" not in captured.out
@@ -112,7 +112,7 @@ def test_main_filter_freeform(
 ) -> None:
     _seed(_item(id_="li-a", origin="gap-tied", gap_id="G1"))
     _seed(_item(id_="li-b"))
-    rc = main(["--filter=freeform"])
+    rc = main(argv=["--filter=freeform"])
     captured = capsys.readouterr()
     assert "li-b" in captured.out
     assert "li-a" not in captured.out
@@ -124,7 +124,7 @@ def test_main_filter_blocked(
 ) -> None:
     _seed(_item(id_="li-a", status="blocked"))
     _seed(_item(id_="li-b"))
-    rc = main(["--filter=blocked"])
+    rc = main(argv=["--filter=blocked"])
     captured = capsys.readouterr()
     assert "li-a" in captured.out
     assert "li-b" not in captured.out
@@ -136,7 +136,7 @@ def test_main_filter_ready_excludes_open_local_deps(
 ) -> None:
     _seed(_item(id_="li-a"))
     _seed(_item(id_="li-b", depends_on=("li-a",)))
-    rc = main(["--filter=ready"])
+    rc = main(argv=["--filter=ready"])
     captured = capsys.readouterr()
     assert "li-a" in captured.out
     assert "li-b" not in captured.out
@@ -148,7 +148,7 @@ def test_main_filter_ready_does_not_exclude_missing_local_dep(
 ) -> None:
     """Missing local ids resolve to UNKNOWN; only OPEN excludes per the v072 contract."""
     _seed(_item(id_="li-c", depends_on=("li-missing",)))
-    rc = main(["--filter=ready"])
+    rc = main(argv=["--filter=ready"])
     captured = capsys.readouterr()
     assert "li-c" in captured.out
     assert rc == 0
@@ -159,7 +159,7 @@ def test_main_filter_ready_includes_closed_deps(
 ) -> None:
     _seed(_item(id_="li-a", status="done"))
     _seed(_item(id_="li-b", depends_on=("li-a",)))
-    rc = main(["--filter=ready"])
+    rc = main(argv=["--filter=ready"])
     captured = capsys.readouterr()
     assert "li-b" in captured.out
     assert rc == 0
@@ -170,7 +170,7 @@ def test_main_filter_closed(
 ) -> None:
     _seed(_item(id_="li-a"))
     _seed(_item(id_="li-b", status="done"))
-    rc = main(["--filter=closed"])
+    rc = main(argv=["--filter=closed"])
     captured = capsys.readouterr()
     assert "li-b" in captured.out
     assert "li-a" not in captured.out
@@ -182,7 +182,7 @@ def test_main_with_gap_id_filter(
 ) -> None:
     _seed(_item(id_="li-a", origin="gap-tied", gap_id="G1"))
     _seed(_item(id_="li-b", origin="gap-tied", gap_id="G2"))
-    rc = main(["--with-gap-id", "G1"])
+    rc = main(argv=["--with-gap-id", "G1"])
     captured = capsys.readouterr()
     assert "li-a" in captured.out
     assert "li-b" not in captured.out
@@ -193,7 +193,7 @@ def test_main_json_output_with_audit(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _seed(_item(id_="li-a", status="done"))
-    rc = main(["--json"])
+    rc = main(argv=["--json"])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -213,7 +213,7 @@ def test_main_json_output_depends_on_is_typed_dict_local_entry(
     """
     _seed(_item(id_="li-dep"))
     _seed(_item(id_="li-blocked", depends_on=("li-dep",)))
-    rc = main(["--json"])
+    rc = main(argv=["--json"])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -225,7 +225,7 @@ def test_main_json_output_without_audit(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _seed(_item(id_="li-open"))
-    rc = main(["--json"])
+    rc = main(argv=["--json"])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -241,7 +241,7 @@ def test_main_json_output_includes_spec_commitment_hint_when_set(
 ) -> None:
     """`--json` exposes spec_commitment_hint so the doctor invariant can match."""
     _seed(_item(id_="li-a", spec_commitment_hint="spec-impl-commitment-tracking"))
-    rc = main(["--json"])
+    rc = main(argv=["--json"])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -253,7 +253,7 @@ def test_main_json_output_includes_null_spec_commitment_hint_when_unset(
 ) -> None:
     """`--json` carries explicit null for freeform work-items (the unset case)."""
     _seed(_item(id_="li-a"))
-    rc = main(["--json"])
+    rc = main(argv=["--json"])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -268,7 +268,7 @@ def test_main_with_spec_commitment_hint_filter(
     _seed(_item(id_="li-match", spec_commitment_hint="topic-x"))
     _seed(_item(id_="li-other", spec_commitment_hint="topic-y"))
     _seed(_item(id_="li-none"))
-    rc = main(["--with-spec-commitment-hint", "topic-x"])
+    rc = main(argv=["--with-spec-commitment-hint", "topic-x"])
     captured = capsys.readouterr()
     assert rc == 0
     assert "li-match" in captured.out
@@ -281,7 +281,7 @@ def test_main_with_spec_commitment_hint_filter_no_matches(
 ) -> None:
     """A hint with no matching record yields the empty-listing message."""
     _seed(_item(id_="li-a"))
-    rc = main(["--with-spec-commitment-hint", "no-match"])
+    rc = main(argv=["--with-spec-commitment-hint", "no-match"])
     captured = capsys.readouterr()
     assert rc == 0
     assert "(no work-items)" in captured.out
@@ -293,7 +293,7 @@ def test_main_with_spec_commitment_hint_filter_combines_with_filter_name(
     """Hint filter composes with --filter (intersect, not union)."""
     _seed(_item(id_="li-open", status="ready", spec_commitment_hint="topic-x"))
     _seed(_item(id_="li-closed", status="done", spec_commitment_hint="topic-x"))
-    rc = main(["--filter=closed", "--with-spec-commitment-hint", "topic-x"])
+    rc = main(argv=["--filter=closed", "--with-spec-commitment-hint", "topic-x"])
     captured = capsys.readouterr()
     assert rc == 0
     assert "li-closed" in captured.out
@@ -313,7 +313,7 @@ def test_main_with_spec_commitment_hint_filter_combines_with_gap_id(
         )
     )
     _seed(_item(id_="li-b", spec_commitment_hint="topic-x"))
-    rc = main(["--with-gap-id", "G1", "--with-spec-commitment-hint", "topic-x"])
+    rc = main(argv=["--with-gap-id", "G1", "--with-spec-commitment-hint", "topic-x"])
     captured = capsys.readouterr()
     assert rc == 0
     assert "li-a" in captured.out
@@ -332,7 +332,7 @@ def test_main_json_emits_lane_active_with_null_reason(
 ) -> None:
     """An active item emits lane 'active' and lane_reason null (Scenario 26)."""
     _seed(_item(id_="li-active", status="active"))
-    rc = main(["--json"])
+    rc = main(argv=["--json"])
     captured = capsys.readouterr()
     assert rc == 0
     entry = _by_id(json.loads(captured.out))["li-active"]
@@ -346,7 +346,7 @@ def test_main_json_emits_lane_blocked_dependency_for_ready_with_open_dep(
     """A stored-ready item with an open dependency renders lane blocked:dependency."""
     _seed(_item(id_="li-dep"))
     _seed(_item(id_="li-ready", status="ready", depends_on=("li-dep",)))
-    rc = main(["--json"])
+    rc = main(argv=["--json"])
     captured = capsys.readouterr()
     assert rc == 0
     entry = _by_id(json.loads(captured.out))["li-ready"]
@@ -359,7 +359,7 @@ def test_main_json_emits_lane_blocked_needs_human_for_stored_blocked(
 ) -> None:
     """A stored blocked item carries its stored blocked_reason as lane_reason."""
     _seed(_item(id_="li-blk", status="blocked", blocked_reason="needs-human"))
-    rc = main(["--json"])
+    rc = main(argv=["--json"])
     captured = capsys.readouterr()
     assert rc == 0
     entry = _by_id(json.loads(captured.out))["li-blk"]
@@ -373,7 +373,7 @@ def test_main_filter_blocked_includes_ready_with_open_dependency(
     """`--filter=blocked` is lane semantics: a ready item with an open dep matches."""
     _seed(_item(id_="li-dep"))
     _seed(_item(id_="li-ready", status="ready", depends_on=("li-dep",)))
-    rc = main(["--filter=blocked"])
+    rc = main(argv=["--filter=blocked"])
     captured = capsys.readouterr()
     assert rc == 0
     assert "li-ready" in captured.out

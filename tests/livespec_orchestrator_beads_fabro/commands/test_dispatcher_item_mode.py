@@ -145,7 +145,7 @@ def test_loop_autonomous_with_item_dispatches_requested_not_top_ranked(
     recording = _RecordingRunDispatch()
     monkeypatch.setattr(dispatcher, "run_dispatch", recording)
     exit_code = main(
-        [
+        argv=[
             "loop",
             "--repo",
             str(repo),
@@ -180,7 +180,7 @@ def test_loop_autonomous_with_item_not_ready_exits_precondition_error(
     recording = _RecordingRunDispatch()
     monkeypatch.setattr(dispatcher, "run_dispatch", recording)
     exit_code = main(
-        [
+        argv=[
             "loop",
             "--repo",
             str(repo),
@@ -215,7 +215,7 @@ def test_loop_shadow_with_item_not_ready_exits_precondition_error(
     recording = _RecordingRunDispatch()
     monkeypatch.setattr(dispatcher, "run_dispatch", recording)
     exit_code = main(
-        [
+        argv=[
             "loop",
             "--repo",
             str(repo),

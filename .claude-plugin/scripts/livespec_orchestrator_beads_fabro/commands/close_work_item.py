@@ -83,7 +83,7 @@ def close_completed(*, path: StoreConfig, item_id: str, reason: str | None = Non
     return closed
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(*, argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="close-work-item")
     _ = parser.add_argument("work_item_id", help="The work-item id to close.")
     _ = parser.add_argument(

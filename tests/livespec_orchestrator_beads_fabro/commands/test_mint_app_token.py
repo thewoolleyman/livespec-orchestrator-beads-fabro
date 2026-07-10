@@ -63,7 +63,7 @@ def test_main_mints_via_the_vendored_provider_and_prints_only_the_token(
     monkeypatch.setenv("GITHUB_APP_ID", " 42 ")
     monkeypatch.setenv("GITHUB_PRIVATE_KEY", "stub-pem")
     monkeypatch.setattr(cli, "InstallationTokenProvider", _StubProvider)
-    assert cli.main([]) == 0
+    assert cli.main(argv=[]) == 0
     captured = capsys.readouterr()
     assert captured.out == "ghs_stub-installation-token"
     assert "github-token source: github-app-installation-token" in captured.err
@@ -101,7 +101,7 @@ def test_main_never_falls_back_to_the_retired_fleet_pat(
     tenant's credential_wrapper.
     """
     monkeypatch.setenv("LIVESPEC_FAMILY_GITHUB_TOKEN", "github_pat_retired")
-    assert cli.main([]) == 3
+    assert cli.main(argv=[]) == 3
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "credential_wrapper" in captured.err
@@ -111,7 +111,7 @@ def test_main_never_falls_back_to_the_retired_fleet_pat(
 def test_main_maps_missing_app_env_to_exit_3_with_actionable_detail(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert cli.main([]) == 3
+    assert cli.main(argv=[]) == 3
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "ERROR:" in captured.err
@@ -124,7 +124,7 @@ def test_main_maps_a_mint_failure_to_exit_3(
     monkeypatch.setenv("GITHUB_APP_ID", "42")
     monkeypatch.setenv("GITHUB_PRIVATE_KEY", "stub-pem")
     monkeypatch.setattr(cli, "InstallationTokenProvider", _MintFailingProvider)
-    assert cli.main([]) == 3
+    assert cli.main(argv=[]) == 3
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "the App API rejected the JWT" in captured.err

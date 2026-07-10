@@ -958,7 +958,7 @@ check-vendor-manifest:
     uv run python -m livespec_dev_tooling.checks.vendor_manifest
 
 check-wrapper-shape:
-    uv run python -m livespec_dev_tooling.checks.wrapper_shape
+    bash dev-tooling/checks/wrapper-shape-compat.sh
 
 # ---------------------------------------------------------------
 # CLI end-to-end harness (top-of-pyramid, user-surface tier).

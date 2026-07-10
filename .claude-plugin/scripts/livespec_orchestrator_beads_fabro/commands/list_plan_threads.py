@@ -10,7 +10,7 @@ __all__: list[str] = ["build_envelope", "list_plan_threads", "main"]
 _ARCHIVE_DIR_NAME = "archive"
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(*, argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="list-plan-threads")
     _ = parser.add_argument("--json", dest="as_json", action="store_true")
     _ = parser.add_argument("--project-root", dest="project_root", default=None)

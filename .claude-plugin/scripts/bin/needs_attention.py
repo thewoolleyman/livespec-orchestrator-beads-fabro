@@ -3,6 +3,8 @@
 
 from _bootstrap import bootstrap
 
+__all__: list[str] = []
+
 bootstrap()
 
 from livespec_orchestrator_beads_fabro.commands.needs_attention import main

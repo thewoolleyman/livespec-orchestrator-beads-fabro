@@ -9,7 +9,7 @@ inherit) and surfaced for the maintainer to approve into `ready`, rather than
 auto-dispatched into a Fabro sandbox. This is the realization of Scenario 10's
 "spec change always reaches the maintainer, never the factory".
 
-It drives the real `dispatcher.main(["dispatch", ...])` CLI through the REAL
+It drives the real `dispatcher.main(argv=["dispatch", ...])` CLI through the REAL
 store/client seam against the in-memory `FakeBeadsClient` (the hermetic CI
 backend), with `run_dispatch` replaced by a recording stand-in so the test can
 prove NO fabro run was launched for a held item.
@@ -193,7 +193,7 @@ def test_dispatch_holds_manual_admission_item_without_launching_fabro(
     monkeypatch.setattr(dispatcher, "run_dispatch", recording)
 
     exit_code = main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(repo),
@@ -229,7 +229,7 @@ def test_dispatch_journals_admission_held(
     monkeypatch.setattr(dispatcher, "run_dispatch", recording)
 
     exit_code = main(
-        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
 
     assert exit_code == 1
@@ -255,7 +255,7 @@ def test_dispatch_admits_auto_item(
     monkeypatch.setattr(dispatcher, "run_dispatch", recording)
 
     exit_code = main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(repo),

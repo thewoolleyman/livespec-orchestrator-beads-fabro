@@ -10,7 +10,7 @@ non-converging slice to needs-regroom" and the contracts.md clause:
 Under the work-item-state-machine lifecycle the bounce target is the
 first-class `backlog` status (the slice leaves the WIP for re-grooming), NOT
 the prior `needs-regroom` label. This is the top-of-pyramid behavior journey:
-it drives the real `dispatcher.main(["dispatch", ...])` CLI through the REAL
+it drives the real `dispatcher.main(argv=["dispatch", ...])` CLI through the REAL
 store/client seam against the in-memory `FakeBeadsClient` (the hermetic CI
 backend), with `run_dispatch` replaced by a stand-in that returns a
 non-convergence terminal. The test then reads the tenant back through the
@@ -229,7 +229,16 @@ def test_dispatch_bounces_stalled_slice_to_backlog(
     monkeypatch.setattr(dispatcher, "run_dispatch", _outcome_returning(stalled))
 
     exit_code = main(
-        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow), "--json"]
+        argv=[
+            "dispatch",
+            "--repo",
+            str(repo),
+            "--item",
+            item.id,
+            "--workflow",
+            str(workflow),
+            "--json",
+        ]
     )
 
     # Non-green terminal -> non-zero exit (the maintainer's eyes are required).
@@ -261,7 +270,7 @@ def test_dispatch_bounces_dot_non_converged_slice_to_backlog(
     monkeypatch.setattr(dispatcher, "run_dispatch", _outcome_returning(non_converged))
 
     exit_code = main(
-        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
 
     assert exit_code == 1
@@ -291,7 +300,7 @@ def test_dispatch_does_not_bounce_ordinary_failure(
     monkeypatch.setattr(dispatcher, "run_dispatch", _outcome_returning(ordinary))
 
     exit_code = main(
-        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
 
     assert exit_code == 1
@@ -322,7 +331,7 @@ def test_dispatch_does_not_bounce_green_run(
     monkeypatch.setattr(dispatcher, "run_dispatch", _outcome_returning(green))
 
     exit_code = main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(repo),

@@ -180,7 +180,7 @@ def _resolve_dep(
 
 
 def _status_lookup(*, index: dict[str, WorkItem]) -> Callable[[str], RefStatus]:
-    def _lookup(work_item_id: str) -> RefStatus:
+    def _lookup_status(*, work_item_id: str) -> RefStatus:
         record = index.get(work_item_id)
         if record is None:
             return RefStatus.UNKNOWN
@@ -188,4 +188,4 @@ def _status_lookup(*, index: dict[str, WorkItem]) -> Callable[[str], RefStatus]:
             return RefStatus.CLOSED
         return RefStatus.OPEN
 
-    return _lookup
+    return lambda work_item_id: _lookup_status(work_item_id=work_item_id)

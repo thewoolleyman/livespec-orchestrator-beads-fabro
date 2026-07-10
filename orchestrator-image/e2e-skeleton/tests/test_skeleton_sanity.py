@@ -5,6 +5,8 @@ agent implements `greet`. The agent adds `tests/test_greet.py` asserting the
 greeting; both run under the same `just check`.
 """
 
+__all__: list[str] = ["test_skeleton_is_present"]
+
 
 def test_skeleton_is_present() -> None:
     assert 1 + 1 == 2

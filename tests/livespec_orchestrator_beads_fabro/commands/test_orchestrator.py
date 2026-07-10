@@ -116,26 +116,26 @@ def _drift(**overrides: object) -> dict[str, object]:
 
 def test_main_without_subcommand_exits_usage_error() -> None:
     with pytest.raises(SystemExit) as excinfo:
-        _ = main([])
+        _ = main(argv=[])
     assert excinfo.value.code == 2
 
 
 def test_main_unknown_subcommand_exits_usage_error() -> None:
     with pytest.raises(SystemExit) as excinfo:
-        _ = main(["frobnicate"])
+        _ = main(argv=["frobnicate"])
     assert excinfo.value.code == 2
 
 
 def test_gap_capture_requires_gaps_json_flag() -> None:
     with pytest.raises(SystemExit) as excinfo:
-        _ = main(["gap-capture"])
+        _ = main(argv=["gap-capture"])
     assert excinfo.value.code == 2
 
 
 def test_drift_capture_requires_propose_change_cli_flag(tmp_path: Path) -> None:
     payload = _drifts_payload_file(root=tmp_path, drifts=[])
     with pytest.raises(SystemExit) as excinfo:
-        _ = main(["drift-capture", "--drifts-json", str(payload)])
+        _ = main(argv=["drift-capture", "--drifts-json", str(payload)])
     assert excinfo.value.code == 2
 
 
@@ -148,7 +148,7 @@ def test_spec_reader_missing_spec_tree_exits_precondition(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    rc = main(["spec-reader", "--project-root", str(tmp_path)])
+    rc = main(argv=["spec-reader", "--project-root", str(tmp_path)])
     assert rc == 3
     assert "spec tree not found" in capsys.readouterr().err
 
@@ -158,7 +158,7 @@ def test_spec_reader_json_categorizes_every_file(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _ = _make_spec_tree(root=tmp_path)
-    rc = main(["spec-reader", "--project-root", str(tmp_path), "--json"])
+    rc = main(argv=["spec-reader", "--project-root", str(tmp_path), "--json"])
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["version"] == 2
@@ -174,7 +174,7 @@ def test_spec_reader_category_filter_selects_one_category(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _ = _make_spec_tree(root=tmp_path)
-    rc = main(["spec-reader", "--project-root", str(tmp_path), "--category", "spec", "--json"])
+    rc = main(argv=["spec-reader", "--project-root", str(tmp_path), "--category", "spec", "--json"])
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert list(payload["categories"]) == ["spec"]
@@ -185,7 +185,7 @@ def test_spec_reader_category_filter_unknown_yields_empty(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _ = _make_spec_tree(root=tmp_path)
-    rc = main(["spec-reader", "--project-root", str(tmp_path), "--category", "nope", "--json"])
+    rc = main(argv=["spec-reader", "--project-root", str(tmp_path), "--category", "nope", "--json"])
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["categories"] == {}
@@ -196,7 +196,7 @@ def test_spec_reader_human_output_lists_categories(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _ = _make_spec_tree(root=tmp_path)
-    rc = main(["spec-reader", "--project-root", str(tmp_path)])
+    rc = main(argv=["spec-reader", "--project-root", str(tmp_path)])
     assert rc == 0
     out = capsys.readouterr().out
     assert "spec version: v002" in out
@@ -209,7 +209,7 @@ def test_spec_reader_human_output_empty_tree(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     (tmp_path / "SPECIFICATION").mkdir()
-    rc = main(["spec-reader", "--project-root", str(tmp_path)])
+    rc = main(argv=["spec-reader", "--project-root", str(tmp_path)])
     assert rc == 0
     out = capsys.readouterr().out
     assert "spec version: v000" in out
@@ -223,7 +223,7 @@ def test_spec_reader_defaults_project_root_to_cwd(
 ) -> None:
     _ = _make_spec_tree(root=tmp_path)
     monkeypatch.chdir(tmp_path)
-    rc = main(["spec-reader", "--json"])
+    rc = main(argv=["spec-reader", "--json"])
     assert rc == 0
     assert json.loads(capsys.readouterr().out)["version"] == 2
 
@@ -234,7 +234,7 @@ def test_spec_reader_explicit_spec_target(
 ) -> None:
     spec = _make_spec_tree(root=tmp_path)
     rc = main(
-        ["spec-reader", "--spec-target", str(spec), "--project-root", str(tmp_path), "--json"]
+        argv=["spec-reader", "--spec-target", str(spec), "--project-root", str(tmp_path), "--json"]
     )
     assert rc == 0
     assert json.loads(capsys.readouterr().out)["version"] == 2
@@ -362,7 +362,7 @@ def test_gap_capture_creates_gap_tied_work_items(
         ],
     )
     rc = main(
-        ["gap-capture", "--gaps-json", str(payload), "--project-root", str(tmp_path), "--json"]
+        argv=["gap-capture", "--gaps-json", str(payload), "--project-root", str(tmp_path), "--json"]
     )
     assert rc == 0
     out = json.loads(capsys.readouterr().out)
@@ -388,7 +388,9 @@ def test_gap_capture_skips_existing_and_payload_duplicates(
 ) -> None:
     _ = _make_spec_tree(root=tmp_path)
     first = _gaps_payload_file(root=tmp_path, gaps=[{"gap_id": "gap-aaa", "title": "First"}])
-    assert main(["gap-capture", "--gaps-json", str(first), "--project-root", str(tmp_path)]) == 0
+    assert (
+        main(argv=["gap-capture", "--gaps-json", str(first), "--project-root", str(tmp_path)]) == 0
+    )
     _ = capsys.readouterr()
     again = tmp_path / "again.json"
     _ = again.write_text(
@@ -403,7 +405,9 @@ def test_gap_capture_skips_existing_and_payload_duplicates(
         ),
         encoding="utf-8",
     )
-    rc = main(["gap-capture", "--gaps-json", str(again), "--project-root", str(tmp_path), "--json"])
+    rc = main(
+        argv=["gap-capture", "--gaps-json", str(again), "--project-root", str(tmp_path), "--json"]
+    )
     assert rc == 0
     out = json.loads(capsys.readouterr().out)
     assert [entry["gap_id"] for entry in out["created"]] == ["gap-ccc"]
@@ -418,7 +422,14 @@ def test_gap_capture_dry_run_writes_nothing(
     _ = _make_spec_tree(root=tmp_path)
     payload = _gaps_payload_file(root=tmp_path, gaps=[{"gap_id": "gap-aaa", "title": "First"}])
     rc = main(
-        ["gap-capture", "--gaps-json", str(payload), "--project-root", str(tmp_path), "--dry-run"],
+        argv=[
+            "gap-capture",
+            "--gaps-json",
+            str(payload),
+            "--project-root",
+            str(tmp_path),
+            "--dry-run",
+        ],
     )
     assert rc == 0
     assert "would create" in capsys.readouterr().out
@@ -437,7 +448,7 @@ def test_gap_capture_human_output_names_created_and_skipped(
             {"gap_id": "gap-aaa", "title": "Dup"},
         ],
     )
-    rc = main(["gap-capture", "--gaps-json", str(payload), "--project-root", str(tmp_path)])
+    rc = main(argv=["gap-capture", "--gaps-json", str(payload), "--project-root", str(tmp_path)])
     assert rc == 0
     out = capsys.readouterr().out
     # The minted id carries the resolved `connection.prefix` (decoupled from
@@ -453,7 +464,7 @@ def test_gap_capture_empty_gaps_list_is_a_no_op(
 ) -> None:
     _ = _make_spec_tree(root=tmp_path)
     payload = _gaps_payload_file(root=tmp_path, gaps=[])
-    rc = main(["gap-capture", "--gaps-json", str(payload), "--project-root", str(tmp_path)])
+    rc = main(argv=["gap-capture", "--gaps-json", str(payload), "--project-root", str(tmp_path)])
     assert rc == 0
     assert capsys.readouterr().out == ""
     assert _stored_items() == []
@@ -467,7 +478,7 @@ def test_gap_capture_reads_payload_from_stdin(
     _ = _make_spec_tree(root=tmp_path)
     stdin_payload = json.dumps({"gaps": [{"gap_id": "gap-ddd", "title": "Stdin gap"}]})
     monkeypatch.setattr(sys, "stdin", io.StringIO(stdin_payload))
-    rc = main(["gap-capture", "--gaps-json", "-", "--project-root", str(tmp_path), "--json"])
+    rc = main(argv=["gap-capture", "--gaps-json", "-", "--project-root", str(tmp_path), "--json"])
     assert rc == 0
     out = json.loads(capsys.readouterr().out)
     assert [entry["gap_id"] for entry in out["created"]] == ["gap-ddd"]
@@ -479,7 +490,7 @@ def test_gap_capture_missing_payload_file_exits_precondition(
 ) -> None:
     _ = _make_spec_tree(root=tmp_path)
     rc = main(
-        [
+        argv=[
             "gap-capture",
             "--gaps-json",
             str(tmp_path / "absent.json"),
@@ -498,7 +509,7 @@ def test_gap_capture_unparseable_payload_exits_validation(
     _ = _make_spec_tree(root=tmp_path)
     path = tmp_path / "bad.json"
     _ = path.write_text("{nope", encoding="utf-8")
-    rc = main(["gap-capture", "--gaps-json", str(path), "--project-root", str(tmp_path)])
+    rc = main(argv=["gap-capture", "--gaps-json", str(path), "--project-root", str(tmp_path)])
     assert rc == 4
     assert "not valid JSON" in capsys.readouterr().err
 
@@ -534,7 +545,7 @@ def test_gap_capture_rejects_malformed_payloads(
     _ = _make_spec_tree(root=tmp_path)
     path = tmp_path / "payload.json"
     _ = path.write_text(json.dumps(payload), encoding="utf-8")
-    rc = main(["gap-capture", "--gaps-json", str(path), "--project-root", str(tmp_path)])
+    rc = main(argv=["gap-capture", "--gaps-json", str(path), "--project-root", str(tmp_path)])
     assert rc == 4
     assert detail in capsys.readouterr().err
     assert _stored_items() == []
@@ -547,7 +558,7 @@ def test_gap_capture_uses_injected_spec_reader_cli(
     _ = _make_spec_tree(root=tmp_path)
     payload = _gaps_payload_file(root=tmp_path, gaps=[{"gap_id": "gap-eee", "title": "Injected"}])
     rc = main(
-        [
+        argv=[
             "gap-capture",
             "--gaps-json",
             str(payload),
@@ -571,7 +582,7 @@ def test_gap_capture_invalid_spec_reader_cli_value_exits_usage(
     _ = _make_spec_tree(root=tmp_path)
     payload = _gaps_payload_file(root=tmp_path, gaps=[])
     rc = main(
-        [
+        argv=[
             "gap-capture",
             "--gaps-json",
             str(payload),
@@ -593,7 +604,7 @@ def test_gap_capture_failing_injected_spec_reader_exits_precondition(
     payload = _gaps_payload_file(root=tmp_path, gaps=[{"gap_id": "gap-fff", "title": "T"}])
     failing = [sys.executable, "-c", "import sys; sys.exit(5)"]
     rc = main(
-        [
+        argv=[
             "gap-capture",
             "--gaps-json",
             str(payload),
@@ -621,7 +632,7 @@ def test_drift_capture_routes_to_propose_change_cli(
     payload = _drifts_payload_file(root=tmp_path, drifts=[_drift()])
     record_path = tmp_path / "record.json"
     rc = main(
-        [
+        argv=[
             "drift-capture",
             "--drifts-json",
             str(payload),
@@ -657,7 +668,7 @@ def test_drift_capture_failing_child_exits_precondition(
     payload = _drifts_payload_file(root=tmp_path, drifts=[_drift()])
     record_path = tmp_path / "record.json"
     rc = main(
-        [
+        argv=[
             "drift-capture",
             "--drifts-json",
             str(payload),
@@ -684,7 +695,7 @@ def test_drift_capture_dry_run_invokes_nothing(
     payload = _drifts_payload_file(root=tmp_path, drifts=[_drift()])
     record_path = tmp_path / "record.json"
     rc = main(
-        [
+        argv=[
             "drift-capture",
             "--drifts-json",
             str(payload),
@@ -708,7 +719,7 @@ def test_drift_capture_human_output_marks_failures(
     payload = _drifts_payload_file(root=tmp_path, drifts=[_drift()])
     record_path = tmp_path / "record.json"
     rc = main(
-        [
+        argv=[
             "drift-capture",
             "--drifts-json",
             str(payload),
@@ -729,7 +740,7 @@ def test_drift_capture_empty_drifts_list_is_a_no_op(
     _ = _make_spec_tree(root=tmp_path)
     payload = _drifts_payload_file(root=tmp_path, drifts=[])
     rc = main(
-        [
+        argv=[
             "drift-capture",
             "--drifts-json",
             str(payload),
@@ -766,7 +777,7 @@ def test_drift_capture_rejects_malformed_payloads(
     path = tmp_path / "payload.json"
     _ = path.write_text(json.dumps(payload), encoding="utf-8")
     rc = main(
-        [
+        argv=[
             "drift-capture",
             "--drifts-json",
             str(path),
@@ -787,7 +798,7 @@ def test_drift_capture_invalid_propose_change_cli_value_exits_usage(
     _ = _make_spec_tree(root=tmp_path)
     payload = _drifts_payload_file(root=tmp_path, drifts=[])
     rc = main(
-        [
+        argv=[
             "drift-capture",
             "--drifts-json",
             str(payload),
@@ -808,7 +819,7 @@ def test_drift_capture_uses_injected_spec_reader_cli(
     _ = _make_spec_tree(root=tmp_path)
     payload = _drifts_payload_file(root=tmp_path, drifts=[])
     rc = main(
-        [
+        argv=[
             "drift-capture",
             "--drifts-json",
             str(payload),

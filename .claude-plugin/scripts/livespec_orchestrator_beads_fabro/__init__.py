@@ -29,3 +29,5 @@ seam. Public package layout:
 The store and spec_reader modules are consumed by every heavyweight skill;
 the types module is consumed by every skill plus the thin-transport CLIs.
 """
+
+__all__: list[str] = []

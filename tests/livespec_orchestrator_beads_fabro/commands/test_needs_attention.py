@@ -222,7 +222,9 @@ def test_main_json_output(
 ) -> None:
     _write_config(tmp_path)
     _stub_spec_next(monkeypatch, output=_stub_spec_output())
-    rc = main(["--json", "--skip-hygiene", "--project-root", str(tmp_path), "--repo-name", "repo"])
+    rc = main(
+        argv=["--json", "--skip-hygiene", "--project-root", str(tmp_path), "--repo-name", "repo"]
+    )
 
     captured = capsys.readouterr()
     assert rc == 0
@@ -236,7 +238,7 @@ def test_main_markdown_output(
 ) -> None:
     _write_config(tmp_path)
     _stub_spec_next(monkeypatch, output=_stub_spec_output())
-    rc = main(["--skip-hygiene", "--project-root", str(tmp_path), "--repo-name", "repo"])
+    rc = main(argv=["--skip-hygiene", "--project-root", str(tmp_path), "--repo-name", "repo"])
 
     captured = capsys.readouterr()
     assert rc == 0

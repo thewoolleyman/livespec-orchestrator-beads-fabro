@@ -24,6 +24,8 @@ from pathlib import Path
 import pytest
 from livespec_orchestrator_beads_fabro.acceptance import LiveAcceptanceConfig, run_live_acceptance
 
+__all__: list[str] = ["test_beads_fabro_live_golden_master_greets_the_name"]
+
 _CHECKOUT_ENV = "LIVESPEC_LIVE_CHECKOUT"
 _NAME_ENV = "LIVESPEC_LIVE_NAME"
 

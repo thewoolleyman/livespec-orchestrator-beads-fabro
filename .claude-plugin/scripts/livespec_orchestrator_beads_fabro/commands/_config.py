@@ -68,6 +68,8 @@ from livespec_orchestrator_beads_fabro.commands import _jsonc
 from livespec_orchestrator_beads_fabro.errors import ConnectionPrefixMissingError
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
+__all__: list[str] = ["resolve_fabro_bin", "resolve_store_config"]
+
 _LIVESPEC_CONFIG = ".livespec.jsonc"
 _PLUGIN_BLOCK = "livespec-orchestrator-beads-fabro"
 _CONNECTION_KEY = "connection"
@@ -98,13 +100,13 @@ def resolve_store_config(
     """
     _ = work_items_arg
     block = _read_connection_block(cwd=cwd)
-    tenant = _str_or(block.get("tenant"), default=_DEFAULT_TENANT)
+    tenant = _str_or(value=block.get("tenant"), default=_DEFAULT_TENANT)
     prefix = _require_prefix(block=block)
-    database = _str_or(block.get("database"), default=tenant)
-    server_user = _str_or(block.get("server_user"), default=tenant)
-    server_host = _str_or(block.get("server_host"), default=_DEFAULT_SERVER_HOST)
-    server_port = _int_or(block.get("server_port"), default=_DEFAULT_SERVER_PORT)
-    socket = _optional_str(block.get("socket"))
+    database = _str_or(value=block.get("database"), default=tenant)
+    server_user = _str_or(value=block.get("server_user"), default=tenant)
+    server_host = _str_or(value=block.get("server_host"), default=_DEFAULT_SERVER_HOST)
+    server_port = _int_or(value=block.get("server_port"), default=_DEFAULT_SERVER_PORT)
+    socket = _optional_str(value=block.get("socket"))
     bd_path = _resolve_bd_path(block=block)
     fake = _resolve_fake(block=block)
     return StoreConfig(
@@ -133,7 +135,7 @@ def resolve_fabro_bin(*, cwd: Path) -> str:
     if env_value is not None and env_value != "":
         return env_value
     block = _read_dispatcher_block(cwd=cwd)
-    configured = _str_or(block.get("fabro_bin"), default="")
+    configured = _str_or(value=block.get("fabro_bin"), default="")
     if configured != "":
         return configured
     return _default_fabro_bin()
@@ -197,7 +199,7 @@ def _resolve_bd_path(*, block: dict[str, Any]) -> str:
     env_value = os.environ.get(_ENV_BD_PATH)
     if env_value is not None and env_value != "":
         return env_value
-    return _str_or(block.get("bd_path"), default=_DEFAULT_BD_PATH)
+    return _str_or(value=block.get("bd_path"), default=_DEFAULT_BD_PATH)
 
 
 def _default_fabro_bin() -> str:
@@ -238,19 +240,19 @@ def _resolve_fake(*, block: dict[str, Any]) -> bool:
     return False
 
 
-def _str_or(value: object, *, default: str) -> str:
+def _str_or(*, value: object, default: str) -> str:
     if isinstance(value, str) and value != "":
         return value
     return default
 
 
-def _optional_str(value: object) -> str | None:
+def _optional_str(*, value: object) -> str | None:
     if isinstance(value, str) and value != "":
         return value
     return None
 
 
-def _int_or(value: object, *, default: int) -> int:
+def _int_or(*, value: object, default: int) -> int:
     if isinstance(value, int) and not isinstance(value, bool):
         return value
     return default

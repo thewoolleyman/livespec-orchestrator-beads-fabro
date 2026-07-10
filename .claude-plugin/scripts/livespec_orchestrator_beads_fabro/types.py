@@ -35,7 +35,7 @@ from livespec_runtime.work_items.types import (
     WorkItemType,
 )
 
-__all__ = [
+__all__: list[str] = [
     "AuditRecord",
     "DependsOnRaw",
     "FileDiff",

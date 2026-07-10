@@ -132,7 +132,7 @@ def test_legacy_seed_breaks_priority_captured_ties_by_id() -> None:
 
 
 def test_main_empty_store_rekeys_nothing(capsys: pytest.CaptureFixture[str]) -> None:
-    rc = main([])
+    rc = main(argv=[])
     captured = capsys.readouterr()
     assert rc == 0
     assert "re-keyed 0" in captured.out
@@ -142,7 +142,7 @@ def test_main_rekeys_live_items_in_order(capsys: pytest.CaptureFixture[str]) -> 
     _seed(_item(id_="ra", rank="z1"))
     _seed(_item(id_="rb", rank="z2"))
     _seed(_item(id_="rc", rank="z3"))
-    rc = main([])
+    rc = main(argv=[])
     captured = capsys.readouterr()
     assert rc == 0
     assert "re-keyed 3" in captured.out
@@ -156,7 +156,7 @@ def test_main_rekeys_live_items_in_order(capsys: pytest.CaptureFixture[str]) -> 
 def test_main_excludes_done_items(capsys: pytest.CaptureFixture[str]) -> None:
     _seed(_item(id_="live", rank="z9"))
     _seed(_item(id_="closed", rank="z8", status="done"))
-    rc = main([])
+    rc = main(argv=[])
     captured = capsys.readouterr()
     assert rc == 0
     # Only the one live head is re-keyed; the done head keeps its rank.
@@ -168,9 +168,9 @@ def test_main_second_run_is_a_noop(capsys: pytest.CaptureFixture[str]) -> None:
     """A rebalance is idempotent: a second pass re-keys nothing (skip branch)."""
     _seed(_item(id_="ra", rank="z1"))
     _seed(_item(id_="rb", rank="z2"))
-    _ = main([])
+    _ = main(argv=[])
     _ = capsys.readouterr()
-    rc = main([])
+    rc = main(argv=[])
     captured = capsys.readouterr()
     assert rc == 0
     assert "re-keyed 0" in captured.out

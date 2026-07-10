@@ -174,7 +174,7 @@ def test_spawn_daemon_starts_and_completes_a_thread() -> None:
     import threading as _threading
 
     done = _threading.Event()
-    _spawn_daemon(done.set)
+    _spawn_daemon(body=done.set)
     # The daemon thread is fire-and-forget; wait deterministically for it.
     assert done.wait(timeout=2.0) is True
 
@@ -235,7 +235,7 @@ def test_spawn_daemon_joining_waits_for_the_body_then_returns() -> None:
         started.set()
         finished.set()
 
-    _spawn_daemon_joining(_body, join_timeout=2.0)
+    _spawn_daemon_joining(body=_body, join_timeout=2.0)
     # The join held until the body completed (both events set on return).
     assert started.is_set()
     assert finished.is_set()
@@ -251,6 +251,6 @@ def test_spawn_daemon_joining_bounds_a_wedged_body_and_returns() -> None:
         # return (a wedged reflector must NEVER hang the loop).
         _ = release.wait(timeout=30.0)
 
-    _spawn_daemon_joining(_wedged, join_timeout=0.05)
+    _spawn_daemon_joining(body=_wedged, join_timeout=0.05)
     # We got here despite the body still running → the join is bounded.
     release.set()  # let the daemon unwind.

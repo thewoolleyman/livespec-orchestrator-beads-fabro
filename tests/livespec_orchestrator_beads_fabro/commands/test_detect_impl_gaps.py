@@ -26,7 +26,7 @@ def test_main_no_rules_human_output(
     monkeypatch.chdir(tmp_path)
     spec = tmp_path / "SPECIFICATION"
     _write_spec(root=spec, files={"spec.md": "# Heading\n\nNo rules here.\n"})
-    rc = main([])
+    rc = main(argv=[])
     captured = capsys.readouterr()
     assert rc == 0
     assert "(no rules detected)" in captured.out
@@ -55,7 +55,7 @@ def test_main_detects_must_and_should_rules(
             ),
         },
     )
-    rc = main([])
+    rc = main(argv=[])
     captured = capsys.readouterr()
     assert rc == 0
     assert "MUST validate" in captured.out
@@ -89,7 +89,7 @@ def test_main_excludes_code_fences(
             ),
         },
     )
-    rc = main([])
+    rc = main(argv=[])
     captured = capsys.readouterr()
     assert rc == 0
     assert "MUST honor" in captured.out
@@ -108,7 +108,7 @@ def test_main_emits_json_payload(
         root=spec,
         files={"spec.md": "# T\n\nEverything MUST be deterministic.\n"},
     )
-    rc = main(["--json"])
+    rc = main(argv=["--json"])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -131,7 +131,7 @@ def test_main_excludes_proposed_changes(
     proposed = spec / "proposed_changes"
     proposed.mkdir()
     (proposed / "draft.md").write_text("# Draft\n\nThis pending rule MUST not surface.\n")
-    rc = main(["--json"])
+    rc = main(argv=["--json"])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -146,7 +146,7 @@ def test_main_uses_explicit_spec_target_and_project_root(
     project = tmp_path / "elsewhere"
     spec = project / "MyCustomSpec"
     _write_spec(root=spec, files={"spec.md": "# T\n\nReaders MUST cope.\n"})
-    rc = main(["--project-root", str(project), "--spec-target", str(spec), "--json"])
+    rc = main(argv=["--project-root", str(project), "--spec-target", str(spec), "--json"])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -160,7 +160,7 @@ def test_main_project_root_with_default_spec_target(
     project = tmp_path / "elsewhere"
     spec = project / "SPECIFICATION"
     _write_spec(root=spec, files={"spec.md": "# T\n\nReaders MUST cope.\n"})
-    rc = main(["--project-root", str(project), "--json"])
+    rc = main(argv=["--project-root", str(project), "--json"])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -181,7 +181,7 @@ def test_main_skips_non_markdown_files(
             "schema.json": '{"note": "JSON files MUST not be scanned"}\n',
         },
     )
-    rc = main(["--json"])
+    rc = main(argv=["--json"])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -210,7 +210,7 @@ def test_main_skips_blank_lines_with_keyword(
             ),
         },
     )
-    rc = main(["--json"])
+    rc = main(argv=["--json"])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -229,7 +229,7 @@ def test_main_detects_rule_at_top_of_file_without_heading(
         root=spec,
         files={"spec.md": "Readers MUST handle the no-heading case.\n# Then Heading\n"},
     )
-    rc = main([])
+    rc = main(argv=[])
     captured = capsys.readouterr()
     assert rc == 0
     assert "(top)" in captured.out
@@ -255,7 +255,7 @@ def test_main_heading_stack_handles_level_jumps(
             ),
         },
     )
-    rc = main([])
+    rc = main(argv=[])
     captured = capsys.readouterr()
     assert rc == 0
     assert "H1 >  > H3 (jumped)" in captured.out
@@ -333,7 +333,7 @@ def test_since_version_filters_to_diff_against_history(
     (spec / "changed.md").write_text(
         "# Changed\n\nOld rule MUST survive.\nBrand-new readers MUST adapt.\n"
     )
-    rc = main(["--json", "--since-version", "v080"])
+    rc = main(argv=["--json", "--since-version", "v080"])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -341,7 +341,7 @@ def test_since_version_filters_to_diff_against_history(
     # stable.md's rule MUST NOT appear because the file is unchanged.
     assert len(payload["gap_ids"]) == 2
     # And human form names changed.md only.
-    rc2 = main(["--since-version", "v080"])
+    rc2 = main(argv=["--since-version", "v080"])
     captured2 = capsys.readouterr()
     assert rc2 == 0
     assert "changed.md" in captured2.out
@@ -363,7 +363,7 @@ def test_since_version_accepts_bare_integer(
         files={"spec.md": "# T\n\nOld rule MUST hold.\n"},
     )
     (spec / "spec.md").write_text("# T\n\nOld rule MUST hold.\nNew rule MUST land.\n")
-    rc = main(["--json", "--since-version", "80"])
+    rc = main(argv=["--json", "--since-version", "80"])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -391,7 +391,7 @@ def test_no_since_version_preserves_full_scan(
     (spec / "changed.md").write_text(
         "# Changed\n\nOld rule MUST survive.\nNew readers MUST adapt.\n"
     )
-    rc = main(["--json"])
+    rc = main(argv=["--json"])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -408,7 +408,7 @@ def test_since_version_invalid_non_integer(
     monkeypatch.chdir(tmp_path)
     spec = tmp_path / "SPECIFICATION"
     _write_spec(root=spec, files={"spec.md": "# T\n\nReaders MUST cope.\n"})
-    rc = main(["--since-version", "vXXX"])
+    rc = main(argv=["--since-version", "vXXX"])
     captured = capsys.readouterr()
     assert rc == 2
     assert "ERROR" in captured.err
@@ -424,7 +424,7 @@ def test_since_version_invalid_negative(
     monkeypatch.chdir(tmp_path)
     spec = tmp_path / "SPECIFICATION"
     _write_spec(root=spec, files={"spec.md": "# T\n\nReaders MUST cope.\n"})
-    rc = main(["--since-version", "-3"])
+    rc = main(argv=["--since-version", "-3"])
     captured = capsys.readouterr()
     assert rc == 2
     assert "ERROR" in captured.err
@@ -439,7 +439,7 @@ def test_since_version_invalid_zero(
     monkeypatch.chdir(tmp_path)
     spec = tmp_path / "SPECIFICATION"
     _write_spec(root=spec, files={"spec.md": "# T\n\nReaders MUST cope.\n"})
-    rc = main(["--since-version", "0"])
+    rc = main(argv=["--since-version", "0"])
     captured = capsys.readouterr()
     assert rc == 2
     assert "ERROR" in captured.err
@@ -455,7 +455,7 @@ def test_since_version_nonexistent_history_dir(
     spec = tmp_path / "SPECIFICATION"
     _write_spec(root=spec, files={"spec.md": "# T\n\nReaders MUST cope.\n"})
     # Only v001 exists (created by _write_spec). v999 does not.
-    rc = main(["--since-version", "v999"])
+    rc = main(argv=["--since-version", "v999"])
     captured = capsys.readouterr()
     assert rc == 3
     assert "ERROR" in captured.err
@@ -476,7 +476,7 @@ def test_since_version_equals_latest_empty_diff(
     # Live tree matches v042 byte-for-byte.
     for name, content in files.items():
         (spec / name).write_text(content)
-    rc = main(["--json", "--since-version", "v042"])
+    rc = main(argv=["--json", "--since-version", "v042"])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -500,7 +500,7 @@ def test_since_version_skips_removed_in_diff(
     )
     # Live tree: rule A removed, B retained.
     (spec / "shrink.md").write_text("# Shrink\n\nB: writers MUST close.\n")
-    rc = main(["--json", "--since-version", "v050"])
+    rc = main(argv=["--json", "--since-version", "v050"])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -524,7 +524,7 @@ def test_since_version_passes_through_spec_target(
     )
     (spec / "spec.md").write_text("# T\n\nOld rule MUST survive.\nNew rule MUST land.\n")
     rc = main(
-        [
+        argv=[
             "--project-root",
             str(project),
             "--spec-target",

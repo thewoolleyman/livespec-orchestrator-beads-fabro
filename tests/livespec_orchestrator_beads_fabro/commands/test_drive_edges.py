@@ -306,7 +306,7 @@ def test_main_missing_repo_returns_precondition(
 ) -> None:
     missing = tmp_path / "missing"
 
-    exit_code = drive.main(["--repo", str(missing), "--action", "impl:bd-ib-123", "--json"])
+    exit_code = drive.main(argv=["--repo", str(missing), "--action", "impl:bd-ib-123", "--json"])
 
     assert exit_code == 3
     assert "does not exist" in capsys.readouterr().err
@@ -321,7 +321,7 @@ def test_main_run_returns_exit_failure_for_failed_dispatch(
     runner = _Runner(results=[_run(stdout="not json", returncode=1)])
 
     exit_code = drive.main(
-        ["--repo", str(repo), "--action", "impl:bd-ib-123"],
+        argv=["--repo", str(repo), "--action", "impl:bd-ib-123"],
         runner=runner,
     )
 
@@ -365,7 +365,7 @@ def test_run_action_without_injected_runner_uses_subprocess_runner(
 
 def test_main_without_action_reports_usage(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as exc_info:
-        drive.main([])
+        drive.main(argv=[])
 
     assert exc_info.value.code == 2
     assert "the following arguments are required: --action" in capsys.readouterr().err
@@ -377,7 +377,7 @@ def test_main_unknown_action_renders_markdown_without_dispatcher(
     repo = tmp_path / "repo"
     repo.mkdir()
 
-    exit_code = drive.main(["--repo", str(repo), "--action", "bogus"])
+    exit_code = drive.main(argv=["--repo", str(repo), "--action", "bogus"])
 
     assert exit_code == 1
     out = capsys.readouterr().out

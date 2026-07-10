@@ -16,7 +16,7 @@ def test_scenario42_list_plan_threads_enumerates_unarchived_plan_threads(
     _ = (plan / "archive" / "old-topic").mkdir(parents=True)
     before = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*"))
 
-    rc = main(["--json", "--project-root", str(tmp_path)])
+    rc = main(argv=["--json", "--project-root", str(tmp_path)])
 
     after = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*"))
     captured = capsys.readouterr()
@@ -31,7 +31,7 @@ def test_scenario42_missing_plan_directory_exits_zero(
     tmp_path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    rc = main(["--json", "--project-root", str(tmp_path)])
+    rc = main(argv=["--json", "--project-root", str(tmp_path)])
 
     captured = capsys.readouterr()
     assert rc == 0

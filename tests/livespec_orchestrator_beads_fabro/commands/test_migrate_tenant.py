@@ -66,7 +66,7 @@ def test_main_registers_statuses_and_backfills_legacy_rank_order(
 
     assert _stored()["older-high"].rank == BOTTOM_SENTINEL
 
-    rc = main([])
+    rc = main(argv=[])
     captured = capsys.readouterr()
 
     assert rc == 0
@@ -81,7 +81,7 @@ def test_main_registers_statuses_and_backfills_legacy_rank_order(
     assert stored["late-low"].rank == keys[2]
     assert stored["closed"].rank == BOTTOM_SENTINEL
 
-    rc = main([])
+    rc = main(argv=[])
     captured = capsys.readouterr()
 
     assert rc == 0

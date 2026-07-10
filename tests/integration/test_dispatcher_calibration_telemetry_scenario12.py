@@ -10,7 +10,7 @@ telemetry" and the contracts.md clause:
 
 This is the top-of-pyramid behavior journey for the calibration telemetry
 (work-item livespec-impl-beads-yfsv4j, gap-ajq7ynr4): it drives the real
-`dispatcher.main(["dispatch", ...])` CLI through the REAL store/client seam
+`dispatcher.main(argv=["dispatch", ...])` CLI through the REAL store/client seam
 against the in-memory `FakeBeadsClient` (the hermetic CI backend), with
 `run_dispatch` replaced by a stand-in that returns a terminal outcome. The test
 then reads the SAME on-disk Dispatcher journal back (the user-observable
@@ -248,7 +248,7 @@ def test_terminal_run_journals_calibration_outcome_and_size_proxies(
     )
 
     exit_code = main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(repo),
@@ -304,7 +304,7 @@ def test_unobservable_proxy_is_journaled_as_none_not_zero(
     )
 
     exit_code = main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(repo),
@@ -346,7 +346,7 @@ def test_calibration_rides_the_existing_journal_with_no_new_service(
     )
 
     exit_code = main(
-        [
+        argv=[
             "dispatch",
             "--repo",
             str(repo),
@@ -407,7 +407,7 @@ def test_non_convergence_terminal_marks_bounced_to_regroom(
     monkeypatch.setattr(dispatcher, "run_dispatch", _stand_in_returning(stalled))
 
     exit_code = main(
-        ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
 
     # Non-green terminal -> non-zero exit, but the calibration record is still
