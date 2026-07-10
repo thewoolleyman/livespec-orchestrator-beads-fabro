@@ -50,6 +50,32 @@ Read the code's existing style and judge it on ITS OWN paradigm:
   data-loss, concurrency, resource cleanup.
 - Plus anything else a senior engineer would genuinely care about.
 
+## Hunt for detector evasion (always `[BLOCKING]`)
+
+`mise exec -- just check` passing does NOT prove the tree is honest — a
+check can be made green by EVADING its detector while leaving the
+condition it exists to catch. The in-sandbox review is the first line of
+defense against this, so actively HUNT for it. Flag any of these as
+`[BLOCKING]`:
+
+- A shared `livespec_dev_tooling` check forked or repointed to a weaker
+  local copy — any edit under `dev-tooling/checks/**`, or a `check-*`
+  justfile recipe changed to invoke anything other than the pinned
+  `python -m livespec_dev_tooling.checks.<module>`.
+- A banned call rewritten into an equivalent the matcher misses (e.g.
+  `sys.stdout.write`/`sys.stderr.write` → `.buffer.write`).
+- A disallowed inheritance/pattern hidden from an AST check by building
+  a class dynamically (`type(name, (Base,), ...)`) or similar
+  restructuring.
+- A check silenced with `: Any`, `# type: ignore`, `# noqa`, a symbol
+  rename, or getattr/indirection instead of being satisfied.
+- The general shape: the diff makes a detector pass while the underlying
+  condition the detector exists to catch is still present.
+
+If the diff instead SURFACES a genuine check-vs-legitimate-pattern
+conflict (via the needs-human `failed` outcome) rather than dodging it,
+that is the correct behavior — do not flag it.
+
 ## Severity — blocking vs advisory (the important part)
 
 The lens tells you what to LOOK at; it does NOT mean flag everything.

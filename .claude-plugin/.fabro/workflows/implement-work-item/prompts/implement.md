@@ -42,6 +42,37 @@ constraints.
   Result rails, bugs raise. Never write the abbreviation "NFR" — spell
   out "non-functional-requirements".
 
+### HONEST checks — no detector evasion (non-negotiable)
+
+Make every check pass HONESTLY — by satisfying the condition it exists
+to enforce, never by hiding the violation from its detector. A green
+tree obtained by evasion is a FAILED outcome, not a success.
+Specifically FORBIDDEN:
+
+- Forking or repointing a shared `livespec_dev_tooling` check to a
+  weaker local copy; editing `dev-tooling/checks/**` or changing a
+  `check-*` justfile recipe to invoke anything other than the pinned
+  `python -m livespec_dev_tooling.checks.<module>`.
+- Rewriting a banned call into a form the matcher doesn't recognize but
+  that does the same thing (e.g. `sys.stdout.write`/`sys.stderr.write`
+  → `.buffer.write`).
+- Constructing a class dynamically (`type(name, (Base,), ...)`) or
+  otherwise restructuring code to hide a disallowed inheritance/pattern
+  from an AST check.
+- Silencing a check with `: Any`, `# type: ignore`, `# noqa`, symbol
+  renames, or getattr/indirection instead of satisfying it.
+
+If a check genuinely conflicts with a LEGITIMATE, required pattern —
+i.e. the check over-applies (a domain exception that must subclass a
+stdlib error; a launcher that can't carry `__all__`; a module correctly
+invoked via `python -m`) — that is NOT yours to resolve by evasion or by
+weakening the check. SURFACE it via the needs-human protocol: end with
+`{"outcome":"failed","failure_reason":"check <name> over-applies to
+<legitimate pattern> at <file>; needs an upstream gate decision"}` so a
+maintainer fixes the check upstream. Reserve this for a genuine
+check-vs-legitimate-pattern conflict, not a check you simply find
+inconvenient to satisfy.
+
 ## Red-Green-Replay (REQUIRED for any product `.py` change — follow VERBATIM)
 
 1. **Red commit.** Stage the test file ALONE (no impl) and commit with a
@@ -88,7 +119,9 @@ operator's.
    work naturally splits into (test+impl land atomically in one commit).
 3. Run the repo's check suite yourself (`mise exec -- just check`) and
    fix what it surfaces — a later janitor stage re-runs it as a hard
-   gate, so hand it a green tree.
+   gate, so hand it a green tree. Green must be earned honestly — see
+   the HONEST checks rule above; a check-vs-legitimate-pattern conflict
+   is a needs-human `failed` outcome, not something to evade.
 4. In your final reply, summarize what you changed, list the commits
    (`git log --oneline origin/master..HEAD`), and report any deviation
    or hook output verbatim.
