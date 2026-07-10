@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.15](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.14...v0.13.15) (2026-07-10)
+
+
+### Bug Fixes
+
+* bounce human-gate-blocked runs to backlog in the unattended factory ([7d822d8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7d822d84a23484282b118bf8b3d3fc6e4dcdbe22))
+
 ## [0.13.14](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.13...v0.13.14) (2026-07-10)
 
 
