@@ -1,0 +1,206 @@
+diff --git a/.claude-plugin/.fabro/workflows/implement-work-item/prompts/pr.md b/.claude-plugin/.fabro/workflows/implement-work-item/prompts/pr.md
+index 04a4649..e5a4eb9 100644
+--- a/.claude-plugin/.fabro/workflows/implement-work-item/prompts/pr.md
++++ b/.claude-plugin/.fabro/workflows/implement-work-item/prompts/pr.md
+@@ -1,52 +1,109 @@
+-# PR stage — publish the work and arm rebase auto-merge
++# PR stage — publish the work and arm rebase auto-merge (token + REST, no `gh`)
+ 
+ The janitor gate is green. Publish this sandbox clone's committed work
+-as a PR per the family merge discipline. You are on a Fabro-managed run
+-branch — its name is run-internal and MUST NOT be published; the PR
+-rides a feature branch named after the work-item instead.
++as a PR per the family merge discipline, using the GitHub REST/GraphQL
++API with a token — NOT the `gh` CLI (the factory is token-only). You are
++on a Fabro-managed run branch — its name is run-internal and MUST NOT be
++published; the PR rides a feature branch named after the work-item
++instead.
+ 
+ ## Where you are
+ 
+ You are in the SAME isolated Fabro sandbox clone the implement/janitor
+ stages produced the committed work in — your CURRENT WORKING DIRECTORY
+-is that clone. Run every `git` and `gh` command here, in the current
++is that clone. Run every `git` and `curl` command here, in the current
+ directory. The assignment below may mention a `Repo:` path: that is the
+ dispatcher's host-side checkout, it does NOT exist in this sandbox, and
+-you must NEVER `cd` to it or treat the absence of any such path as
+-"no committed work". The committed work is reachable as
++you must NEVER `cd` to it. The committed work is reachable as
+ `git log --oneline origin/master..HEAD` from where you already are.
+ 
+ ## Your assignment (for the PR description)
+ 
+ {{ goal }}
+ 
++## Credentials — token only, never `gh`
++
++Fabro refreshes this sandbox's push credentials at node entry, so the
++`origin` remote carries a **freshly-minted installation token** that
++survives past the ~60-minute mint TTL. Both `git push` and the REST/
++GraphQL calls below use it. Extract it ONCE, and derive the repo coords,
++WITHOUT ever printing the token:
++
++```bash
++origin_url="$(git remote get-url origin)"
++# token is the password field of https://x-access-token:<TOKEN>@host/owner/repo(.git)
++GH_API_TOKEN="$(printf '%s' "$origin_url" | sed -nE 's#^https?://[^:]+:([^@]+)@.*#\1#p')"
++owner_repo="$(printf '%s' "$origin_url" | sed -nE 's#^https?://[^@]+@[^/]+/(.+)$#\1#p')"
++owner_repo="${owner_repo%.git}"   # strip a trailing .git (sed ERE has no non-greedy)
++owner="${owner_repo%%/*}"; repo="${owner_repo##*/}"
++# API base: honor $GITHUB_API_URL if set, else api.github.com (github.com host)
++api="${GITHUB_API_URL:-https://api.github.com}"
++```
++
++If `GH_API_TOKEN` comes out empty, `origin` has no inline token — STOP
++and use the needs-human protocol below (do NOT fall back to `gh`).
++NEVER `echo`/`printf` the token value; pass it only via `-H` below.
++
+ ## What to do, in order
+ 
+ 1. Confirm there is committed work: `git log --oneline
+    origin/master..HEAD`. If there are zero commits, STOP — reply
+    explaining that nothing was produced, and end your reply with
+    `{"preferred_next_label": "done"}`.
+-2. Publish under the feature branch named in your assignment (the
+-   "Publish branch" line — `feat/<work-item-id>`), NEVER under the
+-   current run branch's own name:
++2. Push under the feature branch named in your assignment (the "Publish
++   branch" line — `feat/<work-item-id>`), NEVER under the current run
++   branch's own name. This uses the fresh `origin` token:
+    `mise exec -- git push -u origin HEAD:refs/heads/feat/<work-item-id>`.
+    NEVER `--no-verify`; if the pre-push hook fails and you cannot
+-   legitimately fix the cause, report its output verbatim and end with
+-   the needs-human protocol below.
+-3. Open the PR against master with
+-   `gh pr create --head feat/<work-item-id>` — title from the
+-   work-item, body drafted from the work-item acceptance criteria in
+-   the assignment above, and including the work-item id.
+-   The body MUST end with the line:
+-
+-   🤖 Generated with [Claude Code](https://claude.com/claude-code)
+-
+-4. Arm auto-merge: `gh pr merge --rebase --auto --delete-branch <pr-url-or-number>`.
+-5. VERIFY it armed: `gh pr view --json number,autoMergeRequest,mergeStateStatus`.
+-   - If `autoMergeRequest` is null, retry the arming once and re-verify.
+-   - If `mergeStateStatus` is `BEHIND`, the repo automation updates the
+-     branch; if it stays `BEHIND` for more than 10 minutes, report it —
+-     do NOT attempt a manual update.
++   legitimately fix the cause, report its output verbatim and use the
++   needs-human protocol below.
++3. Open the PR against `master` via the REST API. Build the body from the
++   work-item acceptance criteria in the assignment above, include the
++   work-item id, and END the body with the line:
++
++   `🤖 Generated with [Claude Code](https://claude.com/claude-code)`
++
++   Construct the JSON safely with `jq` (so the body's markdown/newlines
++   survive), then POST it. (If `jq` is not installed in the sandbox,
++   build the identical JSON with `python3 -c 'import json,sys;...'`.)
++
++   ```bash
++   printf '%s' "<the full PR body markdown>" > /tmp/pr_body.md
++   jq -n --arg title "<work-item title>" --arg head "feat/<work-item-id>" \
++         --arg base master --rawfile body /tmp/pr_body.md \
++         '{title:$title, head:$head, base:$base, body:$body}' > /tmp/pr_payload.json
++   pr_json="$(curl -sS -X POST \
++     -H "Authorization: Bearer $GH_API_TOKEN" \
++     -H "Accept: application/vnd.github+json" \
++     -H "X-GitHub-Api-Version: 2022-11-28" \
++     "$api/repos/$owner/$repo/pulls" --data @/tmp/pr_payload.json)"
++   pr_number="$(printf '%s' "$pr_json" | jq -r '.number // empty')"
++   pr_node_id="$(printf '%s' "$pr_json" | jq -r '.node_id // empty')"
++   ```
++
++   If `pr_number` is empty, the API returned an error — inspect
++   `pr_json`'s `.message`/`.errors` (these do NOT contain the token) and,
++   if you cannot legitimately resolve it, use the needs-human protocol.
++4. Arm rebase auto-merge via the GraphQL API (equivalent to the old
++   `gh pr merge --rebase --auto`):
++
++   ```bash
++   jq -n --arg id "$pr_node_id" \
++     '{query:"mutation($id:ID!){enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:REBASE}){pullRequest{number autoMergeRequest{enabledAt}}}}", variables:{id:$id}}' \
++     > /tmp/automerge.json
++   am_json="$(curl -sS -X POST \
++     -H "Authorization: Bearer $GH_API_TOKEN" \
++     "$api/graphql" --data @/tmp/automerge.json)"
++   ```
++
++   The head branch is auto-deleted on merge by the repo's
++   "automatically delete head branches" setting; do NOT delete it here.
++5. VERIFY auto-merge armed: check `am_json` — the
++   `.data.enablePullRequestAutoMerge.pullRequest.autoMergeRequest.enabledAt`
++   should be non-null. If it is null or `am_json` carries `.errors`,
++   retry the step-4 mutation once and re-check. If it still will not arm
++   (e.g. the branch is not yet mergeable / behind), report it — do NOT
++   attempt a manual merge or a manual branch update.
+ 6. Do NOT wait for the merge (it lands server-side after CI), do NOT
+    clean anything up, and do NOT switch branches — the Dispatcher owns
+    merge confirmation and the post-merge janitor, and Fabro owns this
+@@ -58,11 +115,13 @@ you must NEVER `cd` to it or treat the absence of any such path as
+ ## When publishing is blocked (needs-human protocol)
+ 
+ If the push or PR flow is blocked in a way you cannot legitimately
+-resolve (hook rejection you must not bypass, gh/auth failure, branch
+-protection surprise), end your final reply with the failed outcome and
+-a STRUCTURED reason, as a JSON object on the last line:
++resolve (hook rejection you must not bypass, an API auth/permission
++failure, branch protection surprise, or an empty `GH_API_TOKEN`), end
++your final reply with the failed outcome and a STRUCTURED reason, as a
++JSON object on the last line:
+ 
+     {"outcome": "failed", "failure_reason": "<what is blocked; what you tried; what decision is needed>"}
+ 
+ The graph routes a failed outcome to an in-loop human gate where an
+-operator answers and routes the run back into the loop.
++operator answers and routes the run back into the loop. Never print a
++token value in any report.
+diff --git a/orchestrator-image/acceptance-live-golden-master.sh b/orchestrator-image/acceptance-live-golden-master.sh
+index 3e211f4..355291c 100755
+--- a/orchestrator-image/acceptance-live-golden-master.sh
++++ b/orchestrator-image/acceptance-live-golden-master.sh
+@@ -38,7 +38,7 @@
+ # Host-side create/clone/delete use LIVESPEC_E2E_GITHUB_TOKEN directly (a
+ # dedicated e2e credential — NOT the retired fleet PAT, which no dispatch
+ # path reads anymore). The in-container legs (entrypoint gh-auth, dispatcher
+-# provider, sandbox GH_TOKEN projection) mint GitHub App installation tokens
++# provider, sandbox GITHUB_TOKEN projection) mint GitHub App installation tokens
+ # from the forwarded GITHUB_APP_ID + GITHUB_PRIVATE_KEY env (github-app-auth
+ # Pillars 1+2). A LIVE run against the `livespec-e2e` org therefore requires
+ # a GitHub App installation covering the throwaway repos in that org — set
+@@ -326,7 +326,7 @@ create_and_seed_repo() {
+     # remote, Fabro reports repo_cloned=false / origin_url="" and the workflow's
+     # `git fetch --unshallow` then fails with "not a git repository"). The URL
+     # carries NO token (secret hygiene); Fabro authenticates the in-sandbox clone
+-    # with the GH_TOKEN the Dispatcher projects into the sandbox env.
++    # with the GITHUB_TOKEN the Dispatcher projects into the sandbox env.
+     git remote add origin "https://github.com/${ORG}/${THROWAWAY_REPO}.git"
+     git add -A
+     git commit -q -m "seed: minimal livespec-impl skeleton + greeting SPECIFICATION"
+diff --git a/orchestrator-image/e2e-skeleton/justfile b/orchestrator-image/e2e-skeleton/justfile
+index 522de62..46d5fb5 100644
+--- a/orchestrator-image/e2e-skeleton/justfile
++++ b/orchestrator-image/e2e-skeleton/justfile
+@@ -29,7 +29,7 @@ check:
+     core_root="${LIVESPEC_CORE_PLUGIN_ROOT:-}"
+     if [ -z "$core_root" ] || [ ! -f "$core_root/scripts/bin/doctor_static.py" ]; then
+       echo "livespec CORE plugin not reachable via LIVESPEC_CORE_PLUGIN_ROOT='${core_root}'." >&2
+-      echo "The Dispatcher overlay must project it into the sandbox env (the GH_TOKEN mechanism)." >&2
++      echo "The Dispatcher overlay must project it into the sandbox env (the GITHUB_TOKEN mechanism)." >&2
+       exit 1
+     fi
+ 
+diff --git a/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher.py b/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher.py
+index 3fcc460..c28677f 100644
+--- a/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher.py
++++ b/tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher.py
+@@ -1420,7 +1420,7 @@ def test_render_run_config_overlay_projects_core_plugin_root(tmp_path: Path) ->
+     so a fleet repo whose janitor resolves the livespec CORE plugin (the
+     console's `check-doctor-static`) has no way to find core unless the overlay
+     projects LIVESPEC_CORE_PLUGIN_ROOT — the SAME container-level env-table
+-    mechanism that carries GH_TOKEN. The value is derived from the siblings
++    mechanism that carries GITHUB_TOKEN. The value is derived from the siblings
+     clones root (`<clones_root>/livespec/.claude-plugin`), and the key lands
+     INSIDE [environments.<id>.env] alongside the credential so it reaches every
+     node's `just check` subprocesses.
