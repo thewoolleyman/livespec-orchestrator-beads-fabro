@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.14](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.13...v0.13.14) (2026-07-10)
+
+
+### Dependencies
+
+* bump Fabro sandbox image pin v0.37.2 → v0.37.3 (restore dev-tooling lockstep) ([b6dd408](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b6dd408e77ebaba9c0512d2e81498bdf61cb7b7d))
+
 ## [0.13.13](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.12...v0.13.13) (2026-07-10)
 
 
