@@ -166,6 +166,9 @@ from livespec_orchestrator_beads_fabro.commands._config import (
     resolve_store_config,
 )
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_autonomous import (
+    arm_autonomous_for_loop,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
     build_calibration_record,
     calibration_journal_record,
@@ -575,6 +578,11 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
         journal=journal,
     ):
         return _EXIT_FAILURE
+    # Full autonomous mode two-factor arming: surface + journal the dangerous
+    # acknowledgement when this run is armed (persistent permission + explicit
+    # --mode autonomous). Collapses NO gate here — the collapse layers on in
+    # later slices; a non-armed run is transparent.
+    _ = arm_autonomous_for_loop(mode=args.mode, repo=repo, journal=journal)
     requested_ids = set(args.items or [])
     if requested_ids:
         preflight_error = _requested_items_preflight_error(
