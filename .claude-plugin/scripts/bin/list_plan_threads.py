@@ -3,8 +3,6 @@
 
 from _bootstrap import bootstrap
 
-__all__: list[str] = []
-
 bootstrap()
 
 from livespec_orchestrator_beads_fabro.commands.list_plan_threads import main

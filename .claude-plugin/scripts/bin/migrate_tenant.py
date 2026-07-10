@@ -6,8 +6,6 @@ Private maintenance entry point for tenant bootstrap.
 
 from _bootstrap import bootstrap
 
-__all__: list[str] = []
-
 bootstrap()
 
 from livespec_orchestrator_beads_fabro.commands.migrate_tenant import main
