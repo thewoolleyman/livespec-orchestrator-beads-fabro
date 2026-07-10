@@ -78,6 +78,23 @@ graph = "workflow.fabro"
 [run]
 goal = "Implement one ready work-item per the livespec family discipline"
 
+# fabro-token-refresh part 1 — make Fabro OWN the fresh gh token.
+# Requesting a push+PR-scoped GitHub App installation token makes
+# `is_token_requested()` true, so Fabro's build_sandbox_env
+# (fabro-workflow/src/pipeline/initialize.rs) builds a MINTABLE token source and
+# re-projects a FRESH GITHUB_TOKEN into every node's ACP launch env at spawn —
+# the value the in-sandbox `gh pr create` + rebase-auto-merge arming reads.
+# WITHOUT this block Fabro builds NO token source (refresh_managed=false), so the
+# external ACP agent's `gh` falls back to the Dispatcher's STATIC overlay
+# GITHUB_TOKEN (minted once at dispatch) and 401s past the ~60-min
+# installation-token TTL on a long run's publish node. This is precisely the
+# per-exec re-mint the CREDENTIAL CHANNEL note above already ASSUMES but which
+# was never actually requested. (git push is refreshed separately via origin-URL
+# rotation at each ACP node entry — fabro-workflow acp.rs turn-entry re-mint.)
+[run.integrations.github.permissions]
+contents = "write"
+pull_requests = "write"
+
 [run.inputs]
 # ACP coding-agent adapter for the implement/fix/pr/review_fix nodes (the
 # IMPLEMENTER nodes). Defaults to the Claude adapter; the Dispatcher
