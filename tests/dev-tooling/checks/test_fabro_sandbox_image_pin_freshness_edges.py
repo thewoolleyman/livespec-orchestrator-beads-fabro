@@ -1,4 +1,4 @@
-"""Edge tests for the Fabro sandbox image pin freshness check."""
+"""Edge tests for the Fabro sandbox image pin lockstep check."""
 
 from __future__ import annotations
 

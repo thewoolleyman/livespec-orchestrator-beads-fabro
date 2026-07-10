@@ -1,10 +1,13 @@
-"""Tests for the Fabro sandbox image pin freshness check."""
+"""Tests for the Fabro sandbox image pin lockstep check."""
 
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 from types import ModuleType
+
+import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _CHECK_PATH = _REPO_ROOT / "dev-tooling" / "checks" / "fabro_sandbox_image_pin_freshness.py"
@@ -60,7 +63,16 @@ def test_matching_dev_tooling_and_sandbox_image_tags_passes(monkeypatch, tmp_pat
     assert _CHECK.main() == 0
 
 
-def test_mismatched_dev_tooling_and_sandbox_image_tags_fail(monkeypatch, tmp_path: Path) -> None:
+def test_mismatched_tags_fail_and_report_lockstep(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
     _write_repo(root=tmp_path, dev_tooling_tag="v0.33.5", image_tag="sha-ea684ad")
     monkeypatch.chdir(tmp_path)
     assert _CHECK.main() == 1
+    record = json.loads(capsys.readouterr().err.splitlines()[-1])
+    assert record["event"] == (
+        "fabro sandbox image tag is out of lockstep with the livespec-dev-tooling pin"
+    )
+    assert "does not verify release shipped or factory rollout" in record["scope"]
