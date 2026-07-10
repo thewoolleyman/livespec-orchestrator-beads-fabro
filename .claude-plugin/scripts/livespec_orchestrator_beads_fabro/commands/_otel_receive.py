@@ -468,11 +468,15 @@ class OtelReceiver:
 def _reply(*, handler: HttpPostHandler, status: HTTPStatus) -> None:
     """Send a tiny JSON OTLP-style response (empty partial-success)."""
     body = b"{}"
-    handler.send_response(code=status)
-    handler.send_header(keyword="content-type", value="application/json")
-    handler.send_header(keyword="content-length", value=str(len(body)))
-    handler.end_headers()
-    _ = handler.wfile.write(body)
+    try:
+        handler.send_response(code=status)
+        handler.send_header(keyword="content-type", value="application/json")
+        handler.send_header(keyword="content-length", value=str(len(body)))
+        handler.end_headers()
+        _ = handler.wfile.write(body[:0])
+        _ = handler.wfile.write(body)
+    except OSError:
+        return
 
 
 def _read_json_body(*, handler: HttpPostHandler) -> dict[str, object] | None:

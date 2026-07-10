@@ -47,6 +47,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from io import BytesIO
 from pathlib import Path
 from socket import create_connection
 from typing import cast
@@ -734,6 +735,47 @@ def test_receiver_internal_error_is_caught_fail_open(tmp_path: Path) -> None:
         assert receiver.is_running() is True
     finally:
         receiver.stop()
+
+
+def test_receiver_does_not_double_reply_after_response_write_failure(tmp_path: Path) -> None:
+    """A body write failure after headers are sent is not followed by a second reply."""
+
+    class _BodyWriteFailure:
+        def write(self, data: bytes) -> int:
+            if data == b"{}":
+                raise BrokenPipeError("client closed")
+            return len(data)
+
+    class _FailingHandler:
+        def __init__(self, *, body: bytes) -> None:
+            self.headers = {"content-length": str(len(body))}
+            self.path = "/v1/traces"
+            self.rfile = BytesIO(body)
+            self.wfile = _BodyWriteFailure()
+            self.statuses: list[int] = []
+
+        def send_response(self, *, code: object) -> None:
+            self.statuses.append(int(code))
+
+        def send_header(self, *, keyword: str, value: str) -> None:
+            _ = (keyword, value)
+
+        def end_headers(self) -> None:
+            return
+
+    payload = json.dumps(
+        _trace_request(attrs=[_attr_entry(key="work.item.id", string_value="li-x")])
+    ).encode("utf-8")
+    handler = _FailingHandler(body=payload)
+    receiver = OtelReceiver(
+        config=ReceiverConfig(host="127.0.0.1", port=0),
+        exporter=_FakeExporter(),
+        heartbeat=HeartbeatSink(path=tmp_path / "hb.json"),
+    )
+
+    receiver.handle_post(handler=handler)
+
+    assert handler.statuses == [_HTTP_OK]
 
 
 def test_receiver_traces_tolerates_malformed_resource_attrs(
