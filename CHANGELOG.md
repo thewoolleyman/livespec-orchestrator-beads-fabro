@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.13.12](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.11...v0.13.12) (2026-07-10)
+
+
+### Bug Fixes
+
+* rename misleading image-pin-freshness gate to pin-lockstep ([d7b4120](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d7b4120be867e82ba52c051996124c2f90e6980f))
+
+
+### Dependencies
+
+* bump Fabro sandbox image to v0.37.1 to restore pin lockstep ([b2c63c2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b2c63c2985bec2fa0ad6ef0cca1dc5cd8156986f))
+
 ## [0.13.11](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.13.10...v0.13.11) (2026-07-10)
 
 
