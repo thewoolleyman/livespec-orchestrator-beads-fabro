@@ -61,13 +61,14 @@ import json
 import threading
 import time
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass, field
+from email.message import Message
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.client import parse_headers
 from pathlib import Path
-from typing import Protocol, cast
-
-from typing_extensions import override
+from socket import AF_INET, SHUT_RDWR, SO_REUSEADDR, SOCK_STREAM, SOL_SOCKET, socket
+from typing import IO, Protocol, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_sink import CostSink
 from livespec_orchestrator_beads_fabro.commands._otel_enrich import (
@@ -149,6 +150,27 @@ class StartableServer(Protocol):
         ...
 
 
+class HttpPostHandler(Protocol):
+    """Minimal HTTP handler surface consumed by `OtelReceiver`."""
+
+    headers: Message
+    path: str
+    rfile: IO[bytes]
+    wfile: IO[bytes]
+
+    def send_response(self, *, code: HTTPStatus) -> None:
+        """Start a response with `code`."""
+        ...
+
+    def send_header(self, *, keyword: str, value: str) -> None:
+        """Add one response header."""
+        ...
+
+    def end_headers(self) -> None:
+        """Flush the response status and headers."""
+        ...
+
+
 @dataclass(frozen=True, kw_only=True)
 class ReceiverConfig:
     """The bound loopback addr/port for the live receiver.
@@ -160,6 +182,59 @@ class ReceiverConfig:
 
     host: str
     port: int
+
+
+class _SocketHttpPostHandler:
+    """Composed request handler for the receiver's socket accept loop."""
+
+    def __init__(
+        self,
+        *,
+        receiver: OtelReceiver,
+        request: socket,
+        client_address: object,
+        server: object,
+    ) -> None:
+        _ = (client_address, server)
+        self._receiver = receiver
+        self._request = request
+        self.headers = Message()
+        self.path = ""
+        self.rfile = cast("IO[bytes]", request.makefile("rb"))
+        self.wfile = cast("IO[bytes]", request.makefile("wb", buffering=0))
+        self._status = HTTPStatus.OK
+        self._headers: list[tuple[str, str]] = []
+        try:
+            self._serve_one()
+        finally:
+            self.rfile.close()
+            self.wfile.close()
+            self._request.close()
+
+    def _serve_one(self) -> None:
+        request_line = self.rfile.readline(65537).decode("iso-8859-1").strip()
+        parts = request_line.split()
+        if len(parts) < 2:  # noqa: PLR2004 - method + path are the minimum.
+            return
+        method, self.path = parts[0], parts[1]
+        self.headers = parse_headers(self.rfile)
+        if method == "POST":
+            self._receiver.handle_post(handler=self)
+            return
+        _reply(handler=self, status=HTTPStatus.NOT_FOUND)
+
+    def send_response(self, *, code: HTTPStatus) -> None:
+        self._status = code
+
+    def send_header(self, *, keyword: str, value: str) -> None:
+        self._headers.append((keyword, value))
+
+    def end_headers(self) -> None:
+        status = f"HTTP/1.1 {self._status.value} {self._status.phrase}\r\n"
+        _ = self.wfile.write(status.encode("ascii"))
+        for keyword, value in self._headers:
+            _ = self.wfile.write(f"{keyword}: {value}\r\n".encode("ascii"))
+        _ = self.wfile.write(b"connection: close\r\n\r\n")
 
 
 def resolve_receiver_config(*, environ: dict[str, str]) -> ReceiverConfig:
@@ -276,19 +351,21 @@ class OtelReceiver:
     join: CorrelationJoin = field(default_factory=CorrelationJoin)
     default_model: str | None = None
     bound_port: int = 0
-    _server: ThreadingHTTPServer | None = field(default=None, init=False, repr=False)
+    _server: socket | None = field(default=None, init=False, repr=False)
     _thread: threading.Thread | None = field(default=None, init=False, repr=False)
+    _stop_event: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
 
     def start(self) -> None:
         """Bind the socket and serve on a daemon thread (idempotent)."""
         if self._server is not None:
             return
-        server = ThreadingHTTPServer(
-            (self.config.host, self.config.port),
-            self._make_handler_class(),
-        )
-        self.bound_port = server.server_address[1]
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        server = socket(AF_INET, SOCK_STREAM)
+        server.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+        server.bind((self.config.host, self.config.port))
+        server.listen()
+        self.bound_port = int(server.getsockname()[1])
+        self._stop_event.clear()
+        thread = threading.Thread(target=self._serve, kwargs={"server": server}, daemon=True)
         thread.start()
         self._server = server
         self._thread = thread
@@ -296,9 +373,11 @@ class OtelReceiver:
     def stop(self) -> None:
         """Shut the server down and join its thread (deterministic teardown)."""
         server = self._server
+        self._stop_event.set()
         if server is not None:
-            server.shutdown()
-            server.server_close()
+            with suppress(OSError):
+                server.shutdown(SHUT_RDWR)
+            server.close()
         thread = self._thread
         if thread is not None:
             thread.join(timeout=5.0)
@@ -308,22 +387,23 @@ class OtelReceiver:
     def is_running(self) -> bool:
         return self._server is not None
 
-    def _make_handler_class(self) -> type[BaseHTTPRequestHandler]:
-        receiver = self
+    def _serve(self, *, server: socket) -> None:
+        while True:
+            try:
+                conn, addr = server.accept()
+            except OSError:
+                return
+            thread = threading.Thread(
+                target=self._serve_connection,
+                kwargs={"conn": conn, "addr": addr},
+                daemon=True,
+            )
+            thread.start()
 
-        class _Handler(BaseHTTPRequestHandler):
-            # Silence the default stderr access-log spam; the receiver is
-            # fail-open and journals nothing per request.
-            @override
-            def log_message(self, /, *args: object) -> None:  # type: ignore[override]
-                _ = args
+    def _serve_connection(self, *, conn: socket, addr: object) -> None:
+        _ = _SocketHttpPostHandler(receiver=self, request=conn, client_address=addr, server=self)
 
-            def do_POST(self) -> None:  # noqa: N802 — BaseHTTPRequestHandler API name.
-                receiver.handle_post(handler=self)
-
-        return _Handler
-
-    def handle_post(self, *, handler: BaseHTTPRequestHandler) -> None:
+    def handle_post(self, *, handler: HttpPostHandler) -> None:
         """Route + handle one POST, fully fail-open (never raises / 500s)."""
         try:
             self._route(handler=handler)
@@ -332,7 +412,7 @@ class OtelReceiver:
             # bad request rather than 500-ing the receiver down.
             _reply(handler=handler, status=HTTPStatus.BAD_REQUEST)
 
-    def _route(self, *, handler: BaseHTTPRequestHandler) -> None:
+    def _route(self, *, handler: HttpPostHandler) -> None:
         if handler.path == _TRACES_PATH:
             self._handle_traces(handler=handler)
             return
@@ -341,7 +421,7 @@ class OtelReceiver:
             return
         _reply(handler=handler, status=HTTPStatus.NOT_FOUND)
 
-    def _handle_traces(self, *, handler: BaseHTTPRequestHandler) -> None:
+    def _handle_traces(self, *, handler: HttpPostHandler) -> None:
         parsed = _read_json_body(handler=handler)
         if parsed is None:
             _reply(handler=handler, status=HTTPStatus.BAD_REQUEST)
@@ -372,7 +452,7 @@ class OtelReceiver:
             _ = self.exporter.export(spans=tuple(batch), dataset=dataset)
         _reply(handler=handler, status=HTTPStatus.OK)
 
-    def _handle_metrics(self, *, handler: BaseHTTPRequestHandler) -> None:
+    def _handle_metrics(self, *, handler: HttpPostHandler) -> None:
         parsed = _read_json_body(handler=handler)
         if parsed is None:
             _reply(handler=handler, status=HTTPStatus.BAD_REQUEST)
@@ -385,17 +465,17 @@ class OtelReceiver:
         _reply(handler=handler, status=HTTPStatus.OK)
 
 
-def _reply(*, handler: BaseHTTPRequestHandler, status: HTTPStatus) -> None:
+def _reply(*, handler: HttpPostHandler, status: HTTPStatus) -> None:
     """Send a tiny JSON OTLP-style response (empty partial-success)."""
     body = b"{}"
-    handler.send_response(status)
-    handler.send_header("content-type", "application/json")
-    handler.send_header("content-length", str(len(body)))
+    handler.send_response(code=status)
+    handler.send_header(keyword="content-type", value="application/json")
+    handler.send_header(keyword="content-length", value=str(len(body)))
     handler.end_headers()
     _ = handler.wfile.write(body)
 
 
-def _read_json_body(*, handler: BaseHTTPRequestHandler) -> dict[str, object] | None:
+def _read_json_body(*, handler: HttpPostHandler) -> dict[str, object] | None:
     """Read + JSON-parse the request body; None on any malformed/oversized body."""
     raw_length = handler.headers.get("content-length")
     if raw_length is None:

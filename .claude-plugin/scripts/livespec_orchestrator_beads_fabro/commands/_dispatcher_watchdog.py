@@ -56,8 +56,7 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from enum import Enum
-from typing import Any, Protocol, cast
+from typing import Any, Final, Literal, Protocol, cast
 
 __all__: list[str] = [
     "DEFAULT_STALL_SECONDS",
@@ -138,7 +137,10 @@ class LivenessProbe(Protocol):
         ...
 
 
-class StallVerdict(Enum):
+StallVerdictValue = Literal["continue", "stalled-no-progress"]
+
+
+class StallVerdict:
     """The watchdog's per-sample-window decision.
 
     `CONTINUE` — progress is being made (the last-event timestamp
@@ -148,8 +150,8 @@ class StallVerdict(Enum):
     for the FULL stall window: a confirmed deadlock, cancel the run.
     """
 
-    CONTINUE = "continue"
-    STALLED = "stalled-no-progress"
+    CONTINUE: Final = "continue"
+    STALLED: Final = "stalled-no-progress"
 
 
 def resolve_stall_seconds(*, environ: dict[str, str] | None = None) -> float:
@@ -198,7 +200,7 @@ def decide_stall(
     *,
     samples: tuple[LivenessSample, ...],
     stall_seconds: float,
-) -> StallVerdict:
+) -> StallVerdictValue:
     """Decide CONTINUE vs STALLED from the window of liveness samples. Fail-safe.
 
     The load-bearing fail-safety rule: a stall is confirmed ONLY when a

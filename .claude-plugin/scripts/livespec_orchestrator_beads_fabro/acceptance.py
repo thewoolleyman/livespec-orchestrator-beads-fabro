@@ -129,7 +129,7 @@ def run_live_acceptance(*, config: LiveAcceptanceConfig) -> AcceptanceResult:
     )
 
 
-class GreetDiscoveryError(RuntimeError):
+class GreetDiscoveryError(Exception):
     """A merged LIVE checkout did not expose exactly one callable `greet`.
 
     A factory bug, not an expected/retryable condition: the operator-facing

@@ -35,28 +35,22 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_parse import (
+    Worktree,
+    lines,
+    parse_remote_heads,
+    parse_worktrees,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_checks import LedgerFinding
 
 __all__: list[str] = ["run_janitor_checks"]
 
 _PROBE_TIMEOUT_SECONDS = 120.0
-_WORKTREE_LINE_PREFIX = "worktree "
-_BRANCH_LINE_PREFIX = "branch refs/heads/"
-_HEADS_REF_PREFIX = "refs/heads/"
 _JANITOR_CHECKS = (
     "no-stale-merged-branch",
     "no-stale-merged-pr-branch",
     "no-stale-worktree",
 )
-
-
-@dataclass(frozen=True, kw_only=True, slots=True)
-class _Worktree:
-    """One `git worktree list --porcelain` entry."""
-
-    path: str
-    branch: str | None
-    is_primary: bool
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -66,7 +60,7 @@ class _ProbeState:
     default_branch: str
     merged: tuple[str, ...] | None
     remote_heads: tuple[str, ...] | None
-    worktrees: tuple[_Worktree, ...] | None
+    worktrees: tuple[Worktree, ...] | None
     name_with_owner: str | None
     merged_pr_heads: tuple[str, ...] | None
 
@@ -140,11 +134,11 @@ def _gather(*, runner: CommandRunner, repo: Path, default_branch: str) -> _Probe
     )
     return _ProbeState(
         default_branch=default_branch,
-        merged=_lines(raw=merged_raw),
-        remote_heads=_parse_remote_heads(raw=remote_raw),
-        worktrees=_parse_worktrees(raw=worktrees_raw),
+        merged=lines(raw=merged_raw),
+        remote_heads=parse_remote_heads(raw=remote_raw),
+        worktrees=parse_worktrees(raw=worktrees_raw),
         name_with_owner=None if nwo_raw is None else nwo_raw.strip(),
-        merged_pr_heads=_lines(raw=prs_raw),
+        merged_pr_heads=lines(raw=prs_raw),
     )
 
 
@@ -224,44 +218,6 @@ def _probe(*, runner: CommandRunner, repo: Path, argv: list[str]) -> str | None:
     if result.exit_code != 0:
         return None
     return result.stdout
-
-
-def _lines(*, raw: str | None) -> tuple[str, ...] | None:
-    if raw is None:
-        return None
-    return tuple(line.strip() for line in raw.splitlines() if line.strip())
-
-
-def _parse_remote_heads(*, raw: str | None) -> tuple[str, ...] | None:
-    """Parse `git ls-remote --heads origin` output into branch names."""
-    if raw is None:
-        return None
-    heads: list[str] = []
-    for line in raw.splitlines():
-        _, _, ref = line.partition("\t")
-        if ref.startswith(_HEADS_REF_PREFIX):
-            heads.append(ref[len(_HEADS_REF_PREFIX) :].strip())
-    return tuple(heads)
-
-
-def _parse_worktrees(*, raw: str | None) -> tuple[_Worktree, ...] | None:
-    """Parse `git worktree list --porcelain` blocks; the first entry is primary."""
-    if raw is None:
-        return None
-    entries: list[_Worktree] = []
-    path: str | None = None
-    branch: str | None = None
-    for line in raw.splitlines():
-        if line.startswith(_WORKTREE_LINE_PREFIX):
-            if path is not None:
-                entries.append(_Worktree(path=path, branch=branch, is_primary=len(entries) == 0))
-            path = line[len(_WORKTREE_LINE_PREFIX) :]
-            branch = None
-        elif line.startswith(_BRANCH_LINE_PREFIX):
-            branch = line[len(_BRANCH_LINE_PREFIX) :]
-    if path is not None:
-        entries.append(_Worktree(path=path, branch=branch, is_primary=len(entries) == 0))
-    return tuple(entries)
 
 
 def _skipped(*, check: str, reason: str) -> LedgerFinding:

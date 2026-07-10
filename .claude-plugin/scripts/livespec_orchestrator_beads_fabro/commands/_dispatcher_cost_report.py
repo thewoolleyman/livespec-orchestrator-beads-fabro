@@ -42,21 +42,18 @@ export. This module is stdlib-only (mirroring the reflection emitter).
 
 from __future__ import annotations
 
-import hashlib
-import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_cost import (
-    COST_MODE_REPORT,
-    usd_micros_to_usd,
-)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_cost import usd_micros_to_usd
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_pricing import (
     DEFAULT_DISPATCH_COST_MODEL,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_report_otlp import (
+    cost_report_request_line,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_sink import CostReport
-from livespec_orchestrator_beads_fabro.commands._otel_scrub import attr as _attr
 from livespec_orchestrator_beads_fabro.io import write_stderr
 
 __all__: list[str] = [
@@ -65,15 +62,6 @@ __all__: list[str] = [
     "cost_report_summary_lines",
     "emit_cost_report",
 ]
-
-# OTLP/HTTP JSON emission constants — the same shape the reflection emitter
-# + the family capture script write (one ExportTraceServiceRequest per
-# line), so the cost report rides the SAME local-span-file → enrich egress.
-_OTLP_SERVICE_NAME = "livespec-dispatcher"
-_OTLP_SERVICE_NAMESPACE = "livespec-family"
-_OTLP_SCOPE_NAME = "livespec.dispatcher.cost-report"
-_OTLP_SCOPE_VERSION = "0.1.0"
-_SPAN_KIND_INTERNAL = 1
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -186,7 +174,11 @@ def _summary_line(*, item: CostReportItem) -> str:
         return f"{head} unobservable (no CC token telemetry arrived); report-only, never enforced"
     dollars = usd_micros_to_usd(usd_micros=item.usd_micros)
     tokens = _token_summary(item=item)
-    suffix = "" if item.model_resolved else f"  ({_default_tag(model_basis=item.model_basis)})"
+    suffix = ""
+    if not item.model_resolved:
+        model = item.model_basis.split(":", 1)[-1]
+        family = model.removeprefix("claude-").split("-", 1)[0] or model
+        suffix = f"  ({family}-default estimate)"
     return f"{head} ${dollars:.2f}  [{tokens}]  basis: {item.model_basis}{suffix}"
 
 
@@ -199,18 +191,6 @@ def _token_summary(*, item: CostReportItem) -> str:
         f"cache-read {item.cache_read_tokens}",
     )
     return f"{' / '.join(counts)} tokens"
-
-
-def _default_tag(*, model_basis: str) -> str:
-    """Render the `(<model>-default estimate)` tag for an unresolved basis.
-
-    `model_basis` is `default:<model>`; the tag uses the model's leading
-    family token (e.g. `opus` from `default:claude-opus-4-8`) so the
-    operator-facing note reads `(opus-default estimate)`.
-    """
-    model = model_basis.split(":", 1)[-1]
-    family = model.removeprefix("claude-").split("-", 1)[0] or model
-    return f"{family}-default estimate"
 
 
 def _emit_summary(*, items: tuple[CostReportItem, ...]) -> None:
@@ -230,104 +210,7 @@ def _emit_spans(
     each with the leak-free derived USD + token + model-basis scalars built
     through the shared `_otel_scrub.attr`.
     """
-    now_ns = time.time_ns()
-    session_usd_micros = sum(item.usd_micros or 0 for item in items)
-    wave_attrs: dict[str, object] = {
-        "livespec.cost.mode": COST_MODE_REPORT,
-        "livespec.cost.session_usd_micros": session_usd_micros,
-        "livespec.cost.usd": f"{usd_micros_to_usd(usd_micros=session_usd_micros):.6f}",
-    }
-    if dispatch_id is not None and dispatch_id != "":
-        wave_attrs["livespec.dispatch.id"] = dispatch_id
-    wave_span = _build_span(
-        name="cost.report.wave",
-        span_id="cost-report-wave",
-        attrs=wave_attrs,
-        parent_id=None,
-        start_ns=now_ns,
-        end_ns=now_ns,
-    )
-    spans = [wave_span]
-    for index, item in enumerate(items):
-        spans.append(
-            _build_span(
-                name="cost.report",
-                span_id=f"cost-report-{index}",
-                attrs=_item_attrs(item=item),
-                parent_id="cost-report-wave",
-                start_ns=now_ns,
-                end_ns=now_ns,
-            )
-        )
-    line = _request_line(spans=spans)
+    line = cost_report_request_line(items=items, dispatch_id=dispatch_id, now_ns=time.time_ns())
     spans_path.parent.mkdir(parents=True, exist_ok=True)
     with spans_path.open("a", encoding="utf-8") as handle:
         _ = handle.write(line + "\n")
-
-
-def _item_attrs(*, item: CostReportItem) -> dict[str, object]:
-    usd_micros = item.usd_micros or 0
-    return {
-        "work.item.id": item.work_item_id,
-        "livespec.cost.usd_micros": usd_micros,
-        "livespec.cost.usd": f"{usd_micros_to_usd(usd_micros=usd_micros):.6f}",
-        "livespec.cost.input_tokens": item.input_tokens,
-        "livespec.cost.output_tokens": item.output_tokens,
-        "livespec.cost.cache_creation_tokens": item.cache_creation_tokens,
-        "livespec.cost.cache_read_tokens": item.cache_read_tokens,
-        "livespec.cost.model_basis": item.model_basis,
-        "livespec.cost.model_resolved": item.model_resolved,
-        "livespec.cost.observable": item.observable,
-    }
-
-
-def _build_span(
-    *,
-    name: str,
-    span_id: str,
-    attrs: dict[str, object],
-    parent_id: str | None,
-    start_ns: int,
-    end_ns: int,
-) -> dict[str, object]:
-    span: dict[str, object] = {
-        "traceId": _hex_id(key="cost-report-trace", nbytes=16),
-        "spanId": _hex_id(key=span_id, nbytes=8),
-        "name": name,
-        "kind": _SPAN_KIND_INTERNAL,
-        "startTimeUnixNano": str(start_ns),
-        "endTimeUnixNano": str(end_ns),
-        "attributes": [_attr(key=k, value=v) for k, v in attrs.items()],
-    }
-    if parent_id is not None:
-        span["parentSpanId"] = _hex_id(key=parent_id, nbytes=8)
-    return span
-
-
-def _hex_id(*, key: str, nbytes: int) -> str:
-    return hashlib.sha256(key.encode()).hexdigest()[: nbytes * 2]
-
-
-def _request_line(*, spans: list[dict[str, object]]) -> str:
-    request: dict[str, object] = {
-        "resourceSpans": [
-            {
-                "resource": {
-                    "attributes": [
-                        {"key": "service.name", "value": {"stringValue": _OTLP_SERVICE_NAME}},
-                        {
-                            "key": "service.namespace",
-                            "value": {"stringValue": _OTLP_SERVICE_NAMESPACE},
-                        },
-                    ]
-                },
-                "scopeSpans": [
-                    {
-                        "scope": {"name": _OTLP_SCOPE_NAME, "version": _OTLP_SCOPE_VERSION},
-                        "spans": spans,
-                    }
-                ],
-            }
-        ]
-    }
-    return json.dumps(request, separators=(",", ":"), sort_keys=True)

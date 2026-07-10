@@ -48,6 +48,7 @@ import urllib.request
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
+from socket import create_connection
 from typing import cast
 
 import pytest
@@ -105,6 +106,14 @@ def _post_oversized_content_length(*, host: str, port: int, path: str) -> int:
         return conn.getresponse().status
     finally:
         conn.close()
+
+
+def _send_raw_http(*, host: str, port: int, payload: bytes) -> bytes:
+    """Send a raw HTTP payload and return whatever response bytes arrive."""
+    with create_connection((host, port), timeout=5.0) as conn:
+        conn.sendall(payload)
+        conn.shutdown(1)
+        return conn.recv(4096)
 
 
 def _resource(*, service_name: str = "cc-sandbox") -> dict[str, object]:
@@ -665,6 +674,28 @@ def test_receiver_unknown_path_404(
     """An unknown path is a clean 404, not a crash."""
     _receiver, _exporter, _heartbeat, base = receiver_factory
     assert _post_json(url=f"{base}/v1/nonsense", body={}) == _HTTP_NOT_FOUND
+
+
+def test_receiver_non_post_request_404(
+    receiver_factory: tuple[OtelReceiver, _FakeExporter, HeartbeatSink, str],
+) -> None:
+    """A non-POST request is a clean 404 from the composed socket handler."""
+    receiver, _exporter, _heartbeat, _base = receiver_factory
+    conn = http.client.HTTPConnection("127.0.0.1", receiver.bound_port, timeout=5.0)
+    try:
+        conn.request("GET", "/v1/traces")
+        assert conn.getresponse().status == _HTTP_NOT_FOUND
+    finally:
+        conn.close()
+
+
+def test_receiver_malformed_request_line_closes_without_response(
+    receiver_factory: tuple[OtelReceiver, _FakeExporter, HeartbeatSink, str],
+) -> None:
+    """A malformed request line closes cleanly without crashing the receiver."""
+    receiver, _exporter, _heartbeat, _base = receiver_factory
+    assert _send_raw_http(host="127.0.0.1", port=receiver.bound_port, payload=b"\r\n") == b""
+    assert receiver.is_running() is True
 
 
 def test_receiver_metrics_malformed_body_is_bad_request(

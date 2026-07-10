@@ -51,7 +51,3 @@ def main(*, argv: list[str] | None = None) -> int:
     _ = write_stderr(text="github-token source: github-app-installation-token\n")
     _ = write_stdout(text=token)
     return 0
-
-
-if __name__ == "__main__":  # pragma: no cover
-    raise SystemExit(main())
