@@ -1,10 +1,12 @@
 # Autonomous-mode MVP — orchestrator plan handoff
 
-**Status:** Step 0 PASSED (2026-07-10, independent Fable validation, NO-BLOCKERS)
-and this plan REVISED per its findings (full verdict:
-`livespec/plan/autonomous-mode/research/step0-fable-verdict.md`). O1 may start
-once the overall plan's Fable certification is recorded. First-drafted
-2026-07-10 from a repo survey.
+**Status:** round 1 of the overall plan's fable-review LOOP is done (2026-07-10:
+Step-0 validation NO-BLOCKERS, then this plan REVISED per its findings — full
+verdict: `livespec/plan/autonomous-mode/research/step0-fable-verdict.md`). The
+loop is still OPEN: O1 MUST NOT start until the overall plan's Step-0 gate is
+met — a FRESH Fable session review finds nothing blocking AND the MAINTAINER
+certifies (loop state: `livespec/plan/autonomous-mode/handoff.md`).
+First-drafted 2026-07-10 from a repo survey.
 
 **Repo:** `thewoolleyman/livespec-orchestrator-beads-fabro` · **Role:** the
 Orchestrator-Plane decision engine (the LLM gate-resolver). Driven from the delegate
@@ -59,11 +61,12 @@ Open bugs to sequence around: `bd-ib-18r` (blocked as first-class outcome), `bd-
 (parked-run credential re-projection).
 
 ## Next action
-Step 0 passed NO-BLOCKERS and this plan carries its findings. Once the overall
-plan's Fable certification is recorded
-(`livespec/plan/autonomous-mode/handoff.md` names it), start O1: file the two
-required deliverables above, then groom `bd-ib-82a` into slices for O2. Refresh
-`bd-ib-82a`'s stale spec pointer (cites v025; spec is v032).
+WAIT for the overall plan's fable-review loop to exit — a FRESH Fable session
+finds nothing blocking AND the maintainer certifies
+(`livespec/plan/autonomous-mode/handoff.md` records the loop state). Only then
+start O1: file the two required deliverables above, then groom `bd-ib-82a`
+into slices for O2. Refresh `bd-ib-82a`'s stale spec pointer (cites v025; spec
+is v032).
 
 ## Pointers
 - Ledger read: `bd list --json` from inside this repo (tenant database
