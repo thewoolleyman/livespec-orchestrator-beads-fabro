@@ -295,6 +295,7 @@ from livespec_orchestrator_beads_fabro.store import (
 )
 from livespec_orchestrator_beads_fabro.types import AuditRecord, StoreConfig, WorkItem
 
+# Compatibility alias for existing dispatcher tests and dispatch-path monkeypatches.
 _github_token_supplier = github_token_supplier
 
 
