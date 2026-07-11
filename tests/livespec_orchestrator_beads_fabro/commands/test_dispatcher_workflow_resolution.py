@@ -1,7 +1,7 @@
 """The Dispatcher resolves its Fabro workflow + bin from the PLUGIN ROOT.
 
 Slice 1 of orchestrator-plugin-self-containment: `_workflow_toml` and
-`_candidate_dispatcher_bin` must anchor on the plugin root (`.claude-plugin/`
+`candidate_dispatcher_bin` must anchor on the plugin root (`.claude-plugin/`
 in source, or `CLAUDE_PLUGIN_ROOT` in the flattened install cache) rather than
 the repo root, and the `.fabro/` workflow payload must ship INSIDE that root.
 
@@ -25,8 +25,10 @@ from pathlib import Path
 import pytest
 from livespec_orchestrator_beads_fabro.commands import dispatcher
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import workflow_toml
+from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
+    candidate_dispatcher_bin,
+)
 from livespec_orchestrator_beads_fabro.commands.dispatcher import (
-    _candidate_dispatcher_bin,  # pyright: ignore[reportPrivateUsage]
     _credential_wrapper_text,  # pyright: ignore[reportPrivateUsage]
     _read_dispatch_target_credential_wrapper,  # pyright: ignore[reportPrivateUsage]
 )
@@ -77,7 +79,7 @@ def test_candidate_dispatcher_bin_resolves_from_plugin_root(
 ) -> None:
     """The canary bin anchors on the same plugin root (no `.claude-plugin` re-segment)."""
     monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
-    assert _candidate_dispatcher_bin() == _PLUGIN_ROOT / "scripts" / "bin" / "dispatcher.py"
+    assert candidate_dispatcher_bin() == _PLUGIN_ROOT / "scripts" / "bin" / "dispatcher.py"
 
 
 def test_candidate_dispatcher_bin_honors_env_override(
@@ -85,7 +87,7 @@ def test_candidate_dispatcher_bin_honors_env_override(
 ) -> None:
     """The canary bin honors CLAUDE_PLUGIN_ROOT in the flattened install cache."""
     monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(tmp_path))
-    assert _candidate_dispatcher_bin() == tmp_path / "scripts" / "bin" / "dispatcher.py"
+    assert candidate_dispatcher_bin() == tmp_path / "scripts" / "bin" / "dispatcher.py"
 
 
 def test_implement_and_review_prompts_enforce_scope_and_acceptance() -> None:

@@ -35,13 +35,11 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import SiblingClones
-
-# Importing the module-private surfaces directly (the test tier verifies
-# the read-only-cache wiring), the same pattern test_dispatcher_self_update
-# uses for the self-update internals.
+from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
+    self_update_after_merge,
+)
 from livespec_orchestrator_beads_fabro.commands.dispatcher import (
     _resolve_sibling_clones,  # pyright: ignore[reportPrivateUsage]
-    _self_update_after_merge,  # pyright: ignore[reportPrivateUsage]
 )
 
 
@@ -74,7 +72,7 @@ def test_self_update_skips_cleanly_on_a_read_only_plugin_cache(
     cache_root.mkdir()
     monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(cache_root))
     journal = _RecordingJournal()
-    _self_update_after_merge(
+    self_update_after_merge(
         work_item_id="livespec-impl-beads-roc",
         merged_paths=_SELF_MERGE_PATHS,
         candidate_bin=str(cache_root / "scripts" / "bin" / "dispatcher.py"),
