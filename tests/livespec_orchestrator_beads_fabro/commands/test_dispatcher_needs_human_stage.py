@@ -1,6 +1,6 @@
 """Acceptance coverage for the needs-human resolve-or-escalate wiring stage (S4).
 
-Drives `dispatcher._resolve_or_bounce_needs_human` and its helpers through the
+Drives `_dispatcher_needs_human.resolve_or_bounce_needs_human` and its helpers through the
 FAKE `RecordingNeedsHumanResolver` (NO real model call) to prove
 `SPECIFICATION/scenarios.md` Scenarios 35 and 36:
 
@@ -22,7 +22,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import dispatcher
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_needs_human as needs_human
 from livespec_orchestrator_beads_fabro.commands._dispatcher_autonomous_audit import (
     AUTONOMOUS_DECISION_STAGE,
 )
@@ -30,6 +30,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Dispat
 from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human import (
     NeedsHumanResolution,
     RecordingNeedsHumanResolver,
+    resolve_or_bounce_needs_human,
+    route_needs_human_resolved,
 )
 from livespec_orchestrator_beads_fabro.errors import WorkItemNotFoundError
 from livespec_orchestrator_beads_fabro.store import (
@@ -131,7 +133,7 @@ def test_armed_resolvable_block_routes_back_to_ready_and_audits(tmp_path: Path) 
         )
     )
 
-    dispatcher._resolve_or_bounce_needs_human(  # noqa: SLF001 — stage under test
+    resolve_or_bounce_needs_human(
         args=_armed(),
         repo=repo,
         item=item,
@@ -172,7 +174,7 @@ def test_armed_low_confidence_block_escalates_to_backlog(
         )
     )
 
-    dispatcher._resolve_or_bounce_needs_human(  # noqa: SLF001 — stage under test
+    resolve_or_bounce_needs_human(
         args=_armed(),
         repo=repo,
         item=item,
@@ -205,7 +207,7 @@ def test_armed_design_gated_block_escalates_by_design(tmp_path: Path) -> None:
         )
     )
 
-    dispatcher._resolve_or_bounce_needs_human(  # noqa: SLF001 — stage under test
+    resolve_or_bounce_needs_human(
         args=_armed(),
         repo=repo,
         item=item,
@@ -230,7 +232,7 @@ def test_armed_human_only_item_escalates_even_when_resolvable(tmp_path: Path) ->
         verdict=NeedsHumanResolution(resolvable=True, design_gated=False, decision="could resolve")
     )
 
-    dispatcher._resolve_or_bounce_needs_human(  # noqa: SLF001 — stage under test
+    resolve_or_bounce_needs_human(
         args=_armed(),
         repo=repo,
         item=item,
@@ -258,7 +260,7 @@ def test_not_armed_blocked_bounces_unchanged_and_builds_the_default_resolver(
     append_work_item(path=_config(), item=item)
     journal = _RecordingJournal()
 
-    dispatcher._resolve_or_bounce_needs_human(  # noqa: SLF001 — stage under test
+    resolve_or_bounce_needs_human(
         args=argparse.Namespace(),
         repo=repo,
         item=item,
@@ -289,7 +291,7 @@ def test_armed_non_blocked_outcome_is_a_noop(tmp_path: Path) -> None:
         detail="merged",
     )
 
-    dispatcher._resolve_or_bounce_needs_human(  # noqa: SLF001 — stage under test
+    resolve_or_bounce_needs_human(
         args=_armed(),
         repo=repo,
         item=item,
@@ -318,11 +320,11 @@ def test_route_back_failsoft_journals_error_when_ledger_write_raises(
     def _raise(**_kwargs: object) -> None:
         raise WorkItemNotFoundError(item_id=item.id)
 
-    monkeypatch.setattr(dispatcher, "store_config", lambda *, repo: repo)
-    monkeypatch.setattr(dispatcher, "update_work_item_status", _raise)
+    monkeypatch.setattr(needs_human, "store_config", lambda *, repo: repo)
+    monkeypatch.setattr(needs_human, "update_work_item_status", _raise)
 
     # Must NOT raise — the resolve is already decided.
-    dispatcher._route_needs_human_resolved(  # noqa: SLF001 — fail-soft branch under test
+    route_needs_human_resolved(
         repo=tmp_path,
         item=item,
         journal=journal,
