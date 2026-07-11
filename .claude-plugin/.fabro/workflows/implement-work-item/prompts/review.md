@@ -49,6 +49,7 @@ Read the code's existing style and judge it on ITS OWN paradigm:
 - **Correctness & safety** — logic, edge cases, error handling, security,
   data-loss, concurrency, resource cleanup.
 - **Size fixes are cohesion-driven, not cosmetic.** If the change reduced a file to satisfy `file_lloc`/`no_lloc_soft`, verify it decomposed by COHESION (each new module is one coherent concern) with MINIMAL COUPLING — only public entry points cross module boundaries; NO `_`-prefixed name is imported or called across modules; NO re-export shim that merely spreads line count; NO exemption or severity lever. A mechanical or shim split is a defect even if the tree is green.
+- **LLOC counter-shaving is evasion.** Beyond a shim split, watch for a size fix that lowers `file_lloc` by cosmetic line-packing — packing `__all__` or a collection onto fewer physical lines, or adding `# fmt: off`/`# fmt: on`/`# fmt: skip` to suppress the formatter's one-element-per-line expansion. Gaming the LLOC number this way is DETECTOR EVASION even if the tree is green; require `__all__` and every multi-element collection one-element-per-line as the formatter produces them. Treat any such counter-shave as `[BLOCKING]`, consistent with the detector-evasion framing below.
 - Plus anything else a senior engineer would genuinely care about.
 
 ## Hunt for detector evasion (always `[BLOCKING]`)

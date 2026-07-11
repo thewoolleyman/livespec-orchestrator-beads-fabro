@@ -112,6 +112,19 @@ mechanical line-count cut, a re-export shim, or an exemption.
   refactor: the source module's `__all__` and externally-visible API are
   unchanged, imports are updated, 100% per-file coverage holds, and every
   existing test still passes. Follow the Red-Green-Replay ritual.
+- **Never counter-shave the line count.** The honest `file_lloc` number is
+  exactly what default `ruff format` yields — do NOT lower it by cosmetic
+  line-packing. Specifically, NEVER add formatter-suppression directives
+  (`# fmt: off`, `# fmt: on`, `# fmt: skip`) to pack `__all__`, a list, a dict, or
+  any multi-element collection onto fewer physical lines to hit an LLOC target;
+  ALWAYS keep `__all__` and every multi-element collection one-element-per-line,
+  exactly as the formatter produces them. Suppressing the formatter to shrink the
+  physical-line count is DETECTOR EVASION — the same class of defect as a
+  re-export shim or an exemption. Dev-tooling now flags these directives
+  mechanically in covered first-party trees (the formatter-suppression guard), so
+  it WILL be caught — but the point is not to do it regardless. If a file cannot
+  reach the ceiling by honest cohesion decomposition, SURFACE it via the
+  needs-human `{"outcome":"failed", ...}` protocol (below), never counter-shave.
 - If a file genuinely cannot be decomposed along cohesive seams (one
   irreducible, legitimately-large responsibility), that is a
   check-vs-legitimate-pattern conflict — SURFACE it via the needs-human
