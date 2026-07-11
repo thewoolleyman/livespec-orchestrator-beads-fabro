@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.5...v0.17.6) (2026-07-11)
+
+
+### Bug Fixes
+
+* extract dispatcher fabro launcher io ([ae4120b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ae4120b06cf32d2a8822992efaccfedddbdea96e))
+
 ## [0.17.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.4...v0.17.5) (2026-07-11)
 
 
