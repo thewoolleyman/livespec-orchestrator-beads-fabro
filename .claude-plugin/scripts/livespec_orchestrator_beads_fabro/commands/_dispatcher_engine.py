@@ -55,24 +55,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_janitor import post_merge
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_merge import (
+    await_merge,
+    confirm_pr,
+    failed,
+    journal_stage,
+    stalled,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
-    CORE_PLUGIN_ROOT_ENV_VAR,
     DispatchPlan,
-    PrView,
     fabro_inspect_argv,
     fabro_run_argv,
-    janitor_bootstrap_argv,
-    janitor_core_clone_argv,
-    janitor_trust_argv,
-    janitor_worktree_add_argv,
-    janitor_worktree_remove_argv,
-    parse_pr_view,
     parse_run_id,
     parse_run_status,
-    pr_arm_argv,
-    pr_update_branch_argv,
-    pr_view_argv,
-    pull_primary_argv,
 )
 
 __all__: list[str] = [
@@ -88,7 +84,6 @@ __all__: list[str] = [
     "run_dispatch",
 ]
 
-_GIT_TIMEOUT_SECONDS = 600.0
 # Worst-case phase-graph wall clock the foreground `fabro run` subprocess
 # must outlive (workflow.fabro budgets): implement 2 attempts x 14400s
 # (one transient auto-retry) + janitor 3 visits x 3600s + fix 2 visits x
@@ -97,13 +92,6 @@ _GIT_TIMEOUT_SECONDS = 600.0
 # mid-run while the server-side engine keeps executing the graph.
 _FABRO_TIMEOUT_SECONDS = 54000.0
 _FABRO_INSPECT_TIMEOUT_SECONDS = 300.0
-_GH_TIMEOUT_SECONDS = 300.0
-_JANITOR_TIMEOUT_SECONDS = 3600.0
-
-# The env-var an operator tunes the watchdog stall window with (named in
-# the stalled-no-progress detail so the message is self-documenting).
-_STALL_ENV_HINT = "LIVESPEC_DISPATCH_STALL_SECONDS"
-
 SleepFn = Callable[[float], None]
 
 
@@ -257,18 +245,35 @@ def run_dispatch(
     launcher = fabro_launcher if fabro_launcher is not None else SynchronousFabroLauncher()
     launched = launcher.launch(plan=plan, runner=runner, journal=journal)
     fabro = launched.command
-    _journal_stage(journal=journal, plan=plan, stage="fabro-run", result=fabro)
+    journal_stage(journal=journal, plan=plan, stage="fabro-run", result=fabro)
     if launched.stalled_run_id is not None:
-        return _stalled(plan=plan, run_id=launched.stalled_run_id)
+        return stalled(outcome_type=DispatchOutcome, plan=plan, run_id=launched.stalled_run_id)
     blocked = _blocked_outcome(plan=plan, runner=runner, journal=journal, fabro=fabro)
     if blocked is not None:
         return blocked
     if fabro.exit_code != 0:
-        return _failed(plan=plan, stage="fabro-run", detail=_tail(text=fabro.stderr))
-    view = _confirm_pr(plan=plan, runner=runner, journal=journal)
+        return failed(
+            outcome_type=DispatchOutcome,
+            plan=plan,
+            stage="fabro-run",
+            detail=_tail(text=fabro.stderr),
+        )
+    view = confirm_pr(plan=plan, runner=runner, journal=journal)
     if view is None:
-        return _failed(plan=plan, stage="pr-view", detail="no PR found for branch")
-    merged = _await_merge(plan=plan, runner=runner, journal=journal, sleep=sleep, poll=poll)
+        return failed(
+            outcome_type=DispatchOutcome,
+            plan=plan,
+            stage="pr-view",
+            detail="no PR found for branch",
+        )
+    merged = await_merge(
+        outcome_type=DispatchOutcome,
+        plan=plan,
+        runner=runner,
+        journal=journal,
+        sleep=sleep,
+        poll=poll,
+    )
     if isinstance(merged, DispatchOutcome):
         outcome = merged
     elif merged is None:
@@ -281,7 +286,13 @@ def run_dispatch(
             detail="PR did not reach MERGED within the poll budget",
         )
     else:
-        outcome = _post_merge(plan=plan, runner=runner, journal=journal, merged=merged)
+        outcome = post_merge(
+            outcome_type=DispatchOutcome,
+            plan=plan,
+            runner=runner,
+            journal=journal,
+            merged=merged,
+        )
     return outcome
 
 
@@ -308,7 +319,7 @@ def _blocked_outcome(
         cwd=plan.repo,
         timeout_seconds=_FABRO_INSPECT_TIMEOUT_SECONDS,
     )
-    _journal_stage(journal=journal, plan=plan, stage="fabro-inspect", result=inspect)
+    journal_stage(journal=journal, plan=plan, stage="fabro-inspect", result=inspect)
     if inspect.exit_code != 0:
         return None
     if parse_run_status(stdout=inspect.stdout) != "blocked":
@@ -325,334 +336,6 @@ def _blocked_outcome(
             f"`fabro resume {run_id}` only if the engine died; "
             "not auto-resumed, item left open"
         ),
-    )
-
-
-def _confirm_pr(
-    *,
-    plan: DispatchPlan,
-    runner: CommandRunner,
-    journal: JournalWriter,
-) -> PrView | None:
-    view = _view_pr(plan=plan, runner=runner, journal=journal)
-    if view is None:
-        return None
-    if view.auto_merge_armed or view.state == "MERGED":
-        return view
-    arm = runner.run(
-        argv=pr_arm_argv(plan=plan, number=view.number),
-        cwd=plan.repo,
-        timeout_seconds=_GH_TIMEOUT_SECONDS,
-    )
-    _journal_stage(journal=journal, plan=plan, stage="pr-arm-fallback", result=arm)
-    return _view_pr(plan=plan, runner=runner, journal=journal)
-
-
-def _await_merge(
-    *,
-    plan: DispatchPlan,
-    runner: CommandRunner,
-    journal: JournalWriter,
-    sleep: SleepFn,
-    poll: PollPolicy,
-) -> PrView | DispatchOutcome | None:
-    for attempt in range(poll.attempts):
-        view = _view_pr(plan=plan, runner=runner, journal=journal)
-        if view is not None and view.state == "MERGED":
-            return view
-        if view is not None and view.merge_state_status == "BEHIND":
-            update = runner.run(
-                argv=pr_update_branch_argv(plan=plan, number=view.number),
-                cwd=plan.repo,
-                timeout_seconds=_GH_TIMEOUT_SECONDS,
-            )
-            _journal_stage(journal=journal, plan=plan, stage="pr-update-branch", result=update)
-        elif view is not None and view.terminal_required_check_failures:
-            checks = ", ".join(view.terminal_required_check_failures)
-            return DispatchOutcome(
-                work_item_id=plan.work_item_id,
-                status="failed",
-                stage="merge-poll",
-                pr_number=view.number,
-                merge_sha=view.merge_sha,
-                detail=f"required check failed terminally: {checks}",
-            )
-        if attempt + 1 < poll.attempts:
-            sleep(poll.interval_seconds)
-    return None
-
-
-def _post_merge(
-    *,
-    plan: DispatchPlan,
-    runner: CommandRunner,
-    journal: JournalWriter,
-    merged: PrView,
-) -> DispatchOutcome:
-    """Refresh the primary, then gate on the janitor in a fresh checkout.
-
-    The janitor runs in a freshly provisioned detached worktree of the
-    merged ref — NEVER the host primary's working tree, whose
-    environment rot once false-redded a confirmed-green merge
-    (livespec-impl-beads-cgd). Provisioning failures degrade (green
-    outcome at `janitor-env-degraded` with actionable detail) instead
-    of failing; a red janitor inside the fresh checkout is the real
-    signal and stays a failure, with the checkout kept for diagnosis.
-    """
-    pull = runner.run(
-        argv=pull_primary_argv(plan=plan),
-        cwd=plan.repo,
-        timeout_seconds=_GIT_TIMEOUT_SECONDS,
-    )
-    _journal_stage(journal=journal, plan=plan, stage="pull-primary", result=pull)
-    if pull.exit_code != 0:
-        return _merged_failure(plan=plan, stage="pull-primary", merged=merged, result=pull)
-    degraded = _provision_janitor_checkout(plan=plan, runner=runner, journal=journal, merged=merged)
-    if degraded is not None:
-        return degraded
-    janitor = runner.run(
-        argv=list(plan.janitor),
-        cwd=plan.janitor_checkout,
-        timeout_seconds=_JANITOR_TIMEOUT_SECONDS,
-        env={CORE_PLUGIN_ROOT_ENV_VAR: str(plan.janitor_core_checkout / ".claude-plugin")},
-    )
-    _journal_stage(journal=journal, plan=plan, stage="janitor-post-merge", result=janitor)
-    if janitor.exit_code != 0:
-        return DispatchOutcome(
-            work_item_id=plan.work_item_id,
-            status="failed",
-            stage="janitor-post-merge",
-            pr_number=merged.number,
-            merge_sha=merged.merge_sha,
-            detail=(
-                f"post-merge janitor red in fresh checkout {plan.janitor_checkout} "
-                f"(kept for diagnosis): {_tail(text=janitor.stderr)}"
-            ),
-        )
-    cleanup = runner.run(
-        argv=janitor_worktree_remove_argv(plan=plan),
-        cwd=plan.repo,
-        timeout_seconds=_GIT_TIMEOUT_SECONDS,
-    )
-    _journal_stage(journal=journal, plan=plan, stage="janitor-checkout-remove", result=cleanup)
-    return DispatchOutcome(
-        work_item_id=plan.work_item_id,
-        status="green",
-        stage="done",
-        pr_number=merged.number,
-        merge_sha=merged.merge_sha,
-        detail="merged, post-merge janitor green",
-    )
-
-
-def _provision_janitor_checkout(
-    *,
-    plan: DispatchPlan,
-    runner: CommandRunner,
-    journal: JournalWriter,
-    merged: PrView,
-) -> DispatchOutcome | None:
-    """Provision the fresh detached worktree the post-merge janitor runs in.
-
-    Returns None when the checkout is ready, or the janitor-env-degraded
-    outcome when a provisioning step fails (environment-shaped; the
-    merge is already confirmed, so gate accounting must not record a
-    work-item failure). Steps: a pre-clean `git worktree remove --force`
-    whose result is deliberately ignored (it clears a stale registration
-    left by a crashed earlier dispatch; on a clean host it just fails),
-    the detached `git worktree add` at the merged ref (the merge sha
-    when the PR view carried one, `origin/master` otherwise — the
-    just-pulled primary has both), and `mise trust` inside the checkout
-    (trust is per-path, so the fresh path is never pre-trusted and the
-    default janitor's `mise exec` would refuse to run there).
-    """
-    preclean = runner.run(
-        argv=janitor_worktree_remove_argv(plan=plan),
-        cwd=plan.repo,
-        timeout_seconds=_GIT_TIMEOUT_SECONDS,
-    )
-    _journal_stage(journal=journal, plan=plan, stage="janitor-checkout-preclean", result=preclean)
-    ref = merged.merge_sha if merged.merge_sha is not None else "origin/master"
-    add = runner.run(
-        argv=janitor_worktree_add_argv(plan=plan, ref=ref),
-        cwd=plan.repo,
-        timeout_seconds=_GIT_TIMEOUT_SECONDS,
-    )
-    _journal_stage(journal=journal, plan=plan, stage="janitor-checkout-add", result=add)
-    if add.exit_code != 0:
-        return _merged_degraded(
-            plan=plan,
-            merged=merged,
-            step=(
-                f"provisioning the fresh janitor checkout at "
-                f"{plan.janitor_checkout} (ref {ref})"
-            ),
-            result=add,
-        )
-    trust = runner.run(
-        argv=janitor_trust_argv(),
-        cwd=plan.janitor_checkout,
-        timeout_seconds=_GIT_TIMEOUT_SECONDS,
-    )
-    _journal_stage(journal=journal, plan=plan, stage="janitor-checkout-trust", result=trust)
-    if trust.exit_code != 0:
-        return _merged_degraded(
-            plan=plan,
-            merged=merged,
-            step=f"`mise trust` inside the janitor checkout {plan.janitor_checkout}",
-            result=trust,
-        )
-    bootstrap = runner.run(
-        argv=janitor_bootstrap_argv(),
-        cwd=plan.repo,
-        timeout_seconds=_GIT_TIMEOUT_SECONDS,
-    )
-    _journal_stage(journal=journal, plan=plan, stage="janitor-checkout-bootstrap", result=bootstrap)
-    if bootstrap.exit_code != 0:
-        return _merged_degraded(
-            plan=plan,
-            merged=merged,
-            step=(
-                f"installing canonical hooks via `just install-commit-refuse-hooks` in "
-                f"{plan.repo}"
-            ),
-            result=bootstrap,
-        )
-    core = runner.run(
-        argv=janitor_core_clone_argv(plan=plan),
-        cwd=plan.janitor_checkout,
-        timeout_seconds=_GIT_TIMEOUT_SECONDS,
-    )
-    _journal_stage(journal=journal, plan=plan, stage="janitor-core-provision", result=core)
-    if core.exit_code != 0:
-        return _merged_degraded(
-            plan=plan,
-            merged=merged,
-            step=(
-                f"provisioning livespec core at {plan.janitor_core_checkout} "
-                f"(ref {plan.janitor_core_ref})"
-            ),
-            result=core,
-        )
-    return None
-
-
-def _merged_degraded(
-    *,
-    plan: DispatchPlan,
-    merged: PrView,
-    step: str,
-    result: CommandResult,
-) -> DispatchOutcome:
-    """Janitor-env-degraded: merged green, but the gate could not run.
-
-    NOT a work-item failure (livespec-impl-beads-cgd): the merge is
-    confirmed on the remote and the work-item's own sandbox checks and
-    CI were green, so a host-side provisioning failure must not reset
-    the gate streak. The outcome stays `green` for accounting, with the
-    degradation loud in the stage and an actionable remediation detail.
-    """
-    return DispatchOutcome(
-        work_item_id=plan.work_item_id,
-        status="green",
-        stage="janitor-env-degraded",
-        pr_number=merged.number,
-        merge_sha=merged.merge_sha,
-        detail=(
-            f"merged, but the post-merge janitor DID NOT RUN: {step} failed "
-            f"({_tail(text=result.stderr, limit=500)}). This is a host-environment "
-            f"problem, not a work-item failure — the merge is confirmed on the "
-            f"remote. Remediate the host, then run `{' '.join(plan.janitor)}` in "
-            f"a clean checkout of merged master to close the gate by hand."
-        ),
-    )
-
-
-def _view_pr(
-    *,
-    plan: DispatchPlan,
-    runner: CommandRunner,
-    journal: JournalWriter,
-) -> PrView | None:
-    result = runner.run(
-        argv=pr_view_argv(plan=plan),
-        cwd=plan.repo,
-        timeout_seconds=_GH_TIMEOUT_SECONDS,
-    )
-    _journal_stage(journal=journal, plan=plan, stage="pr-view", result=result)
-    if result.exit_code != 0:
-        return None
-    return parse_pr_view(stdout=result.stdout)
-
-
-def _journal_stage(
-    *,
-    journal: JournalWriter,
-    plan: DispatchPlan,
-    stage: str,
-    result: CommandResult,
-) -> None:
-    journal.append(
-        record={
-            "work_item_id": plan.work_item_id,
-            "stage": stage,
-            "exit_code": result.exit_code,
-            "detail": _tail(text=result.stderr if result.exit_code != 0 else result.stdout),
-        }
-    )
-
-
-def _failed(*, plan: DispatchPlan, stage: str, detail: str) -> DispatchOutcome:
-    return DispatchOutcome(
-        work_item_id=plan.work_item_id,
-        status="failed",
-        stage=stage,
-        pr_number=None,
-        merge_sha=None,
-        detail=detail,
-    )
-
-
-def _stalled(*, plan: DispatchPlan, run_id: str) -> DispatchOutcome:
-    """The distinct `stalled-no-progress` terminal (the 7us.6 hang class).
-
-    The coarse wall-clock watchdog confirmed sustained no progress (no new
-    fabro event for the full stall window) and `fabro rm -f`-ed the run.
-    This is a FAIL-CLOSED terminal — never silently treated as success: a
-    distinct `status` so the loop verdict exits non-zero and h1p's
-    `notify_terminal` alarms the operator with the `stalled-no-progress`
-    outcome class.
-    """
-    return DispatchOutcome(
-        work_item_id=plan.work_item_id,
-        status="stalled-no-progress",
-        stage="fabro-run",
-        pr_number=None,
-        merge_sha=None,
-        detail=(
-            f"run {run_id} made no progress for the full stall window "
-            f"(no new fabro event); the coarse wall-clock watchdog "
-            f"`fabro rm -f`-ed it (the 7us.6 silent-deadlock class). "
-            f"Set {_STALL_ENV_HINT} to tune the window; the DEFERRED 29f "
-            f"OTEL metrics-heartbeat primary will refine this coarse signal."
-        ),
-    )
-
-
-def _merged_failure(
-    *,
-    plan: DispatchPlan,
-    stage: str,
-    merged: PrView,
-    result: CommandResult,
-) -> DispatchOutcome:
-    return DispatchOutcome(
-        work_item_id=plan.work_item_id,
-        status="failed",
-        stage=stage,
-        pr_number=merged.number,
-        merge_sha=merged.merge_sha,
-        detail=_tail(text=result.stderr),
     )
 
 
