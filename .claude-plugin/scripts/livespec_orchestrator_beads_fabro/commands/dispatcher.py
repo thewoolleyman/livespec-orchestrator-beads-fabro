@@ -151,6 +151,7 @@ import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, replace
+from functools import partial
 from pathlib import Path
 from time import sleep as _real_sleep
 from typing import Protocol, cast
@@ -168,6 +169,15 @@ from livespec_orchestrator_beads_fabro.commands._config import (
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_autonomous import (
     arm_autonomous_for_loop,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_autonomous_audit import (
+    autonomous_decision_journal_record,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_autonomous_collapse import (
+    acceptance_decision_under_mode,
+    collapse_acceptance_to_ai_only,
+    collapse_admission_to_auto,
+    effective_admission_policy_under_mode,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
     build_calibration_record,
@@ -256,9 +266,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_spec_checks import run_spec_checks
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
-    acceptance_decision,
     admission_held_detail,
-    effective_acceptance_policy,
     plan_admissions,
     resolve_assignee,
     resolve_wip_cap,
@@ -294,6 +302,16 @@ __all__: list[str] = ["main"]
 _EXIT_FAILURE = 1
 _EXIT_USAGE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 3
+
+# The `decision` text journaled on each full-autonomous-mode auto-resolution
+# audit record (the S2 autonomous-decision record). Names what the mode
+# decided so no auto-resolution is silent.
+_AUTONOMOUS_APPROVE_DECISION = (
+    "routine manual-admission auto-approved to ready under armed autonomous mode"
+)
+_AUTONOMOUS_ACCEPTANCE_DECISION = (
+    "ai-then-human accepted to done on the passing AI pass under armed autonomous mode"
+)
 
 # The active platform's path separators (os.altsep is None on POSIX). Built as
 # a tuple of the truthy separators so the "does this string carry a directory
@@ -494,8 +512,17 @@ def _run_dispatch_command(*, args: argparse.Namespace) -> int:
     # and an admission-eligible item is admitted (ready -> active, assignee
     # set) and dispatched. A targeted dispatch is an operator override, so it
     # does NOT enforce the per-repo WIP cap (the queue-draining `loop` does).
+    # The targeted `dispatch --item` path NEVER arms full autonomous mode — the
+    # `--mode autonomous` opt-in rides the queue-draining `loop`, not `dispatch`
+    # (SPECIFICATION/contracts.md) — so the admission valve runs with the mode
+    # collapse OFF (armed=False), exactly the pre-mode behavior.
     admission = _admit_and_select(
-        repo=repo, items=items, candidates=[target], journal=journal, enforce_cap=False
+        repo=repo,
+        items=items,
+        candidates=[target],
+        journal=journal,
+        enforce_cap=False,
+        armed=False,
     )
     dispatched = [
         _dispatch_one(args=args, repo=repo, item=item, journal=journal, janitor=janitor)
@@ -580,9 +607,13 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
         return _EXIT_FAILURE
     # Full autonomous mode two-factor arming: surface + journal the dangerous
     # acknowledgement when this run is armed (persistent permission + explicit
-    # --mode autonomous). Collapses NO gate here — the collapse layers on in
-    # later slices; a non-armed run is transparent.
-    _ = arm_autonomous_for_loop(mode=args.mode, repo=repo, journal=journal)
+    # --mode autonomous). The armed bool is threaded onto args so the two
+    # human-delegable valves (admission approve-gate + post-merge acceptance)
+    # read it and collapse to their autonomous leg; a non-armed run is
+    # transparent (both valves keep their normal policies).
+    args.autonomous_armed = arm_autonomous_for_loop(
+        mode=args.mode, repo=repo, journal=journal
+    ).armed
     requested_ids = set(args.items or [])
     if requested_ids:
         preflight_error = _requested_items_preflight_error(
@@ -598,7 +629,12 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
     # slots (ready -> active, assignee set). Capacity-deferred items simply
     # wait for the next pass.
     admission = _admit_and_select(
-        repo=repo, items=items, candidates=candidates, journal=journal, enforce_cap=True
+        repo=repo,
+        items=items,
+        candidates=candidates,
+        journal=journal,
+        enforce_cap=True,
+        armed=_autonomous_armed(args=args),
     )
     journal.append(
         record={
@@ -1556,7 +1592,13 @@ def _post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fi
     the terminal `outcome` and is independently fail-soft where it touches IO.
     """
     if outcome.status == "green" and args.close_on_merge:
-        _complete_and_accept(repo=repo, item=item, outcome=outcome, journal=journal)
+        _complete_and_accept(
+            repo=repo,
+            item=item,
+            outcome=outcome,
+            journal=journal,
+            armed=_autonomous_armed(args=args),
+        )
     journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
     _bounce_non_convergence_to_backlog(repo=repo, item=item, outcome=outcome, journal=journal)
     _bounce_blocked(repo=repo, item=item, outcome=outcome, journal=journal)
@@ -1753,6 +1795,19 @@ class _Admission:
     refused: list[DispatchOutcome]
 
 
+def _autonomous_armed(*, args: argparse.Namespace) -> bool:
+    """Read the per-run full-autonomous-mode armed flag threaded onto args.
+
+    `_run_loop_command` sets `args.autonomous_armed` from the S1 arming
+    decision. The targeted `dispatch --item` path never arms the mode (the
+    `--mode autonomous` opt-in rides `loop`, not `dispatch`), so it never sets
+    the attribute; the `getattr` default keeps that path — and any legacy
+    caller — at the safe unarmed default. `bool(...)` narrows the untyped
+    Namespace attribute to a typed bool.
+    """
+    return bool(getattr(args, "autonomous_armed", False))
+
+
 def _admit_and_select(
     *,
     repo: Path,
@@ -1760,6 +1815,7 @@ def _admit_and_select(
     candidates: list[WorkItem],
     journal: JournalFile,
     enforce_cap: bool,
+    armed: bool,
 ) -> _Admission:
     """Run the admission valve over the rank-sorted candidate set.
 
@@ -1774,6 +1830,15 @@ def _admit_and_select(
     `dispatch --item` is an operator override that passes `enforce_cap=False`
     (every host-cleared candidate gets a slot). The admit writes + the held
     surfaces are journaled here; the launched items flow on to `_dispatch_one`.
+
+    `armed` layers the full-autonomous-mode approve-gate collapse
+    (SPECIFICATION/scenarios.md Scenario 33): an armed run injects an
+    armed-aware admission-policy resolver so a routine `manual` pending item is
+    auto-approved into `ready` instead of held — EXCEPT a design-human-gated
+    spec-change-tier slice, which stays held/escalated (Scenario 36). Each such
+    collapse is journaled as an autonomous auto-resolution audit record
+    (`gate` `approve`); when not armed the resolver is the base policy and
+    behavior is exactly unchanged.
     """
     admittable: list[WorkItem] = []
     refused: list[DispatchOutcome] = []
@@ -1789,7 +1854,10 @@ def _admit_and_select(
     else:
         free_slots = len(admittable)
     plan = plan_admissions(
-        ready_items=admittable, free_slots=free_slots, resolve_assignee=resolve_assignee
+        ready_items=admittable,
+        free_slots=free_slots,
+        resolve_assignee=resolve_assignee,
+        admission_policy=partial(effective_admission_policy_under_mode, armed=armed),
     )
     admitted: list[WorkItem] = []
     config = _store_config(repo=repo)
@@ -1797,6 +1865,15 @@ def _admit_and_select(
     for item in plan.approved:
         update_work_item_status(path=config, item_id=item.id, status="ready")
         journal.append(record={"stage": "ledger-approve", "work_item_id": item.id})
+        if collapse_admission_to_auto(item=item, armed=armed):
+            journal.append(
+                record=autonomous_decision_journal_record(
+                    work_item_id=item.id,
+                    gate="approve",
+                    decision=_AUTONOMOUS_APPROVE_DECISION,
+                    disposition="auto-resolved",
+                )
+            )
     for item, assignee in plan.admitted:
         journal_item = replace(item, status="ready") if item.id in approved_ids else item
         update_work_item_status(
@@ -1864,6 +1941,7 @@ def _complete_and_accept(
     item: WorkItem,
     outcome: DispatchOutcome,
     journal: JournalFile,
+    armed: bool,
 ) -> None:
     """Run the post-merge acceptance valve for a green dispatch.
 
@@ -1877,6 +1955,15 @@ def _complete_and_accept(
     default) PARK the item in `acceptance` on the ledger, surfaced for a human
     to give final acceptance from the console. Nothing parks silently — the
     park is journaled and surfaced.
+
+    `armed` layers the full-autonomous-mode acceptance collapse
+    (SPECIFICATION/scenarios.md Scenario 34): an armed run treats an
+    `ai-then-human` item's effective policy as `ai-only`, accepting it to `done`
+    on the passing AI pass instead of parking — EXCEPT a `human-only` item,
+    which is a deliberate human gate that still parks (Scenario 36). The AI pass
+    STILL runs first (the no-release-with-zero-verification floor). Each such
+    collapse is journaled as an autonomous auto-resolution audit record
+    (`gate` `acceptance`); when not armed behavior is exactly unchanged.
     """
     config = _store_config(repo=repo)
     update_work_item_status(path=config, item_id=item.id, status="acceptance")
@@ -1884,10 +1971,20 @@ def _complete_and_accept(
     journal.append(
         record={"stage": "acceptance-ai-pass", "work_item_id": item.id, "confirmed": True}
     )
-    decision = acceptance_decision(policy=effective_acceptance_policy(item=item))
+    acceptance_collapsed = collapse_acceptance_to_ai_only(item=item, armed=armed)
+    decision = acceptance_decision_under_mode(item=item, armed=armed)
     if decision.to_done:
         _close_item(repo=repo, item=item, outcome=outcome)
         journal.append(record={"stage": "ledger-accept", "work_item_id": item.id})
+        if acceptance_collapsed:
+            journal.append(
+                record=autonomous_decision_journal_record(
+                    work_item_id=item.id,
+                    gate="acceptance",
+                    decision=_AUTONOMOUS_ACCEPTANCE_DECISION,
+                    disposition="auto-resolved",
+                )
+            )
         return
     journal.append(
         record={"stage": "acceptance-parked", "work_item_id": item.id, "policy": decision.policy}

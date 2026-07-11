@@ -221,6 +221,7 @@ def plan_admissions(
     ready_items: Sequence[WorkItem],
     free_slots: int,
     resolve_assignee: Callable[..., str | None],
+    admission_policy: Callable[..., str] = effective_admission_policy,
 ) -> AdmissionPlan:
     """Plan which rank-sorted candidates to approve, admit, hold, or defer.
 
@@ -240,14 +241,19 @@ def plan_admissions(
       slot left; it waits at `ready` for the next pass.
 
     `admission_policy` gates only the pending approval transition. Once an item
-    is `ready`, admission to `active` is mechanical.
+    is `ready`, admission to `active` is mechanical. The `admission_policy`
+    resolver is an injected seam defaulting to `effective_admission_policy`; the
+    full-autonomous-mode approve-gate collapse injects an armed-aware resolver
+    (`_dispatcher_autonomous_collapse.effective_admission_policy_under_mode`)
+    without this valve knowing about the mode — keeping it a PURE, mode-agnostic
+    planner.
     """
     approved: list[WorkItem] = []
     admitted: list[tuple[WorkItem, str]] = []
     held: list[tuple[WorkItem, str]] = []
     for item in ready_items:
         if item.status == "pending-approval":
-            if effective_admission_policy(item=item) != _AUTO_ADMISSION:
+            if admission_policy(item=item) != _AUTO_ADMISSION:
                 held.append((item, _HELD_MANUAL))
                 continue
             approved.append(item)
