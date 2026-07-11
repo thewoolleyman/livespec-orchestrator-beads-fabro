@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.22](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.21...v0.17.22) (2026-07-11)
+
+
+### Bug Fixes
+
+* extract dispatcher ledger close cluster ([72d8ca8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/72d8ca833b74631bb525e448739d7278c68934d3))
+
 ## [0.17.21](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.20...v0.17.21) (2026-07-11)
 
 
