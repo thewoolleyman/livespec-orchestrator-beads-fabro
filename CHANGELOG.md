@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.15.0...v0.16.0) (2026-07-11)
+
+
+### Features
+
+* collapse the two human-delegable valves under armed autonomous mode (bd-ib-82a.3) ([9a1c8ec](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9a1c8ec926e7b87c87dbb5c5822264a5d4d29435))
+
 ## [0.15.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.14.1...v0.15.0) (2026-07-11)
 
 
