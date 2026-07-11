@@ -180,22 +180,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
     build_calibration_record,
     calibration_journal_record,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_cost import (
-    COST_MODE_REPORT,
-    gate_wave,
-    resolve_cost_mode,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
+    cost_gate_after_verdict,
+    derived_costs,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_pricing import (
     DEFAULT_DISPATCH_COST_MODEL_ENV,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_report import (
-    build_cost_report_item,
-    emit_cost_report,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_sink import (
-    CostReport,
     CostSink,
-    cost_lookup_keys,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
@@ -234,7 +227,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_notify import (
     terminal_events,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
-    cost_report_spans_path,
     cost_sink_path,
     heartbeat_path,
     is_writable_orchestrator_checkout,
@@ -554,11 +546,12 @@ def _run_dispatch_command(*, args: argparse.Namespace) -> int:
         include_loop_summary=False,
         journal=journal,
     )
-    _cost_gate_after_verdict(
+    cost_gate_after_verdict(
         args=args,
         repo=repo,
         outcomes=[outcome],
         journal=journal,
+        runner=_post_verdict_runner(runner=None),
     )
     _self_update_after_verdict(
         repo=repo,
@@ -690,11 +683,12 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
         include_loop_summary=True,
         journal=journal,
     )
-    _cost_gate_after_verdict(
+    cost_gate_after_verdict(
         args=args,
         repo=repo,
         outcomes=outcomes,
         journal=journal,
+        runner=_post_verdict_runner(runner=None),
     )
     _self_update_after_verdict(
         repo=repo,
@@ -880,259 +874,9 @@ def _post_verdict_runner(
     return GithubTokenEnvRunner(inner=resolved_runner, token=resolved_supplier)
 
 
-_FABRO_PS_PROBE_TIMEOUT_SECONDS = 60.0
-
 # The merged-PR diff-size probe budget (the calibration size proxy): a
 # single `gh pr view --json additions,deletions` read, fail-soft to None.
 _PR_DIFF_PROBE_TIMEOUT_SECONDS = 60.0
-
-# The alarm class for a fail-closed cost-gate refusal (the producer h1p's
-# `notify_terminal` seam names as y0m's). NOT a `DispatchOutcome.status`,
-# so it is built as its own `NotifyEvent` rather than flowing through
-# `terminal_events`.
-_SPEND_CAP_BREACH_CLASS = "spend-cap-breach"
-
-
-def _cost_gate_after_verdict(  # noqa: PLR0913 — kw-only fail-open stage; seams are independently injectable.
-    *,
-    args: argparse.Namespace,
-    repo: Path,
-    outcomes: list[DispatchOutcome],
-    journal: JournalFile,
-    runner: CommandRunner | None = None,
-    token_supplier: Callable[[], str] | None = None,
-    poster: NotifyPoster | None = None,
-) -> None:
-    """Run the fail-closed cost gate after the verdict is computed (y0m).
-
-    Called AFTER the wave's verdict / exit code is final (alongside the
-    reflection + ntfy-alarm stages), and FAIL-OPEN: the whole stage is
-    wrapped in a broad supervisor, so a `fabro ps` failure, an unparseable
-    payload, or ANY exception is journaled as `cost-gate-error` and
-    swallowed — it can never change a computed verdict or crash the
-    dispatcher (the load-bearing 0jxs invariant, mirroring the reflection /
-    notify stages). It runs `fabro ps -a --json` ONCE, hands the output to
-    `gate_wave` (which applies 5v9's unobservable fail-closed gate AND
-    y0m's per-run + per-session cap-VALUE comparison, resolving the
-    committed env-overridable caps from `os.environ`), and turns each
-    returned refusal into a `spend-cap-breach`-class `NotifyEvent` through
-    h1p's existing `notify_terminal` seam (strict credential hygiene: only
-    the work-item id + outcome class + a non-credential-bearing run id
-    reach the alarm body). `runner` / `poster` are injectable for the
-    hermetic test tier; production is the real `ShellCommandRunner` /
-    `HttpNotifyPoster`.
-    """
-    try:
-        _cost_gate(
-            args=args,
-            repo=repo,
-            outcomes=outcomes,
-            journal=journal,
-            runner=_post_verdict_runner(runner=runner, token_supplier=token_supplier),
-            poster=poster if poster is not None else HttpNotifyPoster(),
-        )
-    except Exception as exc:
-        # Fail-open supervisor: the verdict is already final, so a broad
-        # catch is the whole point — any error is journaled and swallowed,
-        # never raised (0jxs operability gate).
-        journal.append(
-            record={
-                "stage": "cost-gate-error",
-                "reason": f"{type(exc).__name__}",
-            }
-        )
-
-
-def _cost_gate(
-    *,
-    args: argparse.Namespace,
-    repo: Path,
-    outcomes: list[DispatchOutcome],
-    journal: JournalFile,
-    runner: CommandRunner,
-    poster: NotifyPoster,
-) -> None:
-    """The cost-gate / cost-reporter body wrapped fail-open by `_cost_gate_after_verdict`.
-
-    Resolves `LIVESPEC_COST_MODE` (`report` default / `enforce` opt-in) and
-    hands it to `gate_wave`. In `report` mode the per-dispatch
-    API-equivalent cost is DERIVED + journaled but NEVER refused: the wave
-    returns no refusals, and this stage instead EMITS the cost-report
-    telemetry span (through the established spans-file → enrich egress) and
-    a one-line stderr summary. In `enforce` mode the original fail-closed
-    behavior is intact: each refusal becomes a `spend-cap-breach` alarm.
-    """
-    if not any(outcome.status == "green" for outcome in outcomes):
-        # No launched run in the wave -> no cost to gate (host-only refusals
-        # and other non-green outcomes never reached a fabro run).
-        return
-    cost_mode = resolve_cost_mode(environ=dict(os.environ))
-    ps = runner.run(
-        argv=[args.fabro_bin, "ps", "-a", "--json"],
-        cwd=repo,
-        timeout_seconds=_FABRO_PS_PROBE_TIMEOUT_SECONDS,
-    )
-    ps_json = ps.stdout if ps.exit_code == 0 else ""
-    refusals = gate_wave(
-        mode=getattr(args, "mode", "shadow"),
-        outcomes=tuple(outcomes),
-        ps_json=ps_json,
-        journal=journal,
-        environ=dict(os.environ),
-        derived_cost_micros_by_work_item=_derived_costs(args=args, repo=repo, outcomes=outcomes),
-        cost_mode=cost_mode,
-    )
-    if cost_mode == COST_MODE_REPORT:
-        _emit_cost_report_telemetry(args=args, repo=repo, outcomes=outcomes)
-        return
-    if not refusals:
-        return
-    events = tuple(
-        NotifyEvent(work_item_id=work_item_id, outcome_class=_SPEND_CAP_BREACH_CLASS)
-        for work_item_id in refusals
-    )
-    notify_terminal(
-        events=events,
-        run_id=_run_id(),
-        poster=poster,
-        journal=journal,
-    )
-
-
-def _emit_cost_report_telemetry(
-    *,
-    args: argparse.Namespace,
-    repo: Path,
-    outcomes: list[DispatchOutcome],
-) -> None:
-    """Build + emit the report-mode per-dispatch cost telemetry (report mode).
-
-    Reads each green outcome's full `CostReport` from the per-dispatch cost
-    sink, builds the leak-free cost-report items (derived USD + per-category
-    token sums + the honest model basis), and emits the `cost.report` OTLP
-    span(s) plus the one-line stderr summary. A green run with no accrued
-    cost (no CC telemetry arrived) is reported as UNOBSERVABLE — never
-    refused. The whole call is inside `_cost_gate_after_verdict`'s fail-open
-    supervisor, so a sink-read / emit error degrades to a journaled
-    `cost-gate-error` rather than crashing the (already-final) verdict.
-    """
-    default_model = os.environ.get(DEFAULT_DISPATCH_COST_MODEL_ENV, "").strip() or None
-    reports = _derived_reports(args=args, repo=repo, outcomes=outcomes)
-    items = tuple(
-        build_cost_report_item(
-            work_item_id=outcome.work_item_id,
-            report=reports.get(outcome.work_item_id),
-            default_model=default_model,
-        )
-        for outcome in outcomes
-        if outcome.status == "green"
-    )
-    emit_cost_report(
-        items=items,
-        dispatch_id=_dispatch_id_of(outcomes=outcomes),
-        spans_path=cost_report_spans_path(args=args, repo=repo),
-    )
-
-
-def _dispatch_id_of(*, outcomes: list[DispatchOutcome]) -> str | None:
-    """The dispatch id correlating the wave's cost-report wave span, if any.
-
-    `DispatchOutcome` does not carry a dispatch id, so the wave span is
-    correlated by the per-item `work.item.id` on each child span; the wave
-    root carries a dispatch id only when one is later threaded through.
-    Returns None today (the child-span work-item ids are the join keys).
-    """
-    _ = outcomes
-    return None
-
-
-def _derived_costs(
-    *,
-    args: argparse.Namespace,
-    repo: Path,
-    outcomes: list[DispatchOutcome],
-) -> dict[str, int]:
-    """The CC-token-derived per-dispatch cost for each green outcome (efj).
-
-    Reads the per-dispatch cost sink the live receiver wrote
-    (`<base>-otel-cost.json`) and, for each green outcome, looks the
-    accumulated micro-USD up by the work-item id (the `work.item.id`
-    correlation key CC spans carry — the join key per
-    `cc-otel-gap-analysis.md`). A work-item with no accrued
-    cost (no CC telemetry arrived) is OMITTED, so `gate_wave` falls back to
-    5v9's fabro / fail-closed path for it — the gate is never blinded. The
-    read goes through `CostSink`, which is fail-open (a missing / corrupt
-    file reads as empty), so a cost-sink error degrades to the fail-closed
-    path rather than crashing the (already fail-open) cost gate.
-    """
-    try:
-        return _read_derived_costs(args=args, repo=repo, outcomes=outcomes)
-    except Exception:
-        # Fail-open: a cost-sink read error degrades to the fail-closed path
-        # (gate_wave then sees no derived cost), never crashing the cost gate.
-        return {}
-
-
-def _read_derived_costs(
-    *,
-    args: argparse.Namespace,
-    repo: Path,
-    outcomes: list[DispatchOutcome],
-) -> dict[str, int]:
-    sink = CostSink(path=cost_sink_path(args=args, repo=repo))
-    derived: dict[str, int] = {}
-    for outcome in outcomes:
-        if outcome.status != "green":
-            continue
-        for key in cost_lookup_keys(work_item_id=outcome.work_item_id, dispatch_id=None):
-            micros = sink.usd_micros(key=key)
-            if micros is not None:
-                derived[outcome.work_item_id] = micros
-                break
-    return derived
-
-
-def _derived_reports(
-    *,
-    args: argparse.Namespace,
-    repo: Path,
-    outcomes: list[DispatchOutcome],
-) -> dict[str, CostReport]:
-    """The full per-dispatch `CostReport` for each green outcome (report mode).
-
-    The richer sibling of `_derived_costs`: reads the per-dispatch cost sink
-    and, for each green outcome, looks the full report (token sums +
-    model-resolution + summed micro-USD) up by the work-item id. A work-item
-    with no accrued cost is OMITTED (the report builder then reports it
-    UNOBSERVABLE). Fail-open: a sink-read error yields an empty map, so the
-    report degrades to all-unobservable rather than crashing the cost stage.
-    """
-    try:
-        return _read_derived_reports(args=args, repo=repo, outcomes=outcomes)
-    except Exception:
-        # Fail-open: a cost-sink read error degrades the report to
-        # all-unobservable, never crashing the (already fail-open) cost stage.
-        return {}
-
-
-def _read_derived_reports(
-    *,
-    args: argparse.Namespace,
-    repo: Path,
-    outcomes: list[DispatchOutcome],
-) -> dict[str, CostReport]:
-    sink = CostSink(path=cost_sink_path(args=args, repo=repo))
-    reports: dict[str, CostReport] = {}
-    for outcome in outcomes:
-        if outcome.status != "green":
-            continue
-        for key in cost_lookup_keys(work_item_id=outcome.work_item_id, dispatch_id=None):
-            report = sink.cost_report(key=key)
-            if report is not None:
-                reports[outcome.work_item_id] = report
-                break
-    return reports
-
 
 _CANARY_TIMEOUT_SECONDS = 300.0
 
@@ -1659,7 +1403,7 @@ def _calibration_token_cost(
     never as zero. Fail-soft: the underlying `_derived_costs` already
     swallows a cost-sink read error to an empty map.
     """
-    derived = _derived_costs(args=args, repo=repo, outcomes=[outcome])
+    derived = derived_costs(args=args, repo=repo, outcomes=[outcome])
     return derived.get(outcome.work_item_id)
 
 
