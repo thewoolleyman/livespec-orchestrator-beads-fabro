@@ -20,15 +20,8 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_reflection as reflection
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
-
-# Direct imports of the module-private helpers under test (the test tier
-# verifies the mechanical scan/emit internals); importing them avoids the
-# SLF001 attribute-access ban while keeping the names addressable.
-from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection import (
-    _AUTO_TRIP,  # pyright: ignore[reportPrivateUsage]
-    _BUDGET_EXCEEDED_MESSAGE,  # pyright: ignore[reportPrivateUsage]
-    _REFLECTION_BUDGET_SECONDS,  # pyright: ignore[reportPrivateUsage]
-    _read_journal_records,  # pyright: ignore[reportPrivateUsage]
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
+    read_journal_records,
 )
 
 # The scrub + attribute discipline lives in the SHARED `_otel_scrub` module
@@ -319,7 +312,7 @@ def test_reflect_tolerates_missing_journal_and_malformed_lines(
 
 
 def test_read_journal_records_empty_when_file_absent(tmp_path: Path) -> None:
-    assert _read_journal_records(journal_path=tmp_path / "nope.jsonl") == ()
+    assert read_journal_records(journal_path=tmp_path / "nope.jsonl") == ()
 
 
 # --------------------------------------------------------------------------
@@ -435,7 +428,6 @@ def test_reflect_auto_trips_after_three_consecutive_errors(
     # tripped state and does nothing.
     assert stages.count("reflection-error") == 3
     assert "reflection-tripped" in stages
-    assert _AUTO_TRIP.tripped is True
 
 
 def test_reflect_resets_error_streak_after_a_clean_pass(
@@ -454,15 +446,18 @@ def test_reflect_resets_error_streak_after_a_clean_pass(
     reflection.reflect(
         outcomes=[_outcome()], journal=journal, journal_path=journal_path, spans_path=spans_dir
     )
-    assert _AUTO_TRIP.consecutive_errors == 2
     reflection.reflect(
         outcomes=[_outcome()],
         journal=journal,
         journal_path=journal_path,
         spans_path=tmp_path / "good-spans.jsonl",
     )
-    assert _AUTO_TRIP.consecutive_errors == 0
-    assert _AUTO_TRIP.tripped is False
+    reflection.reflect(
+        outcomes=[_outcome()], journal=journal, journal_path=journal_path, spans_path=spans_dir
+    )
+    stages = _stages(journal_path=journal_path)
+    assert stages.count("reflection-error") == 3
+    assert "reflection-tripped" not in stages
 
 
 def test_reflect_time_box_bails_fail_open(
@@ -472,7 +467,7 @@ def test_reflect_time_box_bails_fail_open(
     monkeypatch.setenv("LIVESPEC_REFLECTION", "observe")
     # Force the monotonic clock past the deadline so the first budget
     # check raises; reflect must catch it as a reflection-error (fail-open).
-    clock = iter([0.0, _REFLECTION_BUDGET_SECONDS + 1.0, 1000.0, 1000.0])
+    clock = iter([0.0, 61.0, 1000.0, 1000.0])
     monkeypatch.setattr(reflection.time, "monotonic", lambda: next(clock))
     journal_path = tmp_path / "journal.jsonl"
     journal = JournalFile(path=journal_path)
@@ -488,7 +483,7 @@ def test_reflect_time_box_bails_fail_open(
         if rec["stage"] == "reflection-error"
     ]
     assert errors
-    assert _BUDGET_EXCEEDED_MESSAGE in str(errors[0]["reason"])
+    assert "time budget" in str(errors[0]["reason"])
 
 
 # --------------------------------------------------------------------------

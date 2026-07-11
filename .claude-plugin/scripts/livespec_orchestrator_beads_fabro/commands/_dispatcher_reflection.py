@@ -64,24 +64,27 @@ looks like a credential-bearing URL.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Protocol
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
-
-# The fail-closed scrub + OTLP attribute discipline is the SHARED single
-# source of truth (29f E1): `_otel_scrub` is reused here AND by the
-# host-local enrich/scrub stage (`_otel_enrich`), so the scrub policy lives
-# in exactly one place (telemetry-pipeline-architecture.md §3.4 — "lifting
-# `_scrub` ... into a SHARED module ... single source of truth for the scrub
-# policy"). This module consumes `attr` (which itself scrubs string values
-# via the shared `scrub` + credential-URL regex).
-from livespec_orchestrator_beads_fabro.commands._otel_scrub import attr as _attr
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
+    items_with_retries,
+    items_with_sizing_warn,
+    items_with_timeout,
+    trailing_green_streak,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_runner import (
+    RunReflectionConfig,
+    run_reflection,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_spans import (
+    join_ids,
+    stage_summary,
+)
 from livespec_orchestrator_beads_fabro.io import write_stderr
 
 __all__: list[str] = [
@@ -115,21 +118,6 @@ _FILE_HANDOFF_NOTE = (
     "out-of-band reflector to file/dedup these per best-practices §5; "
     "this loop-exit stage holds no store handle"
 )
-
-# Mechanical-scan magic numbers, named (PLR2004): a stage timeout surfaces
-# as a 124 exit code (the runner's TimeoutExpired mapping), and a second
-# `pr-view` record for one item is the merge-poll retry signal.
-_TIMEOUT_EXIT_CODE = 124
-_RETRY_PR_VIEW_THRESHOLD = 2
-
-# OTLP/HTTP JSON emission constants — the same one-ExportTraceServiceRequest-
-# per-line shape the family capture script writes (cc-otel-gap-analysis.md
-# §3.5; livespec/tmp/capture_runtime_telemetry.py).
-_OTLP_SERVICE_NAME = "livespec-dispatcher"
-_OTLP_SERVICE_NAMESPACE = "livespec-family"
-_OTLP_SCOPE_NAME = "livespec.dispatcher.reflection"
-_OTLP_SCOPE_VERSION = "0.1.0"
-_SPAN_KIND_INTERNAL = 1
 
 
 @dataclass(kw_only=True)
@@ -243,7 +231,7 @@ def scan_outcomes(
                 category="failed-cluster",
                 severity="warn",
                 count=len(failed),
-                subject=f"items failed at: {_stage_summary(outcomes=failed)}",
+                subject=f"items failed at: {stage_summary(outcomes=failed)}",
             )
         )
     if blocked:
@@ -256,34 +244,34 @@ def scan_outcomes(
             )
         )
 
-    timeout_items = _items_with_timeout(records=records)
+    timeout_items = items_with_timeout(records=records)
     if timeout_items:
         findings.append(
             ReflectionFinding(
                 category="stage-timeout",
                 severity="warn",
                 count=len(timeout_items),
-                subject=f"stage timeouts (exit 124) for: {_join_ids(ids=timeout_items)}",
+                subject=f"stage timeouts (exit 124) for: {join_ids(ids=timeout_items)}",
             )
         )
-    retry_items = _items_with_retries(records=records)
+    retry_items = items_with_retries(records=records)
     if retry_items:
         findings.append(
             ReflectionFinding(
                 category="stage-retry",
                 severity="info",
                 count=len(retry_items),
-                subject=f"repeated-stage activity (poll/retry) for: {_join_ids(ids=retry_items)}",
+                subject=f"repeated-stage activity (poll/retry) for: {join_ids(ids=retry_items)}",
             )
         )
-    sizing_items = _items_with_sizing_warn(records=records)
+    sizing_items = items_with_sizing_warn(records=records)
     if sizing_items:
         findings.append(
             ReflectionFinding(
                 category="sizing-warn",
                 severity="info",
                 count=len(sizing_items),
-                subject=f"item-sizing warnings (bn4) for: {_join_ids(ids=sizing_items)}",
+                subject=f"item-sizing warnings (bn4) for: {join_ids(ids=sizing_items)}",
             )
         )
 
@@ -293,7 +281,7 @@ def scan_outcomes(
         green_count=len(green),
         failed_count=len(failed),
         blocked_count=len(blocked),
-        green_streak=_trailing_green_streak(outcomes=outcomes),
+        green_streak=trailing_green_streak(outcomes=outcomes),
         findings=tuple(findings),
     )
 
@@ -315,18 +303,23 @@ def reflect(
     JSONL the loop has already flushed (the scan's read surface);
     `journal` is the append seam for the reflection record(s).
     """
-    mode = resolve_mode(raw=_read_env())
+    mode = resolve_mode(raw=os.environ.get(_REFLECTION_ENV))
     if mode == _MODE_OFF or _AUTO_TRIP.tripped:
         return
     deadline = time.monotonic() + _REFLECTION_BUDGET_SECONDS
     try:
-        _run_reflection(
+        run_reflection(
             outcomes=tuple(outcomes),
             journal=journal,
-            journal_path=journal_path,
-            mode=mode,
-            spans_path=spans_path,
-            deadline=deadline,
+            scan=scan_outcomes,
+            config=RunReflectionConfig(
+                journal_path=journal_path,
+                mode=mode,
+                spans_path=spans_path,
+                deadline=deadline,
+                file_handoff_note=_FILE_HANDOFF_NOTE,
+                budget_exceeded_message=_BUDGET_EXCEEDED_MESSAGE,
+            ),
         )
     except Exception as exc:
         # Fail-open supervisor: reflection must never escape and never
@@ -362,281 +355,3 @@ def _record_reflection_error(*, journal: JournalWriter, exc: Exception) -> None:
             "errors; disabled for the rest of this process (cycle LIVESPEC_REFLECTION)\n"
         )
         _ = write_stderr(text=trip_msg)
-
-
-def _run_reflection(
-    *,
-    outcomes: tuple[DispatchOutcome, ...],
-    journal: JournalWriter,
-    journal_path: Path,
-    mode: str,
-    spans_path: Path,
-    deadline: float,
-) -> None:
-    """The scan-emit body (wrapped fail-open by `reflect`)."""
-    records = _read_journal_records(journal_path=journal_path)
-    _check_budget(deadline=deadline)
-    report = scan_outcomes(outcomes=outcomes, records=records, mode=mode)
-    _check_budget(deadline=deadline)
-    _emit_summary(report=report)
-    _emit_spans(report=report, spans_path=spans_path)
-    _check_budget(deadline=deadline)
-    journal.append(
-        record={
-            "stage": "reflection",
-            "mode": mode,
-            "item_count": report.item_count,
-            "green_count": report.green_count,
-            "failed_count": report.failed_count,
-            "blocked_count": report.blocked_count,
-            "green_streak": report.green_streak,
-            "findings": [
-                {
-                    "category": f.category,
-                    "severity": f.severity,
-                    "count": f.count,
-                    "subject": f.subject,
-                }
-                for f in report.findings
-            ],
-        }
-    )
-    if mode == _MODE_FILE and report.findings:
-        journal.append(
-            record={
-                "stage": "reflection-file-handoff",
-                "findings": [
-                    {"category": f.category, "severity": f.severity, "count": f.count}
-                    for f in report.findings
-                ],
-                "note": _FILE_HANDOFF_NOTE,
-            }
-        )
-
-
-def _check_budget(*, deadline: float) -> None:
-    if time.monotonic() > deadline:
-        raise TimeoutError(_BUDGET_EXCEEDED_MESSAGE)
-
-
-def _read_env() -> str | None:
-    return os.environ.get(_REFLECTION_ENV)
-
-
-def _read_journal_records(*, journal_path: Path) -> tuple[dict[str, object], ...]:
-    """Read back the append-only journal file as parsed records.
-
-    The journal is the authoritative post-hoc surface (the loop has
-    already flushed every stage record to disk by the time reflection
-    runs). A missing or unreadable file yields an empty scan (fail-open),
-    and malformed lines are skipped rather than raising.
-    """
-    if not journal_path.is_file():
-        return ()
-    records: list[dict[str, object]] = []
-    for line in journal_path.read_text(encoding="utf-8").splitlines():
-        try:
-            parsed: object = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict):
-            mapping = cast("dict[object, object]", parsed)
-            typed: dict[str, object] = {str(key): value for key, value in mapping.items()}
-            records.append(typed)
-    return tuple(records)
-
-
-def _items_with_timeout(*, records: tuple[dict[str, object], ...]) -> tuple[str, ...]:
-    ids: list[str] = []
-    for rec in records:
-        if rec.get("exit_code") == _TIMEOUT_EXIT_CODE:
-            item = rec.get("work_item_id")
-            if isinstance(item, str) and item not in ids:
-                ids.append(item)
-    return tuple(ids)
-
-
-def _items_with_retries(*, records: tuple[dict[str, object], ...]) -> tuple[str, ...]:
-    """Items whose journal carries a repeated stage (poll re-views / retries).
-
-    A `pr-update-branch` record, or more than one `pr-view` for the same
-    item, is the mechanical retry signal the journal exposes.
-    """
-    per_item_stage_counts: dict[str, dict[str, int]] = {}
-    for rec in records:
-        item = rec.get("work_item_id")
-        stage = rec.get("stage")
-        if not isinstance(item, str) or not isinstance(stage, str):
-            continue
-        counts = per_item_stage_counts.setdefault(item, {})
-        counts[stage] = counts.get(stage, 0) + 1
-    ids: list[str] = []
-    for item, counts in per_item_stage_counts.items():
-        updated_branch = counts.get("pr-update-branch", 0) >= 1
-        repeated_view = counts.get("pr-view", 0) >= _RETRY_PR_VIEW_THRESHOLD
-        if updated_branch or repeated_view:
-            ids.append(item)
-    return tuple(ids)
-
-
-def _items_with_sizing_warn(*, records: tuple[dict[str, object], ...]) -> tuple[str, ...]:
-    ids: list[str] = []
-    for rec in records:
-        if rec.get("stage") == "sizing-warn":
-            item = rec.get("work_item_id")
-            if isinstance(item, str) and item not in ids:
-                ids.append(item)
-    return tuple(ids)
-
-
-def _trailing_green_streak(*, outcomes: tuple[DispatchOutcome, ...]) -> int:
-    """The count of trailing consecutive green outcomes (gate-streak signal).
-
-    The wave's outcomes are in pick order; the streak the operator cares
-    about is the run of greens at the tail (best-practices' "streak
-    state"). A non-green resets it.
-    """
-    streak = 0
-    for outcome in reversed(outcomes):
-        if outcome.status != "green":
-            break
-        streak += 1
-    return streak
-
-
-def _stage_summary(*, outcomes: tuple[DispatchOutcome, ...]) -> str:
-    return ", ".join(sorted({o.stage for o in outcomes}))
-
-
-def _join_ids(*, ids: tuple[str, ...]) -> str:
-    return ", ".join(ids)
-
-
-def _emit_summary(*, report: ReflectionReport) -> None:
-    """Write the human reflection block to stderr (the loop summary channel).
-
-    stdout carries the machine outcomes array untouched (the existing
-    bare-array JSON contract); the reflection summary rides stderr,
-    exactly where sizing-warn / ledger / janitor diagnostics already go,
-    so the loop summary's diagnostic channel carries the findings without
-    altering the outcomes array (best-practices §5.3).
-    """
-    verdict = (
-        f"{report.green_count} green / {report.failed_count} failed / "
-        f"{report.blocked_count} blocked"
-    )
-    header = (
-        f"reflection ({report.mode}): {report.item_count} item(s) — "
-        f"{verdict}; trailing green streak {report.green_streak}"
-    )
-    lines = [header]
-    if not report.findings:
-        lines.append("reflection: no findings")
-    for finding in report.findings:
-        prefix = f"reflection [{finding.severity}] {finding.category} (x{finding.count})"
-        lines.append(f"{prefix}: {finding.subject}")
-    _ = write_stderr(text="\n".join(lines) + "\n")
-
-
-def _emit_spans(*, report: ReflectionReport, spans_path: Path) -> None:
-    """Append OTLP/HTTP JSON spans for the reflection pass to the spans file.
-
-    One `ExportTraceServiceRequest` per line (the family capture format,
-    cc-otel-gap-analysis.md §3.5). Emits one `reflection.pass` root span
-    carrying the verdict-mix counts + correlation keys, then one
-    `reflection.finding` child span per finding. Credential hygiene:
-    only scalar names/counts/statuses are shipped — never an env value
-    or a credential-bearing URL.
-    """
-    now_ns = time.time_ns()
-    pass_attrs: dict[str, object] = {
-        "livespec.reflection.mode": report.mode,
-        "livespec.reflection.item_count": report.item_count,
-        "livespec.reflection.green_count": report.green_count,
-        "livespec.reflection.failed_count": report.failed_count,
-        "livespec.reflection.blocked_count": report.blocked_count,
-        "livespec.reflection.green_streak": report.green_streak,
-        "livespec.reflection.finding_count": len(report.findings),
-    }
-    pass_span = _build_span(
-        name="reflection.pass",
-        span_id="reflection-pass",
-        attrs=pass_attrs,
-        parent_id=None,
-        start_ns=now_ns,
-        end_ns=now_ns,
-    )
-    spans = [pass_span]
-    for index, finding in enumerate(report.findings):
-        finding_attrs: dict[str, object] = {
-            "livespec.reflection.finding.category": finding.category,
-            "livespec.reflection.finding.severity": finding.severity,
-            "livespec.reflection.finding.count": finding.count,
-            "livespec.reflection.finding.subject": finding.subject,
-        }
-        spans.append(
-            _build_span(
-                name="reflection.finding",
-                span_id=f"reflection-finding-{index}",
-                attrs=finding_attrs,
-                parent_id="reflection-pass",
-                start_ns=now_ns,
-                end_ns=now_ns,
-            )
-        )
-    line = _request_line(spans=spans)
-    spans_path.parent.mkdir(parents=True, exist_ok=True)
-    with spans_path.open("a", encoding="utf-8") as handle:
-        _ = handle.write(line + "\n")
-
-
-def _build_span(
-    *,
-    name: str,
-    span_id: str,
-    attrs: dict[str, object],
-    parent_id: str | None,
-    start_ns: int,
-    end_ns: int,
-) -> dict[str, object]:
-    span: dict[str, object] = {
-        "traceId": _hex_id(key="reflection-trace", nbytes=16),
-        "spanId": _hex_id(key=span_id, nbytes=8),
-        "name": name,
-        "kind": _SPAN_KIND_INTERNAL,
-        "startTimeUnixNano": str(start_ns),
-        "endTimeUnixNano": str(end_ns),
-        "attributes": [_attr(key=k, value=v) for k, v in attrs.items()],
-    }
-    if parent_id is not None:
-        span["parentSpanId"] = _hex_id(key=parent_id, nbytes=8)
-    return span
-
-
-def _hex_id(*, key: str, nbytes: int) -> str:
-    return hashlib.sha256(key.encode()).hexdigest()[: nbytes * 2]
-
-
-def _request_line(*, spans: list[dict[str, object]]) -> str:
-    request: dict[str, object] = {
-        "resourceSpans": [
-            {
-                "resource": {
-                    "attributes": [
-                        {"key": "service.name", "value": {"stringValue": _OTLP_SERVICE_NAME}},
-                        {
-                            "key": "service.namespace",
-                            "value": {"stringValue": _OTLP_SERVICE_NAMESPACE},
-                        },
-                    ]
-                },
-                "scopeSpans": [
-                    {
-                        "scope": {"name": _OTLP_SCOPE_NAME, "version": _OTLP_SCOPE_VERSION},
-                        "spans": spans,
-                    }
-                ],
-            }
-        ]
-    }
-    return json.dumps(request, separators=(",", ":"), sort_keys=True)
