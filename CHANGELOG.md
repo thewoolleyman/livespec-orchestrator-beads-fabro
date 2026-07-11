@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.19](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.18...v0.17.19) (2026-07-11)
+
+
+### Refactoring
+
+* extract dispatcher completion cluster ([755fbf2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/755fbf244986ba873cca6394c9a9d985b2efe45c))
+
 ## [0.17.18](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.17...v0.17.18) (2026-07-11)
 
 
