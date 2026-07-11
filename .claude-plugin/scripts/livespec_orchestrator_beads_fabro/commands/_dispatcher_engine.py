@@ -56,12 +56,15 @@ from pathlib import Path
 from typing import Protocol
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_janitor import post_merge
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import (
+    failed_outcome,
+    journal_stage,
+    stalled_outcome,
+    tail,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_merge import (
     await_merge,
     confirm_pr,
-    failed,
-    journal_stage,
-    stalled,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
@@ -92,6 +95,7 @@ __all__: list[str] = [
 # mid-run while the server-side engine keeps executing the graph.
 _FABRO_TIMEOUT_SECONDS = 54000.0
 _FABRO_INSPECT_TIMEOUT_SECONDS = 300.0
+
 SleepFn = Callable[[float], None]
 
 
@@ -247,20 +251,22 @@ def run_dispatch(
     fabro = launched.command
     journal_stage(journal=journal, plan=plan, stage="fabro-run", result=fabro)
     if launched.stalled_run_id is not None:
-        return stalled(outcome_type=DispatchOutcome, plan=plan, run_id=launched.stalled_run_id)
+        return stalled_outcome(
+            outcome_type=DispatchOutcome, plan=plan, run_id=launched.stalled_run_id
+        )
     blocked = _blocked_outcome(plan=plan, runner=runner, journal=journal, fabro=fabro)
     if blocked is not None:
         return blocked
     if fabro.exit_code != 0:
-        return failed(
+        return failed_outcome(
             outcome_type=DispatchOutcome,
             plan=plan,
             stage="fabro-run",
-            detail=_tail(text=fabro.stderr),
+            detail=tail(text=fabro.stderr),
         )
     view = confirm_pr(plan=plan, runner=runner, journal=journal)
     if view is None:
-        return failed(
+        return failed_outcome(
             outcome_type=DispatchOutcome,
             plan=plan,
             stage="pr-view",
@@ -337,10 +343,3 @@ def _blocked_outcome(
             "not auto-resumed, item left open"
         ),
     )
-
-
-def _tail(*, text: str, limit: int = 2000) -> str:
-    stripped = text.strip()
-    if len(stripped) <= limit:
-        return stripped
-    return stripped[-limit:]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import journal_stage
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
     PrView,
@@ -15,7 +16,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
-        CommandResult,
         CommandRunner,
         DispatchOutcome,
         JournalWriter,
@@ -23,19 +23,9 @@ if TYPE_CHECKING:
         SleepFn,
     )
 
-__all__: list[str] = [
-    "await_merge",
-    "confirm_pr",
-    "failed",
-    "journal_stage",
-    "stalled",
-]
+__all__: list[str] = ["await_merge", "confirm_pr"]
 
 _GH_TIMEOUT_SECONDS = 300.0
-
-# The env-var an operator tunes the watchdog stall window with (named in
-# the stalled-no-progress detail so the message is self-documenting).
-_STALL_ENV_HINT = "LIVESPEC_DISPATCH_STALL_SECONDS"
 
 
 def confirm_pr(
@@ -108,75 +98,3 @@ def _view_pr(
     if result.exit_code != 0:
         return None
     return parse_pr_view(stdout=result.stdout)
-
-
-def journal_stage(
-    *,
-    journal: JournalWriter,
-    plan: DispatchPlan,
-    stage: str,
-    result: CommandResult,
-) -> None:
-    journal.append(
-        record={
-            "work_item_id": plan.work_item_id,
-            "stage": stage,
-            "exit_code": result.exit_code,
-            "detail": _tail(text=result.stderr if result.exit_code != 0 else result.stdout),
-        }
-    )
-
-
-def failed(
-    *,
-    outcome_type: type[DispatchOutcome],
-    plan: DispatchPlan,
-    stage: str,
-    detail: str,
-) -> DispatchOutcome:
-    return outcome_type(
-        work_item_id=plan.work_item_id,
-        status="failed",
-        stage=stage,
-        pr_number=None,
-        merge_sha=None,
-        detail=detail,
-    )
-
-
-def stalled(
-    *,
-    outcome_type: type[DispatchOutcome],
-    plan: DispatchPlan,
-    run_id: str,
-) -> DispatchOutcome:
-    """The distinct `stalled-no-progress` terminal (the 7us.6 hang class).
-
-    The coarse wall-clock watchdog confirmed sustained no progress (no new
-    fabro event for the full stall window) and `fabro rm -f`-ed the run.
-    This is a FAIL-CLOSED terminal — never silently treated as success: a
-    distinct `status` so the loop verdict exits non-zero and h1p's
-    `notify_terminal` alarms the operator with the `stalled-no-progress`
-    outcome class.
-    """
-    return outcome_type(
-        work_item_id=plan.work_item_id,
-        status="stalled-no-progress",
-        stage="fabro-run",
-        pr_number=None,
-        merge_sha=None,
-        detail=(
-            f"run {run_id} made no progress for the full stall window "
-            f"(no new fabro event); the coarse wall-clock watchdog "
-            f"`fabro rm -f`-ed it (the 7us.6 silent-deadlock class). "
-            f"Set {_STALL_ENV_HINT} to tune the window; the DEFERRED 29f "
-            f"OTEL metrics-heartbeat primary will refine this coarse signal."
-        ),
-    )
-
-
-def _tail(*, text: str, limit: int = 2000) -> str:
-    stripped = text.strip()
-    if len(stripped) <= limit:
-        return stripped
-    return stripped[-limit:]
