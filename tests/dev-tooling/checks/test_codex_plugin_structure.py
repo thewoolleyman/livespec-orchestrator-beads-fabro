@@ -317,14 +317,23 @@ def test_codex_resolution_skips_core_like_cwd(tmp_path: Path) -> None:
     core_like = tmp_path / "core-like"
     installed_root = tmp_path / "installed"
     fake_bin = tmp_path / "bin"
+    fake_home = tmp_path / "home"
     (installed_root / "scripts" / "bin").mkdir(parents=True)
+    fake_home.mkdir()
     _write_plugin_candidate(root=core_like, name="livespec", with_orchestrator_wrapper=False)
     _write_fake_codex(bin_dir=fake_bin, installed_root=installed_root)
 
+    # Isolate HOME so the resolution script's `$HOME/.codex/plugins/cache/...`
+    # cache probe (step 3) cannot reach the host's real installed cache. With a
+    # fresh empty HOME that probe misses, so resolution falls through to the
+    # fake-codex `plugin list` path (step 4), which reports `installed_root` —
+    # proving the core-like cwd is skipped at step 2 regardless of what is
+    # really installed on the host running the suite.
     resolved = _resolve_skill_root(
         skill=_live_next_skill(),
         cwd=core_like,
         fake_bin=fake_bin,
+        env_overrides={"HOME": str(fake_home)},
     )
 
     assert resolved == str(installed_root)
