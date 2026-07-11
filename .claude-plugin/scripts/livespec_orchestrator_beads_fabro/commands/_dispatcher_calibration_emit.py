@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
@@ -18,6 +19,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import journal_path
+from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import post_verdict_runner
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -41,7 +43,8 @@ def emit_calibration(  # noqa: PLR0913 — kw-only fail-open stage; each field i
     journal: JournalFile,
     wall_clock_seconds: float,
     dispatch_context_size: int,
-    runner: CommandRunner,
+    runner: CommandRunner | None = None,
+    token_supplier: Callable[[], str] | None = None,
 ) -> None:
     """Journal this dispatch's calibration telemetry on the existing journal (yfsv4j).
 
@@ -61,6 +64,7 @@ def emit_calibration(  # noqa: PLR0913 — kw-only fail-open stage; each field i
     swallowed — it never crashes the (already-final) dispatch verdict.
     `runner` is injectable for the hermetic test tier.
     """
+    resolved_runner = post_verdict_runner(runner=runner, token_supplier=token_supplier)
     try:
         record = build_calibration_record(
             item=item,
@@ -73,7 +77,7 @@ def emit_calibration(  # noqa: PLR0913 — kw-only fail-open stage; each field i
             merged_pr_diff_size=merged_pr_diff_size(
                 repo=repo,
                 outcome=outcome,
-                runner=runner,
+                runner=resolved_runner,
             ),
         )
         journal.append(record=calibration_journal_record(record=record))

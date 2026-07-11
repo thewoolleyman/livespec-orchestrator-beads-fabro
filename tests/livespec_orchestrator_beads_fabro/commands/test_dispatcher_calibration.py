@@ -19,6 +19,7 @@ cost span. No real fabro run, gh call, CC session, or Honeycomb egress.
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -314,37 +315,37 @@ def test_calibration_journal_record_flattens_every_field() -> None:
 # --- the diff-size probe parse ------------------------------------------
 
 
-def testparse_pr_diff_size_sums_additions_and_deletions() -> None:
+def test_parse_pr_diff_size_sums_additions_and_deletions() -> None:
     assert parse_pr_diff_size(stdout='{"additions": 120, "deletions": 25}') == 145
 
 
-def testparse_pr_diff_size_unparseable_is_none() -> None:
+def test_parse_pr_diff_size_unparseable_is_none() -> None:
     assert parse_pr_diff_size(stdout="not json") is None
 
 
-def testparse_pr_diff_size_non_object_is_none() -> None:
+def test_parse_pr_diff_size_non_object_is_none() -> None:
     assert parse_pr_diff_size(stdout="[1, 2, 3]") is None
 
 
-def testparse_pr_diff_size_missing_fields_is_none() -> None:
+def test_parse_pr_diff_size_missing_fields_is_none() -> None:
     assert parse_pr_diff_size(stdout='{"additions": 12}') is None
 
 
-def testmerged_pr_diff_size_reads_green_pr(tmp_path: Path) -> None:
+def test_merged_pr_diff_size_reads_green_pr(tmp_path: Path) -> None:
     runner = _FakeRunner(stdout='{"additions": 30, "deletions": 12}')
     size = merged_pr_diff_size(repo=tmp_path, outcome=_outcome(), runner=runner)
     assert size == 42
     assert runner.calls[0][:3] == ["gh", "pr", "view"]
 
 
-def testmerged_pr_diff_size_non_green_is_none(tmp_path: Path) -> None:
+def test_merged_pr_diff_size_non_green_is_none(tmp_path: Path) -> None:
     runner = _FakeRunner()
     failed = _outcome(status="failed", stage="fabro-run", pr_number=None)
     assert merged_pr_diff_size(repo=tmp_path, outcome=failed, runner=runner) is None
     assert runner.calls == []  # no probe for a non-green outcome
 
 
-def testmerged_pr_diff_size_green_without_pr_is_none(tmp_path: Path) -> None:
+def test_merged_pr_diff_size_green_without_pr_is_none(tmp_path: Path) -> None:
     runner = _FakeRunner()
     assert (
         merged_pr_diff_size(repo=tmp_path, outcome=_outcome(pr_number=None), runner=runner) is None
@@ -352,7 +353,7 @@ def testmerged_pr_diff_size_green_without_pr_is_none(tmp_path: Path) -> None:
     assert runner.calls == []
 
 
-def testmerged_pr_diff_size_gh_failure_is_none(tmp_path: Path) -> None:
+def test_merged_pr_diff_size_gh_failure_is_none(tmp_path: Path) -> None:
     runner = _FakeRunner(exit_code=1)
     assert merged_pr_diff_size(repo=tmp_path, outcome=_outcome(), runner=runner) is None
 
@@ -360,7 +361,7 @@ def testmerged_pr_diff_size_gh_failure_is_none(tmp_path: Path) -> None:
 # --- the journal read-back ----------------------------------------------
 
 
-def testread_journal_records_for_parses_and_skips_garbage(tmp_path: Path) -> None:
+def test_read_journal_records_for_parses_and_skips_garbage(tmp_path: Path) -> None:
     journal = tmp_path / "journal.jsonl"
     # A valid record, an undecodable line (skipped at the JSONDecodeError),
     # a valid-JSON-but-non-dict line (skipped at the isinstance guard), and
@@ -374,7 +375,7 @@ def testread_journal_records_for_parses_and_skips_garbage(tmp_path: Path) -> Non
     assert records[0]["stage"] == "pr-view"
 
 
-def testread_journal_records_for_missing_file_is_empty(tmp_path: Path) -> None:
+def test_read_journal_records_for_missing_file_is_empty(tmp_path: Path) -> None:
     records = read_journal_records_for(args=_args(journal=tmp_path / "absent.jsonl"), repo=tmp_path)
     assert records == ()
 
@@ -382,7 +383,7 @@ def testread_journal_records_for_missing_file_is_empty(tmp_path: Path) -> None:
 # --- the derived token cost ---------------------------------------------
 
 
-def testcalibration_token_cost_reads_seeded_sink(tmp_path: Path) -> None:
+def test_calibration_token_cost_reads_seeded_sink(tmp_path: Path) -> None:
     journal = tmp_path / "journal.jsonl"
     args = _args(journal=journal)
     sink = CostSink(path=cost_sink_path(args=args, repo=tmp_path))
@@ -392,7 +393,7 @@ def testcalibration_token_cost_reads_seeded_sink(tmp_path: Path) -> None:
     assert cost > 0
 
 
-def testcalibration_token_cost_unobservable_is_none(tmp_path: Path) -> None:
+def test_calibration_token_cost_unobservable_is_none(tmp_path: Path) -> None:
     cost = calibration_token_cost(
         args=_args(journal=tmp_path / "journal.jsonl"),
         repo=tmp_path,
@@ -402,6 +403,10 @@ def testcalibration_token_cost_unobservable_is_none(tmp_path: Path) -> None:
 
 
 # --- the fail-open wiring stage -----------------------------------------
+
+
+def test_emit_calibration_accepts_token_supplier_for_post_verdict_runner() -> None:
+    assert "token_supplier" in inspect.signature(emit_calibration).parameters
 
 
 def test_emit_calibration_appends_one_calibration_record(tmp_path: Path) -> None:
