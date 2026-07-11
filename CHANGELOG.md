@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.3...v0.17.4) (2026-07-11)
+
+
+### Refactoring
+
+* decompose dispatcher plan ([16ad6cb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/16ad6cb4272b6d77be642df099c9349328769d87))
+
 ## [0.17.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.2...v0.17.3) (2026-07-11)
 
 
