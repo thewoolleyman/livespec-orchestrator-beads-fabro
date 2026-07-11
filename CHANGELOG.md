@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.16.0...v0.17.0) (2026-07-11)
+
+
+### Features
+
+* add the in-band needs-human resolve-or-escalate stage (bd-ib-82a.4) ([3f5f795](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3f5f79578f1154f7c81569656712112ecbb26614))
+
 ## [0.16.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.15.0...v0.16.0) (2026-07-11)
 
 
