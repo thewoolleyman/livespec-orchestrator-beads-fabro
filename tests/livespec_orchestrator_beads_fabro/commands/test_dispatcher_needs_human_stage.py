@@ -318,7 +318,7 @@ def test_route_back_failsoft_journals_error_when_ledger_write_raises(
     def _raise(**_kwargs: object) -> None:
         raise WorkItemNotFoundError(item_id=item.id)
 
-    monkeypatch.setattr(dispatcher, "_store_config", lambda *, repo: repo)
+    monkeypatch.setattr(dispatcher, "store_config", lambda *, repo: repo)
     monkeypatch.setattr(dispatcher, "update_work_item_status", _raise)
 
     # Must NOT raise — the resolve is already decided.

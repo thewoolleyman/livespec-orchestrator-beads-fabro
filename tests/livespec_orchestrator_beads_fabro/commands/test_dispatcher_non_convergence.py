@@ -76,7 +76,7 @@ def test_bounce_failsoft_journals_error_when_ledger_write_raises(
 
     # The bounce resolves the store config and transitions to backlog; force
     # the status write to fail (the item vanished between dispatch and bounce).
-    monkeypatch.setattr(dispatcher, "_store_config", lambda *, repo: repo)
+    monkeypatch.setattr(dispatcher, "store_config", lambda *, repo: repo)
     monkeypatch.setattr(dispatcher, "update_work_item_status", _raise)
 
     # Must NOT raise — the verdict is already final.
