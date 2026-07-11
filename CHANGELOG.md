@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.10](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.9...v0.17.10) (2026-07-11)
+
+
+### Bug Fixes
+
+* extract store mutations ([21c836e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/21c836e59bf342087e6d78b0fbc68275877aa7b5))
+
 ## [0.17.9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.8...v0.17.9) (2026-07-11)
 
 
