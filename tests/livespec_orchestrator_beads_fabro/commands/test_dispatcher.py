@@ -43,6 +43,7 @@ from coverage.files import GlobMatcher, prep_patterns
 from livespec_orchestrator_beads_fabro._beads_client import FakeBeadsClient, make_beads_client
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_completion,
+    _dispatcher_ledger_close,
     _dispatcher_reflection,
     _dispatcher_sibling_clones,
     dispatcher,
@@ -482,8 +483,12 @@ def test_dispatch_gate_auto_normalizes_beads_native_open(
         _ = path
         return iter(items)
 
-    monkeypatch.setattr(dispatcher, "read_work_items", fake_read_work_items)
-    monkeypatch.setattr(dispatcher, "update_work_item_status", fake_update_work_item_status)
+    monkeypatch.setattr(_dispatcher_ledger_close, "read_work_items", fake_read_work_items)
+    monkeypatch.setattr(
+        _dispatcher_ledger_close,
+        "update_work_item_status",
+        fake_update_work_item_status,
+    )
     monkeypatch.setattr(dispatcher, "_ensure_otel_receiver", lambda **_: None)
     workflow = tmp_path / "workflow.toml"
     workflow.write_text("[workflow]\n", encoding="utf-8")

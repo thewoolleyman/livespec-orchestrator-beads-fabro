@@ -16,6 +16,7 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_codex_auth,
     _dispatcher_credentials,
+    _dispatcher_ledger_close,
     _dispatcher_plan,
     dispatcher,
 )
@@ -141,5 +142,34 @@ def test_credentials_cluster_importable_from_new_module_and_private_names_remove
     assert set(_dispatcher_codex_auth.__all__) == codex_auth_public_names
     for name in codex_auth_public_names:
         assert hasattr(_dispatcher_codex_auth, name)
+    for name in old_private_names:
+        assert not hasattr(dispatcher, name)
+
+
+def test_ledger_close_cluster_importable_from_new_module_and_private_names_removed() -> None:
+    ledger_close_public_names = {
+        "emit_outcomes",
+        "ledger_blocked_after_normalization",
+        "load_items",
+    }
+    old_private_names = {
+        "_append_normalization_note",
+        "_emit_outcomes",
+        "_ledger_blocked",
+        "_ledger_blocked_after_normalization",
+        "_load_items",
+        "_normalize_native_open_statuses",
+        "_write_findings",
+    }
+
+    assert set(_dispatcher_ledger_close.__all__) == ledger_close_public_names
+    for name in ledger_close_public_names:
+        assert hasattr(_dispatcher_ledger_close, name)
+    assert dispatcher.emit_outcomes is _dispatcher_ledger_close.emit_outcomes
+    assert (
+        dispatcher.ledger_blocked_after_normalization
+        is _dispatcher_ledger_close.ledger_blocked_after_normalization
+    )
+    assert dispatcher.load_items is _dispatcher_ledger_close.load_items
     for name in old_private_names:
         assert not hasattr(dispatcher, name)
