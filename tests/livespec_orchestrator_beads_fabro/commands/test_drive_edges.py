@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands import _drive_valves as drive_valves
 from livespec_orchestrator_beads_fabro.commands import drive
 from livespec_orchestrator_beads_fabro.commands.drive import CommandRun
 from livespec_orchestrator_beads_fabro.types import AuditRecord, StoreConfig, WorkItem
@@ -104,9 +105,9 @@ def _install_valve_store(
         assert path is config
         updates.append((item_id, status, assignee))
 
-    monkeypatch.setattr(drive, "resolve_store_config", fake_resolve_store_config)
-    monkeypatch.setattr(drive, "read_work_items", fake_read_work_items)
-    monkeypatch.setattr(drive, "update_work_item_status", fake_update_work_item_status)
+    monkeypatch.setattr(drive_valves, "resolve_store_config", fake_resolve_store_config)
+    monkeypatch.setattr(drive_valves.store, "read_work_items", fake_read_work_items)
+    monkeypatch.setattr(drive_valves.store, "update_work_item_status", fake_update_work_item_status)
     return updates
 
 
@@ -227,6 +228,32 @@ def test_run_human_valve_action_reject_regroom_refuses_when_revert_fails(
     assert result["domain_error"] == "revert-failed"
     assert runner.calls == [("git", "revert", "--no-edit", "badc0de")]
     assert updates == []
+
+
+def test_run_human_valve_action_reject_regroom_uses_default_runner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    updates = _install_valve_store(
+        monkeypatch, items=[_item(status="acceptance", audit=_audit(merge_sha="feed01"))]
+    )
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def fake_run(*args: object, **kwargs: object) -> _Completed:
+        calls.append((args, kwargs))
+        assert kwargs["cwd"] == repo
+        assert kwargs["check"] is False
+        assert kwargs["capture_output"] is True
+        return _Completed(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(drive_valves, "run", fake_run)
+
+    result = drive.run_human_valve_action(repo=repo, action_id="reject:bd-ib-123:regroom")
+
+    assert result["status"] == "green"
+    assert calls[0][0][0] == ("git", "revert", "--no-edit", "feed01")
+    assert updates == [("bd-ib-123", "backlog", None)]
 
 
 def test_run_human_valve_action_reject_regroom_without_audit_refuses_before_backlog(

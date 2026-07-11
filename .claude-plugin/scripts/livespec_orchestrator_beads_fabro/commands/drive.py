@@ -9,15 +9,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
-from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import effective_admission_policy
-from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
-from livespec_orchestrator_beads_fabro.store import (
-    read_work_items,
-    update_work_item_policy,
-    update_work_item_status,
+from livespec_orchestrator_beads_fabro.commands._drive_valves import (
+    is_human_valve_action,
+    run_human_valve_action,
 )
-from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
+from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 
 __all__: list[str] = [
     "CommandRun",
@@ -44,8 +40,6 @@ class CommandRunner(Protocol):
 
 _EXIT_FAILURE = 1
 _EXIT_PRECONDITION_ERROR = 3
-_PARTS_ACTION_REF = 2
-_PARTS_REJECT = 3
 
 
 def run_action(
@@ -56,7 +50,7 @@ def run_action(
     dispatcher_bin: Path | None = None,
 ) -> dict[str, Any]:
     """Run one selected action-id."""
-    if _is_human_valve_action(action_id=action_id):
+    if is_human_valve_action(action_id=action_id):
         return run_human_valve_action(repo=repo, action_id=action_id, runner=runner)
     if not action_id.startswith("impl:"):
         return {
@@ -94,267 +88,6 @@ def run_action(
         },
         "summary": _dispatch_summary(status=status, work_item_ref=work_item_ref),
     }
-
-
-def run_human_valve_action(
-    *, repo: Path, action_id: str, runner: CommandRunner | None = None
-) -> dict[str, Any]:
-    parsed = _parse_human_valve_action(action_id=action_id)
-    if parsed is None:
-        return _valve_refusal(
-            action_id=action_id,
-            domain_error="invalid-action-id",
-            summary="Unsupported human valve action id.",
-        )
-    action, item_id, action_value = parsed
-    config = resolve_store_config(cwd=repo, work_items_arg=None)
-    items = list(read_work_items(path=config))
-    item = _find_item(items=items, item_id=item_id)
-    if item is None:
-        return _valve_refusal(
-            action_id=action_id,
-            domain_error="work-item-not-found",
-            summary=f"work-item not found: {item_id}",
-        )
-    if action == "approve":
-        return _approve_item(config=config, item=item, action_id=action_id)
-    if action == "accept":
-        return _accept_item(config=config, item=item, action_id=action_id)
-    if action in {"set-admission", "set-acceptance"}:
-        return _set_policy(
-            config=config,
-            item=item,
-            action_id=action_id,
-            action=action,
-            value=cast("str", action_value),
-        )
-    return _reject_item(
-        repo=repo,
-        config=config,
-        item=item,
-        action_id=action_id,
-        reject_kind=cast("str", action_value),
-        runner=runner,
-    )
-
-
-def _is_human_valve_action(*, action_id: str) -> bool:
-    return action_id.startswith(
-        ("approve:", "accept:", "reject:", "set-admission:", "set-acceptance:")
-    )
-
-
-def _parse_human_valve_action(*, action_id: str) -> tuple[str, str, str | None] | None:
-    parts = action_id.split(":")
-    if len(parts) == _PARTS_ACTION_REF and parts[0] in {"approve", "accept"} and parts[1] != "":
-        return (parts[0], parts[1], None)
-    if (
-        len(parts) == _PARTS_REJECT
-        and parts[0] == "reject"
-        and parts[1] != ""
-        and parts[2] in {"rework", "regroom"}
-    ):
-        return (parts[0], parts[1], parts[2])
-    if (
-        len(parts) == _PARTS_REJECT
-        and parts[0] == "set-admission"
-        and parts[1] != ""
-        and parts[2] in {"auto", "manual"}
-    ):
-        return (parts[0], parts[1], parts[2])
-    if (
-        len(parts) == _PARTS_REJECT
-        and parts[0] == "set-acceptance"
-        and parts[1] != ""
-        and parts[2] in {"ai-only", "human-only", "ai-then-human"}
-    ):
-        return (parts[0], parts[1], parts[2])
-    return None
-
-
-def _find_item(*, items: list[WorkItem], item_id: str) -> WorkItem | None:
-    for item in items:
-        if item.id == item_id:
-            return item
-    return None
-
-
-def _approve_item(
-    *,
-    config: StoreConfig,
-    item: WorkItem,
-    action_id: str,
-) -> dict[str, Any]:
-    if item.status != "pending-approval":
-        return _invalid_source_state(action_id=action_id, item=item, expected="pending-approval")
-    if effective_admission_policy(item=item) != "manual":
-        return _valve_refusal(
-            action_id=action_id,
-            work_item_id=item.id,
-            domain_error="invalid-source-state",
-            summary="approve requires an effective-manual pending-approval item.",
-        )
-    update_work_item_status(path=config, item_id=item.id, status="ready")
-    return _valve_success(
-        action_id=action_id,
-        work_item_id=item.id,
-        stage="human-valve-approve",
-        target_status="ready",
-        assignee=None,
-        summary=f"Approved {item.id}: pending-approval -> ready.",
-    )
-
-
-def _set_policy(
-    *,
-    config: StoreConfig,
-    item: WorkItem,
-    action_id: str,
-    action: str,
-    value: str,
-) -> dict[str, Any]:
-    admission_policy = value if action == "set-admission" else None
-    acceptance_policy = value if action == "set-acceptance" else None
-    update_work_item_policy(
-        path=config,
-        item_id=item.id,
-        admission_policy=admission_policy,
-        acceptance_policy=acceptance_policy,
-    )
-    return _valve_success(
-        action_id=action_id,
-        work_item_id=item.id,
-        stage=f"human-valve-{action}",
-        target_status=item.status,
-        assignee=item.assignee,
-        summary=(
-            f"Updated {item.id}: {action.removeprefix('set-')} policy -> {value}; "
-            "status unchanged."
-        ),
-    )
-
-
-def _accept_item(*, config: StoreConfig, item: WorkItem, action_id: str) -> dict[str, Any]:
-    if item.status != "acceptance":
-        return _invalid_source_state(action_id=action_id, item=item, expected="acceptance")
-    update_work_item_status(path=config, item_id=item.id, status="done")
-    return _valve_success(
-        action_id=action_id,
-        work_item_id=item.id,
-        stage="human-valve-accept",
-        target_status="done",
-        assignee=None,
-        summary=f"Accepted {item.id}: acceptance -> done.",
-    )
-
-
-def _reject_item(
-    *,
-    repo: Path,
-    config: StoreConfig,
-    item: WorkItem,
-    action_id: str,
-    reject_kind: str,
-    runner: CommandRunner | None,
-) -> dict[str, Any]:
-    if item.status != "acceptance":
-        return _invalid_source_state(action_id=action_id, item=item, expected="acceptance")
-    target_status = "active" if reject_kind == "rework" else "backlog"
-    if reject_kind == "regroom":
-        revert_refusal = _revert_merged_change(
-            repo=repo, item=item, action_id=action_id, runner=runner
-        )
-        if revert_refusal is not None:
-            return revert_refusal
-    update_work_item_status(path=config, item_id=item.id, status=target_status)
-    return _valve_success(
-        action_id=action_id,
-        work_item_id=item.id,
-        stage=f"human-valve-reject-{reject_kind}",
-        target_status=target_status,
-        assignee=None,
-        summary=f"Rejected {item.id}: acceptance -> {target_status}.",
-    )
-
-
-def _revert_merged_change(
-    *, repo: Path, item: WorkItem, action_id: str, runner: CommandRunner | None
-) -> dict[str, Any] | None:
-    merge_sha = item.audit.merge_sha if item.audit is not None else None
-    if not merge_sha:
-        return _valve_refusal(
-            action_id=action_id,
-            work_item_id=item.id,
-            domain_error="missing-merge-evidence",
-            summary="reject:regroom refused: no merged change recorded to revert.",
-        )
-    resolved_runner = _SubprocessRunner() if runner is None else runner
-    result = resolved_runner(argv=("git", "revert", "--no-edit", merge_sha), cwd=repo)
-    if result.returncode == 0:
-        return None
-    return _valve_refusal(
-        action_id=action_id,
-        work_item_id=item.id,
-        domain_error="revert-failed",
-        summary=f"reject:regroom refused: git revert {merge_sha} failed: {result.stderr}",
-    )
-
-
-def _invalid_source_state(*, action_id: str, item: WorkItem, expected: str) -> dict[str, Any]:
-    return _valve_refusal(
-        action_id=action_id,
-        work_item_id=item.id,
-        domain_error="invalid-source-state",
-        summary=(
-            f"{action_id} expected {expected} source state for {item.id}; " f"found {item.status}."
-        ),
-    )
-
-
-def _valve_success(
-    *,
-    action_id: str,
-    work_item_id: str,
-    stage: str,
-    target_status: str,
-    assignee: str | None,
-    summary: str,
-) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "action_id": action_id,
-        "kind": "human-valve",
-        "work_item_ref": work_item_id,
-        "status": "green",
-        "target_status": target_status,
-        "journal": _valve_journal(stage=stage, work_item_id=work_item_id),
-        "summary": summary,
-    }
-    if assignee is not None:
-        payload["assignee"] = assignee
-    return payload
-
-
-def _valve_refusal(
-    *,
-    action_id: str,
-    domain_error: str,
-    summary: str,
-    work_item_id: str | None = None,
-) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "action_id": action_id,
-        "kind": "human-valve",
-        "status": "failed",
-        "domain_error": domain_error,
-        "summary": summary,
-    }
-    if work_item_id is not None:
-        payload["work_item_ref"] = work_item_id
-    return payload
-
-
-def _valve_journal(*, stage: str, work_item_id: str) -> dict[str, str]:
-    return {"actor": "operator", "stage": stage, "work_item_id": work_item_id}
 
 
 def build_dispatcher_argv(

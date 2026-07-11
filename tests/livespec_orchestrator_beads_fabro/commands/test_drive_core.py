@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands import _drive_valves as drive_valves
 from livespec_orchestrator_beads_fabro.commands import drive
 from livespec_orchestrator_beads_fabro.commands.drive import (
     CommandRun,
@@ -110,10 +111,12 @@ def _install_valve_store(
         assert path is config
         updates.append({"item_id": item_id, "status": status, "assignee": assignee})
 
-    monkeypatch.setattr(drive, "resolve_store_config", fake_resolve_store_config, raising=False)
-    monkeypatch.setattr(drive, "read_work_items", fake_read_work_items, raising=False)
     monkeypatch.setattr(
-        drive, "update_work_item_status", fake_update_work_item_status, raising=False
+        drive_valves, "resolve_store_config", fake_resolve_store_config, raising=False
+    )
+    monkeypatch.setattr(drive_valves.store, "read_work_items", fake_read_work_items, raising=False)
+    monkeypatch.setattr(
+        drive_valves.store, "update_work_item_status", fake_update_work_item_status, raising=False
     )
     return updates
 
@@ -151,10 +154,12 @@ def _install_policy_store(
             }
         )
 
-    monkeypatch.setattr(drive, "resolve_store_config", fake_resolve_store_config, raising=False)
-    monkeypatch.setattr(drive, "read_work_items", fake_read_work_items, raising=False)
     monkeypatch.setattr(
-        drive, "update_work_item_policy", fake_update_work_item_policy, raising=False
+        drive_valves, "resolve_store_config", fake_resolve_store_config, raising=False
+    )
+    monkeypatch.setattr(drive_valves.store, "read_work_items", fake_read_work_items, raising=False)
+    monkeypatch.setattr(
+        drive_valves.store, "update_work_item_policy", fake_update_work_item_policy, raising=False
     )
     return updates
 
