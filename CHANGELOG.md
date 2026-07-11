@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.13](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.12...v0.17.13) (2026-07-11)
+
+
+### Bug Fixes
+
+* decompose beads client argv helpers ([471ae04](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/471ae0450d71e12997505939a63af272034b58a2))
+
 ## [0.17.12](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.11...v0.17.12) (2026-07-11)
 
 
