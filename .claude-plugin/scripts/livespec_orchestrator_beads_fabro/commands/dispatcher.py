@@ -259,7 +259,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reflector_oob import
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
     github_token_supplier,
-    post_verdict_runner,
     run_id,
     self_update_after_verdict,
 )
@@ -296,7 +295,6 @@ from livespec_orchestrator_beads_fabro.store import (
 )
 from livespec_orchestrator_beads_fabro.types import AuditRecord, StoreConfig, WorkItem
 
-# Compatibility alias for existing dispatcher tests and dispatch-path monkeypatches.
 _github_token_supplier = github_token_supplier
 
 
@@ -547,12 +545,13 @@ def _run_dispatch_command(*, args: argparse.Namespace) -> int:
         repo=repo,
         outcomes=[outcome],
         journal=journal,
-        runner=post_verdict_runner(runner=None),
+        runner=_post_verdict_runner(runner=None),
     )
     self_update_after_verdict(
         repo=repo,
         outcomes=[outcome],
         journal=journal,
+        runner=_post_verdict_runner(runner=None),
     )
     reflect(
         outcomes=[outcome],
@@ -684,12 +683,13 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
         repo=repo,
         outcomes=outcomes,
         journal=journal,
-        runner=post_verdict_runner(runner=None),
+        runner=_post_verdict_runner(runner=None),
     )
     self_update_after_verdict(
         repo=repo,
         outcomes=outcomes,
         journal=journal,
+        runner=_post_verdict_runner(runner=None),
     )
     reflect(
         outcomes=outcomes,
@@ -743,7 +743,7 @@ def _reflector_oob_after_verdict(  # noqa: PLR0913 — kw-only fail-open stage; 
     daemon thread. The OOB reflector writes its own verdict spans to a
     journal-sibling file the enrich stage forwards.
     """
-    resolved_runner = post_verdict_runner(runner=runner, token_supplier=token_supplier)
+    resolved_runner = _post_verdict_runner(runner=runner, token_supplier=token_supplier)
     resolved_proposer = (
         lessons_proposer
         if lessons_proposer is not None
@@ -834,6 +834,32 @@ def _alarm_on_terminal_failure(
         poster=poster if poster is not None else HttpNotifyPoster(),
         journal=journal,
     )
+
+
+def _github_token_error_supplier(*, detail: str) -> Callable[[], str]:
+    def _raise_github_token_error() -> str:
+        raise GithubAppAuthError(detail=detail)
+
+    return _raise_github_token_error
+
+
+def _post_verdict_runner(
+    *,
+    runner: CommandRunner | None,
+    token_supplier: Callable[[], str] | None = None,
+) -> CommandRunner:
+    resolved_runner: CommandRunner = runner if runner is not None else ShellCommandRunner()
+    resolved_supplier = token_supplier
+    if resolved_supplier is None and runner is None:
+        supplier_or_error = _github_token_supplier()
+        resolved_supplier = (
+            _github_token_error_supplier(detail=supplier_or_error)
+            if isinstance(supplier_or_error, str)
+            else supplier_or_error
+        )
+    if resolved_supplier is None:
+        return resolved_runner
+    return GithubTokenEnvRunner(inner=resolved_runner, token=resolved_supplier)
 
 
 def _run_id() -> str:
@@ -1108,7 +1134,7 @@ def _emit_calibration(  # noqa: PLR0913 — kw-only fail-open stage; each field 
     swallowed — it never crashes the (already-final) dispatch verdict.
     `runner` is injectable for the hermetic test tier.
     """
-    resolved_runner = post_verdict_runner(runner=runner, token_supplier=token_supplier)
+    resolved_runner = _post_verdict_runner(runner=runner, token_supplier=token_supplier)
     try:
         record = build_calibration_record(
             item=item,

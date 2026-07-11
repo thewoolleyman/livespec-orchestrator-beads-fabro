@@ -97,6 +97,7 @@ from livespec_orchestrator_beads_fabro.commands.detect_impl_gaps import detect_r
 from livespec_orchestrator_beads_fabro.commands.dispatcher import (
     _fetch_fleet_manifest_text,  # pyright: ignore[reportPrivateUsage]
     _github_token_supplier,  # pyright: ignore[reportPrivateUsage]
+    _post_verdict_runner,  # pyright: ignore[reportPrivateUsage]
     _ready_items,  # pyright: ignore[reportPrivateUsage]
     main,
 )
@@ -2153,6 +2154,19 @@ def test_github_token_env_runner_fails_closed_on_refresh_error(tmp_path: Path) -
     assert result.exit_code == 1
     assert "fail-closed" in result.stderr
     assert "mint exploded" in result.stderr
+
+
+def test_post_verdict_runner_routes_supplier_resolution_error_through_token_wrapper(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(dispatcher, "_github_token_supplier", lambda: "missing app env")
+    runner = _post_verdict_runner(runner=None)
+
+    result = runner.run(argv=["gh", "pr", "view"], cwd=tmp_path, timeout_seconds=1.0)
+
+    assert result.exit_code == 1
+    assert "fail-closed" in result.stderr
+    assert "missing app env" in result.stderr
 
 
 def test_github_token_supplier_returns_a_provider_accessor(
