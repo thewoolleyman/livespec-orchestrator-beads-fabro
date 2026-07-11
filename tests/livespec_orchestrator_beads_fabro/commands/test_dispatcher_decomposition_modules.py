@@ -11,6 +11,7 @@ untouched by the move.
 
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands import (
@@ -196,5 +197,34 @@ def test_calibration_emit_cluster_importable_from_new_module_and_private_names_r
     for name in calibration_emit_public_names:
         assert hasattr(_dispatcher_calibration_emit, name)
     assert dispatcher.emit_calibration is _dispatcher_calibration_emit.emit_calibration
+    for name in old_private_names:
+        assert not hasattr(dispatcher, name)
+
+
+def test_post_verdict_reflector_cluster_importable_and_private_names_removed() -> None:
+    module_path = (
+        Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
+        / "_dispatcher_post_verdict.py"
+    )
+    post_verdict_public_names = {
+        "ReflectorSpawn",
+        "reflector_oob_after_verdict",
+    }
+    old_private_names = {
+        "_ReflectorSpawn",
+        "_default_reflector_spawn",
+        "_reflector_oob_after_verdict",
+        "_spawn_daemon",
+        "_spawn_daemon_joining",
+    }
+
+    assert module_path.is_file()
+    post_verdict = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_post_verdict"
+    )
+    assert set(post_verdict.__all__) == post_verdict_public_names
+    for name in post_verdict_public_names:
+        assert hasattr(post_verdict, name)
+    assert dispatcher.reflector_oob_after_verdict is post_verdict.reflector_oob_after_verdict
     for name in old_private_names:
         assert not hasattr(dispatcher, name)

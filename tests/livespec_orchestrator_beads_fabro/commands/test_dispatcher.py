@@ -2181,6 +2181,12 @@ def test_post_verdict_runner_routes_supplier_resolution_error_through_token_wrap
     assert "missing app env" in result.stderr
 
 
+def test_post_verdict_runner_returns_injected_runner_without_token_wrapper() -> None:
+    runner = ShellCommandRunner()
+
+    assert _post_verdict_runner(runner=runner) is runner
+
+
 def test_github_token_supplier_returns_a_provider_accessor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
