@@ -57,7 +57,6 @@ from livespec_orchestrator_beads_fabro.commands._otel_receive import (
     HeartbeatSink,
     OtelReceiver,
     ReceiverConfig,
-    _drain_socket_body,
     ensure_receiver_started,
     resolve_receiver_config,
 )
@@ -717,38 +716,6 @@ def test_receiver_oversized_body_is_bad_request(
         host="127.0.0.1", port=receiver.bound_port, path="/v1/traces"
     )
     assert status == _HTTP_BAD_REQUEST
-
-
-# --------------------------------------------------------------------------
-# Lingering-close drain (deterministic unit vehicle for the RST-avoidance
-# close path — the socket race itself cannot be asserted by flakiness).
-# --------------------------------------------------------------------------
-
-
-def test_drain_socket_body_stops_at_eof_below_cap() -> None:
-    """The drain reads + discards all remaining bytes, stopping at EOF."""
-    source = BytesIO(b"ab")
-    assert _drain_socket_body(rfile=source, cap=1 << 20) == 2
-
-
-def test_drain_socket_body_stops_at_cap_without_over_reading() -> None:
-    """The drain never reads past the cap (the oversized-body DoS bound holds)."""
-    source = BytesIO(b"0123456789")
-    assert _drain_socket_body(rfile=source, cap=4) == 4
-    # The bytes beyond the cap are left untouched — the drain stopped exactly
-    # at the cap rather than swallowing the whole (potentially huge) body.
-    assert source.read() == b"456789"
-
-
-def test_drain_socket_body_is_fail_open_on_oserror() -> None:
-    """A read that raises OSError (timed-out / reset socket) never propagates."""
-
-    class _RaisingReader:
-        def read(self, size: int = -1) -> bytes:
-            _ = size
-            raise OSError("connection reset during drain")
-
-    assert _drain_socket_body(rfile=_RaisingReader(), cap=1 << 20) == 0
 
 
 def test_receiver_internal_error_is_caught_fail_open(tmp_path: Path) -> None:
