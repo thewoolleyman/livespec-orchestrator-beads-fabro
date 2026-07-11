@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.11](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.10...v0.17.11) (2026-07-11)
+
+
+### Bug Fixes
+
+* extract dispatcher reflection spans ([8be2f30](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8be2f30e0e9bb0e4608f49c37daf9287e1ed3a32))
+
 ## [0.17.10](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.9...v0.17.10) (2026-07-11)
 
 
