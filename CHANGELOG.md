@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.24...v0.18.0) (2026-07-11)
+
+
+### Features
+
+* extract dispatcher post-verdict reflector ([f2005e1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f2005e158efcd7127b05f131319cc67ea59b9bff))
+
 ## [0.17.24](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.23...v0.17.24) (2026-07-11)
 
 
