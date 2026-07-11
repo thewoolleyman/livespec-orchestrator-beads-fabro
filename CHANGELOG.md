@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.1...v0.17.2) (2026-07-11)
+
+
+### Bug Fixes
+
+* deliver the oversized-body 400 cleanly (drain before close) to end the OTEL receiver RST flake ([530776c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/530776c945bdbb87d6007ded830049897a44e3b3))
+
 ## [0.17.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.0...v0.17.1) (2026-07-11)
 
 
