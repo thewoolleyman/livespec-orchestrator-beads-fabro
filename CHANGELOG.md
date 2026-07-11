@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.21](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.20...v0.17.21) (2026-07-11)
+
+
+### Bug Fixes
+
+* decompose dispatcher credentials cluster ([9071b6b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9071b6ba0cb5079ba1f4119c8a9fa99119218498))
+* split dispatcher codex auth cluster ([bdf4e59](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bdf4e5907e61a13f5cd56036ce00026109dcb266))
+
 ## [0.17.20](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.19...v0.17.20) (2026-07-11)
 
 
