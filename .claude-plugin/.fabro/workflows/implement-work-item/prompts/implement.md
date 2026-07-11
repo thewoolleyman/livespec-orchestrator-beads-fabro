@@ -112,6 +112,23 @@ mechanical line-count cut, a re-export shim, or an exemption.
   refactor: the source module's `__all__` and externally-visible API are
   unchanged, imports are updated, 100% per-file coverage holds, and every
   existing test still passes. Follow the Red-Green-Replay ritual.
+- **Move code VERBATIM — carry its docs and comments, never re-golf an
+  untouched body.** A decomposition MOVES code; it does not rewrite it. When you
+  relocate a function into a new module, carry its docstring, its inline
+  comments, AND any module-level docstring / comment blocks that belong with it —
+  they are part of the verbatim body and part of the DESIGN RECORD (the rationale
+  for a safety layer, a fail-open invariant, a fail-closed edge). NEVER strip
+  docstrings or comments to "clean up" a moved module: stripping them buys ZERO
+  LLOC (the `file_lloc` counter already EXCLUDES docstrings and comments) and
+  destroys exactly the rationale the next reader — and the next self-update
+  safety review — depends on. If a moved module's original docstring was
+  concern-specific and the split gives each half a different concern, RELOCATE
+  the docstring to whichever module now owns that concern and give the other a
+  fitting synthesized one — never drop it. Likewise NEVER rewrite an UNTOUCHED
+  function's body while resizing a file (e.g. collapsing a `for`-loop into a
+  generator expression, or any other re-golf): a size-refactor moves code and
+  cuts along cohesion seams — it does not re-golf bodies it was not asked to
+  change.
 - **Never counter-shave the line count.** The honest `file_lloc` number is
   exactly what default `ruff format` yields — do NOT lower it by cosmetic
   line-packing. Specifically, NEVER add formatter-suppression directives
