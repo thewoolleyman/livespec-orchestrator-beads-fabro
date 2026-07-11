@@ -120,6 +120,8 @@ def test_dispatcher_plan_decomposition_contract() -> None:
 
     from livespec_orchestrator_beads_fabro.commands import (
         _dispatcher_fabro_argv,
+        _dispatcher_goal,
+        _dispatcher_host_only,
         _dispatcher_overlay,
         _dispatcher_plan,
         _dispatcher_run_status,
@@ -127,6 +129,7 @@ def test_dispatcher_plan_decomposition_contract() -> None:
 
     assert set(_dispatcher_fabro_argv.__all__) == {
         "CODEX_IMPLEMENTER_ADAPTER",
+        "FleetMembers",
         "fabro_events_argv",
         "fabro_inspect_argv",
         "fabro_ps_argv",
@@ -141,6 +144,7 @@ def test_dispatcher_plan_decomposition_contract() -> None:
         "janitor_trust_argv",
         "janitor_worktree_add_argv",
         "janitor_worktree_remove_argv",
+        "parse_fleet_members",
         "pr_arm_argv",
         "pr_update_branch_argv",
         "pr_view_argv",
@@ -160,11 +164,18 @@ def test_dispatcher_plan_decomposition_contract() -> None:
         "CURRENCY_GATE_ENV_VAR",
         "SIBLING_CLONES_ROOT_ENV_VAR",
         "SiblingClones",
-        "render_goal",
+        "escape_minijinja_literal",
         "render_run_config_overlay",
+    }
+    assert set(_dispatcher_goal.__all__) == {"render_goal"}
+    assert set(_dispatcher_host_only.__all__) == {
+        "host_only_refusal_detail",
+        "is_host_only_item",
     }
     assert set(_dispatcher_plan.__all__).issuperset(
         set(_dispatcher_fabro_argv.__all__)
+        | set(_dispatcher_goal.__all__)
+        | set(_dispatcher_host_only.__all__)
         | set(_dispatcher_run_status.__all__)
         | set(_dispatcher_overlay.__all__)
     )

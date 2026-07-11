@@ -27,6 +27,13 @@ def test_runtime_resolve_claude_path_covers_local_bin_fallback(monkeypatch, tmp_
     _ = fake_claude.write_text("#!/bin/sh\n", encoding="utf-8")
     monkeypatch.setattr(runtime, "_CLAUDE_LOCAL_BIN_FALLBACK", str(fake_claude))
     assert runtime.resolve_claude_path(environ={}) == str(fake_claude)
+    # Nothing on PATH and no local-bin file → the bare "claude" last resort
+    # (lets the runner surface the FileNotFoundError honestly). The fallback
+    # path is monkeypatched to a nonexistent file so coverage of this branch
+    # is host-independent — it never depends on whether ~/.local/bin/claude
+    # happens to exist on the runner.
+    monkeypatch.setattr(runtime, "_CLAUDE_LOCAL_BIN_FALLBACK", str(tmp_path / "nope" / "claude"))
+    assert runtime.resolve_claude_path(environ={}) == "claude"
 
 
 class _RecordingRunner:

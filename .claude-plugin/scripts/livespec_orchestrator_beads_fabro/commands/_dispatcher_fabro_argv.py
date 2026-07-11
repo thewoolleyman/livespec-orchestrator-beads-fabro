@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "CODEX_IMPLEMENTER_ADAPTER",
+    "FleetMembers",
     "fabro_events_argv",
     "fabro_inspect_argv",
     "fabro_ps_argv",
@@ -28,6 +29,7 @@ __all__: list[str] = [
     "janitor_trust_argv",
     "janitor_worktree_add_argv",
     "janitor_worktree_remove_argv",
+    "parse_fleet_members",
     "pr_arm_argv",
     "pr_update_branch_argv",
     "pr_view_argv",
