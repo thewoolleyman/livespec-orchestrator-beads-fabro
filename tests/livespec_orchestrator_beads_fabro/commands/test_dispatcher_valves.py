@@ -275,6 +275,24 @@ def test_plan_admissions_admits_nothing_when_no_free_slots() -> None:
     assert plan.held == ()
 
 
+def test_plan_admissions_honors_injected_admission_policy_resolver() -> None:
+    # The injected `admission_policy` seam is how the full-autonomous-mode
+    # collapse flips a manual pending item to auto WITHOUT this valve knowing
+    # about the mode: an all-`auto` resolver approves an otherwise-held manual.
+    def _all_auto(*, item: WorkItem) -> str:
+        _ = item
+        return "auto"
+
+    plan = plan_admissions(
+        ready_items=[_item(id="m0", status="pending-approval", admission_policy="manual")],
+        free_slots=0,
+        resolve_assignee=_always(DEFAULT_DOER),
+        admission_policy=_all_auto,
+    )
+    assert [item.id for item in plan.approved] == ["m0"]
+    assert plan.held == ()
+
+
 @given(
     policies=st.lists(st.sampled_from(["auto", "manual", None]), min_size=0, max_size=8),
     free_slots=st.integers(min_value=0, max_value=10),
