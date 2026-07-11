@@ -18,10 +18,10 @@ import pytest
 from livespec_orchestrator_beads_fabro import regroom
 from livespec_orchestrator_beads_fabro._beads_client import (
     IssueDraft,
-    _build_update_argv,
     make_beads_client,
     reset_fake_singleton,
 )
+from livespec_orchestrator_beads_fabro._beads_client_argv import build_update_argv
 from livespec_orchestrator_beads_fabro.errors import (
     GroomExitRefusedError,
     GroomTargetNotBacklogError,
@@ -152,7 +152,7 @@ def test_retired_label_state_machine_surface_is_not_exported() -> None:
 
 
 def test_build_update_argv_emits_remove_label_flag_for_lifecycle_cleanup() -> None:
-    argv = _build_update_argv(
+    argv = build_update_argv(
         issue_id="li-a",
         status=None,
         parent_id=None,

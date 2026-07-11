@@ -14,7 +14,6 @@ Covers, hermetically:
 
 from __future__ import annotations
 
-import json
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -26,9 +25,6 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     FakeBeadsClient,
     IssueDraft,
     ShellBeadsClient,
-    _build_create_argv,
-    _build_update_argv,
-    _coerce_record_list,
     make_beads_client,
     reset_fake_singleton,
 )
@@ -113,124 +109,7 @@ def test_reset_fake_singleton_drops_the_instance() -> None:
 
 
 # --------------------------------------------------------------------------
-# FakeBeadsClient — CRUD + not-present error branches.
-# --------------------------------------------------------------------------
-
-
-def test_fake_create_and_show() -> None:
-    fake = FakeBeadsClient()
-    returned = fake.create_issue(draft=_draft(issue_id="li-x"))
-    assert returned == "li-x"
-    record = fake.show_issue(issue_id="li-x")
-    assert record["id"] == "li-x"
-    assert record["status"] == "open"
-
-
-def test_fake_list_returns_copies() -> None:
-    fake = FakeBeadsClient()
-    _ = fake.create_issue(draft=_draft(issue_id="li-x"))
-    records = fake.list_issues()
-    records[0]["status"] = "mutated"
-    assert fake.show_issue(issue_id="li-x")["status"] == "open"
-
-
-def test_fake_exists() -> None:
-    fake = FakeBeadsClient()
-    _ = fake.create_issue(draft=_draft(issue_id="li-x"))
-    assert fake.exists(issue_id="li-x") is True
-    assert fake.exists(issue_id="li-absent") is False
-
-
-def test_fake_show_missing_raises() -> None:
-    fake = FakeBeadsClient()
-    with pytest.raises(BeadsMappingError):
-        _ = fake.show_issue(issue_id="li-absent")
-
-
-def test_fake_update_missing_raises() -> None:
-    fake = FakeBeadsClient()
-    with pytest.raises(BeadsMappingError):
-        fake.update_issue(issue_id="li-absent", status="closed")
-
-
-def test_fake_close_missing_raises() -> None:
-    fake = FakeBeadsClient()
-    with pytest.raises(BeadsMappingError):
-        fake.close_issue(issue_id="li-absent", reason="x")
-
-
-def test_fake_add_dependency_missing_from_raises() -> None:
-    fake = FakeBeadsClient()
-    with pytest.raises(BeadsMappingError):
-        fake.add_dependency(from_id="li-absent", to_id="li-y", edge_type=EDGE_BLOCKS)
-
-
-def test_fake_add_comment_round_trips_via_list_comments() -> None:
-    """`add_comment` is the net-new write verb (29f.4 comment-bump path).
-
-    Unlike `seed_comment` (a fake-only hermetic seeding hook), `add_comment`
-    is a real `BeadsClient` protocol verb, so the out-of-band reflector can
-    append occurrence evidence to a recurring finding's existing item.
-    """
-    fake = FakeBeadsClient()
-    _ = fake.create_issue(draft=_draft(issue_id="li-x"))
-    fake.add_comment(issue_id="li-x", body="recurrence x2 on wave w7")
-    bodies = [comment["text"] for comment in fake.list_comments(issue_id="li-x")]
-    assert bodies == ["recurrence x2 on wave w7"]
-
-
-def test_fake_add_comment_missing_issue_raises() -> None:
-    fake = FakeBeadsClient()
-    with pytest.raises(BeadsMappingError):
-        fake.add_comment(issue_id="li-absent", body="orphan comment")
-
-
-def test_fake_update_applies_all_fields() -> None:
-    fake = FakeBeadsClient()
-    _ = fake.create_issue(draft=_draft(issue_id="li-x"))
-    fake.update_issue(
-        issue_id="li-x",
-        status="closed",
-        parent_id="li-epic",
-        add_labels=["resolution:completed", "resolution:completed"],
-        metadata={"k": "v"},
-    )
-    record = fake.show_issue(issue_id="li-x")
-    assert record["status"] == "closed"
-    assert record["parent_id"] == "li-epic"
-    # Duplicate label added only once.
-    assert record["labels"].count("resolution:completed") == 1
-    assert record["metadata"] == {"k": "v"}
-
-
-def test_fake_close_sets_status_and_reason() -> None:
-    fake = FakeBeadsClient()
-    _ = fake.create_issue(draft=_draft(issue_id="li-x"))
-    fake.close_issue(issue_id="li-x", reason="shipped")
-    record = fake.show_issue(issue_id="li-x")
-    assert record["status"] == "closed"
-    assert record["close_reason"] == "shipped"
-
-
-def test_fake_add_dependency_dedupes() -> None:
-    fake = FakeBeadsClient()
-    _ = fake.create_issue(draft=_draft(issue_id="li-x"))
-    fake.add_dependency(from_id="li-x", to_id="li-y", edge_type=EDGE_BLOCKS)
-    fake.add_dependency(from_id="li-x", to_id="li-y", edge_type=EDGE_BLOCKS)
-    record = fake.show_issue(issue_id="li-x")
-    assert record["dependencies"] == [{"depends_on_id": "li-y", "type": EDGE_BLOCKS}]
-
-
-def test_fake_children_filters_by_parent() -> None:
-    fake = FakeBeadsClient()
-    _ = fake.create_issue(draft=_draft(issue_id="li-child", parent_id="li-epic"))
-    _ = fake.create_issue(draft=_draft(issue_id="li-other", parent_id=None))
-    children = fake.children(parent_id="li-epic")
-    assert [record["id"] for record in children] == ["li-child"]
-
-
-# --------------------------------------------------------------------------
-# ShellBeadsClient — pure argv builders (no subprocess).
+# ShellBeadsClient — pure argv wiring (no subprocess).
 # --------------------------------------------------------------------------
 
 
@@ -306,114 +185,6 @@ def test_register_custom_statuses_emits_config_set_argv() -> None:
         "status.custom",
         "backlog,pending-approval,ready:active,active:wip,acceptance:wip",
     ]
-
-
-def test_build_create_argv_full_field_set() -> None:
-    draft = _draft(
-        issue_id="li-a",
-        assignee="alice",
-        spec_id="topic-x",
-        parent_id="li-epic",
-        labels=["origin:freeform", "gap-id:G1"],
-        metadata={"audit": {"merge_sha": "sha"}},
-    )
-    argv = _build_create_argv(draft=draft)
-    assert argv[0] == "create"
-    assert "--id" in argv
-    assert "li-a" in argv
-    assert "--type" in argv
-    assert "--title" in argv
-    assert "--description" in argv
-    assert "--priority" in argv
-    assert "2" in argv
-    # bd v1.0.5 `bd create` has NO `--created-at` flag (timestamp
-    # preservation is a `bd import`-only feature); it MUST NOT be emitted.
-    assert "--created-at" not in argv
-    assert "--assignee" in argv
-    assert "alice" in argv
-    assert "--spec-id" in argv
-    assert "topic-x" in argv
-    assert "--parent" in argv
-    assert "li-epic" in argv
-    assert argv.count("--label") == 2
-    assert "origin:freeform" in argv
-    assert "gap-id:G1" in argv
-    # metadata is a single compact-JSON argument.
-    meta_index = argv.index("--metadata")
-    assert json.loads(argv[meta_index + 1]) == {"audit": {"merge_sha": "sha"}}
-
-
-def test_build_create_argv_omits_optional_flags_when_absent() -> None:
-    argv = _build_create_argv(draft=_draft(assignee=None, spec_id=None, parent_id=None))
-    assert "--assignee" not in argv
-    assert "--spec-id" not in argv
-    assert "--parent" not in argv
-    assert argv.count("--label") == 0
-
-
-def test_build_update_argv_full() -> None:
-    argv = _build_update_argv(
-        issue_id="li-a",
-        status="closed",
-        parent_id="li-epic",
-        add_labels=["resolution:completed"],
-        metadata={"audit": {"merge_sha": "sha"}},
-    )
-    assert argv[:2] == ["update", "li-a"]
-    assert "--status" in argv
-    assert "closed" in argv
-    assert "--parent" in argv
-    assert "li-epic" in argv
-    # bd v1.0.5 `bd update` has NO bare `--label`; label additions use
-    # `--add-label` (one per repeated label).
-    assert "--label" not in argv
-    assert argv.count("--add-label") == 1
-    add_index = argv.index("--add-label")
-    assert argv[add_index + 1] == "resolution:completed"
-    assert "--metadata" in argv
-
-
-def test_build_update_argv_includes_assignee() -> None:
-    # The admission valve's ready -> active transition sets the doer via
-    # `bd update --assignee`.
-    argv = _build_update_argv(
-        issue_id="li-a",
-        status="active",
-        parent_id=None,
-        add_labels=None,
-        metadata=None,
-        assignee="fabro",
-    )
-    assert argv[:2] == ["update", "li-a"]
-    assert "--status" in argv
-    assert "active" in argv
-    assignee_index = argv.index("--assignee")
-    assert argv[assignee_index + 1] == "fabro"
-
-
-def test_build_update_argv_repeats_add_label_per_label() -> None:
-    argv = _build_update_argv(
-        issue_id="li-a",
-        status=None,
-        parent_id=None,
-        add_labels=["origin:freeform", "gap-id:G1"],
-        metadata=None,
-    )
-    assert "--label" not in argv
-    assert argv.count("--add-label") == 2
-    assert "origin:freeform" in argv
-    assert "gap-id:G1" in argv
-
-
-def test_build_update_argv_bare_is_noop_length() -> None:
-    argv = _build_update_argv(
-        issue_id="li-a",
-        status=None,
-        parent_id=None,
-        add_labels=None,
-        metadata=None,
-    )
-    assert argv == ["update", "li-a"]
 
 
 def test_shell_update_skips_no_op_but_runs_when_flags_present(
@@ -512,7 +283,9 @@ def test_run_json_builds_argv_and_parses(monkeypatch: pytest.MonkeyPatch) -> Non
             args=argv, returncode=0, stdout='[{"id": "li-a"}]', stderr=""
         )
 
-    monkeypatch.setattr("livespec_orchestrator_beads_fabro._beads_client.subprocess.run", _fake_run)
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro._beads_client_shell.subprocess.run", _fake_run
+    )
     result = client.list_issues()
     assert result == [{"id": "li-a"}]
     # The argv is exactly the pinned bd path + the per-command verb args
@@ -540,7 +313,9 @@ def test_run_json_invokes_bd_from_config_repo_root(
             return subprocess.CompletedProcess(args=argv, returncode=0, stdout="t\n", stderr="")
         return subprocess.CompletedProcess(args=argv, returncode=0, stdout="[]", stderr="")
 
-    monkeypatch.setattr("livespec_orchestrator_beads_fabro._beads_client.subprocess.run", _fake_run)
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro._beads_client_shell.subprocess.run", _fake_run
+    )
     _ = client.list_issues()
     assert seen == [
         (["/managed/bd", "config", "get", "dolt.server-user"], tmp_path),
@@ -564,7 +339,9 @@ def test_run_json_rejects_repo_root_with_mismatched_beads_tenant(
             args=argv, returncode=0, stdout=values[tuple(argv)], stderr=""
         )
 
-    monkeypatch.setattr("livespec_orchestrator_beads_fabro._beads_client.subprocess.run", _fake_run)
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro._beads_client_shell.subprocess.run", _fake_run
+    )
     with pytest.raises(BeadsConnectionError) as excinfo:
         _ = client.list_issues()
     message = str(excinfo.value)
@@ -580,7 +357,9 @@ def test_run_void_builds_argv_and_runs(monkeypatch: pytest.MonkeyPatch) -> None:
         seen.append(argv)
         return subprocess.CompletedProcess(args=argv, returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("livespec_orchestrator_beads_fabro._beads_client.subprocess.run", _fake_run)
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro._beads_client_shell.subprocess.run", _fake_run
+    )
     client.add_dependency(from_id="li-a", to_id="li-b", edge_type=EDGE_BLOCKS)
     assert seen[0][0] == "/managed/bd"
     assert "dep" in seen[0]
@@ -682,31 +461,6 @@ def test_shell_exists_scans_list(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 # --------------------------------------------------------------------------
-# _coerce_record_list — envelope shapes.
-# --------------------------------------------------------------------------
-
-
-def test_coerce_record_list_bare_array_filters_non_dicts() -> None:
-    out = _coerce_record_list(parsed=[{"id": "li-a"}, "junk", 7])
-    assert out == [{"id": "li-a"}]
-
-
-def test_coerce_record_list_envelope() -> None:
-    out = _coerce_record_list(parsed={"issues": [{"id": "li-a"}, "junk"]})
-    assert out == [{"id": "li-a"}]
-
-
-def test_coerce_record_list_unknown_shape_raises() -> None:
-    with pytest.raises(BeadsMappingError):
-        _ = _coerce_record_list(parsed={"not_issues": []})
-
-
-def test_coerce_record_list_scalar_raises() -> None:
-    with pytest.raises(BeadsMappingError):
-        _ = _coerce_record_list(parsed=42)
-
-
-# --------------------------------------------------------------------------
 # _parse_json — `--json` body parsing.
 # --------------------------------------------------------------------------
 
@@ -796,53 +550,8 @@ def test_raise_for_status_other_nonzero_is_command_error() -> None:
 
 
 # --------------------------------------------------------------------------
-# Comments — fake seeding seam + shell `bd comments <id> --json` read.
+# Comments — shell `bd comments <id> --json` read.
 # --------------------------------------------------------------------------
-
-
-def test_fake_seed_and_list_comments_roundtrip() -> None:
-    fake = FakeBeadsClient()
-    _ = fake.create_issue(draft=_draft(issue_id="li-x"))
-    fake.seed_comment(
-        issue_id="li-x",
-        text="first rider",
-        author="operator",
-        created_at="2026-06-12T00:00:00Z",
-    )
-    fake.seed_comment(issue_id="li-x", text="second rider")
-    records = fake.list_comments(issue_id="li-x")
-    assert [record["text"] for record in records] == ["first rider", "second rider"]
-    assert records[0]["author"] == "operator"
-    assert records[0]["created_at"] == "2026-06-12T00:00:00Z"
-    assert records[1]["author"] is None
-    assert records[1]["created_at"] is None
-
-
-def test_fake_list_comments_returns_copies() -> None:
-    fake = FakeBeadsClient()
-    _ = fake.create_issue(draft=_draft(issue_id="li-x"))
-    fake.seed_comment(issue_id="li-x", text="original")
-    records = fake.list_comments(issue_id="li-x")
-    records[0]["text"] = "mutated"
-    assert fake.list_comments(issue_id="li-x")[0]["text"] == "original"
-
-
-def test_fake_list_comments_empty_for_uncommented_issue() -> None:
-    fake = FakeBeadsClient()
-    _ = fake.create_issue(draft=_draft(issue_id="li-x"))
-    assert fake.list_comments(issue_id="li-x") == []
-
-
-def test_fake_list_comments_missing_issue_raises() -> None:
-    fake = FakeBeadsClient()
-    with pytest.raises(BeadsMappingError):
-        _ = fake.list_comments(issue_id="li-absent")
-
-
-def test_fake_seed_comment_missing_issue_raises() -> None:
-    fake = FakeBeadsClient()
-    with pytest.raises(BeadsMappingError):
-        fake.seed_comment(issue_id="li-absent", text="orphan")
 
 
 def test_shell_list_comments_builds_argv_and_filters_non_dicts(
@@ -863,7 +572,9 @@ def test_shell_list_comments_builds_argv_and_filters_non_dicts(
             stderr="",
         )
 
-    monkeypatch.setattr("livespec_orchestrator_beads_fabro._beads_client.subprocess.run", _fake_run)
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro._beads_client_shell.subprocess.run", _fake_run
+    )
     result = client.list_comments(issue_id="li-a")
     assert result == [{"issue_id": "li-a", "text": "a rider"}]
     assert seen[0] == ["/managed/bd", "comments", "li-a", "--json"]
