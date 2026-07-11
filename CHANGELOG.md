@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.2...v0.17.3) (2026-07-11)
+
+
+### Bug Fixes
+
+* extract dispatcher path helpers ([a3a9190](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a3a91906678b5aa502a460f047ae9580bd305862))
+
 ## [0.17.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.1...v0.17.2) (2026-07-11)
 
 
