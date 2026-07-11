@@ -14,6 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_calibration_emit,
     _dispatcher_codex_auth,
     _dispatcher_credentials,
     _dispatcher_ledger_close,
@@ -171,5 +172,29 @@ def test_ledger_close_cluster_importable_from_new_module_and_private_names_remov
         is _dispatcher_ledger_close.ledger_blocked_after_normalization
     )
     assert dispatcher.load_items is _dispatcher_ledger_close.load_items
+    for name in old_private_names:
+        assert not hasattr(dispatcher, name)
+
+
+def test_calibration_emit_cluster_importable_from_new_module_and_private_names_removed() -> None:
+    calibration_emit_public_names = {
+        "calibration_token_cost",
+        "emit_calibration",
+        "merged_pr_diff_size",
+        "parse_pr_diff_size",
+        "read_journal_records_for",
+    }
+    old_private_names = {
+        "_calibration_token_cost",
+        "_emit_calibration",
+        "_merged_pr_diff_size",
+        "_parse_pr_diff_size",
+        "_read_journal_records_for",
+    }
+
+    assert set(_dispatcher_calibration_emit.__all__) == calibration_emit_public_names
+    for name in calibration_emit_public_names:
+        assert hasattr(_dispatcher_calibration_emit, name)
+    assert dispatcher.emit_calibration is _dispatcher_calibration_emit.emit_calibration
     for name in old_private_names:
         assert not hasattr(dispatcher, name)
