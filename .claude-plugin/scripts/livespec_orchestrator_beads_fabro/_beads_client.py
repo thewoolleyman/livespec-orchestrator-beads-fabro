@@ -1,61 +1,27 @@
-"""BeadsClient seam — the backend abstraction the store layer talks to.
-
-The store layer (`store.py`) never shells out to `bd` directly. Instead it
-talks to a `BeadsClient` — a small protocol whose verbs cover exactly the
-beads operations the store needs (list-all, show-one, comments-list,
-children, create, update, close, dep-add). Two implementations satisfy the
-protocol:
-
-- `ShellBeadsClient` — shells out to the pinned `bd` binary (by absolute
-  path, NEVER the mise shim) over the server-mode FLAGS connection and
-  parses the `--json` stdout. The real-binary call sites carry
-  `# pragma: no cover` (they cannot run hermetically without a live
-  `dolt-server`), but ALL parsing / argv-construction logic lives OUTSIDE
-  the pragma so the hermetic test tier covers it.
-
-- `FakeBeadsClient` — a pure in-memory implementation (a dict of issue
-  records keyed by id) with the SAME interface. It is PRODUCT code, not
-  test scaffolding: it is the runtime backend when no live connection is
-  configured (`StoreConfig.fake is True`) AND the backend the hermetic CI
-  tier runs against. It is fully coverable.
-
-Selection mechanism (documented in CLAUDE.md): `make_beads_client(*, config)`
-picks the implementation from `StoreConfig.fake` — a boolean carried on the
-connection descriptor. The descriptor's `fake` is itself resolved from the
-`.livespec.jsonc` connection block overlaid by the `LIVESPEC_BEADS_FAKE`
-environment variable (see `commands/_config.py`). When `fake` is True the
-factory returns a process-singleton `FakeBeadsClient` so repeated
-`read`/`append` calls within one wrapper invocation share the same
-in-memory tenant; when False it returns a `ShellBeadsClient`.
-
-All beads records cross this seam as plain `dict[str, object]` shaped like
-the `bd ... --json` issue object: `id`, `title`, `description`, `status`,
-`priority`, `issue_type`, `assignee`, `created_at`, `close_reason`,
-`spec_id`, `labels` (list[str]), `metadata` (a JSON object), and
-`dependencies` (a list of `{depends_on_id, type}` edge records). The store
-layer owns the field map from this dict onto `WorkItem`.
-
-Per SPECIFICATION/constraints.md (the
-Result-vs-bugs split), EXPECTED backend failures raise the typed
-`Beads*Error` classes from `errors.py`; genuine bugs propagate as raised
-built-in exceptions.
-"""
+"""BeadsClient protocol, shell backend, and backend factory."""
 
 from __future__ import annotations
 
-import json
-import os
 import subprocess
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol
 
-from livespec_orchestrator_beads_fabro.errors import (
-    BeadsCommandError,
-    BeadsConnectionError,
-    BeadsCredentialMissingError,
-    BeadsMappingError,
-    BeadsTenantMissingError,
+from livespec_orchestrator_beads_fabro._beads_client_argv import (
+    build_create_argv,
+    build_update_argv,
+    coerce_comment_list,
+    coerce_issue_record,
+    coerce_record_list,
+    parse_json_output,
+)
+from livespec_orchestrator_beads_fabro._beads_client_fake import (
+    FakeBeadsClient,
+    fake_singleton,
+    reset_fake_singleton,
+)
+from livespec_orchestrator_beads_fabro._beads_client_shell import (
+    invoke,
+    raise_for_status,
 )
 
 if TYPE_CHECKING:
@@ -69,6 +35,7 @@ __all__: list[str] = [
     "IssueDraft",
     "ShellBeadsClient",
     "make_beads_client",
+    "reset_fake_singleton",
 ]
 
 # A beads issue as it crosses the seam: the parsed `bd ... --json` object.
@@ -95,17 +62,7 @@ _STATUS_CUSTOM = "backlog,pending-approval,ready:active,active:wip,acceptance:wi
 
 @dataclass(frozen=True, kw_only=True)
 class IssueDraft:
-    """The full field set for a `bd create` — bundled so the create verb
-    takes one keyword argument instead of eleven (the family `max-args`
-    rule caps a `def` at six). Every field maps onto a `bd create` flag
-    per the FIELD MAP (see `_build_create_argv`).
-
-    `priority` is the beads-NATIVE int column, decoupled from the logical
-    work-item model (which dropped `priority` for the `rank` ordering key).
-    It defaults to a neutral value so a WorkItem-sourced create need not
-    supply one; the reflector's OOB-finding path still sets it explicitly
-    from its severity map.
-    """
+    """The full field set for a `bd create`."""
 
     issue_id: str
     issue_type: str
@@ -121,12 +78,7 @@ class IssueDraft:
 
 
 class BeadsClient(Protocol):
-    """The backend verbs the store layer needs from `bd`.
-
-    Reads return parsed records (issue dicts). Writes mutate the tenant
-    and return nothing (or, for `create`, the created id). Every method
-    is keyword-only to match the family's keyword-only-args rule.
-    """
+    """The backend verbs the store layer needs from `bd`."""
 
     def list_issues(self) -> list[BeadsRecord]:
         """Return every issue in the tenant (`bd list --status all --json`)."""
@@ -212,210 +164,14 @@ EDGE_PARENT_CHILD = "parent-child"
 _UPDATE_ARGV_NO_OP_LENGTH = 2
 
 
-class FakeBeadsClient:
-    """Pure in-memory `BeadsClient` — runtime fallback + hermetic test backend.
-
-    Holds a dict of issue records keyed by id. Each record is the same
-    shape a parsed `bd ... --json` issue object has, so the store layer's
-    field map works identically against the fake and the shell backend.
-    Writes mutate the in-memory dict; reads return copies so callers
-    cannot accidentally mutate the backing store.
-    """
-
-    def __init__(self) -> None:
-        self._issues: dict[str, BeadsRecord] = {}
-        self._comments: dict[str, list[BeadsRecord]] = {}
-        self.custom_statuses_registered: bool = False
-
-    def list_issues(self) -> list[BeadsRecord]:
-        return [dict(record) for record in self._issues.values()]
-
-    def show_issue(self, *, issue_id: str) -> BeadsRecord:
-        record = self._issues.get(issue_id)
-        if record is None:
-            raise BeadsMappingError(
-                record_id=issue_id,
-                detail="issue not present in the in-memory tenant",
-            )
-        return dict(record)
-
-    def seed_comment(
-        self,
-        *,
-        issue_id: str,
-        text: str,
-        author: str | None = None,
-        created_at: str | None = None,
-    ) -> None:
-        """Seed a comment onto an issue (fake-only hermetic seeding seam).
-
-        NOT a `BeadsClient` protocol verb: the store layer only READS
-        comments (the Dispatcher folds them into the dispatch goal), so
-        the protocol carries `list_comments` alone. The fake still needs
-        a write path so hermetic tests can stage comment state — this is
-        it. Records mirror the `bd comments <id> --json` object shape.
-        """
-        if issue_id not in self._issues:
-            raise BeadsMappingError(
-                record_id=issue_id,
-                detail="cannot comment on an issue that is not present in the tenant",
-            )
-        record: BeadsRecord = {
-            "issue_id": issue_id,
-            "text": text,
-            "author": author,
-            "created_at": created_at,
-        }
-        self._comments.setdefault(issue_id, []).append(record)
-
-    def list_comments(self, *, issue_id: str) -> list[BeadsRecord]:
-        """Return copies of an issue's seeded comments."""
-        if issue_id not in self._issues:
-            raise BeadsMappingError(
-                record_id=issue_id,
-                detail="issue not present in the in-memory tenant",
-            )
-        return [dict(record) for record in self._comments.get(issue_id, [])]
-
-    def children(self, *, parent_id: str) -> list[BeadsRecord]:
-        return [
-            dict(record) for record in self._issues.values() if record.get("parent_id") == parent_id
-        ]
-
-    def exists(self, *, issue_id: str) -> bool:
-        return issue_id in self._issues
-
-    def create_issue(self, *, draft: IssueDraft) -> str:
-        record: BeadsRecord = {
-            "id": draft.issue_id,
-            "issue_type": draft.issue_type,
-            "title": draft.title,
-            "description": draft.description,
-            "priority": draft.priority,
-            "assignee": draft.assignee,
-            "created_at": draft.created_at,
-            "status": "open",
-            "close_reason": None,
-            "labels": list(draft.labels),
-            "metadata": dict(draft.metadata),
-            "spec_id": draft.spec_id,
-            "parent_id": draft.parent_id,
-            "dependencies": [],
-        }
-        self._issues[draft.issue_id] = record
-        return draft.issue_id
-
-    def update_issue(  # noqa: PLR0913 — kw-only partial-update verb; each field is an independent optional mutation.
-        self,
-        *,
-        issue_id: str,
-        status: str | None = None,
-        assignee: str | None = None,
-        parent_id: str | None = None,
-        add_labels: list[str] | None = None,
-        remove_labels: list[str] | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> None:
-        record = self._issues.get(issue_id)
-        if record is None:
-            raise BeadsMappingError(
-                record_id=issue_id,
-                detail="cannot update an issue that is not present in the tenant",
-            )
-        if status is not None:
-            record["status"] = status
-        if assignee is not None:
-            record["assignee"] = assignee
-        if parent_id is not None:
-            record["parent_id"] = parent_id
-        if add_labels is not None:
-            existing = cast("list[str]", record.get("labels", []))
-            merged = list(existing)
-            for label in add_labels:
-                if label not in merged:
-                    merged.append(label)
-            record["labels"] = merged
-        if remove_labels is not None:
-            current = cast("list[str]", record.get("labels", []))
-            record["labels"] = [label for label in current if label not in remove_labels]
-        if metadata is not None:
-            record["metadata"] = dict(metadata)
-
-    def close_issue(self, *, issue_id: str, reason: str | None) -> None:
-        record = self._issues.get(issue_id)
-        if record is None:
-            raise BeadsMappingError(
-                record_id=issue_id,
-                detail="cannot close an issue that is not present in the tenant",
-            )
-        record["status"] = "closed"
-        record["close_reason"] = reason
-
-    def add_dependency(self, *, from_id: str, to_id: str, edge_type: str) -> None:
-        record = self._issues.get(from_id)
-        if record is None:
-            raise BeadsMappingError(
-                record_id=from_id,
-                detail="cannot add a dependency from an issue not present in the tenant",
-            )
-        edges = cast("list[DependencyEdge]", record.setdefault("dependencies", []))
-        edge: DependencyEdge = {"depends_on_id": to_id, "type": edge_type}
-        if edge not in edges:
-            edges.append(edge)
-
-    def add_comment(self, *, issue_id: str, body: str) -> None:
-        """Append a comment in the in-memory tenant (mirrors `seed_comment`)."""
-        if issue_id not in self._issues:
-            raise BeadsMappingError(
-                record_id=issue_id,
-                detail="cannot comment on an issue that is not present in the tenant",
-            )
-        record: BeadsRecord = {
-            "issue_id": issue_id,
-            "text": body,
-            "author": None,
-            "created_at": None,
-        }
-        self._comments.setdefault(issue_id, []).append(record)
-
-    def register_custom_statuses(self) -> None:
-        """Record that custom-status registration ran.
-
-        The in-memory tenant stores whatever status string it is handed, so
-        no real status config is needed; the flag lets a hermetic test
-        assert the bootstrap path invoked registration.
-        """
-        self.custom_statuses_registered = True
-
-
 class ShellBeadsClient:
-    """`BeadsClient` that shells out to the pinned `bd` binary in server mode.
-
-    The connection surface (host / port / socket / user / database / prefix)
-    and the binary path come from `StoreConfig`; the tenant password comes
-    from the `BEADS_DOLT_PASSWORD` environment variable at call time and is
-    never stored on the descriptor (see `commands/_config.py`).
-
-    Argv construction and `--json` parsing are pure and fully covered; the
-    single `subprocess.run` call site carries `# pragma: no cover` because
-    it cannot execute hermetically without a live `dolt-server`.
-    """
+    """`BeadsClient` that shells out to the pinned `bd` binary."""
 
     def __init__(self, *, config: StoreConfig) -> None:
         self._config = config
 
     def _build_argv(self, *, verb_args: list[str]) -> list[str]:
-        """Compose the full per-command `bd` argv: `<bd_path> <verb_args...>`.
-
-        Per the verified v1.0.5 connection model (beads-schema-mapping.md
-        §2.1), only `bd`'s `init` verb accepts the `--server*` connection flags.
-        Every per-command verb (`create`/`list`/`show`/`update`/`dep`)
-        takes its connection from `.beads/config.yaml` (written by
-        `bd`'s `init` verb) plus the tenant password in the `BEADS_DOLT_PASSWORD`
-        environment variable, and REJECTS `--server*` as unknown flags.
-        So per-command argv carries NO connection flags — just the pinned
-        bd path and the verb args.
-        """
+        """Compose `<bd_path> <verb_args...>` with no connection flags."""
         return [self._config.bd_path, *verb_args]
 
     def _run_json(self, *, verb_args: list[str]) -> Any:
@@ -428,69 +184,7 @@ class ShellBeadsClient:
         _ = self._invoke(argv=self._build_argv(verb_args=verb_args))
 
     def _invoke(self, *, argv: list[str]) -> subprocess.CompletedProcess[str]:
-        # Secondary guard for in-process callers that bypass the bin/*.py
-        # credential self-heal (which re-execs through the project's
-        # configured credential_wrapper). A real `bd` call needs the tenant
-        # password; without it, surface an actionable typed error naming the
-        # missing var + the remedy rather than a raw backend auth failure.
-        if not os.environ.get("BEADS_DOLT_PASSWORD"):
-            raise BeadsCredentialMissingError(variable="BEADS_DOLT_PASSWORD")
-        repo_root = self._config.repo_root
-        if repo_root is not None:
-            self._assert_repo_root_matches_config(repo_root=repo_root)
-        try:
-            # argv[0] is the pinned bd binary's absolute path from config;
-            # the verb/flag args are bridge-constructed (never raw user
-            # input). Shelling out to bd is the documented store backend.
-            completed = subprocess.run(  # noqa: S603  # pragma: no cover
-                argv,
-                capture_output=True,
-                text=True,
-                check=False,
-                cwd=repo_root,
-            )
-        except FileNotFoundError as exc:  # pragma: no cover
-            raise BeadsConnectionError(
-                detail=f"bd binary not found at {self._config.bd_path}"
-            ) from exc
-        self._raise_for_status(completed=completed, argv=argv)  # pragma: no cover
-        return completed  # pragma: no cover
-
-    def _assert_repo_root_matches_config(self, *, repo_root: Path) -> None:
-        expected = {
-            "dolt.server-user": self._config.server_user,
-            "dolt.database": self._config.database,
-        }
-        observed = {
-            key: self._read_bd_config_value(repo_root=repo_root, key=key) for key in expected
-        }
-        if observed == expected:
-            return
-        observed_text = ", ".join(f"{key}={observed[key]}" for key in sorted(observed))
-        expected_text = ", ".join(f"{key}={expected[key]}" for key in sorted(expected))
-        raise BeadsConnectionError(
-            detail=(
-                f"bd config in {repo_root} does not match resolved StoreConfig "
-                f"({observed_text}; expected {expected_text})"
-            )
-        )
-
-    def _read_bd_config_value(self, *, repo_root: Path, key: str) -> str:
-        argv = [self._config.bd_path, "config", "get", key]
-        try:
-            completed = subprocess.run(  # noqa: S603  # pragma: no cover
-                argv,
-                capture_output=True,
-                text=True,
-                check=False,
-                cwd=repo_root,
-            )
-        except FileNotFoundError as exc:  # pragma: no cover
-            raise BeadsConnectionError(
-                detail=f"bd binary not found at {self._config.bd_path}"
-            ) from exc
-        self._raise_for_status(completed=completed, argv=argv)  # pragma: no cover
-        return completed.stdout.strip()
+        return invoke(config=self._config, argv=argv)
 
     def _raise_for_status(
         self,
@@ -498,88 +192,29 @@ class ShellBeadsClient:
         completed: subprocess.CompletedProcess[str],
         argv: list[str],
     ) -> None:
-        """Map a nonzero `bd` exit onto the typed expected-error surface.
-
-        Pure (takes the completed process), so it is covered by the
-        hermetic tier even though `_invoke`'s subprocess call is not.
-        """
-        if completed.returncode == 0:
-            return
-        stderr = completed.stderr or ""
-        command = " ".join(argv)
-        lowered = stderr.lower()
-        if "connection refused" in lowered or "can't connect" in lowered:
-            raise BeadsConnectionError(detail=stderr.strip())
-        if "unknown database" in lowered or "does not exist" in lowered:
-            raise BeadsTenantMissingError(tenant=self._config.database)
-        raise BeadsCommandError(
-            command=command,
-            exit_code=completed.returncode,
-            stderr=stderr,
-        )
+        """Map a nonzero `bd` exit onto the typed expected-error surface."""
+        raise_for_status(completed=completed, argv=argv, tenant=self._config.database)
 
     def _parse_json(self, *, stdout: str, argv_repr: str) -> Any:
-        """Parse `bd --json` stdout; an unparsable body is an EXPECTED error."""
-        text = stdout.strip()
-        if text == "":
-            return []
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError as exc:
-            raise BeadsCommandError(
-                command=argv_repr,
-                exit_code=0,
-                stderr=f"could not parse bd --json output: {exc}",
-            ) from exc
+        """Parse `bd --json` stdout."""
+        return parse_json_output(stdout=stdout, argv_repr=argv_repr)
 
     def list_issues(self) -> list[BeadsRecord]:
         parsed = self._run_json(verb_args=["list", "--status", "all", "--limit", "0", "--json"])
-        return _coerce_record_list(parsed=parsed)
+        return coerce_record_list(parsed=parsed)
 
     def show_issue(self, *, issue_id: str) -> BeadsRecord:
         parsed = self._run_json(verb_args=["show", issue_id, "--json"])
-        # bd v1.0.5 `bd show <id> --json` returns a JSON ARRAY containing
-        # the single matched issue (not a bare object); take the first
-        # element. An empty array means no such issue.
-        if not isinstance(parsed, list):
-            raise BeadsMappingError(
-                record_id=issue_id,
-                detail="bd show --json did not return a JSON array",
-            )
-        records = cast("list[Any]", parsed)
-        if not records:
-            raise BeadsMappingError(
-                record_id=issue_id,
-                detail="bd show --json returned an empty array (no such issue)",
-            )
-        first = records[0]
-        if not isinstance(first, dict):
-            raise BeadsMappingError(
-                record_id=issue_id,
-                detail="bd show --json array element was not a JSON object",
-            )
-        return cast("BeadsRecord", first)
+        return coerce_issue_record(parsed=parsed, issue_id=issue_id)
 
     def list_comments(self, *, issue_id: str) -> list[BeadsRecord]:
-        """Return an issue's comments (`bd comments <id> --json`).
-
-        bd v1.0.5 returns a JSON array of comment objects
-        (`{id, issue_id, author, text, created_at}`); an uncommented
-        issue yields an empty array. Non-dict elements are dropped
-        fail-soft, mirroring `_coerce_record_list`.
-        """
+        """Return an issue's comments (`bd comments <id> --json`)."""
         parsed = self._run_json(verb_args=["comments", issue_id, "--json"])
-        if not isinstance(parsed, list):
-            raise BeadsMappingError(
-                record_id=issue_id,
-                detail="bd comments --json did not return a JSON array",
-            )
-        records = cast("list[Any]", parsed)
-        return [cast("BeadsRecord", record) for record in records if isinstance(record, dict)]
+        return coerce_comment_list(parsed=parsed, issue_id=issue_id)
 
     def children(self, *, parent_id: str) -> list[BeadsRecord]:
         parsed = self._run_json(verb_args=["children", parent_id, "--json"])
-        return _coerce_record_list(parsed=parsed)
+        return coerce_record_list(parsed=parsed)
 
     def exists(self, *, issue_id: str) -> bool:
         """Return True iff `issue_id` is present (scans the list-all read).
@@ -591,7 +226,7 @@ class ShellBeadsClient:
         return issue_id in ids
 
     def create_issue(self, *, draft: IssueDraft) -> str:
-        self._run_void(verb_args=_build_create_argv(draft=draft))
+        self._run_void(verb_args=build_create_argv(draft=draft))
         return draft.issue_id
 
     def update_issue(  # noqa: PLR0913 — kw-only partial-update verb; each field is an independent optional mutation.
@@ -605,7 +240,7 @@ class ShellBeadsClient:
         remove_labels: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        verb_args = _build_update_argv(
+        verb_args = build_update_argv(
             issue_id=issue_id,
             status=status,
             assignee=assignee,
@@ -630,13 +265,7 @@ class ShellBeadsClient:
         )
 
     def add_comment(self, *, issue_id: str, body: str) -> None:
-        """Append a comment via `bd comment <id> <body>` (the write verb).
-
-        bd v1.0.5 exposes `bd comment <id> "text"` as the shorthand for
-        `bd comments add <id> "text"`; the body is a single positional
-        argument (never shell-interpolated — it crosses the subprocess
-        seam as an argv element).
-        """
+        """Append a comment via `bd comment <id> <body>`."""
         self._run_void(verb_args=["comment", issue_id, body])
 
     def register_custom_statuses(self) -> None:
@@ -649,133 +278,8 @@ class ShellBeadsClient:
         self._run_void(verb_args=["config", "set", "status.custom", _STATUS_CUSTOM])
 
 
-def _coerce_record_list(*, parsed: Any) -> list[BeadsRecord]:
-    """Coerce a parsed `bd --json` body into a list of issue dicts.
-
-    `bd list --json` may return a bare array, or an envelope object with
-    an `issues` key. Both shapes are accepted; anything else is a bug in
-    the assumed bd contract and raises.
-    """
-    if isinstance(parsed, list):
-        records = cast("list[Any]", parsed)
-        return [cast("BeadsRecord", record) for record in records if isinstance(record, dict)]
-    if isinstance(parsed, dict):
-        envelope = cast("dict[str, Any]", parsed)
-        issues_raw = envelope.get("issues")
-        if isinstance(issues_raw, list):
-            issues = cast("list[Any]", issues_raw)
-            return [cast("BeadsRecord", record) for record in issues if isinstance(record, dict)]
-    raise BeadsMappingError(
-        record_id="<list>",
-        detail="bd list --json returned neither an array nor an {issues:[...]} envelope",
-    )
-
-
-def _build_create_argv(*, draft: IssueDraft) -> list[str]:
-    """Build the `bd create ...` verb argv (pure; fully covered).
-
-    Per the FIELD MAP: operator-supplied `--id`, native `--type` /
-    `--title` / `--description` / `--priority` / `--assignee` /
-    `--spec-id` / `--parent`, every label as a repeated `--label`, and
-    the metadata JSON object as a single `--metadata` argument carrying
-    compact JSON.
-
-    `bd create` in v1.0.5 has NO `--created-at` flag — server-assigned
-    creation timestamps are authoritative and timestamp preservation is
-    a `bd import`-only feature — so `draft.created_at` is not emitted
-    here (it is still carried on the draft for the FakeBeadsClient and
-    the import path).
-    """
-    argv: list[str] = [
-        "create",
-        "--id",
-        draft.issue_id,
-        "--type",
-        draft.issue_type,
-        "--title",
-        draft.title,
-        "--description",
-        draft.description,
-        "--priority",
-        str(draft.priority),
-    ]
-    if draft.assignee is not None:
-        argv.extend(["--assignee", draft.assignee])
-    if draft.spec_id is not None:
-        argv.extend(["--spec-id", draft.spec_id])
-    if draft.parent_id is not None:
-        argv.extend(["--parent", draft.parent_id])
-    for label in draft.labels:
-        argv.extend(["--label", label])
-    argv.extend(["--metadata", json.dumps(draft.metadata, separators=(",", ":"), sort_keys=True)])
-    return argv
-
-
-def _build_update_argv(  # noqa: PLR0913 — kw-only argv builder mirroring update_issue's optional fields.
-    *,
-    issue_id: str,
-    status: str | None,
-    parent_id: str | None,
-    add_labels: list[str] | None,
-    metadata: dict[str, Any] | None,
-    remove_labels: list[str] | None = None,
-    assignee: str | None = None,
-) -> list[str]:
-    """Build the `bd update <id> ...` verb argv (pure; fully covered).
-
-    bd v1.0.5 `bd update` has no bare `--label`; label ADDITIONS use the
-    repeatable `--add-label` flag (the in-place close path only ever adds
-    labels, e.g. `resolution:completed`), so each label is emitted as a
-    `--add-label <label>` pair. Label REMOVALS use the symmetric repeatable
-    `--remove-label` flag (the lifecycle router clears retired labels this way).
-    `--assignee` sets the doer (the admission valve's `ready -> active`
-    transition).
-    """
-    argv: list[str] = ["update", issue_id]
-    if status is not None:
-        argv.extend(["--status", status])
-    if assignee is not None:
-        argv.extend(["--assignee", assignee])
-    if parent_id is not None:
-        argv.extend(["--parent", parent_id])
-    if add_labels is not None:
-        for label in add_labels:
-            argv.extend(["--add-label", label])
-    if remove_labels is not None:
-        for label in remove_labels:
-            argv.extend(["--remove-label", label])
-    if metadata is not None:
-        argv.extend(["--metadata", json.dumps(metadata, separators=(",", ":"), sort_keys=True)])
-    return argv
-
-
-# Process-scoped holder for the fake tenant. A single-element list rather
-# than a bare module global so the factory can rebind the contained value
-# without a `global` statement (PLW0603).
-_FAKE_HOLDER: list[FakeBeadsClient] = []
-
-
 def make_beads_client(*, config: StoreConfig) -> BeadsClient:
-    """Select the backend from the connection descriptor's `fake` toggle.
-
-    When `config.fake` is True, return a PROCESS-SINGLETON
-    `FakeBeadsClient` so that repeated store calls within one wrapper
-    invocation (e.g. an `append_work_item` followed by a
-    `read_work_items`) observe the same in-memory tenant. When False,
-    return a fresh `ShellBeadsClient` bound to the connection descriptor.
-
-    The singleton is intentionally process-scoped: each CLI wrapper
-    invocation is a fresh process, so the fake tenant is empty at the
-    start of every real command and only accumulates within that one
-    invocation. Tests that need isolation call `reset_fake_singleton`.
-    """
+    """Select the backend from the connection descriptor's `fake` toggle."""
     if config.fake:
-        if not _FAKE_HOLDER:
-            _FAKE_HOLDER.append(FakeBeadsClient())
-        return _FAKE_HOLDER[0]
+        return fake_singleton()
     return ShellBeadsClient(config=config)
-
-
-def reset_fake_singleton() -> None:
-    """Drop the process-singleton fake tenant (test-isolation hook)."""
-    _FAKE_HOLDER.clear()
