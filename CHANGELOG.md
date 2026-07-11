@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.17](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.16...v0.17.17) (2026-07-11)
+
+
+### Bug Fixes
+
+* expose dispatcher self-update boundary ([1ad7f01](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1ad7f012ec8a970d3400d2c31500643965832304))
+
 ## [0.17.16](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.15...v0.17.16) (2026-07-11)
 
 
