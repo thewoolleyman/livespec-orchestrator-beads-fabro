@@ -353,3 +353,79 @@ def test_bootstrap_fails_when_a_required_override_secret_is_absent(
             required=("BEADS_DOLT_PASSWORD", "GITHUB_APP_ID", "GITHUB_PRIVATE_KEY")
         )
     assert excinfo.value.code == _EXIT_CODE_CREDENTIAL_FAIL
+
+
+# --------------------------------------------------------------------------
+# _tenant_secret_required — derive whether the family tenant secret
+# (BEADS_DOLT_PASSWORD) is needed from the cwd beads ledger MODE. A server-mode
+# tenant (`.beads/config.yaml` declaring `dolt.mode: server`) needs it, and an
+# absent/unreadable config fails CLOSED (require). An EMBEDDED, self-contained
+# Dolt ledger (`bd init` with no `--server`, e.g. the disposable livespec-e2e
+# golden-master target) needs NONE. Regression: the embedded e2e dispatch path
+# was demanding the family password the embedded store never uses.
+# --------------------------------------------------------------------------
+
+
+def _write_beads_config(*, cwd: Path, body: str) -> None:
+    beads_dir = cwd / ".beads"
+    beads_dir.mkdir(parents=True, exist_ok=True)
+    _ = (beads_dir / "config.yaml").write_text(body, encoding="utf-8")
+
+
+def test_tenant_secret_required_when_beads_config_absent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    bootstrap_module = _import_bootstrap()
+    assert bootstrap_module._tenant_secret_required(cwd=tmp_path) is True  # type: ignore[attr-defined]  # noqa: SLF001
+
+
+def test_tenant_secret_required_for_server_mode_tenant(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _write_beads_config(
+        cwd=tmp_path,
+        body="# server-mode tenant on the shared dolt-server\ndolt.mode: server\ndolt.server-host: 127.0.0.1\n",
+    )
+    bootstrap_module = _import_bootstrap()
+    assert bootstrap_module._tenant_secret_required(cwd=tmp_path) is True  # type: ignore[attr-defined]  # noqa: SLF001
+
+
+def test_tenant_secret_not_required_for_embedded_ledger(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _write_beads_config(
+        cwd=tmp_path,
+        body="# Embedded (no --server) self-contained Dolt; no family password.\ndolt.auto-start: true\n",
+    )
+    bootstrap_module = _import_bootstrap()
+    assert bootstrap_module._tenant_secret_required(cwd=tmp_path) is False  # type: ignore[attr-defined]  # noqa: SLF001
+
+
+def test_bootstrap_embedded_ledger_proceeds_without_tenant_secret(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The disposable livespec-e2e golden-master dispatches against an EMBEDDED
+    beads ledger (cwd `.beads/config.yaml` with no `dolt.mode: server`), whose
+    self-contained Dolt store needs no family BEADS_DOLT_PASSWORD. bootstrap()
+    must PROCEED there with the App env present and the tenant secret absent —
+    not fail closed at exit 3 as it did before, which broke the e2e substrate.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("BEADS_DOLT_PASSWORD", raising=False)
+    monkeypatch.delenv(CREDENTIAL_REEXEC_SENTINEL, raising=False)
+    monkeypatch.setenv("GITHUB_APP_ID", "42")
+    monkeypatch.setenv("GITHUB_PRIVATE_KEY", "stub-pem")
+    _write_beads_config(
+        cwd=tmp_path,
+        body="# Embedded (no --server) self-contained Dolt; no family password.\ndolt.auto-start: true\n",
+    )
+    bootstrap_module = _import_bootstrap()
+    assert (
+        bootstrap_module.bootstrap(  # type: ignore[attr-defined]
+            required=("BEADS_DOLT_PASSWORD", "GITHUB_APP_ID", "GITHUB_PRIVATE_KEY")
+        )
+        is None
+    )

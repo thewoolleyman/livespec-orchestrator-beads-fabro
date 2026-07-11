@@ -27,6 +27,13 @@ __all__: list[str] = ["bootstrap"]
 # the DEFAULT `required` set; wrappers with a different secret surface pass
 # their own (see `bootstrap`).
 _REQUIRED_CREDENTIALS = ("BEADS_DOLT_PASSWORD",)
+# The family tenant password authenticates the SHARED dolt-server tenant DB.
+# An EMBEDDED, self-contained Dolt ledger (initialized with no `--server`)
+# needs none, so it is dropped from `required` for a non-server project.
+# (This is the env-var NAME, not a secret value.)
+_TENANT_ENV_NAME = "BEADS_DOLT_PASSWORD"
+_BEADS_CONFIG_RELPATH = (".beads", "config.yaml")
+_SERVER_MODE_MARKER = "dolt.mode:server"
 _LIVESPEC_CONFIG_FILENAME = ".livespec.jsonc"
 _CREDENTIAL_FAIL_EXIT = 3
 
@@ -56,7 +63,37 @@ def bootstrap(*, required: tuple[str, ...] = _REQUIRED_CREDENTIALS) -> None:
         path_str = str(path)
         if path_str not in sys.path:
             sys.path.insert(0, path_str)
-    _self_heal_credentials(required=required)
+    _self_heal_credentials(required=_effective_required(required=required, cwd=Path.cwd()))
+
+
+def _tenant_secret_required(*, cwd: Path) -> bool:
+    """Whether this beads CLI invocation needs the family tenant secret.
+
+    `BEADS_DOLT_PASSWORD` authenticates the SHARED dolt-server tenant DB. A
+    dispatch against an EMBEDDED ledger — a self-contained Dolt store
+    provisioned in embedded mode (no `--server`), e.g. the disposable
+    livespec-e2e golden-master target — needs no such password. So require it
+    only when the governed project's beads ledger is server-mode (its
+    `.beads/config.yaml` declares `dolt.mode: server`), and fail CLOSED
+    (require) when that config is absent or unreadable.
+    """
+    config_path = cwd.joinpath(*_BEADS_CONFIG_RELPATH)
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except OSError:
+        return True
+    return any(line.strip().replace(" ", "") == _SERVER_MODE_MARKER for line in text.splitlines())
+
+
+def _effective_required(*, required: tuple[str, ...], cwd: Path) -> tuple[str, ...]:
+    """Drop the family tenant secret from `required` for an embedded ledger.
+
+    Only the tenant-password env var is mode-conditional; every other member
+    of `required` (the GitHub App env) stays unconditionally required.
+    """
+    if _tenant_secret_required(cwd=cwd):
+        return required
+    return tuple(name for name in required if name != _TENANT_ENV_NAME)
 
 
 def _read_credential_wrapper() -> list[str]:
