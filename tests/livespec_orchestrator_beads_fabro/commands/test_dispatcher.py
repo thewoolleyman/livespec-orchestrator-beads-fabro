@@ -111,6 +111,65 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 from livespec_runtime.cross_repo.types import CrossRepoManifest
 from livespec_runtime.github_auth.errors import GithubAppAuthError
 
+
+def test_dispatcher_plan_decomposition_contract() -> None:
+    base = Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
+    assert (base / "_dispatcher_fabro_argv.py").is_file()
+    assert (base / "_dispatcher_run_status.py").is_file()
+    assert (base / "_dispatcher_overlay.py").is_file()
+
+    from livespec_orchestrator_beads_fabro.commands import (
+        _dispatcher_fabro_argv,
+        _dispatcher_overlay,
+        _dispatcher_plan,
+        _dispatcher_run_status,
+    )
+
+    assert set(_dispatcher_fabro_argv.__all__) == {
+        "CODEX_IMPLEMENTER_ADAPTER",
+        "fabro_events_argv",
+        "fabro_inspect_argv",
+        "fabro_ps_argv",
+        "fabro_rm_argv",
+        "fabro_run_argv",
+        "janitor_argv_with_default",
+        "janitor_bootstrap_argv",
+        "janitor_checkout_path",
+        "janitor_core_checkout_path",
+        "janitor_core_clone_argv",
+        "janitor_core_ref_from_config",
+        "janitor_trust_argv",
+        "janitor_worktree_add_argv",
+        "janitor_worktree_remove_argv",
+        "pr_arm_argv",
+        "pr_update_branch_argv",
+        "pr_view_argv",
+        "pull_primary_argv",
+    }
+    assert set(_dispatcher_run_status.__all__) == {
+        "PrView",
+        "parse_pr_view",
+        "parse_run_id",
+        "parse_run_id_for_work_item",
+        "parse_run_status",
+        "parse_running_run_id",
+    }
+    assert set(_dispatcher_overlay.__all__) == {
+        "CORE_PLUGIN_ROOT_ENV_VAR",
+        "CURRENCY_GATE_ENV_VALUE",
+        "CURRENCY_GATE_ENV_VAR",
+        "SIBLING_CLONES_ROOT_ENV_VAR",
+        "SiblingClones",
+        "render_goal",
+        "render_run_config_overlay",
+    }
+    assert set(_dispatcher_plan.__all__).issuperset(
+        set(_dispatcher_fabro_argv.__all__)
+        | set(_dispatcher_run_status.__all__)
+        | set(_dispatcher_overlay.__all__)
+    )
+
+
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
