@@ -62,14 +62,20 @@ those build on.
 
 from __future__ import annotations
 
-import json
-import time
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol, cast
+from typing import cast
 
+from livespec_orchestrator_beads_fabro.commands._otel_enrich_export import (
+    HoneycombHttpExporter,
+    SpanExporter,
+    honeycomb_dataset_for,
+)
+from livespec_orchestrator_beads_fabro.commands._otel_enrich_tail import (
+    IngestedSpan,
+    TailResult,
+    tail_spans,
+)
 from livespec_orchestrator_beads_fabro.commands._otel_scrub import attr, is_allowed_attr, scrub
 
 __all__: list[str] = [
@@ -86,57 +92,12 @@ __all__: list[str] = [
     "tail_spans",
 ]
 
-# Honeycomb OTLP/HTTP ingest endpoint + auth header name (§3.5). The
-# dataset is derived per-request from `service.name`.
-_HONEYCOMB_TRACES_URL = "https://api.honeycomb.io/v1/traces"
-_HONEYCOMB_TEAM_HEADER = "x-honeycomb-team"
-_HONEYCOMB_DATASET_HEADER = "x-honeycomb-dataset"
-_DEFAULT_DATASET = "livespec-unknown"
-
 # The correlation triple keys (§3.3) — the uniform key set the reflector
 # joins on. `work.item.id` is the join-map key; the other two are backfilled.
 _WORK_ITEM_ID = "work.item.id"
 _DISPATCH_ID = "livespec.dispatch.id"
 _FABRO_RUN_ID = "fabro.run_id"
 _TRIPLE_KEYS = (_WORK_ITEM_ID, _DISPATCH_ID, _FABRO_RUN_ID)
-
-# Egress batching + retry (§3.5). Bounded so a Honeycomb outage degrades
-# the pipeline (fail-open) rather than wedging the host.
-_DEFAULT_MAX_RETRIES = 3
-_DEFAULT_RETRY_BACKOFF_SECONDS = 0.5
-_DEFAULT_HTTP_TIMEOUT_SECONDS = 5.0
-
-# HTTP 2xx is a successful Honeycomb ingest; anything else (4xx/5xx) is a
-# failed export (retried, then fail-open).
-_HTTP_OK_MIN = 200
-_HTTP_OK_MAX_EXCLUSIVE = 300
-
-
-@dataclass(frozen=True, kw_only=True)
-class IngestedSpan:
-    """One span read off a local span file, with its line's resource attrs.
-
-    `resource_attrs` is the per-line `service.name` / `service.namespace`
-    resource block (flattened to a `key -> str` map) so the exporter can
-    derive the Honeycomb dataset and the enrich stage can keep
-    resource-scoped context. `span` is the raw OTLP/HTTP-JSON span object
-    (it carries `name`, `traceId`, `spanId`, `attributes`, ...).
-    """
-
-    resource_attrs: dict[str, str]
-    span: dict[str, object]
-
-
-@dataclass(frozen=True, kw_only=True)
-class TailResult:
-    """The result of one file-tail pass: new spans + the advanced cursor.
-
-    `offset` is the byte position to resume from on the next pass (a
-    resumable cursor so a long-lived stage never re-reads forwarded lines).
-    """
-
-    spans: tuple[IngestedSpan, ...]
-    offset: int
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -148,20 +109,6 @@ class ForwardResult:
     rejected: int
     exported: bool
     offset: int
-
-
-class SpanExporter(Protocol):
-    """Egress seam: ship a batch of scrubbed spans for one dataset.
-
-    Returns True on a successful export, False on a (bounded-retry-
-    exhausted) failure. NEVER raises — the enrich stage is fail-open
-    toward the pipeline, so a Honeycomb outage is a False return, not an
-    exception that could escape toward a dispatch.
-    """
-
-    def export(self, *, spans: tuple[dict[str, object], ...], dataset: str) -> bool:
-        """Export a batch of OTLP/HTTP-JSON spans to the given dataset."""
-        ...
 
 
 @dataclass(kw_only=True)
@@ -299,184 +246,6 @@ def _scalar_value(*, entry: dict[str, object]) -> object:
     if isinstance(string_value, str):
         return string_value
     return ""
-
-
-def honeycomb_dataset_for(*, resource_attrs: dict[str, str]) -> str:
-    """Derive the Honeycomb dataset name from a span line's resource attrs.
-
-    Honeycomb routes a trace dataset by `service.name` (§3.5); a span line
-    missing it (should not happen for family-emitted spans) falls back to a
-    stable sentinel so the span still egresses to a knowable dataset.
-    """
-    return resource_attrs.get("service.name", _DEFAULT_DATASET)
-
-
-def tail_spans(*, spans_path: Path, offset: int) -> TailResult:
-    """Read the span file's new lines past `offset`; return spans + new cursor.
-
-    Each line is one OTLP/HTTP-JSON `ExportTraceServiceRequest`. The reader
-    is fail-open: a missing file yields an empty result at the same offset;
-    a malformed / structurally-unexpected line is skipped (the cursor still
-    advances past it so the stage never wedges on one bad line).
-    """
-    if not spans_path.is_file():
-        return TailResult(spans=(), offset=offset)
-    raw = spans_path.read_bytes()
-    if offset > len(raw):
-        # File was truncated / rotated under us — restart from the top.
-        offset = 0
-    new_text = raw[offset:].decode("utf-8", errors="replace")
-    ingested: list[IngestedSpan] = []
-    for line in new_text.splitlines():
-        ingested.extend(_parse_line(line=line))
-    return TailResult(spans=tuple(ingested), offset=len(raw))
-
-
-def _parse_line(*, line: str) -> tuple[IngestedSpan, ...]:
-    """Parse one `ExportTraceServiceRequest` line into its spans (fail-open)."""
-    stripped = line.strip()
-    if not stripped:
-        return ()
-    try:
-        parsed: object = json.loads(stripped)
-    except json.JSONDecodeError:
-        return ()
-    if not isinstance(parsed, dict):
-        return ()
-    resource_spans = cast("dict[str, object]", parsed).get("resourceSpans")
-    if not isinstance(resource_spans, list):
-        return ()
-    ingested: list[IngestedSpan] = []
-    for raw_rs in cast("list[object]", resource_spans):
-        if isinstance(raw_rs, dict):
-            ingested.extend(_parse_resource_spans(resource_spans=cast("dict[str, object]", raw_rs)))
-    return tuple(ingested)
-
-
-def _parse_resource_spans(*, resource_spans: dict[str, object]) -> tuple[IngestedSpan, ...]:
-    resource_attrs = _resource_attrs(resource_spans=resource_spans)
-    scope_spans = resource_spans.get("scopeSpans")
-    if not isinstance(scope_spans, list):
-        return ()
-    ingested: list[IngestedSpan] = []
-    for raw_scope in cast("list[object]", scope_spans):
-        if not isinstance(raw_scope, dict):
-            continue
-        spans = cast("dict[str, object]", raw_scope).get("spans")
-        if not isinstance(spans, list):
-            continue
-        for raw_span in cast("list[object]", spans):
-            if isinstance(raw_span, dict):
-                ingested.append(
-                    IngestedSpan(
-                        resource_attrs=resource_attrs,
-                        span=cast("dict[str, object]", raw_span),
-                    )
-                )
-    return tuple(ingested)
-
-
-def _resource_attrs(*, resource_spans: dict[str, object]) -> dict[str, str]:
-    resource = resource_spans.get("resource")
-    if not isinstance(resource, dict):
-        return {}
-    raw_attrs = cast("dict[str, object]", resource).get("attributes")
-    if not isinstance(raw_attrs, list):
-        return {}
-    out: dict[str, str] = {}
-    for raw in cast("list[object]", raw_attrs):
-        if not isinstance(raw, dict):
-            continue
-        entry = cast("dict[str, object]", raw)
-        key = entry.get("key")
-        value = _scalar_value(entry=entry)
-        if isinstance(key, str) and isinstance(value, str):
-            out[key] = value
-    return out
-
-
-@dataclass(frozen=True, kw_only=True)
-class HoneycombHttpExporter:
-    """Stdlib-only OTLP/HTTP-JSON exporter to Honeycomb with bounded retry.
-
-    Uses `urllib.request` (no new dependency — stdlib-first per the family
-    discipline) to POST a one-`ExportTraceServiceRequest` batch to
-    `https://api.honeycomb.io/v1/traces` with the ingest-only key in the
-    `x-honeycomb-team` header and the dataset in `x-honeycomb-dataset`.
-    Retries up to `max_retries` on a transport / 5xx error with linear
-    backoff; returns False (fail-open) once retries are exhausted, never
-    raising toward the enrich stage.
-
-    The `ingest_key` is the value of `HONEYCOMB_INGEST_KEY_LIVESPEC` —
-    passed in by the caller (the stage reads env), never read here, so this
-    exporter holds no env coupling and stays a pure transport.
-    """
-
-    ingest_key: str
-    url: str = _HONEYCOMB_TRACES_URL
-    max_retries: int = _DEFAULT_MAX_RETRIES
-    backoff_seconds: float = _DEFAULT_RETRY_BACKOFF_SECONDS
-    timeout_seconds: float = _DEFAULT_HTTP_TIMEOUT_SECONDS
-
-    def export(self, *, spans: tuple[dict[str, object], ...], dataset: str) -> bool:
-        if not spans:
-            return True
-        body = _export_request_bytes(spans=spans, dataset=dataset)
-        for attempt in range(self.max_retries):
-            if self._post(body=body, dataset=dataset):
-                return True
-            if attempt + 1 < self.max_retries:
-                time.sleep(self.backoff_seconds * (attempt + 1))
-        return False
-
-    def _post(self, *, body: bytes, dataset: str) -> bool:
-        request = urllib.request.Request(  # noqa: S310 — fixed https Honeycomb URL.
-            self.url,
-            data=body,
-            method="POST",
-            headers={
-                "content-type": "application/json",
-                _HONEYCOMB_TEAM_HEADER: self.ingest_key,
-                _HONEYCOMB_DATASET_HEADER: dataset,
-            },
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:  # noqa: S310
-                status = response.status
-        except (urllib.error.URLError, OSError):
-            return False
-        return _HTTP_OK_MIN <= status < _HTTP_OK_MAX_EXCLUSIVE
-
-
-def _export_request_bytes(*, spans: tuple[dict[str, object], ...], dataset: str) -> bytes:
-    """Serialize a span batch as one OTLP/HTTP-JSON ExportTraceServiceRequest.
-
-    The forwarded resource carries `service.name` = the dataset (Honeycomb
-    routes on it) + the family `service.namespace`, mirroring the
-    one-`ExportTraceServiceRequest` shape the family capture format uses.
-    """
-    request: dict[str, object] = {
-        "resourceSpans": [
-            {
-                "resource": {
-                    "attributes": [
-                        {"key": "service.name", "value": {"stringValue": dataset}},
-                        {
-                            "key": "service.namespace",
-                            "value": {"stringValue": "livespec-family"},
-                        },
-                    ]
-                },
-                "scopeSpans": [
-                    {
-                        "scope": {"name": "livespec.otel.enrich", "version": "0.1.0"},
-                        "spans": list(spans),
-                    }
-                ],
-            }
-        ]
-    }
-    return json.dumps(request, separators=(",", ":"), sort_keys=True).encode("utf-8")
 
 
 @dataclass(kw_only=True)
