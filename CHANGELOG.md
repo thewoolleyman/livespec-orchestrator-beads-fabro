@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.23](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.22...v0.17.23) (2026-07-11)
+
+
+### Bug Fixes
+
+* make beads invoke embedded-ledger-aware (skip family-secret + tenant-match guards) ([b65a6b2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b65a6b2a3d921eb8e7be28a8b5aeb57139fc6bbf))
+
 ## [0.17.22](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.21...v0.17.22) (2026-07-11)
 
 
