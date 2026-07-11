@@ -82,7 +82,7 @@ def _notify_test_env(
         lambda: (lambda: "test-github-token"),
     )
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands.dispatcher._fetch_fleet_manifest_text",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones.fetch_fleet_manifest_text",
         lambda: _FLEET_MANIFEST_TEXT,
     )
 

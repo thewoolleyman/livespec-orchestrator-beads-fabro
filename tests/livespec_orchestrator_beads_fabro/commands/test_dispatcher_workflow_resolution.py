@@ -24,13 +24,13 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import dispatcher
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
+    credential_wrapper_text,
+    read_dispatch_target_credential_wrapper,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import workflow_toml
 from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
     candidate_dispatcher_bin,
-)
-from livespec_orchestrator_beads_fabro.commands.dispatcher import (
-    _credential_wrapper_text,  # pyright: ignore[reportPrivateUsage]
-    _read_dispatch_target_credential_wrapper,  # pyright: ignore[reportPrivateUsage]
 )
 
 # The plugin root in source: `.claude-plugin/scripts/livespec_orchestrator_beads_fabro/
@@ -109,18 +109,18 @@ def test_dispatch_target_credential_wrapper_reads_configured_prefix(tmp_path: Pa
         encoding="utf-8",
     )
 
-    assert _read_dispatch_target_credential_wrapper(repo=tmp_path) == (
+    assert read_dispatch_target_credential_wrapper(repo=tmp_path) == (
         "/opt/openbrain/with-openbrain-env.sh",
         "--",
     )
-    assert "/opt/openbrain/with-openbrain-env.sh" in _credential_wrapper_text(repo=tmp_path)
+    assert "/opt/openbrain/with-openbrain-env.sh" in credential_wrapper_text(repo=tmp_path)
 
 
 def test_dispatch_target_credential_wrapper_falls_back_for_missing_config(
     tmp_path: Path,
 ) -> None:
-    assert _read_dispatch_target_credential_wrapper(repo=tmp_path) == ()
-    assert "no credential_wrapper configured" in _credential_wrapper_text(repo=tmp_path)
+    assert read_dispatch_target_credential_wrapper(repo=tmp_path) == ()
+    assert "no credential_wrapper configured" in credential_wrapper_text(repo=tmp_path)
 
 
 @pytest.mark.parametrize(
@@ -138,5 +138,5 @@ def test_dispatch_target_credential_wrapper_rejects_unusable_config_shapes(
 ) -> None:
     _ = (tmp_path / ".livespec.jsonc").write_text(config_text, encoding="utf-8")
 
-    assert _read_dispatch_target_credential_wrapper(repo=tmp_path) == ()
-    assert "no credential_wrapper configured" in _credential_wrapper_text(repo=tmp_path)
+    assert read_dispatch_target_credential_wrapper(repo=tmp_path) == ()
+    assert "no credential_wrapper configured" in credential_wrapper_text(repo=tmp_path)

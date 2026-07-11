@@ -34,12 +34,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
+    resolve_sibling_clones,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import SiblingClones
 from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
     self_update_after_merge,
-)
-from livespec_orchestrator_beads_fabro.commands.dispatcher import (
-    _resolve_sibling_clones,  # pyright: ignore[reportPrivateUsage]
 )
 
 
@@ -101,9 +101,9 @@ def test_resolve_sibling_clones_is_empty_when_no_fleet_manifest_is_fetchable(
     # adopter): the projection renders an EMPTY sibling set rather than
     # an actionable-refusal string the dispatch aborts on.
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands.dispatcher._fetch_fleet_manifest_text",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones.fetch_fleet_manifest_text",
         lambda: None,
     )
-    resolved = _resolve_sibling_clones(repo=tmp_path / "adopter-repo")
+    resolved = resolve_sibling_clones(repo=tmp_path / "adopter-repo")
     assert isinstance(resolved, SiblingClones)
     assert resolved.repos == ()

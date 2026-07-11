@@ -12,7 +12,10 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
-from livespec_orchestrator_beads_fabro.commands import dispatcher
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_sibling_clones,
+    dispatcher,
+)
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
@@ -176,7 +179,7 @@ def _configure_full_dispatch_env(
     for ntfy_env in ("CLAUDE_NTFY_DISPATCHER_TOPIC", "CLAUDE_NTFY_TOPIC", "CLAUDE_NTFY_SERVER"):
         monkeypatch.delenv(ntfy_env, raising=False)
     monkeypatch.setattr(dispatcher, "_github_token_supplier", lambda: (lambda: "test-gh-token"))
-    monkeypatch.setattr(dispatcher, "_fetch_fleet_manifest_text", lambda: None)
+    monkeypatch.setattr(_dispatcher_sibling_clones, "fetch_fleet_manifest_text", lambda: None)
     monkeypatch.setattr(dispatcher, "_ensure_otel_receiver", lambda **_: None)
     monkeypatch.setattr(dispatcher, "WatchedFabroLauncher", lambda **_: _MergedFabroLauncher())
     reset_fake_singleton()
