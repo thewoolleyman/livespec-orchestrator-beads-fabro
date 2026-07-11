@@ -1027,7 +1027,7 @@ def _post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fi
         journal=journal,
         wall_clock_seconds=wall_clock_seconds,
         dispatch_context_size=dispatch_context_size,
-        runner=_post_verdict_runner(runner=None, token_supplier=token_supplier),
+        token_supplier=token_supplier,
     )
 
 
