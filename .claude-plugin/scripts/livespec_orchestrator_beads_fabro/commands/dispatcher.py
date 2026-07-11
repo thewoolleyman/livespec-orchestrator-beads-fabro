@@ -150,7 +150,6 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, replace
-from functools import partial
 from pathlib import Path
 from time import sleep as _real_sleep
 from typing import Protocol, cast
@@ -161,6 +160,10 @@ from livespec_runtime.work_items.lifecycle import is_item_ready, ready_sort_key
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_fabro_bin
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
+    admit_and_select,
+    autonomous_armed,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_autonomous import (
     arm_autonomous_for_loop,
 )
@@ -170,8 +173,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_autonomous_audit imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_autonomous_collapse import (
     acceptance_decision_under_mode,
     collapse_acceptance_to_ai_only,
-    collapse_admission_to_auto,
-    effective_admission_policy_under_mode,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
     build_calibration_record,
@@ -263,12 +264,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
     self_update_after_verdict,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_spec_checks import run_spec_checks
-from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
-    admission_held_detail,
-    plan_admissions,
-    resolve_assignee,
-    resolve_wip_cap,
-)
 from livespec_orchestrator_beads_fabro.commands._jsonc import JsoncParseError, loads
 from livespec_orchestrator_beads_fabro.commands._otel_receive import (
     HeartbeatSink,
@@ -308,9 +303,6 @@ _EXIT_PRECONDITION_ERROR = 3
 # The `decision` text journaled on each full-autonomous-mode auto-resolution
 # audit record (the S2 autonomous-decision record). Names what the mode
 # decided so no auto-resolution is silent.
-_AUTONOMOUS_APPROVE_DECISION = (
-    "routine manual-admission auto-approved to ready under armed autonomous mode"
-)
 _AUTONOMOUS_ACCEPTANCE_DECISION = (
     "ai-then-human accepted to done on the passing AI pass under armed autonomous mode"
 )
@@ -518,13 +510,14 @@ def _run_dispatch_command(*, args: argparse.Namespace) -> int:
     # `--mode autonomous` opt-in rides the queue-draining `loop`, not `dispatch`
     # (SPECIFICATION/contracts.md) — so the admission valve runs with the mode
     # collapse OFF (armed=False), exactly the pre-mode behavior.
-    admission = _admit_and_select(
+    admission = admit_and_select(
         repo=repo,
         items=items,
         candidates=[target],
         journal=journal,
         enforce_cap=False,
         armed=False,
+        host_only_refusal=_host_only_refusal,
     )
     dispatched = [
         _dispatch_one(args=args, repo=repo, item=item, journal=journal, janitor=janitor)
@@ -633,13 +626,14 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
     # surfaced, and the highest-rank admission-eligible items fill the free
     # slots (ready -> active, assignee set). Capacity-deferred items simply
     # wait for the next pass.
-    admission = _admit_and_select(
+    admission = admit_and_select(
         repo=repo,
         items=items,
         candidates=candidates,
         journal=journal,
         enforce_cap=True,
-        armed=_autonomous_armed(args=args),
+        armed=autonomous_armed(args=args),
+        host_only_refusal=_host_only_refusal,
     )
     journal.append(
         record={
@@ -1082,7 +1076,7 @@ def _post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fi
             item=item,
             outcome=outcome,
             journal=journal,
-            armed=_autonomous_armed(args=args),
+            armed=autonomous_armed(args=args),
         )
     journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
     _bounce_non_convergence_to_backlog(repo=repo, item=item, outcome=outcome, journal=journal)
@@ -1267,138 +1261,6 @@ def _parse_pr_diff_size(*, stdout: str) -> int | None:
     if not isinstance(additions, int) or not isinstance(deletions, int):
         return None
     return additions + deletions
-
-
-@dataclass(frozen=True, kw_only=True)
-class _Admission:
-    """The outcome of the admission valve over a candidate set.
-
-    `admitted` carries the items transitioned `ready -> active` (assignee
-    set) that the Dispatcher then launches; `refused` carries the
-    non-launched terminal outcomes — host-only routing refusals plus
-    admission holds (manual / unresolvable assignee) — that ride in the
-    wave's outcome list so the verdict and the post-verdict alarm see them.
-    A capacity-deferred admission-eligible item appears in NEITHER list — it
-    simply waits for the next pass.
-    """
-
-    admitted: list[WorkItem]
-    refused: list[DispatchOutcome]
-
-
-def _autonomous_armed(*, args: argparse.Namespace) -> bool:
-    """Read the per-run full-autonomous-mode armed flag threaded onto args.
-
-    `_run_loop_command` sets `args.autonomous_armed` from the S1 arming
-    decision. The targeted `dispatch --item` path never arms the mode (the
-    `--mode autonomous` opt-in rides `loop`, not `dispatch`), so it never sets
-    the attribute; the `getattr` default keeps that path — and any legacy
-    caller — at the safe unarmed default. `bool(...)` narrows the untyped
-    Namespace attribute to a typed bool.
-    """
-    return bool(getattr(args, "autonomous_armed", False))
-
-
-def _admit_and_select(
-    *,
-    repo: Path,
-    items: list[WorkItem],
-    candidates: list[WorkItem],
-    journal: JournalFile,
-    enforce_cap: bool,
-    armed: bool,
-) -> _Admission:
-    """Run the admission valve over the rank-sorted candidate set.
-
-    The sole enforcer of the approval/admission valve + per-repo WIP cap. For
-    each candidate, in order: a host-only self-machinery item is routed away
-    (refused, never admitted — the uvd hang-guard); then `plan_admissions`
-    holds a manual pending item, auto-approves an auto pending item into
-    `ready`, holds an unresolvable-assignee item, and admits the highest-`rank`
-    ready items into the free WIP slots, writing each `ready -> active` with
-    its resolved assignee. `enforce_cap` reads the per-repo `wip_cap` from
-    `.livespec.jsonc` and discounts the already-`active` items; a targeted
-    `dispatch --item` is an operator override that passes `enforce_cap=False`
-    (every host-cleared candidate gets a slot). The admit writes + the held
-    surfaces are journaled here; the launched items flow on to `_dispatch_one`.
-
-    `armed` layers the full-autonomous-mode approve-gate collapse
-    (SPECIFICATION/scenarios.md Scenario 33): an armed run injects an
-    armed-aware admission-policy resolver so a routine `manual` pending item is
-    auto-approved into `ready` instead of held — EXCEPT a design-human-gated
-    spec-change-tier slice, which stays held/escalated (Scenario 36). Each such
-    collapse is journaled as an autonomous auto-resolution audit record
-    (`gate` `approve`); when not armed the resolver is the base policy and
-    behavior is exactly unchanged.
-    """
-    admittable: list[WorkItem] = []
-    refused: list[DispatchOutcome] = []
-    for item in candidates:
-        host_refusal = _host_only_refusal(item=item, journal=journal)
-        if host_refusal is not None:
-            refused.append(host_refusal)
-        else:
-            admittable.append(item)
-    if enforce_cap:
-        active_count = sum(1 for item in items if item.status == "active")
-        free_slots = max(0, resolve_wip_cap(cwd=repo) - active_count)
-    else:
-        free_slots = len(admittable)
-    plan = plan_admissions(
-        ready_items=admittable,
-        free_slots=free_slots,
-        resolve_assignee=resolve_assignee,
-        admission_policy=partial(effective_admission_policy_under_mode, armed=armed),
-    )
-    admitted: list[WorkItem] = []
-    config = store_config(repo=repo)
-    approved_ids = {item.id for item in plan.approved}
-    for item in plan.approved:
-        update_work_item_status(path=config, item_id=item.id, status="ready")
-        journal.append(record={"stage": "ledger-approve", "work_item_id": item.id})
-        if collapse_admission_to_auto(item=item, armed=armed):
-            journal.append(
-                record=autonomous_decision_journal_record(
-                    work_item_id=item.id,
-                    gate="approve",
-                    decision=_AUTONOMOUS_APPROVE_DECISION,
-                    disposition="auto-resolved",
-                )
-            )
-    for item, assignee in plan.admitted:
-        journal_item = replace(item, status="ready") if item.id in approved_ids else item
-        update_work_item_status(
-            path=config, item_id=journal_item.id, status="active", assignee=assignee
-        )
-        journal.append(
-            record={"stage": "ledger-admit", "work_item_id": item.id, "assignee": assignee}
-        )
-        admitted.append(replace(journal_item, status="active", assignee=assignee))
-    for item, reason in plan.held:
-        held = _admission_held_outcome(item=item, reason=reason)
-        journal.append(record={"stage": "outcome", "outcome": asdict(held)})
-        _ = write_stderr(text=f"SURFACE: {admission_held_detail(item_id=item.id, reason=reason)}\n")
-        refused.append(held)
-    return _Admission(admitted=admitted, refused=refused)
-
-
-def _admission_held_outcome(*, item: WorkItem, reason: str) -> DispatchOutcome:
-    """Build the `admission-held` terminal for an item held at the admission valve.
-
-    A `failed` outcome (so the dispatch exit code flips to 1 and the
-    maintainer's eyes are required) at the `admission-held` stage; nothing is
-    launched and nothing is closed — a manual item stays at `pending-approval`
-    for the maintainer to approve, while an unresolvable item stays put until
-    assignment is fixed.
-    """
-    return DispatchOutcome(
-        work_item_id=item.id,
-        status="failed",
-        stage="admission-held",
-        pr_number=None,
-        merge_sha=None,
-        detail=admission_held_detail(item_id=item.id, reason=reason),
-    )
 
 
 def _host_only_refusal(*, item: WorkItem, journal: JournalFile) -> DispatchOutcome | None:
@@ -1662,7 +1524,7 @@ def _resolve_or_bounce_needs_human(
     resolved_resolver = (
         resolver if resolver is not None else ClaudeNeedsHumanResolver(runner=ShellCommandRunner())
     )
-    if not _autonomous_armed(args=args) or outcome.status != "blocked":
+    if not autonomous_armed(args=args) or outcome.status != "blocked":
         _bounce_blocked(repo=repo, item=item, outcome=outcome, journal=journal)
         return
     resolution = resolved_resolver.resolve(item=item, outcome=outcome, repo=repo)

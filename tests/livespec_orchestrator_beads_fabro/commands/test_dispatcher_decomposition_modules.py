@@ -14,6 +14,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_plan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
+    Admission,
+    admission_held_outcome,
+    admit_and_select,
+    autonomous_armed,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_goal import render_goal
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_only import (
     host_only_refusal_detail,
@@ -70,3 +76,10 @@ def test_new_module_functions_are_re_exported_from_dispatcher_plan() -> None:
     assert _dispatcher_plan.render_goal is render_goal
     assert _dispatcher_plan.is_host_only_item is is_host_only_item
     assert _dispatcher_plan.host_only_refusal_detail is host_only_refusal_detail
+
+
+def test_admission_cluster_importable_from_new_module() -> None:
+    assert Admission.__name__ == "Admission"
+    assert admit_and_select.__name__ == "admit_and_select"
+    assert admission_held_outcome(item=_item(), reason="manual").stage == "admission-held"
+    assert autonomous_armed(args=object()) is False
