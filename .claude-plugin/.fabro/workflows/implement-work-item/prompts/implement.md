@@ -85,6 +85,39 @@ maintainer fixes the check upstream. Reserve this for a genuine
 check-vs-legitimate-pattern conflict, not a check you simply find
 inconvenient to satisfy.
 
+### Refactoring for size — decompose by cohesion, not by line count
+
+When a check flags a file as too large (`file_lloc` hard ceiling >250, or
+`no_lloc_soft_warnings` soft band 201–250), the HONEST fix is to improve the
+file's structure — **decompose it by COHESION and minimise COUPLING** — never a
+mechanical line-count cut, a re-export shim, or an exemption.
+
+- **Decompose by cohesion.** A file over the ceiling has almost always accreted
+  several distinct CONCERNS (groups of functions/classes serving one
+  responsibility). Give each concern its own cohesive module; do not cut the
+  file at an arbitrary line.
+- **Minimise coupling — cut along PUBLIC-ENTRY-POINT boundaries.** Move each
+  PUBLIC function together with the private (`_`-prefixed) helpers that ONLY it
+  uses into the new module; keep those helpers private INSIDE the new module;
+  the source file imports the public entry point back. Only PUBLIC names may
+  cross a module boundary — this is REQUIRED: pyright strict
+  (`reportPrivateUsage`) and the `private_calls` check both REJECT importing or
+  calling a `_`-prefixed name defined in another module. The usual way a
+  size-split FAILS is exactly this: moving an individual private helper into a
+  sibling and importing it back. If a helper is shared by several public entry
+  points, move it WITH them into the same module, or promote it to a
+  properly-named, fully-typed PUBLIC function (a real interface) — never a
+  cross-module private import.
+- **Preserve behaviour and the public surface.** The extraction is a pure
+  refactor: the source module's `__all__` and externally-visible API are
+  unchanged, imports are updated, 100% per-file coverage holds, and every
+  existing test still passes. Follow the Red-Green-Replay ritual.
+- If a file genuinely cannot be decomposed along cohesive seams (one
+  irreducible, legitimately-large responsibility), that is a
+  check-vs-legitimate-pattern conflict — SURFACE it via the needs-human
+  `{"outcome":"failed", ...}` protocol for an upstream decision; do NOT invent
+  an exemption or force an incoherent split.
+
 ## Red-Green-Replay (REQUIRED for any product `.py` change — follow VERBATIM)
 
 1. **Red commit.** Stage the test file ALONE (no impl) and commit with a

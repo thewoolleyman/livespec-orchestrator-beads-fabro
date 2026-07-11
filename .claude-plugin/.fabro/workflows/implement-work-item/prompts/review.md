@@ -48,6 +48,7 @@ Read the code's existing style and judge it on ITS OWN paradigm:
   this in production?
 - **Correctness & safety** — logic, edge cases, error handling, security,
   data-loss, concurrency, resource cleanup.
+- **Size fixes are cohesion-driven, not cosmetic.** If the change reduced a file to satisfy `file_lloc`/`no_lloc_soft`, verify it decomposed by COHESION (each new module is one coherent concern) with MINIMAL COUPLING — only public entry points cross module boundaries; NO `_`-prefixed name is imported or called across modules; NO re-export shim that merely spreads line count; NO exemption or severity lever. A mechanical or shim split is a defect even if the tree is green.
 - Plus anything else a senior engineer would genuinely care about.
 
 ## Hunt for detector evasion (always `[BLOCKING]`)
