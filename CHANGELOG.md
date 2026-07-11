@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.24](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.23...v0.17.24) (2026-07-11)
+
+
+### Bug Fixes
+
+* extract dispatcher calibration emit cluster ([8f77084](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8f7708458364c11eec9cb8ea62563bd12072f0ca))
+* preserve calibration emit token supplier ([09246fd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/09246fd1d7ee3fa6bd9b6a434372faf467bea827))
+
 ## [0.17.23](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.22...v0.17.23) (2026-07-11)
 
 
