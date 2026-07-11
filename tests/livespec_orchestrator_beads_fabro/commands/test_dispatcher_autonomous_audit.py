@@ -77,6 +77,16 @@ def test_read_missing_journal_is_empty(tmp_path: Path) -> None:
     assert audit == AutonomousAudit(auto_resolutions=(), escalations=())
 
 
+def test_read_unreadable_journal_fails_open(tmp_path: Path) -> None:
+    # An exists-but-unreadable journal path — here a directory in the file's
+    # place, so `read_text` raises `IsADirectoryError` (an `OSError`) — fails
+    # open to an empty audit rather than raising, honoring the docstring.
+    journal_path = tmp_path / "journal.jsonl"
+    journal_path.mkdir()
+    audit = read_autonomous_decisions(journal_path=journal_path)
+    assert audit == AutonomousAudit(auto_resolutions=(), escalations=())
+
+
 def test_read_round_trips_and_splits_by_disposition(tmp_path: Path) -> None:
     journal_path = tmp_path / "journal.jsonl"
     journal = JournalFile(path=journal_path)
