@@ -1,6 +1,6 @@
 """Tests for wiring the out-of-band reflector into the dispatcher (29f.4).
 
-Covers `dispatcher._reflector_oob_after_verdict`: the 5th post-verdict
+Covers `_dispatcher_post_verdict.reflector_oob_after_verdict`: the 5th post-verdict
 stage. The load-bearing invariants: it is fire-and-forget (a daemon thread
 in production, injectable `spawn` for the hermetic tier), default-OFF (no
 `claude -p` without the lever), and fail-open (it never raises and never
@@ -22,14 +22,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFil
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     reflector_oob_spans_path,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_reflector_oob import (
-    RecordingLessonsProposer,
-)
-from livespec_orchestrator_beads_fabro.commands.dispatcher import (
+from livespec_orchestrator_beads_fabro.commands._dispatcher_post_verdict import (
     _default_reflector_spawn,  # pyright: ignore[reportPrivateUsage]
-    _reflector_oob_after_verdict,  # pyright: ignore[reportPrivateUsage]
     _spawn_daemon,  # pyright: ignore[reportPrivateUsage]
     _spawn_daemon_joining,  # pyright: ignore[reportPrivateUsage]
+    reflector_oob_after_verdict,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reflector_oob import (
+    RecordingLessonsProposer,
 )
 
 _MCP_ENV = "HONEYCOMB_MCP_API_KEY_LIVESPEC"
@@ -86,7 +86,7 @@ def test_off_by_default_does_not_run_claude(
     monkeypatch.delenv(_LEVER_ENV, raising=False)
     journal = JournalFile(path=tmp_path / "j.jsonl")
     runner = _FakeRunner()
-    _reflector_oob_after_verdict(
+    reflector_oob_after_verdict(
         args=_args(journal=tmp_path / "j.jsonl"),
         repo=tmp_path,
         journal=journal,
@@ -105,7 +105,7 @@ def test_armed_runs_the_reflector_through_the_injected_seams(
     journal_path = tmp_path / "j.jsonl"
     journal = JournalFile(path=journal_path)
     runner = _FakeRunner()
-    _reflector_oob_after_verdict(
+    reflector_oob_after_verdict(
         args=_args(journal=journal_path),
         repo=tmp_path,
         journal=journal,
@@ -127,7 +127,7 @@ def test_reflector_after_verdict_refreshes_github_token_before_subprocess(
     monkeypatch.setenv(_MCP_ENV, "hcmk-secret")
     journal_path = tmp_path / "j.jsonl"
     runner = _FakeRunner()
-    _reflector_oob_after_verdict(
+    reflector_oob_after_verdict(
         args=_args(journal=journal_path),
         repo=tmp_path,
         journal=JournalFile(path=journal_path),
@@ -162,7 +162,7 @@ def test_reflector_after_verdict_never_raises(
 
     journal = JournalFile(path=tmp_path / "j.jsonl")
     # Must NOT raise — the stage is fail-open.
-    _reflector_oob_after_verdict(
+    reflector_oob_after_verdict(
         args=_args(journal=tmp_path / "j.jsonl"),
         repo=tmp_path,
         journal=journal,
@@ -189,7 +189,7 @@ def test_default_seams_resolve_without_injection(
     # real subprocess / PR happens (no claude -p, no MCP, no PR).
     monkeypatch.delenv(_LEVER_ENV, raising=False)
     journal = JournalFile(path=tmp_path / "j.jsonl")
-    _reflector_oob_after_verdict(
+    reflector_oob_after_verdict(
         args=_args(journal=tmp_path / "j.jsonl"),
         repo=tmp_path,
         journal=journal,
