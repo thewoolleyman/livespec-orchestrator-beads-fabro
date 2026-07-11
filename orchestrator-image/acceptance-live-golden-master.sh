@@ -341,14 +341,27 @@ create_and_seed_repo() {
     # The --prefix MUST match the skeleton .livespec.jsonc connection.prefix
     # (e2e-skeleton/.livespec.jsonc), which the store-config loader requires.
     bd init --prefix "e2egreet" --skip-agents --skip-hooks --non-interactive --quiet >/dev/null 2>&1
+    # Register the livespec custom work-item statuses that the Dispatcher's
+    # ledger normalization writes (e.g. `bd update --status backlog`). An
+    # embedded `bd init` registers NONE of them, so a real tenant's
+    # status.custom set must be replicated here. MUST match
+    # livespec_orchestrator_beads_fabro/_beads_client.py::_STATUS_CUSTOM.
+    bd config set status.custom "backlog,pending-approval,ready:active,active:wip,acceptance:wip" >/dev/null 2>&1
     bd create "Implement greet per the SPECIFICATION" \
       -d "Implement the program described in this repo's SPECIFICATION/: expose a Python function greet(name: str) -> str (in src/greeting/greet.py) that returns exactly \"Hello, <name>!\". For the input Ada it must return \"Hello, Ada!\". Add a test under tests/ and make \`just check\` pass. Read this repo's root CLAUDE.md for local constraints (no Red-Green-Replay ritual here; commit normally). Follow contracts.md / scenarios.md exactly." \
       >/dev/null 2>&1
+    # Promote the seeded item to the livespec `ready` status. `bd create` mints
+    # it as bd-native `open`, which the Dispatcher's intake normalization maps to
+    # `backlog` (the intake lane) — landing it OUT of the ready set the `--item`
+    # dispatch targets. Setting it `ready` (a registered custom status) survives
+    # normalization and makes it dispatchable.
+    _seed_id="$(bd list --status open --json 2>/dev/null | jq -r '.[0].id')"
+    bd update "$_seed_id" --status ready >/dev/null 2>&1
   )
   # Confirm exactly one ready item in the embedded ledger (redacted count only).
   local ready_count
-  ready_count="$(cd "$clone" && bd list --status open --json 2>/dev/null | jq 'length' 2>/dev/null || echo '?')"
-  printf 'embedded ledger ready (open) items: %s\n' "$ready_count"
+  ready_count="$(cd "$clone" && bd list --status ready --json 2>/dev/null | jq 'length' 2>/dev/null || echo '?')"
+  printf 'embedded ledger ready items: %s\n' "$ready_count"
   [ "$ready_count" = "1" ] || fail "expected exactly 1 ready item in the embedded ledger (got $ready_count)"
 
   log "padding git history (>10 commits so the depth-10 sandbox clone is shallow)"
@@ -454,7 +467,7 @@ provision_codex_auth() {
 
 # Capture the target work-item id from the embedded ledger (host-side read).
 target_item_id() {
-  (cd "$CLONE_DIR" && bd list --status open --json 2>/dev/null | jq -r '.[0].id')
+  (cd "$CLONE_DIR" && bd list --status ready --json 2>/dev/null | jq -r '.[0].id')
 }
 
 run_dispatch() {
