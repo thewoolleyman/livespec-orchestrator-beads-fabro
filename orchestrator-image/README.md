@@ -121,6 +121,66 @@ teardown, or as a scheduled sweep — never mid-dispatch.** See
 `archive/research/w7-orchestrator-convergence/e2e-repo-reaper.md` for the full safety
 model and validation evidence.
 
+## Host Fabro server (self-hosted; the maintainer's factory)
+
+The host-direct Dispatcher path runs `dispatcher.py loop` **on the host** (not in
+this image) and connects to a long-lived Fabro server the maintainer runs
+directly from `~/.fabro/bin/fabro`, listening on **`127.0.0.1:32276`**. This is
+the "maintainer's normal host Fabro server on `32276`" the Tier-2 proof helper
+steps around. It is distinct from the containerized server the entrypoint
+provisions (below); the image's `COPY fabro` stages this same host binary from
+`$HOST_FABRO_BIN`, so the host install IS the image's staging source.
+
+**Current binary (2026-07-11 cutover, Recommendation A):** fabro **0.254 +
+backported PR #568** (the credential-refresh fix), Git SHA `f7ff19e` = canonical
+`v0.254.0` + the #568 cherry-pick + an env-configurable daemon-readiness timeout.
+Chosen over modern fabro because any fabro ≥ 0.256 breaks `workflow.fabro` (fabro
+#474 de-templates `acp.command`, so our `acp.command="{{ inputs.acp_adapter }}"`
+nodes go literal and dispatch dies `exit 127`). Rollout/revert state: ledger
+`bd-ib-2nq.4`; deferred 0.254→0.290 modernization: `bd-ib-6qu`.
+
+### Start / restart
+
+OAuth-only — start it **without** the env wrapper and **without**
+`ANTHROPIC_API_KEY`:
+
+```bash
+~/.fabro/bin/fabro server start --bind 127.0.0.1:32276 --no-web --no-upgrade-check
+```
+
+- It **daemonizes** and returns once the daemon reports ready.
+- `--no-web`: the fork binary ships **no bundled web-UI assets**.
+- The SlateDB store open takes ~6s, which **exceeds stock 0.254's 5s
+  daemon-readiness cap** — the fork makes it env-configurable via
+  `FABRO_SERVER_START_READY_TIMEOUT_SECS` (default **60s**). Stock 0.254 would
+  fail to start against this store.
+- To stop it, find the daemon by port/PID and kill by PID. **Never**
+  `pkill -f 'fabro server'` — it self-matches the killing shell and can reap
+  unrelated shells; resolve the real daemon via `/proc/<pid>/exe`.
+
+### Auth posture (OAuth-only)
+
+- **Never put `ANTHROPIC_API_KEY` in the server's env.** It bills API cost and
+  can leak into the sandbox. The agent's model auth is `CLAUDE_CODE_OAUTH_TOKEN`,
+  which the Dispatcher injects into the *sandbox* per dispatch — not the server.
+- `fabro doctor` on this server should read: GitHub App **configured**, Storage
+  OK, Version parity `0.254.0`, and **`[✗] LLM Providers (none configured)` —
+  which is CORRECT** (the model key is never on the server). `[!] Sandbox`
+  (Daytona) and `[!] Web Search` (Brave) are optional and expected-unconfigured;
+  the factory uses the local **Docker** sandbox, not Daytona.
+- Credentials live in `~/.fabro/` (the GitHub App integration + `auth.json` +
+  SlateDB `storage/`). If `fabro doctor` shows GitHub App **not** configured, the
+  vault didn't load — stop and reassess; do not add `ANTHROPIC_API_KEY` to
+  "fix" it.
+
+### Tailscale-served
+
+`tailscaled` holds a standing `tailscale serve` proxy
+`https://vps.perch-rudd.ts.net:32276 → http://127.0.0.1:32276`. It persists
+across server restarts and returns connection-refused while the loopback backend
+is down — so a `:32276` listener owned by `tailscaled` (not `fabro`) means the
+proxy is up but the backend is not.
+
 ## Real-work substrate (production)
 
 For routine cross-repo work the Dispatcher runs on the **real-work substrate**:
