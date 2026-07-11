@@ -149,7 +149,7 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, replace
 from pathlib import Path
 from time import sleep as _real_sleep
 from typing import Protocol, cast
@@ -188,6 +188,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_pricing import 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_sink import (
     CostSink,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
+    materialize_overlay,
+    read_dispatch_comments,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
     DispatchOutcome,
@@ -195,7 +199,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     run_dispatch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
-    GITHUB_TOKEN_ENV_VAR,
     GithubTokenEnvRunner,
     JournalFile,
     ShellCommandRunner,
@@ -228,18 +231,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     workflow_toml,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
-    CODEX_FRESHNESS_RUN_BUDGET_SECONDS,
-    SiblingClones,
-    assess_codex_credential_freshness,
     build_plan,
-    cc_otel_overlay_env,
     janitor_checkout_path,
     janitor_core_ref_from_config,
-    parse_fleet_members,
-    project_codex_auth_snapshot,
     render_goal,
-    render_run_config_overlay,
-    resolve_sandbox_otel_endpoint,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection import reflect
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflector_oob import (
@@ -255,7 +250,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
     self_update_after_verdict,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_spec_checks import run_spec_checks
-from livespec_orchestrator_beads_fabro.commands._jsonc import JsoncParseError, loads
 from livespec_orchestrator_beads_fabro.commands._otel_receive import (
     HeartbeatSink,
     OtelReceiver,
@@ -263,17 +257,9 @@ from livespec_orchestrator_beads_fabro.commands._otel_receive import (
     ensure_receiver_started,
     resolve_receiver_config,
 )
-from livespec_orchestrator_beads_fabro.errors import (
-    BeadsCommandError,
-    BeadsConnectionError,
-    BeadsMappingError,
-    BeadsTenantMissingError,
-)
 from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 from livespec_orchestrator_beads_fabro.store import (
-    WorkItemComment,
     materialize_work_items,
-    read_work_item_comments,
     read_work_items,
     update_work_item_status,
 )
@@ -301,21 +287,6 @@ _EXIT_PRECONDITION_ERROR = 3
 # component" test is a single `any(...)` with no unreachable `os.altsep` arc.
 _PATH_SEPARATORS: tuple[str, ...] = tuple(sep for sep in (os.sep, os.altsep) if sep)
 
-_OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"  # noqa: S105 - env-var NAME, not a secret value
-_DISPATCH_REQUIRED_CREDENTIALS = (
-    "GITHUB_APP_ID",
-    "GITHUB_PRIVATE_KEY",
-    "BEADS_DOLT_PASSWORD",
-    _OAUTH_TOKEN_ENV,
-)
-_GITHUB_TOKEN_ENV = GITHUB_TOKEN_ENV_VAR  # single-sourced from _dispatcher_io
-
-# Host-side override for where the live Codex `auth.json` lives. The host
-# is the sole `codex login`+refresh owner; the Dispatcher reads its
-# auth.json directly (default `~/.codex/auth.json`) and projects a
-# non-rotatable snapshot into the sandbox. An env-var NAME, not a secret.
-_CODEX_HOME_ENV = "CODEX_HOME"
-
 # The ingest-only Honeycomb key (write-only; the management/MCP key never
 # touches this egress path, per telemetry-pipeline-architecture.md §3.4).
 # An env-var NAME, not a secret value.
@@ -326,25 +297,6 @@ _HONEYCOMB_INGEST_KEY_ENV = "HONEYCOMB_INGEST_KEY_LIVESPEC"
 # dispatches in this dict — NOT one per dispatch (that would collide on the
 # bound port). Module-scoped state, started fail-open at dispatch entry.
 _OTEL_RECEIVER_HOLDER: dict[str, object] = {}
-
-# Where the canonical fleet member registry lives: .livespec-fleet-manifest.jsonc
-# on livespec master (livespec non-functional-requirements.md). Fetched
-# HOST-SIDE at run-config generation
-# time via `gh api` raw content — the same consume-from-master pattern
-# the other family consumers (fleet conformance, release fan-out) use.
-# This pins the manifest LOCATION, not the member list: the list itself
-# is always read fresh. An unreachable/absent manifest renders an EMPTY
-# sibling projection (the non-fleet adopter path); a present-but-malformed
-# manifest fails the dispatch fast rather than falling back to a stale
-# hardcoded set.
-_FLEET_MANIFEST_API_PATH = "repos/thewoolleyman/livespec/contents/.livespec-fleet-manifest.jsonc"
-_FLEET_MANIFEST_FETCH_TIMEOUT_SECONDS = 60.0
-
-# In-sandbox directory the sibling clones land under; projected into
-# the sandbox env as LIVESPEC_SIBLING_CLONES_ROOT. `/workspace` is the
-# fabro docker sandbox's workspace root (the target repo's clone sits
-# at /workspace/<repo>), so the siblings root never collides with it.
-_SIBLING_CLONES_ROOT = "/workspace/siblings"
 
 
 def main(*, argv: list[str] | None = None) -> int:
@@ -936,7 +888,7 @@ def _dispatch_one(
         janitor_core_ref=_janitor_core_ref(repo=repo),
     )
     warn_item_sizing(item=item, journal=journal)
-    comments = _read_dispatch_comments(repo=repo, item=item)
+    comments = read_dispatch_comments(repo=repo, item=item)
     if isinstance(comments, str):
         outcome = DispatchOutcome(
             work_item_id=item.id,
@@ -964,7 +916,7 @@ def _dispatch_one(
         )
         journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
         return outcome
-    overlay_error = _materialize_overlay(
+    overlay_error = materialize_overlay(
         committed=workflow_toml(args=args),
         overlay=overlay_file,
         repo=repo,
@@ -1246,308 +1198,6 @@ def _parse_pr_diff_size(*, stdout: str) -> int | None:
     if not isinstance(additions, int) or not isinstance(deletions, int):
         return None
     return additions + deletions
-
-
-def _read_dispatch_comments(
-    *,
-    repo: Path,
-    item: WorkItem,
-) -> tuple[WorkItemComment, ...] | str:
-    """Read the item's ledger comments for the goal; error string on failure.
-
-    Comments are operator riders appended after filing (e.g.
-    pre-authorizations); a brief without them silently re-creates bn4
-    finding (c), so a failed read REFUSES the dispatch (error-as-data,
-    routed at the `ledger-comments` stage) instead of proceeding
-    comment-blind.
-    """
-    try:
-        return read_work_item_comments(path=store_config(repo=repo), work_item_id=item.id)
-    except (
-        BeadsCommandError,
-        BeadsConnectionError,
-        BeadsMappingError,
-        BeadsTenantMissingError,
-    ) as exc:
-        return f"ledger comments read failed for {item.id} ({type(exc).__name__}: {exc})"
-
-
-def _materialize_overlay(
-    *,
-    committed: Path,
-    overlay: Path,
-    repo: Path,
-    work_item_id: str,
-    dispatch_id: str,
-    token: Callable[[], str],
-) -> str | None:
-    """Write the uncommitted mode-600 run-config overlay.
-
-    Returns None on success, or an actionable error message (an expected
-    failure routed as data — the dispatch reports it at the
-    `run-config-overlay` stage). The overlay is the RUN-SCOPED
-    credential projection: the committed config (graph path absolutized)
-    plus an appended env table carrying the CLAUDE_CODE_OAUTH_TOKEN
-    value read from this process's environment and a GITHUB_TOKEN freshly
-    minted from the App installation-token provider (`token` is the
-    provider's accessor — the sandbox receives an ephemeral installation
-    token, never the durable App key and never a fleet PAT; projected
-    under GITHUB_TOKEN, not GH_TOKEN, so fabro's per-exec re-mint is not
-    shadowed). Fabro
-    `{{ env }}` interpolation is NOT usable here (see the module
-    docstring), so the value MUST be materialized. The token never
-    reaches a log, journal, or argv; the overlay file is deleted when
-    the run returns.
-
-    The overlay ALSO provisions the sandbox sibling clones: one depth-1
-    prepare-step clone per fleet member (minus the dispatch target,
-    keyed by the `--repo` basename) plus the non-secret
-    `LIVESPEC_SIBLING_CLONES_ROOT` env key, so cross-repo checks under
-    `just check` resolve family siblings inside the sandbox the same
-    way livespec CI provisions them.
-
-    It projects the in-sandbox Claude-Code OTel env (29f.3): the
-    `cc_otel_overlay_env` dict carrying the correlation triple
-    (`work_item_id` + `dispatch_id`) and the host-local E1 receiver
-    endpoint, so CC native telemetry exports from inside the sandbox to
-    the host-local enrich/receive stage. All NON-secret values — the
-    Honeycomb ingest key is NOT among them (the sandbox ships plaintext;
-    the host egress stage holds the key).
-
-    Finally it projects the dual-credential Codex snapshot (scenarios.md
-    Scenario 18 / Scenario 19): the host `auth.json` is read, freshness-
-    gated against the run budget, and projected non-rotatably into the
-    sandbox `$CODEX_HOME/auth.json` alongside the Claude OAuth env. A
-    missing or too-short-lived host credential refuses the dispatch here
-    with an actionable renewal message (naming `codex login`).
-    """
-    env_error = _check_credential_env(repo=repo)
-    if env_error is not None:
-        return env_error
-    try:
-        github_token = token()
-    except GithubAppAuthError as error:
-        return f"C-mode dispatch refused: GitHub App token mint failed: {error.detail}"
-    # Refresh the ambient GH_TOKEN so the host-side `gh api` fleet-manifest
-    # fetch below runs on a currently-valid installation token too.
-    os.environ[_GITHUB_TOKEN_ENV] = github_token
-    siblings = _resolve_sibling_clones(repo=repo)
-    if isinstance(siblings, str):
-        return siblings
-    codex_snapshot = _project_codex_auth(now_epoch=int(time.time()))
-    if isinstance(codex_snapshot, _CodexProjectionRefusal):
-        return codex_snapshot.message
-    otel_env = cc_otel_overlay_env(
-        work_item_id=work_item_id,
-        dispatch_id=dispatch_id,
-        endpoint=resolve_sandbox_otel_endpoint(environ=dict(os.environ)),
-    )
-    rendered = render_run_config_overlay(
-        committed_text=committed.read_text(encoding="utf-8"),
-        workflow_dir=committed.parent.resolve(),
-        token=os.environ[_OAUTH_TOKEN_ENV],
-        github_token=github_token,
-        siblings=siblings,
-        otel_env=otel_env,
-        codex_auth_snapshot=codex_snapshot,
-    )
-    if rendered is None:
-        return (
-            f"workflow config {committed} is not materializable: it must carry "
-            '[workflow] graph = "..." and [run.environment] id = "..."'
-        )
-    overlay.unlink(missing_ok=True)
-    descriptor = os.open(str(overlay), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-        _ = handle.write(rendered)
-    return None
-
-
-def _fetch_fleet_manifest_text() -> str | None:
-    """Fetch .livespec-fleet-manifest.jsonc raw text from livespec master via `gh api`.
-
-    HOST-SIDE read at run-config generation time (the Dispatcher's own
-    environment has an authenticated `gh`; the sandbox does not).
-    Returns the raw JSONC text, or None on any failure (no `gh`, no
-    manifest, a non-fleet adopter) — the caller renders an EMPTY sibling
-    projection so the dispatch proceeds.
-    """
-    result = ShellCommandRunner().run(
-        argv=[
-            "gh",
-            "api",
-            "-H",
-            "Accept: application/vnd.github.raw",
-            _FLEET_MANIFEST_API_PATH,
-        ],
-        cwd=Path.cwd(),
-        timeout_seconds=_FLEET_MANIFEST_FETCH_TIMEOUT_SECONDS,
-    )
-    if result.exit_code != 0 or result.stdout.strip() == "":
-        return None
-    return result.stdout
-
-
-def _resolve_sibling_clones(*, repo: Path) -> SiblingClones | str:
-    """Resolve the sandbox sibling-clone plan from the fleet manifest.
-
-    Returns the plan (fleet members minus the dispatch target, keyed by
-    the `--repo` basename — primary checkouts are named after their
-    repo). When NO fleet manifest is present/fetchable (no `gh`, a
-    non-fleet adopter), returns an EMPTY plan so the dispatch PROCEEDS
-    with no sibling clones — the projection is OPTIONAL for adopters per
-    the self-contained plugin dispatch contract. When a manifest IS
-    present but MALFORMED, returns an actionable error string routed as
-    data (the dispatch fails at the `run-config-overlay` stage): a broken
-    fleet member registry is a real config error worth refusing, and a
-    hardcoded fallback list would rot as the fleet changes.
-    """
-    manifest_text = _fetch_fleet_manifest_text()
-    if manifest_text is None:
-        # No fleet manifest is present/fetchable — no `gh`, or a non-fleet
-        # adopter consuming the self-contained plugin. That is NOT a
-        # dispatch-blocking condition: render an EMPTY sibling set so the
-        # dispatch PROCEEDS with no sibling clones (the projection is
-        # optional for adopters), rather than refusing. A fleet member's
-        # dispatcher host has an authenticated `gh`, so it still fetches
-        # the manifest and gets the full projection below. `owner` is
-        # never spliced when `repos` is empty.
-        return SiblingClones(owner="", repos=(), clones_root=_SIBLING_CLONES_ROOT)
-    members = parse_fleet_members(manifest_text=manifest_text)
-    if members is None:
-        return (
-            "sibling-clone provisioning refused: .livespec-fleet-manifest.jsonc "
-            "fetched from livespec master did not parse into an owner "
-            "plus a non-empty members list of GitHub-slug-shaped repo "
-            "names. Fix the manifest on livespec master (it is the "
-            "canonical fleet member registry), then retry the dispatch."
-        )
-    return SiblingClones(
-        owner=members.owner,
-        repos=tuple(name for name in members.repos if name != repo.name),
-        clones_root=_SIBLING_CLONES_ROOT,
-    )
-
-
-def _dispatch_required_credentials_text() -> str:
-    return ", ".join(_DISPATCH_REQUIRED_CREDENTIALS)
-
-
-def _read_dispatch_target_credential_wrapper(*, repo: Path) -> tuple[str, ...]:
-    config_path = repo / ".livespec.jsonc"
-    try:
-        data = loads(text=config_path.read_text(encoding="utf-8"))
-    except (OSError, JsoncParseError):
-        return ()
-    if not isinstance(data, dict):
-        return ()
-    mapping = cast(dict[str, object], data)
-    wrapper = mapping.get("credential_wrapper")
-    if not isinstance(wrapper, list):
-        return ()
-    wrapper_parts = cast(list[object], wrapper)
-    parts: list[str] = []
-    for part in wrapper_parts:
-        if not isinstance(part, str):
-            return ()
-        parts.append(part)
-    return tuple(parts)
-
-
-def _credential_wrapper_text(*, repo: Path) -> str:
-    wrapper = _read_dispatch_target_credential_wrapper(repo=repo)
-    if not wrapper:
-        return f"no credential_wrapper configured in {repo / '.livespec.jsonc'}"
-    return repr(list(wrapper))
-
-
-def _check_credential_env(*, repo: Path) -> str | None:
-    """Fail fast when the sandbox model credential is absent.
-
-    Returns None when CLAUDE_CODE_OAUTH_TOKEN is present, or an
-    actionable error naming it. The Dispatcher's process env is the
-    SOURCE of the run-scoped overlay projection, so an absent or empty
-    variable means there is nothing to project. The dispatch target's
-    credential_wrapper must inject the full per-wrapper credential set:
-    GITHUB_APP_ID, GITHUB_PRIVATE_KEY, BEADS_DOLT_PASSWORD, and
-    CLAUDE_CODE_OAUTH_TOKEN. The GitHub credential is minted
-    per-dispatch by the App installation-token provider
-    (`_github_token_supplier`), but the refusal enumerates the whole
-    wrapper contract up front so adopters do not discover credentials
-    one failure at a time. Values are never logged.
-    """
-    if os.environ.get(_OAUTH_TOKEN_ENV, "") != "":
-        return None
-    return (
-        f"C-mode dispatch refused: {_OAUTH_TOKEN_ENV} is not set in the "
-        f"Dispatcher's process environment. The run-config overlay "
-        f"projects it into the sandbox env table (fabro "
-        f"'{{{{ env.* }}}}' interpolation cannot deliver it — the "
-        f"server-spawned worker env is allowlist-scrubbed), so an absent "
-        f"variable leaves nothing to project. Invoke the Dispatcher under "
-        f"the dispatch target's configured credential_wrapper "
-        f"{_credential_wrapper_text(repo=repo)}. That wrapper must inject "
-        f"the full per-wrapper credential set: "
-        f"{_dispatch_required_credentials_text()}."
-    )
-
-
-def _read_host_codex_auth() -> str | None:
-    """Read the host's Codex `auth.json` text (the projection SOURCE).
-
-    DIRECT host-file read — the host is the sole `codex login`+refresh
-    owner; the sandbox never touches the live credential. Honors a
-    host-side `CODEX_HOME` override (default `~/.codex`). Returns the raw
-    text, or None when the file is missing/unreadable (any `OSError`), so
-    the caller renders an actionable refusal naming `codex login`.
-    """
-    home = os.environ.get(_CODEX_HOME_ENV) or str(Path.home() / ".codex")
-    try:
-        return (Path(home) / "auth.json").read_text(encoding="utf-8")
-    except OSError:
-        return None
-
-
-@dataclass(frozen=True, kw_only=True)
-class _CodexProjectionRefusal:
-    """A dual-credential-projection refusal routed as data (missing/stale)."""
-
-    message: str
-
-
-def _project_codex_auth(*, now_epoch: int) -> str | _CodexProjectionRefusal:
-    """Project the host Codex credential into the dispatch sandbox snapshot.
-
-    Returns the non-rotatable `auth.json` snapshot string on success
-    (scenarios.md Scenario 18), or a `_CodexProjectionRefusal` carrying an
-    actionable message when the host credential is absent (Scenario 18
-    precondition) or too short-lived for the run budget plus margin
-    (Scenario 19). `now_epoch` is injected so the freshness gate stays
-    deterministically testable. The refusal is a distinct type so a
-    snapshot that happens to look like a message is never mistaken for one.
-    """
-    source_auth_json = _read_host_codex_auth()
-    if source_auth_json is None:
-        return _CodexProjectionRefusal(
-            message=(
-                "C-mode dispatch refused: no host Codex credential found at "
-                f"${_CODEX_HOME_ENV}/auth.json (default ~/.codex/auth.json). "
-                "The Dispatcher projects a non-rotatable snapshot of the "
-                "host credential into the sandbox; run `codex login` on the "
-                "orchestrator host before dispatch."
-            )
-        )
-    verdict = assess_codex_credential_freshness(
-        source_auth_json=source_auth_json,
-        now_epoch=now_epoch,
-        run_budget_seconds=CODEX_FRESHNESS_RUN_BUDGET_SECONDS,
-    )
-    if not verdict.fresh_enough:
-        return _CodexProjectionRefusal(
-            message=verdict.renewal_message
-            or "C-mode dispatch refused: host Codex credential requires renewal."
-        )
-    return project_codex_auth_snapshot(source_auth_json=source_auth_json)
 
 
 _BEADS_NATIVE_OPEN = "open"

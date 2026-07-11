@@ -13,7 +13,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro.commands import _dispatcher_plan, dispatcher
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_credentials,
+    _dispatcher_plan,
+    dispatcher,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
     Admission,
     admission_held_outcome,
@@ -98,3 +102,38 @@ def test_completion_cluster_importable_from_new_module_and_dispatcher() -> None:
     assert dispatcher.bounce_non_convergence_to_backlog is bounce_non_convergence_to_backlog
     assert dispatcher.bounce_blocked is bounce_blocked
     assert dispatcher.warn_item_sizing is warn_item_sizing
+
+
+def test_credentials_cluster_importable_from_new_module_and_private_names_removed() -> None:
+    public_names = {
+        "CodexProjectionRefusal",
+        "check_credential_env",
+        "credential_wrapper_text",
+        "dispatch_required_credentials_text",
+        "fetch_fleet_manifest_text",
+        "materialize_overlay",
+        "project_codex_auth",
+        "read_dispatch_comments",
+        "read_dispatch_target_credential_wrapper",
+        "read_host_codex_auth",
+        "resolve_sibling_clones",
+    }
+    old_private_names = {
+        "_CodexProjectionRefusal",
+        "_check_credential_env",
+        "_credential_wrapper_text",
+        "_dispatch_required_credentials_text",
+        "_fetch_fleet_manifest_text",
+        "_materialize_overlay",
+        "_project_codex_auth",
+        "_read_dispatch_comments",
+        "_read_dispatch_target_credential_wrapper",
+        "_read_host_codex_auth",
+        "_resolve_sibling_clones",
+    }
+
+    assert set(_dispatcher_credentials.__all__) == public_names
+    for name in public_names:
+        assert hasattr(_dispatcher_credentials, name)
+    for name in old_private_names:
+        assert not hasattr(dispatcher, name)

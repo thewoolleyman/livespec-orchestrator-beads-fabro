@@ -44,6 +44,7 @@ from livespec_orchestrator_beads_fabro._beads_client import FakeBeadsClient, mak
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_completion,
     _dispatcher_reflection,
+    _dispatcher_sibling_clones,
     dispatcher,
 )
 from livespec_orchestrator_beads_fabro.commands import next as next_command
@@ -92,6 +93,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     render_goal,
     render_run_config_overlay,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones import (
+    fetch_fleet_manifest_text,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_spec_checks import run_spec_checks
 from livespec_orchestrator_beads_fabro.commands._dispatcher_spec_commitments import (
     Obligation,
@@ -99,7 +103,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_spec_commitments imp
 )
 from livespec_orchestrator_beads_fabro.commands.detect_impl_gaps import detect_rules
 from livespec_orchestrator_beads_fabro.commands.dispatcher import (
-    _fetch_fleet_manifest_text,  # pyright: ignore[reportPrivateUsage]
     _github_token_supplier,  # pyright: ignore[reportPrivateUsage]
     _post_verdict_runner,  # pyright: ignore[reportPrivateUsage]
     _ready_items,  # pyright: ignore[reportPrivateUsage]
@@ -209,11 +212,11 @@ _FLEET_MANIFEST_TEXT = (
     "}\n"
 )
 
-# The `_fetch_fleet_manifest_text` / `_github_token_supplier` imports above
+# The `fetch_fleet_manifest_text` / `_github_token_supplier` imports above
 # bind the production function objects at import time, BEFORE the autouse
 # fixture swaps the dispatcher module attributes for canned stand-ins — so
 # the real implementations stay directly testable.
-_real_fetch_fleet_manifest_text = _fetch_fleet_manifest_text
+_real_fetch_fleet_manifest_text = fetch_fleet_manifest_text
 _real_github_token_supplier = _github_token_supplier
 
 
@@ -240,7 +243,7 @@ def fabro_dispatch_env(
         lambda: (lambda: "test-github-token"),
     )
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands.dispatcher._fetch_fleet_manifest_text",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones.fetch_fleet_manifest_text",
         lambda: _FLEET_MANIFEST_TEXT,
     )
 
@@ -2990,7 +2993,7 @@ def test_fetch_fleet_manifest_text_shells_gh_api_raw(
     fake = _FakeManifestRunner(
         result=CommandResult(exit_code=0, stdout=_FLEET_MANIFEST_TEXT, stderr="")
     )
-    monkeypatch.setattr(dispatcher, "ShellCommandRunner", lambda: fake)
+    monkeypatch.setattr(_dispatcher_sibling_clones, "ShellCommandRunner", lambda: fake)
     assert _real_fetch_fleet_manifest_text() == _FLEET_MANIFEST_TEXT
     argv, _cwd = fake.calls[0]
     assert argv[:2] == ["gh", "api"]
@@ -3028,7 +3031,7 @@ def test_dispatch_proceeds_with_empty_siblings_when_fleet_manifest_is_unfetchabl
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
     monkeypatch.setattr(dispatcher, "run_dispatch", fake)
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands.dispatcher._fetch_fleet_manifest_text",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones.fetch_fleet_manifest_text",
         lambda: None,
     )
     exit_code = main(
@@ -3062,7 +3065,7 @@ def test_dispatch_fails_fast_when_fleet_manifest_is_malformed(
     append_work_item(path=_config(), item=item)
     monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={}))
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands.dispatcher._fetch_fleet_manifest_text",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones.fetch_fleet_manifest_text",
         lambda: "not a fleet manifest {{",
     )
     exit_code = main(
@@ -3456,7 +3459,7 @@ def test_dispatch_fails_at_ledger_comments_stage_when_read_raises(
         raise BeadsCommandError(command="bd comments", exit_code=1, stderr="connection lost")
 
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands.dispatcher.read_work_item_comments",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_credentials.read_work_item_comments",
         _boom,
     )
     exit_code = main(

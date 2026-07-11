@@ -21,9 +21,12 @@ import stat
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import dispatcher
-from livespec_orchestrator_beads_fabro.commands.dispatcher import (
-    _materialize_overlay,  # pyright: ignore[reportPrivateUsage]
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_credentials,
+    _dispatcher_sibling_clones,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
+    materialize_overlay,
 )
 
 _COMMITTED_WORKFLOW_TOML = (
@@ -73,7 +76,9 @@ def _workflow_toml(*, tmp_path: Path) -> Path:
 @pytest.fixture(autouse=True)
 def _dispatcher_projection_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _FAKE_CLAUDE_TOKEN)
-    monkeypatch.setattr(dispatcher, "_fetch_fleet_manifest_text", lambda: _FLEET_MANIFEST_TEXT)
+    monkeypatch.setattr(
+        _dispatcher_sibling_clones, "fetch_fleet_manifest_text", lambda: _FLEET_MANIFEST_TEXT
+    )
 
 
 def test_scenario18_dispatch_overlay_projects_dual_credentials(
@@ -82,12 +87,12 @@ def test_scenario18_dispatch_overlay_projects_dual_credentials(
     now = 1_700_000_000
     far_future = now + 100 * 365 * 24 * 3600
     overlay = tmp_path / "overlay.toml"
-    monkeypatch.setattr(dispatcher.time, "time", lambda: now)
+    monkeypatch.setattr(_dispatcher_credentials.time, "time", lambda: now)
     monkeypatch.setattr(
-        dispatcher, "_read_host_codex_auth", lambda: _auth_json_with_exp(exp=far_future)
+        _dispatcher_credentials, "read_host_codex_auth", lambda: _auth_json_with_exp(exp=far_future)
     )
 
-    error = _materialize_overlay(
+    error = materialize_overlay(
         committed=_workflow_toml(tmp_path=tmp_path),
         overlay=overlay,
         repo=tmp_path / "repo",
@@ -113,12 +118,14 @@ def test_scenario19_stale_codex_credential_refuses_before_overlay(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     overlay = tmp_path / "overlay.toml"
-    monkeypatch.setattr(dispatcher.time, "time", lambda: 32_000_000_000)
+    monkeypatch.setattr(_dispatcher_credentials.time, "time", lambda: 32_000_000_000)
     monkeypatch.setattr(
-        dispatcher, "_read_host_codex_auth", lambda: _auth_json_with_exp(exp=1_700_000_000)
+        _dispatcher_credentials,
+        "read_host_codex_auth",
+        lambda: _auth_json_with_exp(exp=1_700_000_000),
     )
 
-    error = _materialize_overlay(
+    error = materialize_overlay(
         committed=_workflow_toml(tmp_path=tmp_path),
         overlay=overlay,
         repo=tmp_path / "repo",

@@ -73,7 +73,7 @@ def _hermetic_dispatch_env(
     for _ntfy_env in ("CLAUDE_NTFY_DISPATCHER_TOPIC", "CLAUDE_NTFY_TOPIC", "CLAUDE_NTFY_SERVER"):
         monkeypatch.delenv(_ntfy_env, raising=False)
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands.dispatcher._fetch_fleet_manifest_text",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones.fetch_fleet_manifest_text",
         lambda: _FLEET_MANIFEST_TEXT,
     )
     reset_fake_singleton()

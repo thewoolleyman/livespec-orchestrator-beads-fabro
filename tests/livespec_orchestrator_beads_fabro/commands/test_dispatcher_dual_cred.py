@@ -19,21 +19,25 @@ import stat
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import dispatcher
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_credentials,
+    _dispatcher_sibling_clones,
+    dispatcher,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
+    CodexProjectionRefusal,
+    materialize_overlay,
+    project_codex_auth,
+    read_host_codex_auth,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     CODEX_IMPLEMENTER_ADAPTER,
     fabro_run_argv,
     render_run_config_overlay,
 )
-from livespec_orchestrator_beads_fabro.commands.dispatcher import (
-    _CodexProjectionRefusal,  # pyright: ignore[reportPrivateUsage]
-    _materialize_overlay,  # pyright: ignore[reportPrivateUsage]
-    _project_codex_auth,  # pyright: ignore[reportPrivateUsage]
-    _read_host_codex_auth,  # pyright: ignore[reportPrivateUsage]
-)
 
-# A canned fleet manifest so `_resolve_sibling_clones` (which runs before
-# the codex projection inside `_materialize_overlay`) never shells out to a
+# A canned fleet manifest so `resolve_sibling_clones` (which runs before
+# the codex projection inside `materialize_overlay`) never shells out to a
 # real `gh api` in the hermetic tier.
 _FLEET_MANIFEST_TEXT = (
     "{\n"
@@ -164,7 +168,7 @@ def test_fabro_run_argv_routes_implementer_to_codex_adapter(tmp_path: Path) -> N
 
 
 # ---------------------------------------------------------------------------
-# _read_host_codex_auth — the DIRECT host-file read
+# read_host_codex_auth — the DIRECT host-file read
 # ---------------------------------------------------------------------------
 
 
@@ -174,7 +178,7 @@ def test_read_host_codex_auth_returns_file_text(
     """With CODEX_HOME pointed at a tmp dir, the auth.json text is returned."""
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))
     _ = (tmp_path / "auth.json").write_text(_FAKE_SNAPSHOT, encoding="utf-8")
-    assert _read_host_codex_auth() == _FAKE_SNAPSHOT
+    assert read_host_codex_auth() == _FAKE_SNAPSHOT
 
 
 def test_read_host_codex_auth_returns_none_when_absent(
@@ -182,11 +186,11 @@ def test_read_host_codex_auth_returns_none_when_absent(
 ) -> None:
     """A missing auth.json reads as None (never raises, never touches ~/.codex)."""
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "empty"))
-    assert _read_host_codex_auth() is None
+    assert read_host_codex_auth() is None
 
 
 # ---------------------------------------------------------------------------
-# _project_codex_auth — missing / stale / fresh
+# project_codex_auth — missing / stale / fresh
 # ---------------------------------------------------------------------------
 
 
@@ -194,9 +198,9 @@ def test_project_codex_auth_refuses_when_host_credential_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A missing host credential refuses with an actionable `codex login` message."""
-    monkeypatch.setattr(dispatcher, "_read_host_codex_auth", lambda: None)
-    result = _project_codex_auth(now_epoch=1_000_000)
-    assert isinstance(result, _CodexProjectionRefusal)
+    monkeypatch.setattr(_dispatcher_credentials, "read_host_codex_auth", lambda: None)
+    result = project_codex_auth(now_epoch=1_000_000)
+    assert isinstance(result, CodexProjectionRefusal)
     assert "codex login" in result.message
 
 
@@ -208,10 +212,10 @@ def test_project_codex_auth_refuses_when_credential_is_stale(
     # An access token whose exp is in the past relative to `now` cannot
     # outlive the run budget plus margin, so the freshness gate refuses.
     monkeypatch.setattr(
-        dispatcher, "_read_host_codex_auth", lambda: _auth_json_with_exp(exp=now - 10)
+        _dispatcher_credentials, "read_host_codex_auth", lambda: _auth_json_with_exp(exp=now - 10)
     )
-    result = _project_codex_auth(now_epoch=now)
-    assert isinstance(result, _CodexProjectionRefusal)
+    result = project_codex_auth(now_epoch=now)
+    assert isinstance(result, CodexProjectionRefusal)
     assert "codex login" in result.message
 
 
@@ -222,9 +226,9 @@ def test_project_codex_auth_projects_snapshot_when_fresh(
     now = 1_000_000
     far_future = now + 100 * 365 * 24 * 3600
     monkeypatch.setattr(
-        dispatcher, "_read_host_codex_auth", lambda: _auth_json_with_exp(exp=far_future)
+        _dispatcher_credentials, "read_host_codex_auth", lambda: _auth_json_with_exp(exp=far_future)
     )
-    result = _project_codex_auth(now_epoch=now)
+    result = project_codex_auth(now_epoch=now)
     assert isinstance(result, str)
     projected = json.loads(result)
     # The refresh token was replaced with the inert sentinel; the real
@@ -249,14 +253,16 @@ def test_project_codex_auth_accepts_token_outliving_a_realistic_run(
     now = 1_000_000
     six_hours = 6 * 3600
     monkeypatch.setattr(
-        dispatcher, "_read_host_codex_auth", lambda: _auth_json_with_exp(exp=now + six_hours)
+        _dispatcher_credentials,
+        "read_host_codex_auth",
+        lambda: _auth_json_with_exp(exp=now + six_hours),
     )
-    result = _project_codex_auth(now_epoch=now)
+    result = project_codex_auth(now_epoch=now)
     assert isinstance(result, str)
 
 
 # ---------------------------------------------------------------------------
-# _materialize_overlay — the wired codex projection
+# materialize_overlay — the wired codex projection
 # ---------------------------------------------------------------------------
 
 
@@ -268,14 +274,18 @@ def test_materialize_overlay_refuses_on_stale_host_credential(
     _ = committed.write_text(_COMMITTED_WORKFLOW_TOML, encoding="utf-8")
     overlay = tmp_path / "overlay.toml"
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _FAKE_TOKEN)
-    monkeypatch.setattr(dispatcher, "_fetch_fleet_manifest_text", lambda: _FLEET_MANIFEST_TEXT)
+    monkeypatch.setattr(
+        _dispatcher_sibling_clones, "fetch_fleet_manifest_text", lambda: _FLEET_MANIFEST_TEXT
+    )
     # Far-future clock makes any real-world `exp` look stale.
     far_future = 32_000_000_000
-    monkeypatch.setattr(dispatcher.time, "time", lambda: far_future)
+    monkeypatch.setattr(_dispatcher_credentials.time, "time", lambda: far_future)
     monkeypatch.setattr(
-        dispatcher, "_read_host_codex_auth", lambda: _auth_json_with_exp(exp=1_700_000_000)
+        _dispatcher_credentials,
+        "read_host_codex_auth",
+        lambda: _auth_json_with_exp(exp=1_700_000_000),
     )
-    error = _materialize_overlay(
+    error = materialize_overlay(
         committed=committed,
         overlay=overlay,
         repo=tmp_path / "repo",
@@ -296,9 +306,11 @@ def test_materialize_overlay_refuses_on_missing_host_credential(
     _ = committed.write_text(_COMMITTED_WORKFLOW_TOML, encoding="utf-8")
     overlay = tmp_path / "overlay.toml"
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _FAKE_TOKEN)
-    monkeypatch.setattr(dispatcher, "_fetch_fleet_manifest_text", lambda: _FLEET_MANIFEST_TEXT)
-    monkeypatch.setattr(dispatcher, "_read_host_codex_auth", lambda: None)
-    error = _materialize_overlay(
+    monkeypatch.setattr(
+        _dispatcher_sibling_clones, "fetch_fleet_manifest_text", lambda: _FLEET_MANIFEST_TEXT
+    )
+    monkeypatch.setattr(_dispatcher_credentials, "read_host_codex_auth", lambda: None)
+    error = materialize_overlay(
         committed=committed,
         overlay=overlay,
         repo=tmp_path / "repo",
@@ -319,14 +331,16 @@ def test_materialize_overlay_writes_codex_projection_when_fresh(
     _ = committed.write_text(_COMMITTED_WORKFLOW_TOML, encoding="utf-8")
     overlay = tmp_path / "overlay.toml"
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _FAKE_TOKEN)
-    monkeypatch.setattr(dispatcher, "_fetch_fleet_manifest_text", lambda: _FLEET_MANIFEST_TEXT)
+    monkeypatch.setattr(
+        _dispatcher_sibling_clones, "fetch_fleet_manifest_text", lambda: _FLEET_MANIFEST_TEXT
+    )
     now = 1_700_000_000
     far_future = now + 100 * 365 * 24 * 3600
-    monkeypatch.setattr(dispatcher.time, "time", lambda: now)
+    monkeypatch.setattr(_dispatcher_credentials.time, "time", lambda: now)
     monkeypatch.setattr(
-        dispatcher, "_read_host_codex_auth", lambda: _auth_json_with_exp(exp=far_future)
+        _dispatcher_credentials, "read_host_codex_auth", lambda: _auth_json_with_exp(exp=far_future)
     )
-    error = _materialize_overlay(
+    error = materialize_overlay(
         committed=committed,
         overlay=overlay,
         repo=tmp_path / "repo",
