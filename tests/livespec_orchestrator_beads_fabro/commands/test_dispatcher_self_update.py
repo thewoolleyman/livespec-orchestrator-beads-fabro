@@ -2,7 +2,7 @@
 
 Covers `_dispatcher_self_update` (the PURE self-merge detection + canary
 verdict + promotion decision) and its wiring into
-`dispatcher._self_update_after_merge`. The load-bearing safety property
+`_dispatcher_self_update.self_update_after_merge`. The load-bearing safety property
 under test (the dark-factory operability gate): a self-merge whose canary
 PASSES promotes the staged candidate to the active pinned copy; a
 self-merge whose canary FAILS keeps the last-known-good pinned copy and
@@ -26,16 +26,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import dispatcher
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_self_update as self_update_module
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
 )
-
-# Importing the module-private wiring helpers directly (the test tier
-# verifies the self-update wiring); importing them avoids the SLF001
-# attribute-access ban while keeping the names addressable, the same
-# pattern test_dispatcher_notify uses for the notify internals.
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import resolve_merged_paths
 from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
     DISPATCHER_SCRIPT_PREFIXES,
@@ -44,15 +39,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
     PromotionDecision,
     canary_self_check_argv,
     canary_verdict,
+    candidate_dispatcher_bin,
     is_self_merge,
     parse_pr_files,
     pr_files_argv,
     promotion_decision,
-)
-from livespec_orchestrator_beads_fabro.commands.dispatcher import (
-    _candidate_dispatcher_bin,  # pyright: ignore[reportPrivateUsage]
-    _self_update_after_merge,  # pyright: ignore[reportPrivateUsage]
-    _self_update_after_verdict,  # pyright: ignore[reportPrivateUsage]
+    self_update_after_merge,
+    self_update_after_verdict,
 )
 
 # ---------------------------------------------------------------------------
@@ -268,7 +261,7 @@ def test_wiring_promotes_on_passing_canary_and_does_not_alarm() -> None:
             CommandResult(exit_code=0, stdout="[]", stderr=""),
         ],
     )
-    _self_update_after_merge(
+    self_update_after_merge(
         work_item_id="livespec-impl-beads-ddu",
         merged_paths=_SELF_MERGE_PATHS,
         candidate_bin="/pin/candidate/bin/dispatcher.py",
@@ -309,7 +302,7 @@ def test_wiring_keeps_last_known_good_and_alarms_on_failing_canary(
             CommandResult(exit_code=1, stdout="", stderr="boom"),
         ],
     )
-    _self_update_after_merge(
+    self_update_after_merge(
         work_item_id="livespec-impl-beads-ddu",
         merged_paths=_SELF_MERGE_PATHS,
         candidate_bin="/pin/candidate/bin/dispatcher.py",
@@ -347,7 +340,7 @@ def test_wiring_skips_when_the_merge_is_not_a_self_merge() -> None:
             ),
         ],
     )
-    _self_update_after_merge(
+    self_update_after_merge(
         work_item_id="livespec-impl-beads-ddu",
         merged_paths=_NON_SELF_MERGE_PATHS,
         candidate_bin="/pin/candidate/bin/dispatcher.py",
@@ -377,7 +370,7 @@ def test_wiring_is_fail_open_when_the_canary_runner_raises() -> None:
     # The runner raises mid-canary: the fail-open supervisor must journal
     # `self-update-error` and SWALLOW it — never re-raise (the verdict is
     # already final; the self-update stage can never crash the dispatcher).
-    _self_update_after_merge(
+    self_update_after_merge(
         work_item_id="livespec-impl-beads-ddu",
         merged_paths=_SELF_MERGE_PATHS,
         candidate_bin="/pin/candidate/bin/dispatcher.py",
@@ -399,7 +392,7 @@ def test_wiring_default_runner_and_poster_are_not_required() -> None:
     # not-a-self-merge path so the defaults are constructed but no real
     # subprocess / network call happens.
     journal = _RecordingJournal()
-    _self_update_after_merge(
+    self_update_after_merge(
         work_item_id="livespec-impl-beads-ddu",
         merged_paths=_NON_SELF_MERGE_PATHS,
         candidate_bin="/pin/candidate/bin/dispatcher.py",
@@ -472,7 +465,7 @@ def test_parse_pr_files_skips_non_dict_and_pathless_and_blank_entries() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Wiring: the wave-level _self_update_after_verdict stage
+# Wiring: the wave-level self_update_after_verdict stage
 # ---------------------------------------------------------------------------
 
 
@@ -513,7 +506,7 @@ def test_candidate_dispatcher_bin_points_at_the_primarys_bin_wrapper() -> None:
     # Resolved off the package-root walk; it must terminate at the bin
     # wrapper the next dispatcher invocation would run.
     assert (
-        _candidate_dispatcher_bin().as_posix().endswith(".claude-plugin/scripts/bin/dispatcher.py")
+        candidate_dispatcher_bin().as_posix().endswith(".claude-plugin/scripts/bin/dispatcher.py")
     )
 
 
@@ -559,7 +552,7 @@ def test_after_verdict_skips_non_green_and_pr_less_outcomes() -> None:
     journal = _RecordingJournal()
     poster = _RecordingPoster()
     runner = _QueueRunner(results=[])  # never consulted: nothing to gate
-    _self_update_after_verdict(
+    self_update_after_verdict(
         outcomes=[
             _outcome(status="failed", pr_number=7),
             _outcome(status="green", pr_number=None),
@@ -602,7 +595,7 @@ def test_after_verdict_refreshes_github_token_for_self_update_subprocesses(
         ]
     )
     minted = iter(["tok-1", "tok-2", "tok-3", "tok-4", "tok-5"])
-    _self_update_after_verdict(
+    self_update_after_verdict(
         outcomes=[_outcome(status="green", pr_number=42)],
         repo=tmp_path,
         journal=_RecordingJournal(),
@@ -626,10 +619,10 @@ def test_after_verdict_default_runner_fails_closed_on_github_supplier_error(
 ) -> None:
     """An unresolvable provider accessor never falls back to ambient GH_TOKEN."""
     runner = _QueueRunner(results=[])
-    monkeypatch.setattr(dispatcher, "ShellCommandRunner", lambda: runner)
-    monkeypatch.setattr(dispatcher, "_github_token_supplier", lambda: "missing app env")
+    monkeypatch.setattr(self_update_module, "ShellCommandRunner", lambda: runner)
+    monkeypatch.setattr(self_update_module, "github_token_supplier", lambda: "missing app env")
     journal = _RecordingJournal()
-    _self_update_after_verdict(
+    self_update_after_verdict(
         outcomes=[_outcome(status="green", pr_number=42)],
         repo=tmp_path,
         journal=journal,
@@ -669,7 +662,7 @@ def test_after_verdict_runs_the_gate_for_a_green_pr_self_merge(
             CommandResult(exit_code=1, stdout="", stderr="canary crashed"),
         ]
     )
-    _self_update_after_verdict(
+    self_update_after_verdict(
         outcomes=[_outcome(status="green", pr_number=42)],
         repo=tmp_path,
         journal=journal,
@@ -687,7 +680,7 @@ def test_after_verdict_defaults_runner_and_poster() -> None:
     # No injected seams: the not-green outcome short-circuits before any
     # default seam is exercised, so no real subprocess / network happens.
     journal = _RecordingJournal()
-    _self_update_after_verdict(
+    self_update_after_verdict(
         outcomes=[_outcome(status="failed", pr_number=None)],
         repo=Path("/repo"),
         journal=journal,
