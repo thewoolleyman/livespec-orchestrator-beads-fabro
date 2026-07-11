@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.15](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.14...v0.17.15) (2026-07-11)
+
+
+### Bug Fixes
+
+* derive dispatch tenant-secret requirement from beads ledger mode ([cca9372](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cca93727ff16a4a866f065e8a3af192f32f85bc1))
+
 ## [0.17.14](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.13...v0.17.14) (2026-07-11)
 
 
