@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.4...v0.17.5) (2026-07-11)
+
+
+### Bug Fixes
+
+* decompose reflector oob helpers ([720be73](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/720be73c8998c98e5f118266fb1ce2092eca5d7c))
+* remove reflector private helper facade ([af4a5c2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/af4a5c29af669f0100bbd5c22c6016aa1f68b913))
+
 ## [0.17.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.3...v0.17.4) (2026-07-11)
 
 
