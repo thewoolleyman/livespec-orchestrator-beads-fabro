@@ -25,6 +25,11 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     make_beads_client,
 )
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_reflector_oob as reflector
+from livespec_orchestrator_beads_fabro.commands import (
+    _reflector_findings_parse,
+    _reflector_lessons,
+    _reflector_spans,
+)
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflector_oob import (
@@ -191,6 +196,23 @@ def test_build_mcp_config_wires_honeycomb_bearer() -> None:
     server = rendered["mcpServers"]["honeycomb"]
     assert server["url"] == "https://mcp.honeycomb.io/mcp"
     assert server["headers"]["Authorization"] == "Bearer hcmk-xyz"
+
+
+def test_reflector_oob_decomposition_modules_export_public_entry_points() -> None:
+    assert _reflector_findings_parse.__all__ == ["ReflectorFinding", "parse_findings"]
+    assert _reflector_spans.__all__ == [
+        "build_span",
+        "emit_spans",
+        "emit_summary",
+        "hex_id",
+        "request_line",
+    ]
+    assert _reflector_lessons.__all__ == [
+        "GitPrLessonsProposer",
+        "LessonProposal",
+        "LessonsProposer",
+        "RecordingLessonsProposer",
+    ]
 
 
 def test_claude_reflector_argv_is_headless_with_mcp_config() -> None:
