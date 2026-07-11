@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.20](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.19...v0.17.20) (2026-07-11)
+
+
+### Bug Fixes
+
+* extract needs-human dispatcher routing ([00a44af](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/00a44affbf2743a1f30a0eb69dabf4635c79e12f))
+
 ## [0.17.19](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.18...v0.17.19) (2026-07-11)
 
 
