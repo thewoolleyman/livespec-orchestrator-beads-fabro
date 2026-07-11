@@ -133,15 +133,20 @@ def read_autonomous_decisions(*, journal_path: Path) -> AutonomousAudit:
     """
     auto_resolutions: list[AutonomousDecision] = []
     escalations: list[AutonomousDecision] = []
-    if journal_path.is_file():
-        for line in journal_path.read_text(encoding="utf-8").splitlines():
-            decision = _decision_from_line(line=line)
-            if decision is None:
-                continue
-            if decision.disposition == _DISPOSITION_ESCALATED:
-                escalations.append(decision)
-            else:
-                auto_resolutions.append(decision)
+    try:
+        lines = journal_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        # A missing OR an exists-but-unreadable journal fails open to an empty
+        # audit, honoring the fail-open contract in the docstring above.
+        lines = []
+    for line in lines:
+        decision = _decision_from_line(line=line)
+        if decision is None:
+            continue
+        if decision.disposition == _DISPOSITION_ESCALATED:
+            escalations.append(decision)
+        else:
+            auto_resolutions.append(decision)
     return AutonomousAudit(auto_resolutions=tuple(auto_resolutions), escalations=tuple(escalations))
 
 
