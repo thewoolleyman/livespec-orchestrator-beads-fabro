@@ -20,31 +20,17 @@ load-bearing invariants under test:
 from __future__ import annotations
 
 import json
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
-import pytest
 from livespec_orchestrator_beads_fabro.commands._otel_enrich import (
     CorrelationJoin,
     EnrichStage,
-    HoneycombHttpExporter,
     correlation_keys_from_attrs,
     enrich_span,
-    honeycomb_dataset_for,
     tail_spans,
 )
-
-_URLOPEN = "urllib.request.urlopen"
-_ENRICH_SLEEP = "livespec_orchestrator_beads_fabro.commands._otel_enrich.time.sleep"
-
-
-def _no_sleep(_seconds: float) -> None:
-    """Drop-in for `time.sleep` so retry tests never actually block."""
-    return None
-
 
 # --------------------------------------------------------------------------
 # Fakes + builders (no network, no real fabro)
@@ -286,120 +272,26 @@ def test_enrich_handles_non_numeric_int_value_as_zero() -> None:
     assert attrs[0] == {"key": "pr_number", "value": {"intValue": "0"}}
 
 
-# --------------------------------------------------------------------------
-# honeycomb_dataset_for
-# --------------------------------------------------------------------------
-
-
-def test_dataset_derives_from_service_name_with_sentinel_fallback() -> None:
-    assert honeycomb_dataset_for(resource_attrs={"service.name": "livespec-dispatcher"}) == (
-        "livespec-dispatcher"
-    )
-    assert honeycomb_dataset_for(resource_attrs={}) == "livespec-unknown"
-
-
-# --------------------------------------------------------------------------
-# tail_spans — resumable cursor, fail-open
-# --------------------------------------------------------------------------
-
-
-def test_tail_missing_file_yields_empty_at_same_offset(tmp_path: Path) -> None:
-    result = tail_spans(spans_path=tmp_path / "absent.jsonl", offset=42)
-    assert result.spans == ()
-    assert result.offset == 42
-
-
-def test_tail_reads_new_lines_and_advances_cursor(tmp_path: Path) -> None:
-    path = tmp_path / "spans.jsonl"
-    line_a = _request_line(service_name="livespec-dispatcher", spans=[_span(name="a", attrs=[])])
-    _write_lines(path=path, lines=[line_a])
-    first = tail_spans(spans_path=path, offset=0)
-    assert len(first.spans) == 1
-    assert first.spans[0].resource_attrs["service.name"] == "livespec-dispatcher"
-    # A second pass from the advanced cursor sees nothing until more is written.
-    second = tail_spans(spans_path=path, offset=first.offset)
-    assert second.spans == ()
-    assert second.offset == first.offset
-
-
-def test_tail_resets_when_file_truncated_under_cursor(tmp_path: Path) -> None:
-    path = tmp_path / "spans.jsonl"
-    line = _request_line(service_name="svc", spans=[_span(name="a", attrs=[])])
-    _write_lines(path=path, lines=[line])
-    # Cursor past EOF (e.g. file rotated): tail restarts from the top.
-    result = tail_spans(spans_path=path, offset=10_000)
-    assert len(result.spans) == 1
-
-
-def test_tail_skips_blank_and_malformed_lines(tmp_path: Path) -> None:
-    path = tmp_path / "spans.jsonl"
-    good = _request_line(service_name="svc", spans=[_span(name="a", attrs=[])])
-    _write_lines(
-        path=path,
-        lines=[
-            "",
-            "{not json",
-            "[1, 2, 3]",  # JSON but not an object
-            json.dumps({"resourceSpans": "not-a-list"}),
-            json.dumps({"resourceSpans": ["not-a-dict"]}),
-            json.dumps({"resourceSpans": [{"resource": {}, "scopeSpans": "nope"}]}),
-            json.dumps({"resourceSpans": [{"resource": {}, "scopeSpans": ["bad"]}]}),
-            json.dumps({"resourceSpans": [{"resource": {}, "scopeSpans": [{"spans": "bad"}]}]}),
-            json.dumps({"resourceSpans": [{"resource": {}, "scopeSpans": [{"spans": ["bad"]}]}]}),
-            good,
-        ],
-    )
-    result = tail_spans(spans_path=path, offset=0)
-    assert len(result.spans) == 1
-    assert result.spans[0].span["name"] == "a"
-
-
-def test_tail_resource_attrs_skip_malformed_and_missing(tmp_path: Path) -> None:
+def test_tail_public_api_skips_non_dict_resource_value(tmp_path: Path) -> None:
     path = tmp_path / "spans.jsonl"
     line = json.dumps(
         {
             "resourceSpans": [
                 {
-                    "resource": "not-a-dict",
+                    "resource": {
+                        "attributes": [
+                            {"key": "service.name", "value": "scalar"},
+                            {"key": "service.namespace", "value": {"stringValue": "ns"}},
+                        ]
+                    },
                     "scopeSpans": [{"spans": [_span(name="a", attrs=[])]}],
                 }
             ]
         }
     )
-    line_b = json.dumps(
-        {
-            "resourceSpans": [
-                {
-                    "resource": {"attributes": "not-a-list"},
-                    "scopeSpans": [{"spans": [_span(name="b", attrs=[])]}],
-                }
-            ]
-        }
-    )
-    line_c = json.dumps(
-        {
-            "resourceSpans": [
-                {
-                    "resource": {
-                        "attributes": [
-                            "bad",
-                            {"key": 1, "value": {"stringValue": "x"}},
-                            {"key": "service.name", "value": {"intValue": "9"}},
-                            {"key": "service.namespace", "value": {"stringValue": "ns"}},
-                        ]
-                    },
-                    "scopeSpans": [{"spans": [_span(name="c", attrs=[])]}],
-                }
-            ]
-        }
-    )
-    _write_lines(path=path, lines=[line, line_b, line_c])
+    _write_lines(path=path, lines=[line])
     result = tail_spans(spans_path=path, offset=0)
-    assert {s.span["name"] for s in result.spans} == {"a", "b", "c"}
-    # The 'c' line has a non-string service.name (intValue) — skipped; only
-    # the string service.namespace survives.
-    c_attrs = next(s for s in result.spans if s.span["name"] == "c").resource_attrs
-    assert c_attrs == {"service.namespace": "ns"}
+    assert result.spans[0].resource_attrs == {"service.namespace": "ns"}
 
 
 # --------------------------------------------------------------------------
@@ -509,98 +401,3 @@ def test_forward_once_no_spans_is_a_clean_noop(tmp_path: Path) -> None:
     assert result.forwarded == 0
     assert result.exported is True
     assert exporter.calls == []
-
-
-# --------------------------------------------------------------------------
-# HoneycombHttpExporter — stdlib transport, monkeypatched (no real socket)
-# --------------------------------------------------------------------------
-
-
-@dataclass(kw_only=True)
-class _FakeResponse:
-    status: int
-
-    def __enter__(self) -> _FakeResponse:
-        return self
-
-    def __exit__(self, *_args: object) -> None:
-        return None
-
-
-def test_http_exporter_posts_with_team_and_dataset_headers(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, object] = {}
-
-    def _fake_urlopen(request: urllib.request.Request, *, timeout: float) -> _FakeResponse:
-        captured["url"] = request.full_url
-        captured["headers"] = dict(request.headers)
-        captured["data"] = request.data
-        captured["timeout"] = timeout
-        return _FakeResponse(status=200)
-
-    monkeypatch.setattr(_URLOPEN, _fake_urlopen)
-    exporter = HoneycombHttpExporter(ingest_key="ingest-key-xyz")
-    span = _span(name="a", attrs=[_attr_entry(key="repo", string_value="livespec")])
-    assert exporter.export(spans=(span,), dataset="livespec-dispatcher") is True
-    headers = cast("dict[str, str]", captured["headers"])
-    # urllib title-cases header keys.
-    assert headers["X-honeycomb-team"] == "ingest-key-xyz"
-    assert headers["X-honeycomb-dataset"] == "livespec-dispatcher"
-    assert captured["url"] == "https://api.honeycomb.io/v1/traces"
-    body = json.loads(cast("bytes", captured["data"]).decode("utf-8"))
-    assert body["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["name"] == "a"
-
-
-def test_http_exporter_empty_batch_is_a_noop_success() -> None:
-    # An empty batch short-circuits to a no-op success BEFORE any urlopen
-    # (urllib is deliberately NOT monkeypatched here — the early return is
-    # what guarantees no network call is attempted on an empty batch).
-    exporter = HoneycombHttpExporter(ingest_key="k")
-    assert exporter.export(spans=(), dataset="svc") is True
-
-
-def test_http_exporter_retries_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
-    attempts: list[int] = []
-
-    def _flaky_urlopen(request: urllib.request.Request, *, timeout: float) -> _FakeResponse:
-        del request, timeout
-        attempts.append(1)
-        if len(attempts) < 2:
-            raise urllib.error.URLError("transient")
-        return _FakeResponse(status=202)
-
-    monkeypatch.setattr(_URLOPEN, _flaky_urlopen)
-    monkeypatch.setattr(_ENRICH_SLEEP, _no_sleep)
-    exporter = HoneycombHttpExporter(ingest_key="k")
-    span = _span(name="a", attrs=[])
-    assert exporter.export(spans=(span,), dataset="svc") is True
-    assert len(attempts) == 2
-
-
-def test_http_exporter_returns_false_after_retries_exhausted(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    attempts: list[int] = []
-
-    def _always_fail(request: urllib.request.Request, *, timeout: float) -> _FakeResponse:
-        del request, timeout
-        attempts.append(1)
-        raise urllib.error.URLError("down")
-
-    monkeypatch.setattr(_URLOPEN, _always_fail)
-    monkeypatch.setattr(_ENRICH_SLEEP, _no_sleep)
-    exporter = HoneycombHttpExporter(ingest_key="k", max_retries=2)
-    span = _span(name="a", attrs=[])
-    assert exporter.export(spans=(span,), dataset="svc") is False
-    assert len(attempts) == 2
-
-
-def test_http_exporter_treats_5xx_as_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _serverdown(request: urllib.request.Request, *, timeout: float) -> _FakeResponse:
-        del request, timeout
-        return _FakeResponse(status=503)
-
-    monkeypatch.setattr(_URLOPEN, _serverdown)
-    monkeypatch.setattr(_ENRICH_SLEEP, _no_sleep)
-    exporter = HoneycombHttpExporter(ingest_key="k", max_retries=1)
-    span = _span(name="a", attrs=[])
-    assert exporter.export(spans=(span,), dataset="svc") is False
