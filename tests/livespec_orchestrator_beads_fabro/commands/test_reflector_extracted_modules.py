@@ -29,6 +29,20 @@ def test_runtime_resolve_claude_path_covers_local_bin_fallback(monkeypatch, tmp_
     assert runtime.resolve_claude_path(environ={}) == str(fake_claude)
 
 
+def test_runtime_resolve_claude_path_covers_bare_last_resort(monkeypatch, tmp_path: Path) -> None:
+    """No override, `which` misses, and the local-bin fallback file is ABSENT.
+
+    This drives the last-resort `return "claude"` (the `is_file()`-is-False
+    branch) deterministically, independent of whether `claude` happens to be
+    on the host's PATH — on a dogfooding host that carries `claude`,
+    `shutil.which` would otherwise short-circuit and leave this branch
+    uncovered.
+    """
+    monkeypatch.setattr(runtime.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(runtime, "_CLAUDE_LOCAL_BIN_FALLBACK", str(tmp_path / "nope" / "claude"))
+    assert runtime.resolve_claude_path(environ={}) == "claude"
+
+
 class _RecordingRunner:
     def __init__(self) -> None:
         self.calls: list[list[str]] = []
