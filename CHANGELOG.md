@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.17.14](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.13...v0.17.14) (2026-07-11)
+
+
+### Bug Fixes
+
+* address dispatcher merge review findings ([1b0efc2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1b0efc2521c59b9add5910bf64592b407ba3d2f1))
+* decompose dispatcher merge engine ([ba5fa8b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ba5fa8b23cfc7aa7b7d23ad5dc7ac3bfd3480dc5))
+* decompose otel receiver parsing ([75a5e82](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/75a5e82e4556d6b7fc41fe4dd2b01249a1186fad))
+
 ## [0.17.13](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.12...v0.17.13) (2026-07-11)
 
 
