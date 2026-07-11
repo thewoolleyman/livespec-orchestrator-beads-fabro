@@ -14,6 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_codex_auth,
     _dispatcher_credentials,
     _dispatcher_plan,
     dispatcher,
@@ -105,18 +106,20 @@ def test_completion_cluster_importable_from_new_module_and_dispatcher() -> None:
 
 
 def test_credentials_cluster_importable_from_new_module_and_private_names_removed() -> None:
-    public_names = {
-        "CodexProjectionRefusal",
+    credential_public_names = {
         "check_credential_env",
         "credential_wrapper_text",
         "dispatch_required_credentials_text",
         "fetch_fleet_manifest_text",
         "materialize_overlay",
-        "project_codex_auth",
         "read_dispatch_comments",
         "read_dispatch_target_credential_wrapper",
-        "read_host_codex_auth",
         "resolve_sibling_clones",
+    }
+    codex_auth_public_names = {
+        "CodexProjectionRefusal",
+        "project_codex_auth",
+        "read_host_codex_auth",
     }
     old_private_names = {
         "_CodexProjectionRefusal",
@@ -132,8 +135,11 @@ def test_credentials_cluster_importable_from_new_module_and_private_names_remove
         "_resolve_sibling_clones",
     }
 
-    assert set(_dispatcher_credentials.__all__) == public_names
-    for name in public_names:
+    assert set(_dispatcher_credentials.__all__) == credential_public_names
+    for name in credential_public_names:
         assert hasattr(_dispatcher_credentials, name)
+    assert set(_dispatcher_codex_auth.__all__) == codex_auth_public_names
+    for name in codex_auth_public_names:
+        assert hasattr(_dispatcher_codex_auth, name)
     for name in old_private_names:
         assert not hasattr(dispatcher, name)

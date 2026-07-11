@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_codex_auth,
     _dispatcher_credentials,
     _dispatcher_sibling_clones,
 )
@@ -89,7 +90,7 @@ def test_scenario18_dispatch_overlay_projects_dual_credentials(
     overlay = tmp_path / "overlay.toml"
     monkeypatch.setattr(_dispatcher_credentials.time, "time", lambda: now)
     monkeypatch.setattr(
-        _dispatcher_credentials, "read_host_codex_auth", lambda: _auth_json_with_exp(exp=far_future)
+        _dispatcher_codex_auth, "read_host_codex_auth", lambda: _auth_json_with_exp(exp=far_future)
     )
 
     error = materialize_overlay(
@@ -120,7 +121,7 @@ def test_scenario19_stale_codex_credential_refuses_before_overlay(
     overlay = tmp_path / "overlay.toml"
     monkeypatch.setattr(_dispatcher_credentials.time, "time", lambda: 32_000_000_000)
     monkeypatch.setattr(
-        _dispatcher_credentials,
+        _dispatcher_codex_auth,
         "read_host_codex_auth",
         lambda: _auth_json_with_exp(exp=1_700_000_000),
     )

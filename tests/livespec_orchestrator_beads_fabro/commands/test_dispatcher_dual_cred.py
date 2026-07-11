@@ -20,15 +20,18 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_codex_auth,
     _dispatcher_credentials,
     _dispatcher_sibling_clones,
     dispatcher,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
     CodexProjectionRefusal,
-    materialize_overlay,
     project_codex_auth,
     read_host_codex_auth,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
+    materialize_overlay,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     CODEX_IMPLEMENTER_ADAPTER,
@@ -198,7 +201,7 @@ def test_project_codex_auth_refuses_when_host_credential_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A missing host credential refuses with an actionable `codex login` message."""
-    monkeypatch.setattr(_dispatcher_credentials, "read_host_codex_auth", lambda: None)
+    monkeypatch.setattr(_dispatcher_codex_auth, "read_host_codex_auth", lambda: None)
     result = project_codex_auth(now_epoch=1_000_000)
     assert isinstance(result, CodexProjectionRefusal)
     assert "codex login" in result.message
@@ -212,7 +215,7 @@ def test_project_codex_auth_refuses_when_credential_is_stale(
     # An access token whose exp is in the past relative to `now` cannot
     # outlive the run budget plus margin, so the freshness gate refuses.
     monkeypatch.setattr(
-        _dispatcher_credentials, "read_host_codex_auth", lambda: _auth_json_with_exp(exp=now - 10)
+        _dispatcher_codex_auth, "read_host_codex_auth", lambda: _auth_json_with_exp(exp=now - 10)
     )
     result = project_codex_auth(now_epoch=now)
     assert isinstance(result, CodexProjectionRefusal)
@@ -226,7 +229,7 @@ def test_project_codex_auth_projects_snapshot_when_fresh(
     now = 1_000_000
     far_future = now + 100 * 365 * 24 * 3600
     monkeypatch.setattr(
-        _dispatcher_credentials, "read_host_codex_auth", lambda: _auth_json_with_exp(exp=far_future)
+        _dispatcher_codex_auth, "read_host_codex_auth", lambda: _auth_json_with_exp(exp=far_future)
     )
     result = project_codex_auth(now_epoch=now)
     assert isinstance(result, str)
@@ -253,7 +256,7 @@ def test_project_codex_auth_accepts_token_outliving_a_realistic_run(
     now = 1_000_000
     six_hours = 6 * 3600
     monkeypatch.setattr(
-        _dispatcher_credentials,
+        _dispatcher_codex_auth,
         "read_host_codex_auth",
         lambda: _auth_json_with_exp(exp=now + six_hours),
     )
@@ -281,7 +284,7 @@ def test_materialize_overlay_refuses_on_stale_host_credential(
     far_future = 32_000_000_000
     monkeypatch.setattr(_dispatcher_credentials.time, "time", lambda: far_future)
     monkeypatch.setattr(
-        _dispatcher_credentials,
+        _dispatcher_codex_auth,
         "read_host_codex_auth",
         lambda: _auth_json_with_exp(exp=1_700_000_000),
     )
@@ -309,7 +312,7 @@ def test_materialize_overlay_refuses_on_missing_host_credential(
     monkeypatch.setattr(
         _dispatcher_sibling_clones, "fetch_fleet_manifest_text", lambda: _FLEET_MANIFEST_TEXT
     )
-    monkeypatch.setattr(_dispatcher_credentials, "read_host_codex_auth", lambda: None)
+    monkeypatch.setattr(_dispatcher_codex_auth, "read_host_codex_auth", lambda: None)
     error = materialize_overlay(
         committed=committed,
         overlay=overlay,
@@ -338,7 +341,7 @@ def test_materialize_overlay_writes_codex_projection_when_fresh(
     far_future = now + 100 * 365 * 24 * 3600
     monkeypatch.setattr(_dispatcher_credentials.time, "time", lambda: now)
     monkeypatch.setattr(
-        _dispatcher_credentials, "read_host_codex_auth", lambda: _auth_json_with_exp(exp=far_future)
+        _dispatcher_codex_auth, "read_host_codex_auth", lambda: _auth_json_with_exp(exp=far_future)
     )
     error = materialize_overlay(
         committed=committed,
