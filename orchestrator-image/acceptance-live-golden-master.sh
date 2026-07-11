@@ -338,7 +338,9 @@ create_and_seed_repo() {
     # Embedded mode: NO --server. Provisions a self-contained Dolt store under
     # .beads/embeddeddolt/. --skip-agents --skip-hooks per the family rule. bd
     # init also auto-commits its .beads/ scaffold (on the current master HEAD).
-    bd init --prefix "${rand}greet" --skip-agents --skip-hooks --non-interactive --quiet >/dev/null 2>&1
+    # The --prefix MUST match the skeleton .livespec.jsonc connection.prefix
+    # (e2e-skeleton/.livespec.jsonc), which the store-config loader requires.
+    bd init --prefix "e2egreet" --skip-agents --skip-hooks --non-interactive --quiet >/dev/null 2>&1
     bd create "Implement greet per the SPECIFICATION" \
       -d "Implement the program described in this repo's SPECIFICATION/: expose a Python function greet(name: str) -> str (in src/greeting/greet.py) that returns exactly \"Hello, <name>!\". For the input Ada it must return \"Hello, Ada!\". Add a test under tests/ and make \`just check\` pass. Read this repo's root CLAUDE.md for local constraints (no Red-Green-Replay ritual here; commit normally). Follow contracts.md / scenarios.md exactly." \
       >/dev/null 2>&1

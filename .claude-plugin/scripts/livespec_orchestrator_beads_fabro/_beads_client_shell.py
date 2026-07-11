@@ -24,13 +24,26 @@ __all__: list[str] = [
     "read_bd_config_value",
 ]
 
+# A server-mode tenant's `.beads/config.yaml` declares this flat-dotted marker
+# (whitespace-stripped). Its ABSENCE identifies an EMBEDDED, self-contained Dolt
+# ledger (initialized with no `--server`, e.g. the disposable livespec-e2e
+# golden-master target). Mirrors the bootstrap credential-precheck's marker.
+_SERVER_MODE_MARKER = "dolt.mode:server"
+
 
 def invoke(*, config: StoreConfig, argv: list[str]) -> subprocess.CompletedProcess[str]:
-    """Run one `bd` command after validating the resolved repo tenant."""
-    if not os.environ.get("BEADS_DOLT_PASSWORD"):
-        raise BeadsCredentialMissingError(variable="BEADS_DOLT_PASSWORD")
+    """Run one `bd` command after validating the resolved repo tenant.
+
+    An EMBEDDED ledger (self-contained Dolt, no shared server) has no family
+    tenant password and no server tenant identity, so both the
+    `BEADS_DOLT_PASSWORD` guard and the `.beads/config.yaml` tenant match are
+    meaningless there and are SKIPPED. The server-mode path is unchanged.
+    """
     repo_root = config.repo_root
-    if repo_root is not None:
+    embedded = repo_root is not None and _is_embedded_ledger(repo_root=repo_root)
+    if not embedded and not os.environ.get("BEADS_DOLT_PASSWORD"):
+        raise BeadsCredentialMissingError(variable="BEADS_DOLT_PASSWORD")
+    if repo_root is not None and not embedded:
         assert_repo_root_matches_config(config=config, repo_root=repo_root)
     try:
         completed = subprocess.run(  # noqa: S603  # pragma: no cover
@@ -44,6 +57,21 @@ def invoke(*, config: StoreConfig, argv: list[str]) -> subprocess.CompletedProce
         raise BeadsConnectionError(detail=f"bd binary not found at {config.bd_path}") from exc
     raise_for_status(completed=completed, argv=argv, tenant=config.database)  # pragma: no cover
     return completed  # pragma: no cover
+
+
+def _is_embedded_ledger(*, repo_root: Path) -> bool:
+    """True when the repo's beads ledger is embedded (self-contained Dolt,
+    no shared server): its `.beads/config.yaml` exists and does NOT declare
+    `dolt.mode: server`. Absent/unreadable config -> False (fail closed:
+    treat as server-mode, requiring the password + tenant match)."""
+    config_path = repo_root / ".beads" / "config.yaml"
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return not any(
+        line.strip().replace(" ", "") == _SERVER_MODE_MARKER for line in text.splitlines()
+    )
 
 
 def assert_repo_root_matches_config(*, config: StoreConfig, repo_root: Path) -> None:

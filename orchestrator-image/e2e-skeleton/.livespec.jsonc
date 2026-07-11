@@ -1,14 +1,17 @@
 // Minimal livespec config for the W7 live-golden-master throwaway skeleton.
 // connection.fake=false selects the ShellBeadsClient so the dispatcher reads
-// this repo's EMBEDDED .beads/ ledger (bd init without --server); all other
-// connection values are irrelevant under embedded mode (the per-command bd
-// argv carries NO connection flags — bd reads .beads/config.yaml).
+// this repo's EMBEDDED .beads/ ledger (bd init without --server). The server
+// host/port/user stay irrelevant under embedded mode (the per-command bd argv
+// carries NO connection flags — bd reads .beads/config.yaml), BUT
+// connection.prefix IS required: the store-config loader (_config.py
+// _require_prefix) demands it as bd's issue-ID create-prefix, and it MUST match
+// the `bd init --prefix` the golden-master uses (acceptance-live-golden-master.sh).
 {
   "template": "livespec",
   "spec_root": "SPECIFICATION",
   "implementation": { "plugin": "livespec-orchestrator-beads-fabro" },
   "livespec-orchestrator-beads-fabro": {
     "format": "beads",
-    "connection": { "fake": false }
+    "connection": { "fake": false, "prefix": "e2egreet" }
   }
 }
