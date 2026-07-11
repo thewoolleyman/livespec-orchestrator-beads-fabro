@@ -6,13 +6,13 @@ shared across concurrent dispatches, fail-open toward the pipeline). These
 tests exercise that wiring with the server launch MOCKED — no real socket
 ever binds, no real fabro run, no real Honeycomb call:
 
-- `_ensure_otel_receiver` is driven against an injected holder + fake
+- `ensure_otel_receiver` is driven against an injected holder + fake
   factory (single-instance), and against a raising factory (fail-open).
-- `_build_otel_receiver` builds (but does NOT start) a real `OtelReceiver`
+- the default receiver factory builds (but does NOT start) a real `OtelReceiver`
   with the env-resolved config + journal-sibling heartbeat path.
 - `heartbeat_path` derives the journal-sibling heartbeat file.
 - The two command entrypoints (`dispatch` / `loop`) invoke the receiver
-  arming at entry — verified with `_ensure_otel_receiver` monkeypatched to
+  arming at entry — verified with `ensure_otel_receiver` monkeypatched to
   a recorder and the command short-circuited on a missing repo (so no real
   receiver / fabro run is reached).
 """
@@ -20,21 +20,24 @@ ever binds, no real fabro run, no real Honeycomb call:
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_otel_wiring
+from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import (
+    ensure_otel_receiver,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import heartbeat_path
 from livespec_orchestrator_beads_fabro.commands._otel_receive import OtelReceiver
 from livespec_orchestrator_beads_fabro.commands.dispatcher import (
-    _build_otel_receiver,
-    _ensure_otel_receiver,
     _run_dispatch_command,
     _run_loop_command,
 )
 
 _EXIT_PRECONDITION_ERROR = 3
-_ENSURE_TARGET = "livespec_orchestrator_beads_fabro.commands.dispatcher._ensure_otel_receiver"
+_ENSURE_TARGET = "livespec_orchestrator_beads_fabro.commands.dispatcher.ensure_otel_receiver"
 
 
 @dataclass(kw_only=True)
@@ -61,10 +64,10 @@ def test_ensure_otel_receiver_is_single_instance(tmp_path: Path) -> None:
         created.append(server)
         return server
 
-    first = _ensure_otel_receiver(
+    first = ensure_otel_receiver(
         args=_args(repo=tmp_path), repo=tmp_path, holder=holder, factory=_factory
     )
-    second = _ensure_otel_receiver(
+    second = ensure_otel_receiver(
         args=_args(repo=tmp_path), repo=tmp_path, holder=holder, factory=_factory
     )
     assert first is second
@@ -79,7 +82,7 @@ def test_ensure_otel_receiver_is_fail_open(tmp_path: Path) -> None:
     def _boom() -> _FakeServer:
         raise RuntimeError("port already bound")
 
-    result = _ensure_otel_receiver(
+    result = ensure_otel_receiver(
         args=_args(repo=tmp_path), repo=tmp_path, holder=holder, factory=_boom
     )
     assert result is None
@@ -93,14 +96,22 @@ def test_heartbeat_path_is_journal_sibling(tmp_path: Path) -> None:
     assert path == tmp_path / "fabro-dispatch-journal-otel-heartbeat.json"
 
 
-def test_build_otel_receiver_builds_without_starting(
+def test_default_otel_receiver_factory_builds_without_starting(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`_build_otel_receiver` returns a configured, UNSTARTED OtelReceiver."""
+    """The default factory returns a configured, UNSTARTED OtelReceiver."""
     monkeypatch.setenv("LIVESPEC_OTEL_RECEIVER_PORT", "0")
     monkeypatch.setenv("HONEYCOMB_INGEST_KEY_LIVESPEC", "ingest-xyz")
+
+    def _without_starting(*, holder: dict[str, object], factory: Callable[[], object]) -> object:
+        _ = holder
+        return factory()
+
+    monkeypatch.setattr(_dispatcher_otel_wiring, "ensure_receiver_started", _without_starting)
     journal = tmp_path / "j.jsonl"
-    receiver = _build_otel_receiver(args=_args(repo=tmp_path, journal=journal), repo=tmp_path)
+    receiver = ensure_otel_receiver(
+        args=_args(repo=tmp_path, journal=journal), repo=tmp_path, holder={}
+    )
     assert isinstance(receiver, OtelReceiver)
     # Port 0 was honored; the receiver is NOT running (never started here).
     assert receiver.config.port == 0
@@ -110,7 +121,7 @@ def test_build_otel_receiver_builds_without_starting(
 
 @dataclass(kw_only=True)
 class _Recorder:
-    """Records each `_ensure_otel_receiver` call made by a command entrypoint."""
+    """Records each `ensure_otel_receiver` call made by a command entrypoint."""
 
     calls: list[Path] = field(default_factory=list)
 

@@ -180,7 +180,7 @@ def _configure_full_dispatch_env(
         monkeypatch.delenv(ntfy_env, raising=False)
     monkeypatch.setattr(dispatcher, "_github_token_supplier", lambda: (lambda: "test-gh-token"))
     monkeypatch.setattr(_dispatcher_sibling_clones, "fetch_fleet_manifest_text", lambda: None)
-    monkeypatch.setattr(dispatcher, "_ensure_otel_receiver", lambda **_: None)
+    monkeypatch.setattr(dispatcher, "ensure_otel_receiver", lambda **_: None)
     monkeypatch.setattr(dispatcher, "WatchedFabroLauncher", lambda **_: _MergedFabroLauncher())
     reset_fake_singleton()
 
