@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.8...v0.17.9) (2026-07-11)
+
+
+### Bug Fixes
+
+* extract needs-attention core roots ([3ba8a83](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3ba8a83ba740cc305dca1f4b213e415040540099))
+* extract otel enrich tail ingest ([f69a22a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f69a22a448d8af9bfadb2246e043c44c1fc9ed7e))
+
 ## [0.17.8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.7...v0.17.8) (2026-07-11)
 
 
