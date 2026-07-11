@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import dispatcher
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_completion
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.errors import WorkItemNotFoundError
 from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -76,11 +76,11 @@ def test_bounce_failsoft_journals_error_when_ledger_write_raises(
 
     # The bounce resolves the store config and transitions to backlog; force
     # the status write to fail (the item vanished between dispatch and bounce).
-    monkeypatch.setattr(dispatcher, "store_config", lambda *, repo: repo)
-    monkeypatch.setattr(dispatcher, "update_work_item_status", _raise)
+    monkeypatch.setattr(_dispatcher_completion, "store_config", lambda *, repo: repo)
+    monkeypatch.setattr(_dispatcher_completion, "update_work_item_status", _raise)
 
     # Must NOT raise — the verdict is already final.
-    dispatcher._bounce_non_convergence_to_backlog(  # noqa: SLF001 — fail-soft branch under test
+    _dispatcher_completion.bounce_non_convergence_to_backlog(
         repo=tmp_path,
         item=item,
         outcome=_stalled_outcome(item_id=item.id),

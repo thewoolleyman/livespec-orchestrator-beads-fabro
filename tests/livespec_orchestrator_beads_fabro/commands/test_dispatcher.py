@@ -41,7 +41,11 @@ import pytest
 from coverage import Coverage
 from coverage.files import GlobMatcher, prep_patterns
 from livespec_orchestrator_beads_fabro._beads_client import FakeBeadsClient, make_beads_client
-from livespec_orchestrator_beads_fabro.commands import _dispatcher_reflection, dispatcher
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_completion,
+    _dispatcher_reflection,
+    dispatcher,
+)
 from livespec_orchestrator_beads_fabro.commands import next as next_command
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
@@ -2780,8 +2784,8 @@ def test_bounce_blocked_failsoft_journals_error_when_ledger_write_raises(
     def _raise(**_kwargs: object) -> None:
         raise WorkItemNotFoundError(item_id=item.id)
 
-    monkeypatch.setattr(dispatcher, "store_config", lambda *, repo: repo)
-    monkeypatch.setattr(dispatcher, "update_work_item_status", _raise)
+    monkeypatch.setattr(_dispatcher_completion, "store_config", lambda *, repo: repo)
+    monkeypatch.setattr(_dispatcher_completion, "update_work_item_status", _raise)
 
     blocked = DispatchOutcome(
         work_item_id=item.id,
@@ -2792,7 +2796,7 @@ def test_bounce_blocked_failsoft_journals_error_when_ledger_write_raises(
         detail="run 01X parked at a human gate; answer with `fabro attach 01X`",
     )
     # Must NOT raise — the verdict is already final.
-    dispatcher._bounce_blocked(  # noqa: SLF001 — fail-soft branch under test
+    _dispatcher_completion.bounce_blocked(
         repo=tmp_path,
         item=item,
         outcome=blocked,
