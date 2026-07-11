@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.16](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.15...v0.17.16) (2026-07-11)
+
+
+### Bug Fixes
+
+* decompose dispatcher planning layer for honest per-file LLOC (bd-ib-9t1) ([61112ef](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/61112ef48f37090de9478a47e39efa38a36c278b))
+
 ## [0.17.15](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.14...v0.17.15) (2026-07-11)
 
 
