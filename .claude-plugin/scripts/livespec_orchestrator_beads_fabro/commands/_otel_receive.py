@@ -67,7 +67,7 @@ from email.message import Message
 from http import HTTPStatus
 from http.client import parse_headers
 from pathlib import Path
-from socket import AF_INET, SHUT_RDWR, SO_REUSEADDR, SOCK_STREAM, SOL_SOCKET, socket
+from socket import AF_INET, SHUT_RDWR, SHUT_WR, SO_REUSEADDR, SOCK_STREAM, SOL_SOCKET, socket
 from typing import IO, Protocol, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_sink import CostSink
@@ -108,6 +108,17 @@ _METRICS_PATH = "/v1/metrics"
 # Defense against an unbounded POST body (a wedged sender flooding the
 # socket). Bodies above this are rejected fail-open as a bad request.
 _MAX_BODY_BYTES = 8 * 1024 * 1024
+
+# Lingering-close drain tuning. Before the per-connection socket is closed,
+# any still-unread request bytes are read + discarded so the close is a
+# clean FIN, never the RST the OS emits when a socket is closed with unread
+# received data (which would reset a client mid-read of the reply). The
+# drain reads in bounded chunks and is capped at `_MAX_BODY_BYTES`, so a
+# genuine oversized/flooding sender can never make it read the full declared
+# body. The per-connection socket has no timeout, so the drain sets a short
+# read timeout to guarantee it can never hang.
+_DRAIN_CHUNK_BYTES = 64 * 1024
+_DRAIN_TIMEOUT_SECONDS = 2.0
 
 # The correlation-triple + session keys a metric data point may carry; the
 # heartbeat is keyed by the FIRST present (most-specific first) so 29f.6's
@@ -207,6 +218,17 @@ class _SocketHttpPostHandler:
         try:
             self._serve_one()
         finally:
+            # Lingering close: half-close the write side (queues the reply's
+            # FIN cleanly) and drain any still-unread request body BEFORE the
+            # hard close, so a well-behaved client's connection ends with a
+            # clean FIN rather than an RST that would reset it mid-read of the
+            # reply. The drain is bounded (`_MAX_BODY_BYTES`) and time-bounded
+            # (a short read timeout on the otherwise-untimed socket), so it
+            # preserves the oversized-body DoS protection and can never hang.
+            with suppress(OSError):
+                self._request.settimeout(_DRAIN_TIMEOUT_SECONDS)
+                self._request.shutdown(SHUT_WR)
+            _ = _drain_socket_body(rfile=self.rfile, cap=_MAX_BODY_BYTES)
             self.rfile.close()
             self.wfile.close()
             self._request.close()
@@ -498,6 +520,31 @@ def _read_json_body(*, handler: HttpPostHandler) -> dict[str, object] | None:
     if not isinstance(parsed, dict):
         return None
     return cast("dict[str, object]", parsed)
+
+
+def _drain_socket_body(*, rfile: IO[bytes], cap: int) -> int:
+    """Read + discard up to `cap` bytes of still-unread request body.
+
+    Empties the bytes a client sent (or is still sending) so the following
+    socket close leaves NO unread received data — a clean FIN rather than
+    the RST the OS emits when a socket carrying unread data is closed (an
+    RST would reset a client mid-read of the reply). Bounded by `cap` so a
+    genuine oversized / flooding sender can never make the drain read the
+    full declared body: the DoS protection the oversized-body reject exists
+    for is preserved. Returns the byte count drained; stops at EOF, at the
+    cap, or fail-open on any OSError (a timed-out or reset read never
+    propagates out of the close path).
+    """
+    drained = 0
+    try:
+        while drained < cap:
+            chunk = rfile.read(min(_DRAIN_CHUNK_BYTES, cap - drained))
+            if not chunk:
+                return drained
+            drained += len(chunk)
+    except OSError:
+        return drained
+    return drained
 
 
 def _ingested_spans_from_trace_request(*, request: dict[str, object]) -> tuple[IngestedSpan, ...]:
