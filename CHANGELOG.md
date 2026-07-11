@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.7...v0.17.8) (2026-07-11)
+
+
+### Bug Fixes
+
+* extract dispatcher cost gate cluster ([abb5d71](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/abb5d715778f024cb12d9c0b3ac53387c6aafee7))
+
 ## [0.17.7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.6...v0.17.7) (2026-07-11)
 
 
