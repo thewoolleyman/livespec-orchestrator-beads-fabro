@@ -5,11 +5,11 @@ Full autonomous mode (specified in `SPECIFICATION/spec.md`,
 `SPECIFICATION/scenarios.md` Scenarios 35 and 36) LLM-resolves
 `blocked_reason: needs-human` items rather than surfacing them — routing a
 resolved item back onto its normal path — WHILE still escalating every
-truly-unresolvable decision. This module owns the DECISION SEAM and the pure
-classifier for that stage; the ledger writes, the per-decision audit record,
-and the bounce-to-backlog escalation are sequenced by `dispatcher.py` (the
-`_resolve_or_bounce_needs_human` wiring stage), mirroring how the reflector's
-lessons-proposer seam lives here and its wiring stage lives in `dispatcher.py`.
+truly-unresolvable decision. This module owns the DECISION SEAM, the pure
+classifier, and the resolution-routing stage for that concern: it sequences
+the ledger writes, the per-decision audit record, and the
+bounce-to-backlog escalation around the injectable resolver, mirroring how the
+completion module owns acceptance and bounce dispositions.
 
 Two disjoint escalation sources exist (the truly-unresolvable set defined in
 `SPECIFICATION/spec.md`): a CONFIDENCE-bounded set (the LLM cannot confidently
