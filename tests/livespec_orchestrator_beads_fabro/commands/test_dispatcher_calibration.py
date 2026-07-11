@@ -2,7 +2,7 @@
 
 Covers the pure `_dispatcher_calibration` derivation module (the outcome
 SIGNAL + mechanical SIZE PROXIES the spec enumerates) and its wiring into
-`dispatcher._dispatch_one` via `_emit_calibration`. The load-bearing
+`dispatcher._dispatch_one` via `emit_calibration`. The load-bearing
 contract under test (livespec-orchestrator-beads-fabro SPECIFICATION/contracts.md):
 the Dispatcher MUST emit calibration telemetry — an
 outcome signal plus mechanical size proxies — recorded on the EXISTING
@@ -33,19 +33,20 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
     outcome_class,
     spec_surface_touched,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_emit import (
+    calibration_token_cost,
+    emit_calibration,
+    merged_pr_diff_size,
+    parse_pr_diff_size,
+    read_journal_records_for,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_sink import CostSink
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import GithubTokenEnvRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import cost_sink_path
-from livespec_orchestrator_beads_fabro.commands.dispatcher import (
-    _calibration_token_cost,  # pyright: ignore[reportPrivateUsage]
-    _emit_calibration,  # pyright: ignore[reportPrivateUsage]
-    _merged_pr_diff_size,  # pyright: ignore[reportPrivateUsage]
-    _parse_pr_diff_size,  # pyright: ignore[reportPrivateUsage]
-    _read_journal_records_for,  # pyright: ignore[reportPrivateUsage]
-)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 
@@ -313,53 +314,53 @@ def test_calibration_journal_record_flattens_every_field() -> None:
 # --- the diff-size probe parse ------------------------------------------
 
 
-def test_parse_pr_diff_size_sums_additions_and_deletions() -> None:
-    assert _parse_pr_diff_size(stdout='{"additions": 120, "deletions": 25}') == 145
+def testparse_pr_diff_size_sums_additions_and_deletions() -> None:
+    assert parse_pr_diff_size(stdout='{"additions": 120, "deletions": 25}') == 145
 
 
-def test_parse_pr_diff_size_unparseable_is_none() -> None:
-    assert _parse_pr_diff_size(stdout="not json") is None
+def testparse_pr_diff_size_unparseable_is_none() -> None:
+    assert parse_pr_diff_size(stdout="not json") is None
 
 
-def test_parse_pr_diff_size_non_object_is_none() -> None:
-    assert _parse_pr_diff_size(stdout="[1, 2, 3]") is None
+def testparse_pr_diff_size_non_object_is_none() -> None:
+    assert parse_pr_diff_size(stdout="[1, 2, 3]") is None
 
 
-def test_parse_pr_diff_size_missing_fields_is_none() -> None:
-    assert _parse_pr_diff_size(stdout='{"additions": 12}') is None
+def testparse_pr_diff_size_missing_fields_is_none() -> None:
+    assert parse_pr_diff_size(stdout='{"additions": 12}') is None
 
 
-def test_merged_pr_diff_size_reads_green_pr(tmp_path: Path) -> None:
+def testmerged_pr_diff_size_reads_green_pr(tmp_path: Path) -> None:
     runner = _FakeRunner(stdout='{"additions": 30, "deletions": 12}')
-    size = _merged_pr_diff_size(repo=tmp_path, outcome=_outcome(), runner=runner)
+    size = merged_pr_diff_size(repo=tmp_path, outcome=_outcome(), runner=runner)
     assert size == 42
     assert runner.calls[0][:3] == ["gh", "pr", "view"]
 
 
-def test_merged_pr_diff_size_non_green_is_none(tmp_path: Path) -> None:
+def testmerged_pr_diff_size_non_green_is_none(tmp_path: Path) -> None:
     runner = _FakeRunner()
     failed = _outcome(status="failed", stage="fabro-run", pr_number=None)
-    assert _merged_pr_diff_size(repo=tmp_path, outcome=failed, runner=runner) is None
+    assert merged_pr_diff_size(repo=tmp_path, outcome=failed, runner=runner) is None
     assert runner.calls == []  # no probe for a non-green outcome
 
 
-def test_merged_pr_diff_size_green_without_pr_is_none(tmp_path: Path) -> None:
+def testmerged_pr_diff_size_green_without_pr_is_none(tmp_path: Path) -> None:
     runner = _FakeRunner()
     assert (
-        _merged_pr_diff_size(repo=tmp_path, outcome=_outcome(pr_number=None), runner=runner) is None
+        merged_pr_diff_size(repo=tmp_path, outcome=_outcome(pr_number=None), runner=runner) is None
     )
     assert runner.calls == []
 
 
-def test_merged_pr_diff_size_gh_failure_is_none(tmp_path: Path) -> None:
+def testmerged_pr_diff_size_gh_failure_is_none(tmp_path: Path) -> None:
     runner = _FakeRunner(exit_code=1)
-    assert _merged_pr_diff_size(repo=tmp_path, outcome=_outcome(), runner=runner) is None
+    assert merged_pr_diff_size(repo=tmp_path, outcome=_outcome(), runner=runner) is None
 
 
 # --- the journal read-back ----------------------------------------------
 
 
-def test_read_journal_records_for_parses_and_skips_garbage(tmp_path: Path) -> None:
+def testread_journal_records_for_parses_and_skips_garbage(tmp_path: Path) -> None:
     journal = tmp_path / "journal.jsonl"
     # A valid record, an undecodable line (skipped at the JSONDecodeError),
     # a valid-JSON-but-non-dict line (skipped at the isinstance guard), and
@@ -368,33 +369,31 @@ def test_read_journal_records_for_parses_and_skips_garbage(tmp_path: Path) -> No
         '{"work_item_id": "a", "stage": "pr-view"}\nnot-json\n[1, 2, 3]\n{"stage": "outcome"}\n',
         encoding="utf-8",
     )
-    records = _read_journal_records_for(args=_args(journal=journal), repo=tmp_path)
+    records = read_journal_records_for(args=_args(journal=journal), repo=tmp_path)
     assert len(records) == 2
     assert records[0]["stage"] == "pr-view"
 
 
-def test_read_journal_records_for_missing_file_is_empty(tmp_path: Path) -> None:
-    records = _read_journal_records_for(
-        args=_args(journal=tmp_path / "absent.jsonl"), repo=tmp_path
-    )
+def testread_journal_records_for_missing_file_is_empty(tmp_path: Path) -> None:
+    records = read_journal_records_for(args=_args(journal=tmp_path / "absent.jsonl"), repo=tmp_path)
     assert records == ()
 
 
 # --- the derived token cost ---------------------------------------------
 
 
-def test_calibration_token_cost_reads_seeded_sink(tmp_path: Path) -> None:
+def testcalibration_token_cost_reads_seeded_sink(tmp_path: Path) -> None:
     journal = tmp_path / "journal.jsonl"
     args = _args(journal=journal)
     sink = CostSink(path=cost_sink_path(args=args, repo=tmp_path))
     sink.accumulate_span(span=_cost_span(work_item_id="livespec-impl-beads-c1", input_tokens=1000))
-    cost = _calibration_token_cost(args=args, repo=tmp_path, outcome=_outcome())
+    cost = calibration_token_cost(args=args, repo=tmp_path, outcome=_outcome())
     assert cost is not None
     assert cost > 0
 
 
-def test_calibration_token_cost_unobservable_is_none(tmp_path: Path) -> None:
-    cost = _calibration_token_cost(
+def testcalibration_token_cost_unobservable_is_none(tmp_path: Path) -> None:
+    cost = calibration_token_cost(
         args=_args(journal=tmp_path / "journal.jsonl"),
         repo=tmp_path,
         outcome=_outcome(),
@@ -410,7 +409,7 @@ def test_emit_calibration_appends_one_calibration_record(tmp_path: Path) -> None
     journal_file = tmp_path / "journal.jsonl"
     recording = _RecordingJournal()
     runner = _FakeRunner(stdout='{"additions": 10, "deletions": 5}')
-    _emit_calibration(
+    emit_calibration(
         args=_args(journal=journal_file),
         repo=tmp_path,
         item=_item(),
@@ -433,7 +432,7 @@ def test_emit_calibration_appends_one_calibration_record(tmp_path: Path) -> None
 def test_emit_calibration_refreshes_github_token_before_diff_probe(tmp_path: Path) -> None:
     """The post-verdict calibration diff probe uses the provider accessor."""
     runner = _FakeRunner(stdout='{"additions": 10, "deletions": 5}')
-    _emit_calibration(
+    emit_calibration(
         args=_args(journal=tmp_path / "journal.jsonl"),
         repo=tmp_path,
         item=_item(),
@@ -441,8 +440,10 @@ def test_emit_calibration_refreshes_github_token_before_diff_probe(tmp_path: Pat
         journal=_RecordingJournal(),
         wall_clock_seconds=7.0,
         dispatch_context_size=321,
-        runner=runner,
-        token_supplier=lambda: "fresh-calibration-token",
+        runner=GithubTokenEnvRunner(
+            inner=runner,
+            token=lambda: "fresh-calibration-token",
+        ),
     )
     env = runner.envs[0]
     assert env is not None
@@ -453,7 +454,7 @@ def test_emit_calibration_failed_outcome_skips_diff_probe(tmp_path: Path) -> Non
     """A failed outcome records None diff size and never probes gh."""
     recording = _RecordingJournal()
     runner = _FakeRunner()
-    _emit_calibration(
+    emit_calibration(
         args=_args(journal=tmp_path / "journal.jsonl"),
         repo=tmp_path,
         item=_item(),
@@ -473,7 +474,7 @@ def test_emit_calibration_failed_outcome_skips_diff_probe(tmp_path: Path) -> Non
 def test_emit_calibration_is_fail_open_on_probe_error(tmp_path: Path) -> None:
     """A raising probe is journaled as calibration-error, never propagated."""
     recording = _RecordingJournal()
-    _emit_calibration(
+    emit_calibration(
         args=_args(journal=tmp_path / "journal.jsonl"),
         repo=tmp_path,
         item=_item(),
@@ -504,7 +505,7 @@ def test_emit_calibration_reads_fix_loops_from_flushed_journal(tmp_path: Path) -
         encoding="utf-8",
     )
     recording = _RecordingJournal()
-    _emit_calibration(
+    emit_calibration(
         args=_args(journal=journal_file),
         repo=tmp_path,
         item=_item(),
