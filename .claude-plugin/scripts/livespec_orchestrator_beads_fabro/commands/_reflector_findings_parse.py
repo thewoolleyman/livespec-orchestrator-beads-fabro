@@ -101,15 +101,3 @@ def _float_field(*, obj: dict[str, object], key: str, default: float) -> float:
     if isinstance(value, int | float):
         return float(value)
     return default
-
-
-def extract_findings_list(*, top: object) -> list[object]:
-    return _extract_findings_list(top=top)
-
-
-def int_field(*, obj: dict[str, object], key: str, default: int) -> int:
-    return _int_field(obj=obj, key=key, default=default)
-
-
-def float_field(*, obj: dict[str, object], key: str, default: float) -> float:
-    return _float_field(obj=obj, key=key, default=default)

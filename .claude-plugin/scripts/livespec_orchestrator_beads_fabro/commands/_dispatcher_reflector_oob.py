@@ -7,9 +7,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from livespec_orchestrator_beads_fabro.commands import _reflector_filing as _filing_compat
-from livespec_orchestrator_beads_fabro.commands import _reflector_findings_parse as _parse_compat
-from livespec_orchestrator_beads_fabro.commands import _reflector_spans as _spans_compat
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._reflector_filing import (
     ReflectorReport,
@@ -258,25 +255,6 @@ def run_reflector_oob(
         return
     _emit_summary(report=report)
     _AUTO_TRIP.consecutive_errors = 0
-
-
-def __getattr__(name: str) -> object:
-    compat: dict[str, object] = {
-        "_build_span": _spans_compat.build_span,
-        "_check_budget": _filing_compat.check_budget,
-        "_dispatch_parent_id": _spans_compat.dispatch_parent_id,
-        "_emit_spans": _spans_compat.emit_spans,
-        "_extract_findings_list": _parse_compat.extract_findings_list,
-        "_float_field": _parse_compat.float_field,
-        "_hex_id": _spans_compat.hex_id,
-        "_int_field": _parse_compat.int_field,
-        "_label_index": _filing_compat.label_index,
-        "_record_labels": _filing_compat.record_labels,
-        "_request_line": _spans_compat.request_line,
-    }
-    if name in compat:
-        return compat[name]
-    raise AttributeError(name)
 
 
 def _record_error(*, journal: JournalWriter, exc: Exception) -> None:
