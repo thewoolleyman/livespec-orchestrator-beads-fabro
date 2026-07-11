@@ -1,7 +1,7 @@
 """Admission valve orchestration for the Dispatcher.
 
 This module owns the Dispatcher's admission / candidate-selection valve:
-host-only candidates are refused through an injected local callback,
+host-only candidates are refused through the completion disposition helper,
 manual or unresolvable-assignee candidates are held and surfaced, and
 admitted candidates are transitioned `ready -> active` with their resolved
 assignee before Fabro launch.
@@ -10,7 +10,6 @@ assignee before Fabro launch.
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 from functools import partial
 from pathlib import Path
@@ -22,6 +21,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_autonomous_collapse 
     collapse_admission_to_auto,
     effective_admission_policy_under_mode,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import host_only_refusal
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
@@ -80,7 +80,7 @@ def autonomous_armed(*, args: argparse.Namespace) -> bool:
     return bool(getattr(args, "autonomous_armed", False))
 
 
-def admit_and_select(  # noqa: PLR0913 - kw-only admission valve; fields are caller inputs.
+def admit_and_select(
     *,
     repo: Path,
     items: list[WorkItem],
@@ -88,7 +88,6 @@ def admit_and_select(  # noqa: PLR0913 - kw-only admission valve; fields are cal
     journal: JournalFile,
     enforce_cap: bool,
     armed: bool,
-    host_only_refusal: Callable[..., DispatchOutcome | None],
 ) -> Admission:
     """Run the admission valve over the rank-sorted candidate set.
 
