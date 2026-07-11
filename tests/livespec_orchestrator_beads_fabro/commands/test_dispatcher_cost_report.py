@@ -53,11 +53,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
+    cost_report_spans_path,
+    cost_sink_path,
+)
 from livespec_orchestrator_beads_fabro.commands._otel_scrub import is_allowed_attr
 from livespec_orchestrator_beads_fabro.commands.dispatcher import (
     _cost_gate_after_verdict,  # pyright: ignore[reportPrivateUsage]
-    _cost_report_spans_path,  # pyright: ignore[reportPrivateUsage]
-    _cost_sink_path,  # pyright: ignore[reportPrivateUsage]
 )
 
 
@@ -569,7 +571,7 @@ def test_cost_gate_report_mode_emits_telemetry_and_fires_no_alarm(
     monkeypatch.setenv("CLAUDE_NTFY_DISPATCHER_TOPIC", "dispatch-alarms")
     journal_path = tmp_path / "journal.jsonl"
     args = _args(journal_path=journal_path)
-    sink = CostSink(path=_cost_sink_path(args=args, repo=tmp_path))
+    sink = CostSink(path=cost_sink_path(args=args, repo=tmp_path))
     sink.accumulate_span(
         span=_cc_cost_span(work_item_id="item-aaa", request_id="req-1", input_tokens=6_000_000)
     )  # $30, over the old $25 per-run cap
@@ -587,7 +589,7 @@ def test_cost_gate_report_mode_emits_telemetry_and_fires_no_alarm(
     # No spend-cap-breach alarm fired (report-only).
     assert poster.calls == []
     # The cost-report telemetry span was written to the sibling spans file.
-    spans = _spans_from_file(spans_path=_cost_report_spans_path(args=args, repo=tmp_path))
+    spans = _spans_from_file(spans_path=cost_report_spans_path(args=args, repo=tmp_path))
     cost_span = next(s for s in spans if s.get("name") == "cost.report")
     attrs = _attrs_of(span=cost_span)
     assert attrs["work.item.id"] == "item-aaa"
@@ -618,7 +620,7 @@ def test_cost_gate_report_mode_reports_unobservable_without_refusing(
         poster=poster,
     )
     assert poster.calls == []
-    spans = _spans_from_file(spans_path=_cost_report_spans_path(args=args, repo=tmp_path))
+    spans = _spans_from_file(spans_path=cost_report_spans_path(args=args, repo=tmp_path))
     cost_span = next(s for s in spans if s.get("name") == "cost.report")
     attrs = _attrs_of(span=cost_span)
     assert attrs["livespec.cost.observable"] is False
@@ -648,7 +650,7 @@ def test_cost_gate_report_mode_skips_non_green_outcomes(
     monkeypatch.delenv("LIVESPEC_COST_MODE", raising=False)
     journal_path = tmp_path / "journal.jsonl"
     args = _args(journal_path=journal_path)
-    sink = CostSink(path=_cost_sink_path(args=args, repo=tmp_path))
+    sink = CostSink(path=cost_sink_path(args=args, repo=tmp_path))
     sink.accumulate_span(
         span=_cc_cost_span(work_item_id="item-aaa", request_id="req-1", input_tokens=1_000_000)
     )
@@ -664,7 +666,7 @@ def test_cost_gate_report_mode_skips_non_green_outcomes(
         poster=poster,
     )
     assert poster.calls == []
-    spans = _spans_from_file(spans_path=_cost_report_spans_path(args=args, repo=tmp_path))
+    spans = _spans_from_file(spans_path=cost_report_spans_path(args=args, repo=tmp_path))
     cost_spans = [s for s in spans if s.get("name") == "cost.report"]
     # Exactly one cost.report span — for the green item only.
     assert len(cost_spans) == 1

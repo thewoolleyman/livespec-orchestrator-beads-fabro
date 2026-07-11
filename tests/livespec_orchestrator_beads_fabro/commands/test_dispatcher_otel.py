@@ -10,7 +10,7 @@ ever binds, no real fabro run, no real Honeycomb call:
   factory (single-instance), and against a raising factory (fail-open).
 - `_build_otel_receiver` builds (but does NOT start) a real `OtelReceiver`
   with the env-resolved config + journal-sibling heartbeat path.
-- `_heartbeat_path` derives the journal-sibling heartbeat file.
+- `heartbeat_path` derives the journal-sibling heartbeat file.
 - The two command entrypoints (`dispatch` / `loop`) invoke the receiver
   arming at entry — verified with `_ensure_otel_receiver` monkeypatched to
   a recorder and the command short-circuited on a missing repo (so no real
@@ -24,11 +24,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import heartbeat_path
 from livespec_orchestrator_beads_fabro.commands._otel_receive import OtelReceiver
 from livespec_orchestrator_beads_fabro.commands.dispatcher import (
     _build_otel_receiver,
     _ensure_otel_receiver,
-    _heartbeat_path,
     _run_dispatch_command,
     _run_loop_command,
 )
@@ -89,7 +89,7 @@ def test_ensure_otel_receiver_is_fail_open(tmp_path: Path) -> None:
 def test_heartbeat_path_is_journal_sibling(tmp_path: Path) -> None:
     """The heartbeat file is co-located with the journal (a sibling file)."""
     journal = tmp_path / "fabro-dispatch-journal.jsonl"
-    path = _heartbeat_path(args=_args(repo=tmp_path, journal=journal), repo=tmp_path)
+    path = heartbeat_path(args=_args(repo=tmp_path, journal=journal), repo=tmp_path)
     assert path == tmp_path / "fabro-dispatch-journal-otel-heartbeat.json"
 
 

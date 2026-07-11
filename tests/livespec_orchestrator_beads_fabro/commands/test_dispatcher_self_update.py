@@ -31,6 +31,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
 )
+
+# Importing the module-private wiring helpers directly (the test tier
+# verifies the self-update wiring); importing them avoids the SLF001
+# attribute-access ban while keeping the names addressable, the same
+# pattern test_dispatcher_notify uses for the notify internals.
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import resolve_merged_paths
 from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
     DISPATCHER_SCRIPT_PREFIXES,
     SELF_UPDATE_BREACH_CLASS,
@@ -43,14 +49,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
     pr_files_argv,
     promotion_decision,
 )
-
-# Importing the module-private wiring helpers directly (the test tier
-# verifies the self-update wiring); importing them avoids the SLF001
-# attribute-access ban while keeping the names addressable, the same
-# pattern test_dispatcher_notify uses for the notify internals.
 from livespec_orchestrator_beads_fabro.commands.dispatcher import (
     _candidate_dispatcher_bin,  # pyright: ignore[reportPrivateUsage]
-    _resolve_merged_paths,  # pyright: ignore[reportPrivateUsage]
     _self_update_after_merge,  # pyright: ignore[reportPrivateUsage]
     _self_update_after_verdict,  # pyright: ignore[reportPrivateUsage]
 )
@@ -528,7 +528,7 @@ def test_resolve_merged_paths_reads_branch_then_pr_files() -> None:
             ),
         ]
     )
-    paths = _resolve_merged_paths(repo=Path("/repo"), runner=runner)
+    paths = resolve_merged_paths(repo=Path("/repo"), runner=runner)
     assert paths == ("README.md",)
     # The pr-files query used the branch the rev-parse reported.
     assert runner.seen_argv[1] == pr_files_argv(branch="feat/ddu")
@@ -541,7 +541,7 @@ def test_resolve_merged_paths_no_signal_when_gh_fails() -> None:
             CommandResult(exit_code=1, stdout="", stderr="gh boom"),
         ]
     )
-    assert _resolve_merged_paths(repo=Path("/repo"), runner=runner) == ()
+    assert resolve_merged_paths(repo=Path("/repo"), runner=runner) == ()
 
 
 def test_resolve_merged_paths_falls_back_to_master_when_rev_parse_fails() -> None:
@@ -551,7 +551,7 @@ def test_resolve_merged_paths_falls_back_to_master_when_rev_parse_fails() -> Non
             CommandResult(exit_code=0, stdout=json.dumps({"files": []}), stderr=""),
         ]
     )
-    _ = _resolve_merged_paths(repo=Path("/repo"), runner=runner)
+    _ = resolve_merged_paths(repo=Path("/repo"), runner=runner)
     assert runner.seen_argv[1] == pr_files_argv(branch="master")
 
 

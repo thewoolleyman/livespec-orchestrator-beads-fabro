@@ -39,6 +39,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import cost_sink_path
 from livespec_orchestrator_beads_fabro.commands._otel_receive import (
     HeartbeatSink,
     OtelReceiver,
@@ -47,7 +48,6 @@ from livespec_orchestrator_beads_fabro.commands._otel_receive import (
 from livespec_orchestrator_beads_fabro.commands._otel_scrub import is_allowed_attr
 from livespec_orchestrator_beads_fabro.commands.dispatcher import (
     _cost_gate_after_verdict,  # pyright: ignore[reportPrivateUsage]
-    _cost_sink_path,  # pyright: ignore[reportPrivateUsage]
 )
 
 
@@ -371,7 +371,7 @@ def test_cost_gate_after_verdict_reads_derived_cost_and_proceeds(
     args = _args(journal_path=journal_path, mode="autonomous")
     # Seed the cost sink the receiver would have written, at the path the
     # dispatcher derives from the journal stem.
-    sink = CostSink(path=_cost_sink_path(args=args, repo=tmp_path))
+    sink = CostSink(path=cost_sink_path(args=args, repo=tmp_path))
     sink.accumulate_span(
         span={
             "name": "claude_code.llm_request",
@@ -416,7 +416,7 @@ def test_cost_gate_after_verdict_derived_over_cap_fires_alarm(
     monkeypatch.setenv("LIVESPEC_COST_MODE", "enforce")
     journal_path = tmp_path / "journal.jsonl"
     args = _args(journal_path=journal_path, mode="autonomous")
-    sink = CostSink(path=_cost_sink_path(args=args, repo=tmp_path))
+    sink = CostSink(path=cost_sink_path(args=args, repo=tmp_path))
     sink.accumulate_span(
         span={
             "name": "claude_code.llm_request",

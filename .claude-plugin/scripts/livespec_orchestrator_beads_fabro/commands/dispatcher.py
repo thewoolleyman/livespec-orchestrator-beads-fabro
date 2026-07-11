@@ -162,10 +162,7 @@ from livespec_runtime.github_auth.errors import GithubAppAuthError
 from livespec_runtime.github_auth.provider import InstallationTokenProvider
 from livespec_runtime.work_items.lifecycle import is_item_ready, ready_sort_key
 
-from livespec_orchestrator_beads_fabro.commands._config import (
-    resolve_fabro_bin,
-    resolve_store_config,
-)
+from livespec_orchestrator_beads_fabro.commands._config import resolve_fabro_bin
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_autonomous import (
     arm_autonomous_for_loop,
@@ -236,6 +233,19 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_notify import (
     notify_terminal,
     terminal_events,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
+    cost_report_spans_path,
+    cost_sink_path,
+    heartbeat_path,
+    is_writable_orchestrator_checkout,
+    journal_path,
+    plugin_root,
+    reflector_oob_spans_path,
+    resolve_merged_paths,
+    spans_path,
+    store_config,
+    workflow_toml,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     CODEX_FRESHNESS_RUN_BUDGET_SECONDS,
     SiblingClones,
@@ -267,8 +277,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
     canary_self_check_argv,
     canary_verdict,
     is_self_merge,
-    parse_pr_files,
-    pr_files_argv,
     promotion_decision,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_spec_checks import run_spec_checks
@@ -497,7 +505,7 @@ def _run_dispatch_command(*, args: argparse.Namespace) -> int:
     items, journal = prepared
     if not args.skip_ledger_check and _ledger_blocked_after_normalization(
         items=items,
-        config=_store_config(repo=repo),
+        config=store_config(repo=repo),
         journal=journal,
     ):
         return _EXIT_FAILURE
@@ -560,8 +568,8 @@ def _run_dispatch_command(*, args: argparse.Namespace) -> int:
     reflect(
         outcomes=[outcome],
         journal=journal,
-        journal_path=_journal_path(args=args, repo=repo),
-        spans_path=_spans_path(args=args, repo=repo),
+        journal_path=journal_path(args=args, repo=repo),
+        spans_path=spans_path(args=args, repo=repo),
     )
     _reflector_oob_after_verdict(args=args, repo=repo, journal=journal)
     return exit_code
@@ -608,7 +616,7 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
     items, journal = prepared
     if not args.skip_ledger_check and _ledger_blocked_after_normalization(
         items=items,
-        config=_store_config(repo=repo),
+        config=store_config(repo=repo),
         journal=journal,
     ):
         return _EXIT_FAILURE
@@ -696,8 +704,8 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
     reflect(
         outcomes=outcomes,
         journal=journal,
-        journal_path=_journal_path(args=args, repo=repo),
-        spans_path=_spans_path(args=args, repo=repo),
+        journal_path=journal_path(args=args, repo=repo),
+        spans_path=spans_path(args=args, repo=repo),
     )
     _reflector_oob_after_verdict(args=args, repo=repo, journal=journal)
     return exit_code
@@ -751,7 +759,7 @@ def _reflector_oob_after_verdict(  # noqa: PLR0913 — kw-only fail-open stage; 
         if lessons_proposer is not None
         else GitPrLessonsProposer(runner=resolved_runner)
     )
-    spans_path = _reflector_oob_spans_path(args=args, repo=repo)
+    spans_path = reflector_oob_spans_path(args=args, repo=repo)
 
     def _body() -> None:
         run_reflector_oob(
@@ -1022,7 +1030,7 @@ def _emit_cost_report_telemetry(
     emit_cost_report(
         items=items,
         dispatch_id=_dispatch_id_of(outcomes=outcomes),
-        spans_path=_cost_report_spans_path(args=args, repo=repo),
+        spans_path=cost_report_spans_path(args=args, repo=repo),
     )
 
 
@@ -1071,7 +1079,7 @@ def _read_derived_costs(
     repo: Path,
     outcomes: list[DispatchOutcome],
 ) -> dict[str, int]:
-    sink = CostSink(path=_cost_sink_path(args=args, repo=repo))
+    sink = CostSink(path=cost_sink_path(args=args, repo=repo))
     derived: dict[str, int] = {}
     for outcome in outcomes:
         if outcome.status != "green":
@@ -1113,7 +1121,7 @@ def _read_derived_reports(
     repo: Path,
     outcomes: list[DispatchOutcome],
 ) -> dict[str, CostReport]:
-    sink = CostSink(path=_cost_sink_path(args=args, repo=repo))
+    sink = CostSink(path=cost_sink_path(args=args, repo=repo))
     reports: dict[str, CostReport] = {}
     for outcome in outcomes:
         if outcome.status != "green":
@@ -1127,13 +1135,6 @@ def _read_derived_reports(
 
 
 _CANARY_TIMEOUT_SECONDS = 300.0
-_PR_FILES_PROBE_TIMEOUT_SECONDS = 60.0
-_CHECKOUT_PROBE_TIMEOUT_SECONDS = 60.0
-
-# The slug the self-update canary requires the promotion target's `origin`
-# to carry: the candidate must be a checkout of THIS orchestrator, never a
-# stray sibling repo the plugin happens to sit inside.
-_ORCHESTRATOR_REPO_SLUG = "livespec-orchestrator-beads-fabro"
 
 
 def _self_update_after_verdict(
@@ -1168,7 +1169,7 @@ def _self_update_after_verdict(
     for outcome in outcomes:
         if outcome.status != "green" or outcome.pr_number is None:
             continue
-        merged_paths = _resolve_merged_paths(repo=repo, runner=resolved_runner)
+        merged_paths = resolve_merged_paths(repo=repo, runner=resolved_runner)
         _self_update_after_merge(
             work_item_id=outcome.work_item_id,
             merged_paths=merged_paths,
@@ -1181,86 +1182,15 @@ def _self_update_after_verdict(
         )
 
 
-def _resolve_merged_paths(*, repo: Path, runner: CommandRunner) -> tuple[str, ...]:
-    """Read the merged PR's changed paths; () on any unobservable signal.
-
-    The publish branch is `feat/<work-item-id>` but the merge is already
-    confirmed, so the simplest authoritative source is the repo's most
-    recent merge to master — read via `gh pr view <branch> --json files`.
-    A `gh` failure / empty payload yields () (no signal), which
-    `is_self_merge` treats as "not a self-merge" (the safe default).
-    """
-    head = runner.run(
-        argv=["git", "-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"],
-        cwd=repo,
-        timeout_seconds=_PR_FILES_PROBE_TIMEOUT_SECONDS,
-    )
-    branch = head.stdout.strip() if head.exit_code == 0 else "master"
-    files = runner.run(
-        argv=pr_files_argv(branch=branch),
-        cwd=repo,
-        timeout_seconds=_PR_FILES_PROBE_TIMEOUT_SECONDS,
-    )
-    return parse_pr_files(stdout=files.stdout) if files.exit_code == 0 else ()
-
-
-def _plugin_root() -> Path:
-    """The plugin root, resolving in BOTH the source tree and the flattened cache.
-
-    In source this module lives at
-    `.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/dispatcher.py`,
-    so the plugin root is `parents[3]` (the `.claude-plugin/` dir). The Claude
-    install flattens that dir to the cache root and exports
-    `CLAUDE_PLUGIN_ROOT`; when that env var is set and non-empty it wins. Both
-    the `.fabro/` workflow payload and the `scripts/bin/` wrappers ship UNDER
-    this root, so a cache-installed plugin resolves them with no repo checkout
-    present.
-    """
-    env_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
-    if env_root:
-        return Path(env_root)
-    return Path(__file__).resolve().parents[3]
-
-
 def _candidate_dispatcher_bin() -> Path:
     """The just-pulled primary's own `bin/dispatcher.py` (the canary target).
 
-    Resolved off the plugin root (the same anchor `_workflow_toml` uses):
+    Resolved off the plugin root (the same anchor `workflow_toml` uses):
     after `_post_merge` pulls the primary, this path holds the STAGED new
     dispatcher code, which the canary self-checks before it can take over the
     loop.
     """
-    return _plugin_root() / "scripts" / "bin" / "dispatcher.py"
-
-
-def _is_writable_orchestrator_checkout(*, root: Path, runner: CommandRunner) -> bool:
-    """True only when `root` is inside a git work-tree whose origin is this orchestrator.
-
-    The post-merge self-update can PROMOTE a self-merge only into a
-    writable checkout of the orchestrator itself. A flattened, read-only
-    plugin cache (the adopter / self-contained-dispatch install) has no
-    `.git` at all, so `git rev-parse --is-inside-work-tree` exits non-zero
-    there and this returns False — the self-update stage then SKIPS
-    cleanly rather than attempting a promotion it could never land. A
-    work-tree whose `origin` is some OTHER repo (the plugin vendored
-    inside an unrelated checkout) also returns False, so a stray sibling
-    repo is never mistaken for the promotion target. The probe is a cheap,
-    read-only, bounded `git` read — NEVER the fabro canary (the
-    self-machinery hang-guard).
-    """
-    inside = runner.run(
-        argv=["git", "-C", str(root), "rev-parse", "--is-inside-work-tree"],
-        cwd=Path.cwd(),
-        timeout_seconds=_CHECKOUT_PROBE_TIMEOUT_SECONDS,
-    )
-    if inside.exit_code != 0 or inside.stdout.strip() != "true":
-        return False
-    origin = runner.run(
-        argv=["git", "-C", str(root), "remote", "get-url", "origin"],
-        cwd=Path.cwd(),
-        timeout_seconds=_CHECKOUT_PROBE_TIMEOUT_SECONDS,
-    )
-    return origin.exit_code == 0 and _ORCHESTRATOR_REPO_SLUG in origin.stdout
+    return plugin_root() / "scripts" / "bin" / "dispatcher.py"
 
 
 def _self_update_after_merge(  # noqa: PLR0913 — kw-only fail-open stage; each field is an independent caller input.
@@ -1344,7 +1274,7 @@ def _self_update(  # noqa: PLR0913 — kw-only fail-open stage body; each field 
     fail-open backstop stays; this guard just removes a never-applicable
     code path from hiding behind it.
     """
-    if not _is_writable_orchestrator_checkout(root=_plugin_root(), runner=runner):
+    if not is_writable_orchestrator_checkout(root=plugin_root(), runner=runner):
         journal.append(
             record={
                 "stage": "self-update-skipped",
@@ -1401,10 +1331,10 @@ def _prepare(
     args: argparse.Namespace,
     repo: Path,
 ) -> tuple[list[WorkItem], JournalFile] | None:
-    if not repo.is_dir() or not _workflow_toml(args=args).is_file():
+    if not repo.is_dir() or not workflow_toml(args=args).is_file():
         _ = write_stderr(text="ERROR: --repo or workflow config does not exist\n")
         return None
-    journal = JournalFile(path=_journal_path(args=args, repo=repo))
+    journal = JournalFile(path=journal_path(args=args, repo=repo))
     return _load_items(repo=repo), journal
 
 
@@ -1507,7 +1437,7 @@ def _dispatch_one(
         journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
         return outcome
     overlay_error = _materialize_overlay(
-        committed=_workflow_toml(args=args),
+        committed=workflow_toml(args=args),
         overlay=overlay_file,
         repo=repo,
         work_item_id=item.id,
@@ -1560,7 +1490,7 @@ def _dispatch_one(
             # heartbeat degrades to the wall-clock layer, never to NO
             # detection.
             fabro_launcher=WatchedFabroLauncher(
-                heartbeat_path=_heartbeat_path(args=args, repo=repo),
+                heartbeat_path=heartbeat_path(args=args, repo=repo),
             ),
         )
     finally:
@@ -1698,11 +1628,11 @@ def _read_journal_records_for(
     mechanical reflection scan reads. A missing or unreadable file yields
     an empty tuple (fail-soft), and malformed lines are skipped.
     """
-    journal_path = _journal_path(args=args, repo=repo)
-    if not journal_path.is_file():
+    resolved_journal_path = journal_path(args=args, repo=repo)
+    if not resolved_journal_path.is_file():
         return ()
     records: list[dict[str, object]] = []
-    for line in journal_path.read_text(encoding="utf-8").splitlines():
+    for line in resolved_journal_path.read_text(encoding="utf-8").splitlines():
         try:
             parsed: object = json.loads(line)
         except json.JSONDecodeError:
@@ -1870,7 +1800,7 @@ def _admit_and_select(
         admission_policy=partial(effective_admission_policy_under_mode, armed=armed),
     )
     admitted: list[WorkItem] = []
-    config = _store_config(repo=repo)
+    config = store_config(repo=repo)
     approved_ids = {item.id for item in plan.approved}
     for item in plan.approved:
         update_work_item_status(path=config, item_id=item.id, status="ready")
@@ -1975,7 +1905,7 @@ def _complete_and_accept(
     collapse is journaled as an autonomous auto-resolution audit record
     (`gate` `acceptance`); when not armed behavior is exactly unchanged.
     """
-    config = _store_config(repo=repo)
+    config = store_config(repo=repo)
     update_work_item_status(path=config, item_id=item.id, status="acceptance")
     journal.append(record={"stage": "ledger-complete", "work_item_id": item.id})
     journal.append(
@@ -2046,7 +1976,7 @@ def _bounce_non_convergence_to_backlog(
     if not is_non_convergence_outcome(outcome=outcome):
         return
     try:
-        update_work_item_status(path=_store_config(repo=repo), item_id=item.id, status="backlog")
+        update_work_item_status(path=store_config(repo=repo), item_id=item.id, status="backlog")
     except (
         WorkItemNotFoundError,
         BeadsCommandError,
@@ -2116,7 +2046,7 @@ def _bounce_blocked(
     if outcome.status != "blocked":
         return
     try:
-        update_work_item_status(path=_store_config(repo=repo), item_id=item.id, status="backlog")
+        update_work_item_status(path=store_config(repo=repo), item_id=item.id, status="backlog")
     except (
         WorkItemNotFoundError,
         BeadsCommandError,
@@ -2232,7 +2162,7 @@ def _route_needs_human_resolved(
     A genuine bug still propagates.
     """
     try:
-        update_work_item_status(path=_store_config(repo=repo), item_id=item.id, status="ready")
+        update_work_item_status(path=store_config(repo=repo), item_id=item.id, status="ready")
     except (
         WorkItemNotFoundError,
         BeadsCommandError,
@@ -2293,7 +2223,7 @@ def _read_dispatch_comments(
     comment-blind.
     """
     try:
-        return read_work_item_comments(path=_store_config(repo=repo), work_item_id=item.id)
+        return read_work_item_comments(path=store_config(repo=repo), work_item_id=item.id)
     except (
         BeadsCommandError,
         BeadsConnectionError,
@@ -2620,7 +2550,7 @@ def _close_item(*, repo: Path, item: WorkItem, outcome: DispatchOutcome) -> None
         reason=f"Fabro dispatch landed PR #{outcome.pr_number} ({outcome.detail})",
         audit=audit,
     )
-    append_work_item(path=_store_config(repo=repo), item=closed)
+    append_work_item(path=store_config(repo=repo), item=closed)
 
 
 _BEADS_NATIVE_OPEN = "open"
@@ -2702,12 +2632,8 @@ def _write_findings(*, findings: list[LedgerFinding]) -> None:
 
 
 def _load_items(*, repo: Path) -> list[WorkItem]:
-    records = read_work_items(path=_store_config(repo=repo))
+    records = read_work_items(path=store_config(repo=repo))
     return list(materialize_work_items(records=records).values())
-
-
-def _store_config(*, repo: Path) -> StoreConfig:
-    return resolve_store_config(cwd=repo, work_items_arg=None)
 
 
 def _emit_outcomes(*, outcomes: list[DispatchOutcome], as_json: bool) -> None:
@@ -2722,78 +2648,6 @@ def _emit_outcomes(*, outcomes: list[DispatchOutcome], as_json: bool) -> None:
         pr_part = f" PR#{outcome.pr_number}" if outcome.pr_number is not None else ""
         line = f"{outcome.work_item_id}  {outcome.status} at {outcome.stage}{pr_part}"
         _ = write_stdout(text=f"{line}  {outcome.detail}\n")
-
-
-def _workflow_toml(*, args: argparse.Namespace) -> Path:
-    if args.workflow is not None:
-        return Path(args.workflow)
-    return _plugin_root() / ".fabro" / "workflows" / "implement-work-item" / "workflow.toml"
-
-
-def _journal_path(*, args: argparse.Namespace, repo: Path) -> Path:
-    if args.journal is not None:
-        return Path(args.journal)
-    return repo / "tmp" / "fabro-dispatch-journal.jsonl"
-
-
-def _spans_path(*, args: argparse.Namespace, repo: Path) -> Path:
-    """Where the mechanical reflection stage appends its OTLP/JSON spans.
-
-    Co-located with the journal (one `<base>-reflection-spans.jsonl`
-    sibling) so a future one-shot replay finds both in the same place;
-    one `ExportTraceServiceRequest` per line (the family capture format).
-    """
-    journal = _journal_path(args=args, repo=repo)
-    return journal.with_name(f"{journal.stem}-reflection-spans.jsonl")
-
-
-def _reflector_oob_spans_path(*, args: argparse.Namespace, repo: Path) -> Path:
-    """Where the out-of-band reflector appends its `gen_ai.evaluation.result` spans.
-
-    Co-located with the journal (a `<base>-reflector-oob-spans.jsonl`
-    sibling next to the mechanical-reflection spans file) so the verdict
-    spans ride the SAME established local-span-file → enrich egress path;
-    one `ExportTraceServiceRequest` per line (the family capture format).
-    """
-    journal = _journal_path(args=args, repo=repo)
-    return journal.with_name(f"{journal.stem}-reflector-oob-spans.jsonl")
-
-
-def _heartbeat_path(*, args: argparse.Namespace, repo: Path) -> Path:
-    """Where the live receiver writes the per-run metrics heartbeat (§4.4).
-
-    Co-located with the journal (a `<base>-otel-heartbeat.json` sibling) so
-    29f.6's oyg `LivenessProbe` reads it OUT OF PROCESS next to the rest of
-    the dispatch's tmp artifacts.
-    """
-    journal = _journal_path(args=args, repo=repo)
-    return journal.with_name(f"{journal.stem}-otel-heartbeat.json")
-
-
-def _cost_sink_path(*, args: argparse.Namespace, repo: Path) -> Path:
-    """Where the live receiver writes the per-dispatch CC-token cost (efj).
-
-    Co-located with the journal (a `<base>-otel-cost.json` sibling next to
-    the heartbeat file) so the cost gate reads the DERIVED per-dispatch
-    cost OUT OF PROCESS, exactly as 29f.6's probe reads the heartbeat. The
-    receiver accrues each per-API-call token vector here keyed by
-    `work.item.id` / `livespec.dispatch.id`.
-    """
-    journal = _journal_path(args=args, repo=repo)
-    return journal.with_name(f"{journal.stem}-otel-cost.json")
-
-
-def _cost_report_spans_path(*, args: argparse.Namespace, repo: Path) -> Path:
-    """Where report mode appends its `cost.report` OTLP spans (LIVESPEC_COST_MODE=report).
-
-    Co-located with the journal (a `<base>-cost-report-spans.jsonl` sibling
-    next to the reflection / reflector-oob spans files) so the report-mode
-    cost telemetry rides the SAME established local-span-file → enrich
-    egress path; one `ExportTraceServiceRequest` per line (the family
-    capture format).
-    """
-    journal = _journal_path(args=args, repo=repo)
-    return journal.with_name(f"{journal.stem}-cost-report-spans.jsonl")
 
 
 def _build_otel_receiver(*, args: argparse.Namespace, repo: Path) -> StartableServer:
@@ -2812,8 +2666,8 @@ def _build_otel_receiver(*, args: argparse.Namespace, repo: Path) -> StartableSe
 
     config = resolve_receiver_config(environ=dict(os.environ))
     exporter = HoneycombHttpExporter(ingest_key=os.environ.get(_HONEYCOMB_INGEST_KEY_ENV, ""))
-    heartbeat = HeartbeatSink(path=_heartbeat_path(args=args, repo=repo))
-    cost = CostSink(path=_cost_sink_path(args=args, repo=repo))
+    heartbeat = HeartbeatSink(path=heartbeat_path(args=args, repo=repo))
+    cost = CostSink(path=cost_sink_path(args=args, repo=repo))
     default_model = os.environ.get(DEFAULT_DISPATCH_COST_MODEL_ENV, "").strip() or None
     return OtelReceiver(
         config=config,

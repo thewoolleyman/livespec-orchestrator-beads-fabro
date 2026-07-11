@@ -19,13 +19,15 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_reflector_oob as reflector
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
+    reflector_oob_spans_path,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflector_oob import (
     RecordingLessonsProposer,
 )
 from livespec_orchestrator_beads_fabro.commands.dispatcher import (
     _default_reflector_spawn,  # pyright: ignore[reportPrivateUsage]
     _reflector_oob_after_verdict,  # pyright: ignore[reportPrivateUsage]
-    _reflector_oob_spans_path,  # pyright: ignore[reportPrivateUsage]
     _spawn_daemon,  # pyright: ignore[reportPrivateUsage]
     _spawn_daemon_joining,  # pyright: ignore[reportPrivateUsage]
 )
@@ -73,7 +75,7 @@ def _sync_spawn() -> Callable[[Callable[[], None]], None]:
 
 def test_spans_path_is_a_journal_sibling(tmp_path: Path) -> None:
     journal = tmp_path / "j.jsonl"
-    path = _reflector_oob_spans_path(args=_args(journal=journal), repo=tmp_path)
+    path = reflector_oob_spans_path(args=_args(journal=journal), repo=tmp_path)
     assert path.name == "j-reflector-oob-spans.jsonl"
     assert path.parent == tmp_path
 

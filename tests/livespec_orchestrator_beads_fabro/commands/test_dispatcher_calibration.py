@@ -38,9 +38,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import cost_sink_path
 from livespec_orchestrator_beads_fabro.commands.dispatcher import (
     _calibration_token_cost,  # pyright: ignore[reportPrivateUsage]
-    _cost_sink_path,  # pyright: ignore[reportPrivateUsage]
     _emit_calibration,  # pyright: ignore[reportPrivateUsage]
     _merged_pr_diff_size,  # pyright: ignore[reportPrivateUsage]
     _parse_pr_diff_size,  # pyright: ignore[reportPrivateUsage]
@@ -386,7 +386,7 @@ def test_read_journal_records_for_missing_file_is_empty(tmp_path: Path) -> None:
 def test_calibration_token_cost_reads_seeded_sink(tmp_path: Path) -> None:
     journal = tmp_path / "journal.jsonl"
     args = _args(journal=journal)
-    sink = CostSink(path=_cost_sink_path(args=args, repo=tmp_path))
+    sink = CostSink(path=cost_sink_path(args=args, repo=tmp_path))
     sink.accumulate_span(span=_cost_span(work_item_id="livespec-impl-beads-c1", input_tokens=1000))
     cost = _calibration_token_cost(args=args, repo=tmp_path, outcome=_outcome())
     assert cost is not None

@@ -24,11 +24,11 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import dispatcher
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import workflow_toml
 from livespec_orchestrator_beads_fabro.commands.dispatcher import (
     _candidate_dispatcher_bin,  # pyright: ignore[reportPrivateUsage]
     _credential_wrapper_text,  # pyright: ignore[reportPrivateUsage]
     _read_dispatch_target_credential_wrapper,  # pyright: ignore[reportPrivateUsage]
-    _workflow_toml,  # pyright: ignore[reportPrivateUsage]
 )
 
 # The plugin root in source: `.claude-plugin/scripts/livespec_orchestrator_beads_fabro/
@@ -41,7 +41,7 @@ _PROMPTS_DIR = _PLUGIN_ROOT / ".fabro" / "workflows" / "implement-work-item" / "
 def test_workflow_toml_resolves_from_plugin_root(monkeypatch: pytest.MonkeyPatch) -> None:
     """Default resolution anchors on the plugin root and the payload ships there."""
     monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
-    resolved = _workflow_toml(args=argparse.Namespace(workflow=None))
+    resolved = workflow_toml(args=argparse.Namespace(workflow=None))
     assert resolved == _PLUGIN_ROOT.joinpath(*_WORKFLOW_SUBPATH)
     assert resolved.parts[-5:] == (
         ".claude-plugin",
@@ -62,14 +62,14 @@ def test_workflow_toml_honors_plugin_root_env_override(
 ) -> None:
     """A non-empty CLAUDE_PLUGIN_ROOT wins (the flattened install-cache anchor)."""
     monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(tmp_path))
-    resolved = _workflow_toml(args=argparse.Namespace(workflow=None))
+    resolved = workflow_toml(args=argparse.Namespace(workflow=None))
     assert resolved == tmp_path.joinpath(*_WORKFLOW_SUBPATH)
 
 
 def test_workflow_override_arg_wins() -> None:
     """An explicit `--workflow <path>` still overrides the plugin-root default."""
     override = "/somewhere/else/workflow.toml"
-    assert _workflow_toml(args=argparse.Namespace(workflow=override)) == Path(override)
+    assert workflow_toml(args=argparse.Namespace(workflow=override)) == Path(override)
 
 
 def test_candidate_dispatcher_bin_resolves_from_plugin_root(
