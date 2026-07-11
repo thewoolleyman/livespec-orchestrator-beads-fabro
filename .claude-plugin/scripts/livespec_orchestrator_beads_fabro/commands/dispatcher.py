@@ -179,12 +179,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
     cost_gate_after_verdict,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_pricing import (
-    DEFAULT_DISPATCH_COST_MODEL_ENV,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_sink import (
-    CostSink,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     materialize_overlay,
     read_dispatch_comments,
@@ -223,8 +217,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_notify import (
     notify_terminal,
     terminal_events,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import (
+    ensure_otel_receiver,
+    parse_janitor,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
-    cost_sink_path,
     heartbeat_path,
     journal_path,
     spans_path,
@@ -247,13 +244,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
     self_update_after_verdict,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_spec_checks import run_spec_checks
-from livespec_orchestrator_beads_fabro.commands._otel_receive import (
-    HeartbeatSink,
-    OtelReceiver,
-    StartableServer,
-    ensure_receiver_started,
-    resolve_receiver_config,
-)
 from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -280,17 +270,6 @@ _EXIT_PRECONDITION_ERROR = 3
 # a tuple of the truthy separators so the "does this string carry a directory
 # component" test is a single `any(...)` with no unreachable `os.altsep` arc.
 _PATH_SEPARATORS: tuple[str, ...] = tuple(sep for sep in (os.sep, os.altsep) if sep)
-
-# The ingest-only Honeycomb key (write-only; the management/MCP key never
-# touches this egress path, per telemetry-pipeline-architecture.md §3.4).
-# An env-var NAME, not a secret value.
-_HONEYCOMB_INGEST_KEY_ENV = "HONEYCOMB_INGEST_KEY_LIVESPEC"
-
-# Process-level holder for the single shared live OTLP receiver (29f.7 E1).
-# `ensure_receiver_started` keeps ONE receiver per host across concurrent
-# dispatches in this dict — NOT one per dispatch (that would collide on the
-# bound port). Module-scoped state, started fail-open at dispatch entry.
-_OTEL_RECEIVER_HOLDER: dict[str, object] = {}
 
 
 def main(*, argv: list[str] | None = None) -> int:
@@ -396,7 +375,7 @@ def _dispatch_preamble(
     before admission (ready -> active) rather than stranding an item at active.
     Sets `args.fabro_bin` to the resolved path as a side effect.
     """
-    janitor, janitor_ok = _parse_janitor(raw=args.janitor)
+    janitor, janitor_ok = parse_janitor(raw=args.janitor)
     if not janitor_ok:
         return None, _EXIT_USAGE_ERROR
     args.fabro_bin = _resolve_fabro_bin_for(args=args, repo=repo)
@@ -412,7 +391,7 @@ def _run_dispatch_command(*, args: argparse.Namespace) -> int:
     janitor, preamble_exit = _dispatch_preamble(args=args, repo=repo)
     if preamble_exit is not None:
         return preamble_exit
-    _ = _ensure_otel_receiver(args=args, repo=repo)
+    _ = ensure_otel_receiver(args=args, repo=repo)
     prepared = _prepare(args=args, repo=repo)
     if prepared is None:
         return _EXIT_PRECONDITION_ERROR
@@ -525,7 +504,7 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
     janitor, preamble_exit = _dispatch_preamble(args=args, repo=repo)
     if preamble_exit is not None:
         return preamble_exit
-    _ = _ensure_otel_receiver(args=args, repo=repo)
+    _ = ensure_otel_receiver(args=args, repo=repo)
     prepared = _prepare(args=args, repo=repo)
     if prepared is None:
         return _EXIT_PRECONDITION_ERROR
@@ -919,76 +898,6 @@ def _post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fi
         dispatch_context_size=dispatch_context_size,
         token_supplier=token_supplier,
     )
-
-
-def _build_otel_receiver(*, args: argparse.Namespace, repo: Path) -> StartableServer:
-    """Build (but do NOT start) the single host-local live OTLP receiver.
-
-    Resolves the bound loopback addr/port from the `LIVESPEC_OTEL_RECEIVER_*`
-    levers, wires the SHARED 29f.5 Honeycomb egress exporter (ingest-only
-    key from env), points the metrics heartbeat at the journal-sibling
-    file, and points the efj CC-token cost sink at its sibling
-    `<base>-otel-cost.json` (the derived-cost seam the y0m spend cap
-    reads), with the fallback pricing model resolved from
-    `LIVESPEC_DISPATCH_COST_MODEL`. Imported lazily so the egress transport
-    is only pulled in when a dispatch actually arms the receiver.
-    """
-    from livespec_orchestrator_beads_fabro.commands._otel_enrich import HoneycombHttpExporter
-
-    config = resolve_receiver_config(environ=dict(os.environ))
-    exporter = HoneycombHttpExporter(ingest_key=os.environ.get(_HONEYCOMB_INGEST_KEY_ENV, ""))
-    heartbeat = HeartbeatSink(path=heartbeat_path(args=args, repo=repo))
-    cost = CostSink(path=cost_sink_path(args=args, repo=repo))
-    default_model = os.environ.get(DEFAULT_DISPATCH_COST_MODEL_ENV, "").strip() or None
-    return OtelReceiver(
-        config=config,
-        exporter=exporter,
-        heartbeat=heartbeat,
-        cost=cost,
-        default_model=default_model,
-    )
-
-
-def _ensure_otel_receiver(
-    *,
-    args: argparse.Namespace,
-    repo: Path,
-    holder: dict[str, object] | None = None,
-    factory: Callable[[], StartableServer] | None = None,
-) -> StartableServer | None:
-    """Idempotently start the single shared live OTLP receiver (29f.7 E1).
-
-    Called at dispatch entry. Fail-OPEN: a receiver start failure NEVER
-    blocks or fails a dispatch (the dispatcher already wrote the
-    authoritative journal; egress is best-effort). `holder` + `factory` are
-    injectable for the hermetic test tier (so no real socket binds in a
-    test); production uses the module-level holder + the real factory.
-    """
-    target_holder = _OTEL_RECEIVER_HOLDER if holder is None else holder
-    resolved_factory = (
-        (lambda: _build_otel_receiver(args=args, repo=repo)) if factory is None else factory
-    )
-    return ensure_receiver_started(holder=target_holder, factory=resolved_factory)
-
-
-def _parse_janitor(*, raw: str | None) -> tuple[tuple[str, ...] | None, bool]:
-    """Parse the --janitor JSON-argv flag; (argv-or-None, parse-ok)."""
-    if raw is None:
-        return None, True
-    try:
-        parsed_raw: object = json.loads(raw)
-    except json.JSONDecodeError:
-        parsed_raw = None
-    if not isinstance(parsed_raw, list):
-        _ = write_stderr(text="ERROR: --janitor must be a JSON array of strings\n")
-        return None, False
-    parts: list[str] = []
-    for part in cast("list[object]", parsed_raw):
-        if not isinstance(part, str):
-            _ = write_stderr(text="ERROR: --janitor must be a JSON array of strings\n")
-            return None, False
-        parts.append(part)
-    return tuple(parts), True
 
 
 def _build_parser() -> argparse.ArgumentParser:

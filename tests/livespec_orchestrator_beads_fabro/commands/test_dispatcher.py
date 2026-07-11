@@ -489,7 +489,7 @@ def test_dispatch_gate_auto_normalizes_beads_native_open(
         "update_work_item_status",
         fake_update_work_item_status,
     )
-    monkeypatch.setattr(dispatcher, "_ensure_otel_receiver", lambda **_: None)
+    monkeypatch.setattr(dispatcher, "ensure_otel_receiver", lambda **_: None)
     workflow = tmp_path / "workflow.toml"
     workflow.write_text("[workflow]\n", encoding="utf-8")
     journal = tmp_path / "journal.jsonl"

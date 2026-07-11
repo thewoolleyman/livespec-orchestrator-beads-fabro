@@ -201,6 +201,32 @@ def test_calibration_emit_cluster_importable_from_new_module_and_private_names_r
         assert not hasattr(dispatcher, name)
 
 
+def test_otel_wiring_cluster_importable_from_new_module_and_private_names_removed() -> None:
+    otel_wiring_public_names = {
+        "ensure_otel_receiver",
+        "parse_janitor",
+    }
+    old_private_names = {
+        "_build_otel_receiver",
+        "_ensure_otel_receiver",
+        "_parse_janitor",
+    }
+
+    for name in old_private_names:
+        assert not hasattr(dispatcher, name)
+    otel_wiring = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring"
+    )
+    assert set(otel_wiring.__all__) == otel_wiring_public_names
+    for name in otel_wiring_public_names:
+        assert hasattr(otel_wiring, name)
+    assert dispatcher.ensure_otel_receiver is otel_wiring.ensure_otel_receiver
+    assert dispatcher.parse_janitor is otel_wiring.parse_janitor
+    assert not hasattr(otel_wiring, "_ensure_otel_receiver")
+    assert not hasattr(otel_wiring, "_parse_janitor")
+    assert hasattr(otel_wiring, "_build_otel_receiver")
+
+
 def test_post_verdict_reflector_cluster_importable_and_private_names_removed() -> None:
     module_path = (
         Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
