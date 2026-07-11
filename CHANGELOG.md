@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.0...v0.17.1) (2026-07-11)
+
+
+### Bug Fixes
+
+* fail open when the autonomous audit journal is unreadable ([98be824](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/98be824817ac7e57ff31346063dbc5956154f305))
+
 ## [0.17.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.16.0...v0.17.0) (2026-07-11)
 
 
