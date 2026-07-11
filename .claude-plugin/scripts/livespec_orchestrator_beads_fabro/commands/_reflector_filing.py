@@ -24,6 +24,7 @@ from livespec_orchestrator_beads_fabro.commands._reflector_lessons import (
 
 __all__: list[str] = [
     "ReflectorReport",
+    "check_budget",
     "file_findings",
     "fingerprint",
     "label_index",

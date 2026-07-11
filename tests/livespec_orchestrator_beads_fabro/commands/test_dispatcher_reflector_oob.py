@@ -38,15 +38,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reflector_oob import
     LessonProposal,
     RecordingLessonsProposer,
     ReflectorFinding,
-    _build_span,  # pyright: ignore[reportPrivateUsage]
-    _check_budget,  # pyright: ignore[reportPrivateUsage]
-    _dispatch_parent_id,  # pyright: ignore[reportPrivateUsage]
-    _emit_spans,  # pyright: ignore[reportPrivateUsage]
-    _extract_findings_list,  # pyright: ignore[reportPrivateUsage]
-    _float_field,  # pyright: ignore[reportPrivateUsage]
-    _int_field,  # pyright: ignore[reportPrivateUsage]
-    _label_index,  # pyright: ignore[reportPrivateUsage]
-    _record_labels,  # pyright: ignore[reportPrivateUsage]
     build_mcp_config,
     claude_reflector_argv,
     fingerprint,
@@ -60,6 +51,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reflector_oob import
     severity_priority,
 )
 from livespec_orchestrator_beads_fabro.commands._otel_scrub import REDACTION_MARKER
+from livespec_orchestrator_beads_fabro.commands._reflector_filing import (
+    check_budget,
+    label_index,
+    record_labels,
+)
+from livespec_orchestrator_beads_fabro.commands._reflector_spans import build_span, emit_spans
 
 _MCP_ENV = "HONEYCOMB_MCP_API_KEY_LIVESPEC"
 _LEVER_ENV = "LIVESPEC_REFLECTOR_OOB"
@@ -823,22 +820,6 @@ def test_reflector_finding_dataclass_is_frozen() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_extract_findings_list_unknown_shapes_yield_empty() -> None:
-    # A dict with neither `findings` nor a string `result`, and a bare scalar.
-    assert _extract_findings_list(top={"other": 1}) == []
-    assert _extract_findings_list(top=42) == []
-    assert _extract_findings_list(top={"result": 99}) == []
-
-
-def test_int_and_float_fields_fall_back_on_non_numeric_and_bool() -> None:
-    assert _int_field(obj={"k": True}, key="k", default=7) == 7
-    assert _int_field(obj={"k": "x"}, key="k", default=7) == 7
-    assert _int_field(obj={"k": 3}, key="k", default=7) == 3
-    assert _float_field(obj={"k": True}, key="k", default=1.5) == 1.5
-    assert _float_field(obj={"k": "x"}, key="k", default=1.5) == 1.5
-    assert _float_field(obj={"k": 2}, key="k", default=1.5) == 2.0
-
-
 def test_parse_findings_skips_finding_missing_required_keys() -> None:
     # `occurrences`/`score` non-numeric defaults are taken; a finding missing
     # `category`/`severity`/`subject` is dropped (fail-soft).
@@ -860,6 +841,31 @@ def test_parse_findings_skips_finding_missing_required_keys() -> None:
     assert len(findings) == 1
     assert findings[0].occurrences == 1  # default
     assert findings[0].score == 0.0  # default
+
+
+def test_parse_findings_unknown_payload_shapes_yield_empty() -> None:
+    assert parse_findings(raw=json.dumps({"other": 1})) == ()
+    assert parse_findings(raw=json.dumps({"result": 99})) == ()
+    assert parse_findings(raw=json.dumps(42)) == ()
+
+
+def test_parse_findings_bool_numeric_fields_fall_back_to_defaults() -> None:
+    raw = json.dumps(
+        {
+            "findings": [
+                {
+                    "category": "c",
+                    "severity": "warn",
+                    "subject": "s",
+                    "occurrences": True,
+                    "score": False,
+                }
+            ]
+        }
+    )
+    findings = parse_findings(raw=raw)
+    assert findings[0].occurrences == 1
+    assert findings[0].score == 0.0
 
 
 def test_label_index_skips_records_without_fingerprint_or_with_bad_shapes() -> None:
@@ -890,16 +896,16 @@ def test_label_index_skips_records_without_fingerprint_or_with_bad_shapes() -> N
             labels=["reflection", "fingerprint:abc123abc123"],
         )
     )
-    index = _label_index(client=fake)
+    index = label_index(client=fake)
     assert "abc123abc123" in index
     assert index["abc123abc123"].issue_id == "li-fp"
     assert len(index) == 1  # the plain record was skipped.
 
 
 def test_record_labels_failsoft_on_non_list_labels() -> None:
-    assert _record_labels(record={"labels": "not-a-list"}) == []
-    assert _record_labels(record={}) == []
-    assert _record_labels(record={"labels": ["a", 1, "b"]}) == ["a", "b"]
+    assert record_labels(record={"labels": "not-a-list"}) == []
+    assert record_labels(record={}) == []
+    assert record_labels(record={"labels": ["a", 1, "b"]}) == ["a", "b"]
 
 
 def test_label_index_skips_records_with_non_string_id() -> None:
@@ -915,13 +921,13 @@ def test_label_index_skips_records_with_non_string_id() -> None:
                 {"id": "li-bad-labels", "labels": "not-a-list", "status": "open"},
             ]
 
-    index = _label_index(client=_MalformedClient())  # type: ignore[arg-type]
+    index = label_index(client=_MalformedClient())  # type: ignore[arg-type]
     assert index == {}
 
 
 def test_emit_spans_no_findings_writes_nothing(tmp_path: Path) -> None:
     spans_path = tmp_path / "spans.jsonl"
-    _emit_spans(findings=(), spans_path=spans_path)
+    emit_spans(findings=(), spans_path=spans_path)
     assert not spans_path.exists()
 
 
@@ -938,7 +944,7 @@ def test_emit_spans_uncorrelated_finding_is_a_root_verdict_span(tmp_path: Path) 
         label="pass",
     )
     spans_path = tmp_path / "spans.jsonl"
-    _emit_spans(findings=(finding,), spans_path=spans_path)
+    emit_spans(findings=(finding,), spans_path=spans_path)
     request = json.loads(spans_path.read_text(encoding="utf-8").splitlines()[0])
     span = request["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
     assert "parentSpanId" not in span
@@ -946,13 +952,8 @@ def test_emit_spans_uncorrelated_finding_is_a_root_verdict_span(tmp_path: Path) 
     assert "work.item.id" not in attr_keys
 
 
-def test_dispatch_parent_id_none_for_uncorrelated() -> None:
-    assert _dispatch_parent_id(work_item_id=None) is None
-    assert _dispatch_parent_id(work_item_id="li-9") == "dispatch-li-9"
-
-
 def test_build_span_without_parent_omits_parent_span_id() -> None:
-    span = _build_span(
+    span = build_span(
         name="n",
         span_id="s",
         attrs={"k": 1},
@@ -965,7 +966,7 @@ def test_build_span_without_parent_omits_parent_span_id() -> None:
 
 def test_check_budget_raises_when_deadline_passed() -> None:
     with pytest.raises(TimeoutError, match=_BUDGET_EXCEEDED_MESSAGE):
-        _check_budget(deadline=0.0)  # a deadline in the deep past trips it.
+        check_budget(deadline=0.0)  # a deadline in the deep past trips it.
 
 
 def test_run_pass_aborts_when_budget_exceeded_midpass(
