@@ -23,7 +23,6 @@ from __future__ import annotations
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import (
     EDGE_BLOCKS,
-    EDGE_SUPERSEDES,
     FakeBeadsClient,
     make_beads_client,
 )
@@ -36,10 +35,6 @@ from livespec_orchestrator_beads_fabro.store import (
     read_work_item_comments,
     read_work_item_native_priorities,
     read_work_items,
-    register_custom_statuses,
-    update_work_item_policy,
-    update_work_item_rank,
-    update_work_item_status,
 )
 from livespec_orchestrator_beads_fabro.types import AuditRecord, StoreConfig, WorkItem
 from livespec_runtime.work_items.rank import BOTTOM_SENTINEL
@@ -175,54 +170,6 @@ def test_assignee_and_rank_roundtrip() -> None:
     assert read_back.assignee == "alice"
 
 
-def test_update_work_item_rank_rekeys_in_place_leaving_other_fields() -> None:
-    """`rebalance-ranks` re-keys metadata.rank in place; status/labels/assignee untouched."""
-    append_work_item(
-        path=_config(),
-        item=_minimal_work_item(
-            id_="li-rk", rank="a2", assignee="alice", origin="gap-tied", gap_id="G1"
-        ),
-    )
-    update_work_item_rank(path=_config(), item=_minimal_work_item(id_="li-rk", rank="a8"))
-    [read_back] = list(read_work_items(path=_config()))
-    assert read_back.rank == "a8"
-    assert read_back.assignee == "alice"
-    assert read_back.gap_id == "G1"
-    assert read_back.status == "ready"
-
-
-def test_update_work_item_status_transitions_and_sets_assignee_in_place() -> None:
-    """The Dispatcher's admit/complete/bounce in-place status (+ assignee) write."""
-    append_work_item(path=_config(), item=_minimal_work_item(id_="li-st", status="ready"))
-    # admit: ready -> active + assignee.
-    update_work_item_status(path=_config(), item_id="li-st", status="active", assignee="fabro")
-    [read_back] = list(read_work_items(path=_config()))
-    assert (read_back.status, read_back.assignee) == ("active", "fabro")
-    # complete: active -> acceptance (no assignee change).
-    update_work_item_status(path=_config(), item_id="li-st", status="acceptance")
-    [read_back] = list(read_work_items(path=_config()))
-    assert (read_back.status, read_back.assignee) == ("acceptance", "fabro")
-
-
-def test_update_work_item_policy_noop_leaves_item_unchanged() -> None:
-    append_work_item(
-        path=_config(),
-        item=_minimal_work_item(
-            id_="li-pol-noop",
-            admission_policy="manual",
-            acceptance_policy="ai-then-human",
-        ),
-    )
-
-    update_work_item_policy(path=_config(), item_id="li-pol-noop")
-
-    [read_back] = list(read_work_items(path=_config()))
-    assert (read_back.admission_policy, read_back.acceptance_policy) == (
-        "manual",
-        "ai-then-human",
-    )
-
-
 def test_legacy_rank_less_record_reads_bottom_sentinel(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -267,16 +214,6 @@ def test_absent_policy_labels_read_back_none() -> None:
     assert read_back.blocked_reason is None
 
 
-def test_append_lands_custom_status_via_two_step() -> None:
-    """A non-done create is a 2-step path: `bd create` lands `open`, then the
-    status is set to the custom livespec state."""
-    append_work_item(path=_config(), item=_minimal_work_item(id_="li-bk", status="backlog"))
-    record = _fake().show_issue(issue_id="li-bk")
-    assert record["status"] == "backlog"
-    [read_back] = list(read_work_items(path=_config()))
-    assert read_back.status == "backlog"
-
-
 def test_done_maps_to_beads_closed_and_back() -> None:
     """livespec `done` is the one adapter name-mapping: it writes beads
     `closed` and reads back `done`."""
@@ -289,11 +226,6 @@ def test_done_maps_to_beads_closed_and_back() -> None:
     assert record["status"] == "closed"
     [read_back] = list(read_work_items(path=_config()))
     assert read_back.status == "done"
-
-
-def test_register_custom_statuses_provisions_the_tenant() -> None:
-    register_custom_statuses(path=_config())
-    assert _fake().custom_statuses_registered is True
 
 
 def test_audit_maps_to_metadata_losslessly() -> None:
@@ -441,18 +373,6 @@ def test_depends_on_mixed_local_and_non_local_roundtrip() -> None:
     assert len(materialized["li-x"].depends_on) == 2
 
 
-def test_superseded_by_maps_to_supersedes_edge_on_superseding_issue() -> None:
-    append_work_item(path=_config(), item=_minimal_work_item(id_="li-new"))
-    append_work_item(
-        path=_config(),
-        item=_minimal_work_item(id_="li-old", superseded_by="li-new"),
-    )
-    # The supersedes edge lives on the SUPERSEDING issue (li-new), pointing at
-    # the superseded issue (li-old).
-    record = _fake().show_issue(issue_id="li-new")
-    assert {"depends_on_id": "li-old", "type": EDGE_SUPERSEDES} in record["dependencies"]
-
-
 def test_read_back_superseded_by_is_none_by_design() -> None:
     """A single record cannot self-report being superseded — reads to None."""
     append_work_item(path=_config(), item=_minimal_work_item(id_="li-new"))
@@ -492,102 +412,6 @@ def test_depends_on_local_dict_with_non_string_id_emits_no_edge() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_close_in_place_mutates_existing_record_no_second_record() -> None:
-    open_item = _minimal_work_item(id_="li-a", status="ready")
-    append_work_item(path=_config(), item=open_item)
-    audit = AuditRecord(
-        verification_timestamp="2026-05-19T02:00:00Z",
-        commits=("c1",),
-        files_changed=("f1",),
-        merge_sha="sha-1",
-        pr_number=11,
-    )
-    closure = _minimal_work_item(
-        id_="li-a",
-        status="done",
-        resolution="completed",
-        reason="shipped",
-        audit=audit,
-    )
-    append_work_item(path=_config(), item=closure)
-    # Exactly one record for li-a (in-place mutation, not a second append).
-    all_ids = [record["id"] for record in _fake().list_issues()]
-    assert all_ids.count("li-a") == 1
-    record = _fake().show_issue(issue_id="li-a")
-    assert record["status"] == "closed"
-    assert record["close_reason"] == "shipped"
-    assert "resolution:completed" in record["labels"]
-    assert record["metadata"]["audit"]["merge_sha"] == "sha-1"
-
-
-def test_close_in_place_reads_back_resolution_and_audit() -> None:
-    append_work_item(path=_config(), item=_minimal_work_item(id_="li-a", status="ready"))
-    audit = AuditRecord(
-        verification_timestamp="2026-05-19T02:00:00Z",
-        commits=(),
-        files_changed=(),
-        merge_sha="sha-2",
-    )
-    append_work_item(
-        path=_config(),
-        item=_minimal_work_item(
-            id_="li-a",
-            status="done",
-            resolution="spec-revised",
-            reason="superseded by spec",
-            audit=audit,
-        ),
-    )
-    materialized = materialize_work_items(records=read_work_items(path=_config()))
-    closed = materialized["li-a"]
-    assert closed.status == "done"
-    assert closed.resolution == "spec-revised"
-    assert closed.reason == "superseded by spec"
-    assert closed.audit is not None
-    assert closed.audit.merge_sha == "sha-2"
-
-
-def test_close_in_place_without_resolution_adds_no_resolution_label() -> None:
-    append_work_item(path=_config(), item=_minimal_work_item(id_="li-a", status="ready"))
-    append_work_item(
-        path=_config(),
-        item=_minimal_work_item(id_="li-a", status="done", reason="admin close"),
-    )
-    record = _fake().show_issue(issue_id="li-a")
-    assert not any(label.startswith("resolution:") for label in record["labels"])
-    assert record["status"] == "closed"
-
-
-def test_append_born_closed_item_for_absent_id_creates_then_closes() -> None:
-    """A fresh record born closed (id not present) is created then closed in place."""
-    audit = AuditRecord(
-        verification_timestamp="2026-05-19T02:00:00Z",
-        commits=("c",),
-        files_changed=("f",),
-        merge_sha="sha-3",
-    )
-    append_work_item(
-        path=_config(),
-        item=_minimal_work_item(
-            id_="li-born",
-            status="done",
-            resolution="completed",
-            reason="done at birth",
-            audit=audit,
-        ),
-    )
-    all_ids = [record["id"] for record in _fake().list_issues()]
-    assert all_ids.count("li-born") == 1
-    record = _fake().show_issue(issue_id="li-born")
-    assert record["status"] == "closed"
-    assert "resolution:completed" in record["labels"]
-
-
-# --------------------------------------------------------------------------
-# read_work_items returns every issue in the tenant.
-# --------------------------------------------------------------------------
-
-
 def test_read_work_items_returns_every_issue() -> None:
     append_work_item(path=_config(), item=_minimal_work_item(id_="li-a"))
     append_work_item(path=_config(), item=_minimal_work_item(id_="li-b"))
@@ -619,7 +443,7 @@ def test_materialize_work_items_is_identity_keyed_by_id() -> None:
 # then read back. Others — a non-string `title`, a non-int `priority` — are
 # field-shapes the fake never produces, so those are exercised with a small
 # stub `BeadsClient` returning a hand-crafted raw record, injected by
-# monkeypatching `store.make_beads_client`.
+# monkeypatching the relevant `make_beads_client` seam.
 # --------------------------------------------------------------------------
 
 
@@ -628,7 +452,7 @@ class _StubClient:
 
     The store's read path (`read_work_items`) only calls `list_issues`, so
     that is the sole verb implemented; the stub is injected via
-    monkeypatching `store.make_beads_client` and never type-checked
+    monkeypatching the relevant `make_beads_client` seam and never type-checked
     against the full `BeadsClient` protocol.
     """
 
@@ -641,10 +465,16 @@ class _StubClient:
 
 def _install_stub(*, monkeypatch: pytest.MonkeyPatch, records: list[dict[str, object]]) -> None:
     stub = _StubClient(records=records)
-    monkeypatch.setattr(
+
+    def make_stub_client(*, config: StoreConfig) -> _StubClient:
+        _ = config
+        return stub
+
+    for target in (
         "livespec_orchestrator_beads_fabro.store.make_beads_client",
-        lambda *, config: stub,  # noqa: ARG005
-    )
+        "livespec_orchestrator_beads_fabro._store_native_priorities.make_beads_client",
+    ):
+        monkeypatch.setattr(target, make_stub_client)
 
 
 def _raw_work_item(**overrides: object) -> dict[str, object]:
@@ -718,6 +548,15 @@ def test_native_priority_reader_rejects_non_int_priority(
     with pytest.raises(BeadsMappingError) as excinfo:
         _ = read_work_item_native_priorities(path=_config())
     assert "priority" in excinfo.value.detail
+
+
+def test_native_priority_reader_rejects_non_string_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_stub(monkeypatch=monkeypatch, records=[_raw_work_item(id=99)])
+    with pytest.raises(BeadsMappingError) as excinfo:
+        _ = read_work_item_native_priorities(path=_config())
+    assert "id" in excinfo.value.detail
 
 
 def test_non_string_optional_field_raises_mapping_error(
@@ -940,7 +779,7 @@ class _CommentsStubClient:
 
     `read_work_item_comments` only calls `list_comments`, so that is the
     sole verb implemented; injected via monkeypatching
-    `store.make_beads_client` (same pattern as `_StubClient`).
+    the comments `make_beads_client` seam.
     """
 
     def __init__(self, *, records: list[dict[str, object]]) -> None:
@@ -987,9 +826,14 @@ def test_read_work_item_comments_skips_unusable_records_fail_soft(
             {"text": "kept", "author": 7, "created_at": False},
         ]
     )
+
+    def make_comments_stub_client(*, config: StoreConfig) -> _CommentsStubClient:
+        _ = config
+        return stub
+
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.store.make_beads_client",
-        lambda *, config: stub,  # noqa: ARG005
+        "livespec_orchestrator_beads_fabro._store_comments.make_beads_client",
+        make_comments_stub_client,
     )
     comments = read_work_item_comments(path=_config(), work_item_id="li-any")
     assert comments == (WorkItemComment(text="kept", author=None, created_at=None),)
