@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.12](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.11...v0.17.12) (2026-07-11)
+
+
+### Bug Fixes
+
+* extract drive human valve actions ([b06dbc6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b06dbc6097559aed3848b7a71cc4c1e036dc95c0))
+
 ## [0.17.11](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.10...v0.17.11) (2026-07-11)
 
 
