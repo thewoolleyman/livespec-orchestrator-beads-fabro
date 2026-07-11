@@ -151,6 +151,44 @@ that a secret is missing. Re-run under your project's configured env wrapper
 (`with-<project>-env.sh`) -- `<command>`. Never hand-hunt the secret or reach
 around the seam with raw `mysql` / `dolt` / `sudo`.
 
+## Host Fabro server (self-hosted dark factory)
+
+The Dispatcher's host-direct path (`dispatcher.py loop` run on the host, NOT in
+the orchestrator container) connects to a long-lived Fabro server on
+**`127.0.0.1:32276`**. Installing the plugin does NOT start it; the maintainer
+runs it directly from `~/.fabro/bin/fabro`. As of the 2026-07-11 cutover
+(Recommendation A) the host binary is **fabro 0.254 + backported PR #568** (Git
+SHA `f7ff19e`) — chosen over modern fabro because any fabro ≥ 0.256 breaks
+`workflow.fabro` (fabro #474 de-templates `acp.command`). Rollout/revert state
+is ledger `bd-ib-2nq.4`; the full runbook is `orchestrator-image/README.md`.
+
+- **Start / restart** (OAuth-only — no wrapper, no `ANTHROPIC_API_KEY`):
+
+  ```bash
+  ~/.fabro/bin/fabro server start --bind 127.0.0.1:32276 --no-web --no-upgrade-check
+  ```
+
+  It daemonizes. `--no-web`: the fork binary ships no bundled web-UI assets. The
+  ~6s SlateDB store open exceeds stock 0.254's 5s daemon-readiness cap, so the
+  fork makes it env-configurable — `FABRO_SERVER_START_READY_TIMEOUT_SECS`
+  (default 60s); stock 0.254 would fail to start against this store.
+- **OAuth-only posture — do NOT put `ANTHROPIC_API_KEY` in the SERVER env.** It
+  bills API cost and can leak into the sandbox. The agent's model auth is
+  `CLAUDE_CODE_OAUTH_TOKEN`, injected into the *sandbox* by the Dispatcher per
+  dispatch. In `fabro doctor`, `[✗] LLM Providers (none configured)` is therefore
+  CORRECT.
+- **Credentials live in `~/.fabro/`** (the GitHub App integration from the vault;
+  `auth.json`; the SlateDB `storage/`). `fabro doctor` should show GitHub App
+  **configured**; if it is not, the server's vault did not load — do NOT "fix" it
+  by adding `ANTHROPIC_API_KEY`.
+- **Fleet-shared + Tailscale-served.** `tailscaled` holds a standing
+  `tailscale serve` proxy `https://vps.perch-rudd.ts.net:32276 → 127.0.0.1:32276`;
+  it persists across restarts and simply returns refused while the loopback
+  backend is down. A `:32276` listener owned by `tailscaled` (not `fabro`) means
+  the proxy is up but the server is not.
+- **Never `pkill -f 'fabro server'`** — it self-matches the killing shell and can
+  reap unrelated shells. Match real daemons via `/proc/<pid>/exe` and kill by PID.
+
 ## Daily commands
 
 - `just bootstrap` — first-touch setup on a fresh clone; idempotently sets

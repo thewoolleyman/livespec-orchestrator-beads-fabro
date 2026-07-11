@@ -1,4 +1,4 @@
-# Handoff — fabro self-host of the credential fix (#568) — MID-CUTOVER (Recommendation A + data recovery)
+# Handoff — fabro self-host of the credential fix (#568) — CUTOVER COMPLETE (Recommendation A)
 
 **Goal:** run fabro **PR #568** (credential-refresh fix — keeps `git push` tokens
 fresh across long ACP turns) in the **host factory**, without waiting for
@@ -11,20 +11,33 @@ backported #568** (NOT modern fabro). The full 0.254→0.290 migration is a
 > Terminology: it's **one fabro PR, #568**. Ignore "part 2/3" in older docs.
 > "Part 1" was a separate, already-merged **this-repo** config PR (#429).
 
-## STATUS RIGHT NOW: factory is DOWN, state is SAFE to leave
+## STATUS: CUTOVER COMPLETE + PROVEN (2026-07-11)
 
-- **No fabro server is running** (verified: 0 listeners on 127.0.0.1:32276, 0 real
-  `__serve` daemons). Nothing is mutating the live store.
-- **Live `~/.fabro` is the 0.290-MIGRATED state** (wrong for Rec A). It must be
-  swapped for the restored old-format store (see cutover).
-- The **0.254+#568+timeout binary** is built at
-  `~/.worktrees/fabro/fork-0254-backport/target/release/fabro`
-  (branch `fork-0254-backport`, HEAD `f7ff19ee` = `497aaba` + #568 `f630c935` +
-  timeout-fix). **Before using it, verify** `BUILD_EXIT=0` in
-  `scratchpad/build-0254-final.log` AND `fabro version` = 0.254.0 AND
-  `strings <bin> | grep FABRO_SERVER_START_READY_TIMEOUT_SECS` is present (proves
-  the timeout fix is compiled in — the store open exceeds the stock 5s daemon
-  readiness cap).
+The cutover below was executed and the fix proven end-to-end. Current live state:
+
+- **Host fabro server is UP** on `127.0.0.1:32276` running the **0.254+#568**
+  binary (`~/.fabro/bin/fabro`, version 0.254.0, SHA `f7ff19e`). OAuth-only;
+  `fabro doctor` green (GitHub App configured; `[✗] LLM Providers` = correct).
+- **Live `~/.fabro` is the restored OLD-format store** (golden `~/.fabro-restore`
+  copied in). The prior 0.290-migrated state is preserved at
+  `~/.fabro.migrated-20260711T133052Z` (backup #6 — one-command rollback).
+- **#568 proven:** a throwaway dispatch (`bd-ib-dqt`) reached the publish node,
+  pushed, and merged **PR #481** GREEN on the self-hosted server (⇒ `git push`
+  works ⇒ credential refresh confirmed). The throwaway was reverted as **PR #482**
+  (it auto-merged — see learning below); `bd-ib-dqt` reset to backlog.
+- **LEARNING — `--mode shadow` still AUTO-MERGES.** Shadow vs autonomous only
+  gates the admission approve-gate arming, NOT the merge. The Dispatcher pipeline
+  always auto-merges a green run, so any throwaway proof lands on master and must
+  be reverted (or use an item you are fine landing).
+- **What REMAINS on the track:** the **>60-min TTL-boundary proof** (`bd-ib-2nq.3`
+  — our proof was the short-run leg), and the **revert-to-canonical last-mile**
+  (`bd-ib-2nq.4`, blocked on fabro-sh/fabro #568 merging upstream). Deferred
+  0.254→0.290 modernization: `bd-ib-6qu`.
+
+The binary was built at `~/.worktrees/fabro/fork-0254-backport/target/release/fabro`
+(branch `fork-0254-backport`, HEAD `f7ff19ee` = `497aaba` + #568 `f630c935` +
+timeout-fix) and installed to `~/.fabro/bin/fabro`. The historical cutover recipe
+below is retained for rollback/reference.
 
 ## Why 0.254 (load-bearing findings — do not re-litigate)
 
