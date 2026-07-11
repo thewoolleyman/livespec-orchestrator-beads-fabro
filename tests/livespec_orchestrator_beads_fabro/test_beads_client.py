@@ -381,6 +381,82 @@ def test_invoke_raises_credential_error_when_password_absent(
     assert "credential_wrapper" in str(excinfo.value)
 
 
+def test_invoke_skips_credential_and_tenant_guards_for_embedded_ledger(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An EMBEDDED ledger (self-contained Dolt, no shared server) has no family
+    tenant password and no server tenant identity, so `_invoke` MUST skip BOTH
+    the `BEADS_DOLT_PASSWORD` guard AND the `.beads/config.yaml` tenant match,
+    proceeding straight to the `bd` subprocess. Modelled by a repo whose
+    `.beads/config.yaml` does NOT declare `dolt.mode: server`, with the family
+    secret absent from env.
+    """
+    beads_dir = tmp_path / ".beads"
+    beads_dir.mkdir()
+    _ = (beads_dir / "config.yaml").write_text(
+        "# Embedded (no --server) self-contained Dolt; no family password.\n"
+        "dolt.auto-start: true\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("BEADS_DOLT_PASSWORD", raising=False)
+    seen: list[list[str]] = []
+
+    def _fake_run(argv: list[str], **_kw: object) -> subprocess.CompletedProcess[str]:
+        seen.append(argv)
+        return subprocess.CompletedProcess(args=argv, returncode=0, stdout="[]", stderr="")
+
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro._beads_client_shell.subprocess.run", _fake_run
+    )
+    client = ShellBeadsClient(config=_config(repo_root=tmp_path))
+    result = client.list_issues()
+    assert result == []
+    # Reached the subprocess WITHOUT the tenant-match `config get` probes and
+    # WITHOUT raising the credential guard: the only argv is the verb itself.
+    assert seen == [["/managed/bd", "list", "--status", "all", "--limit", "0", "--json"]]
+
+
+# --------------------------------------------------------------------------
+# _is_embedded_ledger — the `.beads/config.yaml` mode detector that decides
+# whether `_invoke` skips the family-secret + tenant-match guards. Mirrors the
+# bootstrap credential-precheck's server-mode detector (inverse polarity):
+# server-mode config -> False (guards apply); embedded config -> True; an
+# absent/unreadable config -> False (fail CLOSED to the server-mode guards).
+# --------------------------------------------------------------------------
+
+
+def test_is_embedded_ledger_absent_config_is_false(tmp_path: Path) -> None:
+    from livespec_orchestrator_beads_fabro._beads_client_shell import _is_embedded_ledger
+
+    assert _is_embedded_ledger(repo_root=tmp_path) is False
+
+
+def test_is_embedded_ledger_server_mode_config_is_false(tmp_path: Path) -> None:
+    from livespec_orchestrator_beads_fabro._beads_client_shell import _is_embedded_ledger
+
+    beads_dir = tmp_path / ".beads"
+    beads_dir.mkdir()
+    _ = (beads_dir / "config.yaml").write_text(
+        "# server-mode tenant on the shared dolt-server\ndolt.mode: server\n",
+        encoding="utf-8",
+    )
+    assert _is_embedded_ledger(repo_root=tmp_path) is False
+
+
+def test_is_embedded_ledger_embedded_config_is_true(tmp_path: Path) -> None:
+    from livespec_orchestrator_beads_fabro._beads_client_shell import _is_embedded_ledger
+
+    beads_dir = tmp_path / ".beads"
+    beads_dir.mkdir()
+    _ = (beads_dir / "config.yaml").write_text(
+        "# Embedded (no --server) self-contained Dolt; no family password.\n"
+        "dolt.auto-start: true\n",
+        encoding="utf-8",
+    )
+    assert _is_embedded_ledger(repo_root=tmp_path) is True
+
+
 # --------------------------------------------------------------------------
 # ShellBeadsClient read verbs over a stubbed _run_json (no subprocess).
 # --------------------------------------------------------------------------
