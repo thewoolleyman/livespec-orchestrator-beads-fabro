@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.14.1...v0.15.0) (2026-07-11)
+
+
+### Features
+
+* publish the per-decision autonomous audit record + read surface (bd-ib-82a.2) ([ca28c00](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ca28c001d84e32a0ed8cc10a36d6123f738117f3))
+
 ## [0.14.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.14.0...v0.14.1) (2026-07-10)
 
 
