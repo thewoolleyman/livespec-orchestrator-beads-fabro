@@ -309,3 +309,14 @@ pass `--no-verify`.
   satisfied by a standing directive once the goal is named — do not re-prompt.
   Surface real blockers and true judgment calls; drop routine "should I
   proceed?" confirmations. Default to acting, then reporting outcomes.
+- **Revert decisively; do not diagnose first** (maintainer-declared
+  2026-07-11). When something erroneously landed and the corrective action is
+  already unambiguous (a throwaway/mistaken change on `master` that must be
+  undone), execute the revert/undo IMMEDIATELY — do NOT first spend cycles
+  investigating whether it is "really" broken or why. Diagnosis is warranted
+  BEFORE acting only when it changes WHAT you do; when you already know the
+  action, do it first (worktree → revert PR → merge) and diagnose only if it
+  serves a follow-up. (Context: a throwaway proof dispatch auto-merged to
+  `master` and a post-merge janitor reported a red check; the revert was the
+  correct action regardless of the check result, so pausing to diagnose the
+  red was wasted ceremony.)
