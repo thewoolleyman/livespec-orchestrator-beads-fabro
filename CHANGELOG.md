@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.6...v0.17.7) (2026-07-11)
+
+
+### Bug Fixes
+
+* decompose dispatcher cost sink span pricing ([46e8ea0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/46e8ea09077d22a23ad07a660efc75926b83d946))
+
 ## [0.17.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.5...v0.17.6) (2026-07-11)
 
 
