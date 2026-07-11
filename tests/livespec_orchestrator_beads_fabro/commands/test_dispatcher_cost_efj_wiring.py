@@ -16,7 +16,7 @@ the receiver wrote. Four seams under test:
     proceeds when the derived cost is within caps, refuses `critical` when
     over a cap, accumulates per-session across runs, and STILL fail-closes
     when NO telemetry arrived;
-  * the dispatcher's `_cost_gate_after_verdict` reads the derived cost
+  * the dispatcher's `cost_gate_after_verdict` reads the derived cost
     out of the sink the receiver wrote and flips the gate end-to-end.
 
 Hermetic: synthetic OTLP trace dicts, an in-process receiver on an
@@ -34,6 +34,9 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost import gate_wave
+from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
+    cost_gate_after_verdict,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_sink import CostSink
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
@@ -46,9 +49,6 @@ from livespec_orchestrator_beads_fabro.commands._otel_receive import (
     ReceiverConfig,
 )
 from livespec_orchestrator_beads_fabro.commands._otel_scrub import is_allowed_attr
-from livespec_orchestrator_beads_fabro.commands.dispatcher import (
-    _cost_gate_after_verdict,  # pyright: ignore[reportPrivateUsage]
-)
 
 
 @dataclass(kw_only=True)
@@ -359,7 +359,7 @@ def test_cost_gate_after_verdict_reads_derived_cost_and_proceeds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """End-to-end: the dispatcher reads the derived cost the receiver wrote and
-    PROCEEDS — the gate flip wired through `_cost_gate_after_verdict`.
+    PROCEEDS — the gate flip wired through `cost_gate_after_verdict`.
 
     fabro reports null cost (dark), but the cost sink the receiver wrote
     carries a within-cap derived cost for the work item, so the autonomous
@@ -387,7 +387,7 @@ def test_cost_gate_after_verdict_reads_derived_cost_and_proceeds(
     journal = _RecordingJournal()
     runner = _FakeRunner(stdout=_ps_null(run_id="01RUNAAA", work_item_id="item-aaa"), exit_code=0)
     poster = _RecordingPoster()
-    _cost_gate_after_verdict(
+    cost_gate_after_verdict(
         args=args,
         repo=tmp_path,
         outcomes=[_green("item-aaa")],
@@ -432,7 +432,7 @@ def test_cost_gate_after_verdict_derived_over_cap_fires_alarm(
     journal = _RecordingJournal()
     runner = _FakeRunner(stdout=_ps_null(run_id="01RUNAAA", work_item_id="item-aaa"), exit_code=0)
     poster = _RecordingPoster()
-    _cost_gate_after_verdict(
+    cost_gate_after_verdict(
         args=args,
         repo=tmp_path,
         outcomes=[_green("item-aaa")],
@@ -478,7 +478,7 @@ def test_cost_gate_after_verdict_skips_non_green_and_unaccrued(
     journal = _RecordingJournal()
     runner = _FakeRunner(stdout=_ps_null(run_id="01RUNAAA", work_item_id="item-aaa"), exit_code=0)
     poster = _RecordingPoster()
-    _cost_gate_after_verdict(
+    cost_gate_after_verdict(
         args=args,
         repo=tmp_path,
         outcomes=[_failed("item-host"), _green("item-aaa")],
@@ -509,7 +509,7 @@ def test_cost_gate_after_verdict_is_fail_open_on_missing_journal_attr(
     runner = _FakeRunner(stdout=_ps_null(run_id="01RUNAAA", work_item_id="item-aaa"), exit_code=0)
     poster = _RecordingPoster()
     # Must NOT raise; degrades to the fail-closed unobservable gate.
-    _cost_gate_after_verdict(
+    cost_gate_after_verdict(
         args=args,
         repo=Path("/x"),
         outcomes=[_green("item-aaa")],

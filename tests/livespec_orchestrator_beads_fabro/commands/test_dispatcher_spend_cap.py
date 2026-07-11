@@ -18,7 +18,7 @@ Two layers under test:
     The fail-closed-when-unobservable behavior 5v9 built STAYS: an
     autonomous-mode null cost still refuses even with caps resolved.
 
-  * `_cost_gate_after_verdict` (the dispatcher wiring) — the post-verdict,
+  * `cost_gate_after_verdict` (the dispatcher wiring) — the post-verdict,
     FAIL-OPEN stage that runs `fabro ps -a --json` once, hands it to
     `gate_wave`, and turns each refusal into a `spend-cap-breach`-class
     `NotifyEvent` through `notify_terminal`. Fail-open is load-bearing: a
@@ -38,24 +38,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import dispatcher
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost import (
     CostGateDecision,
     cap_value_decision,
     gate_wave,
     usd_micros_to_usd,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
+    cost_gate_after_verdict,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
-)
-
-# Importing the module-private wiring helper directly (the test tier
-# verifies the alarm wiring); importing it avoids the SLF001
-# attribute-access ban while keeping the name addressable, the same
-# pattern test_dispatcher_notify uses for the alarm internals.
-from livespec_orchestrator_beads_fabro.commands.dispatcher import (
-    _cost_gate_after_verdict,  # pyright: ignore[reportPrivateUsage]
 )
 
 
@@ -354,7 +348,7 @@ def test_cost_gate_after_verdict_no_green_outcome_runs_no_probe() -> None:
     journal = _RecordingJournal()
     runner = _FakeRunner()
     poster = _RecordingPoster()
-    _cost_gate_after_verdict(
+    cost_gate_after_verdict(
         args=_args(),
         repo=Path("/x"),
         outcomes=[_host_only_refused("item-bbb")],
@@ -384,7 +378,7 @@ def test_cost_gate_after_verdict_refusal_fires_spend_cap_breach_alarm(
     journal = _RecordingJournal()
     runner = _FakeRunner(stdout=_PS_JSON_NULL, exit_code=0)
     poster = _RecordingPoster()
-    _cost_gate_after_verdict(
+    cost_gate_after_verdict(
         args=_args(mode="autonomous"),
         repo=Path("/x"),
         outcomes=[_green("item-aaa")],
@@ -407,21 +401,17 @@ def test_cost_gate_after_verdict_refusal_fires_spend_cap_breach_alarm(
     assert "notify-sent" in [r.get("stage") for r in journal.records]
 
 
-def test_cost_gate_after_verdict_refreshes_github_token_before_probe(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_cost_gate_after_verdict_refreshes_github_token_before_probe() -> None:
     """The post-verdict cost probe must not inherit a stale ambient GH_TOKEN."""
     journal = _RecordingJournal()
     runner = _FakeRunner(stdout=_PS_JSON_NULL, exit_code=0)
-    monkeypatch.setattr(dispatcher, "ShellCommandRunner", lambda: runner)
-    monkeypatch.setattr(
-        dispatcher, "_github_token_supplier", lambda: lambda: "fresh-post-verdict-token"
-    )
-    _cost_gate_after_verdict(
+    cost_gate_after_verdict(
         args=_args(mode="shadow"),
         repo=Path("/x"),
         outcomes=[_green("item-aaa")],
         journal=journal,
+        runner=runner,
+        token_supplier=lambda: "fresh-post-verdict-token",
         poster=_RecordingPoster(),
     )
     assert runner.calls[0]["env"]["GH_TOKEN"] == "fresh-post-verdict-token"
@@ -439,7 +429,7 @@ def test_cost_gate_after_verdict_is_fail_open_on_runner_exception() -> None:
     runner = _FakeRunner(raises=RuntimeError("fabro ps blew up"))
     poster = _RecordingPoster()
     # Must NOT raise.
-    _cost_gate_after_verdict(
+    cost_gate_after_verdict(
         args=_args(),
         repo=Path("/x"),
         outcomes=[_green("item-aaa")],
@@ -466,7 +456,7 @@ def test_cost_gate_after_verdict_observed_under_caps_fires_no_alarm() -> None:
         exit_code=0,
     )
     poster = _RecordingPoster()
-    _cost_gate_after_verdict(
+    cost_gate_after_verdict(
         args=_args(mode="autonomous"),
         repo=Path("/x"),
         outcomes=[_green("item-aaa")],
@@ -491,7 +481,7 @@ def test_cost_gate_after_verdict_treats_nonzero_ps_exit_as_no_signal() -> None:
     journal = _RecordingJournal()
     runner = _FakeRunner(stdout="", exit_code=1)
     poster = _RecordingPoster()
-    _cost_gate_after_verdict(
+    cost_gate_after_verdict(
         args=_args(mode="autonomous"),
         repo=Path("/x"),
         outcomes=[_green("item-aaa")],

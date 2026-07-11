@@ -2323,10 +2323,6 @@ def _stored() -> dict[str, WorkItem]:
     return materialize_work_items(records=read_work_items(path=_config()))
 
 
-def _raise_cost_gate_error(**_: object) -> None:
-    raise RuntimeError("cost probe unavailable")
-
-
 def test_dispatch_green_closes_item_and_journals(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
@@ -2337,7 +2333,7 @@ def test_dispatch_green_closes_item_and_journals(
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
     monkeypatch.setattr(dispatcher, "run_dispatch", fake)
-    monkeypatch.setattr(dispatcher, "_cost_gate", _raise_cost_gate_error)
+    monkeypatch.setattr(dispatcher, "cost_gate_after_verdict", lambda **_: None)
     monkeypatch.setattr(
         "livespec_orchestrator_beads_fabro.commands.dispatcher.tempfile.gettempdir",
         lambda: str(tmp_path),
@@ -2376,9 +2372,9 @@ def test_dispatch_green_closes_item_and_journals(
     # per-dispatch outcome signal + mechanical size proxies on the existing
     # journal — here the merged-PR diff-size probe returns None because `gh pr
     # view` fails on the hermetic non-repo, but the record is still
-    # journaled). Then y0m's cost-gate (here `cost-gate-error` because no
-    # `fabro` binary is on the hermetic PATH — the gate fails open and never
-    # changes the verdict), then ddu's staged-self-update gate (here
+    # journaled). The cost-gate stage is stubbed in this dispatcher-level
+    # test; its fail-open behavior is covered in the mirrored cost-gate tests.
+    # Then ddu's staged-self-update gate runs (here
     # `self-update-skipped`: the green outcome has a PR, but `gh pr view`
     # fails on the hermetic non-repo so the merged-file list is empty — NOT a
     # self-merge), then the mechanical reflection stage at the default
@@ -2391,7 +2387,6 @@ def test_dispatch_green_closes_item_and_journals(
         "ledger-accept",
         "outcome",
         "calibration",
-        "cost-gate-error",
         "self-update-skipped",
         "reflection",
     ]

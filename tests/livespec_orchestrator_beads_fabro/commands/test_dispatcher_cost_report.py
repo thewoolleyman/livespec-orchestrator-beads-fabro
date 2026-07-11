@@ -43,6 +43,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_cost import (
     gate_wave,
     resolve_cost_mode,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
+    cost_gate_after_verdict,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_report import (
     build_cost_report_item,
     cost_report_summary_lines,
@@ -58,9 +61,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     cost_sink_path,
 )
 from livespec_orchestrator_beads_fabro.commands._otel_scrub import is_allowed_attr
-from livespec_orchestrator_beads_fabro.commands.dispatcher import (
-    _cost_gate_after_verdict,  # pyright: ignore[reportPrivateUsage]
-)
 
 
 @dataclass(kw_only=True)
@@ -578,7 +578,7 @@ def test_cost_gate_report_mode_emits_telemetry_and_fires_no_alarm(
     journal = _RecordingJournal()
     runner = _FakeRunner(stdout=_ps_null(run_id="01RUNAAA", work_item_id="item-aaa"), exit_code=0)
     poster = _RecordingPoster()
-    _cost_gate_after_verdict(
+    cost_gate_after_verdict(
         args=args,
         repo=tmp_path,
         outcomes=[_green("item-aaa")],
@@ -611,7 +611,7 @@ def test_cost_gate_report_mode_reports_unobservable_without_refusing(
     journal = _RecordingJournal()
     runner = _FakeRunner(stdout=_ps_null(run_id="01RUNAAA", work_item_id="item-aaa"), exit_code=0)
     poster = _RecordingPoster()
-    _cost_gate_after_verdict(
+    cost_gate_after_verdict(
         args=args,
         repo=tmp_path,
         outcomes=[_green("item-aaa")],
@@ -657,7 +657,7 @@ def test_cost_gate_report_mode_skips_non_green_outcomes(
     journal = _RecordingJournal()
     runner = _FakeRunner(stdout=_ps_null(run_id="01RUNAAA", work_item_id="item-aaa"), exit_code=0)
     poster = _RecordingPoster()
-    _cost_gate_after_verdict(
+    cost_gate_after_verdict(
         args=args,
         repo=tmp_path,
         outcomes=[_failed("item-host"), _green("item-aaa")],
