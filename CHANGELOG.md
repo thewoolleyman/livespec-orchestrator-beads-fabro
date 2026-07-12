@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.24.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.23.0...v0.24.0) (2026-07-12)
+
+
+### Features
+
+* drive the file-tail OTel egress driver (P-factory, livespec-3lev.2) ([5e683e4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5e683e4ec7163ddc8e65b2fefd062e9b1d22919f))
+
+
+### Bug Fixes
+
+* bind OTLP receiver to the docker bridge gateway (P-factory, livespec-3lev.2) ([fc17518](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fc17518e24ff680fdd60bf152798bb0fe84dfd9c))
+
 ## [0.23.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.22.3...v0.23.0) (2026-07-12)
 
 
