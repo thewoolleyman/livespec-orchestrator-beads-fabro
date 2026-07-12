@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.22.2...v0.22.3) (2026-07-12)
+
+
+### Bug Fixes
+
+* reflector file_new sets lifecycle status (backlog) after create ([ea1e441](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ea1e441759365fc817fddf2453609f2314cecd4d))
+
 ## [0.22.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.22.1...v0.22.2) (2026-07-12)
 
 
