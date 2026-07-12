@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.20.0...v0.20.1) (2026-07-12)
+
+
+### Bug Fixes
+
+* remove dispatcher loop facade ([d78ef03](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d78ef034d303e0ff1a9c55927765f39eb2ffb88f))
+
 ## [0.20.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.19.0...v0.20.0) (2026-07-12)
 
 
