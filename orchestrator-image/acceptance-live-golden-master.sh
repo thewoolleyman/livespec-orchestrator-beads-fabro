@@ -563,8 +563,13 @@ assert_merged_greeting() {
   # explicitly. The greeting assertion is NEVER weakened or masked.
   local out rc
   set +e
-  out="$(LIVESPEC_LIVE_CHECKOUT="$merged" LIVESPEC_LIVE_NAME="$NAME" LIVESPEC_BEADS_FAKE=1 \
-    uv run --project "$REPO_ROOT" pytest \
+  # Route uv through `mise exec`: mise is a system binary (on PATH even when the
+  # credential wrapper resets PATH to a base set), while `uv` is mise-managed and
+  # otherwise absent here. cd to REPO_ROOT so mise reads this repo's .mise.toml.
+  # This host-side assertion leg is only reached once the dispatch is green, so
+  # the uv-resolution gap surfaced only after the factory itself was fixed.
+  out="$(cd "$REPO_ROOT" && LIVESPEC_LIVE_CHECKOUT="$merged" LIVESPEC_LIVE_NAME="$NAME" LIVESPEC_BEADS_FAKE=1 \
+    mise exec -- uv run --project "$REPO_ROOT" pytest \
       "$REPO_ROOT/acceptance/test_beads_fabro_live_golden_master.py" -q 2>&1)"
   rc=$?
   set -e
