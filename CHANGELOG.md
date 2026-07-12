@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.22.3...v0.23.0) (2026-07-12)
+
+
+### Features
+
+* standalone ledger-normalize + generalize status normalizer (in_progress→active) ([9ea4f1a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9ea4f1ac97db5b6b2acd1e4658dc29e6f5e8bbc2))
+
 ## [0.22.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.22.2...v0.22.3) (2026-07-12)
 
 
