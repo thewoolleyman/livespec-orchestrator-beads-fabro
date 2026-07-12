@@ -130,16 +130,12 @@ provider = "docker"
 #   sha-<short>  — per master-build (mutable; tracks HEAD)
 #   v<X.Y.Z>     — per release tag (immutable)
 #
-# CURRENT PIN: v0.39.0 (matches the livespec-dev-tooling bump-pin surface).
-#
-# PIN SURFACE NOTE: shared pin_autodiscovery does not yet cover workflow.toml
-# docker images. This repo's private
-# `check-fabro-sandbox-image-pin-lockstep` gate therefore requires this tag to
-# match the pinned livespec-dev-tooling tag in pyproject.toml, keeping the two
-# committed pins in lockstep. That is a repo-internal consistency guard only: it
-# does NOT verify that a release shipped the pin or that the running factory
-# uses this image (rollout comes from a release-triggering commit, not this
-# check). The producer-side lockstep gate
+# PIN SURFACE NOTE: this docker image tag is now covered by the shared
+# `bump-pin` autodiscovery — livespec-dev-tooling (>= v0.40.0) ships a
+# `fabro_sandbox_docker_image` pin format, so the release fan-out rewrites the
+# `docker = "...:vX.Y.Z"` tag below in lockstep with the livespec-dev-tooling
+# pin in pyproject.toml, exactly like every other cross-repo pin. No repo-local
+# consistency check is needed. The producer-side lockstep gate
 # (livespec_dev_tooling.fabro_image_pin_lockstep) guards the Dockerfile ARG pins
 # in livespec-dev-tooling and does not run in consumer repos.
 #
