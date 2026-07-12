@@ -16,53 +16,57 @@ armed on every dispatch; the gap is purely the **emitter**.
    Codex emits nothing), what is already intact and reusable, the three
    approach options, and the open questions. **This is the load-bearing
    context; do not proceed without it.**
-2. `.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_plan.py`
+2. `plan/codex-factory-telemetry/research/codex-otel-support.md` — the
+   2026-07-12 **outcome** of the "can Codex emit OTel?" investigation
+   (verdict `no-native-otel`; **Approach 2 selected**). Read before acting
+   on any build step; it lists the ready steps + the receiver-protocol call.
+3. `.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_plan.py`
    — `cc_otel_overlay_env()` (the CC-only overlay),
    `DEFAULT_SANDBOX_OTEL_ENDPOINT` (`http://172.17.0.1:4318`),
    `CODEX_IMPLEMENTER_ADAPTER` (the Codex adapter pin).
-3. `.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_otel_receive.py`
+4. `.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_otel_receive.py`
    — the host OTLP receiver (port 4318, JSON-only today).
 
 ## Next action (exactly one)
 
-**Investigate whether `@zed-industries/codex-acp@0.16.0` (and the
-`codex-core` it wraps) can emit OpenTelemetry** — read-only. Determine:
-does it honor any standard `OTEL_*` env var, or expose any telemetry/
-event-export hook? Capture the answer as a new research note
-(`plan/codex-factory-telemetry/research/codex-otel-support.md`). That
-answer selects the approach:
+**Groom the Approach-2 build steps into dependency-layered children of the
+epic `bd-ib-98c`** — reconciling the EXISTING related items rather than
+filing duplicates. The "can Codex emit OTel?" investigation is DONE
+(2026-07-12): verdict `no-native-otel`, Approach 1 (config-only via
+`OTEL_*`) FALSIFIED, **Approach 2 (fabro-side OTLP from the ACP handler)
+selected**. See `research/codex-otel-support.md` for the full evidence +
+the ready steps.
 
-- **If Codex honors `OTEL_*`** → Approach 1: it may already be one
-  `service.name` + a receiver-protocol check away (the sandbox already
-  has `OTEL_EXPORTER_OTLP_ENDPOINT` set at container level). Confirm the
-  29f receiver (`_otel_receive.py`, JSON-only) accepts Codex's protocol,
-  or teach it `http/protobuf`.
-- **If not** → Approach 2: emit the agent/orchestration layer from
-  fabro's ACP handler via the fabro-side OTLP exporter being added on
-  the `fabro-token-refresh` track (coordinate with it), and decide
-  whether a wrapper around the adapter command is also needed.
+Reconcile with existing `bd-ib` items before filing anything new:
+- **`bd-ib-i4r`** — "Upstream fabro PR: fabro-side OTLP export" — is the
+  Approach-2 ENABLER (the fabro-side exporter, uncommitted on a stale
+  `~/.worktrees/fabro/instrument-v0254` base, must be re-derived vs current
+  main). Step 1 of Approach 2 rides it.
+- **`livespec-impl-beads-zbl`** — "Multi-provider cost observability" —
+  owns the token-cost fidelity the *native* follow-on would serve.
+- **`bd-ib-v2u`** — cred-lifecycle instrumentation (related, distinct).
 
-Then file the chosen build steps as ready ledger work (see below).
+Do the grooming through the `groom` / `capture-work-item` consent seam
+(maintainer owns the cut), NOT a raw bulk `bd` write. The one genuine
+decision to surface: coarse-token-now (Approach 2, no external dep beyond
+`bd-ib-i4r`) vs. also pursuing the native-codex fork path (richer per-turn
+cost, but an upstream/fork dependency + the Statsig-egress override).
 
 ## Ledger status
 
-**DEFERRED epic-anchor.** The ledger is healthy (dolt on
-`127.0.0.1:3307`), but this thread was authored from an **unwrapped**
-session (no `BEADS_DOLT_PASSWORD`), and the plan operation requires the
-epic anchor to route through the `capture-work-item` **consent seam**
-(never a raw `bd` write) — which needs the env wrapper. So the anchor is
-left for the properly-wrapped driving session. Per the plan operation a
-thread should anchor an `epic`-type work-item as its status anchor. The
-driving session MUST, as its first ledger-touching act (running under
-`/data/projects/1password-env-wrapper/with-livespec-env.sh --`):
+**Epic anchor FILED: `bd-ib-98c`** — "Codex-era factory telemetry —
+restore end-to-end factory observability for Codex-driven runs (emitter
+gap)" (`bd-ib` tenant / `livespec-orch-beads-fabro`), filed 2026-07-12 by
+the properly-wrapped driving session under the env wrapper. Its description
+carries the verdict, Approach-2 decision, the ready build steps, and the
+related-item cross-links (`bd-ib-i4r`, `livespec-impl-beads-zbl`,
+`bd-ib-v2u`). The anchor was filed via a maintainer-consented direct `bd`
+write; the **child** build steps still route through the `groom` /
+`capture-work-item` consent seam (never a raw bulk write) — see Next action.
 
-1. File the epic anchor via the `capture-work-item` operation — an
-   `epic` titled "Codex-era factory telemetry" — and record its id here.
-2. Route ripe build steps as CHILD work-items (`depends_on` the epic)
-   via `capture-work-item`; never hand-code them inline (factory-side
-   build under the janitor gate).
-
-Until then, status is composed from this file, not the ledger.
+Not yet filed: the dependency-layered CHILD build steps (they need the
+grooming pass that reconciles `bd-ib-i4r` — see Next action + the ready
+steps in `research/codex-otel-support.md`).
 
 ## Coordination
 
