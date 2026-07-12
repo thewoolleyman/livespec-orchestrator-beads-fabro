@@ -34,12 +34,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_lessons import (
     read_ratified_lessons,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
-    candidates,
-    is_dispatch_candidate,
     janitor_core_ref,
     post_run_dispositions,
-    prepare,
-    ready_items,
     run_id,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
@@ -54,14 +50,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
-    "candidates",
     "dispatch_one",
-    "is_dispatch_candidate",
-    "janitor_core_ref",
-    "post_run_dispositions",
-    "prepare",
-    "ready_items",
-    "run_id",
 ]
 
 

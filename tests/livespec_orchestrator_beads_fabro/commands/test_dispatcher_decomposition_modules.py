@@ -19,7 +19,6 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_codex_auth,
     _dispatcher_credentials,
     _dispatcher_ledger_close,
-    _dispatcher_loop,
     _dispatcher_plan,
     dispatcher,
 )
@@ -203,9 +202,20 @@ def test_calibration_emit_cluster_importable_from_new_module_and_private_names_r
 
 
 def test_dispatch_loop_cluster_importable_from_new_module_and_private_names_removed() -> None:
-    dispatch_loop_public_names = {
+    commands_dir = Path(dispatcher.__file__).parent
+    loop_path = commands_dir / "_dispatcher_loop.py"
+    selection_path = commands_dir / "_dispatcher_loop_selection.py"
+    assert loop_path.is_file()
+    assert selection_path.is_file()
+
+    dispatch_loop = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop"
+    )
+    dispatch_loop_selection = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection"
+    )
+    selection_public_names = {
         "candidates",
-        "dispatch_one",
         "is_dispatch_candidate",
         "janitor_core_ref",
         "post_run_dispositions",
@@ -224,17 +234,18 @@ def test_dispatch_loop_cluster_importable_from_new_module_and_private_names_remo
         "_run_id",
     }
 
-    assert set(_dispatcher_loop.__all__) == dispatch_loop_public_names
-    for name in dispatch_loop_public_names:
-        assert hasattr(_dispatcher_loop, name)
-    assert dispatcher.candidates is _dispatcher_loop.candidates
-    assert dispatcher.dispatch_one is _dispatcher_loop.dispatch_one
-    assert dispatcher.is_dispatch_candidate is _dispatcher_loop.is_dispatch_candidate
-    assert dispatcher.janitor_core_ref is _dispatcher_loop.janitor_core_ref
-    assert dispatcher.post_run_dispositions is _dispatcher_loop.post_run_dispositions
-    assert dispatcher.prepare is _dispatcher_loop.prepare
-    assert dispatcher.ready_items is _dispatcher_loop.ready_items
-    assert dispatcher.run_id is _dispatcher_loop.run_id
+    assert dispatch_loop.__all__ == ["dispatch_one"]
+    assert selection_public_names <= set(dispatch_loop_selection.__all__)
+    assert set(dispatch_loop.__all__).isdisjoint(selection_public_names)
+    assert hasattr(dispatch_loop, "dispatch_one")
+    assert dispatcher.dispatch_one is dispatch_loop.dispatch_one
+    assert dispatcher.candidates is dispatch_loop_selection.candidates
+    assert dispatcher.is_dispatch_candidate is dispatch_loop_selection.is_dispatch_candidate
+    assert dispatcher.janitor_core_ref is dispatch_loop_selection.janitor_core_ref
+    assert dispatcher.post_run_dispositions is dispatch_loop_selection.post_run_dispositions
+    assert dispatcher.prepare is dispatch_loop_selection.prepare
+    assert dispatcher.ready_items is dispatch_loop_selection.ready_items
+    assert dispatcher.run_id is dispatch_loop_selection.run_id
     for name in old_private_names:
         assert not hasattr(dispatcher, name)
 
