@@ -303,3 +303,39 @@ def test_post_verdict_reflector_cluster_importable_and_private_names_removed() -
     assert dispatcher.reflector_oob_after_verdict is post_verdict.reflector_oob_after_verdict
     for name in old_private_names:
         assert not hasattr(dispatcher, name)
+
+
+def test_run_checks_cluster_importable_from_new_module_and_private_names_removed() -> None:
+    module_path = (
+        Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
+        / "_dispatcher_run_checks.py"
+    )
+    run_checks_public_names = {
+        "dispatch_preamble",
+        "requested_items_preflight_error",
+        "run_janitor_check",
+        "run_ledger_check",
+        "run_spec_check",
+    }
+    old_private_names = {
+        "_dispatch_preamble",
+        "_emit_check_findings",
+        "_fabro_preflight_error",
+        "_requested_items_preflight_error",
+        "_resolve_fabro_bin_for",
+        "_run_janitor_check",
+        "_run_ledger_check",
+        "_run_spec_check",
+    }
+
+    assert module_path.is_file()
+    run_checks = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_run_checks"
+    )
+    assert set(run_checks.__all__) == run_checks_public_names
+    for name in run_checks_public_names:
+        assert hasattr(run_checks, name)
+    assert dispatcher.dispatch_preamble is run_checks.dispatch_preamble
+    assert dispatcher.requested_items_preflight_error is run_checks.requested_items_preflight_error
+    for name in old_private_names:
+        assert not hasattr(dispatcher, name)
