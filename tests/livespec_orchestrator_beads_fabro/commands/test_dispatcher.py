@@ -46,6 +46,8 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_ledger_close,
     _dispatcher_loop,
     _dispatcher_reflection,
+    _dispatcher_run_commands,
+    _dispatcher_self_update,
     _dispatcher_sibling_clones,
     dispatcher,
 )
@@ -96,6 +98,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     render_goal,
     render_run_config_overlay,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
+    github_token_supplier,
+    post_verdict_runner,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones import (
     fetch_fleet_manifest_text,
 )
@@ -105,11 +111,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_spec_commitments imp
     collect_obligations_and_supersedes,
 )
 from livespec_orchestrator_beads_fabro.commands.detect_impl_gaps import detect_rules
-from livespec_orchestrator_beads_fabro.commands.dispatcher import (
-    _github_token_supplier,  # pyright: ignore[reportPrivateUsage]
-    _post_verdict_runner,  # pyright: ignore[reportPrivateUsage]
-    main,
-)
+from livespec_orchestrator_beads_fabro.commands.dispatcher import main
 from livespec_orchestrator_beads_fabro.errors import BeadsCommandError, WorkItemNotFoundError
 from livespec_orchestrator_beads_fabro.store import (
     WorkItemComment,
@@ -214,12 +216,12 @@ _FLEET_MANIFEST_TEXT = (
     "}\n"
 )
 
-# The `fetch_fleet_manifest_text` / `_github_token_supplier` imports above
+# The `fetch_fleet_manifest_text` / `github_token_supplier` imports above
 # bind the production function objects at import time, BEFORE the autouse
 # fixture swaps the dispatcher module attributes for canned stand-ins — so
 # the real implementations stay directly testable.
 _real_fetch_fleet_manifest_text = fetch_fleet_manifest_text
-_real_github_token_supplier = _github_token_supplier
+_real_github_token_supplier = github_token_supplier
 
 
 @pytest.fixture(autouse=True)
@@ -490,7 +492,7 @@ def test_dispatch_gate_auto_normalizes_beads_native_open(
         "update_work_item_status",
         fake_update_work_item_status,
     )
-    monkeypatch.setattr(dispatcher, "ensure_otel_receiver", lambda **_: None)
+    monkeypatch.setattr(_dispatcher_run_commands, "ensure_otel_receiver", lambda **_: None)
     workflow = tmp_path / "workflow.toml"
     workflow.write_text("[workflow]\n", encoding="utf-8")
     journal = tmp_path / "journal.jsonl"
@@ -2172,8 +2174,8 @@ def test_github_token_env_runner_fails_closed_on_refresh_error(tmp_path: Path) -
 def test_post_verdict_runner_routes_supplier_resolution_error_through_token_wrapper(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(dispatcher, "_github_token_supplier", lambda: "missing app env")
-    runner = _post_verdict_runner(runner=None)
+    monkeypatch.setattr(_dispatcher_self_update, "github_token_supplier", lambda: "missing app env")
+    runner = post_verdict_runner(runner=None)
 
     result = runner.run(argv=["gh", "pr", "view"], cwd=tmp_path, timeout_seconds=1.0)
 
@@ -2185,7 +2187,7 @@ def test_post_verdict_runner_routes_supplier_resolution_error_through_token_wrap
 def test_post_verdict_runner_returns_injected_runner_without_token_wrapper() -> None:
     runner = ShellCommandRunner()
 
-    assert _post_verdict_runner(runner=runner) is runner
+    assert post_verdict_runner(runner=runner) is runner
 
 
 def test_github_token_supplier_returns_a_provider_accessor(
@@ -2377,7 +2379,7 @@ def test_dispatch_green_closes_item_and_journals(
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
-    monkeypatch.setattr(dispatcher, "cost_gate_after_verdict", lambda **_: None)
+    monkeypatch.setattr(_dispatcher_run_commands, "cost_gate_after_verdict", lambda **_: None)
     monkeypatch.setattr(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_loop.tempfile.gettempdir",
         lambda: str(tmp_path),
@@ -3025,10 +3027,10 @@ def test_fetch_fleet_manifest_text_returns_none_on_failure(
     failing = _FakeManifestRunner(
         result=CommandResult(exit_code=1, stdout="", stderr="gh: HTTP 404")
     )
-    monkeypatch.setattr(dispatcher, "ShellCommandRunner", lambda: failing)
+    monkeypatch.setattr(_dispatcher_sibling_clones, "ShellCommandRunner", lambda: failing)
     assert _real_fetch_fleet_manifest_text() is None
     empty = _FakeManifestRunner(result=CommandResult(exit_code=0, stdout="  \n", stderr=""))
-    monkeypatch.setattr(dispatcher, "ShellCommandRunner", lambda: empty)
+    monkeypatch.setattr(_dispatcher_sibling_clones, "ShellCommandRunner", lambda: empty)
     assert _real_fetch_fleet_manifest_text() is None
 
 
@@ -3594,7 +3596,7 @@ def test_loop_reflection_failure_never_changes_verdict(
     def _boom(**_kwargs: object) -> None:
         raise RuntimeError("reflection blew up")
 
-    monkeypatch.setattr(dispatcher, "reflect", _boom)
+    monkeypatch.setattr(_dispatcher_run_commands, "reflect", _boom)
     with pytest.raises(RuntimeError, match="reflection blew up"):
         _ = main(
             argv=[

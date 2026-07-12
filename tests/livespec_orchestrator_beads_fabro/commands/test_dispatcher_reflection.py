@@ -1,7 +1,7 @@
 """Tests for the mechanical, fail-open loop-exit reflection stage.
 
 Covers `_dispatcher_reflection` (the NO-LLM scan/emit module) and its
-wiring into `dispatcher._run_loop_command` / `_run_dispatch_command`. The
+wiring into `_dispatcher_run_commands.run_loop_command` / `run_dispatch_command`. The
 load-bearing invariant under test (loop-reflection-gate best-practices
 §6): reflection NEVER changes a dispatch verdict and NEVER blocks loop
 exit — the exit code is computed before `reflect` runs and is immutable
