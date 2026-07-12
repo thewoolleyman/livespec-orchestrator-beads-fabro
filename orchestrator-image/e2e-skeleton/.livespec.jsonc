@@ -9,6 +9,16 @@
 {
   "template": "livespec",
   "spec_root": "SPECIFICATION",
+  // The UNMODIFIED production prepare chain runs
+  // `livespec_dev_tooling.checks.plugin_resolution`, which fleet-wide (since M6)
+  // REQUIRES a top-level `harnesses` declaration. This throwaway greeting
+  // skeleton has no interactive `/livespec:*` command surface of its own — it is
+  // exercised only as a factory-dispatch target — so both runtimes are declared
+  // `exempt` (which the verifier PASSes with no smoke run), not `supported`.
+  "harnesses": {
+    "claude": { "status": "exempt", "reason": "W7 golden-master throwaway greeting skeleton — no interactive /livespec:* surface; exercised only as a factory-dispatch target." },
+    "codex":  { "status": "exempt", "reason": "W7 golden-master throwaway greeting skeleton — no interactive /livespec:* surface; exercised only as a factory-dispatch target." }
+  },
   "implementation": { "plugin": "livespec-orchestrator-beads-fabro" },
   "livespec-orchestrator-beads-fabro": {
     "format": "beads",
