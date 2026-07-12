@@ -25,7 +25,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection impor
     prepare,
     ready_items,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import ensure_otel_receiver
+from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import arm_otel_egress
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     journal_path,
     spans_path,
@@ -54,7 +54,7 @@ def run_dispatch_command(*, args: argparse.Namespace) -> int:
     janitor, preamble_exit = dispatch_preamble(args=args, repo=repo)
     if preamble_exit is not None:
         return preamble_exit
-    _ = ensure_otel_receiver(args=args, repo=repo)
+    arm_otel_egress(args=args, repo=repo)
     prepared = prepare(args=args, repo=repo)
     if prepared is None:
         return EXIT_PRECONDITION_ERROR

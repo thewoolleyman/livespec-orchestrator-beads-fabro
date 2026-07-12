@@ -493,7 +493,9 @@ def test_dispatch_gate_auto_normalizes_beads_native_open(
         "update_work_item_status",
         fake_update_work_item_status,
     )
-    monkeypatch.setattr(_dispatcher_run_commands, "ensure_otel_receiver", lambda **_: None)
+    # Neutralize the whole OTel egress arming (receiver + file-tail driver) so a
+    # real dispatch binds no socket and spawns no background thread.
+    monkeypatch.setattr(_dispatcher_run_commands, "arm_otel_egress", lambda **_: None)
     workflow = tmp_path / "workflow.toml"
     workflow.write_text("[workflow]\n", encoding="utf-8")
     journal = tmp_path / "journal.jsonl"

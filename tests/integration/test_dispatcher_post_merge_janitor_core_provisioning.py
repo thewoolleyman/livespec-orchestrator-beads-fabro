@@ -184,7 +184,9 @@ def _configure_full_dispatch_env(
         _dispatcher_loop.selfup, "github_token_supplier", lambda: (lambda: "test-gh-token")
     )
     monkeypatch.setattr(_dispatcher_sibling_clones, "fetch_fleet_manifest_text", lambda: None)
-    monkeypatch.setattr(_dispatcher_run_commands, "ensure_otel_receiver", lambda **_: None)
+    # Neutralize the whole OTel egress arming (receiver + file-tail driver) so a
+    # real dispatch binds no socket and spawns no background thread.
+    monkeypatch.setattr(_dispatcher_run_commands, "arm_otel_egress", lambda **_: None)
     monkeypatch.setattr(
         _dispatcher_loop, "WatchedFabroLauncher", lambda **_: _MergedFabroLauncher()
     )
