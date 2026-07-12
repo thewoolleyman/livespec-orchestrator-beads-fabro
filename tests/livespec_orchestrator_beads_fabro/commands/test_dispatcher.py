@@ -45,6 +45,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_completion,
     _dispatcher_ledger_close,
     _dispatcher_loop,
+    _dispatcher_loop_command,
     _dispatcher_reflection,
     _dispatcher_run_commands,
     _dispatcher_self_update,
@@ -3596,7 +3597,7 @@ def test_loop_reflection_failure_never_changes_verdict(
     def _boom(**_kwargs: object) -> None:
         raise RuntimeError("reflection blew up")
 
-    monkeypatch.setattr(_dispatcher_run_commands, "reflect", _boom)
+    monkeypatch.setattr(_dispatcher_loop_command, "reflect", _boom)
     with pytest.raises(RuntimeError, match="reflection blew up"):
         _ = main(
             argv=[

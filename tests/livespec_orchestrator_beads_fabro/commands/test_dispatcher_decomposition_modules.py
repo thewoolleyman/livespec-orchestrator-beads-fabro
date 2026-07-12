@@ -347,9 +347,18 @@ def test_run_checks_cluster_importable_from_new_module_and_private_names_removed
 
 def test_run_commands_cluster_importable_from_new_module_and_private_names_removed() -> None:
     module_path = Path(dispatcher.__file__).parent / "_dispatcher_run_commands.py"
+    loop_command_path = Path(dispatcher.__file__).parent / "_dispatcher_loop_command.py"
+    command_common_path = Path(dispatcher.__file__).parent / "_dispatcher_command_common.py"
     run_commands_public_names = {
         "run_dispatch_command",
+    }
+    loop_command_public_names = {
         "run_loop_command",
+    }
+    command_common_public_names = {
+        "EXIT_FAILURE",
+        "EXIT_PRECONDITION_ERROR",
+        "alarm_on_terminal_failure",
     }
     old_dispatcher_names = {
         "_alarm_on_terminal_failure",
@@ -360,14 +369,30 @@ def test_run_commands_cluster_importable_from_new_module_and_private_names_remov
         "_run_loop_command",
     }
 
+    assert loop_command_path.is_file()
+    assert command_common_path.is_file()
     assert module_path.is_file()
     run_commands = importlib.import_module(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands"
     )
+    loop_command = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_command"
+    )
+    command_common = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_command_common"
+    )
     assert set(run_commands.__all__) == run_commands_public_names
     for name in run_commands_public_names:
         assert hasattr(run_commands, name)
+    assert set(loop_command.__all__) == loop_command_public_names
+    for name in loop_command_public_names:
+        assert hasattr(loop_command, name)
+    assert set(command_common.__all__) == command_common_public_names
+    for name in command_common_public_names:
+        assert hasattr(command_common, name)
     assert dispatcher.run_dispatch_command is run_commands.run_dispatch_command
-    assert dispatcher.run_loop_command is run_commands.run_loop_command
+    assert dispatcher.run_loop_command is loop_command.run_loop_command
+    assert not hasattr(run_commands, "run_loop_command")
+    assert not hasattr(run_commands, "_alarm_on_terminal_failure")
     for name in old_dispatcher_names:
         assert not hasattr(dispatcher, name)

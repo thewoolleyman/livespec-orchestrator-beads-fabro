@@ -1,7 +1,7 @@
 """Tests for the fail-open ntfy alarm on terminal dispatcher failures.
 
-Covers `_dispatcher_notify` (the reusable, fail-OPEN notifier) and its
-wiring into `_dispatcher_run_commands.run_dispatch_command` / `run_loop_command`. The
+Covers the reusable, fail-OPEN notifier and its
+wiring into the dispatcher command handlers. The
 load-bearing invariant under test (0jxs operability gate): a notification
 failure NEVER changes a dispatch verdict / exit code and NEVER blocks
 exit. Credential hygiene is asserted directly: the body ships ONLY the
@@ -23,9 +23,12 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_command_common,
     _dispatcher_loop,
-    _dispatcher_run_commands,
     dispatcher,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
+    alarm_on_terminal_failure,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_notify import (
@@ -35,14 +38,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_notify import (
     resolve_server,
     resolve_topic,
     terminal_events,
-)
-
-# Importing the module-private wiring helper directly (the test tier
-# verifies the alarm wiring); importing it avoids the SLF001
-# attribute-access ban while keeping the name addressable, the same
-# pattern test_dispatcher_reflection uses for the reflection internals.
-from livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands import (
-    _alarm_on_terminal_failure,  # pyright: ignore[reportPrivateUsage]
 )
 from livespec_orchestrator_beads_fabro.store import append_work_item
 
@@ -364,7 +359,7 @@ def test_http_notify_poster_returns_true_on_2xx(monkeypatch: pytest.MonkeyPatch)
 def test_alarm_helper_fires_nothing_for_green_wave() -> None:
     journal = _RecordingJournal()
     poster = _RecordingPoster()
-    _alarm_on_terminal_failure(
+    alarm_on_terminal_failure(
         outcomes=[_outcome(status="green")],
         include_loop_summary=False,
         journal=journal,
@@ -377,7 +372,7 @@ def test_alarm_helper_fires_nothing_for_green_wave() -> None:
 def test_alarm_helper_skips_when_topic_unset() -> None:
     journal = _RecordingJournal()
     poster = _RecordingPoster()
-    _alarm_on_terminal_failure(
+    alarm_on_terminal_failure(
         outcomes=[_outcome(status="failed")],
         include_loop_summary=False,
         journal=journal,
@@ -402,7 +397,7 @@ def test_dispatch_failed_outcome_journals_notify_and_keeps_exit_code(
     append_work_item(path=_config(), item=item)
     monkeypatch.setenv("CLAUDE_NTFY_DISPATCHER_TOPIC", "dispatch-alarms")
     poster = _RecordingPoster()
-    monkeypatch.setattr(_dispatcher_run_commands, "HttpNotifyPoster", lambda: poster)
+    monkeypatch.setattr(_dispatcher_command_common, "HttpNotifyPoster", lambda: poster)
     failed = DispatchOutcome(
         work_item_id=item.id,
         status="failed",
@@ -442,7 +437,7 @@ def test_dispatch_failed_exit_code_unchanged_when_notify_raises(
     append_work_item(path=_config(), item=item)
     monkeypatch.setenv("CLAUDE_NTFY_TOPIC", "general")
     poster = _RecordingPoster(raises=RuntimeError("ntfy down"))
-    monkeypatch.setattr(_dispatcher_run_commands, "HttpNotifyPoster", lambda: poster)
+    monkeypatch.setattr(_dispatcher_command_common, "HttpNotifyPoster", lambda: poster)
     failed = DispatchOutcome(
         work_item_id=item.id,
         status="failed",
@@ -476,7 +471,7 @@ def test_loop_non_green_wave_alarms_with_loop_summary(
     append_work_item(path=_config(), item=item)
     monkeypatch.setenv("CLAUDE_NTFY_DISPATCHER_TOPIC", "dispatch-alarms")
     poster = _RecordingPoster()
-    monkeypatch.setattr(_dispatcher_run_commands, "HttpNotifyPoster", lambda: poster)
+    monkeypatch.setattr(_dispatcher_command_common, "HttpNotifyPoster", lambda: poster)
     blocked = DispatchOutcome(
         work_item_id=item.id,
         status="blocked",
@@ -519,7 +514,7 @@ def test_loop_all_green_wave_fires_no_alarm(
     append_work_item(path=_config(), item=item)
     monkeypatch.setenv("CLAUDE_NTFY_DISPATCHER_TOPIC", "dispatch-alarms")
     poster = _RecordingPoster()
-    monkeypatch.setattr(_dispatcher_run_commands, "HttpNotifyPoster", lambda: poster)
+    monkeypatch.setattr(_dispatcher_command_common, "HttpNotifyPoster", lambda: poster)
     monkeypatch.setattr(
         _dispatcher_loop,
         "run_dispatch",
