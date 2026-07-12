@@ -142,6 +142,13 @@ fail-closed-when-unobservable behavior 5v9 built stays the live path.
 
 import argparse
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
+    admit_and_select,
+    autonomous_armed,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_autonomous import (
+    arm_autonomous_for_loop,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_emit import (
     emit_calibration,
 )
@@ -189,6 +196,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands import 
 
 # Keep pre-existing dispatcher mini-hub attributes available without changing __all__.
 _COMPATIBILITY_REEXPORTS: tuple[object, ...] = (
+    admit_and_select,
+    arm_autonomous_for_loop,
+    autonomous_armed,
     emit_outcomes,
     ensure_otel_receiver,
     ledger_blocked_after_normalization,
