@@ -68,12 +68,17 @@ from livespec_orchestrator_beads_fabro.commands import _jsonc
 from livespec_orchestrator_beads_fabro.errors import ConnectionPrefixMissingError
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
-__all__: list[str] = ["resolve_fabro_bin", "resolve_store_config"]
+__all__: list[str] = [
+    "resolve_credential_wrapper",
+    "resolve_fabro_bin",
+    "resolve_store_config",
+]
 
 _LIVESPEC_CONFIG = ".livespec.jsonc"
 _PLUGIN_BLOCK = "livespec-orchestrator-beads-fabro"
 _CONNECTION_KEY = "connection"
 _DISPATCHER_KEY = "dispatcher"
+_CREDENTIAL_WRAPPER_KEY = "credential_wrapper"
 
 _DEFAULT_SERVER_HOST = "127.0.0.1"
 _DEFAULT_SERVER_PORT = 3307
@@ -141,6 +146,36 @@ def resolve_fabro_bin(*, cwd: Path) -> str:
     return _default_fabro_bin()
 
 
+def resolve_credential_wrapper(*, cwd: Path) -> list[str]:
+    """Return the top-level `credential_wrapper` argv-prefix, or [] when absent.
+
+    Fail-open toward "no wrapper": an absent config file, malformed JSONC, a
+    non-object root, or a non-list value all yield `[]`. Consumed by the
+    pre-push gate to print the exact credential-wrapped heal command; a `[]`
+    result simply prints the bare `python3 …` form.
+    """
+    root = _read_root_mapping(cwd=cwd)
+    raw = root.get(_CREDENTIAL_WRAPPER_KEY)
+    if not isinstance(raw, list):
+        return []
+    return [str(token) for token in cast("list[Any]", raw)]
+
+
+def _read_root_mapping(*, cwd: Path) -> dict[str, Any]:
+    """Parse `.livespec.jsonc` to its root object, or {} for any off-happy-path shape."""
+    config_path = cwd / _LIVESPEC_CONFIG
+    if not config_path.is_file():
+        return {}
+    raw_text = config_path.read_text(encoding="utf-8")
+    try:
+        parsed = _jsonc.loads(text=raw_text)
+    except _jsonc.JsoncParseError:
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+    return cast("dict[str, Any]", parsed)
+
+
 def _read_connection_block(*, cwd: Path) -> dict[str, Any]:
     """Read the `livespec-orchestrator-beads-fabro.connection` block, or {} when absent."""
     return _read_plugin_sub_block(cwd=cwd, key=_CONNECTION_KEY)
@@ -160,17 +195,7 @@ def _read_plugin_sub_block(*, cwd: Path, key: str) -> dict[str, Any]:
     dispatcher readers so the JSONC -> plugin-block -> sub-block traversal is
     single-sourced rather than duplicated per sub-block.
     """
-    config_path = cwd / _LIVESPEC_CONFIG
-    if not config_path.is_file():
-        return {}
-    raw_text = config_path.read_text(encoding="utf-8")
-    try:
-        parsed = _jsonc.loads(text=raw_text)
-    except _jsonc.JsoncParseError:
-        return {}
-    if not isinstance(parsed, dict):
-        return {}
-    parsed_dict = cast("dict[str, Any]", parsed)
+    parsed_dict = _read_root_mapping(cwd=cwd)
     plugin_block_raw = parsed_dict.get(_PLUGIN_BLOCK)
     if not isinstance(plugin_block_raw, dict):
         return {}

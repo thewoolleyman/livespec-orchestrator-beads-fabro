@@ -53,3 +53,11 @@ pre-push:
   commands:
     check:
       run: just check-pre-push
+    # ALWAYS-RUN, standalone from `check` so it is never subject to
+    # check-pre-push's green-token / doc-only skips: the beads tenant's state
+    # is not tree-derived, so a tree-identical push can still carry a drifted
+    # tenant. FAIL-SOFT — blocks only on POSITIVELY confirmed out-of-lifecycle
+    # work-items; any creds/server/parse problem skips (exit 0). See the
+    # `check-ledger-conformance-live` recipe header.
+    ledger-conformance:
+      run: just check-ledger-conformance-live

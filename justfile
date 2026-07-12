@@ -650,6 +650,55 @@ check-work-item-state-invariants:
 check-status-conformance:
     LIVESPEC_BEADS_FAKE=1 uv run python dev-tooling/checks/status_conformance.py
 
+# `check-ledger-conformance-live` — ALWAYS-RUN pre-push tenant-conformance
+# gate (PROTOTYPE for fleet-wide rollout on the ledger-status-conformance
+# thread). Unlike `check-status-conformance` (the FAKE-mode aggregate member,
+# which runs an empty hermetic tenant and passes trivially), THIS recipe reads
+# the repo's REAL beads tenant LIVE. Tenant state is not tree-derived, so this
+# is deliberately wired as a SECOND, standalone lefthook pre-push command
+# (never a `just check` aggregate member and never subject to the pre-push
+# green-token / doc-only skips).
+#
+# FAIL-SOFT BY CONSTRUCTION — the top correctness requirement. Because it runs
+# on EVERY push, a false-fail would brick all pushes to the repo. It therefore
+# BLOCKS a push (exit 1) ONLY when the gate positively CONFIRMS out-of-lifecycle
+# work-items — i.e. `ledger-normalize --gate` exits 1 AND its machine-checkable
+# `LIVESPEC_LEDGER_GATE: DRIFT` stdout marker is present. EVERY other outcome —
+# conformant, could-not-check (creds unavailable / 1Password locked / Dolt
+# unreachable / unparseable output / missing tenant config), or even an
+# unhandled crash — SKIPS with exit 0. The exit-code contract of
+# `ledger-normalize --gate` is: 0 = conformant, 1 = confirmed drift,
+# 2 = could-not-check; this recipe maps (1 && DRIFT marker) -> block and maps
+# EVERYTHING else -> fail-soft skip.
+check-ledger-conformance-live:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    if [[ ! -f .beads/config.yaml ]]; then
+        echo ":: check-ledger-conformance-live: no .beads/config.yaml (repo has no tenant); skipping"
+        exit 0
+    fi
+    # Read THIS repo's credential_wrapper argv from .livespec.jsonc, reusing the
+    # dispatcher's own JSONC parser (no hardcoded wrapper path). A parse failure
+    # or an empty wrapper is a could-not-check condition -> fail-soft skip.
+    mapfile -t wrapper < <(uv run python -c 'import sys; sys.path.insert(0, ".claude-plugin/scripts"); from pathlib import Path; from livespec_orchestrator_beads_fabro.commands._config import resolve_credential_wrapper; print("\n".join(resolve_credential_wrapper(cwd=Path("."))))' 2>/dev/null) || wrapper=()
+    if [[ ${#wrapper[@]} -eq 0 ]]; then
+        echo ":: check-ledger-conformance-live: no credential_wrapper resolved; skipping (fail-soft)"
+        exit 0
+    fi
+    # Invoke the gate UNDER the credential wrapper (which injects the tenant
+    # secret). Capture combined output + exit code; NEVER `set -e` here — a
+    # non-zero gate exit is expected on the could-not-check path and must NOT
+    # abort the recipe.
+    out=$("${wrapper[@]}" python3 .claude-plugin/scripts/bin/dispatcher.py ledger-normalize --project-root . --gate 2>&1)
+    rc=$?
+    printf '%s\n' "$out"
+    if [[ $rc -eq 1 ]] && grep -q 'LIVESPEC_LEDGER_GATE: DRIFT' <<< "$out"; then
+        echo ":: check-ledger-conformance-live: CONFIRMED out-of-lifecycle work-item status; blocking push (heal per the message above, then re-push)"
+        exit 1
+    fi
+    echo ":: check-ledger-conformance-live: no confirmed drift (gate exit $rc); allowing push (fail-soft: a non-conformant tenant it could not verify is SKIPPED, never blocked)"
+    exit 0
+
 # `check-closed-item-integrity` — beads-private closed-item-integrity static
 # check (SPECIFICATION/contracts.md §"Closed-item-integrity check"). Enumerates
 # every closed gap-tied work-item from the store, resolves each item's gap-id
