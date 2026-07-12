@@ -252,6 +252,17 @@ preflight() {
     || fail "fixture SPECIFICATION missing"
   [ -f "$REPO_ROOT/orchestrator-image/e2e-skeleton/pyproject.toml" ] \
     || fail "throwaway-repo skeleton template missing: orchestrator-image/e2e-skeleton/"
+  # Prefer the dedicated e2e App creds (livespec-e2e-pr-bot, App 4277313, whose
+  # installation covers the disposable livespec-e2e org) over the fleet App
+  # generics, so the in-container legs mint tokens the fleet App (fleet-repos-only
+  # by github-app-auth Pillar 2) cannot. The container contract is UNCHANGED —
+  # GITHUB_APP_ID / GITHUB_PRIVATE_KEY / GITHUB_APP_INSTALLATION_ID per
+  # contracts.md "Self-contained plugin dispatch"; this only re-sources them
+  # host-side. Fleet generics remain the fallback when the *_E2E vars are absent.
+  GITHUB_APP_ID="${GITHUB_APP_ID_E2E:-${GITHUB_APP_ID:-}}"
+  GITHUB_PRIVATE_KEY="${GITHUB_PRIVATE_KEY_E2E:-${GITHUB_PRIVATE_KEY:-}}"
+  GITHUB_APP_INSTALLATION_ID="${GITHUB_APP_INSTALLATION_ID_E2E:-${GITHUB_APP_INSTALLATION_ID:-}}"
+  export GITHUB_APP_ID GITHUB_PRIVATE_KEY GITHUB_APP_INSTALLATION_ID
   require_env LIVESPEC_E2E_GITHUB_TOKEN
   require_env GITHUB_APP_ID
   require_env GITHUB_PRIVATE_KEY
