@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.18.0...v0.19.0) (2026-07-12)
+
+
+### Features
+
+* extract dispatcher otel wiring ([f3ac8b3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f3ac8b38604272ec55a3b168d9a70cd836de8a69))
+
 ## [0.18.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.17.24...v0.18.0) (2026-07-11)
 
 
