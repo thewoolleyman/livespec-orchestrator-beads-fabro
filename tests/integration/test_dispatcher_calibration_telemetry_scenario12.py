@@ -39,7 +39,7 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
-from livespec_orchestrator_beads_fabro.commands import dispatcher
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
     build_calibration_record,
     calibration_journal_record,
@@ -102,7 +102,7 @@ def _hermetic_dispatch_env(
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands.dispatcher._github_token_supplier",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop.selfup.github_token_supplier",
         lambda: (lambda: "test-github-token"),
     )
     # `main()` resolves its store config internally; forcing the fake toggle is
@@ -244,7 +244,7 @@ def test_terminal_run_journals_calibration_outcome_and_size_proxies(
     item = _item()
     append_work_item(path=_config(), item=item)
     monkeypatch.setattr(
-        dispatcher, "run_dispatch", _stand_in_returning(_green_no_pr(work_item_id=item.id))
+        _dispatcher_loop, "run_dispatch", _stand_in_returning(_green_no_pr(work_item_id=item.id))
     )
 
     exit_code = main(
@@ -300,7 +300,7 @@ def test_unobservable_proxy_is_journaled_as_none_not_zero(
     item = _item()
     append_work_item(path=_config(), item=item)
     monkeypatch.setattr(
-        dispatcher, "run_dispatch", _stand_in_returning(_green_no_pr(work_item_id=item.id))
+        _dispatcher_loop, "run_dispatch", _stand_in_returning(_green_no_pr(work_item_id=item.id))
     )
 
     exit_code = main(
@@ -342,7 +342,7 @@ def test_calibration_rides_the_existing_journal_with_no_new_service(
     item = _item()
     append_work_item(path=_config(), item=item)
     monkeypatch.setattr(
-        dispatcher, "run_dispatch", _stand_in_returning(_green_no_pr(work_item_id=item.id))
+        _dispatcher_loop, "run_dispatch", _stand_in_returning(_green_no_pr(work_item_id=item.id))
     )
 
     exit_code = main(
@@ -404,7 +404,7 @@ def test_non_convergence_terminal_marks_bounced_to_regroom(
         merge_sha=None,
         detail="run made no progress for the full stall window",
     )
-    monkeypatch.setattr(dispatcher, "run_dispatch", _stand_in_returning(stalled))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _stand_in_returning(stalled))
 
     exit_code = main(
         argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]

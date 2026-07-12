@@ -32,7 +32,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import dispatcher
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
@@ -75,7 +75,7 @@ def fabro_dispatch_env(
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands.dispatcher._github_token_supplier",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop.selfup.github_token_supplier",
         lambda: (lambda: "test-github-token"),
     )
     monkeypatch.setattr(
@@ -223,7 +223,7 @@ def test_dispatch_refuses_host_only_item_without_launching_fabro(
     item = _item(description="Touch the commit-hook self-machinery. host-only.")
     append_work_item(path=_config(), item=item)
     recording = _RecordingRunDispatch()
-    monkeypatch.setattr(dispatcher, "run_dispatch", recording)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", recording)
     exit_code = main(
         argv=[
             "dispatch",
@@ -256,7 +256,7 @@ def test_dispatch_journals_host_only_refusal(
     item = _item(title="host-only dispatcher self-machinery change")
     append_work_item(path=_config(), item=item)
     recording = _RecordingRunDispatch()
-    monkeypatch.setattr(dispatcher, "run_dispatch", recording)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", recording)
     exit_code = main(
         argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
@@ -280,7 +280,7 @@ def test_dispatch_does_not_refuse_ordinary_item(
     item = _item(description="A perfectly ordinary impl task, no markers.")
     append_work_item(path=_config(), item=item)
     recording = _RecordingRunDispatch()
-    monkeypatch.setattr(dispatcher, "run_dispatch", recording)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", recording)
     exit_code = main(
         argv=[
             "dispatch",

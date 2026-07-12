@@ -19,6 +19,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_codex_auth,
     _dispatcher_credentials,
     _dispatcher_ledger_close,
+    _dispatcher_loop,
     _dispatcher_plan,
     dispatcher,
 )
@@ -197,6 +198,43 @@ def test_calibration_emit_cluster_importable_from_new_module_and_private_names_r
     for name in calibration_emit_public_names:
         assert hasattr(_dispatcher_calibration_emit, name)
     assert dispatcher.emit_calibration is _dispatcher_calibration_emit.emit_calibration
+    for name in old_private_names:
+        assert not hasattr(dispatcher, name)
+
+
+def test_dispatch_loop_cluster_importable_from_new_module_and_private_names_removed() -> None:
+    dispatch_loop_public_names = {
+        "candidates",
+        "dispatch_one",
+        "is_dispatch_candidate",
+        "janitor_core_ref",
+        "post_run_dispositions",
+        "prepare",
+        "ready_items",
+        "run_id",
+    }
+    old_private_names = {
+        "_candidates",
+        "_dispatch_one",
+        "_is_dispatch_candidate",
+        "_janitor_core_ref",
+        "_post_run_dispositions",
+        "_prepare",
+        "_ready_items",
+        "_run_id",
+    }
+
+    assert set(_dispatcher_loop.__all__) == dispatch_loop_public_names
+    for name in dispatch_loop_public_names:
+        assert hasattr(_dispatcher_loop, name)
+    assert dispatcher.candidates is _dispatcher_loop.candidates
+    assert dispatcher.dispatch_one is _dispatcher_loop.dispatch_one
+    assert dispatcher.is_dispatch_candidate is _dispatcher_loop.is_dispatch_candidate
+    assert dispatcher.janitor_core_ref is _dispatcher_loop.janitor_core_ref
+    assert dispatcher.post_run_dispositions is _dispatcher_loop.post_run_dispositions
+    assert dispatcher.prepare is _dispatcher_loop.prepare
+    assert dispatcher.ready_items is _dispatcher_loop.ready_items
+    assert dispatcher.run_id is _dispatcher_loop.run_id
     for name in old_private_names:
         assert not hasattr(dispatcher, name)
 

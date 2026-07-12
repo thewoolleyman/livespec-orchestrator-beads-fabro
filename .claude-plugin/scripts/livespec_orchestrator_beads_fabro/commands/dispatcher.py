@@ -144,18 +144,13 @@ import argparse
 import json
 import os
 import shutil
-import tempfile
-import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, replace
+from dataclasses import asdict
 from pathlib import Path
-from time import sleep as _real_sleep
 from typing import cast
 
-from livespec_runtime.cross_repo.types import CrossRepoManifest
 from livespec_runtime.github_auth.errors import GithubAppAuthError
-from livespec_runtime.work_items.lifecycle import is_item_ready, ready_sort_key
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_fabro_bin
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
@@ -179,21 +174,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
     cost_gate_after_verdict,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
-    materialize_overlay,
-    read_dispatch_comments,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
     DispatchOutcome,
-    PollPolicy,
-    run_dispatch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     GithubTokenEnvRunner,
     JournalFile,
     ShellCommandRunner,
-    WatchedFabroLauncher,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_checks import run_janitor_checks
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_checks import (
@@ -205,11 +193,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import 
     ledger_blocked_after_normalization,
     load_items,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_lessons import (
-    read_ratified_lessons,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human import (
-    resolve_or_bounce_needs_human,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import (
+    candidates,
+    dispatch_one,
+    is_dispatch_candidate,
+    janitor_core_ref,
+    post_run_dispositions,
+    prepare,
+    ready_items,
+    run_id,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_notify import (
     HttpNotifyPoster,
@@ -222,17 +214,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import (
     parse_janitor,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
-    heartbeat_path,
     journal_path,
     spans_path,
     store_config,
-    workflow_toml,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
-    build_plan,
-    janitor_checkout_path,
-    janitor_core_ref_from_config,
-    render_goal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_post_verdict import (
     reflector_oob_after_verdict,
@@ -240,7 +224,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_post_verdict import 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection import reflect
 from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
     github_token_supplier,
-    run_id,
     self_update_after_verdict,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_spec_checks import run_spec_checks
@@ -254,11 +237,19 @@ _github_token_supplier = github_token_supplier
 __all__: list[str] = [
     "bounce_blocked",
     "bounce_non_convergence_to_backlog",
+    "candidates",
     "complete_and_accept",
+    "dispatch_one",
     "emit_calibration",
     "host_only_refusal",
+    "is_dispatch_candidate",
+    "janitor_core_ref",
     "main",
+    "post_run_dispositions",
+    "prepare",
+    "ready_items",
     "reflector_oob_after_verdict",
+    "run_id",
     "warn_item_sizing",
 ]
 
@@ -392,7 +383,7 @@ def _run_dispatch_command(*, args: argparse.Namespace) -> int:
     if preamble_exit is not None:
         return preamble_exit
     _ = ensure_otel_receiver(args=args, repo=repo)
-    prepared = _prepare(args=args, repo=repo)
+    prepared = prepare(args=args, repo=repo)
     if prepared is None:
         return _EXIT_PRECONDITION_ERROR
     items, journal = prepared
@@ -402,7 +393,7 @@ def _run_dispatch_command(*, args: argparse.Namespace) -> int:
         journal=journal,
     ):
         return _EXIT_FAILURE
-    ready = _ready_items(items=items, repo=repo)
+    ready = ready_items(items=items, repo=repo)
     target = next((item for item in ready if item.id == args.item), None)
     if target is None:
         all_ids = {item.id for item in items}
@@ -433,7 +424,7 @@ def _run_dispatch_command(*, args: argparse.Namespace) -> int:
         armed=False,
     )
     dispatched = [
-        _dispatch_one(args=args, repo=repo, item=item, journal=journal, janitor=janitor)
+        dispatch_one(args=args, repo=repo, item=item, journal=journal, janitor=janitor)
         for item in admission.admitted
     ]
     outcome = (admission.refused + dispatched)[0]
@@ -491,7 +482,7 @@ def _requested_items_preflight_error(
             f"ERROR: work-item(s) {missing_text} not found in the target-tenant "
             f"({repo.name}); --target-repo and --item must reference the same tenant\n"
         )
-    ready_ids = {item.id for item in _ready_items(items=items, repo=repo)}
+    ready_ids = {item.id for item in ready_items(items=items, repo=repo)}
     not_ready = requested_ids - ready_ids
     if not_ready:
         missing = ", ".join(sorted(not_ready))
@@ -505,7 +496,7 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
     if preamble_exit is not None:
         return preamble_exit
     _ = ensure_otel_receiver(args=args, repo=repo)
-    prepared = _prepare(args=args, repo=repo)
+    prepared = prepare(args=args, repo=repo)
     if prepared is None:
         return _EXIT_PRECONDITION_ERROR
     items, journal = prepared
@@ -533,7 +524,7 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
         if preflight_error is not None:
             _ = write_stderr(text=preflight_error)
             return _EXIT_PRECONDITION_ERROR
-    candidates = _candidates(args=args, items=items, repo=repo)[: args.budget]
+    selected_candidates = candidates(args=args, items=items, repo=repo)[: args.budget]
     # The admission valve drains the candidate set up to the per-repo WIP cap:
     # host-only items are routed away, manual / unresolvable items are held +
     # surfaced, and the highest-rank admission-eligible items fill the free
@@ -542,7 +533,7 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
     admission = admit_and_select(
         repo=repo,
         items=items,
-        candidates=candidates,
+        candidates=selected_candidates,
         journal=journal,
         enforce_cap=True,
         armed=autonomous_armed(args=args),
@@ -558,7 +549,7 @@ def _run_loop_command(*, args: argparse.Namespace) -> int:
     with ThreadPoolExecutor(max_workers=max(1, args.parallel)) as pool:
         futures = [
             pool.submit(
-                _dispatch_one,
+                dispatch_one,
                 args=args,
                 repo=repo,
                 item=item,
@@ -632,7 +623,7 @@ def _alarm_on_terminal_failure(
     )
     notify_terminal(
         events=events,
-        run_id=_run_id(),
+        run_id=run_id(),
         poster=poster if poster is not None else HttpNotifyPoster(),
         journal=journal,
     )
@@ -662,242 +653,6 @@ def _post_verdict_runner(
     if resolved_supplier is None:
         return resolved_runner
     return GithubTokenEnvRunner(inner=resolved_runner, token=resolved_supplier)
-
-
-def _run_id() -> str:
-    """A non-credential-bearing correlation id for one dispatch run.
-
-    Generated per invocation (a random uuid4 hex): it carries no env / goal
-    / secret material by construction, so it is always safe to ship in the
-    alarm body and to correlate against the journal.
-    """
-    return run_id()
-
-
-def _prepare(
-    *,
-    args: argparse.Namespace,
-    repo: Path,
-) -> tuple[list[WorkItem], JournalFile] | None:
-    if not repo.is_dir() or not workflow_toml(args=args).is_file():
-        _ = write_stderr(text="ERROR: --repo or workflow config does not exist\n")
-        return None
-    journal = JournalFile(path=journal_path(args=args, repo=repo))
-    return load_items(repo=repo), journal
-
-
-def _candidates(
-    *,
-    args: argparse.Namespace,
-    items: list[WorkItem],
-    repo: Path,
-) -> list[WorkItem]:
-    ranked = _ready_items(items=items, repo=repo)
-    requested = set(args.items or [])
-    if requested:
-        return [item for item in ranked if item.id in requested]
-    if args.mode == "autonomous":
-        return ranked
-    return []
-
-
-def _janitor_core_ref(*, repo: Path) -> str:
-    config = repo / ".livespec.jsonc"
-    if not config.exists():
-        return janitor_core_ref_from_config(config_text="{}")
-    return janitor_core_ref_from_config(config_text=config.read_text(encoding="utf-8"))
-
-
-def _ready_items(*, items: list[WorkItem], repo: Path) -> list[WorkItem]:
-    index = {item.id: item for item in items}
-    manifest = load_manifest(project_root=repo)
-    ready = [
-        item for item in items if _is_dispatch_candidate(item=item, index=index, manifest=manifest)
-    ]
-    # Compose the single canonical ranking authority so the Dispatcher's
-    # drain order never diverges from what `next` advertises (i3jiny):
-    # (rank, id) — the fractional rank is the sole ordering key.
-    return sorted(ready, key=ready_sort_key)
-
-
-def _is_dispatch_candidate(
-    *,
-    item: WorkItem,
-    index: dict[str, WorkItem],
-    manifest: CrossRepoManifest,
-) -> bool:
-    if is_item_ready(item=item, index=index, manifest=manifest):
-        return True
-    if item.status != "pending-approval":
-        return False
-    ready_projection = replace(item, status="ready")
-    return is_item_ready(item=ready_projection, index=index, manifest=manifest)
-
-
-def _dispatch_one(
-    *,
-    args: argparse.Namespace,
-    repo: Path,
-    item: WorkItem,
-    journal: JournalFile,
-    janitor: tuple[str, ...] | None,
-) -> DispatchOutcome:
-    goal_file = Path(tempfile.gettempdir()) / f"fabro-goal-{item.id}.md"
-    overlay_file = Path(tempfile.gettempdir()) / f"fabro-run-config-{item.id}.toml"
-    janitor_checkout = janitor_checkout_path(repo=repo, work_item_id=item.id)
-    plan = build_plan(
-        repo=repo,
-        work_item_id=item.id,
-        workflow_toml=overlay_file,
-        goal_file=goal_file,
-        fabro_bin=args.fabro_bin,
-        janitor=janitor,
-        janitor_checkout=janitor_checkout,
-        janitor_core_ref=_janitor_core_ref(repo=repo),
-    )
-    warn_item_sizing(item=item, journal=journal)
-    comments = read_dispatch_comments(repo=repo, item=item)
-    if isinstance(comments, str):
-        outcome = DispatchOutcome(
-            work_item_id=item.id,
-            status="failed",
-            stage="ledger-comments",
-            pr_number=None,
-            merge_sha=None,
-            detail=comments,
-        )
-        journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
-        return outcome
-    dispatch_id = _run_id()
-    journal.append(
-        record={"stage": "dispatch-id", "work_item_id": item.id, "dispatch_id": dispatch_id}
-    )
-    token_supplier = _github_token_supplier()
-    if isinstance(token_supplier, str):
-        outcome = DispatchOutcome(
-            work_item_id=item.id,
-            status="failed",
-            stage="github-app-auth",
-            pr_number=None,
-            merge_sha=None,
-            detail=token_supplier,
-        )
-        journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
-        return outcome
-    overlay_error = materialize_overlay(
-        committed=workflow_toml(args=args),
-        overlay=overlay_file,
-        repo=repo,
-        work_item_id=item.id,
-        dispatch_id=dispatch_id,
-        token=token_supplier,
-    )
-    if overlay_error is not None:
-        outcome = DispatchOutcome(
-            work_item_id=item.id,
-            status="failed",
-            stage="run-config-overlay",
-            pr_number=None,
-            merge_sha=None,
-            detail=overlay_error,
-        )
-        journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
-        return outcome
-    # Lessons are read host-side from `repo` (the dispatcher's operative
-    # checkout, where the reflector maintains loop-reflection-gate/lessons.md),
-    # exactly like `comments` above; only committed content is read, so an
-    # unmerged reflector proposal never influences a brief.
-    lessons = read_ratified_lessons(lessons_root=repo)
-    goal_text = render_goal(
-        item=item, repo=repo, branch=plan.branch, comments=comments, lessons=lessons
-    )
-    _ = goal_file.write_text(goal_text, encoding="utf-8")
-    started_at = time.monotonic()
-    try:
-        outcome = run_dispatch(
-            plan=plan,
-            # Pillar 1 (first-class remint): the decorator re-resolves
-            # GH_TOKEN from the caching provider before EVERY engine
-            # subprocess, so the ~76-min merge-poll and the post-merge
-            # git/janitor legs never ride an expired once-at-start token.
-            runner=GithubTokenEnvRunner(inner=ShellCommandRunner(), token=token_supplier),
-            journal=journal,
-            sleep=_real_sleep,
-            poll=PollPolicy(
-                attempts=args.poll_attempts,
-                interval_seconds=args.poll_interval_seconds,
-            ),
-            # The progress watchdog (work-item livespec-impl-beads-oyg):
-            # runs `fabro run` while watching liveness and `fabro rm -f`-es
-            # a sustained-no-progress stall (the 7us.6 silent-deadlock
-            # backstop) — a distinct `stalled-no-progress` outcome that
-            # h1p's `notify_terminal` alarms on. 29f.6 layers the
-            # metrics-HEARTBEAT (the journal-sibling file the live receiver
-            # writes) as the deferred-PRIMARY liveness signal over the
-            # coarse wall-clock backstop; an absent/stale/malformed
-            # heartbeat degrades to the wall-clock layer, never to NO
-            # detection.
-            fabro_launcher=WatchedFabroLauncher(
-                heartbeat_path=heartbeat_path(args=args, repo=repo),
-            ),
-        )
-    finally:
-        overlay_file.unlink(missing_ok=True)
-    _post_run_dispositions(
-        args=args,
-        repo=repo,
-        item=item,
-        outcome=outcome,
-        journal=journal,
-        wall_clock_seconds=time.monotonic() - started_at,
-        dispatch_context_size=len(goal_text),
-        token_supplier=token_supplier,
-    )
-    return outcome
-
-
-def _post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each field is an independent caller input.
-    *,
-    args: argparse.Namespace,
-    repo: Path,
-    item: WorkItem,
-    outcome: DispatchOutcome,
-    journal: JournalFile,
-    wall_clock_seconds: float,
-    dispatch_context_size: int,
-    token_supplier: Callable[[], str],
-) -> None:
-    """Run the machine-path dispositions after a dispatch reaches its terminal.
-
-    The sequence the Dispatcher runs once a `run_dispatch` returns: on a
-    confirmed merge (when armed) run the post-merge acceptance valve
-    (`complete` -> `acceptance`, then `accept` per `acceptance_policy`),
-    journal the terminal outcome, bounce a non-converging slice to `backlog`
-    (n5kina), and emit the calibration telemetry (yfsv4j). Aggregated here so
-    `_dispatch_one` stays a single readable sequence; every step is keyed off
-    the terminal `outcome` and is independently fail-soft where it touches IO.
-    """
-    if outcome.status == "green" and args.close_on_merge:
-        complete_and_accept(
-            repo=repo,
-            item=item,
-            outcome=outcome,
-            journal=journal,
-            armed=autonomous_armed(args=args),
-        )
-    journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
-    bounce_non_convergence_to_backlog(repo=repo, item=item, outcome=outcome, journal=journal)
-    resolve_or_bounce_needs_human(args=args, repo=repo, item=item, outcome=outcome, journal=journal)
-    emit_calibration(
-        args=args,
-        repo=repo,
-        item=item,
-        outcome=outcome,
-        journal=journal,
-        wall_clock_seconds=wall_clock_seconds,
-        dispatch_context_size=dispatch_context_size,
-        token_supplier=token_supplier,
-    )
 
 
 def _build_parser() -> argparse.ArgumentParser:

@@ -44,6 +44,7 @@ from livespec_orchestrator_beads_fabro._beads_client import FakeBeadsClient, mak
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_completion,
     _dispatcher_ledger_close,
+    _dispatcher_loop,
     _dispatcher_reflection,
     _dispatcher_sibling_clones,
     dispatcher,
@@ -67,6 +68,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_checks import
     LedgerFinding,
     run_ledger_checks,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import ready_items
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
     FleetMembers,
@@ -106,7 +108,6 @@ from livespec_orchestrator_beads_fabro.commands.detect_impl_gaps import detect_r
 from livespec_orchestrator_beads_fabro.commands.dispatcher import (
     _github_token_supplier,  # pyright: ignore[reportPrivateUsage]
     _post_verdict_runner,  # pyright: ignore[reportPrivateUsage]
-    _ready_items,  # pyright: ignore[reportPrivateUsage]
     main,
 )
 from livespec_orchestrator_beads_fabro.errors import BeadsCommandError, WorkItemNotFoundError
@@ -240,7 +241,7 @@ def fabro_dispatch_env(
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands.dispatcher._github_token_supplier",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop.selfup.github_token_supplier",
         lambda: (lambda: "test-github-token"),
     )
     monkeypatch.setattr(
@@ -1126,7 +1127,7 @@ def test_janitor_core_ref_from_config_reads_compat_pin(tmp_path: Path) -> None:
         )
         == "master"
     )
-    assert dispatcher._janitor_core_ref(repo=tmp_path / "missing-config") == "master"  # pyright: ignore[reportPrivateUsage]  # noqa: SLF001
+    assert dispatcher.janitor_core_ref(repo=tmp_path / "missing-config") == "master"
 
 
 def test_parse_pr_view_rejects_unusable_shapes() -> None:
@@ -2375,10 +2376,10 @@ def test_dispatch_green_closes_item_and_journals(
     item = _item()
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
-    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
     monkeypatch.setattr(dispatcher, "cost_gate_after_verdict", lambda **_: None)
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands.dispatcher.tempfile.gettempdir",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop.tempfile.gettempdir",
         lambda: str(tmp_path),
     )
     exit_code = main(
@@ -2446,7 +2447,7 @@ def test_dispatch_materializes_mode600_overlay_and_cleans_up(
     item = _item()
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
-    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
     exit_code = main(
         argv=[
             "dispatch",
@@ -2496,7 +2497,7 @@ def test_dispatch_overlay_provisions_sibling_clones_for_fleet(
     item = _item()
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
-    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
     exit_code = main(
         argv=[
             "dispatch",
@@ -2528,7 +2529,7 @@ def test_dispatch_green_without_sha_closes_without_audit(
     item = _item()
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id, sha=None)})
-    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
     assert (
         main(argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)])
         == 0
@@ -2553,7 +2554,9 @@ def test_dispatch_failed_outcome_leaves_item_open(
         merge_sha=None,
         detail="fabro exploded",
     )
-    monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={item.id: failed}))
+    monkeypatch.setattr(
+        _dispatcher_loop, "run_dispatch", _FakeRunDispatch(outcomes={item.id: failed})
+    )
     exit_code = main(
         argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
@@ -2570,7 +2573,7 @@ def test_dispatch_no_close_on_merge_flag(
     item = _item()
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
-    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
     exit_code = main(
         argv=[
             "dispatch",
@@ -2597,7 +2600,7 @@ def test_dispatch_rejects_not_ready_item(
     append_work_item(path=_config(), item=blocker)
     append_work_item(path=_config(), item=blocked)
     monkeypatch.setattr(
-        dispatcher,
+        _dispatcher_loop,
         "run_dispatch",
         _FakeRunDispatch(outcomes={}),
     )
@@ -2659,7 +2662,7 @@ def test_dispatch_passes_custom_janitor_through(
     item = _item()
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
-    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
     exit_code = main(
         argv=[
             "dispatch",
@@ -2690,7 +2693,7 @@ def test_dispatch_ledger_gate_blocks_and_skip_flag_bypasses(
     append_work_item(path=_config(), item=item)
     append_work_item(path=_config(), item=_item(id="orphaned-9", depends_on=("ghost-7",)))
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
-    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
     base = ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     assert main(argv=base) == 1
     err = capsys.readouterr().err
@@ -2713,7 +2716,7 @@ def test_dispatch_default_workflow_materializes_from_repo_fabro_tree(
     item = _item()
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
-    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
     exit_code = main(
         argv=["dispatch", "--repo", str(repo), "--item", item.id, "--no-close-on-merge"]
     )
@@ -2758,7 +2761,9 @@ def test_dispatch_blocked_outcome_bounces_item_to_backlog(
         merge_sha=None,
         detail="run 01RUNBLOCKED parked at a human gate; answer with `fabro attach 01RUNBLOCKED`",
     )
-    monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={item.id: blocked}))
+    monkeypatch.setattr(
+        _dispatcher_loop, "run_dispatch", _FakeRunDispatch(outcomes={item.id: blocked})
+    )
     exit_code = main(
         argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
@@ -2849,7 +2854,7 @@ def test_dispatch_fails_fast_when_oauth_token_env_is_absent_or_empty(
     item = _item()
     append_work_item(path=_config(), item=item)
     monkeypatch.setattr(
-        dispatcher,
+        _dispatcher_loop,
         "run_dispatch",
         _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)}),
     )
@@ -2899,12 +2904,14 @@ def test_dispatch_fails_closed_when_github_app_env_is_absent(
     item = _item()
     append_work_item(path=_config(), item=item)
     monkeypatch.setattr(
-        dispatcher,
+        _dispatcher_loop,
         "run_dispatch",
         _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)}),
     )
     # Un-stub the supplier: exercise the REAL fail-closed resolution.
-    monkeypatch.setattr(dispatcher, "_github_token_supplier", _real_github_token_supplier)
+    monkeypatch.setattr(
+        _dispatcher_loop.selfup, "github_token_supplier", _real_github_token_supplier
+    )
     monkeypatch.delenv("GITHUB_APP_ID", raising=False)
     monkeypatch.delenv("GITHUB_PRIVATE_KEY", raising=False)
     monkeypatch.setenv("LIVESPEC_FAMILY_GITHUB_TOKEN", "github_pat_retired")
@@ -2931,7 +2938,7 @@ def test_dispatch_routes_a_mint_failure_as_overlay_refusal(
     item = _item()
     append_work_item(path=_config(), item=item)
     monkeypatch.setattr(
-        dispatcher,
+        _dispatcher_loop,
         "run_dispatch",
         _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)}),
     )
@@ -2939,7 +2946,7 @@ def test_dispatch_routes_a_mint_failure_as_overlay_refusal(
     def _raising_token() -> str:
         raise GithubAppAuthError(detail="the App API rejected the JWT")
 
-    monkeypatch.setattr(dispatcher, "_github_token_supplier", lambda: _raising_token)
+    monkeypatch.setattr(_dispatcher_loop.selfup, "github_token_supplier", lambda: _raising_token)
     base = ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     assert main(argv=base) == 1
     out = capsys.readouterr().out
@@ -2962,7 +2969,7 @@ def test_dispatch_fails_when_workflow_config_is_not_materializable(
     _ = bare.write_text("_version = 1\n", encoding="utf-8")
     item = _item()
     append_work_item(path=_config(), item=item)
-    monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={}))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _FakeRunDispatch(outcomes={}))
     exit_code = main(
         argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(bare)]
     )
@@ -3040,7 +3047,7 @@ def test_dispatch_proceeds_with_empty_siblings_when_fleet_manifest_is_unfetchabl
     item = _item()
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
-    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
     monkeypatch.setattr(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones.fetch_fleet_manifest_text",
         lambda: None,
@@ -3074,7 +3081,7 @@ def test_dispatch_fails_fast_when_fleet_manifest_is_malformed(
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     item = _item()
     append_work_item(path=_config(), item=item)
-    monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={}))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _FakeRunDispatch(outcomes={}))
     monkeypatch.setattr(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones.fetch_fleet_manifest_text",
         lambda: "not a fleet manifest {{",
@@ -3097,7 +3104,7 @@ def test_dispatch_custom_journal_path(
     item = _item()
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
-    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
     journal_path = tmp_path / "elsewhere.jsonl"
     exit_code = main(
         argv=[
@@ -3141,7 +3148,7 @@ def test_loop_shadow_dispatches_named_items_within_budget(
     append_work_item(path=_config(), item=first)
     append_work_item(path=_config(), item=second)
     fake = _FakeRunDispatch(outcomes={"a-1": _green_outcome(item_id="a-1")})
-    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
     exit_code = main(
         argv=[
             "loop",
@@ -3190,7 +3197,7 @@ def test_loop_autonomous_parallel_mixed_outcomes(
         detail="poll budget",
     )
     fake = _FakeRunDispatch(outcomes={"a-1": _green_outcome(item_id="a-1"), "b-2": failed})
-    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
     exit_code = main(
         argv=[
             "loop",
@@ -3259,7 +3266,7 @@ def test_loop_parallel_floor_of_one(
     item = _item()
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
-    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
     exit_code = main(
         argv=[
             "loop",
@@ -3428,9 +3435,9 @@ def test_dispatch_goal_text_carries_ledger_comments(
         created_at="2026-06-12T08:00:00Z",
     )
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
-    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands.dispatcher.tempfile.gettempdir",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop.tempfile.gettempdir",
         lambda: str(tmp_path),
     )
     exit_code = main(
@@ -3463,7 +3470,7 @@ def test_dispatch_fails_at_ledger_comments_stage_when_read_raises(
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     item = _item()
     append_work_item(path=_config(), item=item)
-    monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={}))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _FakeRunDispatch(outcomes={}))
 
     def _boom(*, path: StoreConfig, work_item_id: str) -> tuple[WorkItemComment, ...]:
         _ = (path, work_item_id)
@@ -3494,7 +3501,7 @@ def test_dispatch_warns_on_oversized_item_without_blocking(
     item = _item(description="multi-RGR scope: " + "z" * 1600)
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
-    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
     exit_code = main(
         argv=[
             "dispatch",
@@ -3537,7 +3544,7 @@ def test_loop_runs_reflection_stage_after_dispatch(
     item = _item(id="a-1", rank="a1")
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={"a-1": _green_outcome(item_id="a-1")})
-    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
     exit_code = main(
         argv=[
             "loop",
@@ -3582,7 +3589,7 @@ def test_loop_reflection_failure_never_changes_verdict(
     item = _item(id="a-1", rank="a1")
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={"a-1": _green_outcome(item_id="a-1")})
-    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
 
     def _boom(**_kwargs: object) -> None:
         raise RuntimeError("reflection blew up")
@@ -3615,7 +3622,7 @@ def test_dispatch_runs_reflection_stage(
     item = _item()
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
-    monkeypatch.setattr(dispatcher, "run_dispatch", fake)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
     exit_code = main(
         argv=[
             "dispatch",
@@ -3655,9 +3662,9 @@ def test_ready_items_drain_order_equals_next_ranking(tmp_path: Path) -> None:
         _item(id="li-bbb", rank="a1"),
         _item(id="li-ccc", rank="a2"),
     ]
-    # tmp_path has no `.livespec.jsonc`, so `_ready_items` sees an empty
+    # tmp_path has no `.livespec.jsonc`, so `ready_items` sees an empty
     # cross-repo manifest and every ready, dependency-free item is ready.
-    drain_order = [item.id for item in _ready_items(items=fixture, repo=tmp_path)]
+    drain_order = [item.id for item in ready_items(items=fixture, repo=tmp_path)]
     next_order = [c["work_item_ref"] for c in next_command.rank_candidates(items=fixture)]
     assert drain_order == next_order
     # Pin the canonical (rank, id) order explicitly.

@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
-from livespec_orchestrator_beads_fabro.commands import dispatcher
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
@@ -68,7 +68,7 @@ def _hermetic_dispatch_env(
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands.dispatcher._github_token_supplier",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop.selfup.github_token_supplier",
         lambda: (lambda: "test-github-token"),
     )
     monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
@@ -166,7 +166,7 @@ def test_loop_admits_highest_rank_up_to_wip_cap(
     for rank in ("a0", "a1", "a2"):
         append_work_item(path=_config(), item=_item(id=f"bd-ib-{rank}", rank=rank))
     calls: list[str] = []
-    monkeypatch.setattr(dispatcher, "run_dispatch", _green_recording(calls))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _green_recording(calls))
 
     exit_code = main(
         argv=[
@@ -207,7 +207,7 @@ def test_loop_holds_manual_admission_item(
     item = _item(id="bd-ib-manual", status="pending-approval", admission_policy="manual")
     append_work_item(path=_config(), item=item)
     calls: list[str] = []
-    monkeypatch.setattr(dispatcher, "run_dispatch", _green_recording(calls))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _green_recording(calls))
 
     exit_code = main(
         argv=[
@@ -251,7 +251,7 @@ def test_complete_merges_on_green_into_acceptance(
     # AI pass (does NOT go straight to done).
     item = _item(id="bd-ib-acc")
     append_work_item(path=_config(), item=item)
-    monkeypatch.setattr(dispatcher, "run_dispatch", _green_recording([]))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _green_recording([]))
 
     exit_code = main(
         argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
@@ -283,7 +283,7 @@ def test_accept_ai_then_human_parks_until_human(
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     item = _item(id="bd-ib-park", acceptance_policy="ai-then-human")
     append_work_item(path=_config(), item=item)
-    monkeypatch.setattr(dispatcher, "run_dispatch", _green_recording([]))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _green_recording([]))
 
     exit_code = main(
         argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
@@ -302,7 +302,7 @@ def test_accept_ai_only_confirms_to_done(
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     item = _item(id="bd-ib-aionly", acceptance_policy="ai-only")
     append_work_item(path=_config(), item=item)
-    monkeypatch.setattr(dispatcher, "run_dispatch", _green_recording([]))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _green_recording([]))
 
     exit_code = main(
         argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]

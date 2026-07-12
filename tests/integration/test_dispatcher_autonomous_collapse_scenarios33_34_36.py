@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
-from livespec_orchestrator_beads_fabro.commands import dispatcher
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
@@ -66,7 +66,7 @@ def _hermetic_dispatch_env(
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands.dispatcher._github_token_supplier",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop.selfup.github_token_supplier",
         lambda: (lambda: "test-github-token"),
     )
     monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
@@ -181,7 +181,7 @@ def test_armed_auto_approves_routine_manual_item(
     item = _item(id="bd-ib-routine", status="pending-approval", admission_policy="manual")
     append_work_item(path=_config(), item=item)
     calls: list[str] = []
-    monkeypatch.setattr(dispatcher, "run_dispatch", _green_recording(calls))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _green_recording(calls))
 
     exit_code = main(
         argv=[
@@ -222,7 +222,7 @@ def test_armed_auto_accepts_ai_then_human_item(
         id="bd-ib-acc", status="ready", admission_policy="auto", acceptance_policy="ai-then-human"
     )
     append_work_item(path=_config(), item=item)
-    monkeypatch.setattr(dispatcher, "run_dispatch", _green_recording([]))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _green_recording([]))
 
     exit_code = main(
         argv=[
@@ -266,7 +266,7 @@ def test_armed_human_only_acceptance_still_parks(
         id="bd-ib-human", status="ready", admission_policy="auto", acceptance_policy="human-only"
     )
     append_work_item(path=_config(), item=item)
-    monkeypatch.setattr(dispatcher, "run_dispatch", _green_recording([]))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _green_recording([]))
 
     exit_code = main(
         argv=[
@@ -313,7 +313,7 @@ def test_armed_spec_change_tier_item_stays_held(
     )
     append_work_item(path=_config(), item=item)
     calls: list[str] = []
-    monkeypatch.setattr(dispatcher, "run_dispatch", _green_recording(calls))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _green_recording(calls))
 
     exit_code = main(
         argv=[
@@ -353,7 +353,7 @@ def test_flag_without_permission_holds_routine_manual_item(
     item = _item(id="bd-ib-routine", status="pending-approval", admission_policy="manual")
     append_work_item(path=_config(), item=item)
     calls: list[str] = []
-    monkeypatch.setattr(dispatcher, "run_dispatch", _green_recording(calls))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _green_recording(calls))
 
     exit_code = main(
         argv=[
