@@ -154,9 +154,12 @@ def test_credentials_cluster_importable_from_new_module_and_private_names_remove
 
 def test_ledger_close_cluster_importable_from_new_module_and_private_names_removed() -> None:
     ledger_close_public_names = {
+        "apply_native_status_remaps",
         "emit_outcomes",
         "ledger_blocked_after_normalization",
         "load_items",
+        "plan_native_status_remaps",
+        "project_native_status_remaps",
     }
     old_private_names = {
         "_append_normalization_note",
@@ -164,7 +167,7 @@ def test_ledger_close_cluster_importable_from_new_module_and_private_names_remov
         "_ledger_blocked",
         "_ledger_blocked_after_normalization",
         "_load_items",
-        "_normalize_native_open_statuses",
+        "_normalize_native_statuses",
         "_write_findings",
     }
 
@@ -319,6 +322,7 @@ def test_run_checks_cluster_importable_from_new_module_and_private_names_removed
         "requested_items_preflight_error",
         "run_janitor_check",
         "run_ledger_check",
+        "run_ledger_normalize",
         "run_spec_check",
     }
     old_private_names = {
