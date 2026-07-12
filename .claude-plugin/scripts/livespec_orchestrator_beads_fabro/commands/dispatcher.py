@@ -193,9 +193,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import 
     ledger_blocked_after_normalization,
     load_items,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import (
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import dispatch_one
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
     candidates,
-    dispatch_one,
     is_dispatch_candidate,
     janitor_core_ref,
     post_run_dispositions,

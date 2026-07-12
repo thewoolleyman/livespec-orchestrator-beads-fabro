@@ -68,7 +68,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_checks import
     LedgerFinding,
     run_ledger_checks,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import ready_items
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import ready_items
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
     FleetMembers,
