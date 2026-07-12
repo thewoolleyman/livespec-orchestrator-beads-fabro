@@ -50,7 +50,17 @@ __all__: list[str] = [
 
 _RECEIVER_HOST_ENV = "LIVESPEC_OTEL_RECEIVER_HOST"
 _RECEIVER_PORT_ENV = "LIVESPEC_OTEL_RECEIVER_PORT"
-_DEFAULT_RECEIVER_HOST = "127.0.0.1"
+# The Docker default-bridge gateway, SYMMETRIC with the sandbox egress target
+# (`_dispatcher_projection.DEFAULT_SANDBOX_OTEL_ENDPOINT` = http://172.17.0.1:4318).
+# A Fabro sandbox POSTs its Claude-Code OTel to `172.17.0.1` (inside the
+# container `127.0.0.1` is the sandbox's OWN loopback, so the host is reached via
+# the bridge gateway); a receiver bound to `127.0.0.1` would refuse those
+# bridge-interface connections. NOT `0.0.0.0` — this is a shared multi-tenant
+# host, so 4318 is bound to the bridge interface only, never all interfaces. A
+# non-docker host (no `172.17.0.1` interface) sets `LIVESPEC_OTEL_RECEIVER_HOST`
+# to `127.0.0.1`; if unset there, the bind fails fail-open (the driver still
+# egresses the host span files — see `_otel_enrich_driver`).
+_DEFAULT_RECEIVER_HOST = "172.17.0.1"
 _DEFAULT_RECEIVER_PORT = 4318
 
 _TRACES_PATH = "/v1/traces"
@@ -88,11 +98,11 @@ class StartableServer(Protocol):
 
 @dataclass(frozen=True, kw_only=True)
 class ReceiverConfig:
-    """The bound loopback addr/port for the live receiver.
+    """The bound host addr/port for the live receiver.
 
     `port == 0` binds an EPHEMERAL port (used by the hermetic test tier so
-    no fixed port is contended); production uses the committed default or
-    the `LIVESPEC_OTEL_RECEIVER_*` override.
+    no fixed port is contended); production uses the committed default (the
+    Docker bridge gateway) or the `LIVESPEC_OTEL_RECEIVER_*` override.
     """
 
     host: str
@@ -102,7 +112,7 @@ class ReceiverConfig:
 def resolve_receiver_config(*, environ: dict[str, str]) -> ReceiverConfig:
     """Resolve the receiver addr/port from env, with committed defaults.
 
-    An unset env reads as the committed loopback default (never UNBOUND).
+    An unset env reads as the committed Docker-bridge default (never UNBOUND).
     An unparseable / non-positive port falls back to the default rather
     than crashing — same fail-soft discipline as the cost-cap levers.
     """
