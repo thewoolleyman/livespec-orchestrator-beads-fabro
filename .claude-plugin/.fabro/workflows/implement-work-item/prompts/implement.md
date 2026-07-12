@@ -158,6 +158,24 @@ mechanical line-count cut, a re-export shim, or an exemption.
    runs but its assertion FAILS; the stub must NOT make the test pass
    (that trips `test-passed-at-red`). The impl must be UNMODIFIED on
    disk at Red (the hook's pytest reads the on-disk module).
+   - **A COLLECTION ERROR IS NOT AN ACCEPTABLE RED.** If the staged test
+     dies at COLLECTION (e.g. a top-level `import <new_module>` that does
+     not exist yet → `ModuleNotFoundError`, zero assertions run), the Red
+     proves only unimportability, NOT that the behavior is unimplemented —
+     it is a FAKE Red even though the hook accepts a non-zero exit. Never
+     describe such a Red as "genuine-assertion" in the PR body.
+   - **Decomposition / new-module slices — use the importlib pattern (NOT a
+     top-level import).** When the test asserts that code moved INTO a new
+     module, do NOT `import <new_module>` at module top (that makes the Red
+     a collection error). Instead: put the module import INSIDE the test
+     body via `importlib.import_module(...)`, and make the FIRST assertion
+     a genuine check that fails before the import — e.g.
+     `assert module_path.is_file()` on the new module's expected path, then
+     (after import) assert the new public names exist AND the old private
+     names are GONE from the source module. At Red the file does not exist
+     yet, so `is_file()` fails as a genuine assertion; at Green it passes.
+     This is the established pattern the prior decomposition slices used —
+     follow it verbatim for any "extract to a new module" change.
 2. **Green amend.** Stage the impl, `mise exec -- git commit --amend`.
    The hook re-runs the SAME test (now passing) and records
    `TDD-Green-*` trailers. Test-file bytes MUST be byte-identical
