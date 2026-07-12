@@ -28,7 +28,7 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
-from livespec_orchestrator_beads_fabro.commands import dispatcher
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     NON_CONVERGED_MARKER,
@@ -69,7 +69,7 @@ def _hermetic_dispatch_env(
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands.dispatcher._github_token_supplier",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop.selfup.github_token_supplier",
         lambda: (lambda: "test-github-token"),
     )
     # `main()` resolves its store config internally; forcing the fake toggle is
@@ -226,7 +226,7 @@ def test_dispatch_bounces_stalled_slice_to_backlog(
         merge_sha=None,
         detail="run made no progress for the full stall window",
     )
-    monkeypatch.setattr(dispatcher, "run_dispatch", _outcome_returning(stalled))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _outcome_returning(stalled))
 
     exit_code = main(
         argv=[
@@ -267,7 +267,7 @@ def test_dispatch_bounces_dot_non_converged_slice_to_backlog(
         merge_sha=None,
         detail=f"{NON_CONVERGED_MARKER}: fix-loop cap hit; routed back to the Dispatcher",
     )
-    monkeypatch.setattr(dispatcher, "run_dispatch", _outcome_returning(non_converged))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _outcome_returning(non_converged))
 
     exit_code = main(
         argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
@@ -297,7 +297,7 @@ def test_dispatch_does_not_bounce_ordinary_failure(
         merge_sha=None,
         detail="no PR found for branch",
     )
-    monkeypatch.setattr(dispatcher, "run_dispatch", _outcome_returning(ordinary))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _outcome_returning(ordinary))
 
     exit_code = main(
         argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
@@ -328,7 +328,7 @@ def test_dispatch_does_not_bounce_green_run(
         merge_sha="abc123",
         detail="merged, post-merge janitor green",
     )
-    monkeypatch.setattr(dispatcher, "run_dispatch", _outcome_returning(green))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _outcome_returning(green))
 
     exit_code = main(
         argv=[

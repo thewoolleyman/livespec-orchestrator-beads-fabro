@@ -12,7 +12,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import dispatcher
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
@@ -44,7 +44,7 @@ def fabro_dispatch_env(
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands.dispatcher._github_token_supplier",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop.selfup.github_token_supplier",
         lambda: (lambda: "test-github-token"),
     )
     monkeypatch.setattr(
@@ -143,7 +143,7 @@ def test_loop_autonomous_with_item_dispatches_requested_not_top_ranked(
     append_work_item(path=_config(), item=high_priority)
     append_work_item(path=_config(), item=requested)
     recording = _RecordingRunDispatch()
-    monkeypatch.setattr(dispatcher, "run_dispatch", recording)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", recording)
     exit_code = main(
         argv=[
             "loop",
@@ -178,7 +178,7 @@ def test_loop_autonomous_with_item_not_ready_exits_precondition_error(
     closed_item = _item(id="closed-item", status="done", resolution="completed")
     append_work_item(path=_config(), item=closed_item)
     recording = _RecordingRunDispatch()
-    monkeypatch.setattr(dispatcher, "run_dispatch", recording)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", recording)
     exit_code = main(
         argv=[
             "loop",
@@ -213,7 +213,7 @@ def test_loop_shadow_with_item_not_ready_exits_precondition_error(
     closed_item = _item(id="closed-item", status="done", resolution="completed")
     append_work_item(path=_config(), item=closed_item)
     recording = _RecordingRunDispatch()
-    monkeypatch.setattr(dispatcher, "run_dispatch", recording)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", recording)
     exit_code = main(
         argv=[
             "loop",

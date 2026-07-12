@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import dispatcher
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop, dispatcher
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_notify import (
     HttpNotifyPoster,
@@ -78,7 +78,7 @@ def _notify_test_env(
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands.dispatcher._github_token_supplier",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop.selfup.github_token_supplier",
         lambda: (lambda: "test-github-token"),
     )
     monkeypatch.setattr(
@@ -407,7 +407,9 @@ def test_dispatch_failed_outcome_journals_notify_and_keeps_exit_code(
         merge_sha=None,
         detail="host-route me; token https://x:ghp_LEAK@github.com/o/r.git",
     )
-    monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={item.id: failed}))
+    monkeypatch.setattr(
+        _dispatcher_loop, "run_dispatch", _FakeRunDispatch(outcomes={item.id: failed})
+    )
     exit_code = dispatcher.main(
         argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
@@ -445,7 +447,9 @@ def test_dispatch_failed_exit_code_unchanged_when_notify_raises(
         merge_sha=None,
         detail="boom",
     )
-    monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={item.id: failed}))
+    monkeypatch.setattr(
+        _dispatcher_loop, "run_dispatch", _FakeRunDispatch(outcomes={item.id: failed})
+    )
     exit_code = dispatcher.main(
         argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
@@ -477,7 +481,9 @@ def test_loop_non_green_wave_alarms_with_loop_summary(
         merge_sha=None,
         detail="parked at human gate",
     )
-    monkeypatch.setattr(dispatcher, "run_dispatch", _FakeRunDispatch(outcomes={item.id: blocked}))
+    monkeypatch.setattr(
+        _dispatcher_loop, "run_dispatch", _FakeRunDispatch(outcomes={item.id: blocked})
+    )
     exit_code = dispatcher.main(
         argv=[
             "loop",
@@ -511,7 +517,7 @@ def test_loop_all_green_wave_fires_no_alarm(
     poster = _RecordingPoster()
     monkeypatch.setattr(dispatcher, "HttpNotifyPoster", lambda: poster)
     monkeypatch.setattr(
-        dispatcher,
+        _dispatcher_loop,
         "run_dispatch",
         _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)}),
     )

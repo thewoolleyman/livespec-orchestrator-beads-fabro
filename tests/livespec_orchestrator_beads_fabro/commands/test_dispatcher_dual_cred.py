@@ -23,7 +23,6 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_codex_auth,
     _dispatcher_credentials,
     _dispatcher_sibling_clones,
-    dispatcher,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
     CodexProjectionRefusal,
@@ -35,6 +34,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     CODEX_IMPLEMENTER_ADAPTER,
+    build_plan,
     fabro_run_argv,
     render_run_config_overlay,
 )
@@ -152,7 +152,7 @@ def test_render_overlay_without_codex_snapshot_is_unchanged(tmp_path: Path) -> N
 
 def test_fabro_run_argv_routes_implementer_to_codex_adapter(tmp_path: Path) -> None:
     """`--input acp_adapter=<codex>` is present, before --no-upgrade-check."""
-    plan = dispatcher.build_plan(
+    plan = build_plan(
         repo=tmp_path,
         work_item_id="x-1",
         workflow_toml=tmp_path / "wf.toml",

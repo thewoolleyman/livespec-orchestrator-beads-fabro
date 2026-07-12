@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
-from livespec_orchestrator_beads_fabro.commands import dispatcher
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
@@ -66,7 +66,7 @@ def _hermetic_dispatch_env(
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands.dispatcher._github_token_supplier",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop.selfup.github_token_supplier",
         lambda: (lambda: "test-github-token"),
     )
     # `main()` resolves its store config internally; forcing the fake toggle is
@@ -190,7 +190,7 @@ def test_dispatch_holds_manual_admission_item_without_launching_fabro(
     )
     append_work_item(path=_config(), item=item)
     recording = _RecordingRunDispatch()
-    monkeypatch.setattr(dispatcher, "run_dispatch", recording)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", recording)
 
     exit_code = main(
         argv=[
@@ -226,7 +226,7 @@ def test_dispatch_journals_admission_held(
     item = _item(status="pending-approval")
     append_work_item(path=_config(), item=item)
     recording = _RecordingRunDispatch()
-    monkeypatch.setattr(dispatcher, "run_dispatch", recording)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", recording)
 
     exit_code = main(
         argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
@@ -252,7 +252,7 @@ def test_dispatch_admits_auto_item(
     item = _item(admission_policy="auto")
     append_work_item(path=_config(), item=item)
     recording = _RecordingRunDispatch()
-    monkeypatch.setattr(dispatcher, "run_dispatch", recording)
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", recording)
 
     exit_code = main(
         argv=[
