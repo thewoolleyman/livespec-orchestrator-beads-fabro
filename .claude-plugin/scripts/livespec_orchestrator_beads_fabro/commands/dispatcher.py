@@ -16,7 +16,7 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
 `orchestrator.py` CLIs.
 
   dispatcher.py ledger-check [--project-root <path>] [--json]
-  dispatcher.py ledger-normalize [--project-root <path>] [--dry-run] [--json]
+  dispatcher.py ledger-normalize [--project-root <path>] [--dry-run] [--gate] [--json]
   dispatcher.py spec-check [--project-root <path>] [--spec-root <path>] [--json]
   dispatcher.py janitor-check [--repo <path>] [--json]
   dispatcher.py dispatch --repo <path> --item <id> [common flags]
@@ -37,7 +37,12 @@ dispatch-path status normalizer (`open` → `backlog`, `in_progress` →
 `active`; every other status is left for the status-conformance check)
 to remap ANY tenant's beads-native statuses WITHOUT needing a dispatch,
 then reports the residual non-conformant rows. `--dry-run` plans and
-reports the remaps without writing anything.
+reports the remaps without writing anything. `--gate` is the always-run
+pre-push mode (implies dry-run): it prints a case-aware heal message and
+exits 0 (clean) / 1 (confirmed drift) / 2 (could-not-check), a fail-soft
+exit-code contract the `check-ledger-conformance-live` recipe consumes so a
+creds/server problem SKIPS the push rather than bricking it (see
+`_dispatcher_ledger_gate`).
 
 Common flags: [--workflow <toml>] [--fabro-bin <path>]
 [--janitor <json-argv>] [--journal <path>] [--poll-attempts <n>]
@@ -269,6 +274,11 @@ def _build_parser() -> argparse.ArgumentParser:
     _ = norm.add_argument("--project-root", dest="project_root", default=None)
     _ = norm.add_argument("--json", dest="as_json", action="store_true")
     _ = norm.add_argument("--dry-run", dest="dry_run", action="store_true")
+    # `--gate` is the always-run pre-push mode: it implies dry-run, prints a
+    # case-aware heal message, and sets a fail-soft exit-code contract
+    # (0 clean / 1 confirmed drift / 2 could-not-check). See
+    # `_dispatcher_ledger_gate.run_ledger_gate`.
+    _ = norm.add_argument("--gate", dest="gate", action="store_true")
     spec = subparsers.add_parser("spec-check")
     _ = spec.add_argument("--project-root", dest="project_root", default=None)
     _ = spec.add_argument("--spec-root", dest="spec_root", default=None)

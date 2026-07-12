@@ -24,6 +24,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import 
     plan_native_status_remaps,
     project_native_status_remaps,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_gate import run_ledger_gate
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import ready_items
 from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import parse_janitor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
@@ -67,9 +68,13 @@ def run_ledger_normalize(*, args: argparse.Namespace) -> int:
     non-conformant findings (statuses no remap can map) are then computed
     over the resulting rows and reported alongside the remaps. Exit 1 when a
     non-skipped residual finding remains after normalization, else 0 — the
-    same signal `run_ledger_check` uses.
+    same signal `run_ledger_check` uses. `--gate` short-circuits to the
+    always-run pre-push gate (`run_ledger_gate`): a fail-soft, dry-run,
+    case-aware conformance check with the 0/1/2 exit-code contract.
     """
     project_root = Path(args.project_root) if args.project_root is not None else Path.cwd()
+    if args.gate:
+        return run_ledger_gate(project_root=project_root)
     items = load_items(repo=project_root)
     remaps = plan_native_status_remaps(items=items)
     if args.dry_run:
