@@ -339,3 +339,31 @@ def test_run_checks_cluster_importable_from_new_module_and_private_names_removed
     assert dispatcher.requested_items_preflight_error is run_checks.requested_items_preflight_error
     for name in old_private_names:
         assert not hasattr(dispatcher, name)
+
+
+def test_run_commands_cluster_importable_from_new_module_and_private_names_removed() -> None:
+    module_path = Path(dispatcher.__file__).parent / "_dispatcher_run_commands.py"
+    run_commands_public_names = {
+        "run_dispatch_command",
+        "run_loop_command",
+    }
+    old_dispatcher_names = {
+        "_alarm_on_terminal_failure",
+        "_github_token_error_supplier",
+        "_github_token_supplier",
+        "_post_verdict_runner",
+        "_run_dispatch_command",
+        "_run_loop_command",
+    }
+
+    assert module_path.is_file()
+    run_commands = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands"
+    )
+    assert set(run_commands.__all__) == run_commands_public_names
+    for name in run_commands_public_names:
+        assert hasattr(run_commands, name)
+    assert dispatcher.run_dispatch_command is run_commands.run_dispatch_command
+    assert dispatcher.run_loop_command is run_commands.run_loop_command
+    for name in old_dispatcher_names:
+        assert not hasattr(dispatcher, name)

@@ -30,14 +30,16 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import (
     ensure_otel_receiver,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import heartbeat_path
-from livespec_orchestrator_beads_fabro.commands._otel_receive import OtelReceiver
-from livespec_orchestrator_beads_fabro.commands.dispatcher import (
-    _run_dispatch_command,
-    _run_loop_command,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands import (
+    run_dispatch_command,
+    run_loop_command,
 )
+from livespec_orchestrator_beads_fabro.commands._otel_receive import OtelReceiver
 
 _EXIT_PRECONDITION_ERROR = 3
-_ENSURE_TARGET = "livespec_orchestrator_beads_fabro.commands.dispatcher.ensure_otel_receiver"
+_ENSURE_TARGET = (
+    "livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands.ensure_otel_receiver"
+)
 
 
 @dataclass(kw_only=True)
@@ -139,7 +141,7 @@ def test_dispatch_command_arms_receiver_at_entry(
     missing = tmp_path / "does-not-exist"
     args = argparse.Namespace(repo=str(missing), janitor=None, journal=None, fabro_bin=None)
     # A missing repo short-circuits AFTER the arming line; the arming still ran.
-    rc = _run_dispatch_command(args=args)
+    rc = run_dispatch_command(args=args)
     assert rc == _EXIT_PRECONDITION_ERROR
     assert recorder.calls == [missing]
 
@@ -152,6 +154,6 @@ def test_loop_command_arms_receiver_at_entry(
     monkeypatch.setattr(_ENSURE_TARGET, recorder)
     missing = tmp_path / "does-not-exist"
     args = argparse.Namespace(repo=str(missing), janitor=None, journal=None, fabro_bin=None)
-    rc = _run_loop_command(args=args)
+    rc = run_loop_command(args=args)
     assert rc == _EXIT_PRECONDITION_ERROR
     assert recorder.calls == [missing]

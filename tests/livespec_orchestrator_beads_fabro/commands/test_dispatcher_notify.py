@@ -1,7 +1,7 @@
 """Tests for the fail-open ntfy alarm on terminal dispatcher failures.
 
 Covers `_dispatcher_notify` (the reusable, fail-OPEN notifier) and its
-wiring into `dispatcher._run_dispatch_command` / `_run_loop_command`. The
+wiring into `_dispatcher_run_commands.run_dispatch_command` / `run_loop_command`. The
 load-bearing invariant under test (0jxs operability gate): a notification
 failure NEVER changes a dispatch verdict / exit code and NEVER blocks
 exit. Credential hygiene is asserted directly: the body ships ONLY the
@@ -22,7 +22,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop, dispatcher
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_loop,
+    _dispatcher_run_commands,
+    dispatcher,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_notify import (
     HttpNotifyPoster,
@@ -37,7 +41,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_notify import (
 # verifies the alarm wiring); importing it avoids the SLF001
 # attribute-access ban while keeping the name addressable, the same
 # pattern test_dispatcher_reflection uses for the reflection internals.
-from livespec_orchestrator_beads_fabro.commands.dispatcher import (
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands import (
     _alarm_on_terminal_failure,  # pyright: ignore[reportPrivateUsage]
 )
 from livespec_orchestrator_beads_fabro.store import append_work_item
@@ -398,7 +402,7 @@ def test_dispatch_failed_outcome_journals_notify_and_keeps_exit_code(
     append_work_item(path=_config(), item=item)
     monkeypatch.setenv("CLAUDE_NTFY_DISPATCHER_TOPIC", "dispatch-alarms")
     poster = _RecordingPoster()
-    monkeypatch.setattr(dispatcher, "HttpNotifyPoster", lambda: poster)
+    monkeypatch.setattr(_dispatcher_run_commands, "HttpNotifyPoster", lambda: poster)
     failed = DispatchOutcome(
         work_item_id=item.id,
         status="failed",
@@ -438,7 +442,7 @@ def test_dispatch_failed_exit_code_unchanged_when_notify_raises(
     append_work_item(path=_config(), item=item)
     monkeypatch.setenv("CLAUDE_NTFY_TOPIC", "general")
     poster = _RecordingPoster(raises=RuntimeError("ntfy down"))
-    monkeypatch.setattr(dispatcher, "HttpNotifyPoster", lambda: poster)
+    monkeypatch.setattr(_dispatcher_run_commands, "HttpNotifyPoster", lambda: poster)
     failed = DispatchOutcome(
         work_item_id=item.id,
         status="failed",
@@ -472,7 +476,7 @@ def test_loop_non_green_wave_alarms_with_loop_summary(
     append_work_item(path=_config(), item=item)
     monkeypatch.setenv("CLAUDE_NTFY_DISPATCHER_TOPIC", "dispatch-alarms")
     poster = _RecordingPoster()
-    monkeypatch.setattr(dispatcher, "HttpNotifyPoster", lambda: poster)
+    monkeypatch.setattr(_dispatcher_run_commands, "HttpNotifyPoster", lambda: poster)
     blocked = DispatchOutcome(
         work_item_id=item.id,
         status="blocked",
@@ -515,7 +519,7 @@ def test_loop_all_green_wave_fires_no_alarm(
     append_work_item(path=_config(), item=item)
     monkeypatch.setenv("CLAUDE_NTFY_DISPATCHER_TOPIC", "dispatch-alarms")
     poster = _RecordingPoster()
-    monkeypatch.setattr(dispatcher, "HttpNotifyPoster", lambda: poster)
+    monkeypatch.setattr(_dispatcher_run_commands, "HttpNotifyPoster", lambda: poster)
     monkeypatch.setattr(
         _dispatcher_loop,
         "run_dispatch",
