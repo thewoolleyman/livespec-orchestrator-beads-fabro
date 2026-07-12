@@ -266,9 +266,11 @@ def receiver_factory(
 
 
 def test_resolve_receiver_config_defaults_when_unset() -> None:
-    """An unset env never means unbound: committed loopback addr/port apply."""
+    """An unset env never means unbound: the committed Docker-bridge addr/port
+    apply (172.17.0.1:4318) — symmetric with the sandbox egress target so a
+    bridge-interface POST from inside a fabro sandbox actually lands."""
     config = resolve_receiver_config(environ={})
-    assert config.host == "127.0.0.1"
+    assert config.host == "172.17.0.1"
     assert config.port == 4318
 
 
@@ -297,9 +299,23 @@ def test_resolve_receiver_config_negative_port_falls_back() -> None:
 
 
 def test_resolve_receiver_config_blank_host_falls_back() -> None:
-    """A blank/whitespace host env falls back to the committed loopback."""
+    """A blank/whitespace host env falls back to the committed Docker-bridge default."""
     config = resolve_receiver_config(environ={"LIVESPEC_OTEL_RECEIVER_HOST": "   "})
-    assert config.host == "127.0.0.1"
+    assert config.host == "172.17.0.1"
+
+
+def test_receiver_binds_docker_bridge_from_default_config() -> None:
+    """Given the default dispatcher config (no host env), the receiver is
+    CONFIGURED to bind the Docker bridge gateway 172.17.0.1 — symmetric with
+    `_dispatcher_projection.DEFAULT_SANDBOX_OTEL_ENDPOINT`. (The config is
+    asserted rather than a real bind: 172.17.0.1 only exists on a docker host.)"""
+    receiver = OtelReceiver(
+        config=resolve_receiver_config(environ={}),
+        exporter=_FakeExporter(),
+        heartbeat=HeartbeatSink(path=Path("/unused")),
+    )
+    assert receiver.config.host == "172.17.0.1"
+    assert receiver.config.port == 4318
 
 
 def test_resolve_receiver_config_ephemeral_port_allowed() -> None:

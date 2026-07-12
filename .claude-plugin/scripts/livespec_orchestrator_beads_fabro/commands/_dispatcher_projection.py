@@ -30,10 +30,10 @@ __all__: list[str] = [
 # address instead. 172.17.0.1 is the conventional Docker default-bridge
 # gateway; the orchestrator's later live-verify corrects this lever if the
 # real reachable address differs (e.g. `host.docker.internal` when the
-# sandbox provisions that alias). NOTE: the host-side E1 receiver defaults
-# to a loopback (127.0.0.1) bind — for sandbox egress to actually land it
-# must bind a bridge-reachable interface; that host-side wiring is the
-# live-verify leg, OUT OF SCOPE for the overlay-assembly here.
+# sandbox provisions that alias). The host-side E1 receiver binds the SAME
+# bridge gateway by default (`_otel_receive._DEFAULT_RECEIVER_HOST` =
+# 172.17.0.1), so sandbox egress lands symmetrically; a non-docker host
+# overrides both levers to a loopback.
 SANDBOX_OTEL_ENDPOINT_ENV_VAR = "LIVESPEC_SANDBOX_OTEL_ENDPOINT"
 DEFAULT_SANDBOX_OTEL_ENDPOINT = "http://172.17.0.1:4318"
 
