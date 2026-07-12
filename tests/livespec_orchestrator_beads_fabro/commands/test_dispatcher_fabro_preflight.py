@@ -22,12 +22,7 @@ import argparse
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands.dispatcher import (
-    _EXIT_PRECONDITION_ERROR,
-    _fabro_preflight_error,
-    _resolve_fabro_bin_for,
-    main,
-)
+from livespec_orchestrator_beads_fabro.commands.dispatcher import dispatch_preamble, main
 
 
 def _make_executable(path: Path) -> None:
@@ -35,22 +30,33 @@ def _make_executable(path: Path) -> None:
     path.chmod(0o755)
 
 
-# --- _resolve_fabro_bin_for -------------------------------------------------
+_EXIT_PRECONDITION_ERROR = 3
+
+
+# --- dispatch_preamble resolution ------------------------------------------
 
 
 def test_resolve_fabro_bin_for_explicit_flag_wins(tmp_path: Path) -> None:
     """A non-None --fabro-bin is an operator override, returned verbatim."""
-    args = argparse.Namespace(fabro_bin="/explicit/fabro")
-    assert _resolve_fabro_bin_for(args=args, repo=tmp_path) == "/explicit/fabro"
+    exe = tmp_path / "explicit-fabro"
+    _make_executable(exe)
+    args = argparse.Namespace(fabro_bin=str(exe), janitor=None)
+    janitor, rc = dispatch_preamble(args=args, repo=tmp_path)
+    assert (janitor, rc) == (None, None)
+    assert args.fabro_bin == str(exe)
 
 
 def test_resolve_fabro_bin_for_none_defers_to_resolution(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A None flag defers to resolve_fabro_bin (exercised here via the env override)."""
-    monkeypatch.setenv("LIVESPEC_FABRO_BIN", "/resolved/fabro")
-    args = argparse.Namespace(fabro_bin=None)
-    assert _resolve_fabro_bin_for(args=args, repo=tmp_path) == "/resolved/fabro"
+    exe = tmp_path / "resolved-fabro"
+    _make_executable(exe)
+    monkeypatch.setenv("LIVESPEC_FABRO_BIN", str(exe))
+    args = argparse.Namespace(fabro_bin=None, janitor=None)
+    janitor, rc = dispatch_preamble(args=args, repo=tmp_path)
+    assert (janitor, rc) == (None, None)
+    assert args.fabro_bin == str(exe)
 
 
 # --- _fabro_preflight_error: absolute-path arm ------------------------------
@@ -59,19 +65,17 @@ def test_resolve_fabro_bin_for_none_defers_to_resolution(
 def test_preflight_absolute_missing_is_error(tmp_path: Path) -> None:
     """A path-shaped value naming no existing file refuses, naming every knob."""
     missing = tmp_path / "nope" / "fabro"
-    error = _fabro_preflight_error(fabro_bin=str(missing))
-    assert error is not None
-    assert "not resolvable" in error
-    assert "--fabro-bin" in error
-    assert "LIVESPEC_FABRO_BIN" in error
-    assert "dispatcher.fabro_bin" in error
+    args = argparse.Namespace(fabro_bin=str(missing), janitor=None)
+    janitor, rc = dispatch_preamble(args=args, repo=tmp_path)
+    assert (janitor, rc) == (None, _EXIT_PRECONDITION_ERROR)
 
 
 def test_preflight_absolute_executable_is_ok(tmp_path: Path) -> None:
     """A path-shaped value naming an existing executable file is resolvable."""
     exe = tmp_path / "fabro"
     _make_executable(exe)
-    assert _fabro_preflight_error(fabro_bin=str(exe)) is None
+    args = argparse.Namespace(fabro_bin=str(exe), janitor=None)
+    assert dispatch_preamble(args=args, repo=tmp_path) == (None, None)
 
 
 def test_preflight_absolute_non_executable_is_error(tmp_path: Path) -> None:
@@ -79,7 +83,11 @@ def test_preflight_absolute_non_executable_is_error(tmp_path: Path) -> None:
     plain = tmp_path / "fabro"
     _ = plain.write_text("not executable\n", encoding="utf-8")
     plain.chmod(0o644)
-    assert _fabro_preflight_error(fabro_bin=str(plain)) is not None
+    args = argparse.Namespace(fabro_bin=str(plain), janitor=None)
+    assert dispatch_preamble(args=args, repo=tmp_path) == (
+        None,
+        _EXIT_PRECONDITION_ERROR,
+    )
 
 
 # --- _fabro_preflight_error: bare-name arm ----------------------------------
@@ -87,7 +95,11 @@ def test_preflight_absolute_non_executable_is_error(tmp_path: Path) -> None:
 
 def test_preflight_bare_name_not_on_path_is_error() -> None:
     """A bare name absent from PATH refuses (the original bare-`fabro` failure mode)."""
-    assert _fabro_preflight_error(fabro_bin="definitely-not-a-real-binary-xyz") is not None
+    args = argparse.Namespace(fabro_bin="definitely-not-a-real-binary-xyz", janitor=None)
+    assert dispatch_preamble(args=args, repo=Path.cwd()) == (
+        None,
+        _EXIT_PRECONDITION_ERROR,
+    )
 
 
 def test_preflight_bare_name_on_path_is_ok(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -95,7 +107,8 @@ def test_preflight_bare_name_on_path_is_ok(tmp_path: Path, monkeypatch: pytest.M
     exe = tmp_path / "myfabro"
     _make_executable(exe)
     monkeypatch.setenv("PATH", str(tmp_path))
-    assert _fabro_preflight_error(fabro_bin="myfabro") is None
+    args = argparse.Namespace(fabro_bin="myfabro", janitor=None)
+    assert dispatch_preamble(args=args, repo=tmp_path) == (None, None)
 
 
 # --- end-to-end refusal before admission ------------------------------------
