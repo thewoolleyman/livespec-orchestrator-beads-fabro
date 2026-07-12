@@ -30,20 +30,30 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_command import 
     run_loop_command,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import (
+    arm_otel_egress,
+    ensure_otel_enrich_driver,
     ensure_otel_receiver,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import heartbeat_path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands import (
     run_dispatch_command,
 )
+from livespec_orchestrator_beads_fabro.commands._otel_enrich import HoneycombHttpExporter
+from livespec_orchestrator_beads_fabro.commands._otel_enrich_driver import OtelEnrichDriver
 from livespec_orchestrator_beads_fabro.commands._otel_receive import OtelReceiver
 
 _EXIT_PRECONDITION_ERROR = 3
-_DISPATCH_ENSURE_TARGET = (
-    "livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands.ensure_otel_receiver"
+_DISPATCH_ARM_TARGET = (
+    "livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands.arm_otel_egress"
 )
-_LOOP_ENSURE_TARGET = (
-    "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_command.ensure_otel_receiver"
+_LOOP_ARM_TARGET = (
+    "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_command.arm_otel_egress"
+)
+_WIRING_RECEIVER_TARGET = (
+    "livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring.ensure_otel_receiver"
+)
+_WIRING_ENRICH_TARGET = (
+    "livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring.ensure_otel_enrich_driver"
 )
 
 
@@ -128,7 +138,7 @@ def test_default_otel_receiver_factory_builds_without_starting(
 
 @dataclass(kw_only=True)
 class _Recorder:
-    """Records each `ensure_otel_receiver` call made by a command entrypoint."""
+    """Records each OTel arming call (receiver OR enrich driver) a command makes."""
 
     calls: list[Path] = field(default_factory=list)
 
@@ -137,12 +147,12 @@ class _Recorder:
         self.calls.append(repo)
 
 
-def test_dispatch_command_arms_receiver_at_entry(
+def test_dispatch_command_arms_otel_egress_at_entry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The `dispatch` command arms the receiver at entry (before preconditions)."""
+    """The `dispatch` command arms the OTel egress plane at entry (before preconditions)."""
     recorder = _Recorder()
-    monkeypatch.setattr(_DISPATCH_ENSURE_TARGET, recorder)
+    monkeypatch.setattr(_DISPATCH_ARM_TARGET, recorder)
     missing = tmp_path / "does-not-exist"
     args = argparse.Namespace(repo=str(missing), janitor=None, journal=None, fabro_bin=None)
     # A missing repo short-circuits AFTER the arming line; the arming still ran.
@@ -151,14 +161,93 @@ def test_dispatch_command_arms_receiver_at_entry(
     assert recorder.calls == [missing]
 
 
-def test_loop_command_arms_receiver_at_entry(
+def test_loop_command_arms_otel_egress_at_entry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The `loop` command arms the receiver at entry (before preconditions)."""
+    """The `loop` command arms the OTel egress plane at entry (before preconditions)."""
     recorder = _Recorder()
-    monkeypatch.setattr(_LOOP_ENSURE_TARGET, recorder)
+    monkeypatch.setattr(_LOOP_ARM_TARGET, recorder)
     missing = tmp_path / "does-not-exist"
     args = argparse.Namespace(repo=str(missing), janitor=None, journal=None, fabro_bin=None)
     rc = run_loop_command(args=args)
     assert rc == _EXIT_PRECONDITION_ERROR
     assert recorder.calls == [missing]
+
+
+def test_arm_otel_egress_arms_both_planes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`arm_otel_egress` arms BOTH the live receiver AND the file-tail driver."""
+    receiver_calls = _Recorder()
+    driver_calls = _Recorder()
+    monkeypatch.setattr(_WIRING_RECEIVER_TARGET, receiver_calls)
+    monkeypatch.setattr(_WIRING_ENRICH_TARGET, driver_calls)
+    arm_otel_egress(args=_args(repo=tmp_path), repo=tmp_path)
+    assert receiver_calls.calls == [tmp_path]
+    assert driver_calls.calls == [tmp_path]
+
+
+# --------------------------------------------------------------------------
+# File-tail enrich DRIVER wiring (29f.5 — the missing production pump)
+# --------------------------------------------------------------------------
+
+
+def test_ensure_otel_enrich_driver_is_single_instance(tmp_path: Path) -> None:
+    """Two arming calls start exactly ONE driver (shared across dispatches)."""
+    holder: dict[str, object] = {}
+    created: list[_FakeServer] = []
+
+    def _factory() -> _FakeServer:
+        server = _FakeServer()
+        created.append(server)
+        return server
+
+    first = ensure_otel_enrich_driver(
+        args=_args(repo=tmp_path), repo=tmp_path, holder=holder, factory=_factory
+    )
+    second = ensure_otel_enrich_driver(
+        args=_args(repo=tmp_path), repo=tmp_path, holder=holder, factory=_factory
+    )
+    assert first is second
+    assert len(created) == 1
+    assert created[0].started == 1
+
+
+def test_ensure_otel_enrich_driver_is_fail_open(tmp_path: Path) -> None:
+    """A driver start failure never raises out toward a dispatch (fail-open)."""
+    holder: dict[str, object] = {}
+
+    def _boom() -> _FakeServer:
+        raise RuntimeError("thread refused")
+
+    result = ensure_otel_enrich_driver(
+        args=_args(repo=tmp_path), repo=tmp_path, holder=holder, factory=_boom
+    )
+    assert result is None
+    assert holder == {}
+
+
+def test_default_otel_enrich_driver_factory_builds_without_starting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The default factory returns an UNSTARTED driver over the three host
+    span-file kinds, wired to the ingest-keyed Honeycomb exporter."""
+    monkeypatch.setenv("HONEYCOMB_INGEST_KEY_LIVESPEC", "ingest-xyz")
+
+    def _without_starting(*, holder: dict[str, object], factory: Callable[[], object]) -> object:
+        _ = holder
+        return factory()
+
+    monkeypatch.setattr(_dispatcher_otel_wiring, "ensure_receiver_started", _without_starting)
+    journal = tmp_path / "j.jsonl"
+    driver = ensure_otel_enrich_driver(
+        args=_args(repo=tmp_path, journal=journal), repo=tmp_path, holder={}
+    )
+    assert isinstance(driver, OtelEnrichDriver)
+    assert driver.is_running() is False
+    assert {stage.spans_path for stage in driver.stages} == {
+        tmp_path / "j-reflection-spans.jsonl",
+        tmp_path / "j-reflector-oob-spans.jsonl",
+        tmp_path / "j-cost-report-spans.jsonl",
+    }
+    exporter = driver.stages[0].exporter
+    assert isinstance(exporter, HoneycombHttpExporter)
+    assert exporter.ingest_key == "ingest-xyz"

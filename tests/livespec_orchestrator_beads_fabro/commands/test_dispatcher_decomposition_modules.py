@@ -259,6 +259,8 @@ def test_dispatch_loop_cluster_importable_from_new_module_and_private_names_remo
 
 def test_otel_wiring_cluster_importable_from_new_module_and_private_names_removed() -> None:
     otel_wiring_public_names = {
+        "arm_otel_egress",
+        "ensure_otel_enrich_driver",
         "ensure_otel_receiver",
         "parse_janitor",
     }
