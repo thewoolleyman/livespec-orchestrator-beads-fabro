@@ -1,8 +1,14 @@
 # Minimal livespec-impl-shaped skeleton — uv project.
 #
 # Just real enough that `uv sync --all-groups` provisions a venv with pytest so
-# the skeleton's lightweight `just check` (pytest over tests/) runs green. NOT
-# the full impl-beads enforcement suite — deliberately minimal.
+# the skeleton's lightweight `just check` (pytest over tests/) runs green, PLUS
+# livespec-dev-tooling — which the UNMODIFIED production Fabro prepare chain
+# requires: every dispatched sandbox runs
+# `python -m livespec_dev_tooling.install_commit_refuse_hooks` and the
+# `livespec_dev_tooling.checks.*` verifiers. A realistic livespec-impl target
+# carries dev-tooling as a dev dependency; the earlier `dependencies = []`
+# under-modeled that and broke the golden master at the sandbox-setup step.
+# NOT the full impl-beads enforcement suite otherwise — deliberately minimal.
 [project]
 name = "livespec-e2e-greeting"
 version = "0.0.0"
@@ -13,7 +19,14 @@ dependencies = []
 [dependency-groups]
 dev = [
     "pytest>=8,<9",
+    "livespec-dev-tooling",
 ]
+
+[tool.uv.sources]
+# Consumed as a uv git source (not on PyPI), pinned to the current dev-tooling
+# release tag in lockstep with the orchestrator's own pyproject and the Fabro
+# sandbox image pin (orchestrator-image/Dockerfile / workflow.toml).
+livespec-dev-tooling = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git", tag = "v0.39.0" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
