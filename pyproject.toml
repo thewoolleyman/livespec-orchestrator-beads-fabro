@@ -262,6 +262,20 @@ exclude_also = [
 # ---------------------------------------------------------------------------
 
 [tool.livespec_dev_tooling]
+# Phase-2 file_lloc FLIP (fleet-check-coverage epic). With this key true, the
+# `file_lloc` check hard-gates this repo's WHOLE git-derived first-party-.py
+# universe (>250 LLOC => error/exit 1), superseding the hardcoded legacy-tree
+# classifier — so the orchestrator's own package (livespec_orchestrator_beads_fabro/**,
+# newly-covered since the Phase-0 reroute) is now enforced at the 250 hard
+# ceiling, not merely WARNed. Safe to arm: the dispatcher.py decomposition
+# (core-split-1..3a) brought every orchestrator file <=200 LLOC, so zero files
+# hard-fail today; a 201-250 file still WARNs (soft band), a >250 file fails.
+# This is a SEVERITY increase, never a bypass (per .ai/ci-gate-discipline.md and
+# the fleet-check-coverage golden rules). Requires livespec-dev-tooling >= v0.39.0
+# (the flip lever; this repo is pinned at v0.39.0).
+# MUST stay above the [[...mirror_pairings]] array-of-tables below (a bare TOML
+# key after an array-of-tables header attaches to that sub-table, not the parent).
+file_lloc_hard_gate = true
 scenario_tiers = ["tests.e2e-cli", "tests.e2e", "tests.integration", "tests.consumer", "tests.prompts", "tests.bin"]
 source_trees = [".claude-plugin/scripts/livespec"]
 io_trees = [".claude-plugin/scripts/livespec/io"]
