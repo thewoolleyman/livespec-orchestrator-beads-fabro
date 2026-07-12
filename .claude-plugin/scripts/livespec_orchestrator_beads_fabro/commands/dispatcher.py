@@ -16,6 +16,7 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
 `orchestrator.py` CLIs.
 
   dispatcher.py ledger-check [--project-root <path>] [--json]
+  dispatcher.py ledger-normalize [--project-root <path>] [--dry-run] [--json]
   dispatcher.py spec-check [--project-root <path>] [--spec-root <path>] [--json]
   dispatcher.py janitor-check [--repo <path>] [--json]
   dispatcher.py dispatch --repo <path> --item <id> [common flags]
@@ -31,6 +32,12 @@ tree at `--spec-root` (default `<project-root>/SPECIFICATION`).
 see `_dispatcher_janitor_checks.py`) against the repo's git/gh state.
 Both are standalone check surfaces — the pre-dispatch hard gate inside
 `dispatch`/`loop` stays the pure-Ledger dispatch-safety trio.
+`ledger-normalize` is the standalone self-heal surface: it reuses the
+dispatch-path status normalizer (`open` → `backlog`, `in_progress` →
+`active`; every other status is left for the status-conformance check)
+to remap ANY tenant's beads-native statuses WITHOUT needing a dispatch,
+then reports the residual non-conformant rows. `--dry-run` plans and
+reports the remaps without writing anything.
 
 Common flags: [--workflow <toml>] [--fabro-bin <path>]
 [--janitor <json-argv>] [--journal <path>] [--poll-attempts <n>]
@@ -190,6 +197,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_checks import (
     requested_items_preflight_error,
     run_janitor_check,
     run_ledger_check,
+    run_ledger_normalize,
     run_spec_check,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands import (
@@ -229,6 +237,7 @@ __all__: list[str] = [
     "run_id",
     "run_janitor_check",
     "run_ledger_check",
+    "run_ledger_normalize",
     "run_spec_check",
     "warn_item_sizing",
 ]
@@ -239,6 +248,8 @@ def main(*, argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.subcommand == "ledger-check":
         return run_ledger_check(args=args)
+    if args.subcommand == "ledger-normalize":
+        return run_ledger_normalize(args=args)
     if args.subcommand == "spec-check":
         return run_spec_check(args=args)
     if args.subcommand == "janitor-check":
@@ -254,6 +265,10 @@ def _build_parser() -> argparse.ArgumentParser:
     ledger = subparsers.add_parser("ledger-check")
     _ = ledger.add_argument("--project-root", dest="project_root", default=None)
     _ = ledger.add_argument("--json", dest="as_json", action="store_true")
+    norm = subparsers.add_parser("ledger-normalize")
+    _ = norm.add_argument("--project-root", dest="project_root", default=None)
+    _ = norm.add_argument("--json", dest="as_json", action="store_true")
+    _ = norm.add_argument("--dry-run", dest="dry_run", action="store_true")
     spec = subparsers.add_parser("spec-check")
     _ = spec.add_argument("--project-root", dest="project_root", default=None)
     _ = spec.add_argument("--spec-root", dest="spec_root", default=None)

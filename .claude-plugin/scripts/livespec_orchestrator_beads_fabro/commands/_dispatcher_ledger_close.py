@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
@@ -22,41 +22,103 @@ from livespec_orchestrator_beads_fabro.store import (
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 __all__: list[str] = [
+    "apply_native_status_remaps",
     "emit_outcomes",
     "ledger_blocked_after_normalization",
     "load_items",
+    "plan_native_status_remaps",
+    "project_native_status_remaps",
 ]
 
-_BEADS_NATIVE_OPEN = "open"
-_LIVESPEC_BACKLOG = "backlog"
+
+@dataclass(frozen=True, kw_only=True)
+class _NativeRemap:
+    """The livespec lifecycle target + rationale for one beads-native status."""
+
+    to: str
+    reason: str
 
 
-def _normalize_native_open_statuses(
+# The beads-native statuses the Dispatcher self-heals onto their livespec
+# lifecycle equivalent: `open` (beads' intake default a fresh `bd create`
+# lands in) → `backlog`, and `in_progress` (the status a raw `bd --claim`
+# stamps) → `active`. Both carry a lifecycle intent the livespec model names
+# differently. Every OTHER status (deferred / hooked / pinned / closed / any
+# ad-hoc or unknown value) is a KEY-miss here and is left untouched — those
+# surface via the post-normalization ledger status-conformance check, never
+# auto-remapped.
+_NATIVE_STATUS_REMAP: dict[str, _NativeRemap] = {
+    "open": _NativeRemap(to="backlog", reason="beads-native intake default"),
+    "in_progress": _NativeRemap(to="active", reason="raw claim normalized to active"),
+}
+
+
+def plan_native_status_remaps(*, items: list[WorkItem]) -> list[dict[str, str]]:
+    """Plan the beads-native → livespec status remaps for `items` (PURE).
+
+    Returns one `{item_id, from, to, reason}` dict per row whose stored
+    status is a KEY of `_NATIVE_STATUS_REMAP`; every other row (already-
+    conformant, deferred, hooked, ad-hoc, unknown) contributes nothing.
+    Performs NO store mutation and NO journaling, so the dispatch path and
+    the standalone `ledger-normalize` CLI share identical remap logic.
+    """
+    plan: list[dict[str, str]] = []
+    for item in items:
+        stored_status = str(item.status)
+        remap = _NATIVE_STATUS_REMAP.get(stored_status)
+        if remap is None:
+            continue
+        plan.append(
+            {
+                "item_id": item.id,
+                "from": stored_status,
+                "to": remap.to,
+                "reason": remap.reason,
+            }
+        )
+    return plan
+
+
+def apply_native_status_remaps(
+    *,
+    remaps: list[dict[str, str]],
+    config: StoreConfig,
+) -> None:
+    """Write each planned remap to the store via the `update_work_item_status` seam."""
+    for remap in remaps:
+        update_work_item_status(path=config, item_id=remap["item_id"], status=remap["to"])
+
+
+def project_native_status_remaps(
+    *,
+    items: list[WorkItem],
+    remaps: list[dict[str, str]],
+) -> list[WorkItem]:
+    """Return `items` with each planned remap applied in memory (PURE).
+
+    The post-remap view the store would read back — the dispatch path and
+    the CLI dry-run both use it so residual ledger checks run against the
+    same projected rows without a second store round-trip.
+    """
+    remapped_status = {remap["item_id"]: remap["to"] for remap in remaps}
+    return [
+        replace(item, status=remapped_status[item.id]) if item.id in remapped_status else item
+        for item in items
+    ]
+
+
+def _normalize_native_statuses(
     *,
     items: list[WorkItem],
     config: StoreConfig,
     journal: JournalFile,
 ) -> list[WorkItem]:
-    normalized: list[dict[str, str]] = []
-    result: list[WorkItem] = []
-    for item in items:
-        stored_status = str(item.status)
-        if stored_status != _BEADS_NATIVE_OPEN:
-            result.append(item)
-            continue
-        update_work_item_status(path=config, item_id=item.id, status=_LIVESPEC_BACKLOG)
-        result.append(replace(item, status=_LIVESPEC_BACKLOG))
-        normalized.append(
-            {
-                "item_id": item.id,
-                "from": _BEADS_NATIVE_OPEN,
-                "to": _LIVESPEC_BACKLOG,
-                "reason": "beads-native intake default",
-            }
-        )
-    if normalized:
-        _append_normalization_note(journal=journal, normalized=normalized)
-    return result
+    remaps = plan_native_status_remaps(items=items)
+    if not remaps:
+        return items
+    apply_native_status_remaps(remaps=remaps, config=config)
+    _append_normalization_note(journal=journal, normalized=remaps)
+    return project_native_status_remaps(items=items, remaps=remaps)
 
 
 def _append_normalization_note(
@@ -79,7 +141,7 @@ def ledger_blocked_after_normalization(
     config: StoreConfig,
     journal: JournalFile,
 ) -> bool:
-    items[:] = _normalize_native_open_statuses(items=items, config=config, journal=journal)
+    items[:] = _normalize_native_statuses(items=items, config=config, journal=journal)
     return _ledger_blocked(items=items, journal=journal)
 
 
