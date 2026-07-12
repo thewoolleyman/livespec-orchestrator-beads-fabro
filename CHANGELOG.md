@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.22.0...v0.22.1) (2026-07-12)
+
+
+### Bug Fixes
+
+* split dispatcher run commands ([fb3f078](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fb3f07833fe0b98fdd0e625251c4a47cffd9bf58))
+
 ## [0.22.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.21.0...v0.22.0) (2026-07-12)
 
 
