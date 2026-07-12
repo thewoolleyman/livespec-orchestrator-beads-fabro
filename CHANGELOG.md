@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.22.1...v0.22.2) (2026-07-12)
+
+
+### Bug Fixes
+
+* **golden-master:** register custom statuses + seed a ready item ([b13afd1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b13afd1da938e54ad2188f927ad96bb0cf099d9a))
+
 ## [0.22.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.22.0...v0.22.1) (2026-07-12)
 
 
