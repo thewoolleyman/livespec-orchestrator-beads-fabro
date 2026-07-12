@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.20.1...v0.21.0) (2026-07-12)
+
+
+### Features
+
+* extract dispatcher run checks ([9344760](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9344760e7f1c3ac180a614b57191005edce88f05))
+
 ## [0.20.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.20.0...v0.20.1) (2026-07-12)
 
 
