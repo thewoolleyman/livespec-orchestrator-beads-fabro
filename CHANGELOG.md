@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.24.0...v0.25.0) (2026-07-12)
+
+
+### Features
+
+* pre-push ledger-conformance gate (fail-soft, case-aware heal guidance) ([0fb66ed](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0fb66ed204a125b62a6a475a9f285503751630c1))
+
 ## [0.24.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.23.0...v0.24.0) (2026-07-12)
 
 
