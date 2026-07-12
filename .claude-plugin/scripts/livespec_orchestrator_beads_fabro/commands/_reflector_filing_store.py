@@ -28,6 +28,7 @@ __all__: list[str] = [
 _LABEL_REFLECTION = "reflection"
 _LABEL_FINGERPRINT_PREFIX = "fingerprint:"
 _LABEL_REFLECTION_MUTE = "reflection-mute"
+_STATUS_BACKLOG = "backlog"
 _PRIORITY_CRITICAL = 1
 _PRIORITY_WARN = 2
 _PRIORITY_INFO = 4
@@ -71,6 +72,13 @@ def file_new(
             parent_id=None,
         )
     )
+    # `bd create` cannot land directly in a custom lifecycle status (v1.0.5
+    # has no `bd create --status`), so filing is a 2-step: create (lands
+    # `open`) then set the lifecycle status. A reflection finding is a newly
+    # filed, un-triaged observation, so it lands `backlog` (capture-work-item's
+    # default). Collapses to single-step `bd create --status` once beads ships
+    # a release carrying PR #4536.
+    client.update_issue(issue_id=issue_id, status=_STATUS_BACKLOG)
     return issue_id
 
 
