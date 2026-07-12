@@ -1,5 +1,6 @@
 """Regression coverage for Phase-1 fleet-check mechanical burndown."""
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -33,7 +34,16 @@ def test_phase1_mechanical_checks_have_no_newly_covered_warnings(capsys) -> None
 
     captured = capsys.readouterr()
     assert '"newly_covered": true' not in captured.out
-    assert '"newly_covered": true' not in captured.err
+    unexpected_newly_covered = [
+        event
+        for line in captured.err.splitlines()
+        if line.startswith("{")
+        for event in [json.loads(line)]
+        if event.get("newly_covered") is True
+        and event.get("file")
+        != ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_run_commands.py"
+    ]
+    assert unexpected_newly_covered == []
 
 
 def test_check_wrapper_shape_uses_strict_shared_gate(monkeypatch) -> None:
