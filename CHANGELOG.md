@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.22.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.21.0...v0.22.0) (2026-07-12)
+
+
+### Features
+
+* extract dispatcher run commands ([456e40e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/456e40e49bafbe86060871d3d0c787c92790dc82))
+
+
+### Bug Fixes
+
+* preserve dispatcher mini-hub imports ([9b6c094](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9b6c0946f174ccc6dec1b02b171ba7197190374a))
+
 ## [0.21.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.20.1...v0.21.0) (2026-07-12)
 
 
