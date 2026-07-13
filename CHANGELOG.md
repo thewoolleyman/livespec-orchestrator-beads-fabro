@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.29.1...v0.30.0) (2026-07-13)
+
+
+### Features
+
+* **bd-guard:** emit bd.invoke OTLP span per call (default-on, fail-open) ([e30ada0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e30ada0f635e3495344947abf3652d245c4af2a0))
+
 ## [0.29.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.29.0...v0.29.1) (2026-07-13)
 
 
