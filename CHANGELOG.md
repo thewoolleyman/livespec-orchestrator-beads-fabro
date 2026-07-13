@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.28.0...v0.28.1) (2026-07-13)
+
+
+### Bug Fixes
+
+* **ledger-gate:** print each written remap on partial heal; project not reload ([4328aa9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4328aa95889762294a70bfb05c207fe3c011fc86))
+
 ## [0.28.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.27.0...v0.28.0) (2026-07-13)
 
 
