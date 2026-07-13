@@ -344,6 +344,7 @@ check:
         check-global-writes
         check-heading-coverage
         check-keyword-only-args
+        check-local-memory-drift-audit
         check-main-guard
         check-master-ci-green
         check-match-keyword-only
@@ -355,6 +356,7 @@ check:
         check-no-inheritance
         check-no-lloc-soft-warnings
         check-no-raise-outside-io
+        check-no-shadow-ledger-body-identical
         check-no-todo-registry
         check-no-write-direct
         check-partition-completeness
@@ -1269,3 +1271,9 @@ check-ci-matrix-completeness:
 
 check-no-fmt-directives:
     uv run python -m livespec_dev_tooling.checks.no_fmt_directives
+
+check-local-memory-drift-audit:
+    uv run python -m livespec_dev_tooling.checks.local_memory_drift_audit
+
+check-no-shadow-ledger-body-identical:
+    uv run python -m livespec_dev_tooling.checks.no_shadow_ledger_body_identical
