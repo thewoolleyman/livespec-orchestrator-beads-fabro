@@ -207,3 +207,79 @@ def test_gate_fail_soft_skips_and_exits_two_on_heal_write_error(
     assert LEDGER_GATE_SKIP_MARKER in captured.err
     assert "write refused" in captured.err
     assert LEDGER_GATE_DRIFT_MARKER not in captured.out
+
+
+def test_gate_partial_heal_prints_each_written_remap_before_skipping(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _write_config(tmp_path=tmp_path, text=_PREFIX_ONLY_CONFIG)
+    config = _config()
+    append_work_item(path=config, item=_item(id="open-a", status="open"))
+    append_work_item(path=config, item=_item(id="open-b", status="open"))
+
+    real = _dispatcher_ledger_close.update_work_item_status
+    calls = {"n": 0}
+
+    def _flaky(*, path: StoreConfig, item_id: str, status: str) -> None:
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise BeadsConnectionError(detail="write refused mid-heal")
+        real(path=path, item_id=item_id, status=status)
+
+    monkeypatch.setattr(_dispatcher_ledger_close, "update_work_item_status", _flaky)
+
+    exit_code = main(argv=["ledger-normalize", "--project-root", str(tmp_path), "--gate"])
+
+    # The FIRST remap was written to the shared tenant before the second write
+    # failed. The loud-audit guarantee must hold on a partial heal: every remap
+    # that reached the store is printed, even though the gate then skips.
+    assert exit_code == 2
+    captured = capsys.readouterr()
+    assert LEDGER_GATE_SKIP_MARKER in captured.err
+    statuses = _current_statuses(config=config)
+    written = [item_id for item_id in ("open-a", "open-b") if statuses[item_id] == "backlog"]
+    assert len(written) == 1
+    other = "open-b" if written[0] == "open-a" else "open-a"
+    assert statuses[other] == "open"
+    assert f"{written[0]}: open -> backlog" in captured.out
+
+
+def test_gate_fresh_mappable_arrival_during_heal_does_not_block(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _write_config(tmp_path=tmp_path, text=_PREFIX_ONLY_CONFIG)
+    # The initial read sees one open item; a concurrent session's raw `bd create`
+    # lands a fresh open item during the heal window (staged as a second read).
+    # The gate must NOT block on that fresh MAPPABLE status: it computes residual
+    # over the PROJECTION of the initial snapshot, never a live reload.
+    initial = [_item(id="native-open", status="open")]
+    injected = [
+        _item(id="native-open", status="backlog"),
+        _item(id="fresh-open", status="open"),
+    ]
+    calls = {"n": 0}
+
+    def _staged_load(*, repo: Path) -> list[WorkItem]:
+        _ = repo
+        calls["n"] += 1
+        return list(injected) if calls["n"] >= 2 else list(initial)
+
+    monkeypatch.setattr(_dispatcher_ledger_gate, "load_items", _staged_load)
+
+    def _noop_write(*, path: StoreConfig, item_id: str, status: str) -> None:
+        _ = (path, item_id, status)
+
+    # The heal write is a no-op here (reads are stubbed, so there is no store).
+    monkeypatch.setattr(_dispatcher_ledger_close, "update_work_item_status", _noop_write)
+
+    exit_code = main(argv=["ledger-normalize", "--project-root", str(tmp_path), "--gate"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert LEDGER_GATE_DRIFT_MARKER not in out
+    assert "native-open: open -> backlog" in out
+    assert "fresh-open" not in out
