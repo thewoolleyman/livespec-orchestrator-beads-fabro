@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.26.0...v0.27.0) (2026-07-13)
+
+
+### Features
+
+* **bd-guard:** guard bd reopen + harden install.sh fresh-provision relocate ([6635f22](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6635f22e341e77fd91fa5dc5f1af5fe6996e02c9))
+
 ## [0.26.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.25.0...v0.26.0) (2026-07-13)
 
 
