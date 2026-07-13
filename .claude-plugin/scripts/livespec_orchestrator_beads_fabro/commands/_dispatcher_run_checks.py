@@ -69,8 +69,10 @@ def run_ledger_normalize(*, args: argparse.Namespace) -> int:
     over the resulting rows and reported alongside the remaps. Exit 1 when a
     non-skipped residual finding remains after normalization, else 0 — the
     same signal `run_ledger_check` uses. `--gate` short-circuits to the
-    always-run pre-push gate (`run_ledger_gate`): a fail-soft, dry-run,
-    case-aware conformance check with the 0/1/2 exit-code contract.
+    always-run pre-push gate (`run_ledger_gate`): a fail-soft, auto-heal-loud
+    conformance gate that heals the two safe transient remaps IN PLACE, prints
+    each, and blocks only on residual drift (exit 0 clean/healed, 1 residual,
+    2 could-not-check).
     """
     project_root = Path(args.project_root) if args.project_root is not None else Path.cwd()
     if args.gate:
