@@ -160,3 +160,19 @@ jobs:
             -f "context=codex-acp-golden-master" \
             -f "target_url=${RUN_URL}" \
             -f "description=${description}"
+
+      # --- Fail-closed merge gate: a GREEN gate is the ONLY thing that turns
+      # on the dev-tooling codex-acp bump PR's auto-merge (that PR is opened
+      # WITHOUT auto-merge by the pin-freshness surface). A red or errored gate
+      # leaves auto-merge off and the PR open for a human, so an unverified
+      # codex-acp version can never merge. See livespec-dev-tooling
+      # SPECIFICATION/contracts.md §"codex-acp factory gate".
+      - name: Enable auto-merge on the codex-acp bump PR (only on a green gate)
+        if: github.event_name == 'repository_dispatch' && steps.gate.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ steps.callback-token.outputs.token }}
+          PR_NUMBER: ${{ github.event.client_payload.pr_number }}
+        run: |
+          set -euo pipefail
+          echo "Gate green — enabling auto-merge on livespec-dev-tooling PR #${PR_NUMBER}"
+          gh pr merge "${PR_NUMBER}" --repo thewoolleyman/livespec-dev-tooling --rebase --auto
