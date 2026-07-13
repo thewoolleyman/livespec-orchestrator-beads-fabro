@@ -659,22 +659,30 @@ check-status-conformance:
 # gate (PROTOTYPE for fleet-wide rollout on the ledger-status-conformance
 # thread). Unlike `check-status-conformance` (the FAKE-mode aggregate member,
 # which runs an empty hermetic tenant and passes trivially), THIS recipe reads
-# the repo's REAL beads tenant LIVE. Tenant state is not tree-derived, so this
-# is deliberately wired as a SECOND, standalone lefthook pre-push command
-# (never a `just check` aggregate member and never subject to the pre-push
-# green-token / doc-only skips).
+# the repo's REAL beads tenant LIVE and AUTO-HEALS it. Tenant state is not
+# tree-derived, so this is deliberately wired as a SECOND, standalone lefthook
+# pre-push command (never a `just check` aggregate member and never subject to
+# the pre-push green-token / doc-only skips).
+#
+# AUTO-HEAL-LOUD. Under the credential wrapper, `ledger-normalize --gate` heals
+# the two definitionally-safe beads-native transient statuses IN PLACE (open ->
+# backlog, in_progress -> active) and PRINTS every remap it writes. A push CAN
+# therefore mutate the tenant — but only via these two safe remaps and never
+# silently. This removes the cross-session friction of blocking one session on
+# another session's fresh transient item on a shared tenant.
 #
 # FAIL-SOFT BY CONSTRUCTION — the top correctness requirement. Because it runs
 # on EVERY push, a false-fail would brick all pushes to the repo. It therefore
-# BLOCKS a push (exit 1) ONLY when the gate positively CONFIRMS out-of-lifecycle
-# work-items — i.e. `ledger-normalize --gate` exits 1 AND its machine-checkable
-# `LIVESPEC_LEDGER_GATE: DRIFT` stdout marker is present. EVERY other outcome —
-# conformant, could-not-check (creds unavailable / 1Password locked / Dolt
-# unreachable / unparseable output / missing tenant config), or even an
-# unhandled crash — SKIPS with exit 0. The exit-code contract of
-# `ledger-normalize --gate` is: 0 = conformant, 1 = confirmed drift,
-# 2 = could-not-check; this recipe maps (1 && DRIFT marker) -> block and maps
-# EVERYTHING else -> fail-soft skip.
+# BLOCKS a push (exit 1) ONLY when the gate positively CONFIRMS a RESIDUAL
+# out-of-lifecycle work-item that no safe remap can heal — i.e. `ledger-normalize
+# --gate` exits 1 AND its machine-checkable `LIVESPEC_LEDGER_GATE: DRIFT` stdout
+# marker is present. EVERY other outcome — conformant, healed-in-place,
+# could-not-check (creds unavailable / 1Password locked / Dolt unreachable /
+# unparseable output / missing tenant config / a heal write that raised an
+# expected beads error), or even an unhandled crash — SKIPS with exit 0. The
+# exit-code contract of `ledger-normalize --gate` is: 0 = conformant or healed,
+# 1 = residual drift, 2 = could-not-check; this recipe maps (1 && DRIFT marker)
+# -> block and maps EVERYTHING else -> fail-soft skip.
 check-ledger-conformance-live:
     #!/usr/bin/env bash
     set -uo pipefail
@@ -698,10 +706,10 @@ check-ledger-conformance-live:
     rc=$?
     printf '%s\n' "$out"
     if [[ $rc -eq 1 ]] && grep -q 'LIVESPEC_LEDGER_GATE: DRIFT' <<< "$out"; then
-        echo ":: check-ledger-conformance-live: CONFIRMED out-of-lifecycle work-item status; blocking push (heal per the message above, then re-push)"
+        echo ":: check-ledger-conformance-live: RESIDUAL out-of-lifecycle work-item status needs a human lane decision; blocking push (set each to a lifecycle status per the message above, then re-push)"
         exit 1
     fi
-    echo ":: check-ledger-conformance-live: no confirmed drift (gate exit $rc); allowing push (fail-soft: a non-conformant tenant it could not verify is SKIPPED, never blocked)"
+    echo ":: check-ledger-conformance-live: no residual drift (gate exit $rc); allowing push (any safe transient drift was auto-healed in place and printed above; a tenant it could not verify is SKIPPED, never blocked)"
     exit 0
 
 # `check-closed-item-integrity` — beads-private closed-item-integrity static

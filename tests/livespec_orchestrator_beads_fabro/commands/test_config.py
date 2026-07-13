@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands._config import (
+    resolve_credential_wrapper,
     resolve_fabro_bin,
     resolve_store_config,
 )
@@ -426,3 +427,34 @@ def test_env_fabro_bin_beats_config(
         body='{"livespec-orchestrator-beads-fabro": {"dispatcher": {"fabro_bin": "/config/fabro/bin/fabro"}}}',
     )
     assert resolve_fabro_bin(cwd=tmp_path) == "/env/fabro/bin/fabro"
+
+
+def test_resolve_credential_wrapper_reads_top_level_list(
+    tmp_path: Path,
+) -> None:
+    """A top-level `credential_wrapper` list is returned as an argv prefix.
+
+    The `check-ledger-conformance-live` recipe resolves this to invoke the gate
+    under the tenant-secret-injecting wrapper. Non-string tokens are coerced to
+    str so the returned argv is always a `list[str]`.
+    """
+    _write_config(
+        cwd=tmp_path,
+        body='{"credential_wrapper": ["/usr/local/bin/with-livespec-env.sh", "--", 7]}',
+    )
+    assert resolve_credential_wrapper(cwd=tmp_path) == [
+        "/usr/local/bin/with-livespec-env.sh",
+        "--",
+        "7",
+    ]
+
+
+def test_resolve_credential_wrapper_absent_or_non_list_yields_empty(
+    tmp_path: Path,
+) -> None:
+    """A missing (or non-list) `credential_wrapper` fails open to the empty argv."""
+    _write_config(
+        cwd=tmp_path,
+        body='{"credential_wrapper": "not-a-list"}',
+    )
+    assert resolve_credential_wrapper(cwd=tmp_path) == []

@@ -151,8 +151,9 @@ def resolve_credential_wrapper(*, cwd: Path) -> list[str]:
 
     Fail-open toward "no wrapper": an absent config file, malformed JSONC, a
     non-object root, or a non-list value all yield `[]`. Consumed by the
-    pre-push gate to print the exact credential-wrapped heal command; a `[]`
-    result simply prints the bare `python3 …` form.
+    `check-ledger-conformance-live` recipe to invoke the pre-push gate UNDER the
+    tenant-secret-injecting wrapper; a `[]` result means the recipe skips
+    fail-soft (it cannot read the tenant without the wrapper).
     """
     root = _read_root_mapping(cwd=cwd)
     raw = root.get(_CREDENTIAL_WRAPPER_KEY)

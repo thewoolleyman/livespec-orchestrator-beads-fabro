@@ -38,10 +38,12 @@ dispatch-path status normalizer (`open` → `backlog`, `in_progress` →
 to remap ANY tenant's beads-native statuses WITHOUT needing a dispatch,
 then reports the residual non-conformant rows. `--dry-run` plans and
 reports the remaps without writing anything. `--gate` is the always-run
-pre-push mode (implies dry-run): it prints a case-aware heal message and
-exits 0 (clean) / 1 (confirmed drift) / 2 (could-not-check), a fail-soft
-exit-code contract the `check-ledger-conformance-live` recipe consumes so a
-creds/server problem SKIPS the push rather than bricking it (see
+pre-push mode: auto-heal-loud — it heals the two safe transient remaps IN
+PLACE, PRINTS each remap it writes, and exits 0 (clean or healed) / 1
+(residual drift needing a human lane decision) / 2 (could-not-check). A
+heal-write or tenant-read that raises an expected beads error SKIPS the push
+rather than bricking it, the same fail-soft exit-code contract the
+`check-ledger-conformance-live` recipe consumes (see
 `_dispatcher_ledger_gate`).
 
 Common flags: [--workflow <toml>] [--fabro-bin <path>]
@@ -274,10 +276,10 @@ def _build_parser() -> argparse.ArgumentParser:
     _ = norm.add_argument("--project-root", dest="project_root", default=None)
     _ = norm.add_argument("--json", dest="as_json", action="store_true")
     _ = norm.add_argument("--dry-run", dest="dry_run", action="store_true")
-    # `--gate` is the always-run pre-push mode: it implies dry-run, prints a
-    # case-aware heal message, and sets a fail-soft exit-code contract
-    # (0 clean / 1 confirmed drift / 2 could-not-check). See
-    # `_dispatcher_ledger_gate.run_ledger_gate`.
+    # `--gate` is the always-run pre-push mode: auto-heal-loud — it heals the
+    # two safe transient remaps in place, prints each, and sets a fail-soft
+    # exit-code contract (0 clean/healed / 1 residual drift / 2 could-not-check).
+    # See `_dispatcher_ledger_gate.run_ledger_gate`.
     _ = norm.add_argument("--gate", dest="gate", action="store_true")
     spec = subparsers.add_parser("spec-check")
     _ = spec.add_argument("--project-root", dest="project_root", default=None)
