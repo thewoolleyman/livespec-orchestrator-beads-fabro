@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.30.0...v0.30.1) (2026-07-13)
+
+
+### Bug Fixes
+
+* keep janitor worktrees out of repo root ([103f7c8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/103f7c8a70dc27304bbf94bb3562ce62039e7e12))
+
 ## [0.30.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.29.1...v0.30.0) (2026-07-13)
 
 
