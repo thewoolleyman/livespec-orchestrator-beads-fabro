@@ -97,6 +97,8 @@ after_ddash=0         # a `--` end-of-flags terminator has been seen
 status_value=""       # the captured --status/-s value (empty = none seen)
 saw_claim=0           # a --claim flag was seen
 saw_reopen=0          # the `reopen` subcommand was seen
+_bdg_op=""            # telemetry: a summary of the flagged op (reopen / claim /
+                      # status:<value>), empty when nothing was flagged
 
 for arg in "$@"; do
     if [ "$want_status_value" -eq 1 ]; then
@@ -206,11 +208,13 @@ violated=0
 
 if [ "$saw_reopen" -eq 1 ]; then
     violated=1
+    _bdg_op="reopen"
     guard_warn "bd reopen" "bd update --status <lifecycle> (e.g. backlog)"
 fi
 
 if [ "$saw_claim" -eq 1 ]; then
     violated=1
+    _bdg_op="claim"
     guard_warn "bd update --claim" "--status active"
 fi
 
@@ -221,6 +225,7 @@ if [ -n "$status_value" ]; then
             ;;
         *)
             violated=1
+            _bdg_op="status:$status_value"
             if [ "$status_value" = "in_progress" ]; then
                 guard_warn "bd update --status $status_value" "--status active"
             else
@@ -237,7 +242,31 @@ if [ "$violated" -eq 1 ] && [ "$MODE" = "fail" ]; then
     exit 3
 fi
 
-# warn mode (default), or no violation: transparent passthrough. `exec`
-# replaces this process, preserving argv, the std streams, and the exit code
-# of the real bd exactly, with no added fork/latency.
-exec "$REAL" "$@"
+# --- telemetry passthrough (default ON; disable: LIVESPEC_BD_GUARD_OTLP=off) --
+# When ON: run bd in the FOREGROUND (TTY + signals preserved) so we can capture
+# its exit code + duration, then fire a DETACHED, FAIL-OPEN bd.invoke OTLP span
+# at the local collector. The emit can never delay or change bd's result. When
+# OFF: transparent exec passthrough exactly as before (zero overhead).
+if [ "${LIVESPEC_BD_GUARD_OTLP:-on}" = "off" ]; then
+    exec "$REAL" "$@"
+fi
+
+_bdg_start=$(date +%s%N 2>/dev/null || echo 0)
+"$REAL" "$@"
+_bdg_rc=$?
+_bdg_end=$(date +%s%N 2>/dev/null || echo 0)
+
+if command -v python3 >/dev/null 2>&1; then
+    _bdg_emit="${LIVESPEC_BD_GUARD_EMIT:-$(dirname -- "$0")/bd-guard-emit.py}"
+    if [ -f "$_bdg_emit" ]; then
+        _bdg_ppid=$PPID
+        _bdg_comm=$(cat "/proc/$_bdg_ppid/comm" 2>/dev/null || echo "")
+        _bdg_cmd=$(tr '\0' ' ' < "/proc/$_bdg_ppid/cmdline" 2>/dev/null | cut -c1-160)
+        BDG_ARGV="$*" BDG_WARNED="$violated" BDG_OP="$_bdg_op" BDG_MODE="$MODE" \
+        BDG_EXIT="$_bdg_rc" BDG_START_NS="$_bdg_start" BDG_END_NS="$_bdg_end" \
+        BDG_PPID="$_bdg_ppid" BDG_COMM="$_bdg_comm" BDG_CALLER_CMD="$_bdg_cmd" \
+        BDG_CWD="$PWD" \
+            setsid python3 "$_bdg_emit" >/dev/null 2>&1 </dev/null &
+    fi
+fi
+exit "$_bdg_rc"

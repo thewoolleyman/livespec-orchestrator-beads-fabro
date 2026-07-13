@@ -39,6 +39,14 @@ if [ -e "$WRAPPER_TARGET" ]; then
     fi
 fi
 
+# Best-effort removal of the OTLP emit helper install.sh laid down beside the
+# wrapper. `rm -f` is a no-op when it is absent, so this never fails a rollback
+# (older installs predate the helper).
+if [ -e "${BIN_DIR}/bd-guard-emit.py" ]; then
+    echo "rollback.sh: removing OTLP emit helper at '${BIN_DIR}/bd-guard-emit.py'" >&2
+    rm -f "${BIN_DIR}/bd-guard-emit.py"
+fi
+
 echo "rollback.sh: restoring '$REAL_TARGET' -> '$WRAPPER_TARGET'" >&2
 mv "$REAL_TARGET" "$WRAPPER_TARGET"
 

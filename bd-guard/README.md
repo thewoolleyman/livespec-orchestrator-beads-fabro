@@ -48,10 +48,13 @@ not guarded.
   - Any other/unset value is treated as `warn`; the wrapper never blocks unless
     explicitly set to `fail`, so a misconfiguration cannot brick `bd`.
 - **Transparency (load-bearing).** For every passthrough (and warn-mode
-  violation) argv is preserved exactly and the real bd's stdin/stdout/stderr +
-  exit code are preserved via `exec` (no fork, no wait, no added latency).
-  Warnings go to **stderr only** — stdout is never touched, so `--json` stays
-  byte-identical.
+  violation) argv is preserved exactly, the real bd's stdin/stdout/stderr +
+  exit code are preserved, and warnings go to **stderr only** — stdout is never
+  touched, so `--json` stays byte-identical. With telemetry ON (the default),
+  bd runs in the **foreground** (TTY + signals preserved) and the span is fired
+  **detached and fail-open** afterward, so it can never delay or change bd's
+  result; with telemetry `off` the wrapper reverts to a straight `exec`
+  passthrough (no fork, no wait). See **Telemetry** below.
 - **Locating the real bd.** `LIVESPEC_BD_REAL` if set, else
   `/usr/local/bin/bd-real` (the path the installer relocates the real binary
   to).
@@ -63,6 +66,46 @@ livespec bd-guard: 'bd update --status in_progress' is non-lifecycle; use --stat
 livespec bd-guard: 'bd update --claim' is non-lifecycle; use --status active
 livespec bd-guard: 'bd reopen' is non-lifecycle; use bd update --status <lifecycle> (e.g. backlog)
 ```
+
+## Telemetry (OTLP `bd.invoke` span — default ON, fail-open)
+
+The guard emits one `bd.invoke` OpenTelemetry span per `bd` invocation to a
+local OTLP/HTTP collector, so `bd` usage across the fleet is observable (which
+subcommands run, from where, whether the guard warned, exit codes, durations).
+This is **on by default** and **fail-open**: the span is fired by a **detached**
+helper process *after* bd has already run, so a missing collector, a slow
+network, or any emitter error can never delay, alter, or break `bd` — its
+stdout/stderr/exit stay byte-identical either way.
+
+- **Enable/disable** via `LIVESPEC_BD_GUARD_OTLP` (default **`on`**). Set
+  `LIVESPEC_BD_GUARD_OTLP=off` to revert to a pure `exec` passthrough with zero
+  overhead and no emit.
+- **Endpoint** via `LIVESPEC_BD_GUARD_OTLP_ENDPOINT`, default
+  `http://127.0.0.1:4319/v1/traces` (the local collector, which forwards to
+  Honeycomb).
+- **Emit helper.** The span is built and POSTed by `bd-guard-emit.py`, a
+  stdlib-only (`json`, `os`, `secrets`, `sys`, `time`, `urllib.request`)
+  fire-and-forget script that **always exits 0** and never writes to
+  stdout/stderr. The guard resolves it as `$(dirname bd)/bd-guard-emit.py` (so
+  `install.sh` lays it down beside the wrapper; override with
+  `LIVESPEC_BD_GUARD_EMIT`). If `python3` is absent or the helper is missing,
+  the guard simply emits nothing.
+
+The `bd.invoke` span (`service.name=bd-guard`) carries these attributes:
+
+| Attribute | Meaning |
+|---|---|
+| `bd.subcommand` | first non-flag token of argv (e.g. `update`, `list`, `reopen`) |
+| `bd.argv` | the full argument vector passed to `bd` |
+| `guard.warned` | `true` if the guard flagged a non-lifecycle op on this call |
+| `guard.op` | the flagged op summary (`reopen` / `claim` / `status:<value>`), else empty |
+| `guard.mode` | the guard mode (`warn` / `fail`) |
+| `exit_code` | the real bd's exit code |
+| `duration_ms` | wall-clock duration of the bd call |
+| `bd.caller.ppid` / `bd.caller.comm` / `bd.caller.cmd` | the calling process (pid, `comm`, cmdline) |
+| `bd.cwd` / `bd.repo` | the working directory and its basename |
+
+The span `status` is `OK` for a zero exit and `ERROR` for a nonzero exit.
 
 ## Install / rollback (host mutation — run by a maintainer, NOT by CI)
 
@@ -123,6 +166,17 @@ passthrough, exit-code passthrough, and every edge argv form (`--status=`, `-s`,
 `-s<val>`, `--claim=true|false`, reordered flags, root-level and update-level
 `--` terminators, no-args). It also drives `install.sh`/`rollback.sh` end-to-end
 against a temporary `BD_GUARD_BIN_DIR` (never `/usr/local/bin`): install relocates
-the real bd to `bd-real` and installs the guard, rollback restores the original
-bd byte-identically and removes `bd-real`, both are idempotent, and a partial
-install never relocates the guard onto `bd-real` (which would exec-loop).
+the real bd to `bd-real` and installs the guard **plus `bd-guard-emit.py`**,
+rollback restores the original bd byte-identically and removes both `bd-real` and
+the emit helper, both are idempotent, and a partial install never relocates the
+guard onto `bd-real` (which would exec-loop).
+
+The telemetry section (§9 of the harness) stands up a throwaway stdlib
+`http.server` capture on a random loopback port — **never a real collector** —
+and asserts: a `bd.invoke` span is emitted with the correct payload shape
+(`service.name`, `bd.subcommand`, `guard.warned`, `exit_code`, span status);
+that a dead endpoint is fail-open (bd unaffected, returns promptly since the emit
+is detached); that `LIVESPEC_BD_GUARD_OTLP=off` emits nothing; and that a nonzero
+bd exit code is preserved with telemetry ON while the span reflects it. The rest
+of the harness runs with telemetry defaulted OFF so those cases stay pure `exec`
+passthroughs and never emit off-box.
