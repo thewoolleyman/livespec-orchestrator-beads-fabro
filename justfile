@@ -441,6 +441,11 @@ check:
         # asymmetric). Not a canonical slug, so it rides in the private block
         # after the canonical set.
         check-codex-plugin-structure
+        # Warn-first `bd` guard wrapper lint + hermetic tests (bd-guard/). Pure
+        # shell; no beads / no store / no product .py, so it runs in any tier.
+        # Not a canonical slug, so it rides in the private block after the
+        # canonical set.
+        check-bd-guard
         # Live Codex TUI `/skills` picker acceptance. This is intentionally a
         # private, host-aware gate: it drives the actual Codex picker path that
         # operators use, while CI skips unless explicitly opted into an
@@ -715,6 +720,26 @@ check-ledger-conformance-live:
 # connection env configured.
 check-closed-item-integrity:
     LIVESPEC_BEADS_FAKE=1 uv run python dev-tooling/checks/closed_item_integrity.py
+
+# `check-bd-guard` — lint + hermetically test the warn-first `bd` guard wrapper
+# (bd-guard/), the stopgap that fronts every `bd` call and warns/blocks the
+# explicit non-lifecycle ops (`update --status <non-lifecycle>`, `update
+# --claim`). Pure shell: no beads / no store / no product .py, so it runs in any
+# tier with no live bd / dolt-server. shellcheck runs when present; when absent
+# it is a loud WARNING, not a silent skip (a severity lever — a minimal runner
+# may lack shellcheck), while the hermetic harness is the hard gate and always
+# runs. Not a canonical livespec-dev-tooling slug, so it is wired in the
+# private block.
+check-bd-guard:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if command -v shellcheck >/dev/null 2>&1; then
+      shellcheck --shell=sh bd-guard/bd-guard.sh
+      shellcheck --shell=bash bd-guard/install.sh bd-guard/rollback.sh bd-guard/test/run-tests.sh
+    else
+      echo "WARNING: shellcheck not found; skipping shell lint (hermetic tests still run)" >&2
+    fi
+    bash bd-guard/test/run-tests.sh
 
 # `check-codex-plugin-structure` — Codex cross-runtime structural check (P3).
 # Validates the orchestrator plugin's Codex surface (per

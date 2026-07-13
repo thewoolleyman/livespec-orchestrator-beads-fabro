@@ -243,6 +243,12 @@ jobs:
           # runs unconditionally — a Codex-surface drift fails CI on every
           # event, including doc-only PRs.
           - check-codex-plugin-structure
+          # check-bd-guard lints + hermetically tests the warn-first `bd` guard
+          # wrapper (bd-guard/). Pure shell (no beads / no store / no
+          # .py-change gate), so it belongs in the metadata matrix that runs
+          # unconditionally. ubuntu-latest ships shellcheck; the hermetic
+          # harness needs only bash + coreutils.
+          - check-bd-guard
           # Live Codex TUI `/skills` picker acceptance. GitHub-hosted CI skips
           # unless an authenticated Codex runner opts in via
           # LIVESPEC_REQUIRE_CODEX_TUI_PICKER=1; the status stays visible.
