@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.29.0...v0.29.1) (2026-07-13)
+
+
+### Bug Fixes
+
+* consume baked codex-acp global fetch-free (drop [@0](https://github.com/0).16.0 pin) ([9158752](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/915875223999a7a867be7d7f81d21c17b4c033c1))
+
 ## [0.29.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.28.1...v0.29.0) (2026-07-13)
 
 
