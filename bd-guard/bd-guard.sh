@@ -18,12 +18,14 @@
 # `closed`). Beads' native `open` / `in_progress` / `deferred`, and
 # `bd update --claim` (which sets `in_progress`), are NON-conformant.
 #
-# This wrapper guards ONLY the two EXPLICIT non-lifecycle operations that a
+# This wrapper guards ONLY the EXPLICIT non-lifecycle operations that a
 # single-command wrapper on `bd` v1.0.5 can detect with high confidence:
 #
 #   1. `bd update ... --status <S>` where S is not one of the 7 lifecycle
 #      statuses (e.g. open, in_progress, deferred, done, or any unknown value);
-#   2. `bd update ... --claim` (which sets status=in_progress).
+#   2. `bd update ... --claim` (which sets status=in_progress);
+#   3. `bd reopen ...` (which sets status back to the non-lifecycle `open`) —
+#      a single-token subcommand, so detection is unambiguous.
 #
 # EVERYTHING ELSE passes through UNCHANGED — `create`, `list`, `show`, `close`,
 # `dep`, `config`, `history`, `--json`, and every other subcommand/flag. The
@@ -85,7 +87,8 @@ guard_warn() {
 #     --status/-s value or a --claim, honoring a `--` end-of-flags terminator
 #     and skipping the values of value-taking update flags (so a value that
 #     merely LOOKS like `--claim`/`-s` is not misread).
-# If the subcommand is anything other than `update`, we stop early.
+# The single-token `reopen` subcommand is flagged directly in the global phase.
+# If the subcommand is anything else, we stop early.
 # ---------------------------------------------------------------------------
 phase="global"
 expect_value=0        # skip the next token: it is a consumed flag value
@@ -93,6 +96,7 @@ want_status_value=0   # the previous token was --status/-s in separate form
 after_ddash=0         # a `--` end-of-flags terminator has been seen
 status_value=""       # the captured --status/-s value (empty = none seen)
 saw_claim=0           # a --claim flag was seen
+saw_reopen=0          # the `reopen` subcommand was seen
 
 for arg in "$@"; do
     if [ "$want_status_value" -eq 1 ]; then
@@ -125,12 +129,21 @@ for arg in "$@"; do
             -*) : ;;
             *)
                 # First positional token = the subcommand.
-                if [ "$arg" = "update" ]; then
-                    phase="args"
-                else
-                    # Not an update: nothing to guard.
-                    break
-                fi
+                case "$arg" in
+                    update)
+                        phase="args"
+                        ;;
+                    reopen)
+                        # `bd reopen` sets status to the non-lifecycle `open`.
+                        # Single-token op — flag it and stop scanning.
+                        saw_reopen=1
+                        break
+                        ;;
+                    *)
+                        # Not a guarded subcommand: nothing to guard.
+                        break
+                        ;;
+                esac
                 ;;
         esac
         continue
@@ -190,6 +203,11 @@ done
 # Verdict. Collect any violations, then act per mode.
 # ---------------------------------------------------------------------------
 violated=0
+
+if [ "$saw_reopen" -eq 1 ]; then
+    violated=1
+    guard_warn "bd reopen" "bd update --status <lifecycle> (e.g. backlog)"
+fi
 
 if [ "$saw_claim" -eq 1 ]; then
     violated=1
