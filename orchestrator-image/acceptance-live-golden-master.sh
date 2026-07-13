@@ -253,7 +253,16 @@ stage_and_build_image() {
   [ -x "$HOST_FABRO_BIN" ] || fail "fabro binary not found at $HOST_FABRO_BIN"
   cp "$HOST_FABRO_BIN" "$HERE/fabro"
   chmod +x "$HERE/fabro"
-  "$HERE/fabro" version | head -1
+  # Log fabro's version for the record. Capture-then-head, NEVER a live
+  # `fabro version | head -1` pipe: `fabro version` prints its Client: block,
+  # then does a server RPC for its Server: block, so `head -1` closing after
+  # the Client: block races into a broken-pipe write on the (Rust) fabro
+  # binary — which panics (exit 101) and, under `set -o pipefail`, kills the
+  # whole accept whenever the fabro server's version RPC is slow (busy host).
+  # Draining fabro's stdout through $() removes the pipe, so it never SIGPIPEs;
+  # `|| true` keeps an informational log line from ever failing the accept.
+  fabro_ver="$("$HERE/fabro" version || true)"
+  printf '%s\n' "$fabro_ver" | head -1
   # Stage the plugin scripts tree (mint-app-token CLI + package + vendored
   # runtime) into the build context; the Dockerfile bakes it at
   # /opt/livespec-orchestrator/scripts for the entrypoint's github provisioning.
