@@ -348,6 +348,69 @@ else
 fi
 
 # ===========================================================================
+# 7. `bd reopen` subcommand (sets status to the non-lifecycle `open`)
+# ===========================================================================
+run_wrapper warn 0 "" -- reopen abc-8
+if was_called && [ "$RC" -eq 0 ] && stderr_has "bd reopen' is non-lifecycle"; then
+    pass "reopen: warns and still execs in warn mode"
+else
+    fail "reopen: warn (rc=$RC)"
+fi
+
+run_wrapper fail 0 "" -- reopen abc-8
+if ! was_called && [ "$RC" -ne 0 ] && stderr_has "bd reopen' is non-lifecycle"; then
+    pass "reopen: blocks in fail mode (no exec, non-zero exit)"
+else
+    fail "reopen: fail-mode block (rc=$RC)"
+fi
+
+# reopen as a VALUE of a global flag is not the subcommand -> not flagged
+run_wrapper warn 0 "" -- --actor reopen list
+if was_called && stderr_empty; then
+    pass "reopen as --actor value (not the subcommand) is not flagged"
+else
+    fail "reopen as --actor value (stderr=$(cat "$ERR_FILE"))"
+fi
+
+# reopen with a global flag before it is still detected, argv preserved
+run_wrapper warn 0 "" -- --json reopen abc-8
+if was_called && assert_argv --json reopen abc-8 && stderr_has "bd reopen' is non-lifecycle"; then
+    pass "reopen: detected after a global flag, argv preserved"
+else
+    fail "reopen: after global flag"
+fi
+
+# ===========================================================================
+# 8. install.sh fresh-provision recovery: a NEW real bd reinstalled over the
+#    guard while a STALE bd-real is present must be relocated (preserved), not
+#    clobbered by the guard.
+# ===========================================================================
+FBIN="${WORK}/fbin"
+mkdir -p "$FBIN"
+NEW_BD="${WORK}/new-real-bd"
+cat > "$NEW_BD" <<'NEWBD'
+#!/bin/sh
+echo "the-NEWER-bd v1.2.0 $*"
+NEWBD
+chmod +x "$NEW_BD"
+printf '#!/bin/sh\necho "stale old bd v1.0.0"\n' > "$FBIN/bd-real"   # stale prior real
+cp "$NEW_BD" "$FBIN/bd"                                              # fresh real over guard
+BD_GUARD_BIN_DIR="$FBIN" bash "$INSTALL" >/dev/null 2>&1
+if cmp -s "$FBIN/bd-real" "$NEW_BD" && grep -q 'bd-guard-wrapper-sentinel' "$FBIN/bd"; then
+    pass "install: fresh real bd over guard is relocated to bd-real (newest preserved, not clobbered)"
+else
+    fail "install: fresh-provision relocate (bd-real is newest? $(cmp -s "$FBIN/bd-real" "$NEW_BD" && echo yes || echo no))"
+fi
+
+# ...and a subsequent rollback restores that NEW bd (not the stale one)
+BD_GUARD_BIN_DIR="$FBIN" bash "$ROLLBACK" >/dev/null 2>&1
+if cmp -s "$FBIN/bd" "$NEW_BD" && [ ! -e "$FBIN/bd-real" ]; then
+    pass "rollback: after fresh-provision relocate, restores the NEW bd (stale copy discarded)"
+else
+    fail "rollback: post-fresh-provision restore"
+fi
+
+# ===========================================================================
 echo ""
 echo "bd-guard tests: ${PASS} passed, ${FAIL} failed"
 [ "$FAIL" -eq 0 ]

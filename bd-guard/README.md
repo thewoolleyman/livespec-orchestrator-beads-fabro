@@ -1,11 +1,12 @@
 # `bd-guard` — warn-first non-lifecycle `bd` guard (stopgap)
 
 A thin wrapper that fronts every `bd` (beads) invocation on the host and warns
-(or, opt-in, blocks) the two **explicit** non-lifecycle operations that keep
+(or, opt-in, blocks) the **explicit** non-lifecycle operations that keep
 polluting the fleet's beads tenant with off-lifecycle statuses:
 
 1. `bd update ... --status <S>` where `S` is not a livespec lifecycle status;
-2. `bd update ... --claim` (which sets status to `in_progress`).
+2. `bd update ... --claim` (which sets status to `in_progress`);
+3. `bd reopen ...` (which sets status back to the non-lifecycle `open`).
 
 Everything else — `create`, `list`, `show`, `close`, `dep`, `config`,
 `history`, `--json`, and every other subcommand/flag — passes through
@@ -60,6 +61,7 @@ Example warnings:
 ```
 livespec bd-guard: 'bd update --status in_progress' is non-lifecycle; use --status active
 livespec bd-guard: 'bd update --claim' is non-lifecycle; use --status active
+livespec bd-guard: 'bd reopen' is non-lifecycle; use bd update --status <lifecycle> (e.g. backlog)
 ```
 
 ## Install / rollback (host mutation — run by a maintainer, NOT by CI)

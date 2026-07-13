@@ -6,8 +6,10 @@
 #   2. install this repo's bd-guard.sh as /usr/local/bin/bd
 #
 # It is IDEMPOTENT and RECREATABLE (safe to re-run; survives a fresh
-# provision): step 1 is skipped if bd-real already exists, and step 2 always
-# refreshes the installed wrapper from the tracked source.
+# provision): step 1 is skipped if bd-real already exists, and step 2 refreshes
+# the installed wrapper from the tracked source — first relocating a fresh real
+# bd (one a re-provision reinstalled over the guard) to bd-real so it is never
+# clobbered.
 #
 # This is a HOST MUTATION and is deliberately NOT executed by the test suite or
 # CI. A maintainer runs it explicitly (see bd-guard/README.md). Warn-mode is
@@ -51,6 +53,17 @@ else
 fi
 
 # --- Step 2: install the guard wrapper as bd (always refresh) ----------------
+# Fresh-provision safety: if bd-real already exists (step 1 skipped) but the
+# current bd is NOT our guard (no sentinel), a re-provision reinstalled a real
+# bd over the guard. Blindly overwriting it would LOSE that binary (e.g. a bd
+# version bump) while rollback would restore the now-stale bd-real. Relocate
+# the fresh real bd to bd-real first (replacing the stale copy) so the newest
+# real bd is preserved. (When bd was moved away in step 1, WRAPPER_TARGET is
+# absent and this is skipped.)
+if [ -e "$WRAPPER_TARGET" ] && ! grep -q 'bd-guard-wrapper-sentinel' "$WRAPPER_TARGET"; then
+    echo "install.sh: '$WRAPPER_TARGET' is a real bd (no guard sentinel); relocating it -> '$REAL_TARGET' to preserve it." >&2
+    mv "$WRAPPER_TARGET" "$REAL_TARGET"
+fi
 echo "install.sh: installing guard wrapper -> '$WRAPPER_TARGET'" >&2
 install -m 0755 "$WRAPPER_SRC" "$WRAPPER_TARGET"
 
