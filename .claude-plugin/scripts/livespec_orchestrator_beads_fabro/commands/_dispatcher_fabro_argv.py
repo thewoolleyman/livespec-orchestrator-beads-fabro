@@ -42,13 +42,19 @@ _DEFAULT_JANITOR_CORE_REF = "master"
 
 
 # The Codex ACP adapter the implementer nodes (implement/fix/pr/review_fix)
-# run on. PINNED to @0.16.0 — the version where the non-rotatable refresh
-# sentinel's load-but-cannot-refresh behavior (project_codex_auth_snapshot)
-# was empirically verified against codex-core's AuthManager. Bumping the
-# pin requires re-verifying that the sentinel still degrades to a cached
-# access-token fall-back rather than failing the load (tracked by
-# bd-ib-ss7rkr); a silent bump could break credential projection.
-CODEX_IMPLEMENTER_ADAPTER = "npx -y @zed-industries/codex-acp@0.16.0"
+# run on. VERSION-FREE + fetch-free: `--no-install` runs the codex-acp
+# GLOBAL baked into the sandbox image (livespec-dev-tooling's base
+# Dockerfile `ARG CODEX_ACP_VERSION`) with NO npm registry round-trip — it
+# runs even under `--network none`, so the baked image's CODEX_ACP_VERSION
+# is the SINGLE source of truth for the adapter version (no orchestrator-side
+# pin to keep in sync). The non-rotatable refresh sentinel's
+# load-but-cannot-refresh behavior (project_codex_auth_snapshot; tracked by
+# bd-ib-ss7rkr) is RE-VERIFIED on every version change by the Codex-mode
+# golden-master at orchestrator-image/acceptance-live-golden-master.sh, which
+# dispatches via `dispatcher.py loop` and always routes implementer nodes to
+# THIS adapter — so a factory-gated CODEX_ACP_VERSION bump exercises the
+# credential projection end-to-end instead of relying on a manual TODO.
+CODEX_IMPLEMENTER_ADAPTER = "npx --no-install @zed-industries/codex-acp"
 
 # GitHub owner / repo-name shape. The matched values are spliced into
 # prepare-step clone scripts, so anything outside this conservative

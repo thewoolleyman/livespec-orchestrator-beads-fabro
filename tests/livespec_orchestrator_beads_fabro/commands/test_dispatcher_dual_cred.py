@@ -165,7 +165,7 @@ def test_fabro_run_argv_routes_implementer_to_codex_adapter(tmp_path: Path) -> N
     assert "--input" in argv
     input_value = argv[argv.index("--input") + 1]
     assert input_value == f"acp_adapter={CODEX_IMPLEMENTER_ADAPTER}"
-    assert CODEX_IMPLEMENTER_ADAPTER == "npx -y @zed-industries/codex-acp@0.16.0"
+    assert CODEX_IMPLEMENTER_ADAPTER == "npx --no-install @zed-industries/codex-acp"
     # The routing input precedes --no-upgrade-check.
     assert argv.index("--input") < argv.index("--no-upgrade-check")
 

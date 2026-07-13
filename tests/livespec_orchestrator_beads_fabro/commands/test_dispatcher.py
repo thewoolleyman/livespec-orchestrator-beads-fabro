@@ -1041,7 +1041,7 @@ def test_argv_builders_encode_family_discipline(tmp_path: Path) -> None:
         "--goal-file",
         str(tmp_path / "goal.md"),
         "--input",
-        "acp_adapter=npx -y @zed-industries/codex-acp@0.16.0",
+        "acp_adapter=npx --no-install @zed-industries/codex-acp",
         "--no-upgrade-check",
     ]
     assert fabro_inspect_argv(plan=plan, run_id="01RUNID") == [
