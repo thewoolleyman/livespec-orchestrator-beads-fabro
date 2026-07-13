@@ -91,13 +91,22 @@ def post_merge(
                 f"(kept for diagnosis): {tail(text=janitor.stderr)}"
             ),
         )
-    _ = run_stage(
+    cleanup = run_stage(
         runner=runner,
         journal=journal,
         plan=plan,
         stage="janitor-checkout-remove",
         command=(janitor_worktree_remove_argv(plan=plan), plan.repo, _GIT_TIMEOUT_SECONDS, None),
     )
+    if cleanup.exit_code != 0:
+        return outcome_type(
+            work_item_id=plan.work_item_id,
+            status="failed",
+            stage="janitor-checkout-remove",
+            pr_number=merged.number,
+            merge_sha=merged.merge_sha,
+            detail=tail(text=cleanup.stderr),
+        )
     return outcome_type(
         work_item_id=plan.work_item_id,
         status="green",

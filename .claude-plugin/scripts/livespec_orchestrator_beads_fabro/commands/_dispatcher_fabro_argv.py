@@ -132,19 +132,19 @@ def janitor_argv_with_default(*, janitor: tuple[str, ...] | None) -> tuple[str, 
 
 
 def janitor_checkout_path(*, repo: Path, work_item_id: str) -> Path:
-    """The post-merge janitor's fresh-checkout venue: `<repo>/worktrees/janitor-<id>`.
+    """The post-merge janitor's fresh-checkout venue under the family worktree root.
 
-    Under the target repo's own `worktrees/` dispatch-worktree dir and
-    NEVER under the system temp dir: the family pyproject's
-    `[tool.coverage.run]` omit carries `/tmp/*` (a guard against
-    measured tempfile artifacts that must stay), so a /tmp venue omits
-    every source file inside the checkout — coverage measures zero
-    files and check-per-file-coverage dies with NoDataError,
-    false-redding a merged-green change (work-item
-    livespec-impl-beads-1l6; reproduced in the preserved tpu checkout).
-    `git worktree add` creates the missing parent dirs itself.
+    The checkout must stay outside the target repo so a stray `git add -A`
+    cannot stage it. It also stays out of the system temp dir: the family
+    pyproject's `[tool.coverage.run]` omit carries `/tmp/*` (a guard
+    against measured tempfile artifacts that must stay), so a /tmp venue
+    omits every source file inside the checkout — coverage measures zero
+    files and check-per-file-coverage dies with NoDataError, false-redding
+    a merged-green change (work-item livespec-impl-beads-1l6; reproduced
+    in the preserved tpu checkout). `git worktree add` creates the missing
+    parent dirs itself.
     """
-    return repo / "worktrees" / f"janitor-{work_item_id}"
+    return Path.home() / ".worktrees" / repo.name / f"janitor-{work_item_id}"
 
 
 def janitor_core_checkout_path(*, janitor_checkout: Path) -> Path:

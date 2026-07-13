@@ -911,12 +911,15 @@ def test_janitor_argv_with_default_passthrough_and_empty() -> None:
     assert janitor_argv_with_default(janitor=()) == ("mise", "exec", "--", "just", "check")
 
 
-def test_janitor_checkout_path_lives_under_the_repo_worktrees_dir(tmp_path: Path) -> None:
-    """The venue derives from the TARGET REPO (its `worktrees/` dispatch-
-    worktree dir), never from the system temp dir — see the omit-glob
-    test below for why a temp-dir venue false-reds the janitor."""
+def test_janitor_checkout_path_lives_under_home_worktrees(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The venue derives from the target repo name under the family worktree root."""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     checkout = janitor_checkout_path(repo=tmp_path / "primary", work_item_id="x-1")
-    assert checkout == tmp_path / "primary" / "worktrees" / "janitor-x-1"
+    assert checkout == tmp_path / "home" / ".worktrees" / "primary" / "janitor-x-1"
+    assert tmp_path / "primary" / "worktrees" not in checkout.parents
     assert not str(checkout).startswith(tempfile.gettempdir())
 
 
@@ -1667,6 +1670,28 @@ def test_engine_green_runs_janitor_in_fresh_checkout(tmp_path: Path) -> None:
     assert runner.envs[9] == {
         "LIVESPEC_CORE_PLUGIN_ROOT": str(checkout / ".livespec-core" / ".claude-plugin")
     }
+
+
+def test_engine_fails_when_green_janitor_checkout_cleanup_fails(tmp_path: Path) -> None:
+    runner = _FakeRunner(
+        queue=[
+            _ok(stdout="fabro done"),
+            _ok(stdout=_pr_json(armed=True)),
+            _ok(stdout=_pr_json(state="MERGED", sha="cafe01")),
+            _ok(),  # pull-primary
+            _ok(),  # janitor-checkout-preclean
+            _ok(),  # janitor-checkout-add
+            _ok(),  # janitor-checkout-trust
+            _ok(),  # janitor-checkout-bootstrap
+            _ok(),  # janitor-core-provision
+            _ok(),  # janitor-post-merge
+            _err(stderr="checkout has vanished"),  # janitor-checkout-remove
+        ]
+    )
+    outcome, journal, _ = _dispatch(runner=runner, repo=tmp_path)
+    assert (outcome.status, outcome.stage) == ("failed", "janitor-checkout-remove")
+    assert outcome.detail == "checkout has vanished"
+    assert [record["stage"] for record in journal.records][-1] == "janitor-checkout-remove"
 
 
 def test_engine_fails_when_fabro_run_fails_and_trims_detail(tmp_path: Path) -> None:
@@ -2516,6 +2541,7 @@ def test_dispatch_materializes_mode600_overlay_and_cleans_up(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     item = _item()
     append_work_item(path=_config(), item=item)
@@ -2537,7 +2563,9 @@ def test_dispatch_materializes_mode600_overlay_and_cleans_up(
     plan = fake.seen[0]["plan"]
     assert isinstance(plan, DispatchPlan)
     assert plan.workflow_toml.name == f"fabro-run-config-{item.id}.toml"
-    assert plan.janitor_checkout == repo / "worktrees" / f"janitor-{item.id}"
+    assert (
+        plan.janitor_checkout == tmp_path / "home" / ".worktrees" / repo.name / f"janitor-{item.id}"
+    )
     assert not plan.workflow_toml.exists()
     assert fake.overlay_modes == [0o600]
     overlay_text = fake.overlay_texts[0]

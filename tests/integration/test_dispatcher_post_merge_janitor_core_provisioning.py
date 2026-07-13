@@ -67,6 +67,7 @@ def test_real_post_merge_janitor_provisions_livespec_core(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     target = _target_repo(tmp_path=tmp_path)
     core_remote = _core_remote(tmp_path=tmp_path)
     tool_bin = _tool_bin(tmp_path=tmp_path)
@@ -166,6 +167,7 @@ def _configure_full_dispatch_env(
     core_remote: Path,
     tool_bin: Path,
 ) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     git_config = tmp_path / "gitconfig"
     git_config.write_text(
         f'[url "file://{core_remote}"]\n'
