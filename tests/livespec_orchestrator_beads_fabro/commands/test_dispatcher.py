@@ -28,6 +28,7 @@ than work-item failures, per livespec-impl-beads-cgd), and the
 `fabro attach` is the answer path, never auto-resumed).
 """
 
+import argparse
 import json
 import os
 import re
@@ -2368,6 +2369,38 @@ class _FakeRunDispatch:
         return self.outcomes[plan.work_item_id]
 
 
+@dataclass(kw_only=True)
+class _CostGateCall:
+    args: argparse.Namespace
+    repo: Path
+    outcomes: list[DispatchOutcome]
+    journal: object
+    runner: object
+
+
+@dataclass(kw_only=True)
+class _RecordingCostGate:
+    calls: list[_CostGateCall] = field(default_factory=list)
+
+    def __call__(self, **kwargs: object) -> None:
+        args = kwargs["args"]
+        repo = kwargs["repo"]
+        outcomes = kwargs["outcomes"]
+        assert isinstance(args, argparse.Namespace)
+        assert isinstance(repo, Path)
+        assert isinstance(outcomes, list)
+        assert all(isinstance(outcome, DispatchOutcome) for outcome in outcomes)
+        self.calls.append(
+            _CostGateCall(
+                args=args,
+                repo=repo,
+                outcomes=outcomes,
+                journal=kwargs["journal"],
+                runner=kwargs["runner"],
+            )
+        )
+
+
 def _stored() -> dict[str, WorkItem]:
     return materialize_work_items(records=read_work_items(path=_config()))
 
@@ -2442,6 +2475,41 @@ def test_dispatch_green_closes_item_and_journals(
     poll = fake.seen[0]["poll"]
     assert isinstance(poll, PollPolicy)
     assert (poll.attempts, poll.interval_seconds) == (80, 30.0)
+
+
+def test_dispatch_finalize_invokes_cost_gate_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
+    cost_gate = _RecordingCostGate()
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
+    monkeypatch.setattr(_dispatcher_run_commands, "cost_gate_after_verdict", cost_gate)
+
+    exit_code = main(
+        argv=[
+            "dispatch",
+            "--repo",
+            str(repo),
+            "--item",
+            item.id,
+            "--workflow",
+            str(workflow),
+            "--no-close-on-merge",
+        ]
+    )
+
+    assert exit_code == 0
+    assert len(cost_gate.calls) == 1
+    call = cost_gate.calls[0]
+    assert call.repo == repo
+    assert [outcome.work_item_id for outcome in call.outcomes] == [item.id]
+    assert hasattr(call.journal, "append")
+    assert hasattr(call.runner, "run")
+    assert call.args.item == item.id
 
 
 def test_dispatch_materializes_mode600_overlay_and_cleans_up(
@@ -3182,6 +3250,43 @@ def test_loop_shadow_dispatches_named_items_within_budget(
     )
     assert pick["picked"] == ["a-1"]
     assert pick["mode"] == "shadow"
+
+
+def test_loop_finalize_invokes_cost_gate_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item(id="a-1", rank="a1")
+    append_work_item(path=_config(), item=item)
+    fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
+    cost_gate = _RecordingCostGate()
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
+    monkeypatch.setattr(_dispatcher_loop_command, "cost_gate_after_verdict", cost_gate)
+
+    exit_code = main(
+        argv=[
+            "loop",
+            "--repo",
+            str(repo),
+            "--budget",
+            "1",
+            "--workflow",
+            str(workflow),
+            "--item",
+            item.id,
+            "--no-close-on-merge",
+        ]
+    )
+
+    assert exit_code == 0
+    assert len(cost_gate.calls) == 1
+    call = cost_gate.calls[0]
+    assert call.repo == repo
+    assert [outcome.work_item_id for outcome in call.outcomes] == [item.id]
+    assert hasattr(call.journal, "append")
+    assert hasattr(call.runner, "run")
+    assert call.args.items == [item.id]
 
 
 def test_loop_autonomous_parallel_mixed_outcomes(
