@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.28.1...v0.29.0) (2026-07-13)
+
+
+### Features
+
+* codex-acp golden-master gate (repository_dispatch + status callback) ([0d0b0c2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0d0b0c234b505880d4ca5907564604f02f7ad9d0))
+
 ## [0.28.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.28.0...v0.28.1) (2026-07-13)
 
 
