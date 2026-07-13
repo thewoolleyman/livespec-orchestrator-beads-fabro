@@ -126,15 +126,18 @@ provider = "docker"
 # GHCR-published family sandbox image (mise + uv + just + lefthook +
 # node/ACP adapter + gh; Dockerfile in livespec-dev-tooling). Published
 # by dev-tooling PR #111 (2026-06-12) to
-# ghcr.io/thewoolleyman/livespec-fabro-sandbox. Tag format:
-#   sha-<short>  — per master-build (mutable; tracks HEAD)
-#   v<X.Y.Z>     — per release tag (immutable)
+# ghcr.io/thewoolleyman/livespec-fabro-sandbox. Since the layered-image
+# split this consumer pulls the `python` layer (base tools + uv + CPython;
+# no Rust). Tag format:
+#   python-sha-<short>  — per master-build (mutable; tracks HEAD)
+#   python-v<X.Y.Z>     — per release tag (immutable)
 #
 # PIN SURFACE NOTE: this docker image tag is now covered by the shared
 # `bump-pin` autodiscovery — livespec-dev-tooling (>= v0.40.0) ships a
 # `fabro_sandbox_docker_image` pin format, so the release fan-out rewrites the
-# `docker = "...:vX.Y.Z"` tag below in lockstep with the livespec-dev-tooling
-# pin in pyproject.toml, exactly like every other cross-repo pin. No repo-local
+# `docker = "...:python-vX.Y.Z"` tag below in lockstep with the livespec-dev-tooling
+# pin in pyproject.toml, exactly like every other cross-repo pin — preserving the
+# `python-` layer prefix and rewriting only the `vX.Y.Z` version. No repo-local
 # consistency check is needed. The producer-side lockstep gate
 # (livespec_dev_tooling.fabro_image_pin_lockstep) guards the Dockerfile ARG pins
 # in livespec-dev-tooling and does not run in consumer repos.
@@ -146,7 +149,7 @@ provider = "docker"
 # only `provider = "docker"` + `[image] docker = "..."` — never an
 # `[env]` table (the Dispatcher's per-dispatch overlay owns that block;
 # TOML forbids duplicate table declarations).
-docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:v0.43.2"
+docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v0.43.2"
 
 [environments.livespec-ci.resources]
 cpu = 4
