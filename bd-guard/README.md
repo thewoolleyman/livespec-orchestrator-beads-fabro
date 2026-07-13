@@ -106,7 +106,7 @@ bd --version
 
 ## Tests
 
-Hermetic, no real `bd`, no host mutation:
+Hermetic, no real `bd`, no `/usr/local/bin` mutation:
 
 ```sh
 just check-bd-guard      # shellcheck (if present) + the hermetic harness
@@ -117,5 +117,10 @@ bash bd-guard/test/run-tests.sh
 The harness points `LIVESPEC_BD_REAL` at a generated stub that records its exact
 argv, emits controlled stdout/stderr, and exits with a controlled code, then
 asserts warn/fail behavior, exact argv preservation, byte-identical `--json`
-passthrough, exit-code passthrough, and every edge argv form
-(`--status=`, `-s`, `-s<val>`, reordered flags, `--` terminator, no-args).
+passthrough, exit-code passthrough, and every edge argv form (`--status=`, `-s`,
+`-s<val>`, `--claim=true|false`, reordered flags, root-level and update-level
+`--` terminators, no-args). It also drives `install.sh`/`rollback.sh` end-to-end
+against a temporary `BD_GUARD_BIN_DIR` (never `/usr/local/bin`): install relocates
+the real bd to `bd-real` and installs the guard, rollback restores the original
+bd byte-identically and removes `bd-real`, both are idempotent, and a partial
+install never relocates the guard onto `bd-real` (which would exec-loop).
