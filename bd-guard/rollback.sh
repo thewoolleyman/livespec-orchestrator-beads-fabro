@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# rollback.sh — restore the real `bd`, removing the guard wrapper (NOT run by CI).
+#
+# Undoes install.sh:
+#   1. move /usr/local/bin/bd-real -> /usr/local/bin/bd  (restoring the real bd)
+#
+# It is IDEMPOTENT: if bd-real is absent, the guard was never installed (or was
+# already rolled back) and there is nothing to do. This makes the guard
+# TRIVIALLY REMOVABLE — a maintainer runs this, then may delete bd-guard/.
+#
+# This is a HOST MUTATION and is deliberately NOT executed by the test suite or
+# CI. A maintainer runs it explicitly (see bd-guard/README.md).
+#
+# Requires write access to /usr/local/bin (typically `sudo`).
+
+set -euo pipefail
+
+BIN_DIR="${BD_GUARD_BIN_DIR:-/usr/local/bin}"
+REAL_TARGET="${BD_GUARD_REAL_TARGET:-${BIN_DIR}/bd-real}"
+WRAPPER_TARGET="${BIN_DIR}/bd"
+
+if [ ! -e "$REAL_TARGET" ]; then
+    echo "rollback.sh: no '$REAL_TARGET' present; nothing to roll back." >&2
+    exit 0
+fi
+
+# Only remove $WRAPPER_TARGET if it is our guard (avoid clobbering a real bd
+# that a fresh provision may have re-installed there).
+if [ -e "$WRAPPER_TARGET" ]; then
+    if head -n 1 "$WRAPPER_TARGET" | grep -q 'bd-guard'; then
+        echo "rollback.sh: removing guard wrapper at '$WRAPPER_TARGET'" >&2
+        rm -f "$WRAPPER_TARGET"
+    else
+        echo "rollback.sh: '$WRAPPER_TARGET' is not the guard; leaving it, aborting." >&2
+        echo "rollback.sh: inspect manually — refusing to overwrite a non-guard bd." >&2
+        exit 1
+    fi
+fi
+
+echo "rollback.sh: restoring '$REAL_TARGET' -> '$WRAPPER_TARGET'" >&2
+mv "$REAL_TARGET" "$WRAPPER_TARGET"
+
+echo "rollback.sh: done. Verify with: bd --version" >&2
