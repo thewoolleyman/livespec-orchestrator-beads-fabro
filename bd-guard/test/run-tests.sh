@@ -247,6 +247,106 @@ else
     fail "edge: unknown mode"
 fi
 
+# --claim=true (equals form of the boolean) is still a claim
+run_wrapper warn 0 "" -- update abc-7 --claim=true
+if was_called && stderr_has "--claim' is non-lifecycle"; then
+    pass "edge: --claim=true (equals form) flagged"
+else
+    fail "edge: --claim=true"
+fi
+
+# --claim=false is an explicit disable -> NOT a claim, no warning
+run_wrapper warn 0 "" -- update abc-7 --claim=false
+if was_called && stderr_empty; then
+    pass "edge: --claim=false (explicit disable) not flagged"
+else
+    fail "edge: --claim=false (stderr=$(cat "$ERR_FILE"))"
+fi
+
+# root-level `--` BEFORE the subcommand: bd treats the rest as positional (the
+# root command prints help), so no `update` runs and nothing is guarded — not
+# even a trailing --claim. Must not warn, and must NOT block in fail mode.
+run_wrapper warn 0 "" -- -- update abc-6 --claim
+if was_called && stderr_empty && [ "$RC" -eq 0 ]; then
+    pass "edge: root-level '--' before subcommand is not guarded (no wrong-warn)"
+else
+    fail "edge: root-level '--' before subcommand (stderr=$(cat "$ERR_FILE"))"
+fi
+
+run_wrapper fail 0 "" -- -- update abc-6 --claim
+if was_called && stderr_empty && [ "$RC" -eq 0 ]; then
+    pass "edge: root-level '--' does not wrong-block in fail mode"
+else
+    fail "edge: root-level '--' fail-mode wrong-block (rc=$RC)"
+fi
+
+# ===========================================================================
+# 6. install.sh / rollback.sh round-trip (hermetic host-mutation, temp bin dir)
+#    Regression guard for the self-recognition bug (the shipped scripts grepped
+#    line 1 for 'bd-guard', but line 1 is the shebang, so rollback always
+#    aborted and a partial re-install could relocate the guard onto bd-real ->
+#    infinite exec loop). BD_GUARD_BIN_DIR keeps this off /usr/local/bin.
+# ===========================================================================
+INSTALL="${SCRIPT_DIR}/../install.sh"
+ROLLBACK="${SCRIPT_DIR}/../rollback.sh"
+
+# A distinctive stub standing in for the real compiled bd binary.
+ORIG_BD="${WORK}/orig-real-bd"
+cat > "$ORIG_BD" <<'ORIGBD'
+#!/bin/sh
+echo "the-genuine-bd v1.0.5 $*"
+ORIGBD
+chmod +x "$ORIG_BD"
+
+# --- normal install -> rollback round-trip ---
+IBIN="${WORK}/ibin"
+mkdir -p "$IBIN"
+cp "$ORIG_BD" "$IBIN/bd"
+
+BD_GUARD_BIN_DIR="$IBIN" bash "$INSTALL" >/dev/null 2>&1
+if cmp -s "$IBIN/bd-real" "$ORIG_BD" && grep -q 'bd-guard-wrapper-sentinel' "$IBIN/bd"; then
+    pass "install: real bd relocated to bd-real (byte-identical), guard installed as bd"
+else
+    fail "install: relocation/guard-install"
+fi
+
+# idempotent re-install must not disturb the relocated real bd
+BD_GUARD_BIN_DIR="$IBIN" bash "$INSTALL" >/dev/null 2>&1
+if cmp -s "$IBIN/bd-real" "$ORIG_BD" && grep -q 'bd-guard-wrapper-sentinel' "$IBIN/bd"; then
+    pass "install: idempotent re-run keeps bd-real intact (real bd never clobbered)"
+else
+    fail "install: idempotent re-run"
+fi
+
+# rollback must restore the ORIGINAL bd exactly and remove bd-real
+BD_GUARD_BIN_DIR="$IBIN" bash "$ROLLBACK" >/dev/null 2>&1
+if cmp -s "$IBIN/bd" "$ORIG_BD" && [ ! -e "$IBIN/bd-real" ]; then
+    pass "rollback: original bd restored byte-identical, bd-real removed (TRIVIALLY REMOVABLE holds)"
+else
+    fail "rollback: restore (bd-real present? $([ -e "$IBIN/bd-real" ] && echo yes || echo no))"
+fi
+
+# idempotent rollback: nothing left -> exit 0, bd untouched
+BD_GUARD_BIN_DIR="$IBIN" bash "$ROLLBACK" >/dev/null 2>&1; RRC=$?
+if [ "$RRC" -eq 0 ] && cmp -s "$IBIN/bd" "$ORIG_BD"; then
+    pass "rollback: idempotent re-run is a no-op (exit 0, bd unchanged)"
+else
+    fail "rollback: idempotent re-run (rc=$RRC)"
+fi
+
+# --- partial-install recovery: guard at bd, bd-real MISSING ---
+# The old dead check would relocate the guard onto bd-real here, creating an
+# infinite bd -> exec bd-real(=guard) loop. Re-install must refuse to do so.
+PBIN="${WORK}/pbin"
+mkdir -p "$PBIN"
+cp "${SCRIPT_DIR}/../bd-guard.sh" "$PBIN/bd"
+BD_GUARD_BIN_DIR="$PBIN" bash "$INSTALL" >/dev/null 2>&1
+if [ ! -e "$PBIN/bd-real" ] && grep -q 'bd-guard-wrapper-sentinel' "$PBIN/bd"; then
+    pass "install: partial state (guard at bd, no bd-real) does NOT relocate guard onto bd-real (no exec loop)"
+else
+    fail "install: partial-install recovery (bd-real present? $([ -e "$PBIN/bd-real" ] && echo yes || echo no))"
+fi
+
 # ===========================================================================
 echo ""
 echo "bd-guard tests: ${PASS} passed, ${FAIL} failed"

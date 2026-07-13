@@ -39,8 +39,10 @@ else
         exit 1
     fi
     # A prior partial install could have left the guard AT $WRAPPER_TARGET.
-    # Guard against relocating the wrapper onto itself.
-    if head -n 1 "$WRAPPER_TARGET" | grep -q 'bd-guard'; then
+    # Guard against relocating the wrapper onto itself. Recognize the guard by
+    # grepping the whole file for its sentinel marker (the shebang is line 1,
+    # so a line-1-anchored check would never match).
+    if grep -q 'bd-guard-wrapper-sentinel' "$WRAPPER_TARGET"; then
         echo "install.sh: '$WRAPPER_TARGET' already looks like the guard; not relocating." >&2
     else
         echo "install.sh: moving '$WRAPPER_TARGET' -> '$REAL_TARGET'" >&2

@@ -1,4 +1,9 @@
 #!/bin/sh
+# bd-guard-wrapper-sentinel — install.sh/rollback.sh identify this guard by
+# grepping the whole file for the exact marker `bd-guard-wrapper-sentinel`; do
+# NOT remove or rename it. (A line-anchored check would miss it: line 1 is the
+# shebang, so the recognizers scan the entire file for this token, not one
+# line.)
 # bd-guard.sh — warn-first guard wrapper that fronts every `bd` invocation.
 #
 # WHY THIS EXISTS (stopgap): the fleet's beads tenant keeps accumulating
@@ -106,9 +111,17 @@ for arg in "$@"; do
             --actor|--db|-C|--directory|--dolt-auto-commit)
                 expect_value=1
                 ;;
-            # `=`-form or boolean global flags and the end-of-flags marker are
-            # single self-contained tokens; just skip them.
-            --*=*|-C=*|--) : ;;
+            # Root-level `--` end-of-flags terminator: everything after it is
+            # positional to bd's ROOT command, so no subcommand follows and
+            # there is nothing to guard. `break` (do not merely skip) so
+            # `bd -- update x --claim` is never mis-detected — it performs no
+            # update, and flagging it would be a spurious block in fail mode.
+            --)
+                break
+                ;;
+            # `=`-form or boolean global flags are single self-contained
+            # tokens; just skip them.
+            --*=*|-C=*) : ;;
             -*) : ;;
             *)
                 # First positional token = the subcommand.
@@ -134,6 +147,15 @@ for arg in "$@"; do
             ;;
         --claim)
             saw_claim=1
+            ;;
+        --claim=*)
+            # bd's `--claim` is a pflag boolean, so the `=`-form sets it too.
+            # Treat any truthy value as a claim; leave only an explicit false
+            # (the values bd itself accepts as false) unflagged.
+            case "${arg#--claim=}" in
+                0|f|F|false|FALSE|False) : ;;
+                *) saw_claim=1 ;;
+            esac
             ;;
         --status|-s)
             want_status_value=1

@@ -25,9 +25,11 @@ if [ ! -e "$REAL_TARGET" ]; then
 fi
 
 # Only remove $WRAPPER_TARGET if it is our guard (avoid clobbering a real bd
-# that a fresh provision may have re-installed there).
+# that a fresh provision may have re-installed there). Recognize the guard by
+# grepping the whole file for its sentinel marker (the shebang is line 1, so a
+# line-1-anchored check would never match — that bug made rollback always abort).
 if [ -e "$WRAPPER_TARGET" ]; then
-    if head -n 1 "$WRAPPER_TARGET" | grep -q 'bd-guard'; then
+    if grep -q 'bd-guard-wrapper-sentinel' "$WRAPPER_TARGET"; then
         echo "rollback.sh: removing guard wrapper at '$WRAPPER_TARGET'" >&2
         rm -f "$WRAPPER_TARGET"
     else
