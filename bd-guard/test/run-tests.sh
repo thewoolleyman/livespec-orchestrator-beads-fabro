@@ -40,6 +40,15 @@ ERR_FILE="${WORK}/err.txt"
 export LIVESPEC_BD_REAL="$FAKE_BD"
 export FAKE_BD_ARGV_FILE="$ARGV_FILE"
 
+# Telemetry is default-ON in the wrapper, but the hermetic suite must (a) keep
+# every EXISTING case a pure `exec` passthrough — the exact argv/stream/exit
+# semantics those cases assert — and (b) NEVER emit a span to a real collector on
+# a maintainer's host (a live OTLP endpoint may be listening at :4319). So
+# default telemetry OFF for the whole harness; the dedicated telemetry section
+# (§9) opts back IN per-invocation, always pointed at a throwaway capture server
+# or a dead port, never the real endpoint.
+export LIVESPEC_BD_GUARD_OTLP=off
+
 PASS=0
 FAIL=0
 fail() { FAIL=$((FAIL + 1)); echo "  FAIL: $1" >&2; }
@@ -71,6 +80,90 @@ assert_argv() {
     local expected="${WORK}/expected.txt"
     printf '%s\n' "$@" > "$expected"
     diff -q "$expected" "$ARGV_FILE" >/dev/null 2>&1
+}
+
+# --- OTLP telemetry test infrastructure -------------------------------------
+# A throwaway HTTP capture server: binds a RANDOM loopback port, appends each
+# received POST body (one JSON object per line) to $1, and writes the chosen
+# port to $2 so the caller can point the wrapper's emitter at it. Runs until
+# killed. Stdlib http.server only — no network, no external deps.
+CAP_PY="${WORK}/capture.py"
+cat > "$CAP_PY" <<'CAPPY'
+import http.server, sys
+OUT, PORTF = sys.argv[1], sys.argv[2]
+class H(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length", 0) or 0)
+        body = self.rfile.read(n)
+        with open(OUT, "ab") as f:
+            f.write(body)
+            f.write(b"\n")
+        self.send_response(200)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+    def log_message(self, *a):  # silence access log
+        return
+srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+with open(PORTF, "w") as f:
+    f.write(str(srv.server_address[1]))
+srv.serve_forever()
+CAPPY
+
+# A JSON payload verifier: parses the LAST captured OTLP object and asserts the
+# bd.invoke span shape. Args: <capture-file> <subcommand> <warned:true|false>
+# <exit_code>. Parsing (not grepping) makes it whitespace-insensitive.
+VERIFY_PY="${WORK}/verify.py"
+cat > "$VERIFY_PY" <<'VERIFYPY'
+import json, sys
+path, sub, warned, exit_code = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+lines = [b for b in open(path, "rb").read().splitlines() if b.strip()]
+obj = json.loads(lines[-1])
+rs = obj["resourceSpans"][0]
+res = {a["key"]: a["value"] for a in rs["resource"]["attributes"]}
+assert res["service.name"]["stringValue"] == "bd-guard", res
+span = rs["scopeSpans"][0]["spans"][0]
+assert span["name"] == "bd.invoke", span["name"]
+attrs = {a["key"]: a["value"] for a in span["attributes"]}
+assert attrs["bd.subcommand"]["stringValue"] == sub, attrs["bd.subcommand"]
+assert attrs["guard.warned"]["boolValue"] is (warned == "true"), attrs["guard.warned"]
+assert attrs["exit_code"]["intValue"] == exit_code, attrs["exit_code"]
+assert span["status"]["code"] == (2 if exit_code != "0" else 1), span["status"]
+sys.exit(0)
+VERIFYPY
+
+CAP_PID=""
+CAP_PORT=""
+# start_capture <out-file> <port-file> — launch the capture server and block
+# (up to ~2s) until it has published its port into CAP_PORT.
+start_capture() {
+    rm -f "$1" "$2"
+    python3 "$CAP_PY" "$1" "$2" &
+    CAP_PID=$!
+    local i=0
+    while [ ! -s "$2" ] && [ "$i" -lt 40 ]; do
+        sleep 0.05
+        i=$((i + 1))
+    done
+    CAP_PORT="$(cat "$2" 2>/dev/null || echo "")"
+}
+# stop_capture — kill the capture server if running.
+stop_capture() {
+    if [ -n "$CAP_PID" ]; then
+        kill "$CAP_PID" 2>/dev/null
+        wait "$CAP_PID" 2>/dev/null
+    fi
+    CAP_PID=""
+}
+# poll_capture <out-file> — wait up to ~2s for at least one captured POST body
+# (the emit is DETACHED/async, so it may land shortly after the wrapper returns).
+poll_capture() {
+    local i=0
+    while [ "$i" -lt 40 ]; do
+        [ -s "$1" ] && return 0
+        sleep 0.05
+        i=$((i + 1))
+    done
+    return 1
 }
 
 # ===========================================================================
@@ -408,6 +501,127 @@ if cmp -s "$FBIN/bd" "$NEW_BD" && [ ! -e "$FBIN/bd-real" ]; then
     pass "rollback: after fresh-provision relocate, restores the NEW bd (stale copy discarded)"
 else
     fail "rollback: post-fresh-provision restore"
+fi
+
+# ===========================================================================
+# 9. OTLP telemetry (default-ON in the wrapper; opted-in here per-invocation).
+#    The wrapper fires a DETACHED, FAIL-OPEN `bd.invoke` span AFTER running the
+#    real bd, so bd's stdout/stderr/exit are never affected. These cases point
+#    the emitter at a throwaway capture server (or a dead port) — never a real
+#    collector — and prove: emit-happens + payload shape, fail-open on a dead
+#    endpoint, no-emit when disabled, and exit-code fidelity with telemetry ON.
+# ===========================================================================
+TCAP="${WORK}/tel-cap.txt"
+TPORT="${WORK}/tel-port.txt"
+
+# 9.1 emit happens + payload shape. Real bd = /bin/echo, so passthrough stdout
+#     genuinely reflects argv. `--claim` is a warn-mode violation -> warned=true.
+start_capture "$TCAP" "$TPORT"
+if [ -n "$CAP_PORT" ]; then
+    LIVESPEC_BD_REAL=/bin/echo \
+    LIVESPEC_BD_GUARD_OTLP=on \
+    LIVESPEC_BD_GUARD_OTLP_ENDPOINT="http://127.0.0.1:${CAP_PORT}/v1/traces" \
+        "$WRAPPER" update x --claim >"$OUT_FILE" 2>"$ERR_FILE"
+    TRC=$?
+    if [ "$TRC" -eq 0 ] && stdout_is "update x --claim" \
+            && poll_capture "$TCAP" \
+            && python3 "$VERIFY_PY" "$TCAP" update true 0; then
+        pass "telemetry: bd.invoke span emitted (service.name=bd-guard, subcommand=update, warned=true, exit=0) AND bd passthrough intact (stdout+exit)"
+    else
+        fail "telemetry: emit/payload shape (rc=$TRC, stdout=$(cat "$OUT_FILE"), cap=$(cat "$TCAP" 2>/dev/null))"
+    fi
+else
+    fail "telemetry: capture server did not start (9.1)"
+fi
+stop_capture
+
+# 9.2 fail-open when the endpoint is dead. Point at a refused port; the emit is
+#     detached, so the wrapper returns immediately and bd is unaffected — no
+#     multi-second hang regardless of the collector being down.
+T92_START=$(date +%s)
+LIVESPEC_BD_REAL=/bin/echo \
+LIVESPEC_BD_GUARD_OTLP=on \
+LIVESPEC_BD_GUARD_OTLP_ENDPOINT="http://127.0.0.1:1/v1/traces" \
+    "$WRAPPER" list >"$OUT_FILE" 2>"$ERR_FILE"
+T92_RC=$?
+T92_ELAPSED=$(( $(date +%s) - T92_START ))
+if [ "$T92_RC" -eq 0 ] && stdout_is "list" && stderr_empty && [ "$T92_ELAPSED" -lt 2 ]; then
+    pass "telemetry: dead endpoint is fail-open (bd stdout/exit unchanged, returns promptly in ${T92_ELAPSED}s)"
+else
+    fail "telemetry: dead-endpoint fail-open (rc=$T92_RC, elapsed=${T92_ELAPSED}s, stdout=$(cat "$OUT_FILE"), stderr=$(cat "$ERR_FILE"))"
+fi
+
+# 9.3 disabled -> transparent passthrough, NO emit attempted.
+start_capture "$TCAP" "$TPORT"
+if [ -n "$CAP_PORT" ]; then
+    LIVESPEC_BD_REAL=/bin/echo \
+    LIVESPEC_BD_GUARD_OTLP=off \
+    LIVESPEC_BD_GUARD_OTLP_ENDPOINT="http://127.0.0.1:${CAP_PORT}/v1/traces" \
+        "$WRAPPER" list >"$OUT_FILE" 2>"$ERR_FILE"
+    TRC=$?
+    sleep 0.3   # give any (erroneous) emit time to arrive before asserting none did
+    if [ "$TRC" -eq 0 ] && stdout_is "list" && [ ! -s "$TCAP" ]; then
+        pass "telemetry: LIVESPEC_BD_GUARD_OTLP=off is transparent passthrough (no span emitted)"
+    else
+        fail "telemetry: disabled still emitted (rc=$TRC, cap=$(cat "$TCAP" 2>/dev/null))"
+    fi
+else
+    fail "telemetry: capture server did not start (9.3)"
+fi
+stop_capture
+
+# 9.4 exit-code fidelity with telemetry ON. Real bd = /bin/false (exits 1); the
+#     wrapper must still exit 1, and the emitted span must reflect exit_code=1 +
+#     error status. Capture-backed so we prove the emit rides along, not just
+#     that bd's code is preserved. (Dead-safe: capture, never a real collector.)
+start_capture "$TCAP" "$TPORT"
+if [ -n "$CAP_PORT" ]; then
+    LIVESPEC_BD_REAL=/bin/false \
+    LIVESPEC_BD_GUARD_OTLP=on \
+    LIVESPEC_BD_GUARD_OTLP_ENDPOINT="http://127.0.0.1:${CAP_PORT}/v1/traces" \
+        "$WRAPPER" list >"$OUT_FILE" 2>"$ERR_FILE"
+    TRC=$?
+    if [ "$TRC" -eq 1 ] && poll_capture "$TCAP" \
+            && python3 "$VERIFY_PY" "$TCAP" list false 1; then
+        pass "telemetry ON: nonzero real bd exit (1) preserved by wrapper AND span reflects exit_code=1 + error status"
+    else
+        fail "telemetry: exit-code fidelity (rc=$TRC expected 1, cap=$(cat "$TCAP" 2>/dev/null))"
+    fi
+else
+    fail "telemetry: capture server did not start (9.4)"
+fi
+stop_capture
+
+# 9.5 install.sh lays down bd-guard-emit.py beside the wrapper; rollback removes
+#     it. Reuses the same temporary BD_GUARD_BIN_DIR discipline as §6.
+EBIN="${WORK}/ebin"
+mkdir -p "$EBIN"
+cp "$ORIG_BD" "$EBIN/bd"
+BD_GUARD_BIN_DIR="$EBIN" bash "$INSTALL" >/dev/null 2>&1
+if [ -x "$EBIN/bd-guard-emit.py" ] \
+        && cmp -s "$EBIN/bd-guard-emit.py" "${SCRIPT_DIR}/../bd-guard-emit.py"; then
+    pass "install: bd-guard-emit.py laid down next to the wrapper (0755, byte-identical to source)"
+else
+    fail "install: emit helper install (present? $([ -e "$EBIN/bd-guard-emit.py" ] && echo yes || echo no))"
+fi
+
+BD_GUARD_BIN_DIR="$EBIN" bash "$ROLLBACK" >/dev/null 2>&1
+if [ ! -e "$EBIN/bd-guard-emit.py" ] && cmp -s "$EBIN/bd" "$ORIG_BD" && [ ! -e "$EBIN/bd-real" ]; then
+    pass "rollback: bd-guard-emit.py removed, original bd restored, bd-real gone (trivially removable holds)"
+else
+    fail "rollback: emit-helper removal (emit present? $([ -e "$EBIN/bd-guard-emit.py" ] && echo yes || echo no))"
+fi
+
+# rollback tolerates a MISSING emit helper (older install predating it): remove
+# it by hand, then rollback again from a fresh install -> still succeeds.
+cp "$ORIG_BD" "$EBIN/bd"
+BD_GUARD_BIN_DIR="$EBIN" bash "$INSTALL" >/dev/null 2>&1
+rm -f "$EBIN/bd-guard-emit.py"
+BD_GUARD_BIN_DIR="$EBIN" bash "$ROLLBACK" >/dev/null 2>&1; ERC=$?
+if [ "$ERC" -eq 0 ] && cmp -s "$EBIN/bd" "$ORIG_BD" && [ ! -e "$EBIN/bd-real" ]; then
+    pass "rollback: absent emit helper does not fail the rollback (best-effort removal)"
+else
+    fail "rollback: absent-emit tolerance (rc=$ERC)"
 fi
 
 # ===========================================================================

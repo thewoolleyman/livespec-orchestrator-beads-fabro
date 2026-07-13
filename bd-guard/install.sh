@@ -26,9 +26,15 @@ WRAPPER_TARGET="${BIN_DIR}/bd"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "$0")" && pwd -P)"
 WRAPPER_SRC="${SCRIPT_DIR}/bd-guard.sh"
+EMIT_SRC="${SCRIPT_DIR}/bd-guard-emit.py"
 
 if [ ! -f "$WRAPPER_SRC" ]; then
     echo "install.sh: wrapper source not found: $WRAPPER_SRC" >&2
+    exit 1
+fi
+
+if [ ! -f "$EMIT_SRC" ]; then
+    echo "install.sh: emit helper source not found: $EMIT_SRC" >&2
     exit 1
 fi
 
@@ -66,6 +72,14 @@ if [ -e "$WRAPPER_TARGET" ] && ! grep -q 'bd-guard-wrapper-sentinel' "$WRAPPER_T
 fi
 echo "install.sh: installing guard wrapper -> '$WRAPPER_TARGET'" >&2
 install -m 0755 "$WRAPPER_SRC" "$WRAPPER_TARGET"
+
+# --- Step 3: install the fire-and-forget OTLP emit helper next to the wrapper -
+# The guard resolves the emitter as `$(dirname bd)/bd-guard-emit.py` at runtime,
+# so it MUST sit beside the installed wrapper. Telemetry is default-ON and
+# fail-open: a missing helper (or a dead collector) simply means no span is
+# emitted; bd's behavior, exit code, and streams are never affected.
+echo "install.sh: installing OTLP emit helper -> '${BIN_DIR}/bd-guard-emit.py'" >&2
+install -m 0755 "$EMIT_SRC" "${BIN_DIR}/bd-guard-emit.py"
 
 echo "install.sh: done. Verify with: bd --version   (should pass through to real bd)" >&2
 echo "install.sh: default mode is WARN. To block, set LIVESPEC_BD_GUARD_MODE=fail." >&2
