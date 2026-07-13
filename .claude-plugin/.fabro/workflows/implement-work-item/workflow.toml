@@ -200,16 +200,16 @@ enabled = false
 # Fabro's sandbox clone is hardcoded shallow (GIT_CLONE_DEPTH=10, no
 # config knob in v0.254.0); the RGR range checks and `just check` diff
 # origin/master..HEAD, which needs the master merge-base present.
-script = "git fetch --unshallow --quiet"
+script = "livespec-step-timer fetch-unshallow -- git fetch --unshallow --quiet"
 
 [[run.prepare.steps]]
-script = "mise trust && mise install --quiet"
+script = "livespec-step-timer mise-install -- sh -c 'mise trust && mise install --quiet'"
 
 [[run.prepare.steps]]
-script = "uv sync --all-groups"
+script = "livespec-step-timer uv-sync -- uv sync --all-groups"
 
 [[run.prepare.steps]]
-script = "uv run lefthook install"
+script = "livespec-step-timer lefthook-install -- uv run lefthook install"
 
 [[run.prepare.steps]]
 # Install the canonical STRUCTURAL commit-refuse hook at pre-commit,
@@ -225,7 +225,7 @@ script = "uv run lefthook install"
 # check, and the structural body's lefthook delegation fires the
 # Red-Green-Replay gates on every in-sandbox commit (the refuse branch is
 # skipped by the sandboxExempt marker set in the next step).
-script = "uv run python -m livespec_dev_tooling.install_commit_refuse_hooks"
+script = "livespec-step-timer commit-refuse-install -- uv run python -m livespec_dev_tooling.install_commit_refuse_hooks"
 
 [[run.prepare.steps]]
 # Declare the sandbox EXEMPT from the commit-refuse refuse branch
@@ -240,7 +240,7 @@ script = "uv run python -m livespec_dev_tooling.install_commit_refuse_hooks"
 # reads this key, so it is a harmless no-op until each repo migrates to
 # the structural body. Local config only — never leaves the ephemeral
 # sandbox (pushes carry refs, not config).
-script = "git config livespec.sandboxExempt true"
+script = "livespec-step-timer sandbox-exempt -- git config livespec.sandboxExempt true"
 
 [[run.prepare.steps]]
 # Dispatch-time baseline conformance gate — Verifier #1 (Conformance
@@ -253,7 +253,7 @@ script = "git config livespec.sandboxExempt true"
 # the run before any work is driven — the gate makes every dispatched
 # sandbox conformant by construction. Codified in SPECIFICATION/
 # contracts.md §"Dispatch-time baseline conformance gate".
-script = "uv run python -m livespec_dev_tooling.checks.primary_checkout_commit_refuse_hook_installed"
+script = "livespec-step-timer verify-commit-refuse-hook -- uv run python -m livespec_dev_tooling.checks.primary_checkout_commit_refuse_hook_installed"
 
 [[run.prepare.steps]]
 # Dispatch-time baseline conformance gate — Verifier #2 (Conformance
@@ -263,4 +263,4 @@ script = "uv run python -m livespec_dev_tooling.checks.primary_checkout_commit_r
 # one. A non-zero exit aborts the run. Same SHARED Verifier the
 # commit-time and fleet-time tiers run — enforcement-in-depth, one
 # Verifier layered across the tiers.
-script = "uv run python -m livespec_dev_tooling.checks.plugin_resolution"
+script = "livespec-step-timer verify-plugin-resolution -- uv run python -m livespec_dev_tooling.checks.plugin_resolution"
