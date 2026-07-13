@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.26.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.25.0...v0.26.0) (2026-07-13)
+
+
+### Features
+
+* bd guard wrapper (warn-first) — reject non-lifecycle status/claim ops ([65b2d68](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/65b2d68cff57d1680156ee71d13a61b5d892c0d3))
+
+
+### Bug Fixes
+
+* **bd-guard:** repair install/rollback self-recognition; close claim/-- holes ([299dc5e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/299dc5e323536423a5b2cb97371e3ef8af62a532))
+
 ## [0.25.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.24.0...v0.25.0) (2026-07-12)
 
 
