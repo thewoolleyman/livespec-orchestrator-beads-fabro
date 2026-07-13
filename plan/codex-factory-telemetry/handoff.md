@@ -52,6 +52,44 @@ decision to surface: coarse-token-now (Approach 2, no external dep beyond
 `bd-ib-i4r`) vs. also pursuing the native-codex fork path (richer per-turn
 cost, but an upstream/fork dependency + the Statsig-egress override).
 
+## Grooming analysis — scoped 2026-07-13 (item 4a)
+
+The item-3 prepare-step timing wrapper (`livespec-step-timer`) is DONE + accepted
+live (see the sibling `livespec` plan thread `plan/fabro-ci-image-factoring/`). This
+session then scoped item 4a's Approach-2 spine against the ACTUAL code:
+
+- **Step 1 (wire format) RESOLVED — `http/json`.** The stale fabro exporter
+  `~/.worktrees/fabro/instrument-v0254/lib/crates/fabro-cli/src/otel.rs` DEFAULTS to
+  `http/json` (deliberately built to match this JSON-only receiver) and honors
+  `OTEL_EXPORTER_OTLP_PROTOCOL`. Confirmed by reading the code — no live POST capture
+  needed.
+- **Step 2 (teach `_otel_receive.py` protobuf) DROPPED — not needed.** The earlier
+  receiver-protocol note SPECULATED protobuf (Rust default); the actual exporter emits
+  JSON, which the receiver already handles.
+- **Re-derivation target: current fabro main is `0.289.0-nightly.0`** (stale fork is
+  v0.254.0, ~35 versions behind; `otel.rs` is ~105 lines of clean `opentelemetry-otlp`
+  0.30 Rust that should re-derive cleanly, like fabro PR #568 did).
+
+Proposed tiered cut (children of `bd-ib-98c`, PENDING the consent seam — NOT yet filed):
+- **`bd-ib-i4r` (existing, reconcile):** the fabro OTLP TRANSPORT (`otel.rs` re-derived +
+  `main`/`logging` wiring, `http/json`, `service.name=fabro`). Shared enabler for BOTH the
+  cred-lifecycle spans (`bd-ib-v2u`) and item 4a. OUTWARD-FACING upstream Fabro PR.
+- **NEW child — fabro ACP node/turn span instrumentation (steps 3+4):** `tracing` spans
+  in `fabro-workflow/src/handler/llm/acp.rs` (one span per node + child spans per ACP
+  turn/tool-call), correlation triple via `OTEL_RESOURCE_ATTRIBUTES`, map
+  `UsageUpdate`/`TurnComplete` → span fields. Rides `bd-ib-i4r`. OUTWARD-FACING.
+- **NEW child — receiver-side dataset-mapping + scrub (step 5, OURS/factory-safe):** add
+  `service.name=fabro` → dataset in `_otel_enrich.py`'s `honeycomb_dataset_for`;
+  content-redaction in `_otel_scrub.py` (CC content-flags-off hygiene). Depends on the
+  fabro emitter's shape.
+- **`livespec-impl-beads-zbl` (existing):** native-codex token/cost fidelity (steps 6–7)
+  — BLOCKED / NO-FORK (maintainer-declared 2026-07-13).
+
+HARD GATE: item 4a's build is fully gated on OUTWARD-FACING upstream Fabro work (the
+exporter + ACP instrumentation, coordinated with the `fabro-token-refresh` thread). No
+part is autonomously buildable-and-live-acceptable until that lands. Surface the exporter
+re-derivation + upstream-PR decision to the maintainer before opening anything.
+
 ## Ledger status
 
 **Epic anchor FILED: `bd-ib-98c`** — "Codex-era factory telemetry —
