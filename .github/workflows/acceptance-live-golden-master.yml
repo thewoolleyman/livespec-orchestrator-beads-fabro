@@ -22,6 +22,34 @@
 # Trigger from the Actions tab (or `gh workflow run`). `mode=preflight`
 # (default) only validates host/env/image inputs; `mode=run` executes the full
 # create -> factory -> merge -> assert -> delete proof.
+#
+# CODEX-ACP AUTO-BUMP GATE (repository_dispatch).
+# ------------------------------------------------
+# In addition to the operator-triggered workflow_dispatch above, this workflow
+# is ALSO the factory gate for the codex-acp version auto-bump (plan
+# livespec/plan/codex-acp-auto-bump/, epic livespec-3lev.4, PR-C). The weekly
+# scan in livespec-dev-tooling opens a PR bumping the baked codex-acp version and
+# fires a `repository_dispatch` at THIS repo to prove the new version still works
+# end-to-end BEFORE the bump can merge.
+#
+# CROSS-REPO CONTRACT (PIN — both repos must agree; do NOT change unilaterally):
+#   - Trigger:  repository_dispatch, event_type = "codex-acp-golden-master".
+#   - client_payload = {
+#       "codex_acp_version": "<bare semver, e.g. 0.17.0>",
+#       "head_sha":          "<the dev-tooling bump PR head commit SHA>",
+#       "pr_number":         <int>,
+#       "source_repo":       "livespec-dev-tooling"
+#     }
+#   - Callback: a GitHub commit status POSTed to thewoolleyman/livespec-dev-tooling
+#     at head_sha with context = "codex-acp-golden-master", state =
+#     success (gate green) | failure (gate red or run error), target_url = this
+#     run's URL, plus a short description.
+#
+# On the dispatch path the gate runs with `--run --build-image
+# --codex-acp-version "<codex_acp_version>"` so the orchestrator container
+# reflects current master (incl. the baked-global adapter) and the requested
+# codex-acp version is injected as a sandbox prepare-step. The whole run remains
+# self-hosted + credentialed + costly, exactly like the workflow_dispatch path.
 name: acceptance-live-golden-master
 
 on:
@@ -38,7 +66,12 @@ on:
         description: "greeting name to assert"
         type: string
         default: Ada
+  repository_dispatch:
+    types: [codex-acp-golden-master]
 
+# Top-level GITHUB_TOKEN stays read-only: the cross-repo commit-status write is
+# done with a scoped GitHub App installation token minted at runtime, never
+# GITHUB_TOKEN.
 permissions:
   contents: read
 
@@ -57,16 +90,73 @@ jobs:
         uses: jdx/mise-action@v2
 
       - name: Run the live golden-master tier (under the 1Password env wrapper)
+        id: gate
         env:
+          EVENT_NAME: ${{ github.event_name }}
           MODE: ${{ inputs.mode }}
-          GREET_NAME: ${{ inputs.name }}
+          GREET_NAME: ${{ inputs.name || 'Ada' }}
+          CODEX_ACP_VERSION: ${{ github.event.client_payload.codex_acp_version }}
         run: |
           set -euo pipefail
-          flag="--preflight"
-          if [ "$MODE" = "run" ]; then flag="--run"; fi
+          # Two trigger paths share this step:
+          #   - repository_dispatch (codex-acp auto-bump gate): --run --build-image
+          #     against the requested codex-acp version.
+          #   - workflow_dispatch (operator): mode=preflight|run, unchanged.
+          if [ "$EVENT_NAME" = "repository_dispatch" ]; then
+            if [ -z "${CODEX_ACP_VERSION:-}" ]; then
+              echo "repository_dispatch missing client_payload.codex_acp_version" >&2
+              exit 1
+            fi
+            echo "codex-acp auto-bump gate: testing @$CODEX_ACP_VERSION (build-image)"
+            set -- --run --build-image --codex-acp-version "$CODEX_ACP_VERSION" --name "$GREET_NAME"
+          else
+            flag="--preflight"
+            if [ "$MODE" = "run" ]; then flag="--run"; fi
+            set -- "$flag" --name "$GREET_NAME"
+          fi
           # The self-hosted runner wraps the invocation in the livespec
           # 1Password Environment so LIVESPEC_E2E_GITHUB_TOKEN /
           # ANTHROPIC_API_KEY_LIVESPEC_E2E / CLAUDE_CODE_OAUTH_TOKEN /
           # HONEYCOMB_INGEST_KEY_LIVESPEC are present; secrets are never echoed.
           /data/projects/1password-env-wrapper/with-livespec-env.sh -- \
-            just acceptance-live-golden-master -- "$flag" --name "$GREET_NAME"
+            just acceptance-live-golden-master -- "$@"
+
+      # --- codex-acp auto-bump gate: cross-repo commit-status callback. ---
+      # Runs ONLY on the repository_dispatch path, ALWAYS (so a red gate still
+      # posts a failure status). The status is written to livespec-dev-tooling
+      # with a GitHub App installation token scoped to that repo — the top-level
+      # GITHUB_TOKEN is read-only and cannot write cross-repo.
+      - name: Mint App token for the cross-repo status callback
+        id: callback-token
+        if: always() && github.event_name == 'repository_dispatch'
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: thewoolleyman
+          repositories: livespec-dev-tooling
+
+      - name: Post codex-acp-golden-master status to livespec-dev-tooling
+        if: always() && github.event_name == 'repository_dispatch'
+        env:
+          GH_TOKEN: ${{ steps.callback-token.outputs.token }}
+          HEAD_SHA: ${{ github.event.client_payload.head_sha }}
+          PR_NUMBER: ${{ github.event.client_payload.pr_number }}
+          GATE_OUTCOME: ${{ steps.gate.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ "$GATE_OUTCOME" = "success" ]; then
+            state="success"
+            description="codex-acp golden-master gate green"
+          else
+            state="failure"
+            description="codex-acp golden-master gate red (gate outcome=$GATE_OUTCOME)"
+          fi
+          echo "Posting state=$state to livespec-dev-tooling@$HEAD_SHA (bump PR #$PR_NUMBER)"
+          gh api --method POST \
+            "/repos/thewoolleyman/livespec-dev-tooling/statuses/${HEAD_SHA}" \
+            -f "state=${state}" \
+            -f "context=codex-acp-golden-master" \
+            -f "target_url=${RUN_URL}" \
+            -f "description=${description}"

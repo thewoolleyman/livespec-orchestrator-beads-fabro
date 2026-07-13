@@ -109,6 +109,11 @@ KEEP_REPO=0
 SCRATCH_DIR=""
 THROWAWAY_REPO=""
 THROWAWAY_CREATED=0
+# Optional codex-acp version override (the auto-bump factory gate). Empty =
+# normal behavior (use the image-baked codex-acp global, unchanged). Reset
+# UNCONDITIONALLY so an inherited env value never leaks in; only --codex-acp-version
+# sets it.
+CODEX_ACP_VERSION=""
 
 usage() {
   cat <<'USAGE'
@@ -126,6 +131,14 @@ Modes:
 Options:
   --name NAME       Greeting name to assert. Default: Ada.
   --poll-attempts N Dispatcher PR-merge poll attempts. Default: 80.
+  --codex-acp-version VER
+                    Test an ARBITRARY @zed-industries/codex-acp version end-to-end
+                    (the codex-acp auto-bump factory gate). Injects a Fabro
+                    prepare-step that runs `npm install -g
+                    @zed-industries/codex-acp@VER` in the sandbox before the work
+                    graph, overwriting the image-baked global so the version-less
+                    `npx --no-install` implementer adapter runs the target version.
+                    Default: empty (use the image-baked version, unchanged).
 
 Required env (normally from /data/projects/1password-env-wrapper/with-livespec-env.sh):
   LIVESPEC_E2E_GITHUB_TOKEN   (host-side repo create/clone/delete)
@@ -174,9 +187,21 @@ while [ "$#" -gt 0 ]; do
     --keep-repo) KEEP_REPO=1; shift;;
     --name) NAME="${2:-}"; EXPECTED_GREETING="Hello, ${NAME}!"; shift 2;;
     --poll-attempts) POLL_ATTEMPTS="${2:-}"; shift 2;;
+    --codex-acp-version) CODEX_ACP_VERSION="${2:-}"; shift 2;;
     *) fail "unknown argument: $1";;
   esac
 done
+
+# Validate the optional codex-acp version override before it flows into a TOML
+# `script` string and an `npm install` argv. The value can arrive from a
+# cross-repo repository_dispatch payload, so constrain it to a bare version token
+# (digits, dots, hyphens, plus, alnum) — no whitespace, quotes, `@`, or shell
+# metacharacters — to close TOML/shell injection.
+if [ -n "$CODEX_ACP_VERSION" ]; then
+  case "$CODEX_ACP_VERSION" in
+    *[!0-9A-Za-z.+-]*) fail "invalid --codex-acp-version '$CODEX_ACP_VERSION' (expected a bare semver like 0.17.0)";;
+  esac
+fi
 
 # ---------------------------------------------------------------------------
 # Teardown: delete the throwaway repo (idempotent, race-tolerant), tear down
@@ -481,10 +506,63 @@ target_item_id() {
   (cd "$CLONE_DIR" && bd list --status ready --json 2>/dev/null | jq -r '.[0].id')
 }
 
+# Materialize an IN-CONTAINER temp copy of the committed implement-work-item
+# workflow with ONE extra `[[run.prepare.steps]]` block appended that overwrites
+# the image-baked @zed-industries/codex-acp global with $CODEX_ACP_VERSION. The
+# version-less `npx --no-install` implementer adapter then runs the target
+# version — byte-identical to how the base Dockerfile bakes it, so the target
+# version is tested faithfully (including the Codex credential projection).
+#
+# The WHOLE directory (workflow.toml + workflow.fabro + prompts/) is copied, not
+# just workflow.toml, because the Dispatcher resolves the graph path relative to
+# the workflow file's PARENT dir (_dispatcher_credentials.py
+# `workflow_dir=committed.parent`) and workflow.fabro plus its `@prompts/*.md`
+# references live beside it. A single-file copy would leave the graph unresolvable.
+#
+# It runs IN the orchestrator container because dispatcher.py (which reads
+# `--workflow <path>`) runs there; the container is torn down on exit, so the
+# mktemp dir needs no explicit cleanup. Echoes the in-container temp workflow.toml
+# path on success. The extra prepare step is APPENDED (TOML array-of-tables
+# headers are absolute, so position is irrelevant) and no existing line is
+# modified, so the Dispatcher's own overlay (which literal-string-replaces the
+# `graph = "..."` line and appends its own steps) still applies cleanly.
+build_codex_acp_version_workflow() {
+  docker exec "$CONTAINER" sh -lc '
+    set -eu
+    src="$1/.claude-plugin/.fabro/workflows/implement-work-item"
+    [ -f "$src/workflow.toml" ] || { echo "committed workflow.toml missing at $src" >&2; exit 1; }
+    tmp="$(mktemp -d)"
+    cp -R "$src/." "$tmp/"
+    {
+      printf "\n"
+      printf "# --- golden-master codex-acp version pin (TEST-ONLY; appended by\n"
+      printf "# --- acceptance-live-golden-master.sh --codex-acp-version). Overwrites\n"
+      printf "# --- the image-baked codex-acp global so the version-less\n"
+      printf "# --- npx --no-install implementer adapter runs the target version. ---\n"
+      printf "[[run.prepare.steps]]\n"
+      printf "script = \"livespec-step-timer codex-acp-version-pin -- npm install -g @zed-industries/codex-acp@%s\"\n" "$2"
+    } >> "$tmp/workflow.toml"
+    printf "%s\n" "$tmp/workflow.toml"
+  ' sh "$WORKSPACE_REPO" "$CODEX_ACP_VERSION"
+}
+
 run_dispatch() {
   local item_id="$1"
   log "dispatching greeting work-item ($item_id) into the Fabro factory"
   docker exec "$CONTAINER" mkdir -p "$(dirname "$JOURNAL_PATH")"
+
+  # When --codex-acp-version is set, materialize the in-container temp workflow
+  # that pins codex-acp to the target version and thread it via --workflow. When
+  # UNSET, wf_override stays empty and the dispatch runs EXACTLY as before (no
+  # --workflow), against the image-baked codex-acp global.
+  local wf_override=""
+  if [ -n "$CODEX_ACP_VERSION" ]; then
+    wf_override="$(build_codex_acp_version_workflow)" \
+      || fail "could not materialize the codex-acp-version test workflow"
+    [ -n "$wf_override" ] || fail "codex-acp-version workflow path came back empty"
+    log "codex-acp version override: testing @$CODEX_ACP_VERSION via $wf_override"
+  fi
+
   set +e
   # mode shadow + explicit --item targets exactly the seeded item. A no-op
   # janitor ("true") is injected because the throwaway repo is a bare
@@ -498,21 +576,28 @@ run_dispatch() {
   # by its ABSOLUTE path under $WORKSPACE_REPO, so its package-root resolution
   # (the .fabro/workflows graph, via __file__) is cwd-independent and still
   # points at the mounted impl-beads repo.
+  # Build the dispatcher argv with `set --` so the optional --workflow ($7) is
+  # added only when non-empty (a mktemp path with no spaces). When empty, the
+  # resulting argv is identical to the prior invocation.
   docker exec \
     -w "$TARGET_MOUNT" \
     "$CONTAINER" \
-    sh -lc 'exec python3 "$1/.claude-plugin/scripts/bin/dispatcher.py" \
-      loop \
-      --repo "$2" \
-      --budget 1 \
-      --mode shadow \
-      --item "$3" \
-      --janitor "[\"true\"]" \
-      --journal "$4" \
-      --poll-attempts "$5" \
-      --poll-interval-seconds "$6" \
-      --json' \
-      sh "$WORKSPACE_REPO" "$TARGET_MOUNT" "$item_id" "$JOURNAL_PATH" "$POLL_ATTEMPTS" "$POLL_INTERVAL_SECONDS" \
+    sh -lc '
+      wf="$7"
+      set -- python3 "$1/.claude-plugin/scripts/bin/dispatcher.py" \
+        loop \
+        --repo "$2" \
+        --budget 1 \
+        --mode shadow \
+        --item "$3" \
+        --janitor "[\"true\"]" \
+        --journal "$4" \
+        --poll-attempts "$5" \
+        --poll-interval-seconds "$6"
+      if [ -n "$wf" ]; then set -- "$@" --workflow "$wf"; fi
+      set -- "$@" --json
+      exec "$@"' \
+      sh "$WORKSPACE_REPO" "$TARGET_MOUNT" "$item_id" "$JOURNAL_PATH" "$POLL_ATTEMPTS" "$POLL_INTERVAL_SECONDS" "$wf_override" \
       >"$LOG_PATH" 2>&1
   local code=$?
   set -e
