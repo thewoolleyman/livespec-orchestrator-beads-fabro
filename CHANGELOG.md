@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.27.0...v0.28.0) (2026-07-13)
+
+
+### Features
+
+* **ledger-gate:** auto-heal-loud pre-push conformance gate ([86632ad](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/86632adc731e60c094119bae79d664bb98d0de2e))
+
 ## [0.27.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.26.0...v0.27.0) (2026-07-13)
 
 
