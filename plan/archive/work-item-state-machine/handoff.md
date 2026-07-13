@@ -35,6 +35,22 @@ historical resume guide kept for the record; nothing remains to implement.
 The live beads tenant is still PRE-migration (legacy
 `open`/`priority`/no-`rank`); the 7-state status migration is L2's concern.
 
+## Local-Memory Migration Provenance
+
+This archived handoff is the durable destination for the Claude local-memory
+source record `wism-l1a-rollout-state.md` from
+`/home/ubuntu/.claude/projects/-data-projects-livespec-orchestrator-beads-fabro/memory/`
+(inventory SHA-256 prefix `17f8b35c3786`). The source record was classified by
+the livespec cloud-local-memory cleanup inventory as a project runbook that
+should preserve or archive the work-item-state-machine rollout completion state
+after checking current repo docs/spec.
+
+The checked current repo record is already authoritative here: this file records
+the L1a completion date, release, slice ledger ids, merge evidence, and closure
+state; [l2-tenant-migration.md](l2-tenant-migration.md) records the follow-on
+tenant migration result. No active instruction is copied from harness-local
+memory.
+
 ## Autonomy posture
 
 The design is LOCKED (decisions 1-46). This track **AUTO-PROCEEDS** — it
