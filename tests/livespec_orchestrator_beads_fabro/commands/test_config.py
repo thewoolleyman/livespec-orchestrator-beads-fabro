@@ -449,12 +449,19 @@ def test_resolve_credential_wrapper_reads_top_level_list(
     ]
 
 
-def test_resolve_credential_wrapper_absent_or_non_list_yields_empty(
+def test_resolve_credential_wrapper_non_list_yields_empty(
     tmp_path: Path,
 ) -> None:
-    """A missing (or non-list) `credential_wrapper` fails open to the empty argv."""
+    """A non-list `credential_wrapper` value fails open to the empty argv."""
     _write_config(
         cwd=tmp_path,
         body='{"credential_wrapper": "not-a-list"}',
     )
+    assert resolve_credential_wrapper(cwd=tmp_path) == []
+
+
+def test_resolve_credential_wrapper_absent_file_yields_empty(
+    tmp_path: Path,
+) -> None:
+    """No `.livespec.jsonc` at all fails open to the empty argv (no wrapper)."""
     assert resolve_credential_wrapper(cwd=tmp_path) == []

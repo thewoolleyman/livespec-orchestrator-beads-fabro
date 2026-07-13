@@ -693,7 +693,7 @@ check-ledger-conformance-live:
     # Read THIS repo's credential_wrapper argv from .livespec.jsonc, reusing the
     # dispatcher's own JSONC parser (no hardcoded wrapper path). A parse failure
     # or an empty wrapper is a could-not-check condition -> fail-soft skip.
-    mapfile -t wrapper < <(uv run python -c 'import sys; sys.path.insert(0, ".claude-plugin/scripts"); from pathlib import Path; from livespec_orchestrator_beads_fabro.commands._config import resolve_credential_wrapper; print("\n".join(resolve_credential_wrapper(cwd=Path("."))))' 2>/dev/null) || wrapper=()
+    mapfile -t wrapper < <(uv run python -c 'import sys; sys.path.insert(0, ".claude-plugin/scripts"); from pathlib import Path; from livespec_orchestrator_beads_fabro.commands._config import resolve_credential_wrapper; w = resolve_credential_wrapper(cwd=Path(".")); w and print("\n".join(w))' 2>/dev/null) || wrapper=()
     if [[ ${#wrapper[@]} -eq 0 ]]; then
         echo ":: check-ledger-conformance-live: no credential_wrapper resolved; skipping (fail-soft)"
         exit 0
