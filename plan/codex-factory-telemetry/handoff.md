@@ -90,6 +90,38 @@ exporter + ACP instrumentation, coordinated with the `fabro-token-refresh` threa
 part is autonomously buildable-and-live-acceptable until that lands. Surface the exporter
 re-derivation + upstream-PR decision to the maintainer before opening anything.
 
+## Review-gate telemetry attributes to emit — added 2026-07-14
+
+Surfaced during the autonomous-mode acceptance-model redesign: we needed to
+know **how often the factory ships a PR despite the in-factory `review` node
+never approving** (the review↔`review_fix` loop hits its 2-round cap and the
+run "ships on cap" — falls through to `pr` with the reviewer still saying
+`fix`). That ship-on-cap rate is the deciding input for whether making the
+review a hard/escalating gate would stall the factory.
+
+**It is NOT answerable from Honeycomb today.** The Honeycomb factory telemetry
+instruments only the outermost envelope (`fabro.ImplementWorkItem` with
+`fabro.status` = succeeded/failed) plus host dispatcher stages — and that
+`fabro.*`/`dispatcher.*` stream froze 2026-06-14. The Fabro workflow's internal
+graph nodes (`implement`, `janitor`, `review`, `review_fix`, `pr`) emit
+**nothing**, so no review verdict, fix-round count, or ship-on-cap decision is
+captured. (This session mines the answer from the Fabro run logs instead —
+`fabro events`/`logs`/`inspect` + the server log — since the data lives there.)
+
+**Concrete fields to add** — these belong on the existing NEW child *"fabro ACP
+node/turn span instrumentation (steps 3+4)"* above, emitted as span attributes
+on the `review`/`pr` nodes (or attached to `fabro.ImplementWorkItem`):
+
+- `review.verdict` — the review node's routing verdict on its final visit
+  (`approve` | `fix`).
+- `review.fix_rounds` — integer count of `review_fix` rounds taken.
+- `review.hit_cap` — bool: the review↔review_fix cap was reached.
+- `pr.shipped_on_cap` — bool: a PR was opened while the reviewer still said
+  `fix` (the ship-on-cap fall-through).
+
+With these four, the ship-on-cap frequency (and its trend, per work-item and
+over time) is a direct Honeycomb query rather than a manual Fabro-log dig.
+
 ## Ledger status
 
 **Epic anchor FILED: `bd-ib-98c`** — "Codex-era factory telemetry —
