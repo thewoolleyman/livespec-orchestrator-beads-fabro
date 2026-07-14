@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.30.3...v0.30.4) (2026-07-14)
+
+
+### Bug Fixes
+
+* **dispatcher:** contain the Codex refresh sentinel inside the sandbox ([2e98870](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2e9887050e976294d32407418127878d3a8d520e))
+
 ## [0.30.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.30.2...v0.30.3) (2026-07-14)
 
 
