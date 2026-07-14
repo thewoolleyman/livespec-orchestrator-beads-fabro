@@ -142,11 +142,11 @@ The factory does not run an official upstream fabro release: it depends on fixes
 upstream has not shipped yet. Those fixes are carried on ONE standing branch in
 our fork (`thewoolleyman/fabro`) named **`factory-integration`** — the only branch
 name the factory ever pins for unreleased fixes. This is a spec-level rule, not a
-convention: the branch name, the composition rule, and the base-version ceiling are
-fixed by `SPECIFICATION/constraints.md` §"Fabro runtime constraints" — PENDING
-ratification, filed as
-`SPECIFICATION/proposed_changes/fabro-factory-integration-branch-standard.md` and
-landing on the next revise pass. This section carries the commands.
+convention: the branch name, the composition rule, the base-version ceiling, and the
+rebuild/re-pin duty are fixed by `SPECIFICATION/constraints.md` §"Fabro runtime
+constraints" (ratified in `v035`). That section is normative and requires this runbook to
+be updated **in the same change** whenever the pinned build or the carried-fix set
+changes — the spec fixes the rules, this section carries the commands and the current set.
 
 `factory-integration` = the pinned base + EVERY pending upstream fix the factory
 needs (never a subset, so the branch is always the whole truth about what runs):
@@ -175,10 +175,23 @@ cp target/release/fabro ~/.fabro/bin/fabro
 ~/.fabro/bin/fabro --version          # confirm the new integration commit
 ```
 
-Then restart the server (next section) and confirm `fabro doctor` is green. To
-**roll back**, copy the `.bak` binary over `~/.fabro/bin/fabro` and restart. The
-current rollback artifact is `~/.fabro/bin/fabro.f7ff19e-pre-otlp.bak` (the
-pre-OTLP build: 0.254 + #568 + daemon-timeout).
+Then restart the server (next section) and confirm `fabro doctor` is green.
+
+**Then rebuild the orchestrator image — this step is REQUIRED, not optional.** The image
+bakes a COPY of the host binary (`COPY fabro` in the Dockerfile, staged from
+`$HOST_FABRO_BIN`, which defaults to `~/.fabro/bin/fabro`). Re-pinning the host alone
+leaves an already-built image running the OLD fabro, so the containerized server and the
+host-direct server would silently disagree about which engine they run — exactly the split
+the ratified constraint forbids:
+
+```bash
+./orchestrator-image/build-and-verify.sh   # restages $HOST_FABRO_BIN into the image
+```
+
+To **roll back**, copy the `.bak` binary over `~/.fabro/bin/fabro`, restart, and rebuild
+the image the same way. The current rollback artifact is
+`~/.fabro/bin/fabro.f7ff19e-pre-otlp.bak` (the pre-OTLP build: 0.254 + #568 +
+daemon-timeout).
 
 ### Start / restart
 

@@ -163,12 +163,10 @@ the factory needs but upstream has not released (today: PR #568 credential
 refresh, the env-configurable daemon-readiness timeout, PR #576 OTLP export).
 Never pin a fabro build from any other branch, and never modernize the base: any
 fabro ≥ 0.256 breaks `workflow.fabro` (fabro #474 de-templates `acp.command`, so
-every dispatch dies `exit 127`). These rules are PENDING ratification as
-`SPECIFICATION/constraints.md` §"Fabro runtime constraints" (filed in
-`SPECIFICATION/proposed_changes/fabro-factory-integration-branch-standard.md`; the
-next revise pass lands it). The build/pin/rollback commands are in
-`orchestrator-image/README.md`. Rollout/revert state is ledger `bd-ib-2nq.4`;
-deferred modernization is `bd-ib-6qu`.
+every dispatch dies `exit 127`). These rules are NORMATIVE — `SPECIFICATION/constraints.md`
+§"Fabro runtime constraints" (ratified in `v035`). The build/pin/rollback commands are in
+`orchestrator-image/README.md`. Rollout/revert state is ledger `bd-ib-2nq.4`; deferred
+modernization is `bd-ib-6qu`.
 
 - **Start / restart** (OAuth-only — no wrapper, no `ANTHROPIC_API_KEY`):
 
