@@ -383,11 +383,11 @@
     "reason": "Integration-tier acceptance for Scenario 19: the bound node id drives the Dispatcher materialization seam with an injected stale host credential and proves dispatch refuses before writing the run-scoped overlay, surfacing the `codex login` renewal message instead of projecting a credential that cannot outlive the run budget. Sibling tests cover the missing-credential refusal and the pure freshness-gate boundary."
   },
   {
-    "heading": "## Scenario 20 \u2014 Review gate routes a green build through advisory code review before PR",
+    "heading": "## Scenario 20 \u2014 Review gate routes a green build through code review before PR",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_workflow_acp_adapter_parameterized.test_implementer_and_review_nodes_use_their_respective_inputs",
-    "reason": "Integration-tier acceptance for Scenario 20: the bound node id inspects the shipped implement-work-item Fabro graph and verifies the implementer nodes (`implement`, `fix`, `pr`, and `review_fix`) use the Codex-routable `acp_adapter` input while the review-only node uses the separate Claude `review_adapter`; sibling tests prove the review adapter is pinned through ANTHROPIC_MODEL + CLAUDE_CODE_EFFORT_LEVEL and no ACP node hard-codes the Claude adapter. The graph's approve/fix/ship-on-cap edge behavior is codified in the workflow DOT and remains subject to the first live dual-provider dispatch acceptance check."
+    "reason": "Integration-tier acceptance for Scenario 20: the bound node id inspects the shipped implement-work-item Fabro graph and verifies the implementer nodes (`implement`, `fix`, `pr`, and `review_fix`) use the Codex-routable `acp_adapter` input while the review-only node uses the separate Claude `review_adapter`; sibling tests prove the review adapter is pinned through ANTHROPIC_MODEL + CLAUDE_CODE_EFFORT_LEVEL and no ACP node hard-codes the Claude adapter. The gate is BLOCKING by default: a past-cap blocking finding escalates the item to blocked / needs-human unless the effective merge_on_review_cap ships it (contracts.md \u00a7\"Dispatcher policy settings\"); the graph's approve/fix edge behavior is codified in the workflow DOT, and the blocking/ship-on-cap disposition binds its test when the dispatcher-policy-settings implementation slice lands."
   },
   {
     "heading": "## Scenario 21 \u2014 Codex skills picker discovers drive by short name",
@@ -408,7 +408,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "tests.integration.test_dispatcher_admission_acceptance_scenarios22_25.test_loop_admits_highest_rank_up_to_wip_cap",
-    "reason": "Integration-tier acceptance for the approval/admission mechanics, post-merge acceptance, and the per-repo WIP cap. The bound node id drives the loop through the real store/client seam against the in-memory FakeBeadsClient: pending auto-policy items are approved into ready and admitted up to wip_cap with assignee set, while over-cap work waits at ready; Scenario 23 covers the manual pending-approval hold, Scenario 24 covers complete -> acceptance, and Scenario 25 covers acceptance_policy plus reject routing."
+    "reason": "Integration-tier acceptance for the approval/admission mechanics, post-merge acceptance, and the per-repo WIP cap. The bound node id drives the loop through the real store/client seam against the in-memory FakeBeadsClient: pending auto-policy items are approved into ready and admitted up to wip_cap with assignee set, while over-cap work waits at ready; Scenario 23 covers the manual pending-approval hold, Scenario 24 covers complete -> acceptance, and Scenario 25 covers acceptance_policy plus reject routing. An item's effective admission_policy / acceptance_policy is its own label when it carries one, otherwise the global dispatcher.auto_approve_ready / dispatcher.acceptance_mode default (contracts.md \u00a7\"Dispatcher policy settings\"); the failing-AI-pass rework route is covered by Scenario 35."
   },
   {
     "heading": "## Scenario 22 \u2014 Dispatcher admits the top-ranked ready item up to the per-repo WIP cap",
@@ -436,7 +436,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_dispatcher_admission_acceptance_scenarios22_25.test_accept_ai_then_human_parks_until_human",
-    "reason": "Integration-tier acceptance for accept-per-acceptance_policy (slice bd-ib-dnw2ei): ai-then-human parks the merged item in acceptance until a human confirms; the bound node id is the ai-then-human park journey. The ai-only-confirms-to-done case and the reject routing (rework -> active; re-groom -> backlog, exercised through the real store seam + the pure reject_routing) are sibling tests in the same module."
+    "reason": "Integration-tier acceptance for accept-per-acceptance_policy (slice bd-ib-dnw2ei): ai-then-human parks the merged item in acceptance until a human confirms; the bound node id is the ai-then-human park journey. The effective acceptance_policy is the item's own label, or the global dispatcher.acceptance_mode default when it carries none, and the AI pass is a read-and-judge of the merged diff plus a telemetry watch yielding PASS or FAIL (contracts.md \u00a7\"Dispatcher policy settings\"). The ai-only-confirms-to-done case and the reject routing (rework -> active; re-groom -> backlog, exercised through the real store seam + the pure reject_routing) are sibling tests in the same module; the FAIL routes are covered by Scenario 35."
   },
   {
     "heading": "## Scenario 26 \u2014 list-work-items emits lane and lane_reason",
@@ -488,60 +488,60 @@
     "reason": "Integration-tier acceptance for Scenario 31 through drive.run_action and the real FakeBeadsClient-backed store seam: approve:<id> performs pending-approval -> ready and records the operator journal. Sibling tests in the same module cover set-admission and set-acceptance policy edits as label-only writes that leave status unchanged, including the manual -> auto pending-approval no-surprise-transition case."
   },
   {
-    "heading": "## Full autonomous mode",
+    "heading": "## Dispatcher policy settings",
     "spec_root": "SPECIFICATION",
     "spec_file": "spec.md",
     "test": "TODO",
-    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); integration-tier test id populated as the clause->scenario->test binding lands."
+    "reason": "Dispatcher-policy-settings revise: the spec-altitude statement of the independent dispatcher.* policy settings (each a global default, each except the per-repo wip_cap overridable per work-item by a ledger label that WINS over the global), settable via the orchestrator API and the console, with every safety floor preserved. Integration-tier test id populated as the clause->scenario->test binding lands; the behaviors are exercised by Scenarios 33-37."
   },
   {
-    "heading": "## Full autonomous mode",
+    "heading": "## Dispatcher policy settings",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
-    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); integration-tier test id populated as the clause->scenario->test binding lands."
+    "reason": "Dispatcher-policy-settings revise: the wire surface of the three policy settings (auto_approve_ready, acceptance_mode, merge_on_review_cap), the two rework caps (review_fix_cap, acceptance_rework_cap), the no-per-item-override wip_cap, the always-escalate-needs-human floor, the per-disposition audit journal, and the API-configurable completeness principle. Integration-tier test id populated as the clause->scenario->test binding lands; the behaviors are exercised by Scenarios 33-37."
   },
   {
-    "heading": "## Full autonomous mode constraints",
+    "heading": "## Dispatcher policy settings constraints",
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "test": "TODO",
-    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); integration-tier test id populated as the clause->scenario->test binding lands."
+    "reason": "Dispatcher-policy-settings revise: the mechanically-checkable safety rails (safe defaults; audit every auto-disposition; still escalate the truly-unresolvable and hold the no-release-with-zero-verification floor; console Settings / inline help / settings-doc completeness). Integration-tier test id populated as the clause->scenario->test binding lands; Scenario 37 binds the safe-defaults rail."
   },
   {
-    "heading": "## Scenario 33 \u2014 Full autonomous mode auto-approves a manual item",
+    "heading": "## Scenario 33 \u2014 auto_approve_ready governs admission and a per-item label wins",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); integration-tier test id populated as the clause->scenario->test binding lands."
+    "reason": "Dispatcher-policy-settings revise: an unlabeled routine item inherits the global dispatcher.auto_approve_ready and is auto-approved into ready; an explicit per-item admission_policy: manual label BEATS the permissive global and rests the item at pending-approval; a design-human-gated (spec-change-tier) item is never auto-approved under any setting or label. Integration-tier test id populated when the implementing slice binds it."
   },
   {
-    "heading": "## Scenario 34 \u2014 Full autonomous mode auto-accepts an ai-then-human item",
+    "heading": "## Scenario 34 \u2014 acceptance_mode governs the acceptance leg",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); integration-tier test id populated as the clause->scenario->test binding lands."
+    "reason": "Dispatcher-policy-settings revise: dispatcher.acceptance_mode selects the acceptance leg (ai-only accepts to done on a passing AI pass; ai-then-human parks for the human accept valve; human-only parks with the AI pass advisory), a per-item acceptance_policy label overrides the global, and every path carries at least one AI pass. Integration-tier test id populated when the implementing slice binds it."
   },
   {
-    "heading": "## Scenario 35 \u2014 Full autonomous mode resolves a needs-human block",
+    "heading": "## Scenario 35 \u2014 A failing AI acceptance pass reworks only in the AI-dispositive modes",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); integration-tier test id populated as the clause->scenario->test binding lands."
+    "reason": "Dispatcher-policy-settings revise: a FAILING AI acceptance pass auto-reworks the item to active ONLY when the effective acceptance_policy is ai-only or ai-then-human, bounded by dispatcher.acceptance_rework_cap (past the cap it escalates to blocked / needs-human); under human-only the failing pass is ADVISORY - the item stays parked and the human keeps the accept / reject decision. Integration-tier test id populated when the implementing slice binds it."
   },
   {
-    "heading": "## Scenario 36 \u2014 Full autonomous mode still escalates the truly-unresolvable",
+    "heading": "## Scenario 36 \u2014 Every needs-human block always escalates",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); integration-tier test id populated as the clause->scenario->test binding lands."
+    "reason": "Dispatcher-policy-settings revise: no policy setting auto-disposes a blocked_reason: needs-human item or a design-human-gated decision (drift acceptance, spec-change slice, regroom / backlog bounce, human-only acceptance) - each is surfaced to a human even at high confidence, and the escalation is queryable from the journal. Integration-tier test id populated when the implementing slice binds it."
   },
   {
-    "heading": "## Scenario 37 \u2014 Full autonomous mode is default-off and explicitly armed",
+    "heading": "## Scenario 37 \u2014 Safe defaults hold when nothing is configured",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Full autonomous mode propose-change/revise (dangerous default-off Dispatcher override); integration-tier test id populated as the clause->scenario->test binding lands."
+    "reason": "Dispatcher-policy-settings revise: with no dispatcher.* policy settings configured and no per-item policy label, auto_approve_ready and merge_on_review_cap are false, acceptance_mode is ai-then-human, review_fix_cap is 3 and acceptance_rework_cap is 2 - and no UNLABELED item is auto-approved, no past-cap review ships, and no acceptance reaches done without a human (the constraints.md safe-defaults rail; scoped to unlabeled items because a per-item label legitimately beats a safe global). Integration-tier test id populated when the implementing slice binds it."
   },
   {
     "heading": "## Scenario 38 \u2014 capture-spec-drift surfaces ledger intent missing from spec",
