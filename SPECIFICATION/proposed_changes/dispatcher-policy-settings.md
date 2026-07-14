@@ -31,7 +31,10 @@ policy settings are `auto_approve_ready` (admission),
 the existing `wip_cap` becomes API-settable. This proposal also makes the
 post-merge **AI acceptance pass real** (a read-and-judge-plus-telemetry pass/fail,
 replacing today's hardcoded confirm) with an **AI-fail → auto-rework** route back
-into the factory, makes the **in-factory review gate blocking** (escalate-on-cap
+into the factory **in the AI-dispositive modes** (`ai-only` / `ai-then-human`; under
+`human-only` the pass is ADVISORY — it informs, it never decides, and a failing pass
+leaves the item parked for the human), makes the **in-factory review gate blocking**
+(escalate-on-cap
 unless `merge_on_review_cap`), and codifies a general **"anything configurable via
 the orchestrator API must appear in console Settings, the inline/context help, and
 the settings doc"** completeness principle with a mechanical check.
@@ -191,13 +194,26 @@ every truly-unresolvable decision still escalates to a human).
        human `accept:<id>` valve; `human-only` ⇒ park for the human, AI pass
        advisory. Keep the "no release with zero verification — every acceptance
        carries at least one AI pass" floor.
-     - Add: **an AI acceptance pass FAIL routes the item back to `active` for
-       fix-forward rework automatically (no human for a fail)** — mirroring
-       `reject (rework)` but AI-initiated. Repeated failure is bounded by
-       `dispatcher.acceptance_rework_cap` (§"Dispatcher policy settings"); an item
-       that exceeds the cap **escalates to `blocked` / `needs-human`** rather than
-       reworking again. The human `reject` valve is retained for human-judgment
-       rejects.
+     - Add, **SCOPED to the two AI-dispositive modes**: for an item whose effective
+       `acceptance_policy` is `ai-only` or `ai-then-human`, **an AI acceptance pass
+       FAIL routes the item back to `active` for fix-forward rework automatically (no
+       human for a fail)** — mirroring `reject (rework)` but AI-initiated. Repeated
+       failure is bounded by `dispatcher.acceptance_rework_cap` (§"Dispatcher policy
+       settings"); an item that exceeds the cap **escalates to `blocked` /
+       `needs-human`** rather than reworking again. The human `reject` valve is
+       retained for human-judgment rejects.
+     - Add, **the `human-only` carve-out (maintainer-declared 2026-07-14 — chose
+       "stay parked; advisory only")**: under `human-only` the AI acceptance pass is
+       **ADVISORY — it INFORMS, it never DECIDES.** On a FAIL it MUST NOT auto-rework
+       and MUST NOT dispose of the item in any way; the failure is surfaced as an
+       advisory **finding** and the item **stays PARKED in `acceptance`** for the
+       human, who accepts or uses the existing `reject (rework)` / `reject (re-groom)`
+       valve if they concur. An auto-rework IS the AI deciding, which is precisely
+       what `human-only` reserves to the human; auto-reworking here would let the
+       machine repeatedly bounce an item the human explicitly claimed, stripping their
+       accept-vs-reject call. The pass still RUNS (it is what satisfies the "no release
+       with zero verification" floor for this mode) — `human-only` means "no AI
+       DECIDES this", NOT "no AI reads this".
      - Change the effective `acceptance_policy` default to inherit the global
        `dispatcher.acceptance_mode` setting (per-item label overrides).
 
@@ -350,12 +366,19 @@ every truly-unresolvable decision still escalates to a human).
 
 10. **AMEND Scenario 25 — accept confirms post-ship per acceptance_policy.** Keep the
     existing `ai-then-human` park and `reject`-routing sub-scenarios; make the AI pass
-    explicitly pass/fail and ADD: "The AI acceptance pass fails and routes the item
-    back to rework" — Given an item in `acceptance`, When the AI acceptance pass
-    judges the merged artifact against its acceptance criteria and FAILS, Then the
-    item transitions to `active` for fix-forward rework without a human, And repeated
-    failure beyond `dispatcher.acceptance_rework_cap` escalates the item to `blocked`
-    / `needs-human`.
+    explicitly pass/fail and ADD **TWO** sub-scenarios (the FAIL route is MODE-SCOPED):
+    - "The AI acceptance pass fails and routes the item back to rework" — Given an item
+      in `acceptance` **whose effective `acceptance_policy` is `ai-only` or
+      `ai-then-human`**, When the AI acceptance pass judges the merged artifact against
+      its acceptance criteria and FAILS, Then the item transitions to `active` for
+      fix-forward rework without a human, And repeated failure beyond
+      `dispatcher.acceptance_rework_cap` escalates the item to `blocked` /
+      `needs-human`.
+    - "A human-only item's failing AI pass advises but never disposes" — Given an item
+      in `acceptance` whose effective `acceptance_policy` is `human-only`, When the AI
+      acceptance pass FAILS, Then the item **stays parked in `acceptance`** and the
+      failure is surfaced to the human as an advisory finding, And the item is NOT
+      auto-reworked, And the human retains the accept / `reject` decision.
 
 11. **REMOVE Scenarios 33–37** (`## Scenario 33 — Full autonomous mode auto-approves
     a manual item` through `## Scenario 37 — Full autonomous mode is default-off and
@@ -379,11 +402,15 @@ every truly-unresolvable decision still escalates to a human).
       per-item `acceptance_policy` label overrides the global; every path carries at
       least one AI pass. (Replaces Scenario 34, reframed from a "collapse" to a real
       AI-gated `ai-only`.)
-    - **AI acceptance fail auto-reworks, bounded.** A FAILING AI acceptance pass
-      routes the item to `active` rework with no human; exceeding
-      `dispatcher.acceptance_rework_cap` escalates it to `blocked` / `needs-human`.
-      (New. MAY be folded into the Scenario 25 addition (D.10) instead of standing
-      alone — the revise pass picks one home and does not duplicate it.)
+    - **AI acceptance fail auto-reworks, bounded — but ONLY in the AI-dispositive
+      modes.** For an item whose effective `acceptance_policy` is `ai-only` or
+      `ai-then-human`, a FAILING AI acceptance pass routes the item to `active` rework
+      with no human; exceeding `dispatcher.acceptance_rework_cap` escalates it to
+      `blocked` / `needs-human`. For a `human-only` item the failing pass is ADVISORY:
+      the item stays PARKED and the finding is surfaced to the human, who keeps the
+      accept / `reject` decision. (New. MAY be folded into the Scenario 25 additions
+      (D.10) instead of standing alone — the revise pass picks one home and does not
+      duplicate it.)
     - **Every needs-human block always escalates.** The Dispatcher NEVER
       auto-resolves a `blocked_reason: needs-human` item; it always surfaces it to a
       human (this drops the retired mode's LLM-resolve behavior). A design-human-gated
