@@ -90,6 +90,15 @@ every truly-unresolvable decision still escalates to a human).
      default for that one work-item** — the per-item label WINS over the global, and
      an item with no label inherits the global. The settings are independent — no
      setting implies another; there is no master switch.
+     **Cited design record (REQUIRED by §"Intent preservation" — every load-bearing
+     semantic definition MUST carry its rationale AND cite its design record):** repo
+     `thewoolleyman/livespec`, `plan/autonomous-mode/handoff.md` §"SESSION UPDATE —
+     2026-07-14 (cont. 12)" (THE RE-LOCKED DESIGN) together with its
+     §"CORRECTION / ADDENDUM … `wip_cap` is NOT per-item overridable", which records
+     the maintainer's ruling that every setting is per-item overridable EXCEPT
+     `wip_cap`. The ratified prose MUST carry this citation on the global-default +
+     per-item-override scheme AND on the `wip_cap` exclusion; without it, both are
+     uncited load-bearing definitions and doctor/critique will (correctly) flag them.
      *(Revise-note, NOT ratified spec text: this precedence is the INVERSE of the
      retired mode's, which overrode stored per-item labels. Do not carry a "retired
      mode" comparison into the ratified prose — it would leave an uncited dangling
@@ -163,11 +172,14 @@ every truly-unresolvable decision still escalates to a human).
         operator flips `auto_approve_ready` on; see D.11's first scenario). Generalize
         to: `auto` auto-approves into `ready` — at capture/groom time, or on a
         subsequent Dispatcher pass for an item resting at `pending-approval`.
-     c. "`manual` (the default, via inherit)" is now WRONG — `manual` is no longer
-        "the default via inherit"; the global `auto_approve_ready` setting determines
-        what an unlabeled item inherits (and it merely DEFAULTS to the `manual`-
-        equivalent `false`). Reword to "`manual` (whether stored on the item or
-        inherited from a `false` global) rests at `pending-approval` until a human's
+     c. The FULL target phrase (quote it in full so a literal string-replace does not
+        duplicate the trailing clause) is: "`manual` (the default, via inherit) rests
+        at `pending-approval` until a human's explicit `approve`". It is now WRONG —
+        `manual` is no longer "the default via inherit"; the global
+        `auto_approve_ready` setting determines what an UNLABELED item inherits (and
+        it merely DEFAULTS to the `manual`-equivalent `false`). Replace the whole
+        phrase with: "`manual` (whether stored on the item or inherited from a `false`
+        global `auto_approve_ready`) rests at `pending-approval` until a human's
         explicit `approve`".
      The spec-change-tier never-auto-approve rule is unchanged.
    - In `### Post-merge acceptance (`acceptance → done`)`, make the AI acceptance
@@ -381,13 +393,29 @@ every truly-unresolvable decision still escalates to a human).
     - **Safe defaults hold when nothing is configured (the new Scenario 37).** The
       old Scenario 37 (default-off / explicitly-armed) is dropped WITH the mode, but
       its INTENT — a dangerous behavior is never on by accident — survives and gets a
-      scenario so it keeps a bound test: Given a `.livespec.jsonc` that sets no
-      `dispatcher.*` policy settings, When the Dispatcher runs, Then
-      `auto_approve_ready` and `merge_on_review_cap` are `false`, `acceptance_mode` is
-      `ai-then-human`, `review_fix_cap` is `3`, and `acceptance_rework_cap` is `2`;
-      And no item is auto-approved, no past-cap review ships, and no acceptance
-      reaches `done` without a human. This asserts the `constraints.md` §"Dispatcher
-      policy settings constraints" safe-defaults rail.
+      scenario so it keeps a bound test. The scenario asserts what it actually means:
+      **the DEFAULTS ALONE never arm anything.** It MUST therefore scope its Thens to
+      UNLABELED items, because a per-item label legitimately BEATS a safe global (A.2's
+      ratified precedence) — a per-item `admission_policy: auto` label auto-approves
+      even under an all-default config, which is SURVIVING, unretired contract text
+      (`contracts.md` §"Grooming and slice-size calibration" / the intake routing
+      "approved on into `ready` when its effective `admission_policy` is `auto`") and
+      MUST NOT be contradicted:
+      > Given a `.livespec.jsonc` that sets no `dispatcher.*` policy settings
+      > And no work-item carries a per-item policy label (`admission_policy`,
+      >   `acceptance_policy`, or the merge-on-review-cap label)
+      > When the Dispatcher runs
+      > Then `auto_approve_ready` and `merge_on_review_cap` are `false`,
+      >   `acceptance_mode` is `ai-then-human`, `review_fix_cap` is `3`, and
+      >   `acceptance_rework_cap` is `2`
+      > And no such unlabeled item is auto-approved, no past-cap review ships, and no
+      >   acceptance reaches `done` without a human
+
+      This asserts the `constraints.md` §"Dispatcher policy settings constraints"
+      safe-defaults rail WITHOUT contradicting the per-item-override precedence.
+      **Do NOT ratify a blanket "no item is auto-approved" Then** — it would be false
+      in the presence of a per-item `auto` label and would contradict A.2, the
+      Scenario-33 replacement, and the surviving intake/groom contract passages.
     - **Count check:** 5 scenarios are REMOVED (33–37) and 5 are ADDED, so the 33–37
       numbering is fully reused and NO gap is left. (The AI-acceptance-fail scenario
       is one of the five; if the revise pass instead folds it into Scenario 25 per
@@ -437,10 +465,11 @@ every truly-unresolvable decision still escalates to a human).
 - This is ONE coherent change (the retirement and the replacement are inseparable):
   a single revise decision on the `dispatcher-policy-settings` topic.
 - This proposal was adversarially reviewed by an independent Fable-model reviewer
-  before ratification (the maintainer's standing rule), across three rounds. It
-  raised NINE blockers in total — eight in round 1 (including a misattributed
-  design-record cross-reference, and a dangling reference the author's own drift
-  sweep had missed) and one in round 2 (the console factory-drain launcher's
-  `--mode autonomous` argv, which this retirement would otherwise BREAK). All nine
-  are fixed here; the reviewer's final verdict on the ratification-gating dimensions
-  is NO-BLOCKERS.
+  before ratification (the maintainer's standing rule), across multiple rounds. Every
+  blocker it raised is fixed here. Its most consequential catches: a misattributed
+  design-record cross-reference (which this proposal would have RATIFIED into the
+  spec); a dangling reference to the deleted heading that the author's own drift sweep
+  had missed; the console factory-drain launcher's `--mode autonomous` argv, which
+  this retirement would otherwise BREAK; and an over-broad safe-defaults scenario that
+  would have contradicted the very per-item-override precedence this proposal
+  ratifies.
