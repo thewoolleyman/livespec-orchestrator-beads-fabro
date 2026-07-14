@@ -3,6 +3,49 @@
 Ledger epic: `bd-ib-rck`. Landed prerequisite: `bd-ib-a89` (the refresh-sentinel
 containment seatbelt). Origin: the `bd-ib-ss7rkr` re-verification, 2026-07-14.
 
+## 🔴 SCOPE CORRECTION (2026-07-14, same day) — READ BEFORE BUILDING
+
+This design was drafted assuming a short-lived (~1h) access token, which is the
+OAuth norm. **That assumption is WRONG.** Measured against the live host
+credential:
+
+```
+access_token issued : 2026-07-09T15:29:23Z
+access_token expires: 2026-07-19T15:29:23Z
+TOTAL LIFETIME      : 240 hours (10 days)
+remaining at measure: 118 hours
+freshness gate needs:   5 hours (4h run budget + 1h margin)
+```
+
+Consequences — most of the broker below is **YAGNI**:
+
+- **The freshness gate is almost never binding.** With a 240h token and a 5h
+  requirement it can only refuse in the FINAL 5 HOURS of each 10-day cycle —
+  roughly 2% of the window. It is not the routine obstacle this design assumed.
+- **Mid-run expiry is essentially impossible.** A 4h run against a token with up
+  to 240h of life, behind a gate that already guarantees ≥5h. So **§3(b) the
+  per-worker top-up — the centerpiece of this design — solves a problem that
+  barely exists.** DO NOT BUILD IT on current evidence.
+- **§3(c) relaxing the gate is now a pure safety downgrade for no benefit.** The
+  gate costs us nothing at a 240h lifetime. DROP.
+
+**What survives, and is genuinely valuable:**
+
+1. **§3(a) the host credential refresher — the REAL fix.** The actual operational
+   risk is a **10-DAY CLIFF**: the host token is refreshed only when a codex
+   process runs on the host near expiry (`should_refresh_proactively` fires
+   within 5 min of `exp`). If the maintainer does not use codex interactively in
+   that window, the credential EXPIRES and the factory HARD-STOPS — the gate then
+   refuses every dispatch with "run `codex login`". A host-side refresher (plus
+   an expiry alarm) removes the cliff. **This is the whole remaining job.**
+2. **The landed seatbelt (`bd-ib-a89`)** — still correct and still load-bearing.
+   The 401 path and the clock-skew path are real regardless of token lifetime: a
+   *spurious* 401 is gated by nothing at all. Keep it.
+
+Everything from §2 downward is retained as verified reference on how codex-core
+actually behaves, but the **build scope is now just (1)**. Revisit §3(b)/(c) only
+if the token lifetime ever shortens materially.
+
 All codex-core claims below are **code-verified against `rust-v0.137.0`** — the
 version `@zed-industries/codex-acp@0.16.0` actually pins (confirmed in its
 `Cargo.toml`, which pins `codex-core` and `codex-login` to that git tag). Paths

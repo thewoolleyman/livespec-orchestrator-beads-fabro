@@ -41,12 +41,44 @@ Ledger epic: **`bd-ib-rck`**.
     `docker ps -q --filter label=sh.fabro.managed=true --filter label=sh.fabro.run_id=<id>`,
     then write the refreshed snapshot in. Every piece already exists.
 
-**NEXT ACTION:** build the **host credential refresher** (design §3(a),
-sequencing step 2) — it is the next item on the critical path AND is
-independently useful, since a stale host `~/.codex/auth.json` stalls the factory
-today (the freshness gate refuses every dispatch with "run `codex login`")
-regardless of whether the broker ever ships. Then the per-worker top-up (§3(b)),
-whose shape is now fully determined by the answer above.
+- **🔴 SCOPE CORRECTED (2026-07-14) — most of the broker is YAGNI.** Measuring the
+  LIVE host credential falsified the design's core assumption. The access token
+  lives **240 hours (10 days)**, not the ~1h OAuth norm:
+
+  ```
+  issued 2026-07-09T15:29:23Z -> expires 2026-07-19T15:29:23Z  (240h)
+  freshness gate needs 5h (4h run budget + 1h margin)
+  ```
+
+  So: the gate can only refuse in the FINAL 5 HOURS of each 10-day cycle (~2% of
+  the window), and a 4h run against a ≥5h-guaranteed token **cannot realistically
+  expire mid-run**. That means **the per-worker top-up — the centerpiece of the
+  design — solves a problem that barely exists. DO NOT BUILD IT.** Relaxing the
+  freshness gate is likewise now a pure safety downgrade for zero benefit. DROP
+  both.
+
+**NEXT ACTION (the whole remaining job): build the HOST CREDENTIAL REFRESHER**
+(design §3(a)).
+
+The real operational risk is a **10-DAY CLIFF**, not mid-run expiry. The host's
+`~/.codex/auth.json` is refreshed ONLY when a codex process runs on the host near
+expiry (`should_refresh_proactively` fires within 5 minutes of `exp`). If the
+maintainer does not happen to use codex interactively inside that window, the
+credential **expires** and the factory **hard-stops** — the freshness gate then
+refuses every dispatch with "run `codex login`".
+
+Build:
+
+1. A host-side refresher that keeps `~/.codex/auth.json` fresh without depending
+   on interactive use (timer/daemon). **Open sub-question:** drive it by invoking
+   codex itself (letting its own proactive refresh do the work — fewer moving
+   parts, keeps OpenAI's rotation semantics inside codex) versus calling the token
+   endpoint directly with the host's real refresh token. Prefer the former.
+   Note the refresh only *fires* within 5 min of expiry, so a naive "run codex
+   hourly" cron is enough — it is a no-op until it is needed.
+2. An **expiry alarm** — surface when the host token is within N days of `exp`, so
+   the cliff is never a surprise. Cheap, and it is the part that actually
+   prevents the outage.
 
 ## ⚠️ The correction that makes the seatbelt load-bearing (do not lose this)
 
