@@ -119,18 +119,25 @@ jobs:
           # ANTHROPIC_API_KEY_LIVESPEC_E2E / CLAUDE_CODE_OAUTH_TOKEN /
           # HONEYCOMB_INGEST_KEY_LIVESPEC are present; secrets are never echoed.
           #
-          # PATH: the wrapper deliberately scrubs the environment (`env -i`) and
-          # hard-codes PATH to the system secure_path, so mise-managed tools —
-          # `just` and `uv` among them — are NOT resolvable inside it. Calling
-          # `just` directly through the wrapper therefore dies with
-          # `env: 'just': No such file or directory` (exit 127) on ANY host,
-          # runner or laptop alike. So restore the operator's mise shims for the
-          # wrapped command. The wrapper's own OPENV_PRESERVE_VARS hook cannot
-          # solve this: it captures values in stage 1, AFTER sudo has already
-          # reset the environment, so a preserved PATH would just be root's
-          # secure_path again.
+          # The wrapper deliberately scrubs the environment (`env -i`), hard-codes
+          # PATH to the system secure_path, and drops every MISE_* var that
+          # mise-action just set. Two things therefore break INSIDE it, and both
+          # must be restored on this side — the wrapper's scrub is deliberate
+          # security hygiene and is not ours to weaken. (Its OPENV_PRESERVE_VARS
+          # hook cannot help: it captures values in stage 1, AFTER sudo has
+          # already reset the environment.)
+          #
+          #   1. PATH — `just` is mise-managed, so calling it through the wrapper
+          #      dies with `env: 'just': No such file or directory` (exit 127) on
+          #      ANY host, runner or laptop alike. Restore the mise shims.
+          #   2. MISE_TRUSTED_CONFIG_PATHS — the host-side greeting assertion runs
+          #      `mise exec -- uv run pytest` from the CHECKOUT, and on a runner
+          #      that checkout is a path the operator's mise has never trusted, so
+          #      mise refuses it ("Config files ... are not trusted") and the
+          #      assertion fails even though the merged program is correct.
+          #      Restore the trust scope mise-action had already granted.
           /data/projects/1password-env-wrapper/with-livespec-env.sh -- \
-            bash -c 'export PATH="$HOME/.local/share/mise/shims:$PATH"; exec just acceptance-live-golden-master -- "$@"' _ "$@"
+            bash -c 'export PATH="$HOME/.local/share/mise/shims:$PATH"; export MISE_TRUSTED_CONFIG_PATHS="$PWD"; export MISE_YES=1; exec just acceptance-live-golden-master -- "$@"' _ "$@"
 
       # --- codex-acp auto-bump gate: cross-repo commit-status callback. ---
       # Runs ONLY on the repository_dispatch path, ALWAYS (so a red gate still
