@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.30.1...v0.30.2) (2026-07-14)
+
+
+### Bug Fixes
+
+* **ci:** resolve just inside the 1Password wrapper in the golden-master gate ([4876dea](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4876dea1f1fa77652deb690efffc5c88db9dc3ef))
+
 ## [0.30.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.30.0...v0.30.1) (2026-07-13)
 
 
