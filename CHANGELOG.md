@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.30.4...v0.30.5) (2026-07-14)
+
+
+### Bug Fixes
+
+* **bd-guard:** close --format bypass, add host-wide mode file, emit span on fail-mode block ([0831120](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0831120bb0b4eb0111a2ecacf9324ed43917e4d3))
+
 ## [0.30.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.30.3...v0.30.4) (2026-07-14)
 
 
