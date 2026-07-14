@@ -131,13 +131,54 @@ steps around. It is distinct from the containerized server the entrypoint
 provisions (below); the image's `COPY fabro` stages this same host binary from
 `$HOST_FABRO_BIN`, so the host install IS the image's staging source.
 
-**Current binary (2026-07-11 cutover, Recommendation A):** fabro **0.254 +
-backported PR #568** (the credential-refresh fix), Git SHA `f7ff19e` = canonical
-`v0.254.0` + the #568 cherry-pick + an env-configurable daemon-readiness timeout.
-Chosen over modern fabro because any fabro ≥ 0.256 breaks `workflow.fabro` (fabro
-#474 de-templates `acp.command`, so our `acp.command="{{ inputs.acp_adapter }}"`
-nodes go literal and dispatch dies `exit 127`). Rollout/revert state: ledger
-`bd-ib-2nq.4`; deferred 0.254→0.290 modernization: `bd-ib-6qu`.
+**Current binary (2026-07-14):** `fabro 0.254.0 (15b89ab)` — built from the
+`factory-integration` branch (see below). Verify with `~/.fabro/bin/fabro
+--version`; the parenthesized short SHA is the integration commit, and it MUST be
+reachable from `factory-integration`.
+
+### `factory-integration` — the carrier branch for unreleased fixes
+
+The factory does not run an official upstream fabro release: it depends on fixes
+upstream has not shipped yet. Those fixes are carried on ONE standing branch in
+our fork (`thewoolleyman/fabro`) named **`factory-integration`** — the only branch
+name the factory ever pins for unreleased fixes. This is a spec-level rule, not a
+convention: the branch name, the composition rule, and the base-version ceiling are
+fixed by `SPECIFICATION/constraints.md` §"Fabro runtime constraints" — PENDING
+ratification, filed as
+`SPECIFICATION/proposed_changes/fabro-factory-integration-branch-standard.md` and
+landing on the next revise pass. This section carries the commands.
+
+`factory-integration` = the pinned base + EVERY pending upstream fix the factory
+needs (never a subset, so the branch is always the whole truth about what runs):
+
+| Carried fix | What it is | Why the factory needs it |
+| --- | --- | --- |
+| upstream PR **#568** (`push-credential-refresh-ahead`) | credential refresh ahead of expiry | dispatches longer than ~60 min otherwise die on an expired token |
+| env-configurable daemon-readiness timeout | `FABRO_SERVER_START_READY_TIMEOUT_SECS` (default 60s) | the ~6s SlateDB store open exceeds stock 0.254's hard 5s cap, so stock 0.254 cannot start against this store |
+| upstream PR **#576** | opt-in OTLP/HTTP span export | restores factory observability for the Codex era (inert until the OTEL env wiring lands) |
+
+**Base is pinned to 0.254 — do NOT modernize.** The factory MUST NOT pin any fabro
+build ≥ 0.256 until the `workflow.fabro` migration lands: fabro #474 de-templates
+`acp.command`, so our `acp.command="{{ inputs.acp_adapter }}"` node goes through
+literally and every dispatch dies `exit 127`. Deferred modernization: ledger
+`bd-ib-6qu`. Rollout/revert state for the 0.254 cutover: ledger `bd-ib-2nq.4`.
+
+**Rebuild + re-pin** (whenever the carried-fix set changes). Keep the outgoing
+binary as a rollback artifact — the pin is a file swap, so the revert is one too:
+
+```bash
+# in the fork worktree, on factory-integration:
+cargo build --release -p fabro-cli
+# retain the CURRENT binary before overwriting it:
+cp ~/.fabro/bin/fabro ~/.fabro/bin/fabro.<outgoing-sha>-<label>.bak
+cp target/release/fabro ~/.fabro/bin/fabro
+~/.fabro/bin/fabro --version          # confirm the new integration commit
+```
+
+Then restart the server (next section) and confirm `fabro doctor` is green. To
+**roll back**, copy the `.bak` binary over `~/.fabro/bin/fabro` and restart. The
+current rollback artifact is `~/.fabro/bin/fabro.f7ff19e-pre-otlp.bak` (the
+pre-OTLP build: 0.254 + #568 + daemon-timeout).
 
 ### Start / restart
 

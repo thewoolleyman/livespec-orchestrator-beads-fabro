@@ -156,11 +156,19 @@ around the seam with raw `mysql` / `dolt` / `sudo`.
 The Dispatcher's host-direct path (`dispatcher.py loop` run on the host, NOT in
 the orchestrator container) connects to a long-lived Fabro server on
 **`127.0.0.1:32276`**. Installing the plugin does NOT start it; the maintainer
-runs it directly from `~/.fabro/bin/fabro`. As of the 2026-07-11 cutover
-(Recommendation A) the host binary is **fabro 0.254 + backported PR #568** (Git
-SHA `f7ff19e`) — chosen over modern fabro because any fabro ≥ 0.256 breaks
-`workflow.fabro` (fabro #474 de-templates `acp.command`). Rollout/revert state
-is ledger `bd-ib-2nq.4`; the full runbook is `orchestrator-image/README.md`.
+runs it directly from `~/.fabro/bin/fabro`. As of 2026-07-14 the host binary is
+`fabro 0.254.0 (15b89ab)`, built from **`factory-integration`** — the ONE standing
+branch in our fork (`thewoolleyman/fabro`) that carries every upstream fabro fix
+the factory needs but upstream has not released (today: PR #568 credential
+refresh, the env-configurable daemon-readiness timeout, PR #576 OTLP export).
+Never pin a fabro build from any other branch, and never modernize the base: any
+fabro ≥ 0.256 breaks `workflow.fabro` (fabro #474 de-templates `acp.command`, so
+every dispatch dies `exit 127`). These rules are PENDING ratification as
+`SPECIFICATION/constraints.md` §"Fabro runtime constraints" (filed in
+`SPECIFICATION/proposed_changes/fabro-factory-integration-branch-standard.md`; the
+next revise pass lands it). The build/pin/rollback commands are in
+`orchestrator-image/README.md`. Rollout/revert state is ledger `bd-ib-2nq.4`;
+deferred modernization is `bd-ib-6qu`.
 
 - **Start / restart** (OAuth-only — no wrapper, no `ANTHROPIC_API_KEY`):
 
