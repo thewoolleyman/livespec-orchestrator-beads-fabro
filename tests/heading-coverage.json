@@ -153,6 +153,13 @@
     "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
   },
   {
+    "heading": "## Fabro runtime constraints",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "test": "TODO",
+    "reason": "Operator-procedure constraint over an EXTERNAL runtime the plugin does not own (the Fabro engine binary): it governs which Fabro build the factory may pin - the `factory-integration` carrier branch, its composition, the < 0.256 base ceiling, and the rebuild/re-pin duty - none of which is a code path the plugin executes, so there is no plugin-side behavior for a test to exercise. Per the amended file preamble, the deciding command is `fabro --version` and enforcement is review-time verification against it. A real test ID becomes bindable if the ceiling is later enforced by a dispatch-preflight engine-version gate (ledger bd-ib-j9x), which WOULD be plugin-observable behavior and would carry its own scenario."
+  },
+  {
     "heading": "## Process boundaries",
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
