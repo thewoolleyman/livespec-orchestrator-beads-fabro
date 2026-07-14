@@ -83,19 +83,70 @@ below.
   a preflight gate is plugin-observable behavior and so MUST carry its own Gherkin
   scenario, whereas the naming standard is an operator-procedure rule.
 
-**NEXT ACTION:** The transport + integration-branch + spec arc is **CLOSED**. The only
-remaining work in this thread is the EMITTER and the RECEIVER:
+**NEXT ACTION:** The transport + integration-branch + spec arc is **CLOSED**. The EMITTER
+and RECEIVER remain — but a 2026-07-14 code investigation of both sides **FALSIFIED the
+plan both ledger items were written against**. Read the ledger comments before touching
+either; the full file:line evidence is on `bd-ib-98c.1` (fabro side) and `bd-ib-98c.2`
+(receiver side). Summary of what is actually true:
 
-1. **`bd-ib-98c.1` — fabro-side ACP node/turn span instrumentation** (OUTWARD-FACING;
-   rides the now-merged-into-`factory-integration` OTLP transport). Two factory caveats
-   are recorded on that ledger item and MUST be honored — the `apply_worker_env`
-   allowlist (fabro's server spawns workers with `env_clear` + a narrow copy that does
-   NOT include `OTEL_*`, so a server-spawned worker will not export) and the
-   `OTEL_EXPORTER_OTLP_PROTOCOL=http/json` overlay (our receiver is json-only; the
-   upstream exporter now defaults to `http/protobuf`, so without the overlay spans are
-   silently dropped).
-2. **`bd-ib-98c.2` — receiver-side dataset mapping + content-redaction scrub** (OURS,
-   Python, factory-safe → dispatchable via Red-Green-Replay).
+**`bd-ib-98c.1` — fabro-side instrumentation (OUTWARD-FACING). Its stated plan cannot be
+built as written.**
+
+- 🔴 **The ACP events it plans to map DO NOT EXIST.** Repo-wide grep over fabro
+  `factory-integration` returns ZERO hits for `UsageUpdate`, `TurnComplete`, and
+  `time_to_first_token`. The item's "map UsageUpdate/TurnComplete → span fields" plan is
+  built on an API that isn't there. (`turn_id` exists, but on the unrelated chat/sessions
+  surface, not the workflow/ACP path.)
+- 🔴 **NOTHING TO ENRICH — every span must be created NEW.** fabro's entire production
+  span inventory is THREE sites repo-wide (`run/mod.rs:96`, `server.rs:4339`,
+  `automation_scheduler.rs:187`); `fabro-workflow` has ZERO non-test
+  `#[instrument]`/`span!` sites. The tracing tree is ONE SPAN DEEP. Wiring the env alone
+  would export exactly one flat `run` span per process — no nodes, no turns.
+- 🔴 **NO token/cost data on the ACP path.** `acp.rs:424` hardcodes `usage: None`, so
+  `StageCompleted.billing` is always `None`. Token counts only exist on the API backend
+  (`fabro-agent`), and the factory drives `acp.command`. Zero token/cost attributes
+  without new upstream work. Same for per-tool-call spans: `fabro-acp/src/session.rs`
+  handles ONE `SessionUpdate` variant and `.otherwise_ignore()`s the rest, so ACP
+  `ToolCall` notifications are dropped on the floor.
+- ✅ **The `apply_worker_env` caveat is CONFIRMED** — and narrower than feared. The ACP
+  handler runs in a server-spawned `fabro __run-worker` subprocess (production ALWAYS
+  takes the subprocess path; the in-process branch is test-only). `apply_worker_env`
+  (`fabro-server/src/spawn_env.rs:29`, allowlist `:6-26`) is `env_clear()` + EXACT-NAME
+  copy — no `OTEL_*`, no prefix matching — so the exporter is inert there. BUT the worker
+  DOES install our layer already (`logging.rs:419`/`:453`), so **only the env is
+  missing**. Preferred fix: explicit re-injection at `worker_runtime.rs:90-99` (the
+  established pattern, beside `FABRO_LOG`/`FABRO_CONFIG`), NOT widening the fail-closed
+  allowlist. Do NOT blanket-copy `OTEL_*` — that would sweep `OTEL_EXPORTER_OTLP_HEADERS`
+  (the Honeycomb API key) into the worker env.
+- 🔴 **Trace context does not cross the process boundary.** Server and worker each create
+  their own `info_span!("run", id)` with no `traceparent` passed. Enabling OTLP on both
+  today yields TWO DISCONNECTED TRACES per run. A W3C `traceparent` must be injected at
+  the same `worker_runtime.rs` seam and extracted before the worker's run span.
+- The `OTEL_EXPORTER_OTLP_PROTOCOL=http/json` overlay caveat still stands (our receiver is
+  json-only; the upstream exporter now defaults to `http/protobuf`).
+
+**`bd-ib-98c.2` — receiver side (OURS, Python, factory-safe). Its scope is INVERTED:
+both stated halves are already done, and the real work is the opposite.**
+
+- ✅ (a) "add a `service.name` → dataset mapping" — **already generic.**
+  `_otel_enrich_export.py:51-58` is literally
+  `return resource_attrs.get("service.name", _DEFAULT_DATASET)`. No mapping table exists
+  or is needed.
+- ✅ (b) "content-redaction scrub" — **already fail-closed.** `_otel_scrub.py` is an
+  ALLOWLIST (never a denylist); prompts / tool I/O / raw bodies cannot leak because their
+  keys simply aren't in it. There is no redaction pass to write.
+- 🔴 **THE REAL WORK — and it is a SILENT TRAP.** Because the allowlist is fail-closed,
+  it will also DROP the emitter's NEW fields: `_otel_enrich.py:213` does
+  `if not is_allowed_attr(key=key): continue` — no error, no warning, no log line. All
+  four review-gate attributes (`review.verdict`, `review.fix_rounds`, `review.hit_cap`,
+  `pr.shipped_on_cap` — the fields that exist specifically to answer the ship-on-cap
+  question) are currently DROPPED. So the emitter could be built perfectly, spans would
+  arrive in Honeycomb, and every field the effort exists to capture would be missing.
+  **Do not treat "spans appear" as proof the emitter works.** The corrected
+  allowlist-widening set is on the ledger item; pin it against what the emitter actually
+  emits rather than a guess.
+- **SEQUENCING: this MUST land before or with `bd-ib-98c.1`,** or the first end-to-end
+  dispatch is a FALSE SUCCESS.
 
 **GAP-DETECTOR NOTE (expected, do NOT "fix" by filing work-items):** the post-step
 `capture-impl-gaps` on the v035 cut flags **15 new gaps** — every BCP14 clause in
