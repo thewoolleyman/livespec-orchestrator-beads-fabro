@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.30.2...v0.30.3) (2026-07-14)
+
+
+### Bug Fixes
+
+* **ci:** restore mise trust scope inside the wrapper for the greeting assertion ([4ffad84](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4ffad842510afc5e520443a97698deb99f274e51))
+
 ## [0.30.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.30.1...v0.30.2) (2026-07-14)
 
 
