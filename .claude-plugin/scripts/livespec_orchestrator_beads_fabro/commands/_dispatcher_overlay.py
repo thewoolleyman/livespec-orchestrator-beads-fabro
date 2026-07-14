@@ -72,6 +72,22 @@ class SiblingClones:
 # CODEX_HOME from the container-level [environments.<id>.env] table.
 _SANDBOX_CODEX_HOME = "/workspace/.codex"
 
+# Where the projected credential is allowed to reach codex-core's token
+# refresh/revocation service: nowhere. The projected auth.json carries a
+# deliberately non-rotatable `tokens.refresh_token` sentinel, but codex-core
+# still SENDS it: on any HTTP 401 its unauthorized-recovery state machine POSTs
+# `tokens.refresh_token` to the refresh endpoint with no validation and NO
+# expiry check, so the freshness gate does not cover this path (a spurious 401,
+# or a container clock running fast -- codex compares the access-token `exp`
+# against the CONTAINER clock while the gate evaluates on the HOST clock -- both
+# reach it). codex-core resolves that endpoint from
+# CODEX_REFRESH_TOKEN_URL_OVERRIDE when set, and resolves its REVOCATION
+# endpoint from the same variable, so pinning it at a closed loopback port keeps
+# both the sentinel and any revoke attempt inside the container: the POST fails
+# locally with connection-refused instead of presenting a bogus credential to
+# the real auth service. Port 1 is privileged and never bound.
+_SANDBOX_CODEX_REFRESH_URL_OVERRIDE = "http://127.0.0.1:1/livespec-refresh-disabled"
+
 
 def escape_minijinja_literal(*, text: str) -> str:
     """Neutralize MiniJinja syntax in `text` so it renders back verbatim.
@@ -246,12 +262,18 @@ def _codex_auth_env_lines(*, codex_auth_snapshot: str | None) -> str:
     / OTel lines. These ride in the same `[environments.<id>.env]` table —
     the container baseline env every sandbox process inherits — so the
     prepare-step shell and the codex-acp child both see them.
+
+    `CODEX_REFRESH_TOKEN_URL_OVERRIDE` rides alongside them so the projected
+    credential's non-rotatable sentinel can never egress; see
+    `_SANDBOX_CODEX_REFRESH_URL_OVERRIDE`.
     """
     if codex_auth_snapshot is None:
         return ""
     return (
         f"CODEX_HOME = {json.dumps(_SANDBOX_CODEX_HOME)}\n"
         f"CODEX_AUTH_JSON = {json.dumps(codex_auth_snapshot)}\n"
+        "CODEX_REFRESH_TOKEN_URL_OVERRIDE = "
+        f"{json.dumps(_SANDBOX_CODEX_REFRESH_URL_OVERRIDE)}\n"
     )
 
 

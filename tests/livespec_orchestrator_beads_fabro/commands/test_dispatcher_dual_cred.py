@@ -130,6 +130,48 @@ def test_render_overlay_projects_codex_auth_snapshot(tmp_path: Path) -> None:
     assert decoded == _FAKE_SNAPSHOT
 
 
+def test_render_overlay_contains_the_refresh_sentinel_to_a_closed_loopback_port(
+    tmp_path: Path,
+) -> None:
+    """The projection MUST also pin codex-core's refresh/revoke endpoint in-container.
+
+    The projected snapshot carries a deliberately non-rotatable
+    `tokens.refresh_token` sentinel. codex-core POSTs that refresh_token to its
+    refresh endpoint on ANY HTTP 401 WITHOUT checking whether the access token
+    actually expired, so the freshness gate does not protect it: a spurious 401,
+    or container clock skew (codex compares the JWT `exp` against the CONTAINER
+    clock, while the gate evaluates on the HOST clock), sends the sentinel to
+    OpenAI. codex-core reads the endpoint from CODEX_REFRESH_TOKEN_URL_OVERRIDE
+    when set, so pinning it at a closed loopback port keeps the sentinel INSIDE
+    the container -- the POST fails locally instead of presenting a bogus
+    credential to the auth service.
+    """
+    rendered = render_run_config_overlay(
+        committed_text=_COMMITTED_WORKFLOW_TOML,
+        workflow_dir=tmp_path,
+        token=_FAKE_TOKEN,
+        github_token=_FAKE_GITHUB_TOKEN,
+        siblings=None,
+        codex_auth_snapshot=_FAKE_SNAPSHOT,
+    )
+    assert rendered is not None
+    _, env_table = rendered.split("[environments.livespec-ci.env]", 1)
+    override_line = next(
+        (
+            line
+            for line in env_table.splitlines()
+            if line.startswith("CODEX_REFRESH_TOKEN_URL_OVERRIDE = ")
+        ),
+        None,
+    )
+    assert override_line is not None, "the refresh/revoke endpoint override MUST be projected"
+    endpoint = json.loads(override_line[len("CODEX_REFRESH_TOKEN_URL_OVERRIDE = ") :])
+    # Loopback: unreachable from inside the sandbox, so the sentinel cannot
+    # egress. Never the real auth service.
+    assert endpoint.startswith("http://127.0.0.1:")
+    assert "openai.com" not in endpoint
+
+
 def test_render_overlay_without_codex_snapshot_is_unchanged(tmp_path: Path) -> None:
     """Omitting the snapshot keeps the overlay byte-identical (backward compat)."""
     rendered = render_run_config_overlay(
@@ -142,6 +184,7 @@ def test_render_overlay_without_codex_snapshot_is_unchanged(tmp_path: Path) -> N
     assert rendered is not None
     assert "CODEX_HOME" not in rendered
     assert "CODEX_AUTH_JSON" not in rendered
+    assert "CODEX_REFRESH_TOKEN_URL_OVERRIDE" not in rendered
     assert "auth.json" not in rendered
 
 
