@@ -41,14 +41,13 @@ below.
   OTLP export).
 - **`factory-integration` DOCUMENTED (2026-07-14)** — the branch-name standard is now
   recorded in all three places it belongs:
-  - **Spec (pending ratification):** filed via `/livespec:propose-change` as
-    `SPECIFICATION/proposed_changes/fabro-factory-integration-branch-standard.md`
-    (author `claude-opus-4-8`; CLI exit 0, pre/post-step doctor static green). It targets
-    `SPECIFICATION/constraints.md` — this repo's non-functional-requirements analogue;
-    there is NO `non-functional-requirements.md` here (that filename is livespec CORE's,
-    which `constraints.md` explicitly inherits from). TWO edits: (1) a new H2
-    `## Fabro runtime constraints` with five rules — carrier-branch name (+ MUST be
-    pushed to `origin`), composition (base + EVERY pending fix, upstream-unreleased OR
+  - **Spec — RATIFIED as `v035`** (proposal PR #602 → revise PR #604, both merged;
+    master `c513397`). `SPECIFICATION/constraints.md` now carries the LIVE H2
+    `## Fabro runtime constraints`. It targets `constraints.md` — this repo's
+    non-functional-requirements analogue; there is NO `non-functional-requirements.md`
+    here (that filename is livespec CORE's, which `constraints.md` explicitly inherits
+    from). TWO edits landed: (1) the new H2 with five rules — carrier-branch name (+ MUST
+    be pushed to `origin`), composition (base + EVERY pending fix, upstream-unreleased OR
     fork-local, never a subset), base ceiling (MUST NOT pin ≥ 0.256 until `bd-ib-6qu`),
     rebuild/re-pin (the host binary AND the orchestrator image, which bakes a COPY —
     else the containerized server silently runs the old fabro), runbook lockstep; and
@@ -56,8 +55,19 @@ below.
     claim the new section would otherwise flatly contradict. The volatile carried-fix
     LIST lives in the runbook, NOT the spec, so the constraint cannot go stale. No
     `scenarios.md` co-edit (operator-procedure rule over an external binary — no
-    plugin-observable behavior to exercise); the `tests/heading-coverage.json` co-edit is
-    specified for revise time.
+    plugin-observable behavior to exercise); `tests/heading-coverage.json` gained the new
+    heading with `"test": "TODO"` + reason.
+  - **PREAMBLE AMENDMENT — maintainer-acknowledged, do not silently re-tighten.** The
+    revise tripped the intent-preservation gate (`spec.md` §"Intent preservation and
+    design-record authority"): amending the ratified "every constraint is
+    mechanically-checkable / lint-enforced" preamble is a change to a ratified statement,
+    NO design record is cited for it, and the gate forbids a delegated pass from
+    self-resolving that. The conflict + the absence of a governing record were surfaced;
+    the maintainer CONFIRMED the amendment on 2026-07-14. The acknowledgment is recorded
+    in `SPECIFICATION/history/v035/proposed_changes/fabro-factory-integration-branch-standard-revision.md`
+    → `## Decision and Rationale`. The amended preamble keeps binary/decidable, scopes
+    lint/test enforcement to constraints governing PLUGIN CODE, and requires a constraint
+    over an external runtime to NAME its deciding command (`fabro --version` here).
   - **Runbook:** `orchestrator-image/README.md` §"Host Fabro server" gained a
     `### factory-integration — the carrier branch for unreleased fixes` subsection (the
     carried-fix table + build/pin/rollback commands), and its "Current binary" paragraph
@@ -73,18 +83,29 @@ below.
   a preflight gate is plugin-observable behavior and so MUST carry its own Gherkin
   scenario, whereas the naming standard is an operator-procedure rule.
 
-**NEXT ACTION:** none in this thread's own arc — it is DONE. What remains is other
-items' work:
-1. **Ratify the spec proposal.** A `/livespec:revise` pass must accept
-   `fabro-factory-integration-branch-standard.md` (co-editing
-   `tests/heading-coverage.json` with a `"test": "TODO"` entry for the new H2). NOTE: a
-   SECOND proposal is pending in the same tree (`dispatcher-policy-settings.md`, the
-   maintainer's); the two touch `constraints.md` DISJOINTLY (that one retires
-   `## Full autonomous mode constraints`; this one adds a new, unrelated H2), so a revise
-   pass may accept them in either order. Until ratified, `AGENTS.md` and the runbook cite
-   the section as PENDING and point at the proposal file — drop the "PENDING" wording
-   when it lands.
-2. **The emitter + receiver** (`bd-ib-98c.1` / `bd-ib-98c.2`) — see NOT-blocking below.
+**NEXT ACTION:** The transport + integration-branch + spec arc is **CLOSED**. The only
+remaining work in this thread is the EMITTER and the RECEIVER:
+
+1. **`bd-ib-98c.1` — fabro-side ACP node/turn span instrumentation** (OUTWARD-FACING;
+   rides the now-merged-into-`factory-integration` OTLP transport). Two factory caveats
+   are recorded on that ledger item and MUST be honored — the `apply_worker_env`
+   allowlist (fabro's server spawns workers with `env_clear` + a narrow copy that does
+   NOT include `OTEL_*`, so a server-spawned worker will not export) and the
+   `OTEL_EXPORTER_OTLP_PROTOCOL=http/json` overlay (our receiver is json-only; the
+   upstream exporter now defaults to `http/protobuf`, so without the overlay spans are
+   silently dropped).
+2. **`bd-ib-98c.2` — receiver-side dataset mapping + content-redaction scrub** (OURS,
+   Python, factory-safe → dispatchable via Red-Green-Replay).
+
+**GAP-DETECTOR NOTE (expected, do NOT "fix" by filing work-items):** the post-step
+`capture-impl-gaps` on the v035 cut flags **15 new gaps** — every BCP14 clause in
+`## Fabro runtime constraints` plus the 2 amended-preamble clauses. NONE was filed, by
+deliberate disposition: they are operator-procedure clauses over an EXTERNAL binary that
+no plugin code can ever satisfy, so work-items for them would be permanently unclosable
+ledger noise. The gap detector is mechanical over BCP14 clauses, so any
+not-implementable-in-code constraint becomes a standing phantom gap (the pre-existing
+baseline was already 182). The ONE legitimate mechanization is `bd-ib-j9x` (below), which
+is what would actually retire these 15.
 
 **ARCHIVE-CHECK: NOT ARCHIVABLE — leave this thread active.** `.claude-plugin/prose/plan.md`
 §"Step 5 — Archive on epic close" binds the lifecycle hard: a thread is active *if and only
