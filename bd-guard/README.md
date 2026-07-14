@@ -38,15 +38,18 @@ not guarded.
 
 ## Behavior contract
 
-- **Mode** via `LIVESPEC_BD_GUARD_MODE`, default **`warn`**:
+- **Mode** resolved by precedence **`LIVESPEC_BD_GUARD_MODE` env var → host-wide
+  mode file → `warn`** (see **Host-wide flip** below), default **`warn`**:
   - `warn` — print a one-line stderr warning naming the violation and the
     correct alternative, then **still exec the real bd** (transparent
     passthrough; nothing breaks). This is the observation phase used to
     enumerate offending callers.
   - `fail` — print the same message as an error and exit non-zero **without**
-    execing (block the operation).
+    execing (block the operation). A `fail`-mode block is **observable in
+    telemetry** as `guard.mode=fail` + `guard.warned=1` + `exit_code=3` (see
+    **Telemetry**).
   - Any other/unset value is treated as `warn`; the wrapper never blocks unless
-    explicitly set to `fail`, so a misconfiguration cannot brick `bd`.
+    resolved to `fail`, so a misconfiguration cannot brick `bd`.
 - **Transparency (load-bearing).** For every passthrough (and warn-mode
   violation) argv is preserved exactly, the real bd's stdin/stdout/stderr +
   exit code are preserved, and warnings go to **stderr only** — stdout is never
@@ -76,6 +79,10 @@ This is **on by default** and **fail-open**: the span is fired by a **detached**
 helper process *after* bd has already run, so a missing collector, a slow
 network, or any emitter error can never delay, alter, or break `bd` — its
 stdout/stderr/exit stay byte-identical either way.
+
+A `fail`-mode **block** also emits a span (fired just before the non-zero exit,
+so `bd` is never run), which makes enforcement **observable**: a block is
+queryable as `guard.mode=fail` + `guard.warned=1` + `exit_code=3`.
 
 - **Enable/disable** via `LIVESPEC_BD_GUARD_OTLP` (default **`on`**). Set
   `LIVESPEC_BD_GUARD_OTLP=off` to revert to a pure `exec` passthrough with zero
@@ -131,13 +138,28 @@ Optionally point tooling at the wrapper (it already is, since the wrapper IS
 export LIVESPEC_BD_PATH=/usr/local/bin/bd
 ```
 
-**Observe, then optionally enforce:**
+**Observe, then optionally enforce (host-wide flip via the mode file):**
+
+The mode is resolved by precedence **env var → mode file → `warn`**. Prefer the
+**mode file** for a host-wide flip: the fleet credential wrapper
+(`with-livespec-env.sh`) **scrubs the environment** before `bd` runs, so an
+exported `LIVESPEC_BD_GUARD_MODE` never reaches real callers — the file is the
+switch that actually takes effect. `install.sh` seeds it to `warn`.
 
 ```sh
 # warn is the default first rollout — leave it, watch stderr for offenders.
-# Once callers are clean, opt in to blocking:
-export LIVESPEC_BD_GUARD_MODE=fail
+# Once callers are clean, flip the whole host to BLOCK:
+echo fail | sudo tee /usr/local/etc/livespec-bd-guard.mode
+# ...and revert to observe-only at any time:
+echo warn | sudo tee /usr/local/etc/livespec-bd-guard.mode
 ```
+
+Once flipped to `fail`, a blocked op is **observable in telemetry** (it emits a
+`bd.invoke` span BEFORE exiting non-zero): query it as `guard.mode=fail` +
+`guard.warned=1` + `exit_code=3`. Overriding the file per-shell is still
+possible where the env survives (`LIVESPEC_BD_GUARD_MODE=warn` takes precedence
+over a `fail` file), but do not rely on the env var for the host-wide setting —
+the credential wrapper strips it.
 
 **Rollback (restore the real bd, remove the guard):**
 
@@ -180,3 +202,11 @@ is detached); that `LIVESPEC_BD_GUARD_OTLP=off` emits nothing; and that a nonzer
 bd exit code is preserved with telemetry ON while the span reflects it. The rest
 of the harness runs with telemetry defaulted OFF so those cases stay pure `exec`
 passthroughs and never emit off-box.
+
+Later sections cover the flip-hardening behavior: that `--format json update …
+--claim` is **blocked** in `fail` mode (its value is skipped so `update`, not
+`json`, is read as the subcommand — the parser bypass is closed) while
+`--format json list` still passes through; the host-wide **mode-file** precedence
+(env var → file → `warn`, including an env `warn` overriding a `fail` file); and
+that a `fail`-mode **block emits a span** (routed to a stub emitter) so
+enforcement is observable.
