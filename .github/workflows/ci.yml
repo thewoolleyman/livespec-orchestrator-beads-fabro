@@ -218,11 +218,13 @@ jobs:
       matrix:
         target:
           - check-aggregate-completeness
+          - check-local-memory-drift-audit
           # check-no-direct-destructive-cli greps the agent-facing trees
           # for direct destructive-default CLI invocations
           # (livespec/SPECIFICATION/non-functional-requirements.md
           # §"Destructive-default CLI wrapping") so a violation fails CI.
           - check-no-direct-destructive-cli
+          - check-no-shadow-ledger-body-identical
           - check-primary-checkout-commit-refuse-hook-installed
           # check-red-green-replay (no-arg) validates the COMMIT RANGE
           # origin/master..HEAD — every non-merge commit touching product
