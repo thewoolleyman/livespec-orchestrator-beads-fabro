@@ -60,7 +60,24 @@
 set -u
 
 REAL="${LIVESPEC_BD_REAL:-/usr/local/bin/bd-real}"
-MODE="${LIVESPEC_BD_GUARD_MODE:-warn}"
+
+# Mode resolution (precedence): explicit env var > host-wide mode file > warn.
+# WHY THE FILE: the fleet credential wrapper (with-livespec-env.sh) scrubs the
+# environment (sudo env_reset / env -i) before bd runs, so an exported
+# LIVESPEC_BD_GUARD_MODE never reaches real callers. The mode FILE survives the
+# scrub and is the host-wide switch:
+#     echo fail | sudo tee /usr/local/etc/livespec-bd-guard.mode   # block
+#     echo warn | sudo tee /usr/local/etc/livespec-bd-guard.mode   # observe
+# Default (no env, no file, or any non-`fail` value) stays warn — never blocks.
+MODE_FILE="${LIVESPEC_BD_GUARD_MODE_FILE:-/usr/local/etc/livespec-bd-guard.mode}"
+MODE="${LIVESPEC_BD_GUARD_MODE:-}"
+if [ -z "$MODE" ] && [ -r "$MODE_FILE" ]; then
+    read -r MODE < "$MODE_FILE" 2>/dev/null || MODE=""
+fi
+MODE="${MODE:-warn}"
+
+# Display argv for telemetry, captured at top level (a function's $* would shadow it).
+_bdg_argv="$*"
 
 # The 7 livespec lifecycle statuses, space-padded for substring matching.
 # Keep in lockstep with ALLOWED_BEADS_STATUSES (see header).
@@ -114,7 +131,8 @@ for arg in "$@"; do
     if [ "$phase" = "global" ]; then
         case "$arg" in
             # Value-taking GLOBAL flags in separate-word form: skip their value.
-            --actor|--db|-C|--directory|--dolt-auto-commit)
+            # This set must track beads' persistent String flags (bd `cmd/bd/main.go`); `--format` is a hidden String alias for `--json`.
+            --actor|--db|-C|--directory|--dolt-auto-commit|--format)
                 expect_value=1
                 ;;
             # Root-level `--` end-of-flags terminator: everything after it is
@@ -236,17 +254,37 @@ if [ -n "$status_value" ]; then
     esac
 fi
 
+# --- telemetry emit (default ON; disable: LIVESPEC_BD_GUARD_OTLP=off) ---------
+# Fire a DETACHED, FAIL-OPEN bd.invoke OTLP span at the local collector. Emitted
+# for BOTH passthrough AND fail-mode blocks, so enforcement is OBSERVABLE: a
+# block is queryable as guard.mode=fail + guard.warned=1 + exit_code=3. The emit
+# can never delay or change bd's result. Args: $1=exit_code $2=start_ns $3=end_ns.
+_bdg_emit_span() {
+    [ "${LIVESPEC_BD_GUARD_OTLP:-on}" = "off" ] && return 0
+    command -v python3 >/dev/null 2>&1 || return 0
+    _bdg_emit="${LIVESPEC_BD_GUARD_EMIT:-$(dirname -- "$0")/bd-guard-emit.py}"
+    [ -f "$_bdg_emit" ] || return 0
+    _bdg_ppid=$PPID
+    _bdg_comm=$(cat "/proc/$_bdg_ppid/comm" 2>/dev/null || echo "")
+    _bdg_cmd=$(tr '\0' ' ' < "/proc/$_bdg_ppid/cmdline" 2>/dev/null | cut -c1-160)
+    BDG_ARGV="$_bdg_argv" BDG_WARNED="$violated" BDG_OP="$_bdg_op" BDG_MODE="$MODE" \
+    BDG_EXIT="$1" BDG_START_NS="$2" BDG_END_NS="$3" \
+    BDG_PPID="$_bdg_ppid" BDG_COMM="$_bdg_comm" BDG_CALLER_CMD="$_bdg_cmd" \
+    BDG_CWD="$PWD" \
+        setsid python3 "$_bdg_emit" >/dev/null 2>&1 </dev/null &
+}
+
 if [ "$violated" -eq 1 ] && [ "$MODE" = "fail" ]; then
-    # fail mode: block WITHOUT execing. The message(s) above already printed
-    # to stderr; exit non-zero.
+    # fail mode: BLOCK without execing. Emit a span FIRST (so the block is
+    # observable to telemetry), then exit non-zero. Messages already on stderr.
+    _bdg_now=$(date +%s%N 2>/dev/null || echo 0)
+    _bdg_emit_span 3 "$_bdg_now" "$_bdg_now"
     exit 3
 fi
 
-# --- telemetry passthrough (default ON; disable: LIVESPEC_BD_GUARD_OTLP=off) --
-# When ON: run bd in the FOREGROUND (TTY + signals preserved) so we can capture
-# its exit code + duration, then fire a DETACHED, FAIL-OPEN bd.invoke OTLP span
-# at the local collector. The emit can never delay or change bd's result. When
-# OFF: transparent exec passthrough exactly as before (zero overhead).
+# Passthrough. With OTLP off, transparent exec (zero overhead). With OTLP on, run
+# bd in the FOREGROUND (TTY + signals preserved) to capture exit + duration, then
+# fire the detached span.
 if [ "${LIVESPEC_BD_GUARD_OTLP:-on}" = "off" ]; then
     exec "$REAL" "$@"
 fi
@@ -255,18 +293,5 @@ _bdg_start=$(date +%s%N 2>/dev/null || echo 0)
 "$REAL" "$@"
 _bdg_rc=$?
 _bdg_end=$(date +%s%N 2>/dev/null || echo 0)
-
-if command -v python3 >/dev/null 2>&1; then
-    _bdg_emit="${LIVESPEC_BD_GUARD_EMIT:-$(dirname -- "$0")/bd-guard-emit.py}"
-    if [ -f "$_bdg_emit" ]; then
-        _bdg_ppid=$PPID
-        _bdg_comm=$(cat "/proc/$_bdg_ppid/comm" 2>/dev/null || echo "")
-        _bdg_cmd=$(tr '\0' ' ' < "/proc/$_bdg_ppid/cmdline" 2>/dev/null | cut -c1-160)
-        BDG_ARGV="$*" BDG_WARNED="$violated" BDG_OP="$_bdg_op" BDG_MODE="$MODE" \
-        BDG_EXIT="$_bdg_rc" BDG_START_NS="$_bdg_start" BDG_END_NS="$_bdg_end" \
-        BDG_PPID="$_bdg_ppid" BDG_COMM="$_bdg_comm" BDG_CALLER_CMD="$_bdg_cmd" \
-        BDG_CWD="$PWD" \
-            setsid python3 "$_bdg_emit" >/dev/null 2>&1 </dev/null &
-    fi
-fi
+_bdg_emit_span "$_bdg_rc" "$_bdg_start" "$_bdg_end"
 exit "$_bdg_rc"

@@ -47,6 +47,14 @@ if [ -e "${BIN_DIR}/bd-guard-emit.py" ]; then
     rm -f "${BIN_DIR}/bd-guard-emit.py"
 fi
 
+# Best-effort removal of the host-wide mode file install.sh seeded. Guarded so a
+# rollback never fails when it is absent (older installs predate the mode file).
+MODE_FILE="${LIVESPEC_BD_GUARD_MODE_FILE:-/usr/local/etc/livespec-bd-guard.mode}"
+if [ -e "$MODE_FILE" ]; then
+    echo "rollback.sh: removing host-wide mode file at '$MODE_FILE'" >&2
+    rm -f "$MODE_FILE"
+fi
+
 echo "rollback.sh: restoring '$REAL_TARGET' -> '$WRAPPER_TARGET'" >&2
 mv "$REAL_TARGET" "$WRAPPER_TARGET"
 

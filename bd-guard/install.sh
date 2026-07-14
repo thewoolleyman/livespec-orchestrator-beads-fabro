@@ -81,6 +81,20 @@ install -m 0755 "$WRAPPER_SRC" "$WRAPPER_TARGET"
 echo "install.sh: installing OTLP emit helper -> '${BIN_DIR}/bd-guard-emit.py'" >&2
 install -m 0755 "$EMIT_SRC" "${BIN_DIR}/bd-guard-emit.py"
 
+# --- Step 4: seed the host-wide mode file (default warn; never clobber) -------
+MODE_FILE="${LIVESPEC_BD_GUARD_MODE_FILE:-/usr/local/etc/livespec-bd-guard.mode}"
+if [ ! -e "$MODE_FILE" ]; then
+    mkdir -p "$(dirname "$MODE_FILE")"
+    printf 'warn\n' > "$MODE_FILE"
+    chmod 0644 "$MODE_FILE"
+    echo "install.sh: seeded mode file '$MODE_FILE' = warn" >&2
+else
+    echo "install.sh: mode file '$MODE_FILE' already present; leaving it." >&2
+fi
+
 echo "install.sh: done. Verify with: bd --version   (should pass through to real bd)" >&2
-echo "install.sh: default mode is WARN. To block, set LIVESPEC_BD_GUARD_MODE=fail." >&2
+echo "install.sh: default mode is WARN. To block host-wide, run:" >&2
+echo "install.sh:     echo fail | sudo tee $MODE_FILE   (and 'warn' to revert)." >&2
+echo "install.sh: the exported LIVESPEC_BD_GUARD_MODE env var is scrubbed by the" >&2
+echo "install.sh: credential wrapper, so the mode FILE is the real host-wide switch." >&2
 echo "install.sh: to point tooling at the wrapper, set LIVESPEC_BD_PATH=$WRAPPER_TARGET" >&2

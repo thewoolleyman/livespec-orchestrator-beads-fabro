@@ -49,6 +49,13 @@ export FAKE_BD_ARGV_FILE="$ARGV_FILE"
 # or a dead port, never the real endpoint.
 export LIVESPEC_BD_GUARD_OTLP=off
 
+# Insulate the whole harness from any host-wide mode file at the wrapper's
+# default path (/usr/local/etc/livespec-bd-guard.mode). Point MODE_FILE at a
+# path guaranteed ABSENT so an installed 'fail' file can never leak into a case
+# that does not set LIVESPEC_BD_GUARD_MODE (e.g. the §9 telemetry cases). The
+# dedicated mode-file section (§11) overrides this per-invocation.
+export LIVESPEC_BD_GUARD_MODE_FILE="${WORK}/no-such-mode-file"
+
 PASS=0
 FAIL=0
 fail() { FAIL=$((FAIL + 1)); echo "  FAIL: $1" >&2; }
@@ -622,6 +629,104 @@ if [ "$ERC" -eq 0 ] && cmp -s "$EBIN/bd" "$ORIG_BD" && [ ! -e "$EBIN/bd-real" ];
     pass "rollback: absent emit helper does not fail the rollback (best-effort removal)"
 else
     fail "rollback: absent-emit tolerance (rc=$ERC)"
+fi
+
+# ===========================================================================
+# 10. --format value-skip: the hidden persistent String flag must have its value
+#     CONSUMED so `update` (not `json`) is read as the subcommand. Closes the
+#     parser bypass where `--format json update ID --claim` slipped past the
+#     guard by mis-reading `json` as the subcommand and stopping.
+# ===========================================================================
+# fail mode: --format json update ID --claim must BLOCK (bypass closed).
+run_wrapper fail 0 "" -- --format json update abc-f1 --claim
+if ! was_called && [ "$RC" -eq 3 ] && stderr_has "bd update --claim' is non-lifecycle"; then
+    pass "fmt: --format json update --claim blocks in fail mode (bypass closed, no exec, exit 3)"
+else
+    fail "fmt: --format json update --claim bypass (rc=$RC, called=$(was_called && echo y || echo n))"
+fi
+
+# --format json list must still pass through UNGUARDED (list is out of scope);
+# proves the value-skip consumes `json` but does not over-consume the real
+# subcommand.
+run_wrapper warn 0 "issue list output" -- --format json list
+if was_called && assert_argv --format json list && [ "$RC" -eq 0 ] && stderr_empty; then
+    pass "fmt: --format json list passes through (value skipped, list seen, unguarded)"
+else
+    fail "fmt: --format json list passthrough (rc=$RC, stderr=$(cat "$ERR_FILE"))"
+fi
+
+# ===========================================================================
+# 11. Host-wide MODE FILE fallback (precedence: env var > file > warn). The
+#     fleet credential wrapper scrubs the env before bd runs, so the FILE — not
+#     an exported env var — is the real host-wide switch. LIVESPEC_BD_GUARD_MODE
+#     is UNSET for the file cases; the wrapper reads the file at MODE_FILE.
+# ===========================================================================
+MODE_FILE_T="${WORK}/guard.mode"
+
+# file = fail (env var UNSET) -> update --claim BLOCKS (no exec, exit 3)
+printf 'fail\n' > "$MODE_FILE_T"
+rm -f "$ARGV_FILE"
+LIVESPEC_BD_GUARD_MODE_FILE="$MODE_FILE_T" \
+    "$WRAPPER" update abc-m1 --claim >"$OUT_FILE" 2>"$ERR_FILE"; MRC=$?
+if ! was_called && [ "$MRC" -eq 3 ] && stderr_has "bd update --claim' is non-lifecycle"; then
+    pass "mode-file: file='fail' (env unset) blocks --claim (exit 3, no exec)"
+else
+    fail "mode-file: file='fail' block (rc=$MRC, called=$(was_called && echo y || echo n))"
+fi
+
+# file = warn (env var UNSET) -> passthrough (stub runs) + stderr warning
+printf 'warn\n' > "$MODE_FILE_T"
+rm -f "$ARGV_FILE"
+LIVESPEC_BD_GUARD_MODE_FILE="$MODE_FILE_T" \
+    "$WRAPPER" update abc-m2 --claim >"$OUT_FILE" 2>"$ERR_FILE"; MRC=$?
+if was_called && [ "$MRC" -eq 0 ] && stderr_has "bd update --claim' is non-lifecycle"; then
+    pass "mode-file: file='warn' (env unset) passes through with warning (stub runs)"
+else
+    fail "mode-file: file='warn' passthrough (rc=$MRC, called=$(was_called && echo y || echo n))"
+fi
+
+# env var 'warn' OVERRIDES a 'fail' file -> passthrough (env precedence wins)
+printf 'fail\n' > "$MODE_FILE_T"
+rm -f "$ARGV_FILE"
+LIVESPEC_BD_GUARD_MODE=warn \
+LIVESPEC_BD_GUARD_MODE_FILE="$MODE_FILE_T" \
+    "$WRAPPER" update abc-m3 --claim >"$OUT_FILE" 2>"$ERR_FILE"; MRC=$?
+if was_called && [ "$MRC" -eq 0 ] && stderr_has "bd update --claim' is non-lifecycle"; then
+    pass "mode-file: env var 'warn' overrides a 'fail' file (env precedence, passthrough)"
+else
+    fail "mode-file: env overrides file (rc=$MRC, called=$(was_called && echo y || echo n))"
+fi
+
+# ===========================================================================
+# 12. Fail-mode BLOCK emits a telemetry span (blocks are OBSERVABLE). The emit
+#     is DETACHED, so poll for the stub-emit's output. OTLP left default-ON here;
+#     the emit is routed to a stub script (not a real collector) via
+#     LIVESPEC_BD_GUARD_EMIT, which appends to a temp file when it runs.
+# ===========================================================================
+EMIT_STUB="${WORK}/emit-stub.py"
+cat > "$EMIT_STUB" <<'EMITSTUB'
+import os
+p = os.environ.get("EMIT_STUB_OUT", "")
+if p:
+    with open(p, "a") as f:
+        f.write("emitted mode=%s warned=%s exit=%s\n" % (
+            os.environ.get("BDG_MODE", ""),
+            os.environ.get("BDG_WARNED", ""),
+            os.environ.get("BDG_EXIT", ""),
+        ))
+EMITSTUB
+ESTUB_OUT="${WORK}/emit-stub-out.txt"
+rm -f "$ESTUB_OUT" "$ARGV_FILE"
+LIVESPEC_BD_GUARD_MODE=fail \
+LIVESPEC_BD_GUARD_OTLP=on \
+LIVESPEC_BD_GUARD_EMIT="$EMIT_STUB" \
+EMIT_STUB_OUT="$ESTUB_OUT" \
+    "$WRAPPER" update abc-e1 --claim >"$OUT_FILE" 2>"$ERR_FILE"; BRC=$?
+if [ "$BRC" -eq 3 ] && ! was_called && poll_capture "$ESTUB_OUT" \
+        && grep -q 'mode=fail warned=1 exit=3' "$ESTUB_OUT"; then
+    pass "block-emit: fail-mode --claim block emits a span (guard.mode=fail warned=1 exit=3) AND exits 3, no exec"
+else
+    fail "block-emit: fail-mode block span (rc=$BRC, called=$(was_called && echo y || echo n), emit=$(cat "$ESTUB_OUT" 2>/dev/null))"
 fi
 
 # ===========================================================================
