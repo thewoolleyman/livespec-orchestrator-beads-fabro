@@ -118,8 +118,19 @@ jobs:
           # 1Password Environment so LIVESPEC_E2E_GITHUB_TOKEN /
           # ANTHROPIC_API_KEY_LIVESPEC_E2E / CLAUDE_CODE_OAUTH_TOKEN /
           # HONEYCOMB_INGEST_KEY_LIVESPEC are present; secrets are never echoed.
+          #
+          # PATH: the wrapper deliberately scrubs the environment (`env -i`) and
+          # hard-codes PATH to the system secure_path, so mise-managed tools —
+          # `just` and `uv` among them — are NOT resolvable inside it. Calling
+          # `just` directly through the wrapper therefore dies with
+          # `env: 'just': No such file or directory` (exit 127) on ANY host,
+          # runner or laptop alike. So restore the operator's mise shims for the
+          # wrapped command. The wrapper's own OPENV_PRESERVE_VARS hook cannot
+          # solve this: it captures values in stage 1, AFTER sudo has already
+          # reset the environment, so a preserved PATH would just be root's
+          # secure_path again.
           /data/projects/1password-env-wrapper/with-livespec-env.sh -- \
-            just acceptance-live-golden-master -- "$@"
+            bash -c 'export PATH="$HOME/.local/share/mise/shims:$PATH"; exec just acceptance-live-golden-master -- "$@"' _ "$@"
 
       # --- codex-acp auto-bump gate: cross-repo commit-status callback. ---
       # Runs ONLY on the repository_dispatch path, ALWAYS (so a red gate still
