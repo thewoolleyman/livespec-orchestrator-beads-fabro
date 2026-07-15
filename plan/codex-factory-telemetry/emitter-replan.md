@@ -115,18 +115,19 @@ run-event stream — the dispatcher simply doesn't read those fields.
 
 **The mechanism:** `fabro events <run-id> --json` — whose argv builder already
 exists in the dispatcher (`_dispatcher_fabro_argv.py:198-205`, used today only by
-the stall watchdog, and only for timestamps) — dumps the full event stream. Each
-node's `StageCompleted` event carries `preferred_label` **and** `node_visits`
-(`fabro-types/src/run_event/stage.rs:24-43`, emitted at
-`fabro-workflow/src/lifecycle/event.rs:301+`). Parsing the **review** node's
-`StageCompleted` records yields **all four** attributes directly and
-authoritatively — the verdict on each visit, the fix-round count, whether the cap
-was hit, and whether a PR followed a non-approving final verdict — with **no
-`workflow.fabro` change and no upstream fabro PR**. This is the same
-"read structured post-run state" pattern the cost seam already uses
-(`_dispatcher_cost` over `fabro ps -a --json`), and the dispatcher already invokes
-the sibling `fabro inspect <run-id> --json` on every run, green included
-(`_dispatcher_engine.py:257→323`).
+the stall watchdog, and only for timestamps) — dumps the full event stream (JSONL,
+one event per line). Parsing the **review** node's transitions yields **all four**
+attributes directly and authoritatively, with **no `workflow.fabro` change and no
+upstream fabro PR**. This is the same "read structured post-run state" pattern the
+cost seam already uses (`_dispatcher_cost` over `fabro ps -a --json`), and the
+dispatcher already invokes the sibling `fabro inspect <run-id> --json` on every run,
+green included (`_dispatcher_engine.py:257→323`).
+
+The exact field locations were captured empirically from a real completed run (see
+"Verify-first result" below) — and they differ from the source-level reading: the
+verdict lives on the **`edge.selected`** event, not on `stage.completed`, and the
+visit/fix-round count comes from **counting** review/review_fix events, not a
+`node_visits` field. F1's build must be written against those real shapes.
 
 ### Rejected design — the stderr sentinel (recorded so it is not re-proposed)
 
@@ -156,18 +157,59 @@ the event stream already answers the business question in full, so **O3 is no
 longer on the review-gate critical path**; it is per-node *trace* observability,
 not the review-gate source.
 
+## Verify-first result (2026-07-15) — the real event shapes
+
+F1's "verify FIRST" gate was run against a real completed run
+(`fabro events 01KXESWS4FP2KXWGP0944ZPESQ --json`, an ImplementWorkItem run that
+passed through review→pr). The data is all present, but **not where the source-level
+read predicted** — so F1 must be built against these observed shapes:
+
+- **Verdict → `edge.selected`, not `stage.completed`.** The review node's routing
+  decision is an `edge.selected` event: `properties = {from_node:"review",
+  to_node, reason, label, preferred_label}`. Observed approve case:
+  `{from_node:"review", to_node:"pr", reason:"preferred_label", label:"approve",
+  preferred_label:"approve"}`. The `reason` enum seen: `"unconditional"`,
+  `"condition"`, `"preferred_label"`.
+- **`stage.completed`** carries `{node_id, node_label, properties:{attempt, index,
+  max_attempts, status, timing, context_updates…}}` — **no** `preferred_label` and
+  **no** `node_visits`. (The Rust `StageCompleted` type has richer fields; the
+  serialized event does not surface them.)
+- **Derivations F1 will use (all from the event stream, robust):**
+  - `review.fix_rounds` = count of `edge.selected` with `from_node="review",
+    to_node="review_fix"` (≡ count of `review_fix` `stage.completed`).
+  - `pr.shipped_on_cap` = a `review→pr` `edge.selected` with
+    `reason="unconditional"` (the fallthrough — shipped WITHOUT an approve),
+    **AND** review visit-count ≥ 3. A `review→pr` with `reason="preferred_label",
+    label="approve"` is a clean approve, not ship-on-cap.
+  - **Malformed-verdict class handled cleanly:** a `review→pr` fallthrough at
+    visit < 3 is the no/garbled-verdict early ship — recorded `verdict=unknown /
+    shipped_without_approve`, distinct from ship-on-cap by the visit count.
+  - `review.verdict` (terminal) = `preferred_label` on the last review
+    `edge.selected` (approve / fix / unknown).
+  - `review.hit_cap` ≡ `pr.shipped_on_cap` in this graph.
+- Visit count = number of `edge.selected` with `from_node="review"` (≡ review
+  `stage.completed` count). `checkpoint.completed` also carries a `completed_nodes`
+  list, a secondary cross-check.
+
+Net: the gate PASSES — F1 is buildable and unit-testable against synthetic JSONL
+event fixtures shaped like the captured events. The one caveat still open: the
+captured run approved on the first review visit, so the `fix`/ship-on-cap edge
+shapes are inferred from the routing rules, not yet observed on a real fix run;
+confirm on the first dispatch that takes a fix round (or synthesize the fixture and
+validate the parser is order-robust).
+
 ## Proposed decomposition (drafted cut — nothing filed)
 
 ### Tier F — factory-safe, ours, buildable NOW (no upstream dependency)
 
 **F1 — Review-gate attributes from the run-event stream.** *(the high-value standalone slice; dispatcher-only, no `workflow.fabro` change)*
 - `_dispatcher_*`: after a run, query `fabro events <run-id> --json` (argv builder
-  already exists), parse the review node's `StageCompleted` records, and derive the
-  four attributes — `review.verdict` (last visit's `preferred_label`),
-  `review.fix_rounds` (review_fix `StageCompleted` count, = review visits − 1),
-  `review.hit_cap` (review reached its 3rd visit with a non-approve final verdict),
-  `pr.shipped_on_cap` (hit_cap AND a `pr` node ran). Thread them onto a new
-  per-dispatch `livespec-dispatcher` span.
+  already exists) and parse the review node's `edge.selected` + `stage.completed`
+  events per the observed shapes in "Verify-first result" above — `review.verdict`
+  (last review `edge.selected` `preferred_label`), `review.fix_rounds` (count of
+  `review→review_fix` edges), `review.hit_cap` / `pr.shipped_on_cap` (a
+  `review→pr` fallthrough edge at visit ≥ 3). Thread them onto a new per-dispatch
+  `livespec-dispatcher` span.
 - Parse on **every** terminal path (green, blocked, failed) — not green-only — so
   `hit_cap` is not undercounted when the `pr` node fails after the cap
   (`pr -> escalate [outcome=failed]`, workflow.fabro:290).
@@ -181,14 +223,11 @@ not the review-gate source.
   unit test asserting they survive enrich AND a content-shaped key still drops.
 - Product `.py` → Red-Green-Replay; plugin-observable (new dispatcher span) ⇒
   needs a Gherkin scenario.
-- **Build-time verify FIRST:** capture a real `fabro events --json` from a dispatch
-  that actually took a review round, and confirm `StageCompleted` carries
-  `preferred_label` + `node_visits` for the review node. This is the one
-  source-level claim F1 rests on (Fable verified it against the Rust types; confirm
-  it empirically before writing the parser). Fallback if the field is absent
-  post-run: `fabro inspect --json` `checkpoint.node_visits`
-  (`fabro-types/src/checkpoint.rs:29`) — weaker (final-checkpoint coverage of the
-  last nodes unverified).
+- **Build-time verify FIRST — DONE (2026-07-15).** Ran against a real completed run;
+  the data is present but on `edge.selected` (verdict) + event-counting (visits),
+  not on `stage.completed` as the source-read implied. See "Verify-first result".
+  Still open: confirm the `fix`/ship-on-cap edge shapes on the first dispatch that
+  takes a fix round (the captured run approved on visit 1).
 
 ### Tier O — outward-facing fabro (rides `bd-ib-i4r`; carried on `factory-integration`, surfaced before any upstream PR)
 
