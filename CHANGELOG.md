@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.30.5...v0.30.6) (2026-07-15)
+
+
+### Bug Fixes
+
+* **bd-guard:** guard bd ready --claim + bd defer, harden mode-file read ([6df358f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6df358f1c700cfb8431943a9cb654bed02373492))
+
 ## [0.30.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.30.4...v0.30.5) (2026-07-14)
 
 
