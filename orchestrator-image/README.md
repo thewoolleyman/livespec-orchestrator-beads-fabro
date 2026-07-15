@@ -235,6 +235,92 @@ across server restarts and returns connection-refused while the loopback backend
 is down — so a `:32276` listener owned by `tailscaled` (not `fabro`) means the
 proxy is up but the backend is not.
 
+### Host Codex credential refresher timer
+
+The Dispatcher projects the host's Codex `~/.codex/auth.json` into worker
+sandboxes with the real refresh token replaced by the non-rotatable sentinel.
+The host is therefore the only process allowed to refresh or rotate the real
+Codex refresh credential. Today that host credential has measured as a
+240-hour / 10-day access token. If no host Codex process runs near the end of
+that window, the token reaches a cliff: the dispatch freshness gate refuses new
+runs until an operator runs `codex login` on the orchestrator host.
+
+The fix is a host-side user timer that runs the guarded refresher about every
+five minutes. The refresher first decodes the access-token `exp` locally and
+invokes `codex exec` only when the credential is inside the refresh guard. This
+guard matters: Codex has no force-refresh command, and read-only commands such
+as `codex login status` and `codex doctor --json` do not refresh `auth.json`.
+A naive hourly `codex exec` cron would spend roughly 240 real Codex requests per
+10-day cycle. The guarded timer normally spends none, then roughly one to three
+tiny requests near the cliff.
+
+The actual host install is a manual maintainer step. Install these as the
+`ubuntu` user on the orchestrator host, replacing the checkout path only if the
+host checkout differs:
+
+```bash
+mkdir -p ~/.config/systemd/user
+
+cat > ~/.config/systemd/user/livespec-codex-cred-refresh.service <<'EOF'
+[Unit]
+Description=Refresh the host Codex credential for the livespec dark factory
+Documentation=file:/data/projects/livespec-orchestrator-beads-fabro/orchestrator-image/README.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=/data/projects/livespec-orchestrator-beads-fabro
+ExecStart=/usr/local/bin/with-livespec-env.sh -- python3 /data/projects/livespec-orchestrator-beads-fabro/.claude-plugin/scripts/bin/dispatcher.py codex-cred-refresh --json
+EOF
+
+cat > ~/.config/systemd/user/livespec-codex-cred-refresh.timer <<'EOF'
+[Unit]
+Description=Run the livespec host Codex credential refresher every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Persistent=true
+Unit=livespec-codex-cred-refresh.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl --user daemon-reload
+systemctl --user enable --now livespec-codex-cred-refresh.timer
+```
+
+Verify the timer and one manual dry run:
+
+```bash
+systemctl --user list-timers livespec-codex-cred-refresh.timer
+systemctl --user status livespec-codex-cred-refresh.timer
+journalctl --user -u livespec-codex-cred-refresh.service -n 50 --no-pager
+
+/usr/local/bin/with-livespec-env.sh -- \
+  python3 /data/projects/livespec-orchestrator-beads-fabro/.claude-plugin/scripts/bin/dispatcher.py \
+    codex-cred-refresh --dry-run --json
+```
+
+The status command is the alerting surface:
+
+```bash
+/usr/local/bin/with-livespec-env.sh -- \
+  python3 /data/projects/livespec-orchestrator-beads-fabro/.claude-plugin/scripts/bin/dispatcher.py \
+    codex-cred-status --json
+```
+
+`codex-cred-status --json` exits `0` when `"alarm": false` and exits `1` when
+`"alarm": true`; wire external monitoring to that exit code. The JSON includes
+`remaining_seconds`, `remaining_days`, `expires_at_iso`, `refresh_due`, and a
+human-readable `message`. The alarm threshold is two days before expiry. The
+refresh guard is six minutes before expiry, matching Codex's five-minute
+proactive refresh window with a small scheduler margin. A status alarm means the
+10-day cliff is close and deserves attention; a timer run returning non-zero or
+a repeated `"refresh_due": true` after a non-dry-run refresh means the maintainer
+should run `codex login` on the host and then re-check status.
+
 ## Real-work substrate (production)
 
 For routine cross-repo work the Dispatcher runs on the **real-work substrate**:
