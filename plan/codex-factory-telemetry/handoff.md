@@ -1,5 +1,25 @@
 # Handoff — codex-factory-telemetry
 
+## ⇥ CONTINUE THIS TRACK — it is NOT finished (do not let it be orphaned)
+
+This is the ORIGINAL track. Its `factory-integration` + spec-ratification arc is
+DONE, but its reason-for-being — the **emitter + receiver** (`bd-ib-98c.1` /
+`bd-ib-98c.2`) — remains. Resume from §"CURRENT STATE + NEXT ACTION" below.
+
+- **A sibling track was spun off from here (2026-07-15):**
+  `codex-credential-broker` (epic `bd-ib-rck`; handoff
+  `plan/codex-credential-broker/handoff.md`). It surfaced while re-verifying
+  `bd-ib-ss7rkr` during this session and now has its own track + fresh session.
+  That is why the credential work is NOT in this handoff — it did not vanish, it
+  moved.
+- **Cross-track relationship:** SIBLINGS, no hard code dependency (beads:
+  `bd-ib-98c` `related` `bd-ib-rck`, NOT `blocks`). The one real link is soft +
+  operational: **this track's end-to-end verification needs a live dispatch, so a
+  dead Codex credential (the broker's domain) would block that e2e proof.** Also
+  both touch the same fabro worker-env re-injection seam
+  (`worker_runtime.rs:90-99`) / `_dispatcher_overlay.py`. See §"Related tracks" at
+  the end.
+
 ## What this thread is
 
 Restore end-to-end factory observability for the **Codex era**. The
@@ -393,6 +413,26 @@ Coordinate with the **`fabro-token-refresh`** thread: its `#568` is the OTHER
 fabro PR the integration branch combines. Agree on nothing new for the transport
 (wire format `http/json`, `service.name=fabro` settled); the integration-branch
 base-version decision (`#474`) is the shared concern.
+
+## Related tracks
+
+- **`codex-credential-broker`** (epic `bd-ib-rck`; handoff
+  `plan/codex-credential-broker/handoff.md`) — spun off from THIS track on
+  2026-07-15 (surfaced while re-verifying `bd-ib-ss7rkr`). Ledger edge:
+  `bd-ib-98c` `related` `bd-ib-rck` — SIBLINGS, **not** a `blocks` chain.
+  - **Soft, directional, operational dependency:** this track's end-to-end
+    verification (`bd-ib-98c.1` emitter → a live proof dispatch) needs a valid
+    Codex credential. A dead host credential (the broker's 10-day-cliff concern)
+    hard-stops the factory, so it would block that e2e proof. Keeping the
+    credential fresh (the broker's surviving scope) unblocks it. No build-time
+    code dependency — only verification-time.
+  - **Shared code surface to coordinate at:** the broker's landed seatbelt
+    (`bd-ib-a89`) added `CODEX_REFRESH_TOKEN_URL_OVERRIDE` to
+    `_dispatcher_overlay.py`. This track's emitter adds `OTEL_*` at the SAME fabro
+    `worker_runtime.rs:90-99` re-injection seam. Follow that established overlay
+    pattern; do NOT widen fabro's fail-closed `apply_worker_env`.
+- **`fabro-token-refresh`** — see §"Coordination" above (shares the
+  `factory-integration` base + `#474`).
 
 ## Do NOT
 
