@@ -1,0 +1,134 @@
+"""Review-gate telemetry parser for Fabro JSONL events."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, cast
+
+__all__: list[str] = [
+    "ReviewGateTelemetry",
+    "parse_review_gate_events",
+]
+
+_REVIEW_CAP_VISITS = 3
+
+
+@dataclass(frozen=True, kw_only=True)
+class ReviewGateTelemetry:
+    """Derived review-gate telemetry for one completed Fabro run."""
+
+    verdict: str
+    fix_rounds: int
+    hit_cap: bool
+    shipped_on_cap: bool
+
+
+@dataclass(frozen=True, kw_only=True)
+class _ReviewEdge:
+    order_key: tuple[float, int]
+    to_node: str
+    reason: str
+    preferred_label: str | None
+
+
+def parse_review_gate_events(*, events_jsonl: str) -> ReviewGateTelemetry:
+    """Derive terminal review-gate attributes from `fabro events --json` JSONL."""
+    review_edges = tuple(_review_edges(events_jsonl=events_jsonl))
+    fix_rounds = sum(1 for edge in review_edges if edge.to_node == "review_fix")
+    visit_count = len(review_edges)
+    shipped_on_cap = (
+        any(edge.to_node == "pr" and edge.reason == "unconditional" for edge in review_edges)
+        and visit_count >= _REVIEW_CAP_VISITS
+    )
+    terminal_edge = max(review_edges, key=lambda edge: edge.order_key) if review_edges else None
+    verdict = _terminal_verdict(edge=terminal_edge)
+    return ReviewGateTelemetry(
+        verdict=verdict,
+        fix_rounds=fix_rounds,
+        hit_cap=shipped_on_cap,
+        shipped_on_cap=shipped_on_cap,
+    )
+
+
+def _review_edges(*, events_jsonl: str) -> list[_ReviewEdge]:
+    edges: list[_ReviewEdge] = []
+    for index, line in enumerate(events_jsonl.splitlines()):
+        parsed = _parse_line(line=line)
+        if parsed is None or _event_name(event=parsed) != "edge.selected":
+            continue
+        properties = _properties(event=parsed)
+        if properties.get("from_node") != "review":
+            continue
+        to_node = properties.get("to_node")
+        reason = properties.get("reason")
+        preferred_label = properties.get("preferred_label")
+        if not isinstance(to_node, str) or not isinstance(reason, str):
+            continue
+        edges.append(
+            _ReviewEdge(
+                order_key=(_event_order(event=parsed, index=index), index),
+                to_node=to_node,
+                reason=reason,
+                preferred_label=preferred_label if isinstance(preferred_label, str) else None,
+            )
+        )
+    return edges
+
+
+def _parse_line(*, line: str) -> dict[str, Any] | None:
+    stripped = line.strip()
+    if stripped == "":
+        return None
+    try:
+        parsed_raw: object = json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed_raw, dict):
+        return None
+    return cast("dict[str, Any]", parsed_raw)
+
+
+def _event_name(*, event: dict[str, Any]) -> str | None:
+    for key in ("event", "name", "event_name", "type"):
+        value: object = event.get(key)
+        if isinstance(value, str):
+            return value
+    return None
+
+
+def _properties(*, event: dict[str, Any]) -> dict[str, object]:
+    properties_raw: object = event.get("properties")
+    if isinstance(properties_raw, dict):
+        return cast("dict[str, object]", properties_raw)
+    return event
+
+
+def _event_order(*, event: dict[str, Any], index: int) -> float:
+    for key in ("timestamp", "ts", "at"):
+        value: object = event.get(key)
+        if isinstance(value, str):
+            epoch = _iso_to_epoch(value=value)
+            if epoch is not None:
+                return epoch
+        if isinstance(value, int | float) and not isinstance(value, bool):
+            return float(value)
+    return float(index)
+
+
+def _iso_to_epoch(*, value: str) -> float | None:
+    normalized = value.removesuffix("Z") + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
+
+
+def _terminal_verdict(*, edge: _ReviewEdge | None) -> str:
+    if edge is None or edge.preferred_label not in {"approve", "fix"}:
+        return "unknown"
+    return edge.preferred_label

@@ -5,7 +5,8 @@ from __future__ import annotations
 import argparse
 import tempfile
 import time
-from dataclasses import asdict
+from collections.abc import Callable
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from time import sleep as _real_sleep
 
@@ -40,12 +41,18 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     heartbeat_path,
+    spans_path,
     workflow_toml,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
+    DispatchPlan,
     build_plan,
     janitor_checkout_path,
     render_goal,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_review_gate import (
+    ReviewGateEmission,
+    emit_review_gate_from_fabro_events,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -132,20 +139,61 @@ def dispatch_one(
         item=item, repo=repo, branch=plan.branch, comments=comments, lessons=lessons
     )
     _ = goal_file.write_text(goal_text, encoding="utf-8")
+    started_at, outcome = _run_dispatch_and_emit_review_gate(
+        context=_DispatchRunContext(
+            args=args,
+            repo=repo,
+            plan=plan,
+            journal=journal,
+            overlay_file=overlay_file,
+            token_supplier=token_supplier,
+            item_id=item.id,
+            dispatch_id=dispatch_id,
+        )
+    )
+    post_run_dispositions(
+        args=args,
+        repo=repo,
+        item=item,
+        outcome=outcome,
+        journal=journal,
+        wall_clock_seconds=time.monotonic() - started_at,
+        dispatch_context_size=len(goal_text),
+        token_supplier=token_supplier,
+    )
+    return outcome
+
+
+@dataclass(frozen=True, kw_only=True)
+class _DispatchRunContext:
+    args: argparse.Namespace
+    repo: Path
+    plan: DispatchPlan
+    journal: JournalFile
+    overlay_file: Path
+    token_supplier: Callable[[], str]
+    item_id: str
+    dispatch_id: str
+
+
+def _run_dispatch_and_emit_review_gate(
+    *, context: _DispatchRunContext
+) -> tuple[float, DispatchOutcome]:
     started_at = time.monotonic()
+    runner = GithubTokenEnvRunner(inner=ShellCommandRunner(), token=context.token_supplier)
     try:
         outcome = run_dispatch(
-            plan=plan,
+            plan=context.plan,
             # Pillar 1 (first-class remint): the decorator re-resolves
             # GH_TOKEN from the caching provider before EVERY engine
             # subprocess, so the ~76-min merge-poll and the post-merge
             # git/janitor legs never ride an expired once-at-start token.
-            runner=GithubTokenEnvRunner(inner=ShellCommandRunner(), token=token_supplier),
-            journal=journal,
+            runner=runner,
+            journal=context.journal,
             sleep=_real_sleep,
             poll=PollPolicy(
-                attempts=args.poll_attempts,
-                interval_seconds=args.poll_interval_seconds,
+                attempts=context.args.poll_attempts,
+                interval_seconds=context.args.poll_interval_seconds,
             ),
             # The progress watchdog (work-item livespec-impl-beads-oyg):
             # runs `fabro run` while watching liveness and `fabro rm -f`-es
@@ -158,19 +206,20 @@ def dispatch_one(
             # heartbeat degrades to the wall-clock layer, never to NO
             # detection.
             fabro_launcher=WatchedFabroLauncher(
-                heartbeat_path=heartbeat_path(args=args, repo=repo),
+                heartbeat_path=heartbeat_path(args=context.args, repo=context.repo),
             ),
         )
     finally:
-        overlay_file.unlink(missing_ok=True)
-    post_run_dispositions(
-        args=args,
-        repo=repo,
-        item=item,
-        outcome=outcome,
-        journal=journal,
-        wall_clock_seconds=time.monotonic() - started_at,
-        dispatch_context_size=len(goal_text),
-        token_supplier=token_supplier,
+        context.overlay_file.unlink(missing_ok=True)
+    emit_review_gate_from_fabro_events(
+        emission=ReviewGateEmission(
+            plan=context.plan,
+            runner=runner,
+            journal=context.journal,
+            spans_path=spans_path(args=context.args, repo=context.repo),
+            work_item_id=context.item_id,
+            dispatch_id=context.dispatch_id,
+            run_id=outcome.fabro_run_id,
+        )
     )
-    return outcome
+    return started_at, outcome

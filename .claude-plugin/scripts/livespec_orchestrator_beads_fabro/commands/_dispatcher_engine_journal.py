@@ -24,6 +24,7 @@ def failed_outcome(
     plan: DispatchPlan,
     stage: str,
     detail: str,
+    fabro_run_id: str | None = None,
 ) -> DispatchOutcome:
     return outcome_type(
         work_item_id=plan.work_item_id,
@@ -32,6 +33,7 @@ def failed_outcome(
         pr_number=None,
         merge_sha=None,
         detail=detail,
+        fabro_run_id=fabro_run_id,
     )
 
 
@@ -54,6 +56,7 @@ def stalled_outcome(
             f"Set LIVESPEC_DISPATCH_STALL_SECONDS to tune the window; the DEFERRED 29f "
             f"OTEL metrics-heartbeat primary will refine this coarse signal."
         ),
+        fabro_run_id=run_id,
     )
 
 

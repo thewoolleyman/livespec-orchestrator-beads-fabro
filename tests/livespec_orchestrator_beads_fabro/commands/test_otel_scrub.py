@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from hypothesis import given
 from hypothesis import strategies as st
+from livespec_orchestrator_beads_fabro.commands._otel_enrich import enrich_span
 from livespec_orchestrator_beads_fabro.commands._otel_scrub import (
     ATTR_MAX_LEN,
     ATTRIBUTE_ALLOWLIST,
@@ -69,6 +70,36 @@ def test_efj_rider_cost_and_token_scalars_are_allowlisted() -> None:
 def test_correlation_triple_is_allowlisted() -> None:
     for key in ("work.item.id", "livespec.dispatch.id", "fabro.run_id"):
         assert is_allowed_attr(key=key) is True
+
+
+def test_review_gate_keys_survive_enrich_while_prompt_io_drops() -> None:
+    span: dict[str, object] = {
+        "name": "review-gate",
+        "attributes": [
+            {"key": "review.verdict", "value": {"stringValue": "approve"}},
+            {"key": "review.fix_rounds", "value": {"intValue": "2"}},
+            {"key": "review.hit_cap", "value": {"boolValue": True}},
+            {"key": "pr.shipped_on_cap", "value": {"boolValue": True}},
+            {"key": "agent.acp.completed.stdout", "value": {"stringValue": "prompt text"}},
+        ],
+    }
+
+    enriched = enrich_span(span=span, triple={"work.item.id": "bd-1"})
+
+    assert enriched is not None
+    keys = {
+        entry["key"]
+        for entry in enriched["attributes"]
+        if isinstance(entry, dict) and isinstance(entry.get("key"), str)
+    }
+    assert {
+        "review.verdict",
+        "review.fix_rounds",
+        "review.hit_cap",
+        "pr.shipped_on_cap",
+        "work.item.id",
+    } <= keys
+    assert "agent.acp.completed.stdout" not in keys
 
 
 @given(value=st.text(alphabet=st.characters(blacklist_characters="@"), max_size=400))
