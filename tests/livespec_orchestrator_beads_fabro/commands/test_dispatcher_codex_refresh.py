@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 
 _NOW = 1_000_000
 _MODULE_PATH = Path(
@@ -36,6 +37,8 @@ def test_codex_refresh_module_exists_with_expected_public_surface() -> None:
         "CODEX_REFRESH_GUARD_SECONDS",
         "HostCodexCredentialStatus",
         "assess_host_codex_credential",
+        "classify_refresh_outcome",
+        "should_invoke_codex_refresh",
     }
     assert module.CODEX_ALARM_THRESHOLD_SECONDS == 172_800
     assert module.CODEX_REFRESH_GUARD_SECONDS == 360
@@ -114,6 +117,84 @@ def test_valid_host_auth_status_flags_match_thresholds(
     assert status.alarm is (remaining < alarm_threshold)
     assert status.refresh_due is (remaining < refresh_guard)
     assert str(remaining) in status.message
+
+
+@given(
+    present=st.booleans(),
+    malformed=st.booleans(),
+    refresh_due=st.booleans(),
+)
+def test_should_invoke_codex_refresh_matches_present_well_formed_due_status(
+    *,
+    present: bool,
+    malformed: bool,
+    refresh_due: bool,
+) -> None:
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_refresh"
+    )
+    status = module.HostCodexCredentialStatus(
+        present=present,
+        malformed=malformed,
+        expires_at_epoch=_NOW + 10,
+        remaining_seconds=10,
+        alarm=refresh_due,
+        refresh_due=refresh_due,
+        message="status",
+    )
+
+    assert module.should_invoke_codex_refresh(status=status) is (
+        present and not malformed and refresh_due
+    )
+
+
+@given(
+    before_remaining=st.integers(min_value=-1_000, max_value=1_000),
+    after_remaining=st.integers(min_value=-1_000, max_value=1_000),
+    codex_ok=st.booleans(),
+)
+def test_classify_refresh_outcome_matches_guarded_refresh_state(
+    *,
+    before_remaining: int,
+    after_remaining: int,
+    codex_ok: bool,
+) -> None:
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_refresh"
+    )
+    before = module.HostCodexCredentialStatus(
+        present=True,
+        malformed=False,
+        expires_at_epoch=_NOW + before_remaining,
+        remaining_seconds=before_remaining,
+        alarm=True,
+        refresh_due=before_remaining < 360,
+        message="before",
+    )
+    after = module.HostCodexCredentialStatus(
+        present=True,
+        malformed=False,
+        expires_at_epoch=_NOW + after_remaining,
+        remaining_seconds=after_remaining,
+        alarm=after_remaining < 172_800,
+        refresh_due=after_remaining < 360,
+        message="after",
+    )
+
+    outcome = module.classify_refresh_outcome(
+        before=before,
+        after=after,
+        codex_ok=codex_ok,
+    )
+
+    if before_remaining >= 360:
+        assert outcome == "noop-not-due"
+    elif not codex_ok:
+        assert outcome == "codex-error"
+    elif after_remaining > before_remaining and after_remaining >= 360:
+        assert outcome == "refreshed"
+    else:
+        assert outcome == "still-stale"
 
 
 def test_decode_codex_access_token_exp_is_public() -> None:
@@ -200,3 +281,164 @@ def test_run_codex_cred_status_human_output(
     assert "present: true" in out
     assert "alarm: false" in out
     assert "refresh_due: false" in out
+
+
+class _RecordingRunner:
+    def __init__(self, *, result: CommandResult) -> None:
+        self.result = result
+        self.calls: list[tuple[list[str], Path, float]] = []
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+    ) -> CommandResult:
+        assert env is None
+        self.calls.append((argv, cwd, timeout_seconds))
+        return self.result
+
+
+def test_run_codex_cred_refresh_not_due_skips_codex(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_auth = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth"
+    )
+    runner = _RecordingRunner(result=CommandResult(exit_code=0, stdout="OK\n", stderr=""))
+    monkeypatch.setattr(
+        codex_auth,
+        "read_host_codex_auth",
+        lambda: _auth_json_with_exp(exp=_NOW + 3_600),
+    )
+    monkeypatch.setattr(codex_auth.time, "time", lambda: float(_NOW))
+    monkeypatch.setattr(codex_auth, "ShellCommandRunner", lambda: runner)
+
+    exit_code = codex_auth.run_codex_cred_refresh(
+        args=argparse.Namespace(as_json=True, dry_run=False)
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert runner.calls == []
+    assert payload["outcome"] == "noop-not-due"
+    assert payload["invoked_codex"] is False
+
+
+def test_run_codex_cred_refresh_due_invokes_codex_and_confirms_advanced_exp(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_auth = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth"
+    )
+    reads = iter(
+        (
+            _auth_json_with_exp(exp=_NOW + 20),
+            _auth_json_with_exp(exp=_NOW + 86_400),
+        )
+    )
+    runner = _RecordingRunner(result=CommandResult(exit_code=0, stdout="OK\n", stderr=""))
+    monkeypatch.setattr(codex_auth, "read_host_codex_auth", lambda: next(reads))
+    monkeypatch.setattr(codex_auth.time, "time", lambda: float(_NOW))
+    monkeypatch.setattr(codex_auth, "ShellCommandRunner", lambda: runner)
+
+    exit_code = codex_auth.run_codex_cred_refresh(
+        args=argparse.Namespace(as_json=True, dry_run=False)
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["outcome"] == "refreshed"
+    assert payload["invoked_codex"] is True
+    assert payload["before"]["remaining_seconds"] == 20
+    assert payload["after"]["remaining_seconds"] == 86_400
+    assert runner.calls == [(["codex", "exec", "reply OK"], Path.cwd(), 120.0)]
+
+
+def test_run_codex_cred_refresh_due_dry_run_never_invokes_codex(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_auth = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth"
+    )
+    runner = _RecordingRunner(result=CommandResult(exit_code=0, stdout="OK\n", stderr=""))
+    monkeypatch.setattr(
+        codex_auth,
+        "read_host_codex_auth",
+        lambda: _auth_json_with_exp(exp=_NOW + 20),
+    )
+    monkeypatch.setattr(codex_auth.time, "time", lambda: float(_NOW))
+    monkeypatch.setattr(codex_auth, "ShellCommandRunner", lambda: runner)
+
+    exit_code = codex_auth.run_codex_cred_refresh(
+        args=argparse.Namespace(as_json=True, dry_run=True)
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert runner.calls == []
+    assert payload["outcome"] == "still-stale"
+    assert payload["dry_run"] is True
+    assert payload["invoked_codex"] is False
+
+
+def test_run_codex_cred_refresh_codex_error_exits_one(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_auth = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth"
+    )
+    runner = _RecordingRunner(result=CommandResult(exit_code=1, stdout="", stderr="boom"))
+    monkeypatch.setattr(
+        codex_auth,
+        "read_host_codex_auth",
+        lambda: _auth_json_with_exp(exp=_NOW + 20),
+    )
+    monkeypatch.setattr(codex_auth.time, "time", lambda: float(_NOW))
+    monkeypatch.setattr(codex_auth, "ShellCommandRunner", lambda: runner)
+
+    exit_code = codex_auth.run_codex_cred_refresh(
+        args=argparse.Namespace(as_json=False, dry_run=False)
+    )
+
+    assert exit_code == 1
+    out = capsys.readouterr().out
+    assert "outcome: codex-error" in out
+    assert "codex exec failed" in out
+
+
+def test_dispatcher_routes_codex_cred_refresh_dry_run(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dispatcher = importlib.import_module("livespec_orchestrator_beads_fabro.commands.dispatcher")
+    codex_auth = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth"
+    )
+    runner = _RecordingRunner(result=CommandResult(exit_code=0, stdout="OK\n", stderr=""))
+    monkeypatch.setattr(
+        codex_auth,
+        "read_host_codex_auth",
+        lambda: _auth_json_with_exp(exp=_NOW + 20),
+    )
+    monkeypatch.setattr(codex_auth.time, "time", lambda: float(_NOW))
+    monkeypatch.setattr(codex_auth, "ShellCommandRunner", lambda: runner)
+
+    exit_code = dispatcher.main(argv=["codex-cred-refresh", "--json", "--dry-run"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert runner.calls == []
+    assert payload["dry_run"] is True
+    assert payload["outcome"] == "still-stale"
