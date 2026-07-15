@@ -98,7 +98,9 @@ def classify_refresh_outcome(
     codex_ok: bool,
 ) -> _RefreshOutcome:
     """Classify one guarded Codex refresh attempt from credential status only."""
-    if not should_invoke_codex_refresh(status=before):
+    if not before.present or before.malformed:
+        return "still-stale"
+    if not before.refresh_due:
         return "noop-not-due"
     if not codex_ok:
         return "codex-error"

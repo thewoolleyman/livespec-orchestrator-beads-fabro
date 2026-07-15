@@ -197,6 +197,40 @@ def test_classify_refresh_outcome_matches_guarded_refresh_state(
         assert outcome == "still-stale"
 
 
+@pytest.mark.parametrize(
+    ("present", "malformed"),
+    [
+        (False, False),
+        (True, True),
+    ],
+)
+def test_classify_refresh_outcome_treats_unrefreshable_status_as_still_stale(
+    *,
+    present: bool,
+    malformed: bool,
+) -> None:
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_refresh"
+    )
+    before = module.HostCodexCredentialStatus(
+        present=present,
+        malformed=malformed,
+        expires_at_epoch=None,
+        remaining_seconds=None,
+        alarm=True,
+        refresh_due=True,
+        message="before",
+    )
+
+    outcome = module.classify_refresh_outcome(
+        before=before,
+        after=before,
+        codex_ok=True,
+    )
+
+    assert outcome == "still-stale"
+
+
 def test_decode_codex_access_token_exp_is_public() -> None:
     module = importlib.import_module(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_projection"
@@ -415,6 +449,30 @@ def test_run_codex_cred_refresh_codex_error_exits_one(
     out = capsys.readouterr().out
     assert "outcome: codex-error" in out
     assert "codex exec failed" in out
+
+
+def test_run_codex_cred_refresh_malformed_auth_exits_one_without_codex(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codex_auth = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth"
+    )
+    runner = _RecordingRunner(result=CommandResult(exit_code=0, stdout="OK\n", stderr=""))
+    monkeypatch.setattr(codex_auth, "read_host_codex_auth", lambda: "{")
+    monkeypatch.setattr(codex_auth.time, "time", lambda: float(_NOW))
+    monkeypatch.setattr(codex_auth, "ShellCommandRunner", lambda: runner)
+
+    exit_code = codex_auth.run_codex_cred_refresh(
+        args=argparse.Namespace(as_json=True, dry_run=False)
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert runner.calls == []
+    assert payload["outcome"] == "still-stale"
+    assert payload["before"]["malformed"] is True
 
 
 def test_dispatcher_routes_codex_cred_refresh_dry_run(
