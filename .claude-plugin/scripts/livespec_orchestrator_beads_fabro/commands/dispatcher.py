@@ -17,6 +17,7 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
 
   dispatcher.py ledger-check [--project-root <path>] [--json]
   dispatcher.py ledger-normalize [--project-root <path>] [--dry-run] [--gate] [--json]
+  dispatcher.py codex-cred-status [--json]
   dispatcher.py spec-check [--project-root <path>] [--spec-root <path>] [--json]
   dispatcher.py janitor-check [--repo <path>] [--json]
   dispatcher.py dispatch --repo <path> --item <id> [common flags]
@@ -155,6 +156,7 @@ fail-closed-when-unobservable behavior 5v9 built stays the live path.
 """
 
 import argparse
+from collections.abc import Callable
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
     admit_and_select,
@@ -165,6 +167,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_autonomous import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_emit import (
     emit_calibration,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
+    run_codex_cred_status,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
     bounce_blocked,
@@ -241,6 +246,7 @@ __all__: list[str] = [
     "ready_items",
     "reflector_oob_after_verdict",
     "requested_items_preflight_error",
+    "run_codex_cred_status",
     "run_id",
     "run_janitor_check",
     "run_ledger_check",
@@ -250,20 +256,21 @@ __all__: list[str] = [
 ]
 
 
+_SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
+    "codex-cred-status": run_codex_cred_status,
+    "dispatch": run_dispatch_command,
+    "janitor-check": run_janitor_check,
+    "ledger-check": run_ledger_check,
+    "ledger-normalize": run_ledger_normalize,
+    "spec-check": run_spec_check,
+}
+
+
 def main(*, argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
-    if args.subcommand == "ledger-check":
-        return run_ledger_check(args=args)
-    if args.subcommand == "ledger-normalize":
-        return run_ledger_normalize(args=args)
-    if args.subcommand == "spec-check":
-        return run_spec_check(args=args)
-    if args.subcommand == "janitor-check":
-        return run_janitor_check(args=args)
-    if args.subcommand == "dispatch":
-        return run_dispatch_command(args=args)
-    return run_loop_command(args=args)
+    handler = _SUBCOMMAND_HANDLERS.get(args.subcommand, run_loop_command)
+    return handler(args=args)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -281,6 +288,8 @@ def _build_parser() -> argparse.ArgumentParser:
     # exit-code contract (0 clean/healed / 1 residual drift / 2 could-not-check).
     # See `_dispatcher_ledger_gate.run_ledger_gate`.
     _ = norm.add_argument("--gate", dest="gate", action="store_true")
+    codex_cred_status = subparsers.add_parser("codex-cred-status")
+    _ = codex_cred_status.add_argument("--json", dest="as_json", action="store_true")
     spec = subparsers.add_parser("spec-check")
     _ = spec.add_argument("--project-root", dest="project_root", default=None)
     _ = spec.add_argument("--spec-root", dest="spec_root", default=None)

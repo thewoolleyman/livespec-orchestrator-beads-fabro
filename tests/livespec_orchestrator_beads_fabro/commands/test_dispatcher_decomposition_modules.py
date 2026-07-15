@@ -127,6 +127,7 @@ def test_credentials_cluster_importable_from_new_module_and_private_names_remove
         "CodexProjectionRefusal",
         "project_codex_auth",
         "read_host_codex_auth",
+        "run_codex_cred_status",
     }
     old_private_names = {
         "_CodexProjectionRefusal",

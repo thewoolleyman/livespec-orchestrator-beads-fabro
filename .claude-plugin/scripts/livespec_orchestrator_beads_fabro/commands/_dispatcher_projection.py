@@ -16,6 +16,7 @@ __all__: list[str] = [
     "CodexFreshnessVerdict",
     "assess_codex_credential_freshness",
     "cc_otel_overlay_env",
+    "decode_codex_access_token_exp",
     "project_codex_auth_snapshot",
     "resolve_sandbox_otel_endpoint",
 ]
@@ -124,7 +125,7 @@ def assess_codex_credential_freshness(
     run_budget_seconds: int,
 ) -> CodexFreshnessVerdict:
     """Require the projected Codex access token to outlive the run budget."""
-    expires_at = _decode_codex_access_token_exp(source_auth_json=source_auth_json)
+    expires_at = decode_codex_access_token_exp(source_auth_json=source_auth_json)
     required_remaining = run_budget_seconds + CODEX_FRESHNESS_MARGIN_SECONDS
     fresh_enough = (expires_at - now_epoch) >= required_remaining
     renewal_message = (
@@ -142,7 +143,8 @@ def assess_codex_credential_freshness(
     )
 
 
-def _decode_codex_access_token_exp(*, source_auth_json: str) -> int:
+def decode_codex_access_token_exp(*, source_auth_json: str) -> int:
+    """Decode the integer ``exp`` claim from a Codex auth.json access token."""
     source: dict[str, Any] = json.loads(source_auth_json)
     raw_tokens = source.get("tokens")
     tokens: dict[str, Any] = (

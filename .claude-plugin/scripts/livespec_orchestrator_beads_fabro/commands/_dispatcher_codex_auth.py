@@ -2,20 +2,33 @@
 
 from __future__ import annotations
 
+import argparse
+import json
 import os
+import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_refresh import (
+    CODEX_ALARM_THRESHOLD_SECONDS,
+    CODEX_REFRESH_GUARD_SECONDS,
+    HostCodexCredentialStatus,
+    assess_host_codex_credential,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     CODEX_FRESHNESS_RUN_BUDGET_SECONDS,
     assess_codex_credential_freshness,
     project_codex_auth_snapshot,
 )
+from livespec_orchestrator_beads_fabro.io import write_stdout
 
 __all__: list[str] = [
     "CodexProjectionRefusal",
     "project_codex_auth",
     "read_host_codex_auth",
+    "run_codex_cred_status",
 ]
 
 # Host-side override for where the live Codex `auth.json` lives. The host
@@ -81,3 +94,64 @@ def project_codex_auth(*, now_epoch: int) -> str | CodexProjectionRefusal:
             or "C-mode dispatch refused: host Codex credential requires renewal."
         )
     return project_codex_auth_snapshot(source_auth_json=source_auth_json)
+
+
+def run_codex_cred_status(*, args: argparse.Namespace) -> int:
+    """Emit host Codex credential lifetime status for operators."""
+    status = assess_host_codex_credential(
+        source_auth_json=read_host_codex_auth(),
+        now_epoch=int(time.time()),
+        alarm_threshold_seconds=CODEX_ALARM_THRESHOLD_SECONDS,
+        refresh_guard_seconds=CODEX_REFRESH_GUARD_SECONDS,
+    )
+    payload = _codex_cred_status_payload(status=status)
+    if args.as_json:
+        _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    else:
+        _ = write_stdout(text=_codex_cred_status_human(payload=payload))
+    return 1 if status.alarm else 0
+
+
+def _codex_cred_status_payload(*, status: HostCodexCredentialStatus) -> dict[str, Any]:
+    expires_at_iso = (
+        None
+        if status.expires_at_epoch is None
+        else datetime.fromtimestamp(status.expires_at_epoch, tz=timezone.utc).isoformat()
+    )
+    remaining_days = None if status.remaining_seconds is None else status.remaining_seconds / 86_400
+    return {
+        "alarm": status.alarm,
+        "expires_at_epoch": status.expires_at_epoch,
+        "expires_at_iso": expires_at_iso,
+        "malformed": status.malformed,
+        "message": status.message,
+        "present": status.present,
+        "refresh_due": status.refresh_due,
+        "remaining_days": remaining_days,
+        "remaining_seconds": status.remaining_seconds,
+    }
+
+
+def _codex_cred_status_human(*, payload: dict[str, Any]) -> str:
+    return "\n".join(
+        (
+            f"present: {_human_bool(value=payload['present'])}",
+            f"malformed: {_human_bool(value=payload['malformed'])}",
+            f"expires_at_epoch: {_human_optional(value=payload['expires_at_epoch'])}",
+            f"expires_at_iso: {_human_optional(value=payload['expires_at_iso'])}",
+            f"remaining_seconds: {_human_optional(value=payload['remaining_seconds'])}",
+            f"remaining_days: {_human_optional(value=payload['remaining_days'])}",
+            f"alarm: {_human_bool(value=payload['alarm'])}",
+            f"refresh_due: {_human_bool(value=payload['refresh_due'])}",
+            f"message: {payload['message']}",
+            "",
+        )
+    )
+
+
+def _human_bool(*, value: object) -> str:
+    return "true" if value is True else "false"
+
+
+def _human_optional(*, value: object) -> str:
+    return "null" if value is None else str(value)
