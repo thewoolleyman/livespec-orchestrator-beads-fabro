@@ -20,6 +20,7 @@ __all__: list[str] = [
     "append_work_item",
     "create_work_item",
     "register_custom_statuses",
+    "update_work_item_blocked_state",
     "update_work_item_policy",
     "update_work_item_rank",
     "update_work_item_status",
@@ -115,6 +116,40 @@ def update_work_item_status(
         status=_beads_status_for(status=status),
         assignee=assignee,
     )
+
+
+def update_work_item_blocked_state(
+    *,
+    path: StoreConfig,
+    item_id: str,
+    status: str,
+    blocked_reason: str | None,
+    admission_policy: str | None = None,
+) -> None:
+    """Transition an item and replace its dispatcher blocked-reason label.
+
+    This is the dispatch-time escalation seam for Fabro human gates: the
+    Dispatcher writes `status=blocked` plus `blocked-reason:needs-human` in one
+    in-place ledger mutation. The same seam is used by the human valve to clear
+    that label when an operator moves the item out of `blocked`.
+    """
+    remove_labels = [
+        f"{_LABEL_BLOCKED_REASON}{value}" for value in ("needs-human", "infra-external")
+    ]
+    add_labels: list[str] = []
+    if blocked_reason is not None:
+        add_labels.append(f"{_LABEL_BLOCKED_REASON}{blocked_reason}")
+    if admission_policy is not None:
+        remove_labels.extend(f"{_LABEL_ADMISSION}{value}" for value in ("auto", "manual"))
+        add_labels.append(f"{_LABEL_ADMISSION}{admission_policy}")
+    client = make_beads_client(config=path)
+    client.update_issue(
+        issue_id=item_id,
+        status=_beads_status_for(status=status),
+        remove_labels=remove_labels,
+    )
+    if add_labels:
+        client.update_issue(issue_id=item_id, add_labels=add_labels)
 
 
 def update_work_item_policy(

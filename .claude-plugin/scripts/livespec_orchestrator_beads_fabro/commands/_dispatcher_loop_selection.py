@@ -19,6 +19,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_emit imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
     bounce_non_convergence_to_backlog,
     complete_and_accept,
+    escalate_needs_human_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
@@ -144,6 +145,7 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
             armed=autonomous_armed(args=args),
         )
     journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
+    escalate_needs_human_block(repo=repo, item=item, outcome=outcome, journal=journal)
     bounce_non_convergence_to_backlog(repo=repo, item=item, outcome=outcome, journal=journal)
     emit_calibration(
         args=args,

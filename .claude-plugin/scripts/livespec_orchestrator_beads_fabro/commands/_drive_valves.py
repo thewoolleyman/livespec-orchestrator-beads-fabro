@@ -8,6 +8,10 @@ from typing import Any, Protocol, cast
 from livespec_orchestrator_beads_fabro import store
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import effective_admission_policy
+from livespec_orchestrator_beads_fabro.commands._drive_policy_valves import (
+    resolve_blocked_item,
+    set_policy,
+)
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 __all__: list[str] = ["is_human_valve_action", "run_human_valve_action"]
@@ -43,11 +47,18 @@ def run_human_valve_action(
             err="work-item-not-found",
             msg=f"work-item not found: {item_id}",
         )
+    if action == "resolve-blocked":
+        return resolve_blocked_item(
+            config=config,
+            item=item,
+            aid=action_id,
+            target_status=cast("str", action_value),
+        )
     if action in {"approve", "accept"}:
         valve_action = _approve_item if action == "approve" else _accept_item
         return valve_action(config=config, item=item, action_id=action_id)
     if action in {"set-admission", "set-acceptance"}:
-        return _set_policy(
+        return set_policy(
             config=config,
             item=item,
             aid=action_id,
@@ -66,7 +77,14 @@ def run_human_valve_action(
 
 def is_human_valve_action(*, action_id: str) -> bool:
     return action_id.startswith(
-        ("approve:", "accept:", "reject:", "set-admission:", "set-acceptance:")
+        (
+            "approve:",
+            "accept:",
+            "reject:",
+            "resolve-blocked:",
+            "set-admission:",
+            "set-acceptance:",
+        )
     )
 
 
@@ -76,6 +94,8 @@ def _parse_human_valve_action(*, action_id: str) -> tuple[str, str, str | None] 
             return (action, item, None)
         case ["reject", item, ("rework" | "regroom") as value] if item != "":
             return ("reject", item, value)
+        case ["resolve-blocked", item, ("ready" | "backlog") as value] if item != "":
+            return ("resolve-blocked", item, value)
         case ["set-admission", item, ("auto" | "manual") as value] if item != "":
             return ("set-admission", item, value)
         case [
@@ -110,28 +130,6 @@ def _approve_item(*, config: StoreConfig, item: WorkItem, action_id: str) -> dic
         status="ready",
         assignee=None,
         msg=f"Approved {item.id}: pending-approval -> ready.",
-    )
-
-
-def _set_policy(
-    *, config: StoreConfig, item: WorkItem, aid: str, action: str, value: str
-) -> dict[str, Any]:
-    store.update_work_item_policy(
-        path=config,
-        item_id=item.id,
-        admission_policy=value if action == "set-admission" else None,
-        acceptance_policy=value if action == "set-acceptance" else None,
-    )
-    return _valve_success(
-        aid=aid,
-        wid=item.id,
-        stage=f"human-valve-{action}",
-        status=item.status,
-        assignee=item.assignee,
-        msg=(
-            f"Updated {item.id}: {action.removeprefix('set-')} policy -> {value}; "
-            "status unchanged."
-        ),
     )
 
 

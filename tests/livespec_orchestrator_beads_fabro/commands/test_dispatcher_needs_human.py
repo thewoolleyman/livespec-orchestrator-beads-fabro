@@ -15,15 +15,17 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import (
-    _dispatcher_loop_selection as loop_selection,
+    _dispatcher_completion,
+    needs_attention,
 )
 from livespec_orchestrator_beads_fabro.commands import (
-    needs_attention,
+    _dispatcher_loop_selection as loop_selection,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
     post_run_dispositions,
 )
+from livespec_orchestrator_beads_fabro.commands._drive_valves import run_human_valve_action
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
     materialize_work_items,
@@ -198,4 +200,102 @@ def test_needs_human_attention_is_json_queryable(
 
     assert [entry["id"] for entry in payload["attention"]] == [
         "valve:set-admission:bd-ib-needs-human"
+    ]
+
+
+def test_dispatcher_blocked_outcome_writes_needs_human_ledger_and_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_config(tmp_path)
+    item = _item(status="active", blocked_reason=None)
+    append_work_item(path=_config(), item=item)
+    journal = _RecordingJournal()
+    outcome = _blocked_outcome(item_id=item.id)
+
+    _dispatcher_completion.escalate_needs_human_block(
+        repo=tmp_path,
+        item=item,
+        outcome=outcome,
+        journal=journal,
+    )
+
+    stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
+    attention = _needs_attention_ids(tmp_path=tmp_path, monkeypatch=monkeypatch)
+
+    assert stored.status == "blocked"
+    assert stored.blocked_reason == "needs-human"
+    assert "valve:resolve-blocked:bd-ib-needs-human" in attention
+    assert {
+        "stage": "needs-human-blocked",
+        "work_item_id": item.id,
+        "reason": "needs-human",
+        "outcome_stage": "fabro-run",
+        "outcome_status": "blocked",
+    } in journal.records
+
+
+def test_post_run_dispositions_persists_blocked_outcome_as_terminal_needs_human(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_config(tmp_path)
+    item = _item(status="active", blocked_reason=None)
+    append_work_item(path=_config(), item=item)
+    journal = _RecordingJournal()
+
+    def _no_spec_next(*, project_root: Path) -> SpecNextOutput | None:
+        _ = project_root
+        return None
+
+    monkeypatch.setattr(needs_attention, "_spec_next", _no_spec_next)
+
+    post_run_dispositions(
+        args=argparse.Namespace(close_on_merge=True, autonomous_armed=True),
+        repo=tmp_path,
+        item=item,
+        outcome=_blocked_outcome(item_id=item.id),
+        journal=journal,
+        wall_clock_seconds=1.0,
+        dispatch_context_size=100,
+        token_supplier=lambda: "token",
+    )
+
+    stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
+    attention = needs_attention.build_attention(
+        project_root=tmp_path, repo_name="repo", include_hygiene=False
+    )
+
+    assert stored.status == "blocked"
+    assert stored.blocked_reason == "needs-human"
+    assert any(entry.id == f"valve:resolve-blocked:{item.id}" for entry in attention)
+    assert not any(record.get("stage") == "ledger-accept" for record in journal.records)
+
+
+def test_human_valve_resolve_blocked_is_only_way_out(tmp_path: Path) -> None:
+    _write_config(tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+
+    result = run_human_valve_action(
+        repo=tmp_path,
+        action_id=f"resolve-blocked:{item.id}:ready",
+    )
+
+    stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
+    assert result["status"] == "green"
+    assert result["target_status"] == "ready"
+    assert stored.status == "ready"
+    assert stored.blocked_reason is None
+
+
+def _needs_attention_ids(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    def _no_spec_next(*, project_root: Path) -> SpecNextOutput | None:
+        _ = project_root
+        return None
+
+    monkeypatch.setattr(needs_attention, "_spec_next", _no_spec_next)
+    return [
+        entry.id
+        for entry in needs_attention.build_attention(
+            project_root=tmp_path, repo_name="repo", include_hygiene=False
+        )
     ]
