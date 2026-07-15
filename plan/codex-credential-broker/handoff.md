@@ -89,15 +89,56 @@ refuses every dispatch with "run `codex login`".
 Build:
 
 1. A host-side refresher that keeps `~/.codex/auth.json` fresh without depending
-   on interactive use (timer/daemon). **Open sub-question:** drive it by invoking
-   codex itself (letting its own proactive refresh do the work — fewer moving
-   parts, keeps OpenAI's rotation semantics inside codex) versus calling the token
-   endpoint directly with the host's real refresh token. Prefer the former.
-   Note the refresh only *fires* within 5 min of expiry, so a naive "run codex
-   hourly" cron is enough — it is a no-op until it is needed.
+   on interactive use (timer/daemon). **Mechanism: GUARDED codex-invoke** —
+   resolved 2026-07-15, see the correction below.
 2. An **expiry alarm** — surface when the host token is within N days of `exp`, so
    the cliff is never a surprise. Cheap, and it is the part that actually
-   prevents the outage.
+   prevents the outage. Reuses `_decode_codex_access_token_exp`
+   (`_dispatcher_projection.py`); pure over auth.json text, no network.
+
+## 🔴 MECHANISM CORRECTION (2026-07-15) — the naive-cron claim was WRONG
+
+An earlier draft of item 1 said: *"drive it by invoking codex itself … a naive
+'run codex hourly' cron is enough — it is a no-op until it is needed."* Measuring
+the installed codex CLI (`/home/ubuntu/.local/bin/codex`) falsified that:
+
+- **Codex exposes NO force-refresh command.** `codex login` has only
+  `status`/`help`; `codex login status` and `codex doctor --json` are **read-only**
+  — verified: `~/.codex/auth.json` is byte-identical (`sha256` unchanged,
+  doctor's `auth.credentials` check is `durationMs = 0`) before/after running them.
+  Neither triggers a refresh and neither makes a token-endpoint call.
+- **The ONLY in-codex refresh trigger is a real `codex exec` request**, and it
+  refreshes only inside the 5-min pre-`exp` proactive window or via the
+  post-`exp` 401→`Reload`→`RefreshToken` path (the host holds the REAL refresh
+  token, so both work host-side). `codex exec` is **NOT a no-op** — it spends
+  subscription quota on EVERY run. A naive hourly cron = ~240 real requests per
+  10-day cycle to catch one refresh. Do not build the naive cron.
+
+**Corrected design — GUARDED refresher.** We already decode `exp` precisely, so
+gate the codex call on OUR OWN exp check: a cheap exp-read no-op for ~10 days,
+then fire `codex exec` (trivial prompt) only when `exp - now` is inside the
+proactive window / just past expiry. Cron every ~5 min → ~1–3 tiny requests per
+cycle, refresh lands BEFORE expiry, no stale window, rotation stays inside codex.
+
+**Alternative NOT taken (noted for the record):** call the OpenAI token endpoint
+directly with the host refresh token — refreshes proactively at any time (zero
+stale window, zero model quota) but reimplements codex's refresh-token ROTATION
+and risks desync with codex's own auth state. Revisit only if the guarded
+codex-invoke proves unreliable near expiry.
+
+## ✅ NO SPEC CHANGE NEEDED (2026-07-15)
+
+`contracts.md` §"Worker credential projection" (`:2136`) already ratifies: *"The
+orchestrator **host** MUST be the sole owner and **refresher** of the long-lived
+provider refresh credential."* And `:2140` makes *"the numeric freshness
+threshold … implementation-owned."* So the host refresher + alarm IMPLEMENT an
+existing, currently-unimplemented MUST (a spec→impl gap) — no
+`/livespec:propose-change` / `/livespec:revise` ceremony. File the work under
+epic `bd-ib-rck`; mechanism + thresholds are implementation-owned.
+
+**Live measurement (2026-07-15):** host token `exp` = 2026-07-19T15:29Z, ~4.4
+days out (issued 2026-07-09, 240h lifetime — matches the scope-correction
+measurement). The cliff is near; the alarm is the priority piece.
 
 ## ⚠️ The correction that makes the seatbelt load-bearing (do not lose this)
 

@@ -162,10 +162,26 @@ the factory stalls at the freshness gate ("run `codex login`"). The broker needs
 a host-side refresher that owns this — a timer/daemon that keeps the host
 credential fresh, independent of interactive use.
 
-**Open:** whether to drive this by invoking codex itself (letting its own
-proactive refresh do the work) or by calling the token endpoint directly with
-the host's real refresh token. Prefer the former — fewer moving parts, and it
-keeps OpenAI's rotation semantics entirely inside codex.
+**RESOLVED 2026-07-15 — GUARDED codex-invoke.** The original "Open" note assumed
+invoking codex could cheaply drive its own proactive refresh. Measuring the
+installed codex CLI falsified the cheap path:
+
+- Codex has NO force-refresh command. `codex login` offers only `status`/`help`;
+  `codex login status` and `codex doctor --json` are read-only (auth.json is
+  byte-identical before/after — verified). The only refresh trigger is a real
+  `codex exec` request, which refreshes ONLY in the 5-min pre-`exp` proactive
+  window or via the post-`exp` 401 path, and spends subscription quota every run.
+- **Guarded refresher:** gate the `codex exec` call on our OWN `exp` decode
+  (`_decode_codex_access_token_exp`) — a cheap no-op for ~10 days, firing codex
+  only near/after expiry. ~1–3 tiny requests per 10-day cycle; refresh lands
+  before expiry; rotation stays inside codex.
+- **Alternative (token endpoint direct):** proactive, zero stale window, zero
+  model quota, but reimplements codex's refresh-token rotation and risks desync.
+  Not taken; revisit only if guarded codex-invoke proves unreliable near expiry.
+
+**No spec change required:** `contracts.md:2136` already ratifies the host as
+"sole owner and refresher"; `:2140` makes the freshness threshold
+implementation-owned. The refresher + alarm implement that existing MUST.
 
 ### (b) Per-worker top-up
 
