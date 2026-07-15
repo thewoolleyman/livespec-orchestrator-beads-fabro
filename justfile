@@ -245,6 +245,17 @@ ensure-codex-plugins:
     codex plugin add livespec@livespec-driver-codex
     codex plugin add livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro
 
+# factory-bypass-audit — REPORT-ONLY, on-demand attention surface. Surfaces
+# recently-merged PRs that changed product `.py` without going through the
+# factory GitHub App (an in-session factory bypass). Network-using (`gh`), so
+# it is DELIBERATELY kept OUT of the `check:` aggregate and every hook; it
+# exits 0 regardless of findings. Empirical signal for the force-factory
+# decision (plan/force-factory/findings.md; epic bd-ib-y2xro4, work-item
+# bd-ib-c4a2bi). Pass flags through, e.g.
+#   just factory-bypass-audit --limit 50 --json
+factory-bypass-audit *args:
+    uv run python3 .claude-plugin/scripts/bin/factory_bypass_audit.py {{args}}
+
 # ---------------------------------------------------------------
 # Aggregate check — canonical full-set stamped at copier-copy time.
 #
