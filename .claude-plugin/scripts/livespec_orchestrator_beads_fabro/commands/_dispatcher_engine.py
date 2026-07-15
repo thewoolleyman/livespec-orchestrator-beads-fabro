@@ -51,7 +51,7 @@ accounting.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
@@ -225,6 +225,7 @@ class DispatchOutcome:
     pr_number: int | None
     merge_sha: str | None
     detail: str
+    fabro_run_id: str | None = None
 
 
 def run_dispatch(
@@ -254,7 +255,8 @@ def run_dispatch(
         return stalled_outcome(
             outcome_type=DispatchOutcome, plan=plan, run_id=launched.stalled_run_id
         )
-    blocked = _blocked_outcome(plan=plan, runner=runner, journal=journal, fabro=fabro)
+    run_id = parse_run_id(output=fabro.stdout + "\n" + fabro.stderr)
+    blocked = _blocked_outcome(plan=plan, runner=runner, journal=journal, run_id=run_id)
     if blocked is not None:
         return blocked
     if fabro.exit_code != 0:
@@ -263,6 +265,7 @@ def run_dispatch(
             plan=plan,
             stage="fabro-run",
             detail=tail(text=fabro.stderr),
+            fabro_run_id=run_id,
         )
     view = confirm_pr(plan=plan, runner=runner, journal=journal)
     if view is None:
@@ -271,6 +274,7 @@ def run_dispatch(
             plan=plan,
             stage="pr-view",
             detail="no PR found for branch",
+            fabro_run_id=run_id,
         )
     merged = await_merge(
         outcome_type=DispatchOutcome,
@@ -290,6 +294,7 @@ def run_dispatch(
             pr_number=view.number,
             merge_sha=None,
             detail="PR did not reach MERGED within the poll budget",
+            fabro_run_id=run_id,
         )
     else:
         outcome = post_merge(
@@ -299,6 +304,8 @@ def run_dispatch(
             journal=journal,
             merged=merged,
         )
+    if run_id is not None and outcome.fabro_run_id is None:
+        outcome = replace(outcome, fabro_run_id=run_id)
     return outcome
 
 
@@ -307,7 +314,7 @@ def _blocked_outcome(
     plan: DispatchPlan,
     runner: CommandRunner,
     journal: JournalWriter,
-    fabro: CommandResult,
+    run_id: str | None,
 ) -> DispatchOutcome | None:
     """Detect a run parked at the in-loop human gate (third terminal state).
 
@@ -317,7 +324,6 @@ def _blocked_outcome(
     authoritative status via `fabro inspect --json`. Anything other
     than a confirmed blocked status falls back to exit-code routing.
     """
-    run_id = parse_run_id(output=fabro.stdout + "\n" + fabro.stderr)
     if run_id is None:
         return None
     inspect = runner.run(
@@ -342,4 +348,5 @@ def _blocked_outcome(
             f"`fabro resume {run_id}` only if the engine died; "
             "not auto-resumed, item left open"
         ),
+        fabro_run_id=run_id,
     )

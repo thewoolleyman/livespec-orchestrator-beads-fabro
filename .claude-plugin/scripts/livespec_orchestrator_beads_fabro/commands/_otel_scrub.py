@@ -121,6 +121,13 @@ ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
         "livespec.cost.mode",
         "livespec.cost.observable",
         "livespec.cost.session_usd_micros",
+        # Review-gate verdict scalars derived from `fabro events --json`:
+        # direct query keys for ship-on-cap frequency. All are scalar
+        # verdict/count/bool values, scrub-safe.
+        "review.verdict",
+        "review.fix_rounds",
+        "review.hit_cap",
+        "pr.shipped_on_cap",
     }
 )
 
