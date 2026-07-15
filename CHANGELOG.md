@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.34.1...v0.34.2) (2026-07-15)
+
+
+### Bug Fixes
+
+* retire needs-human resolver ([5e8c2d9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5e8c2d9ab5cb0c651c3cc1ff9354cbd4ea4d15c3))
+
 ## [0.34.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.34.0...v0.34.1) (2026-07-15)
 
 
