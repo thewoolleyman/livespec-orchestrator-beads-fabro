@@ -28,6 +28,8 @@ pin the precedence, the per-gate coverage, and the expected-error surface.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import (
     EDGE_BLOCKS,
@@ -58,7 +60,7 @@ def _hermetic_fake_backend() -> object:
     reset_fake_singleton()
 
 
-def _config() -> StoreConfig:
+def _config(*, repo_root: Path | None = None) -> StoreConfig:
     """A hermetic connection descriptor — `fake=True` selects the in-memory backend."""
     return StoreConfig(
         tenant="livespec-impl-beads",
@@ -67,10 +69,13 @@ def _config() -> StoreConfig:
         database="livespec-impl-beads",
         bd_path="bd",
         fake=True,
+        repo_root=repo_root,
     )
 
 
-def _seed_issue(*, issue_id: str, labels: list[str] | None = None) -> None:
+def _seed_issue(
+    *, issue_id: str, labels: list[str] | None = None, spec_id: str | None = None
+) -> None:
     """Create an issue directly through the client seam (the capture front-end's filing).
 
     The intake checklist stamps a verdict on an ALREADY-filed item, so each
@@ -88,7 +93,7 @@ def _seed_issue(*, issue_id: str, labels: list[str] | None = None) -> None:
             created_at="2026-06-19T00:00:00Z",
             labels=list(labels) if labels is not None else [],
             metadata={},
-            spec_id=None,
+            spec_id=spec_id,
             parent_id=None,
         )
     )
@@ -96,6 +101,13 @@ def _seed_issue(*, issue_id: str, labels: list[str] | None = None) -> None:
 
 def _item(*, issue_id: str) -> WorkItem:
     return materialize_work_items(records=read_work_items(path=_config()))[issue_id]
+
+
+def _write_dispatcher_config(*, repo_root: Path, setting: str) -> None:
+    _ = (repo_root / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"dispatcher": {' + setting + "}}}",
+        encoding="utf-8",
+    )
 
 
 def _link_dependency(*, item_id: str, blocker_id: str) -> None:
@@ -141,6 +153,46 @@ def test_auto_admission_single_acceptance_item_lands_ready() -> None:
 
     assert verdict == "ready"
     assert _item(issue_id="li-ready").status == "ready"
+
+
+def test_global_auto_approve_single_acceptance_item_lands_ready(tmp_path: Path) -> None:
+    _write_dispatcher_config(repo_root=tmp_path, setting='"auto_approve_ready": true')
+    _seed_issue(issue_id="li-global-ready")
+
+    verdict = apply_intake_dor(
+        path=_config(repo_root=tmp_path),
+        item_id="li-global-ready",
+        checklist=_ready_checklist(),
+    )
+
+    assert verdict == "ready"
+    assert _item(issue_id="li-global-ready").status == "ready"
+
+
+def test_manual_label_holds_pending_despite_global_auto_approve(tmp_path: Path) -> None:
+    _write_dispatcher_config(repo_root=tmp_path, setting='"auto_approve_ready": true')
+    _seed_issue(issue_id="li-manual", labels=["admission:manual"])
+
+    verdict = apply_intake_dor(
+        path=_config(repo_root=tmp_path), item_id="li-manual", checklist=_ready_checklist()
+    )
+
+    assert verdict == "pending-approval"
+    assert _item(issue_id="li-manual").status == "pending-approval"
+
+
+def test_spec_change_tier_holds_pending_despite_auto_label_and_global_auto(
+    tmp_path: Path,
+) -> None:
+    _write_dispatcher_config(repo_root=tmp_path, setting='"auto_approve_ready": true')
+    _seed_issue(issue_id="li-spec", labels=["admission:auto"], spec_id="SC-1")
+
+    verdict = apply_intake_dor(
+        path=_config(repo_root=tmp_path), item_id="li-spec", checklist=_ready_checklist()
+    )
+
+    assert verdict == "pending-approval"
+    assert _item(issue_id="li-spec").status == "pending-approval"
 
 
 # --------------------------------------------------------------------------

@@ -53,6 +53,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -96,7 +98,7 @@ def is_spec_change_tier(*, item: WorkItem) -> bool:
     return item.spec_commitment_hint is not None
 
 
-def collapse_admission_to_auto(*, item: WorkItem, armed: bool) -> bool:
+def collapse_admission_to_auto(*, item: WorkItem, armed: bool, cwd: Path | None = None) -> bool:
     """Whether an armed run collapses this item's approve gate to `auto`.
 
     True only for an armed run over a routine `pending-approval` manual-admission
@@ -109,12 +111,14 @@ def collapse_admission_to_auto(*, item: WorkItem, armed: bool) -> bool:
         return False
     if item.status != _PENDING_APPROVAL:
         return False
-    if effective_admission_policy(item=item) == _AUTO_ADMISSION:
+    if effective_admission_policy(item=item, cwd=cwd) == _AUTO_ADMISSION:
         return False
     return not is_spec_change_tier(item=item)
 
 
-def effective_admission_policy_under_mode(*, item: WorkItem, armed: bool) -> str:
+def effective_admission_policy_under_mode(
+    *, item: WorkItem, armed: bool, cwd: Path | None = None
+) -> str:
     """The item's effective admission policy with the armed collapse layered on.
 
     Returns `auto` when the armed run collapses the approve gate for this item
@@ -123,12 +127,12 @@ def effective_admission_policy_under_mode(*, item: WorkItem, armed: bool) -> str
     so the valve stays autonomous-mode-agnostic; when not armed this is exactly
     the base policy.
     """
-    if collapse_admission_to_auto(item=item, armed=armed):
+    if collapse_admission_to_auto(item=item, armed=armed, cwd=cwd):
         return _AUTO_ADMISSION
-    return effective_admission_policy(item=item)
+    return effective_admission_policy(item=item, cwd=cwd)
 
 
-def collapse_acceptance_to_ai_only(*, item: WorkItem, armed: bool) -> bool:
+def collapse_acceptance_to_ai_only(*, item: WorkItem, armed: bool, cwd: Path | None = None) -> bool:
     """Whether an armed run collapses this item's acceptance gate to `ai-only`.
 
     True for an armed run over an item whose effective acceptance policy is
@@ -139,11 +143,13 @@ def collapse_acceptance_to_ai_only(*, item: WorkItem, armed: bool) -> bool:
     """
     if not armed:
         return False
-    base = effective_acceptance_policy(item=item)
+    base = effective_acceptance_policy(item=item, cwd=cwd)
     return base not in (_AI_ONLY_ACCEPTANCE, _HUMAN_ONLY_ACCEPTANCE)
 
 
-def acceptance_decision_under_mode(*, item: WorkItem, armed: bool) -> AcceptanceDecision:
+def acceptance_decision_under_mode(
+    *, item: WorkItem, armed: bool, cwd: Path | None = None
+) -> AcceptanceDecision:
     """The item's acceptance decision with the armed collapse layered on.
 
     Returns the `ai-only` decision (accept straight to `done`) when the armed run
@@ -152,6 +158,6 @@ def acceptance_decision_under_mode(*, item: WorkItem, armed: bool) -> Acceptance
     not armed — and for a `human-only` item even when armed — this is exactly the
     base decision, so a `human-only` item still parks.
     """
-    if collapse_acceptance_to_ai_only(item=item, armed=armed):
+    if collapse_acceptance_to_ai_only(item=item, armed=armed, cwd=cwd):
         return acceptance_decision(policy=_AI_ONLY_ACCEPTANCE)
-    return acceptance_decision(policy=effective_acceptance_policy(item=item))
+    return acceptance_decision(policy=effective_acceptance_policy(item=item, cwd=cwd))

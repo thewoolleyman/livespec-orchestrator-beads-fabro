@@ -33,54 +33,73 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
-from livespec_orchestrator_beads_fabro.commands import _jsonc
+from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
+    DEFAULT_ACCEPTANCE_POLICY,
+    DEFAULT_ACCEPTANCE_REWORK_CAP,
+    DEFAULT_ADMISSION_POLICY,
+    DEFAULT_AUTO_APPROVE_READY,
+    DEFAULT_AUTONOMOUS_MODE,
+    DEFAULT_MERGE_ON_REVIEW_CAP,
+    DEFAULT_REVIEW_FIX_CAP,
+    DEFAULT_WIP_CAP,
+    effective_acceptance_policy,
+    effective_acceptance_rework_cap,
+    effective_admission_policy,
+    effective_merge_on_review_cap,
+    effective_review_fix_cap,
+    resolve_acceptance_mode,
+    resolve_acceptance_rework_cap,
+    resolve_auto_approve_ready,
+    resolve_autonomous_mode_permission,
+    resolve_merge_on_review_cap,
+    resolve_review_fix_cap,
+    resolve_wip_cap,
+)
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "DEFAULT_ACCEPTANCE_POLICY",
+    "DEFAULT_ACCEPTANCE_REWORK_CAP",
     "DEFAULT_ADMISSION_POLICY",
     "DEFAULT_AUTONOMOUS_MODE",
+    "DEFAULT_AUTO_APPROVE_READY",
     "DEFAULT_DOER",
+    "DEFAULT_MERGE_ON_REVIEW_CAP",
+    "DEFAULT_REVIEW_FIX_CAP",
     "DEFAULT_WIP_CAP",
     "AcceptanceDecision",
     "AdmissionPlan",
     "acceptance_decision",
     "admission_held_detail",
     "effective_acceptance_policy",
+    "effective_acceptance_rework_cap",
     "effective_admission_policy",
+    "effective_merge_on_review_cap",
+    "effective_review_fix_cap",
     "plan_admissions",
     "reject_routing",
+    "resolve_acceptance_mode",
+    "resolve_acceptance_rework_cap",
     "resolve_assignee",
+    "resolve_auto_approve_ready",
     "resolve_autonomous_mode_permission",
+    "resolve_merge_on_review_cap",
+    "resolve_review_fix_cap",
     "resolve_wip_cap",
 ]
-
-# The per-repo WIP cap default — NOT a fleet-wide number. Total fleet
-# concurrency is the sum of the per-repo caps (per SPECIFICATION/contracts.md).
-DEFAULT_WIP_CAP = 5
 
 # The autonomous doer the admission valve assigns when an item carries no
 # explicit assignee. `assignee` is the reused work-item field (not a new
 # `owner`), per the admission contract.
 DEFAULT_DOER = "fabro"
 
-# The safe-by-default effective policies for a `None` (inherit) field: a
-# work-item with no explicit `admission_policy` waits for a human's explicit
-# approval; with no explicit `acceptance_policy` it requires a human's final
-# acceptance after the AI pass (per SPECIFICATION/contracts.md).
-DEFAULT_ADMISSION_POLICY = "manual"
-DEFAULT_ACCEPTANCE_POLICY = "ai-then-human"
-
 # Full autonomous mode is a DANGEROUS, DEFAULT-OFF override: the persistent
 # `dispatcher.autonomous_mode` permission defaults to `False`, so an
 # unconfigured repo never carries the persistent arming factor.
-DEFAULT_AUTONOMOUS_MODE = False
 
 # The one admission policy that auto-admits without a human in the loop.
 _AUTO_ADMISSION = "auto"
@@ -99,12 +118,6 @@ _REGROOM_TARGET = "backlog"
 # Hold reasons surfaced when the admission valve refuses to admit a ready item.
 _HELD_MANUAL = "manual-admission"
 _HELD_UNRESOLVABLE = "unresolvable-assignee"
-
-_LIVESPEC_CONFIG = ".livespec.jsonc"
-_PLUGIN_BLOCK = "livespec-orchestrator-beads-fabro"
-_DISPATCHER_KEY = "dispatcher"
-_WIP_CAP_KEY = "wip_cap"
-_AUTONOMOUS_MODE_KEY = "autonomous_mode"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -136,73 +149,6 @@ class AcceptanceDecision:
 
     policy: str
     to_done: bool
-
-
-def resolve_wip_cap(*, cwd: Path) -> int:
-    """Read the per-repo WIP cap from `.livespec.jsonc`, defaulting to 5.
-
-    The cap lives at `livespec-orchestrator-beads-fabro.dispatcher.wip_cap`.
-    A missing file/block/key, a parse error, or a non-positive / non-int
-    value all fall back to `DEFAULT_WIP_CAP` (the read never raises — an
-    unconfigured repo gets the safe default, mirroring the merge-evidence
-    check's `_resolve_canonical_branch`).
-    """
-    value = _read_nested_config_value(cwd=cwd, keys=(_PLUGIN_BLOCK, _DISPATCHER_KEY, _WIP_CAP_KEY))
-    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
-        return value
-    return DEFAULT_WIP_CAP
-
-
-def resolve_autonomous_mode_permission(*, cwd: Path) -> bool:
-    """Read the persistent `dispatcher.autonomous_mode` permission (default False).
-
-    The permission lives at
-    `livespec-orchestrator-beads-fabro.dispatcher.autonomous_mode` in
-    `.livespec.jsonc`, sibling to `dispatcher.wip_cap`. Only an explicit
-    boolean `true` enables it; a missing file/block/key, a parse error, or any
-    non-`true` value (including a truthy int or the string `"true"`) reads back
-    as `DEFAULT_AUTONOMOUS_MODE` (False) — the safe default of a dangerous,
-    default-off override (the read never raises). This is only the PERSISTENT
-    factor; arming ALSO requires the per-run `--mode autonomous` opt-in
-    (`_dispatcher_autonomous.decide_arming`).
-    """
-    value = _read_nested_config_value(
-        cwd=cwd, keys=(_PLUGIN_BLOCK, _DISPATCHER_KEY, _AUTONOMOUS_MODE_KEY)
-    )
-    if value is True:
-        return True
-    return DEFAULT_AUTONOMOUS_MODE
-
-
-def _read_nested_config_value(*, cwd: Path, keys: tuple[str, ...]) -> object:
-    """Descend `.livespec.jsonc` along `keys`, returning the leaf value or None.
-
-    Returns None on a missing file, a parse error, or any intermediate level
-    that is absent or not a JSON object — so the caller applies its own
-    default rather than the read raising.
-    """
-    config_path = cwd / _LIVESPEC_CONFIG
-    if not config_path.is_file():
-        return None
-    try:
-        node: object = _jsonc.loads(text=config_path.read_text(encoding="utf-8"))
-    except _jsonc.JsoncParseError:
-        return None
-    for key in keys:
-        if not isinstance(node, dict):
-            return None
-        node = cast("dict[str, Any]", node).get(key)
-    return node
-
-
-def effective_admission_policy(*, item: WorkItem) -> str:
-    """The item's effective admission policy (`None` inherits the safe default)."""
-    return item.admission_policy or DEFAULT_ADMISSION_POLICY
-
-
-def effective_acceptance_policy(*, item: WorkItem) -> str:
-    """The item's effective acceptance policy (`None` inherits the safe default)."""
-    return item.acceptance_policy or DEFAULT_ACCEPTANCE_POLICY
 
 
 def resolve_assignee(*, item: WorkItem) -> str | None:
