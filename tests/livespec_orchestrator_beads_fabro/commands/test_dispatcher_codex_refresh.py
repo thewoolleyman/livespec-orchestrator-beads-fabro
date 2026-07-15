@@ -360,6 +360,7 @@ def test_run_codex_cred_refresh_not_due_skips_codex(
     assert exit_code == 0
     assert runner.calls == []
     assert payload["outcome"] == "noop-not-due"
+    assert payload["would_invoke_codex"] is False
     assert payload["invoked_codex"] is False
 
 
@@ -389,6 +390,7 @@ def test_run_codex_cred_refresh_due_invokes_codex_and_confirms_advanced_exp(
     payload = json.loads(capsys.readouterr().out)
     assert exit_code == 0
     assert payload["outcome"] == "refreshed"
+    assert payload["would_invoke_codex"] is True
     assert payload["invoked_codex"] is True
     assert payload["before"]["remaining_seconds"] == 20
     assert payload["after"]["remaining_seconds"] == 86_400
@@ -421,6 +423,7 @@ def test_run_codex_cred_refresh_due_dry_run_never_invokes_codex(
     assert runner.calls == []
     assert payload["outcome"] == "still-stale"
     assert payload["dry_run"] is True
+    assert payload["would_invoke_codex"] is True
     assert payload["invoked_codex"] is False
 
 
@@ -499,4 +502,5 @@ def test_dispatcher_routes_codex_cred_refresh_dry_run(
     assert exit_code == 0
     assert runner.calls == []
     assert payload["dry_run"] is True
+    assert payload["would_invoke_codex"] is True
     assert payload["outcome"] == "still-stale"

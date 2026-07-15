@@ -38,6 +38,7 @@ class _RefreshPayloadInput:
     dry_run: bool
     invoked_codex: bool
     outcome: str
+    would_invoke_codex: bool
 
 
 def run_codex_cred_refresh_with(
@@ -57,7 +58,8 @@ def run_codex_cred_refresh_with(
     codex_exit_code: int | None = None
     codex_stderr = ""
     after = before
-    if should_invoke_codex_refresh(status=before) and not args.dry_run:
+    would_invoke_codex = should_invoke_codex_refresh(status=before)
+    if would_invoke_codex and not args.dry_run:
         invoked_codex = True
         result = runner_factory().run(
             argv=_CODEX_REFRESH_ARGV,
@@ -84,6 +86,7 @@ def run_codex_cred_refresh_with(
             dry_run=args.dry_run,
             invoked_codex=invoked_codex,
             outcome=outcome,
+            would_invoke_codex=would_invoke_codex,
         )
     )
 
@@ -142,6 +145,7 @@ def _codex_cred_refresh_payload(*, refresh: _RefreshPayloadInput) -> dict[str, A
             outcome=refresh.outcome,
         ),
         "outcome": refresh.outcome,
+        "would_invoke_codex": refresh.would_invoke_codex,
     }
 
 
@@ -168,6 +172,7 @@ def _codex_cred_refresh_human(*, payload: dict[str, Any]) -> str:
         (
             f"outcome: {payload['outcome']}",
             f"dry_run: {_human_bool(value=payload['dry_run'])}",
+            f"would_invoke_codex: {_human_bool(value=payload['would_invoke_codex'])}",
             f"invoked_codex: {_human_bool(value=payload['invoked_codex'])}",
             f"codex_exit_code: {_human_optional(value=payload['codex_exit_code'])}",
             f"before_remaining_seconds: {_human_optional(value=before_remaining)}",
