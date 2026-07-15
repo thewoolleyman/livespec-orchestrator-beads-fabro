@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.35.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.34.2...v0.35.0) (2026-07-15)
+
+
+### Features
+
+* add guarded Codex credential refresh ([2206248](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/22062480dc7dd3597be225642d7bac5981cded97))
+
+
+### Bug Fixes
+
+* fail stale Codex credential refresh ([0a7202d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0a7202d76f2ed77568c1b8c86b590d001b94b464))
+* report codex refresh dry-run decision ([069d85c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/069d85c4d6a5efe4ceaef951ed4c3d997de061d9))
+
 ## [0.34.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.34.1...v0.34.2) (2026-07-15)
 
 
