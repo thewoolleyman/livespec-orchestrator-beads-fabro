@@ -118,8 +118,8 @@ def complete_and_accept(
     journal.append(
         record={"stage": "acceptance-ai-pass", "work_item_id": item.id, "confirmed": True}
     )
-    acceptance_collapsed = collapse_acceptance_to_ai_only(item=item, armed=armed)
-    decision = acceptance_decision_under_mode(item=item, armed=armed)
+    acceptance_collapsed = collapse_acceptance_to_ai_only(item=item, armed=armed, cwd=repo)
+    decision = acceptance_decision_under_mode(item=item, armed=armed, cwd=repo)
     if decision.to_done:
         _close_item(repo=repo, item=item, outcome=outcome)
         journal.append(record={"stage": "ledger-accept", "work_item_id": item.id})

@@ -59,6 +59,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
+from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import effective_admission_policy
 from livespec_orchestrator_beads_fabro.errors import WorkItemNotFoundError
 from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 
@@ -138,7 +139,7 @@ def apply_intake_dor(
     status = _routed_status(verdict=verdict, has_dependencies=bool(item.depends_on))
     if (
         status == _PENDING_APPROVAL_STATUS
-        and item.admission_policy == _AUTO_ADMISSION
+        and effective_admission_policy(item=item, cwd=path.repo_root) == _AUTO_ADMISSION
         and not item.depends_on
     ):
         status = _READY_STATUS

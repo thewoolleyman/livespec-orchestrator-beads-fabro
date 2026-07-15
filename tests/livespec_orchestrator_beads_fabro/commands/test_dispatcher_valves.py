@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_valves as valves
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_ACCEPTANCE_POLICY,
     DEFAULT_ADMISSION_POLICY,
@@ -75,6 +76,7 @@ def _always(value: str | None) -> object:
 
 
 def _write_config(*, tmp_path: Path, text: str) -> Path:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     _ = (tmp_path / ".livespec.jsonc").write_text(text, encoding="utf-8")
     return tmp_path
 
@@ -175,26 +177,165 @@ def test_resolve_autonomous_mode_read_does_not_persist(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# effective_*_policy / resolve_assignee
+# dispatcher policy settings / effective policies / resolve_assignee
 # ---------------------------------------------------------------------------
 
 
-def test_effective_admission_policy_inherits_manual_when_none() -> None:
-    assert effective_admission_policy(item=_item(admission_policy=None)) == DEFAULT_ADMISSION_POLICY
-
-
-def test_effective_admission_policy_honors_explicit() -> None:
-    assert effective_admission_policy(item=_item(admission_policy="auto")) == "auto"
-
-
-def test_effective_acceptance_policy_inherits_default_when_none() -> None:
+def test_dispatcher_policy_settings_default_when_no_config(tmp_path: Path) -> None:
+    assert valves.resolve_auto_approve_ready(cwd=tmp_path) is valves.DEFAULT_AUTO_APPROVE_READY
+    assert valves.resolve_merge_on_review_cap(cwd=tmp_path) is valves.DEFAULT_MERGE_ON_REVIEW_CAP
+    assert valves.resolve_acceptance_mode(cwd=tmp_path) == DEFAULT_ACCEPTANCE_POLICY
+    assert valves.resolve_review_fix_cap(cwd=tmp_path) == valves.DEFAULT_REVIEW_FIX_CAP
     assert (
-        effective_acceptance_policy(item=_item(acceptance_policy=None)) == DEFAULT_ACCEPTANCE_POLICY
+        valves.resolve_acceptance_rework_cap(cwd=tmp_path) == valves.DEFAULT_ACCEPTANCE_REWORK_CAP
+    )
+    assert resolve_wip_cap(cwd=tmp_path) == DEFAULT_WIP_CAP
+
+
+def test_dispatcher_policy_settings_read_explicit_values(tmp_path: Path) -> None:
+    cwd = _write_config(
+        tmp_path=tmp_path,
+        text=(
+            '{"livespec-orchestrator-beads-fabro": {"dispatcher": {'
+            '"auto_approve_ready": true,'
+            '"merge_on_review_cap": true,'
+            '"acceptance_mode": "human-only",'
+            '"review_fix_cap": 4,'
+            '"acceptance_rework_cap": 5,'
+            '"wip_cap": 6'
+            "}}}"
+        ),
+    )
+
+    assert valves.resolve_auto_approve_ready(cwd=cwd) is True
+    assert valves.resolve_merge_on_review_cap(cwd=cwd) is True
+    assert valves.resolve_acceptance_mode(cwd=cwd) == "human-only"
+    assert valves.resolve_review_fix_cap(cwd=cwd) == 4
+    assert valves.resolve_acceptance_rework_cap(cwd=cwd) == 5
+    assert resolve_wip_cap(cwd=cwd) == 6
+
+
+@pytest.mark.parametrize(
+    ("key", "raw"),
+    [
+        ("auto_approve_ready", '"true"'),
+        ("merge_on_review_cap", "1"),
+        ("acceptance_mode", '"sometimes"'),
+        ("review_fix_cap", "true"),
+        ("acceptance_rework_cap", "0"),
+    ],
+)
+def test_dispatcher_policy_settings_default_on_wrong_typed_values(
+    tmp_path: Path, key: str, raw: str
+) -> None:
+    cwd = _write_config(
+        tmp_path=tmp_path,
+        text=(f'{{"livespec-orchestrator-beads-fabro": {{"dispatcher": {{"{key}": {raw}}}}}}}'),
+    )
+
+    assert valves.resolve_auto_approve_ready(cwd=cwd) is valves.DEFAULT_AUTO_APPROVE_READY
+    assert valves.resolve_merge_on_review_cap(cwd=cwd) is valves.DEFAULT_MERGE_ON_REVIEW_CAP
+    assert valves.resolve_acceptance_mode(cwd=cwd) == DEFAULT_ACCEPTANCE_POLICY
+    assert valves.resolve_review_fix_cap(cwd=cwd) == valves.DEFAULT_REVIEW_FIX_CAP
+    assert valves.resolve_acceptance_rework_cap(cwd=cwd) == valves.DEFAULT_ACCEPTANCE_REWORK_CAP
+
+
+def test_effective_admission_policy_inherits_global_auto_when_unlabeled(tmp_path: Path) -> None:
+    cwd = _write_config(
+        tmp_path=tmp_path,
+        text='{"livespec-orchestrator-beads-fabro": {"dispatcher": {"auto_approve_ready": true}}}',
+    )
+    assert effective_admission_policy(item=_item(admission_policy=None), cwd=cwd) == "auto"
+
+
+def test_effective_admission_policy_inherits_manual_when_none(tmp_path: Path) -> None:
+    assert (
+        effective_admission_policy(item=_item(admission_policy=None), cwd=tmp_path)
+        == DEFAULT_ADMISSION_POLICY
     )
 
 
-def test_effective_acceptance_policy_honors_explicit() -> None:
-    assert effective_acceptance_policy(item=_item(acceptance_policy="ai-only")) == "ai-only"
+def test_effective_admission_policy_honors_explicit_in_both_directions(tmp_path: Path) -> None:
+    auto_off = _write_config(
+        tmp_path=tmp_path / "auto-off",
+        text='{"livespec-orchestrator-beads-fabro": {"dispatcher": {"auto_approve_ready": false}}}',
+    )
+    auto_on = _write_config(
+        tmp_path=tmp_path / "auto-on",
+        text='{"livespec-orchestrator-beads-fabro": {"dispatcher": {"auto_approve_ready": true}}}',
+    )
+    assert effective_admission_policy(item=_item(admission_policy="auto"), cwd=auto_off) == "auto"
+    assert (
+        effective_admission_policy(item=_item(admission_policy="manual"), cwd=auto_on) == "manual"
+    )
+
+
+def test_effective_admission_policy_never_auto_approves_spec_change_tier(
+    tmp_path: Path,
+) -> None:
+    cwd = _write_config(
+        tmp_path=tmp_path,
+        text='{"livespec-orchestrator-beads-fabro": {"dispatcher": {"auto_approve_ready": true}}}',
+    )
+    item = _item(admission_policy="auto", spec_commitment_hint="SC-1")
+
+    assert effective_admission_policy(item=item, cwd=cwd) == "manual"
+
+
+def test_effective_acceptance_policy_inherits_global_mode_when_unlabeled(tmp_path: Path) -> None:
+    cwd = _write_config(
+        tmp_path=tmp_path,
+        text='{"livespec-orchestrator-beads-fabro": {"dispatcher": {"acceptance_mode": "ai-only"}}}',
+    )
+    assert effective_acceptance_policy(item=_item(acceptance_policy=None), cwd=cwd) == "ai-only"
+
+
+def test_effective_acceptance_policy_inherits_default_when_none(tmp_path: Path) -> None:
+    assert (
+        effective_acceptance_policy(item=_item(acceptance_policy=None), cwd=tmp_path)
+        == DEFAULT_ACCEPTANCE_POLICY
+    )
+
+
+def test_effective_acceptance_policy_honors_explicit(tmp_path: Path) -> None:
+    cwd = _write_config(
+        tmp_path=tmp_path,
+        text='{"livespec-orchestrator-beads-fabro": {"dispatcher": {"acceptance_mode": "ai-only"}}}',
+    )
+    assert (
+        effective_acceptance_policy(item=_item(acceptance_policy="human-only"), cwd=cwd)
+        == "human-only"
+    )
+
+
+def test_new_raw_label_overrides_beat_global_settings(tmp_path: Path) -> None:
+    cwd = _write_config(
+        tmp_path=tmp_path,
+        text=(
+            '{"livespec-orchestrator-beads-fabro": {"dispatcher": {'
+            '"merge_on_review_cap": false,'
+            '"review_fix_cap": 3,'
+            '"acceptance_rework_cap": 2'
+            "}}}"
+        ),
+    )
+
+    assert (
+        valves.effective_merge_on_review_cap(
+            item=_item(), cwd=cwd, raw_labels=("merge-on-review-cap:true",)
+        )
+        is True
+    )
+    assert (
+        valves.effective_review_fix_cap(item=_item(), cwd=cwd, raw_labels=("review-fix-cap:7",))
+        == 7
+    )
+    assert (
+        valves.effective_acceptance_rework_cap(
+            item=_item(), cwd=cwd, raw_labels=("acceptance-rework-cap:8",)
+        )
+        == 8
+    )
 
 
 def test_resolve_assignee_honors_explicit() -> None:

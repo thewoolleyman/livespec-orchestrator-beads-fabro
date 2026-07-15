@@ -129,7 +129,7 @@ def admit_and_select(
         ready_items=admittable,
         free_slots=free_slots,
         resolve_assignee=resolve_assignee,
-        admission_policy=partial(effective_admission_policy_under_mode, armed=armed),
+        admission_policy=partial(effective_admission_policy_under_mode, armed=armed, cwd=repo),
     )
     admitted: list[WorkItem] = []
     config = store_config(repo=repo)
@@ -137,7 +137,7 @@ def admit_and_select(
     for item in plan.approved:
         update_work_item_status(path=config, item_id=item.id, status="ready")
         journal.append(record={"stage": "ledger-approve", "work_item_id": item.id})
-        if collapse_admission_to_auto(item=item, armed=armed):
+        if collapse_admission_to_auto(item=item, armed=armed, cwd=repo):
             journal.append(
                 record=autonomous_decision_journal_record(
                     work_item_id=item.id,
