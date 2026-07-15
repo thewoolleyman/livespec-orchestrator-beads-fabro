@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -92,7 +93,23 @@ def emit_review_gate_from_fabro_events(*, emission: ReviewGateEmission) -> None:
     Runs without a resolved Fabro run id are pre-run refusals or unobservable CLI
     failures, so there is no event stream to query.
     """
+    try:
+        _emit_review_gate_from_fabro_events(emission=emission)
+    except Exception as exc:
+        _append_review_gate_skip(
+            emission=emission,
+            reason=str(exc) or type(exc).__name__,
+            exit_code=None,
+        )
+
+
+def _emit_review_gate_from_fabro_events(*, emission: ReviewGateEmission) -> None:
     if emission.run_id is None:
+        _append_review_gate_skip(
+            emission=emission,
+            reason="fabro run id unavailable",
+            exit_code=None,
+        )
         return
     events = emission.runner.run(
         argv=fabro_events_argv(plan=emission.plan, run_id=emission.run_id),
@@ -100,14 +117,10 @@ def emit_review_gate_from_fabro_events(*, emission: ReviewGateEmission) -> None:
         timeout_seconds=_FABRO_EVENTS_TIMEOUT_SECONDS,
     )
     if events.exit_code != 0:
-        emission.journal.append(
-            record={
-                "stage": "review-gate-telemetry-skipped",
-                "work_item_id": emission.work_item_id,
-                "run_id": emission.run_id,
-                "reason": "fabro events command failed",
-                "exit_code": events.exit_code,
-            }
+        _append_review_gate_skip(
+            emission=emission,
+            reason="fabro events command failed",
+            exit_code=events.exit_code,
         )
         return
     telemetry = parse_review_gate_events(events_jsonl=events.stdout)
@@ -130,6 +143,21 @@ def emit_review_gate_from_fabro_events(*, emission: ReviewGateEmission) -> None:
             "pr_shipped_on_cap": telemetry.shipped_on_cap,
         }
     )
+
+
+def _append_review_gate_skip(
+    *, emission: ReviewGateEmission, reason: str, exit_code: int | None
+) -> None:
+    record: dict[str, object] = {
+        "stage": "review-gate-telemetry-skipped",
+        "work_item_id": emission.work_item_id,
+        "run_id": emission.run_id,
+        "reason": reason,
+    }
+    if exit_code is not None:
+        record["exit_code"] = exit_code
+    with suppress(Exception):
+        emission.journal.append(record=record)
 
 
 def emit_review_gate_span(

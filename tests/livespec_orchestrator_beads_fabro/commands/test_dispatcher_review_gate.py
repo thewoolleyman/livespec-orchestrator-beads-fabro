@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
+import pytest
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_review_gate as review_gate
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan, build_plan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_review_gate import (
@@ -42,35 +44,34 @@ def test_parse_review_gate_events_approved_on_first_visit() -> None:
 
 
 def test_parse_review_gate_events_counts_fix_rounds_and_ship_on_cap_order_robust() -> None:
-    # Intentionally out of stream order; timestamps decide the terminal review edge.
     events = _jsonl(
+        _edge(
+            from_node="review",
+            to_node="review_fix",
+            reason="preferred_label",
+            preferred_label="fix",
+            timestamp="2026-07-15T00:01:00.100000001Z",
+        ),
+        _edge(
+            from_node="review",
+            to_node="review_fix",
+            reason="preferred_label",
+            preferred_label="fix",
+            timestamp="2026-07-15T00:02:00.200000002Z",
+        ),
         _edge(
             from_node="review",
             to_node="pr",
             reason="unconditional",
             preferred_label=None,
-            timestamp="2026-07-15T00:03:00Z",
-        ),
-        _edge(
-            from_node="review",
-            to_node="review_fix",
-            reason="preferred_label",
-            preferred_label="fix",
-            timestamp="2026-07-15T00:01:00Z",
-        ),
-        _edge(
-            from_node="review",
-            to_node="review_fix",
-            reason="preferred_label",
-            preferred_label="fix",
-            timestamp="2026-07-15T00:02:00Z",
+            timestamp="2026-07-15T00:03:00.300000003Z",
         ),
         _edge(
             from_node="implement",
             to_node="review",
             reason="unconditional",
             preferred_label=None,
-            timestamp="2026-07-15T00:00:30Z",
+            timestamp="2026-07-15T00:00:30.400000004Z",
         ),
         {"event": "not-json-review"},
     )
@@ -82,6 +83,41 @@ def test_parse_review_gate_events_counts_fix_rounds_and_ship_on_cap_order_robust
         fix_rounds=2,
         hit_cap=True,
         shipped_on_cap=True,
+    )
+
+
+def test_parse_review_gate_events_uses_stream_order_for_mixed_precision_timestamps() -> None:
+    events = _jsonl(
+        _edge(
+            from_node="review",
+            to_node="review_fix",
+            reason="preferred_label",
+            preferred_label="fix",
+            timestamp="2026-07-15T00:00:10.471Z",
+        ),
+        _edge(
+            from_node="review",
+            to_node="review_fix",
+            reason="preferred_label",
+            preferred_label="fix",
+            timestamp="2026-07-15T00:00:10.471247Z",
+        ),
+        _edge(
+            from_node="review",
+            to_node="pr",
+            reason="preferred_label",
+            preferred_label="approve",
+            timestamp="2026-07-15T00:00:11.471247193Z",
+        ),
+    )
+
+    telemetry = parse_review_gate_events(events_jsonl=events)
+
+    assert telemetry == ReviewGateTelemetry(
+        verdict="approve",
+        fix_rounds=2,
+        hit_cap=False,
+        shipped_on_cap=False,
     )
 
 
@@ -288,7 +324,14 @@ def test_emit_review_gate_from_fabro_events_skips_without_run_id(tmp_path: Path)
     )
 
     assert runner.calls == []
-    assert journal.records == []
+    assert journal.records == [
+        {
+            "stage": "review-gate-telemetry-skipped",
+            "work_item_id": "bd-1",
+            "run_id": None,
+            "reason": "fabro run id unavailable",
+        }
+    ]
 
 
 def test_emit_review_gate_from_fabro_events_skips_on_command_failure(tmp_path: Path) -> None:
@@ -311,6 +354,65 @@ def test_emit_review_gate_from_fabro_events_skips_on_command_failure(tmp_path: P
     assert not spans_path.exists()
     assert journal.records[-1]["reason"] == "fabro events command failed"
     assert journal.records[-1]["exit_code"] == 1
+
+
+def test_emit_review_gate_from_fabro_events_swallows_span_write_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _FakeRunner(
+        queue=[
+            CommandResult(
+                exit_code=0,
+                stdout=_jsonl(
+                    _edge(
+                        from_node="review",
+                        to_node="pr",
+                        reason="preferred_label",
+                        preferred_label="approve",
+                        timestamp="2026-07-15T00:00:02.123456789Z",
+                    )
+                ),
+                stderr="",
+            )
+        ]
+    )
+    journal = _Journal()
+
+    def raise_os_error(
+        *,
+        telemetry: ReviewGateTelemetry,
+        spans_path: Path,
+        work_item_id: str,
+        dispatch_id: str,
+        run_id: str,
+        now_ns: int,
+    ) -> None:
+        _ = (telemetry, spans_path, work_item_id, dispatch_id, run_id, now_ns)
+        raise OSError("span sink unavailable")
+
+    monkeypatch.setattr(review_gate, "emit_review_gate_span", raise_os_error)
+
+    emit_review_gate_from_fabro_events(
+        emission=ReviewGateEmission(
+            plan=_plan(repo=tmp_path),
+            runner=runner,
+            journal=journal,
+            spans_path=tmp_path / "review-spans.jsonl",
+            work_item_id="bd-1",
+            dispatch_id="dispatch-1",
+            run_id="run-1",
+        )
+    )
+
+    assert runner.calls == [(["fabro", "events", "run-1", "--json"], tmp_path)]
+    assert journal.records == [
+        {
+            "stage": "review-gate-telemetry-skipped",
+            "work_item_id": "bd-1",
+            "run_id": "run-1",
+            "reason": "span sink unavailable",
+        }
+    ]
 
 
 def _jsonl(*events: dict[str, object]) -> str:
