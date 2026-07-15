@@ -12,9 +12,10 @@ alone, MUST NOT infer it from context, and MUST NOT let the armed mode
 persist beyond the invocation — each run re-passes the flag.
 
 This module owns the arming DECISION and its surfacing only. It collapses NO
-gate: the two-valve collapse (approve -> auto, acceptance -> ai-only), the
-in-band needs-human resolution stage, and the per-decision audit record all
-layer on top in later slices. When a run IS armed the Dispatcher surfaces an
+gate: the two-valve collapse (approve -> auto, acceptance -> ai-only) and
+the per-decision audit record layer on top in later slices. Needs-human
+escalations remain human-owned and are not auto-resolved. When a run IS armed
+the Dispatcher surfaces an
 explicit dangerous-mode acknowledgement and journals the arming; when it is
 NOT armed the run is transparent — nothing is surfaced and every
 human-delegable gate keeps its normal policy (a `--mode autonomous` drain

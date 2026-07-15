@@ -30,7 +30,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
     autonomous_armed,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
-    bounce_blocked,
     bounce_non_convergence_to_backlog,
     complete_and_accept,
     host_only_refusal,
@@ -108,7 +107,6 @@ def test_completion_cluster_importable_from_new_module_and_dispatcher() -> None:
     assert dispatcher.host_only_refusal is host_only_refusal
     assert dispatcher.complete_and_accept is complete_and_accept
     assert dispatcher.bounce_non_convergence_to_backlog is bounce_non_convergence_to_backlog
-    assert dispatcher.bounce_blocked is bounce_blocked
     assert dispatcher.warn_item_sizing is warn_item_sizing
 
 

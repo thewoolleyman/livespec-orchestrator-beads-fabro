@@ -23,9 +23,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import load_items
-from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human import (
-    resolve_or_bounce_needs_human,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     journal_path,
     workflow_toml,
@@ -148,7 +145,6 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
         )
     journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
     bounce_non_convergence_to_backlog(repo=repo, item=item, outcome=outcome, journal=journal)
-    resolve_or_bounce_needs_human(args=args, repo=repo, item=item, outcome=outcome, journal=journal)
     emit_calibration(
         args=args,
         repo=repo,
