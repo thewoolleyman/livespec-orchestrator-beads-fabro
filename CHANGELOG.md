@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.30.6...v0.31.0) (2026-07-15)
+
+
+### Features
+
+* factory-bypass audit — surface merged product-code PRs not authored by the factory GitHub App (work-item bd-ib-c4a2bi) ([68e7ce0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/68e7ce02ffc0b1c0a7085bd52161e3e2e41d929c))
+
 ## [0.30.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.30.5...v0.30.6) (2026-07-15)
 
 
