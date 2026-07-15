@@ -29,6 +29,42 @@ disposition` per livespec/SPECIFICATION/contracts.md
 
 ## Flow
 
+### Step 0 — Factory routing (dispatch-first)
+
+**"The factory path" means exactly one thing: dispatch through the
+Dispatcher — the `drive` operation's `impl:<id>` action or the
+Dispatcher's own drain of `ready` items.** The in-session Red→Green
+driver below is NOT the factory path, and any handoff or prose that
+describes in-session implementation as "the factory path" is defective
+(the `plan` operation's handoff gate refuses it).
+
+Resolve the routing before driving anything in-session:
+
+1. **Factory-worker context.** When this operation is running INSIDE a
+   factory sandbox clone (the declared sandbox marker is present:
+   `git config --get livespec.sandboxExempt` prints `true`), skip this
+   step — the session IS the factory-side implementer; proceed to
+   Step 1.
+2. **Default: dispatch and stop.** When the work-item's implementation
+   would change product code (any changeset the repo's Red-Green-Replay
+   gate classifies as product), route it factory-side: hand the item to
+   the `drive` operation (action `impl:<id>`), or leave it for the
+   Dispatcher drain, and STOP — the in-session driver below does not
+   run. Monitor the dispatched run instead.
+3. **The in-session exception path.** Drive Red→Green in-session ONLY
+   when at least one of the following holds, and record WHICH one (with
+   a one-line reason) in the work-item's closure audit:
+   - the item is explicitly recorded as **factory-ineligible** (host
+     mutation, interactive credentials, or mid-implementation human
+     judgment);
+   - the **factory is unavailable** (Dispatcher/server outage, or the
+     repo is not factory-wired) and the work must not wait;
+   - the **maintainer explicitly directed** in-session execution for
+     this item in this session.
+4. **Non-product changesets** (docs, spec prose, plan threads,
+   work-item records, config chores — what the Red-Green-Replay gate
+   exempts) are not factory-gated; proceed to Step 1.
+
 ### Step 1 — Pick the work-item
 
 If `<work-item-id>` was supplied, load it from the JSONL store:

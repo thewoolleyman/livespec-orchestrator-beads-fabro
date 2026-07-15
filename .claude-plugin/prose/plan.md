@@ -141,7 +141,7 @@ may happen this invocation; ask the user which, one at a time:
 
 A handoff is NOT ready until it is self-sufficient: a fresh session
 opening ONLY the handoff can execute its next action without
-re-deriving anything. Enforce all three before declaring a handoff
+re-deriving anything. Enforce all four before declaring a handoff
 ready; if any fails, repair the handoff and re-run the gate.
 
 1. **Cold-open readiness test.** Have a **fresh-context reader** (a
@@ -163,6 +163,15 @@ ready; if any fails, repair the handoff and re-run the gate.
    (`git ls-files --error-unmatch <path>`, or existence + tracked
    status); a missing or uncommitted reference FAILS the gate. Surface
    the offending path and stop — do not declare the handoff ready.
+4. **Dispatch routing (the factory path).** When the handoff's next
+   action includes implementing ledger-backed work, it MUST name the
+   factory dispatch route — the `drive` operation (action `impl:<id>`)
+   or the Dispatcher drain — as THE implementation path, and it MUST
+   NOT direct the reader to the in-session Red→Green driver (the
+   `implement` operation), except for items explicitly recorded as
+   factory-ineligible. "Factory path" refers EXCLUSIVELY to dispatch
+   through the Dispatcher/`drive`; a handoff that uses the phrase for
+   in-session implementation FAILS this gate.
 
 ### Step 5 — Archive on epic close
 
@@ -204,7 +213,8 @@ the reserved `handoff.md`, and it archives on close).
   resolves an existing thread or fails listing slugs. Creation is the
   interview path's job, with a canonical slug the human confirms.
 - **Self-sufficient handoffs** — a handoff is declared ready only after
-  the Step 4 gate (cold-open test + one path + no dangling reference).
+  the Step 4 gate (cold-open test + one path + no dangling reference +
+  dispatch routing).
 - **No new ledger state, no new store path beyond `plan/`** — the
   thread anchors a plain Beads `epic` and reuses the `capture-work-item`
   machinery; `plan/<topic>/` and `plan/archive/<topic>/` are the only
