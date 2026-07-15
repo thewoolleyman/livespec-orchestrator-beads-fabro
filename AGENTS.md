@@ -326,3 +326,20 @@ pass `--no-verify`.
   `master` and a post-merge janitor reported a red check; the revert was the
   correct action regardless of the check result, so pausing to diagnose the
   red was wasted ceremony.)
+- **Prefer factory dispatch for factory-safe work; do not default to
+  hand-building it** (maintainer-declared 2026-07-15). When a work-item is
+  factory-safe (in-repo, dispatchable Python/config — NOT outward-facing upstream
+  fabro work), default to running it THROUGH the dark factory
+  (`dispatcher.py dispatch --item <id>`), not implementing it in-session. Do NOT
+  present the factory path as the heavier or less-preferred option — dogfooding the
+  factory is the point ("we should be running things to the factory whenever we
+  can"). The "it needs a Codex credential" objection is usually hollow: check
+  `~/.fabro/bin/fabro ps` for an in-flight dispatch first; a running dispatch is
+  live proof the credential works. The dispatcher self-wraps for credentials but
+  often cannot reach the credstore alone — run it already inside
+  `with-<project>-env.sh`. Hand-build only when the work is genuinely NOT
+  factory-safe (outward-facing upstream fabro PRs, e.g. the codex-factory-telemetry
+  O-track) or the maintainer explicitly asks. (Context: after re-planning the
+  telemetry emitter, the factory-safe slice F1 was first offered as "hand-build
+  (recommended) vs dispatch (heavier)"; the maintainer corrected that the
+  factory-safe slice is exactly what should be dispatched.)
