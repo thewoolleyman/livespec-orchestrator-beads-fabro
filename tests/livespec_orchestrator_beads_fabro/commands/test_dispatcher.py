@@ -2471,7 +2471,9 @@ def test_dispatch_green_closes_item_and_journals(
     # The admission valve fires first (`ledger-admit`: ready -> active +
     # assignee), then the dispatch journals the per-dispatch correlation id
     # (29f.3 — projected into the sandbox's CC OTel OTEL_RESOURCE_ATTRIBUTES
-    # so telemetry joins to this dispatch). On a green run the post-merge
+    # so telemetry joins to this dispatch). This hermetic fake outcome has no
+    # Fabro run id, so review-gate telemetry records its fail-open skip before
+    # dispositions continue. On a green run the post-merge
     # acceptance valve runs: `ledger-complete` (active -> acceptance) then the
     # `acceptance-ai-pass` confirm then `ledger-accept` (ai-only -> done; the
     # default factory item is ai-only). After `outcome` come the post-verdict
@@ -2489,6 +2491,7 @@ def test_dispatch_green_closes_item_and_journals(
     assert stages == [
         "ledger-admit",
         "dispatch-id",
+        "review-gate-telemetry-skipped",
         "ledger-complete",
         "acceptance-ai-pass",
         "ledger-accept",

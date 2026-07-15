@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any, cast
 
 __all__: list[str] = [
@@ -27,7 +26,7 @@ class ReviewGateTelemetry:
 
 @dataclass(frozen=True, kw_only=True)
 class _ReviewEdge:
-    order_key: tuple[float, int]
+    order_key: int
     to_node: str
     reason: str
     preferred_label: str | None
@@ -68,7 +67,7 @@ def _review_edges(*, events_jsonl: str) -> list[_ReviewEdge]:
             continue
         edges.append(
             _ReviewEdge(
-                order_key=(_event_order(event=parsed, index=index), index),
+                order_key=index,
                 to_node=to_node,
                 reason=reason,
                 preferred_label=preferred_label if isinstance(preferred_label, str) else None,
@@ -103,29 +102,6 @@ def _properties(*, event: dict[str, Any]) -> dict[str, object]:
     if isinstance(properties_raw, dict):
         return cast("dict[str, object]", properties_raw)
     return event
-
-
-def _event_order(*, event: dict[str, Any], index: int) -> float:
-    for key in ("timestamp", "ts", "at"):
-        value: object = event.get(key)
-        if isinstance(value, str):
-            epoch = _iso_to_epoch(value=value)
-            if epoch is not None:
-                return epoch
-        if isinstance(value, int | float) and not isinstance(value, bool):
-            return float(value)
-    return float(index)
-
-
-def _iso_to_epoch(*, value: str) -> float | None:
-    normalized = value.removesuffix("Z") + "+00:00" if value.endswith("Z") else value
-    try:
-        parsed = datetime.fromisoformat(normalized)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.timestamp()
 
 
 def _terminal_verdict(*, edge: _ReviewEdge | None) -> str:
