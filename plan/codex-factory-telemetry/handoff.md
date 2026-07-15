@@ -35,6 +35,33 @@ below.
 
 ## ▶ CURRENT STATE + NEXT ACTION (read this first)
 
+**EMITTER RE-PLAN FILED (2026-07-15) — read `emitter-replan.md` first; it supersedes
+the falsification narrative below.** The monolithic emitter `bd-ib-98c.1` was
+re-planned (grounded in two fresh code investigations), adversarially reviewed by
+Fable, and re-sliced into dependency-layered children. `bd-ib-98c.1` is now CLOSED
+(`no-longer-applicable` = re-sliced, not dropped). New ledger structure under
+`bd-ib-98c`:
+- **`bd-ib-98c.3` (F1) — the ripe next build. FACTORY-SAFE, dispatcher-only, no
+  upstream dependency.** Emit the four review-gate attributes (incl. the
+  ship-on-cap signal) by parsing the structured `fabro events --json` stream
+  (each `StageCompleted` carries `preferred_label` + `node_visits`). This answers
+  the standing "ship-on-cap rate" question with NO fabro change. Maintainer decision
+  (2026-07-15): **ship F1 now**, O-track as the follow-on. First F1 step is the
+  "verify FIRST" gate — capture a real `fabro events --json` from a run with a
+  review round and confirm those fields exist.
+- **`bd-ib-98c.4-.7` (O1-O4) — the outward-facing fabro emitter spine**, strict
+  order: activate the inert worker exporter (env re-injection + `http/json`) →
+  cross-process traceparent → node-lifecycle spans → ACP turn spans. Rides
+  `bd-ib-i4r`.
+- **`bd-ib-98c.8` (O5, deferred)** — ACP token/cost via the already-enabled
+  `unstable_session_usage` seam.
+- **`bd-ib-98c.2` (receiver)** repointed onto F1/O1/O3 (allowlist widening +
+  `http/json` overlay). Unchanged sequencing: land before/with the emitter it serves.
+
+Full decomposition, the eight code-verified constraints, the rejected stderr-sentinel
+design, and every file:line citation live in `emitter-replan.md`. Everything below
+this block is retained as the historical arc.
+
 **DONE this arc (2026-07-14):**
 - **Upstream OTLP transport PR — [fabro-sh/fabro#576](https://github.com/fabro-sh/fabro/pull/576)**:
   DRAFT, **CI GREEN**. Adversarial review COMPLETE — Codex (gpt-5.5 high) 7 passes →
