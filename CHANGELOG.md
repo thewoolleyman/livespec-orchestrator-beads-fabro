@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.33.0...v0.34.0) (2026-07-15)
+
+
+### Features
+
+* emit review gate telemetry ([29a253b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/29a253bb8329527c000d4822e2e7df4d894579db))
+
 ## [0.33.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.32.0...v0.33.0) (2026-07-15)
 
 
