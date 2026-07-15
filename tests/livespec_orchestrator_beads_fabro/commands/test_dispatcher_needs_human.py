@@ -173,7 +173,7 @@ def test_dispatcher_pass_leaves_blocked_needs_human_item_blocked(
 
     assert stored.status == "blocked"
     assert stored.blocked_reason == "needs-human"
-    assert any(entry.id == f"valve:set-admission:{item.id}" for entry in attention)
+    assert any(entry.id == f"valve:resolve-blocked:{item.id}" for entry in attention)
     assert not any(record.get("stage") == "needs-human-resolved" for record in journal.records)
     assert not any(record.get("stage") == "blocked-bounce" for record in journal.records)
 
@@ -199,7 +199,7 @@ def test_needs_human_attention_is_json_queryable(
     )
 
     assert [entry["id"] for entry in payload["attention"]] == [
-        "valve:set-admission:bd-ib-needs-human"
+        "valve:resolve-blocked:bd-ib-needs-human"
     ]
 
 

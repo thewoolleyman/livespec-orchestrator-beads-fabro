@@ -71,19 +71,13 @@ def human_valves(
                 )
             )
         elif status == "blocked" and lane_reason == "needs-human":
-            action = (
-                f"resolve-blocked:{item_id}:ready"
-                if item.admission_policy == "manual"
-                else f"set-admission:{item_id}:manual"
-            )
-            verb = "resolve-blocked" if item.admission_policy == "manual" else "set-admission"
             lanes.append(
                 _valve(
-                    verb=verb,
+                    verb="resolve-blocked",
                     work_item=item_id,
                     summary=f"Resolve human-needed block for work-item {item_id}: {title}",
                     project_root=project_root,
-                    action_id=action,
+                    action_id=f"resolve-blocked:{item_id}:ready",
                 )
             )
     return lanes

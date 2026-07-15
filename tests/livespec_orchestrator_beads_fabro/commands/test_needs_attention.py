@@ -147,7 +147,7 @@ def test_build_attention_composes_impl_human_valves_plan_threads_and_spec_next(
     assert [item.id for item in attention] == [
         "valve:approve:bd-approval",
         "valve:accept:bd-accept",
-        "valve:set-admission:bd-block",
+        "valve:resolve-blocked:bd-block",
         "impl:bd-ready",
         "spec:revise:SPECIFICATION",
         "plan:needs-attention",
