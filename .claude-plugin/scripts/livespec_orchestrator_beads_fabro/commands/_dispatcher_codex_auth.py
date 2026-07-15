@@ -11,12 +11,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_cred_refresh_command import (
+    run_codex_cred_refresh_with,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_refresh import (
     CODEX_ALARM_THRESHOLD_SECONDS,
     CODEX_REFRESH_GUARD_SECONDS,
     HostCodexCredentialStatus,
     assess_host_codex_credential,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     CODEX_FRESHNESS_RUN_BUDGET_SECONDS,
     assess_codex_credential_freshness,
@@ -28,6 +32,7 @@ __all__: list[str] = [
     "CodexProjectionRefusal",
     "project_codex_auth",
     "read_host_codex_auth",
+    "run_codex_cred_refresh",
     "run_codex_cred_status",
 ]
 
@@ -98,18 +103,32 @@ def project_codex_auth(*, now_epoch: int) -> str | CodexProjectionRefusal:
 
 def run_codex_cred_status(*, args: argparse.Namespace) -> int:
     """Emit host Codex credential lifetime status for operators."""
-    status = assess_host_codex_credential(
-        source_auth_json=read_host_codex_auth(),
-        now_epoch=int(time.time()),
-        alarm_threshold_seconds=CODEX_ALARM_THRESHOLD_SECONDS,
-        refresh_guard_seconds=CODEX_REFRESH_GUARD_SECONDS,
-    )
+    status = _assess_current_host_codex_credential()
     payload = _codex_cred_status_payload(status=status)
     if args.as_json:
         _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
     else:
         _ = write_stdout(text=_codex_cred_status_human(payload=payload))
     return 1 if status.alarm else 0
+
+
+def run_codex_cred_refresh(*, args: argparse.Namespace) -> int:
+    return run_codex_cred_refresh_with(
+        args=args,
+        cwd=Path.cwd,
+        now_epoch=lambda: int(time.time()),
+        read_host_codex_auth=read_host_codex_auth,
+        runner_factory=ShellCommandRunner,
+    )
+
+
+def _assess_current_host_codex_credential() -> HostCodexCredentialStatus:
+    return assess_host_codex_credential(
+        source_auth_json=read_host_codex_auth(),
+        now_epoch=int(time.time()),
+        alarm_threshold_seconds=CODEX_ALARM_THRESHOLD_SECONDS,
+        refresh_guard_seconds=CODEX_REFRESH_GUARD_SECONDS,
+    )
 
 
 def _codex_cred_status_payload(*, status: HostCodexCredentialStatus) -> dict[str, Any]:

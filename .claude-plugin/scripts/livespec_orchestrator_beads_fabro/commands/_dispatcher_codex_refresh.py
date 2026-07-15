@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import Literal
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
     decode_codex_access_token_exp,
@@ -14,6 +15,8 @@ __all__: list[str] = [
     "CODEX_REFRESH_GUARD_SECONDS",
     "HostCodexCredentialStatus",
     "assess_host_codex_credential",
+    "classify_refresh_outcome",
+    "should_invoke_codex_refresh",
 ]
 
 CODEX_ALARM_THRESHOLD_SECONDS = 172_800
@@ -31,6 +34,9 @@ class HostCodexCredentialStatus:
     alarm: bool
     refresh_due: bool
     message: str
+
+
+_RefreshOutcome = Literal["noop-not-due", "refreshed", "codex-error", "still-stale"]
 
 
 def assess_host_codex_credential(
@@ -78,3 +84,29 @@ def assess_host_codex_credential(
         refresh_due=remaining < refresh_guard_seconds,
         message=f"Host Codex credential expires in {remaining} seconds.",
     )
+
+
+def should_invoke_codex_refresh(*, status: HostCodexCredentialStatus) -> bool:
+    """Return whether the guarded refresher should spend a Codex request."""
+    return status.present and not status.malformed and status.refresh_due
+
+
+def classify_refresh_outcome(
+    *,
+    before: HostCodexCredentialStatus,
+    after: HostCodexCredentialStatus,
+    codex_ok: bool,
+) -> _RefreshOutcome:
+    """Classify one guarded Codex refresh attempt from credential status only."""
+    if not should_invoke_codex_refresh(status=before):
+        return "noop-not-due"
+    if not codex_ok:
+        return "codex-error"
+    if (
+        before.expires_at_epoch is not None
+        and after.expires_at_epoch is not None
+        and after.expires_at_epoch > before.expires_at_epoch
+        and not after.refresh_due
+    ):
+        return "refreshed"
+    return "still-stale"
