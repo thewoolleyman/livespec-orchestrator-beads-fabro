@@ -6,11 +6,15 @@ polluting the fleet's beads tenant with off-lifecycle statuses:
 
 1. `bd update ... --status <S>` where `S` is not a livespec lifecycle status;
 2. `bd update ... --claim` (which sets status to `in_progress`);
-3. `bd reopen ...` (which sets status back to the non-lifecycle `open`).
+3. `bd reopen ...` (which sets status back to the non-lifecycle `open`);
+4. `bd ready ... --claim` (the advertised "grab work" path, which sets status
+   to `in_progress`);
+5. `bd defer <id>` (the defer **subcommand**, which sets status to the
+   non-lifecycle `deferred`).
 
 Everything else — `create`, `list`, `show`, `close`, `dep`, `config`,
-`history`, `--json`, and every other subcommand/flag — passes through
-**unchanged**.
+`history`, `--json`, a bare `bd ready` list (or `bd ready --status <x>`
+filtering), and every other subcommand/flag — passes through **unchanged**.
 
 This is a **STOPGAP** until beads ships the upstream fixes (a `status.default`
 and a lifecycle-aware `--claim`/`--status`). It is designed to be **trivially
@@ -33,8 +37,12 @@ The bare `bd create` → `open` default is **not** guarded here: it cannot be
 cleanly detected at a single-command wrapper on `bd` v1.0.5 (no
 `create --status`), so a bare `create` is indistinguishable from a conformant
 one. That case is handled elsewhere by the store normalizer plus the upstream
-`status.default` work. `--defer` (sets a defer date, not a status) is likewise
-not guarded.
+`status.default` work.
+
+Note the **flag vs subcommand** distinction for defer: `bd update ... --defer
+<date>` (the `--defer` **flag**) sets a defer *date*, not a status, so it is
+**not** guarded — but the `bd defer <id>` **subcommand** writes
+status=`deferred` and **is** guarded (item 5 above), exactly like `bd reopen`.
 
 ## Behavior contract
 
@@ -68,6 +76,8 @@ Example warnings:
 livespec bd-guard: 'bd update --status in_progress' is non-lifecycle; use --status active
 livespec bd-guard: 'bd update --claim' is non-lifecycle; use --status active
 livespec bd-guard: 'bd reopen' is non-lifecycle; use bd update --status <lifecycle> (e.g. backlog)
+livespec bd-guard: 'bd ready --claim' is non-lifecycle; use --status active
+livespec bd-guard: 'bd defer' is non-lifecycle; use bd update --status <lifecycle> (e.g. backlog)
 ```
 
 ## Telemetry (OTLP `bd.invoke` span — default ON, fail-open)
@@ -210,3 +220,13 @@ Later sections cover the flip-hardening behavior: that `--format json update …
 (env var → file → `warn`, including an env `warn` overriding a `fail` file); and
 that a `fail`-mode **block emits a span** (routed to a stub emitter) so
 enforcement is observable.
+
+The final sections cover the `ready`/`defer` guards and the mode-file
+newline footgun: `bd ready --claim` (and `--claim=true`) is **blocked** in
+`fail` mode while a bare `bd ready` list, `bd ready --json`, `bd ready --limit
+5`, and — critically — `bd ready --status ready` / `bd ready --status open`
+list-filters all **pass through** unblocked (the `ready` phase never scans
+`--status`, so no legit list is ever mis-blocked); the `bd defer <id>`
+subcommand is **blocked** in `fail` and **warns** in `warn`; and a mode file
+containing `fail` with **no trailing newline** still resolves to `fail` and
+blocks (proving the `head`/`tr` read does not silently degrade to `warn`).
