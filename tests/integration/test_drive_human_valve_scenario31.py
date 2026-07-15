@@ -126,3 +126,35 @@ def test_set_acceptance_edits_policy_without_touching_status(tmp_path: Path) -> 
     stored = _stored()["bd-ib-123"]
     assert stored.acceptance_policy == "human-only"
     assert stored.status == "acceptance"
+
+
+def test_unblock_clears_needs_human_block_and_routes_to_ready(tmp_path: Path) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    append_work_item(
+        path=_config(),
+        item=_item(status="blocked", blocked_reason="needs-human", assignee="fabro"),
+    )
+
+    result = run_action(repo=repo, action_id="unblock:bd-ib-123:ready")
+
+    assert result["status"] == "green"
+    assert result["target_status"] == "ready"
+    assert result["journal"] == {
+        "actor": "operator",
+        "stage": "human-valve-unblock",
+        "work_item_id": "bd-ib-123",
+    }
+    stored = _stored()["bd-ib-123"]
+    assert stored.status == "ready"
+    assert stored.blocked_reason is None
+
+
+def test_unblock_refuses_non_blocked_item(tmp_path: Path) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=_item(status="ready"))
+
+    result = run_action(repo=repo, action_id="unblock:bd-ib-123:ready")
+
+    assert result["status"] == "failed"
+    assert result["domain_error"] == "invalid-source-state"
+    assert _stored()["bd-ib-123"].status == "ready"

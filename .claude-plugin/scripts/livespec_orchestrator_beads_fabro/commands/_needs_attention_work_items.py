@@ -73,11 +73,11 @@ def human_valves(
         elif status == "blocked" and lane_reason == "needs-human":
             lanes.append(
                 _valve(
-                    verb="set-admission",
+                    verb="unblock",
                     work_item=item_id,
                     summary=f"Resolve human-needed block for work-item {item_id}: {title}",
                     project_root=project_root,
-                    action_id=f"set-admission:{item_id}:manual",
+                    action_id=f"unblock:{item_id}:ready",
                 )
             )
     return lanes

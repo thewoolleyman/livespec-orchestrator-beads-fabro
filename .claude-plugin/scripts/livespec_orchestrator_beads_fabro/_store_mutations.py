@@ -20,6 +20,7 @@ __all__: list[str] = [
     "append_work_item",
     "create_work_item",
     "register_custom_statuses",
+    "update_work_item_blocked_reason",
     "update_work_item_policy",
     "update_work_item_rank",
     "update_work_item_status",
@@ -40,6 +41,7 @@ _META_RANK = "rank"
 
 _LIVESPEC_DONE = "done"
 _BEADS_CLOSED = "closed"
+_BLOCKED_REASONS = ("needs-human", "infra-external")
 
 
 def _beads_status_for(*, status: str) -> str:
@@ -114,6 +116,37 @@ def update_work_item_status(
         issue_id=item_id,
         status=_beads_status_for(status=status),
         assignee=assignee,
+    )
+
+
+def update_work_item_blocked_reason(
+    *,
+    path: StoreConfig,
+    item_id: str,
+    status: str,
+    blocked_reason: str | None,
+) -> None:
+    """Transition an issue and replace its dispatcher-owned blocked-reason label.
+
+    This is the Dispatcher's terminal needs-human escalation seam. The status
+    and replacement `blocked-reason:<enum>` label land together on the second
+    update after any stale blocked-reason labels are cleared; clearing the
+    reason for a human-valve unblock uses the same API with `blocked_reason=None`.
+    """
+    remove_labels = [f"{_LABEL_BLOCKED_REASON}{reason}" for reason in _BLOCKED_REASONS]
+    client = make_beads_client(config=path)
+    if blocked_reason is None:
+        client.update_issue(
+            issue_id=item_id,
+            status=_beads_status_for(status=status),
+            remove_labels=remove_labels,
+        )
+        return
+    client.update_issue(issue_id=item_id, remove_labels=remove_labels)
+    client.update_issue(
+        issue_id=item_id,
+        status=_beads_status_for(status=status),
+        add_labels=[f"{_LABEL_BLOCKED_REASON}{blocked_reason}"],
     )
 
 

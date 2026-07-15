@@ -45,6 +45,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     ShellCommandRunner,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_block import (
+    block_needs_human,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     store_config,
 )
@@ -77,6 +80,7 @@ __all__: list[str] = [
     "NeedsHumanResolution",
     "NeedsHumanResolver",
     "RecordingNeedsHumanResolver",
+    "block_needs_human",
     "journal_needs_human_decision",
     "resolution_resolves",
     "resolve_or_bounce_needs_human",

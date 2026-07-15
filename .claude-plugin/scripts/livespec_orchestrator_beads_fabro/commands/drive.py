@@ -61,7 +61,8 @@ def run_action(
                 "Unsupported action id; expected 'impl:<id>', 'approve:<id>', "
                 "'accept:<id>', 'reject:<id>:rework|regroom', "
                 "'set-admission:<id>:auto|manual', or "
-                "'set-acceptance:<id>:ai-only|human-only|ai-then-human'."
+                "'set-acceptance:<id>:ai-only|human-only|ai-then-human', or "
+                "'unblock:<id>:ready|backlog'."
             ),
         }
     work_item_ref = action_id.removeprefix("impl:")

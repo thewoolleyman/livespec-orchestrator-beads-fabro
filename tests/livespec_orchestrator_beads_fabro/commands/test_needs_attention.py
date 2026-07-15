@@ -147,13 +147,14 @@ def test_build_attention_composes_impl_human_valves_plan_threads_and_spec_next(
     assert [item.id for item in attention] == [
         "valve:approve:bd-approval",
         "valve:accept:bd-accept",
-        "valve:set-admission:bd-block",
+        "valve:unblock:bd-block",
         "impl:bd-ready",
         "spec:revise:SPECIFICATION",
         "plan:needs-attention",
     ]
     assert attention[0].handoff.action_id == "approve:bd-approval"
     assert attention[1].handoff.command.endswith("--action accept:bd-accept --json")
+    assert attention[2].handoff.action_id == "unblock:bd-block:ready"
     assert attention[3].handoff.command.endswith("--action impl:bd-ready --json")
     assert attention[-1].source_ref.path == "plan/needs-attention/"
 

@@ -18,6 +18,7 @@ Plus the not-armed / non-blocked pass-through (exactly the pre-existing
 from __future__ import annotations
 
 import argparse
+import json
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -33,6 +34,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human import (
     resolve_or_bounce_needs_human,
     route_needs_human_resolved,
 )
+from livespec_orchestrator_beads_fabro.commands.dispatcher import main as dispatcher_main
+from livespec_orchestrator_beads_fabro.commands.drive import run_action
+from livespec_orchestrator_beads_fabro.commands.list_work_items import main as list_work_items_main
 from livespec_orchestrator_beads_fabro.errors import WorkItemNotFoundError
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
@@ -61,6 +65,16 @@ def _repo(*, tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return repo
+
+
+def _repo_with_workflow(*, tmp_path: Path) -> tuple[Path, Path]:
+    repo = _repo(tmp_path=tmp_path)
+    workflow = tmp_path / "workflow.toml"
+    _ = workflow.write_text(
+        '[workflow]\ngraph = "graph.toml"\n\n[run.environment]\nid = "fabro-sandbox"\n',
+        encoding="utf-8",
+    )
+    return repo, workflow
 
 
 def _item(**overrides: object) -> WorkItem:
@@ -115,6 +129,75 @@ def _armed() -> argparse.Namespace:
 
 def _audit_records(journal: _RecordingJournal) -> list[dict[str, object]]:
     return [r for r in journal.records if r.get("stage") == AUTONOMOUS_DECISION_STAGE]
+
+
+# ---------------------------------------------------------------------------
+# Dispatcher-level needs-human ledger escalation
+# ---------------------------------------------------------------------------
+
+
+def test_block_needs_human_is_terminal_until_drive_human_valve(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item(id="bd-ib-blocked", status="active")
+    append_work_item(path=_config(), item=item)
+    journal = _RecordingJournal()
+
+    assert hasattr(needs_human, "block_needs_human")
+    needs_human.block_needs_human(
+        repo=repo, item=item, reason="operator judgment needed", journal=journal
+    )
+
+    stored = _stored()[item.id]
+    assert (stored.status, stored.blocked_reason) == ("blocked", "needs-human")
+    assert any(
+        record
+        == {
+            "stage": "needs-human-blocked",
+            "work_item_id": item.id,
+            "reason": "operator judgment needed",
+        }
+        for record in journal.records
+    )
+
+    list_work_items_main(argv=["--project-root", str(repo), "--json"])
+    listed = {entry["id"]: entry for entry in json.loads(capsys.readouterr().out)}
+    assert listed[item.id]["status"] == "blocked"
+    assert listed[item.id]["blocked_reason"] == "needs-human"
+
+    _ = (repo / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {'
+        '"connection": {"prefix": "bd-ib"}, '
+        '"dispatcher": {"auto_approve_ready": true}}}',
+        encoding="utf-8",
+    )
+    exit_code = dispatcher_main(
+        argv=[
+            "loop",
+            "--repo",
+            str(repo),
+            "--budget",
+            "1",
+            "--mode",
+            "autonomous",
+            "--workflow",
+            str(workflow),
+            "--skip-ledger-check",
+            "--json",
+        ]
+    )
+
+    assert exit_code == 0
+    assert _stored()[item.id].status == "blocked"
+
+    result = run_action(repo=repo, action_id=f"unblock:{item.id}:ready")
+
+    assert result["status"] == "green"
+    assert result["target_status"] == "ready"
+    unblocked = _stored()[item.id]
+    assert (unblocked.status, unblocked.blocked_reason) == ("ready", None)
 
 
 # ---------------------------------------------------------------------------
