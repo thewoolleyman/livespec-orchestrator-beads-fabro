@@ -33,49 +33,120 @@ Ledger epic: **`bd-ib-rck`**.
 
 ## ▶ CURRENT STATE + NEXT ACTION (read this first)
 
-## ▶▶ EXECUTION STATE (2026-07-15) — FACTORY-DRIVEN, IN FLIGHT
+## ▶▶ EXECUTION STATE (2026-07-15) — ✅ TRACK COMPLETE (epic `bd-ib-rck` CLOSED)
 
-The remaining job (host refresher + expiry alarm) is now being built THROUGH THE
-FACTORY (maintainer directive: prefer factory dispatch). No spec change is needed
-— it implements the ratified `contracts.md:2136` "host is sole owner + refresher"
-MUST; the freshness threshold is implementation-owned (`:2140`).
+**All three work-items landed via the factory, verified, accepted → `done`; epic
+`bd-ib-rck` CLOSED.** W1 alarm/status (PR #646), W2 guarded refresher (PR #662),
+W3 host timer + operator docs (PR #664). No spec change was needed — the work
+implements the ratified `contracts.md:2136` "host is sole owner + refresher" MUST
+(freshness threshold implementation-owned, `:2140`). **The ONE remaining action is
+a MANUAL MAINTAINER STEP: install the host systemd user timer** per
+`orchestrator-image/README.md` §"Host Codex credential refresher timer" — the
+unattended refresher is NOT live on the host until that install runs. Everything
+below is the execution record.
 
 Work-items filed under epic `bd-ib-rck` (2026-07-15):
 
 | item | id | status | dep | scope |
 |---|---|---|---|---|
-| W1 alarm/status | `bd-ib-26lpjp` | **merged (PR #646) + verified; parked in `acceptance`** | — | `dispatcher codex-cred-status`: read host auth.json, decode exp, emit remaining + `alarm`/`refresh_due`; NEW pure `_dispatcher_codex_refresh` module (PBT) + promoted `decode_codex_access_token_exp` |
-| W2 refresher | `bd-ib-fcipkv` | backlog | W1 | `dispatcher codex-cred-refresh`: GUARDED codex-invoke (exp-gated `codex exec`) |
-| W3 timer/docs | `bd-ib-6xv5l5` | backlog | W1,W2 | host systemd/cron under `with-livespec-env.sh` + operator runbook (config/docs, TDD-exempt) |
+| W1 alarm/status | `bd-ib-26lpjp` | **DONE (PR #646, merged + verified + accepted → CLOSED)** | — | `dispatcher codex-cred-status`: read host auth.json, decode exp, emit remaining + `alarm`/`refresh_due`; NEW pure `_dispatcher_codex_refresh` module (PBT) + promoted `decode_codex_access_token_exp` |
+| W2 refresher | `bd-ib-fcipkv` | **DONE (PR #662, merged + verified + accepted → CLOSED)** | W1 ✓ | `dispatcher codex-cred-refresh`: GUARDED codex-invoke (exp-gated `codex exec`) |
+| W3 timer/docs | `bd-ib-6xv5l5` | **DONE (PR #664, merged + verified + accepted → CLOSED)** | W1 ✓, W2 ✓ | host systemd/cron under `with-livespec-env.sh` + operator runbook (config/docs, TDD-exempt) |
 
 The epic `bd-ib-rck` description was scope-corrected in the ledger to match this.
 The two CRUX / `docker exec` bullets under "DONE (2026-07-14)" below are RETAINED
 only as historical reference — they belong to the DROPPED per-worker top-up, NOT
 to the remaining job.
 
-**Dispatch status (2026-07-15):** W1 dispatched host-direct via `dispatcher.py loop
---repo . --budget 1 --mode shadow --item bd-ib-26lpjp`. Outcome: **converged, PR
-#646 merged, post-merge janitor green (all 63 targets), ~27 min wall-clock, 2 fix
-loops.** VERIFIED live on merged master: `dispatcher codex-cred-status --json`
-emits the designed payload (token exp 2026-07-19, ~3.98 days, `alarm:false`,
-`refresh_due:false`, exit 0). The AI acceptance pass confirmed; item is now
-**parked in `acceptance` under the `ai-then-human` policy — awaiting the
-maintainer's final acceptance** to reach `done`.
+**W1 dispatch (2026-07-15):** host-direct via `dispatcher.py loop --repo . --budget
+1 --mode shadow --item bd-ib-26lpjp`. Converged, PR #646 merged, post-merge janitor
+green, ~27 min, 2 fix loops. Verified live on merged master; **accepted → CLOSED
+(done)**. W2's dependency on W1 is therefore cleared.
 
-**⛔ GATE: W2/W3 are dependency-blocked until W1 is `done`.** The lane authority
-(`_vendor/livespec_runtime/work_items/lifecycle.py:191,201`) clears a same-repo
-dependency ONLY when the target is `done`; `acceptance` still resolves `OPEN`. So
-W2 (dep W1) and W3 (dep W1,W2) cannot be admitted until the maintainer accepts W1.
-This is not self-acceptable — `ai-then-human` reserves final acceptance for a human.
+### W2 first dispatch FAILED then re-dispatched — root cause (READ THIS)
 
-**NEXT ACTIONS:**
-1. Maintainer accepts W1 → `done`:
-   `/livespec-orchestrator-beads-fabro:drive --action accept:bd-ib-26lpjp`
-   (or `… drive.py --action accept:bd-ib-26lpjp --repo .` under the env wrapper).
-2. Once W1 is `done`: promote W2 `backlog→ready` and dispatch it through the
-   factory (same host-direct `loop` invocation, `--item bd-ib-fcipkv`).
-3. Then W3 (`--item bd-ib-6xv5l5`).
-4. Install the host timer (manual maintainer step, documented by W3's deliverable).
+The first W2 dispatch (fabro run `01KXK9CG3MZW`, routed to the **codex-acp** worker)
+**failed at the `pr` node** and parked `blocked/human_input_required`:
+
+> `git push to refs/heads/feat/bd-ib-fcipkv was remote-rejected: GitHub App cannot
+> create or update workflow .github/workflows/bump-pin-from-dispatch.yml without
+> workflows permission … operator decision needed to publish with credentials that
+> have workflow permission OR adjust the branch contents`
+
+**Root cause = a TRANSIENT stale-workflow-file push race, NOT a code defect and NOT
+a missing grant.** Verified against the fabro `factory-integration` source + the run
+log:
+- The `pr` node does a plain `git push HEAD:refs/heads/feat/<id>` (`prompts/pr.md`),
+  with **no rebase onto latest origin/master**.
+- GitHub's workflow-scope gate rejects a pushed branch whose `.github/workflows/`
+  state **differs from the current default branch**. W2's sandbox cloned master
+  BEFORE the 16:59 UTC `bump-pin-from-dispatch.yml` change (dev-tooling pin →
+  v0.48.1, commit `8ef9714`) and pushed at 17:18 UTC, so its workflow file was
+  stale vs master → rejected. W1 (PR #646) did not straddle a pin-bump → clean.
+- The **git-push (origin) token is HARDCODED to `{contents:write}`** in
+  `resolve_clone_credentials` (`fabro-github/src/lib.rs`) — it does NOT read
+  `github_permissions`. So neither the `workflow.toml`
+  `[run.integrations.github.permissions]` block **nor** the GitHub-App/installation
+  `workflows:write` grant reaches the push token. **Adding `workflows` to
+  `workflow.toml` would NOT fix this** (that block only feeds the preflight check +
+  the `gh`/`GITHUB_TOKEN` env). Fixing the push path would need a fabro fork rebuild.
+
+**Recovery taken (2026-07-15):** `fabro rm -f 01KXK9CG3MZW` (abandoned the blocked
+run; container torn down) → `bd update bd-ib-fcipkv --status ready` → re-dispatched
+W2 host-direct with the **Claude default adapter** (W1's proven form) in a window
+where no workflow-file change had landed in ~3h. **Result: clean converge — fabro run
+`01KXKPFGMQ7JG…`, PR #662 merged, post-merge janitor green.** Verified live on merged
+master: `dispatcher codex-cred-refresh --dry-run --json` emits the designed payload
+(`outcome:noop-not-due`, `invoked_codex:false`, correct guard; host token exp
+2026-07-19, ~3.75 days). **Accepted → CLOSED (done).** The transient-race diagnosis
+held: the identical work landed clean on a run that did not straddle a pin-bump.
+
+**GitHub-App note:** the dispatch App `livespec-pr-bot` (App ID `3668528`,
+installation `131208965` on `thewoolleyman`, covering this repo) ALREADY has
+`Workflows: Read and write` at both the App definition and the accepted
+installation. That grant is harmless but **latent** — it does not reach the
+hardcoded contents-only push token, so it neither fixed nor is needed for W2. Left
+in place.
+
+**SYSTEMIC (separate factory-hardening, out of scope for THIS track):** any
+dispatch whose run straddles a `.github/workflows/` change on master will hit the
+same push-gate. Durable fixes, in order of cleanliness: (a) `pr` node rebases the
+branch onto fresh `origin/master` before pushing (prose-only change to `pr.md` —
+makes workflow files match master, no gate); (b) fork change to mint the push token
+with `workflows:write` (needs a fabro rebuild + re-pin — governed by the fabro pin
+constraints); (c) exclude `.github/workflows/**` from sandbox branch deltas. Track
+this under factory hardening, not the credential-broker epic.
+
+### W3 dispatch — one inherited-CI failure, then green (execution record)
+
+W3's FIRST dispatch (fabro run `01KXKVCQVYFT…`) **failed at the janitor gate on a
+condition it did not cause**: `check-master-ci-green`. W3's own branch was clean
+(README-only; local `just check` = `1672 passed, 1 skipped, 100% coverage`,
+lint/format/types green). The gate fails closed because the LATEST `master` CI run
+(release 0.35.0, commit `7a1e02a`) had gone red when `uv sync` **timed out
+downloading cpython-3.10.16** — a CI-infra network flake, unrelated to W3, that
+blocks EVERY dispatch's janitor while it stands. Recovery: `gh run rerun 29452285810`
+(the full re-run succeeded where the agent's earlier `--failed` variant was refused)
+→ CI came back **green** → `fabro rm -f` the failed run + reset `bd-ib-6xv5l5` to
+`ready` → re-dispatched → **PR #664 merged, post-merge janitor green**. Verified the
+runbook content on merged master; **accepted → CLOSED**.
+
+**Factory-friction note (recurring, not this epic's bug):** `check-master-ci-green`
+is a global fail-closed gate — a single transient `uv`/cpython-download flake on the
+latest master CI run stalls all dispatches until a fresh green master CI run exists
+(via re-run or the next master push). Worth a factory-hardening item (retry the
+network fetch, or make the gate tolerate a re-runnable flake) alongside the
+stale-workflow push-gate item above.
+
+**NEXT ACTIONS — track complete; ONE manual step remains:**
+1. **MANUAL MAINTAINER STEP — install the host timer.** Follow
+   `orchestrator-image/README.md` §"Host Codex credential refresher timer": install
+   `~/.config/systemd/user/livespec-codex-cred-refresh.{service,timer}` and
+   `systemctl --user enable --now livespec-codex-cred-refresh.timer`. Until this
+   runs, the unattended refresher is NOT live and the 10-day cliff is only
+   *surfaced* by `codex-cred-status` (alarm), not *prevented*.
+2. (Optional) File the two factory-hardening items noted above (stale-workflow
+   push-gate; `check-master-ci-green` flake tolerance) — outside this epic.
 
 ---
 
