@@ -12,6 +12,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_autonomous_collapse 
     acceptance_decision_under_mode,
     collapse_acceptance_to_ai_only,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_blocked import (
+    escalate_needs_human_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile, utc_now_iso
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
@@ -35,6 +38,7 @@ from livespec_orchestrator_beads_fabro.types import AuditRecord, WorkItem
 __all__: list[str] = [
     "bounce_non_convergence_to_backlog",
     "complete_and_accept",
+    "escalate_needs_human_block",
     "host_only_refusal",
     "warn_item_sizing",
 ]

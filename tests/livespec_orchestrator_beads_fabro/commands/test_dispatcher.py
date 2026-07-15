@@ -2838,12 +2838,12 @@ def test_dispatch_default_workflow_materializes_from_repo_fabro_tree(
     assert _ENV_INTERPOLATION_LITERAL not in overlay_text
 
 
-def test_dispatch_blocked_outcome_leaves_item_status_unchanged(
+def test_dispatch_blocked_outcome_marks_item_blocked_needs_human(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A run parked at the in-loop human gate is surfaced but not auto-disposed."""
+    """A run parked at the in-loop human gate is surfaced as terminal blocked."""
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     item = _item()
     append_work_item(path=_config(), item=item)
@@ -2869,10 +2869,13 @@ def test_dispatch_blocked_outcome_leaves_item_status_unchanged(
     err = captured.err
     assert "blocked at fabro-run" in out
     assert "fabro attach 01RUNBLOCKED" in out
-    assert _stored()[item.id].status == "active"
+    stored = _stored()[item.id]
+    assert stored.status == "blocked"
+    assert stored.blocked_reason == "needs-human"
     assert "bounced to backlog" not in err
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
     assert '"blocked"' in journal_text
+    assert '"needs-human-blocked"' in journal_text
     assert '"blocked-bounce"' not in journal_text
     assert "ledger-accept" not in journal_text
     assert "ledger-complete" not in journal_text
