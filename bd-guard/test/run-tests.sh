@@ -730,6 +730,104 @@ else
 fi
 
 # ===========================================================================
+# 13. `bd ready --claim` (grab-work -> in_progress) and the `bd defer` SUBCOMMAND
+#     (-> non-lifecycle `deferred`). The `ready` subcommand is scanned in a
+#     DEDICATED phase that checks ONLY --claim, so a bare `bd ready` list and a
+#     `bd ready --status <x>` filter must NEVER be misread as a status write —
+#     the critical no-false-positive property (a wrong block of a legit list is
+#     the exact incident this guard exists to avoid).
+# ===========================================================================
+# 13a. ready --claim -> blocks in fail mode (no exec, exit 3).
+run_wrapper fail 0 "" -- ready --claim
+if ! was_called && [ "$RC" -eq 3 ] && stderr_has "bd ready --claim' is non-lifecycle"; then
+    pass "ready: --claim blocks in fail mode (no exec, exit 3, message names 'bd ready --claim')"
+else
+    fail "ready: --claim fail-mode block (rc=$RC, called=$(was_called && echo y || echo n))"
+fi
+
+# 13a'. ready --claim=true (equals form) -> also blocks.
+run_wrapper fail 0 "" -- ready --claim=true
+if ! was_called && [ "$RC" -eq 3 ] && stderr_has "bd ready --claim' is non-lifecycle"; then
+    pass "ready: --claim=true (equals form) blocks in fail mode"
+else
+    fail "ready: --claim=true fail-mode block (rc=$RC, called=$(was_called && echo y || echo n))"
+fi
+
+# 13b. plain `bd ready` list -> PASSES even in fail mode (stub runs, no warning).
+run_wrapper fail 0 "issue ready output" -- ready
+if was_called && assert_argv ready && [ "$RC" -eq 0 ] && stderr_empty; then
+    pass "ready: bare 'bd ready' list passes through in fail mode (no false-positive block)"
+else
+    fail "ready: bare list passthrough (rc=$RC, stderr=$(cat "$ERR_FILE"))"
+fi
+
+# 13b'. ready --json and ready --limit 5 -> PASS (no false positive on flags).
+run_wrapper fail 0 "" -- ready --json
+if was_called && assert_argv ready --json && [ "$RC" -eq 0 ] && stderr_empty; then
+    pass "ready: 'bd ready --json' passes through in fail mode (no false positive)"
+else
+    fail "ready: --json passthrough (rc=$RC, stderr=$(cat "$ERR_FILE"))"
+fi
+
+run_wrapper fail 0 "" -- ready --limit 5
+if was_called && assert_argv ready --limit 5 && [ "$RC" -eq 0 ] && stderr_empty; then
+    pass "ready: 'bd ready --limit 5' passes through in fail mode (no false positive)"
+else
+    fail "ready: --limit passthrough (rc=$RC, stderr=$(cat "$ERR_FILE"))"
+fi
+
+# 13b''. CRITICAL: `bd ready --status <x>` is a LIST FILTER, not a status write.
+#        The ready phase never scans --status, so both a lifecycle and a
+#        non-lifecycle filter value MUST pass (a wrong block here is the incident
+#        we are preventing). Test both `ready` and `open` filter values.
+run_wrapper fail 0 "" -- ready --status ready
+if was_called && assert_argv ready --status ready && [ "$RC" -eq 0 ] && stderr_empty; then
+    pass "ready: 'bd ready --status ready' list-filter passes (ready phase never checks --status)"
+else
+    fail "ready: --status ready filter blocked (rc=$RC, stderr=$(cat "$ERR_FILE"))"
+fi
+
+run_wrapper fail 0 "" -- ready --status open
+if was_called && assert_argv ready --status open && [ "$RC" -eq 0 ] && stderr_empty; then
+    pass "ready: 'bd ready --status open' list-filter passes even for a NON-lifecycle value (no false-positive block)"
+else
+    fail "ready: --status open filter blocked (rc=$RC, stderr=$(cat "$ERR_FILE"))"
+fi
+
+# 13c. `bd defer <id>` subcommand -> blocks in fail mode, warns in warn mode.
+run_wrapper fail 0 "" -- defer abc-1
+if ! was_called && [ "$RC" -eq 3 ] && stderr_has "bd defer' is non-lifecycle"; then
+    pass "defer: 'bd defer abc-1' blocks in fail mode (no exec, exit 3)"
+else
+    fail "defer: fail-mode block (rc=$RC, called=$(was_called && echo y || echo n))"
+fi
+
+run_wrapper warn 0 "" -- defer abc-1
+if was_called && assert_argv defer abc-1 && [ "$RC" -eq 0 ] && stderr_has "bd defer' is non-lifecycle"; then
+    pass "defer: 'bd defer abc-1' warns and still execs in warn mode (argv preserved)"
+else
+    fail "defer: warn-mode passthrough (rc=$RC, stderr=$(cat "$ERR_FILE"))"
+fi
+
+# ===========================================================================
+# 14. Mode-file with NO TRAILING NEWLINE resolves to `fail` (footgun fix). The
+#     old `read -r MODE < file` returned EOF-nonzero on a newline-less file and
+#     the `|| MODE=""` fallback clobbered the valid value, silently degrading
+#     `fail` to warn. Write `fail` with `printf` (no newline), env UNSET, and
+#     assert a `--claim` is BLOCKED (exit 3, no exec).
+# ===========================================================================
+MODE_FILE_NN="${WORK}/guard-nonewline.mode"
+printf 'fail' > "$MODE_FILE_NN"   # NO trailing newline (printf, not echo)
+rm -f "$ARGV_FILE"
+LIVESPEC_BD_GUARD_MODE_FILE="$MODE_FILE_NN" \
+    "$WRAPPER" update abc-nn --claim >"$OUT_FILE" 2>"$ERR_FILE"; NNRC=$?
+if ! was_called && [ "$NNRC" -eq 3 ] && stderr_has "bd update --claim' is non-lifecycle"; then
+    pass "mode-file: newline-less 'fail' still resolves to fail and BLOCKS (footgun fixed)"
+else
+    fail "mode-file: newline-less 'fail' block (rc=$NNRC, called=$(was_called && echo y || echo n))"
+fi
+
+# ===========================================================================
 echo ""
 echo "bd-guard tests: ${PASS} passed, ${FAIL} failed"
 [ "$FAIL" -eq 0 ]

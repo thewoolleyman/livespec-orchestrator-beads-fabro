@@ -25,7 +25,15 @@
 #      statuses (e.g. open, in_progress, deferred, done, or any unknown value);
 #   2. `bd update ... --claim` (which sets status=in_progress);
 #   3. `bd reopen ...` (which sets status back to the non-lifecycle `open`) —
-#      a single-token subcommand, so detection is unambiguous.
+#      a single-token subcommand, so detection is unambiguous;
+#   4. `bd ready ... --claim` (the advertised "grab work" path, which sets
+#      status=in_progress) — scanned in a DEDICATED `ready` phase that checks
+#      ONLY --claim, so a bare `bd ready` list or a `bd ready --status <x>`
+#      filter is never misread as a status write;
+#   5. `bd defer <id>` (which sets status to the non-lifecycle `deferred`) —
+#      a single-token subcommand, exactly the `reopen` shape. NOTE this is the
+#      defer SUBCOMMAND, distinct from `update --defer <date>` (a defer-date
+#      FLAG that writes no status and is NOT guarded).
 #
 # EVERYTHING ELSE passes through UNCHANGED — `create`, `list`, `show`, `close`,
 # `dep`, `config`, `history`, `--json`, and every other subcommand/flag. The
@@ -72,7 +80,11 @@ REAL="${LIVESPEC_BD_REAL:-/usr/local/bin/bd-real}"
 MODE_FILE="${LIVESPEC_BD_GUARD_MODE_FILE:-/usr/local/etc/livespec-bd-guard.mode}"
 MODE="${LIVESPEC_BD_GUARD_MODE:-}"
 if [ -z "$MODE" ] && [ -r "$MODE_FILE" ]; then
-    read -r MODE < "$MODE_FILE" 2>/dev/null || MODE=""
+    # head|tr, NOT `read`: `read` returns EOF-nonzero on a file with no trailing
+    # newline and the `|| MODE=""` fallback would then clobber a VALID value,
+    # silently degrading `fail` to warn. `head -n1 | tr -d` strips all whitespace
+    # (incl. CR) so `fail`, `fail\n`, `fail\r\n`, and ` fail ` all resolve to fail.
+    MODE=$(head -n1 "$MODE_FILE" 2>/dev/null | tr -d '[:space:]')
 fi
 MODE="${MODE:-warn}"
 
@@ -104,7 +116,11 @@ guard_warn() {
 #     --status/-s value or a --claim, honoring a `--` end-of-flags terminator
 #     and skipping the values of value-taking update flags (so a value that
 #     merely LOOKS like `--claim`/`-s` is not misread).
-# The single-token `reopen` subcommand is flagged directly in the global phase.
+#   * phase=ready  — after a `ready` subcommand: look ONLY for a --claim (which
+#     grabs a ready item into in_progress). Deliberately does NOT scan --status,
+#     so a bare `bd ready` list or a `bd ready --status <x>` filter never trips.
+# The single-token `reopen` and `defer` subcommands (both direct non-lifecycle
+# status writes) are flagged directly in the global phase.
 # If the subcommand is anything else, we stop early.
 # ---------------------------------------------------------------------------
 phase="global"
@@ -114,6 +130,8 @@ after_ddash=0         # a `--` end-of-flags terminator has been seen
 status_value=""       # the captured --status/-s value (empty = none seen)
 saw_claim=0           # a --claim flag was seen
 saw_reopen=0          # the `reopen` subcommand was seen
+saw_defer=0           # the `defer` subcommand was seen
+guarded_sub="update"  # subcommand a --claim was seen under (update|ready), for the message
 _bdg_op=""            # telemetry: a summary of the flagged op (reopen / claim /
                       # status:<value>), empty when nothing was flagged
 
@@ -152,11 +170,28 @@ for arg in "$@"; do
                 case "$arg" in
                     update)
                         phase="args"
+                        guarded_sub="update"
+                        ;;
+                    ready)
+                        # `bd ready --claim` claims a ready item -> in_progress
+                        # (beads' advertised "grab work" path). Scan ONLY for
+                        # --claim in a dedicated `ready` phase — NOT the update
+                        # phase — so a bare `bd ready` list (or `bd ready --status
+                        # <x>` filtering) is NEVER misread as a status write.
+                        phase="ready"
+                        guarded_sub="ready"
                         ;;
                     reopen)
                         # `bd reopen` sets status to the non-lifecycle `open`.
                         # Single-token op — flag it and stop scanning.
                         saw_reopen=1
+                        break
+                        ;;
+                    defer)
+                        # `bd defer <id>` sets status to the non-lifecycle
+                        # `deferred` (a direct status write, exactly the `reopen`
+                        # shape). Single-token op — flag it and stop scanning.
+                        saw_defer=1
                         break
                         ;;
                     *)
@@ -165,6 +200,23 @@ for arg in "$@"; do
                         ;;
                 esac
                 ;;
+        esac
+        continue
+    fi
+
+    if [ "$phase" = "ready" ]; then
+        # ready phase: ONLY --claim matters. `bd ready` has no lifecycle --status
+        # write, so we deliberately do NOT scan for --status here (avoids a
+        # false-positive block on a `bd ready --status <x>` list filter).
+        case "$arg" in
+            --claim) saw_claim=1 ;;
+            --claim=*)
+                case "${arg#--claim=}" in
+                    0|f|F|false|FALSE|False) : ;;
+                    *) saw_claim=1 ;;
+                esac
+                ;;
+            *) : ;;
         esac
         continue
     fi
@@ -230,10 +282,16 @@ if [ "$saw_reopen" -eq 1 ]; then
     guard_warn "bd reopen" "bd update --status <lifecycle> (e.g. backlog)"
 fi
 
+if [ "$saw_defer" -eq 1 ]; then
+    violated=1
+    _bdg_op="defer"
+    guard_warn "bd defer" "bd update --status <lifecycle> (e.g. backlog)"
+fi
+
 if [ "$saw_claim" -eq 1 ]; then
     violated=1
     _bdg_op="claim"
-    guard_warn "bd update --claim" "--status active"
+    guard_warn "bd $guarded_sub --claim" "--status active"
 fi
 
 if [ -n "$status_value" ]; then
