@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.33.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.32.0...v0.33.0) (2026-07-15)
+
+
+### Features
+
+* add codex credential status alarm ([cd29e9a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cd29e9affe064ebbe3b23b1ef6e122905cc9fb92))
+
 ## [0.32.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.31.0...v0.32.0) (2026-07-15)
 
 
