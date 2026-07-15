@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.34.0...v0.34.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* cover review gate telemetry failure modes ([fda7106](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fda7106894fd264e8abe38fe834247454d748eb0))
+
 ## [0.34.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.33.0...v0.34.0) (2026-07-15)
 
 
