@@ -73,11 +73,11 @@ def run_loop_command(*, args: argparse.Namespace) -> int:
         return EXIT_FAILURE
     # Full autonomous mode two-factor arming: surface + journal the dangerous
     # acknowledgement when this run is armed (persistent permission + explicit
-    # --mode autonomous). The armed bool is threaded onto `args` so the three
-    # in-band consumers — the admission approve-gate collapse, the post-merge
-    # acceptance collapse, and the post-run needs-human resolve-or-escalate
-    # stage — read it and collapse/resolve to their autonomous leg; a non-armed
-    # run is transparent (every gate keeps its normal policy).
+    # --mode autonomous). The armed bool is threaded onto `args` so the
+    # admission approve-gate collapse and post-merge acceptance collapse read
+    # it and use their autonomous leg; needs-human escalations stay
+    # human-owned. A non-armed run is transparent (every gate keeps its
+    # normal policy).
     args.autonomous_armed = arm_autonomous_for_loop(
         mode=args.mode, repo=repo, journal=journal
     ).armed

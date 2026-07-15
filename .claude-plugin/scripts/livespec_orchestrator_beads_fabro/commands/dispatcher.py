@@ -172,7 +172,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
     run_codex_cred_status,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
-    bounce_blocked,
     bounce_non_convergence_to_backlog,
     complete_and_accept,
     host_only_refusal,
@@ -228,7 +227,6 @@ _COMPATIBILITY_REEXPORTS: tuple[object, ...] = (
 )
 
 __all__: list[str] = [
-    "bounce_blocked",
     "bounce_non_convergence_to_backlog",
     "candidates",
     "complete_and_accept",

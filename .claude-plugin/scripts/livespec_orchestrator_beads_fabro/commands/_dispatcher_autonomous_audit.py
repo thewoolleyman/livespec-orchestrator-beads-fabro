@@ -4,19 +4,17 @@ Full autonomous mode (specified in `SPECIFICATION/spec.md`,
 `SPECIFICATION/contracts.md`, and `SPECIFICATION/constraints.md`) MUST record
 every decision it auto-resolves on the EXISTING Dispatcher journal — the same
 journal -> Honeycomb leg the calibration telemetry rides — carrying at minimum
-the work-item id, which gate was collapsed (`approve` / `acceptance` /
-`needs-human`), and what the LLM decided; no auto-resolution may be silent. The
-set of decisions the mode escalated as truly-unresolvable MUST be queryable
-from that same journal. This journal is the plugin's PUBLISHED per-decision
-audit surface: the Control-Plane console reads each auto-resolution and each
-truly-unresolvable escalation from it through the read surface here.
+the work-item id, which gate was collapsed (`approve` / `acceptance`), and
+what the LLM decided; no auto-resolution may be silent. Needs-human
+escalations are never auto-resolved by this audit path. This journal is the
+plugin's PUBLISHED per-decision audit surface: the Control-Plane console reads
+each auto-resolution from it through the read surface here.
 
 This module owns the RECORD CONTRACT and its read surface only — it makes NO
 decision. `autonomous_decision_journal_record` is the pure builder the
-decision stages (the two-valve collapse and the needs-human resolution stage,
-later slices) call to journal every decision; `read_autonomous_decisions` is
-the fail-open reader the console calls to observe the auto-resolutions and the
-truly-unresolvable escalations. The record shape mirrors
+approve and acceptance collapse stages call to journal every decision;
+`read_autonomous_decisions` is the fail-open reader the console calls to
+observe the auto-resolutions. The record shape mirrors
 `_dispatcher_calibration.calibration_journal_record`: a flat `stage` +
 sibling-scalar dict, so the OTLP enrich stage promotes each field to a span
 attribute without unwrapping a nested map. Autonomous-mode auto-resolution
