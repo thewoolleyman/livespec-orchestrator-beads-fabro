@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.36.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.35.0...v0.36.0) (2026-07-15)
+
+
+### Features
+
+* add dispatcher needs-human blocked path ([69c3ef6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/69c3ef6881b72b59bedead79a1f62e3ac820b58b))
+
+
+### Bug Fixes
+
+* surface blocked needs-human resolver ([3ebc82a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3ebc82adb43c7603548e97f6d4905138bfe6e464))
+
 ## [0.35.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.34.2...v0.35.0) (2026-07-15)
 
 
