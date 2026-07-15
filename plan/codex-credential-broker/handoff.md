@@ -44,7 +44,7 @@ Work-items filed under epic `bd-ib-rck` (2026-07-15):
 
 | item | id | status | dep | scope |
 |---|---|---|---|---|
-| W1 alarm/status | `bd-ib-26lpjp` | ready → dispatched | — | `dispatcher codex-cred-status`: read host auth.json, decode exp, emit remaining + `alarm`/`refresh_due`; NEW pure `_dispatcher_codex_refresh` module (PBT) + promoted `decode_codex_access_token_exp` |
+| W1 alarm/status | `bd-ib-26lpjp` | **merged (PR #646) + verified; parked in `acceptance`** | — | `dispatcher codex-cred-status`: read host auth.json, decode exp, emit remaining + `alarm`/`refresh_due`; NEW pure `_dispatcher_codex_refresh` module (PBT) + promoted `decode_codex_access_token_exp` |
 | W2 refresher | `bd-ib-fcipkv` | backlog | W1 | `dispatcher codex-cred-refresh`: GUARDED codex-invoke (exp-gated `codex exec`) |
 | W3 timer/docs | `bd-ib-6xv5l5` | backlog | W1,W2 | host systemd/cron under `with-livespec-env.sh` + operator runbook (config/docs, TDD-exempt) |
 
@@ -53,14 +53,29 @@ The two CRUX / `docker exec` bullets under "DONE (2026-07-14)" below are RETAINE
 only as historical reference — they belong to the DROPPED per-worker top-up, NOT
 to the remaining job.
 
-**Dispatch status:** W1 dispatched host-direct 2026-07-15 via `dispatcher.py loop
---repo . --budget 1 --mode shadow --item bd-ib-26lpjp` (auto-merge on green; the
-Fabro server on `:32276` runs Red-Green implement → PR → merge → janitor →
-acceptance). Each work-item's description carries its full design.
+**Dispatch status (2026-07-15):** W1 dispatched host-direct via `dispatcher.py loop
+--repo . --budget 1 --mode shadow --item bd-ib-26lpjp`. Outcome: **converged, PR
+#646 merged, post-merge janitor green (all 63 targets), ~27 min wall-clock, 2 fix
+loops.** VERIFIED live on merged master: `dispatcher codex-cred-status --json`
+emits the designed payload (token exp 2026-07-19, ~3.98 days, `alarm:false`,
+`refresh_due:false`, exit 0). The AI acceptance pass confirmed; item is now
+**parked in `acceptance` under the `ai-then-human` policy — awaiting the
+maintainer's final acceptance** to reach `done`.
 
-**NEXT ACTIONS:** (1) confirm W1's factory PR merges green + verify the change;
-(2) promote W2 `backlog→ready` and dispatch; (3) then W3; (4) install the host
-timer (manual maintainer step, documented by W3).
+**⛔ GATE: W2/W3 are dependency-blocked until W1 is `done`.** The lane authority
+(`_vendor/livespec_runtime/work_items/lifecycle.py:191,201`) clears a same-repo
+dependency ONLY when the target is `done`; `acceptance` still resolves `OPEN`. So
+W2 (dep W1) and W3 (dep W1,W2) cannot be admitted until the maintainer accepts W1.
+This is not self-acceptable — `ai-then-human` reserves final acceptance for a human.
+
+**NEXT ACTIONS:**
+1. Maintainer accepts W1 → `done`:
+   `/livespec-orchestrator-beads-fabro:drive --action accept:bd-ib-26lpjp`
+   (or `… drive.py --action accept:bd-ib-26lpjp --repo .` under the env wrapper).
+2. Once W1 is `done`: promote W2 `backlog→ready` and dispatch it through the
+   factory (same host-direct `loop` invocation, `--item bd-ib-fcipkv`).
+3. Then W3 (`--item bd-ib-6xv5l5`).
+4. Install the host timer (manual maintainer step, documented by W3's deliverable).
 
 ---
 
