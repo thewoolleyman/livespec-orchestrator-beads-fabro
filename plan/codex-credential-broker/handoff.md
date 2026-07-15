@@ -1,5 +1,24 @@
 # Handoff — codex-credential-broker
 
+## ⇥ THIS IS A NEW TRACK — start a fresh session for it
+
+This thread was spun off from the `codex-factory-telemetry` track (it surfaced
+while re-verifying `bd-ib-ss7rkr`). It is its **own track with its own epic
+(`bd-ib-rck`)** and should be picked up in a **fresh team-up session** dedicated
+to it — do NOT run it inside the telemetry session, or the two will tangle.
+
+- **Continue the ORIGINAL track separately:** `plan/codex-factory-telemetry/handoff.md`.
+  That track is NOT finished (its emitter + receiver remain) and must not be
+  orphaned. Whoever spins up this broker track should confirm the telemetry track
+  has its own live session or is explicitly parked.
+- **Cross-track relationship:** SIBLINGS, no hard code dependency (beads: a
+  `related` edge, `bd-ib-rck` ↔ `bd-ib-98c`). The one real link is soft +
+  operational: telemetry's end-to-end verification needs a live dispatch, so a
+  dead Codex credential (this track's whole point) would block telemetry's e2e
+  proof. And both touch the same fabro worker-env re-injection seam
+  (`worker_runtime.rs:90-99`) / `_dispatcher_overlay.py` — coordinate there,
+  don't widen fabro's fail-closed `apply_worker_env`. See §"Related" at the end.
+
 ## What this thread is
 
 Retire the class of credential problem caused by fanning a **single-seat,
@@ -137,11 +156,21 @@ stalls the factory *today* regardless of the broker.
 
 ## Related
 
+- **Sibling track `codex-factory-telemetry`** (epic `bd-ib-98c`; handoff
+  `plan/codex-factory-telemetry/handoff.md`). **Ledger edge:** `bd-ib-rck`
+  `related` `bd-ib-98c` (NOT `blocks` — no hard code dependency either way). The
+  relationship:
+  - **Soft, directional, operational:** telemetry's end-to-end verification needs
+    a live dispatch, which needs a valid Codex credential — THIS track's concern.
+    A dead host credential (the 10-day cliff) hard-stops the factory, so it would
+    block telemetry's e2e proof. Keeping the credential fresh unblocks that.
+  - **Shared code surface:** the seatbelt `bd-ib-a89` added
+    `CODEX_REFRESH_TOKEN_URL_OVERRIDE` to `_dispatcher_overlay.py`; telemetry's
+    emitter adds `OTEL_*` at the SAME fabro `worker_runtime.rs:90-99` re-injection
+    seam. Coordinate there; do not widen fabro's fail-closed `apply_worker_env`.
 - `bd-ib-a89` — the landed seatbelt (CLOSED).
 - `bd-ib-ss7rkr` — the re-verification that surfaced this; remaining half is the
   docs/contract realignment.
 - `contracts.md` §"Worker credential projection" + `scenarios.md` Scenarios 18/19
   — the ratified contract. The "host is sole owner / worker is a read-only
   consumer" clauses stay TRUE under the broker; the design strengthens them.
-- Sibling thread `codex-factory-telemetry` — hit the same fabro fail-closed-env
-  wall and the same `worker_runtime.rs` re-injection seam.
