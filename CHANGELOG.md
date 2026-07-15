@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.31.0...v0.32.0) (2026-07-15)
+
+
+### Features
+
+* add dispatcher policy setting coverage ([43b399c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/43b399c7ecb56d7bca1c314a9dfd3917acf35778))
+
 ## [0.31.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.30.6...v0.31.0) (2026-07-15)
 
 
