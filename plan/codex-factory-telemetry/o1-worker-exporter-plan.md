@@ -39,21 +39,43 @@ becomes its own fabro PR.
   server/worker.** O1 wires the fabro processes; do not assume the agent overlay
   reaches them.
 
-## Step 0 — confirm which process emits the target spans (do this FIRST)
+## Step 0 — RESOLVED (2026-07-16, code trace on `factory-integration`)
 
-The emitter's value depends on where the `run`/node/ACP spans originate. The handoff's
-falsification established the ACP handler runs in the **server-spawned
-`fabro __run-worker` subprocess** (production always takes the subprocess path). Before
-writing code, confirm on a live `factory-integration` run:
-1. Which process holds the span you want — the host fabro server (`127.0.0.1:32276`)
-   or the `__run-worker` subprocess. Both create their own `info_span!("run", id)`.
-2. Whether the host server needs `OTEL_*` at **start** (it is launched OAuth-only with
-   no OTEL env today, so its own `run` span is also inert) in addition to the worker
-   re-injection.
+The target spans split across **two processes**, so O1 has **two independent
+levers** — do BOTH to light up the whole dispatch, but they ship separately:
 
-This gates whether O1 is worker-only or worker + server-start env.
+- **The host server emits the top-level `run` span.**
+  `lib/crates/fabro-server/src/server.rs:4339` —
+  `execute_run(state_clone, id).instrument(tracing::info_span!("run", id = %id))`.
+  This runs in the fabro-server process on `127.0.0.1:32276`. Its span is inert only
+  because the server is started **OAuth-only with no OTEL env** today.
+- **The ACP work runs in the server-spawned `fabro __run-worker` subprocess**
+  (`lib/crates/fabro-server/src/commands/run/runner.rs`, `RunWorkerMode::Start/Resume`).
+  It installs `otel_layer` (`logging.rs:368,392,419,453`) but `env_clear()` + the
+  `spawn_env.rs:6` allowlist strip `OTEL_*`. `worker_runtime.rs` creates **no span of
+  its own** — it is the spawn plumbing where the re-injection goes.
 
-## Step 1 — the code change (fabro Rust, on `factory-integration`)
+The two spans are **disconnected** (each process mints its own root `run` span with no
+`traceparent`) until O2 (`bd-ib-98c.5`) joins them. Full finding on the ledger
+(`bd-ib-98c.4`, 2026-07-16).
+
+## Lever A — server-start OTEL env (ops, NO fabro code, immediate)
+
+Start the host fabro server with the exporter env so its `run` span exports. This is a
+**runbook change in `orchestrator-image/README.md` §"Host Fabro server"**, not code —
+add to the launch env beside the existing OAuth posture:
+- `OTEL_EXPORTER_OTLP_ENDPOINT=http://172.17.0.1:4318` (the receiver)
+- `OTEL_EXPORTER_OTLP_PROTOCOL=http/json` — **mandatory** (see Lever B for why)
+- `OTEL_SERVICE_NAME=fabro` (the receiver maps `service.name` → dataset)
+- **NO `OTEL_EXPORTER_OTLP_HEADERS`** — the server exports to the LOCAL receiver (no
+  auth); the receiver adds Honeycomb egress auth. Keep the key off the server too.
+
+**Operator-gated:** applying it requires **restarting the live fleet-shared server**,
+which interrupts in-flight dispatches. Confirm with the maintainer and pick a quiet
+window; do not restart unilaterally. Lever A can prove the first fabro `run` span in
+Honeycomb **today** with just this env change + restart — no code, no rebuild.
+
+## Lever B — the code change (fabro Rust, on `factory-integration`)
 
 At `worker_runtime.rs:89-98`, after `apply_worker_env`, re-inject the exporter env
 from the server's environment into the worker `cmd`:
@@ -70,11 +92,6 @@ worker exports to the LOCAL receiver (no auth); the receiver adds Honeycomb egre
 auth. Keep the key out of the worker. Explicit `cmd.env` of the three non-secret vars
 only — mirror the `FABRO_LOG`/`FABRO_CONFIG` pattern.
 
-If Step 0 shows the host server also needs it, set the three vars in the server's
-launch env (an ops/runbook change in `orchestrator-image/README.md` §"Host Fabro
-server", not a code change) — again endpoint + `http/json` + service.name, **no
-HEADERS**.
-
 ## What O1 does NOT do (keep the slices honest)
 
 - **No new spans.** O1 exports only the EXISTING single `run` span per process (the
@@ -89,15 +106,22 @@ HEADERS**.
 
 ## Verification (the gate before calling O1 done)
 
+**Lever A** needs no build: apply the server-start env, restart in a quiet window, run
+a proof-dispatch, and confirm the server-side `run` span lands in the `fabro` dataset
+with attributes intact. This alone is the first fabro span in Honeycomb.
+
+**Lever B** (the code change):
 1. CI-equivalent on `factory-integration`: `fmt --check` + `clippy --locked
    --workspace --all-targets -- -D warnings` + tests under the pinned nightly.
 2. Rebuild the host binary from `factory-integration` and re-pin (per
    `orchestrator-image/README.md`); rebuild the orchestrator image too (it bakes a
    COPY — else the containerized server runs the old fabro).
-3. A proof-dispatch → confirm a fabro `run` span (worker and/or server) lands in the
-   Honeycomb dataset its `service.name` maps to, with attributes intact. This is the
-   real end-to-end proof deferred from the transport work.
-4. Update `bd-ib-98c.4` + `handoff.md` with the result; then O2 (traceparent) is next.
+3. A proof-dispatch → confirm the WORKER `run` span also lands in the Honeycomb dataset
+   its `service.name` maps to, with attributes intact. This is the real end-to-end
+   proof deferred from the transport work.
+
+O1 is done when both levers are proven. Update `bd-ib-98c.4` + `handoff.md` with the
+result; then O2 (traceparent, joining the two disconnected `run` spans) is next.
 
 ## Review criteria (Codex + Fable loops, like the transport)
 
