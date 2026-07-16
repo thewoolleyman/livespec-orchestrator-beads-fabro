@@ -237,6 +237,7 @@ jobs:
           # master pushes the range is empty.
           - check-red-green-replay
           - check-self-hosted-routing
+          - check-source-trees-scoped-to-consumer
           - check-tool-backed-check-completeness
           # check-codex-plugin-structure (P3) validates the orchestrator
           # plugin's Codex cross-runtime surface (repo-root marketplace
