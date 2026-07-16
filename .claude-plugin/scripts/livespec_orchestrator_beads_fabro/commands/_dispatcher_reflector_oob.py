@@ -250,7 +250,7 @@ def run_reflector_oob(
             api_key=api_key,
             deadline=deadline,
         )
-    except Exception as exc:
+    except (OSError, RuntimeError, TimeoutError) as exc:
         _record_error(journal=journal, exc=exc)
         return
     _emit_summary(report=report)

@@ -231,32 +231,17 @@ def notify_terminal(
     journal: JournalWriter,
     environ: dict[str, str] | None = None,
 ) -> None:
-    """Fail-open: POST one ntfy alarm per terminal `event`. NEVER raises.
+    """POST one ntfy alarm per terminal `event`.
 
-    Called by the dispatcher AFTER the verdict / exit code is computed, so
-    nothing here can change it. With no events, it is a no-op. With the
-    topic unset it journals `notify-skipped` and returns (unconfigured
-    notifications never fail a dispatch). Otherwise it POSTs a leak-free
-    body (work-item id + outcome class + run id ONLY) per event through
-    the injected `poster`, journaling `notify-sent` / `notify-failed` per
-    event. Any exception anywhere is caught, journaled as `notify-error`,
-    and swallowed — the alarm is strictly best-effort.
+    With no events, it is a no-op. With the topic unset it journals
+    `notify-skipped` and returns. Otherwise it POSTs a leak-free body
+    (work-item id + outcome class + run id ONLY) per event through the
+    injected `poster`, journaling `notify-sent` / `notify-failed` per event.
+    Unexpected poster or journal errors propagate to the supervisor.
     """
     if not events:
         return
-    try:
-        _notify(events=events, run_id=run_id, poster=poster, journal=journal, environ=environ)
-    except Exception as exc:
-        # Fail-open supervisor: the verdict is already final, so a broad
-        # catch is the whole point — any error is journaled and swallowed,
-        # never raised (0jxs operability gate, mirroring the reflection
-        # stage's fail-open supervisor).
-        journal.append(
-            record={
-                "stage": "notify-error",
-                "reason": f"{type(exc).__name__}: {_scrub(value=str(exc))}",
-            }
-        )
+    _notify(events=events, run_id=run_id, poster=poster, journal=journal, environ=environ)
 
 
 def _notify(

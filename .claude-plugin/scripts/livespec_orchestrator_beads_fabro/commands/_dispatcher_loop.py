@@ -141,7 +141,7 @@ def dispatch_one(
         item=item, repo=repo, branch=plan.branch, comments=comments, lessons=lessons
     )
     _ = goal_file.write_text(goal_text, encoding="utf-8")
-    started_at, outcome = _run_dispatch_and_emit_review_gate(
+    started_at, outcome = _run_dispatch(
         context=_DispatchRunContext(
             args=args,
             repo=repo,
@@ -163,6 +163,17 @@ def dispatch_one(
         dispatch_context_size=len(goal_text),
         token_supplier=token_supplier,
     )
+    emit_review_gate_from_fabro_events(
+        emission=ReviewGateEmission(
+            plan=plan,
+            runner=GithubTokenEnvRunner(inner=ShellCommandRunner(), token=token_supplier),
+            journal=journal,
+            spans_path=spans_path(args=args, repo=repo),
+            work_item_id=item.id,
+            dispatch_id=dispatch_id,
+            run_id=outcome.fabro_run_id,
+        )
+    )
     return outcome
 
 
@@ -178,9 +189,7 @@ class _DispatchRunContext:
     dispatch_id: str
 
 
-def _run_dispatch_and_emit_review_gate(
-    *, context: _DispatchRunContext
-) -> tuple[float, DispatchOutcome]:
+def _run_dispatch(*, context: _DispatchRunContext) -> tuple[float, DispatchOutcome]:
     started_at = time.monotonic()
     runner = GithubTokenEnvRunner(inner=ShellCommandRunner(), token=context.token_supplier)
     try:
@@ -213,15 +222,4 @@ def _run_dispatch_and_emit_review_gate(
         )
     finally:
         context.overlay_file.unlink(missing_ok=True)
-    emit_review_gate_from_fabro_events(
-        emission=ReviewGateEmission(
-            plan=context.plan,
-            runner=runner,
-            journal=context.journal,
-            spans_path=spans_path(args=context.args, repo=context.repo),
-            work_item_id=context.item_id,
-            dispatch_id=context.dispatch_id,
-            run_id=outcome.fabro_run_id,
-        )
-    )
     return started_at, outcome

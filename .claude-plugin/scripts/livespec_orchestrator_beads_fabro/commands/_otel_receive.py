@@ -248,11 +248,8 @@ class OtelReceiver:
         _ = SocketHttpPostHandler(receiver=self, request=conn, client_address=addr, server=self)
 
     def handle_post(self, *, handler: HttpPostHandler) -> None:
-        """Route + handle one POST, fully fail-open (never raises / 500s)."""
-        try:
-            self._route(handler=handler)
-        except Exception:
-            reply(handler=handler, status=HTTPStatus.BAD_REQUEST)
+        """Route + handle one POST, returning bad request for parse errors."""
+        self._route(handler=handler)
 
     def _route(self, *, handler: HttpPostHandler) -> None:
         if handler.path == _TRACES_PATH:
@@ -321,7 +318,7 @@ def ensure_receiver_started(
     try:
         server = factory()
         server.start()
-    except Exception:
+    except (OSError, RuntimeError):
         return None
     holder[_HOLDER_SLOT] = server
     return server

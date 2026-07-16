@@ -76,12 +76,13 @@ livespec-runtime = { git = "https://github.com/thewoolleyman/livespec-runtime.gi
 
 [tool.ruff]
 line-length = 100
+force-exclude = true
 # orchestrator-image/e2e-skeleton/** is a SEED TEMPLATE for the W7
 # live-golden-master throwaway repo — a separate minimal project copied into a
 # throwaway clone, not impl-beads product code. It deliberately uses bare
 # `assert`/magic values (pytest idiom) and is NOT subject to this repo's strict
 # rule set; exclude it from the lint scan (pyright already scopes via `include`).
-extend-exclude = [".claude/hooks/**", "**/_vendor/**", "**/__pycache__/**", "mutants/**", "orchestrator-image/e2e-skeleton/**"]
+extend-exclude = [".claude/hooks/**", ".claude/skills/**", "**/_vendor/**", "**/__pycache__/**", "mutants/**", "orchestrator-image/e2e-skeleton/**"]
 
 [tool.ruff.lint]
 select = [
@@ -90,6 +91,7 @@ select = [
     "F",     # pyflakes
     "I",     # isort
     "B",     # flake8-bugbear
+    "BLE",   # flake8-blind-except — bans broad exception bulkheads
     "UP",    # pyupgrade
     "SIM",   # flake8-simplify
     "C90",   # mccabe complexity
