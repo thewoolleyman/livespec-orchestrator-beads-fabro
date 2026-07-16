@@ -45,6 +45,25 @@ a MANUAL MAINTAINER STEP: install the host systemd user timer** per
 unattended refresher is NOT live on the host until that install runs. Everything
 below is the execution record.
 
+### ⤳ POST-COMPLETION DESIGN RECONSIDERATION (2026-07-16) — read before installing the timer
+
+A design review after the track landed questioned the timer/gate architecture and
+produced **`research/credential-freshness-redesign.md`** — read it before wiring up
+the systemd timer, because the recommendation is to **NOT** rely on the timer and
+instead move to **preflight refresh in the dispatch path + a right-sized gate +
+liveness check + the W1 alarm** (drops the host-coupled timer, no codex-internals
+coupling). Key grounded findings: the Codex access token is a **session-bound JWT**
+(`session_id` + `jti`, 240h, `iss=auth.openai.com`) — not stateless; refresh tokens
+rotate (single-use); **OpenAI explicitly discourages sharing one credential across
+concurrent workers** (`learn.chatgpt.com/docs/auth/ci-cd-auth`); and the freshness
+gate's margin is load-bearing in a way not previously credited — it **temporally
+separates rotation from worker execution**, which is what makes our concurrent
+credential-sharing safe. **Mid-run refresh is DEFERRED** pending one open question
+(does a refresh bump `session_id` and thus invalidate outstanding access tokens?),
+resolvable with zero risk by instrumenting `codex-cred-status` to capture
+`session_id` on the next natural refresh. The redesign is analysis-only — the landed
+W1/W2/W3 code stays valid; the decision to supersede the timer is the maintainer's.
+
 Work-items filed under epic `bd-ib-rck` (2026-07-15):
 
 | item | id | status | dep | scope |
