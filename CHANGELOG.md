@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.37.0...v0.38.0) (2026-07-16)
+
+
+### Features
+
+* add drive config surface ([f43a80a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f43a80a2872ca0003974d2c7b873abb77ca1c986))
+
 ## [0.37.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.36.0...v0.37.0) (2026-07-16)
 
 
