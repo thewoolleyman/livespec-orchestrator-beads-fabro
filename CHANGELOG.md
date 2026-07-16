@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.41.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.40.0...v0.41.0) (2026-07-16)
+
+
+### Features
+
+* auto-rework failed AI acceptance ([adfed7e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/adfed7e32a507e2aa1b14bfd4e076d5a5a2f6658))
+
 ## [0.40.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.39.0...v0.40.0) (2026-07-16)
 
 
