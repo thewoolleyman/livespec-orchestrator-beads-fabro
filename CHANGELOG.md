@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.41.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.41.2...v0.41.3) (2026-07-16)
+
+
+### Bug Fixes
+
+* journal dispatcher auto dispositions ([e579911](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e5799117b6c1b5c99ea0b7545ac58fb659a8017f))
+
 ## [0.41.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.41.1...v0.41.2) (2026-07-16)
 
 
