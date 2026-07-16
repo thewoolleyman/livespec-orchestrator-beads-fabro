@@ -16,7 +16,7 @@ Two layers under test:
     DORMANT in the current fabro version (cost null on every run) but is
     correct + unit-tested here (forward-compat for livespec-impl-beads-efj).
     The fail-closed-when-unobservable behavior 5v9 built STAYS: an
-    autonomous-mode null cost still refuses even with caps resolved.
+    unattended-drain null cost still refuses even with caps resolved.
 
   * `cost_gate_after_verdict` (the dispatcher wiring) — the post-verdict,
     FAIL-OPEN stage that runs `fabro ps -a --json` once, hands it to
@@ -241,7 +241,7 @@ def test_gate_wave_refuses_observed_run_over_per_run_cap() -> None:
     """An observed cost over the per-run cap → a refusal + a cost-gate record."""
     journal = _RecordingJournal()
     refusals = gate_wave(
-        mode="autonomous",
+        unattended=True,
         outcomes=(_green("item-aaa"),),
         ps_json=_ps_json_observed(
             run_id="01RUNAAA", work_item_id="item-aaa", usd_micros=30_000_000
@@ -262,7 +262,7 @@ def test_gate_wave_proceeds_observed_run_under_caps() -> None:
     """An observed cost under both caps → no refusal, an info cost-gate record."""
     journal = _RecordingJournal()
     refusals = gate_wave(
-        mode="autonomous",
+        unattended=True,
         outcomes=(_green("item-aaa"),),
         ps_json=_ps_json_observed(run_id="01RUNAAA", work_item_id="item-aaa", usd_micros=1_250_000),
         journal=journal,
@@ -287,7 +287,7 @@ def test_gate_wave_accumulates_per_session_cost_across_runs() -> None:
     """
     journal = _RecordingJournal()
     refusals = gate_wave(
-        mode="autonomous",
+        unattended=True,
         outcomes=(_green("item-aaa"), _green("item-bbb")),
         ps_json=_ps_json_two_observed(
             first=("01RUNAAA", "item-aaa", 40_000_000),
@@ -311,12 +311,12 @@ def test_gate_wave_still_refuses_unobservable_in_autonomous_with_caps() -> None:
     """The 5v9 fail-closed-when-unobservable behavior STAYS under y0m's caps.
 
     Caps are resolved (environ supplied), but the cost is null, so the
-    unobservable gate fires: autonomous mode refuses cost-blind, exactly as
+    unobservable gate fires: unattended drain refuses cost-blind, exactly as
     5v9 built it — the cap-value layer only governs OBSERVED costs.
     """
     journal = _RecordingJournal()
     refusals = gate_wave(
-        mode="autonomous",
+        unattended=True,
         outcomes=(_green("item-aaa"),),
         ps_json=_PS_JSON_NULL,
         journal=journal,
@@ -335,8 +335,8 @@ def test_gate_wave_still_refuses_unobservable_in_autonomous_with_caps() -> None:
 # --------------------------------------------------------------------------
 
 
-def _args(*, mode: str = "autonomous", fabro_bin: str = "fabro") -> argparse.Namespace:
-    return argparse.Namespace(mode=mode, fabro_bin=fabro_bin)
+def _args(*, items: list[str] | None = None, fabro_bin: str = "fabro") -> argparse.Namespace:
+    return argparse.Namespace(items=items, fabro_bin=fabro_bin)
 
 
 def test_cost_gate_after_verdict_no_green_outcome_runs_no_probe() -> None:
@@ -364,11 +364,11 @@ def test_cost_gate_after_verdict_no_green_outcome_runs_no_probe() -> None:
 def test_cost_gate_after_verdict_refusal_fires_spend_cap_breach_alarm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Fail-CLOSED end-to-end: autonomous + unobservable cost → a refusal that
+    """Fail-CLOSED end-to-end: unattended + unobservable cost → a refusal that
     POSTs a `spend-cap-breach`-class alarm through the notifier seam.
 
     The injected `fabro ps` returns the null-cost (dark) shape, so the
-    autonomous-mode unobservable gate refuses, and the wiring turns the
+    unattended-drain unobservable gate refuses, and the wiring turns the
     refusal into a `spend-cap-breach` `NotifyEvent`. With a dispatcher topic
     set, the leak-free body carries the item id + the class + a run id only.
     (Opt into `enforce`, since the `report` default never refuses.)
@@ -379,7 +379,7 @@ def test_cost_gate_after_verdict_refusal_fires_spend_cap_breach_alarm(
     runner = _FakeRunner(stdout=_PS_JSON_NULL, exit_code=0)
     poster = _RecordingPoster()
     cost_gate_after_verdict(
-        args=_args(mode="autonomous"),
+        args=_args(),
         repo=Path("/x"),
         outcomes=[_green("item-aaa")],
         journal=journal,
@@ -406,7 +406,7 @@ def test_cost_gate_after_verdict_refreshes_github_token_before_probe() -> None:
     journal = _RecordingJournal()
     runner = _FakeRunner(stdout=_PS_JSON_NULL, exit_code=0)
     cost_gate_after_verdict(
-        args=_args(mode="shadow"),
+        args=_args(items=["item-aaa"]),
         repo=Path("/x"),
         outcomes=[_green("item-aaa")],
         journal=journal,
@@ -457,7 +457,7 @@ def test_cost_gate_after_verdict_observed_under_caps_fires_no_alarm() -> None:
     )
     poster = _RecordingPoster()
     cost_gate_after_verdict(
-        args=_args(mode="autonomous"),
+        args=_args(),
         repo=Path("/x"),
         outcomes=[_green("item-aaa")],
         journal=journal,
@@ -482,7 +482,7 @@ def test_cost_gate_after_verdict_treats_nonzero_ps_exit_as_no_signal() -> None:
     runner = _FakeRunner(stdout="", exit_code=1)
     poster = _RecordingPoster()
     cost_gate_after_verdict(
-        args=_args(mode="autonomous"),
+        args=_args(),
         repo=Path("/x"),
         outcomes=[_green("item-aaa")],
         journal=journal,

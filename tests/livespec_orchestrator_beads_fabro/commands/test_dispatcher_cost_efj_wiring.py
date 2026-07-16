@@ -2,7 +2,7 @@
 
 The wiring that LIFTS 5v9's fail-closed refusal: the host OTLP receiver
 accrues per-API-call token cost into the cost sink; `gate_wave` routes a
-DERIVED cost through the OBSERVED-cost path so the autonomous fail-closed
+DERIVED cost through the OBSERVED-cost path so the unattended fail-closed
 refusal no longer fires and the (previously dormant) y0m `cap_value`
 comparison activates; the dispatcher reads the derived cost from the sink
 the receiver wrote. Four seams under test:
@@ -243,7 +243,7 @@ def test_receiver_with_no_cost_sink_does_not_crash(tmp_path: Path) -> None:
 
 
 def test_gate_flip_derived_cost_lifts_autonomous_fail_closed() -> None:
-    """The headline efj flip: an autonomous run that WOULD fail-close (fabro
+    """The headline efj flip: an unattended run that WOULD fail-close (fabro
     cost null) now PROCEEDS when the CC-derived cost is within caps.
 
     Without a derived cost this exact wave refuses (5v9). With the derived
@@ -252,7 +252,7 @@ def test_gate_flip_derived_cost_lifts_autonomous_fail_closed() -> None:
     """
     journal = _RecordingJournal()
     refusals = gate_wave(
-        mode="autonomous",
+        unattended=True,
         outcomes=(_green("item-aaa"),),
         ps_json=_ps_null(run_id="01RUNAAA", work_item_id="item-aaa"),
         journal=journal,
@@ -272,7 +272,7 @@ def test_gate_flip_derived_cost_over_per_run_cap_refuses() -> None:
     """A derived cost OVER the per-run cap → critical refuse (cap-value live)."""
     journal = _RecordingJournal()
     refusals = gate_wave(
-        mode="autonomous",
+        unattended=True,
         outcomes=(_green("item-aaa"),),
         ps_json=_ps_null(run_id="01RUNAAA", work_item_id="item-aaa"),
         journal=journal,
@@ -296,7 +296,7 @@ def test_gate_flip_derived_cost_accumulates_per_session() -> None:
     """
     journal = _RecordingJournal()
     refusals = gate_wave(
-        mode="autonomous",
+        unattended=True,
         outcomes=(_green("item-aaa"), _green("item-bbb")),
         ps_json=json.dumps(
             [
@@ -328,13 +328,13 @@ def test_gate_still_fail_closed_when_no_telemetry_arrived() -> None:
     """No derived cost AND null fabro cost → STILL fail-closed (gate not blinded).
 
     The genuinely-dark condition: when no CC telemetry arrived for the run
-    AND fabro's field is null, the autonomous fail-closed refusal still
+    AND fabro's field is null, the unattended fail-closed refusal still
     fires — efj makes the COMMON path observable, it does not disable the
     safety net.
     """
     journal = _RecordingJournal()
     refusals = gate_wave(
-        mode="autonomous",
+        unattended=True,
         outcomes=(_green("item-aaa"),),
         ps_json=_ps_null(run_id="01RUNAAA", work_item_id="item-aaa"),
         journal=journal,
@@ -351,8 +351,8 @@ def test_gate_still_fail_closed_when_no_telemetry_arrived() -> None:
 # --- the dispatcher reads the derived cost out of the sink ---------------
 
 
-def _args(*, journal_path: Path, mode: str = "autonomous") -> argparse.Namespace:
-    return argparse.Namespace(mode=mode, fabro_bin="fabro", journal=str(journal_path))
+def _args(*, journal_path: Path, items: list[str] | None = None) -> argparse.Namespace:
+    return argparse.Namespace(items=items, fabro_bin="fabro", journal=str(journal_path))
 
 
 def test_cost_gate_after_verdict_reads_derived_cost_and_proceeds(
@@ -362,13 +362,13 @@ def test_cost_gate_after_verdict_reads_derived_cost_and_proceeds(
     PROCEEDS — the gate flip wired through `cost_gate_after_verdict`.
 
     fabro reports null cost (dark), but the cost sink the receiver wrote
-    carries a within-cap derived cost for the work item, so the autonomous
+    carries a within-cap derived cost for the work item, so the unattended
     enforce gate proceeds with no `spend-cap-breach` alarm. (Opt into
     `enforce`, since the `report` default never refuses / caps.)
     """
     monkeypatch.setenv("LIVESPEC_COST_MODE", "enforce")
     journal_path = tmp_path / "journal.jsonl"
-    args = _args(journal_path=journal_path, mode="autonomous")
+    args = _args(journal_path=journal_path)
     # Seed the cost sink the receiver would have written, at the path the
     # dispatcher derives from the journal stem.
     sink = CostSink(path=cost_sink_path(args=args, repo=tmp_path))
@@ -415,7 +415,7 @@ def test_cost_gate_after_verdict_derived_over_cap_fires_alarm(
     monkeypatch.setenv("LIVESPEC_MAX_RUN_USD", "25")
     monkeypatch.setenv("LIVESPEC_COST_MODE", "enforce")
     journal_path = tmp_path / "journal.jsonl"
-    args = _args(journal_path=journal_path, mode="autonomous")
+    args = _args(journal_path=journal_path)
     sink = CostSink(path=cost_sink_path(args=args, repo=tmp_path))
     sink.accumulate_span(
         span={
@@ -469,12 +469,12 @@ def test_cost_gate_after_verdict_skips_non_green_and_unaccrued(
     Mixed wave: a non-green (host-only) outcome is skipped for cost
     derivation, and a green outcome whose work item NEVER accrued a cost
     yields no derived value — so the enforce gate falls back to 5v9's
-    fail-closed path (autonomous + null fabro cost → refuse), proving the
+    fail-closed path (unattended + null fabro cost → refuse), proving the
     omission is fail-closed, not silently free. (Opt into `enforce`.)
     """
     monkeypatch.setenv("LIVESPEC_COST_MODE", "enforce")
     journal_path = tmp_path / "journal.jsonl"
-    args = _args(journal_path=journal_path, mode="autonomous")
+    args = _args(journal_path=journal_path)
     journal = _RecordingJournal()
     runner = _FakeRunner(stdout=_ps_null(run_id="01RUNAAA", work_item_id="item-aaa"), exit_code=0)
     poster = _RecordingPoster()
@@ -487,7 +487,7 @@ def test_cost_gate_after_verdict_skips_non_green_and_unaccrued(
         poster=poster,
     )
     gate = next(r for r in journal.records if r.get("stage") == "cost-gate")
-    # No derived cost for item-aaa -> unobservable -> autonomous fail-closed.
+    # No derived cost for item-aaa -> unobservable -> unattended fail-closed.
     assert gate["observable"] is False
     assert gate["refuse"] is True
 
@@ -504,7 +504,7 @@ def test_cost_gate_after_verdict_is_fail_open_on_missing_journal_attr(
     proves the fall-back fires.)
     """
     monkeypatch.setenv("LIVESPEC_COST_MODE", "enforce")
-    args = argparse.Namespace(mode="autonomous", fabro_bin="fabro")  # no `journal`
+    args = argparse.Namespace(unattended=True, fabro_bin="fabro")  # no `journal`
     journal = _RecordingJournal()
     runner = _FakeRunner(stdout=_ps_null(run_id="01RUNAAA", work_item_id="item-aaa"), exit_code=0)
     poster = _RecordingPoster()

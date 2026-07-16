@@ -48,7 +48,7 @@ def test_cost_gate_after_verdict_skips_probe_when_no_green_outcome() -> None:
     runner = _FakeRunner()
 
     cost_gate_after_verdict(
-        args=argparse.Namespace(mode="autonomous", fabro_bin="fabro"),
+        args=argparse.Namespace(items=None, fabro_bin="fabro"),
         repo=Path("/repo"),
         outcomes=[_host_only_refused(work_item_id="item-host")],
         journal=journal,

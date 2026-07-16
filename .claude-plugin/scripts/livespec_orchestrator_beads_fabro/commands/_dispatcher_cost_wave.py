@@ -21,7 +21,7 @@ __all__: list[str] = ["gate_wave_refusals"]
 
 def gate_wave_refusals(  # noqa: PLR0913 - mirrors the public gate_wave inputs.
     *,
-    mode: str,
+    unattended: bool,
     outcomes: tuple[DispatchOutcome, ...],
     ps_json: str,
     journal: JournalWriter,
@@ -52,7 +52,7 @@ def gate_wave_refusals(  # noqa: PLR0913 - mirrors the public gate_wave inputs.
             session_usd_micros += usd_micros
         decision = _decision(
             enforcing=enforcing,
-            mode=mode,
+            unattended=unattended,
             run_id=run_id,
             observation=observation,
             usd_micros=usd_micros,
@@ -76,7 +76,7 @@ def gate_wave_refusals(  # noqa: PLR0913 - mirrors the public gate_wave inputs.
 def _decision(  # noqa: PLR0913 - keeps the cost-mode branch explicit and typed.
     *,
     enforcing: bool,
-    mode: str,
+    unattended: bool,
     run_id: str,
     observation: CostObservation,
     usd_micros: int | None,
@@ -94,7 +94,7 @@ def _decision(  # noqa: PLR0913 - keeps the cost-mode branch explicit and typed.
             session_usd_micros_after=session_usd_micros,
             per_session_cap_usd=per_session_cap,
         )
-    return cost_gate_decision(mode=mode, observation=observation)
+    return cost_gate_decision(unattended=unattended, observation=observation)
 
 
 def _append_skipped(*, journal: JournalWriter, work_item_id: str) -> None:

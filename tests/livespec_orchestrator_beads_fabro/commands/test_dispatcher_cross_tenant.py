@@ -116,8 +116,6 @@ def test_loop_with_item_absent_from_tenant_emits_target_tenant_mismatch_error(
             str(repo),
             "--budget",
             "1",
-            "--mode",
-            "autonomous",
             "--item",
             "foreign-item-xyz",
             "--workflow",

@@ -188,7 +188,7 @@ def test_report_mode_never_refuses_when_cost_exceeds_old_caps() -> None:
     """
     journal = _RecordingJournal()
     refusals = gate_wave(
-        mode="autonomous",
+        unattended=True,
         outcomes=(_green("item-aaa"),),
         ps_json=_ps_null(run_id="01RUNAAA", work_item_id="item-aaa"),
         journal=journal,
@@ -207,12 +207,12 @@ def test_report_mode_never_refuses_when_cost_exceeds_old_caps() -> None:
 def test_report_mode_never_refuses_when_unobservable() -> None:
     """Report mode does NOT refuse even when the cost is unobservable.
 
-    The OLD enforce gate fail-closed (autonomous + dark cost → refuse);
+    The OLD enforce gate fail-closed (unattended + dark cost → refuse);
     report mode reports the dark condition and returns no refusals.
     """
     journal = _RecordingJournal()
     refusals = gate_wave(
-        mode="autonomous",
+        unattended=True,
         outcomes=(_green("item-aaa"),),
         ps_json=_ps_null(run_id="01RUNAAA", work_item_id="item-aaa"),
         journal=journal,
@@ -231,7 +231,7 @@ def test_report_mode_is_the_default_cost_mode() -> None:
     """Omitting `cost_mode` defaults to report (never refuses) — the new default."""
     journal = _RecordingJournal()
     refusals = gate_wave(
-        mode="autonomous",
+        unattended=True,
         outcomes=(_green("item-aaa"),),
         ps_json=_ps_null(run_id="01RUNAAA", work_item_id="item-aaa"),
         journal=journal,

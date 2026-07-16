@@ -15,7 +15,6 @@ import importlib
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands import (
-    _dispatcher_autonomous,
     _dispatcher_calibration_emit,
     _dispatcher_codex_auth,
     _dispatcher_credentials,
@@ -27,7 +26,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
     Admission,
     admission_held_outcome,
     admit_and_select,
-    autonomous_armed,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
     bounce_non_convergence_to_backlog,
@@ -97,10 +95,7 @@ def test_admission_cluster_importable_from_new_module() -> None:
     assert Admission.__name__ == "Admission"
     assert admit_and_select.__name__ == "admit_and_select"
     assert admission_held_outcome(item=_item(), reason="manual").stage == "admission-held"
-    assert autonomous_armed(args=object()) is False
     assert dispatcher.admit_and_select is admit_and_select
-    assert dispatcher.autonomous_armed is autonomous_armed
-    assert dispatcher.arm_autonomous_for_loop is _dispatcher_autonomous.arm_autonomous_for_loop
 
 
 def test_completion_cluster_importable_from_new_module_and_dispatcher() -> None:

@@ -156,7 +156,7 @@ def test_dispatcher_pass_leaves_blocked_needs_human_item_blocked(
         return
 
     post_run_dispositions(
-        args=argparse.Namespace(close_on_merge=False, autonomous_armed=True),
+        args=argparse.Namespace(close_on_merge=False),
         repo=tmp_path,
         item=item,
         outcome=_blocked_outcome(item_id=item.id),
@@ -249,7 +249,7 @@ def test_post_run_dispositions_persists_blocked_outcome_as_terminal_needs_human(
     monkeypatch.setattr(needs_attention, "_spec_next", _no_spec_next)
 
     post_run_dispositions(
-        args=argparse.Namespace(close_on_merge=True, autonomous_armed=True),
+        args=argparse.Namespace(close_on_merge=True),
         repo=tmp_path,
         item=item,
         outcome=_blocked_outcome(item_id=item.id),

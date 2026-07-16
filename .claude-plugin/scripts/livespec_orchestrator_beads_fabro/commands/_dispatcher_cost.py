@@ -37,14 +37,12 @@ real `total_usd_micros` as an observable cost the moment fabro starts
 populating it (forward-compat, no gate change), and reports
 `observable=False` whenever the field is null / absent / unparseable.
 
-`cost_gate_decision` is the fail-closed rule (preconditions.md): in `autonomous`
-(unattended) mode an unobservable
-cost is itself a cap-accounting failure — the loop REFUSES to keep
-picking rather than burning spend cost-blind; in `shadow` mode (an
-explicit `--item` dispatch with a human present) a `warn` suffices. An
-OBSERVED cost never trips this gate — cap-VALUE enforcement (the per-run
-/ per-session ceilings) is y0m's job; 5v9's gate fires only on the
-unobservable condition.
+`cost_gate_decision` is the fail-closed rule (preconditions.md): in an
+unattended queue drain an unobservable cost is itself a cap-accounting failure
+— the loop REFUSES to keep picking rather than burning spend cost-blind; in a
+human hand-picked `--item` dispatch a `warn` suffices. An OBSERVED cost never
+trips this gate — cap-VALUE enforcement (the per-run / per-session ceilings)
+is y0m's job; 5v9's gate fires only on the unobservable condition.
 
 `resolve_per_run_cap_usd` / `resolve_per_session_cap_usd` carry the
 committed env-overridable cap defaults (`LIVESPEC_MAX_RUN_USD` /
@@ -102,11 +100,6 @@ _MAX_SESSION_USD_ENV = "LIVESPEC_MAX_SESSION_USD"
 _DEFAULT_MAX_RUN_USD = 25.0
 _DEFAULT_MAX_SESSION_USD = 100.0
 
-# The mode in which the dark-cost condition is a hard refusal. In
-# `shadow` (explicit `--item`, human present) the same condition is a
-# warn — preconditions.md.
-_AUTONOMOUS_MODE = "autonomous"
-
 # The cost-mode lever (`LIVESPEC_COST_MODE`): the NAME of an env var, not a
 # secret. `report` (the DEFAULT) derives + emits the API-equivalent cost as
 # an observability signal and NEVER refuses / applies caps — the
@@ -156,7 +149,7 @@ class CostObservation:
 class CostGateDecision:
     """The fail-closed gate verdict for one completed run (leak-free).
 
-    `refuse` is True only when the loop must stop picking (autonomous +
+    `refuse` is True only when the loop must stop picking (unattended +
     unobservable cost). `severity` is `critical` / `warn` / `info`.
     `reason` is a human, blob-free sentence naming the actionable
     condition + the run id.
@@ -187,12 +180,12 @@ def observe_run_cost(*, ps_json: str, run_id: str) -> CostObservation:
     )
 
 
-def cost_gate_decision(*, mode: str, observation: CostObservation) -> CostGateDecision:
+def cost_gate_decision(*, unattended: bool, observation: CostObservation) -> CostGateDecision:
     """The fail-closed cost gate (preconditions.md).
 
-    Autonomous (unattended) mode + an unobservable cost ⇒ REFUSE: the
-    loop must stop picking rather than burn spend cost-blind. Shadow mode
-    (a human is present) + the same condition ⇒ a `warn`, never a
+    Unattended queue drain + an unobservable cost ⇒ REFUSE: the loop must
+    stop picking rather than burn spend cost-blind. Human hand-picked `--item`
+    dispatch + the same condition ⇒ a `warn`, never a
     refusal. An OBSERVED cost (either mode) ⇒ `info`, never a refusal —
     cap-VALUE enforcement is y0m's job; 5v9's gate fires only on the
     unobservable condition, "fix the gate, not the bypass": the
@@ -207,13 +200,13 @@ def cost_gate_decision(*, mode: str, observation: CostObservation) -> CostGateDe
                 f"({observation.usd_micros} usd_micros); cap-value check is y0m's"
             ),
         )
-    if mode == _AUTONOMOUS_MODE:
+    if unattended:
         return CostGateDecision(
             refuse=True,
             severity="critical",
             reason=(
                 f"run {observation.run_id} cost is UNOBSERVABLE (fabro "
-                f"total_usd_micros null) in autonomous mode; refusing to keep "
+                f"total_usd_micros null) in unattended queue drain; refusing to keep "
                 f"picking rather than burn spend cost-blind (fail-closed)"
             ),
         )
@@ -222,7 +215,7 @@ def cost_gate_decision(*, mode: str, observation: CostObservation) -> CostGateDe
         severity="warn",
         reason=(
             f"run {observation.run_id} cost is unobservable (fabro "
-            f"total_usd_micros null); shadow mode has a human present, so "
+            f"total_usd_micros null); --item was hand-picked by a human, so "
             f"this is a warning rather than a refusal"
         ),
     )
@@ -327,7 +320,7 @@ def resolve_per_session_cap_usd(*, environ: dict[str, str]) -> float:
 
 def gate_wave(  # noqa: PLR0913 — kw-only post-verdict gate/reporter; each field is an independent caller input.
     *,
-    mode: str,
+    unattended: bool,
     outcomes: tuple[DispatchOutcome, ...],
     ps_json: str,
     journal: JournalWriter,
@@ -366,8 +359,8 @@ def gate_wave(  # noqa: PLR0913 — kw-only post-verdict gate/reporter; each fie
 
     The `enforce` verdict is decided in two layers:
 
-      * UNOBSERVABLE cost ⇒ `cost_gate_decision` (5v9): autonomous mode
-        refuses, shadow warns. This is the fall-back when NO telemetry
+      * UNOBSERVABLE cost ⇒ `cost_gate_decision` (5v9): unattended drain
+        refuses, hand-picked item warns. This is the fall-back when NO telemetry
         arrived for the run — the genuinely-dark condition the fail-closed
         refusal exists for.
       * OBSERVED cost ⇒ y0m's `cap_value_decision`: the per-run cost is
@@ -381,7 +374,7 @@ def gate_wave(  # noqa: PLR0913 — kw-only post-verdict gate/reporter; each fie
     source: the per-dispatch cost the host OTLP receiver DERIVES from CC
     token telemetry (`_dispatcher_cost_sink`), keyed by work-item id. When
     a run has a derived cost it becomes the observed cost — so the common
-    path is now OBSERVABLE and 5v9's autonomous fail-closed refusal NO
+    path is now OBSERVABLE and 5v9's unattended fail-closed refusal NO
     LONGER fires, activating the (previously dormant) `cap_value_decision`.
     Per `cc-otel-gap-analysis.md`, CC-token-derived cost is
     the primary signal; fabro's `total_usd_micros` (read from `ps_json`) is
@@ -400,7 +393,7 @@ def gate_wave(  # noqa: PLR0913 — kw-only post-verdict gate/reporter; each fie
     )
 
     return gate_wave_refusals(
-        mode=mode,
+        unattended=unattended,
         outcomes=outcomes,
         ps_json=ps_json,
         journal=journal,

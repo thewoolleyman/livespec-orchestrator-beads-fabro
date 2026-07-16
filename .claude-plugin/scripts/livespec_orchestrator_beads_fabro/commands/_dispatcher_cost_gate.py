@@ -120,7 +120,7 @@ def _cost_gate(
     )
     ps_json = ps.stdout if ps.exit_code == 0 else ""
     refusals = gate_wave(
-        mode=getattr(args, "mode", "shadow"),
+        unattended=not bool(getattr(args, "items", None) or getattr(args, "item", None)),
         outcomes=tuple(outcomes),
         ps_json=ps_json,
         journal=journal,

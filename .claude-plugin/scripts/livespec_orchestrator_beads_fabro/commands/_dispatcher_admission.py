@@ -9,18 +9,9 @@ assignee before Fabro launch.
 
 from __future__ import annotations
 
-import argparse
 from dataclasses import asdict, dataclass, replace
-from functools import partial
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_autonomous_audit import (
-    autonomous_decision_journal_record,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_autonomous_collapse import (
-    collapse_admission_to_auto,
-    effective_admission_policy_under_mode,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import host_only_refusal
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
@@ -39,15 +30,7 @@ __all__: list[str] = [
     "Admission",
     "admission_held_outcome",
     "admit_and_select",
-    "autonomous_armed",
 ]
-
-# The `decision` text journaled on each full-autonomous-mode auto-resolution
-# audit record (the S2 autonomous-decision record). Names what the mode
-# decided so no auto-resolution is silent.
-_AUTONOMOUS_APPROVE_DECISION = (
-    "routine manual-admission auto-approved to ready under armed autonomous mode"
-)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -67,19 +50,6 @@ class Admission:
     refused: list[DispatchOutcome]
 
 
-def autonomous_armed(*, args: argparse.Namespace) -> bool:
-    """Read the per-run full-autonomous-mode armed flag threaded onto args.
-
-    `_run_loop_command` sets `args.autonomous_armed` from the S1 arming
-    decision. The targeted `dispatch --item` path never arms the mode (the
-    `--mode autonomous` opt-in rides `loop`, not `dispatch`), so it never sets
-    the attribute; the `getattr` default keeps that path — and any legacy
-    caller — at the safe unarmed default. `bool(...)` narrows the untyped
-    Namespace attribute to a typed bool.
-    """
-    return bool(getattr(args, "autonomous_armed", False))
-
-
 def admit_and_select(
     *,
     repo: Path,
@@ -87,7 +57,6 @@ def admit_and_select(
     candidates: list[WorkItem],
     journal: JournalFile,
     enforce_cap: bool,
-    armed: bool,
 ) -> Admission:
     """Run the admission valve over the rank-sorted candidate set.
 
@@ -103,14 +72,6 @@ def admit_and_select(
     (every host-cleared candidate gets a slot). The admit writes + the held
     surfaces are journaled here; the launched items flow on to `_dispatch_one`.
 
-    `armed` layers the full-autonomous-mode approve-gate collapse
-    (SPECIFICATION/scenarios.md Scenario 33): an armed run injects an
-    armed-aware admission-policy resolver so a routine `manual` pending item is
-    auto-approved into `ready` instead of held — EXCEPT a design-human-gated
-    spec-change-tier slice, which stays held/escalated (Scenario 36). Each such
-    collapse is journaled as an autonomous auto-resolution audit record
-    (`gate` `approve`); when not armed the resolver is the base policy and
-    behavior is exactly unchanged.
     """
     admittable: list[WorkItem] = []
     refused: list[DispatchOutcome] = []
@@ -129,7 +90,6 @@ def admit_and_select(
         ready_items=admittable,
         free_slots=free_slots,
         resolve_assignee=resolve_assignee,
-        admission_policy=partial(effective_admission_policy_under_mode, armed=armed, cwd=repo),
     )
     admitted: list[WorkItem] = []
     config = store_config(repo=repo)
@@ -137,15 +97,6 @@ def admit_and_select(
     for item in plan.approved:
         update_work_item_status(path=config, item_id=item.id, status="ready")
         journal.append(record={"stage": "ledger-approve", "work_item_id": item.id})
-        if collapse_admission_to_auto(item=item, armed=armed, cwd=repo):
-            journal.append(
-                record=autonomous_decision_journal_record(
-                    work_item_id=item.id,
-                    gate="approve",
-                    decision=_AUTONOMOUS_APPROVE_DECISION,
-                    disposition="auto-resolved",
-                )
-            )
     for item, assignee in plan.admitted:
         journal_item = replace(item, status="ready") if item.id in approved_ids else item
         update_work_item_status(
