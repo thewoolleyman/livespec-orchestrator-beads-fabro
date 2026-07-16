@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.40.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.39.0...v0.40.0) (2026-07-16)
+
+
+### Features
+
+* block review gate at cap ([bdb84d1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bdb84d159f256adbd7a31a851a1bbe9756b5d094))
+
 ## [0.39.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.38.0...v0.39.0) (2026-07-16)
 
 
