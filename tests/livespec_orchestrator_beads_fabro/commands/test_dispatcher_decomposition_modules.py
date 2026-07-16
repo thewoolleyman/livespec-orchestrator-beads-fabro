@@ -113,6 +113,7 @@ def test_credentials_cluster_importable_from_new_module_and_private_names_remove
         "fetch_fleet_manifest_text",
         "materialize_overlay",
         "read_dispatch_comments",
+        "read_dispatch_labels",
         "read_dispatch_target_credential_wrapper",
         "resolve_sibling_clones",
     }

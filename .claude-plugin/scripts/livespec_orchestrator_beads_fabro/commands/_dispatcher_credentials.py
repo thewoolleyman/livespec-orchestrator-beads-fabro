@@ -10,6 +10,7 @@ from typing import cast
 
 from livespec_runtime.github_auth.errors import GithubAppAuthError
 
+from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
     CodexProjectionRefusal,
     project_codex_auth,
@@ -47,6 +48,7 @@ __all__: list[str] = [
     "fetch_fleet_manifest_text",
     "materialize_overlay",
     "read_dispatch_comments",
+    "read_dispatch_labels",
     "read_dispatch_target_credential_wrapper",
     "resolve_sibling_clones",
 ]
@@ -83,6 +85,28 @@ def read_dispatch_comments(
         BeadsTenantMissingError,
     ) as exc:
         return f"ledger comments read failed for {item.id} ({type(exc).__name__}: {exc})"
+
+
+def read_dispatch_labels(
+    *,
+    repo: Path,
+    item: WorkItem,
+) -> tuple[str, ...] | str:
+    """Read raw beads labels that carry per-item dispatcher policy overrides."""
+    try:
+        record = make_beads_client(config=store_config(repo=repo)).show_issue(issue_id=item.id)
+    except (
+        BeadsCommandError,
+        BeadsConnectionError,
+        BeadsMappingError,
+        BeadsTenantMissingError,
+    ) as exc:
+        return f"ledger label read failed for {item.id} ({type(exc).__name__}: {exc})"
+    labels = record.get("labels")
+    if not isinstance(labels, list):
+        return ()
+    raw_labels = cast("list[object]", labels)
+    return tuple(label for label in raw_labels if isinstance(label, str))
 
 
 def materialize_overlay(

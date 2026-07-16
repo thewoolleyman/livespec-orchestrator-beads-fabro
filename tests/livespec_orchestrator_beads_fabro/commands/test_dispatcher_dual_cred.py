@@ -13,15 +13,18 @@ hermetic and deterministic.
 
 from __future__ import annotations
 
+import argparse
 import base64
 import json
 import stat
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_codex_auth,
     _dispatcher_credentials,
+    _dispatcher_loop,
     _dispatcher_sibling_clones,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
@@ -32,12 +35,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     materialize_overlay,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     CODEX_IMPLEMENTER_ADAPTER,
     build_plan,
     fabro_run_argv,
     render_run_config_overlay,
 )
+from livespec_orchestrator_beads_fabro.errors import BeadsCommandError
+from livespec_orchestrator_beads_fabro.types import WorkItem
 
 # A canned fleet manifest so `resolve_sibling_clones` (which runs before
 # the codex projection inside `materialize_overlay`) never shells out to a
@@ -205,11 +211,16 @@ def test_fabro_run_argv_routes_implementer_to_codex_adapter(tmp_path: Path) -> N
         janitor_checkout=tmp_path / "janitor-co",
     )
     argv = fabro_run_argv(plan=plan)
-    assert "--input" in argv
-    input_value = argv[argv.index("--input") + 1]
-    assert input_value == f"acp_adapter={CODEX_IMPLEMENTER_ADAPTER}"
+    input_values = [
+        value for index, value in enumerate(argv[1:], start=1) if argv[index - 1] == "--input"
+    ]
+    assert input_values == [
+        f"acp_adapter={CODEX_IMPLEMENTER_ADAPTER}",
+        "review_fix_visit_cap=4",
+        "merge_on_review_cap_outcome=__merge_on_review_cap_disabled__",
+    ]
     assert CODEX_IMPLEMENTER_ADAPTER == "npx --no-install @zed-industries/codex-acp"
-    # The routing input precedes --no-upgrade-check.
+    # The routing inputs precede --no-upgrade-check.
     assert argv.index("--input") < argv.index("--no-upgrade-check")
 
 
@@ -401,3 +412,135 @@ def test_materialize_overlay_writes_codex_projection_when_fresh(
     assert "[[run.prepare.steps]]" in rendered
     # The overlay stays mode-600 (the run-scoped credential projection).
     assert stat.S_IMODE(overlay.stat().st_mode) == 0o600
+
+
+def test_fabro_run_argv_routes_effective_review_cap_policy_inputs(tmp_path: Path) -> None:
+    """Dispatcher policy values are rendered as Fabro workflow inputs."""
+    plan = build_plan(
+        repo=tmp_path,
+        work_item_id="x-1",
+        workflow_toml=tmp_path / "wf.toml",
+        goal_file=tmp_path / "goal.md",
+        fabro_bin="fabro",
+        janitor=None,
+        janitor_checkout=tmp_path / "janitor-co",
+        review_fix_cap=7,
+        merge_on_review_cap=True,
+    )
+    argv = fabro_run_argv(plan=plan)
+    input_values = [
+        value for index, value in enumerate(argv[1:], start=1) if argv[index - 1] == "--input"
+    ]
+    assert input_values == [
+        f"acp_adapter={CODEX_IMPLEMENTER_ADAPTER}",
+        "review_fix_visit_cap=8",
+        "merge_on_review_cap_outcome=succeeded",
+    ]
+
+
+def _policy_item() -> WorkItem:
+    return WorkItem(
+        id="x-1",
+        type="feature",
+        status="ready",
+        title="Title",
+        description="Description",
+        origin="freeform",
+        gap_id=None,
+        rank="a0",
+        assignee=None,
+        depends_on=(),
+        captured_at="2026-01-01T00:00:00Z",
+        resolution=None,
+        reason=None,
+        audit=None,
+        superseded_by=None,
+        spec_commitment_hint=None,
+        acceptance_criteria=None,
+        notes=None,
+        admission_policy=None,
+        acceptance_policy=None,
+        blocked_reason=None,
+    )
+
+
+def _store_config_stub(*, repo: Path) -> object:
+    _ = repo
+    return object()
+
+
+def test_read_dispatch_labels_returns_raw_string_labels(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(_dispatcher_credentials, "store_config", _store_config_stub)
+
+    def show_issue(*, issue_id: str) -> dict[str, object]:
+        _ = issue_id
+        return {"labels": ["merge-on-review-cap:true", 7, "review-fix-cap:5"]}
+
+    def make_client(*, config: object) -> SimpleNamespace:
+        _ = config
+        return SimpleNamespace(show_issue=show_issue)
+
+    monkeypatch.setattr(_dispatcher_credentials, "make_beads_client", make_client)
+    assert _dispatcher_credentials.read_dispatch_labels(repo=tmp_path, item=_policy_item()) == (
+        "merge-on-review-cap:true",
+        "review-fix-cap:5",
+    )
+
+
+def test_read_dispatch_labels_returns_refusal_on_beads_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail_show(*, issue_id: str) -> dict[str, object]:
+        _ = issue_id
+        raise BeadsCommandError(command="bd show x-1", exit_code=1, stderr="boom")
+
+    monkeypatch.setattr(_dispatcher_credentials, "store_config", _store_config_stub)
+
+    def make_client(*, config: object) -> SimpleNamespace:
+        _ = config
+        return SimpleNamespace(show_issue=fail_show)
+
+    monkeypatch.setattr(_dispatcher_credentials, "make_beads_client", make_client)
+    result = _dispatcher_credentials.read_dispatch_labels(repo=tmp_path, item=_policy_item())
+    assert isinstance(result, str)
+    assert result.startswith("ledger label read failed for x-1 (BeadsCommandError:")
+
+
+def test_read_dispatch_labels_treats_missing_labels_as_no_overrides(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(_dispatcher_credentials, "store_config", _store_config_stub)
+
+    def show_issue(*, issue_id: str) -> dict[str, object]:
+        _ = issue_id
+        return {}
+
+    def make_client(*, config: object) -> SimpleNamespace:
+        _ = config
+        return SimpleNamespace(show_issue=show_issue)
+
+    monkeypatch.setattr(_dispatcher_credentials, "make_beads_client", make_client)
+    assert _dispatcher_credentials.read_dispatch_labels(repo=tmp_path, item=_policy_item()) == ()
+
+
+def test_dispatch_one_refuses_when_policy_labels_cannot_be_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def label_failure(*, repo: Path, item: WorkItem) -> str:
+        _ = (repo, item)
+        return "label backend unavailable"
+
+    monkeypatch.setattr(_dispatcher_loop, "read_dispatch_labels", label_failure)
+    outcome = _dispatcher_loop.dispatch_one(
+        args=argparse.Namespace(fabro_bin="fabro"),
+        repo=tmp_path,
+        item=_policy_item(),
+        journal=JournalFile(path=tmp_path / "journal.jsonl"),
+        janitor=None,
+    )
+    assert outcome.status == "failed"
+    assert outcome.stage == "ledger-labels"
+    assert outcome.detail == "label backend unavailable"
+    assert '"stage": "outcome"' in (tmp_path / "journal.jsonl").read_text(encoding="utf-8")

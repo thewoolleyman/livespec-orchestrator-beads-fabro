@@ -116,6 +116,15 @@ acp_adapter = "npx -y @agentclientprotocol/claude-agent-acp"
 # recent @latest and verify the model in the run transcript.
 review_adapter = "ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL=high npx -y @zed-industries/claude-code-acp@latest"
 
+# Review fix rounds count implementer repair rounds, not review visits. The
+# workflow guard reads review node visits, so the default three fix rounds render
+# as a visit guard of four: initial review visit plus three fix rounds.
+review_fix_visit_cap = 4
+
+# Disabled by default. The Dispatcher renders this to `succeeded` only when the
+# effective merge_on_review_cap escape hatch is true for the item.
+merge_on_review_cap_outcome = "__merge_on_review_cap_disabled__"
+
 [run.environment]
 id = "livespec-ci"
 

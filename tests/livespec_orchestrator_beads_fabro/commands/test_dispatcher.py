@@ -903,6 +903,8 @@ def test_build_plan_derives_publish_branch_and_default_janitor(tmp_path: Path) -
     assert plan.branch == "feat/x-1"
     assert plan.janitor == ("mise", "exec", "--", "just", "check")
     assert plan.janitor_checkout == tmp_path / "janitor-co"
+    assert plan.review_fix_visit_cap == 4
+    assert plan.merge_on_review_cap_outcome == "__merge_on_review_cap_disabled__"
 
 
 def test_janitor_argv_with_default_passthrough_and_empty() -> None:
@@ -1044,6 +1046,10 @@ def test_argv_builders_encode_family_discipline(tmp_path: Path) -> None:
         str(tmp_path / "goal.md"),
         "--input",
         "acp_adapter=npx --no-install @zed-industries/codex-acp",
+        "--input",
+        "review_fix_visit_cap=4",
+        "--input",
+        "merge_on_review_cap_outcome=__merge_on_review_cap_disabled__",
         "--no-upgrade-check",
     ]
     assert fabro_inspect_argv(plan=plan, run_id="01RUNID") == [
