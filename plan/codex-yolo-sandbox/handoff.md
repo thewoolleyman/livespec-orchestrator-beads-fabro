@@ -65,18 +65,22 @@ The plugin files live in the **cache**:
 
 - Sandbox modes: `read-only` / `workspace-write` / `danger-full-access`. Only
   `danger-full-access` = full disk + network, no restrictions.
-- CLI equivalent: `codex exec --dangerously-bypass-approvals-and-sandbox`
-  (alias `--yolo`) → forces `DangerFullAccess`. (`--full-auto` is deprecated →
-  maps to workspace-write; do NOT use it for YOLO.)
-- app-server transport equivalent of `--yolo` = sending `sandbox: "danger-full-access"`
-  on the thread — which is exactly the value the plugin never sends.
+- CLI flag (**use this** — explicit and documented):
+  `codex exec --dangerously-bypass-approvals-and-sandbox` → forces
+  `DangerFullAccess`. (`--yolo` is an accepted but UNDOCUMENTED shorthand alias in
+  0.144.3 — hidden from `--help`/completion, but the parser accepts it identically
+  to the full flag; prefer the explicit form. `--full-auto` maps to
+  workspace-write; do NOT use it for full access.)
+- app-server transport equivalent of `--dangerously-bypass-approvals-and-sandbox`
+  = sending `sandbox: "danger-full-access"` on the thread — which is exactly the
+  value the plugin never sends.
 
 ## Options (for the new session to decide)
 
 | # | Approach | Durability | Notes |
 | --- | --- | --- | --- |
 | 1 | Patch the 3 cached sandbox sites → `danger-full-access` directly | ❌ clobbered on plugin update | Fastest, but silently reverts on any `codex plugin` refresh. Only acceptable with a re-apply hook or version pin. |
-| 2 | Fork `openai-codex` (thewoolleyman fork): make the 3 sites resolve to `danger-full-access`, gated behind an env/config toggle (e.g. `CODEX_COMPANION_SANDBOX=danger-full-access`) + add a `--sandbox`/`--yolo` flag to the review parser; install the fork | ✅ durable | Maintenance: track upstream. Fits the repo's existing fork-carry discipline (cf. the fabro `factory-integration` pattern). |
+| 2 | Fork `openai-codex` (thewoolleyman fork): make the 3 sites resolve to `danger-full-access`, gated behind an env/config toggle (e.g. `CODEX_COMPANION_SANDBOX=danger-full-access`) + add a `--sandbox`/`--full-access` flag to the review parser; install the fork | ✅ durable | Maintenance: track upstream. Fits the repo's existing fork-carry discipline (cf. the fabro `factory-integration` pattern). |
 | 3 | Upstream a PR to `openai-codex` making the companion sandbox configurable (respect a per-call `sandbox` option + a default-full-access toggle) | ✅ durable, best long-term | Slow — depends on upstream merge. |
 | 4 | **Bypass the plugin for execute-needing reviews:** call Codex directly via `codex exec --dangerously-bypass-approvals-and-sandbox "<prompt>"` (or an app-server client sending `sandbox: "danger-full-access"`) instead of the hardcoded-read-only `review`/`adversarial-review` path | ✅ fully under our control | Fast interim; a small wrapper the orchestrator invokes for reviews. Does NOT fix the `task`/rescue path (still workspace-write). |
 
@@ -108,7 +112,7 @@ cwd) — but the stated ask is YOLO. Whatever the fix, it MUST survive plugin up
    `codex exec --dangerously-bypass-approvals-and-sandbox` and returns the result;
    verify it can run `pytest` + `gh` inside a repo.
 4. **Implement the durable fix (2/3):** the 3 sandbox sites →
-   `danger-full-access` (env/config-gated), + a review-parser `--yolo` flag.
+   `danger-full-access` (env/config-gated), + a review-parser `--full-access` flag.
 5. **Survives-update guard:** pin the plugin version, add a post-install re-patch
    hook, or carry the fork — so a marketplace refresh can't silently re-sandbox.
 6. Formalize as a proper plan thread (`/plan codex-yolo-sandbox`) + anchor a ledger
@@ -122,7 +126,11 @@ cwd) — but the stated ask is YOLO. Whatever the fix, it MUST survive plugin up
   "never", sandbox defaults "read-only"; `:1002-1015` runAppServerReview, `:1012`
   literal read-only); `scripts/lib/app-server.mjs:190` (spawns `codex app-server`).
 - Codex CLI `codex-cli 0.144.3`: `--dangerously-bypass-approvals-and-sandbox`
-  (alias `--yolo`) → `SandboxMode::DangerFullAccess`; `codex exec` hardcodes
+  → `SandboxMode::DangerFullAccess`. It also accepts an **undocumented `--yolo`
+  alias** (hidden from `--help`/completion, but the parser accepts `--yolo`
+  identically to the full flag while rejecting near-miss typos like `--yo` — so it
+  is a real hidden alias, not inference; prefer the explicit flag). `codex exec`
+  hardcodes
   `AskForApproval::Never`; CLI flag > config precedence
   (`resolve_permission_config_syntax`); config keys `sandbox_mode`,
   `[sandbox_workspace_write] network_access`, `default_permissions=":danger-full-access"`
