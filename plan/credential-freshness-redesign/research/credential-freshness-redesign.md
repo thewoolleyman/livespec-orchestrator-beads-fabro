@@ -81,12 +81,20 @@ dynamic-mid-run. The mid-run delivery is the sole source of the internals coupli
    - Case 2 — refresh bumps the session → outstanding access tokens with the old
      `session_id` are invalidated at rotation (a fleet-wide, simultaneous failure
      of every worker holding the shared token).
-   The `session_id` claim makes Case 2 *possible*; OpenAI's anti-concurrency
-   guidance is *consistent* with it; neither *proves* it. **The only definitive
-   test is a before/after `session_id` comparison across a real refresh, and there
-   is no safe way to trigger one now** — codex has no force-refresh, and an
-   out-of-band refresh would rotate (and thus break) the live refresh token →
-   forced `codex login`.
+   **A-priori lean: Case 1.** A `session_id`/`sid` claim identifies the *sign-in
+   session*, and a refresh-token exchange is designed to extend that session
+   *without* re-authenticating — so the standard behavior is a stable `session_id`
+   with a new `jti` per token (Case 1). For `session_id` to bump on refresh, OpenAI
+   would have to mint a new session on *every* refresh, which is nonstandard. And
+   the anti-concurrency guidance (#3) is **fully explained by refresh-token rotation
+   desync (#2) alone** — which our seatbelt + sentinel already neutralize for
+   workers — so it is *not* strong evidence for Case 2. Still: the `session_id`
+   claim makes Case 2 *possible* and Codex's auth is opaque, so it stays unproven.
+   **The only definitive test is a before/after `session_id` comparison across a
+   real refresh, and there is no safe way to trigger one now** — codex has no
+   force-refresh, and an out-of-band refresh would rotate (and thus break) the live
+   refresh token → forced `codex login`. Net: mid-run top-up's concurrency risk is
+   likely *lower* than this open question first implied, but confirm before building.
 
 ## The gate's real role (reframed by finding #4)
 
@@ -123,9 +131,11 @@ Case 2 holds. Mid-run refresh deliberately destroys that separation.
 ## Status
 
 Analysis only; no product code changed. The landed W1/W2/W3 remain in place and
-correct. This redesign is tracked in the ledger (see the handoff's "Related");
-the decision to supersede the timer (W3's timer, not its runbook) is the
-maintainer's.
+correct. This redesign has its own plan thread —
+`plan/credential-freshness-redesign/handoff.md` — and ledger items `bd-ib-yx7pdm`
+(redesign, epic-shaped) + `bd-ib-zz6gii` (the zero-risk `session_id`
+instrumentation). The decision to supersede the timer (W3's timer, not its
+runbook) is the maintainer's.
 
 ## Sources
 
