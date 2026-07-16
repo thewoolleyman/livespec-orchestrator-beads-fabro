@@ -48,8 +48,11 @@ below is the execution record.
 ### ⤳ POST-COMPLETION DESIGN RECONSIDERATION (2026-07-16) — read before installing the timer
 
 A design review after the track landed questioned the timer/gate architecture and
-produced **`research/credential-freshness-redesign.md`** — read it before wiring up
-the systemd timer, because the recommendation is to **NOT** rely on the timer and
+produced a design-of-record, now graduated to its own plan thread:
+**`plan/credential-freshness-redesign/handoff.md`** (design of record:
+`plan/credential-freshness-redesign/research/credential-freshness-redesign.md`) —
+read it before wiring up the systemd timer, because the recommendation is to
+**NOT** rely on the timer and
 instead move to **preflight refresh in the dispatch path + a right-sized gate +
 liveness check + the W1 alarm** (drops the host-coupled timer, no codex-internals
 coupling). Key grounded findings: the Codex access token is a **session-bound JWT**
