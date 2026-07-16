@@ -39,10 +39,16 @@ Ledger epic: **`bd-ib-rck`**.
 `bd-ib-rck` CLOSED.** W1 alarm/status (PR #646), W2 guarded refresher (PR #662),
 W3 host timer + operator docs (PR #664). No spec change was needed — the work
 implements the ratified `contracts.md:2136` "host is sole owner + refresher" MUST
-(freshness threshold implementation-owned, `:2140`). **The ONE remaining action is
-a MANUAL MAINTAINER STEP: install the host systemd user timer** per
-`orchestrator-image/README.md` §"Host Codex credential refresher timer" — the
-unattended refresher is NOT live on the host until that install runs. Everything
+(freshness threshold implementation-owned, `:2140`). **The former "one remaining
+action" — installing the host systemd user timer — is now DONE (2026-07-16):**
+`livespec-codex-cred-refresh.timer` is installed, `enabled`, `active`, and
+lingering (`Linger=yes`) on the orchestrator host, firing every 5 min per
+`orchestrator-image/README.md` §"Host Codex credential refresher timer". Its first
+real run exited `0` with `outcome: noop-not-due` (credential had ~3.28 days left,
+so the guard correctly did not invoke codex). NOTE: the post-completion redesign
+(`plan/credential-freshness-redesign/handoff.md`) may later *supersede* this timer
+with preflight refresh — installing it now is the belt-and-suspenders safety net
+against the ~10-day cliff, trivially removable if the redesign lands. Everything
 below is the execution record.
 
 ### ⤳ POST-COMPLETION DESIGN RECONSIDERATION (2026-07-16) — read before installing the timer
@@ -160,15 +166,17 @@ latest master CI run stalls all dispatches until a fresh green master CI run exi
 network fetch, or make the gate tolerate a re-runnable flake) alongside the
 stale-workflow push-gate item above.
 
-**NEXT ACTIONS — track complete; ONE manual step remains:**
-1. **MANUAL MAINTAINER STEP — install the host timer.** Follow
-   `orchestrator-image/README.md` §"Host Codex credential refresher timer": install
-   `~/.config/systemd/user/livespec-codex-cred-refresh.{service,timer}` and
-   `systemctl --user enable --now livespec-codex-cred-refresh.timer`. Until this
-   runs, the unattended refresher is NOT live and the 10-day cliff is only
-   *surfaced* by `codex-cred-status` (alarm), not *prevented*.
-2. (Optional) File the two factory-hardening items noted above (stale-workflow
-   push-gate; `check-master-ci-green` flake tolerance) — outside this epic.
+**NEXT ACTIONS — track complete; all follow-through DONE (2026-07-16):**
+1. ✅ **Host timer INSTALLED (2026-07-16).** `livespec-codex-cred-refresh.timer`
+   is `enabled`/`active`/lingering (`Linger=yes`) on the host, firing every 5 min;
+   first real run exited `0` (`outcome: noop-not-due`). The 10-day cliff is now
+   *prevented*, not merely *surfaced*. (The redesign —
+   `plan/credential-freshness-redesign/handoff.md` — may later supersede it with
+   preflight refresh.)
+2. ✅ **Factory-hardening items FILED** and graduated to their own thread
+   `plan/factory-hardening/handoff.md`: `bd-ib-bwgko4` (stale-workflow push-gate /
+   pr-node rebase) + `bd-ib-wmqsn7` (`check-master-ci-green` flake tolerance). Both
+   BLOCKED on autonomy-tiering before dispatch.
 
 ---
 
