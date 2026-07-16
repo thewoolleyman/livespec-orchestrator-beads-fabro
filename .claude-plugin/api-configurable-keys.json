@@ -1,0 +1,46 @@
+{
+  "surface": "livespec-orchestrator-beads-fabro.dispatcher",
+  "keys": [
+    {
+      "key": "auto_approve_ready",
+      "type": "boolean",
+      "default": false,
+      "per_item_override": true
+    },
+    {
+      "key": "merge_on_review_cap",
+      "type": "boolean",
+      "default": false,
+      "per_item_override": true
+    },
+    {
+      "key": "acceptance_mode",
+      "type": "enum",
+      "default": "ai-then-human",
+      "values": [
+        "ai-only",
+        "ai-then-human",
+        "human-only"
+      ],
+      "per_item_override": true
+    },
+    {
+      "key": "review_fix_cap",
+      "type": "positive_integer",
+      "default": 3,
+      "per_item_override": true
+    },
+    {
+      "key": "acceptance_rework_cap",
+      "type": "positive_integer",
+      "default": 2,
+      "per_item_override": true
+    },
+    {
+      "key": "wip_cap",
+      "type": "positive_integer",
+      "default": 5,
+      "per_item_override": false
+    }
+  ]
+}
