@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import asdict, replace
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_ai import (
+    run_acceptance_pass,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_blocked import (
     escalate_needs_human_block,
 )
@@ -98,21 +101,28 @@ def complete_and_accept(
     config = store_config(repo=repo)
     update_work_item_status(path=config, item_id=item.id, status="acceptance")
     journal.append(record={"stage": "ledger-complete", "work_item_id": item.id})
-    journal.append(
-        record={"stage": "acceptance-ai-pass", "work_item_id": item.id, "confirmed": True}
-    )
-    decision = acceptance_decision(policy=effective_acceptance_policy(item=item, cwd=repo))
-    if decision.to_done:
+    policy = effective_acceptance_policy(item=item, cwd=repo)
+    acceptance_pass = run_acceptance_pass(repo=repo, item=item, outcome=outcome)
+    journal.append(record=acceptance_pass.journal_record(work_item_id=item.id, policy=policy))
+    decision = acceptance_decision(policy=policy)
+    if decision.to_done and acceptance_pass.verdict == "PASS":
         _close_item(repo=repo, item=item, outcome=outcome)
         journal.append(record={"stage": "ledger-accept", "work_item_id": item.id})
         return
     journal.append(
-        record={"stage": "acceptance-parked", "work_item_id": item.id, "policy": decision.policy}
+        record={
+            "stage": "acceptance-parked",
+            "work_item_id": item.id,
+            "policy": decision.policy,
+            "advisory": decision.policy == "human-only",
+            "acceptance_verdict": acceptance_pass.verdict,
+        }
     )
     surface_line = (
         f"SURFACE: work-item {item.id} merged + live; parked in acceptance under "
         f"acceptance_policy {decision.policy} — awaits a human's final acceptance "
-        f"before done (no release with zero verification; the AI pass has run).\n"
+        f"before done (no release with zero verification; the AI pass verdict was "
+        f"{acceptance_pass.verdict}).\n"
     )
     _ = write_stderr(text=surface_line)
 

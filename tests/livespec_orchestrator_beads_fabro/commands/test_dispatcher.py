@@ -43,6 +43,7 @@ from coverage import Coverage
 from coverage.files import GlobMatcher, prep_patterns
 from livespec_orchestrator_beads_fabro._beads_client import FakeBeadsClient, make_beads_client
 from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_completion,
     _dispatcher_ledger_close,
     _dispatcher_loop,
     _dispatcher_loop_command,
@@ -2370,6 +2371,22 @@ def _green_outcome(*, item_id: str, sha: str | None = "feed01") -> DispatchOutco
     )
 
 
+@dataclass(frozen=True, kw_only=True)
+class _FakeAcceptancePass:
+    verdict: str
+
+    def journal_record(self, *, work_item_id: str, policy: str) -> dict[str, object]:
+        return {
+            "stage": "acceptance-ai-pass",
+            "work_item_id": work_item_id,
+            "verdict": self.verdict,
+            "acceptance_policy": policy,
+            "diff": {"observed": True},
+            "criteria": {"observed": True},
+            "telemetry": {"observed": True},
+        }
+
+
 @dataclass(kw_only=True)
 class _FakeRunDispatch:
     """Stand-in for run_dispatch: records kwargs plus the materialized
@@ -2502,6 +2519,75 @@ def test_dispatch_green_closes_item_and_journals(
     poll = fake.seen[0]["poll"]
     assert isinstance(poll, PollPolicy)
     assert (poll.attempts, poll.interval_seconds) == (80, 30.0)
+
+
+def test_complete_and_accept_ai_only_pass_journals_verdict_and_closes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, _workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item(acceptance_policy="ai-only")
+    append_work_item(path=_config(), item=item)
+    monkeypatch.setattr(
+        _dispatcher_completion,
+        "run_acceptance_pass",
+        lambda **_: _FakeAcceptancePass(verdict="PASS"),
+        raising=False,
+    )
+    journal = JournalFile(path=repo / "journal.jsonl")
+
+    dispatcher.complete_and_accept(
+        repo=repo,
+        item=item,
+        outcome=_green_outcome(item_id=item.id),
+        journal=journal,
+    )
+
+    stored = _stored()[item.id]
+    assert (stored.status, stored.resolution) == ("done", "completed")
+    records = [json.loads(line) for line in journal.path.read_text(encoding="utf-8").splitlines()]
+    acceptance = next(record for record in records if record["stage"] == "acceptance-ai-pass")
+    assert acceptance["verdict"] == "PASS"
+    assert acceptance["acceptance_policy"] == "ai-only"
+    assert "confirmed" not in acceptance
+
+
+@pytest.mark.parametrize("verdict", ["PASS", "FAIL"])
+def test_complete_and_accept_human_only_pass_is_advisory_and_parks(
+    verdict: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, _workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item(acceptance_policy="human-only")
+    append_work_item(path=_config(), item=item)
+    monkeypatch.setattr(
+        _dispatcher_completion,
+        "run_acceptance_pass",
+        lambda **_: _FakeAcceptancePass(verdict=verdict),
+        raising=False,
+    )
+    journal = JournalFile(path=repo / "journal.jsonl")
+
+    dispatcher.complete_and_accept(
+        repo=repo,
+        item=item,
+        outcome=_green_outcome(item_id=item.id),
+        journal=journal,
+    )
+
+    stored = _stored()[item.id]
+    assert (stored.status, stored.resolution) == ("acceptance", None)
+    records = [json.loads(line) for line in journal.path.read_text(encoding="utf-8").splitlines()]
+    stages = [record["stage"] for record in records]
+    assert "ledger-accept" not in stages
+    acceptance = next(record for record in records if record["stage"] == "acceptance-ai-pass")
+    assert acceptance["verdict"] == verdict
+    assert acceptance["acceptance_policy"] == "human-only"
+    assert (
+        next(record for record in records if record["stage"] == "acceptance-parked")["advisory"]
+        is True
+    )
 
 
 def test_dispatch_finalize_invokes_cost_gate_once(
