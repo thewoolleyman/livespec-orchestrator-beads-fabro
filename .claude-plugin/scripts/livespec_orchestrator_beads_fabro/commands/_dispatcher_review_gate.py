@@ -5,10 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
+
+from returns.functions import tap
+from returns.result import Success
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
@@ -89,18 +91,13 @@ class ReviewGateEmission:
 def emit_review_gate_from_fabro_events(*, emission: ReviewGateEmission) -> None:
     """Query Fabro events for a terminal run and append the review-gate span.
 
-    The helper is fail-soft: telemetry loss must not change the dispatch result.
     Runs without a resolved Fabro run id are pre-run refusals or unobservable CLI
-    failures, so there is no event stream to query.
+    failures, so there is no event stream to query. A failed `fabro events`
+    command is an expected telemetry miss and is journaled as a skip.
+    Unexpected span or journal write errors propagate after the dispatcher's
+    critical post-run dispositions have already committed.
     """
-    try:
-        _emit_review_gate_from_fabro_events(emission=emission)
-    except Exception as exc:
-        _append_review_gate_skip(
-            emission=emission,
-            reason=str(exc) or type(exc).__name__,
-            exit_code=None,
-        )
+    _emit_review_gate_from_fabro_events(emission=emission)
 
 
 def _emit_review_gate_from_fabro_events(*, emission: ReviewGateEmission) -> None:
@@ -124,14 +121,27 @@ def _emit_review_gate_from_fabro_events(*, emission: ReviewGateEmission) -> None
         )
         return
     telemetry = parse_review_gate_events(events_jsonl=events.stdout)
+    _ = (
+        Success(telemetry)
+        .map(tap(lambda value: _emit_review_gate_span(emission=emission, telemetry=value)))
+        .map(tap(lambda value: _append_review_gate_telemetry(emission=emission, telemetry=value)))
+    )
+
+
+def _emit_review_gate_span(*, emission: ReviewGateEmission, telemetry: ReviewGateTelemetry) -> None:
     emit_review_gate_span(
         telemetry=telemetry,
         spans_path=emission.spans_path,
         work_item_id=emission.work_item_id,
         dispatch_id=emission.dispatch_id,
-        run_id=emission.run_id,
+        run_id=emission.run_id or "",
         now_ns=time.time_ns(),
     )
+
+
+def _append_review_gate_telemetry(
+    *, emission: ReviewGateEmission, telemetry: ReviewGateTelemetry
+) -> None:
     emission.journal.append(
         record={
             "stage": "review-gate-telemetry",
@@ -156,8 +166,7 @@ def _append_review_gate_skip(
     }
     if exit_code is not None:
         record["exit_code"] = exit_code
-    with suppress(Exception):
-        emission.journal.append(record=record)
+    emission.journal.append(record=record)
 
 
 def emit_review_gate_span(

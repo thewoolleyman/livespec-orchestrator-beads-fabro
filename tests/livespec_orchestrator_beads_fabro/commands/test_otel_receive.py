@@ -28,9 +28,9 @@ Load-bearing invariants under test:
 - Fail-CLOSED scrub on BOTH planes: a credential-shaped value never
   egresses (the span is rejected; a metric data point's credential-shaped
   attribute does not reach the heartbeat sink as a plaintext value).
-- Fail-OPEN toward the pipeline: a malformed body / unknown path / a
-  forward error never crashes the handler (HTTP 200/4xx, never a 500 that
-  takes down the receiver), and never raises out of the host machinery.
+- Expected receiver misses are explicit: malformed bodies and unknown paths
+  return HTTP 4xx, while exporter implementation errors surface to the
+  connection instead of being hidden behind a blanket catch.
 - Single-instance, idempotent start: `ensure_receiver_started` starts ONE
   receiver per host and is a no-op when one is already running (it does
   NOT spawn a second / collide on the port). A start failure is fail-open
@@ -734,9 +734,8 @@ def test_receiver_oversized_body_is_bad_request(
     assert status == _HTTP_BAD_REQUEST
 
 
-def test_receiver_internal_error_is_caught_fail_open(tmp_path: Path) -> None:
-    """An exporter that RAISES never 500s / crashes the receiver — the handler
-    catches it and answers a bad request (fail-open toward the pipeline)."""
+def test_receiver_internal_exporter_error_surfaces_to_connection(tmp_path: Path) -> None:
+    """An exporter that raises is an unexpected implementation error."""
     receiver = OtelReceiver(
         config=ReceiverConfig(host="127.0.0.1", port=0),
         exporter=_RaisingExporter(),
@@ -746,8 +745,8 @@ def test_receiver_internal_error_is_caught_fail_open(tmp_path: Path) -> None:
     try:
         url = f"http://127.0.0.1:{receiver.bound_port}/v1/traces"
         body = _trace_request(attrs=[_attr_entry(key="work.item.id", string_value="li-x")])
-        assert _post_raw(url=url, body=json.dumps(body).encode("utf-8")) == _HTTP_BAD_REQUEST
-        # The receiver is still alive after the caught error.
+        with pytest.raises(http.client.RemoteDisconnected):
+            _post_raw(url=url, body=json.dumps(body).encode("utf-8"))
         assert receiver.is_running() is True
     finally:
         receiver.stop()
@@ -910,12 +909,12 @@ def test_ensure_receiver_started_is_single_instance() -> None:
     assert created[0].started == 1
 
 
-def test_ensure_receiver_started_is_fail_open() -> None:
-    """A start failure never raises out toward a dispatch (fail-open)."""
+def test_ensure_receiver_started_degrades_on_bind_error() -> None:
+    """An expected socket bind/start failure degrades to no receiver."""
     holder: dict[str, object] = {}
 
     def _exploding_factory() -> _FakeServer:
-        raise RuntimeError("port already bound")
+        raise OSError("port already bound")
 
     result = ensure_receiver_started(holder=holder, factory=_exploding_factory)
     assert result is None

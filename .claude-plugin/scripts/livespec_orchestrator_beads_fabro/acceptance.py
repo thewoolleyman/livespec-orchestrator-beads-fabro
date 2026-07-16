@@ -184,6 +184,6 @@ def _module_exposes_greet(*, program: Path) -> bool:
         return False
     try:
         namespace: dict[str, Any] = runpy.run_path(str(program))
-    except Exception:
+    except (ImportError, NameError, OSError, RuntimeError, SyntaxError, TypeError, ValueError):
         return False
     return callable(namespace.get(_GREET_SYMBOL))

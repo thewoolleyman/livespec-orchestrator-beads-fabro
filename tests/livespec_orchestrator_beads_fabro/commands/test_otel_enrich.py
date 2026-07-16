@@ -13,8 +13,8 @@ load-bearing invariants under test:
   `work.item.id` — backfill the others when a span carries one key (§3.3).
 - Fail-CLOSED scrub: a credential-shaped value in an allowlisted attribute
   REJECTS the whole span; a non-allowlisted attribute is DROPPED (§3.4).
-- Fail-OPEN toward the pipeline: a forward error never raises out of
-  `forward_once` (§3.2).
+- Expected ingest misses stay fail-open; exporter implementation exceptions
+  propagate instead of being hidden by a blanket catch.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._otel_enrich import (
     CorrelationJoin,
     EnrichStage,
@@ -370,9 +371,9 @@ def test_forward_once_reports_export_failure_without_raising(tmp_path: Path) -> 
     assert result.exported is False
 
 
-def test_forward_once_is_fail_open_when_a_dependency_raises(tmp_path: Path) -> None:
-    # A raising exporter must NOT escape forward_once (fail-open toward the
-    # pipeline): a forward error never blocks a dispatch.
+def test_forward_once_propagates_unexpected_exporter_error(tmp_path: Path) -> None:
+    # Exporters report retry-exhausted delivery by returning False; raising is
+    # an unexpected implementation error.
     @dataclass(kw_only=True)
     class _BoomExporter:
         def export(self, *, spans: tuple[dict[str, object], ...], dataset: str) -> bool:
@@ -384,10 +385,9 @@ def test_forward_once_is_fail_open_when_a_dependency_raises(tmp_path: Path) -> N
     _write_lines(path=path, lines=[_request_line(service_name="svc", spans=[span])])
     start_offset = 0
     stage = EnrichStage(spans_path=path, exporter=_BoomExporter(), offset=start_offset)
-    result = stage.forward_once()  # must not raise
-    assert result.exported is False
-    assert result.forwarded == 0
-    # Cursor unchanged on a fail-open error so the next pass retries.
+    with pytest.raises(RuntimeError, match="honeycomb exploded"):
+        stage.forward_once()
+
     assert stage.offset == start_offset
 
 

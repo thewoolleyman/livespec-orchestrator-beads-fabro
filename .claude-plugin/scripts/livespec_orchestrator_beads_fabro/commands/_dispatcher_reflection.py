@@ -321,10 +321,7 @@ def reflect(
                 budget_exceeded_message=_BUDGET_EXCEEDED_MESSAGE,
             ),
         )
-    except Exception as exc:
-        # Fail-open supervisor: reflection must never escape and never
-        # change the verdict (best-practices §6). A broad catch is the
-        # whole point — any error is journaled and counted, not raised.
+    except (OSError, TimeoutError) as exc:
         _record_reflection_error(journal=journal, exc=exc)
         return
     _AUTO_TRIP.consecutive_errors = 0

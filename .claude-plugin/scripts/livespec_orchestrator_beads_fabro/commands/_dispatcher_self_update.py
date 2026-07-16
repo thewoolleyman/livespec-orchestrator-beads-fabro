@@ -272,11 +272,7 @@ def self_update_after_merge(  # noqa: PLR0913 - kw-only fail-open stage; fields 
             runner=runner if runner is not None else ShellCommandRunner(),
             poster=poster if poster is not None else HttpNotifyPoster(),
         )
-    except Exception as exc:
-        # Fail-open supervisor: the verdict is already final, so a broad
-        # catch is the whole point — any error is journaled and swallowed,
-        # never raised (0jxs operability gate, mirroring the cost-gate /
-        # notify stages).
+    except (OSError, RuntimeError) as exc:
         journal.append(
             record={
                 "stage": "self-update-error",

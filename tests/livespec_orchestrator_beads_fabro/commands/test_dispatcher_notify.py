@@ -257,18 +257,20 @@ def test_notify_terminal_records_failed_delivery() -> None:
     assert _stages(journal=journal) == ["notify-failed"]
 
 
-def test_notify_terminal_fail_open_when_poster_raises() -> None:
+def test_notify_terminal_propagates_unexpected_poster_error() -> None:
     journal = _RecordingJournal()
     poster = _RecordingPoster(raises=RuntimeError("network exploded"))
-    # Must NOT propagate: the verdict is already final.
-    notify_terminal(
-        events=(NotifyEvent(work_item_id="li-1", outcome_class="failed"),),
-        run_id="r1",
-        poster=poster,
-        journal=journal,
-        environ={"CLAUDE_NTFY_TOPIC": "t"},
-    )
-    assert _stages(journal=journal) == ["notify-error"]
+
+    with pytest.raises(RuntimeError, match="network exploded"):
+        notify_terminal(
+            events=(NotifyEvent(work_item_id="li-1", outcome_class="failed"),),
+            run_id="r1",
+            poster=poster,
+            journal=journal,
+            environ={"CLAUDE_NTFY_TOPIC": "t"},
+        )
+
+    assert journal.records == []
 
 
 def test_notify_terminal_body_never_carries_credential_shaped_run_id() -> None:
@@ -425,13 +427,12 @@ def test_dispatch_failed_outcome_journals_notify_and_keeps_exit_code(
     assert "notify-sent" in stages
 
 
-def test_dispatch_failed_exit_code_unchanged_when_notify_raises(
+def test_dispatch_propagates_unexpected_notify_error(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The 0jxs load-bearing invariant: a notify exception NEVER changes the
-    verdict. A poster that raises must leave the exit code at 1."""
+    """Unexpected notify poster errors surface after the verdict is journaled."""
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     item = _item()
     append_work_item(path=_config(), item=item)
@@ -449,14 +450,16 @@ def test_dispatch_failed_exit_code_unchanged_when_notify_raises(
     monkeypatch.setattr(
         _dispatcher_loop, "run_dispatch", _FakeRunDispatch(outcomes={item.id: failed})
     )
-    exit_code = dispatcher.main(
-        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
-    )
-    assert exit_code == 1
-    _ = capsys.readouterr()
+    with pytest.raises(RuntimeError, match="ntfy down"):
+        dispatcher.main(
+            argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+        )
+
+    assert "failed at fabro-run" in capsys.readouterr().out
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
     stages = [json.loads(line)["stage"] for line in journal_text.splitlines()]
-    assert "notify-error" in stages
+    assert "outcome" in stages
+    assert "notify-error" not in stages
 
 
 def test_loop_non_green_wave_alarms_with_loop_summary(

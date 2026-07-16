@@ -74,10 +74,7 @@ def cost_gate_after_verdict(  # noqa: PLR0913 — kw-only fail-open stage; seams
             runner=resolved_runner,
             poster=poster if poster is not None else HttpNotifyPoster(),
         )
-    except Exception as exc:
-        # Fail-open supervisor: the verdict is already final, so a broad
-        # catch is the whole point — any error is journaled and swallowed,
-        # never raised.
+    except (AttributeError, OSError, RuntimeError) as exc:
         journal.append(
             record={
                 "stage": "cost-gate-error",
@@ -95,9 +92,7 @@ def derived_costs(
     """The CC-token-derived per-dispatch cost for each green outcome."""
     try:
         return _read_derived_costs(args=args, repo=repo, outcomes=outcomes)
-    except Exception:
-        # Fail-open: a cost-sink read error degrades to the fail-closed path
-        # (gate_wave then sees no derived cost), never crashing the cost gate.
+    except (AttributeError, OSError, RuntimeError, ValueError):
         return {}
 
 
@@ -200,9 +195,7 @@ def _derived_reports(
 ) -> dict[str, CostReport]:
     try:
         return _read_derived_reports(args=args, repo=repo, outcomes=outcomes)
-    except Exception:
-        # Fail-open: a cost-sink read error degrades the report to
-        # all-unobservable, never crashing the cost stage.
+    except (AttributeError, OSError, RuntimeError, ValueError):
         return {}
 
 

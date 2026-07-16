@@ -81,11 +81,7 @@ def emit_calibration(  # noqa: PLR0913 — kw-only fail-open stage; each field i
             ),
         )
         journal.append(record=calibration_journal_record(record=record))
-    except Exception as exc:
-        # Fail-open supervisor: the verdict is already final, so a broad
-        # catch is the whole point — any error is journaled and swallowed,
-        # never raised (the load-bearing 0jxs invariant, mirroring the
-        # cost-gate / reflection stages).
+    except (AttributeError, OSError, RuntimeError) as exc:
         journal.append(
             record={
                 "stage": "calibration-error",

@@ -356,7 +356,7 @@ def test_emit_review_gate_from_fabro_events_skips_on_command_failure(tmp_path: P
     assert journal.records[-1]["exit_code"] == 1
 
 
-def test_emit_review_gate_from_fabro_events_swallows_span_write_failure(
+def test_emit_review_gate_from_fabro_events_propagates_span_write_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     runner = _FakeRunner(
@@ -392,27 +392,21 @@ def test_emit_review_gate_from_fabro_events_swallows_span_write_failure(
 
     monkeypatch.setattr(review_gate, "emit_review_gate_span", raise_os_error)
 
-    emit_review_gate_from_fabro_events(
-        emission=ReviewGateEmission(
-            plan=_plan(repo=tmp_path),
-            runner=runner,
-            journal=journal,
-            spans_path=tmp_path / "review-spans.jsonl",
-            work_item_id="bd-1",
-            dispatch_id="dispatch-1",
-            run_id="run-1",
+    with pytest.raises(OSError, match="span sink unavailable"):
+        emit_review_gate_from_fabro_events(
+            emission=ReviewGateEmission(
+                plan=_plan(repo=tmp_path),
+                runner=runner,
+                journal=journal,
+                spans_path=tmp_path / "review-spans.jsonl",
+                work_item_id="bd-1",
+                dispatch_id="dispatch-1",
+                run_id="run-1",
+            )
         )
-    )
 
     assert runner.calls == [(["fabro", "events", "run-1", "--json"], tmp_path)]
-    assert journal.records == [
-        {
-            "stage": "review-gate-telemetry-skipped",
-            "work_item_id": "bd-1",
-            "run_id": "run-1",
-            "reason": "span sink unavailable",
-        }
-    ]
+    assert journal.records == []
 
 
 def _jsonl(*events: dict[str, object]) -> str:

@@ -3,12 +3,12 @@
 any error is swallowed and the process exits 0 so telemetry can never affect
 bd. Invoked detached by bd-guard.sh; reads span fields from BDG_* env."""
 
-import contextlib
 import json
 import os
 import secrets
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -26,7 +26,7 @@ def _b(*, v):
 def _i(*, v):
     try:
         return {"intValue": str(int(v))}
-    except Exception:
+    except (TypeError, ValueError):
         return {"intValue": "0"}
 
 
@@ -34,7 +34,7 @@ def _read_int(*, name):
     # Read a BDG_* env var as an int, fail-open to 0 (missing / unparseable).
     try:
         return int(os.environ.get(name) or 0)
-    except Exception:
+    except (TypeError, ValueError):
         return 0
 
 
@@ -101,11 +101,12 @@ def main():
     # default 127.0.0.1:4319), not attacker-controlled input. Fail-open: any
     # error is suppressed and never affects bd.
     req = urllib.request.Request(ep, data=data, headers=headers)  # noqa: S310
-    with contextlib.suppress(Exception):
+    try:
         urllib.request.urlopen(req, timeout=2).read()  # noqa: S310
+    except (OSError, TimeoutError, urllib.error.URLError):
+        return
 
 
 if __name__ == "__main__":
-    with contextlib.suppress(Exception):
-        main()
+    main()
     sys.exit(0)

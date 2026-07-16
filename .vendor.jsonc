@@ -48,6 +48,12 @@
       "upstream_url": "https://github.com/python/typing_extensions",
       "upstream_ref": "4.15.0",
       "vendored_at": "2026-06-30T03:21:25Z"
+    },
+    {
+      "name": "returns",
+      "upstream_url": "https://github.com/thewoolleyman/livespec",
+      "upstream_ref": "e2cdeea:.claude-plugin/scripts/_vendor/returns",
+      "vendored_at": "2026-07-16T09:36:00Z"
     }
   ]
 }

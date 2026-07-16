@@ -266,21 +266,8 @@ class EnrichStage:
     offset: int = 0
 
     def forward_once(self) -> ForwardResult:
-        """Tail, enrich/scrub, and batch-forward new spans (one fail-open pass)."""
-        try:
-            return self._forward_once()
-        except Exception:
-            # Fail-open toward the pipeline: a forward error never escapes
-            # toward a dispatch (the dispatcher already wrote the
-            # authoritative journal). The cursor is left unchanged so the
-            # next pass retries the same lines.
-            return ForwardResult(
-                ingested=0,
-                forwarded=0,
-                rejected=0,
-                exported=False,
-                offset=self.offset,
-            )
+        """Tail, enrich/scrub, and batch-forward new spans."""
+        return self._forward_once()
 
     def _forward_once(self) -> ForwardResult:
         tail = tail_spans(spans_path=self.spans_path, offset=self.offset)
