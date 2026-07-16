@@ -20,7 +20,7 @@ class _Runner:
         return self.results.pop(0)
 
 
-def test_build_dispatcher_argv_uses_shadow_loop_for_selected_impl_item(tmp_path: Path) -> None:
+def test_build_dispatcher_argv_uses_targeted_loop_for_selected_impl_item(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     dispatcher_bin = tmp_path / "dispatcher.py"
 
@@ -40,8 +40,6 @@ def test_build_dispatcher_argv_uses_shadow_loop_for_selected_impl_item(tmp_path:
         "1",
         "--parallel",
         "1",
-        "--mode",
-        "shadow",
         "--item",
         "bd-ib-123",
         "--json",

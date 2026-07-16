@@ -83,17 +83,12 @@ def run_dispatch_command(*, args: argparse.Namespace) -> int:
     # and an admission-eligible item is admitted (ready -> active, assignee
     # set) and dispatched. A targeted dispatch is an operator override, so it
     # does NOT enforce the per-repo WIP cap (the queue-draining `loop` does).
-    # The targeted `dispatch --item` path NEVER arms full autonomous mode — the
-    # `--mode autonomous` opt-in rides the queue-draining `loop`, not `dispatch`
-    # (SPECIFICATION/contracts.md) — so the admission valve runs with the mode
-    # collapse OFF (armed=False), exactly the pre-mode behavior.
     admission = admit_and_select(
         repo=repo,
         items=items,
         candidates=[target],
         journal=journal,
         enforce_cap=False,
-        armed=False,
     )
     dispatched = [
         dispatch_one(args=args, repo=repo, item=item, journal=journal, janitor=janitor)

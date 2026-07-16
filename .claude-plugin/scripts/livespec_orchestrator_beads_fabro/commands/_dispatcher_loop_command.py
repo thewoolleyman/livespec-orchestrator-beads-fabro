@@ -4,14 +4,11 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
     admit_and_select,
-    autonomous_armed,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_autonomous import (
-    arm_autonomous_for_loop,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
     EXIT_FAILURE,
@@ -21,6 +18,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
     cost_gate_after_verdict,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import (
     emit_outcomes,
     ledger_blocked_after_normalization,
@@ -49,47 +47,40 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
     self_update_after_verdict,
 )
 from livespec_orchestrator_beads_fabro.io import write_stderr
+from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "run_loop_command",
 ]
 
 
+@dataclass(frozen=True, kw_only=True)
+class _LoopStart:
+    janitor: tuple[str, ...] | None
+    items: list[WorkItem]
+    journal: JournalFile
+
+
 def run_loop_command(*, args: argparse.Namespace) -> int:
     repo = Path(args.repo)
-    janitor, preamble_exit = dispatch_preamble(args=args, repo=repo)
-    if preamble_exit is not None:
-        return preamble_exit
-    arm_otel_egress(args=args, repo=repo)
-    prepared = prepare(args=args, repo=repo)
-    if prepared is None:
-        return EXIT_PRECONDITION_ERROR
-    items, journal = prepared
-    if not args.skip_ledger_check and ledger_blocked_after_normalization(
-        items=items,
-        config=store_config(repo=repo),
-        journal=journal,
-    ):
-        return EXIT_FAILURE
-    # Full autonomous mode two-factor arming: surface + journal the dangerous
-    # acknowledgement when this run is armed (persistent permission + explicit
-    # --mode autonomous). The armed bool is threaded onto `args` so the
-    # admission approve-gate collapse and post-merge acceptance collapse read
-    # it and use their autonomous leg; needs-human escalations stay
-    # human-owned. A non-armed run is transparent (every gate keeps its
-    # normal policy).
-    args.autonomous_armed = arm_autonomous_for_loop(
-        mode=args.mode, repo=repo, journal=journal
-    ).armed
-    requested_ids = set(args.items or [])
-    if requested_ids:
-        preflight_error = requested_items_preflight_error(
-            requested_ids=requested_ids, items=items, repo=repo
-        )
-        if preflight_error is not None:
-            _ = write_stderr(text=preflight_error)
-            return EXIT_PRECONDITION_ERROR
+    started = _start_loop(args=args, repo=repo)
+    if isinstance(started, int):
+        return started
+    janitor = started.janitor
+    items = started.items
+    journal = started.journal
     selected_candidates = candidates(args=args, items=items, repo=repo)[: args.budget]
+    if args.dry_run:
+        journal.append(
+            record={
+                "stage": "loop-pick",
+                "dry_run": True,
+                "budget": args.budget,
+                "picked": [item.id for item in selected_candidates],
+            }
+        )
+        emit_outcomes(outcomes=[], as_json=args.as_json)
+        return 0
     # The admission valve drains the candidate set up to the per-repo WIP cap:
     # host-only items are routed away, manual / unresolvable items are held +
     # surfaced, and the highest-rank admission-eligible items fill the free
@@ -101,12 +92,11 @@ def run_loop_command(*, args: argparse.Namespace) -> int:
         candidates=selected_candidates,
         journal=journal,
         enforce_cap=True,
-        armed=autonomous_armed(args=args),
     )
     journal.append(
         record={
             "stage": "loop-pick",
-            "mode": args.mode,
+            "dry_run": False,
             "budget": args.budget,
             "picked": [item.id for item in admission.admitted],
         }
@@ -162,3 +152,29 @@ def run_loop_command(*, args: argparse.Namespace) -> int:
     )
     reflector_oob_after_verdict(args=args, repo=repo, journal=journal)
     return exit_code
+
+
+def _start_loop(*, args: argparse.Namespace, repo: Path) -> _LoopStart | int:
+    janitor, preamble_exit = dispatch_preamble(args=args, repo=repo)
+    if preamble_exit is not None:
+        return preamble_exit
+    arm_otel_egress(args=args, repo=repo)
+    prepared = prepare(args=args, repo=repo)
+    if prepared is None:
+        return EXIT_PRECONDITION_ERROR
+    items, journal = prepared
+    if not args.skip_ledger_check and ledger_blocked_after_normalization(
+        items=items,
+        config=store_config(repo=repo),
+        journal=journal,
+    ):
+        return EXIT_FAILURE
+    requested_ids = set(args.items or [])
+    if requested_ids:
+        preflight_error = requested_items_preflight_error(
+            requested_ids=requested_ids, items=items, repo=repo
+        )
+        if preflight_error is not None:
+            _ = write_stderr(text=preflight_error)
+            return EXIT_PRECONDITION_ERROR
+    return _LoopStart(janitor=janitor, items=items, journal=journal)

@@ -490,8 +490,6 @@ def test_loop_non_green_wave_alarms_with_loop_summary(
             str(repo),
             "--budget",
             "1",
-            "--mode",
-            "autonomous",
             "--workflow",
             str(workflow),
         ]
@@ -527,8 +525,6 @@ def test_loop_all_green_wave_fires_no_alarm(
             str(repo),
             "--budget",
             "1",
-            "--mode",
-            "autonomous",
             "--workflow",
             str(workflow),
         ]

@@ -9,7 +9,7 @@ dispatched item in `fabro ps -a --json`).
 The load-bearing facts under test: `gate_wave` journals one `cost-gate`
 record per launched (green) run carrying the leak-free verdict, and
 returns the refusal events for the wave-level notify alarm. In autonomous
-mode an unobservable cost is a `refuse`; in shadow mode it is a `warn`;
+mode an unobservable cost is a `refuse`; in hand-picked item it is a `warn`;
 an outcome that never launched a run (e.g. a host-only refusal) is not
 cost-gated. `gate_wave` is fail-open like the other post-verdict stages:
 the verdict / exit code is already final, so a probe failure is journaled
@@ -93,13 +93,13 @@ def test_parse_run_id_for_work_item_none_when_matching_run_lacks_run_id() -> Non
 
 
 def test_gate_wave_autonomous_refuses_and_journals_on_dark_cost() -> None:
-    """Autonomous + unobservable cost → a refusal event + a cost-gate record.
+    """Unattended drain + unobservable cost → a refusal event + a cost-gate record.
 
     The enforce-mode 5v9 behavior (the `report` default never refuses).
     """
     journal = _RecordingJournal()
     refusals = gate_wave(
-        mode="autonomous",
+        unattended=True,
         outcomes=(_green("item-aaa"),),
         ps_json=_PS_JSON_NULL,
         journal=journal,
@@ -116,10 +116,10 @@ def test_gate_wave_autonomous_refuses_and_journals_on_dark_cost() -> None:
 
 
 def test_gate_wave_shadow_warns_and_does_not_refuse() -> None:
-    """Shadow + unobservable cost → a warn cost-gate record, no refusal (enforce)."""
+    """Hand-picked item + unobservable cost → a warn cost-gate record, no refusal (enforce)."""
     journal = _RecordingJournal()
     refusals = gate_wave(
-        mode="shadow",
+        unattended=False,
         outcomes=(_green("item-aaa"),),
         ps_json=_PS_JSON_NULL,
         journal=journal,
@@ -136,7 +136,7 @@ def test_gate_wave_skips_outcomes_that_never_launched_a_run() -> None:
     """A host-only-refused outcome has no fabro run, so it is not cost-gated."""
     journal = _RecordingJournal()
     refusals = gate_wave(
-        mode="autonomous",
+        unattended=True,
         outcomes=(_host_only_refused("item-bbb"),),
         ps_json=_PS_JSON_NULL,
         journal=journal,
@@ -154,7 +154,7 @@ def test_gate_wave_is_fail_open_on_unparseable_ps_json() -> None:
     """
     journal = _RecordingJournal()
     refusals = gate_wave(
-        mode="autonomous",
+        unattended=True,
         outcomes=(_green("item-aaa"),),
         ps_json="not json {",
         journal=journal,

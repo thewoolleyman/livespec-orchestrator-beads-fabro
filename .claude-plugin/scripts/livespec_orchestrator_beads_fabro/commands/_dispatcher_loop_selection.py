@@ -12,7 +12,6 @@ from livespec_runtime.work_items.lifecycle import is_item_ready, ready_sort_key
 
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_self_update as selfup
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
-from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import autonomous_armed
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_emit import (
     emit_calibration,
 )
@@ -77,9 +76,7 @@ def candidates(
     requested = set(args.items or [])
     if requested:
         return [item for item in ranked if item.id in requested]
-    if args.mode == "autonomous":
-        return ranked
-    return []
+    return ranked
 
 
 def janitor_core_ref(*, repo: Path) -> str:
@@ -142,7 +139,6 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
             item=item,
             outcome=outcome,
             journal=journal,
-            armed=autonomous_armed(args=args),
         )
     journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
     escalate_needs_human_block(repo=repo, item=item, outcome=outcome, journal=journal)

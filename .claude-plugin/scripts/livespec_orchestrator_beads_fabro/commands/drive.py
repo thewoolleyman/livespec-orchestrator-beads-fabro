@@ -106,8 +106,6 @@ def build_dispatcher_argv(
         "1",
         "--parallel",
         "1",
-        "--mode",
-        "shadow",
         "--item",
         work_item_ref,
         "--json",

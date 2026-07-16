@@ -3175,20 +3175,37 @@ def test_dispatch_custom_journal_path(
     assert journal_path.is_file()
 
 
-def test_loop_shadow_requires_explicit_items(
+def test_loop_without_item_drains_ranked_queue(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
-    append_work_item(path=_config(), item=_item())
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
     exit_code = main(
-        argv=["loop", "--repo", str(repo), "--budget", "5", "--workflow", str(workflow)]
+        argv=[
+            "loop",
+            "--repo",
+            str(repo),
+            "--budget",
+            "5",
+            "--workflow",
+            str(workflow),
+            "--no-close-on-merge",
+        ]
     )
     assert exit_code == 0
-    assert "(nothing dispatched)" in capsys.readouterr().out
+    payload = capsys.readouterr().out
+    assert item.id in payload
+    seen_plan = fake.seen[0]["plan"]
+    assert isinstance(seen_plan, DispatchPlan)
+    assert seen_plan.work_item_id == item.id
 
 
-def test_loop_shadow_dispatches_named_items_within_budget(
+def test_loop_dispatches_named_items_within_budget(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3227,7 +3244,7 @@ def test_loop_shadow_dispatches_named_items_within_budget(
         if json.loads(line)["stage"] == "loop-pick"
     )
     assert pick["picked"] == ["a-1"]
-    assert pick["mode"] == "shadow"
+    assert pick["dry_run"] is False
 
 
 def test_loop_finalize_invokes_cost_gate_once(
@@ -3295,8 +3312,6 @@ def test_loop_autonomous_parallel_mixed_outcomes(
             "5",
             "--parallel",
             "2",
-            "--mode",
-            "autonomous",
             "--workflow",
             str(workflow),
             "--no-close-on-merge",
@@ -3640,8 +3655,6 @@ def test_loop_runs_reflection_stage_after_dispatch(
             str(repo),
             "--budget",
             "1",
-            "--mode",
-            "autonomous",
             "--workflow",
             str(workflow),
             "--no-close-on-merge",
@@ -3691,8 +3704,6 @@ def test_loop_reflection_failure_never_changes_verdict(
                 str(repo),
                 "--budget",
                 "1",
-                "--mode",
-                "autonomous",
                 "--workflow",
                 str(workflow),
                 "--no-close-on-merge",

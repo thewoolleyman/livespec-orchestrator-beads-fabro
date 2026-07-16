@@ -23,7 +23,7 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
   dispatcher.py janitor-check [--repo <path>] [--json]
   dispatcher.py dispatch --repo <path> --item <id> [common flags]
   dispatcher.py loop --repo <path> --budget <n> [--parallel <k>]
-                     [--mode shadow|autonomous] [--item <id>]... [common flags]
+                     [--dry-run] [--item <id>]... [common flags]
 
 `spec-check` runs the three re-homed spec-context work-item invariants
 (no-stalled-epic / no-stale-gap-tied / unresolved-spec-commitment; see
@@ -131,8 +131,8 @@ run and no token/usage signal is populated anywhere. The warranted
 fail-closed gate lives in `_dispatcher_cost`: `observe_run_cost(ps_json,
 run_id)` is the cost SIGNAL (reads `total_usd_micros` from `fabro ps -a
 --json`, surfacing a real value the moment fabro populates it),
-`cost_gate_decision(mode, observation)` is the fail-closed rule
-(autonomous + unobservable cost ⇒ refuse; shadow ⇒ warn), and
+`cost_gate_decision(unattended, observation)` is the fail-closed rule
+(unattended drain + unobservable cost ⇒ refuse; hand-picked item ⇒ warn), and
 `gate_wave(...)` applies it across a completed wave — journaling one
 leak-free `cost-gate` record per launched run and returning the work-item
 ids that refused.
@@ -161,10 +161,6 @@ from collections.abc import Callable
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
     admit_and_select,
-    autonomous_armed,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_autonomous import (
-    arm_autonomous_for_loop,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_emit import (
     emit_calibration,
@@ -220,8 +216,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands import 
 # Keep pre-existing dispatcher mini-hub attributes available without changing __all__.
 _COMPATIBILITY_REEXPORTS: tuple[object, ...] = (
     admit_and_select,
-    arm_autonomous_for_loop,
-    autonomous_armed,
     emit_outcomes,
     ensure_otel_receiver,
     ledger_blocked_after_normalization,
@@ -307,7 +301,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_dispatch_common(parser=loop)
     _ = loop.add_argument("--budget", dest="budget", type=int, required=True)
     _ = loop.add_argument("--parallel", dest="parallel", type=int, default=1)
-    _ = loop.add_argument("--mode", dest="mode", choices=["shadow", "autonomous"], default="shadow")
+    _ = loop.add_argument("--dry-run", dest="dry_run", action="store_true")
     _ = loop.add_argument("--item", dest="items", action="append", default=None)
     return parser
 

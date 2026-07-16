@@ -9,9 +9,9 @@ per-node `usage` or token count is populated anywhere — so per-run cost
 is FUNDAMENTALLY UNOBSERVABLE at dispatch time in this fabro version.
 
 The warranted path is therefore the fail-closed gate (preconditions.md
-leg (b)): in `autonomous` (unattended) mode an
+leg (b)): in an unattended queue drain an
 unobservable cost is itself a cap-accounting failure and the loop must
-REFUSE to keep picking; in `shadow` mode (a human is present) a warn
+REFUSE to keep picking; in a human hand-picked `--item` dispatch a warn
 suffices. The extractor is the observable-cost seam; when fabro starts
 populating the field, the same extractor surfaces a real value with no
 gate change.
@@ -111,10 +111,10 @@ def test_observe_run_cost_rejects_boolean_total_usd_micros() -> None:
     assert observation.usd_micros is None
 
 
-def test_cost_gate_autonomous_refuses_on_unobservable_cost() -> None:
-    """Fail-closed: autonomous mode + unobservable cost → REFUSE to continue."""
+def test_cost_gate_unattended_refuses_on_unobservable_cost() -> None:
+    """Fail-closed: unattended drain + unobservable cost → REFUSE to continue."""
     decision = cost_gate_decision(
-        mode="autonomous",
+        unattended=True,
         observation=CostObservation(run_id="01RUNAAA", usd_micros=None, observable=False),
     )
     assert decision.refuse is True
@@ -124,10 +124,10 @@ def test_cost_gate_autonomous_refuses_on_unobservable_cost() -> None:
     assert "01RUNAAA" in decision.reason
 
 
-def test_cost_gate_shadow_warns_but_does_not_refuse_on_unobservable_cost() -> None:
-    """Shadow mode (a human is present): unobservable cost warns, never refuses."""
+def test_cost_gate_hand_picked_item_warns_but_does_not_refuse_on_unobservable_cost() -> None:
+    """A human hand-picked item warns on unobservable cost, never refuses."""
     decision = cost_gate_decision(
-        mode="shadow",
+        unattended=False,
         observation=CostObservation(run_id="01RUNAAA", usd_micros=None, observable=False),
     )
     assert decision.refuse is False
@@ -142,7 +142,7 @@ def test_cost_gate_does_not_refuse_when_cost_is_observable() -> None:
     `info` and lets the loop proceed to y0m's cap check.
     """
     decision = cost_gate_decision(
-        mode="autonomous",
+        unattended=True,
         observation=CostObservation(run_id="01RUNAAA", usd_micros=1_250_000, observable=True),
     )
     assert decision.refuse is False
@@ -152,7 +152,7 @@ def test_cost_gate_does_not_refuse_when_cost_is_observable() -> None:
 def test_cost_gate_decision_is_a_frozen_value() -> None:
     """The decision is a leak-free value carrying only scalar fields."""
     decision = cost_gate_decision(
-        mode="autonomous",
+        unattended=True,
         observation=CostObservation(run_id="01RUNAAA", usd_micros=None, observable=False),
     )
     assert isinstance(decision, CostGateDecision)

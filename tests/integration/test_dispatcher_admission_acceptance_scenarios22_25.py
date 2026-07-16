@@ -175,8 +175,6 @@ def test_loop_admits_highest_rank_up_to_wip_cap(
             str(repo),
             "--budget",
             "3",
-            "--mode",
-            "autonomous",
             "--workflow",
             str(workflow),
             "--no-close-on-merge",
@@ -216,8 +214,6 @@ def test_loop_holds_manual_admission_item(
             str(repo),
             "--budget",
             "5",
-            "--mode",
-            "autonomous",
             "--workflow",
             str(workflow),
         ]

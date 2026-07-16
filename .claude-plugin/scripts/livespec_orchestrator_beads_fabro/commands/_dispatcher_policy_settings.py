@@ -23,7 +23,6 @@ __all__: list[str] = [
     "DEFAULT_ACCEPTANCE_POLICY",
     "DEFAULT_ACCEPTANCE_REWORK_CAP",
     "DEFAULT_ADMISSION_POLICY",
-    "DEFAULT_AUTONOMOUS_MODE",
     "DEFAULT_AUTO_APPROVE_READY",
     "DEFAULT_MERGE_ON_REVIEW_CAP",
     "DEFAULT_REVIEW_FIX_CAP",
@@ -36,7 +35,6 @@ __all__: list[str] = [
     "resolve_acceptance_mode",
     "resolve_acceptance_rework_cap",
     "resolve_auto_approve_ready",
-    "resolve_autonomous_mode_permission",
     "resolve_merge_on_review_cap",
     "resolve_review_fix_cap",
     "resolve_wip_cap",
@@ -45,7 +43,6 @@ __all__: list[str] = [
 DEFAULT_WIP_CAP = 5
 DEFAULT_AUTO_APPROVE_READY = False
 DEFAULT_MERGE_ON_REVIEW_CAP = False
-DEFAULT_AUTONOMOUS_MODE = False
 DEFAULT_ADMISSION_POLICY = "manual"
 DEFAULT_ACCEPTANCE_POLICY = "ai-then-human"
 DEFAULT_REVIEW_FIX_CAP = 3
@@ -56,7 +53,6 @@ _LIVESPEC_CONFIG = ".livespec.jsonc"
 _PLUGIN_BLOCK = "livespec-orchestrator-beads-fabro"
 _DISPATCHER_KEY = "dispatcher"
 _WIP_CAP_KEY = "wip_cap"
-_AUTONOMOUS_MODE_KEY = "autonomous_mode"
 _AUTO_APPROVE_READY_KEY = "auto_approve_ready"
 _MERGE_ON_REVIEW_CAP_KEY = "merge_on_review_cap"
 _ACCEPTANCE_MODE_KEY = "acceptance_mode"
@@ -107,14 +103,6 @@ def resolve_acceptance_rework_cap(*, cwd: Path) -> int:
     return _resolve_positive_int_setting(
         cwd=cwd, key=_ACCEPTANCE_REWORK_CAP_KEY, default=DEFAULT_ACCEPTANCE_REWORK_CAP
     )
-
-
-def resolve_autonomous_mode_permission(*, cwd: Path) -> bool:
-    """Read the persistent `dispatcher.autonomous_mode` permission (default False)."""
-    value = _read_dispatcher_config_value(cwd=cwd, key=_AUTONOMOUS_MODE_KEY)
-    if value is True:
-        return True
-    return DEFAULT_AUTONOMOUS_MODE
 
 
 def effective_admission_policy(*, item: WorkItem, cwd: Path | None = None) -> str:

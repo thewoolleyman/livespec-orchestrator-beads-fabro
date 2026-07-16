@@ -40,7 +40,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
     DEFAULT_ACCEPTANCE_REWORK_CAP,
     DEFAULT_ADMISSION_POLICY,
     DEFAULT_AUTO_APPROVE_READY,
-    DEFAULT_AUTONOMOUS_MODE,
     DEFAULT_MERGE_ON_REVIEW_CAP,
     DEFAULT_REVIEW_FIX_CAP,
     DEFAULT_WIP_CAP,
@@ -52,7 +51,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
     resolve_acceptance_mode,
     resolve_acceptance_rework_cap,
     resolve_auto_approve_ready,
-    resolve_autonomous_mode_permission,
     resolve_merge_on_review_cap,
     resolve_review_fix_cap,
     resolve_wip_cap,
@@ -65,7 +63,6 @@ __all__: list[str] = [
     "DEFAULT_ACCEPTANCE_POLICY",
     "DEFAULT_ACCEPTANCE_REWORK_CAP",
     "DEFAULT_ADMISSION_POLICY",
-    "DEFAULT_AUTONOMOUS_MODE",
     "DEFAULT_AUTO_APPROVE_READY",
     "DEFAULT_DOER",
     "DEFAULT_MERGE_ON_REVIEW_CAP",
@@ -86,7 +83,6 @@ __all__: list[str] = [
     "resolve_acceptance_rework_cap",
     "resolve_assignee",
     "resolve_auto_approve_ready",
-    "resolve_autonomous_mode_permission",
     "resolve_merge_on_review_cap",
     "resolve_review_fix_cap",
     "resolve_wip_cap",
@@ -96,10 +92,6 @@ __all__: list[str] = [
 # explicit assignee. `assignee` is the reused work-item field (not a new
 # `owner`), per the admission contract.
 DEFAULT_DOER = "fabro"
-
-# Full autonomous mode is a DANGEROUS, DEFAULT-OFF override: the persistent
-# `dispatcher.autonomous_mode` permission defaults to `False`, so an
-# unconfigured repo never carries the persistent arming factor.
 
 # The one admission policy that auto-admits without a human in the loop.
 _AUTO_ADMISSION = "auto"
@@ -188,11 +180,8 @@ def plan_admissions(
 
     `admission_policy` gates only the pending approval transition. Once an item
     is `ready`, admission to `active` is mechanical. The `admission_policy`
-    resolver is an injected seam defaulting to `effective_admission_policy`; the
-    full-autonomous-mode approve-gate collapse injects an armed-aware resolver
-    (`_dispatcher_autonomous_collapse.effective_admission_policy_under_mode`)
-    without this valve knowing about the mode — keeping it a PURE, mode-agnostic
-    planner.
+    resolver is an injected seam defaulting to `effective_admission_policy`,
+    keeping this a PURE, mode-agnostic planner.
     """
     approved: list[WorkItem] = []
     admitted: list[tuple[WorkItem, str]] = []

@@ -5,13 +5,6 @@ from __future__ import annotations
 from dataclasses import asdict, replace
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_autonomous_audit import (
-    autonomous_decision_journal_record,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_autonomous_collapse import (
-    acceptance_decision_under_mode,
-    collapse_acceptance_to_ai_only,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_blocked import (
     escalate_needs_human_block,
 )
@@ -23,6 +16,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     is_host_only_item,
     is_non_convergence_outcome,
     item_sizing_warnings,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
+    acceptance_decision,
+    effective_acceptance_policy,
 )
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
@@ -42,14 +39,6 @@ __all__: list[str] = [
     "host_only_refusal",
     "warn_item_sizing",
 ]
-
-# The `decision` text journaled on each full-autonomous-mode auto-resolution
-# audit record (the S2 autonomous-decision record). Names what the mode
-# decided so no auto-resolution is silent.
-_AUTONOMOUS_ACCEPTANCE_DECISION = (
-    "ai-then-human accepted to done on the passing AI pass under armed autonomous mode"
-)
-
 
 _LEDGER_WRITE_ERRORS = (
     WorkItemNotFoundError,
@@ -91,7 +80,6 @@ def complete_and_accept(
     item: WorkItem,
     outcome: DispatchOutcome,
     journal: JournalFile,
-    armed: bool,
 ) -> None:
     """Run the post-merge acceptance valve for a green dispatch.
 
@@ -106,14 +94,6 @@ def complete_and_accept(
     to give final acceptance from the console. Nothing parks silently — the
     park is journaled and surfaced.
 
-    `armed` layers the full-autonomous-mode acceptance collapse
-    (SPECIFICATION/scenarios.md Scenario 34): an armed run treats an
-    `ai-then-human` item's effective policy as `ai-only`, accepting it to `done`
-    on the passing AI pass instead of parking — EXCEPT a `human-only` item,
-    which is a deliberate human gate that still parks (Scenario 36). The AI pass
-    STILL runs first (the no-release-with-zero-verification floor). Each such
-    collapse is journaled as an autonomous auto-resolution audit record
-    (`gate` `acceptance`); when not armed behavior is exactly unchanged.
     """
     config = store_config(repo=repo)
     update_work_item_status(path=config, item_id=item.id, status="acceptance")
@@ -121,20 +101,10 @@ def complete_and_accept(
     journal.append(
         record={"stage": "acceptance-ai-pass", "work_item_id": item.id, "confirmed": True}
     )
-    acceptance_collapsed = collapse_acceptance_to_ai_only(item=item, armed=armed, cwd=repo)
-    decision = acceptance_decision_under_mode(item=item, armed=armed, cwd=repo)
+    decision = acceptance_decision(policy=effective_acceptance_policy(item=item, cwd=repo))
     if decision.to_done:
         _close_item(repo=repo, item=item, outcome=outcome)
         journal.append(record={"stage": "ledger-accept", "work_item_id": item.id})
-        if acceptance_collapsed:
-            journal.append(
-                record=autonomous_decision_journal_record(
-                    work_item_id=item.id,
-                    gate="acceptance",
-                    decision=_AUTONOMOUS_ACCEPTANCE_DECISION,
-                    disposition="auto-resolved",
-                )
-            )
         return
     journal.append(
         record={"stage": "acceptance-parked", "work_item_id": item.id, "policy": decision.policy}
