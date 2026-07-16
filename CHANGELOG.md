@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.36.0...v0.37.0) (2026-07-16)
+
+
+### Features
+
+* replace dispatcher mode loop surface ([0cef76a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0cef76a50b43221b67f092d5c844c221e2007771))
+
 ## [0.36.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.35.0...v0.36.0) (2026-07-15)
 
 
