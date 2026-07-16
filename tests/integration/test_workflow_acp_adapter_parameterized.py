@@ -72,3 +72,44 @@ def test_toml_declares_review_adapter_pinned_to_opus_high_thinking() -> None:
     value = review_line.group(1)
     assert "ANTHROPIC_MODEL=claude-opus-4-8" in value
     assert "CLAUDE_CODE_EFFORT_LEVEL=high" in value
+
+
+def _review_edge_lines(*, to_node: str) -> list[str]:
+    dot = _WORKFLOW_DOT.read_text(encoding="utf-8")
+    return [
+        line.strip() for line in dot.splitlines() if line.strip().startswith(f"review -> {to_node}")
+    ]
+
+
+def test_scenario20_review_approve_edge_is_conditioned() -> None:
+    """Scenario 20: approve reaches PR only through an explicit condition."""
+    pr_edges = _review_edge_lines(to_node="pr")
+    approve_edges = [line for line in pr_edges if 'label="approve"' in line]
+    assert approve_edges == [
+        'review -> pr         [label="approve", condition="preferred_label=approve"]'
+    ]
+    assert all("condition=" in line for line in pr_edges)
+
+
+def test_scenario20_review_cap_routes_to_escape_hatch_or_needs_human() -> None:
+    """Scenario 20: a still-blocking capped review ships only via the escape hatch."""
+    dot = _WORKFLOW_DOT.read_text(encoding="utf-8")
+    assert (
+        'condition="preferred_label=fix && context.internal.node_visit_count < {{ inputs.review_fix_visit_cap }}"'
+        in dot
+    )
+    assert 'label="ship on review cap"' in dot
+    assert "outcome={{ inputs.merge_on_review_cap_outcome }}" in dot
+    assert 'label="needs-human"' in dot
+    assert "outcome!={{ inputs.merge_on_review_cap_outcome }}" in dot
+    assert "advisory" not in dot
+    assert "SHIP-ON-CAP" not in dot
+
+
+def test_scenario20_review_fix_cap_counts_fix_rounds_not_review_visits() -> None:
+    """Scenario 20: default cap=3 yields exactly three review-fix rounds."""
+    dot = _WORKFLOW_DOT.read_text(encoding="utf-8")
+    toml = _WORKFLOW_TOML.read_text(encoding="utf-8")
+    assert "review_fix_visit_cap = 4" in toml
+    assert "context.internal.node_visit_count < {{ inputs.review_fix_visit_cap }}" in dot
+    assert re.search(r"review_fix \[.*?max_visits=4", dot, re.DOTALL) is not None

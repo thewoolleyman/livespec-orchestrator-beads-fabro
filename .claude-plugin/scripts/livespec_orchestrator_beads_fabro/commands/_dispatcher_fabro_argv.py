@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, cast
 from livespec_orchestrator_beads_fabro.commands import _jsonc
 
 if TYPE_CHECKING:
-    from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import DispatchPlan
 
 __all__: list[str] = [
     "CODEX_IMPLEMENTER_ADAPTER",
@@ -187,6 +187,10 @@ def fabro_run_argv(*, plan: DispatchPlan) -> list[str]:
         str(plan.goal_file),
         "--input",
         f"acp_adapter={CODEX_IMPLEMENTER_ADAPTER}",
+        "--input",
+        f"review_fix_visit_cap={plan.review_fix_visit_cap}",
+        "--input",
+        f"merge_on_review_cap_outcome={plan.merge_on_review_cap_outcome}",
         "--no-upgrade-check",
     ]
 

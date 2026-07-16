@@ -6,7 +6,7 @@ import argparse
 import tempfile
 import time
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from time import sleep as _real_sleep
 
@@ -19,6 +19,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     materialize_overlay,
     read_dispatch_comments,
+    read_dispatch_labels,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     DispatchOutcome,
@@ -33,6 +34,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_lessons import (
     read_ratified_lessons,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
+    failed_dispatch_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
     janitor_core_ref,
@@ -49,6 +53,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     build_plan,
     janitor_checkout_path,
     render_goal,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
+    effective_merge_on_review_cap,
+    effective_review_fix_cap,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_review_gate import (
     ReviewGateEmission,
@@ -72,6 +80,11 @@ def dispatch_one(
     goal_file = Path(tempfile.gettempdir()) / f"fabro-goal-{item.id}.md"
     overlay_file = Path(tempfile.gettempdir()) / f"fabro-run-config-{item.id}.toml"
     janitor_checkout = janitor_checkout_path(repo=repo, work_item_id=item.id)
+    raw_labels = read_dispatch_labels(repo=repo, item=item)
+    if isinstance(raw_labels, str):
+        return failed_dispatch_outcome(
+            journal=journal, work_item_id=item.id, stage="ledger-labels", detail=raw_labels
+        )
     plan = build_plan(
         repo=repo,
         work_item_id=item.id,
@@ -81,36 +94,29 @@ def dispatch_one(
         janitor=janitor,
         janitor_checkout=janitor_checkout,
         janitor_core_ref=janitor_core_ref(repo=repo),
+        review_fix_cap=effective_review_fix_cap(item=item, cwd=repo, raw_labels=raw_labels),
+        merge_on_review_cap=effective_merge_on_review_cap(
+            item=item, cwd=repo, raw_labels=raw_labels
+        ),
     )
     warn_item_sizing(item=item, journal=journal)
     comments = read_dispatch_comments(repo=repo, item=item)
     if isinstance(comments, str):
-        outcome = DispatchOutcome(
-            work_item_id=item.id,
-            status="failed",
-            stage="ledger-comments",
-            pr_number=None,
-            merge_sha=None,
-            detail=comments,
+        return failed_dispatch_outcome(
+            journal=journal, work_item_id=item.id, stage="ledger-comments", detail=comments
         )
-        journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
-        return outcome
     dispatch_id = run_id()
     journal.append(
         record={"stage": "dispatch-id", "work_item_id": item.id, "dispatch_id": dispatch_id}
     )
     token_supplier = selfup.github_token_supplier()
     if isinstance(token_supplier, str):
-        outcome = DispatchOutcome(
+        return failed_dispatch_outcome(
+            journal=journal,
             work_item_id=item.id,
-            status="failed",
             stage="github-app-auth",
-            pr_number=None,
-            merge_sha=None,
             detail=token_supplier,
         )
-        journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
-        return outcome
     overlay_error = materialize_overlay(
         committed=workflow_toml(args=args),
         overlay=overlay_file,
@@ -120,16 +126,12 @@ def dispatch_one(
         token=token_supplier,
     )
     if overlay_error is not None:
-        outcome = DispatchOutcome(
+        return failed_dispatch_outcome(
+            journal=journal,
             work_item_id=item.id,
-            status="failed",
             stage="run-config-overlay",
-            pr_number=None,
-            merge_sha=None,
             detail=overlay_error,
         )
-        journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
-        return outcome
     # Lessons are read host-side from `repo` (the dispatcher's operative
     # checkout, where the reflector maintains loop-reflection-gate/lessons.md),
     # exactly like `comments` above; only committed content is read, so an
