@@ -66,11 +66,28 @@ Fable, and re-sliced into dependency-layered children. `bd-ib-98c.1` is now CLOS
   open until then. (Evidence recorded on the ledger item, 2026-07-16.)
 
 **▶ NEXT ACTION (2026-07-16): the factory-safe work on this track is DONE + verified
-(F1 + the receiver allowlist). The remaining O-track spine (O1–O5, `bd-ib-98c.4-.8`)
-is OUTWARD-FACING fabro (Rust) work and is MAINTAINER-GATED: it rides the transport PR
-[fabro-sh/fabro#576], which is deliberately left DRAFT awaiting the maintainer's
-ready-flip + base-version decision (`#474` / ≤0.256 ceiling). No factory-safe forward
-step remains until #576 is flipped ready and merged upstream.**
+(F1 + the receiver allowlist). O1 Step 0 is RESOLVED — the target spans split across
+two processes, so O1 has two levers (see `o1-worker-exporter-plan.md`):**
+
+- **O1 does NOT wait on #576's upstream merge.** The transport is already carried +
+  pinned live in `factory-integration` (`fabro 0.254.0 (15b89ab)`), so O1 builds on
+  that branch NOW. #576 was flipped to **READY (2026-07-16)**; that only starts
+  upstream acceptance and does not gate O1.
+- **Lever A — server-start OTEL env (ops, no fabro code).** The host server mints the
+  top-level `run` span (`server.rs:4339`), inert only because the server starts with no
+  OTEL env. Fix = add `OTEL_EXPORTER_OTLP_ENDPOINT` + `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`
+  + `OTEL_SERVICE_NAME=fabro` (NO HEADERS) to the launch env. **Operator-gated:** it
+  requires restarting the fleet-shared server, which interrupts in-flight dispatches —
+  schedule a quiet window (as of this writing a dispatch was 22 min in). Provable in
+  Honeycomb the same day with no code/rebuild.
+- **Lever B — worker re-injection (fabro Rust).** The ACP work runs in the spawned
+  `__run-worker` subprocess whose `OTEL_*` is stripped by `env_clear()` + the
+  `spawn_env.rs` allowlist; re-inject the same three vars at `worker_runtime.rs:89-98`
+  (never the allowlist — keeps the Honeycomb key off the worker). This is outward-facing
+  fabro, hand-built operator-side via Codex + Fable review loops (NOT factory-safe).
+
+**Both levers are maintainer-gated (a live-server restart / an operator-driven fabro
+build). The two `run` spans stay disconnected until O2 (`bd-ib-98c.5`) joins them.**
 
 Full decomposition, the eight code-verified constraints, the rejected stderr-sentinel
 design, and every file:line citation live in `emitter-replan.md`. Everything below
