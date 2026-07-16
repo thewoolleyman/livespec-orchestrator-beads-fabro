@@ -9,6 +9,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+from livespec_orchestrator_beads_fabro.commands._drive_config import (
+    is_config_action,
+    run_config_action,
+)
 from livespec_orchestrator_beads_fabro.commands._drive_valves import (
     is_human_valve_action,
     run_human_valve_action,
@@ -52,6 +56,8 @@ def run_action(
     """Run one selected action-id."""
     if is_human_valve_action(action_id=action_id):
         return run_human_valve_action(repo=repo, action_id=action_id, runner=runner)
+    if is_config_action(action_id=action_id):
+        return run_config_action(repo=repo, action_id=action_id)
     if not action_id.startswith("impl:"):
         return {
             "action_id": action_id,
@@ -60,8 +66,9 @@ def run_action(
             "summary": (
                 "Unsupported action id; expected 'impl:<id>', 'approve:<id>', "
                 "'accept:<id>', 'reject:<id>:rework|regroom', "
-                "'set-admission:<id>:auto|manual', or "
-                "'set-acceptance:<id>:ai-only|human-only|ai-then-human'."
+                "'set-admission:<id>:auto|manual', "
+                "'set-acceptance:<id>:ai-only|human-only|ai-then-human', "
+                "'config', 'config-manifest', or 'set-config:<key>:<value>'."
             ),
         }
     work_item_ref = action_id.removeprefix("impl:")
