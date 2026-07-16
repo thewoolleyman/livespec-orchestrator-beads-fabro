@@ -33,13 +33,17 @@ Nothing here is implemented.
    Catching the exception superclass is exactly the anti-pattern that swallows
    genuine bugs into silent breadcrumbs; it must fail lint, not merely be
    discouraged.
-3. **Observability and other side-effects are pass-through steps in the ROP
-   chain, never bulkheads.** Infallible observability is a `.map(tap(effect))`
-   step (the value rides through unchanged; you never hand-write `Success(...)` —
-   the container re-wraps for you). Fallible-I/O observability lifts the boundary
-   with `@impure_safe` and recovers its own expected failure back onto the value
-   with `.lash`, so a telemetry I/O failure can never derail the main track and
-   is never caught with `except`.
+3. **Observability and other side-effects are `.map(tap(effect))` pass-through
+   steps, never bulkheads.** The value rides through unchanged; you never
+   hand-write `Success(...)` — the container re-wraps for you. If the effect
+   throws an **unexpected** error (a full disk, a bad path), it propagates to the
+   supervisor like any other bug — we handle only *expected* errors, never
+   unexpected ones, and "the call could throw" is never itself a reason to catch.
+   The railway (`Result` / a **narrowed** `@impure_safe` / `.lash`) is used only
+   for a specific, enumerated failure this path has *deliberately chosen to
+   tolerate*, never as a blanket guard. Where a critical downstream step must not
+   be lost to an observability failure, that is guaranteed by **ordering** (commit
+   the critical state before the observability tap), not by catching.
 4. **Every mechanical rule applies to all first-party code except
    `.claude/skills/**`.** Today the rules under-cover: they are aimed at a
    package path that does not exist in this repo.
@@ -150,49 +154,63 @@ only if avoiding the 115-file footprint were a hard requirement — it is not.
 
 ## The observability pattern (the specific guidance this plan mandates)
 
-Two shapes, chosen by whether the side-effect can fail:
+The organizing question is **not** "can the effect fail?" — everything can fail;
+any line of I/O can raise. The question is "is this a failure I have
+*deliberately anticipated and chosen to tolerate*?" That yields one default and
+one rare, explicit exception.
 
-**Infallible observability** (increment an in-memory counter, append to a buffer,
-format a string) — a `tap` inside a `.map`:
-
-```python
-result.map(tap(lambda v: metrics.incr("dispatch.ok")))   # value rides through unchanged
-```
-
-There is nothing to catch and nothing to hand-wrap. This is the literal "just
-map" case.
-
-**Fallible-I/O observability** (write a span file, POST to an OTLP endpoint — the
-review-gate case, which does `mkdir` + `open("a").write(...)`, both of which
-raise `OSError` on disk-full / permission / bad path) — lift the boundary, then
-recover the expected failure back onto the value so it cannot derail the track:
+**Default — observability is `.map(tap(effect))`.** The value rides through
+unchanged; you never hand-write `Success(...)`. This holds whether the effect is
+infallible (bump an in-memory counter) or does real I/O (write a span file, POST
+to a collector):
 
 ```python
-@impure_safe                       # the library performs the ONE sanctioned catch, not us
-def emit_span(v) -> IOResult[T, EmitError]:
-    spans_path.open("a").write(line)
-    return v
-
-pipeline.bind(emit_span).lash(lambda _err: IOResult.from_value(value))
-#             ^ I/O on the railway         ^ expected emit failure collapses back to the value
+result.map(tap(lambda v: emit_span(v)))   # value rides through unchanged
 ```
 
-The invariant, stated for the implementing session: an observability step's
-**expected** failures ride the Result railway and are collapsed to the success
-value — never an `except Exception`, never a change to the pipeline's outcome —
-while a genuine **bug** in observability code still propagates (it is a bug; it
-must surface). This is `bind`+`lash` rather than `map` only because a fallible
-effect returns an `IOResult` instead of a bare value; the "no `try/except` in our
-code" rule holds either way.
+If `emit_span` throws an **unexpected** error — a full disk, a permission denial —
+it propagates to the supervisor exactly like any other bug. We do **not** wrap it
+"just in case," because catching unexpected errors is the bulkhead anti-pattern
+we are removing. "`open().write()` can raise `OSError`" is true of essentially
+every line of I/O in the program; it is never, by itself, a licence to catch.
 
-**Worked before/after** — the emitter that started this thread
-(`_dispatcher_review_gate.py`): the current
-`try: _emit(...) except Exception: _append_review_gate_skip(...)` bulkhead
-(lines 96–103) becomes an `@impure_safe emit_span` bound into the dispatch
-pipeline with a `.lash` that recovers to the dispatch outcome. The telemetry can
-still fail softly (its failure is journaled on the error arm before the `.lash`),
-but a bug inside it now surfaces instead of hiding, and the emission can never
-skip the merged item's ledger disposition.
+**Rare, explicit exception — a specific, enumerated, EXPECTED failure this path
+chooses to tolerate** (e.g. "the OTLP collector being unreachable is an
+anticipated condition we swallow and continue"). Only that named failure rides
+the railway, via a **narrowed** lift — never a catch-all:
+
+```python
+@impure_safe(exceptions=(ConnectionError,))   # ONLY the anticipated error, not all Exception
+def post_span(v) -> IOResult[T, OSError]:
+    collector.post(v); return v
+
+pipeline.bind(post_span).lash(lambda _err: IOResult.from_value(value))
+#             ^ anticipated failure on the railway   ^ collapses back to the value
+```
+
+Everything the narrowed lift does *not* name still propagates. The invariant:
+**named, expected** failures ride the railway; **everything unexpected**
+propagates to the supervisor; neither is ever caught with a blanket
+`except Exception`.
+
+**Protecting a critical step is ordering, not catching.** The concern behind the
+review-gate bulkhead was real — a telemetry throw between a PR merge and the
+item's ledger disposition could strand the disposition. The ROP fix is to
+sequence the critical commit **before** the observability tap, so an unexpected
+throw in telemetry surfaces (correct) without stranding anything (the disposition
+already ran) — no catch required.
+
+**Worked before/after** — the emitter that started this thread. Today
+`_dispatcher_review_gate.py:96-103` is a
+`try: _emit(...) except Exception: _append_review_gate_skip(...)` bulkhead, and
+its call site (`_dispatcher_loop.py:214`) emits telemetry **before**
+`post_run_dispositions` (`:154`) — which is what let a telemetry throw skip a
+merged item's disposition. The fix: move the disposition **ahead** of a plain
+`.map(tap(emit))` telemetry step and delete the `try/except` entirely. An
+unexpected write failure then surfaces instead of hiding into a
+`review-gate-telemetry-skipped` breadcrumb, and it cannot skip the disposition
+because that already committed. If some *named* expected failure genuinely needs
+tolerating, add the narrowed lift for that one error — nothing broader.
 
 ---
 
@@ -317,10 +335,14 @@ are migrated, or all work stops on a wall of red. Sequence:
 change yet.
 
 **Phase 1 — migrate the bulkheads + arm the narrow ban.** Convert the 13
-`except Exception` sites to the observability/ROP pattern (review-gate emitter
-first, as the worked example). Then add `"BLE"` to Ruff `select` and add
-`.claude/skills/**` to `extend-exclude`. BLE goes green because the bulkheads are
-gone. This delivers Rule 2 end-to-end with a small, self-contained blast radius.
+`except Exception` sites per the observability pattern (review-gate emitter first,
+as the worked example). Expect **most to become a plain `.map(tap(...))` with the
+critical work reordered ahead of the tap** — the bulkheads were guarding against
+unexpected errors that should simply propagate. Only a site with a genuinely
+*named, expected* failure keeps a narrowed lift for that one error. Then add
+`"BLE"` to Ruff `select` and add `.claude/skills/**` to `extend-exclude`. BLE goes
+green because the blanket catches are gone. This delivers Rule 2 end-to-end with a
+small, self-contained blast radius.
 
 **Phase 2 — re-scope the config-driven checks.** Re-point the dead pyproject keys
 (`source_trees`, `io_trees`, `commands_trees`, `supervisor_entry_files`,
@@ -394,8 +416,10 @@ re-point. Decide the no-analog checks here too.
 2. **Phase 0.** Vendor `returns` from `/data/projects/livespec/.claude-plugin/
    scripts/_vendor/returns/` + manifest entry; confirm `vendor_manifest` +
    Pyright accept it.
-3. **Phase 1.** Migrate `_dispatcher_review_gate.py` to the `@impure_safe` +
-   `.lash` pattern (the worked example), then the other 12 bulkheads; add `"BLE"`
+3. **Phase 1.** Migrate `_dispatcher_review_gate.py` per the worked example
+   (reorder `post_run_dispositions` ahead of a plain `.map(tap(emit))`; delete the
+   `try/except`), then the other 12 bulkheads (most collapse to `.map(tap(...))`;
+   a narrowed lift only where a named expected failure is tolerated); add `"BLE"`
    to Ruff `select` and `.claude/skills/**` to `extend-exclude`; confirm green.
 4. **Phase 2.** Re-point the dead pyproject keys; fix per-check using the Phase-1
    inventory; land the flips green.
