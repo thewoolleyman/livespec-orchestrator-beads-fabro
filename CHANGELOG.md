@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.41.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.41.1...v0.41.2) (2026-07-16)
+
+
+### Bug Fixes
+
+* preserve dispositions before review telemetry ([3d2ff13](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3d2ff13189aed9748755cf4e40bba79fdc248c92))
+
 ## [0.41.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.41.0...v0.41.1) (2026-07-16)
 
 
