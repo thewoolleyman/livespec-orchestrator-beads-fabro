@@ -33,6 +33,38 @@ Ledger epic: **`bd-ib-rck`**.
 
 ## ▶ CURRENT STATE + NEXT ACTION (read this first)
 
+**Epic `bd-ib-rck` is COMPLETE (execution record below), and the plan has adopted
+ONE follow-on item:** `bd-ib-ss7rkr` — the predecessor that surfaced this track —
+whose docs/contract-realignment half is now active work in this plan (see next).
+
+## ▶▶▶ ACTIVE — `bd-ib-ss7rkr` docs/contract realignment (adopted 2026-07-16)
+
+**Status:** RESTARTED 2026-07-16 (`blocked` → `backlog`; cleared the stale
+`blocked-reason:needs-human` + `not-yet-actionable` labels). The item's
+re-verification half is DONE (2026-07-14) and produced the landed seatbelt
+`bd-ib-a89` (`CODEX_REFRESH_TOKEN_URL_OVERRIDE`, CLOSED). Only the docs half
+remains.
+
+**Scope (the remaining half):** realign the orchestrator SPECIFICATION to describe
+the MULTI-PROVIDER worker credential path — `contracts.md` §"Worker credential
+projection" + `scenarios.md` Scenario 18/19. This is the "describe the
+multi-provider worker path" work deferred while upstream codex-core auth behavior
+was still a judgement call.
+
+**Why it was blocked and no longer is:** blocked 2026-07-04 as "acceptance is a
+judgement call against a moving upstream." That blocker was explicitly resolved by
+the 2026-07-14 re-verification against the actually-pinned codex-core
+(`rust-v0.137.0`): the credential-safety conclusion HOLDS and the seatbelt closed
+the one reachable exposure. Nothing about the docs realignment itself is a
+judgement call, so the item is actionable.
+
+**Next action:** groom `bd-ib-ss7rkr` from `backlog` → a scoped, ready slice —
+identify exactly which `contracts.md` §"Worker credential projection" clauses and
+`scenarios.md` 18/19 steps need multi-provider language, then execute the
+realignment through the livespec revise flow (spec change → ratify), honoring the
+`tests/heading-coverage.json` co-edit discipline if any `## ` spec headings move.
+Factory-safe per the item's own `Autonomy: factory-safe`.
+
 ## ▶▶ EXECUTION STATE (2026-07-15) — ✅ TRACK COMPLETE (epic `bd-ib-rck` CLOSED)
 
 **All three work-items landed via the factory, verified, accepted → `done`; epic
@@ -357,8 +389,10 @@ stalls the factory *today* regardless of the broker.
     emitter adds `OTEL_*` at the SAME fabro `worker_runtime.rs:90-99` re-injection
     seam. Coordinate there; do not widen fabro's fail-closed `apply_worker_env`.
 - `bd-ib-a89` — the landed seatbelt (CLOSED).
-- `bd-ib-ss7rkr` — the re-verification that surfaced this; remaining half is the
-  docs/contract realignment.
+- `bd-ib-ss7rkr` — the re-verification that surfaced this. **Now ADOPTED into this
+  plan as active work** (2026-07-16): re-verification half DONE, docs/contract
+  realignment half restarted `blocked` → `backlog`. See §"ACTIVE — `bd-ib-ss7rkr`
+  docs/contract realignment" near the top.
 - `contracts.md` §"Worker credential projection" + `scenarios.md` Scenarios 18/19
   — the ratified contract. The "host is sole owner / worker is a read-only
   consumer" clauses stay TRUE under the broker; the design strengthens them.
