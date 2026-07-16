@@ -2516,6 +2516,7 @@ def test_dispatch_green_closes_item_and_journals(
         "ledger-complete",
         "acceptance-ai-pass",
         "ledger-accept",
+        "auto-disposition",
         "outcome",
         "calibration",
         "review-gate-telemetry-skipped",

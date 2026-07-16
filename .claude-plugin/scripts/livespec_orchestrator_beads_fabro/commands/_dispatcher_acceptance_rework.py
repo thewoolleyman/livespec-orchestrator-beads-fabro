@@ -9,6 +9,9 @@ from livespec_orchestrator_beads_fabro._store_acceptance_rework import (
     update_acceptance_failed_ai_passes,
 )
 from livespec_orchestrator_beads_fabro._store_mutations import update_work_item_blocked_state
+from livespec_orchestrator_beads_fabro.commands._dispatcher_decision_journal import (
+    auto_disposition_journal_record,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
@@ -58,6 +61,13 @@ def rework_or_block_failed_acceptance(
                 "blocked_reason": "needs-human",
             },
         )
+        journal.append(
+            record=auto_disposition_journal_record(
+                work_item_id=item.id,
+                disposition="cap-exceeded-escalation",
+                governing_settings=("acceptance_rework_cap",),
+            )
+        )
         _ = write_stderr(
             text=(
                 f"SURFACE: work-item {item.id} exceeded acceptance_rework_cap {cap} "
@@ -77,6 +87,13 @@ def rework_or_block_failed_acceptance(
             "acceptance_rework_cap": cap,
             "cap_source": cap_source,
         },
+    )
+    journal.append(
+        record=auto_disposition_journal_record(
+            work_item_id=item.id,
+            disposition="ai-fail-auto-rework",
+            governing_settings=("acceptance_mode", "acceptance_rework_cap"),
+        )
     )
 
 
