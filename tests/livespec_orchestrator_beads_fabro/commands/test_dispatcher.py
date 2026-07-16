@@ -2596,6 +2596,142 @@ def test_complete_and_accept_human_only_pass_is_advisory_and_parks(
     )
 
 
+def test_complete_and_accept_fail_reworks_and_persists_count_across_passes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, _workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item(acceptance_policy="ai-then-human")
+    append_work_item(path=_config(), item=item)
+    monkeypatch.setattr(
+        _dispatcher_completion,
+        "run_acceptance_pass",
+        lambda **_: _FakeAcceptancePass(verdict="FAIL"),
+        raising=False,
+    )
+    first_journal = JournalFile(path=repo / "first-journal.jsonl")
+    second_journal = JournalFile(path=repo / "second-journal.jsonl")
+
+    dispatcher.complete_and_accept(
+        repo=repo,
+        item=item,
+        outcome=_green_outcome(item_id=item.id),
+        journal=first_journal,
+    )
+    first_record = make_beads_client(config=_config()).show_issue(issue_id=item.id)
+    dispatcher.complete_and_accept(
+        repo=repo,
+        item=item,
+        outcome=_green_outcome(item_id=item.id),
+        journal=second_journal,
+    )
+
+    second_record = make_beads_client(config=_config()).show_issue(issue_id=item.id)
+    assert first_record["metadata"]["acceptance_failed_ai_passes"] == 1
+    assert second_record["metadata"]["acceptance_failed_ai_passes"] == 2
+    stored = _stored()[item.id]
+    assert (stored.status, stored.blocked_reason) == ("active", None)
+    records = [
+        json.loads(line) for line in second_journal.path.read_text(encoding="utf-8").splitlines()
+    ]
+    rework = next(record for record in records if record["stage"] == "acceptance-auto-rework")
+    assert rework == {
+        "stage": "acceptance-auto-rework",
+        "work_item_id": item.id,
+        "policy": "ai-then-human",
+        "failed_ai_passes": 2,
+        "acceptance_rework_cap": 2,
+        "cap_source": "dispatcher.acceptance_rework_cap",
+    }
+
+
+def test_complete_and_accept_fail_past_label_cap_blocks_needs_human(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, _workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item(acceptance_policy="ai-only")
+    append_work_item(path=_config(), item=item)
+    make_beads_client(config=_config()).update_issue(
+        issue_id=item.id,
+        add_labels=["acceptance-rework-cap:1"],
+    )
+    monkeypatch.setattr(
+        _dispatcher_completion,
+        "run_acceptance_pass",
+        lambda **_: _FakeAcceptancePass(verdict="FAIL"),
+        raising=False,
+    )
+    first_journal = JournalFile(path=repo / "first-label-cap-journal.jsonl")
+    second_journal = JournalFile(path=repo / "second-label-cap-journal.jsonl")
+
+    dispatcher.complete_and_accept(
+        repo=repo,
+        item=item,
+        outcome=_green_outcome(item_id=item.id),
+        journal=first_journal,
+    )
+    dispatcher.complete_and_accept(
+        repo=repo,
+        item=item,
+        outcome=_green_outcome(item_id=item.id),
+        journal=second_journal,
+    )
+
+    stored = _stored()[item.id]
+    assert (stored.status, stored.blocked_reason) == ("blocked", "needs-human")
+    record = make_beads_client(config=_config()).show_issue(issue_id=item.id)
+    assert record["metadata"]["acceptance_failed_ai_passes"] == 2
+    records = [
+        json.loads(line) for line in second_journal.path.read_text(encoding="utf-8").splitlines()
+    ]
+    escalation = next(
+        record for record in records if record["stage"] == "acceptance-rework-cap-exceeded"
+    )
+    assert escalation == {
+        "stage": "acceptance-rework-cap-exceeded",
+        "work_item_id": item.id,
+        "policy": "ai-only",
+        "failed_ai_passes": 2,
+        "acceptance_rework_cap": 1,
+        "cap_source": "acceptance-rework-cap label",
+        "blocked_reason": "needs-human",
+    }
+
+
+def test_complete_and_accept_human_only_fail_never_auto_reworks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, _workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item(acceptance_policy="human-only")
+    append_work_item(path=_config(), item=item)
+    monkeypatch.setattr(
+        _dispatcher_completion,
+        "run_acceptance_pass",
+        lambda **_: _FakeAcceptancePass(verdict="FAIL"),
+        raising=False,
+    )
+    journal = JournalFile(path=repo / "human-only-fail-journal.jsonl")
+
+    dispatcher.complete_and_accept(
+        repo=repo,
+        item=item,
+        outcome=_green_outcome(item_id=item.id),
+        journal=journal,
+    )
+
+    stored = _stored()[item.id]
+    assert (stored.status, stored.blocked_reason) == ("acceptance", None)
+    record = make_beads_client(config=_config()).show_issue(issue_id=item.id)
+    assert "acceptance_failed_ai_passes" not in record["metadata"]
+    records = [json.loads(line) for line in journal.path.read_text(encoding="utf-8").splitlines()]
+    parked = next(record for record in records if record["stage"] == "acceptance-parked")
+    assert parked["advisory"] is True
+    assert parked["acceptance_verdict"] == "FAIL"
+    assert "acceptance-auto-rework" not in {record["stage"] for record in records}
+
+
 def test_dispatch_finalize_invokes_cost_gate_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

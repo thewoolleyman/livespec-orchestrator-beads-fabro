@@ -8,6 +8,10 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_ai import (
     run_acceptance_pass,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_rework import (
+    AI_DISPOSITIVE_ACCEPTANCE_POLICIES,
+    rework_or_block_failed_acceptance,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_blocked import (
     escalate_needs_human_block,
 )
@@ -105,6 +109,9 @@ def complete_and_accept(
     acceptance_pass = run_acceptance_pass(repo=repo, item=item, outcome=outcome)
     journal.append(record=acceptance_pass.journal_record(work_item_id=item.id, policy=policy))
     decision = acceptance_decision(policy=policy)
+    if acceptance_pass.verdict == "FAIL" and policy in AI_DISPOSITIVE_ACCEPTANCE_POLICIES:
+        rework_or_block_failed_acceptance(repo=repo, item=item, policy=policy, journal=journal)
+        return
     if decision.to_done and acceptance_pass.verdict == "PASS":
         _close_item(repo=repo, item=item, outcome=outcome)
         journal.append(record={"stage": "ledger-accept", "work_item_id": item.id})
