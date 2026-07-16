@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.39.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.38.0...v0.39.0) (2026-07-16)
+
+
+### Features
+
+* add real acceptance pass coverage ([1da5747](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1da5747af9ff6d15b1f0e7dedeb162ad0916e5ef))
+
 ## [0.38.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.37.0...v0.38.0) (2026-07-16)
 
 
