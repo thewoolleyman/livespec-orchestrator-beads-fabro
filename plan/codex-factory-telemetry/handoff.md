@@ -73,21 +73,28 @@ two processes, so O1 has two levers (see `o1-worker-exporter-plan.md`):**
   pinned live in `factory-integration` (`fabro 0.254.0 (15b89ab)`), so O1 builds on
   that branch NOW. #576 was flipped to **READY (2026-07-16)**; that only starts
   upstream acceptance and does not gate O1.
-- **Lever A — server-start OTEL env (ops, no fabro code).** The host server mints the
-  top-level `run` span (`server.rs:4339`), inert only because the server starts with no
-  OTEL env. Fix = add `OTEL_EXPORTER_OTLP_ENDPOINT` + `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`
-  + `OTEL_SERVICE_NAME=fabro` (NO HEADERS) to the launch env. **Operator-gated:** it
-  requires restarting the fleet-shared server, which interrupts in-flight dispatches —
-  schedule a quiet window (as of this writing a dispatch was 22 min in). Provable in
-  Honeycomb the same day with no code/rebuild.
-- **Lever B — worker re-injection (fabro Rust).** The ACP work runs in the spawned
-  `__run-worker` subprocess whose `OTEL_*` is stripped by `env_clear()` + the
-  `spawn_env.rs` allowlist; re-inject the same three vars at `worker_runtime.rs:89-98`
-  (never the allowlist — keeps the Honeycomb key off the worker). This is outward-facing
-  fabro, hand-built operator-side via Codex + Fable review loops (NOT factory-safe).
+- **Lever A — server-start OTEL env (ops, no fabro code). RUNBOOK STEP LANDED** (PR
+  #702): `orchestrator-image/README.md` §"Host Fabro server" now carries a copy-paste
+  "enable span export" start command (`OTEL_EXPORTER_OTLP_ENDPOINT` +
+  `OTEL_EXPORTER_OTLP_PROTOCOL=http/json` + `OTEL_SERVICE_NAME=fabro`, NO HEADERS). The
+  host server mints the top-level `run` span (`server.rs:4339`), inert only because the
+  server starts with no OTEL env. **Execution is operator-gated:** it requires restarting
+  the fleet-shared server (interrupts in-flight dispatches — pick a quiet window). Then
+  provable in Honeycomb the same day, no code/rebuild.
+- **Lever B — worker re-injection (fabro Rust). BUILT + REVIEWED + READY** (2026-07-16):
+  fork PR **thewoolleyman/fabro#1** (`worker-otel-reinject` → `factory-integration`),
+  marked ready. New `apply_worker_otel_export_env` in `spawn_env.rs`, called from
+  `worker_runtime.rs` after `apply_worker_env`; forwards the non-secret OTLP export vars
+  and strips `OTEL_EXPORTER_OTLP_HEADERS`/`_TRACES_HEADERS` so the Honeycomb key never
+  reaches the sandboxed worker. Codex + Fable adversarial review done (invariant confirmed
+  fail-closed); fmt/clippy(`-D warnings`)/tests green under pinned `nightly-2026-04-14`.
+  **Remaining is operator-gated:** merge #1 → rebuild + re-pin the host binary → restart
+  with the Lever A env → proof-dispatch a worker `run` span into Honeycomb.
 
-**Both levers are maintainer-gated (a live-server restart / an operator-driven fabro
-build). The two `run` spans stay disconnected until O2 (`bd-ib-98c.5`) joins them.**
+**Both levers' CODE/DOCS are done; what remains is one operator window — merge #1,
+rebuild + re-pin the host binary, and restart the server with the Lever A OTEL env — which
+lights up BOTH the server and worker `run` spans. They stay two disconnected traces until
+O2 (`bd-ib-98c.5`, traceparent) joins them; O2 is the next slice AFTER O1's proof-dispatch.**
 
 Full decomposition, the eight code-verified constraints, the rejected stderr-sentinel
 design, and every file:line citation live in `emitter-replan.md`. Everything below
