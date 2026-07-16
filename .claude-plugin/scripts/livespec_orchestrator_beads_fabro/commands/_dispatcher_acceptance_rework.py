@@ -9,6 +9,9 @@ from livespec_orchestrator_beads_fabro._store_acceptance_rework import (
     update_acceptance_failed_ai_passes,
 )
 from livespec_orchestrator_beads_fabro._store_mutations import update_work_item_blocked_state
+from livespec_orchestrator_beads_fabro.commands._dispatcher_decision_journal import (
+    dispatcher_decision_journal_record,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
@@ -48,15 +51,19 @@ def rework_or_block_failed_acceptance(
         )
         _append_disposition(
             journal=journal,
-            record={
-                "stage": "acceptance-rework-cap-exceeded",
-                "work_item_id": item.id,
-                "policy": policy,
-                "failed_ai_passes": failure_state.failed_ai_passes,
-                "acceptance_rework_cap": cap,
-                "cap_source": cap_source,
-                "blocked_reason": "needs-human",
-            },
+            record=dispatcher_decision_journal_record(
+                stage="acceptance-rework-cap-exceeded",
+                work_item_id=item.id,
+                disposition="cap-exceeded-escalation",
+                governing_settings=("acceptance_rework_cap",),
+                extra={
+                    "policy": policy,
+                    "failed_ai_passes": failure_state.failed_ai_passes,
+                    "acceptance_rework_cap": cap,
+                    "cap_source": cap_source,
+                    "blocked_reason": "needs-human",
+                },
+            ),
         )
         _ = write_stderr(
             text=(
@@ -69,14 +76,18 @@ def rework_or_block_failed_acceptance(
     update_work_item_status(path=config, item_id=item.id, status="active")
     _append_disposition(
         journal=journal,
-        record={
-            "stage": "acceptance-auto-rework",
-            "work_item_id": item.id,
-            "policy": policy,
-            "failed_ai_passes": failure_state.failed_ai_passes,
-            "acceptance_rework_cap": cap,
-            "cap_source": cap_source,
-        },
+        record=dispatcher_decision_journal_record(
+            stage="acceptance-auto-rework",
+            work_item_id=item.id,
+            disposition="ai-fail-auto-rework",
+            governing_settings=("acceptance_mode", "acceptance_rework_cap"),
+            extra={
+                "policy": policy,
+                "failed_ai_passes": failure_state.failed_ai_passes,
+                "acceptance_rework_cap": cap,
+                "cap_source": cap_source,
+            },
+        ),
     )
 
 

@@ -15,6 +15,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_rework im
 from livespec_orchestrator_beads_fabro.commands._dispatcher_blocked import (
     escalate_needs_human_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_decision_journal import (
+    dispatcher_decision_journal_record,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile, utc_now_iso
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
@@ -114,7 +117,15 @@ def complete_and_accept(
         return
     if decision.to_done and acceptance_pass.verdict == "PASS":
         _close_item(repo=repo, item=item, outcome=outcome)
-        journal.append(record={"stage": "ledger-accept", "work_item_id": item.id})
+        journal.append(
+            record=dispatcher_decision_journal_record(
+                stage="ledger-accept",
+                work_item_id=item.id,
+                disposition="ai-auto-accept",
+                governing_settings=("acceptance_mode",),
+                extra={"policy": decision.policy},
+            )
+        )
         return
     journal.append(
         record={

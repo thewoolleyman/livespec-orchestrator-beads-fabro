@@ -9,6 +9,9 @@ from typing import cast
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_review_gate as review_gate
+from livespec_orchestrator_beads_fabro.commands._dispatcher_decision_journal import (
+    read_dispatcher_decisions,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan, build_plan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_review_gate import (
@@ -19,6 +22,29 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_review_gate import (
     parse_review_gate_events,
     review_gate_request_line,
 )
+
+
+def test_read_dispatcher_decisions_handles_missing_and_non_object_lines(tmp_path: Path) -> None:
+    assert read_dispatcher_decisions(journal_path=tmp_path / "absent.jsonl") == ()
+    journal = tmp_path / "journal.jsonl"
+    journal.write_text(
+        "\n".join(
+            [
+                "[]",
+                json.dumps(
+                    {
+                        "stage": "ledger-approve",
+                        "work_item_id": "bd-1",
+                        "disposition": "auto-approve",
+                        "governing_settings": "auto_approve_ready",
+                    }
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert read_dispatcher_decisions(journal_path=journal) == ()
 
 
 def test_parse_review_gate_events_approved_on_first_visit() -> None:

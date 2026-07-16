@@ -13,11 +13,15 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import host_only_refusal
+from livespec_orchestrator_beads_fabro.commands._dispatcher_decision_journal import (
+    dispatcher_decision_journal_record,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     admission_held_detail,
+    effective_admission_policy,
     plan_admissions,
     resolve_assignee,
     resolve_wip_cap,
@@ -86,17 +90,29 @@ def admit_and_select(
         free_slots = max(0, resolve_wip_cap(cwd=repo) - active_count)
     else:
         free_slots = len(admittable)
+
+    def admission_policy(*, item: WorkItem) -> str:
+        return effective_admission_policy(item=item, cwd=repo)
+
     plan = plan_admissions(
         ready_items=admittable,
         free_slots=free_slots,
         resolve_assignee=resolve_assignee,
+        admission_policy=admission_policy,
     )
     admitted: list[WorkItem] = []
     config = store_config(repo=repo)
     approved_ids = {item.id for item in plan.approved}
     for item in plan.approved:
         update_work_item_status(path=config, item_id=item.id, status="ready")
-        journal.append(record={"stage": "ledger-approve", "work_item_id": item.id})
+        journal.append(
+            record=dispatcher_decision_journal_record(
+                stage="ledger-approve",
+                work_item_id=item.id,
+                disposition="auto-approve",
+                governing_settings=("auto_approve_ready",),
+            )
+        )
     for item, assignee in plan.admitted:
         journal_item = replace(item, status="ready") if item.id in approved_ids else item
         update_work_item_status(

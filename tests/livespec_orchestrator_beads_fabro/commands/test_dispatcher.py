@@ -2638,6 +2638,8 @@ def test_complete_and_accept_fail_reworks_and_persists_count_across_passes(
     assert rework == {
         "stage": "acceptance-auto-rework",
         "work_item_id": item.id,
+        "disposition": "ai-fail-auto-rework",
+        "governing_settings": ["acceptance_mode", "acceptance_rework_cap"],
         "policy": "ai-then-human",
         "failed_ai_passes": 2,
         "acceptance_rework_cap": 2,
@@ -2691,6 +2693,8 @@ def test_complete_and_accept_fail_past_label_cap_blocks_needs_human(
     assert escalation == {
         "stage": "acceptance-rework-cap-exceeded",
         "work_item_id": item.id,
+        "disposition": "cap-exceeded-escalation",
+        "governing_settings": ["acceptance_rework_cap"],
         "policy": "ai-only",
         "failed_ai_passes": 2,
         "acceptance_rework_cap": 1,
