@@ -106,6 +106,12 @@ def test_scenario20_review_cap_routes_to_escape_hatch_or_needs_human() -> None:
     assert "SHIP-ON-CAP" not in dot
 
 
+def test_scenario20_review_has_unconditional_fallback_to_human_gate() -> None:
+    """Fabro requires a fallback when a node has conditional custom routing."""
+    escalate_edges = _review_edge_lines(to_node="escalate")
+    assert 'review -> escalate   [label="unmatched review outcome"]' in escalate_edges
+
+
 def test_scenario20_review_fix_cap_counts_fix_rounds_not_review_visits() -> None:
     """Scenario 20: default cap=3 yields exactly three review-fix rounds."""
     dot = _WORKFLOW_DOT.read_text(encoding="utf-8")

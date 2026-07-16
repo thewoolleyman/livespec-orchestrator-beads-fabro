@@ -285,6 +285,7 @@ digraph ImplementWorkItem {
     review -> pr         [label="approve", condition="preferred_label=approve"]
     review -> pr         [label="ship on review cap", condition="preferred_label=fix && context.internal.node_visit_count >= {{ inputs.review_fix_visit_cap }} && outcome={{ inputs.merge_on_review_cap_outcome }}"]
     review -> escalate   [label="needs-human", condition="preferred_label=fix && context.internal.node_visit_count >= {{ inputs.review_fix_visit_cap }} && outcome!={{ inputs.merge_on_review_cap_outcome }}"]
+    review -> escalate   [label="unmatched review outcome"]
     review_fix -> janitor
 
     // A failed pr stage (hook rejection, gh failure — structured
