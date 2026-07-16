@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.41.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.41.0...v0.41.1) (2026-07-16)
+
+
+### Bug Fixes
+
+* add review workflow fallback edge ([3c832d6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3c832d693be74fcabd29cdef205fb9dce72f6c9d))
+
 ## [0.41.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.40.0...v0.41.0) (2026-07-16)
 
 
