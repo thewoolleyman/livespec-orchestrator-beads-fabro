@@ -13,6 +13,9 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import host_only_refusal
+from livespec_orchestrator_beads_fabro.commands._dispatcher_decision_journal import (
+    auto_disposition_journal_record,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
@@ -97,6 +100,13 @@ def admit_and_select(
     for item in plan.approved:
         update_work_item_status(path=config, item_id=item.id, status="ready")
         journal.append(record={"stage": "ledger-approve", "work_item_id": item.id})
+        journal.append(
+            record=auto_disposition_journal_record(
+                work_item_id=item.id,
+                disposition="auto-approve",
+                governing_settings=("auto_approve_ready",),
+            )
+        )
     for item, assignee in plan.admitted:
         journal_item = replace(item, status="ready") if item.id in approved_ids else item
         update_work_item_status(

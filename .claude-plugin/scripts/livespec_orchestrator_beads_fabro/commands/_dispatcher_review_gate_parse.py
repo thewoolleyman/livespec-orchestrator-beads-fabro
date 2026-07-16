@@ -37,16 +37,18 @@ def parse_review_gate_events(*, events_jsonl: str) -> ReviewGateTelemetry:
     review_edges = tuple(_review_edges(events_jsonl=events_jsonl))
     fix_rounds = sum(1 for edge in review_edges if edge.to_node == "review_fix")
     visit_count = len(review_edges)
-    shipped_on_cap = (
-        any(edge.to_node == "pr" and edge.reason == "unconditional" for edge in review_edges)
+    terminal_edge = max(review_edges, key=lambda edge: edge.order_key) if review_edges else None
+    hit_cap = (
+        terminal_edge is not None
+        and terminal_edge.reason == "unconditional"
         and visit_count >= _REVIEW_CAP_VISITS
     )
-    terminal_edge = max(review_edges, key=lambda edge: edge.order_key) if review_edges else None
+    shipped_on_cap = terminal_edge is not None and hit_cap and terminal_edge.to_node == "pr"
     verdict = _terminal_verdict(edge=terminal_edge)
     return ReviewGateTelemetry(
         verdict=verdict,
         fix_rounds=fix_rounds,
-        hit_cap=shipped_on_cap,
+        hit_cap=hit_cap,
         shipped_on_cap=shipped_on_cap,
     )
 
