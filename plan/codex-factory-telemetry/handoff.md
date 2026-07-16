@@ -41,22 +41,36 @@ re-planned (grounded in two fresh code investigations), adversarially reviewed b
 Fable, and re-sliced into dependency-layered children. `bd-ib-98c.1` is now CLOSED
 (`no-longer-applicable` = re-sliced, not dropped). New ledger structure under
 `bd-ib-98c`:
-- **`bd-ib-98c.3` (F1) — the ripe next build. FACTORY-SAFE, dispatcher-only, no
-  upstream dependency.** Emit the four review-gate attributes (incl. the
-  ship-on-cap signal) by parsing the structured `fabro events --json` stream
-  (each `StageCompleted` carries `preferred_label` + `node_visits`). This answers
-  the standing "ship-on-cap rate" question with NO fabro change. Maintainer decision
-  (2026-07-15): **ship F1 now**, O-track as the follow-on. First F1 step is the
-  "verify FIRST" gate — capture a real `fabro events --json` from a run with a
-  review round and confirm those fields exist.
+- **✅ `bd-ib-98c.3` (F1) — DONE + VERIFIED END-TO-END (2026-07-16); CLOSED.** Emits
+  the four review-gate attributes (incl. the ship-on-cap signal) by parsing
+  `fabro events --json`. Built + adversarially reviewed (Codex + Fable), plus the
+  ts-ordering verdict-mislabel fix (`bd-ib-98c.9`, also CLOSED). PROVEN in
+  production: 9 real dispatches emitted review-gate telemetry with 0 skips
+  (`tmp/fabro-dispatch-journal.jsonl`); the Honeycomb `livespec-dispatcher` dataset
+  (7d) holds 64 `review.gate` spans with all four attributes INTACT — 49 approve /
+  8 fix+ship-on-cap / 7 unknown — so the standing "ship-on-cap rate" question is now
+  answered live (e.g. `bd-ib-fcipkv` ran fix×2 → hit the cap → shipped, captured as
+  `pr_shipped_on_cap=true`). (The parser correctly emits `verdict=unknown` when a run
+  has no terminal approve/fix edge — an honest fallback, not a mislabel.)
 - **`bd-ib-98c.4-.7` (O1-O4) — the outward-facing fabro emitter spine**, strict
   order: activate the inert worker exporter (env re-injection + `http/json`) →
   cross-process traceparent → node-lifecycle spans → ACP turn spans. Rides
   `bd-ib-i4r`.
 - **`bd-ib-98c.8` (O5, deferred)** — ACP token/cost via the already-enabled
   `unstable_session_usage` seam.
-- **`bd-ib-98c.2` (receiver)** repointed onto F1/O1/O3 (allowlist widening +
-  `http/json` overlay). Unchanged sequencing: land before/with the emitter it serves.
+- **`bd-ib-98c.2` (receiver) — allowlist half DONE + PROVEN; `http/json` half BLOCKED
+  on O1.** The allowlist widening for the four review-gate attributes is live on
+  master (`_otel_scrub.py:127-130`) and verified end-to-end above (F1 spans land in
+  Honeycomb, not silently dropped). Remaining: the `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`
+  overlay serves the O-track emitter path and rides O1 (`bd-ib-98c.4`) — keep this item
+  open until then. (Evidence recorded on the ledger item, 2026-07-16.)
+
+**▶ NEXT ACTION (2026-07-16): the factory-safe work on this track is DONE + verified
+(F1 + the receiver allowlist). The remaining O-track spine (O1–O5, `bd-ib-98c.4-.8`)
+is OUTWARD-FACING fabro (Rust) work and is MAINTAINER-GATED: it rides the transport PR
+[fabro-sh/fabro#576], which is deliberately left DRAFT awaiting the maintainer's
+ready-flip + base-version decision (`#474` / ≤0.256 ceiling). No factory-safe forward
+step remains until #576 is flipped ready and merged upstream.**
 
 Full decomposition, the eight code-verified constraints, the rejected stderr-sentinel
 design, and every file:line citation live in `emitter-replan.md`. Everything below
