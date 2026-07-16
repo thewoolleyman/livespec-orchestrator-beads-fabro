@@ -212,6 +212,39 @@ OAuth-only — start it **without** the env wrapper and **without**
   `pkill -f 'fabro server'` — it self-matches the killing shell and can reap
   unrelated shells; resolve the real daemon via `/proc/<pid>/exe`.
 
+### Enabling fabro span export (O1 Lever A — opt-in)
+
+The server's tracing spans (the top-level `run` span it mints per dispatch) are
+bridged to OTLP **only when the OTLP endpoint env is present at start**; the
+default start command above carries none, so export is inert. To turn it on,
+start the server with the three **non-secret** OTLP vars added to its env:
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://172.17.0.1:4318 \
+OTEL_EXPORTER_OTLP_PROTOCOL=http/json \
+OTEL_SERVICE_NAME=fabro \
+~/.fabro/bin/fabro server start --bind 127.0.0.1:32276 --no-web --no-upgrade-check
+```
+
+- **`http/json` is mandatory.** The upstream exporter defaults to
+  `http/protobuf`, but the local receiver is json-only, so protobuf POSTs are
+  silently dropped.
+- **Never set `OTEL_EXPORTER_OTLP_HEADERS` on the server.** The server exports to
+  the **local** receiver (`172.17.0.1:4318`, no auth); the receiver holds the
+  Honeycomb egress key and adds it on egress. The key must stay off the server
+  (the exporter would otherwise send it). This mirrors the OAuth-only posture:
+  no outbound-auth secret in the server env.
+- **Restart required, so pick a quiet window.** A restart interrupts every
+  in-flight dispatch — check `~/.fabro/bin/fabro ps` for running runs first.
+- **Pairs with Lever B** (the worker OTLP re-injection,
+  `fabro-server/spawn_env.rs`). Lever A lights up the **server-side** `run`
+  span; the **worker/agent-side** spans only export once the pinned host binary
+  is rebuilt from a `factory-integration` that carries Lever B (it forwards
+  these same server vars into the worker, minus `OTEL_*HEADERS`). Until then
+  Lever A alone yields the server `run` span only. See the livespec O1 plan
+  (`plan/codex-factory-telemetry/o1-worker-exporter-plan.md`) for the full
+  two-lever design.
+
 ### Auth posture (OAuth-only)
 
 - **Never put `ANTHROPIC_API_KEY` in the server's env.** It bills API cost and
