@@ -65,36 +65,36 @@ Fable, and re-sliced into dependency-layered children. `bd-ib-98c.1` is now CLOS
   overlay serves the O-track emitter path and rides O1 (`bd-ib-98c.4`) — keep this item
   open until then. (Evidence recorded on the ledger item, 2026-07-16.)
 
-**▶ NEXT ACTION (2026-07-16): the factory-safe work on this track is DONE + verified
-(F1 + the receiver allowlist). O1 Step 0 is RESOLVED — the target spans split across
-two processes, so O1 has two levers (see `o1-worker-exporter-plan.md`):**
+**▶ NEXT ACTION (2026-07-17): O1 is PROVEN END-TO-END. Both levers are live and confirmed
+in Honeycomb; the next slice is O2 (`bd-ib-98c.5`, traceparent).**
 
-- **O1 does NOT wait on #576's upstream merge.** The transport is already carried +
-  pinned live in `factory-integration` (`fabro 0.254.0 (15b89ab)`), so O1 builds on
-  that branch NOW. #576 was flipped to **READY (2026-07-16)**; that only starts
-  upstream acceptance and does not gate O1.
-- **Lever A — server-start OTEL env (ops, no fabro code). RUNBOOK STEP LANDED** (PR
-  #702): `orchestrator-image/README.md` §"Host Fabro server" now carries a copy-paste
-  "enable span export" start command (`OTEL_EXPORTER_OTLP_ENDPOINT` +
-  `OTEL_EXPORTER_OTLP_PROTOCOL=http/json` + `OTEL_SERVICE_NAME=fabro`, NO HEADERS). The
-  host server mints the top-level `run` span (`server.rs:4339`), inert only because the
-  server starts with no OTEL env. **Execution is operator-gated:** it requires restarting
-  the fleet-shared server (interrupts in-flight dispatches — pick a quiet window). Then
-  provable in Honeycomb the same day, no code/rebuild.
-- **Lever B — worker re-injection (fabro Rust). BUILT + REVIEWED + READY** (2026-07-16):
-  fork PR **thewoolleyman/fabro#1** (`worker-otel-reinject` → `factory-integration`),
-  marked ready. New `apply_worker_otel_export_env` in `spawn_env.rs`, called from
-  `worker_runtime.rs` after `apply_worker_env`; forwards the non-secret OTLP export vars
-  and strips `OTEL_EXPORTER_OTLP_HEADERS`/`_TRACES_HEADERS` so the Honeycomb key never
-  reaches the sandboxed worker. Codex + Fable adversarial review done (invariant confirmed
-  fail-closed); fmt/clippy(`-D warnings`)/tests green under pinned `nightly-2026-04-14`.
-  **Remaining is operator-gated:** merge #1 → rebuild + re-pin the host binary → restart
-  with the Lever A env → proof-dispatch a worker `run` span into Honeycomb.
+The full operator cutover ran on 2026-07-17:
+- Merged fork PR **thewoolleyman/fabro#1** into `factory-integration` (tip `c543446`).
+- Rebuilt + re-pinned the host binary (`fabro 0.254.0 (c543446)`, Lever B); outgoing
+  `15b89ab` retained as `~/.fabro/bin/fabro.15b89ab-pre-worker-otel.bak`.
+- Restarted the server OAuth-only WITH the Lever A OTEL env (endpoint + `http/json` +
+  `service.name=fabro`, NO HEADERS — confirmed in `/proc/<daemon>/environ`; `fabro doctor`
+  green).
+- Rebuilt the orchestrator image (fixed a pre-existing SIGPIPE in `build-and-verify.sh`'s
+  version probe: `fabro version | head -1` → `fabro --version`).
+- **Proof-dispatch** `bd-ib-dqt` (the throwaway factory-confirmation item; had to promote it
+  `backlog → ready`, the factory had zero ready-status work) ran green → PR #706 merged,
+  post-merge janitor green.
 
-**Both levers' CODE/DOCS are done; what remains is one operator window — merge #1,
-rebuild + re-pin the host binary, and restart the server with the Lever A OTEL env — which
-lights up BOTH the server and worker `run` spans. They stay two disconnected traces until
-O2 (`bd-ib-98c.5`, traceparent) joins them; O2 is the next slice AFTER O1's proof-dispatch.**
+**Result (Honeycomb `livespec` env, `fabro` dataset):** the `run` span shows count=2,
+root_count=2 — TWO root run spans in TWO distinct traces, both `service.name=fabro`, arriving
+via the receiver's `livespec.otel.enrich` scope. That is exactly the predicted server (Lever A)
++ worker (Lever B) pair — two disconnected traces until O2 joins them. Bonus: the export also
+carried the full fabro span tree (Stage/Edge/Checkpoint/Sandbox/Setup/Workflow-run), so much of
+the O3/O4 node-lifecycle layer is already visible.
+
+**Ledger note:** `bd-ib-98c.4` (O1) stays formally OPEN only because it is `blocks`-linked to
+the upstream-transport item `bd-ib-i4r` (fabro#576's upstream merge). O1's deliverable is done +
+proven on the carry branch; force-closing it while that upstream item is open is a deliberate
+manual override left to the maintainer, and `bd-ib-i4r` independently tracks the upstream PR.
+
+**NEXT SLICE — O2 (`bd-ib-98c.5`):** W3C `traceparent` at the `worker_runtime.rs` seam to join
+the server and worker `run` spans into one trace. Unblocked now that O1 is proven.
 
 Full decomposition, the eight code-verified constraints, the rejected stderr-sentinel
 design, and every file:line citation live in `emitter-replan.md`. Everything below
