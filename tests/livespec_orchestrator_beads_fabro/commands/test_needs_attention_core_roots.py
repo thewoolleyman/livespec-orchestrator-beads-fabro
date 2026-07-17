@@ -108,6 +108,22 @@ def test_claude_installed_core_roots_missing_registry(tmp_path) -> None:
     assert list(claude_installed_core_roots(registry=tmp_path / "nope.json")) == []
 
 
+def test_claude_installed_core_roots_unreadable_registry_yields_nothing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = tmp_path / "installed_plugins.json"
+    _ = registry.write_text("{}", encoding="utf-8")
+
+    def _raise_oserror(self: Path, *args: object, **kwargs: object) -> str:
+        _ = (self, args, kwargs)
+        raise OSError("nope")
+
+    monkeypatch.setattr(Path, "read_text", _raise_oserror)
+
+    assert list(claude_installed_core_roots(registry=registry)) == []
+
+
 @pytest.mark.parametrize(
     "registry_text",
     [
@@ -151,6 +167,21 @@ def test_codex_installed_core_roots_yields_version_dirs_highest_first(tmp_path) 
 
 
 def test_read_spec_clis_next_argv_missing_file(tmp_path) -> None:
+    assert read_spec_clis_next_argv(project_root=tmp_path) is None
+
+
+def test_read_spec_clis_next_argv_unreadable_file_returns_none(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ = (tmp_path / ".livespec.jsonc").write_text("{}", encoding="utf-8")
+
+    def _raise_oserror(self: Path, *args: object, **kwargs: object) -> str:
+        _ = (self, args, kwargs)
+        raise OSError("nope")
+
+    monkeypatch.setattr(Path, "read_text", _raise_oserror)
+
     assert read_spec_clis_next_argv(project_root=tmp_path) is None
 
 

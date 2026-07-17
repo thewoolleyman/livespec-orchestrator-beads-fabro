@@ -78,6 +78,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import 
     project_native_status_remaps,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
     BeadsConnectionError,
@@ -225,10 +226,12 @@ def _load_items_fail_soft(*, project_root: Path) -> _LoadedItems | _LoadUnavaila
     output) becomes `_LoadUnavailable` rather than a raised exception, so the
     gate skips instead of bricking the push.
     """
-    try:
-        items = load_items(repo=project_root)
-    except _GATE_COULD_NOT_CHECK_ERRORS as exc:
-        return _LoadUnavailable(reason=str(exc))
+    items = attempt(
+        action=lambda: load_items(repo=project_root),
+        exceptions=_GATE_COULD_NOT_CHECK_ERRORS,
+    )
+    if isinstance(items, AttemptFailure):
+        return _LoadUnavailable(reason=str(items.error))
     return _LoadedItems(items=items)
 
 
@@ -249,10 +252,12 @@ def _heal_and_report(
     config = store_config(repo=project_root)
     _ = write_stdout(text=_HEALED_HEADER)
     for remap in remaps:
-        try:
-            apply_native_status_remaps(remaps=[remap], config=config)
-        except _GATE_COULD_NOT_CHECK_ERRORS as exc:
-            return _LoadUnavailable(reason=str(exc))
+        applied = attempt(
+            action=lambda remap=remap: apply_native_status_remaps(remaps=[remap], config=config),
+            exceptions=_GATE_COULD_NOT_CHECK_ERRORS,
+        )
+        if isinstance(applied, AttemptFailure):
+            return _LoadUnavailable(reason=str(applied.error))
         _ = write_stdout(text=_healed_line(remap=remap))
     return None
 

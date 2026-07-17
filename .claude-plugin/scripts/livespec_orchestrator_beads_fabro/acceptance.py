@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
+
 __all__: list[str] = [
     "AcceptanceConfig",
     "AcceptanceResult",
@@ -95,11 +97,11 @@ def _generated_greeting(*, generated_program: Path, name: str) -> str:
     # the parameter positional OR keyword-only (`def greet(*, name)`, the
     # livespec family discipline). Call faithfully for either: try positional,
     # and on a TypeError that signals a keyword-only signature, retry by keyword.
-    try:
-        return greet(name)
-    except TypeError:
-        greet_kw = cast(Callable[..., str], greet)
-        return greet_kw(name=name)
+    positional = attempt(action=lambda: greet(name), exceptions=(TypeError,))
+    if not isinstance(positional, AttemptFailure):
+        return positional
+    greet_kw = cast(Callable[..., str], greet)
+    return greet_kw(name=name)
 
 
 def run_live_acceptance(*, config: LiveAcceptanceConfig) -> AcceptanceResult:
@@ -182,8 +184,18 @@ def _module_exposes_greet(*, program: Path) -> bool:
     """
     if _GREET_SYMBOL not in program.read_text(encoding="utf-8"):
         return False
-    try:
-        namespace: dict[str, Any] = runpy.run_path(str(program))
-    except (ImportError, NameError, OSError, RuntimeError, SyntaxError, TypeError, ValueError):
+    namespace = attempt(
+        action=lambda: runpy.run_path(str(program)),
+        exceptions=(
+            ImportError,
+            NameError,
+            OSError,
+            RuntimeError,
+            SyntaxError,
+            TypeError,
+            ValueError,
+        ),
+    )
+    if isinstance(namespace, AttemptFailure):
         return False
     return callable(namespace.get(_GREET_SYMBOL))

@@ -81,6 +81,21 @@ def test_run_human_valve_action_refuses_malformed_action(tmp_path: Path) -> None
     }
 
 
+def test_run_human_valve_action_refuses_unknown_value_action(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    result = run_human_valve_action(repo=repo, action_id="unsupported:bd-ib-ready:value")
+
+    assert result == {
+        "action_id": "unsupported:bd-ib-ready:value",
+        "kind": "human-valve",
+        "status": "failed",
+        "domain_error": "invalid-action-id",
+        "summary": "Unsupported human valve action id.",
+    }
+
+
 def test_resolve_blocked_refuses_non_blocked_source_state(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()

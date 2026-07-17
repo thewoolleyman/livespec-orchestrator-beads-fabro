@@ -91,9 +91,8 @@ def parse_fleet_members(*, manifest_text: str) -> FleetMembers | None:
     deviation yields None — the caller refuses the dispatch with an
     actionable error rather than cloning from a guessed member list.
     """
-    try:
-        parsed_raw: object = _jsonc.loads(text=manifest_text)
-    except _jsonc.JsoncParseError:
+    parsed_raw = _jsonc.parse(text=manifest_text)
+    if isinstance(parsed_raw, _jsonc.JsoncFailure):
         return None
     if not isinstance(parsed_raw, dict):
         return None
@@ -154,9 +153,8 @@ def janitor_core_checkout_path(*, janitor_checkout: Path) -> Path:
 
 def janitor_core_ref_from_config(*, config_text: str) -> str:
     """Resolve the livespec core ref pinned by the target repo config."""
-    try:
-        parsed_raw: object = _jsonc.loads(text=config_text)
-    except _jsonc.JsoncParseError:
+    parsed_raw = _jsonc.parse(text=config_text)
+    if isinstance(parsed_raw, _jsonc.JsoncFailure):
         return _DEFAULT_JANITOR_CORE_REF
     if not isinstance(parsed_raw, dict):
         return _DEFAULT_JANITOR_CORE_REF

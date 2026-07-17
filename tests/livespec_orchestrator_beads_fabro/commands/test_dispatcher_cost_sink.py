@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_sink import (
     CostSink,
     cost_lookup_keys,
@@ -113,6 +114,22 @@ def test_sink_no_cost_for_unknown_key(tmp_path: Path) -> None:
     """A key that never accrued reads None (the unobservable condition)."""
     sink = CostSink(path=tmp_path / "cost.json")
     assert sink.usd_micros(key="li-never") is None
+
+
+def test_sink_unreadable_file_reads_as_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An OSError while reading the persisted sink fails open to empty."""
+    path = tmp_path / "cost.json"
+    _ = path.write_text("{}", encoding="utf-8")
+
+    def _raise_oserror(self: Path, *args: object, **kwargs: object) -> str:
+        _ = (self, args, kwargs)
+        raise OSError("nope")
+
+    monkeypatch.setattr(Path, "read_text", _raise_oserror)
+
+    assert CostSink(path=path).usd_micros(key="li-efj") is None
 
 
 def test_sink_non_token_span_is_noop(tmp_path: Path) -> None:

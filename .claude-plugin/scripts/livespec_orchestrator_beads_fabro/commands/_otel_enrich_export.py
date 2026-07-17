@@ -9,6 +9,8 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Protocol
 
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
+
 __all__: list[str] = [
     "HoneycombHttpExporter",
     "SpanExporter",
@@ -79,11 +81,11 @@ class HoneycombHttpExporter:
         if not spans:
             return True
         body = _export_request_bytes(spans=spans, dataset=dataset)
-        for attempt in range(self.max_retries):
+        for attempt_index in range(self.max_retries):
             if self._post(body=body, dataset=dataset):
                 return True
-            if attempt + 1 < self.max_retries:
-                time.sleep(self.backoff_seconds * (attempt + 1))
+            if attempt_index + 1 < self.max_retries:
+                time.sleep(self.backoff_seconds * (attempt_index + 1))
         return False
 
     def _post(self, *, body: bytes, dataset: str) -> bool:
@@ -97,12 +99,18 @@ class HoneycombHttpExporter:
                 _HONEYCOMB_DATASET_HEADER: dataset,
             },
         )
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:  # noqa: S310
-                status = response.status
-        except (urllib.error.URLError, OSError):
+        status = attempt(
+            action=lambda: _urlopen_status(request=request, timeout_seconds=self.timeout_seconds),
+            exceptions=(urllib.error.URLError, OSError),
+        )
+        if isinstance(status, AttemptFailure):
             return False
         return _HTTP_OK_MIN <= status < _HTTP_OK_MAX_EXCLUSIVE
+
+
+def _urlopen_status(*, request: urllib.request.Request, timeout_seconds: float) -> int:
+    with urllib.request.urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
+        return response.status
 
 
 def _export_request_bytes(*, spans: tuple[dict[str, object], ...], dataset: str) -> bytes:

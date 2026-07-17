@@ -64,7 +64,7 @@ dev = [
 # module uses its types module for the canonical cross-repo manifest shape.
 # Pin matches livespec's pin (>=0.2.0; ~/livespec).
 [tool.uv.sources]
-livespec-dev-tooling = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git", tag = "v0.48.1" }
+livespec-dev-tooling = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git", tag = "v0.48.2" }
 livespec-runtime = { git = "https://github.com/thewoolleyman/livespec-runtime.git", tag = "v0.9.2" }
 
 # ---------------------------------------------------------------------------
@@ -279,30 +279,31 @@ exclude_also = [
 # key after an array-of-tables header attaches to that sub-table, not the parent).
 file_lloc_hard_gate = true
 scenario_tiers = ["tests.e2e-cli", "tests.e2e", "tests.integration", "tests.consumer", "tests.prompts", "tests.bin"]
-source_trees = [".claude-plugin/scripts/livespec"]
-io_trees = [".claude-plugin/scripts/livespec/io"]
-commands_trees = [".claude-plugin/scripts/livespec/commands"]
+source_trees = [".claude-plugin/scripts/livespec_orchestrator_beads_fabro"]
+io_trees = [
+    ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/effects",
+    ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/io",
+]
+commands_trees = [".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands"]
 supervisor_entry_files = [
-    ".claude-plugin/scripts/livespec/doctor/run_static.py",
     ".claude-plugin/scripts/bin/_bootstrap.py",
+    ".claude/hooks/beads_access_guard.py",
 ]
-dataclasses_tree = ".claude-plugin/scripts/livespec/schemas/dataclasses"
-pure_trees = [
-    ".claude-plugin/scripts/livespec/parse",
-    ".claude-plugin/scripts/livespec/validate",
-]
+pure_trees = []
 covered_trees = [
-    ".claude-plugin/scripts/livespec",
+    ".claude-plugin/scripts/livespec_orchestrator_beads_fabro",
     ".claude-plugin/scripts/bin",
     "dev-tooling",
+    ".claude/hooks",
 ]
 source_tree_prefixes = [
-    ".claude-plugin/scripts/livespec/",
+    ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/",
     ".claude-plugin/scripts/bin/",
     "dev-tooling/checks/",
+    ".claude/hooks/",
 ]
 tests_tree_prefix = "tests/"
-target_dirs = [".claude-plugin/scripts", "dev-tooling", "tests"]
+target_dirs = [".claude-plugin/scripts", ".claude/hooks", "dev-tooling", "tests"]
 
 # Path-prefix allowlist for the `no_direct_destructive_cli` check: files whose
 # repo-root-relative POSIX path starts with one of these entries are exempt
@@ -352,8 +353,8 @@ subprocess_spawn_allowlist = [
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]
-source_tree = ".claude-plugin/scripts/livespec"
-test_tree = "tests/livespec"
+source_tree = ".claude-plugin/scripts/livespec_orchestrator_beads_fabro"
+test_tree = "tests/livespec_orchestrator_beads_fabro"
 
 [[tool.livespec_dev_tooling.mirror_pairings]]
 source_tree = ".claude-plugin/scripts/bin"
@@ -362,7 +363,3 @@ test_tree = "tests/bin"
 [[tool.livespec_dev_tooling.mirror_pairings]]
 source_tree = "dev-tooling/checks"
 test_tree = "tests/dev-tooling/checks"
-
-[[tool.livespec_dev_tooling.mirror_pairings]]
-source_tree = "livespec_dev_tooling/checks"
-test_tree = "tests/livespec_dev_tooling/checks"

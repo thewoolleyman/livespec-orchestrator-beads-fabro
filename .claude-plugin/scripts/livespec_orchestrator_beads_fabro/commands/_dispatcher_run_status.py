@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from typing import Any, cast
+
+from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 __all__: list[str] = [
     "PrView",
@@ -45,9 +46,8 @@ def parse_running_run_id(*, ps_json: str, work_item_id: str) -> str | None:
     registered; the watchdog treats that as "no signal", never a stall).
     Accepts a top-level array or a `{"runs": [...]}` envelope.
     """
-    try:
-        parsed_raw: object = json.loads(ps_json)
-    except json.JSONDecodeError:
+    parsed_raw = parse_json(text=ps_json)
+    if isinstance(parsed_raw, JsonParseFailure):
         return None
     runs = _runs_list(parsed_raw=parsed_raw)
     for run_raw in runs:
@@ -80,9 +80,8 @@ def parse_run_id_for_work_item(*, ps_json: str, work_item_id: str) -> str | None
     id or the JSON is unusable; the cost gate journals `cost-gate-skipped`
     for a None match rather than crashing the wave.
     """
-    try:
-        parsed_raw: object = json.loads(ps_json)
-    except json.JSONDecodeError:
+    parsed_raw = parse_json(text=ps_json)
+    if isinstance(parsed_raw, JsonParseFailure):
         return None
     for run_raw in _runs_list(parsed_raw=parsed_raw):
         if not isinstance(run_raw, dict):
@@ -144,9 +143,8 @@ def parse_run_status(*, stdout: str) -> str | None:
     in fabro v0.254.0); a plain string status is accepted for
     forward-compatibility. None when the shape is unusable.
     """
-    try:
-        parsed_raw: object = json.loads(stdout)
-    except json.JSONDecodeError:
+    parsed_raw = parse_json(text=stdout)
+    if isinstance(parsed_raw, JsonParseFailure):
         return None
     if not isinstance(parsed_raw, dict):
         return None
@@ -174,9 +172,8 @@ _TERMINAL_CHECK_CONCLUSIONS = frozenset(
 
 def parse_pr_view(*, stdout: str) -> PrView | None:
     """Parse `gh pr view --json` output; None when the shape is unusable."""
-    try:
-        parsed_raw: object = json.loads(stdout)
-    except json.JSONDecodeError:
+    parsed_raw = parse_json(text=stdout)
+    if isinstance(parsed_raw, JsonParseFailure):
         return None
     if not isinstance(parsed_raw, dict):
         return None

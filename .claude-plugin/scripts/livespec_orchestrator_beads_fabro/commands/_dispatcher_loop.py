@@ -6,6 +6,7 @@ import argparse
 import tempfile
 import time
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from time import sleep as _real_sleep
@@ -192,7 +193,8 @@ class _DispatchRunContext:
 def _run_dispatch(*, context: _DispatchRunContext) -> tuple[float, DispatchOutcome]:
     started_at = time.monotonic()
     runner = GithubTokenEnvRunner(inner=ShellCommandRunner(), token=context.token_supplier)
-    try:
+    with ExitStack() as stack:
+        _ = stack.callback(lambda: context.overlay_file.unlink(missing_ok=True))
         outcome = run_dispatch(
             plan=context.plan,
             # Pillar 1 (first-class remint): the decorator re-resolves
@@ -220,6 +222,4 @@ def _run_dispatch(*, context: _DispatchRunContext) -> tuple[float, DispatchOutco
                 heartbeat_path=heartbeat_path(args=context.args, repo=context.repo),
             ),
         )
-    finally:
-        context.overlay_file.unlink(missing_ok=True)
     return started_at, outcome

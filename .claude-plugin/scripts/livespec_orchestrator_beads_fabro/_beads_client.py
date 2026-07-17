@@ -19,7 +19,7 @@ from livespec_orchestrator_beads_fabro._beads_client_fake import (
     fake_singleton,
     reset_fake_singleton,
 )
-from livespec_orchestrator_beads_fabro._beads_client_shell import (
+from livespec_orchestrator_beads_fabro.effects._beads_client_shell import (
     invoke,
     raise_for_status,
 )

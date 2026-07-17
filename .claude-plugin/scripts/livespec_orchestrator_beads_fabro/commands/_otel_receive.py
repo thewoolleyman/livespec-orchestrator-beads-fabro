@@ -37,6 +37,7 @@ from livespec_orchestrator_beads_fabro.commands._otel_parse import (
     ingested_spans_from_trace_request,
 )
 from livespec_orchestrator_beads_fabro.commands._otel_scrub import scrub
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [
     "HeartbeatSink",
@@ -124,9 +125,8 @@ def resolve_receiver_config(*, environ: dict[str, str]) -> ReceiverConfig:
 def _resolve_port(*, raw: str | None) -> int:
     if raw is None:
         return _DEFAULT_RECEIVER_PORT
-    try:
-        port = int(raw.strip())
-    except ValueError:
+    port = attempt(action=lambda: int(raw.strip()), exceptions=(ValueError,))
+    if isinstance(port, AttemptFailure):
         return _DEFAULT_RECEIVER_PORT
     if port < 0:
         return _DEFAULT_RECEIVER_PORT
@@ -234,10 +234,10 @@ class OtelReceiver:
 
     def _serve(self, *, server: socket) -> None:
         while True:
-            try:
-                conn, addr = server.accept()
-            except OSError:
+            accepted = attempt(action=server.accept, exceptions=(OSError,))
+            if isinstance(accepted, AttemptFailure):
                 return
+            conn, addr = accepted
             threading.Thread(
                 target=self._serve_connection,
                 kwargs={"conn": conn, "addr": addr},
@@ -315,10 +315,11 @@ def ensure_receiver_started(
     existing = holder.get(_HOLDER_SLOT)
     if existing is not None:
         return cast("StartableServer", existing)
-    try:
-        server = factory()
-        server.start()
-    except (OSError, RuntimeError):
+    server = attempt(action=factory, exceptions=(OSError, RuntimeError))
+    if isinstance(server, AttemptFailure):
+        return None
+    started = attempt(action=server.start, exceptions=(OSError, RuntimeError))
+    if isinstance(started, AttemptFailure):
         return None
     holder[_HOLDER_SLOT] = server
     return server

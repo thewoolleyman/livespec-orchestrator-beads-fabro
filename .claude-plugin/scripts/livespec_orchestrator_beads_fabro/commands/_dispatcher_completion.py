@@ -31,6 +31,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     acceptance_decision,
     effective_acceptance_policy,
 )
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
     BeadsConnectionError,
@@ -182,14 +183,20 @@ def bounce_non_convergence_to_backlog(
     """
     if not is_non_convergence_outcome(outcome=outcome):
         return
-    try:
-        update_work_item_status(path=store_config(repo=repo), item_id=item.id, status="backlog")
-    except _LEDGER_WRITE_ERRORS as exc:
+    updated = attempt(
+        action=lambda: update_work_item_status(
+            path=store_config(repo=repo),
+            item_id=item.id,
+            status="backlog",
+        ),
+        exceptions=_LEDGER_WRITE_ERRORS,
+    )
+    if isinstance(updated, AttemptFailure):
         journal.append(
             record={
                 "stage": "non-convergence-bounce-error",
                 "work_item_id": item.id,
-                "reason": f"{type(exc).__name__}",
+                "reason": f"{type(updated.error).__name__}",
             }
         )
         return

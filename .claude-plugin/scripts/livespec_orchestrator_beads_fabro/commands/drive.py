@@ -17,6 +17,7 @@ from livespec_orchestrator_beads_fabro.commands._drive_valves import (
     is_human_valve_action,
     run_human_valve_action,
 )
+from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 
 __all__: list[str] = [
@@ -196,10 +197,10 @@ def _dispatch_summary(*, status: str, work_item_ref: str) -> str:
 
 
 def _parse_json_object_or_array(*, text: str) -> object:
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
+    parsed = parse_json(text=text)
+    if isinstance(parsed, JsonParseFailure):
         return None
+    return parsed
 
 
 def _emit_payload(*, payload: dict[str, Any], as_json: bool) -> None:

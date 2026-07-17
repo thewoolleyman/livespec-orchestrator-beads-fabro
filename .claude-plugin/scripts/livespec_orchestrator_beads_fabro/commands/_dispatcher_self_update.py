@@ -46,7 +46,7 @@ import tempfile
 import uuid
 from collections.abc import Callable
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 from livespec_runtime.github_auth.config import load_github_app_config
 from livespec_runtime.github_auth.errors import GithubAppAuthError
@@ -78,6 +78,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update_decision
     pr_files_argv,
     promotion_decision,
 )
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [
     "DISPATCHER_SCRIPT_PREFIXES",
@@ -125,10 +126,13 @@ def github_token_supplier() -> Callable[[], str] | str:
     refusal routed as data at the `github-app-auth` stage — NEVER a
     silent fall-through to a fleet PAT or an ambient `gh` login.
     """
-    try:
-        config = load_github_app_config(environ=os.environ)
-    except GithubAppAuthError as error:
-        return f"C-mode dispatch refused: {error.detail}"
+    config = attempt(
+        action=lambda: load_github_app_config(environ=os.environ),
+        exceptions=(GithubAppAuthError,),
+    )
+    if isinstance(config, AttemptFailure):
+        exc = cast("GithubAppAuthError", config.error)
+        return f"C-mode dispatch refused: {exc.detail}"
     return InstallationTokenProvider(config=config).token
 
 
@@ -261,8 +265,8 @@ def self_update_after_merge(  # noqa: PLR0913 - kw-only fail-open stage; fields 
     `runner` / `poster` are injectable for the hermetic test tier;
     production is the real `ShellCommandRunner` / `HttpNotifyPoster`.
     """
-    try:
-        _self_update(
+    updated = attempt(
+        action=lambda: _self_update(
             work_item_id=work_item_id,
             merged_paths=merged_paths,
             candidate_bin=candidate_bin,
@@ -271,12 +275,14 @@ def self_update_after_merge(  # noqa: PLR0913 - kw-only fail-open stage; fields 
             journal=journal,
             runner=runner if runner is not None else ShellCommandRunner(),
             poster=poster if poster is not None else HttpNotifyPoster(),
-        )
-    except (OSError, RuntimeError) as exc:
+        ),
+        exceptions=(OSError, RuntimeError),
+    )
+    if isinstance(updated, AttemptFailure):
         journal.append(
             record={
                 "stage": "self-update-error",
-                "reason": f"{type(exc).__name__}",
+                "reason": f"{type(updated.error).__name__}",
             }
         )
 

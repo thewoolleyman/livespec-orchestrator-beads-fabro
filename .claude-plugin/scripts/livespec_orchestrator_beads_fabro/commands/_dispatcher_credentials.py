@@ -28,7 +28,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones impor
     fetch_fleet_manifest_text,
     resolve_sibling_clones,
 )
-from livespec_orchestrator_beads_fabro.commands._jsonc import JsoncParseError, loads
+from livespec_orchestrator_beads_fabro.commands._jsonc import JsoncFailure, parse
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
     BeadsConnectionError,
@@ -61,6 +62,12 @@ _DISPATCH_REQUIRED_CREDENTIALS = (
     _OAUTH_TOKEN_ENV,
 )
 _GITHUB_TOKEN_ENV = GITHUB_TOKEN_ENV_VAR  # single-sourced from _dispatcher_io
+_LEDGER_READ_ERRORS = (
+    BeadsCommandError,
+    BeadsConnectionError,
+    BeadsMappingError,
+    BeadsTenantMissingError,
+)
 
 
 def read_dispatch_comments(
@@ -76,15 +83,16 @@ def read_dispatch_comments(
     routed at the `ledger-comments` stage) instead of proceeding
     comment-blind.
     """
-    try:
-        return read_work_item_comments(path=store_config(repo=repo), work_item_id=item.id)
-    except (
-        BeadsCommandError,
-        BeadsConnectionError,
-        BeadsMappingError,
-        BeadsTenantMissingError,
-    ) as exc:
-        return f"ledger comments read failed for {item.id} ({type(exc).__name__}: {exc})"
+    comments = attempt(
+        action=lambda: read_work_item_comments(path=store_config(repo=repo), work_item_id=item.id),
+        exceptions=_LEDGER_READ_ERRORS,
+    )
+    if isinstance(comments, AttemptFailure):
+        return (
+            f"ledger comments read failed for {item.id} "
+            f"({type(comments.error).__name__}: {comments.error})"
+        )
+    return comments
 
 
 def read_dispatch_labels(
@@ -93,15 +101,17 @@ def read_dispatch_labels(
     item: WorkItem,
 ) -> tuple[str, ...] | str:
     """Read raw beads labels that carry per-item dispatcher policy overrides."""
-    try:
-        record = make_beads_client(config=store_config(repo=repo)).show_issue(issue_id=item.id)
-    except (
-        BeadsCommandError,
-        BeadsConnectionError,
-        BeadsMappingError,
-        BeadsTenantMissingError,
-    ) as exc:
-        return f"ledger label read failed for {item.id} ({type(exc).__name__}: {exc})"
+    record = attempt(
+        action=lambda: make_beads_client(config=store_config(repo=repo)).show_issue(
+            issue_id=item.id
+        ),
+        exceptions=_LEDGER_READ_ERRORS,
+    )
+    if isinstance(record, AttemptFailure):
+        return (
+            f"ledger label read failed for {item.id} "
+            f"({type(record.error).__name__}: {record.error})"
+        )
     labels = record.get("labels")
     if not isinstance(labels, list):
         return ()
@@ -161,10 +171,10 @@ def materialize_overlay(
     env_error = check_credential_env(repo=repo)
     if env_error is not None:
         return env_error
-    try:
-        github_token = token()
-    except GithubAppAuthError as error:
-        return f"C-mode dispatch refused: GitHub App token mint failed: {error.detail}"
+    github_token = attempt(action=token, exceptions=(GithubAppAuthError,))
+    if isinstance(github_token, AttemptFailure):
+        exc = cast("GithubAppAuthError", github_token.error)
+        return f"C-mode dispatch refused: GitHub App token mint failed: {exc.detail}"
     # Refresh the ambient GH_TOKEN so the host-side `gh api` fleet-manifest
     # fetch below runs on a currently-valid installation token too.
     os.environ[_GITHUB_TOKEN_ENV] = github_token
@@ -206,9 +216,14 @@ def dispatch_required_credentials_text() -> str:
 
 def read_dispatch_target_credential_wrapper(*, repo: Path) -> tuple[str, ...]:
     config_path = repo / ".livespec.jsonc"
-    try:
-        data = loads(text=config_path.read_text(encoding="utf-8"))
-    except (OSError, JsoncParseError):
+    config_text = attempt(
+        action=lambda: config_path.read_text(encoding="utf-8"),
+        exceptions=(OSError,),
+    )
+    if isinstance(config_text, AttemptFailure):
+        return ()
+    data = parse(text=config_text)
+    if isinstance(data, JsoncFailure):
         return ()
     if not isinstance(data, dict):
         return ()

@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-import json
-from contextlib import suppress
+from contextlib import ExitStack, suppress
 from email.message import Message
 from http import HTTPStatus
 from http.client import parse_headers
 from socket import SHUT_WR, socket
 from typing import IO, TYPE_CHECKING, Protocol, cast
+
+from livespec_orchestrator_beads_fabro.effects import (
+    AttemptFailure,
+    JsonParseFailure,
+    attempt,
+    parse_json,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._otel_receive import OtelReceiver
@@ -67,16 +73,18 @@ class SocketHttpPostHandler:
         self.wfile = cast("IO[bytes]", request.makefile("wb", buffering=0))
         self._status = HTTPStatus.OK
         self._headers: list[tuple[str, str]] = []
-        try:
+        with ExitStack() as stack:
+            _ = stack.callback(self._cleanup)
             self._serve_one()
-        finally:
-            with suppress(OSError):
-                self._request.settimeout(_DRAIN_TIMEOUT_SECONDS)
-                self._request.shutdown(SHUT_WR)
-            _ = drain_socket_body(rfile=self.rfile, cap=_MAX_BODY_BYTES)
-            self.rfile.close()
-            self.wfile.close()
-            self._request.close()
+
+    def _cleanup(self) -> None:
+        with suppress(OSError):
+            self._request.settimeout(_DRAIN_TIMEOUT_SECONDS)
+            self._request.shutdown(SHUT_WR)
+        _ = drain_socket_body(rfile=self.rfile, cap=_MAX_BODY_BYTES)
+        self.rfile.close()
+        self.wfile.close()
+        self._request.close()
 
     def _serve_one(self) -> None:
         request_line = self.rfile.readline(65537).decode("iso-8859-1").strip()
@@ -107,32 +115,39 @@ class SocketHttpPostHandler:
 def reply(*, handler: HttpPostHandler, status: HTTPStatus) -> None:
     """Send a tiny JSON OTLP-style response (empty partial-success)."""
     body = b"{}"
-    try:
-        handler.send_response(code=status)
-        handler.send_header(keyword="content-type", value="application/json")
-        handler.send_header(keyword="content-length", value=str(len(body)))
-        handler.end_headers()
-        _ = handler.wfile.write(body[:0])
-        _ = handler.wfile.write(body)
-    except OSError:
+    sent = attempt(
+        action=lambda: _send_reply(handler=handler, status=status, body=body),
+        exceptions=(OSError,),
+    )
+    if isinstance(sent, AttemptFailure):
         return
 
 
-def read_json_body(*, handler: HttpPostHandler) -> dict[str, object] | None:
+def _send_reply(*, handler: HttpPostHandler, status: HTTPStatus, body: bytes) -> None:
+    handler.send_response(code=status)
+    handler.send_header(keyword="content-type", value="application/json")
+    handler.send_header(keyword="content-length", value=str(len(body)))
+    handler.end_headers()
+    _ = handler.wfile.write(body[:0])
+    _ = handler.wfile.write(body)
+
+
+def read_json_body(*, handler: HttpPostHandler) -> dict[str, object] | None:  # noqa: PLR0911
     """Read + JSON-parse the request body; None on any malformed/oversized body."""
     raw_length = handler.headers.get("content-length")
     if raw_length is None:
         return None
-    try:
-        length = int(raw_length)
-    except ValueError:
+    length = attempt(action=lambda: int(raw_length), exceptions=(ValueError,))
+    if isinstance(length, AttemptFailure):
         return None
     if length < 0 or length > _MAX_BODY_BYTES:
         return None
     body = handler.rfile.read(length)
-    try:
-        parsed: object = json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
+    decoded = attempt(action=lambda: body.decode("utf-8"), exceptions=(UnicodeDecodeError,))
+    if isinstance(decoded, AttemptFailure):
+        return None
+    parsed = parse_json(text=decoded)
+    if isinstance(parsed, JsonParseFailure):
         return None
     if not isinstance(parsed, dict):
         return None
@@ -142,12 +157,15 @@ def read_json_body(*, handler: HttpPostHandler) -> dict[str, object] | None:
 def drain_socket_body(*, rfile: IO[bytes], cap: int) -> int:
     """Read + discard up to `cap` bytes of still-unread request body."""
     drained = 0
-    try:
-        while drained < cap:
-            chunk = rfile.read(min(_DRAIN_CHUNK_BYTES, cap - drained))
-            if not chunk:
-                return drained
-            drained += len(chunk)
-    except OSError:
-        return drained
+    while drained < cap:
+        to_read = min(_DRAIN_CHUNK_BYTES, cap - drained)
+        chunk = attempt(
+            action=lambda to_read=to_read: rfile.read(to_read),
+            exceptions=(OSError,),
+        )
+        if isinstance(chunk, AttemptFailure):
+            return drained
+        if not chunk:
+            return drained
+        drained += len(chunk)
     return drained

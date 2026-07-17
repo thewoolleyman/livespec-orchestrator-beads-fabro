@@ -35,6 +35,7 @@ from livespec_runtime.cross_repo.types import (
 )
 
 from livespec_orchestrator_beads_fabro.commands import _jsonc
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [
     "load_manifest",
@@ -59,9 +60,8 @@ def load_manifest(*, project_root: Path) -> CrossRepoManifest:
     if not config_path.is_file():
         return CrossRepoManifest(targets={})
     raw_text = config_path.read_text(encoding="utf-8")
-    try:
-        parsed = _jsonc.loads(text=raw_text)
-    except _jsonc.JsoncParseError:
+    parsed = _jsonc.parse(text=raw_text)
+    if isinstance(parsed, _jsonc.JsoncFailure):
         return CrossRepoManifest(targets={})
     if not isinstance(parsed, dict):
         return CrossRepoManifest(targets={})
@@ -70,10 +70,13 @@ def load_manifest(*, project_root: Path) -> CrossRepoManifest:
     if not isinstance(block_raw, dict):
         return CrossRepoManifest(targets={})
     block = cast("dict[str, Any]", block_raw)
-    try:
-        return parse_cross_repo_manifest(parsed=block)
-    except CrossRepoSchemaError:
+    manifest = attempt(
+        action=lambda: parse_cross_repo_manifest(parsed=block),
+        exceptions=(CrossRepoSchemaError,),
+    )
+    if isinstance(manifest, AttemptFailure):
         return CrossRepoManifest(targets={})
+    return manifest
 
 
 def parse_entry(*, raw: object) -> DependsOnEntry | None:
@@ -89,8 +92,11 @@ def parse_entry(*, raw: object) -> DependsOnEntry | None:
         return LocalDependency(work_item_id=raw)
     if isinstance(raw, dict):
         typed_raw = cast("dict[str, Any]", raw)
-        try:
-            return parse_depends_on_entry(parsed=typed_raw)
-        except CrossRepoSchemaError:
+        entry = attempt(
+            action=lambda: parse_depends_on_entry(parsed=typed_raw),
+            exceptions=(CrossRepoSchemaError,),
+        )
+        if isinstance(entry, AttemptFailure):
             return None
+        return entry
     return None

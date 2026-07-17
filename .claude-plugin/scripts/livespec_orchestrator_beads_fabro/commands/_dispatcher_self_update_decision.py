@@ -68,10 +68,11 @@ No goal text, env values, stderr blobs, or remote URLs reach the alarm.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from typing import Any, Final, cast
+
+from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 __all__: list[str] = [
     "DISPATCHER_SCRIPT_PREFIXES",
@@ -182,9 +183,8 @@ def parse_pr_files(*, stdout: str) -> tuple[str, ...]:
     must never force a stage-and-canary blindly; the caller journals the
     unobservable list as its own degraded path).
     """
-    try:
-        parsed_raw: object = json.loads(stdout)
-    except json.JSONDecodeError:
+    parsed_raw = parse_json(text=stdout)
+    if isinstance(parsed_raw, JsonParseFailure):
         return ()
     if not isinstance(parsed_raw, dict):
         return ()

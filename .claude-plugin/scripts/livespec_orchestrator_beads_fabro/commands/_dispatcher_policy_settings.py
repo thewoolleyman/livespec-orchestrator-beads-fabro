@@ -178,9 +178,8 @@ def _read_nested_config_value(*, cwd: Path, keys: tuple[str, ...]) -> object:
     config_path = cwd / _LIVESPEC_CONFIG
     if not config_path.is_file():
         return None
-    try:
-        node: object = _jsonc.loads(text=config_path.read_text(encoding="utf-8"))
-    except _jsonc.JsoncParseError:
+    node = _jsonc.parse(text=config_path.read_text(encoding="utf-8"))
+    if isinstance(node, _jsonc.JsoncFailure):
         return None
     for key in keys:
         if not isinstance(node, dict):

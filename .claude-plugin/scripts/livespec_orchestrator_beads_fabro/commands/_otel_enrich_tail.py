@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
+
+from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 __all__: list[str] = [
     "IngestedSpan",
@@ -66,9 +67,8 @@ def _parse_line(*, line: str) -> tuple[IngestedSpan, ...]:
     stripped = line.strip()
     if not stripped:
         return ()
-    try:
-        parsed: object = json.loads(stripped)
-    except json.JSONDecodeError:
+    parsed = parse_json(text=stripped)
+    if isinstance(parsed, JsonParseFailure):
         return ()
     if not isinstance(parsed, dict):
         return ()

@@ -50,6 +50,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_sink_span impor
     SpanCost,
     span_cost,
 )
+from livespec_orchestrator_beads_fabro.effects import (
+    AttemptFailure,
+    JsonParseFailure,
+    attempt,
+    parse_json,
+)
 
 __all__: list[str] = [
     "CostReport",
@@ -230,9 +236,14 @@ class CostSink:
     def _read(self) -> dict[str, dict[str, _DedupRecord]]:
         if not self.path.is_file():
             return {}
-        try:
-            raw: object = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        stored = attempt(
+            action=lambda: self.path.read_text(encoding="utf-8"),
+            exceptions=(OSError,),
+        )
+        if isinstance(stored, AttemptFailure):
+            return {}
+        raw = parse_json(text=stored)
+        if isinstance(raw, JsonParseFailure):
             return {}
         if not isinstance(raw, dict):
             return {}
@@ -257,15 +268,21 @@ class CostSink:
         }
         text = json.dumps(serializable, separators=(",", ":"), sort_keys=True)
         tmp = self.path.with_name(f"{self.path.name}.tmp")
-        try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            _ = tmp.write_text(text, encoding="utf-8")
-            _ = tmp.replace(self.path)
-        except OSError:
+        written = attempt(
+            action=lambda: _write_atomic(path=self.path, tmp=tmp, text=text),
+            exceptions=(OSError,),
+        )
+        if isinstance(written, AttemptFailure):
             # Fail-open: a cost-write failure never crashes the receiver's
             # trace path (the cost gate degrades to 5v9's unobservable
             # fail-closed refusal, which is the safe direction).
             return
+
+
+def _write_atomic(*, path: Path, tmp: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _ = tmp.write_text(text, encoding="utf-8")
+    _ = tmp.replace(path)
 
 
 def _record_to_dict(*, record: _DedupRecord) -> dict[str, object]:

@@ -129,9 +129,8 @@ def _read_dispatcher_for_effective_settings(*, repo: Path) -> dict[str, Any]:
     config_path = repo / _LIVESPEC_CONFIG
     if not config_path.is_file():
         return {}
-    try:
-        root = _jsonc.loads(text=config_path.read_text(encoding="utf-8"))
-    except _jsonc.JsoncParseError:
+    root = _jsonc.parse(text=config_path.read_text(encoding="utf-8"))
+    if isinstance(root, _jsonc.JsoncFailure):
         return {}
     if not isinstance(root, dict):
         return {}
@@ -148,12 +147,11 @@ def _read_root_for_write(*, repo: Path, action_id: str) -> dict[str, Any]:
     config_path = repo / _LIVESPEC_CONFIG
     if not config_path.is_file():
         return {"status": "green", "root": {}}
-    try:
-        root = _jsonc.loads(text=config_path.read_text(encoding="utf-8"))
-    except _jsonc.JsoncParseError as exc:
+    root = _jsonc.parse(text=config_path.read_text(encoding="utf-8"))
+    if isinstance(root, _jsonc.JsoncFailure):
         return _invalid_config_shape(
             action_id=action_id,
-            summary=f"Cannot write config until .livespec.jsonc parses: {exc.detail}",
+            summary=f"Cannot write config until .livespec.jsonc parses: {root.detail}",
         )
     if not isinstance(root, dict):
         return _invalid_config_shape(
