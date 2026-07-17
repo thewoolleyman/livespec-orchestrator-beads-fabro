@@ -11,6 +11,11 @@
           {
             "type": "command",
             "command": "mise exec -- just ensure-plugins"
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/codex-yolo-reapply.sh\"",
+            "timeout": 15
           }
         ]
       }

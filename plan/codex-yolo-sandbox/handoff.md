@@ -1,8 +1,57 @@
 # Plan handoff — codex-yolo-sandbox
 
-**Independent side track. Not started — this is a drafted plan for a fresh session
-to pick up and drive.** Authored 2026-07-15 from a read-only investigation
-(two subagents). Nothing here is implemented.
+**Status: IMPLEMENTED + PROVEN (2026-07-17).** Authored 2026-07-15 from a read-only
+investigation; picked up and driven 2026-07-17. The always-YOLO fix is live and
+end-to-end verified. See "Resolution" below; the original analysis (still accurate)
+follows unchanged for the record, and the upstream prior-art survey is in
+[`research.md`](./research.md).
+
+## Resolution (2026-07-17)
+
+**Deep-research first (maintainer's ask):** this is *not* new ground — `openai/codex-plugin-cc`
+has 12+ issues and 5+ PRs on exactly this, none of the sandbox-config PRs ever merged, and
+the crisp root-cause issues (#482, #505) have zero maintainer comments. Full survey +
+the "why no upstream fix" analysis: [`research.md`](./research.md). Consequence: "wait for
+upstream" (option 3) is a weak bet, so we self-carry.
+
+**Fix chosen (self-hosted, reversible — options 1+2 hybrid, NOT the fork):** force
+`danger-full-access` at the *single* chokepoint both param builders share, with an env
+escape-hatch to downgrade. `startThread`/`resumeThread` are the only two thread primitives
+and every path (task, review, adversarial-review, resume) flows through
+`buildThreadParams`/`buildResumeParams`, so two identical lines cover everything — the
+handoff's original 3-site plan collapses to one:
+
+```
+lib/codex.mjs:68,81   sandbox: options.sandbox ?? "read-only"
+                  ->  sandbox: process.env.CODEX_COMPANION_SANDBOX || "danger-full-access"
+```
+
+Also set `sandbox_mode = "danger-full-access"` in `~/.codex/config.toml` (defense-in-depth +
+covers the raw `codex exec` path). Design note: we force at the chokepoint rather than the
+upstream-flavored "inherit config.toml" because inherit *silently degrades* to read-only if
+config.toml is ever reset — the exact false-confidence bug we are fixing.
+
+**Durability vs plugin updates:** the cache is clobbered on refresh, so an idempotent
+SessionStart re-apply hook restores the patch every session:
+- `.claude/hooks/codex-yolo-reapply.sh` — string-match rewrite of the stock chokepoint in
+  every cached plugin version; idempotent, fail-open.
+- `.claude/settings.json` — registered under `hooks.SessionStart` **after** `just
+  ensure-plugins` (which may re-resolve/clobber), so ordering restores it.
+
+**Proof (end-to-end, same curl probe through the patched companion `task`):**
+
+| Sandbox | `curl … api.github.com` | Verdict |
+| --- | --- | --- |
+| patched default (`danger-full-access`) | `NET=200` + out-of-workspace write OK | full access ✅ |
+| escape-hatch `CODEX_COMPANION_SANDBOX=read-only` | `NET=000` (blocked) | reproduces original bug + hatch works ✅ |
+
+Network is the discriminator: read-only *and* workspace-write both have network off, so
+`NET=200` proves `danger-full-access` specifically (not merely workspace-write).
+
+**Deferred (needs maintainer sign-off — outward/host-wide):** forking
+`openai/codex-plugin-cc` + re-pointing the host-wide `openai-codex` marketplace (durable
+"first-class" option 2), and/or promoting the re-apply hook from project scope to user scope
+(`~/.claude/settings.json`) for host-wide coverage outside this repo.
 
 ## Goal
 
