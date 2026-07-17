@@ -131,10 +131,10 @@ steps around. It is distinct from the containerized server the entrypoint
 provisions (below); the image's `COPY fabro` stages this same host binary from
 `$HOST_FABRO_BIN`, so the host install IS the image's staging source.
 
-**Current binary (2026-07-14):** `fabro 0.254.0 (15b89ab)` — built from the
+**Current binary (2026-07-17):** `fabro 0.254.0 (b651dba)` — built from the
 `factory-integration` branch (see below). Verify with `~/.fabro/bin/fabro
 --version`; the parenthesized short SHA is the integration commit, and it MUST be
-reachable from `factory-integration`.
+reachable from `factory-integration` (`origin/factory-integration` = `b651dbabe`).
 
 ### `factory-integration` — the carrier branch for unreleased fixes
 
@@ -155,7 +155,9 @@ needs (never a subset, so the branch is always the whole truth about what runs):
 | --- | --- | --- |
 | upstream PR **#568** (`push-credential-refresh-ahead`) | credential refresh ahead of expiry | dispatches longer than ~60 min otherwise die on an expired token |
 | env-configurable daemon-readiness timeout | `FABRO_SERVER_START_READY_TIMEOUT_SECS` (default 60s) | the ~6s SlateDB store open exceeds stock 0.254's hard 5s cap, so stock 0.254 cannot start against this store |
-| upstream PR **#576** | opt-in OTLP/HTTP span export | restores factory observability for the Codex era (inert until the OTEL env wiring lands) |
+| upstream PR **#576** | opt-in OTLP/HTTP span export | restores factory observability for the Codex era (the transport; lit up by the fork-local O1/O2 emitter wiring below) |
+| fork-local **O1** — worker OTLP env re-injection (`bd-ib-98c.4`) | the server forwards its non-secret `OTEL_*` export config into the `__run-worker` subprocess (`apply_worker_otel_export_env`), deliberately stripping the credential-bearing `OTEL_EXPORTER_OTLP_HEADERS` | #576 alone is inert in the factory: the ACP work runs in a server-spawned worker whose env is `env_clear`ed by `apply_worker_env`, so without re-injection the worker exports nothing |
+| fork-local **O2** — W3C `traceparent` join (`bd-ib-98c.5`) | the server serializes its `run`-span context to a per-run `TRACEPARENT` env at the worker-launch seam; the worker parents its `run` span on it | without it the server and worker each emit a SEPARATE root `run` span in a distinct trace, so one dispatch is unviewable as one trace |
 
 **Base is pinned to 0.254 — do NOT modernize.** The factory MUST NOT pin any fabro
 build ≥ 0.256 until the `workflow.fabro` migration lands: fabro #474 de-templates

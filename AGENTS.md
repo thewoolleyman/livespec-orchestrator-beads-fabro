@@ -111,6 +111,23 @@ row renders as `drive (livespec-orchestrator-beads-fabro)` with kind
 `codex exec` name selection and model-visible skill references, but it is not
 the picker row operators should expect.
 
+**A RAW `codex exec` invocation MUST redirect stdin from a source that reaches
+EOF** — normally `< /dev/null` when the prompt is passed as an argument (or a
+heredoc / file when using stdin-prompt mode). Never leave stdin inherited.
+`codex exec` reads *additional* prompt text from stdin until EOF even when a
+prompt argument is present (it prints `Reading additional input from stdin...`);
+a background/detached or subagent-spawned call inherits an open **socket** that
+never closes, so codex blocks on that read forever, before doing any work —
+the process stays alive (a status check reports "running") while its output
+never grows past that one line. A foreground call works only because it inherits
+`/dev/null`. This trap hits ONLY raw `codex exec`; the plugin's own
+`codex-companion.mjs` runtime spawns with `stdio: "ignore"` and is immune, so
+prefer routing through the companion / `codex:codex-rescue`. When you must call
+`codex exec` directly, use the redirect form, e.g.
+`codex exec -s read-only -m gpt-5.5 "$(cat prompt.txt)" < /dev/null > out.log 2>&1`.
+And NEVER treat "the process is alive" as proof of progress — verify the output
+file is growing past the stdin line.
+
 ## Beads runtime prerequisites
 
 This plugin's work-item store is a per-repo beads/Dolt TENANT on the shared
@@ -156,11 +173,13 @@ around the seam with raw `mysql` / `dolt` / `sudo`.
 The Dispatcher's host-direct path (`dispatcher.py loop` run on the host, NOT in
 the orchestrator container) connects to a long-lived Fabro server on
 **`127.0.0.1:32276`**. Installing the plugin does NOT start it; the maintainer
-runs it directly from `~/.fabro/bin/fabro`. As of 2026-07-14 the host binary is
-`fabro 0.254.0 (15b89ab)`, built from **`factory-integration`** — the ONE standing
-branch in our fork (`thewoolleyman/fabro`) that carries every upstream fabro fix
-the factory needs but upstream has not released (today: PR #568 credential
-refresh, the env-configurable daemon-readiness timeout, PR #576 OTLP export).
+runs it directly from `~/.fabro/bin/fabro`. As of 2026-07-17 the host binary is
+`fabro 0.254.0 (b651dba)`, built from **`factory-integration`** — the ONE standing
+branch in our fork (`thewoolleyman/fabro`) that carries every fabro fix the
+factory needs but upstream has not released (today: PR #568 credential refresh,
+the env-configurable daemon-readiness timeout, PR #576 OTLP export transport, and
+the fork-local O1 worker-OTLP env re-injection + O2 W3C-traceparent join that
+light that transport up for the Codex era).
 Never pin a fabro build from any other branch, and never modernize the base: any
 fabro ≥ 0.256 breaks `workflow.fabro` (fabro #474 de-templates `acp.command`, so
 every dispatch dies `exit 127`). These rules are NORMATIVE — `SPECIFICATION/constraints.md`
