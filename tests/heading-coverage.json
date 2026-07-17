@@ -619,5 +619,19 @@
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test \u2014 a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` \u00a7\"Heading taxonomy\"). Added by the retire-mode-flag revise (v036), which retired the `--mode` run-mode flag: `loop` now drains the ranked queue by default, `--dry-run` plans without dispatching, and the fail-closed cost gate keys on `--item` presence. The exercising test lands with the impl work-item that realizes the new `loop` surface."
+  },
+  {
+    "heading": "## Scenario 46 \u2014 Per-item cap overrides set a label or clear to reinherit the global default",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test \u2014 a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` \u00a7\"Heading taxonomy\"). Added by the enumerate-per-item-override-and-move-drive-actions revise: the three per-item cap-override drive verbs (set-merge-on-review-cap boolean, set-review-fix-cap / set-acceptance-rework-cap positive-int) write a per-item cap label without touching status, and the reserved `clear` value removes the label so the item reinherits the global dispatcher.* default, with clear-when-absent a green no-op. The exercising test binds through drive.run_action and the FakeBeadsClient-backed store seam (b620304 + the clear-to-inherit commit)."
+  },
+  {
+    "heading": "## Scenario 47 \u2014 The guarded move relocates within the operator-movable statuses only",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test \u2014 a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` \u00a7\"Heading taxonomy\"). Added by the enumerate-per-item-override-and-move-drive-actions revise: the guarded move drive action writes ONLY the item's status among the operator-movable set {backlog, ready, blocked, active} and refuses done / acceptance / pending-approval with a clear error, preserving the accept-from-acceptance ship-guard. The exercising test binds through drive.run_action and the FakeBeadsClient-backed store seam (b620304)."
   }
 ]
