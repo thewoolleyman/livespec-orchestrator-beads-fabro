@@ -63,9 +63,23 @@ Fable, and re-sliced into dependency-layered children. `bd-ib-98c.1` is now CLOS
   O1 proof-dispatch — fabro spans routed to the `fabro` dataset via `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`
   (two `run` spans + the full span tree landed, not dropped). This item can be closed.
 
-**▶ NEXT ACTION (2026-07-17): O2 is DONE + PROVEN END-TO-END. The next slice is O3
-(`bd-ib-98c.6`) — but re-verify first, since O1 already exports most of the node-lifecycle
-layer; the recommendation is CLOSE-without-build (see the spine table below).**
+**▶ NEXT ACTION (2026-07-17): O2 DONE + PROVEN; O3 VERIFIED already-covered (no build);
+the next BUILD is O4 (`bd-ib-98c.7`) — execution-ready plan at `o4-acp-turn-plan.md`.**
+
+- **O3 (`bd-ib-98c.6`) — verification COMPLETE, close DEFERRED to the maintainer.** Live-verified
+  against the O2 proof trace `d74367bc…`: the node-lifecycle layer O3 planned is ALREADY on
+  fabro's existing `Stage started/completed` spans (now joined into the run trace by O2) —
+  `node_id` (start/implement/review/pr/janitor/exit), `index` 0-5, `handler_type`, `attempt`,
+  `max_attempts`, `stage` (human-readable), `status=succeeded`, plus per-node
+  `active/inference/tool/wall_time_ms`. Zero new fabro code needed. `bd close` is blocked by the
+  dependency guard (O2 still formally open behind the `bd-ib-i4r` upstream entanglement); the
+  maintainer force-closes the O1→O2→O3 chain when `bd-ib-i4r` resolves. Evidence on the ledger item.
+- **O4 (`bd-ib-98c.7`) — the genuine remaining gap; THIS is the next build.** No `run_turn` span
+  exists in the live `fabro` dataset. Plan `o4-acp-turn-plan.md` (livespec PR #727): add a
+  `run_turn` span at `fabro-workflow/src/handler/llm/acp.rs:196` with `command` / `config_name` /
+  `visit` / `stop_reason` — all in scope at the seam (code-verified: `stage_scope.visit` is a
+  `u32` right there, correcting the earlier "visit defers" note). No new dep; nests under the
+  Stage span and rides O1/O2. `files_touched` (git-derived) + token/cost (O5) still defer.
 
 **O2 cutover + proof (2026-07-17), superseding the O1-era description that was here:**
 - Built the traceparent join on `factory-integration`: server captures its `run`-span OTel
@@ -109,15 +123,21 @@ ledger item.
 **Whole remaining spine (2026-07-17), all fabro-Rust builds on the O1 seams:**
 - **O2 (`bd-ib-98c.5`)** — ✅ **DONE + PROVEN (2026-07-17), commit `b651dbabe`.** See the
   cutover + Honeycomb proof above. Both adversarial loops clean; re-pinned live.
-- **O3 (`bd-ib-98c.6`) — THE NEXT SLICE, but recommend CLOSE without a build.** O1 already
-  exports the whole
-  node-lifecycle layer (live `fabro` dataset columns: `node_id`/`node`/`label`/`from_node`/
-  `to_node`/`status`/`attempt`/`max_attempts`/`index`/`stage`/`phase`/`handler_type`/timing).
-- **O4 (`bd-ib-98c.7`)** — narrowed to a small attribute add on the `run_turn` span at
-  `fabro-workflow/src/handler/llm/acp.rs`. EASY (at the seam): `stop_reason`
-  (`AcpRunResult.stop_reason`) + `command` (`AcpRunRequest.command`). HARDER (workflow-layer,
-  defer): `files_touched` (derive from git) + `visit` (node-loop count).
+- **O3 (`bd-ib-98c.6`) — ✅ VERIFIED already-covered (2026-07-17); no build.** Live-verified on
+  the O2 proof trace `d74367bc…` (not just the schema): `node_id`/`index`/`handler_type`/`attempt`/
+  `max_attempts`/`stage`/`status` + per-node `active/inference/tool/wall_time_ms` are all on the
+  existing `Stage started/completed` spans, joined into the run trace by O2. Formal `bd close`
+  deferred to the maintainer (dependency-guard, see NEXT ACTION).
+- **O4 (`bd-ib-98c.7`) — THE NEXT BUILD. Execution-ready plan: `o4-acp-turn-plan.md`.** Create a
+  `run_turn` span at `fabro-workflow/src/handler/llm/acp.rs:196` with `command` (`command_display`,
+  `:212`) + `config_name` (`:206`) + `visit` (`stage_scope.visit`, `u32`, `:216`) + `stop_reason`
+  (`Ok(result)` `:356` and `Err(StopReason)` `:399`). No new dep; nests under the Stage span,
+  rides O1/O2. Defers only `files_touched` (git-derived). Build it like O2: implement → Fable+Codex
+  loops (raw `codex exec` needs `< /dev/null`) → re-pin (mind the SHA-stamp trap) → proof-dispatch →
+  confirm a `run_turn` span lands in the `fabro` dataset.
 - **O5 (`bd-ib-98c.8`)** — deferred (token/cost).
+- **`bd-ib-98c.12` (P2, cross-cutting)** — `FABRO_LOG` level silently gates ALL telemetry at both
+  ends; arguably jumps ahead of O4 in operational risk. Decide before building O4.
 
 Full seam citations + data-availability evidence are on each ledger item.
 
