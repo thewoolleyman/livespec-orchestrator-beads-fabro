@@ -68,6 +68,10 @@ def run_action(
                 "'accept:<id>', 'reject:<id>:rework|regroom', "
                 "'set-admission:<id>:auto|manual', "
                 "'set-acceptance:<id>:ai-only|human-only|ai-then-human', "
+                "'set-merge-on-review-cap:<id>:true|false', "
+                "'set-review-fix-cap:<id>:<positive-int>', "
+                "'set-acceptance-rework-cap:<id>:<positive-int>', "
+                "'move:<id>:backlog|ready|blocked|active', "
                 "'config', 'config-manifest', or 'set-config:<key>:<value>'."
             ),
         }

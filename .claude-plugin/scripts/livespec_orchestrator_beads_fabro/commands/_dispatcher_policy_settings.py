@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
+    "ACCEPTANCE_REWORK_CAP_LABEL",
     "DEFAULT_ACCEPTANCE_POLICY",
     "DEFAULT_ACCEPTANCE_REWORK_CAP",
     "DEFAULT_ADMISSION_POLICY",
@@ -27,6 +28,8 @@ __all__: list[str] = [
     "DEFAULT_MERGE_ON_REVIEW_CAP",
     "DEFAULT_REVIEW_FIX_CAP",
     "DEFAULT_WIP_CAP",
+    "MERGE_ON_REVIEW_CAP_LABEL",
+    "REVIEW_FIX_CAP_LABEL",
     "effective_acceptance_policy",
     "effective_acceptance_rework_cap",
     "effective_admission_policy",
@@ -58,9 +61,9 @@ _MERGE_ON_REVIEW_CAP_KEY = "merge_on_review_cap"
 _ACCEPTANCE_MODE_KEY = "acceptance_mode"
 _REVIEW_FIX_CAP_KEY = "review_fix_cap"
 _ACCEPTANCE_REWORK_CAP_KEY = "acceptance_rework_cap"
-_MERGE_ON_REVIEW_CAP_LABEL = "merge-on-review-cap:"
-_REVIEW_FIX_CAP_LABEL = "review-fix-cap:"
-_ACCEPTANCE_REWORK_CAP_LABEL = "acceptance-rework-cap:"
+MERGE_ON_REVIEW_CAP_LABEL = "merge-on-review-cap:"
+REVIEW_FIX_CAP_LABEL = "review-fix-cap:"
+ACCEPTANCE_REWORK_CAP_LABEL = "acceptance-rework-cap:"
 _ACCEPTANCE_POLICIES = frozenset(("ai-only", "ai-then-human", "human-only"))
 
 
@@ -130,7 +133,7 @@ def effective_merge_on_review_cap(
 ) -> bool:
     """Resolve `merge_on_review_cap`, with a raw per-item label overriding global."""
     _ = item
-    label_value = _raw_label_value(raw_labels=raw_labels, prefix=_MERGE_ON_REVIEW_CAP_LABEL)
+    label_value = _raw_label_value(raw_labels=raw_labels, prefix=MERGE_ON_REVIEW_CAP_LABEL)
     parsed = _bool_label_value(value=label_value)
     if parsed is not None:
         return parsed
@@ -144,7 +147,7 @@ def effective_review_fix_cap(
 ) -> int:
     """Resolve `review_fix_cap`, with a raw per-item label overriding global."""
     _ = item
-    label_value = _raw_label_value(raw_labels=raw_labels, prefix=_REVIEW_FIX_CAP_LABEL)
+    label_value = _raw_label_value(raw_labels=raw_labels, prefix=REVIEW_FIX_CAP_LABEL)
     parsed = _positive_int_label_value(value=label_value)
     if parsed is not None:
         return parsed
@@ -158,7 +161,7 @@ def effective_acceptance_rework_cap(
 ) -> int:
     """Resolve `acceptance_rework_cap`, with a raw per-item label overriding global."""
     _ = item
-    label_value = _raw_label_value(raw_labels=raw_labels, prefix=_ACCEPTANCE_REWORK_CAP_LABEL)
+    label_value = _raw_label_value(raw_labels=raw_labels, prefix=ACCEPTANCE_REWORK_CAP_LABEL)
     parsed = _positive_int_label_value(value=label_value)
     if parsed is not None:
         return parsed
