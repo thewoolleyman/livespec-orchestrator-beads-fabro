@@ -1,17 +1,18 @@
 # rop-sweep-consumer-cleanup — bring this repo's error handling onto the ROP railway
 
-## Archived status — 2026-07-17
+## Reopened status — 2026-07-17
 
-This thread is archived because the originally dispatched implementation slice is
-closed:
+This thread is active again because the remaining phases are still part of the
+original cleanup plan and must be finished before the parent tracking issue can
+close:
 
 - Phase 0/1 landed in PR #694 and work item `bd-ib-l3bx6p` is done.
-- The parent tracking issue `bd-ib-y6gv3o` was closed after follow-ups were
-  split out.
-- Phase 2 continues as `bd-ib-esxztq` (`ready`): re-point the pyproject
-  source-tree scopes.
-- Phase 3 continues as `bd-ib-rmfuij` (`blocked`): adopt the six
-  library-hardcoded checks after the sibling dev-tooling prerequisite lands.
+- Phase 2 is tracked by `bd-ib-esxztq`: re-point the pyproject source-tree
+  scopes.
+- Phase 3 is tracked by `bd-ib-rmfuij`: adopt the six library-hardcoded checks
+  after the sibling dev-tooling prerequisite lands.
+- The parent tracking issue `bd-ib-y6gv3o` remains open until all phases are
+  complete and verified together.
 
 **Part of the `rop-sweep-*` coordinated set (do these ASAP, together).** Sibling
 plans, findable fleet-wide via `plan/rop-sweep-*`:
