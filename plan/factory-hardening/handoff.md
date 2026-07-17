@@ -71,7 +71,7 @@ under test.
 
 ## Related
 
-- Parent track (closed): `plan/codex-credential-broker/handoff.md` (epic
+- Parent track (closed): `plan/archive/codex-credential-broker/handoff.md` (epic
   `bd-ib-rck`). Both items were surfaced there but are out of that epic's scope.
 - Sibling thread: `plan/credential-freshness-redesign/handoff.md` — independent; no
   code dependency.

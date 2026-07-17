@@ -8,7 +8,7 @@ DONE, but its reason-for-being — the **emitter + receiver** (`bd-ib-98c.1` /
 
 - **A sibling track was spun off from here (2026-07-15):**
   `codex-credential-broker` (epic `bd-ib-rck`; handoff
-  `plan/codex-credential-broker/handoff.md`). It surfaced while re-verifying
+  `plan/archive/codex-credential-broker/handoff.md`). It surfaced while re-verifying
   `bd-ib-ss7rkr` during this session and now has its own track + fresh session.
   That is why the credential work is NOT in this handoff — it did not vanish, it
   moved.
@@ -503,7 +503,7 @@ base-version decision (`#474`) is the shared concern.
 ## Related tracks
 
 - **`codex-credential-broker`** (epic `bd-ib-rck`; handoff
-  `plan/codex-credential-broker/handoff.md`) — spun off from THIS track on
+  `plan/archive/codex-credential-broker/handoff.md`) — spun off from THIS track on
   2026-07-15 (surfaced while re-verifying `bd-ib-ss7rkr`). Ledger edge:
   `bd-ib-98c` `related` `bd-ib-rck` — SIBLINGS, **not** a `blocks` chain.
   - **Soft, directional, operational dependency:** this track's end-to-end

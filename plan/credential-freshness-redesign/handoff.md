@@ -20,7 +20,7 @@ NOT the shipped *code* — every landed piece (`codex-cred-status`,
 - **Design of record:** [`research/credential-freshness-redesign.md`](research/credential-freshness-redesign.md)
   — the full analysis, the design space (A preflight / mid-run top-up / B direct
   endpoint), the grounded investigation findings, and the recommendation.
-- **Parent track (closed):** `plan/codex-credential-broker/handoff.md` (epic
+- **Parent track (closed):** `plan/archive/codex-credential-broker/handoff.md` (epic
   `bd-ib-rck`). This thread graduated out of that track's post-completion design
   reconsideration.
 
