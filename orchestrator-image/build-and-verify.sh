@@ -53,7 +53,10 @@ log "staging fabro binary into build context"
 [ -x "$HOST_FABRO_BIN" ] || { echo "fabro binary not found at $HOST_FABRO_BIN" >&2; exit 1; }
 cp "$HOST_FABRO_BIN" "$HERE/fabro"
 chmod +x "$HERE/fabro"
-"$HERE/fabro" version | head -1
+# `--version` is a single line; the `version` SUBCOMMAND prints a multi-line
+# client/server block, so `version | head -1` closed the pipe early and the
+# Rust binary panicked on SIGPIPE/EPIPE (fatal under `set -o pipefail`).
+"$HERE/fabro" --version
 
 # --------------------------------------------------------------------------
 # Build.
