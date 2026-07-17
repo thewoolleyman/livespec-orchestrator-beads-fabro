@@ -1,18 +1,20 @@
 # rop-sweep-consumer-cleanup — bring this repo's error handling onto the ROP railway
 
-## Reopened status — 2026-07-17
+## Archived status — 2026-07-17
 
-This thread is active again because the remaining phases are still part of the
-original cleanup plan and must be finished before the parent tracking issue can
-close:
+This thread is complete and archived. The remaining phases from the reopened
+plan landed in PR #735 and were verified by local `just check`, pre-push
+aggregate checks, GitHub CI, and ledger conformance.
 
-- Phase 0/1 landed in PR #694 and work item `bd-ib-l3bx6p` is done.
-- Phase 2 is tracked by `bd-ib-esxztq`: re-point the pyproject source-tree
-  scopes.
-- Phase 3 is tracked by `bd-ib-rmfuij`: adopt the six library-hardcoded checks
-  after the sibling dev-tooling prerequisite lands.
-- The parent tracking issue `bd-ib-y6gv3o` remains open until all phases are
-  complete and verified together.
+- Phase 0/1 landed earlier in PR #694 and work item `bd-ib-l3bx6p` is done.
+- Phase 2 `bd-ib-esxztq` landed in PR #735 and is closed with
+  `resolution:completed`.
+- Phase 3 `bd-ib-rmfuij` landed in PR #735 and is closed with
+  `resolution:completed`.
+- Parent tracking issue `bd-ib-y6gv3o` is closed with `resolution:completed`.
+- PR #735 rebase-merged as `8858c904206cdac400e2556417d2d5dece3686b3`.
+- Final code commit on `master`: `8858c90 fix: route expected failures through
+  effects`.
 
 **Part of the `rop-sweep-*` coordinated set (do these ASAP, together).** Sibling
 plans, findable fleet-wide via `plan/rop-sweep-*`:
