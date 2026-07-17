@@ -75,8 +75,13 @@ The full operator cutover ran on 2026-07-17:
 - Restarted the server OAuth-only WITH the Lever A OTEL env (endpoint + `http/json` +
   `service.name=fabro`, NO HEADERS — confirmed in `/proc/<daemon>/environ`; `fabro doctor`
   green).
-- Rebuilt the orchestrator image (fixed a pre-existing SIGPIPE in `build-and-verify.sh`'s
-  version probe: `fabro version | head -1` → `fabro --version`).
+- Orchestrator-image rebuild: **NOT complete — blocked** (`bd-ib-dwv`). Fixed a pre-existing
+  SIGPIPE in `build-and-verify.sh`'s version probe (`fabro version | head -1` → `fabro
+  --version`, PR #708), which got the build past staging, but `docker build` then fails at
+  Dockerfile Step 9 — the beads fetch `gastownhall/beads` v1.0.5 returns HTTP 404 (dead URL,
+  pre-existing). So the **containerized** fabro path stays on the OLD image (host↔container
+  parity gap); the **host-direct** path — the one that runs dispatches and now emits telemetry
+  — is fully on `c543446`. Re-pinning the image awaits the `bd-ib-dwv` URL/SHA fix.
 - **Proof-dispatch** `bd-ib-dqt` (the throwaway factory-confirmation item; had to promote it
   `backlog → ready`, the factory had zero ready-status work) ran green → PR #706 merged,
   post-merge janitor green.
