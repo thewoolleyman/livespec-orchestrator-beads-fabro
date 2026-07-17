@@ -63,8 +63,11 @@ Fable, and re-sliced into dependency-layered children. `bd-ib-98c.1` is now CLOS
   O1 proof-dispatch — fabro spans routed to the `fabro` dataset via `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`
   (two `run` spans + the full span tree landed, not dropped). This item can be closed.
 
-**▶ NEXT ACTION (2026-07-17): O2 DONE + PROVEN; O3 VERIFIED already-covered (no build);
-the next BUILD is O4 (`bd-ib-98c.7`) — execution-ready plan at `o4-acp-turn-plan.md`.**
+**▶ NEXT ACTION (2026-07-18): O2 DONE + PROVEN; O3 VERIFIED already-covered (no build).
+The most-ripe next step is finishing P2 (`bd-ib-98c.12`) — already IMPLEMENTED + gated on
+fork branch `p2-fabro-log-decouple`, needs only review + re-pin + a `FABRO_LOG=warn`
+proof-dispatch; recommend it BEFORE the O4 build (`bd-ib-98c.7`, execution-ready plan
+`o4-acp-turn-plan.md`), since O4's new span would be gated by the very coupling P2 fixes.**
 
 - **O3 (`bd-ib-98c.6`) — verification COMPLETE, close DEFERRED to the maintainer.** Live-verified
   against the O2 proof trace `d74367bc…`: the node-lifecycle layer O3 planned is ALREADY on
@@ -136,8 +139,16 @@ ledger item.
   loops (raw `codex exec` needs `< /dev/null`) → re-pin (mind the SHA-stamp trap) → proof-dispatch →
   confirm a `run_turn` span lands in the `fabro` dataset.
 - **O5 (`bd-ib-98c.8`)** — deferred (token/cost).
-- **`bd-ib-98c.12` (P2, cross-cutting)** — `FABRO_LOG` level silently gates ALL telemetry at both
-  ends; arguably jumps ahead of O4 in operational risk. Decide before building O4.
+- **`bd-ib-98c.12` (P2, cross-cutting) — IMPLEMENTED + GATED (2026-07-18); review + pin + proof
+  PENDING.** `FABRO_LOG` was a GLOBAL registry filter gating the otel layer too, so raising the log
+  level silently zeroed ALL telemetry at both ends. Fix (per-layer filtering: FABRO_LOG on the fmt
+  layers, `LevelFilter::INFO` on the otel layer) is on fork branch **`p2-fabro-log-decouple`**
+  (commit `12e0a7b86`, pushed) — deliberately OFF `factory-integration` so the carrier tip stays ==
+  the pinned binary while review is deferred. Validated: workspace clippy `-D warnings` + 438/438
+  fabro-cli bin tests. NEXT: Codex+Fable loops → fast-forward `factory-integration` + re-pin →
+  **acceptance proof = a `FABRO_LOG=warn` dispatch that still emits run/Stage spans**. Recommend
+  sequencing BEFORE O4 (O4's new span would be gated by the same coupling). Full detail on the
+  ledger item.
 
 Full seam citations + data-availability evidence are on each ledger item.
 
