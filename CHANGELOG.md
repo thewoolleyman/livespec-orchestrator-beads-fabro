@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.42.0...v0.43.0) (2026-07-17)
+
+
+### Features
+
+* **drive:** clear-to-inherit for the per-item cap-override verbs ([7b94230](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7b942305e9c575e6558e55bbea07173df8a5b416))
+
 ## [0.42.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.41.3...v0.42.0) (2026-07-17)
 
 
