@@ -128,6 +128,24 @@ prefer routing through the companion / `codex:codex-rescue`. When you must call
 And NEVER treat "the process is alive" as proof of progress — verify the output
 file is growing past the stdin line.
 
+**The codex-companion runtime is patched to always run `danger-full-access`
+(YOLO): full disk + network, no OS sandbox.** Upstream `openai/codex-plugin-cc`
+hardcodes a restrictive sandbox on every plugin-launched thread (`read-only` /
+`workspace-write`, both network-OFF), which silently cripples Codex reviews — an
+adversarial review that cannot run `pytest`/`gh` passes code it never executed.
+Upstream ships no toggle and has merged no fix (prior-art survey:
+`plan/codex-yolo-sandbox/research.md`), so this repo self-carries a one-line
+chokepoint rewrite in the plugin cache — `buildThreadParams` / `buildResumeParams`
+in `lib/codex.mjs` resolve to `danger-full-access` — re-applied every session by
+`.claude/hooks/codex-yolo-reapply.sh` (registered under `hooks.SessionStart`
+AFTER `just ensure-plugins`, because a plugin refresh clobbers the cache).
+To DOWNGRADE a single run, set `CODEX_COMPANION_SANDBOX` (e.g. `read-only` or
+`workspace-write`) in the environment — that env var is the escape-hatch the
+chokepoint honors. `~/.codex/config.toml` also carries
+`sandbox_mode = "danger-full-access"` to cover the raw `codex exec` path.
+Rationale, end-to-end proof, and the deferred fork / host-wide options are in
+`plan/codex-yolo-sandbox/handoff.md`.
+
 ## Beads runtime prerequisites
 
 This plugin's work-item store is a per-repo beads/Dolt TENANT on the shared
