@@ -33,37 +33,31 @@ Ledger epic: **`bd-ib-rck`**.
 
 ## ▶ CURRENT STATE + NEXT ACTION (read this first)
 
-**Epic `bd-ib-rck` is COMPLETE (execution record below), and the plan has adopted
-ONE follow-on item:** `bd-ib-ss7rkr` — the predecessor that surfaced this track —
-whose docs/contract-realignment half is now active work in this plan (see next).
+**Epic `bd-ib-rck` is COMPLETE, and the adopted follow-on item `bd-ib-ss7rkr` is
+now DONE (v038, 2026-07-17) — the plan is complete again.** No open work remains
+here; the redesign and factory-hardening follow-ups live in their own plans
+(`plan/credential-freshness-redesign/`, `plan/factory-hardening/`).
 
-## ▶▶▶ ACTIVE — `bd-ib-ss7rkr` docs/contract realignment (adopted 2026-07-16)
+## ▶▶▶ DONE — `bd-ib-ss7rkr` docs/contract realignment (closed 2026-07-17, resolution:completed)
 
-**Status:** RESTARTED 2026-07-16 (`blocked` → `backlog`; cleared the stale
-`blocked-reason:needs-human` + `not-yet-actionable` labels). The item's
-re-verification half is DONE (2026-07-14) and produced the landed seatbelt
-`bd-ib-a89` (`CODEX_REFRESH_TOKEN_URL_OVERRIDE`, CLOSED). Only the docs half
-remains.
+**Both halves complete.** The re-verification half was DONE 2026-07-14 (it produced
+the landed seatbelt `bd-ib-a89`, `CODEX_REFRESH_TOKEN_URL_OVERRIDE`). The
+docs/contract realignment half landed as **SPECIFICATION v038** (PR #714, merged
+2026-07-17): `contracts.md` §"Worker credential projection" + `scenarios.md`
+Scenarios 18/19 were de-drifted to the shipped **multi-provider** worker path — an
+ADDITIVE projection where the host MAY hold and project credentials for more than
+one provider into a single worker sandbox (a Claude-subscription OAuth env
+credential and an OpenAI/ChatGPT Codex file credential), each non-rotatable;
+guarantees provider-agnostic; the projection mechanism and WHICH credentials the
+freshness gate covers left implementation-owned (matching the shipped gate, which
+lifetime-gates the Codex credential and presence-checks the Claude one). No `## ` H2
+heading changed, so `tests/heading-coverage.json` was unchanged.
 
-**Scope (the remaining half):** realign the orchestrator SPECIFICATION to describe
-the MULTI-PROVIDER worker credential path — `contracts.md` §"Worker credential
-projection" + `scenarios.md` Scenario 18/19. This is the "describe the
-multi-provider worker path" work deferred while upstream codex-core auth behavior
-was still a judgement call.
-
-**Why it was blocked and no longer is:** blocked 2026-07-04 as "acceptance is a
-judgement call against a moving upstream." That blocker was explicitly resolved by
-the 2026-07-14 re-verification against the actually-pinned codex-core
-(`rust-v0.137.0`): the credential-safety conclusion HOLDS and the seatbelt closed
-the one reachable exposure. Nothing about the docs realignment itself is a
-judgement call, so the item is actionable.
-
-**Next action:** groom `bd-ib-ss7rkr` from `backlog` → a scoped, ready slice —
-identify exactly which `contracts.md` §"Worker credential projection" clauses and
-`scenarios.md` 18/19 steps need multi-provider language, then execute the
-realignment through the livespec revise flow (spec change → ratify), honoring the
-`tests/heading-coverage.json` co-edit discipline if any `## ` spec headings move.
-Factory-safe per the item's own `Autonomy: factory-safe`.
+**Process:** grooming (`active`) → propose → **4 rounds of independent Fable
+adversarial review → final NO-BLOCKERS** → ratify (revision sidecar +
+`history/v038/` snapshot) → merge → close (`resolution:completed`). The Fable rounds
+tightened the freshness-gate arity across the contract and Scenario 19 until the
+prose exactly matched shipped behavior (the impl gates only the Codex credential).
 
 ## ▶▶ EXECUTION STATE (2026-07-15) — ✅ TRACK COMPLETE (epic `bd-ib-rck` CLOSED)
 
@@ -389,10 +383,11 @@ stalls the factory *today* regardless of the broker.
     emitter adds `OTEL_*` at the SAME fabro `worker_runtime.rs:90-99` re-injection
     seam. Coordinate there; do not widen fabro's fail-closed `apply_worker_env`.
 - `bd-ib-a89` — the landed seatbelt (CLOSED).
-- `bd-ib-ss7rkr` — the re-verification that surfaced this. **Now ADOPTED into this
-  plan as active work** (2026-07-16): re-verification half DONE, docs/contract
-  realignment half restarted `blocked` → `backlog`. See §"ACTIVE — `bd-ib-ss7rkr`
-  docs/contract realignment" near the top.
+- `bd-ib-ss7rkr` — the re-verification that surfaced this; adopted into this plan
+  and **now DONE** (closed 2026-07-17, `resolution:completed`). Both halves landed:
+  re-verification (produced seatbelt `bd-ib-a89`) + docs/contract realignment
+  (SPECIFICATION v038, PR #714). See §"DONE — `bd-ib-ss7rkr` docs/contract
+  realignment" near the top.
 - `contracts.md` §"Worker credential projection" + `scenarios.md` Scenarios 18/19
   — the ratified contract. The "host is sole owner / worker is a read-only
   consumer" clauses stay TRUE under the broker; the design strengthens them.
