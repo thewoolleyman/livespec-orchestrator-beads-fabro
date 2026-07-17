@@ -37,6 +37,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import cast
 
 from livespec_runtime.github_auth.errors import GithubAppAuthError
 
@@ -47,6 +48,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io_fabro_launcher import (
     WatchedFabroLauncher,
 )
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [
     "GITHUB_TOKEN_ENV_VAR",
@@ -75,8 +77,8 @@ class ShellCommandRunner:
         timeout_seconds: float,
         env: dict[str, str] | None = None,
     ) -> CommandResult:
-        try:
-            completed = subprocess.run(  # noqa: S603 - argvs are Dispatcher-built, never shell
+        completed = attempt(
+            action=lambda: subprocess.run(  # noqa: S603 - argvs are Dispatcher-built, never shell
                 argv,
                 cwd=str(cwd),
                 capture_output=True,
@@ -84,8 +86,11 @@ class ShellCommandRunner:
                 timeout=timeout_seconds,
                 check=False,
                 env=None if env is None else {**os.environ, **env},
-            )
-        except subprocess.TimeoutExpired as exc:
+            ),
+            exceptions=(subprocess.TimeoutExpired,),
+        )
+        if isinstance(completed, AttemptFailure):
+            exc = cast("subprocess.TimeoutExpired", completed.error)
             return CommandResult(
                 exit_code=124,
                 stdout=_decode(raw=exc.stdout),
@@ -113,14 +118,15 @@ class GithubTokenEnvRunner:
         timeout_seconds: float,
         env: dict[str, str] | None = None,
     ) -> CommandResult:
-        try:
-            os.environ[GITHUB_TOKEN_ENV_VAR] = self.token()
-        except GithubAppAuthError as error:
+        token = attempt(action=self.token, exceptions=(GithubAppAuthError,))
+        if isinstance(token, AttemptFailure):
+            exc = cast("GithubAppAuthError", token.error)
             return CommandResult(
                 exit_code=1,
                 stdout="",
-                stderr=f"GitHub App token refresh failed (fail-closed): {error.detail}",
+                stderr=f"GitHub App token refresh failed (fail-closed): {exc.detail}",
             )
+        os.environ[GITHUB_TOKEN_ENV_VAR] = token
         merged_env = {**(env or {}), GITHUB_TOKEN_ENV_VAR: os.environ[GITHUB_TOKEN_ENV_VAR]}
         return self.inner.run(argv=argv, cwd=cwd, timeout_seconds=timeout_seconds, env=merged_env)
 

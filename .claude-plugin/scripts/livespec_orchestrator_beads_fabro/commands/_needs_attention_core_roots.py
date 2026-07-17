@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro.commands import _jsonc
+from livespec_orchestrator_beads_fabro.effects import (
+    AttemptFailure,
+    JsonParseFailure,
+    attempt,
+    parse_json,
+)
 
 __all__: list[str] = [
     "CoreRootBases",
@@ -63,9 +68,14 @@ def read_spec_clis_next_argv(*, project_root: Path) -> list[str] | None:
     config_path = project_root / _LIVESPEC_CONFIG
     if not config_path.is_file():
         return None
-    try:
-        parsed = _jsonc.loads(text=config_path.read_text(encoding="utf-8"))
-    except _jsonc.JsoncParseError:
+    config_text = attempt(
+        action=lambda: config_path.read_text(encoding="utf-8"),
+        exceptions=(OSError,),
+    )
+    if isinstance(config_text, AttemptFailure):
+        return None
+    parsed = _jsonc.parse(text=config_text)
+    if isinstance(parsed, _jsonc.JsoncFailure):
         return None
     if not isinstance(parsed, dict):
         return None
@@ -89,9 +99,14 @@ def claude_installed_core_roots(*, registry: Path) -> Iterator[Path]:
     """Yield CORE roots from a Claude `installed_plugins.json` registry file."""
     if not registry.is_file():
         return
-    try:
-        parsed = json.loads(registry.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
+    registry_text = attempt(
+        action=lambda: registry.read_text(encoding="utf-8"),
+        exceptions=(OSError,),
+    )
+    if isinstance(registry_text, AttemptFailure):
+        return
+    parsed = parse_json(text=registry_text)
+    if isinstance(parsed, JsonParseFailure):
         return
     if not isinstance(parsed, dict):
         return

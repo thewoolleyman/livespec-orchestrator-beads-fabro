@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import json
 import shlex
 from pathlib import Path
 from typing import Any, cast
 
 from livespec_runtime.attention_item import AttentionUrgency
 from livespec_runtime.needs_attention import SpecNextOutput
+
+from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 __all__: list[str] = [
     "adapt_top_candidate",
@@ -68,9 +69,8 @@ def adapt_top_candidate(*, stdout: str, project_root: Path) -> SpecNextOutput | 
     non-list `candidates`, an empty ranking, or a ranking with only inert
     (`none`) candidates.
     """
-    try:
-        payload = json.loads(stdout)
-    except json.JSONDecodeError:
+    payload = parse_json(text=stdout)
+    if isinstance(payload, JsonParseFailure):
         return None
     if not isinstance(payload, dict):
         return None

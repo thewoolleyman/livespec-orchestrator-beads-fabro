@@ -20,13 +20,13 @@ are private to the orchestrator CLI surface; nothing else in the
 package raises or catches them.
 """
 
-import json
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.spec_reader import current_specification_version
 
@@ -83,9 +83,8 @@ def parse_cli_argv(*, raw: str, flag: str) -> list[str] | None:
     when the value is not a JSON array of non-empty strings. The
     caller maps None to the usage-error exit code 2.
     """
-    try:
-        parsed: object = json.loads(raw)
-    except json.JSONDecodeError:
+    parsed = parse_json(text=raw)
+    if isinstance(parsed, JsonParseFailure):
         parsed = None
     argv = as_non_empty_str_list(value=parsed)
     if argv is not None:
@@ -120,10 +119,10 @@ def load_payload(*, source: str) -> object:
         if not path.is_file():
             raise PayloadMissingError(path=path)
         text = path.read_text(encoding="utf-8")
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise PayloadInvalidError(detail=f"payload is not valid JSON: {exc}") from exc
+    parsed = parse_json(text=text)
+    if isinstance(parsed, JsonParseFailure):
+        raise PayloadInvalidError(detail=f"payload is not valid JSON: {parsed.error}")
+    return parsed
 
 
 def require_str(*, obj: dict[str, Any], key: str, where: str) -> str:
@@ -161,9 +160,8 @@ def resolve_spec_version(*, spec_reader_cli: list[str] | None, context: CliConte
 
 
 def _version_from_stdout(*, spec_reader_cli: list[str], stdout: str) -> int:
-    try:
-        parsed: object = json.loads(stdout)
-    except json.JSONDecodeError:
+    parsed = parse_json(text=stdout)
+    if isinstance(parsed, JsonParseFailure):
         parsed = None
     if not isinstance(parsed, dict):
         raise InjectedCliError(

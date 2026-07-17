@@ -26,6 +26,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     assess_codex_credential_freshness,
     project_codex_auth_snapshot,
 )
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.io import write_stdout
 
 __all__: list[str] = [
@@ -53,10 +54,13 @@ def read_host_codex_auth() -> str | None:
     the caller renders an actionable refusal naming `codex login`.
     """
     home = os.environ.get(_CODEX_HOME_ENV) or str(Path.home() / ".codex")
-    try:
-        return (Path(home) / "auth.json").read_text(encoding="utf-8")
-    except OSError:
+    auth_text = attempt(
+        action=lambda: (Path(home) / "auth.json").read_text(encoding="utf-8"),
+        exceptions=(OSError,),
+    )
+    if isinstance(auth_text, AttemptFailure):
         return None
+    return auth_text
 
 
 @dataclass(frozen=True, kw_only=True)

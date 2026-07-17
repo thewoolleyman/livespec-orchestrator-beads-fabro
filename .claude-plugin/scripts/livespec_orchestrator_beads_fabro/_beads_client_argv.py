@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any, cast
 
+from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 from livespec_orchestrator_beads_fabro.errors import BeadsCommandError, BeadsMappingError
 
 if TYPE_CHECKING:
@@ -25,14 +26,15 @@ def parse_json_output(*, stdout: str, argv_repr: str) -> Any:
     text = stdout.strip()
     if text == "":
         return []
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError as exc:
+    parsed = parse_json(text=text)
+    if isinstance(parsed, JsonParseFailure):
+        exc = parsed.error
         raise BeadsCommandError(
             command=argv_repr,
             exit_code=0,
             stderr=f"could not parse bd --json output: {exc}",
         ) from exc
+    return parsed
 
 
 def coerce_issue_record(*, parsed: Any, issue_id: str) -> BeadsRecord:

@@ -8,6 +8,7 @@ from livespec_orchestrator_beads_fabro._store_mutations import update_work_item_
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
     BeadsConnectionError,
@@ -47,20 +48,22 @@ def escalate_needs_human_block(
         return
     if item.status == "blocked" and item.blocked_reason == "needs-human":
         return
-    try:
-        update_work_item_blocked_state(
+    updated = attempt(
+        action=lambda: update_work_item_blocked_state(
             path=store_config(repo=repo),
             item_id=item.id,
             status="blocked",
             blocked_reason="needs-human",
             admission_policy="manual",
-        )
-    except _LEDGER_WRITE_ERRORS as exc:
+        ),
+        exceptions=_LEDGER_WRITE_ERRORS,
+    )
+    if isinstance(updated, AttemptFailure):
         journal.append(
             record={
                 "stage": "needs-human-blocked-error",
                 "work_item_id": item.id,
-                "reason": f"{type(exc).__name__}",
+                "reason": f"{type(updated.error).__name__}",
             }
         )
         return

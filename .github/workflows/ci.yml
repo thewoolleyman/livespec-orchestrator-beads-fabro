@@ -286,6 +286,7 @@ jobs:
           - check-partition-completeness
           - check-plugin-resolution
           - check-skill-invocation-paths
+          - check-source-trees-scoped-to-consumer
           - check-vendor-manifest
     steps:
       - name: Checkout

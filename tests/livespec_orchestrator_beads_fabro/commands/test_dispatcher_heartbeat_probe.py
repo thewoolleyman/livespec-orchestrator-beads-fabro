@@ -49,6 +49,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
     StallVerdict,
     decide_stall,
 )
+from livespec_orchestrator_beads_fabro.commands._otel_heartbeat import read_beats
 from livespec_orchestrator_beads_fabro.commands._otel_receive import HeartbeatSink
 
 # ---------------------------------------------------------------------------
@@ -171,6 +172,22 @@ def test_probe_is_fail_safe_on_malformed_file(tmp_path: Path) -> None:
     _ = path.write_text("{ this is not json", encoding="utf-8")
     probe = HeartbeatLivenessProbe(sink=HeartbeatSink(path=path), keys=("oyg-1",))
     assert probe.sample(observed_at=9.0).last_event_epoch is None
+
+
+def test_read_beats_is_fail_safe_on_unreadable_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "j-otel-heartbeat.json"
+    _ = path.write_text("{}", encoding="utf-8")
+
+    def _raise_oserror(self: Path, *args: object, **kwargs: object) -> str:
+        _ = (self, args, kwargs)
+        raise OSError("nope")
+
+    monkeypatch.setattr(Path, "read_text", _raise_oserror)
+
+    assert read_beats(path=path) == {}
 
 
 def test_frozen_heartbeat_confirms_a_stall_through_decide_stall(tmp_path: Path) -> None:

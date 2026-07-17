@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import cast
@@ -20,6 +19,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import journal_path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import post_verdict_runner
+from livespec_orchestrator_beads_fabro.effects import (
+    AttemptFailure,
+    JsonParseFailure,
+    attempt,
+    parse_json,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -65,23 +70,21 @@ def emit_calibration(  # noqa: PLR0913 — kw-only fail-open stage; each field i
     `runner` is injectable for the hermetic test tier.
     """
     resolved_runner = post_verdict_runner(runner=runner, token_supplier=token_supplier)
-    try:
-        record = build_calibration_record(
+    emitted = attempt(
+        action=lambda: _build_and_append_calibration(
+            args=args,
+            repo=repo,
             item=item,
             outcome=outcome,
-            repo_name=repo.name,
-            journal_records=read_journal_records_for(args=args, repo=repo),
+            journal=journal,
             wall_clock_seconds=wall_clock_seconds,
-            token_cost_micros=calibration_token_cost(args=args, repo=repo, outcome=outcome),
             dispatch_context_size=dispatch_context_size,
-            merged_pr_diff_size=merged_pr_diff_size(
-                repo=repo,
-                outcome=outcome,
-                runner=resolved_runner,
-            ),
-        )
-        journal.append(record=calibration_journal_record(record=record))
-    except (AttributeError, OSError, RuntimeError) as exc:
+            runner=resolved_runner,
+        ),
+        exceptions=(AttributeError, OSError, RuntimeError),
+    )
+    if isinstance(emitted, AttemptFailure):
+        exc = emitted.error
         journal.append(
             record={
                 "stage": "calibration-error",
@@ -89,6 +92,34 @@ def emit_calibration(  # noqa: PLR0913 — kw-only fail-open stage; each field i
                 "reason": f"{type(exc).__name__}",
             }
         )
+
+
+def _build_and_append_calibration(  # noqa: PLR0913 - injectable calibration seam inputs.
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    item: WorkItem,
+    outcome: DispatchOutcome,
+    journal: JournalFile,
+    wall_clock_seconds: float,
+    dispatch_context_size: int,
+    runner: CommandRunner,
+) -> None:
+    record = build_calibration_record(
+        item=item,
+        outcome=outcome,
+        repo_name=repo.name,
+        journal_records=read_journal_records_for(args=args, repo=repo),
+        wall_clock_seconds=wall_clock_seconds,
+        token_cost_micros=calibration_token_cost(args=args, repo=repo, outcome=outcome),
+        dispatch_context_size=dispatch_context_size,
+        merged_pr_diff_size=merged_pr_diff_size(
+            repo=repo,
+            outcome=outcome,
+            runner=runner,
+        ),
+    )
+    journal.append(record=calibration_journal_record(record=record))
 
 
 def read_journal_records_for(
@@ -109,9 +140,8 @@ def read_journal_records_for(
         return ()
     records: list[dict[str, object]] = []
     for line in resolved_journal_path.read_text(encoding="utf-8").splitlines():
-        try:
-            parsed: object = json.loads(line)
-        except json.JSONDecodeError:
+        parsed = parse_json(text=line)
+        if isinstance(parsed, JsonParseFailure):
             continue
         if isinstance(parsed, dict):
             mapping = cast("dict[object, object]", parsed)
@@ -180,9 +210,8 @@ def parse_pr_diff_size(*, stdout: str) -> int | None:
     present, else `None` (an unparseable or partial payload is unobservable,
     never a false zero).
     """
-    try:
-        parsed: object = json.loads(stdout)
-    except json.JSONDecodeError:
+    parsed = parse_json(text=stdout)
+    if isinstance(parsed, JsonParseFailure):
         return None
     if not isinstance(parsed, dict):
         return None

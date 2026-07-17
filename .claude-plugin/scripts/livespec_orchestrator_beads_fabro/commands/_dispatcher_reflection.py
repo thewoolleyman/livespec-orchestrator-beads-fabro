@@ -85,6 +85,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_spans imp
     join_ids,
     stage_summary,
 )
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.io import write_stderr
 
 __all__: list[str] = [
@@ -307,8 +308,8 @@ def reflect(
     if mode == _MODE_OFF or _AUTO_TRIP.tripped:
         return
     deadline = time.monotonic() + _REFLECTION_BUDGET_SECONDS
-    try:
-        run_reflection(
+    reflected = attempt(
+        action=lambda: run_reflection(
             outcomes=tuple(outcomes),
             journal=journal,
             scan=scan_outcomes,
@@ -320,9 +321,11 @@ def reflect(
                 file_handoff_note=_FILE_HANDOFF_NOTE,
                 budget_exceeded_message=_BUDGET_EXCEEDED_MESSAGE,
             ),
-        )
-    except (OSError, TimeoutError) as exc:
-        _record_reflection_error(journal=journal, exc=exc)
+        ),
+        exceptions=(OSError, TimeoutError),
+    )
+    if isinstance(reflected, AttemptFailure):
+        _record_reflection_error(journal=journal, exc=reflected.error)
         return
     _AUTO_TRIP.consecutive_errors = 0
 

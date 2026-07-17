@@ -14,11 +14,18 @@ Public surface:
 
 from __future__ import annotations
 
-import json
 import re
+from dataclasses import dataclass
 from typing import Any
 
-__all__: list[str] = ["JsoncParseError", "loads"]
+from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
+
+__all__: list[str] = ["JsoncFailure", "JsoncParseError", "loads", "parse"]
+
+
+@dataclass(frozen=True, kw_only=True)
+class JsoncFailure:
+    detail: str
 
 
 class JsoncParseError(Exception):
@@ -47,8 +54,17 @@ def _strip_line_comments(*, text: str) -> str:
 
 def loads(*, text: str) -> Any:
     """Parse a JSONC string and return the decoded Python value."""
+    parsed = parse(text=text)
+    if isinstance(parsed, JsoncFailure):
+        raise JsoncParseError(detail=parsed.detail)
+    return parsed
+
+
+def parse(*, text: str) -> object | JsoncFailure:
+    """Parse JSONC into a value, or return an explicit failure."""
     stripped = _strip_line_comments(text=text)
-    try:
-        return json.loads(stripped)
-    except json.JSONDecodeError as exc:
-        raise JsoncParseError(detail=f"jsonc parse failed: {exc}") from exc
+    parsed = parse_json(text=stripped)
+    if isinstance(parsed, JsonParseFailure):
+        exc = parsed.error
+        return JsoncFailure(detail=f"jsonc parse failed: {exc}")
+    return parsed

@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import tempfile
+from contextlib import ExitStack
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
@@ -21,6 +22,7 @@ from livespec_orchestrator_beads_fabro.commands._reflector_filing import (
 from livespec_orchestrator_beads_fabro.commands._reflector_findings_parse import parse_findings
 from livespec_orchestrator_beads_fabro.commands._reflector_lessons import LessonsProposer
 from livespec_orchestrator_beads_fabro.commands._reflector_spans import emit_spans
+from livespec_orchestrator_beads_fabro.effects import FloatParseFailure, parse_float
 
 __all__: list[str] = [
     "build_mcp_config",
@@ -74,9 +76,8 @@ def _resolve_positive_float(*, environ: dict[str, str], name: str, default: floa
     raw = environ.get(name, "")
     if raw == "":
         return default
-    try:
-        parsed = float(raw)
-    except ValueError:
+    parsed = parse_float(text=raw)
+    if isinstance(parsed, FloatParseFailure):
         return default
     return parsed if parsed > 0 else default
 
@@ -232,7 +233,9 @@ def run_claude_reflector(
     claude_path = resolve_claude_path(environ=dict(os.environ))
     timeout_seconds = resolve_claude_timeout_seconds(environ=dict(os.environ))
     strict_mcp = resolve_strict_mcp(environ=dict(os.environ))
-    try:
+    with ExitStack() as stack:
+        _ = stack.callback(handle.close)
+        _ = stack.callback(lambda: config_path.unlink(missing_ok=True))
         json.dump(config, handle)
         handle.close()
         return runner.run(
@@ -246,8 +249,6 @@ def run_claude_reflector(
             cwd=repo,
             timeout_seconds=timeout_seconds,
         )
-    finally:
-        config_path.unlink(missing_ok=True)
 
 
 def reflector_prompt(*, repo: Path) -> str:

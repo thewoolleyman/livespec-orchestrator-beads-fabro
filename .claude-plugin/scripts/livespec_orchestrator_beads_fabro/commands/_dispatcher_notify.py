@@ -54,6 +54,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [
     "HttpNotifyPoster",
@@ -186,11 +187,18 @@ class HttpNotifyPoster:
             method="POST",
             headers={"Title": title},
         )
-        try:
-            with urllib.request.urlopen(request, timeout=timeout_seconds):  # noqa: S310
-                return True
-        except (urllib.error.URLError, OSError, ValueError):
+        posted = attempt(
+            action=lambda: _urlopen_post(request=request, timeout_seconds=timeout_seconds),
+            exceptions=(urllib.error.URLError, OSError, ValueError),
+        )
+        if isinstance(posted, AttemptFailure):
             return False
+        return posted
+
+
+def _urlopen_post(*, request: urllib.request.Request, timeout_seconds: float) -> bool:
+    with urllib.request.urlopen(request, timeout=timeout_seconds):  # noqa: S310
+        return True
 
 
 def resolve_topic(*, environ: dict[str, str]) -> str | None:

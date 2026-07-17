@@ -36,6 +36,12 @@ from livespec_orchestrator_beads_fabro.commands._reflector_runtime import (
 from livespec_orchestrator_beads_fabro.commands._reflector_spans import (
     emit_summary as _emit_summary,
 )
+from livespec_orchestrator_beads_fabro.effects import (
+    AttemptFailure,
+    FloatParseFailure,
+    attempt,
+    parse_float,
+)
 from livespec_orchestrator_beads_fabro.io import write_stderr
 
 __all__: list[str] = [
@@ -178,9 +184,8 @@ def _resolve_positive_float(*, environ: dict[str, str], name: str, default: floa
     raw = environ.get(name, "")
     if raw == "":
         return default
-    try:
-        parsed = float(raw)
-    except ValueError:
+    parsed = parse_float(text=raw)
+    if isinstance(parsed, FloatParseFailure):
         return default
     return parsed if parsed > 0 else default
 
@@ -239,8 +244,8 @@ def run_reflector_oob(
         )
         return
     deadline = time.monotonic() + resolve_reflector_budget_seconds(environ=dict(os.environ))
-    try:
-        report = _run_pass(
+    reflected = attempt(
+        action=lambda: _run_pass(
             repo=repo,
             journal=journal,
             spans_path=spans_path,
@@ -249,10 +254,13 @@ def run_reflector_oob(
             mode=mode,
             api_key=api_key,
             deadline=deadline,
-        )
-    except (OSError, RuntimeError, TimeoutError) as exc:
-        _record_error(journal=journal, exc=exc)
+        ),
+        exceptions=(OSError, RuntimeError, TimeoutError),
+    )
+    if isinstance(reflected, AttemptFailure):
+        _record_error(journal=journal, exc=reflected.error)
         return
+    report = reflected
     _emit_summary(report=report)
     _AUTO_TRIP.consecutive_errors = 0
 

@@ -32,6 +32,7 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_work_items impo
     human_valves,
     impl_next,
 )
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.io import write_stdout
 from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -175,15 +176,17 @@ def _run_spec_next_cli(*, argv: list[str]) -> _SpecNextResult:  # pragma: no cov
     (integration-covered): it cannot run hermetically without a live CORE
     checkout. Fail-soft — any OS / subprocess error becomes a non-zero result.
     """
-    try:
-        completed = subprocess.run(  # noqa: S603
+    completed = attempt(
+        action=lambda: subprocess.run(  # noqa: S603
             argv,
             capture_output=True,
             text=True,
             check=False,
             timeout=_SPEC_NEXT_TIMEOUT_SECONDS,
-        )
-    except (OSError, subprocess.SubprocessError):
+        ),
+        exceptions=(OSError, subprocess.SubprocessError),
+    )
+    if isinstance(completed, AttemptFailure):
         return _SpecNextResult(stdout="", returncode=1)
     return _SpecNextResult(stdout=completed.stdout, returncode=completed.returncode)
 
@@ -208,13 +211,19 @@ def _spec_next(
     injectable (mirroring `MintSeams`) so unit tests exercise the adapt /
     fail-soft logic without a live CORE checkout.
     """
-    try:
-        command = seam.resolve_command(project_root=project_root)
-        if command is None:
-            return None
-        result = seam.run(argv=[*command, "--project-root", str(project_root)])
-    except (OSError, subprocess.SubprocessError):
+    result = attempt(
+        action=lambda: _run_resolved_spec_next(seam=seam, project_root=project_root),
+        exceptions=(OSError, subprocess.SubprocessError),
+    )
+    if isinstance(result, AttemptFailure) or result is None:
         return None
     if result.returncode != 0:
         return None
     return adapt_top_candidate(stdout=result.stdout, project_root=project_root)
+
+
+def _run_resolved_spec_next(*, seam: SpecNextSeam, project_root: Path) -> _SpecNextResult | None:
+    command = seam.resolve_command(project_root=project_root)
+    if command is None:
+        return None
+    return seam.run(argv=[*command, "--project-root", str(project_root)])

@@ -51,12 +51,20 @@ foreground while `fabro run` executes in a background thread) lives in
 
 from __future__ import annotations
 
-import json
 import os
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import timezone
 from typing import Any, Final, Protocol, cast
+
+from livespec_orchestrator_beads_fabro.effects import (
+    FloatParseFailure,
+    IsoDatetimeParseFailure,
+    JsonParseFailure,
+    parse_float,
+    parse_iso_datetime,
+    parse_json,
+)
 
 __all__: list[str] = [
     "DEFAULT_STALL_SECONDS",
@@ -169,10 +177,10 @@ def resolve_stall_seconds(*, environ: dict[str, str] | None = None) -> float:
     """
     env = dict(os.environ) if environ is None else environ
     raw = env.get(STALL_SECONDS_ENV_VAR, "")
-    try:
-        value = float(raw)
-    except ValueError:
+    parsed = parse_float(text=raw)
+    if isinstance(parsed, FloatParseFailure):
         return DEFAULT_STALL_SECONDS
+    value = parsed
     if value <= 0:
         return DEFAULT_STALL_SECONDS
     return value
@@ -245,9 +253,8 @@ def decide_stall(
 
 def _max_event_epoch(*, events_json: str) -> float | None:
     """Max event timestamp (epoch seconds) across `fabro events --json`; None on no signal."""
-    try:
-        parsed_raw: object = json.loads(events_json)
-    except json.JSONDecodeError:
+    parsed_raw = parse_json(text=events_json)
+    if isinstance(parsed_raw, JsonParseFailure):
         return None
     events = _events_list(parsed_raw=parsed_raw)
     if events is None:
@@ -287,9 +294,8 @@ def _event_epoch(*, event_raw: object) -> float | None:
 
 def _inspect_updated_epoch(*, inspect_json: str) -> float | None:
     """Read `updated_at` from `fabro inspect --json` as epoch seconds; None on no signal."""
-    try:
-        parsed_raw: object = json.loads(inspect_json)
-    except json.JSONDecodeError:
+    parsed_raw = parse_json(text=inspect_json)
+    if isinstance(parsed_raw, JsonParseFailure):
         return None
     if not isinstance(parsed_raw, dict):
         return None
@@ -310,9 +316,8 @@ def _iso_to_epoch(*, value: str) -> float | None:
     timestamp as UTC.
     """
     normalized = _TRAILING_Z_RE.sub("+00:00", value)
-    try:
-        parsed = datetime.fromisoformat(normalized)
-    except ValueError:
+    parsed = parse_iso_datetime(text=normalized)
+    if isinstance(parsed, IsoDatetimeParseFailure):
         return None
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)

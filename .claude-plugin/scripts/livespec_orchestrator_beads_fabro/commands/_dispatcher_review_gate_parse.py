@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any, cast
+
+from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 __all__: list[str] = [
     "ReviewGateTelemetry",
@@ -82,9 +83,8 @@ def _parse_line(*, line: str) -> dict[str, Any] | None:
     stripped = line.strip()
     if stripped == "":
         return None
-    try:
-        parsed_raw: object = json.loads(stripped)
-    except json.JSONDecodeError:
+    parsed_raw = parse_json(text=stripped)
+    if isinstance(parsed_raw, JsonParseFailure):
         return None
     if not isinstance(parsed_raw, dict):
         return None

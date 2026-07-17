@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Protocol, cast
+
+from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 __all__: list[str] = [
     "items_with_retries",
@@ -29,9 +30,8 @@ def read_journal_records(*, journal_path: Path) -> tuple[dict[str, object], ...]
         return ()
     records: list[dict[str, object]] = []
     for line in journal_path.read_text(encoding="utf-8").splitlines():
-        try:
-            parsed: object = json.loads(line)
-        except json.JSONDecodeError:
+        parsed = parse_json(text=line)
+        if isinstance(parsed, JsonParseFailure):
             continue
         if isinstance(parsed, dict):
             mapping = cast("dict[object, object]", parsed)

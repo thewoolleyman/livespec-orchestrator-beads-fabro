@@ -9,6 +9,7 @@ from typing import Literal
 from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
     decode_codex_access_token_exp,
 )
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [
     "CODEX_ALARM_THRESHOLD_SECONDS",
@@ -59,9 +60,11 @@ def assess_host_codex_credential(
                 "No host Codex credential found; run `codex login` on the " "orchestrator host."
             ),
         )
-    try:
-        expires_at = decode_codex_access_token_exp(source_auth_json=source_auth_json)
-    except (ValueError, json.JSONDecodeError):
+    expires_at = attempt(
+        action=lambda: decode_codex_access_token_exp(source_auth_json=source_auth_json),
+        exceptions=(ValueError, json.JSONDecodeError),
+    )
+    if isinstance(expires_at, AttemptFailure):
         return HostCodexCredentialStatus(
             present=True,
             malformed=True,

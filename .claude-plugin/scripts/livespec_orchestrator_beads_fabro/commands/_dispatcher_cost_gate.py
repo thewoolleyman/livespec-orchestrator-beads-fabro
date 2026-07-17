@@ -44,6 +44,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     cost_report_spans_path,
     cost_sink_path,
 )
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = ["cost_gate_after_verdict", "derived_costs"]
 
@@ -65,20 +66,22 @@ def cost_gate_after_verdict(  # noqa: PLR0913 — kw-only fail-open stage; seams
     resolved_runner: CommandRunner = runner if runner is not None else ShellCommandRunner()
     if token_supplier is not None:
         resolved_runner = GithubTokenEnvRunner(inner=resolved_runner, token=token_supplier)
-    try:
-        _cost_gate(
+    gated = attempt(
+        action=lambda: _cost_gate(
             args=args,
             repo=repo,
             outcomes=outcomes,
             journal=journal,
             runner=resolved_runner,
             poster=poster if poster is not None else HttpNotifyPoster(),
-        )
-    except (AttributeError, OSError, RuntimeError) as exc:
+        ),
+        exceptions=(AttributeError, OSError, RuntimeError),
+    )
+    if isinstance(gated, AttemptFailure):
         journal.append(
             record={
                 "stage": "cost-gate-error",
-                "reason": f"{type(exc).__name__}",
+                "reason": f"{type(gated.error).__name__}",
             }
         )
 
@@ -90,10 +93,13 @@ def derived_costs(
     outcomes: list[DispatchOutcome],
 ) -> dict[str, int]:
     """The CC-token-derived per-dispatch cost for each green outcome."""
-    try:
-        return _read_derived_costs(args=args, repo=repo, outcomes=outcomes)
-    except (AttributeError, OSError, RuntimeError, ValueError):
+    derived = attempt(
+        action=lambda: _read_derived_costs(args=args, repo=repo, outcomes=outcomes),
+        exceptions=(AttributeError, OSError, RuntimeError, ValueError),
+    )
+    if isinstance(derived, AttemptFailure):
         return {}
+    return derived
 
 
 def _cost_gate(
@@ -193,10 +199,13 @@ def _derived_reports(
     repo: Path,
     outcomes: list[DispatchOutcome],
 ) -> dict[str, CostReport]:
-    try:
-        return _read_derived_reports(args=args, repo=repo, outcomes=outcomes)
-    except (AttributeError, OSError, RuntimeError, ValueError):
+    reports = attempt(
+        action=lambda: _read_derived_reports(args=args, repo=repo, outcomes=outcomes),
+        exceptions=(AttributeError, OSError, RuntimeError, ValueError),
+    )
+    if isinstance(reports, AttemptFailure):
         return {}
+    return reports
 
 
 def _read_derived_reports(

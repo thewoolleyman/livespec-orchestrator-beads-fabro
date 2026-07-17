@@ -22,6 +22,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
+
 __all__: list[str] = ["LESSONS_RELATIVE_PATH", "read_ratified_lessons"]
 
 LESSONS_RELATIVE_PATH = Path("loop-reflection-gate/lessons.md")
@@ -38,9 +40,11 @@ def read_ratified_lessons(*, lessons_root: Path) -> str:
     text stripped. Returns '' when the file is absent, unreadable, missing the
     `## Lessons` heading, or carries only the placeholder — never raising.
     """
-    try:
-        text = (lessons_root / LESSONS_RELATIVE_PATH).read_text(encoding="utf-8")
-    except OSError:
+    text = attempt(
+        action=lambda: (lessons_root / LESSONS_RELATIVE_PATH).read_text(encoding="utf-8"),
+        exceptions=(OSError,),
+    )
+    if isinstance(text, AttemptFailure):
         return ""
     if _LESSONS_HEADING not in text:
         return ""

@@ -168,9 +168,8 @@ def _read_root_mapping(*, cwd: Path) -> dict[str, Any]:
     if not config_path.is_file():
         return {}
     raw_text = config_path.read_text(encoding="utf-8")
-    try:
-        parsed = _jsonc.loads(text=raw_text)
-    except _jsonc.JsoncParseError:
+    parsed = _jsonc.parse(text=raw_text)
+    if isinstance(parsed, _jsonc.JsoncFailure):
         return {}
     if not isinstance(parsed, dict):
         return {}

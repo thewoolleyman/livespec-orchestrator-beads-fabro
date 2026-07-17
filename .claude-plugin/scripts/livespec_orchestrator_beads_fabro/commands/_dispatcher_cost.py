@@ -60,11 +60,16 @@ never echoes the broader record).
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any, Protocol, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.effects import (
+    FloatParseFailure,
+    JsonParseFailure,
+    parse_float,
+    parse_json,
+)
 
 
 class JournalWriter(Protocol):
@@ -407,10 +412,10 @@ def _resolve_cap(*, environ: dict[str, str], name: str, default: float) -> float
     raw = environ.get(name, "")
     if raw == "":
         return default
-    try:
-        return float(raw)
-    except ValueError:
+    parsed = parse_float(text=raw)
+    if isinstance(parsed, FloatParseFailure):
         return default
+    return parsed
 
 
 def _total_usd_micros_for(*, ps_json: str, run_id: str) -> int | None:
@@ -420,9 +425,8 @@ def _total_usd_micros_for(*, ps_json: str, run_id: str) -> int | None:
     null / non-integer field. `bool` is excluded explicitly (a JSON
     `true` is an `int` in Python but is never a valid micro-USD count).
     """
-    try:
-        parsed_raw: object = json.loads(ps_json)
-    except json.JSONDecodeError:
+    parsed_raw = parse_json(text=ps_json)
+    if isinstance(parsed_raw, JsonParseFailure):
         return None
     if not isinstance(parsed_raw, list):
         return None

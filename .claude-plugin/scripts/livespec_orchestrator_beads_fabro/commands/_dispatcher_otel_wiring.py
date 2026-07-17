@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 from collections.abc import Callable
 from pathlib import Path
@@ -27,6 +26,7 @@ from livespec_orchestrator_beads_fabro.commands._otel_receive import (
     ensure_receiver_started,
     resolve_receiver_config,
 )
+from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 from livespec_orchestrator_beads_fabro.io import write_stderr
 
 __all__: list[str] = [
@@ -184,9 +184,8 @@ def parse_janitor(*, raw: str | None) -> tuple[tuple[str, ...] | None, bool]:
     """Parse the --janitor JSON-argv flag; (argv-or-None, parse-ok)."""
     if raw is None:
         return None, True
-    try:
-        parsed_raw: object = json.loads(raw)
-    except json.JSONDecodeError:
+    parsed_raw = parse_json(text=raw)
+    if isinstance(parsed_raw, JsonParseFailure):
         parsed_raw = None
     if not isinstance(parsed_raw, list):
         _ = write_stderr(text="ERROR: --janitor must be a JSON array of strings\n")

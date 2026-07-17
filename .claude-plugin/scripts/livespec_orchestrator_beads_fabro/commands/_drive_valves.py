@@ -34,6 +34,15 @@ class HumanValveCommandRun(Protocol):
 
 
 HumanValveRunner = Callable[..., object]
+ACTION_WITH_ITEM_PARTS = 2
+ACTION_WITH_VALUE_PARTS = 3
+APPROVAL_ACTIONS = frozenset({"approve", "accept"})
+VALUE_ALLOWLISTS = {
+    "reject": frozenset({"rework", "regroom"}),
+    "resolve-blocked": frozenset({"ready", "backlog"}),
+    "set-admission": frozenset({"auto", "manual"}),
+    "set-acceptance": frozenset({"ai-only", "human-only", "ai-then-human"}),
+}
 
 
 def run_human_valve_action(
@@ -92,29 +101,36 @@ def is_human_valve_action(*, action_id: str) -> bool:
 
 
 def _parse_human_valve_action(*, action_id: str) -> tuple[str, str, str | None] | None:
-    parsed: tuple[str, str, str | None] | None
-    match action_id.split(":"):
-        case [("approve" | "accept") as action, item] if item != "":
-            parsed = (action, item, None)
-        case ["reject", item, ("rework" | "regroom") as value] if item != "":
-            parsed = ("reject", item, value)
-        case ["resolve-blocked", item, ("ready" | "backlog") as value] if item != "":
-            parsed = ("resolve-blocked", item, value)
-        case ["set-admission", item, ("auto" | "manual") as value] if item != "":
-            parsed = ("set-admission", item, value)
-        case [
-            "set-acceptance",
-            item,
-            ("ai-only" | "human-only" | "ai-then-human") as value,
-        ] if item != "":
-            parsed = ("set-acceptance", item, value)
-        case [action, item, value] if item != "" and action in CAP_ACTION_VERBS:
-            parsed = (action, item, value)
-        case ["move", item, status] if item != "":
-            parsed = ("move", item, status)
-        case _:
-            parsed = None
-    return parsed
+    parts = action_id.split(":")
+    parsed = _parse_action_with_item(parts=parts)
+    if parsed is not None:
+        return parsed
+    return _parse_action_with_value(parts=parts)
+
+
+def _parse_action_with_item(*, parts: list[str]) -> tuple[str, str, str | None] | None:
+    if len(parts) != ACTION_WITH_ITEM_PARTS:
+        return None
+    action, item = parts
+    if item == "" or action not in APPROVAL_ACTIONS:
+        return None
+    return (action, item, None)
+
+
+def _parse_action_with_value(*, parts: list[str]) -> tuple[str, str, str | None] | None:
+    if len(parts) != ACTION_WITH_VALUE_PARTS:
+        return None
+    action, item, value = parts
+    if item == "":
+        return None
+    if action in CAP_ACTION_VERBS:
+        return (action, item, value)
+    if action == "move":
+        return ("move", item, value)
+    allowed_values = VALUE_ALLOWLISTS.get(action)
+    if allowed_values is None or value not in allowed_values:
+        return None
+    return (action, item, value)
 
 
 def _find_item(*, items: list[WorkItem], item_id: str) -> WorkItem | None:

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import cast
+
+from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 __all__: list[str] = ["ReflectorFinding", "parse_findings"]
 
@@ -39,9 +40,8 @@ def _coerce_findings_payload(*, raw: str) -> list[object]:
     text = raw.strip()
     if not text:
         return []
-    try:
-        top: object = json.loads(text)
-    except json.JSONDecodeError:
+    top = parse_json(text=text)
+    if isinstance(top, JsonParseFailure):
         return []
     return _extract_findings_list(top=top)
 

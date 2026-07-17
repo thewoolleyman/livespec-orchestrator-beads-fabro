@@ -284,7 +284,7 @@ def test_run_json_builds_argv_and_parses(monkeypatch: pytest.MonkeyPatch) -> Non
         )
 
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro._beads_client_shell.subprocess.run", _fake_run
+        "livespec_orchestrator_beads_fabro.effects._beads_client_shell.subprocess.run", _fake_run
     )
     result = client.list_issues()
     assert result == [{"id": "li-a"}]
@@ -314,7 +314,7 @@ def test_run_json_invokes_bd_from_config_repo_root(
         return subprocess.CompletedProcess(args=argv, returncode=0, stdout="[]", stderr="")
 
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro._beads_client_shell.subprocess.run", _fake_run
+        "livespec_orchestrator_beads_fabro.effects._beads_client_shell.subprocess.run", _fake_run
     )
     _ = client.list_issues()
     assert seen == [
@@ -340,7 +340,7 @@ def test_run_json_rejects_repo_root_with_mismatched_beads_tenant(
         )
 
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro._beads_client_shell.subprocess.run", _fake_run
+        "livespec_orchestrator_beads_fabro.effects._beads_client_shell.subprocess.run", _fake_run
     )
     with pytest.raises(BeadsConnectionError) as excinfo:
         _ = client.list_issues()
@@ -358,7 +358,7 @@ def test_run_void_builds_argv_and_runs(monkeypatch: pytest.MonkeyPatch) -> None:
         return subprocess.CompletedProcess(args=argv, returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro._beads_client_shell.subprocess.run", _fake_run
+        "livespec_orchestrator_beads_fabro.effects._beads_client_shell.subprocess.run", _fake_run
     )
     client.add_dependency(from_id="li-a", to_id="li-b", edge_type=EDGE_BLOCKS)
     assert seen[0][0] == "/managed/bd"
@@ -407,7 +407,7 @@ def test_invoke_skips_credential_and_tenant_guards_for_embedded_ledger(
         return subprocess.CompletedProcess(args=argv, returncode=0, stdout="[]", stderr="")
 
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro._beads_client_shell.subprocess.run", _fake_run
+        "livespec_orchestrator_beads_fabro.effects._beads_client_shell.subprocess.run", _fake_run
     )
     client = ShellBeadsClient(config=_config(repo_root=tmp_path))
     result = client.list_issues()
@@ -427,13 +427,13 @@ def test_invoke_skips_credential_and_tenant_guards_for_embedded_ledger(
 
 
 def test_is_embedded_ledger_absent_config_is_false(tmp_path: Path) -> None:
-    from livespec_orchestrator_beads_fabro._beads_client_shell import _is_embedded_ledger
+    from livespec_orchestrator_beads_fabro.effects._beads_client_shell import _is_embedded_ledger
 
     assert _is_embedded_ledger(repo_root=tmp_path) is False
 
 
 def test_is_embedded_ledger_server_mode_config_is_false(tmp_path: Path) -> None:
-    from livespec_orchestrator_beads_fabro._beads_client_shell import _is_embedded_ledger
+    from livespec_orchestrator_beads_fabro.effects._beads_client_shell import _is_embedded_ledger
 
     beads_dir = tmp_path / ".beads"
     beads_dir.mkdir()
@@ -445,7 +445,7 @@ def test_is_embedded_ledger_server_mode_config_is_false(tmp_path: Path) -> None:
 
 
 def test_is_embedded_ledger_embedded_config_is_true(tmp_path: Path) -> None:
-    from livespec_orchestrator_beads_fabro._beads_client_shell import _is_embedded_ledger
+    from livespec_orchestrator_beads_fabro.effects._beads_client_shell import _is_embedded_ledger
 
     beads_dir = tmp_path / ".beads"
     beads_dir.mkdir()
@@ -649,7 +649,7 @@ def test_shell_list_comments_builds_argv_and_filters_non_dicts(
         )
 
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro._beads_client_shell.subprocess.run", _fake_run
+        "livespec_orchestrator_beads_fabro.effects._beads_client_shell.subprocess.run", _fake_run
     )
     result = client.list_comments(issue_id="li-a")
     assert result == [{"issue_id": "li-a", "text": "a rider"}]
