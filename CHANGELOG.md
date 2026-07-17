@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.43.0...v0.43.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* route expected failures through effects ([8858c90](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8858c904206cdac400e2556417d2d5dece3686b3))
+
 ## [0.43.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.42.0...v0.43.0) (2026-07-17)
 
 
