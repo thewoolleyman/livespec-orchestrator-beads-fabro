@@ -633,5 +633,12 @@
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test \u2014 a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` \u00a7\"Heading taxonomy\"). Added by the enumerate-per-item-override-and-move-drive-actions revise: the guarded move drive action writes ONLY the item's status among the operator-movable set {backlog, ready, blocked, active} and refuses done / acceptance / pending-approval with a clear error, preserving the accept-from-acceptance ship-guard. The exercising test binds through drive.run_action and the FakeBeadsClient-backed store seam (b620304)."
+  },
+  {
+    "heading": "## Scenario 48 \u2014 Dispatcher refuses a not-factory-safe item at admission",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test \u2014 a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` \u00a7\"Heading taxonomy\"). Added by the factory-safe-by-default revise: a ready work-item whose factory_safety is non-null is refused at the admission valve before any Fabro sandbox launch, is NOT marked blocked (its runnability is intrinsic), and is surfaced for host routing. The exercising test binds through the dispatcher admission-valve seam when the factory-safe-by-default impl slice lands."
   }
 ]
