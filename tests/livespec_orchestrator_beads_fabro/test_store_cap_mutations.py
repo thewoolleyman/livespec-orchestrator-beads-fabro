@@ -77,3 +77,18 @@ def test_update_work_item_cap_leaves_non_string_labels_untouched() -> None:
     record = _fake().show_issue(issue_id="li-cap-mixed")
     assert "merge-on-review-cap:true" in record["labels"]
     assert 123 in record["labels"]
+
+
+def test_update_work_item_cap_none_value_clears_the_label() -> None:
+    append_work_item(path=_config(), item=_item(id_="li-cap-clear"))
+    update_work_item_cap(
+        path=_config(), item_id="li-cap-clear", label_prefix="review-fix-cap:", value="7"
+    )
+    assert "review-fix-cap:7" in _fake().show_issue(issue_id="li-cap-clear")["labels"]
+    # A None value removes any prefixed label and adds none (clear-to-inherit).
+    update_work_item_cap(
+        path=_config(), item_id="li-cap-clear", label_prefix="review-fix-cap:", value=None
+    )
+    labels = _fake().show_issue(issue_id="li-cap-clear")["labels"]
+    assert not any(str(label).startswith("review-fix-cap:") for label in labels)
+    assert "origin:freeform" in labels

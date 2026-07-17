@@ -56,6 +56,14 @@ _CAP_CONFIG_KEYS: dict[str, ConfigKey] = {
 }
 CAP_ACTION_VERBS: frozenset[str] = frozenset(_CAP_ACTIONS)
 
+# The explicit clear-to-inherit sentinel: `set-<cap>:<id>:clear` REMOVES the
+# per-item override label so the item reinherits the global default. `clear` can
+# never collide with a real cap value (booleans are true/false; the int caps are
+# positive integers), and an explicit token is less error-prone than a bare empty
+# trailing field. The operator console sends this when its per-item override
+# command carries `value: null`.
+_CLEAR_SENTINEL = "clear"
+
 
 def resolve_blocked_item(
     *, config: StoreConfig, item: WorkItem, aid: str, target_status: str
@@ -108,16 +116,31 @@ def set_policy(
 def set_cap(
     *, config: StoreConfig, item: WorkItem, aid: str, action: str, value: str
 ) -> dict[str, Any]:
-    """Set one of the three per-item cap-override labels the resolver reads.
+    """Set OR CLEAR one of the three per-item cap-override labels the resolver reads.
 
-    Mirrors `set_policy` for the caps that carry no `WorkItem` field: the value
+    Mirrors `set_policy` for the caps that carry no `WorkItem` field: a real value
     is validated against the setting's declared schema type (a bad value is
-    refused with a clear domain error naming the expected domain), then written
-    as the raw beads label `<prefix><value>` the Dispatcher resolver reads. The
-    write is label-only, so status/assignee are unchanged.
+    refused with a clear domain error naming the expected domain), then written as
+    the raw beads label `<prefix><value>` the Dispatcher resolver reads. The
+    reserved value `clear` (`_CLEAR_SENTINEL`) instead REMOVES the per-item label so
+    the item reinherits the global default; clearing an already-absent override is
+    a green no-op. The write is label-only, so status/assignee are unchanged.
     """
     config_key = _CAP_CONFIG_KEYS[action]
     label_prefix = _CAP_ACTIONS[action][1]
+    if value == _CLEAR_SENTINEL:
+        update_work_item_cap(path=config, item_id=item.id, label_prefix=label_prefix, value=None)
+        return valve_success(
+            aid=aid,
+            wid=item.id,
+            stage=f"human-valve-{action}",
+            status=item.status,
+            assignee=item.assignee,
+            msg=(
+                f"Cleared {action.removeprefix('set-')} override on {item.id}; "
+                "inherits global default."
+            ),
+        )
     if parse_config_value(config_key=config_key, raw_value=value) is None:
         return valve_refusal(
             aid=aid,

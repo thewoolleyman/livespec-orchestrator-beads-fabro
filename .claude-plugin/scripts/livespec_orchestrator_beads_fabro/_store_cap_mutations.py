@@ -24,18 +24,20 @@ def update_work_item_cap(
     path: StoreConfig,
     item_id: str,
     label_prefix: str,
-    value: str,
+    value: str | None,
 ) -> None:
-    """Replace an item's per-item cap-override label without changing its status.
+    """Set or CLEAR an item's per-item cap-override label without changing status.
 
     The Dispatcher resolver reads these caps straight from raw beads labels
     (`<label_prefix><value>`; see the `effective_*_cap` resolvers), so the write
     is label-only. Unlike `update_work_item_policy`, which enumerates the finite
     admission/acceptance enums to know which prior label to remove, the integer
     caps have an unbounded value space; so the prior label is discovered by
-    reading the issue and every label carrying `label_prefix` is removed before
-    the replacement is added. No status or assignee mutation is sent, so a cap
-    edit cannot surprise-transition the item.
+    reading the issue and every label carrying `label_prefix` is removed first. A
+    non-`None` `value` then adds the replacement label; a `None` `value` CLEARS
+    the override (removes only), so the item reinherits the global default —
+    clearing an already-absent override is a no-op. No status or assignee mutation
+    is sent, so a cap edit cannot surprise-transition the item.
     """
     client = make_beads_client(config=path)
     record = client.show_issue(issue_id=item_id)
@@ -45,4 +47,5 @@ def update_work_item_cap(
     ]
     if remove_labels:
         client.update_issue(issue_id=item_id, remove_labels=remove_labels)
-    client.update_issue(issue_id=item_id, add_labels=[f"{label_prefix}{value}"])
+    if value is not None:
+        client.update_issue(issue_id=item_id, add_labels=[f"{label_prefix}{value}"])
