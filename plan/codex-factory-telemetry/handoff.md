@@ -52,18 +52,16 @@ Fable, and re-sliced into dependency-layered children. `bd-ib-98c.1` is now CLOS
   answered live (e.g. `bd-ib-fcipkv` ran fix×2 → hit the cap → shipped, captured as
   `pr_shipped_on_cap=true`). (The parser correctly emits `verdict=unknown` when a run
   has no terminal approve/fix edge — an honest fallback, not a mislabel.)
-- **`bd-ib-98c.4-.7` (O1-O4) — the outward-facing fabro emitter spine**, strict
-  order: activate the inert worker exporter (env re-injection + `http/json`) →
-  cross-process traceparent → node-lifecycle spans → ACP turn spans. Rides
-  `bd-ib-i4r`.
+- **`bd-ib-98c.4-.7` (O1-O4) — the outward-facing fabro emitter spine.** SUPERSEDED by
+  the per-slice status in §"NEXT ACTION" below: **O1 DONE + PROVEN**, O2 next build, O3
+  recommend-close, O4 narrowed. (The original strict order was: worker exporter → traceparent
+  → node-lifecycle → ACP turns.)
 - **`bd-ib-98c.8` (O5, deferred)** — ACP token/cost via the already-enabled
   `unstable_session_usage` seam.
-- **`bd-ib-98c.2` (receiver) — allowlist half DONE + PROVEN; `http/json` half BLOCKED
-  on O1.** The allowlist widening for the four review-gate attributes is live on
-  master (`_otel_scrub.py:127-130`) and verified end-to-end above (F1 spans land in
-  Honeycomb, not silently dropped). Remaining: the `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`
-  overlay serves the O-track emitter path and rides O1 (`bd-ib-98c.4`) — keep this item
-  open until then. (Evidence recorded on the ledger item, 2026-07-16.)
+- **`bd-ib-98c.2` (receiver) — BOTH halves now DONE + PROVEN (2026-07-17).** The allowlist
+  widening (`_otel_scrub.py:127-130`) was proven by F1; the `http/json` half was proven by the
+  O1 proof-dispatch — fabro spans routed to the `fabro` dataset via `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`
+  (two `run` spans + the full span tree landed, not dropped). This item can be closed.
 
 **▶ NEXT ACTION (2026-07-17): O1 is PROVEN END-TO-END. Both levers are live and confirmed
 in Honeycomb; the next slice is O2 (`bd-ib-98c.5`, traceparent).**
