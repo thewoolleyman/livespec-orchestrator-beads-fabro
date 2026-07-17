@@ -176,6 +176,36 @@ def test_set_cap_with_empty_item_is_unsupported(tmp_path: Path) -> None:
     assert result["domain_error"] == "invalid-action-id"
 
 
+def test_set_cap_clear_removes_the_override_and_inherits_global(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write_fake_config(repo)
+    append_work_item(path=_config(), item=_item())
+    run_human_valve_action(repo=repo, action_id="set-review-fix-cap:bd-ib-ready:5")
+
+    result = run_human_valve_action(repo=repo, action_id="set-review-fix-cap:bd-ib-ready:clear")
+
+    assert result["status"] == "green"
+    assert "inherits global default" in result["summary"]
+    labels = _fake().show_issue(issue_id="bd-ib-ready")["labels"]
+    assert not any(str(label).startswith("review-fix-cap:") for label in labels)
+
+
+def test_set_cap_clear_when_absent_is_a_green_noop(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write_fake_config(repo)
+    append_work_item(path=_config(), item=_item())
+
+    result = run_human_valve_action(
+        repo=repo, action_id="set-merge-on-review-cap:bd-ib-ready:clear"
+    )
+
+    assert result["status"] == "green"
+    labels = _fake().show_issue(issue_id="bd-ib-ready")["labels"]
+    assert not any(str(label).startswith("merge-on-review-cap:") for label in labels)
+
+
 def test_move_transitions_item_to_allowed_status(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
