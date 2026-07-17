@@ -53,9 +53,9 @@ Fable, and re-sliced into dependency-layered children. `bd-ib-98c.1` is now CLOS
   `pr_shipped_on_cap=true`). (The parser correctly emits `verdict=unknown` when a run
   has no terminal approve/fix edge — an honest fallback, not a mislabel.)
 - **`bd-ib-98c.4-.7` (O1-O4) — the outward-facing fabro emitter spine.** SUPERSEDED by
-  the per-slice status in §"NEXT ACTION" below: **O1 DONE + PROVEN**, O2 next build, O3
-  recommend-close, O4 narrowed. (The original strict order was: worker exporter → traceparent
-  → node-lifecycle → ACP turns.)
+  the per-slice status in §"NEXT ACTION" below: **O1 DONE + PROVEN, O2 DONE + PROVEN
+  (2026-07-17)**, O3 recommend-close, O4 narrowed. (The original strict order was: worker
+  exporter → traceparent → node-lifecycle → ACP turns.)
 - **`bd-ib-98c.8` (O5, deferred)** — ACP token/cost via the already-enabled
   `unstable_session_usage` seam.
 - **`bd-ib-98c.2` (receiver) — BOTH halves now DONE + PROVEN (2026-07-17).** The allowlist
@@ -63,50 +63,54 @@ Fable, and re-sliced into dependency-layered children. `bd-ib-98c.1` is now CLOS
   O1 proof-dispatch — fabro spans routed to the `fabro` dataset via `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`
   (two `run` spans + the full span tree landed, not dropped). This item can be closed.
 
-**▶ NEXT ACTION (2026-07-17): O1 is PROVEN END-TO-END. Both levers are live and confirmed
-in Honeycomb; the next slice is O2 (`bd-ib-98c.5`, traceparent).**
+**▶ NEXT ACTION (2026-07-17): O2 is DONE + PROVEN END-TO-END. The next slice is O3
+(`bd-ib-98c.6`) — but re-verify first, since O1 already exports most of the node-lifecycle
+layer; the recommendation is CLOSE-without-build (see the spine table below).**
 
-The full operator cutover ran on 2026-07-17:
-- Merged fork PR **thewoolleyman/fabro#1** into `factory-integration` (tip `c543446`).
-- Rebuilt + re-pinned the host binary (`fabro 0.254.0 (c543446)`, Lever B); outgoing
-  `15b89ab` retained as `~/.fabro/bin/fabro.15b89ab-pre-worker-otel.bak`.
-- Restarted the server OAuth-only WITH the Lever A OTEL env (endpoint + `http/json` +
-  `service.name=fabro`, NO HEADERS — confirmed in `/proc/<daemon>/environ`; `fabro doctor`
-  green).
-- Orchestrator-image rebuild: **NOT complete — blocked** (`bd-ib-dwv`). Fixed a pre-existing
-  SIGPIPE in `build-and-verify.sh`'s version probe (`fabro version | head -1` → `fabro
-  --version`, PR #708), which got the build past staging, but `docker build` then fails at
-  Dockerfile Step 9 — the beads fetch `gastownhall/beads` v1.0.5 returns HTTP 404 (dead URL,
-  pre-existing). So the **containerized** fabro path stays on the OLD image (host↔container
-  parity gap); the **host-direct** path — the one that runs dispatches and now emits telemetry
-  — is fully on `c543446`. Re-pinning the image awaits the `bd-ib-dwv` URL/SHA fix.
-- **Proof-dispatch** `bd-ib-dqt` (the throwaway factory-confirmation item; had to promote it
-  `backlog → ready`, the factory had zero ready-status work) ran green → PR #706 merged,
-  post-merge janitor green.
+**O2 cutover + proof (2026-07-17), superseding the O1-era description that was here:**
+- Built the traceparent join on `factory-integration`: server captures its `run`-span OTel
+  context in `execute_run_subprocess` (before the `spawn_blocking`, while the span is current),
+  threads it via a new `WorkerLaunchSpec.traceparent` to a per-run `TRACEPARENT` env at the O1
+  `worker_runtime.rs` seam; the worker `set_parent`s its `run` span at `run/mod.rs`. New module
+  `fabro-server/src/otel_propagation.rs`. No new dependency (three existing workspace otel
+  crates). Commit `b651dbabe`, pushed to `origin/factory-integration`.
+- **Adversarial review CONVERGED CLEAN (both loops):** Fable (no blockers; verified the
+  set_parent/eager-trace_id mechanism against vendored sources) and Codex gpt-5.5 high (no
+  blockers, no actionable; one nitpick acted on — narrowed the lockfile single-version guard to
+  `tracing-opentelemetry` alone, the only crate whose split causes the silent WithContext-downcast
+  no-op). Two follow-ups filed: `bd-ib-98c.11` (capture-SITE test guard) and `bd-ib-98c.12`
+  (**P2** — `FABRO_LOG` level silently gates ALL telemetry at both ends; inherited from O1,
+  higher operational risk than any remaining slice).
+- Gates green under `nightly-2026-04-14`: fmt, clippy `-D warnings`, 733/733 lib unit tests,
+  1863/1863 integration at `-j4` (full-parallelism flakes were environmental). NOTE: the
+  fork-local daemon-timeout commit was FAILING the carry branch's own clippy gate (pre-existing,
+  never run through CI); fixed behavior-preservingly in a separate commit `062abfa16`.
+- **Re-pinned + restarted:** `~/.fabro/bin/fabro` = `fabro 0.254.0 (b651dba)`; server restarted
+  OAuth-only (pid 1398923) with the SAME Lever A OTEL env; `fabro doctor` correct. Rollback
+  binary: `~/.fabro/bin/fabro.c543446-o1-pre-o2.bak`. Runbook + `AGENTS.md` re-pinned in lockstep
+  (livespec PR #724, merged). Orchestrator-image still stale (host↔container parity gap persists,
+  `bd-ib-dwv`).
+- **Proof-dispatch** `bd-ib-98c.10` (throwaway, promoted to `ready`) ran GREEN → PR #723 merged,
+  post-merge janitor green, `fabro_run_id 01KXRYSTK6K0TJ5HBPBPJD7X10`.
 
-**Result (Honeycomb `livespec` env, `fabro` dataset):** the `run` span shows count=2,
-root_count=2 — TWO root run spans in TWO distinct traces, both `service.name=fabro`, arriving
-via the receiver's `livespec.otel.enrich` scope. That is exactly the predicted server (Lever A)
-+ worker (Lever B) pair — two disconnected traces until O2 joins them. Bonus: the export also
-carried the full fabro span tree (Stage/Edge/Checkpoint/Sandbox/Setup/Workflow-run), so much of
-the O3/O4 node-lifecycle layer is already visible.
+**Result (Honeycomb `livespec` env, `fabro` dataset) — the O2 join criterion is MET.** The two
+`run` spans now share ONE trace `d74367bc7d5e5e026ef499f00975d67a` (unsampled): server span
+`2a2e866423fa7d8d` (root, empty parent); worker span `0e44fce07c8c3806` with `parent_id =
+2a2e866423fa7d8d` = the server `span_id` EXACTLY; the whole tree (server run → worker run [46
+events] → connection children) hangs under one root. Contrast O1's proven state (2 root run spans,
+2 DISTINCT trace ids).
 
-**Ledger note:** `bd-ib-98c.4` (O1) stays formally OPEN only because it is `blocks`-linked to
-the upstream-transport item `bd-ib-i4r` (fabro#576's upstream merge). O1's deliverable is done +
-proven on the carry branch; force-closing it while that upstream item is open is a deliberate
-manual override left to the maintainer, and `bd-ib-i4r` independently tracks the upstream PR.
+**Ledger note (unchanged pattern):** `bd-ib-98c.4` (O1) and `bd-ib-98c.5` (O2) are both DONE +
+PROVEN on the carry branch. O1 stays formally OPEN because it is `blocks`-linked to the
+upstream-transport item `bd-ib-i4r` (fabro#576); force-closing these outward items while that
+upstream PR is open is a deliberate manual override left to the maintainer. Recorded done on each
+ledger item.
 
-**NEXT SLICE — O2 (`bd-ib-98c.5`):** W3C `traceparent` at the `worker_runtime.rs` seam to join
-the server and worker `run` spans into one trace. Unblocked now that O1 is proven.
-Execution-ready plan: `o2-traceparent-plan.md` (PR #710).
-
-**Whole remaining spine is now scoped to execution-ready (2026-07-17), all fabro-Rust builds
-on the O1 seams:**
-- **O2 (`bd-ib-98c.5`)** — plan written (`o2-traceparent-plan.md`); server captures its
-  run-span context in `execute_run`, threads it via a new `WorkerLaunchSpec.traceparent` to a
-  per-run `TRACEPARENT` env at the O1 `worker_runtime.rs` seam, worker `set_parent`s at
-  `run/mod.rs:96`. No new dep. **This is the next build.**
-- **O3 (`bd-ib-98c.6`)** — **recommend CLOSE, no build.** O1 already exports the whole
+**Whole remaining spine (2026-07-17), all fabro-Rust builds on the O1 seams:**
+- **O2 (`bd-ib-98c.5`)** — ✅ **DONE + PROVEN (2026-07-17), commit `b651dbabe`.** See the
+  cutover + Honeycomb proof above. Both adversarial loops clean; re-pinned live.
+- **O3 (`bd-ib-98c.6`) — THE NEXT SLICE, but recommend CLOSE without a build.** O1 already
+  exports the whole
   node-lifecycle layer (live `fabro` dataset columns: `node_id`/`node`/`label`/`from_node`/
   `to_node`/`status`/`attempt`/`max_attempts`/`index`/`stage`/`phase`/`handler_type`/timing).
 - **O4 (`bd-ib-98c.7`)** — narrowed to a small attribute add on the `run_turn` span at
