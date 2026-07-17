@@ -100,6 +100,24 @@ manual override left to the maintainer, and `bd-ib-i4r` independently tracks the
 
 **NEXT SLICE — O2 (`bd-ib-98c.5`):** W3C `traceparent` at the `worker_runtime.rs` seam to join
 the server and worker `run` spans into one trace. Unblocked now that O1 is proven.
+Execution-ready plan: `o2-traceparent-plan.md` (PR #710).
+
+**Whole remaining spine is now scoped to execution-ready (2026-07-17), all fabro-Rust builds
+on the O1 seams:**
+- **O2 (`bd-ib-98c.5`)** — plan written (`o2-traceparent-plan.md`); server captures its
+  run-span context in `execute_run`, threads it via a new `WorkerLaunchSpec.traceparent` to a
+  per-run `TRACEPARENT` env at the O1 `worker_runtime.rs` seam, worker `set_parent`s at
+  `run/mod.rs:96`. No new dep. **This is the next build.**
+- **O3 (`bd-ib-98c.6`)** — **recommend CLOSE, no build.** O1 already exports the whole
+  node-lifecycle layer (live `fabro` dataset columns: `node_id`/`node`/`label`/`from_node`/
+  `to_node`/`status`/`attempt`/`max_attempts`/`index`/`stage`/`phase`/`handler_type`/timing).
+- **O4 (`bd-ib-98c.7`)** — narrowed to a small attribute add on the `run_turn` span at
+  `fabro-workflow/src/handler/llm/acp.rs`. EASY (at the seam): `stop_reason`
+  (`AcpRunResult.stop_reason`) + `command` (`AcpRunRequest.command`). HARDER (workflow-layer,
+  defer): `files_touched` (derive from git) + `visit` (node-loop count).
+- **O5 (`bd-ib-98c.8`)** — deferred (token/cost).
+
+Full seam citations + data-availability evidence are on each ledger item.
 
 Full decomposition, the eight code-verified constraints, the rejected stderr-sentinel
 design, and every file:line citation live in `emitter-replan.md`. Everything below
