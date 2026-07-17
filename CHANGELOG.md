@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.42.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.41.3...v0.42.0) (2026-07-17)
+
+
+### Features
+
+* **drive:** per-item cap-override actions and guarded operator move ([b620304](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b620304e3f0b55e26e6e879552367bf80e910824))
+
 ## [0.41.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.41.2...v0.41.3) (2026-07-16)
 
 
