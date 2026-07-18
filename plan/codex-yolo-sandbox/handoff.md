@@ -63,6 +63,48 @@ anti-silent-drift canary, the adopter-default decision, and the propose-change �
 ratification path — is in [`permanent-fix-design.md`](./permanent-fix-design.md). Only true
 blocker: the maintainer's adopter-default decision (opt-in vs force-on).
 
+## Drain continuity (live — 2026-07-18)
+
+The adopter-default decision is resolved (fleet members + official adopters ON, others
+opt-in; keyed on the core fleet manifest — see the "Adopter default" section of
+`permanent-fix-design.md`). The whole build layer was groomed, filed, and dispatched
+through the dark factory. This is the durable "any session can pick up" record — it does
+NOT belong in `.overseer-state` (that file takes exactly one token: `ready` /
+`blocked: <reason>` / `winding-down`).
+
+**Ledger:** epic `bd-ib-1jye` + slices, all stored status `ready`:
+
+| ID | Slice | Depends on |
+| --- | --- | --- |
+| `bd-ib-1jye.1` | S1 — re-apply hook → tested Python module + drift canary | — |
+| `bd-ib-1jye.2` | S5 — propose-change ratifying the codex-full-access contract | — |
+| `bd-ib-1jye.3` | S2 — manifest-gating helper + wire hook to it | S1 |
+| `bd-ib-1jye.4` | S3 — ship the gated hook FROM the orchestrator plugin | S2 |
+| `bd-ib-1jye.5` | C1 — orchestrator-owned full-access `codex exec` (Surface 2) | S2 |
+
+S1 (`01KXSTW44M0B`) and S5 (`01KXSWBJ74VG`) were dispatched host-direct 2026-07-18.
+
+**Autonomous drain watcher:** `tmp/codex-yolo-watch.sh` runs DETACHED (`setsid`, was pid
+`3554923`; log `tmp/codex-yolo-watch.log`). Every 5 min (max 12h) it readiness-probes each
+of `.3`/`.4`/`.5` via `dispatcher.py loop --item <id> --dry-run` and fires
+`dispatcher.py dispatch --item <id>` (backgrounded) the moment it unblocks — so S2 goes
+when S1 merges, then S3/C1 when S2 merges. It `wait`s on its backgrounded pollers before
+exiting. Monitor with `tail -f tmp/codex-yolo-watch.log`; stop with `kill <watcher-pid>`
+(re-find via `pgrep -f codex-yolo-watch.sh`).
+
+**Gotchas learned (cost real time — heed them):**
+- Raw `bd create` files items as `open`; the Dispatcher's readiness gate requires the
+  custom stored status `ready` (the board lane IS the stored status). The proper
+  capture/groom flow sets it via intake Definition-of-Ready routing; raw `bd create`
+  bypasses it, so transition with `bd update <id> -s ready`.
+- `dispatcher.py loop --budget N` — `N` is a dispatch COUNT, not a dollar amount.
+- `dispatcher.py loop --item <id>` validates readiness UP FRONT and rejects a still-blocked
+  item ("not in the ready set"), which is why draining a dependency chain needs the
+  poll-until-unblocked watcher above rather than one `--item`-scoped loop invocation.
+- Run every `bd`/dispatcher command under `with-livespec-env.sh -- …`; the beads-access
+  guard also false-positives on the bare word "bd" in unrelated shell (e.g. an `echo`),
+  so write such notes via a file tool, not `echo`.
+
 ## Goal
 
 Make every Codex sub-session launched through the `codex:codex-rescue` subagent /
