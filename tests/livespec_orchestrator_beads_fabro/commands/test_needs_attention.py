@@ -3,6 +3,7 @@
 import json
 import shlex
 from pathlib import Path
+from typing import Any
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import needs_attention
@@ -106,6 +107,7 @@ def _item(
     status: str,
     rank: str = "a2",
     blocked_reason: str | None = None,
+    factory_safety: str | None = None,
 ) -> WorkItem:
     return WorkItem(
         id=id_,
@@ -124,7 +126,15 @@ def _item(
         audit=None,
         superseded_by=None,
         blocked_reason=blocked_reason,  # type: ignore[arg-type]
+        factory_safety=factory_safety,  # type: ignore[arg-type]
     )
+
+
+def _write_journal_record(project_root: Path, *, record: dict[str, Any]) -> None:
+    journal = project_root / "tmp" / "fabro-dispatch-journal.jsonl"
+    journal.parent.mkdir(parents=True)
+    with journal.open("a", encoding="utf-8") as handle:
+        _ = handle.write(json.dumps(record, sort_keys=True) + "\n")
 
 
 def test_build_attention_composes_impl_human_valves_plan_threads_and_spec_next(
@@ -156,6 +166,67 @@ def test_build_attention_composes_impl_human_valves_plan_threads_and_spec_next(
     assert attention[1].handoff.command.endswith("--action accept:bd-accept --json")
     assert attention[3].handoff.command.endswith("--action impl:bd-ready --json")
     assert attention[-1].source_ref.path == "plan/needs-attention/"
+
+
+def test_build_attention_surfaces_ready_factory_safety_item_as_host_only(
+    tmp_path, monkeypatch
+) -> None:
+    _write_config(tmp_path)
+    _stub_spec_next(monkeypatch, output=None)
+    _seed(
+        _item(
+            id_="bd-host",
+            status="ready",
+            rank="a1",
+            factory_safety="needs-host-secrets",
+        )
+    )
+    _seed(_item(id_="bd-ready", status="ready", rank="a2"))
+
+    attention = build_attention(
+        project_root=tmp_path,
+        repo_name="repo",
+        include_hygiene=False,
+    )
+
+    assert [(item.id, item.kind, item.handoff.kind) for item in attention] == [
+        ("impl:bd-ready", "impl", "drive"),
+        ("host-only:needs-host-secrets:bd-host", "host-only", "shell"),
+    ]
+    host_only = attention[1]
+    assert host_only.source_ref.work_item == "bd-host"
+    assert "bd-host" in host_only.summary
+    assert str(tmp_path) in host_only.handoff.command
+    assert "< /dev/null" in host_only.handoff.command
+
+
+def test_build_attention_surfaces_recorded_factory_safety_refusal(tmp_path, monkeypatch) -> None:
+    _write_config(tmp_path)
+    _stub_spec_next(monkeypatch, output=None)
+    _write_journal_record(
+        tmp_path,
+        record={
+            "stage": "outcome",
+            "outcome": {
+                "work_item_id": "bd-recorded",
+                "status": "failed",
+                "stage": "host-only-refused",
+                "pr_number": None,
+                "merge_sha": None,
+                "detail": "factory-safety refusal",
+            },
+        },
+    )
+
+    attention = build_attention(
+        project_root=tmp_path,
+        repo_name="repo",
+        include_hygiene=False,
+    )
+
+    assert [(item.id, item.kind, item.handoff.kind) for item in attention] == [
+        ("host-only:recorded-refusal:bd-recorded", "host-only", "shell")
+    ]
 
 
 def test_build_attention_drops_spec_item_when_spec_next_none(tmp_path, monkeypatch) -> None:

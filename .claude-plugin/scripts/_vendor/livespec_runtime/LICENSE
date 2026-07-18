@@ -1,7 +1,7 @@
 This file is the LICENSE for the vendored copy of `livespec_runtime`
 under .claude-plugin/scripts/_vendor/livespec_runtime/. The library is
 vendored from the upstream source repository at
-https://github.com/thewoolleyman/livespec-runtime at tag v0.3.0.
+https://github.com/thewoolleyman/livespec-runtime at tag v0.11.0.
 
 The upstream repository declares its license as MIT in its
 pyproject.toml `[project].license` field but does not ship a top-level
