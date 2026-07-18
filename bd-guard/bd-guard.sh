@@ -230,9 +230,19 @@ for arg in "$@"; do
             --)
                 break
                 ;;
-            # `=`-forms and clustered short form of the tenant selectors.
+            # `=`-forms and clustered short form of the value-taking tenant
+            # selectors (a path value is always "set", no truthy check needed).
             -C=*|--directory=*|--db=*|-C?*)
                 create_tenant_selector=1
+                ;;
+            # `--global=<truthy>` boolean =-form: a truthy value selects the
+            # shared-server db (must precede the generic `--*=*` skip below, which
+            # would otherwise swallow it and leave the create wrongly forced).
+            --global=*)
+                case "${arg#*=}" in
+                    0|f|F|false|FALSE|False) : ;;
+                    *) create_tenant_selector=1 ;;
+                esac
                 ;;
             # `=`-form or boolean global flags are single self-contained
             # tokens; just skip them.
@@ -352,15 +362,30 @@ for arg in "$@"; do
             --file|-f|--graph|--file=*|-f=*|--graph=*|-f?*)
                 create_batch=1
                 ;;
-            # --repo targets a DIFFERENT repository/tenant than the flag-less
-            # follow-up `update` would hit — a wrong-tenant risk — so EXCLUDE such
-            # a create from forcing. Consume the value in the separate form.
-            --repo)
+            # TENANT/DB SELECTORS placed AFTER the subcommand. bd is cobra:
+            # persistent flags are equally valid after `create` (that is how
+            # `bd create ... --json` works), so `-C`/`--directory`/`--db`/
+            # `--global`/`--repo` can appear HERE, not only in the global phase.
+            # Any of them means the create mints in a DIFFERENT tenant/db than
+            # the flag-less follow-up `update` would target — a wrong-tenant risk
+            # — so EXCLUDE such a create from forcing. Mirror the global phase.
+            # Value-taking ones (`-C`/`--directory`/`--db`/`--repo`) consume their
+            # separate-word value too.
+            -C|--directory|--db|--repo)
                 create_tenant_selector=1
                 expect_value=1
                 ;;
-            --repo=*)
+            -C=*|--directory=*|--db=*|--repo=*|-C?*)
                 create_tenant_selector=1
+                ;;
+            --global)
+                create_tenant_selector=1
+                ;;
+            --global=*)
+                case "${arg#*=}" in
+                    0|f|F|false|FALSE|False) : ;;
+                    *) create_tenant_selector=1 ;;
+                esac
                 ;;
             # Future-proofing: a create-time --status/-s (absent on v1.0.5).
             # CAPTURE it so a lifecycle value is respected (not overridden).

@@ -1142,6 +1142,89 @@ else
 fi
 
 # ===========================================================================
+# 17. POST-SUBCOMMAND tenant/db selectors. bd is cobra: persistent flags are
+#     valid AFTER the subcommand too (that is how `bd create ... --json` works).
+#     A selector placed after `create` must exclude the create from forcing just
+#     like a pre-subcommand one — otherwise the flag-less follow-up update hits
+#     the caller-cwd tenant, not the create's tenant (BLOCKER 2, narrower).
+# ===========================================================================
+
+# 17a. `bd create -C /dir --title x` (selector AFTER the subcommand) -> excluded.
+run_create 0 "bd-ib-ps1" -- create -C /other/repo --title "x"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: post-subcommand '-C /dir' is excluded (no follow-up) — narrow BLOCKER 2 hole closed"
+else
+    fail "create: post-sub -C exclusion (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 17b. `bd create --db /x --title x` (post-subcommand) -> excluded.
+run_create 0 "bd-ib-ps2" -- create --db /tmp/other.db --title "x"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: post-subcommand '--db <path>' is excluded (no follow-up)"
+else
+    fail "create: post-sub --db exclusion (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 17b'. `bd create --directory /dir` (post-subcommand) -> excluded (value consumed).
+run_create 0 "bd-ib-ps3" -- create --directory /other/dir --title "x"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: post-subcommand '--directory <dir>' is excluded (value consumed)"
+else
+    fail "create: post-sub --directory exclusion (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 17c. `bd create --global --title x` (post-subcommand boolean) -> excluded.
+run_create 0 "bd-ib-ps4" -- create --global --title "x"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: post-subcommand '--global' is excluded (shared-server db; no follow-up)"
+else
+    fail "create: post-sub --global exclusion (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 17c'. selector placed AFTER a positional/other flag (not adjacent to create) ->
+#       still excluded (position within the create's args is irrelevant).
+run_create 0 "bd-ib-ps5" -- create --title "x" -C /other/repo
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: a '-C /dir' after other create flags is still excluded (position-independent)"
+else
+    fail "create: post-sub trailing -C exclusion (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 17c''. clustered post-subcommand '-Cdir' -> excluded.
+run_create 0 "bd-ib-ps6" -- create -C/other/dir --title "x"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: post-subcommand clustered '-Cdir' is excluded"
+else
+    fail "create: post-sub -Cdir exclusion (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 17d. PRE-subcommand `--global=true` (=-form) -> excluded (previously swallowed
+#      by the generic --*=* skip and left wrongly forced).
+run_create 0 "bd-ib-ps7" -- --global=true create --title "x"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: pre-subcommand '--global=true' (=-form) is excluded"
+else
+    fail "create: pre-sub --global=true exclusion (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 17d'. post-subcommand `--global=true` -> excluded.
+run_create 0 "bd-ib-ps8" -- create --global=true --title "x"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: post-subcommand '--global=true' (=-form) is excluded"
+else
+    fail "create: post-sub --global=true exclusion (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 17e. `--global=false` does NOT select the shared db -> the create is STILL
+#      forced (truthy-check, so an explicit-false selector is not an exclusion).
+run_create 0 "bd-ib-ps9" -- create --global=false --title "x"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 2 ] && log_has "update bd-ib-ps9 --status backlog"; then
+    pass "create: '--global=false' is NOT a selector -> create still forced (truthy-check)"
+else
+    fail "create: --global=false still-forced (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# ===========================================================================
 echo ""
 echo "bd-guard tests: ${PASS} passed, ${FAIL} failed"
 [ "$FAIL" -eq 0 ]
