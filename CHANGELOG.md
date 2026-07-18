@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.44.4...v0.45.0) (2026-07-18)
+
+
+### Features
+
+* surface host-only attention items ([e1536b4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e1536b46d148d4705446544cee00138cb7e8b605))
+
 ## [0.44.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.44.3...v0.44.4) (2026-07-18)
 
 
