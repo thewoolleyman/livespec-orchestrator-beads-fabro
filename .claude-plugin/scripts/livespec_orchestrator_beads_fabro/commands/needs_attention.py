@@ -29,6 +29,7 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_spec_next_adapt
     adapt_top_candidate,
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_work_items import (
+    host_only_items,
     human_valves,
     impl_next,
 )
@@ -96,6 +97,7 @@ def build_attention(
             plan_threads=plan_threads(project_root=project_root),
             hygiene_scan=(),
         )
+        + host_only_items(project_root=project_root, repo=repo_name, items=materialized)
         + hygiene_scan
     )
 

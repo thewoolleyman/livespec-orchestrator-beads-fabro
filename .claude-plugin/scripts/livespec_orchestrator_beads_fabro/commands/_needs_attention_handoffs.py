@@ -11,6 +11,7 @@ from livespec_orchestrator_beads_fabro.commands.list_plan_threads import list_pl
 
 __all__: list[str] = [
     "drive_command",
+    "host_only_command",
     "plan_threads",
 ]
 
@@ -37,6 +38,14 @@ def drive_command(*, project_root: Path, action_id: str) -> str:
         f"python3 {_quote(path=_wrapper_path(name='drive.py'))} "
         f"--repo {_quote(path=project_root)} --action {shlex.quote(action_id)} --json"
     )
+
+
+def host_only_command(*, project_root: Path, work_item: str) -> str:
+    prompt = (
+        f"Host-route work-item {work_item} from repository {project_root}. "
+        "Run it on the host with required credentials; do not dispatch it to Fabro."
+    )
+    return f"cd {_quote(path=project_root)} && codex exec {shlex.quote(prompt)} < /dev/null"
 
 
 def _wrapper_path(*, name: str) -> Path:
