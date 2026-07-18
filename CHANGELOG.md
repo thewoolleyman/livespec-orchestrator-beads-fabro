@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.44.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.44.3...v0.44.4) (2026-07-18)
+
+
+### Bug Fixes
+
+* retire factory safety prose fallback ([285321e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/285321e264aa9a304cb50f949e40ef7f922564dc))
+
 ## [0.44.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.44.2...v0.44.3) (2026-07-18)
 
 
