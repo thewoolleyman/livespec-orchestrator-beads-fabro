@@ -7,7 +7,6 @@ and the `BeadsWorkItemStore` facade while preserving the original public API.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, cast
 
@@ -76,8 +75,6 @@ _META_ACCEPTANCE_CRITERIA = "acceptance_criteria"
 _META_NON_LOCAL_DEPENDS_ON = "non_local_depends_on"
 _META_NOTES = "notes"
 
-_LEGACY_HOST_MARKER_RE = re.compile(r"(?<![\w-])host[-_]only(?![\w-])", re.IGNORECASE)
-
 # The one adapter status name-mapping: livespec `done` is beads' built-in
 # `closed` (native closure: `closed_at`, `bd close`, done-hiding). Every
 # other livespec state maps to a beads status of the SAME name (5 custom +
@@ -124,11 +121,7 @@ def _record_to_work_item(*, record: BeadsRecord) -> WorkItem:
     content_fields = {**metadata, **record}
     title = _require_str(record=record, key="title")
     description = _optional_str(record=record, key="description") or ""
-    factory_safety = _factory_safety_from_labels_or_legacy(
-        labels=labels,
-        title=title,
-        description=description,
-    )
+    factory_safety = _factory_safety_from_labels(labels=labels)
     return WorkItem(
         id=issue_id,
         type=cast("Any", _require_str(record=record, key="issue_type")),
@@ -168,18 +161,11 @@ def _record_to_work_item(*, record: BeadsRecord) -> WorkItem:
     )
 
 
-def _factory_safety_from_labels_or_legacy(
+def _factory_safety_from_labels(
     *,
     labels: list[str],
-    title: str,
-    description: str,
 ) -> str | None:
-    explicit = _label_value(labels=labels, prefix=_LABEL_FACTORY_SAFETY)
-    if explicit is not None:
-        return explicit
-    if _LEGACY_HOST_MARKER_RE.search(f"{title}\n{description}") is not None:
-        return "mutates-host-machinery"
-    return None
+    return _label_value(labels=labels, prefix=_LABEL_FACTORY_SAFETY)
 
 
 def _depends_on_from_edges(

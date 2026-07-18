@@ -220,7 +220,7 @@ def test_absent_policy_labels_read_back_none() -> None:
     assert read_back.factory_safety is None
 
 
-def test_legacy_marker_reads_as_factory_safety_fallback(
+def test_prose_marker_without_factory_safety_label_reads_factory_safe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _install_stub(
@@ -228,7 +228,7 @@ def test_legacy_marker_reads_as_factory_safety_fallback(
         records=[_raw_work_item(description="Touch self-machinery. host-only.")],
     )
     [read_back] = list(read_work_items(path=_config()))
-    assert read_back.factory_safety == "mutates-host-machinery"
+    assert read_back.factory_safety is None
 
 
 def test_done_maps_to_beads_closed_and_back() -> None:
