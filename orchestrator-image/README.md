@@ -131,10 +131,10 @@ steps around. It is distinct from the containerized server the entrypoint
 provisions (below); the image's `COPY fabro` stages this same host binary from
 `$HOST_FABRO_BIN`, so the host install IS the image's staging source.
 
-**Current binary (2026-07-17):** `fabro 0.254.0 (b651dba)` — built from the
+**Current binary (2026-07-18):** `fabro 0.254.0 (9048a8d)` — built from the
 `factory-integration` branch (see below). Verify with `~/.fabro/bin/fabro
 --version`; the parenthesized short SHA is the integration commit, and it MUST be
-reachable from `factory-integration` (`origin/factory-integration` = `b651dbabe`).
+reachable from `factory-integration` (`origin/factory-integration` = `9048a8d52`).
 
 ### `factory-integration` — the carrier branch for unreleased fixes
 
@@ -158,6 +158,7 @@ needs (never a subset, so the branch is always the whole truth about what runs):
 | upstream PR **#576** | opt-in OTLP/HTTP span export | restores factory observability for the Codex era (the transport; lit up by the fork-local O1/O2 emitter wiring below) |
 | fork-local **O1** — worker OTLP env re-injection (`bd-ib-98c.4`) | the server forwards its non-secret `OTEL_*` export config into the `__run-worker` subprocess (`apply_worker_otel_export_env`), deliberately stripping the credential-bearing `OTEL_EXPORTER_OTLP_HEADERS` | #576 alone is inert in the factory: the ACP work runs in a server-spawned worker whose env is `env_clear`ed by `apply_worker_env`, so without re-injection the worker exports nothing |
 | fork-local **O2** — W3C `traceparent` join (`bd-ib-98c.5`) | the server serializes its `run`-span context to a per-run `TRACEPARENT` env at the worker-launch seam; the worker parents its `run` span on it | without it the server and worker each emit a SEPARATE root `run` span in a distinct trace, so one dispatch is unviewable as one trace |
+| fork-local **P2** — decouple OTLP export from `FABRO_LOG` (`bd-ib-98c.12`) | `FABRO_LOG` was a GLOBAL registry filter gating the otel layer too; the fix filters per-layer (`FABRO_LOG` on the fmt layers, a fixed `INFO` floor on the otel layer) | otherwise raising the log level silently zeroes ALL telemetry at both ends (the server injects its level into the worker), with no error — an operator quieting logs could kill the Honeycomb dataset |
 
 **Base is pinned to 0.254 — do NOT modernize.** The factory MUST NOT pin any fabro
 build ≥ 0.256 until the `workflow.fabro` migration lands: fabro #474 de-templates
