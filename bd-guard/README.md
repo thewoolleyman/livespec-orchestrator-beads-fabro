@@ -47,12 +47,15 @@ is **qualifying** when the subcommand is `create` / `new` / `q` (quick-capture)
   **skipped in this first cut** and left to the store normalizer (documented here
   and in the wrapper, not a silent gap);
 - a **tenant / db selector** (`-C` / `--directory` / `--db` / `--global` /
-  `--repo`, incl. `=`-forms and clustered `-Cdir`) — the create mints in one
-  tenant/db while the **flag-less** follow-up `update` would target another, so
-  forcing would strand the new item `open` or (worse) mutate a same-id item in
+  `--repo`, incl. `=`-forms and clustered `-Cdir`) — detected **whether it
+  appears before OR after the subcommand** (bd is cobra: persistent flags are
+  valid in both positions, as `bd create … --json` shows). The create mints in
+  one tenant/db while the **flag-less** follow-up `update` would target another,
+  so forcing would strand the new item `open` or (worse) mutate a same-id item in
   the **wrong** tenant. Such creates pass through unforced (they land `open` and
   the store normalizer catches them). We deliberately do **not** try to propagate
-  the selector onto `update` — exclusion is the safe fix;
+  the selector onto `update` — exclusion is the safe fix. (`--global=false` is
+  not a selector, so it does not exclude.);
 - a create already carrying a lifecycle `--status <s>` — future-proofing for when
   beads ships create-time `--status`: a lifecycle value is **respected**, a
   non-lifecycle value is still normalized to `backlog`.
