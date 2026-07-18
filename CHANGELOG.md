@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.44.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.44.1...v0.44.2) (2026-07-18)
+
+
+### Bug Fixes
+
+* **bd-guard:** exclude POST-subcommand tenant/db selectors from create-forcing ([bf0f1b5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bf0f1b54996a41c82340a51c1421e15debb5f003))
+
 ## [0.44.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.44.0...v0.44.1) (2026-07-18)
 
 
