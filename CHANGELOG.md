@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.44.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.43.1...v0.44.0) (2026-07-18)
+
+
+### Features
+
+* **bd-guard:** normalize bd create to lifecycle backlog (close create drift) ([07bc66f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/07bc66f04109c4e52afa288675a41d70442af43a))
+
 ## [0.43.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.43.0...v0.43.1) (2026-07-17)
 
 
