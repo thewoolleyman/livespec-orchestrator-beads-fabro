@@ -25,8 +25,21 @@ trap 'rm -rf "$WORK"' EXIT
 FAKE_BD="${WORK}/fake-bd"
 cat > "$FAKE_BD" <<'STUB'
 #!/bin/sh
-# Records exact argv (one per line), emits controlled streams, exits controlled.
+# Records exact argv (one per line) to the single argv file (overwritten each
+# call), emits controlled streams, and exits controlled.
+#
+# For MULTI-STEP sequences — specifically the create-normalization two-step
+# (real create, then the guard's follow-up `bd update <id> --status backlog`) —
+# it ALSO appends one space-joined line per invocation to FAKE_BD_LOG when that
+# is set, so BOTH stub calls are assertable (the single argv file only keeps the
+# last call). And it honors a per-verb FAKE_BD_UPDATE_EXIT so the follow-up
+# `update` can be failed INDEPENDENTLY of the create (to exercise the
+# create-enforcement fail-open path).
 printf '%s\n' "$@" > "$FAKE_BD_ARGV_FILE"
+if [ -n "${FAKE_BD_LOG:-}" ]; then printf '%s\n' "$*" >> "$FAKE_BD_LOG"; fi
+if [ "${1:-}" = "update" ] && [ -n "${FAKE_BD_UPDATE_EXIT:-}" ]; then
+    exit "$FAKE_BD_UPDATE_EXIT"
+fi
 if [ -n "${FAKE_BD_STDOUT:-}" ]; then printf '%s' "$FAKE_BD_STDOUT"; fi
 if [ -n "${FAKE_BD_STDERR:-}" ]; then printf '%s' "$FAKE_BD_STDERR" >&2; fi
 exit "${FAKE_BD_EXIT:-0}"
@@ -88,6 +101,31 @@ assert_argv() {
     printf '%s\n' "$@" > "$expected"
     diff -q "$expected" "$ARGV_FILE" >/dev/null 2>&1
 }
+
+# --- create-normalization test infrastructure (§15) -------------------------
+# CLOG records EVERY stub invocation (create + any guard follow-up `update`),
+# one space-joined line per call, so the two-step is assertable.
+CLOG="${WORK}/call-log.txt"
+
+# run_create EXITCODE STDOUT -- <argv...> — run the wrapper with the call log
+# enabled and the create stub output/exit set. Mode is left unset (resolves to
+# warn — create is never blocked). Captures stdout/stderr/exit into globals.
+run_create() {
+    local exitcode="$1" stdout="$2"
+    shift 2
+    [ "$1" = "--" ] && shift
+    rm -f "$ARGV_FILE" "$CLOG"
+    FAKE_BD_LOG="$CLOG" \
+    FAKE_BD_EXIT="$exitcode" \
+    FAKE_BD_STDOUT="$stdout" \
+        "$WRAPPER" "$@" >"$OUT_FILE" 2>"$ERR_FILE"
+    RC=$?
+}
+
+# log_lines — count of recorded stub invocations (0 if the log is absent).
+log_lines() { if [ -f "$CLOG" ]; then wc -l < "$CLOG" | tr -d ' '; else echo 0; fi; }
+# log_has <substr> — the call log contains a line with this substring.
+log_has() { [ -f "$CLOG" ] && grep -qF -- "$1" "$CLOG"; }
 
 # --- OTLP telemetry test infrastructure -------------------------------------
 # A throwaway HTTP capture server: binds a RANDOM loopback port, appends each
@@ -230,16 +268,11 @@ else
 fi
 
 # ===========================================================================
-# 4. non-update subcommands -> exact passthrough (argv + stdout + exit)
+# 4. non-guarded, non-create subcommands -> exact passthrough (argv+stdout+exit).
+#    NOTE: create/new/q are NO LONGER exact-passthrough — they are normalized to
+#    lifecycle `backlog` (covered comprehensively in §15). This section now only
+#    covers the still-exact-passthrough subcommands (list, show, unknown).
 # ===========================================================================
-run_wrapper warn 0 "created abc-9" -- create --title "hello world" --status open
-if was_called && assert_argv create --title "hello world" --status open \
-        && [ "$RC" -eq 0 ] && stdout_is "created abc-9" && stderr_empty; then
-    pass "create --status open passes through UNGUARDED (create is out of scope)"
-else
-    fail "create --status open passthrough"
-fi
-
 run_wrapper warn 0 "issue list output" -- list
 if was_called && assert_argv list && stdout_is "issue list output" && stderr_empty; then
     pass "list passes through"
@@ -825,6 +858,163 @@ if ! was_called && [ "$NNRC" -eq 3 ] && stderr_has "bd update --claim' is non-li
     pass "mode-file: newline-less 'fail' still resolves to fail and BLOCKS (footgun fixed)"
 else
     fail "mode-file: newline-less 'fail' block (rc=$NNRC, called=$(was_called && echo y || echo n))"
+fi
+
+# ===========================================================================
+# 15. CREATE NORMALIZATION: a QUALIFYING `create`/`new`/`q` is forced to the
+#     lifecycle status `backlog` via a guard-side two-step (real create, then
+#     `bd update <new-id> --status backlog`). Excluded/batch/dry-run/lifecycle-
+#     status creates are NOT forced. Forcing is FAIL-OPEN (a follow-up failure
+#     never changes the create's exit code). FAKE_BD_LOG records BOTH stub calls
+#     so the two-step is assertable.
+# ===========================================================================
+
+# 15a. qualifying create -> follow-up `update <id> --status backlog` with the id
+#      the create emitted; create's stdout + exit code preserved. Uses a
+#      HYPHENATED-prefix id to prove the extractor handles multi-hyphen prefixes.
+run_create 0 "livespec-console-beads-fabro-ble" -- create --title "hello"
+if [ "$RC" -eq 0 ] && stdout_is "livespec-console-beads-fabro-ble" \
+        && [ "$(log_lines)" -eq 2 ] \
+        && log_has "create --title hello" \
+        && log_has "update livespec-console-beads-fabro-ble --status backlog"; then
+    pass "create: qualifying create forces 'update <id> --status backlog' (id extracted incl. hyphenated prefix), stdout+exit preserved"
+else
+    fail "create: qualifying two-step (rc=$RC, out=$(cat "$OUT_FILE"), log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 15b. HUMAN-format output ('✓ Created issue: <id> — <title>'): the id is the
+#      FIRST lowercase-hyphenated token, so it is extracted even when the title
+#      itself is hyphenated (id precedes title). Output is preserved.
+run_create 0 "$(printf '✓ Created issue: bd-ib-ara4 — my-hyphenated title\n  Priority: P2\n  Status: open')" -- create "my-hyphenated title"
+if [ "$RC" -eq 0 ] && grep -qF "bd-ib-ara4" "$OUT_FILE" && grep -qF "Status: open" "$OUT_FILE" \
+        && [ "$(log_lines)" -eq 2 ] \
+        && log_has "update bd-ib-ara4 --status backlog"; then
+    pass "create: human-format id extracted despite a hyphenated title (id is the first token), output preserved"
+else
+    fail "create: human-format extraction (rc=$RC, out=$(cat "$OUT_FILE"), log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 15c. EXCLUSIONS are NOT forced (single stub call, no follow-up update).
+# --type=event (equals form)
+run_create 0 "bd-ib-ev1" -- create --type=event --title "audit"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: --type=event is NOT forced (audit event bead)"
+else
+    fail "create: --type=event exclusion (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# --type event (separate form)
+run_create 0 "bd-ib-ev2" -- create --type event --title "audit"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: --type event (separate form) is NOT forced"
+else
+    fail "create: --type event exclusion (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# --ephemeral
+run_create 0 "bd-ib-ep1" -- create --ephemeral --title "temp"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: --ephemeral is NOT forced"
+else
+    fail "create: --ephemeral exclusion (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# --dry-run (nothing is created)
+run_create 0 "bd-ib-dr1" -- create --title "preview" --dry-run
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: --dry-run is NOT forced (nothing created)"
+else
+    fail "create: --dry-run exclusion (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# --file (batch): documented first-cut SKIP, left to the store normalizer.
+run_create 0 "bd-ib-b1" -- create --file plan.md
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: --file batch is NOT forced (documented first-cut skip; normalizer handles it)"
+else
+    fail "create: --file batch skip (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# --graph (batch)
+run_create 0 "bd-ib-b2" -- create --graph plan.json
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: --graph batch is NOT forced"
+else
+    fail "create: --graph batch skip (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 15d. existing lifecycle --status respected; a NON-lifecycle --status still
+#      normalized. (bd v1.0.5 create has no --status; this future-proofs the
+#      parser for when beads ships create-time --status.)
+run_create 0 "bd-ib-ls1" -- create --status ready --title "x"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: existing lifecycle --status ready is respected (NOT overridden to backlog)"
+else
+    fail "create: lifecycle --status not overridden (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+run_create 0 "bd-ib-ns1" -- create --status open --title "x"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 2 ] && log_has "update bd-ib-ns1 --status backlog"; then
+    pass "create: a NON-lifecycle --status open is still normalized to backlog"
+else
+    fail "create: non-lifecycle --status normalized (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 15e. FAIL-OPEN: create succeeds (exit 0) but the follow-up update FAILS (exit
+#      5) -> the create's exit stays 0, its output is intact, update still tried.
+rm -f "$ARGV_FILE" "$CLOG"
+FAKE_BD_LOG="$CLOG" \
+FAKE_BD_EXIT=0 \
+FAKE_BD_UPDATE_EXIT=5 \
+FAKE_BD_STDOUT="bd-ib-fo1" \
+    "$WRAPPER" create --title "x" >"$OUT_FILE" 2>"$ERR_FILE"; FRC=$?
+if [ "$FRC" -eq 0 ] && stdout_is "bd-ib-fo1" && [ "$(log_lines)" -eq 2 ] \
+        && log_has "update bd-ib-fo1 --status backlog"; then
+    pass "create: follow-up update FAILURE is fail-open (create exit stays 0, output intact, update still attempted)"
+else
+    fail "create: fail-open on follow-up failure (rc=$FRC, out=$(cat "$OUT_FILE"), log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 15f. a FAILED create (exit 4) is NOT forced (forcing only on success).
+run_create 4 "" -- create --title "x"
+if [ "$RC" -eq 4 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: a FAILED create (exit 4) is not forced (no follow-up update; exit preserved)"
+else
+    fail "create: failed-create no-force (rc=$RC, log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 15g. `bd q` quick-capture and `bd new` alias are also normalized; `bd q --type
+#      event` is excluded.
+run_create 0 "bd-ib-q1" -- q "quick task"
+if [ "$RC" -eq 0 ] && stdout_is "bd-ib-q1" && [ "$(log_lines)" -eq 2 ] \
+        && log_has "update bd-ib-q1 --status backlog"; then
+    pass "create: 'bd q' quick-capture is normalized to backlog"
+else
+    fail "create: bd q normalization (rc=$RC, log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+run_create 0 "bd-ib-n1" -- new --title "via alias"
+if [ "$RC" -eq 0 ] && stdout_is "bd-ib-n1" && [ "$(log_lines)" -eq 2 ] \
+        && log_has "update bd-ib-n1 --status backlog"; then
+    pass "create: 'bd new' alias is normalized to backlog"
+else
+    fail "create: bd new normalization (rc=$RC, log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+run_create 0 "bd-ib-qe1" -- q "event via q" --type event
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: 'bd q --type event' is NOT forced (event bead)"
+else
+    fail "create: bd q --type event exclusion (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 15h. value-misread guard: a --title value of "--ephemeral" must NOT be read as
+#      the exclusion flag -> the create is still forced.
+run_create 0 "bd-ib-vm1" -- create --title "--ephemeral"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 2 ] && log_has "update bd-ib-vm1 --status backlog"; then
+    pass "create: a --title value of '--ephemeral' is not misread as the flag (still forced)"
+else
+    fail "create: value-misread guard (log=$(cat "$CLOG" 2>/dev/null))"
 fi
 
 # ===========================================================================
