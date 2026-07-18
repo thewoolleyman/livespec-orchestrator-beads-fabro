@@ -37,12 +37,22 @@ is **qualifying** when the subcommand is `create` / `new` / `q` (quick-capture)
 **and** it is none of these exclusions:
 
 - `--type event` (audit **event** beads, not work items);
-- `--ephemeral`;
-- `--dry-run` (nothing is created);
-- a **batch** create (`--file` / `-f` / `--graph`) — a batch mints **many** ids;
-  forcing a single id is not meaningful, so batch is **skipped in this first cut**
-  and left to the store normalizer (documented here and in the wrapper, not a
-  silent gap);
+- `--ephemeral` (incl. `--ephemeral=true`; an explicit `--ephemeral=false` still
+  creates a real item, so it is still forced);
+- `--dry-run` (nothing is created; incl. `--dry-run=true`, same false-value rule);
+- `--help` / `-h` (prints help and creates nothing — its help **text** carries
+  example ids like `bd-20` that must never be mistaken for a new id);
+- a **batch** create (`--file` / `-f` / `--graph`, incl. clustered `-fFILE`) — a
+  batch mints **many** ids; forcing a single id is not meaningful, so batch is
+  **skipped in this first cut** and left to the store normalizer (documented here
+  and in the wrapper, not a silent gap);
+- a **tenant / db selector** (`-C` / `--directory` / `--db` / `--global` /
+  `--repo`, incl. `=`-forms and clustered `-Cdir`) — the create mints in one
+  tenant/db while the **flag-less** follow-up `update` would target another, so
+  forcing would strand the new item `open` or (worse) mutate a same-id item in
+  the **wrong** tenant. Such creates pass through unforced (they land `open` and
+  the store normalizer catches them). We deliberately do **not** try to propagate
+  the selector onto `update` — exclusion is the safe fix;
 - a create already carrying a lifecycle `--status <s>` — future-proofing for when
   beads ships create-time `--status`: a lifecycle value is **respected**, a
   non-lifecycle value is still normalized to `backlog`.
@@ -51,15 +61,29 @@ The forcing is **fail-open**: if the follow-up `update` fails, the create's own
 exit code and output are untouched, and a stranded `open` is caught by the store
 normalizer. A create is **never blocked** (even in `fail` mode) — only
 normalized. The follow-up is emitted only when the real create **succeeds**
-(exit 0). Telemetry records the normalization as `guard.op=create-forced-backlog`
-(with `guard.warned=false`, since a create is not a violation).
+(exit 0). The create's stdout is **replayed only after** the follow-up update
+returns, so a consumer that reads the id (e.g. `id=$(bd create --silent)`) and
+immediately updates the item cannot race the guard's own backlog update.
+Telemetry records the normalization as `guard.op=create-forced-backlog` (with
+`guard.warned=false`, since a create is not a violation).
 
-The new id is extracted from the create's stdout with one regex,
-`[a-z][a-z0-9]*(-[a-z0-9]+)+` (first match), which covers every create output
-form: the human default (`✓ Created issue: <id> — <title>`, id first), `--silent`
-/ `q` (id only), and `--json` (`"id":"<id>"`) — because in each the id is the
-first lowercase hyphenated token, while timestamps start with a digit and other
-fields carry no hyphen.
+**id extraction is form-anchored, never first-token-anywhere.** beads v1.0.5's
+legacy `--json` (the **default** when `BD_JSON_ENVELOPE` is unset) re-marshals
+the issue through a map with **alphabetically-sorted keys**, so `assignee` /
+`created_by` / `description` / `external_ref` all precede `"id"`. A naive
+first-hyphenated-token grep would then grab a **real** id embedded in e.g.
+`--description "Discovered from bd-ib-9x9x9x"` and demote the wrong item while
+stranding the new one. So the extractor anchors on the output **form**, in order:
+
+1. stdout starts with `{` → the **first** `"id": "<v>"` field (safe in both JSON
+   modes — envelope has id first in `data`, legacy sorts metadata after id, and
+   JSON escaping guarantees no literal `"id":` inside a string value);
+2. else a line containing `Created issue: ` → the token immediately **after** it;
+3. else the whole trimmed output is a single id token → use it (`--silent` / `q`);
+4. else extract **nothing** and skip the follow-up (the normalizer catches it).
+
+The candidate is then validated against the beads id shape
+(`^[a-z][a-z0-9]*(-[a-z0-9]+)+$`); anything else yields empty (fail-safe).
 
 ## The lifecycle statuses (authoritative)
 
@@ -75,9 +99,12 @@ native `open` / `in_progress` / `deferred` are non-conformant.
 ## Out of scope (deliberately)
 
 The bare `bd create` → `open` default is **no longer** out of scope: it is now
-**normalized** to `backlog` (see **Create normalization** above). Only **batch**
-creates (`--file` / `-f` / `--graph`) remain unforced in this first cut — a batch
-mints many ids and is left to the store normalizer.
+**normalized** to `backlog` (see **Create normalization** above). The creates
+that remain unforced are the documented exclusions listed there — **batch**
+creates (`--file` / `-f` / `--graph`, a batch mints many ids, left to the store
+normalizer) and creates carrying a **tenant/db selector** (`-C` / `--directory` /
+`--db` / `--global` / `--repo`, where a flag-less follow-up `update` would hit the
+wrong tenant).
 
 Note the **flag vs subcommand** distinction for defer: `bd update ... --defer
 <date>` (the `--defer` **flag**) sets a defer *date*, not a status, so it is
@@ -283,3 +310,14 @@ non-lifecycle `--status` still is); a failed follow-up `update` is **fail-open**
 (the create's exit stays 0); a failed create is not forced; `bd q` and `bd new`
 are normalized while `bd q --type event` is excluded; and a `--title` value of
 `--ephemeral` is not misread as the flag.
+
+The **hardening** section (§16, from a beads-v1.0.5-source adversarial review)
+proves the two deploy-blocker fixes and the remaining edge forms: a legacy
+`--json` create whose `--description` carries a real-looking id **before** the
+sorted `"id"` field → the follow-up targets the **new** id, not the description's
+(form-anchored extraction); an envelope-`--json` (id-first) fixture; `bd create
+--help` → **no** follow-up (help text carries example ids); `--ephemeral=true` /
+`--dry-run=true` excluded while `--dry-run=false` is still forced; clustered
+`-fplan.md` batch not forced; `-C <dir>` / `--db <path>` / `--global` / `--repo`
+(and clustered `-Cdir`) creates excluded (wrong-tenant); and a `--silent`
+single-id create still forced.

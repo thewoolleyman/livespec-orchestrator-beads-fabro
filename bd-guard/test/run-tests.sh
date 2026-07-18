@@ -1018,6 +1018,130 @@ else
 fi
 
 # ===========================================================================
+# 16. CREATE-NORMALIZATION HARDENING (fix-forward, from a beads-v1.0.5-source
+#     adversarial review): form-anchored id extraction (legacy --json sorts
+#     metadata keys BEFORE "id"), tenant/db-selector exclusion (a flag-less
+#     follow-up update would hit the WRONG tenant), and the remaining edge forms.
+# ===========================================================================
+
+# 16a. BLOCKER 1 — legacy --json output re-marshals with ALPHABETICALLY-SORTED
+#      keys, so `assignee`/`created_by`/`description`/`external_ref` precede
+#      `"id"`. A `--description` carrying a REAL existing id would fool a naive
+#      first-token grep. Assert the follow-up targets the NEW id (from the "id"
+#      FIELD), never the id embedded in the description.
+JSON_SORTED='{"assignee":"","created_by":"chad","description":"Discovered from bd-ib-3f9a2c","external_ref":"gh-9","id":"bd-ib-newone","issue_type":"task","priority":2,"status":"open","title":"t"}'
+run_create 0 "$JSON_SORTED" -- create --title "t" --description "Discovered from bd-ib-3f9a2c" --json
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 2 ] \
+        && log_has "update bd-ib-newone --status backlog" \
+        && ! log_has "update bd-ib-3f9a2c"; then
+    pass "create: legacy --json (sorted keys) — follow-up targets the NEW id from the \"id\" field, NOT a real id inside --description (BLOCKER 1 closed)"
+else
+    fail "create: legacy-json wrong-token extraction (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 16b. envelope --json (id FIRST in data): id still extracted from the first
+#      "id" field.
+JSON_ENVELOPE='{"data":{"id":"bd-ib-env1","status":"open","title":"envelope"},"meta":{"ok":true}}'
+run_create 0 "$JSON_ENVELOPE" -- create --title "envelope" --json
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 2 ] && log_has "update bd-ib-env1 --status backlog"; then
+    pass "create: envelope --json (id-first) — id extracted from the first \"id\" field"
+else
+    fail "create: envelope-json extraction (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 16c. `bd create --help` prints help TEXT (containing example ids like bd-20)
+#      and creates nothing -> excluded, NO follow-up update.
+HELP_TXT="$(printf 'Create a new issue (or batch from markdown/graph JSON)\n\nExamples:\n  bd create "Fix bug"\n  bd dep add bd-20 blocks bd-15\n')"
+run_create 0 "$HELP_TXT" -- create --help
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: 'bd create --help' is excluded — no follow-up update from help-text ids (bd-20)"
+else
+    fail "create: --help exclusion (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 16d. `=`-form booleans: --ephemeral=true / --dry-run=true are excluded (a forced
+#      --dry-run would echo REAL dep ids for a create that made nothing).
+run_create 0 "bd-ib-et1" -- create --ephemeral=true --title "x"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: --ephemeral=true (=-form) is NOT forced"
+else
+    fail "create: --ephemeral=true exclusion (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+run_create 0 "bd-ib-dt1" -- create --dry-run=true --title "x"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: --dry-run=true (=-form) is NOT forced"
+else
+    fail "create: --dry-run=true exclusion (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 16d'. ...but an explicit FALSE value DOES create a real item -> still forced
+#       (truthy-check, mirroring the --claim=* idiom).
+run_create 0 "bd-ib-df1" -- create --dry-run=false --title "x"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 2 ] && log_has "update bd-ib-df1 --status backlog"; then
+    pass "create: --dry-run=false (explicit false) still creates -> still forced (truthy-check)"
+else
+    fail "create: --dry-run=false still-forced (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 16e. clustered `-fplan.md` batch form is detected -> NOT forced.
+run_create 0 "bd-ib-cf1" -- create -fplan.md
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: clustered '-fplan.md' batch is NOT forced (batch detection)"
+else
+    fail "create: clustered -f batch skip (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 16f. BLOCKER 2 — tenant/db selectors: a create under -C/--db/--global/--repo
+#      mints in one tenant while the flag-less follow-up update would hit
+#      another. EXCLUDE such creates from forcing (no follow-up update).
+run_create 0 "bd-ib-tc1" -- -C /some/other/dir create --title "x"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: '-C <dir>' create is excluded (wrong-tenant risk; no follow-up) — BLOCKER 2"
+else
+    fail "create: -C tenant exclusion (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+run_create 0 "bd-ib-tc2" -- --db /tmp/other.db create --title "x"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: '--db <path>' create is excluded (wrong-db risk; no follow-up)"
+else
+    fail "create: --db tenant exclusion (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+run_create 0 "bd-ib-tc3" -- --global create --title "x"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: '--global' create is excluded (shared-server db; no follow-up)"
+else
+    fail "create: --global tenant exclusion (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+run_create 0 "bd-ib-tc4" -- create --repo other-repo --title "x"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: '--repo <other>' create is excluded (cross-repo/tenant; no follow-up)"
+else
+    fail "create: --repo tenant exclusion (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 16f'. clustered '-Cdir' tenant selector also excludes.
+run_create 0 "bd-ib-tc5" -- -C/some/dir create --title "x"
+if [ "$RC" -eq 0 ] && [ "$(log_lines)" -eq 1 ] && ! log_has "update "; then
+    pass "create: clustered '-Cdir' tenant selector is excluded (no follow-up)"
+else
+    fail "create: -Cdir tenant exclusion (log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# 16g. a plain '--silent' single-id create is STILL forced (regression guard for
+#      the extractor's single-token path).
+run_create 0 "bd-ib-sil1" -- create --title "x" --silent
+if [ "$RC" -eq 0 ] && stdout_is "bd-ib-sil1" && [ "$(log_lines)" -eq 2 ] \
+        && log_has "update bd-ib-sil1 --status backlog"; then
+    pass "create: '--silent' single-id create is still forced (single-token extraction)"
+else
+    fail "create: --silent still-forced (rc=$RC, out=$(cat "$OUT_FILE"), log=$(cat "$CLOG" 2>/dev/null))"
+fi
+
+# ===========================================================================
 echo ""
 echo "bd-guard tests: ${PASS} passed, ${FAIL} failed"
 [ "$FAIL" -eq 0 ]
