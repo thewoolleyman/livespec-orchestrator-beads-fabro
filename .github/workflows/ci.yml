@@ -21,16 +21,6 @@
 # scripts, add the corresponding `check-<slug>` targets to the
 # appropriate matrix and to branch protection's required-status-
 # checks list.
-#
-# The check matrices + check-doctor-static run in the SAME baked image the
-# Fabro sandbox uses, on the local self-hosted runner — so "green in CI" and
-# "green in sandbox" are the same environment (livespec
-# plan/fabro-ci-image-factoring). runs-on resolves from the repo variable
-# CI_RUNNER_LABELS, defaulting to the self-hosted label; set it to
-# '["ubuntu-latest"]' to reroute to GitHub-hosted when the local host is down
-# (the merge-gate fallback). setup, export-telemetry and ci-green stay
-# ubuntu-latest — the gate must stay reportable host-down and the telemetry
-# secret must never reach the runner.
 
 name: CI
 
@@ -43,16 +33,11 @@ name: CI
 env:
   UV_HTTP_RETRIES: "5"
 
-# merge_group is deliberately ABSENT: no merge queue is configured for this
-# repo (verified live — zero rulesets, required_merge_queue: null; branch
-# protection requires only ci-green). Keeping the vestigial trigger would be
-# exactly the routing hole the trusted-event audit forbids, since merge_group
-# is not a fork-gated event and the matrices below are self-hosted. Re-add it
-# WITH hosted routing only if a merge queue is adopted.
 on:
   pull_request:
   push:
     branches: [master]
+  merge_group:
 
 jobs:
   setup:
@@ -109,18 +94,7 @@ jobs:
   check-python:
     name: ${{ matrix.target }}
     needs: setup
-    # Local self-hosted runner in the baked sandbox image (fallback: set the
-    # CI_RUNNER_LABELS repo variable to '["ubuntu-latest"]'). The container is
-    # the SAME tag the Fabro sandbox runs — that sameness collapses the
-    # green-in-CI / red-in-sandbox drift this epic exists to remove.
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["self-hosted","local-ci"]') }}
-    container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v0.48.1
-    env:
-      MISE_DATA_DIR: /root/.local/share/mise
-      MISE_NOT_FOUND_AUTO_INSTALL: "0"
-      GITHUB_TOKEN: ${{ github.token }}
-      GH_TOKEN: ${{ github.token }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -171,16 +145,17 @@ jobs:
         if: needs.setup.outputs.py_changed == 'true'
         uses: actions/checkout@v4
 
-      # Tools are baked into the image; `mise install` is a near-no-op that just
-      # confirms the pinned versions. A fresh container does not TRUST the repo
-      # .mise.toml, so `mise trust` is required for the shims to resolve.
-      # (Replaces the mise-action install + the actions/cache uv restore — the
-      # local runner's persistent ~/.cache/uv is the cache now.)
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      - name: Install pinned binaries via mise
         if: needs.setup.outputs.py_changed == 'true'
-        run: |
-          mise trust
-          mise install
+        uses: jdx/mise-action@v2
+
+      - name: Restore uv download cache
+        if: needs.setup.outputs.py_changed == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
 
       - name: Install Python dev deps via uv
         if: needs.setup.outputs.py_changed == 'true'
@@ -188,16 +163,7 @@ jobs:
 
       - name: just ${{ matrix.target }}
         if: needs.setup.outputs.py_changed == 'true'
-        run: |
-          # pyright (check-types) shells out to `npm`; under the container-hooks
-          # HOME the mise npm shim busy-loops (no node registered for that HOME).
-          # Put the image's real node/npm — derived from the shim's own location,
-          # never a hardcoded image path — ahead of the shim on PATH. Harmless
-          # for the non-npm targets.
-          shims_dir="$(dirname "$(command -v npm)")"
-          node_bin="$(cd "$shims_dir/../installs/node/latest/bin" 2>/dev/null && pwd || ls -d "$shims_dir/../installs/node"/*/bin 2>/dev/null | head -1)"
-          [ -n "$node_bin" ] && export PATH="$node_bin:$PATH"
-          just ${{ matrix.target }}
+        run: just ${{ matrix.target }}
 
   # livespec core's doctor STATIC phase (reference-discipline + out-of-band
   # invariants), wired fleet-wide per livespec epic livespec-6jfq. core ships
@@ -208,25 +174,13 @@ jobs:
   # that no other target does.
   check-doctor-static:
     name: check-doctor-static
-    # Self-hosted in the baked image. The livespec-core checkout below is a
-    # fresh PUBLIC clone INSIDE the container (no host mount — containment
-    # preserved).
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["self-hosted","local-ci"]') }}
-    container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v0.48.1
-    env:
-      MISE_DATA_DIR: /root/.local/share/mise
-      MISE_NOT_FOUND_AUTO_INSTALL: "0"
-      GITHUB_TOKEN: ${{ github.token }}
-      GH_TOKEN: ${{ github.token }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: mise trust + install (baked tools — install is a near-no-op)
-        run: |
-          mise trust
-          mise install
+      - name: Install pinned binaries via mise
+        uses: jdx/mise-action@v2
 
       - name: Resolve pinned livespec core ref (.livespec.jsonc compat.pinned)
         id: corepin
@@ -242,12 +196,9 @@ jobs:
           path: .livespec-core
 
       - name: just check-doctor-static
-        run: |
-          # In a container job, github.workspace (context) may be the HOST path;
-          # $GITHUB_WORKSPACE (env) is the in-container mount, so derive the core
-          # plugin root from it to stay container-correct.
-          export LIVESPEC_CORE_PLUGIN_ROOT="${GITHUB_WORKSPACE}/.livespec-core/.claude-plugin"
-          just check-doctor-static
+        env:
+          LIVESPEC_CORE_PLUGIN_ROOT: ${{ github.workspace }}/.livespec-core/.claude-plugin
+        run: just check-doctor-static
 
   # Metadata matrix runs unconditionally to preserve the repo-metadata
   # safety net. check-aggregate-completeness is the wiring-completeness
@@ -261,15 +212,7 @@ jobs:
   check-metadata:
     name: ${{ matrix.target }}
     needs: setup
-    # Self-hosted in the baked image, same rationale as check-python above.
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["self-hosted","local-ci"]') }}
-    container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v0.48.1
-    env:
-      MISE_DATA_DIR: /root/.local/share/mise
-      MISE_NOT_FOUND_AUTO_INSTALL: "0"
-      GITHUB_TOKEN: ${{ github.token }}
-      GH_TOKEN: ${{ github.token }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -358,10 +301,15 @@ jobs:
           # the other metadata entries.
           fetch-depth: 0
 
-      - name: mise trust + install (baked tools — install is a near-no-op)
-        run: |
-          mise trust
-          mise install
+      - name: Install pinned binaries via mise
+        uses: jdx/mise-action@v2
+
+      - name: Restore uv download cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
 
       - name: Install Python dev deps via uv
         run: uv sync --all-groups
@@ -426,20 +374,8 @@ jobs:
   e2e-cli:
     name: e2e-cli
     needs: setup
-    # Self-hosted in the baked image, same rationale as check-python above.
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["self-hosted","local-ci"]') }}
-    container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v0.48.1
+    runs-on: ubuntu-latest
     env:
-      MISE_DATA_DIR: /root/.local/share/mise
-      MISE_NOT_FOUND_AUTO_INSTALL: "0"
-      GITHUB_TOKEN: ${{ github.token }}
-      GH_TOKEN: ${{ github.token }}
-      # This job's own pre-existing setting — MERGED into the single env block
-      # above, never a second `env:` key. Two `env:` keys in one job is a YAML
-      # duplicate-key error: GitHub rejects the whole workflow at startup, and a
-      # permissive parser silently keeps only the LAST block, which would drop
-      # the mock tier and turn this into a live-harness run.
       LIVESPEC_E2E_HARNESS: mock
     steps:
       - name: Skip when no .py changes
@@ -450,16 +386,17 @@ jobs:
         if: needs.setup.outputs.py_changed == 'true'
         uses: actions/checkout@v4
 
-      # Tools are baked into the image; `mise install` is a near-no-op that just
-      # confirms the pinned versions. A fresh container does not TRUST the repo
-      # .mise.toml, so `mise trust` is required for the shims to resolve.
-      # (Replaces the mise-action install + the actions/cache uv restore — the
-      # local runner's persistent ~/.cache/uv is the cache now.)
-      - name: mise trust + install (baked tools — install is a near-no-op)
+      - name: Install pinned binaries via mise
         if: needs.setup.outputs.py_changed == 'true'
-        run: |
-          mise trust
-          mise install
+        uses: jdx/mise-action@v2
+
+      - name: Restore uv download cache
+        if: needs.setup.outputs.py_changed == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
 
       - name: Install Python dev deps via uv
         if: needs.setup.outputs.py_changed == 'true'
@@ -472,23 +409,20 @@ jobs:
   acceptance:
     name: acceptance
     needs: setup
-    # Self-hosted in the baked image, same rationale as check-python above.
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["self-hosted","local-ci"]') }}
-    container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v0.48.1
-    env:
-      MISE_DATA_DIR: /root/.local/share/mise
-      MISE_NOT_FOUND_AUTO_INSTALL: "0"
-      GITHUB_TOKEN: ${{ github.token }}
-      GH_TOKEN: ${{ github.token }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: mise trust + install (baked tools — install is a near-no-op)
-        run: |
-          mise trust
-          mise install
+      - name: Install pinned binaries via mise
+        uses: jdx/mise-action@v2
+
+      - name: Restore uv download cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
 
       - name: Install Python dev deps via uv
         run: uv sync --all-groups
@@ -500,7 +434,7 @@ jobs:
   # (dataset github-ci) and FAIL if Honeycomb does not accept them. The run
   # that produced the data confirms its own telemetry landed — so a broken
   # pipeline can't die silently (it reddens master CI and fires the existing
-  # failure notification). Master ONLY (never PRs, so PR feedback
+  # failure notification). Master/merge_group ONLY (never PRs, so PR feedback
   # stays fast); runs even when checks fail (!cancelled) so failed runs are
   # observable too; excludes itself (still in_progress → no completedAt).
   # `needs` lists every top-level job so this runs last, after each job's
@@ -510,7 +444,7 @@ jobs:
   export-telemetry:
     name: export-telemetry
     needs: [setup, check-python, check-doctor-static, check-metadata, e2e-cli, acceptance]
-    if: ${{ !cancelled() && github.event_name == 'push' }}
+    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'merge_group') }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -536,7 +470,7 @@ jobs:
   # never churns as checks are added. A SKIPPED dependency (e.g. the entire
   # check-python or e2e-cli job on a zero-.py PR) is not a failure, so ci-green
   # stays green then. setup (change-detection gate) and export-telemetry
-  # (push-only, not a gate) are intentionally absent from `needs:`.
+  # (push/merge_group-only, not a gate) are intentionally absent from `needs:`.
   ci-green:
     name: ci-green
     needs: [check-python, check-doctor-static, check-metadata, e2e-cli, acceptance]
