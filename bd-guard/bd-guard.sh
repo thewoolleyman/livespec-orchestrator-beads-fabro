@@ -35,11 +35,30 @@
 #      defer SUBCOMMAND, distinct from `update --defer <date>` (a defer-date
 #      FLAG that writes no status and is NOT guarded).
 #
-# EVERYTHING ELSE passes through UNCHANGED — `create`, `list`, `show`, `close`,
-# `dep`, `config`, `history`, `--json`, and every other subcommand/flag. The
-# bare-`create` -> `open` case is deliberately OUT OF SCOPE (it cannot be
-# cleanly guarded at a single-command wrapper on v1.0.5; it is handled by the
-# store normalizer + the upstream `status.default` work).
+# EVERYTHING ELSE passes through UNCHANGED — `list`, `show`, `close`, `dep`,
+# `config`, `history`, `--json`, and every other subcommand/flag.
+#
+# CREATE NORMALIZATION (the sixth channel). beads v1.0.5 `bd create` hardcodes
+# status `open` (a NON-lifecycle status): there is no `create --status` flag and
+# no default-status config on v1.0.5, so every plain create mints an `open` item
+# — the last raw drift channel. To close it, the wrapper forces a QUALIFYING
+# create to land the lifecycle status `backlog` via a guard-side two-step: it
+# runs the real create, then (FAIL-OPEN) issues `bd update <new-id> --status
+# backlog`. A create is QUALIFYING when the subcommand is `create` / `new` / `q`
+# (quick-capture) AND it is NONE of these exclusions:
+#   * `--type event` (audit event beads, not work items);
+#   * `--ephemeral`;
+#   * `--dry-run` (nothing is created);
+#   * a BATCH create (`--file` / `-f` / `--graph`) — it mints MANY ids; forcing
+#     is SKIPPED for batch in this first cut and left to the store normalizer
+#     (documented, not silent — see the create-phase scan and README);
+#   * a create already carrying a lifecycle `--status <s>` (future-proofing for
+#     when beads ships create-time `--status`: a lifecycle value is respected,
+#     a non-lifecycle value is still normalized to `backlog`).
+# The forcing is FAIL-OPEN: if the follow-up update fails, the create's own exit
+# code and output are untouched and a stranded `open` is caught by the store
+# normalizer. Create never trips a violation, so it is never BLOCKED (even in
+# fail mode) — only normalized.
 #
 # This is a STOPGAP until beads ships the upstream fixes. It is designed to be
 # TRIVIALLY REMOVABLE: rollback restores the real `bd`, and the whole
@@ -135,7 +154,26 @@ guarded_sub="update"  # subcommand a --claim was seen under (update|ready), for 
 _bdg_op=""            # telemetry: a summary of the flagged op (reopen / claim /
                       # status:<value>), empty when nothing was flagged
 
+# --- create-normalization scan state (phase=create) --------------------------
+is_create=0           # a create/new/q subcommand was seen
+create_excluded=0     # --ephemeral or --dry-run seen (do not force)
+create_batch=0        # --file/-f/--graph seen (batch create; forcing SKIPPED)
+create_type=""        # the captured --type/-t value ("event" excludes)
+create_status_value="" # a create-time --status/-s value (future-proofing)
+want_type_value=0     # the previous token was --type/-t in separate form
+want_create_status=0  # the previous token was a create --status/-s (separate)
+
 for arg in "$@"; do
+    if [ "$want_type_value" -eq 1 ]; then
+        create_type="$arg"
+        want_type_value=0
+        continue
+    fi
+    if [ "$want_create_status" -eq 1 ]; then
+        create_status_value="$arg"
+        want_create_status=0
+        continue
+    fi
     if [ "$want_status_value" -eq 1 ]; then
         status_value="$arg"
         want_status_value=0
@@ -194,6 +232,16 @@ for arg in "$@"; do
                         saw_defer=1
                         break
                         ;;
+                    create|new|q)
+                        # create / new (aliases) and q (quick-capture) all mint
+                        # a NEW item that bd v1.0.5 hardcodes to the non-lifecycle
+                        # `open`. Enter a dedicated `create` phase to detect the
+                        # exclusions; the passthrough tail then forces a
+                        # QUALIFYING create to lifecycle `backlog`. Do NOT break —
+                        # keep scanning the create's flags.
+                        is_create=1
+                        phase="create"
+                        ;;
                     *)
                         # Not a guarded subcommand: nothing to guard.
                         break
@@ -217,6 +265,76 @@ for arg in "$@"; do
                 esac
                 ;;
             *) : ;;
+        esac
+        continue
+    fi
+
+    if [ "$phase" = "create" ]; then
+        # create phase: detect the EXCLUSIONS that must NOT be forced to
+        # `backlog` (event type, ephemeral, dry-run, batch) and capture any
+        # future create-time --status. Value-taking flags have their value
+        # skipped so a value that LOOKS like an exclusion flag (e.g. a --title of
+        # "--ephemeral") is never misread. Flag set derived from `bd create
+        # --help` on bd v1.0.5.
+        case "$arg" in
+            --)
+                # End-of-flags: everything after is the positional title, never
+                # a flag — no further exclusion can appear, so stop scanning.
+                break
+                ;;
+            --ephemeral|--dry-run)
+                create_excluded=1
+                ;;
+            # --type/-t: CAPTURE the value (a value of `event` excludes). Handled
+            # before the generic value-skip so the type value is inspected.
+            --type|-t)
+                want_type_value=1
+                ;;
+            --type=*)
+                create_type="${arg#--type=}"
+                ;;
+            -t=*)
+                create_type="${arg#-t=}"
+                ;;
+            -t?*)
+                # Clustered short form: -tVALUE
+                create_type="${arg#-t}"
+                ;;
+            # Batch creates mint MANY ids from a file/graph; forcing a single id
+            # is not meaningful, so SKIP forcing for batch (documented; left to
+            # the store normalizer). Both separate and =-form.
+            --file|-f|--graph|--file=*|-f=*|--graph=*)
+                create_batch=1
+                ;;
+            # Future-proofing: a create-time --status/-s (absent on v1.0.5).
+            # CAPTURE it so a lifecycle value is respected (not overridden).
+            --status|-s)
+                want_create_status=1
+                ;;
+            --status=*)
+                create_status_value="${arg#--status=}"
+                ;;
+            -s=*)
+                create_status_value="${arg#-s=}"
+                ;;
+            -s?*)
+                create_status_value="${arg#-s}"
+                ;;
+            # Value-taking CREATE flags (separate-word form): skip their value so
+            # a value like "--ephemeral" or "event" is not misread. This is the
+            # `bd create --help` value-taking set MINUS the specially-handled
+            # --type/-t, --file/-f, --graph, and --status/-s above.
+            --acceptance|--append-notes|-a|--assignee|--body-file|--context|\
+            --defer|--deps|-d|--description|--design|--design-file|--due|-e|\
+            --estimate|--event-actor|--event-category|--event-payload|\
+            --event-target|--external-ref|--id|-l|--labels|--metadata|\
+            --mol-type|--notes|--parent|-p|--priority|--repo|--skills|\
+            --spec-id|--title|--waits-for|--waits-for-gate|--wisp-type)
+                expect_value=1
+                ;;
+            *)
+                : # positional title, boolean flag, or =-form value — ignore.
+                ;;
         esac
         continue
     fi
@@ -312,6 +430,34 @@ if [ -n "$status_value" ]; then
     esac
 fi
 
+# Create-normalization verdict: decide whether this create should be forced to
+# lifecycle `backlog`. Qualifying = a create/new/q that is NOT excluded (event
+# type / ephemeral / dry-run), NOT a batch (file/graph), and NOT already
+# carrying a LIFECYCLE --status (a lifecycle value is respected; a non-lifecycle
+# value is still normalized). This never sets `violated` — a create is never
+# blocked, only normalized.
+is_forced_create=0
+if [ "$is_create" -eq 1 ] && [ "$create_excluded" -eq 0 ] && [ "$create_batch" -eq 0 ]; then
+    case "$create_type" in
+        event)
+            : # audit event bead — not a work item; do not force.
+            ;;
+        *)
+            is_forced_create=1
+            if [ -n "$create_status_value" ]; then
+                case "$LIFECYCLE_STATUSES" in
+                    *" $create_status_value "*)
+                        is_forced_create=0 # already a lifecycle status — respect it.
+                        ;;
+                    *)
+                        : # non-lifecycle status — still normalize to backlog.
+                        ;;
+                esac
+            fi
+            ;;
+    esac
+fi
+
 # --- telemetry emit (default ON; disable: LIVESPEC_BD_GUARD_OTLP=off) ---------
 # Fire a DETACHED, FAIL-OPEN bd.invoke OTLP span at the local collector. Emitted
 # for BOTH passthrough AND fail-mode blocks, so enforcement is OBSERVABLE: a
@@ -338,6 +484,45 @@ if [ "$violated" -eq 1 ] && [ "$MODE" = "fail" ]; then
     _bdg_now=$(date +%s%N 2>/dev/null || echo 0)
     _bdg_emit_span 3 "$_bdg_now" "$_bdg_now"
     exit 3
+fi
+
+# --- create normalization (force lifecycle `backlog`) ------------------------
+# A qualifying create reaches here (create never trips a violation). Run the
+# real create in the FOREGROUND capturing ONLY its stdout (stderr flows through
+# live, byte-for-byte), replay the captured stdout, emit the normal span, then
+# FAIL-OPEN force the new item to `backlog` via a direct `bd update` (bypassing
+# this guard; `backlog` is already a lifecycle status, so it would not be
+# blocked anyway). A follow-up failure NEVER changes the create's exit code or
+# output — a stranded `open` is caught by the store normalizer. This branch runs
+# regardless of the OTLP setting (the span emit is a no-op when OTLP is off), so
+# a qualifying create can never take the plain `exec` path below.
+if [ "$is_forced_create" -eq 1 ]; then
+    _bdg_op="create-forced-backlog"   # telemetry: enforcement is observable
+    _bdg_cstart=$(date +%s%N 2>/dev/null || echo 0)
+    _bdg_cout=$("$REAL" "$@")
+    _bdg_crc=$?
+    _bdg_cend=$(date +%s%N 2>/dev/null || echo 0)
+    # Replay captured stdout. Command substitution stripped trailing newlines;
+    # bd's create output ends in exactly one, so restore a single one. Guard the
+    # empty case so a failed/silent create does not gain a spurious blank line.
+    if [ -n "$_bdg_cout" ]; then
+        printf '%s\n' "$_bdg_cout"
+    fi
+    _bdg_emit_span "$_bdg_crc" "$_bdg_cstart" "$_bdg_cend"
+    if [ "$_bdg_crc" -eq 0 ]; then
+        # Extract the new id from the captured output. beads ids are
+        # `<prefix>-<shorthash>` (prefix may itself contain hyphens), all
+        # lowercase. This ONE regex covers every create output form — human
+        # ("✓ Created issue: <id> — <title>", id first), `--silent` / `q` (id
+        # only), and `--json` ("id":"<id>") — because in each the id is the first
+        # lowercase hyphenated token, while timestamps start with a digit and
+        # other fields carry no hyphen.
+        _bdg_newid=$(printf '%s\n' "$_bdg_cout" | grep -oE '[a-z][a-z0-9]*(-[a-z0-9]+)+' | head -n1)
+        if [ -n "$_bdg_newid" ]; then
+            "$REAL" update "$_bdg_newid" --status backlog >/dev/null 2>&1 || :
+        fi
+    fi
+    exit "$_bdg_crc"
 fi
 
 # Passthrough. With OTLP off, transparent exec (zero overhead). With OTLP on, run

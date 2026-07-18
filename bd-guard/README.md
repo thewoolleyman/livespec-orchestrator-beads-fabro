@@ -12,13 +12,54 @@ polluting the fleet's beads tenant with off-lifecycle statuses:
 5. `bd defer <id>` (the defer **subcommand**, which sets status to the
    non-lifecycle `deferred`).
 
-Everything else — `create`, `list`, `show`, `close`, `dep`, `config`,
-`history`, `--json`, a bare `bd ready` list (or `bd ready --status <x>`
-filtering), and every other subcommand/flag — passes through **unchanged**.
+Separately, it **normalizes** every qualifying `bd create` (see **Create
+normalization** below) to the lifecycle status `backlog`.
+
+Everything else — `list`, `show`, `close`, `dep`, `config`, `history`, `--json`,
+a bare `bd ready` list (or `bd ready --status <x>` filtering), and every other
+subcommand/flag — passes through **unchanged**.
 
 This is a **STOPGAP** until beads ships the upstream fixes (a `status.default`
 and a lifecycle-aware `--claim`/`--status`). It is designed to be **trivially
 removable**: run `rollback.sh` and delete the `bd-guard/` directory.
+
+## Create normalization (the sixth channel)
+
+Unlike the five warn/block channels above, this one **rewrites state**: it is a
+silent normalization, not a warning. beads v1.0.5 `bd create` **hardcodes**
+status `open` (a non-lifecycle status) — there is no `create --status` flag and
+no default-status config on v1.0.5 — so every plain create mints an `open` item.
+That was the last raw drift channel.
+
+The guard closes it with a **two-step**: it runs the real create, captures the
+new id, then (fail-open) issues `bd update <new-id> --status backlog`. A create
+is **qualifying** when the subcommand is `create` / `new` / `q` (quick-capture)
+**and** it is none of these exclusions:
+
+- `--type event` (audit **event** beads, not work items);
+- `--ephemeral`;
+- `--dry-run` (nothing is created);
+- a **batch** create (`--file` / `-f` / `--graph`) — a batch mints **many** ids;
+  forcing a single id is not meaningful, so batch is **skipped in this first cut**
+  and left to the store normalizer (documented here and in the wrapper, not a
+  silent gap);
+- a create already carrying a lifecycle `--status <s>` — future-proofing for when
+  beads ships create-time `--status`: a lifecycle value is **respected**, a
+  non-lifecycle value is still normalized to `backlog`.
+
+The forcing is **fail-open**: if the follow-up `update` fails, the create's own
+exit code and output are untouched, and a stranded `open` is caught by the store
+normalizer. A create is **never blocked** (even in `fail` mode) — only
+normalized. The follow-up is emitted only when the real create **succeeds**
+(exit 0). Telemetry records the normalization as `guard.op=create-forced-backlog`
+(with `guard.warned=false`, since a create is not a violation).
+
+The new id is extracted from the create's stdout with one regex,
+`[a-z][a-z0-9]*(-[a-z0-9]+)+` (first match), which covers every create output
+form: the human default (`✓ Created issue: <id> — <title>`, id first), `--silent`
+/ `q` (id only), and `--json` (`"id":"<id>"`) — because in each the id is the
+first lowercase hyphenated token, while timestamps start with a digit and other
+fields carry no hyphen.
 
 ## The lifecycle statuses (authoritative)
 
@@ -33,11 +74,10 @@ native `open` / `in_progress` / `deferred` are non-conformant.
 
 ## Out of scope (deliberately)
 
-The bare `bd create` → `open` default is **not** guarded here: it cannot be
-cleanly detected at a single-command wrapper on `bd` v1.0.5 (no
-`create --status`), so a bare `create` is indistinguishable from a conformant
-one. That case is handled elsewhere by the store normalizer plus the upstream
-`status.default` work.
+The bare `bd create` → `open` default is **no longer** out of scope: it is now
+**normalized** to `backlog` (see **Create normalization** above). Only **batch**
+creates (`--file` / `-f` / `--graph`) remain unforced in this first cut — a batch
+mints many ids and is left to the store normalizer.
 
 Note the **flag vs subcommand** distinction for defer: `bd update ... --defer
 <date>` (the `--defer` **flag**) sets a defer *date*, not a status, so it is
@@ -221,12 +261,25 @@ Later sections cover the flip-hardening behavior: that `--format json update …
 that a `fail`-mode **block emits a span** (routed to a stub emitter) so
 enforcement is observable.
 
-The final sections cover the `ready`/`defer` guards and the mode-file
-newline footgun: `bd ready --claim` (and `--claim=true`) is **blocked** in
-`fail` mode while a bare `bd ready` list, `bd ready --json`, `bd ready --limit
-5`, and — critically — `bd ready --status ready` / `bd ready --status open`
-list-filters all **pass through** unblocked (the `ready` phase never scans
-`--status`, so no legit list is ever mis-blocked); the `bd defer <id>`
-subcommand is **blocked** in `fail` and **warns** in `warn`; and a mode file
-containing `fail` with **no trailing newline** still resolves to `fail` and
-blocks (proving the `head`/`tr` read does not silently degrade to `warn`).
+The `ready`/`defer` guards and the mode-file newline footgun: `bd ready --claim`
+(and `--claim=true`) is **blocked** in `fail` mode while a bare `bd ready` list,
+`bd ready --json`, `bd ready --limit 5`, and — critically — `bd ready --status
+ready` / `bd ready --status open` list-filters all **pass through** unblocked
+(the `ready` phase never scans `--status`, so no legit list is ever mis-blocked);
+the `bd defer <id>` subcommand is **blocked** in `fail` and **warns** in `warn`;
+and a mode file containing `fail` with **no trailing newline** still resolves to
+`fail` and blocks (proving the `head`/`tr` read does not silently degrade to
+`warn`).
+
+The **create-normalization** section (§15) uses a stub that appends every
+invocation to a call log (`FAKE_BD_LOG`), so the two-step (real create, then the
+guard's follow-up `update <id> --status backlog`) is asserted directly. It
+proves: a qualifying `create` triggers the follow-up with the id the create
+emitted (id extraction covers hyphenated prefixes and the human `✓ Created
+issue: <id> — <title>` form even with a hyphenated title); the create's stdout +
+exit code are preserved; `--type event`, `--ephemeral`, `--dry-run`, `--file`,
+`--graph`, and an existing lifecycle `--status` are **not** forced (a
+non-lifecycle `--status` still is); a failed follow-up `update` is **fail-open**
+(the create's exit stays 0); a failed create is not forced; `bd q` and `bd new`
+are normalized while `bd q --type event` is excluded; and a `--title` value of
+`--ephemeral` is not misread as the flag.
