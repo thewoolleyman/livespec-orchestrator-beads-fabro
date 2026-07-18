@@ -82,6 +82,7 @@ def host_only_refusal(*, item: WorkItem, journal: JournalFile) -> DispatchOutcom
         detail=host_only_refusal_detail(item_id=item.id),
     )
     journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
+    _ = write_stderr(text=f"SURFACE: {outcome.detail}\n")
     return outcome
 
 

@@ -233,6 +233,49 @@ def test_loop_holds_manual_admission_item(
     assert "outcome" in stages
 
 
+def test_loop_refuses_factory_unsafe_item_before_launch(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path, wip_cap=5)
+    item = _item(
+        id="bd-ib-factory-unsafe",
+        status="ready",
+        factory_safety="mutates-host-machinery",
+    )
+    append_work_item(path=_config(), item=item)
+    calls: list[str] = []
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _green_recording(calls))
+
+    exit_code = main(
+        argv=[
+            "loop",
+            "--repo",
+            str(repo),
+            "--budget",
+            "5",
+            "--workflow",
+            str(workflow),
+        ]
+    )
+
+    assert exit_code == 1
+    assert calls == []
+    stored = _stored()[item.id]
+    assert (stored.status, stored.assignee) == ("ready", None)
+    err = capsys.readouterr().err
+    assert "host-route" in err.lower()
+    assert item.id in err
+    journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
+    outcome_record = next(
+        json.loads(line)
+        for line in journal_text.splitlines()
+        if json.loads(line).get("stage") == "outcome"
+    )
+    assert outcome_record["outcome"]["stage"] == "host-only-refused"
+
+
 # ---------------------------------------------------------------------------
 # Scenario 24 — complete merges on green into the acceptance state.
 # ---------------------------------------------------------------------------

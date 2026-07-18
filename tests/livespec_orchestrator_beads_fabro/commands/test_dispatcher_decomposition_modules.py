@@ -67,13 +67,14 @@ def _item(**overrides: object) -> WorkItem:
 
 
 def test_host_only_predicate_importable_and_callable_from_new_module() -> None:
-    assert is_host_only_item(item=_item(title="Refactor [host-only] the hook")) is True
+    assert is_host_only_item(item=_item(factory_safety="mutates-host-machinery")) is True
+    assert is_host_only_item(item=_item(title="Refactor [host-only] the hook")) is False
     assert is_host_only_item(item=_item()) is False
 
 
 def test_host_only_refusal_detail_importable_and_callable_from_new_module() -> None:
     detail = host_only_refusal_detail(item_id="livespec-impl-beads-uvd")
-    assert "host-only refusal" in detail
+    assert "factory-safety refusal" in detail
     assert "livespec-impl-beads-uvd" in detail
 
 

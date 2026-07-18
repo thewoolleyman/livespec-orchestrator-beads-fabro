@@ -76,6 +76,7 @@ def _minimal_work_item(
     admission_policy: str | None = None,
     acceptance_policy: str | None = None,
     blocked_reason: str | None = None,
+    factory_safety: str | None = None,
     acceptance_criteria: str | None = None,
     notes: str | None = None,
 ) -> WorkItem:
@@ -101,6 +102,7 @@ def _minimal_work_item(
         admission_policy=admission_policy,  # type: ignore[arg-type]
         acceptance_policy=acceptance_policy,  # type: ignore[arg-type]
         blocked_reason=blocked_reason,  # type: ignore[arg-type]
+        factory_safety=factory_safety,  # type: ignore[arg-type]
     )
 
 
@@ -188,16 +190,19 @@ def test_policy_fields_round_trip_via_labels() -> None:
         admission_policy="manual",
         acceptance_policy="ai-then-human",
         blocked_reason="needs-human",
+        factory_safety="mutates-host-machinery",
     )
     append_work_item(path=_config(), item=item)
     record = _fake().show_issue(issue_id="li-pol")
     assert "admission:manual" in record["labels"]
     assert "acceptance:ai-then-human" in record["labels"]
     assert "blocked-reason:needs-human" in record["labels"]
+    assert "factory-safety:mutates-host-machinery" in record["labels"]
     [read_back] = list(read_work_items(path=_config()))
     assert read_back.admission_policy == "manual"
     assert read_back.acceptance_policy == "ai-then-human"
     assert read_back.blocked_reason == "needs-human"
+    assert read_back.factory_safety == "mutates-host-machinery"
 
 
 def test_absent_policy_labels_read_back_none() -> None:
@@ -205,13 +210,25 @@ def test_absent_policy_labels_read_back_none() -> None:
     append_work_item(path=_config(), item=_minimal_work_item(id_="li-nopol"))
     record = _fake().show_issue(issue_id="li-nopol")
     assert not any(
-        label.startswith(("admission:", "acceptance:", "blocked-reason:"))
+        label.startswith(("admission:", "acceptance:", "blocked-reason:", "factory-safety:"))
         for label in record["labels"]
     )
     [read_back] = list(read_work_items(path=_config()))
     assert read_back.admission_policy is None
     assert read_back.acceptance_policy is None
     assert read_back.blocked_reason is None
+    assert read_back.factory_safety is None
+
+
+def test_legacy_marker_reads_as_factory_safety_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_stub(
+        monkeypatch=monkeypatch,
+        records=[_raw_work_item(description="Touch self-machinery. host-only.")],
+    )
+    [read_back] = list(read_work_items(path=_config()))
+    assert read_back.factory_safety == "mutates-host-machinery"
 
 
 def test_done_maps_to_beads_closed_and_back() -> None:
