@@ -74,10 +74,11 @@ The next BUILD is O4 (`bd-ib-98c.7`) — execution-ready plan `o4-acp-turn-plan.
   `~/.fabro/bin/fabro` = `9048a8d` (rollback `.bak` = `b651dba-o2-pre-p2`). PROVEN: a proof-dispatch
   (`bd-ib-98c.13`, PR #738 green) ran with the SERVER at `FABRO_LOG=warn` and the FULL 51-span
   tree STILL landed in Honeycomb (trace `a54a340f…`; O2 join intact — worker parent = server
-  span) — pre-fix, warn would have emptied the dataset. ⚠️ The live server is TEMPORARILY at
-  `FABRO_LOG=warn` (the proof config); revert it to the default level once the factory is idle
-  (an idle-watch is queued; a busy factory blocked the immediate revert). warn is operationally
-  safe with P2 (full telemetry, quieter logs).
+  span) — pre-fix, warn would have emptied the dataset. NOTE: the currently-RUNNING daemon is at
+  `FABRO_LOG=warn` (the one-off env var used for the proof). `FABRO_LOG` is a start-time env var,
+  not persisted anywhere (no `settings.toml` level, no shell rc, not in the runbook start command),
+  so the NEXT server start already returns to the default level automatically — nothing to revert,
+  no action needed. warn is operationally safe with P2 regardless (full telemetry, quieter logs).
 
 - **O3 (`bd-ib-98c.6`) — verification COMPLETE, close DEFERRED to the maintainer.** Live-verified
   against the O2 proof trace `d74367bc…`: the node-lifecycle layer O3 planned is ALREADY on
@@ -158,8 +159,9 @@ ledger item.
   (`export_layer_still_sees_info_when_fabro_log_is_quieter`) pins the decoupling. PROVEN in
   production: proof-dispatch `bd-ib-98c.13` (PR #738 green) ran with the server at `FABRO_LOG=warn`
   and the full 51-span tree still landed in Honeycomb (trace `a54a340f…`, O2 join intact) — pre-fix
-  it would have emptied the dataset. ⚠️ server temporarily at `FABRO_LOG=warn`; revert to default
-  when the factory is idle (safe meanwhile — full telemetry, quieter logs). Full detail on the ledger.
+  it would have emptied the dataset. The running daemon is at `FABRO_LOG=warn` (a one-off env var
+  for the proof, persisted nowhere) — the next start auto-returns to default; no revert needed, safe
+  meanwhile. Full detail on the ledger.
 
 Full seam citations + data-availability evidence are on each ledger item.
 
