@@ -67,13 +67,16 @@ dogfooding). These constraints govern when those surfaces MUST run with Codex
 
 - **Manifest gate.** Codex full access MUST default ON only when the current
   repository identity (`owner/repo` resolved from `git remote get-url origin`)
-  appears in the livespec core fleet manifest
-  `.livespec-fleet-manifest.jsonc` as either a fleet member or an official
-  adopter. For every other repository, Codex full access MUST default OFF and
-  MAY be enabled only by an explicit local opt-in signal such as
-  `LIVESPEC_CODEX_FULL_ACCESS=1` or a local `.livespec.jsonc` flag. Installing
-  the plugin alone MUST NOT silently put an unrelated external repository into a
-  full-access Codex posture.
+  appears in the livespec core fleet manifest, resolved through the same
+  fleet-contract machinery that already reads `.livespec-fleet-manifest.jsonc`
+  from livespec core, as either a fleet member or an official adopter. A
+  distributed local membership marker MAY cache that decision for hook-time
+  execution, but the marker MUST be derived from the core manifest rather than
+  introducing a second source of truth. For every other repository, Codex full
+  access MUST default OFF and MAY be enabled only by an explicit local opt-in
+  signal such as `LIVESPEC_CODEX_FULL_ACCESS=1` or a local `.livespec.jsonc`
+  flag. Installing the plugin alone MUST NOT silently put an unrelated external
+  repository into a full-access Codex posture.
 - **Companion-plugin surface.** When the manifest gate or local opt-in is ON,
   the orchestrator-distributed hook MUST make the active Codex companion
   review/rescue chokepoint resolve to `danger-full-access`, while preserving an
@@ -144,8 +147,8 @@ Scenario: The /skills picker renders drive under this plugin
     "livespec-orchestrator-beads-fabro:drive" form
 
 Scenario: A fleet member or official adopter gets Codex full access
-  Given the current repository identity appears in the livespec fleet manifest
-    as a fleet member or official adopter
+  Given the current repository identity appears in the livespec core fleet
+    manifest as a fleet member or official adopter
   When the orchestrator's Codex full-access gate is evaluated
   Then the companion-plugin review/rescue surface is patched to
     "danger-full-access"
@@ -155,8 +158,8 @@ Scenario: A fleet member or official adopter gets Codex full access
     sandbox posture and stdin redirected from an EOF-reaching source
 
 Scenario: An unrelated external repository remains default-off
-  Given the current repository identity does not appear in the livespec fleet
-    manifest as a fleet member or official adopter
+  Given the current repository identity does not appear in the livespec core
+    fleet manifest as a fleet member or official adopter
   And no local Codex full-access opt-in is set
   When the orchestrator's Codex full-access gate is evaluated
   Then the companion-plugin review/rescue surface is not patched by this plugin
