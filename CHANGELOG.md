@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.44.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.44.2...v0.44.3) (2026-07-18)
+
+
+### Bug Fixes
+
+* encode factory safety in beads store ([591fe0c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/591fe0c65f5060add23b81245836a3ae8dadb3f9))
+
 ## [0.44.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.44.1...v0.44.2) (2026-07-18)
 
 
