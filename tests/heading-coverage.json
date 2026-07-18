@@ -639,6 +639,6 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test \u2014 a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` \u00a7\"Heading taxonomy\"). Added by the factory-safe-by-default revise: a ready work-item whose factory_safety is non-null is refused at the admission valve before any Fabro sandbox launch, is NOT marked blocked (its runnability is intrinsic), and is surfaced for host routing. The exercising test binds through the dispatcher admission-valve seam when the factory-safe-by-default impl slice lands."
+    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test once the heading-coverage classifier accepts this repo's dispatcher integration tier path. This change realizes the scenario in tests/integration/test_dispatcher_admission_acceptance_scenarios22_25.py::test_loop_refuses_factory_unsafe_item_before_launch: a ready item whose factory_safety is non-null is refused before run_dispatch, stays ready with no assignee, journals host-only-refused, and surfaces host routing."
   }
 ]

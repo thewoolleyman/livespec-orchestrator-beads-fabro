@@ -32,6 +32,7 @@ _LABEL_RESOLUTION = "resolution:"
 _LABEL_ADMISSION = "admission:"
 _LABEL_ACCEPTANCE = "acceptance:"
 _LABEL_BLOCKED_REASON = "blocked-reason:"
+_LABEL_FACTORY_SAFETY = "factory-safety:"
 
 _META_AUDIT = "audit"
 _META_ACCEPTANCE_CRITERIA = "acceptance_criteria"
@@ -284,6 +285,8 @@ def _work_item_labels(*, item: WorkItem) -> list[str]:
         labels.append(f"{_LABEL_ACCEPTANCE}{item.acceptance_policy}")
     if item.blocked_reason is not None:
         labels.append(f"{_LABEL_BLOCKED_REASON}{item.blocked_reason}")
+    if item.factory_safety is not None:
+        labels.append(f"{_LABEL_FACTORY_SAFETY}{item.factory_safety}")
     return labels
 
 

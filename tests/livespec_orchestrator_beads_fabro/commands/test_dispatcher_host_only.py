@@ -1,4 +1,4 @@
-"""Tests for the Dispatcher's host-only refuse-to-sandbox routing gate.
+"""Tests for the Dispatcher's factory-safety refuse-to-sandbox routing gate.
 
 Mechanizes the currently-manual routing rule (judgment-leaning OR touches
 dispatcher self-machinery -> host sub-agent) AND prevents the proven
@@ -181,28 +181,22 @@ def test_is_host_only_item_false_for_ordinary_item() -> None:
 
 
 def test_is_host_only_item_true_for_host_only_marker_in_title() -> None:
-    assert is_host_only_item(item=_item(title="Refactor [host-only] the dispatcher")) is True
+    item = _item(
+        title="Refactor the dispatcher",
+        factory_safety="mutates-host-machinery",
+    )
+    assert is_host_only_item(item=item) is True
 
 
-def test_is_host_only_item_true_for_underscore_marker_in_description() -> None:
-    assert is_host_only_item(item=_item(description="Touches commit-hook. host_only.")) is True
-
-
-def test_is_host_only_item_is_case_insensitive() -> None:
-    assert is_host_only_item(item=_item(description="Routing: HOST-ONLY please")) is True
-
-
-def test_is_host_only_item_does_not_match_substring_of_other_words() -> None:
-    # `host-onlyish` / `ghosthost-only` and incidental prose must not trip the
-    # gate; the marker is a bounded token, not any substring.
-    assert is_host_only_item(item=_item(description="ghosthost-onlyish nonsense")) is False
-    assert is_host_only_item(item=_item(description="The host is only sometimes ready")) is False
+def test_is_host_only_item_ignores_legacy_marker_prose_without_field() -> None:
+    assert is_host_only_item(item=_item(description="Touches commit-hook. host_only.")) is False
 
 
 def test_host_only_refusal_detail_is_actionable() -> None:
     detail = host_only_refusal_detail(item_id="livespec-impl-beads-uvd")
     assert "livespec-impl-beads-uvd" in detail
-    assert "host-only" in detail
+    assert "factory-safety" in detail
+    assert "livespec-implementer dispatch path" not in detail
     # The orchestrator must learn it should HOST-ROUTE (a host sub-agent),
     # not retry the sandbox.
     assert "host" in detail.lower()
@@ -220,7 +214,10 @@ def test_dispatch_refuses_host_only_item_without_launching_fabro(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
-    item = _item(description="Touch the commit-hook self-machinery. host-only.")
+    item = _item(
+        description="Touch the commit-hook self-machinery.",
+        factory_safety="mutates-host-machinery",
+    )
     append_work_item(path=_config(), item=item)
     recording = _RecordingRunDispatch()
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", recording)
@@ -243,7 +240,7 @@ def test_dispatch_refuses_host_only_item_without_launching_fabro(
     payload = json.loads(capsys.readouterr().out)
     assert payload[0]["status"] == "failed"
     assert payload[0]["stage"] == "host-only-refused"
-    assert "host-only" in payload[0]["detail"]
+    assert "factory-safety" in payload[0]["detail"]
     # The item is NOT closed — it stays open for host-routing.
     assert _stored()[item.id].status == "ready"
 
@@ -253,7 +250,10 @@ def test_dispatch_journals_host_only_refusal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
-    item = _item(title="host-only dispatcher self-machinery change")
+    item = _item(
+        title="dispatcher self-machinery change",
+        factory_safety="mutates-host-machinery",
+    )
     append_work_item(path=_config(), item=item)
     recording = _RecordingRunDispatch()
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", recording)

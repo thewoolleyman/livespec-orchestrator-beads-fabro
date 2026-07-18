@@ -7,6 +7,7 @@ and the `BeadsWorkItemStore` facade while preserving the original public API.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, cast
 
@@ -67,12 +68,15 @@ _LABEL_RESOLUTION = "resolution:"
 _LABEL_ADMISSION = "admission:"
 _LABEL_ACCEPTANCE = "acceptance:"
 _LABEL_BLOCKED_REASON = "blocked-reason:"
+_LABEL_FACTORY_SAFETY = "factory-safety:"
 
 # Metadata keys carrying livespec fields that ride in the JSON column.
 _META_AUDIT = "audit"
 _META_ACCEPTANCE_CRITERIA = "acceptance_criteria"
 _META_NON_LOCAL_DEPENDS_ON = "non_local_depends_on"
 _META_NOTES = "notes"
+
+_LEGACY_HOST_MARKER_RE = re.compile(r"(?<![\w-])host[-_]only(?![\w-])", re.IGNORECASE)
 
 # The one adapter status name-mapping: livespec `done` is beads' built-in
 # `closed` (native closure: `closed_at`, `bd close`, done-hiding). Every
@@ -118,14 +122,21 @@ def _record_to_work_item(*, record: BeadsRecord) -> WorkItem:
     audit = _audit_from_metadata(record_id=issue_id, metadata=metadata)
     depends_on = _depends_on_from_edges(record=record, metadata=metadata)
     content_fields = {**metadata, **record}
+    title = _require_str(record=record, key="title")
+    description = _optional_str(record=record, key="description") or ""
+    factory_safety = _factory_safety_from_labels_or_legacy(
+        labels=labels,
+        title=title,
+        description=description,
+    )
     return WorkItem(
         id=issue_id,
         type=cast("Any", _require_str(record=record, key="issue_type")),
         # Map the beads status back to its livespec name (`closed` → `done`);
         # the 5 custom statuses + the reused `blocked` pass through.
         status=cast("Any", livespec_status_for(status=_require_str(record=record, key="status"))),
-        title=_require_str(record=record, key="title"),
-        description=_optional_str(record=record, key="description") or "",
+        title=title,
+        description=description,
         origin=cast("Any", origin),
         gap_id=gap_id,
         # `rank` is read from `metadata.rank`; a legacy rank-less issue reads
@@ -153,7 +164,22 @@ def _record_to_work_item(*, record: BeadsRecord) -> WorkItem:
         admission_policy=cast("Any", _label_value(labels=labels, prefix=_LABEL_ADMISSION)),
         acceptance_policy=cast("Any", _label_value(labels=labels, prefix=_LABEL_ACCEPTANCE)),
         blocked_reason=cast("Any", _label_value(labels=labels, prefix=_LABEL_BLOCKED_REASON)),
+        factory_safety=cast("Any", factory_safety),
     )
+
+
+def _factory_safety_from_labels_or_legacy(
+    *,
+    labels: list[str],
+    title: str,
+    description: str,
+) -> str | None:
+    explicit = _label_value(labels=labels, prefix=_LABEL_FACTORY_SAFETY)
+    if explicit is not None:
+        return explicit
+    if _LEGACY_HOST_MARKER_RE.search(f"{title}\n{description}") is not None:
+        return "mutates-host-machinery"
+    return None
 
 
 def _depends_on_from_edges(
