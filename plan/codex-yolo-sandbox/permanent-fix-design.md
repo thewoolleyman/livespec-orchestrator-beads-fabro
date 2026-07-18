@@ -68,14 +68,32 @@ is optional and the heaviest piece.
 - **Merge is uncertain** (research.md: stalled 3+ mo, withdrawn PRs, no maintainer engagement).
   Value even if unmerged: a public, referenceable articulation of the fix.
 
-## Adopter default — THE decision that gates A's shape [OPEN]
+## Adopter default — RESOLVED (2026-07-18)
 
-Maintainer accepted always-YOLO for the fleet. For **adopters**, forcing full disk + network
-on their Codex the moment they enable the orchestrator (and silently patching OpenAI's plugin on
-their machine) is a security/trust call that is theirs.
-- **Recommended: opt-in for adopters** (A gated off by default; fleet enables via fleet config;
-  adopters flip `.livespec.jsonc`/env). C is the narrower, more-defensible thing to ship on.
-- Alternative: force-on for everyone (max "just works", but inflicts YOLO + third-party patch).
+Maintainer's decision: **ON** for the fleet's own repos and the maintainer's **official
+adopters**; **opt-in** for any other (random external open-source) user. Grounded in the
+existing fleet-membership contract — no new config format invented:
+
+- **Source of truth = the "fleet config file in core":** `.livespec-fleet-manifest.jsonc`,
+  committed on livespec-core master, already parsed by
+  `livespec_dev_tooling.fleet.contract.parse_manifest` into `owner` + `members`
+  (`FleetMember{repo, class}`) + **`adopters`** (`Adopter{repo, profile, posture}`).
+- **Current project identity** = `owner/repo` from `git remote get-url origin`, via the
+  contract's existing `resolve_owner` (no new identity scheme).
+- **Gate:** `owner/repo` ∈ (`manifest.member_names()` ∪ `{a.repo for a in manifest.adopters}`)
+  ⇒ **ON** (fleet member or official adopter — "MY OWN ADOPTERS"). Otherwise ⇒ **opt-in**
+  (default OFF; the user flips a local `.livespec.jsonc`/env flag).
+- **A's behavior under the gate:** patch the codex plugin only when the gate says ON *or* the
+  local opt-in flag is set; otherwise no-op — a non-listed adopter's Codex and OpenAI's plugin
+  are left untouched. This is what keeps us from silently YOLO-ing a random external user.
+
+**Build-time implementation choices (not blockers):**
+- *Fetch vs local marker:* fetching the manifest over `gh` at each SessionStart is a network
+  cost + auth dependency. Cleaner: write a LOCAL membership/posture marker when a repo is wired
+  as a fleet member / official adopter (`wire_fleet_member`) and have the hook read local state.
+- *Per-repo opt-OUT:* today "listed ⇒ on". If some listed repo should NOT get full-access, add
+  an explicit per-adopter/member field to the manifest (the `Adopter.posture`/`profile` seam is
+  the natural home) rather than removing it from the list.
 
 ## Canary (mandatory if A ships) — defeat silent drift
 
@@ -94,12 +112,21 @@ proposal **after** the adopter-default decision, since it encodes that default.
 
 ## Recommended sequence
 
-1. Maintainer decides **adopter default** (gates A's shape). ← only true blocker
-2. Ship **A** (plugin-shipped hook, gated) **+ the canary** — covers Surface 1 for fleet+adopters.
-3. Ship **C** for Surface 2 (force full-access on orchestrator `codex exec`; for adopters too).
+1. ~~Maintainer decides **adopter default**~~ — DONE (2026-07-18; see "Adopter default" above).
+2. Ship **A** (plugin-shipped hook, manifest-gated per above) **+ the canary** — covers Surface 1
+   for fleet + official adopters; no-op for non-listed users.
+3. Ship **C** for Surface 2 (force full-access on orchestrator `codex exec`; gated the same way).
    Add the review-wrapper overlap only if the drift-insurance is wanted.
 4. Ratify the contract via propose-change → revise; record in `constraints.md`.
 5. Pursue **B** as the endgame; retire A if/when it merges.
+
+**Execution note:** steps 2–4 are factory-safe (in-repo Python/config/tests). Per the standing
+"prefer factory dispatch" directive they should be **groomed into ready work-items and dispatched
+through the dark factory**, not hand-built in-session. NB: `.claude/hooks/` is now a
+`source_tree_prefixes` entry, so the canary + hook logic must live in a tested Python module
+(the `beads_access_guard.py` pattern) with a thin `.sh` wrapper — a shell-only edit is rejected
+by `check-commit-pairs-source-and-test` (and `check-tests-no-subprocess-spawn` forbids testing
+the `.sh` by spawning it).
 
 ## Status snapshot
 
