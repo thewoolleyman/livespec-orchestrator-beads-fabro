@@ -226,6 +226,7 @@ jobs:
           # §"Destructive-default CLI wrapping") so a violation fails CI.
           - check-no-direct-destructive-cli
           - check-no-shadow-ledger-body-identical
+          - check-plan-thread-anchor-declared
           - check-primary-checkout-commit-refuse-hook-installed
           # check-red-green-replay (no-arg) validates the COMMIT RANGE
           # origin/master..HEAD — every non-merge commit touching product

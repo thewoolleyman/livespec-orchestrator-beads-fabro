@@ -374,6 +374,8 @@ check:
         check-partition-completeness
         check-pbt-coverage-pure-modules
         check-per-file-coverage
+        check-plan-thread-anchor-declared
+        check-plan-thread-epic-parity
         check-plugin-resolution
         check-primary-checkout-commit-refuse-hook-installed
         check-private-calls
@@ -1300,3 +1302,9 @@ check-handoff-dispatch-routing:
 
 check-self-hosted-routing:
     uv run python -m livespec_dev_tooling.checks.self_hosted_routing
+
+check-plan-thread-anchor-declared:
+    uv run python -m livespec_dev_tooling.checks.plan_thread_anchor_declared
+
+check-plan-thread-epic-parity:
+    uv run python -m livespec_dev_tooling.checks.plan_thread_epic_parity
