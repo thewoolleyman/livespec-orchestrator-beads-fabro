@@ -53,6 +53,16 @@ Network is the discriminator: read-only *and* workspace-write both have network 
 "first-class" option 2), and/or promoting the re-apply hook from project scope to user scope
 (`~/.claude/settings.json`) for host-wide coverage outside this repo.
 
+**Permanent fix for fleet + adopters (2026-07-18, no-fork):** the maintainer ruled out the
+fork and asked for a permanent fix reaching fleet members and adopters. Since the shipped hook
+is repo-local dev config, the fix must ride the orchestrator plugin's own distribution. The
+actionable design — A (plugin-shipped re-apply hook, covers the interactive plugin surface) +
+C (orchestrator-owned full-access `codex exec`, covers the `codex exec` surface) as
+complete-coverage belt-and-suspenders, B (upstream toggle) as endgame, plus the mandatory
+anti-silent-drift canary, the adopter-default decision, and the propose-change → revise
+ratification path — is in [`permanent-fix-design.md`](./permanent-fix-design.md). Only true
+blocker: the maintainer's adopter-default decision (opt-in vs force-on).
+
 ## Goal
 
 Make every Codex sub-session launched through the `codex:codex-rescue` subagent /
