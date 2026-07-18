@@ -63,13 +63,21 @@ Fable, and re-sliced into dependency-layered children. `bd-ib-98c.1` is now CLOS
   O1 proof-dispatch — fabro spans routed to the `fabro` dataset via `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`
   (two `run` spans + the full span tree landed, not dropped). This item can be closed.
 
-**▶ NEXT ACTION (2026-07-18): O2 DONE + PROVEN; O3 VERIFIED already-covered (no build).
-P2 (`bd-ib-98c.12`) is IMPLEMENTED + REVIEWED (both loops clean) + gated on fork branch
-`p2-fabro-log-decouple` (`9048a8d52`) — the ONLY steps left are the cutover: merge into
-`factory-integration` → rebuild + re-pin → restart → a `FABRO_LOG=warn` proof-dispatch that
-still emits run/Stage spans (the acceptance test). No code work remains on P2. Do it BEFORE
-the O4 build (`bd-ib-98c.7`, plan `o4-acp-turn-plan.md`), since O4's new span would be gated
-by the very coupling P2 fixes.**
+**▶ NEXT ACTION (2026-07-18): O2, P2 DONE + PROVEN; O3 VERIFIED already-covered (no build).
+The next BUILD is O4 (`bd-ib-98c.7`) — execution-ready plan `o4-acp-turn-plan.md`.**
+
+- **P2 (`bd-ib-98c.12`) — ✅ DONE + PROVEN (2026-07-18). LIVE PIN is now `9048a8d`.** Decouples
+  OTLP export from `FABRO_LOG` (per-layer filtering + an `INFO` floor on the otel layer) so
+  quieting logs can no longer silently zero telemetry. Both adversarial loops converged clean
+  (Codex + Fable, same `.map()` finding fixed; regression test added). Cutover: merged
+  `p2-fabro-log-decouple` into `factory-integration` (`9048a8d52`, pushed); re-pinned
+  `~/.fabro/bin/fabro` = `9048a8d` (rollback `.bak` = `b651dba-o2-pre-p2`). PROVEN: a proof-dispatch
+  (`bd-ib-98c.13`, PR #738 green) ran with the SERVER at `FABRO_LOG=warn` and the FULL 51-span
+  tree STILL landed in Honeycomb (trace `a54a340f…`; O2 join intact — worker parent = server
+  span) — pre-fix, warn would have emptied the dataset. ⚠️ The live server is TEMPORARILY at
+  `FABRO_LOG=warn` (the proof config); revert it to the default level once the factory is idle
+  (an idle-watch is queued; a busy factory blocked the immediate revert). warn is operationally
+  safe with P2 (full telemetry, quieter logs).
 
 - **O3 (`bd-ib-98c.6`) — verification COMPLETE, close DEFERRED to the maintainer.** Live-verified
   against the O2 proof trace `d74367bc…`: the node-lifecycle layer O3 planned is ALREADY on
@@ -141,18 +149,17 @@ ledger item.
   loops (raw `codex exec` needs `< /dev/null`) → re-pin (mind the SHA-stamp trap) → proof-dispatch →
   confirm a `run_turn` span lands in the `fabro` dataset.
 - **O5 (`bd-ib-98c.8`)** — deferred (token/cost).
-- **`bd-ib-98c.12` (P2, cross-cutting) — IMPLEMENTED + REVIEWED + GATED (2026-07-18); only the
-  cutover remains.** `FABRO_LOG` was a GLOBAL registry filter gating the otel layer too, so raising
-  the log level silently zeroed ALL telemetry at both ends. Fix (per-layer filtering: FABRO_LOG on
-  the fmt layers, an `INFO` floor applied INSIDE the `Some` on the otel layer) is on fork branch
-  **`p2-fabro-log-decouple`** (`9048a8d52`, pushed) — deliberately OFF `factory-integration` so the
-  carrier tip stays == the pinned binary. Both adversarial loops (Codex + Fable) CONVERGED CLEAN:
-  they independently found the same `.map()`-composition point (a `Filtered<Option<_>,INFO>` bumps
-  the disabled path's max-level hint), now fixed; a regression test
-  (`export_layer_still_sees_info_when_fabro_log_is_quieter`) pins the decoupling. Gated: workspace
-  clippy `-D warnings` + 439/439 fabro-cli bin tests. LEFT: merge → re-pin → restart → **acceptance
-  proof = a `FABRO_LOG=warn` dispatch that still emits run/Stage spans** (pre-fix they vanish). Full
-  detail on the ledger item.
+- **`bd-ib-98c.12` (P2, cross-cutting) — ✅ DONE + PROVEN (2026-07-18); LIVE on `9048a8d`.**
+  `FABRO_LOG` was a GLOBAL registry filter gating the otel layer too, so raising the log level
+  silently zeroed ALL telemetry at both ends. Fix (per-layer filtering: FABRO_LOG on the fmt layers,
+  an `INFO` floor applied INSIDE the `Some` on the otel layer, `9048a8d52`). Both adversarial loops
+  (Codex + Fable) converged clean — they independently found the same `.map()`-composition point (a
+  `Filtered<Option<_>,INFO>` bumps the disabled path's max-level hint), fixed; a regression test
+  (`export_layer_still_sees_info_when_fabro_log_is_quieter`) pins the decoupling. PROVEN in
+  production: proof-dispatch `bd-ib-98c.13` (PR #738 green) ran with the server at `FABRO_LOG=warn`
+  and the full 51-span tree still landed in Honeycomb (trace `a54a340f…`, O2 join intact) — pre-fix
+  it would have emptied the dataset. ⚠️ server temporarily at `FABRO_LOG=warn`; revert to default
+  when the factory is idle (safe meanwhile — full telemetry, quieter logs). Full detail on the ledger.
 
 Full seam citations + data-availability evidence are on each ledger item.
 

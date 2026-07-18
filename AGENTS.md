@@ -191,13 +191,14 @@ around the seam with raw `mysql` / `dolt` / `sudo`.
 The Dispatcher's host-direct path (`dispatcher.py loop` run on the host, NOT in
 the orchestrator container) connects to a long-lived Fabro server on
 **`127.0.0.1:32276`**. Installing the plugin does NOT start it; the maintainer
-runs it directly from `~/.fabro/bin/fabro`. As of 2026-07-17 the host binary is
-`fabro 0.254.0 (b651dba)`, built from **`factory-integration`** — the ONE standing
+runs it directly from `~/.fabro/bin/fabro`. As of 2026-07-18 the host binary is
+`fabro 0.254.0 (9048a8d)`, built from **`factory-integration`** — the ONE standing
 branch in our fork (`thewoolleyman/fabro`) that carries every fabro fix the
 factory needs but upstream has not released (today: PR #568 credential refresh,
-the env-configurable daemon-readiness timeout, PR #576 OTLP export transport, and
-the fork-local O1 worker-OTLP env re-injection + O2 W3C-traceparent join that
-light that transport up for the Codex era).
+the env-configurable daemon-readiness timeout, PR #576 OTLP export transport, the
+fork-local O1 worker-OTLP env re-injection + O2 W3C-traceparent join that light
+that transport up for the Codex era, and the fork-local P2 that decouples OTLP
+export from `FABRO_LOG` so quieting logs cannot silently zero telemetry).
 Never pin a fabro build from any other branch, and never modernize the base: any
 fabro ≥ 0.256 breaks `workflow.fabro` (fabro #474 de-templates `acp.command`, so
 every dispatch dies `exit 127`). These rules are NORMATIVE — `SPECIFICATION/constraints.md`
