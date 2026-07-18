@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.44.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.44.0...v0.44.1) (2026-07-18)
+
+
+### Bug Fixes
+
+* **bd-guard:** harden create-normalization (2 deploy-blockers + edges) ([be48d54](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/be48d548063440ae11f6526fa2a981ed832ccf0d))
+
 ## [0.44.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.43.1...v0.44.0) (2026-07-18)
 
 
