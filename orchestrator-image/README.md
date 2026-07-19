@@ -131,10 +131,10 @@ steps around. It is distinct from the containerized server the entrypoint
 provisions (below); the image's `COPY fabro` stages this same host binary from
 `$HOST_FABRO_BIN`, so the host install IS the image's staging source.
 
-**Current binary (2026-07-18):** `fabro 0.254.0 (9048a8d)` — built from the
+**Current binary (2026-07-19):** `fabro 0.254.0 (b9b63a8)` — built from the
 `factory-integration` branch (see below). Verify with `~/.fabro/bin/fabro
 --version`; the parenthesized short SHA is the integration commit, and it MUST be
-reachable from `factory-integration` (`origin/factory-integration` = `9048a8d52`).
+reachable from `factory-integration` (`origin/factory-integration` = `b9b63a8a6`).
 
 ### `factory-integration` — the carrier branch for unreleased fixes
 
@@ -159,6 +159,7 @@ needs (never a subset, so the branch is always the whole truth about what runs):
 | fork-local **O1** — worker OTLP env re-injection (`bd-ib-98c.4`) | the server forwards its non-secret `OTEL_*` export config into the `__run-worker` subprocess (`apply_worker_otel_export_env`), deliberately stripping the credential-bearing `OTEL_EXPORTER_OTLP_HEADERS` | #576 alone is inert in the factory: the ACP work runs in a server-spawned worker whose env is `env_clear`ed by `apply_worker_env`, so without re-injection the worker exports nothing |
 | fork-local **O2** — W3C `traceparent` join (`bd-ib-98c.5`) | the server serializes its `run`-span context to a per-run `TRACEPARENT` env at the worker-launch seam; the worker parents its `run` span on it | without it the server and worker each emit a SEPARATE root `run` span in a distinct trace, so one dispatch is unviewable as one trace |
 | fork-local **P2** — decouple OTLP export from `FABRO_LOG` (`bd-ib-98c.12`) | `FABRO_LOG` was a GLOBAL registry filter gating the otel layer too; the fix filters per-layer (`FABRO_LOG` on the fmt layers, a fixed `INFO` floor on the otel layer) | otherwise raising the log level silently zeroes ALL telemetry at both ends (the server injects its level into the worker), with no error — an operator quieting logs could kill the Honeycomb dataset |
+| fork-local **O4** — `run_turn` ACP turn span (`bd-ib-98c.7`) | a `tracing::info_span!("run_turn", …)` at the ACP seam (`fabro-workflow/src/handler/llm/acp.rs::run_turn`) carrying `node_id` / `command` / `config_name` / `visit` plus a deferred `stop_reason`; it nests under the worker `run` span (fabro-workflow has no spans of its own, so the `Stage started/completed` telemetry — which are EVENTS, not spans — is not the parent) | without it the finest per-agent granularity is the `handler_type=agent` Stage telemetry, which never records WHICH command an agent turn ran or HOW it ended; O4 is what makes per-turn command/stop-reason queryable in Honeycomb |
 
 **Base is pinned to 0.254 — do NOT modernize.** The factory MUST NOT pin any fabro
 build ≥ 0.256 until the `workflow.fabro` migration lands: fabro #474 de-templates
@@ -174,11 +175,32 @@ binary as a rollback artifact — the pin is a file swap, so the revert is one t
 cargo build --release -p fabro-cli
 # retain the CURRENT binary before overwriting it:
 cp ~/.fabro/bin/fabro ~/.fabro/bin/fabro.<outgoing-sha>-<label>.bak
-cp target/release/fabro ~/.fabro/bin/fabro
+# stage + ATOMIC RENAME into place (see the Text-file-busy note below):
+cp target/release/fabro ~/.fabro/bin/fabro.new
+mv -f ~/.fabro/bin/fabro.new ~/.fabro/bin/fabro
 ~/.fabro/bin/fabro --version          # confirm the new integration commit
 ```
 
-Then restart the server (next section) and confirm `fabro doctor` is green.
+**Why `mv`, not a plain `cp` over the target.** While the server is running it is
+*executing* `~/.fabro/bin/fabro`, so overwriting that path in place fails with
+`cp: cannot create regular file ...: Text file busy` (`ETXTBSY`). Staging to a
+temp name in the same directory and `mv`-ing over the target is a rename: the
+running process keeps its old inode, and the path immediately points at the new
+build. Two traps this avoids: a silently-failed `cp` followed by a restart brings
+the server back up on the OLD binary (the swap never happened), and waiting for
+the listening port to free is NOT sufficient — the port frees before the process
+fully exits, so a stop-then-`cp` can still hit `ETXTBSY`. If you do stop first,
+wait for the PROCESS to exit (`kill -0 <pid>` fails), not just the port.
+
+Then restart the server (next section) and confirm `fabro doctor` is green. Verify
+the running daemon actually picked up the new build by comparing inodes — a
+mismatch (or an `exe` link reading `(deleted)`) means it is still running the old
+image:
+
+```bash
+PID=$(ss -ltnp | grep '127.0.0.1:32276' | grep -oP 'pid=\K[0-9]+')
+stat -Lc %i /proc/$PID/exe; stat -c %i ~/.fabro/bin/fabro   # must match
+```
 
 **Then rebuild the orchestrator image — this step is REQUIRED, not optional.** The image
 bakes a COPY of the host binary (`COPY fabro` in the Dockerfile, staged from
@@ -193,8 +215,8 @@ the ratified constraint forbids:
 
 To **roll back**, copy the `.bak` binary over `~/.fabro/bin/fabro`, restart, and rebuild
 the image the same way. The current rollback artifact is
-`~/.fabro/bin/fabro.f7ff19e-pre-otlp.bak` (the pre-OTLP build: 0.254 + #568 +
-daemon-timeout).
+`~/.fabro/bin/fabro.9048a8d-p2-pre-o4.bak` (the pre-O4 build: 0.254 + #568 +
+daemon-timeout + #576 + O1 + O2 + P2).
 
 ### Start / restart
 
