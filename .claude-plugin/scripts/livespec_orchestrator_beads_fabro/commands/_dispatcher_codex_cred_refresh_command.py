@@ -48,9 +48,16 @@ def _load_codex_yolo_gate() -> _CodexYoloGate:
     spec = importlib.util.spec_from_file_location(_HOOK_GATE_MODULE, _HOOK_GATE_PATH)
     if spec is None or spec.loader is None:
         return _OffCodexYoloGate()
+    loader = spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules[_HOOK_GATE_MODULE] = module
-    spec.loader.exec_module(module)
+    loaded = attempt(
+        action=lambda: loader.exec_module(module),
+        exceptions=(AttributeError, ImportError, OSError, RuntimeError, SyntaxError),
+    )
+    if isinstance(loaded, AttemptFailure):
+        _ = sys.modules.pop(_HOOK_GATE_MODULE, None)
+        return _OffCodexYoloGate()
     return cast("_CodexYoloGate", module)
 
 
