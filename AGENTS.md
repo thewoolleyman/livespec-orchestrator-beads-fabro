@@ -137,8 +137,8 @@ Upstream ships no toggle and has merged no fix (prior-art survey:
 `plan/codex-yolo-sandbox/research.md`), so this repo self-carries a one-line
 chokepoint rewrite in the plugin cache — `buildThreadParams` / `buildResumeParams`
 in `lib/codex.mjs` resolve to `danger-full-access` — re-applied every session by
-`.claude/hooks/codex-yolo-reapply.sh` (registered under `hooks.SessionStart`
-AFTER `just ensure-plugins`, because a plugin refresh clobbers the cache).
+the distributed orchestrator plugin hook in `.claude-plugin/hooks/hooks.json`
+(because a plugin refresh clobbers the cache).
 To DOWNGRADE a single run, set `CODEX_COMPANION_SANDBOX` (e.g. `read-only` or
 `workspace-write`) in the environment — that env var is the escape-hatch the
 chokepoint honors. `~/.codex/config.toml` also carries

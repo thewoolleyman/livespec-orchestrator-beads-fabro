@@ -58,6 +58,38 @@ def test_refresh_command_module_public_surface() -> None:
     assert module.__all__ == ["run_codex_cred_refresh_with"]
 
 
+def test_refresh_command_loads_gate_from_distributed_plugin_hooks(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module_name = (
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_cred_refresh_command"
+    )
+    expected = (
+        Path(__file__).resolve().parents[3] / ".claude-plugin" / "hooks" / "codex_yolo_gate.py"
+    )
+    loaded_paths: list[Path] = []
+    real_spec_from_file_location = importlib.util.spec_from_file_location
+
+    def spy_spec_from_file_location(
+        name: str,
+        location: str | bytes | Path,
+        *args: object,
+        **kwargs: object,
+    ) -> object:
+        loaded_paths.append(Path(str(location)))
+        return real_spec_from_file_location(name, location, *args, **kwargs)
+
+    monkeypatch.setattr(importlib.util, "spec_from_file_location", spy_spec_from_file_location)
+    sys.modules.pop(module_name, None)
+    _ = importlib.import_module(module_name)
+
+    assert loaded_paths == [expected]
+    monkeypatch.undo()
+    sys.modules.pop(module_name, None)
+    importlib.import_module(module_name)
+
+
 def test_refresh_command_fails_closed_when_gate_hook_cannot_load(
     *,
     monkeypatch: pytest.MonkeyPatch,
