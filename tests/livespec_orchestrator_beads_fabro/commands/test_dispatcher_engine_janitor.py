@@ -88,3 +88,53 @@ def test_post_merge_degraded_detail_truncates_long_checkout_error(tmp_path: Path
     assert (outcome.status, outcome.stage) == ("green", "janitor-env-degraded")
     assert "-suffix" in outcome.detail
     assert "prefix-" not in outcome.detail
+
+
+def test_post_merge_lock_contention_refuses_before_preclean(tmp_path: Path) -> None:
+    plan = _plan(repo=tmp_path)
+    lock = plan.janitor_checkout.with_name(f"{plan.janitor_checkout.name}.lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    _ = lock.write_text("work_item_id=x-1\n", encoding="utf-8")
+    runner = Runner(queue=[])
+    journal = Journal()
+
+    outcome = post_merge(
+        outcome_type=DispatchOutcome,
+        plan=plan,
+        runner=runner,
+        journal=journal,
+        merged=_merged(),
+    )
+
+    assert (outcome.status, outcome.stage) == ("failed", "janitor-checkout-locked")
+    assert "Wait for that janitor to finish" in outcome.detail
+    assert runner.calls == []
+    assert journal.records == []
+
+
+def test_post_merge_releases_lock_after_green(tmp_path: Path) -> None:
+    plan = _plan(repo=tmp_path)
+    lock = plan.janitor_checkout.with_name(f"{plan.janitor_checkout.name}.lock")
+    runner = Runner(queue=[_ok() for _ in range(8)])
+    journal = Journal()
+
+    outcome = post_merge(
+        outcome_type=DispatchOutcome,
+        plan=plan,
+        runner=runner,
+        journal=journal,
+        merged=_merged(),
+    )
+
+    assert (outcome.status, outcome.stage) == ("green", "done")
+    assert not lock.exists()
+    assert [record["stage"] for record in journal.records] == [
+        "pull-primary",
+        "janitor-checkout-preclean",
+        "janitor-checkout-add",
+        "janitor-checkout-trust",
+        "janitor-checkout-bootstrap",
+        "janitor-core-provision",
+        "janitor-post-merge",
+        "janitor-checkout-remove",
+    ]
