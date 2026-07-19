@@ -21,11 +21,14 @@ from types import ModuleType
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+_HOOKS_DIR = _REPO_ROOT / ".claude" / "hooks"
 _HOOK_PATH = _REPO_ROOT / ".claude" / "hooks" / "codex_yolo_reapply.py"
 _MODULE_NAME = "codex_yolo_reapply_under_test"
 
 
 def _load_hook() -> ModuleType:
+    if str(_HOOKS_DIR) not in sys.path:
+        sys.path.insert(0, str(_HOOKS_DIR))
     spec = importlib.util.spec_from_file_location(_MODULE_NAME, _HOOK_PATH)
     assert spec is not None
     assert spec.loader is not None
@@ -119,6 +122,7 @@ def test_main_patches_a_stock_chokepoint_and_reports_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LIVESPEC_CODEX_FULL_ACCESS", "1")
     target = _cached_mjs(home=tmp_path, version="1.0.6")
     _ = target.write_text(_stock_source(), encoding="utf-8")
 
@@ -136,6 +140,7 @@ def test_main_is_idempotent_on_an_already_patched_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LIVESPEC_CODEX_FULL_ACCESS", "1")
     target = _cached_mjs(home=tmp_path, version="1.0.6")
     already = _stock_source().replace(hook.STOCK, hook.PATCHED)
     _ = target.write_text(already, encoding="utf-8")
@@ -152,6 +157,7 @@ def test_main_warns_loudly_and_changes_nothing_when_the_chokepoint_drifted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LIVESPEC_CODEX_FULL_ACCESS", "1")
     target = _cached_mjs(home=tmp_path, version="1.0.6")
     restructured = "export function buildThreadParams(o) { return resolveSandbox(o); }\n"
     _ = target.write_text(restructured, encoding="utf-8")
@@ -169,6 +175,7 @@ def test_main_is_a_silent_noop_without_a_plugin_cache(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LIVESPEC_CODEX_FULL_ACCESS", "1")
 
     assert hook.main() == 0
 
@@ -181,12 +188,30 @@ def test_main_skips_a_glob_match_that_cannot_be_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LIVESPEC_CODEX_FULL_ACCESS", "1")
     # A directory named codex.mjs still matches the glob; reading it fails.
     unreadable = _cached_mjs(home=tmp_path, version="1.0.6")
     unreadable.mkdir()
 
     assert hook.main() == 0
 
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_main_is_a_silent_noop_when_the_gate_is_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LIVESPEC_CODEX_FULL_ACCESS", "0")
+    target = _cached_mjs(home=tmp_path, version="1.0.6")
+    source = _stock_source()
+    _ = target.write_text(source, encoding="utf-8")
+
+    assert hook.main() == 0
+
+    assert target.read_text(encoding="utf-8") == source
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == ""
