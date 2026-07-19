@@ -1,109 +1,129 @@
 # Plan handoff — codex-yolo-sandbox
 
-**Status: IMPLEMENTED + PROVEN (2026-07-17).** Authored 2026-07-15 from a read-only
-investigation; picked up and driven 2026-07-17. The always-YOLO fix is live and
-end-to-end verified. See "Resolution" below; the original analysis (still accurate)
-follows unchanged for the record, and the upstream prior-art survey is in
-[`research.md`](./research.md).
+**READ THIS FIRST. Status as of 2026-07-19.** This file is the ONLY thing a fresh session
+inherits. Everything from "## Goal" down is the ORIGINAL 2026-07-15 analysis, kept as
+background — its "First steps for the new session" list is **OBSOLETE**; use
+"Next action" below.
 
-## Resolution (2026-07-17)
+## What this track is
 
-**Deep-research first (maintainer's ask):** this is *not* new ground — `openai/codex-plugin-cc`
-has 12+ issues and 5+ PRs on exactly this, none of the sandbox-config PRs ever merged, and
-the crisp root-cause issues (#482, #505) have zero maintainer comments. Full survey +
-the "why no upstream fix" analysis: [`research.md`](./research.md). Consequence: "wait for
-upstream" (option 3) is a weak bet, so we self-carry.
+Make every Codex sub-session launched through the codex-companion plugin run in full-access
+"YOLO" mode (`danger-full-access`: full disk + network, no OS sandbox), so a dispatched Codex
+reviewer can actually run `pytest`/`gh` instead of silently passing code it never executed —
+and make that permanent for fleet members and official adopters, **without forking**
+`openai/codex-plugin-cc` (the maintainer ruled the fork out).
 
-**Fix chosen (self-hosted, reversible — options 1+2 hybrid, NOT the fork):** force
-`danger-full-access` at the *single* chokepoint both param builders share, with an env
-escape-hatch to downgrade. `startThread`/`resumeThread` are the only two thread primitives
-and every path (task, review, adversarial-review, resume) flows through
-`buildThreadParams`/`buildResumeParams`, so two identical lines cover everything — the
-handoff's original 3-site plan collapses to one:
+## DONE and landed — do NOT redo
 
-```
-lib/codex.mjs:68,81   sandbox: options.sandbox ?? "read-only"
-                  ->  sandbox: process.env.CODEX_COMPANION_SANDBOX || "danger-full-access"
-```
+- **The fix is already LIVE in this repo** (PR #730, `737f562`): a one-line chokepoint rewrite
+  in the codex plugin cache — `buildThreadParams` / `buildResumeParams` in `lib/codex.mjs`
+  resolve to `danger-full-access`, with `CODEX_COMPANION_SANDBOX` as a downgrade escape-hatch —
+  plus `.claude/hooks/codex-yolo-reapply.sh` re-applied from `hooks.SessionStart` (ordered AFTER
+  `just ensure-plugins`, because a plugin refresh clobbers the cache), and
+  `sandbox_mode = "danger-full-access"` in `~/.codex/config.toml` (host-local, not in git).
+  Proven end-to-end: patched default → `NET=200` + out-of-workspace write;
+  `CODEX_COMPANION_SANDBOX=read-only` → `NET=000`. **Network is the discriminator** —
+  `read-only` AND `workspace-write` are both network-OFF, so `NET=200` proves
+  `danger-full-access` specifically.
+- **Upstream research** (PR #739, `bb845ec`): this is NOT new ground — 12+ issues and 5+ PRs
+  upstream, **none merged**, and the sharpest root-cause issues have zero maintainer comments.
+  Full survey + the "why" analysis: [`research.md`](./research.md). Consequence: do NOT wait on
+  upstream; self-carry.
+- **Design**: [`permanent-fix-design.md`](./permanent-fix-design.md) — options A/B/C, the two
+  distinct failure surfaces, the mandatory drift canary, and the spec-ratification path.
+- **Adopter gate DECIDED** (PR #742, `0184180`): **ON** for fleet members + official adopters,
+  **opt-in** for everyone else — keyed on the core fleet manifest
+  `.livespec-fleet-manifest.jsonc` (`members` ∪ `adopters`) parsed by
+  `livespec_dev_tooling.fleet.contract.parse_manifest`; project identity via the fleet
+  contract's `resolve_owner`.
+- **AGENTS.md orientation note** (PR #731).
+- **S5's spec proposal LANDED** (`61363e7` + `e968bb4`); item `.2` sits at `acceptance` — the
+  maintainer may want to accept/close it.
 
-Also set `sandbox_mode = "danger-full-access"` in `~/.codex/config.toml` (defense-in-depth +
-covers the raw `codex exec` path). Design note: we force at the chokepoint rather than the
-upstream-flavored "inherit config.toml" because inherit *silently degrades* to read-only if
-config.toml is ever reset — the exact false-confidence bug we are fixing.
+## The ledger — epic `bd-ib-1jye`
 
-**Durability vs plugin updates:** the cache is clobbered on refresh, so an idempotent
-SessionStart re-apply hook restores the patch every session:
-- `.claude/hooks/codex-yolo-reapply.sh` — string-match rewrite of the stock chokepoint in
-  every cached plugin version; idempotent, fail-open.
-- `.claude/settings.json` — registered under `hooks.SessionStart` **after** `just
-  ensure-plugins` (which may re-resolve/clobber), so ordering restores it.
-
-**Proof (end-to-end, same curl probe through the patched companion `task`):**
-
-| Sandbox | `curl … api.github.com` | Verdict |
+| ID | Slice | Status |
 | --- | --- | --- |
-| patched default (`danger-full-access`) | `NET=200` + out-of-workspace write OK | full access ✅ |
-| escape-hatch `CODEX_COMPANION_SANDBOX=read-only` | `NET=000` (blocked) | reproduces original bug + hatch works ✅ |
+| `bd-ib-1jye.1` | **S1** — re-apply hook → tested Python module + drift canary | `ready` ← **THE BLOCKER** |
+| `bd-ib-1jye.2` | S5 — propose-change ratifying the codex-full-access contract | `acceptance` (work merged) |
+| `bd-ib-1jye.3` | S2 — manifest-gating helper + wire hook to it (needs S1) | `ready`, blocked-on-dependency |
+| `bd-ib-1jye.4` | S3 — ship the gated hook FROM the orchestrator plugin (needs S2) | `ready`, blocked-on-dependency |
+| `bd-ib-1jye.5` | C1 — orchestrator-owned full-access `codex exec`, Surface 2 (needs S2) | `ready`, blocked-on-dependency |
 
-Network is the discriminator: read-only *and* workspace-write both have network off, so
-`NET=200` proves `danger-full-access` specifically (not merely workspace-write).
+Each item's full spec lives in its beads record — `with-livespec-env.sh -- bd show <id>`.
 
-**Deferred (needs maintainer sign-off — outward/host-wide):** forking
-`openai/codex-plugin-cc` + re-pointing the host-wide `openai-codex` marketplace (durable
-"first-class" option 2), and/or promoting the re-apply hook from project scope to user scope
-(`~/.claude/settings.json`) for host-wide coverage outside this repo.
+## Next action — S1 is the blocker, and the factory has failed it TWICE
 
-**Permanent fix for fleet + adopters (2026-07-18, no-fork):** the maintainer ruled out the
-fork and asked for a permanent fix reaching fleet members and adopters. Since the shipped hook
-is repo-local dev config, the fix must ride the orchestrator plugin's own distribution. The
-actionable design — A (plugin-shipped re-apply hook, covers the interactive plugin surface) +
-C (orchestrator-owned full-access `codex exec`, covers the `codex exec` surface) as
-complete-coverage belt-and-suspenders, B (upstream toggle) as endgame, plus the mandatory
-anti-silent-drift canary, the adopter-default decision, and the propose-change → revise
-ratification path — is in [`permanent-fix-design.md`](./permanent-fix-design.md). Only true
-blocker: the maintainer's adopter-default decision (opt-in vs force-on).
+S1 was dispatched twice. Both runs ended `failed / workflow_error` **after reaching
+`just check` GREEN**, and a run event flagged *"stages running beyond token expiry may need to
+be retried."* Diagnosis: ~6h runtime under an oversubscribed factory (3–4 concurrent fleet
+loops) blew the model-auth token TTL. **The implementation was fine — this is an infrastructure
+failure, not a code defect.**
 
-## Drain continuity (live — 2026-07-18)
+**Recommended: hand-implement S1 in a supervised session.** Two factory failures is the
+carve-out to the standing "prefer factory dispatch" directive. It is small and fully specified:
 
-The adopter-default decision is resolved (fleet members + official adopters ON, others
-opt-in; keyed on the core fleet manifest — see the "Adopter default" section of
-`permanent-fix-design.md`). The whole build layer was groomed, filed, and dispatched
-through the dark factory. This is the durable "any session can pick up" record — it does
-NOT belong in `.overseer-state` (that file takes exactly one token: `ready` /
-`blocked: <reason>` / `winding-down`).
+- **NEW** `.claude/hooks/codex_yolo_reapply.py` — PURE importable
+  `classify_state(*, content) -> "stock" | "patched" | "drift"` plus a patch function, and a
+  `main()` that globs `~/.claude/plugins/cache/openai-codex/codex/*/scripts/lib/codex.mjs`,
+  rewrites stock chokepoints, and writes a LOUD stderr WARNING for any file in the `drift`
+  state (neither stock string nor our sentinel) — that warning IS the canary. Idempotent;
+  fail-open when python3 or the plugin cache is absent.
+  - `STOCK   = 'sandbox: options.sandbox ?? "read-only"'`
+  - `PATCHED = 'sandbox: process.env.CODEX_COMPANION_SANDBOX || "danger-full-access"'`
+- **REWRITE** `.claude/hooks/codex-yolo-reapply.sh` into a thin wrapper, mirroring
+  `.claude/hooks/beads-access-guard.sh` (`command -v python3 >/dev/null 2>&1 || exit 0; exec
+  python3 "$(dirname "$0")/codex_yolo_reapply.py"`).
+- **NEW** `tests/` unit tests for the pure functions covering all four states
+  (stock→patched, already-patched→no-op, drift→warn, absent→no-op). Pure — NO subprocess spawn.
+- **Scope discipline:** preserve the current always-on repo-local behavior. Manifest-gating is
+  S2, NOT this slice.
 
-**Ledger:** epic `bd-ib-1jye` + slices, all stored status `ready`:
+*Alternative* — re-dispatch, but only when the factory is quiet (check `fabro ps` first; if 3+
+runs are already going, expect the same token-expiry death):
 
-| ID | Slice | Depends on |
-| --- | --- | --- |
-| `bd-ib-1jye.1` | S1 — re-apply hook → tested Python module + drift canary | — |
-| `bd-ib-1jye.2` | S5 — propose-change ratifying the codex-full-access contract | — |
-| `bd-ib-1jye.3` | S2 — manifest-gating helper + wire hook to it | S1 |
-| `bd-ib-1jye.4` | S3 — ship the gated hook FROM the orchestrator plugin | S2 |
-| `bd-ib-1jye.5` | C1 — orchestrator-owned full-access `codex exec` (Surface 2) | S2 |
+```bash
+/data/projects/1password-env-wrapper/with-livespec-env.sh -- \
+  python3 .claude-plugin/scripts/bin/dispatcher.py loop \
+  --repo /data/projects/livespec-orchestrator-beads-fabro \
+  --item bd-ib-1jye.1 --budget 1 --parallel 1 --json
+```
 
-S1 (`01KXSTW44M0B`) and S5 (`01KXSWBJ74VG`) were dispatched host-direct 2026-07-18.
+After S1 merges, S2 (`.3`) unblocks; after S2 merges, S3 (`.4`) and C1 (`.5`) unblock.
+Dispatch each **supervised, in-session**.
 
-**Autonomous drain watcher:** `tmp/codex-yolo-watch.sh` runs DETACHED (`setsid`, was pid
-`3554923`; log `tmp/codex-yolo-watch.log`). Every 5 min (max 12h) it readiness-probes each
-of `.3`/`.4`/`.5` via `dispatcher.py loop --item <id> --dry-run` and fires
-`dispatcher.py dispatch --item <id>` (backgrounded) the moment it unblocks — so S2 goes
-when S1 merges, then S3/C1 when S2 merges. It `wait`s on its backgrounded pollers before
-exiting. Monitor with `tail -f tmp/codex-yolo-watch.log`; stop with `kill <watcher-pid>`
-(re-find via `pgrep -f codex-yolo-watch.sh`).
+## Hard rules and gotchas — each of these cost real time
 
-**Gotchas learned (cost real time — heed them):**
-- Raw `bd create` files items as `open`; the Dispatcher's readiness gate requires the
-  custom stored status `ready` (the board lane IS the stored status). The proper
-  capture/groom flow sets it via intake Definition-of-Ready routing; raw `bd create`
-  bypasses it, so transition with `bd update <id> -s ready`.
-- `dispatcher.py loop --budget N` — `N` is a dispatch COUNT, not a dollar amount.
-- `dispatcher.py loop --item <id>` validates readiness UP FRONT and rejects a still-blocked
-  item ("not in the ready set"), which is why draining a dependency chain needs the
-  poll-until-unblocked watcher above rather than one `--item`-scoped loop invocation.
-- Run every `bd`/dispatcher command under `with-livespec-env.sh -- …`; the beads-access
-  guard also false-positives on the bare word "bd" in unrelated shell (e.g. an `echo`),
-  so write such notes via a file tool, not `echo`.
+- **NO detached / `setsid` / `nohup` watchers.** The maintainer explicitly objected to a
+  background process auto-dispatching with no session attached and no oversight. If you want a
+  watcher, use a harness-owned background task (tracked, killable, dies with the session).
+- **`.overseer-state` holds EXACTLY ONE token** on its first line — `ready`,
+  `blocked: <one-line reason>`, or `winding-down`. It is NOT a handoff surface; durable notes
+  belong in THIS file. A long note there is reported fleet-wide as a malformed state file.
+- **Dispatcher readiness ≠ `bd ready`.** The board lane IS the stored status, so an item must be
+  stored status `ready`. Raw `bd create` files items as `open`, and the dispatcher then rejects
+  them ("not in the ready set") — fix with `bd update <id> -s ready`. A killed dispatch can also
+  leave an item stuck `active`; reset it to `ready` before re-dispatching.
+- **`dispatcher loop --budget N`**: `N` is a dispatch COUNT, not dollars.
+- **`loop --item <id>` validates readiness UP FRONT** and rejects a still-blocked item, so it
+  cannot be used to "wait until it unblocks."
+- Run every `bd` / dispatcher command under
+  `/data/projects/1password-env-wrapper/with-livespec-env.sh -- …`. The beads-access guard also
+  false-positives on the bare word "bd" appearing in unrelated shell (e.g. inside an `echo`), so
+  write notes with a file tool rather than `echo`.
+- **`.claude/hooks/` is a `source_tree_prefixes` entry**: touching a hook file requires a paired
+  `tests/` change (`check-commit-pairs-source-and-test`), and `check-tests-no-subprocess-spawn`
+  forbids testing the `.sh` by spawning it — which is exactly why S1 must become a tested Python
+  module with a thin shell wrapper.
+- Repo mutation protocol: worktree → PR → merge → cleanup; never commit on the primary checkout.
+  Docs/shell/config changesets use `chore(...)` / `docs(...)` and skip the Red-Green ritual, but
+  S1's new product `.py` DOES require the Red→Green pair.
+
+## Deferred / explicitly not doing
+
+- **Forking `openai/codex-plugin-cc`** — the maintainer ruled it out.
+- **Upstreaming a sandbox toggle (option B)** — good citizenship, but the research shows upstream
+  is a graveyard (nothing merged, no maintainer engagement); do not block this track on it.
 
 ## Goal
 
