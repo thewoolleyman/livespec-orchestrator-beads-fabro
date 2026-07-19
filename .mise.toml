@@ -8,7 +8,19 @@
 # Generated from livespec/templates/impl-plugin/ at copier-copy time;
 # re-sync via `copier update --vcs-ref=master` when livespec publishes a new release.
 
+# `shellcheck` is pinned here because the CI cutover to the baked
+# fabro-sandbox image removed the only reason it was present. It used to be
+# inherited incidentally from `ubuntu-latest`, which ships it; the baked image
+# does NOT (verified against python-v0.49.1). `check-bd-guard` degrades to a
+# loud WARNING when shellcheck is absent — a deliberate severity lever for a
+# minimal runner — but containerizing `check-metadata` would make CI take that
+# warning path on EVERY run, turning an occasional lever into a permanently
+# disabled lint while CI stayed green. Pinning it makes the tool deterministic
+# in all three places (local, container, hosted) instead of ambiently
+# inherited, which is the "handle it automatically at its source" fix rather
+# than accepting the degraded path.
 [tools]
-uv       = "0.9.26"
-just     = "1.36.0"
-lefthook = "1.13.6"
+uv         = "0.9.26"
+just       = "1.36.0"
+lefthook   = "1.13.6"
+shellcheck = "0.11.0"
