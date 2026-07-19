@@ -73,6 +73,35 @@ def test_classify_state_patched_when_our_sentinel_present() -> None:
     assert hook.classify_state(content=patched) == "patched"
 
 
+def test_classify_state_drifts_when_upstream_merely_mentions_our_env_var() -> None:
+    """The canary must not be silenced by a passing mention of the env-var name.
+
+    This is the scenario the canary exists for, and the one a substring test got
+    backwards. Upstream restructures the chokepoint (so STOCK no longer matches)
+    while its own file references `CODEX_COMPANION_SANDBOX` — most plausibly by
+    landing the toggle from the unmerged upstream proposal, which is named
+    `CODEX_COMPANION_SANDBOX_MODE` and so CONTAINS our name as a substring. The
+    file is NOT patched; reporting it `patched` would go silent exactly when
+    Codex has quietly reverted to read-only.
+    """
+    upstream = (
+        "// Sandbox mode is configurable via CODEX_COMPANION_SANDBOX_MODE\n"
+        "export function buildThreadParams(o) { return { sandbox: resolveSandbox(o) }; }\n"
+    )
+
+    assert hook.PATCHED not in upstream
+    assert hook.classify_state(content=upstream) == "drift"
+
+
+def test_classify_state_drifts_when_our_env_var_appears_only_in_a_comment() -> None:
+    commented = (
+        "// NOTE: set CODEX_COMPANION_SANDBOX to override the sandbox\n"
+        "export function buildThreadParams(o) { return { sandbox: pick(o) }; }\n"
+    )
+
+    assert hook.classify_state(content=commented) == "drift"
+
+
 def test_classify_state_drift_when_neither_marker_present() -> None:
     restructured = "export function buildThreadParams(o) { return resolveSandbox(o); }\n"
 

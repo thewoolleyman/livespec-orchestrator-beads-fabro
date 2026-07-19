@@ -25,9 +25,11 @@ THE DRIFT CANARY: the hook's worst failure is silent. If OpenAI restructures
 `codex.mjs` so the stock chokepoint string no longer matches, the rewrite becomes
 a no-op and Codex quietly reverts to read-only — a reviewer that cannot execute
 passing code it never ran. `classify_state` therefore distinguishes a file that
-carries NEITHER the stock string NOR our sentinel (`drift`) from one already
-patched (`patched`), and `main` writes a loud stderr WARNING for every drifted
-file.
+carries NEITHER the stock string NOR our exact `PATCHED` rewrite (`drift`) from
+one already patched, and `main` writes a loud stderr WARNING for every drifted
+file. The `patched` test matches the FULL rewrite rather than the bare env-var
+name, so an upstream file that merely MENTIONS `CODEX_COMPANION_SANDBOX` cannot
+masquerade as patched and silence the canary.
 
 Idempotent: only the stock chokepoint is rewritten, so a second run is a no-op.
 Fail-open throughout: an absent plugin cache or an unreadable file is a silent
@@ -51,7 +53,6 @@ import codex_yolo_gate
 __all__: list[str] = [
     "CACHE_GLOB",
     "PATCHED",
-    "SENTINEL",
     "STOCK",
     "apply_patch",
     "cached_codex_mjs_paths",
@@ -62,11 +63,22 @@ __all__: list[str] = [
 ]
 
 STOCK: str = 'sandbox: options.sandbox ?? "read-only"'
-PATCHED: str = 'sandbox: process.env.CODEX_COMPANION_SANDBOX || "danger-full-access"'
 
-# The escape-hatch env var also serves as the patch sentinel: its presence is how
-# an already-patched file is told apart from an upstream-restructured one.
-SENTINEL: str = "CODEX_COMPANION_SANDBOX"
+# `PATCHED` is BOTH the rewrite and the patch sentinel: "already patched" means
+# this EXACT expression is present, nothing looser.
+#
+# It used to be enough for the bare env-var name `CODEX_COMPANION_SANDBOX` to
+# appear anywhere in the file, which defeated the canary in exactly the scenario
+# the canary exists for. If upstream restructures the chokepoint (so `STOCK` no
+# longer matches) AND the file mentions that name anywhere — a comment, a doc
+# line, or most plausibly upstream landing its OWN toggle, since the unmerged
+# upstream proposal is literally named `CODEX_COMPANION_SANDBOX_MODE` and
+# CONTAINS our name as a substring — then an unpatched file classified as
+# `patched`. Silent, no warning, Codex quietly back on read-only.
+#
+# Matching the full expression fails in the safe direction instead: a cosmetic
+# upstream reformat of our own line now reports `drift`, which is merely loud.
+PATCHED: str = 'sandbox: process.env.CODEX_COMPANION_SANDBOX || "danger-full-access"'
 
 # Home-relative; every cached plugin VERSION is patched, not just the newest, so
 # a rollback to an older cached version stays full-access.
@@ -76,8 +88,8 @@ State = Literal["stock", "patched", "drift", "absent"]
 
 _DRIFT_WARNING: str = (
     "[codex-yolo-reapply] WARNING: sandbox chokepoint DRIFT in {path} — the file "
-    "carries neither the stock read-only default nor our CODEX_COMPANION_SANDBOX "
-    "sentinel. The codex plugin was almost certainly restructured upstream, so "
+    "carries neither the stock read-only default nor our exact full-access "
+    "rewrite. The codex plugin was almost certainly restructured upstream, so "
     "Codex threads are running with an UNKNOWN sandbox and may have silently "
     "reverted to read-only (no network, so no pytest / gh — a reviewer that "
     "cannot execute passes code it never ran). Re-derive the chokepoint strings "
@@ -99,7 +111,7 @@ def classify_state(*, content: str | None) -> State:
 
     `absent` — `content` is None: the file does not exist or could not be read.
     `stock`  — the upstream read-only default is present and needs rewriting.
-    `patched`— our `CODEX_COMPANION_SANDBOX` sentinel is present; nothing to do.
+    `patched`— our exact `PATCHED` rewrite is present; nothing to do.
     `drift`  — neither marker is present; the chokepoint moved upstream and this
                hook has silently stopped working. That is the canary state.
     """
@@ -107,7 +119,7 @@ def classify_state(*, content: str | None) -> State:
         return "absent"
     if STOCK in content:
         return "stock"
-    if SENTINEL in content:
+    if PATCHED in content:
         return "patched"
     return "drift"
 
