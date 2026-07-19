@@ -1,6 +1,7 @@
 # Plan handoff — codex-yolo-sandbox
 
-**READ THIS FIRST. Status as of 2026-07-19 (S1 landed).** This file is the ONLY thing a
+**READ THIS FIRST. Status as of 2026-07-19 — S1 + S2 landed and repaired; the track is now
+BLOCKED on the maintainer's acceptance valve, not on work.** This file is the ONLY thing a
 fresh session inherits. Everything from "## Goal" down is the ORIGINAL 2026-07-15
 analysis, kept as background — its "First steps for the new session" list is
 **OBSOLETE**; use "Next action" below.
@@ -14,6 +15,32 @@ and make that permanent for fleet members and official adopters, **without forki
 `openai/codex-plugin-cc` (the maintainer ruled the fork out).
 
 ## DONE and landed — do NOT redo
+
+- **S2 LANDED via the factory** (PR #791, `afe5ff1`): `.claude/hooks/codex_yolo_gate.py`
+  (`gate_state` + `read_marker` + a manifest-derived `refresh` path), the committed
+  `codex_full_access.fleet_listed` marker in `.livespec.jsonc`, a justfile refresh target, and
+  `codex_yolo_reapply.main()` wired to no-op when the gate is OFF. Precedence:
+  `LIVESPEC_CODEX_FULL_ACCESS` (both directions) > committed marker > OFF.
+- **HOOK-CHAIN FIX LANDED** (PR #793, `483c100`) — read this before touching the hooks again.
+  Adversarial review of S1 + empirical probing found **two silent-failure defects, one in each
+  slice**, both of the very class this epic exists to eliminate (Codex quietly back on stock
+  `read-only`, so a reviewer that cannot execute passes code it never ran):
+  1. **S1's rewrite lost the shell's per-file isolation.** The `.sh` ran each cached
+     `codex.mjs` in its OWN `python3 -c` subprocess, so a failure died there and the loop moved
+     on. One process meant one escape aborted everything: `read_text_or_none` caught only
+     `OSError` while `UnicodeDecodeError` derives from `ValueError`, and `write_text` was
+     unguarded — so a non-UTF-8 or unwritable file crashed the hook at SessionStart AND left
+     every alphabetically-later cached version stock, with NO canary warning. Fixed at both
+     sites plus an explicit per-file bulkhead.
+  2. **S2's gate read its marker from `Path.cwd()`.** The marker lives at
+     `<repo>/.livespec.jsonc`, so starting a session anywhere but the repo root — a
+     subdirectory sufficed — found nothing, reported OFF, and silently no-opped the hook. Now
+     anchored on the hook's own `__file__`.
+  - **The transferable lesson:** 100% line+branch coverage did not catch either one. Coverage
+    cannot see a MISSING `except` clause, nor an assertion that never discriminates. Mutation
+    testing found two more dead assertions (a `sorted()` that the filesystem's own ordering
+    masked; a footgun-guard read-flag arm deletable without any test failing). **Probe hook
+    behavior against the OLD implementation empirically; do not infer it from coverage.**
 
 - **The fix is already LIVE in this repo** (PR #730, `737f562`): a one-line chokepoint rewrite
   in the codex plugin cache — `buildThreadParams` / `buildResumeParams` in `lib/codex.mjs`
@@ -65,43 +92,47 @@ and make that permanent for fleet members and official adopters, **without forki
 
 | ID | Slice | Status |
 | --- | --- | --- |
-| `bd-ib-1jye.1` | S1 — re-apply hook → tested Python module + drift canary | **`closed`** (PR #782) |
-| `bd-ib-1jye.2` | S5 — propose-change ratifying the codex-full-access contract | `acceptance` (work merged) |
-| `bd-ib-1jye.3` | **S2** — manifest-gating helper + wire hook to it | `ready` ← **NOW UNBLOCKED; the next slice** |
-| `bd-ib-1jye.4` | S3 — ship the gated hook FROM the orchestrator plugin (needs S2) | `ready`, blocked-on-dependency |
-| `bd-ib-1jye.5` | C1 — orchestrator-owned full-access `codex exec`, Surface 2 (needs S2) | `ready`, blocked-on-dependency |
+| `bd-ib-1jye.1` | S1 — re-apply hook → tested Python module + drift canary | **`closed`** (PR #782, fixed by #793) |
+| `bd-ib-1jye.2` | S5 — propose-change ratifying the codex-full-access contract | `acceptance` ← **maintainer valve** |
+| `bd-ib-1jye.3` | S2 — manifest-gating helper + wire hook to it | `acceptance` ← **maintainer valve** (PR #791, fixed by #793) |
+| `bd-ib-1jye.4` | S3 — ship the gated hook FROM the orchestrator plugin (needs S2) | `ready`, blocked until `.3` closes |
+| `bd-ib-1jye.5` | C1 — orchestrator-owned full-access `codex exec`, Surface 2 (needs S2) | `ready`, blocked until `.3` closes |
+
+**The epic is currently gated on a HUMAN decision, not on work.** `.4` and `.5` carry stored
+status `ready` but stay out of the dispatcher's ready set while `.3` sits at `acceptance` —
+dependency-blocked. Accepting/closing `.2` and `.3` is the maintainer's valve; once `.3`
+closes, `.4` and `.5` both unblock and are dispatchable in parallel (neither depends on the
+other).
 
 Each item's full spec lives in its beads record — `with-livespec-env.sh -- bd show <id>`.
 
-## Next action — S2 (`bd-ib-1jye.3`), now unblocked
+## Next action — BLOCKED on the maintainer's acceptance valve
 
-S1 is closed, so **S2 is the next slice**: a shared helper that resolves the current repo's
-identity (the fleet contract's `resolve_owner` + repo from the git remote) and decides the
-gate ON iff owner/repo appears in the core fleet manifest `.livespec-fleet-manifest.jsonc`
-(`members` ∪ `adopters`, via `livespec_dev_tooling.fleet.contract.parse_manifest`); else a
-local opt-in flag defaulting OFF. Then wire `codex_yolo_reapply` to gate on it. Prefer a
-local marker written at wire time over a per-session `gh` fetch. Full spec:
-`with-livespec-env.sh -- bd show bd-ib-1jye.3`; design in
-[`permanent-fix-design.md`](./permanent-fix-design.md) §"Adopter default".
+Every slice that could be built without a human decision has been built. What remains:
 
-**Try the factory FIRST for S2** — the standing directive prefers dispatch for factory-safe
-work, and the S1 carve-out was specific to S1's two token-expiry deaths. Check `fabro ps`
-first; if 3+ runs are already in flight, expect the same token-expiry death and hand-implement
-instead:
+1. **Maintainer accepts (or rejects) `.2` (S5) and `.3` (S2).** Both sit at `acceptance`.
+   Weigh this evidence when deciding on `.3`: S2 shipped a real silent-OFF defect (the
+   cwd-relative marker read), already fixed in PR #793 — the slice is sound now, but it did
+   not land correct.
+2. **Once `.3` closes, `.4` (S3) and `.5` (C1) unblock together** and are independent of each
+   other, so dispatch BOTH; the factory handles them in parallel.
+
+Do NOT try to dispatch `.4`/`.5` before `.3` closes: `loop --item <id>` validates readiness up
+front and rejects a dependency-blocked item, so it cannot be used to "wait until it unblocks".
 
 ```bash
 /data/projects/1password-env-wrapper/with-livespec-env.sh -- \
   python3 .claude-plugin/scripts/bin/dispatcher.py loop \
   --repo /data/projects/livespec-orchestrator-beads-fabro \
-  --item bd-ib-1jye.3 --budget 1 --parallel 1 --json
+  --item bd-ib-1jye.4 --budget 1 --parallel 1 --json
 ```
 
-After S2 merges, S3 (`.4`) and C1 (`.5`) unblock. Drive each **supervised, in-session**.
-
-**Hand it whichever way, mind the hooks-tree rules S1 discovered** (see the S1 entry above):
-a `.claude/hooks/**.py` changeset is NON-product to the replay check — use a `chore(...)`
-subject and the suite-green leg, never a `feat:`/`fix:` Red-Green pair; and any hook `.py`
-touched now needs its mirror-paired test under `tests/hooks/` at 100% line + branch.
+**Dispatching works well now — but REVIEW what it produces.** The S2 dispatch succeeded
+end-to-end and still merged a silent-OFF bug through a green `just check` and its own janitor +
+review stages. Auto-merge is armed on this repo, so a factory PR lands as soon as checks pass:
+if you want to inspect one before it merges, look immediately after the PR opens. Probe the
+resulting hook behavior EMPIRICALLY (run it from several cwds, against malformed/unwritable
+fixtures, and diff old-vs-new); do not treat a green gate as proof.
 
 ## Hard rules and gotchas — each of these cost real time
 
