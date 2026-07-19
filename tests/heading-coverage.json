@@ -195,139 +195,139 @@
     "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
   },
   {
-    "heading": "## Scenario 1 \u2014 Gap-tied fix cycle",
+    "heading": "## Scenario 1 — Gap-tied fix cycle",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
   },
   {
-    "heading": "## Scenario 4 \u2014 Freeform bug fix",
+    "heading": "## Scenario 4 — Freeform bug fix",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
   },
   {
-    "heading": "## Scenario 5 \u2014 Doctor cross-boundary read",
+    "heading": "## Scenario 5 — Doctor cross-boundary read",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
   },
   {
-    "heading": "## Scenario 6 \u2014 Cross-repo dispatch via the Dispatcher",
+    "heading": "## Scenario 6 — Cross-repo dispatch via the Dispatcher",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
   },
   {
-    "heading": "## Scenario 7 \u2014 Regroom an oversized work-item",
+    "heading": "## Scenario 7 — Regroom an oversized work-item",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_groom_scenario7.test_groom_journey_files_ready_slices_links_deps_and_regrooms_out",
     "clauses": [
       {
         "gap_id": "gap-rneqlq7j",
-        "scenario": "Scenario 7 \u2014 Regroom an oversized work-item"
+        "scenario": "Scenario 7 — Regroom an oversized work-item"
       }
     ],
     "reason": "Integration-tier acceptance for the groom backlog-decomposition front-end's mechanical seam (livespec_orchestrator_beads_fabro.commands.groom): the Scenario-7 journey (draft read-only via load_groom_context -> on approval file_approved_slices files approved factory slices through intake routing with dependency edges linked, routes the spec-change slice to /livespec:propose-change, and explicitly closes the original backlog item as regroomed-out) is exercised through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id is the end-to-end approval journey; read-only-until-approval, the dependency-edge linkage, the all-spec-change refuse-don't-drop guarantee, and the non-backlog-target / unknown-id expected errors are sibling tests in the same module."
   },
   {
-    "heading": "## Scenario 8 \u2014 Intake Definition-of-Ready triage",
+    "heading": "## Scenario 8 — Intake Definition-of-Ready triage",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_intake_dor_scenario8.test_single_acceptance_item_is_tagged_ready",
     "clauses": [
       {
         "gap_id": "gap-55i6toie",
-        "scenario": "Scenario 8 \u2014 Intake Definition-of-Ready triage"
+        "scenario": "Scenario 8 — Intake Definition-of-Ready triage"
       }
     ],
     "reason": "Integration-tier acceptance for the shared intake Definition-of-Ready checklist (livespec_orchestrator_beads_fabro.intake_dor) that all three capture front-ends call: the three Scenario-8 cases (single-acceptance->ready, epic->needs-regroom, non-verifiable-or-blocked->not-yet-actionable) are exercised through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id is the single-acceptance->ready journey; the epic->needs-regroom and non-verifiable/blocked->not-yet-actionable cases are sibling tests in the same module, with the per-gate precedence pinned by evaluate()."
   },
   {
-    "heading": "## Scenario 9 \u2014 backlog bounce state and transitions",
+    "heading": "## Scenario 9 — backlog bounce state and transitions",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_regroom_state_machine_scenario9.test_groom_approval_exits_needs_regroom_by_filing_ready_slices",
     "clauses": [
       {
         "gap_id": "gap-qyvkjjyg",
-        "scenario": "Scenario 9 \u2014 backlog bounce state and transitions"
+        "scenario": "Scenario 9 — backlog bounce state and transitions"
       }
     ],
     "reason": "Integration-tier acceptance for the needs-regroom state machine (livespec_orchestrator_beads_fabro.regroom): the three Scenario-9 transitions are exercised through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend). The bound node id is the exit-by-filing-ready-slices journey; the entry-via-DoR-failure and entry-via-non-convergence-bounce transitions are sibling tests in the same module."
   },
   {
-    "heading": "## Scenario 10 \u2014 Dispatcher never auto-approves a manual-admission spec-change item",
+    "heading": "## Scenario 10 — Dispatcher never auto-approves a manual-admission spec-change item",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_dispatcher_human_gated_scenario10::test_dispatch_holds_manual_admission_item_without_launching_fabro",
     "clauses": [
       {
         "gap_id": "gap-dpk6g22t",
-        "scenario": "Scenario 10 \u2014 Dispatcher never auto-approves a manual-admission spec-change item"
+        "scenario": "Scenario 10 — Dispatcher never auto-approves a manual-admission spec-change item"
       }
     ],
     "reason": "Integration-tier acceptance for Scenario 10 under the ratified approval model: a spec-change / risky item rests at pending-approval when its effective admission_policy is manual, is surfaced for the maintainer, and is never launched into a Fabro sandbox. The dispatch CLI is driven through the real store/client seam against the in-memory FakeBeadsClient with run_dispatch recorded; sibling cases in the same module cover journaling and the auto-policy path."
   },
   {
-    "heading": "## Scenario 11 \u2014 Dispatcher bounces a non-converging slice to backlog",
+    "heading": "## Scenario 11 — Dispatcher bounces a non-converging slice to backlog",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_dispatcher_non_convergence_scenario11.test_dispatch_bounces_stalled_slice_to_backlog",
     "clauses": [
       {
         "gap_id": "gap-rs4tkntz",
-        "scenario": "Scenario 11 \u2014 Dispatcher bounces a non-converging slice to backlog"
+        "scenario": "Scenario 11 — Dispatcher bounces a non-converging slice to backlog"
       }
     ],
     "reason": "Integration-tier acceptance for the Dispatcher's non-convergence bounce (slice bd-ib-dnw2ei, gap-rs4tkntz): under the work-item-state-machine lifecycle the bounce target is the first-class backlog status (the slice leaves the WIP for re-grooming), not the prior needs-regroom label. The dispatch CLI is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend); the bound node id is the stalled-slice bounce-to-backlog journey; the DOT-marker bounce, the no-bounce-on-ordinary-failure/green cases, and the predicate cases are sibling tests in the same module."
   },
   {
-    "heading": "## Scenario 12 \u2014 Dispatcher emits calibration telemetry",
+    "heading": "## Scenario 12 — Dispatcher emits calibration telemetry",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_dispatcher_calibration_telemetry_scenario12.test_terminal_run_journals_calibration_outcome_and_size_proxies",
     "clauses": [
       {
         "gap_id": "gap-ajq7ynr4",
-        "scenario": "Scenario 12 \u2014 Dispatcher emits calibration telemetry"
+        "scenario": "Scenario 12 — Dispatcher emits calibration telemetry"
       }
     ],
     "reason": "Integration-tier acceptance for the Dispatcher's calibration telemetry (work-item livespec-impl-beads-yfsv4j, gap-ajq7ynr4): the dispatch CLI is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend) to a terminal outcome, then the EXISTING on-disk Dispatcher journal (tmp/fabro-dispatch-journal.jsonl) is read back, proving a single `calibration` stage record carries the full outcome signal plus the mechanical size proxies. The bound node id is the outcome-and-size-proxies journey; the unobservable-proxy-is-null (not zero) case, the rides-the-existing-journal-with-no-new-service case, the non-convergence bounced_to_regroom case, and the journal-record-shape pin are sibling tests in the same module."
   },
   {
-    "heading": "## Scenario 13 \u2014 Calibration analysis pass proposes advisory thresholds",
+    "heading": "## Scenario 13 — Calibration analysis pass proposes advisory thresholds",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_calibration_analysis_scenario13.test_proposal_is_advisory_and_never_auto_enforced",
     "clauses": [
       {
         "gap_id": "gap-hvqcpz2d",
-        "scenario": "Scenario 13 \u2014 Calibration analysis pass proposes advisory thresholds"
+        "scenario": "Scenario 13 — Calibration analysis pass proposes advisory thresholds"
       }
     ],
     "reason": "Integration-tier acceptance for the periodic calibration analysis pass (livespec_orchestrator_beads_fabro.calibration_analysis): a real on-disk Dispatcher journal seeded with behavior 6's flat calibration-stage records is read back through the production seam and analyze_calibration proposes ceiling thresholds. The bound node id is the advisory-and-never-auto-enforced guardrail (the proposal flags advisory/not-adopted and mutates no journal state); the correlation-proposes-a-ceiling Then, the not-an-always-on-service Then, the decline-on-no-signal cases, and the no-false-zero proxy handling are sibling tests in the same module."
   },
   {
-    "heading": "## Scenario 14 \u2014 Fabro non-convergence routes back to the Dispatcher",
+    "heading": "## Scenario 14 — Fabro non-convergence routes back to the Dispatcher",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_workflow_dot_non_convergence_scenario14.test_exhausted_edge_routes_to_non_converged_not_the_human_gate",
     "clauses": [
       {
         "gap_id": "gap-f7kcvboh",
-        "scenario": "Scenario 14 \u2014 Fabro non-convergence routes back to the Dispatcher"
+        "scenario": "Scenario 14 — Fabro non-convergence routes back to the Dispatcher"
       }
     ],
     "reason": "Integration-tier acceptance for the single Fabro workflow-DOT tweak (work-item livespec-impl-beads-rw75ym, gap-f7kcvboh): the shipped .fabro/workflows/implement-work-item/workflow.fabro is read and asserted to carry the fix-loop cap (the existing janitor node-visit governor) plus a non-converged exit edge (janitor Exhausted -> the non_converged terminal command node, NOT the human gate) that routes back to the Dispatcher, within Fabro's existing DOT vocabulary and requiring no platform/setup change. The bound node id is the exit-edge-routing assertion; the cap, terminal-node, and shared-sentinel cases are sibling tests in the same module."
   },
   {
-    "heading": "## Scenario 15 \u2014 Dispatcher composes next's ranking",
+    "heading": "## Scenario 15 — Dispatcher composes next's ranking",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
@@ -341,28 +341,28 @@
     "reason": "Added by the closed-item-integrity revise pass (v007). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; the closed-item-integrity invariant's mechanical guard (the closed_item_integrity check) is not yet built, so this constraint heading binds to its real test via the governed propose-change/revise resulting_files[] loop once the gap-tied impl work-item that wires the check lands its exercising test. The clauses[] gap-id->scenario link is deferred to that implementation step (impl-beads ships no clauses[] entries or livespec_spec_clauses extractor yet; adopting the clauses[] map is itself the first implementation work-item)."
   },
   {
-    "heading": "## Scenario 16 \u2014 Closed-item-integrity check rejects \"closed but unproven\"",
+    "heading": "## Scenario 16 — Closed-item-integrity check rejects \"closed but unproven\"",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_closed_item_integrity_scenario16.test_todo_bound_scenario_warns_in_warn_mode",
     "clauses": [
       {
         "gap_id": "gap-j2femmn7",
-        "scenario": "Scenario 16 \u2014 Closed-item-integrity check rejects \"closed but unproven\""
+        "scenario": "Scenario 16 — Closed-item-integrity check rejects \"closed but unproven\""
       },
       {
         "gap_id": "gap-gtamowt3",
-        "scenario": "Scenario 16 \u2014 Closed-item-integrity check rejects \"closed but unproven\""
+        "scenario": "Scenario 16 — Closed-item-integrity check rejects \"closed but unproven\""
       },
       {
         "gap_id": "gap-3wbdenoy",
-        "scenario": "Scenario 16 \u2014 Closed-item-integrity check rejects \"closed but unproven\""
+        "scenario": "Scenario 16 — Closed-item-integrity check rejects \"closed but unproven\""
       }
     ],
     "reason": "Integration-tier acceptance for the closed_item_integrity dev-tooling check (work-items livespec-impl-beads-fxt/xe0/oaq; gap-j2femmn7 invariant, gap-gtamowt3 + gap-3wbdenoy check): the check's main() is driven through the real store/client seam against the in-memory FakeBeadsClient (the hermetic CI backend) with a fixture tests/heading-coverage.json carrying the clauses[] gap-id->scenario map. The bound node id is the case-1 finding journey (a TODO-bound closed gap-tied item surfaces a closed-item-integrity warning at exit 0 in the default warn mode); the fail-mode exit-non-zero, the missing-resolution:completed-label, the unresolvable-gap-id, and the case-2 fully-proven-no-finding cases are sibling tests in the same module. Bound at the gap-tied impl step before its own resolution:completed closure (the check is its own first subject)."
   },
   {
-    "heading": "## Scenario 17 \u2014 drive operator-surface defaults",
+    "heading": "## Scenario 17 — drive operator-surface defaults",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
@@ -376,32 +376,32 @@
     "reason": "Integration-tier acceptance for the worker credential-projection contract (work-items bd-ib-di442r, bd-ib-3ti4jf, bd-ib-g7e34u): the bound node id drives the Dispatcher overlay materialization seam with injected host credential, clock, and fleet manifest, then proves the run-scoped mode-600 overlay carries both the existing Claude OAuth env and the Codex auth.json file projection materialized through a prepare step. Sibling tests in tests/integration/test_worker_credential_projection_scenarios18_19.py and tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_dual_cred.py cover stale-credential refusal, direct host auth.json read, non-rotatable snapshot projection, and Codex implementer adapter selection. The live dual-provider dispatch proof remains a provisioned-environment acceptance check because this host lacks the required Fabro LLM provider and sandbox provisioning."
   },
   {
-    "heading": "## Scenario 18 \u2014 Dispatcher projects a non-rotatable subscription credential into a worker sandbox",
+    "heading": "## Scenario 18 — Dispatcher projects a non-rotatable subscription credential into a worker sandbox",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_worker_credential_projection_scenarios18_19.test_scenario18_dispatch_overlay_projects_dual_credentials",
     "reason": "Integration-tier acceptance for Scenario 18: the bound node id exercises the Dispatcher materialization seam and verifies a fresh host Codex credential is transformed into a non-rotatable snapshot, carried in the overlay, and written by a sandbox prepare step to `$CODEX_HOME/auth.json` while the Claude OAuth env remains present in the same overlay. Lower-level sibling tests prove the refresh token is replaced with the inert sentinel and never leaks the host refresh token. The scenario's worker-authenticates clause still needs the first live dual-provider dispatch proof in a Fabro-provisioned environment."
   },
   {
-    "heading": "## Scenario 19 \u2014 Dispatcher refuses dispatch when the credential freshness gate fails",
+    "heading": "## Scenario 19 — Dispatcher refuses dispatch when the credential freshness gate fails",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_worker_credential_projection_scenarios18_19.test_scenario19_stale_codex_credential_refuses_before_overlay",
     "reason": "Integration-tier acceptance for Scenario 19: the bound node id drives the Dispatcher materialization seam with an injected stale host credential and proves dispatch refuses before writing the run-scoped overlay, surfacing the `codex login` renewal message instead of projecting a credential that cannot outlive the run budget. Sibling tests cover the missing-credential refusal and the pure freshness-gate boundary."
   },
   {
-    "heading": "## Scenario 20 \u2014 Review gate routes a green build through code review before PR",
+    "heading": "## Scenario 20 — Review gate routes a green build through code review before PR",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_workflow_acp_adapter_parameterized.test_implementer_and_review_nodes_use_their_respective_inputs",
-    "reason": "Integration-tier acceptance for Scenario 20: the bound node id inspects the shipped implement-work-item Fabro graph and verifies the implementer nodes (`implement`, `fix`, `pr`, and `review_fix`) use the Codex-routable `acp_adapter` input while the review-only node uses the separate Claude `review_adapter`; sibling tests prove the review adapter is pinned through ANTHROPIC_MODEL + CLAUDE_CODE_EFFORT_LEVEL and no ACP node hard-codes the Claude adapter. The gate is BLOCKING by default: a past-cap blocking finding escalates the item to blocked / needs-human unless the effective merge_on_review_cap ships it (contracts.md \u00a7\"Dispatcher policy settings\"); the graph's approve/fix edge behavior is codified in the workflow DOT, and the blocking/ship-on-cap disposition binds its test when the dispatcher-policy-settings implementation slice lands."
+    "reason": "Integration-tier acceptance for Scenario 20: the bound node id inspects the shipped implement-work-item Fabro graph and verifies the implementer nodes (`implement`, `fix`, `pr`, and `review_fix`) use the Codex-routable `acp_adapter` input while the review-only node uses the separate Claude `review_adapter`; sibling tests prove the review adapter is pinned through ANTHROPIC_MODEL + CLAUDE_CODE_EFFORT_LEVEL and no ACP node hard-codes the Claude adapter. The gate is BLOCKING by default: a past-cap blocking finding escalates the item to blocked / needs-human unless the effective merge_on_review_cap ships it (contracts.md §\"Dispatcher policy settings\"); the graph's approve/fix edge behavior is codified in the workflow DOT, and the blocking/ship-on-cap disposition binds its test when the dispatcher-policy-settings implementation slice lands."
   },
   {
-    "heading": "## Scenario 21 \u2014 Codex skills picker discovers drive by short name",
+    "heading": "## Scenario 21 — Codex plugin discovery and full-access posture",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.e2e-cli.test_codex_skill_picker.test_skills_picker_finds_drive_by_short_name",
-    "reason": "Top-of-pyramid live Codex TUI acceptance for the operator discovery path: starts the real Codex TUI, opens /skills, chooses List skills, searches the short name drive, and requires the rendered Skill row to include the livespec-orchestrator-beads-fabro plugin context."
+    "reason": "Top-of-pyramid live Codex TUI acceptance for the operator discovery path: starts the real Codex TUI, opens /skills, chooses List skills, searches the short name drive, and requires the rendered Skill row to include the livespec-orchestrator-beads-fabro plugin context. The merged scenario also carries the manifest-gated full-access posture sub-scenarios (fleet-listed ON, unlisted default-off, gate-unevaluable fail-closed); those are covered by unit tests under tests/hooks and tests/hooks_plugin but are NOT bound to this e2e picker test, which still covers only the discovery half."
   },
   {
     "heading": "## Work-item state semantics",
@@ -415,80 +415,80 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "tests.integration.test_dispatcher_admission_acceptance_scenarios22_25.test_loop_admits_highest_rank_up_to_wip_cap",
-    "reason": "Integration-tier acceptance for the approval/admission mechanics, post-merge acceptance, and the per-repo WIP cap. The bound node id drives the loop through the real store/client seam against the in-memory FakeBeadsClient: pending auto-policy items are approved into ready and admitted up to wip_cap with assignee set, while over-cap work waits at ready; Scenario 23 covers the manual pending-approval hold, Scenario 24 covers complete -> acceptance, and Scenario 25 covers acceptance_policy plus reject routing. An item's effective admission_policy / acceptance_policy is its own label when it carries one, otherwise the global dispatcher.auto_approve_ready / dispatcher.acceptance_mode default (contracts.md \u00a7\"Dispatcher policy settings\"); the failing-AI-pass rework route is covered by Scenario 35."
+    "reason": "Integration-tier acceptance for the approval/admission mechanics, post-merge acceptance, and the per-repo WIP cap. The bound node id drives the loop through the real store/client seam against the in-memory FakeBeadsClient: pending auto-policy items are approved into ready and admitted up to wip_cap with assignee set, while over-cap work waits at ready; Scenario 23 covers the manual pending-approval hold, Scenario 24 covers complete -> acceptance, and Scenario 25 covers acceptance_policy plus reject routing. An item's effective admission_policy / acceptance_policy is its own label when it carries one, otherwise the global dispatcher.auto_approve_ready / dispatcher.acceptance_mode default (contracts.md §\"Dispatcher policy settings\"); the failing-AI-pass rework route is covered by Scenario 35."
   },
   {
-    "heading": "## Scenario 22 \u2014 Dispatcher admits the top-ranked ready item up to the per-repo WIP cap",
+    "heading": "## Scenario 22 — Dispatcher admits the top-ranked ready item up to the per-repo WIP cap",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_dispatcher_admission_acceptance_scenarios22_25.test_loop_admits_highest_rank_up_to_wip_cap",
     "reason": "Integration-tier acceptance for the admission valve + per-repo WIP cap (slice bd-ib-dnw2ei): with wip_cap=2 and three admission-eligible ready items ranked a0/a1/a2, the loop admits a0 and a1 (sets an assignee, transitions each to active) and leaves a2 at ready (capacity-deferred). Driven through the real dispatcher loop CLI + store/client seam against the in-memory FakeBeadsClient with run_dispatch recorded."
   },
   {
-    "heading": "## Scenario 23 \u2014 Dispatcher never auto-approves a manual-admission item",
+    "heading": "## Scenario 23 — Dispatcher never auto-approves a manual-admission item",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_dispatcher_admission_acceptance_scenarios22_25::test_loop_holds_manual_admission_item",
     "reason": "Integration-tier acceptance for Scenario 23 under the ratified approval model: an effective-manual item at pending-approval is held there, surfaced on every Dispatcher pass for explicit approve, and never auto-approved into ready or launched. The test exercises dispatcher.main loop mode through the real store/client seam against the in-memory FakeBeadsClient."
   },
   {
-    "heading": "## Scenario 24 \u2014 complete merges on green into the acceptance state",
+    "heading": "## Scenario 24 — complete merges on green into the acceptance state",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_dispatcher_admission_acceptance_scenarios22_25.test_complete_merges_on_green_into_acceptance",
     "reason": "Integration-tier acceptance for complete merges-on-green into acceptance (slice bd-ib-dnw2ei): a green dispatch transitions the active item to the observable acceptance state (merged + live) rather than straight to done. Driven through the real dispatch CLI + store/client seam against the in-memory FakeBeadsClient; the journal shows ledger-complete + acceptance-ai-pass and no ledger-accept under the default ai-then-human policy."
   },
   {
-    "heading": "## Scenario 25 \u2014 accept confirms post-ship per acceptance_policy",
+    "heading": "## Scenario 25 — accept confirms post-ship per acceptance_policy",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_dispatcher_admission_acceptance_scenarios22_25.test_accept_ai_then_human_parks_until_human",
-    "reason": "Integration-tier acceptance for accept-per-acceptance_policy (slice bd-ib-dnw2ei): ai-then-human parks the merged item in acceptance until a human confirms; the bound node id is the ai-then-human park journey. The effective acceptance_policy is the item's own label, or the global dispatcher.acceptance_mode default when it carries none, and the AI pass is a read-and-judge of the merged diff plus a telemetry watch yielding PASS or FAIL (contracts.md \u00a7\"Dispatcher policy settings\"). The ai-only-confirms-to-done case and the reject routing (rework -> active; re-groom -> backlog, exercised through the real store seam + the pure reject_routing) are sibling tests in the same module; the FAIL routes are covered by Scenario 35."
+    "reason": "Integration-tier acceptance for accept-per-acceptance_policy (slice bd-ib-dnw2ei): ai-then-human parks the merged item in acceptance until a human confirms; the bound node id is the ai-then-human park journey. The effective acceptance_policy is the item's own label, or the global dispatcher.acceptance_mode default when it carries none, and the AI pass is a read-and-judge of the merged diff plus a telemetry watch yielding PASS or FAIL (contracts.md §\"Dispatcher policy settings\"). The ai-only-confirms-to-done case and the reject routing (rework -> active; re-groom -> backlog, exercised through the real store seam + the pure reject_routing) are sibling tests in the same module; the FAIL routes are covered by Scenario 35."
   },
   {
-    "heading": "## Scenario 26 \u2014 list-work-items emits lane and lane_reason",
+    "heading": "## Scenario 26 — list-work-items emits lane and lane_reason",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it."
   },
   {
-    "heading": "## Scenario 27 \u2014 next ranks ready items by rank",
+    "heading": "## Scenario 27 — next ranks ready items by rank",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it."
   },
   {
-    "heading": "## Scenario 28 \u2014 append_work_item registers and lands a custom status in two steps",
+    "heading": "## Scenario 28 — append_work_item registers and lands a custom status in two steps",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it."
   },
   {
-    "heading": "## Scenario 29 \u2014 Factory GitHub App token on the dispatch path",
+    "heading": "## Scenario 29 — Factory GitHub App token on the dispatch path",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Added by the v023 revise pass (claude-fable-5 critique follow-up): acceptance scenarios for the v022 factory GitHub App auth MUSTs (fail-closed refusal without App env + credential_wrapper, first-class remint across long operations, ephemeral-only sandbox token projection). Will be bound to an integration/consumer-tier test exercising the Dispatcher's token-provider and refusal seams against hermetic fakes, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implementing work-item binds it."
   },
   {
-    "heading": "## Scenario 30 \u2014 Dispatch-time baseline conformance gate",
+    "heading": "## Scenario 30 — Dispatch-time baseline conformance gate",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Added by the v023 revise pass (claude-fable-5 critique follow-up): acceptance scenarios for the dispatch-time baseline conformance gate (green provisioning path + abort-on-Verifier-failure before any work is driven). The gate's behavior lives in the Fabro prepare chain (.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml); it will be bound to an integration/consumer-tier test exercising the prepare-chain gating, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implementing work-item binds it."
   },
   {
-    "heading": "## Scenario 32 \u2014 Adopter-target dispatch compatibility",
+    "heading": "## Scenario 32 — Adopter-target dispatch compatibility",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Added by the github-app-auth-adopter-dispatch revise pass (maintainer-ordered spec wave, openbrain adopter dogfood 2026-07-03): per-tenant engine identity + App-reach/workflows-grant preflight, target-local workflow with target-toolchain prepare steps, and default-branch pull-primary resolution. Will be bound to integration/consumer-tier tests exercising the dispatcher preflight, workflow-override, and janitor default-branch seams against hermetic fakes, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node ids populated via the governed propose-change/revise resulting_files[] loop when the implementing work-items (bd-ib-z2ctra, bd-ib-hkzcfb, bd-ib-w4iaaf) bind them."
   },
   {
-    "heading": "## Scenario 31 \u2014 drive human valve actions",
+    "heading": "## Scenario 31 — drive human valve actions",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_drive_human_valve_scenario31::test_approve_authorizes_pending_manual_item_into_ready",
@@ -516,42 +516,42 @@
     "reason": "Dispatcher-policy-settings revise: the mechanically-checkable safety rails (safe defaults; audit every auto-disposition; still escalate the truly-unresolvable and hold the no-release-with-zero-verification floor; console Settings / inline help / settings-doc completeness). Integration-tier test id populated as the clause->scenario->test binding lands; Scenario 37 binds the safe-defaults rail."
   },
   {
-    "heading": "## Scenario 33 \u2014 auto_approve_ready governs admission and a per-item label wins",
+    "heading": "## Scenario 33 — auto_approve_ready governs admission and a per-item label wins",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Dispatcher-policy-settings revise: an unlabeled routine item inherits the global dispatcher.auto_approve_ready and is auto-approved into ready; an explicit per-item admission_policy: manual label BEATS the permissive global and rests the item at pending-approval; a design-human-gated (spec-change-tier) item is never auto-approved under any setting or label. Integration-tier test id populated when the implementing slice binds it."
   },
   {
-    "heading": "## Scenario 34 \u2014 acceptance_mode governs the acceptance leg",
+    "heading": "## Scenario 34 — acceptance_mode governs the acceptance leg",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Dispatcher-policy-settings revise: dispatcher.acceptance_mode selects the acceptance leg (ai-only accepts to done on a passing AI pass; ai-then-human parks for the human accept valve; human-only parks with the AI pass advisory), a per-item acceptance_policy label overrides the global, and every path carries at least one AI pass. Integration-tier test id populated when the implementing slice binds it."
   },
   {
-    "heading": "## Scenario 35 \u2014 A failing AI acceptance pass reworks only in the AI-dispositive modes",
+    "heading": "## Scenario 35 — A failing AI acceptance pass reworks only in the AI-dispositive modes",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Dispatcher-policy-settings revise: a FAILING AI acceptance pass auto-reworks the item to active ONLY when the effective acceptance_policy is ai-only or ai-then-human, bounded by dispatcher.acceptance_rework_cap (past the cap it escalates to blocked / needs-human); under human-only the failing pass is ADVISORY - the item stays parked and the human keeps the accept / reject decision. Integration-tier test id populated when the implementing slice binds it."
   },
   {
-    "heading": "## Scenario 36 \u2014 Every needs-human block always escalates",
+    "heading": "## Scenario 36 — Every needs-human block always escalates",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Dispatcher-policy-settings revise: no policy setting auto-disposes a blocked_reason: needs-human item or a design-human-gated decision (drift acceptance, spec-change slice, regroom / backlog bounce, human-only acceptance) - each is surfaced to a human even at high confidence, and the escalation is queryable from the journal. Integration-tier test id populated when the implementing slice binds it."
   },
   {
-    "heading": "## Scenario 37 \u2014 Safe defaults hold when nothing is configured",
+    "heading": "## Scenario 37 — Safe defaults hold when nothing is configured",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Dispatcher-policy-settings revise: with no dispatcher.* policy settings configured and no per-item policy label, auto_approve_ready and merge_on_review_cap are false, acceptance_mode is ai-then-human, review_fix_cap is 3 and acceptance_rework_cap is 2 - and no UNLABELED item is auto-approved, no past-cap review ships, and no acceptance reaches done without a human (the constraints.md safe-defaults rail; scoped to unlabeled items because a per-item label legitimately beats a safe global). Integration-tier test id populated when the implementing slice binds it."
   },
   {
-    "heading": "## Scenario 38 \u2014 capture-spec-drift surfaces ledger intent missing from spec",
+    "heading": "## Scenario 38 — capture-spec-drift surfaces ledger intent missing from spec",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
@@ -565,28 +565,28 @@
     "reason": "Dispatch-brief lessons-injection consumer contract (reflection gate's human-ratified lessons loop); integration-tier test id populated when work-item livespec-impl-beads-29f.10 lands its clause->scenario->test binding."
   },
   {
-    "heading": "## Scenario 39 \u2014 Ratified lesson injects into dispatch briefs",
+    "heading": "## Scenario 39 — Ratified lesson injects into dispatch briefs",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Ratified-lesson injection scenario; integration-tier test id populated when the lessons-brief-injection consumer (livespec-impl-beads-29f.10) lands."
   },
   {
-    "heading": "## Scenario 40 \u2014 Unratified or absent lessons never alter briefs",
+    "heading": "## Scenario 40 — Unratified or absent lessons never alter briefs",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Never-inject (absent / placeholder / unmerged / unreadable fail-open) scenario; integration-tier test id populated when the lessons-brief-injection consumer (livespec-impl-beads-29f.10) lands."
   },
   {
-    "heading": "## Scenario 41 \u2014 standalone analysis lands in a plan thread, not a root research tree",
+    "heading": "## Scenario 41 — standalone analysis lands in a plan thread, not a root research tree",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Analysis-placement scenario for the no-root-research-tree invariant (normative restatement in contracts.md \u00a7\"The plan/<topic>/ thread store\"); integration-tier test id populated as the enforcing structural gate binds."
+    "reason": "Analysis-placement scenario for the no-root-research-tree invariant (normative restatement in contracts.md §\"The plan/<topic>/ thread store\"); integration-tier test id populated as the enforcing structural gate binds."
   },
   {
-    "heading": "## Scenario 42 \u2014 list-plan-threads enumerates unarchived plan threads",
+    "heading": "## Scenario 42 — list-plan-threads enumerates unarchived plan threads",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_list_plan_threads_scenario42::test_scenario42_list_plan_threads_enumerates_unarchived_plan_threads",
@@ -600,45 +600,52 @@
     "reason": "TODO: bind to the exercising test. Added by the retire-mode-flag revise (v036), which retired the `--mode` run-mode flag and contracted the `loop` invocation surface (ranked-queue drain by default, `--dry-run`, and the `--item`-keyed fail-closed cost gate) for the first time. The exercising test lands with the impl work-item that realizes the new surface."
   },
   {
-    "heading": "## Scenario 43 \u2014 loop drains the ranked queue by default",
+    "heading": "## Scenario 43 — loop drains the ranked queue by default",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test \u2014 a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` \u00a7\"Heading taxonomy\"). Added by the retire-mode-flag revise (v036), which retired the `--mode` run-mode flag: `loop` now drains the ranked queue by default, `--dry-run` plans without dispatching, and the fail-closed cost gate keys on `--item` presence. The exercising test lands with the impl work-item that realizes the new `loop` surface."
+    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test — a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` §\"Heading taxonomy\"). Added by the retire-mode-flag revise (v036), which retired the `--mode` run-mode flag: `loop` now drains the ranked queue by default, `--dry-run` plans without dispatching, and the fail-closed cost gate keys on `--item` presence. The exercising test lands with the impl work-item that realizes the new `loop` surface."
   },
   {
-    "heading": "## Scenario 44 \u2014 --dry-run plans the ranked queue and dispatches nothing",
+    "heading": "## Scenario 44 — --dry-run plans the ranked queue and dispatches nothing",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test \u2014 a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` \u00a7\"Heading taxonomy\"). Added by the retire-mode-flag revise (v036), which retired the `--mode` run-mode flag: `loop` now drains the ranked queue by default, `--dry-run` plans without dispatching, and the fail-closed cost gate keys on `--item` presence. The exercising test lands with the impl work-item that realizes the new `loop` surface."
+    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test — a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` §\"Heading taxonomy\"). Added by the retire-mode-flag revise (v036), which retired the `--mode` run-mode flag: `loop` now drains the ranked queue by default, `--dry-run` plans without dispatching, and the fail-closed cost gate keys on `--item` presence. The exercising test lands with the impl work-item that realizes the new `loop` surface."
   },
   {
-    "heading": "## Scenario 45 \u2014 Unobservable cost fails closed on an unattended drain and warns on a hand-picked dispatch",
+    "heading": "## Scenario 45 — Unobservable cost fails closed on an unattended drain and warns on a hand-picked dispatch",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test \u2014 a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` \u00a7\"Heading taxonomy\"). Added by the retire-mode-flag revise (v036), which retired the `--mode` run-mode flag: `loop` now drains the ranked queue by default, `--dry-run` plans without dispatching, and the fail-closed cost gate keys on `--item` presence. The exercising test lands with the impl work-item that realizes the new `loop` surface."
+    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test — a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` §\"Heading taxonomy\"). Added by the retire-mode-flag revise (v036), which retired the `--mode` run-mode flag: `loop` now drains the ranked queue by default, `--dry-run` plans without dispatching, and the fail-closed cost gate keys on `--item` presence. The exercising test lands with the impl work-item that realizes the new `loop` surface."
   },
   {
-    "heading": "## Scenario 46 \u2014 Per-item cap overrides set a label or clear to reinherit the global default",
+    "heading": "## Scenario 46 — Per-item cap overrides set a label or clear to reinherit the global default",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test \u2014 a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` \u00a7\"Heading taxonomy\"). Added by the enumerate-per-item-override-and-move-drive-actions revise: the three per-item cap-override drive verbs (set-merge-on-review-cap boolean, set-review-fix-cap / set-acceptance-rework-cap positive-int) write a per-item cap label without touching status, and the reserved `clear` value removes the label so the item reinherits the global dispatcher.* default, with clear-when-absent a green no-op. The exercising test binds through drive.run_action and the FakeBeadsClient-backed store seam (b620304 + the clear-to-inherit commit)."
+    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test — a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` §\"Heading taxonomy\"). Added by the enumerate-per-item-override-and-move-drive-actions revise: the three per-item cap-override drive verbs (set-merge-on-review-cap boolean, set-review-fix-cap / set-acceptance-rework-cap positive-int) write a per-item cap label without touching status, and the reserved `clear` value removes the label so the item reinherits the global dispatcher.* default, with clear-when-absent a green no-op. The exercising test binds through drive.run_action and the FakeBeadsClient-backed store seam (b620304 + the clear-to-inherit commit)."
   },
   {
-    "heading": "## Scenario 47 \u2014 The guarded move relocates within the operator-movable statuses only",
+    "heading": "## Scenario 47 — The guarded move relocates within the operator-movable statuses only",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test \u2014 a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` \u00a7\"Heading taxonomy\"). Added by the enumerate-per-item-override-and-move-drive-actions revise: the guarded move drive action writes ONLY the item's status among the operator-movable set {backlog, ready, blocked, active} and refuses done / acceptance / pending-approval with a clear error, preserving the accept-from-acceptance ship-guard. The exercising test binds through drive.run_action and the FakeBeadsClient-backed store seam (b620304)."
+    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test — a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` §\"Heading taxonomy\"). Added by the enumerate-per-item-override-and-move-drive-actions revise: the guarded move drive action writes ONLY the item's status among the operator-movable set {backlog, ready, blocked, active} and refuses done / acceptance / pending-approval with a clear error, preserving the accept-from-acceptance ship-guard. The exercising test binds through drive.run_action and the FakeBeadsClient-backed store seam (b620304)."
   },
   {
-    "heading": "## Scenario 48 \u2014 Dispatcher refuses a not-factory-safe item at admission",
+    "heading": "## Scenario 48 — Dispatcher refuses a not-factory-safe item at admission",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "TODO: bind to an INTEGRATION-TIER-or-above test once the heading-coverage classifier accepts this repo's dispatcher integration tier path. This change realizes the scenario in tests/integration/test_dispatcher_admission_acceptance_scenarios22_25.py::test_loop_refuses_factory_unsafe_item_before_launch: a ready item whose factory_safety is non-null is refused before run_dispatch, stays ready with no assignee, journals host-only-refused, and surfaces host routing."
+  },
+  {
+    "heading": "## Codex full-access runtime constraints",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "test": "TODO",
+    "reason": "External-runtime posture constraint over Codex and the OpenAI Codex companion plugin: the deciding signals are the local opt-in/marker gate, the canary's exact-expression classification of the active companion source, the fail-closed-on-authorization default, and the rendered raw codex exec full-access/EOF behavior. Unit coverage for the gate and canary exists under tests/hooks and tests/hooks_plugin; a single bindable test ID for the whole constraint awaits an integration-tier test that exercises the gate and canary end to end."
   }
 ]
