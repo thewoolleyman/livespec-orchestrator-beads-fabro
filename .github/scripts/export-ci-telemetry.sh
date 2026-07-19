@@ -45,11 +45,17 @@ run_end="$(iso_to_nanos "$(jq -r '.updatedAt' <<<"$run_json")")"
 run_concl="$(jq -r '.conclusion // ""' <<<"$run_json")"
 run_code=2; [ "$run_concl" = "success" ] && run_code=1
 
-run_span="$(jq -nc \
+# `run_json` carries EVERY job and step of the run, so it is fed on STDIN
+# rather than as an `--argjson` argv value. Past a certain job/step count the
+# argument vector exceeds ARG_MAX and jq dies with "Argument list too long"
+# (exit 126) — which is exactly what the baked-image cutover triggered, by
+# adding a `safe.directory` and `mise install` step to five jobs. STDIN has no
+# such limit, so this cannot regress as the workflow grows.
+run_span="$(jq -c \
   --arg trace "$trace_id" --arg span "$run_span_id" \
   --arg start "$run_start" --arg end "$run_end" \
-  --arg repo "$REPO" --argjson run_id "$RUN_ID" --argjson code "$run_code" \
-  --argjson run "$run_json" '
+  --arg repo "$REPO" --argjson run_id "$RUN_ID" --argjson code "$run_code" '
+  . as $run |
   {traceId:$trace, spanId:$span, name:"ci.run", kind:1,
    startTimeUnixNano:$start, endTimeUnixNano:$end,
    attributes:[
@@ -61,7 +67,7 @@ run_span="$(jq -nc \
      {key:"git.branch",value:{stringValue:($run.headBranch // "")}},
      {key:"ci.event",value:{stringValue:($run.event // "")}}
    ],
-   status:{code:$code}}')"
+   status:{code:$code}}' <<<"$run_json")"
 
 job_spans="[]"
 while IFS=$'\t' read -r jid jname jconcl jstart_iso jend_iso; do
@@ -89,10 +95,16 @@ while IFS=$'\t' read -r jid jname jconcl jstart_iso jend_iso; do
 done < <(jq -r '.jobs[] | [.databaseId, .name, (.conclusion // ""), (.startedAt // ""), (.completedAt // "")] | @tsv' <<<"$run_json")
 
 payload_file="$(mktemp)"
-jq -nc \
-  --argjson run "$run_span" --argjson jobs "$job_spans" \
+# `job_spans` grows with the job count, so it too is fed on STDIN rather than
+# as an `--argjson` argv value — the same ARG_MAX failure mode as `run_json`
+# above, just reached at a higher job count. `run_span` stays an argv value:
+# it is a single bounded span. Fixing only the one that happened to fire
+# would leave this to break later as the workflow grows.
+jq -c \
+  --argjson run "$run_span" \
   --arg svc "$DATASET" --arg ns "$NAMESPACE" \
   --arg scope "$SCOPE_NAME" --arg ver "$SCOPE_VERSION" '
+  . as $jobs |
   {resourceSpans:[{
      resource:{attributes:[
        {key:"service.name",value:{stringValue:$svc}},
@@ -102,7 +114,7 @@ jq -nc \
        scope:{name:$scope, version:$ver},
        spans:([$run] + $jobs)
      }]
-   }]}' > "$payload_file"
+   }]}' <<<"$job_spans" > "$payload_file"
 
 span_count="$(jq '.resourceSpans[0].scopeSpans[0].spans | length' "$payload_file")"
 resp_file="$(mktemp)"
