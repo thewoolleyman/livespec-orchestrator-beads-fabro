@@ -327,6 +327,15 @@ def _add_reconcile_merged(*, parser: argparse.ArgumentParser) -> None:
     _ = parser.add_argument("--item", dest="item", required=True)
     _ = parser.add_argument("--janitor", dest="janitor", default=None)
     _ = parser.add_argument("--journal", dest="journal", default=None)
+    _ = parser.add_argument(
+        "--force",
+        dest="force",
+        action="store_true",
+        help=(
+            "bypass only the live-dispatch heartbeat refusal after confirming the "
+            "original dispatcher process is dead"
+        ),
+    )
     _ = parser.add_argument("--json", dest="as_json", action="store_true")
 
 

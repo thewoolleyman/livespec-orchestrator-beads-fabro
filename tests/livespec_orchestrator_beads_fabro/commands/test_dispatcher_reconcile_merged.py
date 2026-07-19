@@ -11,6 +11,7 @@ from types import ModuleType
 import pytest
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_completion
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._otel_receive import HeartbeatSink
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
@@ -193,6 +194,34 @@ def test_reconcile_merged_janitor_red_leaves_item_active(
     stages = [record["stage"] for record in _journal_records(repo=repo)]
     assert "ledger-complete" not in stages
     assert stages[-1] == "outcome"
+
+
+def test_reconcile_merged_refuses_live_dispatch_before_pr_resolution(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _assert_reconcile_command_registered(capsys=capsys)
+    repo = _repo(tmp_path=tmp_path)
+    item = _item(status="active")
+    append_work_item(path=_config(), item=item)
+    runner = _Runner(
+        queue=[_ok(stdout=_pr_json(number=9, state="MERGED", sha="badc0de"))] + [_ok()] * 8
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=runner)
+    HeartbeatSink(path=repo / "tmp" / "fabro-dispatch-journal-otel-heartbeat.json").beat(
+        key=item.id,
+        at=9_999_999_999.0,
+    )
+
+    exit_code = main(argv=["reconcile-merged", "--repo", str(repo), "--item", item.id])
+
+    assert exit_code == 3
+    err = capsys.readouterr().err
+    assert "live dispatch still appears active" in err
+    assert "fabro ps" in err
+    assert runner.calls == []
+    assert not (repo / "tmp" / "fabro-dispatch-journal.jsonl").exists()
 
 
 @pytest.mark.parametrize("status", ["ready", "acceptance"])

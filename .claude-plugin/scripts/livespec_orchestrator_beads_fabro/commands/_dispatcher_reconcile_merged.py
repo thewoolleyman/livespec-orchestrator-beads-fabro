@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -19,6 +21,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_janitor import post_merge
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import run_stage
+from livespec_orchestrator_beads_fabro.commands._dispatcher_heartbeat_probe import (
+    HeartbeatLivenessProbe,
+    LayeredLivenessProbe,
+    heartbeat_lookup_keys,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
@@ -31,7 +38,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection impor
     janitor_core_ref,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import parse_janitor
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import journal_path
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
+    heartbeat_path,
+    journal_path,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
     PrView,
@@ -39,6 +49,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     janitor_checkout_path,
     parse_pr_view,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
+    LivenessSample,
+    resolve_stall_seconds,
+)
+from livespec_orchestrator_beads_fabro.commands._otel_receive import HeartbeatSink
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -58,21 +73,11 @@ def run_reconcile_merged_command(
 ) -> int:
     """Run the post-merge janitor + acceptance valve for a stranded active item."""
     repo = Path(args.repo)
-    if not repo.exists():
-        _ = write_stderr(text="ERROR: --repo does not exist\n")
-        return EXIT_PRECONDITION_ERROR
-    items = {item.id: item for item in load_items(repo=repo)}
-    item = items.get(args.item)
-    if item is None:
-        _ = write_stderr(text=f"ERROR: work-item {args.item} not found\n")
-        return EXIT_PRECONDITION_ERROR
-    if item.status != "active":
-        detail = f"ERROR: reconcile-merged expected active item {item.id}; found {item.status}\n"
-        _ = write_stderr(text=detail)
-        return EXIT_PRECONDITION_ERROR
-    janitor, janitor_ok = parse_janitor(raw=args.janitor)
-    if not janitor_ok:
-        return 2
+    preflight = _reconcile_preflight(args=args, repo=repo)
+    if isinstance(preflight, int):
+        return preflight
+    item = preflight.item
+    janitor = preflight.janitor
     command_runner = ShellCommandRunner() if runner is None else runner
     journal = JournalFile(path=journal_path(args=args, repo=repo))
     plan = reconcile_plan(repo=repo, item=item, janitor=janitor)
@@ -92,6 +97,63 @@ def run_reconcile_merged_command(
     journal.append(record={"stage": "outcome", "outcome": _outcome_payload(outcome=outcome)})
     emit_outcomes(outcomes=[outcome], as_json=args.as_json)
     return 0 if outcome.status == "green" and outcome.stage == "done" else EXIT_FAILURE
+
+
+@dataclass(frozen=True, kw_only=True)
+class _ReconcilePreflight:
+    item: WorkItem
+    janitor: tuple[str, ...] | None
+
+
+def _reconcile_preflight(*, args: argparse.Namespace, repo: Path) -> _ReconcilePreflight | int:
+    if not repo.exists():
+        _ = write_stderr(text="ERROR: --repo does not exist\n")
+        return EXIT_PRECONDITION_ERROR
+    items = {item.id: item for item in load_items(repo=repo)}
+    item = items.get(args.item)
+    if item is None:
+        _ = write_stderr(text=f"ERROR: work-item {args.item} not found\n")
+        return EXIT_PRECONDITION_ERROR
+    if item.status != "active":
+        detail = f"ERROR: reconcile-merged expected active item {item.id}; found {item.status}\n"
+        _ = write_stderr(text=detail)
+        return EXIT_PRECONDITION_ERROR
+    janitor, janitor_ok = parse_janitor(raw=args.janitor)
+    if not janitor_ok:
+        return 2
+    if not args.force:
+        live_detail = _live_dispatch_refusal(args=args, repo=repo, item=item)
+        if live_detail is not None:
+            _ = write_stderr(text=live_detail)
+            return EXIT_PRECONDITION_ERROR
+    return _ReconcilePreflight(item=item, janitor=janitor)
+
+
+@dataclass(frozen=True, kw_only=True)
+class _NoSignalLivenessProbe:
+    def sample(self, *, observed_at: float) -> LivenessSample:
+        return LivenessSample(last_event_epoch=None, observed_at=observed_at)
+
+
+def _live_dispatch_refusal(*, args: argparse.Namespace, repo: Path, item: WorkItem) -> str | None:
+    observed_at = time.time()
+    heartbeat = HeartbeatLivenessProbe(
+        sink=HeartbeatSink(path=heartbeat_path(args=args, repo=repo)),
+        keys=heartbeat_lookup_keys(work_item_id=item.id, run_id=None),
+    )
+    probe = LayeredLivenessProbe(primary=heartbeat, fallback=_NoSignalLivenessProbe())
+    sample = probe.sample(observed_at=observed_at)
+    if sample.last_event_epoch is None:
+        return None
+    age_seconds = sample.observed_at - sample.last_event_epoch
+    if age_seconds > resolve_stall_seconds():
+        return None
+    return (
+        f"ERROR: reconcile-merged refused: live dispatch still appears active for "
+        f"work-item {item.id} (recent heartbeat age {age_seconds:.1f}s). "
+        f"Confirm with `fabro ps`, wait for the janitor window to close, or rerun "
+        f"with --force only after confirming the original dispatcher process is dead.\n"
+    )
 
 
 def reconcile_plan(*, repo: Path, item: WorkItem, janitor: tuple[str, ...] | None) -> DispatchPlan:
