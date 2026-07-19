@@ -58,6 +58,7 @@ __all__: list[str] = [
     "classify_state",
     "main",
     "read_text_or_none",
+    "write_text_or_false",
 ]
 
 STOCK: str = 'sandbox: options.sandbox ?? "read-only"'
@@ -84,6 +85,13 @@ _DRIFT_WARNING: str = (
 )
 
 _APPLIED: str = "[codex-yolo-reapply] forced danger-full-access in {path}"
+
+_SKIPPED: str = (
+    "[codex-yolo-reapply] WARNING: skipped {path} — it could not be read or rewritten. "
+    "That cached plugin version is still on the stock read-only sandbox, so Codex threads "
+    "resolved from it cannot reach the network (no pytest / gh). Other cached versions were "
+    "still processed."
+)
 
 
 def classify_state(*, content: str | None) -> State:
@@ -114,11 +122,35 @@ def read_text_or_none(*, path: Path) -> str | None:
 
     Fail-open seam: a glob match that is a directory, a dangling link, or a
     permission-denied file classifies as `absent` rather than raising.
+
+    `UnicodeDecodeError` is caught alongside `OSError` because it is NOT an
+    `OSError` (it derives from `ValueError`), so an `except OSError` alone lets
+    a non-UTF-8 `codex.mjs` escape as a traceback and take the whole
+    SessionStart hook down with it. The shell implementation this module
+    replaced survived that case — the decode error was confined to a `python3
+    -c` subprocess whose non-zero exit the loop ignored — so letting it
+    propagate here would be a regression, not merely a gap.
     """
     try:
         return path.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
+
+
+def write_text_or_false(*, path: Path, content: str) -> bool:
+    """Write `content` to `path`; return False when the write is refused.
+
+    The other half of the fail-open seam. A cached `codex.mjs` can be readable
+    but not writable (a read-only plugin cache, a root-owned file, a full
+    disk), and an unguarded `write_text` would raise straight out of the
+    SessionStart hook. The shell implementation degraded the same case to "skip
+    this file, keep going, exit 0"; so does this.
+    """
+    try:
+        _ = path.write_text(content, encoding="utf-8")
+    except OSError:
+        return False
+    return True
 
 
 def cached_codex_mjs_paths(*, home: Path) -> list[Path]:
@@ -135,23 +167,49 @@ def main() -> int:
     if codex_yolo_gate.gate_state() == "off":
         return 0
     for path in cached_codex_mjs_paths(home=Path.home()):
-        _reconcile(path=path)
+        _reconcile_guarded(path=path)
     return 0
+
+
+def _reconcile_guarded(*, path: Path) -> None:
+    """Per-file bulkhead: one bad file must never abort the remaining ones.
+
+    The shell implementation got this isolation for free — each file was
+    handled by its own `python3 -c` subprocess, so a failure there died with
+    that subprocess and the loop moved on. Folding the loop into ONE process
+    lost that property: an exception escaping any single file aborted `main`
+    outright, so every alphabetically-later cached version silently stayed at
+    the stock `read-only` chokepoint. That is worse than the failure the drift
+    canary exists to catch, because it emits no warning at all.
+
+    So the isolation is restored explicitly. The catch is deliberately broad:
+    the specific failures are already handled precisely in `read_text_or_none`
+    and `write_text_or_false`, and this is the last-resort net for the ones not
+    yet imagined. A SessionStart hook that raises is a hook that can wedge the
+    session — matching `livespec_footgun_guard.py`, which takes the same
+    fail-open posture for the same reason.
+    """
+    try:
+        _reconcile(path=path)
+    except Exception:  # noqa: BLE001 — deliberate fail-open bulkhead; see docstring.
+        print(_SKIPPED.format(path=path), file=sys.stderr)
 
 
 def _reconcile(*, path: Path) -> None:
     """Patch, warn, or leave alone a single cached `codex.mjs`."""
     content = read_text_or_none(path=path)
+    if content is None:
+        return
     state = classify_state(content=content)
     if state == "drift":
         print(_DRIFT_WARNING.format(path=path), file=sys.stderr)
         return
-    # `content is None` is the `absent` state; the second test then leaves a
-    # `patched` file alone. Only `stock` falls through to the rewrite.
-    if content is None or state != "stock":
+    if state == "patched":
         return
-    _ = path.write_text(apply_patch(content=content), encoding="utf-8")
-    print(_APPLIED.format(path=path))
+    # Report only what actually landed: a refused write leaves the file stock,
+    # so claiming "forced danger-full-access" would be a lie the operator acts on.
+    if write_text_or_false(path=path, content=apply_patch(content=content)):
+        print(_APPLIED.format(path=path))
 
 
 if __name__ == "__main__":

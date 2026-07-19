@@ -105,6 +105,30 @@ def test_read_text_or_none_returns_none_for_an_unreadable_path(tmp_path: Path) -
     assert hook.read_text_or_none(path=tmp_path) is None
 
 
+def test_read_text_or_none_returns_none_for_non_utf8_bytes(tmp_path: Path) -> None:
+    # UnicodeDecodeError derives from ValueError, NOT OSError, so an
+    # `except OSError` alone would let this escape as a traceback and take the
+    # whole SessionStart hook down. The shell implementation survived it.
+    target = tmp_path / "codex.mjs"
+    _ = target.write_bytes(b'sandbox: "x"\n// \xff\xfe not utf-8 \x80\n')
+
+    assert hook.read_text_or_none(path=target) is None
+
+
+def test_write_text_or_false_reports_success(tmp_path: Path) -> None:
+    target = tmp_path / "codex.mjs"
+
+    assert hook.write_text_or_false(path=target, content="written") is True
+    assert target.read_text(encoding="utf-8") == "written"
+
+
+def test_write_text_or_false_reports_a_refused_write(tmp_path: Path) -> None:
+    # A directory refuses write_text with IsADirectoryError (an OSError) —
+    # standing in for the real cases: a read-only cache, a root-owned file, a
+    # full disk. The hook must skip the file, not raise.
+    assert hook.write_text_or_false(path=tmp_path, content="anything") is False
+
+
 def test_cached_codex_mjs_paths_finds_every_cached_version_sorted(tmp_path: Path) -> None:
     newer = _cached_mjs(home=tmp_path, version="1.0.7")
     older = _cached_mjs(home=tmp_path, version="1.0.6")
@@ -112,6 +136,21 @@ def test_cached_codex_mjs_paths_finds_every_cached_version_sorted(tmp_path: Path
         _ = path.write_text(_stock_source(), encoding="utf-8")
 
     assert hook.cached_codex_mjs_paths(home=tmp_path) == [older, newer]
+
+
+def test_cached_codex_mjs_paths_sorts_an_unordered_glob(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pin the `sorted()` itself, not the filesystem's incidental glob order.
+
+    Asserting against real files cannot distinguish "we sort" from "this
+    filesystem happened to yield them in order" — a mutant deleting `sorted()`
+    survives that test. Feeding an explicitly reversed glob does distinguish it.
+    """
+    unordered = [Path("/cache/9/codex.mjs"), Path("/cache/1/codex.mjs")]
+    monkeypatch.setattr(type(tmp_path), "glob", lambda *_a, **_k: iter(unordered))
+
+    assert hook.cached_codex_mjs_paths(home=tmp_path) == sorted(unordered)
 
 
 def test_cached_codex_mjs_paths_is_empty_without_a_plugin_cache(tmp_path: Path) -> None:
@@ -182,6 +221,86 @@ def test_main_is_a_silent_noop_without_a_plugin_cache(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == ""
+
+
+def test_main_fails_open_on_a_non_utf8_cached_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A SessionStart hook must never crash — the shell version did not."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    target = _cached_mjs(home=tmp_path, version="1.0.6")
+    raw = hook.STOCK.encode() + b"\n// \xff\xfe not utf-8 \x80\n"
+    _ = target.write_bytes(raw)
+
+    assert hook.main() == 0
+
+    assert target.read_bytes() == raw
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_main_fails_open_when_a_stock_file_cannot_be_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Readable but unwritable: skip it, stay silent, exit 0 — never raise."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    target = _cached_mjs(home=tmp_path, version="1.0.6")
+    stock = _stock_source()
+    _ = target.write_text(stock, encoding="utf-8")
+    monkeypatch.setattr(hook, "write_text_or_false", lambda **_kwargs: False)
+
+    assert hook.main() == 0
+
+    assert target.read_text(encoding="utf-8") == stock
+    captured = capsys.readouterr()
+    # No "forced danger-full-access" claim for a write that never landed.
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_main_keeps_patching_later_versions_after_one_bad_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The property the shell got free from per-file subprocess isolation.
+
+    A single unreadable cached version must not abort the loop: every LATER
+    version would silently stay on the stock read-only chokepoint, and unlike
+    genuine drift that failure emits no canary at all.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path))
+    first = _cached_mjs(home=tmp_path, version="1.0.5")
+    last = _cached_mjs(home=tmp_path, version="1.0.6")
+    _ = first.write_bytes(hook.STOCK.encode() + b"\n// \xff\xfe not utf-8 \x80\n")
+    _ = last.write_text(_stock_source(), encoding="utf-8")
+
+    assert hook.main() == 0
+
+    # The bad file is untouched; the one sorted AFTER it is still patched.
+    assert hook.STOCK.encode() in first.read_bytes()
+    assert hook.STOCK not in last.read_text(encoding="utf-8")
+    assert str(last) in capsys.readouterr().out
+
+
+def test_main_warns_and_continues_when_a_file_raises_unexpectedly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The last-resort bulkhead: an unforeseen error is a warning, not a crash."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    target = _cached_mjs(home=tmp_path, version="1.0.6")
+    _ = target.write_text(_stock_source(), encoding="utf-8")
+
+    def _boom(**_kwargs: object) -> str | None:
+        raise RuntimeError("something nobody anticipated")
+
+    monkeypatch.setattr(hook, "read_text_or_none", _boom)
+
+    assert hook.main() == 0
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "WARNING" in captured.err
+    assert str(target) in captured.err
 
 
 def test_main_skips_a_glob_match_that_cannot_be_read(

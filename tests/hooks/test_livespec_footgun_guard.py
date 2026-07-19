@@ -301,6 +301,29 @@ def test_reading_core_bare_with_git_config_get_is_allowed() -> None:
     assert check_segment(seg="git config --get core.bare") == (False, "")
 
 
+@pytest.mark.parametrize(
+    "seg",
+    [
+        "git config --get core.bare true",
+        "git config --get-all core.bare true",
+        "git config --unset core.bare true",
+        "git config --unset-all core.bare true",
+        "git config --list core.bare true",
+    ],
+)
+def test_a_read_flag_beats_a_truthy_token_on_the_same_line(seg: str) -> None:
+    """The read-flag arm must win even when a truthy value token is present.
+
+    Without a truthy token in the command, deleting the ENTIRE
+    `--get/--unset/--list/...` guard arm changes no verdict — the core.bare
+    check needs BOTH a `core.bare` match and a truthy match to block, so a bare
+    `git config --get core.bare` is allowed either way. These cases supply the
+    truthy token, so they are the ones that actually pin the arm: drop it and
+    they start blocking legitimate reads.
+    """
+    assert check_segment(seg=seg) == (False, "")
+
+
 def test_setting_core_bare_true_is_blocked() -> None:
     blocked, reason = check_segment(seg="git config core.bare true")
 

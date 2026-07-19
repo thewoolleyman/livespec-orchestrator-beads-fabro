@@ -31,6 +31,7 @@ __all__: list[str] = [
     "derive_fleet_listed",
     "gate_state",
     "main",
+    "owning_repo_root",
     "read_marker",
     "remote_url_for_repo",
     "repo_name_from_remote_url",
@@ -48,6 +49,23 @@ _REMOTE_URL_PATTERN = re.compile(
 )
 
 
+def owning_repo_root() -> Path:
+    """The repo this hook file belongs to, independent of the process cwd.
+
+    The marker lives at `<repo>/.livespec.jsonc` and this module at
+    `<repo>/.claude/hooks/`, so the repo root is two parents up — a fact that
+    holds no matter where the interpreter was started.
+
+    Deriving it from `Path.cwd()` instead made the gate silently OFF whenever a
+    session began anywhere but the repo root (a subdirectory was enough): the
+    marker was simply not found, the hook no-opped, and Codex quietly stayed on
+    the stock read-only sandbox with NO warning — the same silent-read-only
+    failure the drift canary exists to make loud. Anchoring on `__file__`
+    removes the dependency on an unstated harness guarantee about cwd.
+    """
+    return Path(__file__).resolve().parents[2]
+
+
 def gate_state(*, env: dict[str, str] | None = None, repo: Path | None = None) -> GateState:
     """Return whether the codex full-access patch is locally enabled."""
     environment = env if env is not None else dict(os.environ)
@@ -56,7 +74,7 @@ def gate_state(*, env: dict[str, str] | None = None, repo: Path | None = None) -
         return "on"
     if override is False:
         return "off"
-    if read_marker(repo=Path.cwd() if repo is None else repo):
+    if read_marker(repo=owning_repo_root() if repo is None else repo):
         return "on"
     return "off"
 
