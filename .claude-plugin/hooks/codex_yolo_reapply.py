@@ -11,8 +11,8 @@ plugin-launched thread — `buildThreadParams` / `buildResumeParams` default to
 read-only / workspace-write. None of those enable network. Upstream offers no
 toggle: every configurable-sandbox issue/PR is unmerged or author-withdrawn (see
 `plan/codex-yolo-sandbox/research.md`). A plugin refresh clobbers the cache, so
-this hook re-applies the patch every session, registered in `.claude/settings.json`
-under `hooks.SessionStart` AFTER `just ensure-plugins`.
+this hook re-applies the patch every session through the plugin-bundled
+`hooks/hooks.json` SessionStart registration.
 
 WHAT: rewrites the single sandbox chokepoint in every cached plugin version,
 `STOCK` -> `PATCHED`. `buildThreadParams` / `buildResumeParams` are the ONLY two
@@ -37,9 +37,7 @@ pass-through (exit 0), never an error — a session must never fail to start
 because the Codex plugin is missing.
 
 The classification and rewrite logic is PURE so it is unit-testable by import,
-with no subprocess spawn (`check-tests-no-subprocess-spawn`); the paired
-`codex-yolo-reapply.sh` is a thin wrapper, mirroring `beads_access_guard.py` +
-`beads-access-guard.sh`.
+with no subprocess spawn (`check-tests-no-subprocess-spawn`).
 """
 
 from __future__ import annotations
@@ -93,7 +91,7 @@ _DRIFT_WARNING: str = (
     "Codex threads are running with an UNKNOWN sandbox and may have silently "
     "reverted to read-only (no network, so no pytest / gh — a reviewer that "
     "cannot execute passes code it never ran). Re-derive the chokepoint strings "
-    "in .claude/hooks/codex_yolo_reapply.py; see plan/codex-yolo-sandbox/."
+    "in .claude-plugin/hooks/codex_yolo_reapply.py; see plan/codex-yolo-sandbox/."
 )
 
 _APPLIED: str = "[codex-yolo-reapply] forced danger-full-access in {path}"
