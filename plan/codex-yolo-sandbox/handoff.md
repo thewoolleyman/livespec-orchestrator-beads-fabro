@@ -1,7 +1,8 @@
 # Plan handoff — codex-yolo-sandbox
 
-**READ THIS FIRST. Status as of 2026-07-19 — S1 + S2 landed and repaired; the track is now
-BLOCKED on the maintainer's acceptance valve, not on work.** This file is the ONLY thing a
+**READ THIS FIRST. Status as of 2026-07-19 — every BUILD slice (S1, S2, S3, C1) has landed
+and been verified. Two items remain: `.2` (a spec ratification, maintainer-only) and `.6` (a
+de-duplication follow-up, BLOCKED on a host Codex credential renewal).** This file is the ONLY thing a
 fresh session inherits. Everything from "## Goal" down is the ORIGINAL 2026-07-15
 analysis, kept as background — its "First steps for the new session" list is
 **OBSOLETE**; use "Next action" below.
@@ -48,7 +49,17 @@ and make that permanent for fleet members and official adopters, **without forki
      safe: a cosmetic upstream reformat reports `drift` (loud) instead of a restructure
      reporting `patched` (silent). Verified all three live cached versions still classify
      `patched`, so the tightening creates no false drift.
-  - **The transferable lesson:** 100% line+branch coverage did not catch either one. Coverage
+    4. **S3 + C1 landed clean, and grooming is why** (PRs #800, #803). Both were dispatched with
+     explicit acceptance criteria written after reading the actual APIs. S3's criteria named a
+     landmine in advance — `owning_repo_root()` resolves `__file__.parents[2]`, correct for
+     `.claude/hooks/` but WRONG once shipped from the plugin cache, where it would point at the
+     plugin and leave the gate silently OFF for EVERY adopter — and directed the agent to
+     `CLAUDE_PROJECT_DIR`; it complied and the shipped hook is correct. C1's criteria flagged
+     that it touches product `.py` and so needs the Red->Green pair (unlike the hooks slices'
+     suite-green leg), and separated the REAL executed argv from call sites that merely emit
+     suggestion strings. **Ungroomed one-paragraph items produced defects; groomed ones did
+     not.** Groom before dispatching.
+- **The transferable lesson:** 100% line+branch coverage did not catch either one. Coverage
     cannot see a MISSING `except` clause, nor an assertion that never discriminates. Mutation
     testing found two more dead assertions (a `sorted()` that the filesystem's own ordering
     masked; a footgun-guard read-flag arm deletable without any test failing). **Probe hook
@@ -104,47 +115,59 @@ and make that permanent for fleet members and official adopters, **without forki
 
 | ID | Slice | Status |
 | --- | --- | --- |
-| `bd-ib-1jye.1` | S1 — re-apply hook → tested Python module + drift canary | **`closed`** (PR #782, fixed by #793) |
-| `bd-ib-1jye.2` | S5 — propose-change ratifying the codex-full-access contract | `acceptance` ← **maintainer valve** |
-| `bd-ib-1jye.3` | S2 — manifest-gating helper + wire hook to it | `acceptance` ← **maintainer valve** (PR #791, fixed by #793) |
-| `bd-ib-1jye.4` | S3 — ship the gated hook FROM the orchestrator plugin (needs S2) | `ready`, blocked until `.3` closes |
-| `bd-ib-1jye.5` | C1 — orchestrator-owned full-access `codex exec`, Surface 2 (needs S2) | `ready`, blocked until `.3` closes |
+| `bd-ib-1jye.1` | S1 — re-apply hook -> tested module + drift canary | **`closed`** (#782, fixed by #793/#795) |
+| `bd-ib-1jye.2` | S5 — propose-change ratifying the codex-full-access contract | `acceptance` <- **maintainer-only** |
+| `bd-ib-1jye.3` | S2 — manifest-gating helper + wire hook to it | **`closed`** (#791, fixed by #793) |
+| `bd-ib-1jye.4` | S3 — ship the gated hook FROM the orchestrator plugin | **`closed`** (#800) |
+| `bd-ib-1jye.5` | C1 — orchestrator-owned full-access `codex exec` (Surface 2) | **`closed`** (#803) |
+| `bd-ib-1jye.6` | de-duplicate the two copies of the hook modules | `ready` <- **blocked on `codex login`** |
 
-**The epic is currently gated on a HUMAN decision, not on work.** `.4` and `.5` carry stored
-status `ready` but stay out of the dispatcher's ready set while `.3` sits at `acceptance` —
-dependency-blocked. Accepting/closing `.2` and `.3` is the maintainer's valve; once `.3`
-closes, `.4` and `.5` both unblock and are dispatchable in parallel (neither depends on the
-other).
+Every BUILD slice is closed. `.4` and `.5` were verified post-merge (auto-merge landed both
+before review): S3's plugin-shipped hook correctly resolves the consuming project via
+`CLAUDE_PROJECT_DIR` — patching a fleet-listed project and no-opping for a non-listed one — and
+C1 emits `--dangerously-bypass-approvals-and-sandbox` with `stdin=subprocess.DEVNULL` only for a
+listed repo, with no raise on a nonexistent path.
 
 Each item's full spec lives in its beads record — `with-livespec-env.sh -- bd show <id>`.
 
-## Next action — BLOCKED on the maintainer's acceptance valve
+## Next action — one dispatchable item, blocked on a HOST credential
 
-Every slice that could be built without a human decision has been built. What remains:
+**All four build slices are done.** S1 (`.1`), S2 (`.3`), S3 (`.4`), and C1 (`.5`) are landed,
+empirically verified, and closed. What is left:
 
-1. **Maintainer accepts (or rejects) `.2` (S5) and `.3` (S2).** Both sit at `acceptance`.
-   Weigh this evidence when deciding on `.3`: S2 shipped a real silent-OFF defect (the
-   cwd-relative marker read), already fixed in PR #793 — the slice is sound now, but it did
-   not land correct.
-2. **Once `.3` closes, `.4` (S3) and `.5` (C1) unblock together** and are independent of each
-   other, so dispatch BOTH; the factory handles them in parallel.
+1. **`.6` — de-duplicate the two copies of the hook modules.** Groomed and ready. Its dispatch
+   FAILED AT PREFLIGHT, before launching, with:
+   *"Host Codex credential is too short-lived for the run budget; run `codex login` on the
+   orchestrator host to renew it."* The credential was valid but only ~3.9h from expiry, under
+   the headroom the dispatcher demands for a full run budget. **This needs an interactive
+   `codex login` on the host — nobody but the maintainer can do it.** Once renewed, dispatch:
 
-Do NOT try to dispatch `.4`/`.5` before `.3` closes: `loop --item <id>` validates readiness up
-front and rejects a dependency-blocked item, so it cannot be used to "wait until it unblocks".
+   ```bash
+   /data/projects/1password-env-wrapper/with-livespec-env.sh -- \
+     python3 .claude-plugin/scripts/bin/dispatcher.py loop \
+     --repo /data/projects/livespec-orchestrator-beads-fabro \
+     --item bd-ib-1jye.6 --budget 1 --parallel 1 --json
+   ```
 
-```bash
-/data/projects/1password-env-wrapper/with-livespec-env.sh -- \
-  python3 .claude-plugin/scripts/bin/dispatcher.py loop \
-  --repo /data/projects/livespec-orchestrator-beads-fabro \
-  --item bd-ib-1jye.4 --budget 1 --parallel 1 --json
-```
+   (A killed or preflight-failed dispatch leaves the item stuck `active`; reset it with
+   `bd update bd-ib-1jye.6 -s ready` before re-dispatching. Already done for this one.)
 
-**Dispatching works well now — but REVIEW what it produces.** The S2 dispatch succeeded
-end-to-end and still merged a silent-OFF bug through a green `just check` and its own janitor +
-review stages. Auto-merge is armed on this repo, so a factory PR lands as soon as checks pass:
-if you want to inspect one before it merges, look immediately after the PR opens. Probe the
-resulting hook behavior EMPIRICALLY (run it from several cwds, against malformed/unwritable
-fixtures, and diff old-vs-new); do not treat a green gate as proof.
+2. **`.2` (S5) — the spec ratification at `acceptance`.** Maintainer-only judgment about what
+   the specification should say. It gates nothing.
+
+**Why `.6` exists:** S3 shipped the hook FROM the plugin, so `codex_yolo_gate.py` and
+`codex_yolo_reapply.py` now exist as two byte-identical copies (`.claude/hooks/` and
+`.claude-plugin/hooks/`) with nothing keeping them in sync. Fix the repo-local copy and every
+ADOPTER keeps running the unfixed distributed one. Three defects were fixed in these hooks on
+2026-07-19; had S3 landed first, each fix would have reached only one copy. Full analysis,
+the verified-viable deduplication plan, and a harness trap that will otherwise waste an hour
+are in the item body: `with-livespec-env.sh -- bd show bd-ib-1jye.6`.
+
+**Dispatch works well now — but REVIEW what it produces, immediately.** Auto-merge is armed, so
+a factory PR lands as soon as checks pass; S3's and C1's both merged before review. Both turned
+out correct, but S2's did not — it merged a silent-OFF gate bug through a green `just check`
+plus its own janitor and review stages. Probe the resulting behavior EMPIRICALLY (several cwds,
+malformed and unwritable fixtures, old-vs-new diff). Do not treat a green gate as proof.
 
 ## Hard rules and gotchas — each of these cost real time
 
