@@ -2,9 +2,13 @@
 
 `ShellCommandRunner` is the production `CommandRunner`: it executes the
 engine's argvs via `subprocess.run` with captured output and converts
-timeouts into non-zero `CommandResult`s (the engine treats every failure
-as routable data, so the runner never lets an expected failure escape as
-an exception). The hermetic test tier exercises it with
+both a TIMEOUT (exit 124) and an ABSENT EXECUTABLE (exit 127) into
+non-zero `CommandResult`s (the engine treats every failure as routable
+data, so the runner never lets an expected failure escape as an
+exception). The absent-executable mapping is what keeps the post-verdict
+self-update's fail-open 0jxs invariant intact on a host whose PATH lacks
+`gh`: an unresolvable binary skips the stage exactly as a `gh` ERROR
+does. The hermetic test tier exercises it with
 `sys.executable -c` stubs, mirroring how `test_orchestrator` drives the
 injected reference CLIs.
 
@@ -87,14 +91,13 @@ class ShellCommandRunner:
                 check=False,
                 env=None if env is None else {**os.environ, **env},
             ),
-            exceptions=(subprocess.TimeoutExpired,),
+            exceptions=(subprocess.TimeoutExpired, FileNotFoundError),
         )
         if isinstance(completed, AttemptFailure):
-            exc = cast("subprocess.TimeoutExpired", completed.error)
-            return CommandResult(
-                exit_code=124,
-                stdout=_decode(raw=exc.stdout),
-                stderr=_decode(raw=exc.stderr) + f"\ntimeout after {timeout_seconds}s",
+            return _failure_result(
+                error=completed.error,
+                argv=argv,
+                timeout_seconds=timeout_seconds,
             )
         return CommandResult(
             exit_code=completed.returncode,
@@ -150,6 +153,37 @@ class JournalFile:
 def utc_now_iso() -> str:
     """Current UTC time in ISO-8601 with seconds precision."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _failure_result(
+    *,
+    error: Exception,
+    argv: list[str],
+    timeout_seconds: float,
+) -> CommandResult:
+    """Map a caught runner exception onto a non-zero `CommandResult`.
+
+    Both branches keep the failure as routable DATA rather than letting it
+    escape: a TIMED-OUT command becomes exit 124, and a command whose
+    EXECUTABLE IS ABSENT becomes exit 127 (the POSIX command-not-found
+    convention). The absent case matters to the post-verdict self-update's
+    fail-open invariant — `resolve_merged_paths` reads any non-zero `gh`
+    exit as "unobservable" and returns `()`, so a host without `gh` skips
+    the stage exactly as a `gh` ERROR does, instead of crashing the
+    dispatch with a `FileNotFoundError`.
+    """
+    if isinstance(error, FileNotFoundError):
+        return CommandResult(
+            exit_code=127,
+            stdout="",
+            stderr=f"executable not found: {argv[0]}: {error}",
+        )
+    exc = cast("subprocess.TimeoutExpired", error)
+    return CommandResult(
+        exit_code=124,
+        stdout=_decode(raw=exc.stdout),
+        stderr=_decode(raw=exc.stderr) + f"\ntimeout after {timeout_seconds}s",
+    )
 
 
 def _decode(*, raw: object) -> str:

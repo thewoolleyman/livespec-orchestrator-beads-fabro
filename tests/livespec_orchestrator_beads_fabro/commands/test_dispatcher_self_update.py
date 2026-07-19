@@ -31,6 +31,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import resolve_merged_paths
 from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
     DISPATCHER_SCRIPT_PREFIXES,
@@ -47,6 +48,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
     self_update_after_merge,
     self_update_after_verdict,
 )
+
+from tests.conftest import ScriptedGh
 
 # ---------------------------------------------------------------------------
 # Shared fakes
@@ -686,3 +689,195 @@ def test_after_verdict_defaults_runner_and_poster() -> None:
         journal=journal,
     )
     assert journal.records == []
+
+
+# ---------------------------------------------------------------------------
+# The PRODUCTION `gh` path: real `ShellCommandRunner`, hermetic `gh`
+# ---------------------------------------------------------------------------
+#
+# Everything above drives an INJECTED `CommandRunner`, so it never proves the
+# real spawn path behaves. Production wires the real `ShellCommandRunner`, and
+# `resolve_merged_paths` is the one self-update call that reaches an actual
+# `gh` binary. These tests exercise that spawn for each of the three outcomes
+# `gh` can produce — SUCCESS, a non-zero ERROR, and an ABSENT executable —
+# against the conftest stub `gh` on PATH, never a host one. The
+# absent-executable case is the regression test for the crash that broke the
+# fail-open 0jxs invariant on a PATH without `gh`.
+
+
+_SELF_MERGE_PR_FILES = json.dumps(
+    {
+        "files": [
+            {
+                "path": (
+                    ".claude-plugin/scripts/livespec_orchestrator_beads_fabro"
+                    "/commands/dispatcher.py"
+                )
+            },
+            {"path": "SPECIFICATION/spec.md"},
+        ]
+    }
+)
+
+
+@dataclass(kw_only=True)
+class _RealGhRunner:
+    """Real runner for `gh`; scripted for every other argv.
+
+    Keeps the production spawn path under test for the `gh` call while the
+    self-machinery hang-guard still holds: the checkout probes and the
+    canary stay scripted, so no test runs the candidate dispatcher.
+    """
+
+    others: list[CommandResult]
+    seen_argv: list[list[str]] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+    ) -> CommandResult:
+        self.seen_argv.append(list(argv))
+        if argv[0] == "gh":
+            return ShellCommandRunner().run(
+                argv=argv, cwd=cwd, timeout_seconds=timeout_seconds, env=env
+            )
+        return self.others.pop(0)
+
+
+def test_merged_paths_reads_the_file_list_when_gh_succeeds(
+    tmp_path: Path, scripted_gh: ScriptedGh
+) -> None:
+    """gh SUCCESS: the spawned `gh pr view --json files` payload becomes the
+    merged-path tuple, and a payload touching the dispatcher's own scripts
+    is what makes `is_self_merge` true — i.e. the stage proceeds."""
+    scripted_gh.script(exit_code=0, stdout=_SELF_MERGE_PR_FILES)
+
+    merged = resolve_merged_paths(repo=tmp_path, runner=ShellCommandRunner())
+
+    assert merged == (
+        ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/dispatcher.py",
+        "SPECIFICATION/spec.md",
+    )
+    assert is_self_merge(merged_paths=merged)
+    assert scripted_gh.argv_lines() == ["pr view master --json files"]
+
+
+def test_merged_paths_is_empty_when_gh_exits_non_zero(
+    tmp_path: Path, scripted_gh: ScriptedGh
+) -> None:
+    """gh ERROR (255): the signal is unobservable, so the stage gets `()`
+    and skips — the fail-open branch that already held."""
+    scripted_gh.script(exit_code=255)
+
+    assert resolve_merged_paths(repo=tmp_path, runner=ShellCommandRunner()) == ()
+    assert scripted_gh.argv_lines() == ["pr view master --json files"]
+
+
+@pytest.mark.usefixtures("absent_gh")
+def test_merged_paths_is_empty_when_gh_is_absent(tmp_path: Path) -> None:
+    """gh ABSENT: the runner degrades the missing executable to exit 127, so
+    the stage takes the SAME `() -> skip` path as a `gh` error instead of
+    crashing the dispatch with a `FileNotFoundError` (the 0jxs invariant)."""
+    runner = ShellCommandRunner()
+
+    probe = runner.run(argv=pr_files_argv(branch="master"), cwd=tmp_path, timeout_seconds=5.0)
+
+    assert probe.exit_code == 127
+    assert resolve_merged_paths(repo=tmp_path, runner=runner) == ()
+
+
+def test_after_verdict_promotes_over_the_real_gh_spawn(
+    tmp_path: Path, scripted_gh: ScriptedGh
+) -> None:
+    """End to end over the real `gh`: a self-merge payload read from the
+    spawned `gh` reaches the canary, and a passing canary promotes."""
+    scripted_gh.script(exit_code=0, stdout=_SELF_MERGE_PR_FILES)
+    journal = _RecordingJournal()
+    runner = _RealGhRunner(
+        others=[
+            # rev-parse --abbrev-ref HEAD -> the branch `gh pr view` reads.
+            CommandResult(exit_code=0, stdout="feat/ddu\n", stderr=""),
+            # The writable-checkout probes, then a PASSING canary.
+            CommandResult(exit_code=0, stdout="true\n", stderr=""),
+            CommandResult(
+                exit_code=0,
+                stdout="https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+                stderr="",
+            ),
+            CommandResult(exit_code=0, stdout="", stderr=""),
+        ]
+    )
+
+    self_update_after_verdict(
+        outcomes=[_outcome(status="green", pr_number=42)],
+        repo=tmp_path,
+        journal=journal,
+        runner=runner,
+        poster=_RecordingPoster(),
+    )
+
+    assert scripted_gh.argv_lines() == ["pr view feat/ddu --json files"]
+    assert [record["stage"] for record in journal.records] == ["self-update-promoted"]
+
+
+@pytest.mark.parametrize(
+    ("gh_exit", "case"),
+    [(255, "gh errors"), (0, "gh reports no dispatcher files")],
+)
+def test_after_verdict_skips_and_keeps_the_verdict_when_gh_yields_nothing(
+    tmp_path: Path, scripted_gh: ScriptedGh, gh_exit: int, case: str
+) -> None:
+    """Both unobservable shapes skip cleanly: no promotion, no alarm, and no
+    `self-update-error` — the stage never touches the computed verdict."""
+    _ = case
+    scripted_gh.script(exit_code=gh_exit, stdout=json.dumps({"files": []}))
+    journal = _RecordingJournal()
+    poster = _RecordingPoster()
+    runner = _RealGhRunner(
+        others=[
+            CommandResult(exit_code=0, stdout="feat/ddu\n", stderr=""),
+            CommandResult(exit_code=0, stdout="true\n", stderr=""),
+            CommandResult(
+                exit_code=0,
+                stdout="https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+                stderr="",
+            ),
+        ]
+    )
+
+    self_update_after_verdict(
+        outcomes=[_outcome(status="green", pr_number=42)],
+        repo=tmp_path,
+        journal=journal,
+        runner=runner,
+        poster=poster,
+    )
+
+    assert [record["stage"] for record in journal.records] == ["self-update-skipped"]
+    assert poster.bodies == []
+
+
+@pytest.mark.usefixtures("absent_gh")
+def test_after_verdict_never_crashes_when_gh_is_absent(tmp_path: Path) -> None:
+    """The PART-1 regression at stage level: with NO `gh` on PATH the whole
+    post-verdict stage still completes, journaling a clean skip rather than
+    raising a `FileNotFoundError` out of the dispatch."""
+    journal = _RecordingJournal()
+    poster = _RecordingPoster()
+
+    self_update_after_verdict(
+        outcomes=[_outcome(status="green", pr_number=42)],
+        repo=tmp_path,
+        journal=journal,
+        runner=ShellCommandRunner(),
+        poster=poster,
+    )
+
+    stages = [record["stage"] for record in journal.records]
+    assert stages == ["self-update-skipped"]
+    assert "self-update-error" not in stages
+    assert poster.bodies == []

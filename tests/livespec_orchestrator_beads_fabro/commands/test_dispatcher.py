@@ -2149,6 +2149,28 @@ def test_shell_runner_converts_timeouts(tmp_path: Path) -> None:
     assert "timeout after" in result.stderr
 
 
+def test_shell_runner_converts_a_missing_executable_into_127(tmp_path: Path) -> None:
+    """An ABSENT executable degrades like any other failing command.
+
+    The 0jxs invariant makes the post-verdict self-update FAIL-OPEN: every
+    non-zero `gh` exit is "unobservable", so `resolve_merged_paths` returns
+    `()` and the stage skips. A `FileNotFoundError` escaping the runner
+    instead CRASHES the dispatch, breaking that invariant on any host whose
+    PATH lacks `gh` (the baked fabro-sandbox image). 127 is the POSIX
+    command-not-found convention, and callers already read any non-zero exit
+    as a failure.
+    """
+    runner = ShellCommandRunner()
+    result = runner.run(
+        argv=["livespec-no-such-binary-xyz"],
+        cwd=tmp_path,
+        timeout_seconds=5.0,
+    )
+    assert result.exit_code == 127
+    assert result.stdout == ""
+    assert "executable not found: livespec-no-such-binary-xyz" in result.stderr
+
+
 def test_decode_handles_bytes_str_and_none() -> None:
     assert _decode(raw=b"x") == "x"
     assert _decode(raw="y") == "y"
