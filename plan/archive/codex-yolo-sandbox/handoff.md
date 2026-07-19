@@ -1,11 +1,9 @@
-# Plan handoff — codex-yolo-sandbox
+# Plan handoff — codex-yolo-sandbox (ARCHIVED 2026-07-19)
 
-**READ THIS FIRST. Status as of 2026-07-19 — every BUILD slice (S1, S2, S3, C1) has landed
-and been verified. Two items remain: `.2` (a spec ratification, maintainer-only) and `.6` (a
-de-duplication follow-up, BLOCKED on a host Codex credential renewal).** This file is the ONLY thing a
-fresh session inherits. Everything from "## Goal" down is the ORIGINAL 2026-07-15
-analysis, kept as background — its "First steps for the new session" list is
-**OBSOLETE**; use "Next action" below.
+**CLOSED. Epic `bd-ib-1jye` and all six children are closed; the contract is
+ratified in `SPECIFICATION/history/v043`.** Nothing here is open work. This file
+is kept as the design record and the defect post-mortem — read it before touching
+`.claude-plugin/hooks/codex_yolo_*.py`, the Codex gate, or the drift canary.
 
 ## What this track is
 
@@ -115,59 +113,72 @@ and make that permanent for fleet members and official adopters, **without forki
 
 | ID | Slice | Status |
 | --- | --- | --- |
-| `bd-ib-1jye.1` | S1 — re-apply hook -> tested module + drift canary | **`closed`** (#782, fixed by #793/#795) |
-| `bd-ib-1jye.2` | S5 — propose-change ratifying the codex-full-access contract | `acceptance` <- **maintainer-only** |
-| `bd-ib-1jye.3` | S2 — manifest-gating helper + wire hook to it | **`closed`** (#791, fixed by #793) |
-| `bd-ib-1jye.4` | S3 — ship the gated hook FROM the orchestrator plugin | **`closed`** (#800) |
-| `bd-ib-1jye.5` | C1 — orchestrator-owned full-access `codex exec` (Surface 2) | **`closed`** (#803) |
-| `bd-ib-1jye.6` | de-duplicate the two copies of the hook modules | `ready` <- **blocked on `codex login`** |
+| `bd-ib-1jye.1` | S1 — tested re-apply module + drift canary | `closed` |
+| `bd-ib-1jye.2` | S5 — spec ratification (`v043`) | `closed` |
+| `bd-ib-1jye.3` | S2 — manifest-gating helper | `closed` |
+| `bd-ib-1jye.4` | S3 — ship the hook FROM the plugin | `closed` |
+| `bd-ib-1jye.5` | C1 — orchestrator-owned full-access `codex exec` | `closed` |
+| `bd-ib-1jye.6` | de-duplicate the two hook copies | `closed` |
 
-Every BUILD slice is closed. `.4` and `.5` were verified post-merge (auto-merge landed both
-before review): S3's plugin-shipped hook correctly resolves the consuming project via
-`CLAUDE_PROJECT_DIR` — patching a fleet-listed project and no-opping for a non-listed one — and
-C1 emits `--dangerously-bypass-approvals-and-sandbox` with `stdin=subprocess.DEVNULL` only for a
-listed repo, with no raise on a nonexistent path.
+The epic `bd-ib-1jye` itself is CLOSED. No open work remains on this track.
 
 Each item's full spec lives in its beads record — `with-livespec-env.sh -- bd show <id>`.
 
-## Next action — one dispatchable item, blocked on a HOST credential
+## Outcome
 
-**All four build slices are done.** S1 (`.1`), S2 (`.3`), S3 (`.4`), and C1 (`.5`) are landed,
-empirically verified, and closed. What is left:
+Every slice landed and was verified empirically, not merely gate-green:
 
-1. **`.6` — de-duplicate the two copies of the hook modules.** Groomed and ready. Its dispatch
-   FAILED AT PREFLIGHT, before launching, with:
-   *"Host Codex credential is too short-lived for the run budget; run `codex login` on the
-   orchestrator host to renew it."* The credential was valid but only ~3.9h from expiry, under
-   the headroom the dispatcher demands for a full run budget. **This needs an interactive
-   `codex login` on the host — nobody but the maintainer can do it.** Once renewed, dispatch:
+| Item | Slice | Landed |
+| --- | --- | --- |
+| `.1` | S1 — tested re-apply module + drift canary | #782 (fixed by #793, #795) |
+| `.2` | S5 — spec ratification | #812 amend -> #813 ratify (`v043`) |
+| `.3` | S2 — manifest-gating helper | #791 (fixed by #793) |
+| `.4` | S3 — ship the hook FROM the plugin | #800 |
+| `.5` | C1 — orchestrator-owned full-access `codex exec` | #803 |
+| `.6` | de-duplicate the two hook copies | #814 |
 
-   ```bash
-   /data/projects/1password-env-wrapper/with-livespec-env.sh -- \
-     python3 .claude-plugin/scripts/bin/dispatcher.py loop \
-     --repo /data/projects/livespec-orchestrator-beads-fabro \
-     --item bd-ib-1jye.6 --budget 1 --parallel 1 --json
-   ```
+Final shape: ONE source of truth at `.claude-plugin/hooks/`, distributed via the
+plugin's own `hooks.json`; the repo-local copies and the redundant
+`.claude/settings.json` SessionStart entry are gone (the double-run is resolved).
+The contract is normative in `constraints.md` §"Codex full-access runtime
+constraints", and Scenario 21 covers discovery plus full-access posture.
 
-   (A killed or preflight-failed dispatch leaves the item stuck `active`; reset it with
-   `bd update bd-ib-1jye.6 -s ready` before re-dispatching. Already done for this one.)
+## The lesson this track actually taught
 
-2. **`.2` (S5) — the spec ratification at `acceptance`.** Maintainer-only judgment about what
-   the specification should say. It gates nothing.
+**A green gate is not evidence.** `just check` at 100% line+branch coverage
+passed while FOUR silent-failure defects shipped, every one of them the same
+class the epic existed to eliminate — Codex quietly back on `read-only`, so a
+reviewer that cannot execute passes code it never ran:
 
-**Why `.6` exists:** S3 shipped the hook FROM the plugin, so `codex_yolo_gate.py` and
-`codex_yolo_reapply.py` now exist as two byte-identical copies (`.claude/hooks/` and
-`.claude-plugin/hooks/`) with nothing keeping them in sync. Fix the repo-local copy and every
-ADOPTER keeps running the unfixed distributed one. Three defects were fixed in these hooks on
-2026-07-19; had S3 landed first, each fix would have reached only one copy. Full analysis,
-the verified-viable deduplication plan, and a harness trap that will otherwise waste an hour
-are in the item body: `with-livespec-env.sh -- bd show bd-ib-1jye.6`.
+1. The shell->Python rewrite lost the shell's per-file subprocess isolation, so
+   one unreadable `codex.mjs` crashed SessionStart AND left every later cached
+   version stock, with no canary warning (#793).
+2. The gate read its marker relative to `Path.cwd()`, so starting a session in
+   any subdirectory silently reported OFF (#793).
+3. The canary treated a bare env-var-name substring as "patched", so an upstream
+   file merely MENTIONING `CODEX_COMPANION_SANDBOX` silenced it — and the
+   unmerged upstream toggle is named `CODEX_COMPANION_SANDBOX_MODE`, containing
+   it as a substring (#795).
+4. The pre-implementation spec draft would have RATIFIED defect 3 as a
+   requirement, plus three other claims that contradicted the shipped code
+   (#812).
 
-**Dispatch works well now — but REVIEW what it produces, immediately.** Auto-merge is armed, so
-a factory PR lands as soon as checks pass; S3's and C1's both merged before review. Both turned
-out correct, but S2's did not — it merged a silent-OFF gate bug through a green `just check`
-plus its own janitor and review stages. Probe the resulting behavior EMPIRICALLY (several cwds,
-malformed and unwritable fixtures, old-vs-new diff). Do not treat a green gate as proof.
+Coverage cannot see a MISSING `except` clause, an assertion that never
+discriminates, or a sentinel that matches too much. What found all four was
+adversarial review plus differential probing against the OLD implementation.
+Mutation testing separately exposed two dead assertions in tests that reported
+100%.
+
+**Corollary for dispatch:** ungroomed one-paragraph work-items produced defects;
+items groomed with acceptance criteria written after reading the real APIs did
+not. S3's criteria named its landmine in advance (an `__file__`-relative repo
+root that would have been silently OFF for every adopter once shipped from the
+plugin cache) and the agent followed them. Groom before dispatching, and review
+what the factory produces — auto-merge lands a PR as soon as checks pass.
+
+**Harness trap, still true:** bare `python3` on this host is a mise shim that
+HANGS with no output when `HOME` points somewhere without mise config. Use an
+absolute interpreter (`/usr/bin/python3.13`) for any probe overriding `HOME`.
 
 ## Hard rules and gotchas — each of these cost real time
 
