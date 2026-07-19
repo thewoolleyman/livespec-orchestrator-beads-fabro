@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import _dispatcher_completion
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_completion,
+    _dispatcher_dispatch_lock,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
-from livespec_orchestrator_beads_fabro.commands._otel_receive import HeartbeatSink
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
@@ -50,7 +53,7 @@ class _Runner:
         return self.queue.pop(0)
 
 
-def test_reconcile_merged_allows_stale_heartbeat(
+def test_reconcile_merged_allows_stale_dispatch_lock(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -58,10 +61,7 @@ def test_reconcile_merged_allows_stale_heartbeat(
     repo = _repo(tmp_path=tmp_path)
     item = _item(status="active")
     append_work_item(path=_config(), item=item)
-    HeartbeatSink(path=repo / "tmp" / "fabro-dispatch-journal-otel-heartbeat.json").beat(
-        key=item.id,
-        at=1.0,
-    )
+    _write_dispatch_lock(repo=repo, item_id=item.id, pid=999_999_999, started_at=1.0)
     runner = _Runner(
         queue=[_ok(stdout=_pr_json(number=11, state="MERGED", sha="abc111"))] + [_ok()] * 8
     )
@@ -79,25 +79,24 @@ def test_reconcile_merged_allows_stale_heartbeat(
     assert "post-merge janitor green" in capsys.readouterr().out
 
 
-def test_reconcile_merged_force_bypasses_live_heartbeat_but_not_janitor_lock(
+def test_reconcile_merged_force_bypasses_live_dispatch_lock(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    home = tmp_path / "home"
-    monkeypatch.setenv("HOME", str(home))
     repo = _repo(tmp_path=tmp_path)
     item = _item(status="active")
     append_work_item(path=_config(), item=item)
-    HeartbeatSink(path=repo / "tmp" / "fabro-dispatch-journal-otel-heartbeat.json").beat(
-        key=item.id,
-        at=9_999_999_999.0,
+    _write_dispatch_lock(repo=repo, item_id=item.id, pid=os.getpid(), started_at=1.0)
+    runner = _Runner(
+        queue=[_ok(stdout=_pr_json(number=12, state="MERGED", sha="abc222"))] + [_ok()] * 8
     )
-    lock = home / ".worktrees" / repo.name / f"janitor-{item.id}.lock"
-    lock.parent.mkdir(parents=True, exist_ok=True)
-    _ = lock.write_text(f"work_item_id={item.id}\n", encoding="utf-8")
-    runner = _Runner(queue=[_ok(stdout=_pr_json(number=12, state="MERGED", sha="abc222"))])
     _patch_runner(monkeypatch=monkeypatch, runner=runner)
+    monkeypatch.setattr(
+        _dispatcher_completion,
+        "run_acceptance_pass",
+        lambda **_: _AcceptancePass(verdict="PASS"),
+    )
 
     exit_code = main(
         argv=[
@@ -111,15 +110,77 @@ def test_reconcile_merged_force_bypasses_live_heartbeat_but_not_janitor_lock(
         ]
     )
 
-    assert exit_code == 1
+    assert exit_code == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload[0]["stage"] == "janitor-checkout-locked"
-    assert not any(call[0][0:3] == ["git", "worktree", "remove"] for call in runner.calls)
+    assert payload[0]["stage"] == "done"
     stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
-    assert stored.status == "active"
-    stages = [record["stage"] for record in _journal_records(repo=repo)]
-    assert "ledger-complete" not in stages
-    assert stages == ["reconcile-pr-view-branch", "outcome"]
+    assert stored.status == "done"
+
+
+def test_dispatch_lock_ignores_malformed_payloads(tmp_path: Path) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    item_id = "bd-ib-lock"
+    path = repo / "tmp" / f"fabro-dispatch-{item_id}.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    for payload in (
+        "[]",
+        json.dumps({"work_item_id": "other", "pid": os.getpid(), "started_at_epoch": 1.0}),
+        json.dumps({"work_item_id": item_id, "pid": True, "started_at_epoch": 1.0}),
+        json.dumps({"work_item_id": item_id, "pid": os.getpid(), "started_at_epoch": True}),
+        json.dumps(
+            {
+                "work_item_id": item_id,
+                "pid": os.getpid(),
+                "started_at_epoch": 1.0,
+                "dispatch_id": 7,
+            }
+        ),
+    ):
+        _ = path.write_text(payload, encoding="utf-8")
+        assert _dispatcher_dispatch_lock.live_dispatch_lock(repo=repo, work_item_id=item_id) is None
+
+
+def test_parse_merged_pr_list_rejects_non_default_base(tmp_path: Path) -> None:
+    _ = tmp_path
+    from livespec_orchestrator_beads_fabro.commands import _dispatcher_reconcile_merged
+
+    item = _item(id="bd-ib-target")
+
+    matches = _dispatcher_reconcile_merged.parse_merged_pr_list(
+        stdout=json.dumps(
+            [
+                {
+                    "number": 31,
+                    "title": f"fix {item.id}",
+                    "headRefName": "branch",
+                    "baseRefName": "release",
+                    "state": "MERGED",
+                    "mergeCommit": {"oid": "def031"},
+                }
+            ]
+        ),
+        item=item,
+        branch="feat/bd-ib-target",
+    )
+
+    assert matches == ()
+
+
+def _write_dispatch_lock(*, repo: Path, item_id: str, pid: int, started_at: float) -> None:
+    path = repo / "tmp" / f"fabro-dispatch-{item_id}.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _ = path.write_text(
+        json.dumps(
+            {
+                "work_item_id": item_id,
+                "pid": pid,
+                "started_at_epoch": started_at,
+                "dispatch_id": "dispatch-test",
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 def _patch_runner(*, monkeypatch: pytest.MonkeyPatch, runner: _Runner) -> None:
@@ -191,8 +252,3 @@ def _pr_json(*, number: int, state: str, sha: str | None) -> str:
             "statusCheckRollup": [],
         }
     )
-
-
-def _journal_records(*, repo: Path) -> list[dict[str, object]]:
-    text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
-    return [json.loads(line) for line in text.splitlines()]

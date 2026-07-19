@@ -156,6 +156,7 @@ def test_dispatcher_plan_decomposition_contract() -> None:
         "janitor_core_checkout_path",
         "janitor_core_clone_argv",
         "janitor_core_ref_from_config",
+        "janitor_reconcile_checkout_path",
         "janitor_trust_argv",
         "janitor_worktree_add_argv",
         "janitor_worktree_remove_argv",

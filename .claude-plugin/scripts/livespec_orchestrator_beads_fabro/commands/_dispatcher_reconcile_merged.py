@@ -15,17 +15,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
     complete_and_accept,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import (
+    live_dispatch_lock,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
     DispatchOutcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_janitor import post_merge
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import run_stage
-from livespec_orchestrator_beads_fabro.commands._dispatcher_heartbeat_probe import (
-    HeartbeatLivenessProbe,
-    LayeredLivenessProbe,
-    heartbeat_lookup_keys,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
@@ -38,23 +36,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection impor
     janitor_core_ref,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import parse_janitor
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
-    heartbeat_path,
-    journal_path,
-)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import journal_path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
     PrView,
     build_plan,
-    janitor_checkout_path,
+    janitor_reconcile_checkout_path,
     parse_pr_view,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
-    LivenessSample,
-    resolve_stall_seconds,
-)
-from livespec_orchestrator_beads_fabro.commands._otel_receive import HeartbeatSink
-from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
+from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, attempt, parse_json
 from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -82,6 +72,10 @@ def run_reconcile_merged_command(
     journal = JournalFile(path=journal_path(args=args, repo=repo))
     plan = reconcile_plan(repo=repo, item=item, janitor=janitor)
     merged = _resolve_merged_pr(plan=plan, item=item, runner=command_runner, journal=journal)
+    if isinstance(merged, str):
+        _ = _remove_journal(path=journal.path)
+        _ = write_stderr(text=merged)
+        return EXIT_PRECONDITION_ERROR
     if merged is None:
         _ = write_stderr(text=f"ERROR: no merged PR found for active work-item {item.id}\n")
         return EXIT_PRECONDITION_ERROR
@@ -129,28 +123,19 @@ def _reconcile_preflight(*, args: argparse.Namespace, repo: Path) -> _ReconcileP
     return _ReconcilePreflight(item=item, janitor=janitor)
 
 
-@dataclass(frozen=True, kw_only=True)
-class _NoSignalLivenessProbe:
-    def sample(self, *, observed_at: float) -> LivenessSample:
-        return LivenessSample(last_event_epoch=None, observed_at=observed_at)
+def _remove_journal(*, path: Path) -> None:
+    _ = attempt(action=path.unlink, exceptions=(FileNotFoundError, OSError))
 
 
 def _live_dispatch_refusal(*, args: argparse.Namespace, repo: Path, item: WorkItem) -> str | None:
-    observed_at = time.time()
-    heartbeat = HeartbeatLivenessProbe(
-        sink=HeartbeatSink(path=heartbeat_path(args=args, repo=repo)),
-        keys=heartbeat_lookup_keys(work_item_id=item.id, run_id=None),
-    )
-    probe = LayeredLivenessProbe(primary=heartbeat, fallback=_NoSignalLivenessProbe())
-    sample = probe.sample(observed_at=observed_at)
-    if sample.last_event_epoch is None:
+    _ = args
+    lock = live_dispatch_lock(repo=repo, work_item_id=item.id)
+    if lock is None:
         return None
-    age_seconds = sample.observed_at - sample.last_event_epoch
-    if age_seconds > resolve_stall_seconds():
-        return None
+    age_seconds = max(0.0, time.time() - lock.started_at_epoch)
     return (
-        f"ERROR: reconcile-merged refused: live dispatch still appears active for "
-        f"work-item {item.id} (recent heartbeat age {age_seconds:.1f}s). "
+        f"ERROR: reconcile-merged refused: dispatch lock is held by live pid "
+        f"{lock.pid} for work-item {item.id} (age {age_seconds:.1f}s). "
         f"Confirm with `fabro ps`, wait for the janitor window to close, or rerun "
         f"with --force only after confirming the original dispatcher process is dead.\n"
     )
@@ -165,7 +150,7 @@ def reconcile_plan(*, repo: Path, item: WorkItem, janitor: tuple[str, ...] | Non
         goal_file=repo / "tmp" / f"reconcile-{item.id}-goal.md",
         fabro_bin="fabro",
         janitor=janitor,
-        janitor_checkout=janitor_checkout_path(repo=repo, work_item_id=item.id),
+        janitor_checkout=janitor_reconcile_checkout_path(repo=repo, work_item_id=item.id),
         janitor_core_ref=janitor_core_ref(repo=repo),
     )
 
@@ -181,7 +166,9 @@ def merged_pr_list_argv(*, item: WorkItem) -> list[str]:
         "--search",
         item.id,
         "--json",
-        "number,title,headRefName,state,mergeCommit",
+        "number,title,headRefName,baseRefName,state,mergeCommit",
+        "--base",
+        "master",
         "--limit",
         "20",
     ]
@@ -202,7 +189,7 @@ def parse_merged_pr_list(*, stdout: str, item: WorkItem, branch: str) -> tuple[P
 
 def _resolve_merged_pr(
     *, plan: DispatchPlan, item: WorkItem, runner: CommandRunner, journal: JournalFile
-) -> PrView | None:
+) -> PrView | str | None:
     viewed = run_stage(
         runner=runner,
         journal=journal,
@@ -219,9 +206,17 @@ def _resolve_merged_pr(
         stage="reconcile-pr-list-merged",
         command=(merged_pr_list_argv(item=item), plan.repo, _GH_TIMEOUT_SECONDS, None),
     )
-    for candidate in parse_merged_pr_list(stdout=searched.stdout, item=item, branch=plan.branch):
-        return candidate
+    candidates = parse_merged_pr_list(stdout=searched.stdout, item=item, branch=plan.branch)
+    if len(candidates) == 1:
+        return candidates[0]
+    if len(candidates) > 1:
+        return _ambiguous_pr_detail(candidates=candidates)
     return None
+
+
+def _ambiguous_pr_detail(*, candidates: tuple[PrView, ...]) -> str:
+    listed = ", ".join(f"#{candidate.number} {candidate.merge_sha}" for candidate in candidates)
+    return f"ERROR: ambiguous merged PR candidates for reconcile-merged: {listed}\n"
 
 
 def _pr_view_branch_argv(*, plan: DispatchPlan) -> list[str]:
@@ -252,6 +247,9 @@ def _pr_view_from_list_entry(*, entry_raw: object, item: WorkItem, branch: str) 
         return None
     title_raw: object = entry.get("title")
     head_raw: object = entry.get("headRefName")
+    base_raw: object = entry.get("baseRefName")
+    if isinstance(base_raw, str) and base_raw != "master":
+        return None
     if head_raw != branch and not (isinstance(title_raw, str) and item.id in title_raw):
         return None
     merge_sha = _list_entry_merge_sha(entry=entry)

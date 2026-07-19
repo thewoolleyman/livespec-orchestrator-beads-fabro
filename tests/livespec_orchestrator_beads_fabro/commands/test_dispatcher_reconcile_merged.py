@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import ModuleType
@@ -11,7 +12,7 @@ from types import ModuleType
 import pytest
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_completion
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
-from livespec_orchestrator_beads_fabro.commands._otel_receive import HeartbeatSink
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import janitor_checkout_path
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
@@ -196,7 +197,7 @@ def test_reconcile_merged_janitor_red_leaves_item_active(
     assert stages[-1] == "outcome"
 
 
-def test_reconcile_merged_refuses_live_dispatch_before_pr_resolution(
+def test_reconcile_merged_refuses_live_dispatch_lock_before_pr_resolution(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -209,19 +210,74 @@ def test_reconcile_merged_refuses_live_dispatch_before_pr_resolution(
         queue=[_ok(stdout=_pr_json(number=9, state="MERGED", sha="badc0de"))] + [_ok()] * 8
     )
     _patch_runner(monkeypatch=monkeypatch, runner=runner)
-    HeartbeatSink(path=repo / "tmp" / "fabro-dispatch-journal-otel-heartbeat.json").beat(
-        key=item.id,
-        at=9_999_999_999.0,
+    _write_dispatch_lock(
+        repo=repo,
+        item_id=item.id,
+        pid=os.getpid(),
+        started_at=1.0,
+        dispatch_id="dispatch-live",
     )
 
     exit_code = main(argv=["reconcile-merged", "--repo", str(repo), "--item", item.id])
 
     assert exit_code == 3
     err = capsys.readouterr().err
-    assert "live dispatch still appears active" in err
+    assert "dispatch lock is held by live pid" in err
     assert "fabro ps" in err
+    assert "age" in err
     assert runner.calls == []
     assert not (repo / "tmp" / "fabro-dispatch-journal.jsonl").exists()
+
+
+@pytest.mark.parametrize("pid", [None, 999_999_999])
+def test_reconcile_merged_proceeds_when_dispatch_lock_absent_or_stale(
+    pid: int | None,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _assert_reconcile_command_registered(capsys=capsys)
+    repo = _repo(tmp_path=tmp_path)
+    item = _item(status="active")
+    append_work_item(path=_config(), item=item)
+    if pid is not None:
+        _write_dispatch_lock(
+            repo=repo,
+            item_id=item.id,
+            pid=pid,
+            started_at=1.0,
+            dispatch_id="dispatch-stale",
+        )
+    runner = _Runner(
+        queue=[_ok(stdout=_pr_json(number=10, state="MERGED", sha="abc010"))] + [_ok()] * 8
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=runner)
+    monkeypatch.setattr(
+        _dispatcher_completion,
+        "run_acceptance_pass",
+        lambda **_: _AcceptancePass(verdict="PASS"),
+    )
+
+    exit_code = main(argv=["reconcile-merged", "--repo", str(repo), "--item", item.id])
+
+    assert exit_code == 0
+    assert runner.calls[0][0][:3] == ["gh", "pr", "view"]
+    assert "post-merge janitor green" in capsys.readouterr().out
+
+
+def test_reconcile_merged_uses_checkout_path_distinct_from_loop_janitor(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    _assert_reconcile_command_registered(capsys=capsys)
+    module = _reconcile_module()
+    repo = _repo(tmp_path=tmp_path)
+    item = _item(id="bd-ib-path")
+
+    plan = module.reconcile_plan(repo=repo, item=item, janitor=None)
+
+    assert plan.janitor_checkout != janitor_checkout_path(repo=repo, work_item_id=item.id)
+    assert plan.janitor_checkout.name == f"janitor-reconcile-{item.id}"
 
 
 @pytest.mark.parametrize("status", ["ready", "acceptance"])
@@ -300,6 +356,40 @@ def test_reconcile_merged_refuses_when_no_merged_pr_resolves(
     assert "no merged PR found" in capsys.readouterr().err
 
 
+def test_reconcile_merged_refuses_ambiguous_title_search_candidates(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _assert_reconcile_command_registered(capsys=capsys)
+    repo = _repo(tmp_path=tmp_path)
+    item = _item(id="bd-ib-target", status="active")
+    append_work_item(path=_config(), item=item)
+    runner = _Runner(
+        queue=[
+            CommandResult(exit_code=1, stdout="", stderr="not found"),
+            _ok(
+                stdout=json.dumps(
+                    [
+                        _list_pr(number=4, title=f"fix {item.id}", sha="ddd"),
+                        _list_pr(number=5, title=f"follow-up {item.id}", sha="eee"),
+                    ]
+                )
+            ),
+        ]
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=runner)
+
+    exit_code = main(argv=["reconcile-merged", "--repo", str(repo), "--item", item.id])
+
+    assert exit_code == 3
+    err = capsys.readouterr().err
+    assert "ambiguous merged PR candidates" in err
+    assert "#4 ddd" in err
+    assert "#5 eee" in err
+    assert not (repo / "tmp" / "fabro-dispatch-journal.jsonl").exists()
+
+
 def test_parse_merged_pr_list_accepts_branch_or_title_and_rejects_unusable_shapes(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -364,6 +454,24 @@ def _patch_runner(*, monkeypatch: pytest.MonkeyPatch, runner: _Runner) -> None:
 def _reconcile_module() -> ModuleType:
     return importlib.import_module(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_merged"
+    )
+
+
+def _write_dispatch_lock(
+    *, repo: Path, item_id: str, pid: int, started_at: float, dispatch_id: str
+) -> None:
+    path = repo / "tmp" / f"fabro-dispatch-{item_id}.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _ = path.write_text(
+        json.dumps(
+            {
+                "work_item_id": item_id,
+                "pid": pid,
+                "started_at_epoch": started_at,
+                "dispatch_id": dispatch_id,
+            }
+        ),
+        encoding="utf-8",
     )
 
 
