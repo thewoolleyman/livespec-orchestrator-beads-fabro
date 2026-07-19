@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 _NOW = 1_000_000
 
@@ -67,6 +68,58 @@ def test_refresh_command_fails_closed_when_gate_hook_cannot_load(
     monkeypatch.setattr(importlib.util, "spec_from_file_location", lambda *_args, **_kwargs: None)
     sys.modules.pop(module_name, None)
     module = importlib.import_module(module_name)
+    reads = iter(
+        (
+            _auth_json_with_exp(exp=_NOW + 20),
+            _auth_json_with_exp(exp=_NOW + 200_000),
+        )
+    )
+    runner = _Runner(
+        result=CommandResult(exit_code=0, stdout="OK", stderr=""),
+        expected_argv=["codex", "exec", "reply OK"],
+    )
+
+    exit_code = module.run_codex_cred_refresh_with(
+        args=argparse.Namespace(as_json=True, dry_run=False),
+        cwd=Path.cwd,
+        now_epoch=lambda: _NOW,
+        read_host_codex_auth=lambda: next(reads),
+        runner_factory=lambda: runner,
+    )
+
+    assert exit_code == 0
+    assert runner.stdin == subprocess.DEVNULL
+    monkeypatch.undo()
+    sys.modules.pop(module_name, None)
+    importlib.import_module(module_name)
+
+
+def test_refresh_command_fails_closed_when_gate_hook_execution_fails(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module_name = (
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_cred_refresh_command"
+    )
+
+    class _FailingLoader:
+        def create_module(self, spec: object) -> None:
+            _ = spec
+
+        def exec_module(self, module: object) -> None:
+            _ = module
+            raise RuntimeError("gate execution failed")
+
+    spec = importlib.machinery.ModuleSpec("failing_codex_yolo_gate", _FailingLoader())
+    monkeypatch.setattr(importlib.util, "spec_from_file_location", lambda *_args, **_kwargs: spec)
+    sys.modules.pop(module_name, None)
+
+    loaded = attempt(
+        action=lambda: importlib.import_module(module_name),
+        exceptions=(RuntimeError,),
+    )
+    assert not isinstance(loaded, AttemptFailure), loaded
+    module = loaded
     reads = iter(
         (
             _auth_json_with_exp(exp=_NOW + 20),
