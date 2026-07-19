@@ -22,8 +22,7 @@ and make that permanent for fleet members and official adopters, **without forki
   `codex_yolo_reapply.main()` wired to no-op when the gate is OFF. Precedence:
   `LIVESPEC_CODEX_FULL_ACCESS` (both directions) > committed marker > OFF.
 - **HOOK-CHAIN FIX LANDED** (PR #793, `483c100`) — read this before touching the hooks again.
-  Adversarial review of S1 + empirical probing found **two silent-failure defects, one in each
-  slice**, both of the very class this epic exists to eliminate (Codex quietly back on stock
+  Adversarial review of S1 + empirical probing found **three silent-failure defects**, both of the very class this epic exists to eliminate (Codex quietly back on stock
   `read-only`, so a reviewer that cannot execute passes code it never ran):
   1. **S1's rewrite lost the shell's per-file isolation.** The `.sh` ran each cached
      `codex.mjs` in its OWN `python3 -c` subprocess, so a failure died there and the loop moved
@@ -36,6 +35,19 @@ and make that permanent for fleet members and official adopters, **without forki
      `<repo>/.livespec.jsonc`, so starting a session anywhere but the repo root — a
      subdirectory sufficed — found nothing, reported OFF, and silently no-opped the hook. Now
      anchored on the hook's own `__file__`.
+  3. **The drift canary could be silenced in the exact case it exists for** (PR #795,
+     `463a573`). `classify_state` called a file `patched` if the bare env-var name
+     `CODEX_COMPANION_SANDBOX` appeared ANYWHERE in it. So an upstream restructure — which
+     IS the drift condition — combined with any passing mention of that name classified an
+     UNPATCHED file as patched: no rewrite, no warning, Codex silently on stock `read-only`.
+     Not hypothetical: the unmerged upstream toggle proposal in
+     [`research.md`](./research.md) is named `CODEX_COMPANION_SANDBOX_MODE`, which CONTAINS
+     our sentinel as a substring, so if it ever lands the canary goes quiet on the very
+     release that broke us. Now matches the full `PATCHED` expression; `SENTINEL` is deleted
+     (a second, looser spelling of "is it patched" WAS the bug). Failure direction is now
+     safe: a cosmetic upstream reformat reports `drift` (loud) instead of a restructure
+     reporting `patched` (silent). Verified all three live cached versions still classify
+     `patched`, so the tightening creates no false drift.
   - **The transferable lesson:** 100% line+branch coverage did not catch either one. Coverage
     cannot see a MISSING `except` clause, nor an assertion that never discriminates. Mutation
     testing found two more dead assertions (a `sorted()` that the filesystem's own ordering
