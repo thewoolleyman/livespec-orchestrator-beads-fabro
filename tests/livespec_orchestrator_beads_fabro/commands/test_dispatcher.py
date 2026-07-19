@@ -1410,6 +1410,10 @@ _DEV_TOOLING_CLONE_STEP_LINE = (
 
 _SIBLING_ENV_LINE = 'LIVESPEC_SIBLING_CLONES_ROOT = "/workspace/siblings"'
 _CURRENCY_GATE_ENV_LINE = 'LIVESPEC_CURRENCY_GATE = "fail"'
+_TMUX_TMPDIR_ENV_LINE = 'TMUX_TMPDIR = "/workspace/.tmux"'
+_TMUX_TMPDIR_PREPARE_STEP_LINE = (
+    'script = "mkdir -p /workspace/.tmux && chmod 700 /workspace/.tmux"'
+)
 
 # The console's `check-doctor-static` resolves livespec CORE inside the Fabro
 # sandbox via this projected env key, valued at the in-sandbox core-sibling
@@ -1478,9 +1482,10 @@ def test_render_run_config_overlay_appends_sibling_clone_steps_and_env_root(
         siblings=_SIBLINGS,
     )
     assert rendered is not None
-    assert rendered.count("[[run.prepare.steps]]") == 2
+    assert rendered.count("[[run.prepare.steps]]") == 3
     assert _LIVESPEC_CLONE_STEP_LINE in rendered
     assert _DEV_TOOLING_CLONE_STEP_LINE in rendered
+    assert _TMUX_TMPDIR_PREPARE_STEP_LINE in rendered
     # The clone prepare steps are appended BEFORE the env table header,
     # and the clones-root env key lands INSIDE [environments.<id>.env]
     # (after the header) so it reaches the sandbox as container-level
@@ -1489,6 +1494,7 @@ def test_render_run_config_overlay_appends_sibling_clone_steps_and_env_root(
     env_table_at = rendered.index("[environments.livespec-ci.env]")
     assert rendered.index(_LIVESPEC_CLONE_STEP_LINE) < env_table_at
     assert rendered.index(_DEV_TOOLING_CLONE_STEP_LINE) < env_table_at
+    assert rendered.index(_TMUX_TMPDIR_PREPARE_STEP_LINE) < env_table_at
     assert rendered.index(_SIBLING_ENV_LINE) > env_table_at
     assert _FAKE_TOKEN_LINE in rendered
     assert _FAKE_GITHUB_TOKEN_LINE in rendered
@@ -1506,7 +1512,8 @@ def test_render_run_config_overlay_without_siblings_appends_no_clone_steps(
         siblings=None,
     )
     assert rendered is not None
-    assert "[[run.prepare.steps]]" not in rendered
+    assert rendered.count("[[run.prepare.steps]]") == 1
+    assert _TMUX_TMPDIR_PREPARE_STEP_LINE in rendered
     assert "LIVESPEC_SIBLING_CLONES_ROOT" not in rendered
 
 
@@ -1598,6 +1605,7 @@ def test_committed_implement_workflow_overlay_carries_full_fleet_sandbox_env() -
         _SIBLING_ENV_LINE,
         _CORE_PLUGIN_ROOT_ENV_LINE,
         _CURRENCY_GATE_ENV_LINE,
+        _TMUX_TMPDIR_ENV_LINE,
     )
     for line in required_sandbox_env_lines:
         assert line in rendered, f"overlay missing required sandbox env line: {line}"

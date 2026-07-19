@@ -16,7 +16,9 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import os
 import stat
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -192,6 +194,75 @@ def test_render_overlay_without_codex_snapshot_is_unchanged(tmp_path: Path) -> N
     assert "CODEX_AUTH_JSON" not in rendered
     assert "CODEX_REFRESH_TOKEN_URL_OVERRIDE" not in rendered
     assert "auth.json" not in rendered
+
+
+def test_render_overlay_projects_tmux_tmpdir_into_sandbox_env(tmp_path: Path) -> None:
+    rendered = render_run_config_overlay(
+        committed_text=_COMMITTED_WORKFLOW_TOML,
+        workflow_dir=tmp_path,
+        token=_FAKE_TOKEN,
+        github_token=_FAKE_GITHUB_TOKEN,
+        siblings=None,
+    )
+    assert rendered is not None
+    assert "[environments.livespec-ci.env]\n" in rendered
+    assert 'TMUX_TMPDIR = "/workspace/.tmux"\n' in rendered
+
+
+def test_tmux_probe_with_sandbox_tmpdir_leaves_host_default_socket_dir(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    tmux = fake_bin / "tmux"
+    tmux.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os\n"
+        "import pathlib\n"
+        "import sys\n"
+        "sock = pathlib.Path(os.environ['TMUX_TMPDIR']) / f'tmux-{os.getuid()}' / 'default'\n"
+        "if sys.argv[1:3] == ['new-session', '-d']:\n"
+        "    sock.parent.mkdir(parents=True, exist_ok=True)\n"
+        "    sock.write_text('sandbox', encoding='utf-8')\n"
+        "elif sys.argv[1:] == ['kill-server']:\n"
+        "    sock.unlink(missing_ok=True)\n"
+        "else:\n"
+        "    raise SystemExit(2)\n",
+        encoding="utf-8",
+    )
+    tmux.chmod(0o755)
+    assert _socket_dir_listing(path=tmp_path / "absent-host-default") == ()
+    host_default = tmp_path / "host-default" / f"tmux-{os.getuid()}"
+    host_default.mkdir(parents=True)
+    before = _socket_dir_listing(path=host_default)
+    sandbox_tmpdir = tmp_path / "sandbox-tmux"
+    sandbox_tmpdir.mkdir(mode=0o700)
+    env = {
+        **os.environ,
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+        "TMUX_TMPDIR": str(sandbox_tmpdir),
+    }
+    _ = subprocess.run(
+        ["tmux", "new-session", "-d", "-s", "livespec-tmux-tmpdir-probe"],
+        check=True,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    _ = subprocess.run(
+        ["tmux", "kill-server"],
+        check=True,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert _socket_dir_listing(path=host_default) == before
+
+
+def _socket_dir_listing(*, path: Path) -> tuple[str, ...]:
+    if not path.exists():
+        return ()
+    return tuple(sorted(child.name for child in path.iterdir()))
 
 
 # ---------------------------------------------------------------------------

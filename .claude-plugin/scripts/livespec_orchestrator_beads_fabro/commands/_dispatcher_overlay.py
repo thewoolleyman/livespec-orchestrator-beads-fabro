@@ -88,6 +88,11 @@ _SANDBOX_CODEX_HOME = "/workspace/.codex"
 # the real auth service. Port 1 is privileged and never bound.
 _SANDBOX_CODEX_REFRESH_URL_OVERRIDE = "http://127.0.0.1:1/livespec-refresh-disabled"
 
+# Sandbox-local tmux socket root. tmux appends its own tmux-<uid>/default
+# socket below TMUX_TMPDIR, so bare `tmux kill-server` inside a Fabro sandbox
+# resolves only sandbox-local sockets and never the host default under /tmp.
+_SANDBOX_TMUX_TMPDIR = "/workspace/.tmux"
+
 
 def escape_minijinja_literal(*, text: str) -> str:
     """Neutralize MiniJinja syntax in `text` so it renders back verbatim.
@@ -190,23 +195,38 @@ def render_run_config_overlay(  # noqa: PLR0913 — kw-only pure overlay builder
     currency_gate_env_line = f"{CURRENCY_GATE_ENV_VAR} = {json.dumps(CURRENCY_GATE_ENV_VALUE)}\n"
     core_plugin_env_line = _core_plugin_env_line(siblings=siblings)
     otel_env_lines = _otel_env_lines(otel_env=otel_env)
+    tmux_steps = _tmux_tmpdir_prepare_steps_block()
+    tmux_env_line = f"TMUX_TMPDIR = {json.dumps(_SANDBOX_TMUX_TMPDIR)}\n"
     codex_steps = _codex_auth_prepare_steps_block(codex_auth_snapshot=codex_auth_snapshot)
     codex_env_lines = _codex_auth_env_lines(codex_auth_snapshot=codex_auth_snapshot)
     return (
         rewritten
         + sibling_steps
+        + tmux_steps
         + codex_steps
         + "\n# --- Dispatcher-materialized run-scoped credential projection"
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
         + f"[environments.{environment_id}.env]\n"
         + f"CLAUDE_CODE_OAUTH_TOKEN = {token_literal}\n"
         + f"GITHUB_TOKEN = {github_token_literal}\n"
+        + tmux_env_line
         + sibling_env_line
         + core_plugin_env_line
         + currency_gate_env_line
         + otel_env_lines
         + codex_env_lines
     )
+
+
+def _tmux_tmpdir_prepare_steps_block() -> str:
+    script = f"mkdir -p {_SANDBOX_TMUX_TMPDIR} && chmod 700 {_SANDBOX_TMUX_TMPDIR}"
+    lines = [
+        "",
+        "# --- Dispatcher-materialized sandbox-local tmux socket root ---",
+        "[[run.prepare.steps]]",
+        f"script = {json.dumps(script)}",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def _core_plugin_env_line(*, siblings: SiblingClones | None) -> str:
