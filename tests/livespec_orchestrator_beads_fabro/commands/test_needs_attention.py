@@ -342,7 +342,7 @@ def test_spec_next_inlines_top_actionable_candidate(tmp_path) -> None:
     assert output.summary == "proposed change pending; queue depth 1"
     assert output.urgency == "high"
     assert output.command == (
-        f"codex exec livespec:revise --project-root {shlex.quote(str(tmp_path))}"
+        f"codex exec livespec:revise --project-root {shlex.quote(str(tmp_path))} < /dev/null"
     )
     assert calls["argv"] == [
         "python3",

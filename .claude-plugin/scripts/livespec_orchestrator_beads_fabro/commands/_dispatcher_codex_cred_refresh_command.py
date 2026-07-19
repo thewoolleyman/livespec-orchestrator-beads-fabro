@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib.abc
-import importlib.machinery
 import importlib.util
 import json
 import subprocess
@@ -35,19 +33,23 @@ class _CodexYoloGate(Protocol):
         ...
 
 
+class _OffCodexYoloGate:
+    def gate_state(self, *, repo: Path) -> GateState:
+        _ = repo
+        return "off"
+
+
 _HOOK_GATE_PATH = Path(__file__).resolve().parents[4] / ".claude" / "hooks" / "codex_yolo_gate.py"
 _HOOK_GATE_MODULE = "livespec_orchestrator_codex_yolo_gate"
 
 
 def _load_codex_yolo_gate() -> _CodexYoloGate:
-    spec = cast(
-        "importlib.machinery.ModuleSpec",
-        importlib.util.spec_from_file_location(_HOOK_GATE_MODULE, _HOOK_GATE_PATH),
-    )
-    loader = cast("importlib.abc.Loader", spec.loader)
+    spec = importlib.util.spec_from_file_location(_HOOK_GATE_MODULE, _HOOK_GATE_PATH)
+    if spec is None or spec.loader is None:
+        return _OffCodexYoloGate()
     module = importlib.util.module_from_spec(spec)
     sys.modules[_HOOK_GATE_MODULE] = module
-    loader.exec_module(module)
+    spec.loader.exec_module(module)
     return cast("_CodexYoloGate", module)
 
 

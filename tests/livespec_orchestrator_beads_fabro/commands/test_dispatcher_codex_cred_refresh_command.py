@@ -7,6 +7,7 @@ import base64
 import importlib
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -54,6 +55,42 @@ def test_refresh_command_module_public_surface() -> None:
     )
 
     assert module.__all__ == ["run_codex_cred_refresh_with"]
+
+
+def test_refresh_command_fails_closed_when_gate_hook_cannot_load(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module_name = (
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_cred_refresh_command"
+    )
+    monkeypatch.setattr(importlib.util, "spec_from_file_location", lambda *_args, **_kwargs: None)
+    sys.modules.pop(module_name, None)
+    module = importlib.import_module(module_name)
+    reads = iter(
+        (
+            _auth_json_with_exp(exp=_NOW + 20),
+            _auth_json_with_exp(exp=_NOW + 200_000),
+        )
+    )
+    runner = _Runner(
+        result=CommandResult(exit_code=0, stdout="OK", stderr=""),
+        expected_argv=["codex", "exec", "reply OK"],
+    )
+
+    exit_code = module.run_codex_cred_refresh_with(
+        args=argparse.Namespace(as_json=True, dry_run=False),
+        cwd=Path.cwd,
+        now_epoch=lambda: _NOW,
+        read_host_codex_auth=lambda: next(reads),
+        runner_factory=lambda: runner,
+    )
+
+    assert exit_code == 0
+    assert runner.stdin == subprocess.DEVNULL
+    monkeypatch.undo()
+    sys.modules.pop(module_name, None)
+    importlib.import_module(module_name)
 
 
 def test_refresh_command_uses_full_access_argv_and_devnull_when_gate_is_on(
