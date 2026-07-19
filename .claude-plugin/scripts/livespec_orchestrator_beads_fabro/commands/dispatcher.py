@@ -21,6 +21,7 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
   dispatcher.py codex-cred-status [--json]
   dispatcher.py spec-check [--project-root <path>] [--spec-root <path>] [--json]
   dispatcher.py janitor-check [--repo <path>] [--json]
+  dispatcher.py reconcile-merged --repo <path> --item <id> [--json]
   dispatcher.py dispatch --repo <path> --item <id> [common flags]
   dispatcher.py loop --repo <path> --budget <n> [--parallel <k>]
                      [--dry-run] [--item <id>]... [common flags]
@@ -34,6 +35,10 @@ tree at `--spec-root` (default `<project-root>/SPECIFICATION`).
 see `_dispatcher_janitor_checks.py`) against the repo's git/gh state.
 Both are standalone check surfaces — the pre-dispatch hard gate inside
 `dispatch`/`loop` stays the pure-Ledger dispatch-safety trio.
+`reconcile-merged` is the guarded recovery valve for an already-merged
+active item whose dispatch process died before post-run disposition: it
+resolves the merged PR from GitHub, re-runs only the post-merge janitor,
+and then enters the existing acceptance path without relaunching Fabro.
 `ledger-normalize` is the standalone self-heal surface: it reuses the
 dispatch-path status normalizer (`open` → `backlog`, `in_progress` →
 `active`; every other status is left for the status-conformance check)
@@ -200,6 +205,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_post_verdict import (
     reflector_oob_after_verdict,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_merged import (
+    run_reconcile_merged_command,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection import reflect
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_checks import (
     dispatch_preamble,
@@ -246,6 +254,7 @@ __all__: list[str] = [
     "run_janitor_check",
     "run_ledger_check",
     "run_ledger_normalize",
+    "run_reconcile_merged_command",
     "run_spec_check",
     "warn_item_sizing",
 ]
@@ -258,6 +267,7 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "janitor-check": run_janitor_check,
     "ledger-check": run_ledger_check,
     "ledger-normalize": run_ledger_normalize,
+    "reconcile-merged": run_reconcile_merged_command,
     "spec-check": run_spec_check,
 }
 
@@ -294,6 +304,7 @@ def _build_parser() -> argparse.ArgumentParser:
     janitor = subparsers.add_parser("janitor-check")
     _ = janitor.add_argument("--repo", dest="repo", default=None)
     _ = janitor.add_argument("--json", dest="as_json", action="store_true")
+    _add_reconcile_merged(parser=subparsers.add_parser("reconcile-merged"))
     dispatch = subparsers.add_parser("dispatch")
     _add_dispatch_common(parser=dispatch)
     _ = dispatch.add_argument("--item", dest="item", required=True)
@@ -309,6 +320,14 @@ def _build_parser() -> argparse.ArgumentParser:
 def _add_codex_cred_refresh(*, parser: argparse.ArgumentParser) -> None:
     _ = parser.add_argument("--json", dest="as_json", action="store_true")
     _ = parser.add_argument("--dry-run", dest="dry_run", action="store_true")
+
+
+def _add_reconcile_merged(*, parser: argparse.ArgumentParser) -> None:
+    _ = parser.add_argument("--repo", dest="repo", required=True)
+    _ = parser.add_argument("--item", dest="item", required=True)
+    _ = parser.add_argument("--janitor", dest="janitor", default=None)
+    _ = parser.add_argument("--journal", dest="journal", default=None)
+    _ = parser.add_argument("--json", dest="as_json", action="store_true")
 
 
 def _add_dispatch_common(*, parser: argparse.ArgumentParser) -> None:
