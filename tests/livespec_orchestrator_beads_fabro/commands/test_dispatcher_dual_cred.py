@@ -615,3 +615,31 @@ def test_dispatch_one_refuses_when_policy_labels_cannot_be_read(
     assert outcome.stage == "ledger-labels"
     assert outcome.detail == "label backend unavailable"
     assert '"stage": "outcome"' in (tmp_path / "journal.jsonl").read_text(encoding="utf-8")
+
+
+def test_dispatch_one_releases_dispatch_lock_when_locked_body_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    item = _policy_item()
+    lock_path = tmp_path / "tmp" / f"fabro-dispatch-{item.id}.lock"
+
+    def label_failure(*, repo: Path, item: WorkItem) -> str:
+        _ = repo
+        payload = json.loads(lock_path.read_text(encoding="utf-8"))
+        assert payload["work_item_id"] == item.id
+        assert payload["dispatch_id"] == "dispatch-lock-test"
+        raise RuntimeError("label backend crashed")
+
+    monkeypatch.setattr(_dispatcher_loop, "run_id", lambda: "dispatch-lock-test")
+    monkeypatch.setattr(_dispatcher_loop, "read_dispatch_labels", label_failure)
+
+    with pytest.raises(RuntimeError, match="label backend crashed"):
+        _dispatcher_loop.dispatch_one(
+            args=argparse.Namespace(fabro_bin="fabro"),
+            repo=tmp_path,
+            item=item,
+            journal=JournalFile(path=tmp_path / "journal.jsonl"),
+            janitor=None,
+        )
+
+    assert not lock_path.exists()

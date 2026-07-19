@@ -44,7 +44,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     janitor_reconcile_checkout_path,
     parse_pr_view,
 )
-from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, attempt, parse_json
+from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -73,7 +73,6 @@ def run_reconcile_merged_command(
     plan = reconcile_plan(repo=repo, item=item, janitor=janitor)
     merged = _resolve_merged_pr(plan=plan, item=item, runner=command_runner, journal=journal)
     if isinstance(merged, str):
-        _ = _remove_journal(path=journal.path)
         _ = write_stderr(text=merged)
         return EXIT_PRECONDITION_ERROR
     if merged is None:
@@ -121,10 +120,6 @@ def _reconcile_preflight(*, args: argparse.Namespace, repo: Path) -> _ReconcileP
             _ = write_stderr(text=live_detail)
             return EXIT_PRECONDITION_ERROR
     return _ReconcilePreflight(item=item, janitor=janitor)
-
-
-def _remove_journal(*, path: Path) -> None:
-    _ = attempt(action=path.unlink, exceptions=(FileNotFoundError, OSError))
 
 
 def _live_dispatch_refusal(*, args: argparse.Namespace, repo: Path, item: WorkItem) -> str | None:
