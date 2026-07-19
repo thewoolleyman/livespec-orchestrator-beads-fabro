@@ -365,6 +365,14 @@ def test_reconcile_merged_refuses_ambiguous_title_search_candidates(
     repo = _repo(tmp_path=tmp_path)
     item = _item(id="bd-ib-target", status="active")
     append_work_item(path=_config(), item=item)
+    shared_journal = repo / "tmp" / "fabro-dispatch-journal.jsonl"
+    shared_journal.parent.mkdir(parents=True, exist_ok=True)
+    unrelated_record = {
+        "stage": "dispatch-id",
+        "work_item_id": "bd-other",
+        "dispatch_id": "dispatch-other",
+    }
+    _ = shared_journal.write_text(json.dumps(unrelated_record) + "\n", encoding="utf-8")
     runner = _Runner(
         queue=[
             CommandResult(exit_code=1, stdout="", stderr="not found"),
@@ -387,7 +395,14 @@ def test_reconcile_merged_refuses_ambiguous_title_search_candidates(
     assert "ambiguous merged PR candidates" in err
     assert "#4 ddd" in err
     assert "#5 eee" in err
-    assert not (repo / "tmp" / "fabro-dispatch-journal.jsonl").exists()
+    assert shared_journal.exists()
+    records = _journal_records(repo=repo)
+    assert unrelated_record in records
+    assert [record["stage"] for record in records] == [
+        "dispatch-id",
+        "reconcile-pr-view-branch",
+        "reconcile-pr-list-merged",
+    ]
 
 
 def test_parse_merged_pr_list_accepts_branch_or_title_and_rejects_unusable_shapes(

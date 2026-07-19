@@ -88,6 +88,7 @@ def _dispatch_lock_from_payload(
 
 
 def _pid_is_alive(*, pid: int) -> bool:
+    # Known residual risk: this pidfile lock accepts standard PID-reuse ambiguity.
     probed = attempt(action=lambda: os.kill(pid, 0), exceptions=(OSError,))
     if not isinstance(probed, AttemptFailure):
         return True
