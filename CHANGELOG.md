@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.1...v0.45.2) (2026-07-19)
+
+
+### Bug Fixes
+
+* isolate dispatched tmux sockets ([861e40c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/861e40c3505b7ccf66d89b1a394eb1691749a70f))
+
 ## [0.45.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.0...v0.45.1) (2026-07-19)
 
 
