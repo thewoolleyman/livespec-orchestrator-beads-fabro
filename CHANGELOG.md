@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.8...v0.45.9) (2026-07-19)
+
+
+### Bug Fixes
+
+* preserve reconcile journal on ambiguous PR ([8e812ba](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8e812ba2f50c491586994f5542a4e0685cd960c9))
+
 ## [0.45.8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.7...v0.45.8) (2026-07-19)
 
 
