@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.6...v0.45.7) (2026-07-19)
+
+
+### Bug Fixes
+
+* close reconcile merged race ([e957b35](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e957b35c8b002c6c36950bc36542eee519ed8069))
+
 ## [0.45.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.5...v0.45.6) (2026-07-19)
 
 
