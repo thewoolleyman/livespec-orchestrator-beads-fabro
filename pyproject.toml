@@ -288,6 +288,7 @@ commands_trees = [".claude-plugin/scripts/livespec_orchestrator_beads_fabro/comm
 supervisor_entry_files = [
     ".claude-plugin/scripts/bin/_bootstrap.py",
     ".claude/hooks/beads_access_guard.py",
+    ".claude/hooks/codex_yolo_reapply.py",
 ]
 pure_trees = []
 covered_trees = [
@@ -363,3 +364,16 @@ test_tree = "tests/bin"
 [[tool.livespec_dev_tooling.mirror_pairings]]
 source_tree = "dev-tooling/checks"
 test_tree = "tests/dev-tooling/checks"
+
+# `.claude/hooks` has been a `source_tree_prefixes` entry (so a hook edit
+# requires a co-staged test) and a `covered_trees` entry all along, but it
+# carried NO mirror pairing — an incoherence that stayed latent only because no
+# `.py` under it had ever changed on a branch. The first one that did
+# (codex_yolo_reapply.py) failed `check-check-coverage-incremental`, which
+# DERIVES its changed-file set from `source_tree_prefixes` and then RESOLVES
+# each to a mirror-paired test: a prefix with no pairing is unresolvable.
+# Pairing the tree closes that, and brings the pre-existing hooks under
+# `check-tests-mirror-pairing` (each now has its paired test).
+[[tool.livespec_dev_tooling.mirror_pairings]]
+source_tree = ".claude/hooks"
+test_tree = "tests/hooks"
