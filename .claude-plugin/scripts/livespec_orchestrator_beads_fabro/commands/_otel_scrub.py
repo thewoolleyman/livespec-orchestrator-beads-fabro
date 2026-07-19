@@ -128,6 +128,19 @@ ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
         "review.fix_rounds",
         "review.hit_cap",
         "pr.shipped_on_cap",
+        # O4 (bd-ib-98c.7) fabro-side `run_turn` SPAN scalars — which command an
+        # ACP agent turn ran, under which config, on which visit, and how it
+        # ended. Span EVENTS (e.g. "Stage started/completed") bypass this
+        # allowlist, so this gap only appeared once O4 added fabro-workflow's
+        # first real span. All non-secret: `command` is argv-only (ACP
+        # credentials are env-injected, never argv) and is additionally covered
+        # by the credential-URL scrub + ATTR_MAX_LEN truncation below;
+        # `stop_reason` is a bounded protocol enum; `visit` is a counter.
+        "command",
+        "config_name",
+        "visit",
+        "stop_reason",
+        "node_id",
     }
 )
 

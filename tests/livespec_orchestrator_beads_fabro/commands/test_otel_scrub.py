@@ -72,6 +72,20 @@ def test_correlation_triple_is_allowlisted() -> None:
         assert is_allowed_attr(key=key) is True
 
 
+def test_o4_run_turn_attrs_are_allowlisted() -> None:
+    # O4 (bd-ib-98c.7) emits a fabro-side `run_turn` SPAN carrying these
+    # per-ACP-turn scalars. Span attributes (unlike span EVENTS, which bypass
+    # this allowlist) are filtered by the fail-closed enrich stage, so without
+    # these entries the span lands in Honeycomb with every O4 field silently
+    # DROPPED — proven live on 2026-07-19: 6 run_turn spans arrived carrying
+    # none of them. All are non-secret scalars: an ACP argv-only command
+    # string, an operator-set config name, a visit counter, a bounded
+    # stop-reason enum, and the node id.
+    for key in ("command", "config_name", "visit", "stop_reason", "node_id"):
+        assert key in ATTRIBUTE_ALLOWLIST
+        assert is_allowed_attr(key=key) is True
+
+
 def test_review_gate_keys_survive_enrich_while_prompt_io_drops() -> None:
     span: dict[str, object] = {
         "name": "review-gate",
