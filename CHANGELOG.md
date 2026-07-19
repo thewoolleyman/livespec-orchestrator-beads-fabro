@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.45.8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.7...v0.45.8) (2026-07-19)
+
+
+### Bug Fixes
+
+* load codex yolo gate from plugin hook ([8055848](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8055848d2a7f1047f2392cdf1d3e18f71bc451a2))
+* load codex yolo gate from plugin root ([73f5a52](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/73f5a521315bb4d6cc5457dda6c3b90f4023cc2d))
+
 ## [0.45.7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.6...v0.45.7) (2026-07-19)
 
 
