@@ -80,6 +80,7 @@ class ShellCommandRunner:
         cwd: Path,
         timeout_seconds: float,
         env: dict[str, str] | None = None,
+        stdin: int | None = None,
     ) -> CommandResult:
         completed = attempt(
             action=lambda: subprocess.run(  # noqa: S603 - argvs are Dispatcher-built, never shell
@@ -90,6 +91,7 @@ class ShellCommandRunner:
                 timeout=timeout_seconds,
                 check=False,
                 env=None if env is None else {**os.environ, **env},
+                stdin=stdin,
             ),
             exceptions=(subprocess.TimeoutExpired, FileNotFoundError),
         )
@@ -120,6 +122,7 @@ class GithubTokenEnvRunner:
         cwd: Path,
         timeout_seconds: float,
         env: dict[str, str] | None = None,
+        stdin: int | None = None,
     ) -> CommandResult:
         token = attempt(action=self.token, exceptions=(GithubAppAuthError,))
         if isinstance(token, AttemptFailure):
@@ -131,7 +134,20 @@ class GithubTokenEnvRunner:
             )
         os.environ[GITHUB_TOKEN_ENV_VAR] = token
         merged_env = {**(env or {}), GITHUB_TOKEN_ENV_VAR: os.environ[GITHUB_TOKEN_ENV_VAR]}
-        return self.inner.run(argv=argv, cwd=cwd, timeout_seconds=timeout_seconds, env=merged_env)
+        if stdin is None:
+            return self.inner.run(
+                argv=argv,
+                cwd=cwd,
+                timeout_seconds=timeout_seconds,
+                env=merged_env,
+            )
+        return self.inner.run(
+            argv=argv,
+            cwd=cwd,
+            timeout_seconds=timeout_seconds,
+            env=merged_env,
+            stdin=stdin,
+        )
 
 
 @dataclass(frozen=True, kw_only=True)

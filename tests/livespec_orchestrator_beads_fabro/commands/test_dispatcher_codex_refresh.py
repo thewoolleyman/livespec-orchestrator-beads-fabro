@@ -6,6 +6,7 @@ import argparse
 import base64
 import importlib
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -320,7 +321,7 @@ def test_run_codex_cred_status_human_output(
 class _RecordingRunner:
     def __init__(self, *, result: CommandResult) -> None:
         self.result = result
-        self.calls: list[tuple[list[str], Path, float]] = []
+        self.calls: list[tuple[list[str], Path, float, int | None]] = []
 
     def run(
         self,
@@ -329,9 +330,10 @@ class _RecordingRunner:
         cwd: Path,
         timeout_seconds: float,
         env: dict[str, str] | None = None,
+        stdin: int | None = None,
     ) -> CommandResult:
         assert env is None
-        self.calls.append((argv, cwd, timeout_seconds))
+        self.calls.append((argv, cwd, timeout_seconds, stdin))
         return self.result
 
 
@@ -394,7 +396,19 @@ def test_run_codex_cred_refresh_due_invokes_codex_and_confirms_advanced_exp(
     assert payload["invoked_codex"] is True
     assert payload["before"]["remaining_seconds"] == 20
     assert payload["after"]["remaining_seconds"] == 86_400
-    assert runner.calls == [(["codex", "exec", "reply OK"], Path.cwd(), 120.0)]
+    assert runner.calls == [
+        (
+            [
+                "codex",
+                "exec",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "reply OK",
+            ],
+            Path.cwd(),
+            120.0,
+            subprocess.DEVNULL,
+        )
+    ]
 
 
 def test_run_codex_cred_refresh_due_dry_run_never_invokes_codex(

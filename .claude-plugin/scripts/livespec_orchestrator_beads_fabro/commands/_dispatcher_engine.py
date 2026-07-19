@@ -126,6 +126,7 @@ class CommandRunner(Protocol):
         cwd: Path,
         timeout_seconds: float,
         env: dict[str, str] | None = None,
+        stdin: int | None = None,
     ) -> CommandResult:
         """Run argv in cwd, returning the completed result (never raising
         for non-zero exits; timeouts surface as non-zero results)."""

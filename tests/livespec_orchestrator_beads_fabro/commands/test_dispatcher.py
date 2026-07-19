@@ -33,6 +33,7 @@ import json
 import os
 import re
 import stat
+import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass, field, replace
@@ -2207,6 +2208,37 @@ def test_github_token_env_runner_refreshes_gh_token_before_each_run(
     assert (first.exit_code, second.exit_code) == (0, 0)
     assert first.stdout == "ok"
     assert seen_tokens == ["ghs_tok-1", "ghs_tok-2"]
+
+
+def test_github_token_env_runner_forwards_explicit_stdin(tmp_path: Path) -> None:
+    seen_stdin: list[int | None] = []
+
+    @dataclass
+    class _RecordingRunner:
+        def run(
+            self,
+            *,
+            argv: list[str],
+            cwd: Path,
+            timeout_seconds: float,
+            env: dict[str, str] | None = None,
+            stdin: int | None = None,
+        ) -> CommandResult:
+            _ = (argv, cwd, timeout_seconds, env)
+            seen_stdin.append(stdin)
+            return CommandResult(exit_code=0, stdout="ok", stderr="")
+
+    runner = GithubTokenEnvRunner(inner=_RecordingRunner(), token=lambda: "ghs_tok")
+
+    result = runner.run(
+        argv=["codex", "exec", "reply OK"],
+        cwd=tmp_path,
+        timeout_seconds=1.0,
+        stdin=subprocess.DEVNULL,
+    )
+
+    assert result.exit_code == 0
+    assert seen_stdin == [subprocess.DEVNULL]
 
 
 def test_github_token_env_runner_fails_closed_on_refresh_error(tmp_path: Path) -> None:
