@@ -86,6 +86,35 @@ def test_gate_state_defaults_off_for_absent_false_or_unknown_marker(tmp_path: Pa
     assert hook.gate_state(env={}, repo=tmp_path) == "off"
 
 
+def test_owning_repo_root_is_this_repo_regardless_of_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gate must anchor on the hook's own location, never on the cwd."""
+    monkeypatch.chdir(tmp_path)
+
+    root = hook.owning_repo_root()
+
+    assert (root / hook.CONFIG_FILENAME).is_file()
+    assert (root / ".claude" / "hooks" / "codex_yolo_gate.py").is_file()
+
+
+def test_gate_state_stays_on_from_any_cwd_for_a_listed_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: a non-root cwd silently turned the whole hook OFF.
+
+    Reading the marker relative to `Path.cwd()` meant starting a session in a
+    subdirectory (or anywhere else) found no `.livespec.jsonc`, so the gate
+    reported OFF and the re-apply hook no-opped — leaving Codex on the stock
+    read-only sandbox with no warning at all. This repo IS fleet-listed, so the
+    gate must report ON no matter where the process was started.
+    """
+    monkeypatch.delenv(hook.ENV_OVERRIDE, raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    assert hook.gate_state(env={}) == "on"
+
+
 def test_read_marker_fails_open_for_bad_config_shapes(tmp_path: Path) -> None:
     for source in ("not json", "[]", '{"codex_full_access": []}'):
         _ = (tmp_path / hook.CONFIG_FILENAME).write_text(source, encoding="utf-8")
