@@ -82,7 +82,7 @@ force-exclude = true
 # throwaway clone, not impl-beads product code. It deliberately uses bare
 # `assert`/magic values (pytest idiom) and is NOT subject to this repo's strict
 # rule set; exclude it from the lint scan (pyright already scopes via `include`).
-extend-exclude = [".claude/hooks/**", ".claude/skills/**", "**/_vendor/**", "**/__pycache__/**", "mutants/**", "orchestrator-image/e2e-skeleton/**"]
+extend-exclude = [".claude/hooks/**", ".claude-plugin/hooks/**", ".claude/skills/**", "**/_vendor/**", "**/__pycache__/**", "mutants/**", "orchestrator-image/e2e-skeleton/**"]
 
 [tool.ruff.lint]
 select = [
@@ -289,6 +289,7 @@ supervisor_entry_files = [
     ".claude-plugin/scripts/bin/_bootstrap.py",
     ".claude/hooks/beads_access_guard.py",
     ".claude/hooks/codex_yolo_reapply.py",
+    ".claude-plugin/hooks/codex_yolo_reapply.py",
 ]
 pure_trees = []
 covered_trees = [
@@ -296,15 +297,17 @@ covered_trees = [
     ".claude-plugin/scripts/bin",
     "dev-tooling",
     ".claude/hooks",
+    ".claude-plugin/hooks",
 ]
 source_tree_prefixes = [
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/",
     ".claude-plugin/scripts/bin/",
     "dev-tooling/checks/",
     ".claude/hooks/",
+    ".claude-plugin/hooks/",
 ]
 tests_tree_prefix = "tests/"
-target_dirs = [".claude-plugin/scripts", ".claude/hooks", "dev-tooling", "tests"]
+target_dirs = [".claude-plugin/scripts", ".claude-plugin/hooks", ".claude/hooks", "dev-tooling", "tests"]
 
 # Path-prefix allowlist for the `no_direct_destructive_cli` check: files whose
 # repo-root-relative POSIX path starts with one of these entries are exempt
@@ -377,3 +380,7 @@ test_tree = "tests/dev-tooling/checks"
 [[tool.livespec_dev_tooling.mirror_pairings]]
 source_tree = ".claude/hooks"
 test_tree = "tests/hooks"
+
+[[tool.livespec_dev_tooling.mirror_pairings]]
+source_tree = ".claude-plugin/hooks"
+test_tree = "tests/hooks_plugin"
