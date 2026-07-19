@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.0...v0.45.1) (2026-07-19)
+
+
+### Bug Fixes
+
+* **otel:** allowlist the O4 run_turn span attributes ([4614493](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/461449337b3337d24fa12e71f89b7bbed55ce1d7))
+
 ## [0.45.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.44.4...v0.45.0) (2026-07-18)
 
 
