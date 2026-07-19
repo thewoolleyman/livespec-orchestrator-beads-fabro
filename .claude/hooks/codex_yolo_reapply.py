@@ -46,6 +46,8 @@ import sys
 from pathlib import Path
 from typing import Literal
 
+import codex_yolo_gate
+
 __all__: list[str] = [
     "CACHE_GLOB",
     "PATCHED",
@@ -130,6 +132,8 @@ def main() -> int:
     Always exits 0 (fail-open): an absent plugin cache yields no paths and no
     output, and an unreadable match is skipped.
     """
+    if codex_yolo_gate.gate_state() == "off":
+        return 0
     for path in cached_codex_mjs_paths(home=Path.home()):
         _reconcile(path=path)
     return 0

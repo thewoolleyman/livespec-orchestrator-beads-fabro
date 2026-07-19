@@ -14,6 +14,9 @@
   "template": "livespec",
   "spec_root": "SPECIFICATION",
   "implementation": { "plugin": "livespec-orchestrator-beads-fabro" },
+  "codex_full_access": {
+    "fleet_listed": true
+  },
   // Fleet-default credential-injection wrapper (argv-form command prefix). The
   // bin/*.py credential self-heal (bin/_bootstrap.py) re-execs the process
   // through this prefix when BEADS_DOLT_PASSWORD is absent, so the 1Password

@@ -245,6 +245,9 @@ ensure-codex-plugins:
     codex plugin add livespec@livespec-driver-codex
     codex plugin add livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro
 
+refresh-codex-full-access-marker manifest='.livespec-fleet-manifest.jsonc':
+    uv run python3 .claude/hooks/codex_yolo_gate.py refresh {{manifest}}
+
 # factory-bypass-audit — REPORT-ONLY, on-demand attention surface. Surfaces
 # recently-merged PRs that changed product `.py` without going through the
 # factory GitHub App (an in-session factory bypass). Network-using (`gh`), so
