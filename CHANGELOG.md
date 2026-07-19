@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.2...v0.45.3) (2026-07-19)
+
+
+### Bug Fixes
+
+* **dispatcher:** degrade a missing executable to exit 127, not a crash ([74fe125](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/74fe125085aa1e435c29d8462549a7cc872dfca5))
+
 ## [0.45.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.1...v0.45.2) (2026-07-19)
 
 
