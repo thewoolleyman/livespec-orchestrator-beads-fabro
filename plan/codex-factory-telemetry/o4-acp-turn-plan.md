@@ -9,11 +9,14 @@ spine. Grounded in fresh code verification on `factory-integration` (2026-07-17,
 
 O1 exports fabro's span tree; O2 joins the server and worker halves into one trace; O3
 was confirmed already-covered (the node-lifecycle "which-node-ran" layer arrives on the
-existing `Stage started/completed` spans). The one **genuine remaining gap**, confirmed
+existing `Stage started/completed` telemetry). The one **genuine remaining gap**, confirmed
 against the live `fabro` dataset (O2 proof trace `d74367bc…`), is **per-ACP-turn detail**:
-there is NO `run_turn` span today, so the finest per-agent granularity is the three
-`handler_type=agent` `Stage` spans, which do not carry what the specific agent turn ran
-(`command`) or how it ended (`stop_reason`). O4 adds a `run_turn` span carrying that.
+there is NO `run_turn` span today, so the finest per-agent granularity is the
+`handler_type=agent` `Stage started/completed` telemetry, which does not carry what the
+specific agent turn ran (`command`) or how it ended (`stop_reason`). O4 adds a `run_turn`
+span carrying that. (Terminology: those `Stage` records are tracing EVENTS, not spans —
+`fabro-workflow` has no spans of its own pre-O4 — so they land in Honeycomb as span-event
+rows. This matters for the verification step below.)
 
 ## The seam (verified on `factory-integration`, `b651dba`)
 
@@ -125,9 +128,17 @@ the minimal change (a single `command_display.clone()` is the low-blast-radius o
    stamped SHA and violates the reachability constraint). Update the runbook + `AGENTS.md`
    pin lines in lockstep (the ratified `constraints.md` rule).
 3. Proof-dispatch (promote a throwaway item to `ready`). Then in Honeycomb (`livespec` env,
-   `fabro` dataset): a `run_turn` span must now appear, parented under a `handler_type=agent`
-   `Stage` span, carrying `command` / `config_name` / `visit` / `stop_reason`, all inside the
-   one dispatch trace. Today (pre-O4) `list_spans` shows no `run_turn`.
+   `fabro` dataset): a `run_turn` span must now appear carrying `command` / `config_name` /
+   `visit` / `stop_reason`, inside the one dispatch trace. Today (pre-O4) `list_spans` shows
+   no `run_turn`.
+   **Expect the worker `run` span as its parent — NOT a `Stage` span.** `fabro-workflow` has
+   zero spans of its own, so there is no `handler_type=agent` Stage SPAN to nest under:
+   "Stage started/completed" are tracing EVENTS (`info!` at `event/events.rs`), which reach
+   Honeycomb as span-event rows, not spans. The nearest enclosing span is the worker's root
+   `run` span (`fabro-cli/src/commands/run/mod.rs`, whose `.instrument(run_span)` covers the
+   whole engine execution; the agent handler awaits `backend.run` inline). An earlier draft of
+   this step asserted a Stage-span parent — that check can never pass and would misread a
+   correct result as a failure.
 4. Update `bd-ib-98c.7` + `handoff.md`.
 
 ## Review criteria (Codex + Fable loops, like O1/O2)
