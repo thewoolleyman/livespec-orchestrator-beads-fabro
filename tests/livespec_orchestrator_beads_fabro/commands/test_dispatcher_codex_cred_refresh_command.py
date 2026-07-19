@@ -6,6 +6,7 @@ import argparse
 import base64
 import importlib
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -15,8 +16,15 @@ _NOW = 1_000_000
 
 
 class _Runner:
-    def __init__(self, *, result: CommandResult) -> None:
+    def __init__(self, *, result: CommandResult, expected_argv: list[str] | None = None) -> None:
         self.result = result
+        self.expected_argv = expected_argv or [
+            "codex",
+            "exec",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "reply OK",
+        ]
+        self.stdin: int | None = None
 
     def run(
         self,
@@ -25,11 +33,13 @@ class _Runner:
         cwd: Path,
         timeout_seconds: float,
         env: dict[str, str] | None = None,
+        stdin: int | None = None,
     ) -> CommandResult:
-        assert argv == ["codex", "exec", "reply OK"]
+        assert argv == self.expected_argv
         assert cwd == Path.cwd()
         assert timeout_seconds == 120.0
         assert env is None
+        self.stdin = stdin
         return self.result
 
 
@@ -44,6 +54,85 @@ def test_refresh_command_module_public_surface() -> None:
     )
 
     assert module.__all__ == ["run_codex_cred_refresh_with"]
+
+
+def test_refresh_command_uses_full_access_argv_and_devnull_when_gate_is_on(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_cred_refresh_command"
+    )
+    reads = iter(
+        (
+            _auth_json_with_exp(exp=_NOW + 20),
+            _auth_json_with_exp(exp=_NOW + 200_000),
+        )
+    )
+    runner = _Runner(
+        result=CommandResult(exit_code=0, stdout="OK", stderr=""),
+        expected_argv=[
+            "codex",
+            "exec",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "reply OK",
+        ],
+    )
+    assert hasattr(module, "codex_yolo_gate")
+
+    def gate_state(*, repo: Path) -> str:
+        assert repo == Path.cwd()
+        return "on"
+
+    monkeypatch.setattr(module.codex_yolo_gate, "gate_state", gate_state)
+
+    exit_code = module.run_codex_cred_refresh_with(
+        args=argparse.Namespace(as_json=True, dry_run=False),
+        cwd=Path.cwd,
+        now_epoch=lambda: _NOW,
+        read_host_codex_auth=lambda: next(reads),
+        runner_factory=lambda: runner,
+    )
+
+    assert exit_code == 0
+    assert runner.stdin == subprocess.DEVNULL
+
+
+def test_refresh_command_leaves_argv_as_is_when_gate_is_off(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_cred_refresh_command"
+    )
+    reads = iter(
+        (
+            _auth_json_with_exp(exp=_NOW + 20),
+            _auth_json_with_exp(exp=_NOW + 200_000),
+        )
+    )
+    runner = _Runner(
+        result=CommandResult(exit_code=0, stdout="OK", stderr=""),
+        expected_argv=["codex", "exec", "reply OK"],
+    )
+    assert hasattr(module, "codex_yolo_gate")
+
+    def gate_state(*, repo: Path) -> str:
+        assert repo == Path.cwd()
+        return "off"
+
+    monkeypatch.setattr(module.codex_yolo_gate, "gate_state", gate_state)
+
+    exit_code = module.run_codex_cred_refresh_with(
+        args=argparse.Namespace(as_json=True, dry_run=False),
+        cwd=Path.cwd,
+        now_epoch=lambda: _NOW,
+        read_host_codex_auth=lambda: next(reads),
+        runner_factory=lambda: runner,
+    )
+
+    assert exit_code == 0
+    assert runner.stdin == subprocess.DEVNULL
 
 
 def test_codex_error_without_stderr_stays_actionable(

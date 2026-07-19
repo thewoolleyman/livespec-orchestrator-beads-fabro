@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import argparse
+import importlib.abc
+import importlib.machinery
+import importlib.util
 import json
+import subprocess
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, Protocol, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_refresh import (
     CODEX_ALARM_THRESHOLD_SECONDS,
@@ -21,11 +26,39 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_refresh import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.io import write_stdout
 
+GateState = Literal["on", "off"]
+
+
+class _CodexYoloGate(Protocol):
+    def gate_state(self, *, repo: Path) -> GateState:
+        """Return whether Codex full access is enabled for repo."""
+        ...
+
+
+_HOOK_GATE_PATH = Path(__file__).resolve().parents[4] / ".claude" / "hooks" / "codex_yolo_gate.py"
+_HOOK_GATE_MODULE = "livespec_orchestrator_codex_yolo_gate"
+
+
+def _load_codex_yolo_gate() -> _CodexYoloGate:
+    spec = cast(
+        "importlib.machinery.ModuleSpec",
+        importlib.util.spec_from_file_location(_HOOK_GATE_MODULE, _HOOK_GATE_PATH),
+    )
+    loader = cast("importlib.abc.Loader", spec.loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[_HOOK_GATE_MODULE] = module
+    loader.exec_module(module)
+    return cast("_CodexYoloGate", module)
+
+
+codex_yolo_gate = _load_codex_yolo_gate()
+
 __all__: list[str] = [
     "run_codex_cred_refresh_with",
 ]
 
 _CODEX_REFRESH_ARGV = ["codex", "exec", "reply OK"]
+_CODEX_FULL_ACCESS_FLAG = "--dangerously-bypass-approvals-and-sandbox"
 _CODEX_REFRESH_TIMEOUT_SECONDS = 120.0
 
 
@@ -61,10 +94,12 @@ def run_codex_cred_refresh_with(
     would_invoke_codex = should_invoke_codex_refresh(status=before)
     if would_invoke_codex and not args.dry_run:
         invoked_codex = True
+        refresh_cwd = cwd()
         result = runner_factory().run(
-            argv=_CODEX_REFRESH_ARGV,
-            cwd=cwd(),
+            argv=_codex_refresh_argv(repo=refresh_cwd),
+            cwd=refresh_cwd,
             timeout_seconds=_CODEX_REFRESH_TIMEOUT_SECONDS,
+            stdin=subprocess.DEVNULL,
         )
         codex_exit_code = result.exit_code
         codex_stderr = result.stderr
@@ -97,6 +132,12 @@ def run_codex_cred_refresh_with(
     if args.dry_run or outcome in ("noop-not-due", "refreshed"):
         return 0
     return 1
+
+
+def _codex_refresh_argv(*, repo: Path) -> list[str]:
+    if codex_yolo_gate.gate_state(repo=repo) == "on":
+        return [*_CODEX_REFRESH_ARGV[:2], _CODEX_FULL_ACCESS_FLAG, *_CODEX_REFRESH_ARGV[2:]]
+    return list(_CODEX_REFRESH_ARGV)
 
 
 def _assess_host_codex_credential(
