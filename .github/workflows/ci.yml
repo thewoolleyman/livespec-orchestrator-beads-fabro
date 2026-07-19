@@ -33,12 +33,35 @@ name: CI
 env:
   UV_HTTP_RETRIES: "5"
 
+# merge_group is deliberately ABSENT: no merge queue is configured for this
+# repo (verified live — zero rulesets, required_merge_queue: null; branch
+# protection requires only the ci-green context). Keeping the vestigial trigger
+# would leave a dead event in the trigger set. Re-add it only if a merge queue
+# is actually adopted.
 on:
   pull_request:
   push:
     branches: [master]
-  merge_group:
 
+# RUNNER ROUTING — deliberately PLAIN `runs-on: ubuntu-latest` everywhere.
+#
+# Do NOT "restore uniformity" by introducing the flippable
+# `runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["self-hosted","local-ci"]') }}`
+# form that the other fleet repos use. This repo hosts the fleet's PRIVILEGED
+# on-demand gate-runner lane, and livespec-dev-tooling's `self_hosted_routing`
+# check is a fail-by-default SECURITY guard: if ANY job's `runs-on` references
+# the label `local-ci`, the workflow's trigger set must contain none of six
+# forbidden triggers. The flippable form puts the literal `local-ci` into this
+# file, dragging the one repo with a privileged lane into that guard's scope and
+# leaving a latent default that would route CI to self-hosted runners if the
+# CI_RUNNER_LABELS repo variable were ever unset. This repo also registers ZERO
+# self-hosted runners today, so that default would simply hang. Adding a
+# contained `local-ci` lane here is a two-trust-tier security decision the
+# maintainer owns, and it is deliberately NOT being made.
+#
+# The baked `container:` image below is orthogonal to routing: it gives the
+# check jobs the SAME environment the Fabro sandbox runs, so "green in CI" and
+# "green in sandbox" mean the same thing (livespec plan/fabro-ci-image-factoring).
 jobs:
   setup:
     name: detect-py-changes
@@ -95,6 +118,13 @@ jobs:
     name: ${{ matrix.target }}
     needs: setup
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v0.49.1
+    env:
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
     strategy:
       fail-fast: false
       matrix:
@@ -145,17 +175,27 @@ jobs:
         if: needs.setup.outputs.py_changed == 'true'
         uses: actions/checkout@v4
 
-      - name: Install pinned binaries via mise
+      # The baked container runs git as ROOT over a uid-1001 checkout, so every
+      # post-checkout git call fails "detected dubious ownership" (exit 128)
+      # without this. actions/checkout adds its own safe.directory but scopes it
+      # to a temporary HOME it discards, and resolve_repo_root() (config.py)
+      # strips all GIT_* env before shelling git — so an env-var GIT_CONFIG_*
+      # approach is invisible to it. It MUST be the --global write to
+      # $HOME/.gitconfig (HOME=/github/home) so EVERY git call reads it.
+      - name: Trust workspace for git (container root-vs-checkout uid)
         if: needs.setup.outputs.py_changed == 'true'
-        uses: jdx/mise-action@v2
+        run: git config --global --add safe.directory '*'
 
-      - name: Restore uv download cache
+      # Tools are baked into the image; `mise install` is a near-no-op that just
+      # confirms the pinned versions. A fresh container does not TRUST the repo
+      # .mise.toml, so `mise trust` is required for the shims to resolve.
+      # (Replaces the mise-action install + the actions/cache uv restore — the
+      # container image is the cache now.)
+      - name: mise trust + install (baked tools — install is a near-no-op)
         if: needs.setup.outputs.py_changed == 'true'
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/uv
-          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
-          restore-keys: uv-${{ runner.os }}-
+        run: |
+          mise trust
+          mise install
 
       - name: Install Python dev deps via uv
         if: needs.setup.outputs.py_changed == 'true'
@@ -175,12 +215,36 @@ jobs:
   check-doctor-static:
     name: check-doctor-static
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v0.49.1
+    env:
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install pinned binaries via mise
-        uses: jdx/mise-action@v2
+      # The baked container runs git as ROOT over a uid-1001 checkout, so every
+      # post-checkout git call fails "detected dubious ownership" (exit 128)
+      # without this. actions/checkout adds its own safe.directory but scopes it
+      # to a temporary HOME it discards, and resolve_repo_root() (config.py)
+      # strips all GIT_* env before shelling git — so an env-var GIT_CONFIG_*
+      # approach is invisible to it. It MUST be the --global write to
+      # $HOME/.gitconfig (HOME=/github/home) so EVERY git call reads it.
+      - name: Trust workspace for git (container root-vs-checkout uid)
+        run: git config --global --add safe.directory '*'
+
+      # Tools are baked into the image; `mise install` is a near-no-op that just
+      # confirms the pinned versions. A fresh container does not TRUST the repo
+      # .mise.toml, so `mise trust` is required for the shims to resolve.
+      # (Replaces the mise-action install + the actions/cache uv restore — the
+      # container image is the cache now.)
+      - name: mise trust + install (baked tools — install is a near-no-op)
+        run: |
+          mise trust
+          mise install
 
       - name: Resolve pinned livespec core ref (.livespec.jsonc compat.pinned)
         id: corepin
@@ -196,9 +260,12 @@ jobs:
           path: .livespec-core
 
       - name: just check-doctor-static
-        env:
-          LIVESPEC_CORE_PLUGIN_ROOT: ${{ github.workspace }}/.livespec-core/.claude-plugin
-        run: just check-doctor-static
+        run: |
+          # In a container job, the github.workspace CONTEXT may be the HOST
+          # path; $GITHUB_WORKSPACE (env) is the in-container mount, so derive
+          # the core plugin root from it to stay container-correct.
+          export LIVESPEC_CORE_PLUGIN_ROOT="${GITHUB_WORKSPACE}/.livespec-core/.claude-plugin"
+          just check-doctor-static
 
   # Metadata matrix runs unconditionally to preserve the repo-metadata
   # safety net. check-aggregate-completeness is the wiring-completeness
@@ -213,6 +280,13 @@ jobs:
     name: ${{ matrix.target }}
     needs: setup
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v0.49.1
+    env:
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
     strategy:
       fail-fast: false
       matrix:
@@ -302,15 +376,25 @@ jobs:
           # the other metadata entries.
           fetch-depth: 0
 
-      - name: Install pinned binaries via mise
-        uses: jdx/mise-action@v2
+      # The baked container runs git as ROOT over a uid-1001 checkout, so every
+      # post-checkout git call fails "detected dubious ownership" (exit 128)
+      # without this. actions/checkout adds its own safe.directory but scopes it
+      # to a temporary HOME it discards, and resolve_repo_root() (config.py)
+      # strips all GIT_* env before shelling git — so an env-var GIT_CONFIG_*
+      # approach is invisible to it. It MUST be the --global write to
+      # $HOME/.gitconfig (HOME=/github/home) so EVERY git call reads it.
+      - name: Trust workspace for git (container root-vs-checkout uid)
+        run: git config --global --add safe.directory '*'
 
-      - name: Restore uv download cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/uv
-          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
-          restore-keys: uv-${{ runner.os }}-
+      # Tools are baked into the image; `mise install` is a near-no-op that just
+      # confirms the pinned versions. A fresh container does not TRUST the repo
+      # .mise.toml, so `mise trust` is required for the shims to resolve.
+      # (Replaces the mise-action install + the actions/cache uv restore — the
+      # container image is the cache now.)
+      - name: mise trust + install (baked tools — install is a near-no-op)
+        run: |
+          mise trust
+          mise install
 
       - name: Install Python dev deps via uv
         run: uv sync --all-groups
@@ -376,8 +460,20 @@ jobs:
     name: e2e-cli
     needs: setup
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v0.49.1
+    # SINGLE env block — this job already had a job-level `env:` carrying
+    # LIVESPEC_E2E_HARNESS before the baked-image cutover, so the container
+    # preamble's vars are MERGED in here rather than added as a second `env:`
+    # key. Two `env:` keys in one job make GitHub reject the entire workflow at
+    # startup (zero jobs, no logs), and a permissive YAML parser would silently
+    # keep only the last block and drop LIVESPEC_E2E_HARNESS. Keep this ONE block.
     env:
       LIVESPEC_E2E_HARNESS: mock
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Skip when no .py changes
         if: needs.setup.outputs.py_changed != 'true'
@@ -387,17 +483,27 @@ jobs:
         if: needs.setup.outputs.py_changed == 'true'
         uses: actions/checkout@v4
 
-      - name: Install pinned binaries via mise
+      # The baked container runs git as ROOT over a uid-1001 checkout, so every
+      # post-checkout git call fails "detected dubious ownership" (exit 128)
+      # without this. actions/checkout adds its own safe.directory but scopes it
+      # to a temporary HOME it discards, and resolve_repo_root() (config.py)
+      # strips all GIT_* env before shelling git — so an env-var GIT_CONFIG_*
+      # approach is invisible to it. It MUST be the --global write to
+      # $HOME/.gitconfig (HOME=/github/home) so EVERY git call reads it.
+      - name: Trust workspace for git (container root-vs-checkout uid)
         if: needs.setup.outputs.py_changed == 'true'
-        uses: jdx/mise-action@v2
+        run: git config --global --add safe.directory '*'
 
-      - name: Restore uv download cache
+      # Tools are baked into the image; `mise install` is a near-no-op that just
+      # confirms the pinned versions. A fresh container does not TRUST the repo
+      # .mise.toml, so `mise trust` is required for the shims to resolve.
+      # (Replaces the mise-action install + the actions/cache uv restore — the
+      # container image is the cache now.)
+      - name: mise trust + install (baked tools — install is a near-no-op)
         if: needs.setup.outputs.py_changed == 'true'
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/uv
-          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
-          restore-keys: uv-${{ runner.os }}-
+        run: |
+          mise trust
+          mise install
 
       - name: Install Python dev deps via uv
         if: needs.setup.outputs.py_changed == 'true'
@@ -411,19 +517,36 @@ jobs:
     name: acceptance
     needs: setup
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v0.49.1
+    env:
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install pinned binaries via mise
-        uses: jdx/mise-action@v2
+      # The baked container runs git as ROOT over a uid-1001 checkout, so every
+      # post-checkout git call fails "detected dubious ownership" (exit 128)
+      # without this. actions/checkout adds its own safe.directory but scopes it
+      # to a temporary HOME it discards, and resolve_repo_root() (config.py)
+      # strips all GIT_* env before shelling git — so an env-var GIT_CONFIG_*
+      # approach is invisible to it. It MUST be the --global write to
+      # $HOME/.gitconfig (HOME=/github/home) so EVERY git call reads it.
+      - name: Trust workspace for git (container root-vs-checkout uid)
+        run: git config --global --add safe.directory '*'
 
-      - name: Restore uv download cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/uv
-          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
-          restore-keys: uv-${{ runner.os }}-
+      # Tools are baked into the image; `mise install` is a near-no-op that just
+      # confirms the pinned versions. A fresh container does not TRUST the repo
+      # .mise.toml, so `mise trust` is required for the shims to resolve.
+      # (Replaces the mise-action install + the actions/cache uv restore — the
+      # container image is the cache now.)
+      - name: mise trust + install (baked tools — install is a near-no-op)
+        run: |
+          mise trust
+          mise install
 
       - name: Install Python dev deps via uv
         run: uv sync --all-groups
@@ -435,7 +558,7 @@ jobs:
   # (dataset github-ci) and FAIL if Honeycomb does not accept them. The run
   # that produced the data confirms its own telemetry landed — so a broken
   # pipeline can't die silently (it reddens master CI and fires the existing
-  # failure notification). Master/merge_group ONLY (never PRs, so PR feedback
+  # failure notification). Master pushes ONLY (never PRs, so PR feedback
   # stays fast); runs even when checks fail (!cancelled) so failed runs are
   # observable too; excludes itself (still in_progress → no completedAt).
   # `needs` lists every top-level job so this runs last, after each job's
@@ -445,7 +568,7 @@ jobs:
   export-telemetry:
     name: export-telemetry
     needs: [setup, check-python, check-doctor-static, check-metadata, e2e-cli, acceptance]
-    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'merge_group') }}
+    if: ${{ !cancelled() && github.event_name == 'push' }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -471,7 +594,7 @@ jobs:
   # never churns as checks are added. A SKIPPED dependency (e.g. the entire
   # check-python or e2e-cli job on a zero-.py PR) is not a failure, so ci-green
   # stays green then. setup (change-detection gate) and export-telemetry
-  # (push/merge_group-only, not a gate) are intentionally absent from `needs:`.
+  # (push-only, not a gate) are intentionally absent from `needs:`.
   ci-green:
     name: ci-green
     needs: [check-python, check-doctor-static, check-metadata, e2e-cli, acceptance]
