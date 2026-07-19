@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.4...v0.45.5) (2026-07-19)
+
+
+### Bug Fixes
+
+* add reconcile merged dispatcher red ([3f60465](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3f60465919634c17009d8cb824349f4ef794789a))
+
 ## [0.45.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.3...v0.45.4) (2026-07-19)
 
 
