@@ -1,9 +1,9 @@
 # Plan handoff — codex-yolo-sandbox
 
-**READ THIS FIRST. Status as of 2026-07-19.** This file is the ONLY thing a fresh session
-inherits. Everything from "## Goal" down is the ORIGINAL 2026-07-15 analysis, kept as
-background — its "First steps for the new session" list is **OBSOLETE**; use
-"Next action" below.
+**READ THIS FIRST. Status as of 2026-07-19 (S1 landed).** This file is the ONLY thing a
+fresh session inherits. Everything from "## Goal" down is the ORIGINAL 2026-07-15
+analysis, kept as background — its "First steps for the new session" list is
+**OBSOLETE**; use "Next action" below.
 
 ## What this track is
 
@@ -36,6 +36,27 @@ and make that permanent for fleet members and official adopters, **without forki
   `.livespec-fleet-manifest.jsonc` (`members` ∪ `adopters`) parsed by
   `livespec_dev_tooling.fleet.contract.parse_manifest`; project identity via the fleet
   contract's `resolve_owner`.
+- **S1 LANDED — hand-implemented, supervised** (PR #782, `667b24d`), after the factory
+  failed it twice on token-expiry. `.claude/hooks/codex_yolo_reapply.py` is now a pure,
+  importable module (`classify_state` / `apply_patch` / `read_text_or_none` /
+  `cached_codex_mjs_paths` + `main`), the `.sh` is a thin `exec python3` wrapper, and the
+  **drift canary** writes a loud stderr WARNING for any cached `codex.mjs` carrying neither
+  the stock string nor our `CODEX_COMPANION_SANDBOX` sentinel. Runtime behavior unchanged:
+  always-on, repo-local, idempotent, fail-open.
+  - **Enabling work it forced, now also landed.** `.claude/hooks` was a
+    `source_tree_prefixes` + `covered_trees` entry with **no `mirror_pairings` entry** — an
+    incoherence that stayed latent only because no `.py` under it had ever changed on a
+    branch. The first one that did failed `check-check-coverage-incremental` (it derives its
+    changed set from `source_tree_prefixes`, then resolves each path to a mirror-paired
+    test). So the PR also pairs `.claude/hooks` -> `tests/hooks`, covers the two
+    pre-existing untested hooks (`beads_access_guard`, `livespec_footgun_guard`), and
+    deletes three provably-unreachable arms in `livespec_footgun_guard.py` that blocked its
+    100%-branch gate. **All three hook modules are now at 100% line + branch.**
+  - **Gotcha for the next slice:** the replay check classifies `.claude/hooks/**.py` as
+    **non-product**, so a hooks changeset takes the **green-verified / suite-green leg**, NOT
+    a Red-Green pair — use a `chore(...)` subject. A `feat:`/`fix:` subject declares Red
+    intent and, with no product impl staged, is routed to Red mode, which then rejects any
+    commit staging more than one test file (`multi-test-file`).
 - **AGENTS.md orientation note** (PR #731).
 - **S5's spec proposal LANDED** (`61363e7` + `e968bb4`); item `.2` sits at `acceptance` — the
   maintainer may want to accept/close it.
@@ -44,53 +65,43 @@ and make that permanent for fleet members and official adopters, **without forki
 
 | ID | Slice | Status |
 | --- | --- | --- |
-| `bd-ib-1jye.1` | **S1** — re-apply hook → tested Python module + drift canary | `ready` ← **THE BLOCKER** |
+| `bd-ib-1jye.1` | S1 — re-apply hook → tested Python module + drift canary | **`closed`** (PR #782) |
 | `bd-ib-1jye.2` | S5 — propose-change ratifying the codex-full-access contract | `acceptance` (work merged) |
-| `bd-ib-1jye.3` | S2 — manifest-gating helper + wire hook to it (needs S1) | `ready`, blocked-on-dependency |
+| `bd-ib-1jye.3` | **S2** — manifest-gating helper + wire hook to it | `ready` ← **NOW UNBLOCKED; the next slice** |
 | `bd-ib-1jye.4` | S3 — ship the gated hook FROM the orchestrator plugin (needs S2) | `ready`, blocked-on-dependency |
 | `bd-ib-1jye.5` | C1 — orchestrator-owned full-access `codex exec`, Surface 2 (needs S2) | `ready`, blocked-on-dependency |
 
 Each item's full spec lives in its beads record — `with-livespec-env.sh -- bd show <id>`.
 
-## Next action — S1 is the blocker, and the factory has failed it TWICE
+## Next action — S2 (`bd-ib-1jye.3`), now unblocked
 
-S1 was dispatched twice. Both runs ended `failed / workflow_error` **after reaching
-`just check` GREEN**, and a run event flagged *"stages running beyond token expiry may need to
-be retried."* Diagnosis: ~6h runtime under an oversubscribed factory (3–4 concurrent fleet
-loops) blew the model-auth token TTL. **The implementation was fine — this is an infrastructure
-failure, not a code defect.**
+S1 is closed, so **S2 is the next slice**: a shared helper that resolves the current repo's
+identity (the fleet contract's `resolve_owner` + repo from the git remote) and decides the
+gate ON iff owner/repo appears in the core fleet manifest `.livespec-fleet-manifest.jsonc`
+(`members` ∪ `adopters`, via `livespec_dev_tooling.fleet.contract.parse_manifest`); else a
+local opt-in flag defaulting OFF. Then wire `codex_yolo_reapply` to gate on it. Prefer a
+local marker written at wire time over a per-session `gh` fetch. Full spec:
+`with-livespec-env.sh -- bd show bd-ib-1jye.3`; design in
+[`permanent-fix-design.md`](./permanent-fix-design.md) §"Adopter default".
 
-**Recommended: hand-implement S1 in a supervised session.** Two factory failures is the
-carve-out to the standing "prefer factory dispatch" directive. It is small and fully specified:
-
-- **NEW** `.claude/hooks/codex_yolo_reapply.py` — PURE importable
-  `classify_state(*, content) -> "stock" | "patched" | "drift"` plus a patch function, and a
-  `main()` that globs `~/.claude/plugins/cache/openai-codex/codex/*/scripts/lib/codex.mjs`,
-  rewrites stock chokepoints, and writes a LOUD stderr WARNING for any file in the `drift`
-  state (neither stock string nor our sentinel) — that warning IS the canary. Idempotent;
-  fail-open when python3 or the plugin cache is absent.
-  - `STOCK   = 'sandbox: options.sandbox ?? "read-only"'`
-  - `PATCHED = 'sandbox: process.env.CODEX_COMPANION_SANDBOX || "danger-full-access"'`
-- **REWRITE** `.claude/hooks/codex-yolo-reapply.sh` into a thin wrapper, mirroring
-  `.claude/hooks/beads-access-guard.sh` (`command -v python3 >/dev/null 2>&1 || exit 0; exec
-  python3 "$(dirname "$0")/codex_yolo_reapply.py"`).
-- **NEW** `tests/` unit tests for the pure functions covering all four states
-  (stock→patched, already-patched→no-op, drift→warn, absent→no-op). Pure — NO subprocess spawn.
-- **Scope discipline:** preserve the current always-on repo-local behavior. Manifest-gating is
-  S2, NOT this slice.
-
-*Alternative* — re-dispatch, but only when the factory is quiet (check `fabro ps` first; if 3+
-runs are already going, expect the same token-expiry death):
+**Try the factory FIRST for S2** — the standing directive prefers dispatch for factory-safe
+work, and the S1 carve-out was specific to S1's two token-expiry deaths. Check `fabro ps`
+first; if 3+ runs are already in flight, expect the same token-expiry death and hand-implement
+instead:
 
 ```bash
 /data/projects/1password-env-wrapper/with-livespec-env.sh -- \
   python3 .claude-plugin/scripts/bin/dispatcher.py loop \
   --repo /data/projects/livespec-orchestrator-beads-fabro \
-  --item bd-ib-1jye.1 --budget 1 --parallel 1 --json
+  --item bd-ib-1jye.3 --budget 1 --parallel 1 --json
 ```
 
-After S1 merges, S2 (`.3`) unblocks; after S2 merges, S3 (`.4`) and C1 (`.5`) unblock.
-Dispatch each **supervised, in-session**.
+After S2 merges, S3 (`.4`) and C1 (`.5`) unblock. Drive each **supervised, in-session**.
+
+**Hand it whichever way, mind the hooks-tree rules S1 discovered** (see the S1 entry above):
+a `.claude/hooks/**.py` changeset is NON-product to the replay check — use a `chore(...)`
+subject and the suite-green leg, never a `feat:`/`fix:` Red-Green pair; and any hook `.py`
+touched now needs its mirror-paired test under `tests/hooks/` at 100% line + branch.
 
 ## Hard rules and gotchas — each of these cost real time
 
