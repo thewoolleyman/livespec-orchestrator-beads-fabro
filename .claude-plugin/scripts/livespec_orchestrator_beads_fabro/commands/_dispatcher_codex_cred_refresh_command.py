@@ -22,6 +22,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_refresh import
     should_invoke_codex_refresh,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.io import write_stdout
 
 GateState = Literal["on", "off"]
@@ -137,8 +138,14 @@ def run_codex_cred_refresh_with(
 
 
 def _codex_refresh_argv(*, repo: Path) -> list[str]:
-    if codex_yolo_gate.gate_state(repo=repo) == "on":
+    gate_state = attempt(
+        action=lambda: codex_yolo_gate.gate_state(repo=repo),
+        exceptions=(AttributeError, ImportError, OSError, RuntimeError),
+    )
+    if gate_state == "on":
         return [*_CODEX_REFRESH_ARGV[:2], _CODEX_FULL_ACCESS_FLAG, *_CODEX_REFRESH_ARGV[2:]]
+    if isinstance(gate_state, AttemptFailure):
+        return list(_CODEX_REFRESH_ARGV)
     return list(_CODEX_REFRESH_ARGV)
 
 
