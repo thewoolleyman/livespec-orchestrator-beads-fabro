@@ -40,9 +40,7 @@ class _OffCodexYoloGate:
         return "off"
 
 
-_HOOK_GATE_PATH = (
-    Path(__file__).resolve().parents[4] / ".claude-plugin" / "hooks" / "codex_yolo_gate.py"
-)
+_HOOK_GATE_PATH = Path(__file__).resolve().parents[3] / "hooks" / "codex_yolo_gate.py"
 _HOOK_GATE_MODULE = "livespec_orchestrator_codex_yolo_gate"
 
 

@@ -6,6 +6,7 @@ import argparse
 import base64
 import importlib
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -58,16 +59,26 @@ def test_refresh_command_module_public_surface() -> None:
     assert module.__all__ == ["run_codex_cred_refresh_with"]
 
 
-def test_refresh_command_loads_gate_from_distributed_plugin_hooks(
+def test_refresh_command_loads_gate_from_installed_plugin_root(
     *,
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    module_name = (
-        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_cred_refresh_command"
+    source = Path(
+        ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/"
+        "_dispatcher_codex_cred_refresh_command.py"
     )
-    expected = (
-        Path(__file__).resolve().parents[3] / ".claude-plugin" / "hooks" / "codex_yolo_gate.py"
+    installed_module = (
+        tmp_path
+        / "plugin-cache"
+        / "scripts"
+        / "livespec_orchestrator_beads_fabro"
+        / "commands"
+        / "_dispatcher_codex_cred_refresh_command.py"
     )
+    installed_module.parent.mkdir(parents=True)
+    shutil.copyfile(source, installed_module)
+    expected = tmp_path / "plugin-cache" / "hooks" / "codex_yolo_gate.py"
     loaded_paths: list[Path] = []
     real_spec_from_file_location = importlib.util.spec_from_file_location
 
@@ -81,13 +92,18 @@ def test_refresh_command_loads_gate_from_distributed_plugin_hooks(
         return real_spec_from_file_location(name, location, *args, **kwargs)
 
     monkeypatch.setattr(importlib.util, "spec_from_file_location", spy_spec_from_file_location)
-    sys.modules.pop(module_name, None)
-    _ = importlib.import_module(module_name)
+    module_name = "installed_plugin_codex_cred_refresh_under_test"
+    spec = real_spec_from_file_location(module_name, installed_module)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(module_name, None)
 
     assert loaded_paths == [expected]
-    monkeypatch.undo()
-    sys.modules.pop(module_name, None)
-    importlib.import_module(module_name)
 
 
 def test_refresh_command_fails_closed_when_gate_hook_cannot_load(
