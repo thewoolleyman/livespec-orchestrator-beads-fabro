@@ -23,6 +23,7 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _HOOKS_DIR = _REPO_ROOT / ".claude-plugin" / "hooks"
 _HOOK_PATH = _REPO_ROOT / ".claude-plugin" / "hooks" / "codex_yolo_reapply.py"
+_GATE_PATH = _REPO_ROOT / ".claude-plugin" / "hooks" / "codex_yolo_gate.py"
 _MODULE_NAME = "codex_yolo_reapply_under_test"
 
 
@@ -39,6 +40,24 @@ def _load_hook() -> ModuleType:
 
 
 hook = _load_hook()
+
+
+def _load_cached_hook(*, plugin_hooks: Path, module_name: str) -> ModuleType:
+    sys.modules.pop("codex_yolo_gate", None)
+    sys.path.insert(0, str(plugin_hooks))
+    spec = importlib.util.spec_from_file_location(
+        module_name, plugin_hooks / "codex_yolo_reapply.py"
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop("codex_yolo_gate", None)
+        sys.path.remove(str(plugin_hooks))
+    return module
 
 
 def _cached_mjs(*, home: Path, version: str) -> Path:
@@ -359,6 +378,74 @@ def test_main_is_a_silent_noop_when_the_gate_is_off(
 
     assert hook.main() == 0
 
+    assert target.read_text(encoding="utf-8") == source
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_plugin_cache_shape_patches_a_fleet_listed_claude_project_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    _ = (project / ".livespec.jsonc").write_text(
+        '{\n  "codex_full_access": { "fleet_listed": true }\n}\n',
+        encoding="utf-8",
+    )
+    plugin_hooks = tmp_path / "plugin-cache" / "hooks"
+    plugin_hooks.mkdir(parents=True)
+    _ = (plugin_hooks / "codex_yolo_gate.py").write_text(
+        _GATE_PATH.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    _ = (plugin_hooks / "codex_yolo_reapply.py").write_text(
+        _HOOK_PATH.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project))
+    monkeypatch.chdir(tmp_path)
+    target = _cached_mjs(home=tmp_path, version="1.0.6")
+    _ = target.write_text(_stock_source(), encoding="utf-8")
+
+    cached = _load_cached_hook(
+        plugin_hooks=plugin_hooks,
+        module_name="codex_yolo_reapply_plugin_cache_under_test",
+    )
+
+    assert cached.main() == 0
+    assert cached.STOCK not in target.read_text(encoding="utf-8")
+    assert str(target) in capsys.readouterr().out
+
+
+def test_plugin_cache_shape_is_silent_noop_for_unlisted_claude_project_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    project = tmp_path / "external-project"
+    project.mkdir()
+    plugin_hooks = tmp_path / "plugin-cache" / "hooks"
+    plugin_hooks.mkdir(parents=True)
+    _ = (plugin_hooks / "codex_yolo_gate.py").write_text(
+        _GATE_PATH.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    _ = (plugin_hooks / "codex_yolo_reapply.py").write_text(
+        _HOOK_PATH.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project))
+    target = _cached_mjs(home=tmp_path, version="1.0.6")
+    source = _stock_source()
+    _ = target.write_text(source, encoding="utf-8")
+
+    cached = _load_cached_hook(
+        plugin_hooks=plugin_hooks,
+        module_name="codex_yolo_reapply_plugin_cache_off_under_test",
+    )
+
+    assert cached.main() == 0
     assert target.read_text(encoding="utf-8") == source
     captured = capsys.readouterr()
     assert captured.out == ""
