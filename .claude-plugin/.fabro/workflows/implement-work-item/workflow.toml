@@ -136,18 +136,33 @@ provider = "docker"
 # node/ACP adapter + gh; Dockerfile in livespec-dev-tooling). Published
 # by dev-tooling PR #111 (2026-06-12) to
 # ghcr.io/thewoolleyman/livespec-fabro-sandbox. Since the layered-image
-# split this consumer pulls the `python` layer (base tools + uv + CPython;
-# no Rust). Tag format:
-#   python-sha-<short>  — per master-build (mutable; tracks HEAD)
-#   python-v<X.Y.Z>     — per release tag (immutable)
+# split this consumer pulls the `python-agent` layer (base tools + uv +
+# CPython, plus the agent payload: bubblewrap and both ACP adapters; no
+# Rust). Tag format:
+#   python-agent-sha-<short>  — per master-build (mutable; tracks HEAD)
+#   python-agent-v<X.Y.Z>     — per release tag (immutable)
+#
+# WHY `python-agent` AND NOT `python`: the agent payload (bubblewrap +
+# both ACP adapters) was moved OUT of the base layer into an `agent`
+# layer stacked on top of `python`, because CI never uses it and it is
+# 316.6 MB of every CI job's image pull (livespec-dev-tooling-a46). The
+# bare `python-` tag is now the SLIM, CI-facing image and carries NO ACP
+# adapters. A Fabro sandbox pinned to it does NOT fail loudly: the
+# version-less `npx -y` adapter command below simply re-downloads the
+# adapter at runtime, silently reintroducing the per-run tax the baked
+# image exists to eliminate (Codex fails loudly instead, on missing
+# bubblewrap). So this pin MUST keep the `python-agent-` prefix.
 #
 # PIN SURFACE NOTE: this docker image tag is now covered by the shared
 # `bump-pin` autodiscovery — livespec-dev-tooling (>= v0.40.0) ships a
 # `fabro_sandbox_docker_image` pin format, so the release fan-out rewrites the
-# `docker = "...:python-vX.Y.Z"` tag below in lockstep with the livespec-dev-tooling
-# pin in pyproject.toml, exactly like every other cross-repo pin — preserving the
-# `python-` layer prefix and rewriting only the `vX.Y.Z` version. No repo-local
-# consistency check is needed. The producer-side lockstep gate
+# `docker = "...:python-agent-vX.Y.Z"` tag below in lockstep with the
+# livespec-dev-tooling pin in pyproject.toml, exactly like every other cross-repo
+# pin — preserving the `python-agent-` layer prefix and rewriting only the
+# `vX.Y.Z` version. That prefix-preservation is what keeps this pin on the agent
+# layer once set, but it is ALSO why the one-time migration off the bare
+# `python-` prefix had to be made by hand: the fan-out preserves whatever prefix
+# it finds, so it would have kept this pin on the slim CI image forever. The producer-side lockstep gate
 # (livespec_dev_tooling.fabro_image_pin_lockstep) guards the Dockerfile ARG pins
 # in livespec-dev-tooling and does not run in consumer repos.
 #
@@ -158,7 +173,7 @@ provider = "docker"
 # only `provider = "docker"` + `[image] docker = "..."` — never an
 # `[env]` table (the Dispatcher's per-dispatch overlay owns that block;
 # TOML forbids duplicate table declarations).
-docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v0.50.4"
+docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v0.50.4"
 
 [environments.livespec-ci.resources]
 cpu = 4
