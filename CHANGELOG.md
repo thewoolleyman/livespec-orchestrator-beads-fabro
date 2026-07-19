@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.45.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.5...v0.45.6) (2026-07-19)
+
+
+### Bug Fixes
+
+* fail closed on codex yolo gate errors ([eeb80fe](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/eeb80febabde1174ff7719adaa3d9bb0d8da2a34))
+* fail closed when codex gate load aborts ([8283d5e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8283d5e00abf3daa4d3f7e23df0ee2f4ba834cce))
+* force codex refresh full access ([1b87d99](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1b87d99e8a403675dc3baeea4daf06ff66cf3830))
+* guard reconcile merged liveness ([cff7225](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cff7225bab5a24a3d3d193baec5543dc8c257434))
+* make spec codex handoff EOF-safe ([91b3117](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/91b3117f9be2e3fe509d70790434b4d3971d672f))
+
 ## [0.45.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.4...v0.45.5) (2026-07-19)
 
 
