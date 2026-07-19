@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.3...v0.45.4) (2026-07-19)
+
+
+### Bug Fixes
+
+* **ci:** feed jq its large JSON payloads on stdin, not argv ([c6ae317](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c6ae317c50e7d465c380ba6985e05951495fafe2))
+
 ## [0.45.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.2...v0.45.3) (2026-07-19)
 
 
