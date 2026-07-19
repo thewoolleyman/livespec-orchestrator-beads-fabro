@@ -16,7 +16,7 @@ from types import ModuleType
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_HOOKS_DIR = _REPO_ROOT / ".claude" / "hooks"
+_HOOKS_DIR = _REPO_ROOT / ".claude-plugin" / "hooks"
 _HOOK_PATH = _HOOKS_DIR / "codex_yolo_gate.py"
 _MODULE_NAME = "codex_yolo_gate_under_test"
 
@@ -27,6 +27,16 @@ def _load_hook() -> ModuleType:
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[_MODULE_NAME] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_hook_from_path(*, hook_path: Path, module_name: str) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(module_name, hook_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -95,7 +105,7 @@ def test_owning_repo_root_is_this_repo_regardless_of_cwd(
     root = hook.owning_repo_root()
 
     assert (root / hook.CONFIG_FILENAME).is_file()
-    assert (root / ".claude" / "hooks" / "codex_yolo_gate.py").is_file()
+    assert (root / ".claude-plugin" / "hooks" / "codex_yolo_gate.py").is_file()
 
 
 def test_gate_state_stays_on_from_any_cwd_for_a_listed_repo(
@@ -336,6 +346,40 @@ def test_remote_url_for_repo_returns_empty_string_from_failed_runner(tmp_path: P
         return Completed()
 
     assert hook.remote_url_for_repo(repo=tmp_path, run=fake_run) == ""
+
+
+def test_plugin_cache_shape_uses_claude_project_dir_for_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    _write_config(repo=project, marker="true")
+    plugin_cache = tmp_path / "plugin-cache" / "hooks"
+    plugin_cache.mkdir(parents=True)
+    cached_hook = plugin_cache / "codex_yolo_gate.py"
+    _ = cached_hook.write_text(_HOOK_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    cached = _load_hook_from_path(
+        hook_path=cached_hook, module_name="codex_yolo_gate_plugin_cache_under_test"
+    )
+
+    assert cached.gate_state(env={"CLAUDE_PROJECT_DIR": str(project)}) == "on"
+
+
+def test_plugin_cache_shape_is_silent_off_for_unmarked_project(tmp_path: Path) -> None:
+    project = tmp_path / "external-project"
+    project.mkdir()
+    plugin_cache = tmp_path / "plugin-cache" / "hooks"
+    plugin_cache.mkdir(parents=True)
+    cached_hook = plugin_cache / "codex_yolo_gate.py"
+    _ = cached_hook.write_text(_HOOK_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+
+    cached = _load_hook_from_path(
+        hook_path=cached_hook, module_name="codex_yolo_gate_plugin_cache_off_under_test"
+    )
+
+    assert cached.gate_state(env={"CLAUDE_PROJECT_DIR": str(project)}) == "off"
 
 
 def test_owning_repo_root_prefers_claude_project_dir(
