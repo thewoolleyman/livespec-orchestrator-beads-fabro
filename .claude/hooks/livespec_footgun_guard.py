@@ -118,16 +118,15 @@ def _strip_leading_noise(*, tokens: list[str]) -> tuple[list[str], bool]:
             continue
         if base == "mise":
             j = i + 1
-            # consume `exec`, any flags, and a `--` terminator
+            # Consume `exec`/`x`, any flags, and the `--` terminator. `--` needs no
+            # arm of its own: it starts with `-`, so the flag clause already eats it.
             while (j < n and tokens[j] != "--" and tokens[j] in ("exec", "x")) or (
                 j < n and tokens[j].startswith("-")
             ):
                 j += 1
-            if j < n and tokens[j] == "--":
-                j += 1
-            if j > i:
-                i = j
-                changed = True
+            # `j` started at `i + 1` and only ever grows, so it always advanced.
+            i = j
+            changed = True
             continue
     return tokens[i:], lefthook_off
 
@@ -175,12 +174,12 @@ def _check_segment(*, seg: str) -> tuple[bool, str]:
         if any(a in ("--get", "--unset", "--list", "--get-all", "--unset-all") for a in args):
             return False, ""
         joined = " ".join(args)
+        # This also catches the `=`-form `config core.bare=true`: `=` is a non-word
+        # character, so both `\bcore\.bare\b` and the truthy-value pattern still
+        # match either side of it. No separate `=`-form arm is needed.
         if re.search(r"\bcore\.bare\b", joined) and re.search(
             r"\b(?:true|1|yes|on)\b", joined, re.IGNORECASE
         ):
-            return True, _CORE_BARE_REASON
-        # also catches `config core.bare=true`
-        if re.search(r"\bcore\.bare\s*=\s*(?:true|1|yes|on)\b", joined, re.IGNORECASE):
             return True, _CORE_BARE_REASON
     return False, ""
 
