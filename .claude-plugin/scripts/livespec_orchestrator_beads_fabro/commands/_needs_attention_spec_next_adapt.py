@@ -58,7 +58,10 @@ def spec_output_from_candidate(*, candidate: object, project_root: Path) -> Spec
         # (see `_plan_threads`) but names the ACTUAL ranked op — revise /
         # propose-change / critique / prune-history — never `next`, so a human
         # runs the recommended spec action directly instead of re-ranking.
-        command=f"codex exec livespec:{action} --project-root {_quote(path=project_root)}",
+        command=(
+            f"codex exec livespec:{action} --project-root "
+            f"{_quote(path=project_root)} < /dev/null"
+        ),
     )
 
 

@@ -34,7 +34,7 @@ def test_spec_output_from_candidate_defaults_summary_and_target(tmp_path) -> Non
     assert output.spec_target == "SPECIFICATION"
     assert output.urgency == "medium"
     assert output.command == (
-        f"codex exec livespec:critique --project-root {shlex.quote(str(tmp_path))}"
+        f"codex exec livespec:critique --project-root {shlex.quote(str(tmp_path))} < /dev/null"
     )
 
 
