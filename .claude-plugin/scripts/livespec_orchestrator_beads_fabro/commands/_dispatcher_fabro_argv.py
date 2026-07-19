@@ -26,6 +26,7 @@ __all__: list[str] = [
     "janitor_core_checkout_path",
     "janitor_core_clone_argv",
     "janitor_core_ref_from_config",
+    "janitor_reconcile_checkout_path",
     "janitor_trust_argv",
     "janitor_worktree_add_argv",
     "janitor_worktree_remove_argv",
@@ -149,6 +150,11 @@ def janitor_checkout_path(*, repo: Path, work_item_id: str) -> Path:
 def janitor_core_checkout_path(*, janitor_checkout: Path) -> Path:
     """Livespec core clone provisioned inside the fresh janitor checkout."""
     return janitor_checkout / ".livespec-core"
+
+
+def janitor_reconcile_checkout_path(*, repo: Path, work_item_id: str) -> Path:
+    """The reconcile valve's janitor venue, distinct from live dispatch checkouts."""
+    return Path.home() / ".worktrees" / repo.name / f"janitor-reconcile-{work_item_id}"
 
 
 def janitor_core_ref_from_config(*, config_text: str) -> str:

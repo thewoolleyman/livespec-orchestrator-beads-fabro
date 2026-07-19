@@ -22,6 +22,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     read_dispatch_comments,
     read_dispatch_labels,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import (
+    release_dispatch_lock,
+    write_dispatch_lock,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     DispatchOutcome,
     PollPolicy,
@@ -78,6 +82,29 @@ def dispatch_one(
     journal: JournalFile,
     janitor: tuple[str, ...] | None,
 ) -> DispatchOutcome:
+    dispatch_id = run_id()
+    lock_path = write_dispatch_lock(repo=repo, work_item_id=item.id, dispatch_id=dispatch_id)
+    with ExitStack() as stack:
+        _ = stack.callback(lambda: release_dispatch_lock(path=lock_path))
+        return _dispatch_one_locked(
+            args=args,
+            repo=repo,
+            item=item,
+            journal=journal,
+            janitor=janitor,
+            dispatch_id=dispatch_id,
+        )
+
+
+def _dispatch_one_locked(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    item: WorkItem,
+    journal: JournalFile,
+    janitor: tuple[str, ...] | None,
+    dispatch_id: str,
+) -> DispatchOutcome:
     goal_file = Path(tempfile.gettempdir()) / f"fabro-goal-{item.id}.md"
     overlay_file = Path(tempfile.gettempdir()) / f"fabro-run-config-{item.id}.toml"
     janitor_checkout = janitor_checkout_path(repo=repo, work_item_id=item.id)
@@ -106,7 +133,6 @@ def dispatch_one(
         return failed_dispatch_outcome(
             journal=journal, work_item_id=item.id, stage="ledger-comments", detail=comments
         )
-    dispatch_id = run_id()
     journal.append(
         record={"stage": "dispatch-id", "work_item_id": item.id, "dispatch_id": dispatch_id}
     )
