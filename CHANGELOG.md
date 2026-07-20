@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.13](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.12...v0.45.13) (2026-07-20)
+
+
+### Bug Fixes
+
+* protect janitor stale reclaim race ([ba9fdaf](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ba9fdafef8952ed964ce8236b17a0c84b33f8023))
+
 ## [0.45.12](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.11...v0.45.12) (2026-07-20)
 
 
