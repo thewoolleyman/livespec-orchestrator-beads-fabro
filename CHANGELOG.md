@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.16](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.15...v0.45.16) (2026-07-20)
+
+
+### Bug Fixes
+
+* restore the janitor gate for non-root runners and cover the reclaim mutex ([ff97ad8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ff97ad8990758058816757a97f16c747a5b7705a))
+
 ## [0.45.15](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.14...v0.45.15) (2026-07-20)
 
 
