@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
-from livespec_orchestrator_beads_fabro.commands import _jsonc
+from livespec_orchestrator_beads_fabro.commands import _jsonc, _jsonc_splice
 from livespec_orchestrator_beads_fabro.commands._drive_config_schema import (
     CONFIG_KEYS,
     ConfigKey,
@@ -87,7 +87,7 @@ def _write_config(*, repo: Path, action_id: str) -> dict[str, Any]:
             action_id=action_id, summary="dispatcher block must be an object."
         )
     dispatcher[key] = value
-    _write_root(repo=repo, root=root)
+    _write_root(repo=repo, root=root, key=key, value=value)
     return {
         "action_id": action_id,
         "kind": "config-write",
@@ -216,9 +216,15 @@ def _invalid_config_shape(*, action_id: str, summary: str) -> dict[str, Any]:
     }
 
 
-def _write_root(*, repo: Path, root: dict[str, Any]) -> None:
+def _write_root(*, repo: Path, root: dict[str, Any], key: str, value: Any) -> None:
     config_path = repo / _LIVESPEC_CONFIG
-    _ = config_path.write_text(
-        json.dumps(root, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    if not config_path.is_file():
+        _ = config_path.write_text(json.dumps(root, indent=2) + "\n", encoding="utf-8")
+        return
+    text = config_path.read_text(encoding="utf-8")
+    updated = _jsonc_splice.set_path(
+        text=text,
+        path=(_PLUGIN_BLOCK, _DISPATCHER_KEY, key),
+        value=value,
     )
+    _ = config_path.write_text(updated, encoding="utf-8")

@@ -2,8 +2,9 @@
 
 The `.livespec.jsonc` configuration file uses `//`-style line comments
 exclusively in the impl-beads templates; the wider `/* block */`
-form is not required. Stripping the comments and delegating to stdlib
-`json.loads` keeps the parser tiny and dependency-free.
+form is not required. This parser returns decoded data only; callers that
+write existing JSONC files must preserve source text separately rather than
+round-tripping this parsed value through `json.dumps`.
 
 Public surface:
 
