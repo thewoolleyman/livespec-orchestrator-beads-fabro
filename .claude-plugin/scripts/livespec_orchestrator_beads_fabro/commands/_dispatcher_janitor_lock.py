@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import time
@@ -64,11 +65,23 @@ def _write_janitor_lock(*, descriptor: int, owner: str) -> None:
 
 
 def _stale_janitor_lock_reclaimed(*, path: Path) -> bool:
+    with _reclaim_mutex_path(path=path).open("a+b") as mutex:
+        fcntl.flock(mutex.fileno(), fcntl.LOCK_EX)
+        return _stale_janitor_lock_reclaimed_locked(path=path)
+
+
+def _stale_janitor_lock_reclaimed_locked(*, path: Path) -> bool:
     lock = _read_janitor_lock(path=path)
-    if lock is None or _pid_is_alive(pid=lock.pid):
+    if lock is None or lock.pid == os.getpid() or _pid_is_alive(pid=lock.pid):
+        return False
+    if _read_janitor_lock(path=path) != lock:
         return False
     release_janitor_lock(path=path)
     return True
+
+
+def _reclaim_mutex_path(*, path: Path) -> Path:
+    return path.with_name(f"{path.name}.reclaim")
 
 
 def _read_janitor_lock(*, path: Path) -> JanitorLock | None:
@@ -109,8 +122,7 @@ def _contention_detail(*, path: Path, owner: str) -> str:
         f"janitor checkout lock {path} is already held for work-item {holder} "
         f"({pid_detail}). If the pid is present and alive, retry after that process "
         "exits; if the pid is absent or dead and the lock still remains, remove the "
-        "stale lock file before retrying. The old instruction 'Wait for that janitor "
-        "to finish' is unsafe for stale locks."
+        "stale lock file before retrying."
     )
 
 
