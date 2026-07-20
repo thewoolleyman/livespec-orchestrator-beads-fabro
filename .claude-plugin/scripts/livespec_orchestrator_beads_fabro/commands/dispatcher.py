@@ -102,9 +102,12 @@ unreachable or malformed manifest fails the dispatch fast at the
 Connection + consent model: the Ledger connection resolves from the
 TARGET repo's `.livespec.jsonc` (cwd-style `--repo` addressing) plus
 `BEADS_DOLT_PASSWORD` for that tenant in the environment — one tenant
-per process. Modes per the Dispatcher guidance: `shadow` (default)
-dispatches ONLY items explicitly named via `--item`; `autonomous` takes
-the ready queue. The Dispatcher is the sole enforcer of the two
+per process. There are NO run modes: `dispatch --item` drives one
+explicitly named item as an operator override (no WIP-cap
+enforcement), while `loop` with no `--item` drains the ranked ready
+queue up to `--budget` and the WIP cap. Dispositions are governed by the
+`dispatcher.*` policy settings read from `.livespec.jsonc`, never by a
+per-run mode argument. The Dispatcher is the sole enforcer of the two
 human-delegable policy valves bracketing the WIP-limited autonomous
 middle: ADMISSION (admit the highest-`rank` admission-eligible `ready`
 items up to the per-repo `dispatcher.wip_cap`, set the assignee,

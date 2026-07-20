@@ -65,8 +65,22 @@ def _write_janitor_lock(*, descriptor: int, owner: str) -> None:
 
 
 def _stale_janitor_lock_reclaimed(*, path: Path) -> bool:
-    with _reclaim_mutex_path(path=path).open("a+b") as mutex:
-        fcntl.flock(mutex.fileno(), fcntl.LOCK_EX)
+    # Fail closed: a claimant that cannot take the reclaim mutex has not
+    # established exclusion, so it reports contention rather than reclaiming.
+    # This runs before the lock is read, so it is on EVERY contention path.
+    opened = attempt(
+        action=lambda: _reclaim_mutex_path(path=path).open("a+b"),
+        exceptions=(OSError,),
+    )
+    if isinstance(opened, AttemptFailure):
+        return False
+    with opened as mutex:
+        locked = attempt(
+            action=lambda: fcntl.flock(mutex.fileno(), fcntl.LOCK_EX),
+            exceptions=(OSError,),
+        )
+        if isinstance(locked, AttemptFailure):
+            return False
         return _stale_janitor_lock_reclaimed_locked(path=path)
 
 
