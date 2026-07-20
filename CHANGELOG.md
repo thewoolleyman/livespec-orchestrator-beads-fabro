@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.11](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.10...v0.45.11) (2026-07-20)
+
+
+### Bug Fixes
+
+* discover the dispatch target's own committed Fabro workflow ([c8bde4a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c8bde4a512c1b6e92f257b08ab25109693af8592))
+
 ## [0.45.10](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.9...v0.45.10) (2026-07-20)
 
 
