@@ -1,5 +1,39 @@
 # Autonomous-mode MVP — orchestrator plan handoff
 
+> # CLOSED + ARCHIVED 2026-07-19
+>
+> **This thread is finished; nothing below is a live instruction.** It was
+> frozen on 2026-07-10 **before execution** and never updated, so it contradicts
+> reality on three load-bearing points. Read §"Closing record" for what actually
+> happened, then treat everything below it as history.
+>
+> Its overall-plan parent (`livespec:plan/autonomous-mode/`) was superseded and
+> collapsed the same day; the surviving live work is
+> `livespec:plan/autonomous-mode-acceptance/` (epic `livespec-j4odoz`).
+
+## Closing record
+
+This handoff says three things that were true on 2026-07-10 and false shortly
+after. Anyone who resumed from it would have been actively misled:
+
+| It says | Reality |
+|---|---|
+| "the fable-review LOOP is OPEN — O1 MUST NOT start" | The loop EXITED 2026-07-10 (round 6 nothing-blocking + maintainer certification). O1 was cleared that same day. |
+| "The engine is ALREADY fully spec'd (v032) and UNBUILT" | It was BUILT. `bd-ib-82a` was groomed into slices and merged by ~2026-07-13. |
+| "One backlog item tracks the whole build: `bd-ib-82a` … no slices" | Superseded outright: orchestrator spec **v034** (2026-07-14) RETIRED "Full autonomous mode" and replaced it with six independent `dispatcher.*` policy settings, rebuilt under epic `bd-ib-24j5uy` (O0–O10, all done, released through 0.43.0). |
+
+**Where the work went.** The decision-engine half of the programme shipped and
+is live. The single remaining step of the whole autonomous-mode programme is
+the MVP acceptance, owned by `livespec:plan/autonomous-mode-acceptance/`.
+
+**Residual, still open and correctly homed elsewhere:** `bd-ib-0s5` (cost-gate
+weaknesses, blocked/needs-human, spec-change tier) under epic `bd-ib-24j5uy`.
+
+Everything from here down is preserved AS WRITTEN on 2026-07-10 and is
+**stale by design**.
+
+---
+
 **Status:** the overall plan's fable-review LOOP is OPEN — O1 MUST NOT start
 until the loop exits: a FRESH Fable session review finds nothing blocking AND
 the MAINTAINER certifies. The AUTHORITATIVE loop state (rounds run, fixes
