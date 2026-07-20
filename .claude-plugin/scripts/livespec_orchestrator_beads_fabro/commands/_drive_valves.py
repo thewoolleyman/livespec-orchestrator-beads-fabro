@@ -67,9 +67,10 @@ def run_human_valve_action(
     value = cast("str", action_value)
     if action == "resolve-blocked":
         result = resolve_blocked_item(config=config, item=item, aid=action_id, target_status=value)
-    elif action in {"approve", "accept"}:
-        handler = _approve_item if action == "approve" else _accept_item
-        result = handler(config=config, item=item, action_id=action_id)
+    elif action == "approve":
+        result = _approve_item(repo=repo, config=config, item=item, action_id=action_id)
+    elif action == "accept":
+        result = _accept_item(config=config, item=item, action_id=action_id)
     elif action in {"set-admission", "set-acceptance"}:
         result = set_policy(config=config, item=item, aid=action_id, action=action, value=value)
     elif action in CAP_ACTION_VERBS:
@@ -137,10 +138,12 @@ def _find_item(*, items: list[WorkItem], item_id: str) -> WorkItem | None:
     return next((item for item in items if item.id == item_id), None)
 
 
-def _approve_item(*, config: StoreConfig, item: WorkItem, action_id: str) -> dict[str, Any]:
+def _approve_item(
+    *, repo: Path, config: StoreConfig, item: WorkItem, action_id: str
+) -> dict[str, Any]:
     if item.status != "pending-approval":
         return invalid_source_state(aid=action_id, item=item, expected="pending-approval")
-    if effective_admission_policy(item=item) != "manual":
+    if effective_admission_policy(item=item, cwd=repo) != "manual":
         return valve_refusal(
             aid=action_id,
             wid=item.id,

@@ -135,10 +135,12 @@ def _ready_checklist() -> DefinitionOfReadyChecklist:
 # --------------------------------------------------------------------------
 
 
-def test_single_acceptance_item_lands_pending_approval() -> None:
+def test_single_acceptance_item_lands_pending_approval(tmp_path: Path) -> None:
     _seed_issue(issue_id="li-pending")
 
-    verdict = apply_intake_dor(path=_config(), item_id="li-pending", checklist=_ready_checklist())
+    verdict = apply_intake_dor(
+        path=_config(repo_root=tmp_path), item_id="li-pending", checklist=_ready_checklist()
+    )
 
     assert verdict == "pending-approval"
     item = _item(issue_id="li-pending")
@@ -146,10 +148,19 @@ def test_single_acceptance_item_lands_pending_approval() -> None:
     assert item.blocked_reason is None
 
 
-def test_auto_admission_single_acceptance_item_lands_ready() -> None:
+def test_pending_item_without_repo_root_fails_loudly() -> None:
+    _seed_issue(issue_id="li-no-root")
+
+    with pytest.raises(TypeError, match="repo_root is required"):
+        apply_intake_dor(path=_config(), item_id="li-no-root", checklist=_ready_checklist())
+
+
+def test_auto_admission_single_acceptance_item_lands_ready(tmp_path: Path) -> None:
     _seed_issue(issue_id="li-ready", labels=["admission:auto"])
 
-    verdict = apply_intake_dor(path=_config(), item_id="li-ready", checklist=_ready_checklist())
+    verdict = apply_intake_dor(
+        path=_config(repo_root=tmp_path), item_id="li-ready", checklist=_ready_checklist()
+    )
 
     assert verdict == "ready"
     assert _item(issue_id="li-ready").status == "ready"

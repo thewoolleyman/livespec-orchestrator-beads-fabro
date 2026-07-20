@@ -34,6 +34,8 @@ as `sibling_work_item` so the Dispatcher can gate on it.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import (
     IssueDraft,
@@ -73,10 +75,12 @@ def _config() -> StoreConfig:
         database="livespec-impl-beads",
         bd_path="bd",
         fake=True,
+        repo_root=_LOCAL_REPO_ROOT,
     )
 
 
 _LOCAL_REPO = "livespec-orchestrator-beads-fabro"
+_LOCAL_REPO_ROOT = Path("tests/nonexistent-groom-policy-cwd")
 _CROSS_REPO = "livespec-runtime"
 
 

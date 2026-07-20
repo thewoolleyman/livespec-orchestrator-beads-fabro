@@ -84,6 +84,29 @@ def test_auto_approve_path_journals_governing_setting(
     _assert_auto_disposition(
         records=journal.records,
         disposition="auto-approve",
+        governing_settings=("admission:auto",),
+    )
+
+
+def test_global_auto_approve_path_journals_governing_setting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_dispatcher_config(repo=tmp_path, auto_approve_ready=True)
+    journal = _MemoryJournal()
+    monkeypatch.setattr(_dispatcher_admission, "store_config", lambda **_: tmp_path)
+    monkeypatch.setattr(_dispatcher_admission, "update_work_item_status", lambda **_: None)
+
+    _dispatcher_admission.admit_and_select(
+        repo=tmp_path,
+        items=[],
+        candidates=[_item(status="pending-approval", admission_policy=None)],
+        journal=journal,
+        enforce_cap=False,
+    )
+
+    _assert_auto_disposition(
+        records=journal.records,
+        disposition="auto-approve",
         governing_settings=("auto_approve_ready",),
     )
 
@@ -248,6 +271,22 @@ def test_review_cap_exceeded_path_journals_governing_setting(tmp_path: Path) -> 
         records=journal.records,
         disposition="cap-exceeded-escalation",
         governing_settings=("review_fix_cap",),
+    )
+
+
+def _write_dispatcher_config(*, repo: Path, auto_approve_ready: bool) -> None:
+    repo.joinpath(".livespec.jsonc").write_text(
+        """{
+  "livespec-orchestrator-beads-fabro": {
+    "dispatcher": {
+      "auto_approve_ready": """
+        + str(auto_approve_ready).lower()
+        + """
+    }
+  }
+}
+""",
+        encoding="utf-8",
     )
 
 

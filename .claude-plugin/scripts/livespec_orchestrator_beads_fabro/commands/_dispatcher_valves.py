@@ -57,6 +57,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -158,6 +160,7 @@ def plan_admissions(
     *,
     ready_items: Sequence[WorkItem],
     free_slots: int,
+    cwd: Path,
     resolve_assignee: Callable[..., str | None],
     admission_policy: Callable[..., str] = effective_admission_policy,
 ) -> AdmissionPlan:
@@ -181,6 +184,7 @@ def plan_admissions(
     `admission_policy` gates only the pending approval transition. Once an item
     is `ready`, admission to `active` is mechanical. The `admission_policy`
     resolver is an injected seam defaulting to `effective_admission_policy`,
+    and `cwd` is required so global policy settings cannot be skipped.
     keeping this a PURE, mode-agnostic planner.
     """
     approved: list[WorkItem] = []
@@ -188,7 +192,7 @@ def plan_admissions(
     held: list[tuple[WorkItem, str]] = []
     for item in ready_items:
         if item.status == "pending-approval":
-            if admission_policy(item=item) != _AUTO_ADMISSION:
+            if admission_policy(item=item, cwd=cwd) != _AUTO_ADMISSION:
                 held.append((item, _HELD_MANUAL))
                 continue
             approved.append(item)
