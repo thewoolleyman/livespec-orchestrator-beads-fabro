@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.10](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.9...v0.45.10) (2026-07-20)
+
+
+### Bug Fixes
+
+* harden janitor checkout lock ([70cd9df](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/70cd9df8046be09b35392e0a66cd539d3dfea080))
+
 ## [0.45.9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.8...v0.45.9) (2026-07-19)
 
 
