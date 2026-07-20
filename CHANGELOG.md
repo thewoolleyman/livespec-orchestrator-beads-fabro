@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.15](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.14...v0.45.15) (2026-07-20)
+
+
+### Bug Fixes
+
+* derive review cap telemetry from plan ([349fe79](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/349fe79f6bd3b87a8a72cc903c144c3429d4229d))
+
 ## [0.45.14](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.13...v0.45.14) (2026-07-20)
 
 
