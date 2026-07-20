@@ -3,8 +3,11 @@
 The price table + token→USD math that turns the per-API-call token counts
 the host OTLP receiver already sees into the OBSERVED per-dispatch cost
 the y0m spend cap consumes. This is the seam that LIFTS 5v9's fail-closed
-refusal: `_dispatcher_cost` refuses in autonomous mode whenever run cost
-is UNOBSERVABLE, and today it is always unobservable because fabro's
+refusal: `_dispatcher_cost` refuses in an unattended queue drain (a run
+with no explicit `--item` selection) whenever run cost is UNOBSERVABLE;
+a human-hand-picked `--item` dispatch warns instead of refusing (only
+under `LIVESPEC_COST_MODE=enforce`; the default `report` posture never
+refuses). Today it is always unobservable because fabro's
 `total_usd_micros` is null on every run. Claude-Code emits per-API-call
 token counts on its TRACE spans but NO `cost_usd` ATTRIBUTE on the span
 (cost is a metric, not a span attribute — see

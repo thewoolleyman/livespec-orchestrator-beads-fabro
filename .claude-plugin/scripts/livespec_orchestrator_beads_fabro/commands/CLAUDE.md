@@ -63,8 +63,8 @@ public module per query-only skill:
   `_dispatcher_reflection.py`, `_dispatcher_watchdog.py`,
   `_dispatcher_cost.py` — the fail-closed cost-observability seam
   (work-item 5v9: `total_usd_micros` is null on every fabro run in
-  v0.254.0, so autonomous mode refuses to keep picking on unobservable
-  cost; the seam y0m's spend cap builds on). Its Ledger
+  v0.254.0, so an unattended queue drain refuses to keep picking on
+  unobservable cost; the seam y0m's spend cap builds on). Its Ledger
   writes (admit / complete / accept / reject / close-on-confirmed-merge)
   are machine-path dispositions of already-filed items.
 - `rebalance_ranks.py` — the orchestrator-PRIVATE, on-demand bulk
