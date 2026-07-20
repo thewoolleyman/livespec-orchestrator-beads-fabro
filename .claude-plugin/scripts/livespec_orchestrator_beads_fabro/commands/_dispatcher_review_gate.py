@@ -119,7 +119,10 @@ def _emit_review_gate_from_fabro_events(*, emission: ReviewGateEmission) -> None
             exit_code=events.exit_code,
         )
         return
-    telemetry = parse_review_gate_events(events_jsonl=events.stdout)
+    telemetry = parse_review_gate_events(
+        events_jsonl=events.stdout,
+        review_fix_visit_cap=emission.plan.review_fix_visit_cap,
+    )
     _ = (
         Success(telemetry)
         .map(tap(lambda value: _emit_review_gate_span(emission=emission, telemetry=value)))

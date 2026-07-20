@@ -307,6 +307,116 @@ def test_emit_review_gate_from_fabro_events_queries_and_journals(tmp_path: Path)
     assert journal.records[-1]["review_verdict"] == "approve"
 
 
+def test_emit_review_gate_from_fabro_events_journals_low_cap_ship(tmp_path: Path) -> None:
+    plan = _plan(repo=tmp_path, review_fix_cap=1)
+    runner = _FakeRunner(
+        queue=[
+            CommandResult(
+                exit_code=0,
+                stdout=_jsonl(
+                    _edge(
+                        from_node="review",
+                        to_node="review_fix",
+                        reason="preferred_label",
+                        preferred_label="fix",
+                        timestamp="2026-07-15T00:00:01Z",
+                    ),
+                    _edge(
+                        from_node="review",
+                        to_node="pr",
+                        reason="unconditional",
+                        preferred_label=None,
+                        timestamp="2026-07-15T00:00:02Z",
+                    ),
+                ),
+                stderr="",
+            )
+        ]
+    )
+    journal = _Journal()
+
+    emit_review_gate_from_fabro_events(
+        emission=ReviewGateEmission(
+            plan=plan,
+            runner=runner,
+            journal=journal,
+            spans_path=tmp_path / "review-spans.jsonl",
+            work_item_id="bd-1",
+            dispatch_id="dispatch-1",
+            run_id="run-1",
+        )
+    )
+
+    assert journal.records[-1]["stage"] == "auto-disposition"
+    assert journal.records[-1]["disposition"] == "ship-on-cap"
+    assert journal.records[-1]["governing_settings"] == [
+        "merge_on_review_cap",
+        "review_fix_cap",
+    ]
+
+
+def test_emit_review_gate_from_fabro_events_does_not_false_positive_below_high_cap(
+    tmp_path: Path,
+) -> None:
+    plan = _plan(repo=tmp_path, review_fix_cap=7)
+    runner = _FakeRunner(
+        queue=[
+            CommandResult(
+                exit_code=0,
+                stdout=_jsonl(
+                    _edge(
+                        from_node="review",
+                        to_node="review_fix",
+                        reason="preferred_label",
+                        preferred_label="fix",
+                        timestamp="2026-07-15T00:00:01Z",
+                    ),
+                    _edge(
+                        from_node="review",
+                        to_node="review_fix",
+                        reason="preferred_label",
+                        preferred_label="fix",
+                        timestamp="2026-07-15T00:00:02Z",
+                    ),
+                    _edge(
+                        from_node="review",
+                        to_node="pr",
+                        reason="unconditional",
+                        preferred_label=None,
+                        timestamp="2026-07-15T00:00:03Z",
+                    ),
+                ),
+                stderr="",
+            )
+        ]
+    )
+    journal = _Journal()
+
+    emit_review_gate_from_fabro_events(
+        emission=ReviewGateEmission(
+            plan=plan,
+            runner=runner,
+            journal=journal,
+            spans_path=tmp_path / "review-spans.jsonl",
+            work_item_id="bd-1",
+            dispatch_id="dispatch-1",
+            run_id="run-1",
+        )
+    )
+
+    assert journal.records == [
+        {
+            "stage": "review-gate-telemetry",
+            "work_item_id": "bd-1",
+            "run_id": "run-1",
+            "review_verdict": "unknown",
+            "review_fix_rounds": 2,
+            "review_hit_cap": False,
+            "pr_shipped_on_cap": False,
+        }
+    ]
+
+
 def test_emit_review_gate_from_fabro_events_skips_without_run_id(tmp_path: Path) -> None:
     runner = _FakeRunner(queue=[])
     journal = _Journal()
@@ -455,7 +565,7 @@ def _attrs(entries: object) -> dict[str, object]:
     return attrs
 
 
-def _plan(*, repo: Path) -> DispatchPlan:
+def _plan(*, repo: Path, review_fix_cap: int = 3) -> DispatchPlan:
     return build_plan(
         repo=repo,
         work_item_id="bd-1",
@@ -464,6 +574,7 @@ def _plan(*, repo: Path) -> DispatchPlan:
         fabro_bin="fabro",
         janitor=None,
         janitor_checkout=repo / "janitor",
+        review_fix_cap=review_fix_cap,
     )
 
 
