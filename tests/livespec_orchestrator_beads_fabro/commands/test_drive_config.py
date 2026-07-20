@@ -106,6 +106,58 @@ def test_drive_writes_one_dispatcher_setting_without_clobbering_siblings(
     }
 
 
+def test_drive_config_write_preserves_comments_and_unrelated_order(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    config_path = repo / ".livespec.jsonc"
+    original = f"""{{
+  // template rationale stays with the first key
+  "template": "impl-plugin",
+  "credential_wrapper": [
+    "op",
+    "run"
+  ],
+  "{_PLUGIN_BLOCK}": {{
+    "connection": {{
+      "tenant": "tenant",
+      "prefix": "bd-ib"
+    }},
+    // dispatcher settings are operator-owned
+    "dispatcher": {{
+      // wip cap keeps queue pressure bounded
+      "wip_cap": 5,
+      "acceptance_mode": "ai-then-human"
+    }},
+    "compat": {{
+      // pins track releases rather than raw master
+      "pinned": "v0.16.0"
+    }}
+  }},
+  "livespec": {{
+    "version": 1
+  }}
+}}
+"""
+    _ = config_path.write_text(original, encoding="utf-8")
+
+    result = drive.run_action(repo=repo, action_id="set-config:wip_cap:9")
+
+    assert result["status"] == "green"
+    updated = config_path.read_text(encoding="utf-8")
+    assert [line for line in updated.splitlines() if line.strip().startswith("//")] == [
+        line for line in original.splitlines() if line.strip().startswith("//")
+    ]
+    assert updated.index('"template"') < updated.index('"credential_wrapper"')
+    assert updated.index('"connection"') < updated.index('"dispatcher"') < updated.index('"compat"')
+    assert updated == original.replace('"wip_cap": 5', '"wip_cap": 9')
+    assert (
+        json.loads(
+            "\n".join(line for line in updated.splitlines() if not line.strip().startswith("//"))
+        )[_PLUGIN_BLOCK]["dispatcher"]["wip_cap"]
+        == 9
+    )
+
+
 def test_drive_refuses_invalid_config_key_and_value(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
