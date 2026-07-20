@@ -92,6 +92,7 @@ def admit_and_select(
     plan = plan_admissions(
         ready_items=admittable,
         free_slots=free_slots,
+        cwd=repo,
         resolve_assignee=resolve_assignee,
     )
     admitted: list[WorkItem] = []
@@ -104,7 +105,7 @@ def admit_and_select(
             record=auto_disposition_journal_record(
                 work_item_id=item.id,
                 disposition="auto-approve",
-                governing_settings=("auto_approve_ready",),
+                governing_settings=_auto_approve_governing_settings(item=item),
             )
         )
     for item, assignee in plan.admitted:
@@ -122,6 +123,12 @@ def admit_and_select(
         _ = write_stderr(text=f"SURFACE: {admission_held_detail(item_id=item.id, reason=reason)}\n")
         refused.append(held)
     return Admission(admitted=admitted, refused=refused)
+
+
+def _auto_approve_governing_settings(*, item: WorkItem) -> tuple[str, ...]:
+    if item.admission_policy == "auto":
+        return ("admission:auto",)
+    return ("auto_approve_ready",)
 
 
 def admission_held_outcome(*, item: WorkItem, reason: str) -> DispatchOutcome:

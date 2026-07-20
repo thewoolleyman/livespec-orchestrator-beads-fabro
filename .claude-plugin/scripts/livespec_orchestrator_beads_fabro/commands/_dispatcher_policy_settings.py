@@ -108,28 +108,26 @@ def resolve_acceptance_rework_cap(*, cwd: Path) -> int:
     )
 
 
-def effective_admission_policy(*, item: WorkItem, cwd: Path | None = None) -> str:
+def effective_admission_policy(*, item: WorkItem, cwd: Path) -> str:
     """The item's effective admission policy with per-item-over-global precedence."""
     if _is_spec_change_tier(item=item):
         return DEFAULT_ADMISSION_POLICY
     if item.admission_policy is not None:
         return item.admission_policy
-    if cwd is not None and resolve_auto_approve_ready(cwd=cwd):
+    if resolve_auto_approve_ready(cwd=cwd):
         return _AUTO_ADMISSION
     return DEFAULT_ADMISSION_POLICY
 
 
-def effective_acceptance_policy(*, item: WorkItem, cwd: Path | None = None) -> str:
+def effective_acceptance_policy(*, item: WorkItem, cwd: Path) -> str:
     """The item's effective acceptance policy with per-item-over-global precedence."""
     if item.acceptance_policy is not None:
         return item.acceptance_policy
-    if cwd is not None:
-        return resolve_acceptance_mode(cwd=cwd)
-    return DEFAULT_ACCEPTANCE_POLICY
+    return resolve_acceptance_mode(cwd=cwd)
 
 
 def effective_merge_on_review_cap(
-    *, item: WorkItem, cwd: Path | None = None, raw_labels: Sequence[str] = ()
+    *, item: WorkItem, cwd: Path, raw_labels: Sequence[str] = ()
 ) -> bool:
     """Resolve `merge_on_review_cap`, with a raw per-item label overriding global."""
     _ = item
@@ -137,27 +135,21 @@ def effective_merge_on_review_cap(
     parsed = _bool_label_value(value=label_value)
     if parsed is not None:
         return parsed
-    if cwd is not None:
-        return resolve_merge_on_review_cap(cwd=cwd)
-    return DEFAULT_MERGE_ON_REVIEW_CAP
+    return resolve_merge_on_review_cap(cwd=cwd)
 
 
-def effective_review_fix_cap(
-    *, item: WorkItem, cwd: Path | None = None, raw_labels: Sequence[str] = ()
-) -> int:
+def effective_review_fix_cap(*, item: WorkItem, cwd: Path, raw_labels: Sequence[str] = ()) -> int:
     """Resolve `review_fix_cap`, with a raw per-item label overriding global."""
     _ = item
     label_value = _raw_label_value(raw_labels=raw_labels, prefix=REVIEW_FIX_CAP_LABEL)
     parsed = _positive_int_label_value(value=label_value)
     if parsed is not None:
         return parsed
-    if cwd is not None:
-        return resolve_review_fix_cap(cwd=cwd)
-    return DEFAULT_REVIEW_FIX_CAP
+    return resolve_review_fix_cap(cwd=cwd)
 
 
 def effective_acceptance_rework_cap(
-    *, item: WorkItem, cwd: Path | None = None, raw_labels: Sequence[str] = ()
+    *, item: WorkItem, cwd: Path, raw_labels: Sequence[str] = ()
 ) -> int:
     """Resolve `acceptance_rework_cap`, with a raw per-item label overriding global."""
     _ = item
@@ -165,9 +157,7 @@ def effective_acceptance_rework_cap(
     parsed = _positive_int_label_value(value=label_value)
     if parsed is not None:
         return parsed
-    if cwd is not None:
-        return resolve_acceptance_rework_cap(cwd=cwd)
-    return DEFAULT_ACCEPTANCE_REWORK_CAP
+    return resolve_acceptance_rework_cap(cwd=cwd)
 
 
 def _read_dispatcher_config_value(*, cwd: Path, key: str) -> object:

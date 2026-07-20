@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro._beads_client import FakeBeadsClient, make_beads_client
@@ -27,7 +28,15 @@ def _fake() -> FakeBeadsClient:
     return client
 
 
-def _write_fake_config(repo: Path) -> None:
+def _write_fake_config(repo: Path, *, auto_approve_ready: bool = False) -> None:
+    dispatcher = (
+        f""",
+    "dispatcher": {{
+      "auto_approve_ready": {str(auto_approve_ready).lower()}
+    }}"""
+        if auto_approve_ready
+        else ""
+    )
     (repo / ".livespec.jsonc").write_text(
         """{
   "livespec-orchestrator-beads-fabro": {
@@ -38,7 +47,9 @@ def _write_fake_config(repo: Path) -> None:
       "database": "livespec-impl-beads",
       "bd_path": "bd",
       "fake": true
-    }
+    }"""
+        + dispatcher
+        + """
   }
 }
 """,
@@ -46,8 +57,8 @@ def _write_fake_config(repo: Path) -> None:
     )
 
 
-def _item() -> WorkItem:
-    return WorkItem(
+def _item(**overrides: object) -> WorkItem:
+    base = WorkItem(
         id="bd-ib-ready",
         type="task",
         status="ready",
@@ -64,6 +75,25 @@ def _item() -> WorkItem:
         audit=None,
         superseded_by=None,
     )
+    return replace(base, **overrides)
+
+
+def test_approve_refuses_unlabeled_pending_item_when_global_auto_enabled(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write_fake_config(repo, auto_approve_ready=True)
+    append_work_item(
+        path=_config(),
+        item=_item(status="pending-approval", admission_policy=None),
+    )
+
+    result = run_human_valve_action(repo=repo, action_id="approve:bd-ib-ready")
+
+    assert result["status"] == "failed"
+    assert result["domain_error"] == "invalid-source-state"
+    assert _fake().show_issue(issue_id="bd-ib-ready")["status"] == "pending-approval"
 
 
 def test_run_human_valve_action_refuses_malformed_action(tmp_path: Path) -> None:

@@ -137,12 +137,13 @@ def apply_intake_dor(
     item = materialize_work_items(records=read_work_items(path=path))[item_id]
     verdict = evaluate(checklist=checklist)
     status = _routed_status(verdict=verdict, has_dependencies=bool(item.depends_on))
-    if (
-        status == _PENDING_APPROVAL_STATUS
-        and effective_admission_policy(item=item, cwd=path.repo_root) == _AUTO_ADMISSION
-        and not item.depends_on
-    ):
-        status = _READY_STATUS
+    if status == _PENDING_APPROVAL_STATUS and not item.depends_on:
+        repo_root = path.repo_root
+        if repo_root is None:
+            msg = "StoreConfig.repo_root is required for intake admission policy resolution"
+            raise TypeError(msg)
+        if effective_admission_policy(item=item, cwd=repo_root) == _AUTO_ADMISSION:
+            status = _READY_STATUS
 
     add_labels = [_BLOCKED_REASON_LABEL] if status == _BLOCKED_STATUS else []
     remove_labels = list(_RETIRED_INTAKE_LABELS)

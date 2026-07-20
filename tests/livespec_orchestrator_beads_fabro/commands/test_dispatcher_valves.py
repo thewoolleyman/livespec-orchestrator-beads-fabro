@@ -36,6 +36,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
+_NO_CONFIG_CWD = Path("tests/nonexistent-policy-cwd")
+
 
 def _item(**overrides: object) -> WorkItem:
     base = WorkItem(
@@ -215,9 +217,10 @@ def test_effective_admission_policy_inherits_manual_when_none(tmp_path: Path) ->
     )
 
 
-def test_effective_acceptance_policy_defaults_without_cwd() -> None:
+def test_effective_acceptance_policy_defaults_with_empty_config() -> None:
     assert (
-        effective_acceptance_policy(item=_item(acceptance_policy=None)) == DEFAULT_ACCEPTANCE_POLICY
+        effective_acceptance_policy(item=_item(acceptance_policy=None), cwd=_NO_CONFIG_CWD)
+        == DEFAULT_ACCEPTANCE_POLICY
     )
 
 
@@ -323,7 +326,12 @@ def test_plan_admissions_admits_up_to_free_slots_in_rank_order() -> None:
         _item(id="a1", rank="a1", admission_policy="auto"),
         _item(id="a2", rank="a2", admission_policy="auto"),
     ]
-    plan = plan_admissions(ready_items=items, free_slots=2, resolve_assignee=_always(DEFAULT_DOER))
+    plan = plan_admissions(
+        ready_items=items,
+        free_slots=2,
+        cwd=_NO_CONFIG_CWD,
+        resolve_assignee=_always(DEFAULT_DOER),
+    )
     assert plan.approved == ()
     assert [item.id for item, _ in plan.admitted] == ["a0", "a1"]
     assert all(assignee == DEFAULT_DOER for _, assignee in plan.admitted)
@@ -336,7 +344,12 @@ def test_plan_admissions_holds_manual_pending_items_regardless_of_capacity() -> 
         _item(id="m0", status="pending-approval", admission_policy="manual"),
         _item(id="a0", admission_policy="auto"),
     ]
-    plan = plan_admissions(ready_items=items, free_slots=5, resolve_assignee=_always(DEFAULT_DOER))
+    plan = plan_admissions(
+        ready_items=items,
+        free_slots=5,
+        cwd=_NO_CONFIG_CWD,
+        resolve_assignee=_always(DEFAULT_DOER),
+    )
     assert [item.id for item, _ in plan.admitted] == ["a0"]
     assert [(item.id, reason) for item, reason in plan.held] == [("m0", "manual-admission")]
 
@@ -345,6 +358,7 @@ def test_plan_admissions_holds_default_none_policy_as_manual_when_pending() -> N
     plan = plan_admissions(
         ready_items=[_item(id="n0", status="pending-approval", admission_policy=None)],
         free_slots=5,
+        cwd=_NO_CONFIG_CWD,
         resolve_assignee=_always(DEFAULT_DOER),
     )
     assert plan.admitted == ()
@@ -355,6 +369,7 @@ def test_plan_admissions_auto_approves_pending_item() -> None:
     plan = plan_admissions(
         ready_items=[_item(id="a0", status="pending-approval", admission_policy="auto")],
         free_slots=0,
+        cwd=_NO_CONFIG_CWD,
         resolve_assignee=_always(DEFAULT_DOER),
     )
     assert [item.id for item in plan.approved] == ["a0"]
@@ -366,6 +381,7 @@ def test_plan_admissions_holds_unresolvable_assignee() -> None:
     plan = plan_admissions(
         ready_items=[_item(id="a0", admission_policy="auto")],
         free_slots=5,
+        cwd=_NO_CONFIG_CWD,
         resolve_assignee=_always(None),
     )
     assert plan.admitted == ()
@@ -376,6 +392,7 @@ def test_plan_admissions_admits_nothing_when_no_free_slots() -> None:
     plan = plan_admissions(
         ready_items=[_item(id="a0", admission_policy="auto")],
         free_slots=0,
+        cwd=_NO_CONFIG_CWD,
         resolve_assignee=_always(DEFAULT_DOER),
     )
     assert plan.admitted == ()
@@ -386,13 +403,14 @@ def test_plan_admissions_honors_injected_admission_policy_resolver() -> None:
     # The injected `admission_policy` seam is how the full-autonomous-mode
     # collapse flips a manual pending item to auto WITHOUT this valve knowing
     # about the mode: an all-`auto` resolver approves an otherwise-held manual.
-    def _all_auto(*, item: WorkItem) -> str:
-        _ = item
+    def _all_auto(*, item: WorkItem, cwd: Path) -> str:
+        _ = (item, cwd)
         return "auto"
 
     plan = plan_admissions(
         ready_items=[_item(id="m0", status="pending-approval", admission_policy="manual")],
         free_slots=0,
+        cwd=_NO_CONFIG_CWD,
         resolve_assignee=_always(DEFAULT_DOER),
         admission_policy=_all_auto,
     )
@@ -420,7 +438,10 @@ def test_plan_admissions_invariants(
         for index, policy in enumerate(policies)
     ]
     plan = plan_admissions(
-        ready_items=items, free_slots=free_slots, resolve_assignee=_always(resolved)
+        ready_items=items,
+        free_slots=free_slots,
+        cwd=_NO_CONFIG_CWD,
+        resolve_assignee=_always(resolved),
     )
     # Admissions never exceed the free slots, and each admitted item is
     # auto-policy + resolvable.
