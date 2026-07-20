@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.17](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.16...v0.45.17) (2026-07-20)
+
+
+### Bug Fixes
+
+* route the janitor reclaim mutex's own I/O onto the Result track ([0cf21c5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0cf21c536108886e66436edb9dcbadd7fca30c88))
+
 ## [0.45.16](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.15...v0.45.16) (2026-07-20)
 
 
