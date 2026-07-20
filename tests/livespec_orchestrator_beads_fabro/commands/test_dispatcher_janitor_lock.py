@@ -150,7 +150,11 @@ def test_claim_janitor_lock_preserves_live_replacement_when_stale_reclaim_races(
     live_bytes = json.dumps(live_payload, sort_keys=True).encode() + b"\n"
 
     def replace_stale_with_live(*, pid: int) -> bool:
-        assert pid == stale_payload["pid"]
+        # The probe is now consulted for the live replacement pid as well, since
+        # the production-dead `lock.pid == os.getpid()` short-circuit is gone.
+        # Only the stale pid triggers the swap; the live pid reports alive.
+        if pid != stale_payload["pid"]:
+            return True
         path.write_bytes(live_bytes)
         return False
 
