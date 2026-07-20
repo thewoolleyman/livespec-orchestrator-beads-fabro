@@ -1,20 +1,29 @@
-"""The Dispatcher resolves its Fabro workflow + bin from the PLUGIN ROOT.
+"""The Dispatcher resolves its Fabro workflow + bin over a three-step precedence.
 
-Slice 1 of orchestrator-plugin-self-containment: `_workflow_toml` and
-`candidate_dispatcher_bin` must anchor on the plugin root (`.claude-plugin/`
-in source, or `CLAUDE_PLUGIN_ROOT` in the flattened install cache) rather than
-the repo root, and the `.fabro/` workflow payload must ship INSIDE that root.
+Slice 1 of orchestrator-plugin-self-containment established the PLUGIN ROOT as
+the anchor: `workflow_toml` and `candidate_dispatcher_bin` resolve against
+`.claude-plugin/` in source (or `CLAUDE_PLUGIN_ROOT` in the flattened install
+cache) rather than the repo root, and the `.fabro/` workflow payload ships
+INSIDE that root.
 
-Two properties under test:
+`workflow_toml` then admits the DISPATCH TARGET's own committed workflow
+between the explicit override and that plugin-root default, so a consumer repo
+whose sandbox needs a different toolchain governs its own execution substrate.
+The full precedence under test:
 
-1. With no `--workflow` override, `_workflow_toml` returns
-   `<plugin-root>/.fabro/workflows/implement-work-item/workflow.toml`, where
-   `<plugin-root>` is `Path(dispatcher.__file__).resolve().parents[3]` (the
-   `.claude-plugin/` dir) — and that the packaged `workflow.toml` AND
-   `workflow.fabro` actually exist there, so a future accidental drop of the
-   payload fails CI (the structural guard for change (e)).
-2. Both resolvers honor a non-empty `CLAUDE_PLUGIN_ROOT` env override (the
-   cache-mode anchor) and otherwise fall back to the source `parents[3]` walk.
+1. An explicit `--workflow <path>` always wins.
+2. Otherwise `<repo>/.fabro/workflows/implement-work-item/workflow.toml`, when
+   the dispatch target commits one. `args` is not guaranteed to carry a `repo`
+   attribute, so a namespace without one must degrade to step 3 rather than
+   raise.
+3. Otherwise `<plugin-root>/.fabro/workflows/implement-work-item/workflow.toml`,
+   where `<plugin-root>` is `Path(dispatcher.__file__).resolve().parents[3]`
+   (the `.claude-plugin/` dir) — and the packaged `workflow.toml` AND
+   `workflow.fabro` must actually exist there, so a future accidental drop of
+   the payload fails CI (the structural guard for change (e)).
+
+Both resolvers honor a non-empty `CLAUDE_PLUGIN_ROOT` env override (the
+cache-mode anchor) and otherwise fall back to the source `parents[3]` walk.
 """
 
 from __future__ import annotations
@@ -72,6 +81,68 @@ def test_workflow_override_arg_wins() -> None:
     """An explicit `--workflow <path>` still overrides the plugin-root default."""
     override = "/somewhere/else/workflow.toml"
     assert workflow_toml(args=argparse.Namespace(workflow=override)) == Path(override)
+
+
+def test_workflow_toml_prefers_the_dispatch_target_committed_workflow(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A dispatch target that commits its own workflow governs its own sandbox.
+
+    The bundled workflow pins the orchestrator's OWN (Python-only) sandbox
+    image; a consumer repo needing another toolchain layer commits its own
+    `workflow.toml` and must have it read rather than silently ignored.
+    """
+    monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
+    repo = tmp_path / "consumer-repo"
+    repo_local = repo.joinpath(*_WORKFLOW_SUBPATH)
+    repo_local.parent.mkdir(parents=True)
+    _ = repo_local.write_text("# the dispatch target's own workflow\n", encoding="utf-8")
+
+    resolved = workflow_toml(args=argparse.Namespace(workflow=None, repo=str(repo)))
+
+    assert resolved == repo_local
+
+
+def test_workflow_toml_falls_back_to_plugin_root_when_repo_commits_none(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A dispatch target committing no workflow keeps the bundled default."""
+    monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
+    repo = tmp_path / "consumer-repo"
+    repo.mkdir()
+
+    resolved = workflow_toml(args=argparse.Namespace(workflow=None, repo=str(repo)))
+
+    assert resolved == _PLUGIN_ROOT.joinpath(*_WORKFLOW_SUBPATH)
+
+
+def test_workflow_override_arg_wins_over_the_repo_local_workflow(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`--workflow` outranks a committed repo-local workflow, not just the default."""
+    monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
+    repo = tmp_path / "consumer-repo"
+    repo_local = repo.joinpath(*_WORKFLOW_SUBPATH)
+    repo_local.parent.mkdir(parents=True)
+    _ = repo_local.write_text("# the dispatch target's own workflow\n", encoding="utf-8")
+    override = tmp_path / "explicit" / "workflow.toml"
+
+    resolved = workflow_toml(
+        args=argparse.Namespace(workflow=str(override), repo=str(repo)),
+    )
+
+    assert resolved == override
+
+
+def test_workflow_toml_tolerates_a_namespace_without_a_repo_attribute(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-dispatch subparsers define no `--repo`; the probe must not raise."""
+    monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
+    args = argparse.Namespace(workflow=None)
+    assert not hasattr(args, "repo")
+
+    assert workflow_toml(args=args) == _PLUGIN_ROOT.joinpath(*_WORKFLOW_SUBPATH)
 
 
 def test_candidate_dispatcher_bin_resolves_from_plugin_root(

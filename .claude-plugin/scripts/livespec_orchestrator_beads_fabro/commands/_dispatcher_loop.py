@@ -133,8 +133,18 @@ def _dispatch_one_locked(
         return failed_dispatch_outcome(
             journal=journal, work_item_id=item.id, stage="ledger-comments", detail=comments
         )
+    # Resolved once and journaled: `workflow_toml` now picks the dispatch
+    # target's OWN committed workflow over the plugin's bundled default, and
+    # that config carries the sandbox image pin — so which file won is the
+    # first thing to read when a dispatch dies on a missing toolchain.
+    committed_workflow = workflow_toml(args=args)
     journal.append(
-        record={"stage": "dispatch-id", "work_item_id": item.id, "dispatch_id": dispatch_id}
+        record={
+            "stage": "dispatch-id",
+            "work_item_id": item.id,
+            "dispatch_id": dispatch_id,
+            "workflow_toml": str(committed_workflow),
+        }
     )
     token_supplier = selfup.github_token_supplier()
     if isinstance(token_supplier, str):
@@ -145,7 +155,7 @@ def _dispatch_one_locked(
             detail=token_supplier,
         )
     overlay_error = materialize_overlay(
-        committed=workflow_toml(args=args),
+        committed=committed_workflow,
         overlay=overlay_file,
         repo=repo,
         work_item_id=item.id,

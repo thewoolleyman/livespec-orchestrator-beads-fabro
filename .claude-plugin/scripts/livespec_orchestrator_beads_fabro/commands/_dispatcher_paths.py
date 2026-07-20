@@ -31,6 +31,11 @@ __all__: list[str] = [
 _PR_FILES_PROBE_TIMEOUT_SECONDS = 60.0
 _CHECKOUT_PROBE_TIMEOUT_SECONDS = 60.0
 
+# Where a Fabro workflow config sits under whichever root carries it — the
+# plugin root for the bundled default, or a dispatch target's own checkout
+# for the repo-local override.
+_WORKFLOW_SUBPATH = (".fabro", "workflows", "implement-work-item", "workflow.toml")
+
 # The slug the self-update canary requires the promotion target's `origin`
 # to carry: the candidate must be a checkout of THIS orchestrator, never a
 # stray sibling repo the plugin happens to sit inside.
@@ -42,9 +47,31 @@ def store_config(*, repo: Path) -> StoreConfig:
 
 
 def workflow_toml(*, args: argparse.Namespace) -> Path:
+    """The committed Fabro workflow config this dispatch runs, by precedence.
+
+    1. An explicit `--workflow <path>` always wins.
+    2. Otherwise the DISPATCH TARGET's own committed
+       `<repo>/.fabro/workflows/implement-work-item/workflow.toml`, when it
+       exists. The workflow config carries the sandbox image pin, so a
+       consumer repo whose toolchain differs from the orchestrator's own
+       (a Rust repo needing the `python-rust-agent-` layer, against the
+       orchestrator's Python-only pin) governs its own execution substrate
+       rather than silently inheriting one that cannot build it.
+    3. Otherwise the plugin's bundled workflow — the default for every
+       dispatch target that commits none.
+
+    `args` is not guaranteed to carry a `repo` attribute: only the
+    dispatch-common subparsers define `--repo`, so the repo-local probe
+    reads it defensively and degrades to the bundled default.
+    """
     if args.workflow is not None:
         return Path(args.workflow)
-    return plugin_root() / ".fabro" / "workflows" / "implement-work-item" / "workflow.toml"
+    repo: object = getattr(args, "repo", None)
+    if repo is not None:
+        repo_local = Path(str(repo)).joinpath(*_WORKFLOW_SUBPATH)
+        if repo_local.is_file():
+            return repo_local
+    return plugin_root().joinpath(*_WORKFLOW_SUBPATH)
 
 
 def journal_path(*, args: argparse.Namespace, repo: Path) -> Path:
