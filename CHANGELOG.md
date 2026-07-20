@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.18](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.17...v0.45.18) (2026-07-20)
+
+
+### Bug Fixes
+
+* preserve jsonc comments on config writes ([108d390](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/108d3902252643ad84f501cce889adcec71b7a40))
+
 ## [0.45.17](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.16...v0.45.17) (2026-07-20)
 
 
