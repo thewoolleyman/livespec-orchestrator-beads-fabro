@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.12](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.11...v0.45.12) (2026-07-20)
+
+
+### Bug Fixes
+
+* **fabro:** point review_adapter at the renamed package it already bakes ([a3137d4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a3137d46d677ed985aaabd6d0127db74ee8868cd))
+
 ## [0.45.11](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.10...v0.45.11) (2026-07-20)
 
 
