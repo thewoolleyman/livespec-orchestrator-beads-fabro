@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.14](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.13...v0.45.14) (2026-07-20)
+
+
+### Bug Fixes
+
+* honor global auto approval in valves ([952d874](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/952d874c5c3c7fe5206efb7aa3925c71f47fc567))
+
 ## [0.45.13](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.12...v0.45.13) (2026-07-20)
 
 
