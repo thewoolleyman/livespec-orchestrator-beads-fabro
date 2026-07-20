@@ -647,5 +647,12 @@
     "spec_file": "constraints.md",
     "test": "TODO",
     "reason": "External-runtime posture constraint over Codex and the OpenAI Codex companion plugin: the deciding signals are the local opt-in/marker gate, the canary's exact-expression classification of the active companion source, the fail-closed-on-authorization default, and the rendered raw codex exec full-access/EOF behavior. Unit coverage for the gate and canary exists under tests/hooks and tests/hooks_plugin; a single bindable test ID for the whole constraint awaits an integration-tier test that exercises the gate and canary end to end."
+  },
+  {
+    "heading": "## Factory sandbox credential constraints",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "test": "TODO",
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
   }
 ]
