@@ -12,8 +12,6 @@ __all__: list[str] = [
     "parse_review_gate_events",
 ]
 
-_REVIEW_CAP_VISITS = 3
-
 
 @dataclass(frozen=True, kw_only=True)
 class ReviewGateTelemetry:
@@ -33,16 +31,20 @@ class _ReviewEdge:
     preferred_label: str | None
 
 
-def parse_review_gate_events(*, events_jsonl: str) -> ReviewGateTelemetry:
+def parse_review_gate_events(
+    *, events_jsonl: str, review_fix_visit_cap: int | None = None
+) -> ReviewGateTelemetry:
     """Derive terminal review-gate attributes from `fabro events --json` JSONL."""
     review_edges = tuple(_review_edges(events_jsonl=events_jsonl))
     fix_rounds = sum(1 for edge in review_edges if edge.to_node == "review_fix")
     visit_count = len(review_edges)
     terminal_edge = max(review_edges, key=lambda edge: edge.order_key) if review_edges else None
+    cap_visit_count = review_fix_visit_cap if review_fix_visit_cap is not None else visit_count
     hit_cap = (
         terminal_edge is not None
         and terminal_edge.reason == "unconditional"
-        and visit_count >= _REVIEW_CAP_VISITS
+        and fix_rounds > 0
+        and visit_count >= cap_visit_count
     )
     shipped_on_cap = terminal_edge is not None and hit_cap and terminal_edge.to_node == "pr"
     verdict = _terminal_verdict(edge=terminal_edge)
