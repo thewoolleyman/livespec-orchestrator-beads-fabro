@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import livespec_orchestrator_beads_fabro.commands._dispatcher_engine_janitor as janitor_module
+import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
@@ -110,6 +112,65 @@ def test_post_merge_lock_contention_refuses_before_preclean(tmp_path: Path) -> N
     assert "Wait for that janitor to finish" in outcome.detail
     assert runner.calls == []
     assert journal.records == []
+
+
+def test_post_merge_releases_lock_when_locked_body_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan = _plan(repo=tmp_path)
+    lock = plan.janitor_checkout.with_name(f"{plan.janitor_checkout.name}.lock")
+
+    def raise_from_locked_body(
+        *,
+        outcome_type: type[DispatchOutcome],
+        plan: DispatchPlan,
+        runner: Runner,
+        journal: Journal,
+        merged: PrView,
+    ) -> DispatchOutcome:
+        _ = outcome_type
+        _ = plan
+        _ = runner
+        _ = journal
+        _ = merged
+        raise RuntimeError("janitor body exploded")
+
+    monkeypatch.setattr(janitor_module, "_post_merge_locked", raise_from_locked_body)
+
+    with pytest.raises(RuntimeError, match="janitor body exploded"):
+        post_merge(
+            outcome_type=DispatchOutcome,
+            plan=plan,
+            runner=Runner(queue=[]),
+            journal=Journal(),
+            merged=_merged(),
+        )
+
+    assert not lock.exists()
+
+
+def test_post_merge_reclaims_stale_pid_lock_before_preclean(tmp_path: Path) -> None:
+    plan = _plan(repo=tmp_path)
+    lock = plan.janitor_checkout.with_name(f"{plan.janitor_checkout.name}.lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    _ = lock.write_text(
+        '{"pid": 999999999, "started_at_epoch": 1.0, "work_item_id": "x-1"}',
+        encoding="utf-8",
+    )
+    runner = Runner(queue=[_ok() for _ in range(8)])
+    journal = Journal()
+
+    outcome = post_merge(
+        outcome_type=DispatchOutcome,
+        plan=plan,
+        runner=runner,
+        journal=journal,
+        merged=_merged(),
+    )
+
+    assert (outcome.status, outcome.stage) == ("green", "done")
+    assert not lock.exists()
+    assert next(record["stage"] for record in journal.records) == "pull-primary"
 
 
 def test_post_merge_releases_lock_after_green(tmp_path: Path) -> None:

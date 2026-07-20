@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
+from contextlib import ExitStack
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import (
     run_stage,
     tail,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_lock import (
+    claim_janitor_lock,
+    janitor_lock_path,
+    release_janitor_lock,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     CORE_PLUGIN_ROOT_ENV_VAR,
@@ -21,7 +25,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     janitor_worktree_remove_argv,
     pull_primary_argv,
 )
-from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
@@ -37,32 +40,6 @@ _GIT_TIMEOUT_SECONDS = 600.0
 _JANITOR_TIMEOUT_SECONDS = 3600.0
 
 
-def _janitor_lock_path(*, plan: DispatchPlan) -> Path:
-    return plan.janitor_checkout.with_name(f"{plan.janitor_checkout.name}.lock")
-
-
-def _claim_janitor_lock(*, path: Path, owner: str) -> str | None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    opened = attempt(
-        action=lambda: os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600),
-        exceptions=(FileExistsError, OSError),
-    )
-    if isinstance(opened, AttemptFailure):
-        return (
-            f"janitor checkout lock {path} is already held for work-item {owner}; "
-            "another post-merge janitor is using the janitor checkout. "
-            f"Wait for that janitor to finish before retrying."
-        )
-    descriptor = opened
-    with os.fdopen(descriptor, "wb") as handle:
-        _ = handle.write(f"work_item_id={owner}\n".encode())
-    return None
-
-
-def _release_janitor_lock(*, path: Path) -> None:
-    _ = attempt(action=path.unlink, exceptions=(FileNotFoundError, OSError))
-
-
 def post_merge(
     *,
     outcome_type: type[DispatchOutcome],
@@ -71,8 +48,8 @@ def post_merge(
     journal: JournalWriter,
     merged: PrView,
 ) -> DispatchOutcome:
-    lock_path = _janitor_lock_path(plan=plan)
-    lock_detail = _claim_janitor_lock(path=lock_path, owner=plan.work_item_id)
+    lock_path = janitor_lock_path(plan=plan)
+    lock_detail = claim_janitor_lock(path=lock_path, owner=plan.work_item_id)
     if lock_detail is not None:
         return outcome_type(
             work_item_id=plan.work_item_id,
@@ -82,15 +59,15 @@ def post_merge(
             merge_sha=merged.merge_sha,
             detail=lock_detail,
         )
-    outcome = _post_merge_locked(
-        outcome_type=outcome_type,
-        plan=plan,
-        runner=runner,
-        journal=journal,
-        merged=merged,
-    )
-    _release_janitor_lock(path=lock_path)
-    return outcome
+    with ExitStack() as stack:
+        _ = stack.callback(release_janitor_lock, path=lock_path)
+        return _post_merge_locked(
+            outcome_type=outcome_type,
+            plan=plan,
+            runner=runner,
+            journal=journal,
+            merged=merged,
+        )
 
 
 def _post_merge_locked(
