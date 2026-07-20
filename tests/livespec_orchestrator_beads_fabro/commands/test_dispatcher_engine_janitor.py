@@ -109,7 +109,7 @@ def test_post_merge_lock_contention_refuses_before_preclean(tmp_path: Path) -> N
     )
 
     assert (outcome.status, outcome.stage) == ("failed", "janitor-checkout-locked")
-    assert "Wait for that janitor to finish" in outcome.detail
+    assert "remove the stale lock file before retrying" in outcome.detail
     assert runner.calls == []
     assert journal.records == []
 

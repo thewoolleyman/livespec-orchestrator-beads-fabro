@@ -73,7 +73,7 @@ def test_claim_janitor_lock_refuses_legacy_lock_without_pid(tmp_path: Path) -> N
     assert detail is not None
     assert "no pid recorded" in detail
     assert "remove the stale lock file" in detail
-    assert "Wait for that janitor to finish" in detail
+    assert "Wait for that janitor to finish" not in detail
 
 
 def test_claim_janitor_lock_treats_unprobeable_pid_as_live(
@@ -130,6 +130,42 @@ def test_claim_janitor_lock_refuses_invalid_json_payloads(
 
     assert detail is not None
     assert "no pid recorded" in detail
+
+
+def test_claim_janitor_lock_preserves_live_replacement_when_stale_reclaim_races(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "janitor.lock"
+    stale_payload = {
+        "pid": 999_999_999,
+        "started_at_epoch": 1.0,
+        "work_item_id": "bd-stale",
+    }
+    live_payload = {
+        "pid": os.getpid(),
+        "started_at_epoch": 2.0,
+        "work_item_id": "bd-live-replacement",
+    }
+    path.write_text(json.dumps(stale_payload), encoding="utf-8")
+    live_bytes = json.dumps(live_payload, sort_keys=True).encode() + b"\n"
+
+    def replace_stale_with_live(*, pid: int) -> bool:
+        assert pid == stale_payload["pid"]
+        path.write_bytes(live_bytes)
+        return False
+
+    monkeypatch.setattr(janitor_lock, "_pid_is_alive", replace_stale_with_live)
+
+    detail = janitor_lock.claim_janitor_lock(path=path, owner="bd-racing-claimant")
+
+    assert detail is not None
+    assert "work-item bd-live-replacement" in detail
+    assert path.read_bytes() == live_bytes
+
+    third_detail = janitor_lock.claim_janitor_lock(path=path, owner="bd-third")
+
+    assert third_detail is not None
+    assert path.read_bytes() == live_bytes
 
 
 def test_claim_janitor_lock_reports_contention_when_reclaim_race_loses(
