@@ -72,7 +72,7 @@ def _stale_janitor_lock_reclaimed(*, path: Path) -> bool:
 
 def _stale_janitor_lock_reclaimed_locked(*, path: Path) -> bool:
     lock = _read_janitor_lock(path=path)
-    if lock is None or lock.pid == os.getpid() or _pid_is_alive(pid=lock.pid):
+    if lock is None or _pid_is_alive(pid=lock.pid):
         return False
     if _read_janitor_lock(path=path) != lock:
         return False
