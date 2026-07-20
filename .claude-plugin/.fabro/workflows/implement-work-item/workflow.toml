@@ -110,11 +110,31 @@ acp_adapter = "npx -y @agentclientprotocol/claude-agent-acp"
 # The Claude ACP adapter is Claude Code under the hood, so it reads Claude
 # Code's own env — the model is pinned by prefixing ANTHROPIC_MODEL +
 # CLAUDE_CODE_EFFORT_LEVEL onto the command (fabro parses leading KEY=val
-# assignments into the child's env). KNOWN CAVEAT: some claude-code-acp
-# versions have ignored ANTHROPIC_MODEL and defaulted to haiku, so "the
-# review node actually runs on Opus 4.8" is a live acceptance check — pin a
-# recent @latest and verify the model in the run transcript.
-review_adapter = "ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL=high npx -y @zed-industries/claude-code-acp@latest"
+# assignments into the child's env).
+#
+# SAME PACKAGE AS `acp_adapter` ABOVE, AND VERSION-LESS FOR THE SAME REASON.
+# This used to read `npx -y @zed-industries/claude-code-acp@latest`. That name
+# is the DEPRECATED FORMER NAME of @agentclientprotocol/claude-agent-acp — npm
+# says so outright ("This package has been renamed to
+# @agentclientprotocol/claude-agent-acp"). It is not a second adapter; it is
+# this one under a dead alias.
+#
+# The consequence was the opposite of what `@latest` suggests. `@latest` on a
+# DEPRECATED package does not float — it is frozen at the tombstone (0.16.2,
+# last published 2026-03-26) forever, while the implementer node ran THE SAME
+# adapter under its current name at CLAUDE_AGENT_ACP_VERSION=0.44.0. Two nodes,
+# one adapter, ~28 minor versions apart, and the review node could never receive
+# an upstream fix. Dropping the name and the `@latest` resolves the global baked
+# into the sandbox image (livespec-dev-tooling
+# docker/fabro-sandbox/agent/Dockerfile), exactly as `acp_adapter` already does.
+#
+# LIVE ACCEPTANCE CHECK, still owed: a former caveat here recorded that some
+# claude-code-acp versions ignored ANTHROPIC_MODEL and defaulted to haiku. That
+# was observed on the frozen 0.16.x line and is plausibly fixed upstream long
+# since, but "the review node actually runs on Opus 4.8" is only provable from a
+# real run — verify the model in the transcript of the next dispatch. A green CI
+# run does not substitute; CI never runs the review node.
+review_adapter = "ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
 
 # Review fix rounds count implementer repair rounds, not review visits. The
 # workflow guard reads review node visits, so the default three fix rounds render
