@@ -28,6 +28,7 @@ pin the precedence, the per-gate coverage, and the expected-error surface.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -43,7 +44,12 @@ from livespec_orchestrator_beads_fabro.intake_dor import (
     apply_intake_dor,
     evaluate,
 )
-from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
+from livespec_orchestrator_beads_fabro.store import (
+    INTAKE_TRIAGED_LABEL,
+    materialize_work_items,
+    read_intake_triage_records,
+    read_work_items,
+)
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 
@@ -279,6 +285,81 @@ def test_linked_dependency_item_keeps_edges_and_does_not_land_ready() -> None:
 
 
 # --------------------------------------------------------------------------
+# The triage marker: stamped for EVERY verdict, so "the gate saw this item"
+# is observable — the discriminator a `backlog` item otherwise lacks.
+# --------------------------------------------------------------------------
+
+
+def _triaged(*, issue_id: str) -> bool:
+    records = {record.id: record for record in read_intake_triage_records(path=_config())}
+    return records[issue_id].triaged
+
+
+@pytest.mark.parametrize(
+    ("issue_id", "checklist", "expected_status"),
+    [
+        ("li-mark-pending", _ready_checklist(), "pending-approval"),
+        (
+            "li-mark-backlog",
+            replace(_ready_checklist(), single_coherent_done=False),
+            "backlog",
+        ),
+        (
+            "li-mark-blocked",
+            replace(_ready_checklist(), autonomously_verifiable=False),
+            "blocked",
+        ),
+    ],
+)
+def test_every_verdict_stamps_the_intake_triage_marker(
+    issue_id: str,
+    checklist: DefinitionOfReadyChecklist,
+    expected_status: str,
+    tmp_path: Path,
+) -> None:
+    """Routing an item — anywhere — records that the gate ran on it.
+
+    The `backlog` row is the load-bearing one (livespec-h95t): without the
+    marker, an epic the gate deliberately parked is indistinguishable from an
+    item filed with a raw `bd create` that will never move, because both sit
+    in `backlog`, both are refused by dispatch, and neither was reported.
+    """
+    _seed_issue(issue_id=issue_id)
+
+    verdict = apply_intake_dor(
+        path=_config(repo_root=tmp_path), item_id=issue_id, checklist=checklist
+    )
+
+    assert verdict == expected_status
+    assert _triaged(issue_id=issue_id)
+
+
+def test_auto_admitted_ready_item_is_also_marked_triaged(tmp_path: Path) -> None:
+    """The onward `ready` approval keeps the marker rather than dropping it."""
+    _seed_issue(issue_id="li-mark-ready", labels=["admission:auto"])
+
+    verdict = apply_intake_dor(
+        path=_config(repo_root=tmp_path), item_id="li-mark-ready", checklist=_ready_checklist()
+    )
+
+    assert verdict == "ready"
+    assert _triaged(issue_id="li-mark-ready")
+
+
+def test_a_raw_created_item_the_gate_never_saw_carries_no_marker() -> None:
+    """The complement: filing outside the gate leaves the item unmarked.
+
+    `_seed_issue` is the raw `bd create` path — no `apply_intake_dor` call —
+    which is exactly how an agent or script files today. The absence of the
+    marker is what the un-triaged-backlog attention lane keys on.
+    """
+    _seed_issue(issue_id="li-never-gated")
+
+    assert not _triaged(issue_id="li-never-gated")
+    assert INTAKE_TRIAGED_LABEL == "intake:triaged"
+
+
+# --------------------------------------------------------------------------
 # Pure-verdict precedence + per-gate coverage (the `evaluate` function).
 # --------------------------------------------------------------------------
 
@@ -302,8 +383,6 @@ def test_evaluate_all_gates_pass_is_ready() -> None:
 )
 def test_evaluate_each_failing_gate_blocks_ready(gate: str, expected: str) -> None:
     """No single gate failure ever yields `ready`; the contract names the bucket."""
-    from dataclasses import replace
-
     checklist = replace(_ready_checklist(), **{gate: False})
     assert evaluate(checklist=checklist) == expected
 
