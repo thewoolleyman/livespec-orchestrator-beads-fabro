@@ -230,6 +230,21 @@ omit = [
 ]
 
 [tool.coverage.report]
+# DO NOT LOWER without re-reading `.github/workflows/ci.yml` check-python.
+#
+# bd-ib-sfa2: that matrix runs every target under BOTH root and uid 1000 and
+# relies on THIS gate being exactly 100 to detect uid-dependent divergence. The
+# reasoning is that a line reachable under only one uid is missing in the other
+# leg, which then falls short of 100% and fails — so divergence cannot survive
+# two independently-gated legs, and no divergence-comparison machinery is
+# needed.
+#
+# That argument LAPSES the moment this number drops below 100: a line missing
+# in exactly one leg could then sit under the threshold in both, and the
+# divergence would go undetected in the same silence as before. Lowering this
+# is therefore not a local coverage-policy tweak — it re-opens the blind spot
+# that left the janitor red on master for weeks while CI reported green, and it
+# obliges whoever lowers it to add explicit divergence detection in exchange.
 fail_under = 100
 show_missing = true
 skip_covered = false
