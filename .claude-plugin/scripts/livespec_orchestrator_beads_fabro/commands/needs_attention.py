@@ -28,6 +28,9 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_handoffs import
 from livespec_orchestrator_beads_fabro.commands._needs_attention_spec_next_adapt import (
     adapt_top_candidate,
 )
+from livespec_orchestrator_beads_fabro.commands._needs_attention_untriaged_backlog import (
+    untriaged_backlog_items,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_work_items import (
     host_only_items,
     human_valves,
@@ -35,8 +38,11 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_work_items impo
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.io import write_stdout
-from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
-from livespec_orchestrator_beads_fabro.types import WorkItem
+from livespec_orchestrator_beads_fabro.store import (
+    materialize_work_items,
+    read_intake_triage_records,
+    read_work_items,
+)
 
 __all__: list[str] = [
     "build_attention",
@@ -76,7 +82,8 @@ def build_attention(
     work_items_path: str | None = None,
     include_hygiene: bool = True,
 ) -> list[AttentionItem]:
-    items = _load_work_items(project_root=project_root, work_items_path=work_items_path)
+    config = resolve_store_config(cwd=project_root, work_items_arg=work_items_path)
+    items = list(read_work_items(path=config.work_items_path))
     manifest = load_manifest(project_root=project_root)
     materialized = list(materialize_work_items(records=iter(items)).values())
     index = {item.id: item for item in materialized}
@@ -98,6 +105,16 @@ def build_attention(
             hygiene_scan=(),
         )
         + host_only_items(project_root=project_root, repo=repo_name, items=materialized)
+        # A second raw read of the tenant: the triage marker is a label and the
+        # urgency tier is the beads-native `priority` column, and the
+        # materialized `WorkItem` above carries neither (labels are decoded into
+        # named fields; `priority` was dropped for `rank`). Same shape as the
+        # other narrow raw read, `read_work_item_native_priorities`.
+        + untriaged_backlog_items(
+            project_root=project_root,
+            repo=repo_name,
+            records=read_intake_triage_records(path=config.work_items_path),
+        )
         + hygiene_scan
     )
 
@@ -121,11 +138,6 @@ def render_markdown(*, attention: list[AttentionItem]) -> str:
             ]
         )
     return "\n".join(lines) + "\n"
-
-
-def _load_work_items(*, project_root: Path, work_items_path: str | None) -> list[WorkItem]:
-    config = resolve_store_config(cwd=project_root, work_items_arg=work_items_path)
-    return list(read_work_items(path=config.work_items_path))
 
 
 _SPEC_NEXT_TIMEOUT_SECONDS = 60

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from livespec_orchestrator_beads_fabro._beads_client import IssueDraft, make_beads_client
 from livespec_orchestrator_beads_fabro.commands import needs_attention
 from livespec_orchestrator_beads_fabro.commands.needs_attention import (
     SpecNextSeam,
@@ -34,6 +35,43 @@ def _config() -> StoreConfig:
 
 def _seed(item: WorkItem) -> None:
     append_work_item(path=_config(), item=item)
+
+
+def _seed_raw(
+    *,
+    id_: str,
+    status: str,
+    priority: int,
+    labels: list[str] | None = None,
+    title: str | None = None,
+) -> None:
+    """Seed an issue straight through the client seam — the raw `bd create` path.
+
+    `append_work_item` is the capture front-ends' filing path; an agent or
+    script that files with a bare `bd create` bypasses it, so the intake
+    Definition-of-Ready gate never runs and the record lands WITHOUT the
+    `intake:triaged` marker. That is exactly the population the un-triaged
+    backlog lane must surface, so these cases seed it the way it really
+    arrives. `priority` is the beads-native column (lower = more urgent),
+    which `append_work_item` always writes as the neutral default.
+    """
+    client = make_beads_client(config=_config())
+    _ = client.create_issue(
+        draft=IssueDraft(
+            issue_id=id_,
+            issue_type="task",
+            title=title if title is not None else f"{id_} title",
+            description="d",
+            priority=priority,
+            assignee=None,
+            created_at="2026-05-19T00:00:00Z",
+            labels=list(labels) if labels is not None else [],
+            metadata={},
+            spec_id=None,
+            parent_id=None,
+        )
+    )
+    client.update_issue(issue_id=id_, status=status)
 
 
 def _write_config(project_root: Path) -> None:
@@ -227,6 +265,64 @@ def test_build_attention_surfaces_recorded_factory_safety_refusal(tmp_path, monk
     assert [(item.id, item.kind, item.handoff.kind) for item in attention] == [
         ("host-only:recorded-refusal:bd-recorded", "host-only", "shell")
     ]
+
+
+def test_build_attention_surfaces_untriaged_backlog_and_summarizes_the_remainder(
+    tmp_path, monkeypatch
+) -> None:
+    """The load-bearing case: a backlog item the intake gate never saw is visible.
+
+    `livespec-h95t` — an item filed with a raw `bd create` lands in
+    `backlog`, which no dispatch surface admits and no attention lane
+    reported, so it was indistinguishable from a deliberately-parked epic.
+    The `intake:triaged` marker is the discriminator: gated items carry it,
+    this one does not. Noise control is part of the contract — P0/P1 get one
+    lane each, everything at P2 or lower collapses into ONE summary lane.
+    """
+    _write_config(tmp_path)
+    _stub_spec_next(monkeypatch, output=None)
+    _seed_raw(id_="bd-p0", status="backlog", priority=0, title="Un-triaged P0")
+    _seed_raw(id_="bd-p1", status="backlog", priority=1, title="Un-triaged P1")
+    _seed_raw(id_="bd-p2", status="backlog", priority=2, title="Un-triaged P2")
+    _seed_raw(id_="bd-p3", status="backlog", priority=3, title="Un-triaged P3")
+
+    attention = build_attention(
+        project_root=tmp_path,
+        repo_name="repo",
+        include_hygiene=False,
+    )
+
+    assert [(item.id, item.kind, item.urgency) for item in attention] == [
+        ("hygiene:untriaged-backlog:bd-p0", "hygiene", "high"),
+        ("hygiene:untriaged-backlog:bd-p1", "hygiene", "high"),
+        ("hygiene:untriaged-backlog-remainder:count", "hygiene", "low"),
+    ]
+    assert attention[0].source_ref.work_item == "bd-p0"
+    assert "Un-triaged P0" in attention[0].summary
+    remainder = attention[2]
+    assert remainder.source_ref.work_item is None
+    assert "2 un-triaged backlog work-items at P2 or lower" in remainder.summary
+
+
+def test_build_attention_omits_triaged_backlog_and_non_backlog_items(tmp_path, monkeypatch) -> None:
+    """The marker dismisses an item; a non-backlog status is never in this lane.
+
+    A deliberately-parked epic the intake gate routed to `backlog` carries
+    `intake:triaged`, so it stays silent — that is the whole point of the
+    discriminator. A P0 item in any other status belongs to another lane.
+    """
+    _write_config(tmp_path)
+    _stub_spec_next(monkeypatch, output=None)
+    _seed_raw(id_="bd-parked", status="backlog", priority=0, labels=["intake:triaged"])
+    _seed_raw(id_="bd-elsewhere", status="ready", priority=0)
+
+    attention = build_attention(
+        project_root=tmp_path,
+        repo_name="repo",
+        include_hygiene=False,
+    )
+
+    assert [item.id for item in attention if item.kind == "hygiene"] == []
 
 
 def test_build_attention_drops_spec_item_when_spec_next_none(tmp_path, monkeypatch) -> None:

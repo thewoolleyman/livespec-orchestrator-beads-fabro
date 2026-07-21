@@ -48,6 +48,15 @@ The verdict and routing precedence:
   when its effective admission policy is `auto`; the dependency lane is
   derived from those linked edges.
 
+Alongside the routed status, `apply_intake_dor` stamps the
+`intake:triaged` marker label for EVERY verdict — `pending-approval`,
+`ready`, `backlog`, and `blocked` alike. The marker is what makes "the gate
+saw this item" observable. Without it a `backlog` item the gate
+deliberately parked for decomposition is indistinguishable from one filed
+outside the gate entirely (a raw `bd create` never runs this primitive), and
+neither is admitted by dispatch nor reported by any attention lane. The read
+side of that discriminator lives in `_store_intake_triage`.
+
 Per SPECIFICATION/constraints.md (the Result-vs-bugs split), routing a phantom
 id raises `WorkItemNotFoundError`; genuine bugs propagate as raised built-in
 exceptions.
@@ -61,7 +70,11 @@ from typing import TYPE_CHECKING, Literal
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import effective_admission_policy
 from livespec_orchestrator_beads_fabro.errors import WorkItemNotFoundError
-from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
+from livespec_orchestrator_beads_fabro.store import (
+    INTAKE_TRIAGED_LABEL,
+    materialize_work_items,
+    read_work_items,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import StoreConfig
@@ -145,7 +158,13 @@ def apply_intake_dor(
         if effective_admission_policy(item=item, cwd=repo_root) == _AUTO_ADMISSION:
             status = _READY_STATUS
 
-    add_labels = [_BLOCKED_REASON_LABEL] if status == _BLOCKED_STATUS else []
+    # The triage marker is stamped for EVERY verdict, not just the routed-on
+    # ones: it records that the gate SAW this item, which is the only thing
+    # that distinguishes a deliberately-parked `backlog` epic from an item
+    # filed through a door the gate never guarded (see `_store_intake_triage`).
+    add_labels = [INTAKE_TRIAGED_LABEL]
+    if status == _BLOCKED_STATUS:
+        add_labels.append(_BLOCKED_REASON_LABEL)
     remove_labels = list(_RETIRED_INTAKE_LABELS)
     if status != _BLOCKED_STATUS:
         remove_labels.append(_BLOCKED_REASON_LABEL)
