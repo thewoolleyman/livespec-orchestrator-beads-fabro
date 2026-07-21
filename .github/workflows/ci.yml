@@ -261,7 +261,12 @@ jobs:
       - name: Prepare non-root leg (open baked toolchain to uid 1000)
         if: needs.setup.outputs.py_changed == 'true' && matrix.uid == 'nonroot'
         run: |
-          set -euo pipefail
+          # NO `set -euo pipefail` here. The container job's default shell is
+          # `sh -e {0}` — dash, not bash — where `-o pipefail` is an illegal
+          # option and the whole step dies with exit 2 before doing any work.
+          # The `-e` in the default shell already supplies errexit, so nothing
+          # is lost. Verified in the image: `sh -e -c 'false; echo X'` exits 1
+          # without printing.
           chmod 0755 /root
           chmod -R a+rX /root/.config /root/.local
           # HOME deliberately NOT under /tmp: that would put the venue inside
