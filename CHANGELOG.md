@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.19](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.18...v0.45.19) (2026-07-21)
+
+
+### Bug Fixes
+
+* drop set -euo pipefail from the non-root prepare step (dash, not bash) ([fd98be2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fd98be21cbdc423c9e3a26b19a28c0d7bdd50d89))
+
 ## [0.45.18](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.17...v0.45.18) (2026-07-20)
 
 
