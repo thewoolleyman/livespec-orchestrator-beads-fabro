@@ -115,7 +115,7 @@ jobs:
       # it is not worth taxing every run's wall-clock.
 
   check-python:
-    name: ${{ matrix.target }}
+    name: ${{ matrix.target }} (${{ matrix.uid }})
     needs: setup
     runs-on: ubuntu-latest
     container:
@@ -128,6 +128,36 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # bd-ib-sfa2: every target runs under BOTH uids, and BOTH are
+        # required. Before this dimension existed the whole matrix ran as
+        # root, so CI STRUCTURALLY COULD NOT exhibit a non-root divergence —
+        # which is how `_dispatcher_janitor_lock.py:133` stayed uncovered for
+        # every non-root runner while CI reported green on the same SHA, and
+        # the janitor (which runs NON-ROOT in a fresh checkout) was red on
+        # master for weeks.
+        #
+        # NO divergence-detection machinery is needed, and that is deliberate:
+        # the existing 100% coverage gate ALREADY converts divergence into a
+        # failure. A line reachable only as root is unreachable in the non-root
+        # leg, which then misses 100% and fails; a line reachable only as
+        # non-root fails the root leg identically. So divergence cannot survive
+        # two independently-gated legs — no comparison step, no report-diffing,
+        # no second invariant that could drift from the first.
+        #
+        # THIS ARGUMENT DEPENDS ON THE COVERAGE FAIL-UNDER REMAINING 100%
+        # (`pyproject.toml [tool.coverage.report] fail_under = 100`, which
+        # carries the reciprocal note). Lower it and this reasoning lapses:
+        # explicit divergence detection would then become necessary, because a
+        # line missing in exactly one leg could sit under the threshold in both.
+        #
+        # Both uids run the FULL target list rather than a curated
+        # "targets that can diverge" subset. A hand-enumerated subset would be
+        # a drift-prone allowlist that silently stops covering new targets —
+        # the defect class of `bd-ib-d9gf`. Uniformity costs runner minutes and
+        # buys the absence of a list nobody would remember to update.
+        uid:
+          - root
+          - nonroot
         target:
           - check-lint
           - check-format
@@ -161,15 +191,19 @@ jobs:
           - check-tests-no-subprocess-spawn
           - check-wrapper-shape
     steps:
-      # Per-step `if:` (not job-level) so each matrix entry still
-      # reports a status check named `${{ matrix.target }}`. With
-      # job-level `if:`, a skipped matrix collapses to one
-      # `check-python` status, which doesn't satisfy branch
-      # protection's requirement that each specific check name be
-      # present.
+      # Per-step `if:` (not job-level) so each matrix entry still reports a
+      # status check named `${{ matrix.target }} (${{ matrix.uid }})`. With
+      # job-level `if:`, a skipped matrix collapses to one `check-python`
+      # status and the per-target detail is lost from the checks list.
+      #
+      # This is now readability, NOT a gating requirement: branch protection
+      # requires only the aggregate `ci-green` context, which `needs:` this job
+      # and fails when ANY matrix leg fails. That is also why adding the `uid`
+      # dimension — which renames every check context — needs no
+      # branch-protection change.
       - name: Skip when no .py changes
         if: needs.setup.outputs.py_changed != 'true'
-        run: echo "::notice::skipped ${{ matrix.target }} — no .py changes in this PR"
+        run: echo "::notice::skipped ${{ matrix.target }} (${{ matrix.uid }}) — no .py changes in this PR"
 
       - name: Checkout
         if: needs.setup.outputs.py_changed == 'true'
@@ -201,9 +235,68 @@ jobs:
         if: needs.setup.outputs.py_changed == 'true'
         run: uv sync --all-groups
 
-      - name: just ${{ matrix.target }}
-        if: needs.setup.outputs.py_changed == 'true'
+      # bd-ib-sfa2, the NARROW ROUTE (maintainer-decided 2026-07-21).
+      #
+      # /root is mode 0700 and the ENTIRE baked toolchain lives beneath it —
+      # mise itself is /root/.local/bin/mise and there is NO copy anywhere else
+      # on the filesystem, so `find / -xdev -name mise -not -path '/root/*'`
+      # returns nothing. An unprivileged uid therefore cannot reach the
+      # toolchain at all. Env overrides alone CANNOT fix this: they change
+      # where mise WRITES, not where it IS. Opening /root to 0755 lets uid 1000
+      # reuse the BAKED toolchain read-only, with no image change and no
+      # toolchain install.
+      #
+      # LIMITATION — this must travel WITH the capability and never alone:
+      # this is a PARTIAL replica. It reproduces "uid 1000 with access to
+      # root's toolchain", NOT "uid 1000 as the janitor sees the world". Any
+      # divergence that depends on /root genuinely being 0700 stays invisible
+      # to it. The faithful alternative relocates the toolchain to a
+      # world-readable path in livespec-dev-tooling's docker/fabro-sandbox/base
+      # layer, at the cost of a fleet-wide rebuild, republish, and pin bump;
+      # it was weighed and declined, and remains the upgrade path if a
+      # /root-mode-dependent divergence ever surfaces.
+      #
+      # Runs AFTER `uv sync` on purpose: root creates .venv, so the chown must
+      # follow it or uid 1000 inherits a venv it cannot write.
+      - name: Prepare non-root leg (open baked toolchain to uid 1000)
+        if: needs.setup.outputs.py_changed == 'true' && matrix.uid == 'nonroot'
+        run: |
+          set -euo pipefail
+          chmod 0755 /root
+          chmod -R a+rX /root/.config /root/.local
+          # HOME deliberately NOT under /tmp: that would put the venue inside
+          # the `/tmp/*` coverage omit glob (pyproject.toml) and trip
+          # livespec-impl-beads-1l6's regression guard.
+          mkdir -p /home/ci
+          chown -R 1000:1000 /home/ci "$GITHUB_WORKSPACE"
+          # The root-side safe.directory trust was written to /github/home,
+          # which uid 1000 does not read (its HOME is /home/ci). Without this,
+          # every git call from a check fails "detected dubious ownership".
+          setpriv --reuid=1000 --regid=1000 --clear-groups \
+            env HOME=/home/ci git config --global --add safe.directory '*'
+
+      - name: just ${{ matrix.target }} (root)
+        if: needs.setup.outputs.py_changed == 'true' && matrix.uid == 'root'
         run: just ${{ matrix.target }}
+
+      # No `--cov` or fail-under override here: this leg runs the SAME recipe
+      # under a different uid, which is the whole point. Nothing about it is
+      # advisory, warn-only, or gated behind an env lever — a failure here
+      # fails the job, and `ci-green` (the sole required context) fails if any
+      # matrix leg fails.
+      - name: just ${{ matrix.target }} (uid 1000)
+        if: needs.setup.outputs.py_changed == 'true' && matrix.uid == 'nonroot'
+        run: |
+          setpriv --reuid=1000 --regid=1000 --clear-groups \
+            env HOME=/home/ci \
+                MISE_DATA_DIR=/root/.local/share/mise \
+                MISE_GLOBAL_CONFIG_FILE=/root/.config/mise/config.toml \
+                MISE_NOT_FOUND_AUTO_INSTALL=0 \
+                MISE_TRUSTED_CONFIG_PATHS="$GITHUB_WORKSPACE" \
+                PATH=/root/.local/share/mise/shims:/root/.local/bin:/usr/local/bin:/usr/bin:/bin \
+                GITHUB_TOKEN="$GITHUB_TOKEN" \
+                GH_TOKEN="$GH_TOKEN" \
+              just ${{ matrix.target }}
 
   # livespec core's doctor STATIC phase (reference-discipline + out-of-band
   # invariants), wired fleet-wide per livespec epic livespec-6jfq. core ships
