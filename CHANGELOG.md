@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.20](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.19...v0.45.20) (2026-07-21)
+
+
+### Bug Fixes
+
+* **needs-attention:** surface un-triaged backlog work-items ([5804141](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5804141ee00b010ca53aae5c36da6ee99162282d))
+
 ## [0.45.19](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.18...v0.45.19) (2026-07-21)
 
 
