@@ -36,6 +36,9 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_work_items impo
     human_valves,
     impl_next,
 )
+from livespec_orchestrator_beads_fabro.commands._sibling_status_lookup import (
+    make_sibling_status_lookup,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.io import write_stdout
 from livespec_orchestrator_beads_fabro.store import (
@@ -87,6 +90,11 @@ def build_attention(
     manifest = load_manifest(project_root=project_root)
     materialized = list(materialize_work_items(records=iter(items)).values())
     index = {item.id: item for item in materialized}
+    # One cross-tenant sibling resolver for this whole attention pass, threaded
+    # into every readiness/lane consumer so the impl-next pick and the
+    # human-valve lanes agree with the dispatcher on closed-sibling items
+    # (qiqz6b Part B).
+    sibling_status_lookup = make_sibling_status_lookup(project_root=project_root)
     hygiene_scan = (
         scan_hygiene(repo_path=project_root, repo_name=repo_name) if include_hygiene else []
     )
@@ -94,12 +102,18 @@ def build_attention(
         compose_needs_attention(
             repo=repo_name,
             spec_next=_spec_next(project_root=project_root),
-            impl_next=impl_next(project_root=project_root, items=materialized, manifest=manifest),
+            impl_next=impl_next(
+                project_root=project_root,
+                items=materialized,
+                manifest=manifest,
+                sibling_status_lookup=sibling_status_lookup,
+            ),
             human_valve_lanes=human_valves(
                 project_root=project_root,
                 items=materialized,
                 index=index,
                 manifest=manifest,
+                sibling_status_lookup=sibling_status_lookup,
             ),
             plan_threads=plan_threads(project_root=project_root),
             hygiene_scan=(),
