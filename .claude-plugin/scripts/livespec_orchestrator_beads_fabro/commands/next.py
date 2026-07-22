@@ -49,14 +49,18 @@ the wrapper emits `candidates: []` with `has_more: false`.
 
 import argparse
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from livespec_runtime.cross_repo.types import CrossRepoManifest
+from livespec_runtime.cross_repo.types import CrossRepoManifest, RefStatus
 from livespec_runtime.work_items.lifecycle import is_item_ready, ready_sort_key
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
+from livespec_orchestrator_beads_fabro.commands._sibling_status_lookup import (
+    make_sibling_status_lookup,
+)
 from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
@@ -90,7 +94,12 @@ def main(*, argv: list[str] | None = None) -> int:
     )
     materialized = _load_work_items(path=config.work_items_path)
     manifest = load_manifest(project_root=project_root)
-    ranked = rank_candidates(items=materialized, manifest=manifest)
+    sibling_status_lookup = make_sibling_status_lookup(project_root=project_root)
+    ranked = rank_candidates(
+        items=materialized,
+        manifest=manifest,
+        sibling_status_lookup=sibling_status_lookup,
+    )
     envelope = _slice_envelope(ranked=ranked, offset=offset, limit=limit)
     if args.as_json:
         _ = write_stdout(text=json.dumps(envelope, indent=2, sort_keys=True) + "\n")
@@ -104,6 +113,7 @@ def rank_candidates(
     *,
     items: list[WorkItem],
     manifest: CrossRepoManifest | None = None,
+    sibling_status_lookup: Callable[[str, str], RefStatus] | None = None,
 ) -> list[dict[str, Any]]:
     """Return the full ranked list of candidate envelopes (no slicing).
 
@@ -123,7 +133,14 @@ def rank_candidates(
     effective_manifest = manifest if manifest is not None else CrossRepoManifest(targets={})
     index = {item.id: item for item in items}
     ready = [
-        item for item in items if is_item_ready(item=item, index=index, manifest=effective_manifest)
+        item
+        for item in items
+        if is_item_ready(
+            item=item,
+            index=index,
+            manifest=effective_manifest,
+            sibling_status_lookup=sibling_status_lookup,
+        )
     ]
     ready.sort(key=ready_sort_key)
     return [_candidate_for(item=item) for item in ready]
@@ -135,6 +152,7 @@ def build_envelope(
     offset: int,
     limit: int,
     manifest: CrossRepoManifest | None = None,
+    sibling_status_lookup: Callable[[str, str], RefStatus] | None = None,
 ) -> dict[str, Any]:
     """Return the `{candidates[], pagination}` envelope per v005 contract.
 
@@ -144,7 +162,11 @@ def build_envelope(
     slicing) and `has_more` (`true` iff `offset + len(candidates) <
     total`).
     """
-    ranked = rank_candidates(items=items, manifest=manifest)
+    ranked = rank_candidates(
+        items=items,
+        manifest=manifest,
+        sibling_status_lookup=sibling_status_lookup,
+    )
     return _slice_envelope(ranked=ranked, offset=offset, limit=limit)
 
 

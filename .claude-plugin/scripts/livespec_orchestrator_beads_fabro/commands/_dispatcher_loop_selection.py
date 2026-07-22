@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import asdict, replace
 from pathlib import Path
 
-from livespec_runtime.cross_repo.types import CrossRepoManifest
+from livespec_runtime.cross_repo.types import CrossRepoManifest, RefStatus
 from livespec_runtime.work_items.lifecycle import is_item_ready, ready_sort_key
 
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_self_update as selfup
@@ -29,6 +29,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     janitor_core_ref_from_config,
+)
+from livespec_orchestrator_beads_fabro.commands._sibling_status_lookup import (
+    make_sibling_status_lookup,
 )
 from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -89,8 +92,21 @@ def janitor_core_ref(*, repo: Path) -> str:
 def ready_items(*, items: list[WorkItem], repo: Path) -> list[WorkItem]:
     index = {item.id: item for item in items}
     manifest = load_manifest(project_root=repo)
+    # Build the cross-tenant sibling resolver ONCE per readiness pass and thread
+    # the same instance through every candidate check, so a CLOSED cross-repo
+    # sibling stops blocking while OPEN / unresolvable ones still fail closed
+    # (qiqz6b Part B). Lazy + memoized: it reads nothing unless an item actually
+    # carries a sibling dependency.
+    sibling_status_lookup = make_sibling_status_lookup(project_root=repo)
     ready = [
-        item for item in items if is_dispatch_candidate(item=item, index=index, manifest=manifest)
+        item
+        for item in items
+        if is_dispatch_candidate(
+            item=item,
+            index=index,
+            manifest=manifest,
+            sibling_status_lookup=sibling_status_lookup,
+        )
     ]
     # Compose the single canonical ranking authority so the Dispatcher's
     # drain order never diverges from what `next` advertises (i3jiny):
@@ -103,13 +119,21 @@ def is_dispatch_candidate(
     item: WorkItem,
     index: dict[str, WorkItem],
     manifest: CrossRepoManifest,
+    sibling_status_lookup: Callable[[str, str], RefStatus] | None = None,
 ) -> bool:
-    if is_item_ready(item=item, index=index, manifest=manifest):
+    if is_item_ready(
+        item=item, index=index, manifest=manifest, sibling_status_lookup=sibling_status_lookup
+    ):
         return True
     if item.status != "pending-approval":
         return False
     ready_projection = replace(item, status="ready")
-    return is_item_ready(item=ready_projection, index=index, manifest=manifest)
+    return is_item_ready(
+        item=ready_projection,
+        index=index,
+        manifest=manifest,
+        sibling_status_lookup=sibling_status_lookup,
+    )
 
 
 def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each field is an independent caller input.

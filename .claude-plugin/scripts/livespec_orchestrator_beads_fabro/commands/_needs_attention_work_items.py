@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
 from livespec_runtime.attention_item import AttentionItem, Handoff, SourceRef
-from livespec_runtime.cross_repo.types import CrossRepoManifest
+from livespec_runtime.cross_repo.types import CrossRepoManifest, RefStatus
 from livespec_runtime.needs_attention import ImplNextOutput, WorkItemHumanValveLane
 from livespec_runtime.work_items.lifecycle import lane_of
 
@@ -35,10 +36,12 @@ def impl_next(
     project_root: Path,
     items: list[WorkItem],
     manifest: CrossRepoManifest,
+    sibling_status_lookup: Callable[[str, str], RefStatus] | None = None,
 ) -> ImplNextOutput | None:
     ranked = rank_candidates(
         items=[item for item in items if item.factory_safety is None],
         manifest=manifest,
+        sibling_status_lookup=sibling_status_lookup,
     )
     if not ranked:
         return None
@@ -58,13 +61,19 @@ def human_valves(
     items: list[WorkItem],
     index: dict[str, WorkItem],
     manifest: CrossRepoManifest,
+    sibling_status_lookup: Callable[[str, str], RefStatus] | None = None,
 ) -> list[WorkItemHumanValveLane]:
     lanes: list[WorkItemHumanValveLane] = []
     for item in items:
         item_id = item.id
         title = item.title
         status = item.status
-        lane_reason = lane_of(item=item, index=index, manifest=manifest).reason
+        lane_reason = lane_of(
+            item=item,
+            index=index,
+            manifest=manifest,
+            sibling_status_lookup=sibling_status_lookup,
+        ).reason
         if status == "pending-approval":
             lanes.append(
                 _valve(
