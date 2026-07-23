@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.20...v0.46.0) (2026-07-23)
+
+
+### Features
+
+* **readiness:** resolve CLOSED cross-repo siblings via sibling_status_lookup (qiqz6b Part B) ([b4e926d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b4e926d30bd019ec7390e1ae0e08be83701e656c))
+
 ## [0.45.20](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.19...v0.45.20) (2026-07-21)
 
 
