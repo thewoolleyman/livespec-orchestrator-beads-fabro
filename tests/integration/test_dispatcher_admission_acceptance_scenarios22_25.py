@@ -276,6 +276,89 @@ def test_loop_refuses_factory_unsafe_item_before_launch(
     assert outcome_record["outcome"]["stage"] == "host-only-refused"
 
 
+def test_loop_refuses_declared_workflow_edit_before_launch(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path, wip_cap=5)
+    item = _item(
+        id="bd-ib-workflow-edit",
+        status="ready",
+        description=(
+            "Scope: edit `.github/workflows/ci.yml` so the dispatch gate " "uses the new helper."
+        ),
+    )
+    append_work_item(path=_config(), item=item)
+    calls: list[str] = []
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _green_recording(calls))
+
+    exit_code = main(
+        argv=[
+            "loop",
+            "--repo",
+            str(repo),
+            "--budget",
+            "5",
+            "--workflow",
+            str(workflow),
+        ]
+    )
+
+    assert exit_code == 1
+    assert calls == []
+    stored = _stored()[item.id]
+    assert (stored.status, stored.assignee, stored.factory_safety) == ("ready", None, None)
+    err = capsys.readouterr().err
+    assert "attended host session" in err.lower()
+    assert "interactive" not in err.lower()
+    assert "set-admission" in err
+    assert item.id in err
+    journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
+    outcome_record = next(
+        json.loads(line)
+        for line in journal_text.splitlines()
+        if json.loads(line).get("stage") == "outcome"
+    )
+    assert outcome_record["outcome"]["stage"] == "host-only-refused"
+
+
+def test_loop_admits_composite_action_edit_under_github_actions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path, wip_cap=5)
+    item = _item(
+        id="bd-ib-action-edit",
+        status="ready",
+        description=(
+            "Scope: edit `.github/actions/bump-pin-rewrite/action.yml` "
+            "and no files under `.github/workflows/`."
+        ),
+    )
+    append_work_item(path=_config(), item=item)
+    calls: list[str] = []
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _green_recording(calls))
+
+    exit_code = main(
+        argv=[
+            "loop",
+            "--repo",
+            str(repo),
+            "--budget",
+            "5",
+            "--workflow",
+            str(workflow),
+            "--no-close-on-merge",
+        ]
+    )
+
+    assert exit_code == 0
+    assert calls == [item.id]
+    stored = _stored()[item.id]
+    assert (stored.status, stored.assignee) == ("active", DEFAULT_DOER)
+
+
 # ---------------------------------------------------------------------------
 # Scenario 24 — complete merges on green into the acceptance state.
 # ---------------------------------------------------------------------------

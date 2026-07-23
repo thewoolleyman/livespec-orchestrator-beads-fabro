@@ -192,6 +192,21 @@ def test_is_host_only_item_ignores_legacy_marker_prose_without_field() -> None:
     assert is_host_only_item(item=_item(description="Touches commit-hook. host_only.")) is False
 
 
+def test_is_host_only_item_true_for_declared_workflow_edit_in_reason() -> None:
+    item = _item(reason="`.github/workflows/ci.yml` should be updated for the new gate.")
+    assert is_host_only_item(item=item) is True
+
+
+def test_is_host_only_item_false_for_cite_only_workflow_mention() -> None:
+    item = _item(
+        description=(
+            "Evidence: `.github/workflows/ci.yml` rejected a prior sandbox push; "
+            "the actual scope is under .github/actions/."
+        )
+    )
+    assert is_host_only_item(item=item) is False
+
+
 def test_host_only_refusal_detail_is_actionable() -> None:
     detail = host_only_refusal_detail(item_id="livespec-impl-beads-uvd")
     assert "livespec-impl-beads-uvd" in detail
