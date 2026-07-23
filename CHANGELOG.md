@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.46.0...v0.46.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* refuse workflow edits before dispatch ([8eb81fa](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8eb81fae38a1dc7a4836314b809b1c821ec25312))
+
 ## [0.46.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.45.20...v0.46.0) (2026-07-23)
 
 
