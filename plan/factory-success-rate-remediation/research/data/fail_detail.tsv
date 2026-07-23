@@ -1,0 +1,55 @@
+01KTX65NMFGKQFK9NRTVG6MTRE	failed/terminated	implement	deterministic	Fabro server shut down before the run reached a terminal state.	implement|transient_infra|acp turn failed
+01KTXB3592HQA4MYX5B7ZRCY2P	failed/workflow_error	fix	deterministic	deterministic failure cycle detected: signature janitor|deterministic|script failed with e	fix|deterministic|check-doctor-static fails with doctor-wiri
+01KWJP39EB8NGAF5T3YS5FZW59	failed/workflow_error	-	deterministic	Failed to initialize sandbox	-
+01KWN1BA71GCEC57S1PK6EQV3C	failed/workflow_error	non_converged	deterministic	stage non_converged failed with no outgoing fail edge	non_converged|deterministic|script failed with exit code: <n
+01KWN1H90JSPZCKFWZ7FMA8DG1	failed/workflow_error	review	transient_infra	git checkpoint commit failed for node 'review_fix': git commit timed out after 30001ms	
+01KWN45QX29XZSM063G7A5GD53	failed/workflow_error	start	transient_infra	git checkpoint commit failed for node 'implement': git commit timed out after 30000ms	
+01KWN8KSRC10FC1SZS3V1WJM57	failed/workflow_error	abandon	deterministic	stage abandon failed with no outgoing fail edge	abandon|deterministic|script failed with exit code: <n> ## o
+01KWNV41MTHN96KM6MSD0S0QC7	failed/workflow_error	start	transient_infra	git checkpoint commit failed for node 'implement': git commit timed out after 30001ms	
+01KWWR9Y7DN92A55VQ6WAC117D	failed/workflow_error	-	deterministic	Failed to initialize sandbox	-
+01KWX3ATA877ZNY3DEVN7SPS6N	failed/workflow_error	-	deterministic	Failed to initialize sandbox	-
+01KWX3FYF3D3DQZDSP92QG0EGM	failed/workflow_error	start	deterministic	git checkpoint commit failed for node 'implement': git commit failed (exit 1)	
+01KWX8WG6S7S0F8TMSE5FB6SCT	failed/workflow_error	pr	deterministic	stall watchdog: node "escalate" had no activity for 7200s	pr|deterministic|pr publish is blocked by invalid github cre
+01KWXN9WG22AHQ4BRW03JEHTBG	failed/workflow_error	pr	deterministic	stall watchdog: node "escalate" had no activity for 7200s	pr|deterministic|push blocked by invalid github credentials;
+01KX0CV53VKBN4EW2RQHVDZTKB	failed/workflow_error	-	deterministic	Failed to initialize sandbox	-
+01KX0CV53W0BEQ1G4E580EQ5S6	failed/workflow_error	-	deterministic	Failed to initialize sandbox	-
+01KX2T50W6WHVJC8XKSB08SKYG	failed/workflow_error	-	deterministic	Failed to initialize sandbox	-
+01KX2TN9RQS2V13KHCRXG8BCDD	failed/workflow_error	-	deterministic	Failed to initialize sandbox	-
+01KX4TYJRS1XMG9AJ4RKG2FKG9	failed/workflow_error	implement	deterministic	stall watchdog: node "escalate" had no activity for 7200s	implement|deterministic|livespec core is green on `just chec
+01KX4Y270TCD0T68G8TKVD6W0T	failed/workflow_error	start	deterministic	git checkpoint commit failed for node 'implement': git add failed	
+01KX5600MFKSYB0VNGW24W5AG0	failed/workflow_error	implement	deterministic	stall watchdog: node "escalate" had no activity for 7200s	implement|deterministic|implementation and all local checks 
+01KX58K86KKSE8MGH8NPQEVZWC	failed/workflow_error	pr	deterministic	stall watchdog: node "escalate" had no activity for 7200s	pr|deterministic|push blocked by github remote permission: t
+01KX5BG1QRCT3CDWKZ5HKYJ9PH	failed/workflow_error	start	deterministic	git checkpoint commit failed for node 'implement': git add failed	
+01KX5X9W94M6HKDDQ1DJ0QMMZ8	failed/workflow_error	implement	deterministic	stall watchdog: node "escalate" had no activity for 7200s	implement|deterministic|implementation and checks are comple
+01KX67MF4CK7366T8KMS7NYBA7	failed/workflow_error	pr	deterministic	stall watchdog: node "escalate" had no activity for 7200s	pr|deterministic|push blocked by github permissions: the aut
+01KX783B6V7NC7AN3ND1Y0PQJP	failed/workflow_error	implement	deterministic	stall watchdog: node "escalate" had no activity for 7200s	implement|deterministic|file_lloc exemptions requested by th
+01KXACVBBYNZDMA6C4QMY2XQH7	failed/workflow_error	start	transient_infra	git checkpoint commit failed for node 'implement': git commit timed out after 30001ms	
+01KXAX09VYZ1Y12NM73RXQ5QG1	failed/workflow_error	implement	deterministic	stall watchdog: node "escalate" had no activity for 7200s	implement|deterministic|check aggregate_completeness in pinn
+01KXAX1MDHYYQGSBKTWBY7MM8Z	failed/workflow_error	implement	deterministic	stall watchdog: node "escalate" had no activity for 7200s	implement|deterministic|check aggregate_completeness over-ap
+01KXAXT2H2EGX6T9ASD9YKAA1E	failed/workflow_error	start	deterministic	git checkpoint commit failed for node 'implement': git commit failed (exit 1)	
+01KXAZZY945WPGSN1JNSSF57GY	failed/workflow_error	pr	deterministic	stall watchdog: node "escalate" had no activity for 7200s	pr|deterministic|push blocked by github permission: token is
+01KXB003KCAB40G8178FKYM4YJ	failed/workflow_error	pr	deterministic	stall watchdog: node "escalate" had no activity for 7200s	pr|deterministic|push blocked by github remote rejection: cu
+01KXDAH4FTP3YZ21ZSJWH71NBP	failed/cancelled	janitor	canceled	Pipeline cancelled	janitor|canceled|script cancelled: mise exec -- just check #
+01KXDVEY5Q440GWQ0CESXQ466X	failed/workflow_error	pr	deterministic	stall watchdog: node "escalate" had no activity for 7200s	pr|deterministic|push to feat/livespec-dev-tooling-gcpm3y wa
+01KXEJFWZDTVP04RXXHTZEDY1W	failed/workflow_error	pr	deterministic	stall watchdog: node "escalate" had no activity for 7200s	pr|deterministic|push to refs/heads/feat/livespec-dev-toolin
+01KXS1PP7CKXBTY3JXDQPBEQHJ	failed/workflow_error	abandon	deterministic	stage abandon failed with no outgoing fail edge	abandon|deterministic|script failed with exit code: <n> ## o
+01KXS4AN6D0S8R6XXKR6QWA9FF	failed/terminated	start	deterministic	Fabro server shut down before the run reached a terminal state.	
+01KXSMM6XZ2SJZPD9C7NCWC9MN	failed/workflow_error	pr	deterministic	stall watchdog: node "escalate" had no activity for 7200s	pr|deterministic|push to refs/heads/feat/livespec-dev-toolin
+01KXSTB51RA6AH5DK7AVQ0RRTG	failed/workflow_error	pr	deterministic	stall watchdog: node "escalate" had no activity for 7200s	pr|deterministic|push blocked by github app permission: remo
+01KXSTW44M0B88XVNA1B3BRW18	failed/workflow_error	review	deterministic	stall watchdog: node "escalate" had no activity for 7200s	
+01KXSZJN9BTPTWC8Y7RZV29B62	failed/workflow_error	pr	deterministic	stall watchdog: node "escalate" had no activity for 7200s	pr|deterministic|push blocked by github remote rejection: th
+01KXT5FEHJT08WYZBGYSNY2XQP	failed/workflow_error	pr	deterministic	stall watchdog: node "escalate" had no activity for 7200s	pr|deterministic|push blocked by github permissions; pre-pus
+01KXT842SGHE1RX1HF85KK3AMX	failed/cancelled	janitor	canceled	Pipeline cancelled	
+01KXVHPT1F3491WAKSSNYWN7TN	failed/workflow_error	review	transient_infra	git checkpoint commit failed for node 'review_fix': git commit timed out after 30001ms	
+01KXWEME24ZEJKJ6SD01TWH7AD	failed/workflow_error	start	transient_infra	git checkpoint commit failed for node 'implement': git commit timed out after 30001ms	
+01KXYRAB8C3X6CXYP4Z8J0B09S	failed/workflow_error	start	deterministic	git checkpoint commit failed for node 'implement': git commit failed (exit 1)	
+01KXYRBNW8ETWXWAV3DS0Z0PC4	failed/workflow_error	pr	deterministic	stall watchdog: node "escalate" had no activity for 7200s	pr|deterministic|push blocked: `mise exec -- git push -u ori
+01KXYVJ6883AVC4GXZH9JG20GA	failed/workflow_error	start	deterministic	git checkpoint commit failed for node 'implement': git commit failed (exit 1)	
+01KXZH9XSEGF3Q5PTQWSKZ0KK1	failed/workflow_error	pr	deterministic	stall watchdog: node "escalate" had no activity for 7200s	pr|deterministic|push to refs/heads/feat/livespec-dev-toolin
+01KY642MBGW3QS75VKT2M6KVCT	failed/workflow_error	review	transient_infra	git checkpoint commit failed for node 'pr': git commit timed out after 30000ms	
+01KY6542WFTBM03EADVW9WPRS0	failed/workflow_error	pr	deterministic	stall watchdog: node "escalate" had no activity for 7200s	pr|deterministic|push blocked by github app permission: upda
+01KY68R2GF8BVW847NY42VE8QH	failed/workflow_error	janitor	transient_infra	git checkpoint commit failed for node 'fix': git commit timed out after 30005ms	janitor|deterministic|script failed with exit code: <n> ## o
+01KY6CVRQNEANPZ1WPBF32ZV3D	failed/workflow_error	start	deterministic	git checkpoint commit failed for node 'implement': git commit failed (exit 1)	
+01KY6DKK2BNJSH02CYDV09D4CD	blocked/-	pr	-	-	pr|deterministic|push blocked by github remote rejection: th
+01KY6HC0CJNYM7V5DV6PZGJ2T4	blocked/-	pr	-	-	pr|deterministic|remote push rejected because the github app
+01KY6HE32S1CV2TV7JK71GGH23	failed/workflow_error	start	transient_infra	git checkpoint commit failed for node 'implement': git commit timed out after 30002ms	
