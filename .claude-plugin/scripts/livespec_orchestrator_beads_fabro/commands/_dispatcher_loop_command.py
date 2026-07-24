@@ -10,6 +10,11 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
     admit_and_select,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_mutex import (
+    AdmissionMutexRefusal,
+    claim_dispatch_admission_mutex,
+    release_dispatch_admission_mutex,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
     EXIT_FAILURE,
     EXIT_PRECONDITION_ERROR,
@@ -18,7 +23,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
     cost_gate_after_verdict,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
+    JournalFile,
+    ShellCommandRunner,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import (
     emit_outcomes,
     ledger_blocked_after_normalization,
@@ -81,42 +90,16 @@ def run_loop_command(*, args: argparse.Namespace) -> int:
         )
         emit_outcomes(outcomes=[], as_json=args.as_json)
         return 0
-    # The admission valve drains the candidate set up to the per-repo WIP cap:
-    # host-only items are routed away, manual / unresolvable items are held +
-    # surfaced, and the highest-rank admission-eligible items fill the free
-    # slots (ready -> active, assignee set). Capacity-deferred items simply
-    # wait for the next pass.
-    admission = admit_and_select(
+    outcomes = _dispatch_loop_wave(
+        args=args,
         repo=repo,
         items=items,
-        candidates=selected_candidates,
+        selected_candidates=selected_candidates,
         journal=journal,
-        enforce_cap=True,
+        janitor=janitor,
     )
-    journal.append(
-        record={
-            "stage": "loop-pick",
-            "dry_run": False,
-            "budget": args.budget,
-            "picked": [item.id for item in admission.admitted],
-        }
-    )
-    with ThreadPoolExecutor(max_workers=max(1, args.parallel)) as pool:
-        futures = [
-            pool.submit(
-                dispatch_one,
-                args=args,
-                repo=repo,
-                item=item,
-                journal=journal,
-                janitor=janitor,
-            )
-            for item in admission.admitted
-        ]
-        dispatched = [future.result() for future in futures]
-    # Held / host-only-refused items ride in the outcomes (so the verdict and
-    # the post-verdict alarm see them); capacity-deferred items do not.
-    outcomes = admission.refused + dispatched
+    if isinstance(outcomes, int):
+        return outcomes
     if not outcomes:
         emit_outcomes(outcomes=[], as_json=args.as_json)
         return 0
@@ -152,6 +135,97 @@ def run_loop_command(*, args: argparse.Namespace) -> int:
     )
     reflector_oob_after_verdict(args=args, repo=repo, journal=journal)
     return exit_code
+
+
+def _dispatch_loop_wave(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    items: list[WorkItem],
+    selected_candidates: list[WorkItem],
+    journal: JournalFile,
+    janitor: tuple[str, ...] | None,
+) -> list[DispatchOutcome] | int:
+    # The interim host-wide admission mutex runs BEFORE the admission valve
+    # mutates the Ledger or any Fabro sandbox work starts. It is deliberately
+    # recorded as bd-ib-sd8o deliverable (c), to be removed or demoted by
+    # deliverable (b).
+    guard = claim_dispatch_admission_mutex(
+        repo=repo, fabro_bin="fabro", runner=ShellCommandRunner()
+    )
+    if isinstance(guard, AdmissionMutexRefusal):
+        _journal_mutex_refusal(journal=journal, refusal=guard)
+        _ = write_stderr(text=guard.detail)
+        return EXIT_PRECONDITION_ERROR
+    try:
+        return _admit_and_dispatch_loop_wave(
+            args=args,
+            repo=repo,
+            items=items,
+            selected_candidates=selected_candidates,
+            journal=journal,
+            janitor=janitor,
+        )
+    finally:
+        release_dispatch_admission_mutex(claim=guard)
+
+
+def _admit_and_dispatch_loop_wave(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    items: list[WorkItem],
+    selected_candidates: list[WorkItem],
+    journal: JournalFile,
+    janitor: tuple[str, ...] | None,
+) -> list[DispatchOutcome]:
+    # The admission valve drains the candidate set up to the per-repo WIP cap:
+    # host-only items are routed away, manual / unresolvable items are held +
+    # surfaced, and the highest-rank admission-eligible items fill the free
+    # slots (ready -> active, assignee set). Capacity-deferred items simply
+    # wait for the next pass.
+    admission = admit_and_select(
+        repo=repo,
+        items=items,
+        candidates=selected_candidates,
+        journal=journal,
+        enforce_cap=True,
+    )
+    journal.append(
+        record={
+            "stage": "loop-pick",
+            "dry_run": False,
+            "budget": args.budget,
+            "picked": [item.id for item in admission.admitted],
+        }
+    )
+    with ThreadPoolExecutor(max_workers=max(1, args.parallel)) as pool:
+        futures = [
+            pool.submit(
+                dispatch_one,
+                args=args,
+                repo=repo,
+                item=item,
+                journal=journal,
+                janitor=janitor,
+            )
+            for item in admission.admitted
+        ]
+        dispatched = [future.result() for future in futures]
+    # Held / host-only-refused items ride in the outcomes (so the verdict and
+    # the post-verdict alarm see them); capacity-deferred items do not.
+    return admission.refused + dispatched
+
+
+def _journal_mutex_refusal(*, journal: JournalFile, refusal: AdmissionMutexRefusal) -> None:
+    journal.append(
+        record={
+            "stage": "dispatch-admission-mutex",
+            "guard": "interim bd-ib-sd8o deliverable (c)",
+            "run_id": refusal.run_id,
+            "refused": True,
+        }
+    )
 
 
 def _start_loop(*, args: argparse.Namespace, repo: Path) -> _LoopStart | int:

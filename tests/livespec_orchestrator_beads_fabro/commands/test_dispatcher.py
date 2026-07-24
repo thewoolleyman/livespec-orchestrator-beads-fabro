@@ -2496,6 +2496,62 @@ class _FakeRunDispatch:
 
 
 @dataclass(kw_only=True)
+class _FakePsRunner:
+    stdout: str
+    calls: list[list[str]] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        _ = (cwd, timeout_seconds, env, stdin)
+        self.calls.append(argv)
+        return CommandResult(exit_code=0, stdout=self.stdout, stderr="")
+
+
+@dataclass(kw_only=True)
+class _SequencePsRunner:
+    stdouts: list[str]
+    calls: list[list[str]] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        _ = (cwd, timeout_seconds, env, stdin)
+        self.calls.append(argv)
+        return CommandResult(exit_code=0, stdout=self.stdouts.pop(0), stderr="")
+
+
+def _ps_json(*, run_id: str, status: str) -> str:
+    return json.dumps(
+        {
+            "runs": [
+                {
+                    "run_id": run_id,
+                    "status": {"kind": status},
+                    "goal": "Work-item: bd-ib-other",
+                }
+            ]
+        }
+    )
+
+
+def _admission_mutex_path(*, repo: Path) -> Path:
+    return repo / "tmp" / "fabro-dispatch-admission.lock"
+
+
+@dataclass(kw_only=True)
 class _CostGateCall:
     args: argparse.Namespace
     repo: Path
@@ -3063,6 +3119,152 @@ def test_dispatch_bad_janitor_is_usage_error(tmp_path: Path) -> None:
     assert main(argv=[*base, "--janitor", "not json"]) == 2
     assert main(argv=[*base, "--janitor", '{"a": 1}']) == 2
     assert main(argv=[*base, "--janitor", '["ok", 1]']) == 2
+
+
+def test_dispatch_refuses_when_host_wide_admission_mutex_sees_running_run(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
+    ps_runner = _FakePsRunner(stdout=_ps_json(run_id="01RUNNING", status="running"))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
+    monkeypatch.setattr(
+        _dispatcher_run_commands,
+        "ShellCommandRunner",
+        lambda: ps_runner,
+        raising=False,
+    )
+
+    exit_code = main(
+        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+    )
+
+    assert exit_code == 3
+    assert fake.seen == []
+    assert _stored()[item.id].status == "ready"
+    err = capsys.readouterr().err
+    assert "dispatch admission mutex" in err
+    assert "01RUNNING" in err
+    assert "wait for run 01RUNNING to reach terminal state, then retry" in err
+    assert ps_runner.calls == [["fabro", "ps", "-a", "--json"]]
+
+
+def test_dispatch_admits_when_only_parked_human_input_run_exists(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
+    ps_runner = _FakePsRunner(stdout=_ps_json(run_id="01PARKED", status="blocked"))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
+    monkeypatch.setattr(
+        _dispatcher_run_commands,
+        "ShellCommandRunner",
+        lambda: ps_runner,
+        raising=False,
+    )
+
+    exit_code = main(
+        argv=[
+            "dispatch",
+            "--repo",
+            str(repo),
+            "--item",
+            item.id,
+            "--workflow",
+            str(workflow),
+            "--no-close-on-merge",
+        ]
+    )
+
+    assert exit_code == 0
+    assert [
+        seen["plan"].work_item_id for seen in fake.seen if isinstance(seen["plan"], DispatchPlan)
+    ] == [item.id]
+    assert not _admission_mutex_path(repo=repo).exists()
+
+
+def test_dispatch_reclaims_dead_admission_mutex_when_no_run_is_running(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    _admission_mutex_path(repo=repo).parent.mkdir(parents=True, exist_ok=True)
+    _admission_mutex_path(repo=repo).write_text(
+        json.dumps({"guard": "dispatch admission mutex", "pid": 999_999_999}),
+        encoding="utf-8",
+    )
+    fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
+    ps_runner = _FakePsRunner(stdout=json.dumps({"runs": []}))
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
+    monkeypatch.setattr(
+        _dispatcher_run_commands,
+        "ShellCommandRunner",
+        lambda: ps_runner,
+        raising=False,
+    )
+
+    exit_code = main(
+        argv=[
+            "dispatch",
+            "--repo",
+            str(repo),
+            "--item",
+            item.id,
+            "--workflow",
+            str(workflow),
+            "--no-close-on-merge",
+        ]
+    )
+
+    assert exit_code == 0
+    assert fake.seen != []
+    assert not _admission_mutex_path(repo=repo).exists()
+
+
+def test_dispatch_crash_lock_refuses_while_run_running_then_retry_succeeds(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    _admission_mutex_path(repo=repo).parent.mkdir(parents=True, exist_ok=True)
+    _admission_mutex_path(repo=repo).write_text(
+        json.dumps({"guard": "dispatch admission mutex", "pid": 999_999_999}),
+        encoding="utf-8",
+    )
+    fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
+    ps_runner = _SequencePsRunner(
+        stdouts=[_ps_json(run_id="01CRASHED", status="running"), json.dumps({"runs": []})]
+    )
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
+    monkeypatch.setattr(
+        _dispatcher_run_commands,
+        "ShellCommandRunner",
+        lambda: ps_runner,
+        raising=False,
+    )
+    argv = ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+
+    assert main(argv=argv) == 3
+    err = capsys.readouterr().err
+    assert "01CRASHED" in err
+    assert "wait for run 01CRASHED to reach terminal state, then retry" in err
+    assert fake.seen == []
+
+    assert main(argv=[*argv, "--no-close-on-merge"]) == 0
+    assert fake.seen != []
+    assert not _admission_mutex_path(repo=repo).exists()
 
 
 def test_dispatch_passes_custom_janitor_through(
