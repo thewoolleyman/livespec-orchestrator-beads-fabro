@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.46.6...v0.46.7) (2026-07-24)
+
+
+### Bug Fixes
+
+* thread resolved fabro_bin into the admission cap gauge and count all non-terminal non-parked runs (bd-ib-3zek, bd-ib-4cw9) ([edbff85](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/edbff85d571054070ffef5edccfae6d69e2a6238))
+
 ## [0.46.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.46.5...v0.46.6) (2026-07-24)
 
 
