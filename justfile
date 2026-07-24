@@ -478,6 +478,12 @@ check:
         # closes the gap for brand-new dispatch scripts and unguarded workflow
         # env forwards.
         check-no-fleet-pat-dispatch-surface
+        # Factory branches cannot publish workflow-file diffs through the
+        # fleet App's contents-only push token. Run this before the janitor
+        # can progress to PR publication so workflow wiring is restored to
+        # master and reported for maintainer-side landing instead of being
+        # discovered by GitHub's push rejection.
+        check-no-workflow-edits
         # livespec core's doctor STATIC phase (reference-discipline +
         # out-of-band invariants) against THIS repo's SPECIFICATION/ tree,
         # wired fleet-wide per livespec epic livespec-6jfq. Not a canonical
@@ -941,6 +947,9 @@ check-no-direct-destructive-cli:
 
 check-no-direct-tool-invocation:
     uv run python -m livespec_dev_tooling.checks.no_direct_tool_invocation
+
+check-no-workflow-edits:
+    uv run python .claude-plugin/scripts/bin/workflow_guard.py
 
 check-no-except-outside-io:
     uv run python -m livespec_dev_tooling.checks.no_except_outside_io

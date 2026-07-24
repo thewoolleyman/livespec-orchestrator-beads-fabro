@@ -81,7 +81,8 @@ digraph ImplementWorkItem {
         prompt="@prompts/implement.md"
     ]
 
-    // Janitor hard gate: a non-zero `just check` MUST prevent the PR
+    // Janitor hard gate: workflow-file drift is refused before `just
+    // check`, and a non-zero guard or `just check` MUST prevent the PR
     // stage (livespec non-functional-requirements.md §"Orchestrator-
     // internal Dispatcher guidance"). Script outcome routes the edges:
     // exit 0 -> succeeded -> pr; non-zero -> failed -> fix loop.
@@ -89,7 +90,7 @@ digraph ImplementWorkItem {
         label="Janitor: just check"
         shape=parallelogram
         timeout="3600s"
-        script="mise exec -- just check"
+        script="mise exec -- just check-no-workflow-edits check"
     ]
 
     fix [

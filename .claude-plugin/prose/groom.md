@@ -78,6 +78,11 @@ Draft candidate slices. Each candidate is pre-filled with all of:
 - **repo target** — the one ledger the slice lands in.
 - **scope** — the slice body.
 
+When the draft discovers required workflow-file wiring, split that wiring
+into an explicitly maintainer-side step: factory slices never create or update
+files under `.github/workflows/`, so the factory slice carries the product
+change and reports the workflow diff for maintainer-side landing.
+
 Present the draft to the maintainer. The maintainer OWNS the cut and the
 acceptance — `groom` only proposes. The draft is READ-ONLY: nothing is
 filed until the maintainer approves. The maintainer may edit the cut /

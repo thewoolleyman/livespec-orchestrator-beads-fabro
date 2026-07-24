@@ -904,7 +904,14 @@ def test_janitor_checks_skip_per_failed_probe(
 def test_build_plan_derives_publish_branch_and_default_janitor(tmp_path: Path) -> None:
     plan = _plan(repo=tmp_path)
     assert plan.branch == "feat/x-1"
-    assert plan.janitor == ("mise", "exec", "--", "just", "check")
+    assert plan.janitor == (
+        "mise",
+        "exec",
+        "--",
+        "just",
+        "check-no-workflow-edits",
+        "check",
+    )
     assert plan.janitor_checkout == tmp_path / "janitor-co"
     assert plan.review_fix_visit_cap == 4
     assert plan.merge_on_review_cap_outcome == "__merge_on_review_cap_disabled__"
@@ -912,7 +919,14 @@ def test_build_plan_derives_publish_branch_and_default_janitor(tmp_path: Path) -
 
 def test_janitor_argv_with_default_passthrough_and_empty() -> None:
     assert janitor_argv_with_default(janitor=("echo", "hi")) == ("echo", "hi")
-    assert janitor_argv_with_default(janitor=()) == ("mise", "exec", "--", "just", "check")
+    assert janitor_argv_with_default(janitor=()) == (
+        "mise",
+        "exec",
+        "--",
+        "just",
+        "check-no-workflow-edits",
+        "check",
+    )
 
 
 def test_janitor_checkout_path_lives_under_home_worktrees(
@@ -2122,7 +2136,9 @@ def test_engine_runs_configured_janitor_in_fresh_checkout(tmp_path: Path) -> Non
     )
     _, _, _ = _dispatch(runner=runner, repo=tmp_path)
     janitor_calls = [
-        (argv, cwd) for argv, cwd in runner.calls if argv == ["mise", "exec", "--", "just", "check"]
+        (argv, cwd)
+        for argv, cwd in runner.calls
+        if argv == ["mise", "exec", "--", "just", "check-no-workflow-edits", "check"]
     ]
     assert len(janitor_calls) == 1
     assert janitor_calls[0][1] == tmp_path / "janitor-co"
