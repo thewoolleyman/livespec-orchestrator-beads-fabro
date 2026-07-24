@@ -25,6 +25,7 @@ __all__: list[str] = [
     "DEFAULT_ACCEPTANCE_REWORK_CAP",
     "DEFAULT_ADMISSION_POLICY",
     "DEFAULT_AUTO_APPROVE_READY",
+    "DEFAULT_HOST_DISPATCH_CAP",
     "DEFAULT_MERGE_ON_REVIEW_CAP",
     "DEFAULT_REVIEW_FIX_CAP",
     "DEFAULT_WIP_CAP",
@@ -38,12 +39,14 @@ __all__: list[str] = [
     "resolve_acceptance_mode",
     "resolve_acceptance_rework_cap",
     "resolve_auto_approve_ready",
+    "resolve_host_dispatch_cap",
     "resolve_merge_on_review_cap",
     "resolve_review_fix_cap",
     "resolve_wip_cap",
 ]
 
 DEFAULT_WIP_CAP = 5
+DEFAULT_HOST_DISPATCH_CAP = 2
 DEFAULT_AUTO_APPROVE_READY = False
 DEFAULT_MERGE_ON_REVIEW_CAP = False
 DEFAULT_ADMISSION_POLICY = "manual"
@@ -56,6 +59,7 @@ _LIVESPEC_CONFIG = ".livespec.jsonc"
 _PLUGIN_BLOCK = "livespec-orchestrator-beads-fabro"
 _DISPATCHER_KEY = "dispatcher"
 _WIP_CAP_KEY = "wip_cap"
+_HOST_DISPATCH_CAP_KEY = "host_dispatch_cap"
 _AUTO_APPROVE_READY_KEY = "auto_approve_ready"
 _MERGE_ON_REVIEW_CAP_KEY = "merge_on_review_cap"
 _ACCEPTANCE_MODE_KEY = "acceptance_mode"
@@ -70,6 +74,13 @@ _ACCEPTANCE_POLICIES = frozenset(("ai-only", "ai-then-human", "human-only"))
 def resolve_wip_cap(*, cwd: Path) -> int:
     """Read the per-repo WIP cap from `.livespec.jsonc`, defaulting to 5."""
     return _resolve_positive_int_setting(cwd=cwd, key=_WIP_CAP_KEY, default=DEFAULT_WIP_CAP)
+
+
+def resolve_host_dispatch_cap(*, cwd: Path) -> int:
+    """Read the host-level dispatch concurrency cap (spec v047), defaulting to 2."""
+    return _resolve_positive_int_setting(
+        cwd=cwd, key=_HOST_DISPATCH_CAP_KEY, default=DEFAULT_HOST_DISPATCH_CAP
+    )
 
 
 def resolve_auto_approve_ready(*, cwd: Path) -> bool:

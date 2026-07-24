@@ -43,6 +43,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     spans_path,
     store_config,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
+    resolve_host_dispatch_cap,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_post_verdict import (
     reflector_oob_after_verdict,
 )
@@ -146,12 +149,15 @@ def _dispatch_loop_wave(
     journal: JournalFile,
     janitor: tuple[str, ...] | None,
 ) -> list[DispatchOutcome] | int:
-    # The interim host-wide admission mutex runs BEFORE the admission valve
-    # mutates the Ledger or any Fabro sandbox work starts. It is deliberately
-    # recorded as bd-ib-sd8o deliverable (c), to be removed or demoted by
-    # deliverable (b).
+    # The host-level dispatch admission cap (spec v047, contracts.md) runs
+    # BEFORE the admission valve mutates the Ledger or any Fabro sandbox work
+    # starts — the bd-ib-sd8o deliverable (b) counting demotion of the interim
+    # binary mutex.
     guard = claim_dispatch_admission_mutex(
-        repo=repo, fabro_bin="fabro", runner=ShellCommandRunner()
+        repo=repo,
+        fabro_bin="fabro",
+        runner=ShellCommandRunner(),
+        cap=resolve_host_dispatch_cap(cwd=repo),
     )
     if isinstance(guard, AdmissionMutexRefusal):
         _journal_mutex_refusal(journal=journal, refusal=guard)
@@ -221,7 +227,7 @@ def _journal_mutex_refusal(*, journal: JournalFile, refusal: AdmissionMutexRefus
     journal.append(
         record={
             "stage": "dispatch-admission-mutex",
-            "guard": "interim bd-ib-sd8o deliverable (c)",
+            "guard": "host_dispatch_cap counting cap (bd-ib-sd8o deliverable (b))",
             "run_id": refusal.run_id,
             "refused": True,
         }

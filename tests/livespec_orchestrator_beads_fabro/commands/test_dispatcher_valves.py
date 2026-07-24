@@ -20,6 +20,10 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_valves as valves
+from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
+    DEFAULT_HOST_DISPATCH_CAP,
+    resolve_host_dispatch_cap,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_ACCEPTANCE_POLICY,
     DEFAULT_ADMISSION_POLICY,
@@ -136,6 +140,31 @@ def test_resolve_wip_cap_defaults_when_value_invalid(tmp_path: Path, raw: str) -
         text=f'{{"livespec-orchestrator-beads-fabro": {{"dispatcher": {{"wip_cap": {raw}}}}}}}',
     )
     assert resolve_wip_cap(cwd=cwd) == DEFAULT_WIP_CAP
+
+
+def test_resolve_host_dispatch_cap_defaults_to_two(tmp_path: Path) -> None:
+    assert DEFAULT_HOST_DISPATCH_CAP == 2
+    assert resolve_host_dispatch_cap(cwd=tmp_path) == DEFAULT_HOST_DISPATCH_CAP
+
+
+def test_resolve_host_dispatch_cap_reads_explicit_value(tmp_path: Path) -> None:
+    cwd = _write_config(
+        tmp_path=tmp_path,
+        text='{"livespec-orchestrator-beads-fabro": {"dispatcher": {"host_dispatch_cap": 3}}}',
+    )
+    assert resolve_host_dispatch_cap(cwd=cwd) == 3
+
+
+@pytest.mark.parametrize("raw", ['"3"', "true", "0", "-1"])
+def test_resolve_host_dispatch_cap_defaults_when_value_invalid(tmp_path: Path, raw: str) -> None:
+    cwd = _write_config(
+        tmp_path=tmp_path,
+        text=(
+            '{"livespec-orchestrator-beads-fabro": '
+            f'{{"dispatcher": {{"host_dispatch_cap": {raw}}}}}}}'
+        ),
+    )
+    assert resolve_host_dispatch_cap(cwd=cwd) == DEFAULT_HOST_DISPATCH_CAP
 
 
 # ---------------------------------------------------------------------------
