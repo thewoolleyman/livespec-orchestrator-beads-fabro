@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.46.1...v0.46.2) (2026-07-24)
+
+
+### Bug Fixes
+
+* guard factory workflow edits ([3fe97cc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3fe97cc8d02902b15ba489b57c846d15ec96ca69))
+
 ## [0.46.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.46.0...v0.46.1) (2026-07-23)
 
 
