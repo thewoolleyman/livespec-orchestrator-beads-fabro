@@ -277,7 +277,12 @@ def _target_repo(*, tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     with (target / "justfile").open("a", encoding="utf-8") as handle:
-        _ = handle.write("\ninstall-commit-refuse-hooks:\n    @just bootstrap\n")
+        _ = handle.write(
+            "\ncheck-no-workflow-edits:\n"
+            '    @echo "No .github/workflows/ changes detected."\n'
+            "\ninstall-commit-refuse-hooks:\n"
+            "    @just bootstrap\n"
+        )
     _git(target, "init", "-b", "master")
     _git(target, "config", "user.email", "janitor-test@example.invalid")
     _git(target, "config", "user.name", "Janitor Test")

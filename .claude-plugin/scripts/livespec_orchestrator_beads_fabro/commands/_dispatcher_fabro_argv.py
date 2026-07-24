@@ -37,7 +37,14 @@ __all__: list[str] = [
     "pull_primary_argv",
 ]
 
-_DEFAULT_JANITOR: tuple[str, ...] = ("mise", "exec", "--", "just", "check")
+_DEFAULT_JANITOR: tuple[str, ...] = (
+    "mise",
+    "exec",
+    "--",
+    "just",
+    "check-no-workflow-edits",
+    "check",
+)
 _DEFAULT_JANITOR_CORE_REPO_URL = "https://github.com/thewoolleyman/livespec.git"
 _DEFAULT_JANITOR_CORE_REF = "master"
 

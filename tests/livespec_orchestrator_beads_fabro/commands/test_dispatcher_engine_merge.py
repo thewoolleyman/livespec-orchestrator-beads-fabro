@@ -180,9 +180,16 @@ def test_post_merge_runs_janitor_in_fresh_checkout(tmp_path: Path) -> None:
 
     assert (outcome.status, outcome.stage) == ("green", "done")
     janitor_calls = [
-        (argv, cwd) for argv, cwd in runner.calls if argv == ["mise", "exec", "--", "just", "check"]
+        (argv, cwd)
+        for argv, cwd in runner.calls
+        if argv == ["mise", "exec", "--", "just", "check-no-workflow-edits", "check"]
     ]
-    assert janitor_calls == [(["mise", "exec", "--", "just", "check"], tmp_path / "janitor-co")]
+    assert janitor_calls == [
+        (
+            ["mise", "exec", "--", "just", "check-no-workflow-edits", "check"],
+            tmp_path / "janitor-co",
+        )
+    ]
     assert runner.envs[-2] == {
         "LIVESPEC_CORE_PLUGIN_ROOT": str(
             tmp_path / "janitor-co" / ".livespec-core" / ".claude-plugin"

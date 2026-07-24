@@ -15,6 +15,9 @@ from typing import TYPE_CHECKING
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
     escape_minijinja_literal,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_guard import (
+    FACTORY_WORKFLOW_BOUNDARY_TEXT,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 if TYPE_CHECKING:
@@ -65,6 +68,9 @@ def render_goal(
         f"{gap_line}"
         f"{spec_line}"
         f"Title: {item.title}\n"
+        "\n"
+        "Factory branch boundary:\n"
+        f"{FACTORY_WORKFLOW_BOUNDARY_TEXT}\n"
         "\n"
         "Description:\n"
         f"{item.description}\n"
