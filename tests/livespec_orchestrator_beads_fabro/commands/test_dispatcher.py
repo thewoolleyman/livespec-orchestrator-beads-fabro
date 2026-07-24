@@ -1267,6 +1267,7 @@ def test_parse_run_status_reads_tagged_kind() -> None:
         }
     )
     assert parse_run_status(stdout=blocked) == "blocked"
+    assert parse_run_status(stdout=_HUMAN_INPUT_REQUIRED_INSPECT_JSON) == "human_input_required"
     succeeded = json.dumps({"status": {"kind": "succeeded", "reason": "completed"}})
     assert parse_run_status(stdout=succeeded) == "succeeded"
     assert parse_run_status(stdout=json.dumps({"status": "failed"})) == "failed"
@@ -1639,6 +1640,12 @@ _BLOCKED_INSPECT_JSON = json.dumps(
         "status": {"kind": "blocked", "blocked_reason": "human_input_required"},
     }
 )
+_HUMAN_INPUT_REQUIRED_INSPECT_JSON = json.dumps(
+    {
+        "run_id": "01RUNPARKED",
+        "status": {"kind": "human_input_required"},
+    }
+)
 
 
 def test_engine_green_runs_janitor_in_fresh_checkout(tmp_path: Path) -> None:
@@ -1750,6 +1757,23 @@ def test_engine_blocked_run_is_a_third_terminal_state(tmp_path: Path) -> None:
     assert inspect_argv == ["fabro", "inspect", "01RUNBLOCKED", "--json"]
     assert inspect_cwd == tmp_path
     assert len(runner.calls) == 2
+    assert [record["stage"] for record in journal.records] == ["fabro-run", "fabro-inspect"]
+
+
+def test_engine_human_input_required_run_is_blocked_not_failed(tmp_path: Path) -> None:
+    parked = CommandResult(
+        exit_code=1,
+        stdout="Run: 01RUNPARKED\n",
+        stderr="Needs human: R/I/A\n",
+    )
+    runner = _FakeRunner(queue=[parked, _ok(stdout=_HUMAN_INPUT_REQUIRED_INSPECT_JSON)])
+
+    outcome, journal, _ = _dispatch(runner=runner, repo=tmp_path)
+
+    assert (outcome.status, outcome.stage) == ("blocked", "fabro-run")
+    assert outcome.fabro_run_id == "01RUNPARKED"
+    assert "fabro attach 01RUNPARKED" in outcome.detail
+    assert "failed" not in outcome.status
     assert [record["stage"] for record in journal.records] == ["fabro-run", "fabro-inspect"]
 
 

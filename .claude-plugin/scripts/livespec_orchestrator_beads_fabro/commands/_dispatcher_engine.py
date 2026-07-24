@@ -335,7 +335,7 @@ def _blocked_outcome(
     journal_stage(journal=journal, plan=plan, stage="fabro-inspect", result=inspect)
     if inspect.exit_code != 0:
         return None
-    if parse_run_status(stdout=inspect.stdout) != "blocked":
+    if parse_run_status(stdout=inspect.stdout) not in {"blocked", "human_input_required"}:
         return None
     return DispatchOutcome(
         work_item_id=plan.work_item_id,
