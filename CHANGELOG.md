@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.46.5...v0.46.6) (2026-07-24)
+
+
+### Bug Fixes
+
+* refuse origin-unreachable dispatch source ([03c8bf3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/03c8bf35a5e0813ace218c4a16afab85c6acefed))
+
 ## [0.46.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.46.4...v0.46.5) (2026-07-24)
 
 
