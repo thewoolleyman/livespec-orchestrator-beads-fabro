@@ -4,10 +4,16 @@ The counting successor of the interim binary admission mutex. Admission
 capacity is measured by two INDEPENDENT host-global gauges, each capped by
 `dispatcher.host_dispatch_cap` (never summed):
 
-- gauge (ii), checked first: Fabro runs observed host-wide whose status is
-  `running`. A PARKED (`blocked` / human_input_required) run never counts,
-  terminal runs never count, and an unobservable `fabro ps` fails open (the
-  slot gauge still bounds dispatcher-originated concurrency).
+- gauge (ii), checked first: Fabro runs observed host-wide in a non-terminal,
+  non-parked state — `running`, `starting`, and any unknown kind all count
+  (fail-closed, bd-ib-4cw9); a PARKED (`blocked` / human_input_required) run
+  and the terminal kinds never count. The caller MUST pass the RESOLVED
+  engine binary — a bare name does not resolve inside the credential wrapper
+  and blinds this gauge (bd-ib-3zek). An unobservable `fabro ps` (exec
+  failure, non-zero exit, unparseable output) still fails open — the slot
+  gauge bounds dispatcher-originated concurrency — but the fail-open is
+  LOUD: the returned claim carries `ps_unobservable` and the call sites
+  warn on stderr and journal it.
 - gauge (i): capacity slot files `tmp/fabro-dispatch-admission.slot<i>.lock`
   for `i < cap`, one held per admitted dispatch from claim time until release.
   Each slot keeps the proven per-slot claim/release/crash-reclaim semantics:
@@ -50,6 +56,7 @@ __all__: list[str] = [
 
 _FABRO_PS_TIMEOUT_SECONDS = 60.0
 _GUARD_NAME = "dispatch admission cap"
+_TERMINAL_OR_PARKED_KINDS = frozenset({"succeeded", "failed", "cancelled", "canceled", "blocked"})
 _REMEDY = (
     "then retry, or raise livespec-orchestrator-beads-fabro.dispatcher."
     "host_dispatch_cap in .livespec.jsonc (config-only). This counting cap is "
@@ -60,6 +67,12 @@ _REMEDY = (
 @dataclass(frozen=True, kw_only=True)
 class AdmissionMutexClaim:
     path: Path
+    ps_unobservable: str | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class _PsUnobservable:
+    detail: str
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -82,28 +95,33 @@ def admission_mutex_slot_path(*, repo: Path, slot: int) -> Path:
 def claim_dispatch_admission_mutex(
     *, repo: Path, fabro_bin: str, runner: CommandRunner, cap: int
 ) -> AdmissionMutexClaim | AdmissionMutexRefusal:
-    running = _running_run_ids(repo=repo, fabro_bin=fabro_bin, runner=runner)
-    if len(running) >= cap:
-        return _running_refusal(run_ids=running, cap=cap)
+    observed = _observed_in_flight(repo=repo, fabro_bin=fabro_bin, runner=runner)
+    ps_unobservable = observed.detail if isinstance(observed, _PsUnobservable) else None
+    in_flight = observed if isinstance(observed, list) else []
+    if len(in_flight) >= cap:
+        return _running_refusal(run_ids=in_flight, cap=cap)
     admission_mutex_slot_path(repo=repo, slot=0).parent.mkdir(parents=True, exist_ok=True)
     for slot in range(cap):
-        claimed = _claim_slot(path=admission_mutex_slot_path(repo=repo, slot=slot))
+        claimed = _claim_slot(
+            path=admission_mutex_slot_path(repo=repo, slot=slot),
+            ps_unobservable=ps_unobservable,
+        )
         if claimed is not None:
             return claimed
     return _contention_refusal(repo=repo, cap=cap)
 
 
-def _claim_slot(*, path: Path) -> AdmissionMutexClaim | None:
+def _claim_slot(*, path: Path, ps_unobservable: str | None) -> AdmissionMutexClaim | None:
     opened = _open_admission_mutex(path=path)
     if not isinstance(opened, AttemptFailure):
         _write_admission_mutex(descriptor=opened)
-        return AdmissionMutexClaim(path=path)
+        return AdmissionMutexClaim(path=path, ps_unobservable=ps_unobservable)
     if not _stale_admission_mutex_reclaimed(path=path):
         return None
     opened = _open_admission_mutex(path=path)
     if not isinstance(opened, AttemptFailure):
         _write_admission_mutex(descriptor=opened)
-        return AdmissionMutexClaim(path=path)
+        return AdmissionMutexClaim(path=path, ps_unobservable=ps_unobservable)
     return None
 
 
@@ -118,32 +136,34 @@ def release_dispatch_admission_mutex(*, claim: AdmissionMutexClaim) -> None:
     _ = attempt(action=claim.path.unlink, exceptions=(FileNotFoundError, OSError))
 
 
-def _running_run_ids(*, repo: Path, fabro_bin: str, runner: CommandRunner) -> list[str]:
+def _observed_in_flight(
+    *, repo: Path, fabro_bin: str, runner: CommandRunner
+) -> list[str] | _PsUnobservable:
     result = runner.run(
         argv=[fabro_bin, "ps", "-a", "--json"],
         cwd=repo,
         timeout_seconds=_FABRO_PS_TIMEOUT_SECONDS,
     )
     if result.exit_code != 0:
-        return []
-    return _parse_running_run_ids(ps_json=result.stdout)
-
-
-def _parse_running_run_ids(*, ps_json: str) -> list[str]:
-    parsed_raw = parse_json(text=ps_json)
+        return _PsUnobservable(detail=f"{fabro_bin!r} ps exited {result.exit_code}")
+    parsed_raw = parse_json(text=result.stdout)
     if isinstance(parsed_raw, JsonParseFailure):
-        return []
-    running: list[str] = []
+        return _PsUnobservable(detail=f"{fabro_bin!r} ps emitted unparseable JSON")
+    return _parse_in_flight_run_ids(parsed_raw=parsed_raw)
+
+
+def _parse_in_flight_run_ids(*, parsed_raw: object) -> list[str]:
+    in_flight: list[str] = []
     for run_raw in _runs_list(parsed_raw=parsed_raw):
         if not isinstance(run_raw, dict):
             continue
         run = cast("dict[str, Any]", run_raw)
-        if _run_status_kind(run=run) != "running":
+        if _run_status_kind(run=run) in _TERMINAL_OR_PARKED_KINDS:
             continue
         run_id_raw: object = run.get("run_id")
         if isinstance(run_id_raw, str) and run_id_raw:
-            running.append(run_id_raw)
-    return running
+            in_flight.append(run_id_raw)
+    return in_flight
 
 
 def _runs_list(*, parsed_raw: object) -> list[object]:

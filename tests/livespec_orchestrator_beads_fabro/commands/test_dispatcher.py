@@ -2654,6 +2654,10 @@ def test_dispatch_green_closes_item_and_journals(
     # self-merge), then the mechanical reflection stage at the default
     # `observe` lever (work-item 29f.2).
     assert stages == [
+        # The hermetic fabro stub answers `ps` with exit 0 and EMPTY stdout, so
+        # the admission cap's run gauge is genuinely unobservable here — the
+        # loud fail-open record (bd-ib-3zek) is the first journaled stage.
+        "dispatch-admission-cap-ps-unobservable",
         "ledger-admit",
         "dispatch-id",
         "ledger-complete",
@@ -3161,7 +3165,9 @@ def test_dispatch_refuses_when_host_wide_admission_mutex_sees_running_run(
     assert "host dispatch cap (1)" in err
     assert "reach terminal state" in err
     assert "dispatcher.host_dispatch_cap" in err
-    assert ps_runner.calls == [["fabro", "ps", "-a", "--json"]]
+    resolved_fabro = os.environ["LIVESPEC_FABRO_BIN"]
+    assert ps_runner.calls == [[resolved_fabro, "ps", "-a", "--json"]]
+    assert ps_runner.calls[0][0] != "fabro"
 
 
 def test_dispatch_admits_when_only_parked_human_input_run_exists(
@@ -3726,6 +3732,37 @@ def test_loop_without_item_drains_ranked_queue(
     seen_plan = fake.seen[0]["plan"]
     assert isinstance(seen_plan, DispatchPlan)
     assert seen_plan.work_item_id == item.id
+
+
+def test_loop_with_observable_ps_claims_quietly(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
+    ps_runner = _FakePsRunner(stdout=json.dumps({"runs": []}))
+    monkeypatch.setattr(_dispatcher_loop_command, "ShellCommandRunner", lambda: ps_runner)
+    exit_code = main(
+        argv=[
+            "loop",
+            "--repo",
+            str(repo),
+            "--budget",
+            "1",
+            "--workflow",
+            str(workflow),
+            "--no-close-on-merge",
+        ]
+    )
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "could not observe Fabro runs" not in captured.err
+    resolved_fabro = os.environ["LIVESPEC_FABRO_BIN"]
+    assert ps_runner.calls == [[resolved_fabro, "ps", "-a", "--json"]]
 
 
 def test_loop_dispatches_named_items_within_budget(

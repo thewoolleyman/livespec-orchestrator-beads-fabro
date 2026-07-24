@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
     admit_and_select,
@@ -154,10 +155,13 @@ def _admit_and_dispatch_target(
     # The host-level dispatch admission cap (spec v047, contracts.md) runs
     # BEFORE the admission valve mutates the Ledger or any Fabro sandbox work
     # starts — the bd-ib-sd8o deliverable (b) counting demotion of the interim
-    # binary mutex.
+    # binary mutex. The gauge gets the RESOLVED engine binary from the
+    # dispatch preamble — a bare name does not resolve inside the credential
+    # wrapper and blinds the run gauge (bd-ib-3zek).
+    fabro_bin = cast("str", args.fabro_bin)
     guard = claim_dispatch_admission_mutex(
         repo=repo,
-        fabro_bin="fabro",
+        fabro_bin=fabro_bin,
         runner=ShellCommandRunner(),
         cap=resolve_host_dispatch_cap(cwd=repo),
     )
@@ -165,6 +169,10 @@ def _admit_and_dispatch_target(
         _journal_mutex_refusal(journal=journal, refusal=guard)
         _ = write_stderr(text=guard.detail)
         return EXIT_PRECONDITION_ERROR
+    if guard.ps_unobservable is not None:
+        _warn_cap_ps_unobservable(
+            journal=journal, detail=guard.ps_unobservable, fabro_bin=fabro_bin
+        )
     try:
         # The admission valve runs BEFORE the Fabro launch: a host-only item is
         # routed away, a manual / unresolvable-assignee item is held + surfaced,
@@ -194,5 +202,23 @@ def _journal_mutex_refusal(*, journal: JournalFile, refusal: AdmissionMutexRefus
             "guard": "host_dispatch_cap counting cap (bd-ib-sd8o deliverable (b))",
             "run_id": refusal.run_id,
             "refused": True,
+        }
+    )
+
+
+def _warn_cap_ps_unobservable(*, journal: JournalFile, detail: str, fabro_bin: str) -> None:
+    _ = write_stderr(
+        text=(
+            "WARNING: dispatch admission cap could not observe Fabro runs "
+            f"({detail}); admission proceeds on the capacity-slot gauge alone "
+            f"(fail-open). Verify {fabro_bin!r} is invocable on this host.\n"
+        )
+    )
+    journal.append(
+        record={
+            "stage": "dispatch-admission-cap-ps-unobservable",
+            "fabro_bin": fabro_bin,
+            "detail": detail,
+            "fail_open": True,
         }
     )
