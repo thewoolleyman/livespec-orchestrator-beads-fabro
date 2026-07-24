@@ -2,7 +2,11 @@
 
 The counting successor of the interim binary admission mutex (bd-ib-sd8o
 deliverable (b)): two independent gauges — live capacity slot claims and
-observed RUNNING Fabro runs — each capped by `dispatcher.host_dispatch_cap`.
+observed in-flight Fabro runs — each capped by `dispatcher.host_dispatch_cap`.
+Gauge (ii) counts every observed run that is neither terminal nor parked
+(fail-closed on unknown kinds, bd-ib-4cw9), is invoked with the RESOLVED
+engine binary rather than a bare name (bd-ib-3zek), and fails open LOUDLY
+when `fabro ps` is unobservable.
 """
 
 from __future__ import annotations
@@ -123,6 +127,79 @@ def _slot(*, repo: Path, slot: int) -> Path:
     return repo / "tmp" / f"fabro-dispatch-admission.slot{slot}.lock"
 
 
+def test_starting_runs_count_toward_the_in_flight_gauge(tmp_path: Path) -> None:
+    ps_json = json.dumps(
+        [
+            {"run_id": "01RUNNING", "status": "running"},
+            {"run_id": "01STARTING", "status": {"kind": "starting"}},
+        ]
+    )
+
+    result = mutex.claim_dispatch_admission_mutex(
+        repo=tmp_path, fabro_bin="/abs/fabro", runner=_PsRunner(stdouts=[ps_json]), cap=2
+    )
+
+    assert isinstance(result, mutex.AdmissionMutexRefusal), (
+        "a starting-kind run escaped the in-flight gauge (bd-ib-4cw9): spec "
+        'v047 gauge (ii) counts every run in a "non-terminal, non-parked" '
+        "state, and `starting` is such a state (observed live on run "
+        "01KY9QWV0EPP, 2026-07-24)"
+    )
+    assert "01STARTING" in result.detail
+
+
+def test_unknown_status_kind_counts_toward_the_cap_fail_closed(tmp_path: Path) -> None:
+    ps_json = json.dumps([{"run_id": "01NOVEL", "status": {"kind": "mysterious"}}])
+
+    result = mutex.claim_dispatch_admission_mutex(
+        repo=tmp_path, fabro_bin="/abs/fabro", runner=_PsRunner(stdouts=[ps_json]), cap=1
+    )
+
+    assert isinstance(result, mutex.AdmissionMutexRefusal)
+    assert "01NOVEL" in result.detail
+
+
+def test_unknown_status_shape_counts_toward_the_cap_fail_closed(tmp_path: Path) -> None:
+    ps_json = json.dumps([{"run_id": "01ODDSHAPE", "status": {"unexpected": "shape"}}])
+
+    result = mutex.claim_dispatch_admission_mutex(
+        repo=tmp_path, fabro_bin="/abs/fabro", runner=_PsRunner(stdouts=[ps_json]), cap=1
+    )
+
+    assert isinstance(result, mutex.AdmissionMutexRefusal)
+    assert "01ODDSHAPE" in result.detail
+
+
+def test_non_string_status_entry_counts_toward_the_cap_fail_closed(tmp_path: Path) -> None:
+    result = mutex.claim_dispatch_admission_mutex(
+        repo=tmp_path,
+        fabro_bin="/abs/fabro",
+        runner=_PsRunner(stdouts=[json.dumps([{"run_id": "01ODD", "status": 7}])]),
+        cap=1,
+    )
+
+    assert isinstance(result, mutex.AdmissionMutexRefusal)
+    assert "01ODD" in result.detail
+
+
+def test_terminal_kinds_never_count_toward_the_cap(tmp_path: Path) -> None:
+    ps_json = json.dumps(
+        [
+            {"run_id": "01DONE", "status": {"kind": "succeeded"}},
+            {"run_id": "01FAILED", "status": "failed"},
+            {"run_id": "01CANCELLED", "status": {"kind": "cancelled"}},
+            {"run_id": "01CANCELED", "status": {"kind": "canceled"}},
+            {"run_id": "01RUNNING", "status": "running"},
+        ]
+    )
+
+    claim = mutex.claim_dispatch_admission_mutex(
+        repo=tmp_path, fabro_bin="/abs/fabro", runner=_PsRunner(stdouts=[ps_json]), cap=2
+    )
+
+    assert isinstance(claim, mutex.AdmissionMutexClaim)
+
+
 def test_counting_cap_slot_surface_is_implemented() -> None:
     slot_path = getattr(mutex, "admission_mutex_slot_path", None)
     assert slot_path is not None, (
@@ -136,11 +213,12 @@ def test_counting_cap_slot_surface_is_implemented() -> None:
 
 def test_claim_writes_pid_payload_and_release_removes_it(tmp_path: Path) -> None:
     claim = mutex.claim_dispatch_admission_mutex(
-        repo=tmp_path, fabro_bin="fabro", runner=_PsRunner(stdouts=[_empty_ps()]), cap=2
+        repo=tmp_path, fabro_bin="/abs/fabro", runner=_PsRunner(stdouts=[_empty_ps()]), cap=2
     )
 
     assert isinstance(claim, mutex.AdmissionMutexClaim)
     assert claim.path == _slot(repo=tmp_path, slot=0)
+    assert claim.ps_unobservable is None
     payload = json.loads(claim.path.read_text(encoding="utf-8"))
     assert payload["guard"] == _GUARD
     assert payload["pid"] == os.getpid()
@@ -154,7 +232,7 @@ def test_claim_writes_pid_payload_and_release_removes_it(tmp_path: Path) -> None
 def test_claim_admits_alongside_one_running_run_under_cap_two(tmp_path: Path) -> None:
     claim = mutex.claim_dispatch_admission_mutex(
         repo=tmp_path,
-        fabro_bin="fabro",
+        fabro_bin="/abs/fabro",
         runner=_PsRunner(stdouts=[_running_ps("01RUNNING")]),
         cap=2,
     )
@@ -165,10 +243,10 @@ def test_claim_admits_alongside_one_running_run_under_cap_two(tmp_path: Path) ->
 
 def test_second_claim_takes_next_free_slot(tmp_path: Path) -> None:
     first = mutex.claim_dispatch_admission_mutex(
-        repo=tmp_path, fabro_bin="fabro", runner=_PsRunner(stdouts=[_empty_ps()]), cap=2
+        repo=tmp_path, fabro_bin="/abs/fabro", runner=_PsRunner(stdouts=[_empty_ps()]), cap=2
     )
     second = mutex.claim_dispatch_admission_mutex(
-        repo=tmp_path, fabro_bin="fabro", runner=_PsRunner(stdouts=[_empty_ps()]), cap=2
+        repo=tmp_path, fabro_bin="/abs/fabro", runner=_PsRunner(stdouts=[_empty_ps()]), cap=2
     )
 
     assert isinstance(first, mutex.AdmissionMutexClaim)
@@ -182,7 +260,7 @@ def test_second_claim_takes_next_free_slot(tmp_path: Path) -> None:
 def test_claim_refuses_when_running_runs_meet_cap(tmp_path: Path) -> None:
     result = mutex.claim_dispatch_admission_mutex(
         repo=tmp_path,
-        fabro_bin="fabro",
+        fabro_bin="/abs/fabro",
         runner=_PsRunner(stdouts=[_running_ps("01AAA", "01BBB")]),
         cap=2,
     )
@@ -207,7 +285,7 @@ def test_parked_blocked_run_never_counts_toward_the_cap(tmp_path: Path) -> None:
     )
 
     claim = mutex.claim_dispatch_admission_mutex(
-        repo=tmp_path, fabro_bin="fabro", runner=_PsRunner(stdouts=[ps_json]), cap=2
+        repo=tmp_path, fabro_bin="/abs/fabro", runner=_PsRunner(stdouts=[ps_json]), cap=2
     )
 
     assert isinstance(claim, mutex.AdmissionMutexClaim)
@@ -220,7 +298,7 @@ def test_claim_refuses_when_all_slots_are_held_live(tmp_path: Path) -> None:
 
     result = mutex.claim_dispatch_admission_mutex(
         repo=tmp_path,
-        fabro_bin="fabro",
+        fabro_bin="/abs/fabro",
         runner=_PsRunner(stdouts=[_empty_ps(), _empty_ps()]),
         cap=1,
     )
@@ -240,7 +318,7 @@ def test_claim_reclaims_dead_slot_when_capacity_is_free(tmp_path: Path) -> None:
 
     claim = mutex.claim_dispatch_admission_mutex(
         repo=tmp_path,
-        fabro_bin="fabro",
+        fabro_bin="/abs/fabro",
         runner=_PsRunner(stdouts=[_empty_ps(), _empty_ps()]),
         cap=1,
     )
@@ -256,7 +334,7 @@ def test_dead_slot_zero_is_reclaimed_before_slot_one_is_considered(tmp_path: Pat
     slot_zero.write_text(_lock_payload(pid=999_999_999), encoding="utf-8")
 
     claim = mutex.claim_dispatch_admission_mutex(
-        repo=tmp_path, fabro_bin="fabro", runner=_PsRunner(stdouts=[_empty_ps()]), cap=2
+        repo=tmp_path, fabro_bin="/abs/fabro", runner=_PsRunner(stdouts=[_empty_ps()]), cap=2
     )
 
     assert isinstance(claim, mutex.AdmissionMutexClaim)
@@ -270,7 +348,7 @@ def test_live_slot_zero_overflows_to_slot_one_under_cap_two(tmp_path: Path) -> N
     slot_zero.write_text(_lock_payload(pid=os.getpid()), encoding="utf-8")
 
     claim = mutex.claim_dispatch_admission_mutex(
-        repo=tmp_path, fabro_bin="fabro", runner=_PsRunner(stdouts=[_empty_ps()]), cap=2
+        repo=tmp_path, fabro_bin="/abs/fabro", runner=_PsRunner(stdouts=[_empty_ps()]), cap=2
     )
 
     assert isinstance(claim, mutex.AdmissionMutexClaim)
@@ -293,7 +371,7 @@ def test_claim_reports_contention_when_post_reclaim_open_loses_race(
 
     result = mutex.claim_dispatch_admission_mutex(
         repo=tmp_path,
-        fabro_bin="fabro",
+        fabro_bin="/abs/fabro",
         runner=_PsRunner(stdouts=[_empty_ps()]),
         cap=1,
     )
@@ -302,70 +380,66 @@ def test_claim_reports_contention_when_post_reclaim_open_loses_race(
     assert _GUARD in result.detail
 
 
-def test_claim_ignores_non_container_fabro_ps_payload(tmp_path: Path) -> None:
+def test_claim_counts_zero_for_non_container_fabro_ps_payload(tmp_path: Path) -> None:
     claim = mutex.claim_dispatch_admission_mutex(
-        repo=tmp_path, fabro_bin="fabro", runner=_PsRunner(stdouts=[json.dumps(7)]), cap=2
+        repo=tmp_path, fabro_bin="/abs/fabro", runner=_PsRunner(stdouts=[json.dumps(7)]), cap=2
     )
 
     assert isinstance(claim, mutex.AdmissionMutexClaim)
+    assert claim.ps_unobservable is None
 
 
-def test_claim_ignores_fabro_ps_entry_with_non_string_status(tmp_path: Path) -> None:
-    claim = mutex.claim_dispatch_admission_mutex(
-        repo=tmp_path,
-        fabro_bin="fabro",
-        runner=_PsRunner(stdouts=[json.dumps([{"run_id": "01ODD", "status": 7}])]),
-        cap=2,
-    )
-
-    assert isinstance(claim, mutex.AdmissionMutexClaim)
-
-
-def test_claim_ignores_unparseable_fabro_ps_payload(tmp_path: Path) -> None:
-    claim = mutex.claim_dispatch_admission_mutex(
-        repo=tmp_path, fabro_bin="fabro", runner=_PsRunner(stdouts=["not json"]), cap=2
-    )
-
-    assert isinstance(claim, mutex.AdmissionMutexClaim)
-
-
-def test_claim_ignores_fabro_ps_entries_without_running_run_ids(tmp_path: Path) -> None:
+def test_claim_skips_junk_entries_and_excludes_parked(tmp_path: Path) -> None:
     ps_json = json.dumps(
         [
             7,
             {"run_id": "", "status": "running"},
             {"run_id": "01BLOCKED", "status": {"kind": "blocked"}},
-            {"run_id": "01UNKNOWN", "status": {"unexpected": "shape"}},
         ]
     )
 
     claim = mutex.claim_dispatch_admission_mutex(
-        repo=tmp_path, fabro_bin="fabro", runner=_PsRunner(stdouts=[ps_json]), cap=1
+        repo=tmp_path, fabro_bin="/abs/fabro", runner=_PsRunner(stdouts=[ps_json]), cap=1
     )
 
     assert isinstance(claim, mutex.AdmissionMutexClaim)
 
 
-def test_claim_ignores_fabro_ps_without_a_runs_list(tmp_path: Path) -> None:
+def test_claim_counts_zero_for_fabro_ps_without_a_runs_list(tmp_path: Path) -> None:
     claim = mutex.claim_dispatch_admission_mutex(
         repo=tmp_path,
-        fabro_bin="fabro",
+        fabro_bin="/abs/fabro",
         runner=_PsRunner(stdouts=[json.dumps({"runs": "not-a-list"})]),
         cap=2,
     )
 
     assert isinstance(claim, mutex.AdmissionMutexClaim)
+    assert claim.ps_unobservable is None
 
 
-def test_claim_allows_admission_when_fabro_ps_is_unobservable(tmp_path: Path) -> None:
+def test_unparseable_ps_payload_flags_the_claim_unobservable(tmp_path: Path) -> None:
+    claim = mutex.claim_dispatch_admission_mutex(
+        repo=tmp_path, fabro_bin="/abs/fabro", runner=_PsRunner(stdouts=["not json"]), cap=2
+    )
+
+    assert isinstance(claim, mutex.AdmissionMutexClaim)
+    assert claim.ps_unobservable is not None
+    assert "'/abs/fabro'" in claim.ps_unobservable
+    assert "unparseable" in claim.ps_unobservable
+
+
+def test_failing_ps_flags_the_claim_unobservable(tmp_path: Path) -> None:
     claim = mutex.claim_dispatch_admission_mutex(
         repo=tmp_path,
-        fabro_bin="fabro",
-        runner=_PsRunner(stdouts=["not json"], exit_code=1),
+        fabro_bin="/abs/fabro",
+        runner=_PsRunner(stdouts=["irrelevant"], exit_code=127),
         cap=2,
     )
 
     assert isinstance(claim, mutex.AdmissionMutexClaim)
+    assert claim.ps_unobservable is not None
+    assert "'/abs/fabro'" in claim.ps_unobservable
+    assert "exited 127" in claim.ps_unobservable
 
 
 def test_claim_reports_no_pid_when_slot_path_is_unreadable(tmp_path: Path) -> None:
@@ -375,7 +449,7 @@ def test_claim_reports_no_pid_when_slot_path_is_unreadable(tmp_path: Path) -> No
 
     result = mutex.claim_dispatch_admission_mutex(
         repo=tmp_path,
-        fabro_bin="fabro",
+        fabro_bin="/abs/fabro",
         runner=_PsRunner(stdouts=[_empty_ps(), _empty_ps()]),
         cap=1,
     )
@@ -399,7 +473,7 @@ def test_claim_reports_contention_when_reclaim_flock_fails(
 
     result = mutex.claim_dispatch_admission_mutex(
         repo=tmp_path,
-        fabro_bin="fabro",
+        fabro_bin="/abs/fabro",
         runner=_PsRunner(stdouts=[_empty_ps(), _empty_ps()]),
         cap=1,
     )
@@ -423,7 +497,7 @@ def test_slot_with_eperm_pid_probe_reads_held(
 
     result = mutex.claim_dispatch_admission_mutex(
         repo=tmp_path,
-        fabro_bin="fabro",
+        fabro_bin="/abs/fabro",
         runner=_PsRunner(stdouts=[_empty_ps(), _empty_ps()]),
         cap=1,
     )
@@ -440,7 +514,7 @@ def test_claim_reports_no_pid_for_malformed_slot_payload(tmp_path: Path, payload
 
     result = mutex.claim_dispatch_admission_mutex(
         repo=tmp_path,
-        fabro_bin="fabro",
+        fabro_bin="/abs/fabro",
         runner=_PsRunner(stdouts=[_empty_ps(), _empty_ps()]),
         cap=1,
     )
@@ -466,7 +540,7 @@ def test_claim_preserves_replacement_when_stale_reclaim_races(
 
     result = mutex.claim_dispatch_admission_mutex(
         repo=tmp_path,
-        fabro_bin="fabro",
+        fabro_bin="/abs/fabro",
         runner=_PsRunner(stdouts=[_empty_ps(), _empty_ps()]),
         cap=1,
     )
@@ -476,7 +550,7 @@ def test_claim_preserves_replacement_when_stale_reclaim_races(
     assert slot_zero.read_text(encoding="utf-8") == replacement
 
 
-def test_loop_refuses_at_committed_host_dispatch_cap_of_one(
+def test_loop_threads_the_resolved_fabro_bin_into_the_cap_gauge(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -504,7 +578,13 @@ def test_loop_refuses_at_committed_host_dispatch_cap_of_one(
     assert "fabro-run-01RUNNING" in captured.err
     assert "host dispatch cap (1)" in captured.err
     assert "dispatcher.host_dispatch_cap" in captured.err
-    assert runner.calls == [["fabro", "ps", "-a", "--json"]]
+    resolved_fabro = os.environ["LIVESPEC_FABRO_BIN"]
+    assert runner.calls == [[resolved_fabro, "ps", "-a", "--json"]]
+    assert runner.calls[0][0] != "fabro", (
+        "the cap gauge received the bare name 'fabro' instead of the resolved "
+        "engine binary (bd-ib-3zek): bare names do not resolve inside the "
+        "credential wrapper, so the gauge exec-fails and fail-opens blind"
+    )
     journal_records = [
         json.loads(line)
         for line in (repo / "tmp" / "fabro-dispatch-journal.jsonl")
@@ -518,6 +598,51 @@ def test_loop_refuses_at_committed_host_dispatch_cap_of_one(
         and record.get("refused") is True
         for record in journal_records
     )
+
+
+def test_loop_warns_loudly_and_proceeds_when_ps_is_unobservable(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path, host_dispatch_cap=2)
+    runner = _PsRunner(stdouts=["irrelevant"], exit_code=127)
+    monkeypatch.setattr(_dispatcher_loop_command, "ShellCommandRunner", lambda: runner)
+
+    _ = main(
+        argv=[
+            "loop",
+            "--repo",
+            str(repo),
+            "--budget",
+            "1",
+            "--workflow",
+            str(workflow),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert "WARNING: dispatch admission cap could not observe Fabro runs" in captured.err
+    assert "capacity-slot gauge alone" in captured.err
+    assert "fail-open" in captured.err
+    resolved_fabro = os.environ["LIVESPEC_FABRO_BIN"]
+    assert repr(resolved_fabro) in captured.err
+    journal_records = [
+        json.loads(line)
+        for line in (repo / "tmp" / "fabro-dispatch-journal.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert any(
+        record.get("stage") == "dispatch-admission-cap-ps-unobservable"
+        and record.get("fabro_bin") == resolved_fabro
+        and record.get("fail_open") is True
+        and "exited 127" in str(record.get("detail"))
+        for record in journal_records
+    )
+    assert any(
+        record.get("stage") == "loop-pick" for record in journal_records
+    ), "admission did not proceed past the unobservable gauge (fail-open broken)"
 
 
 def test_loop_refuses_missing_requested_item_before_dispatching(
