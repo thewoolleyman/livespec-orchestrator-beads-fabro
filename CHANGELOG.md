@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.46.3...v0.46.4) (2026-07-24)
+
+
+### Bug Fixes
+
+* refresh PR publish base before push ([231e9a4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/231e9a48ecec36096f1312668382d70db00b529a))
+
 ## [0.46.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.46.2...v0.46.3) (2026-07-24)
 
 
