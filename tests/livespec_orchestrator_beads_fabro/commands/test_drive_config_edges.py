@@ -42,7 +42,11 @@ def test_config_read_defaults_when_config_file_is_absent(tmp_path: Path) -> None
     result = drive.run_action(repo=repo, action_id="config")
 
     assert result["status"] == "green"
-    assert result["settings"][-1] == {"key": "wip_cap", "value": 5, "source": "default"}
+    assert result["settings"][-1] == {
+        "key": "host_dispatch_cap",
+        "value": 2,
+        "source": "default",
+    }
 
 
 def test_config_write_creates_missing_file_and_nested_blocks(tmp_path: Path) -> None:

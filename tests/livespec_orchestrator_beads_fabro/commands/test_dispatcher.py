@@ -2548,7 +2548,15 @@ def _ps_json(*, run_id: str, status: str) -> str:
 
 
 def _admission_mutex_path(*, repo: Path) -> Path:
-    return repo / "tmp" / "fabro-dispatch-admission.lock"
+    return repo / "tmp" / "fabro-dispatch-admission.slot0.lock"
+
+
+def _commit_host_dispatch_cap_one(*, repo: Path) -> None:
+    _ = (repo / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"},'
+        ' "dispatcher": {"host_dispatch_cap": 1}}}',
+        encoding="utf-8",
+    )
 
 
 @dataclass(kw_only=True)
@@ -3127,6 +3135,7 @@ def test_dispatch_refuses_when_host_wide_admission_mutex_sees_running_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    _commit_host_dispatch_cap_one(repo=repo)
     item = _item()
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
@@ -3147,9 +3156,11 @@ def test_dispatch_refuses_when_host_wide_admission_mutex_sees_running_run(
     assert fake.seen == []
     assert _stored()[item.id].status == "ready"
     err = capsys.readouterr().err
-    assert "dispatch admission mutex" in err
+    assert "dispatch admission cap" in err
     assert "01RUNNING" in err
-    assert "wait for run 01RUNNING to reach terminal state, then retry" in err
+    assert "host dispatch cap (1)" in err
+    assert "reach terminal state" in err
+    assert "dispatcher.host_dispatch_cap" in err
     assert ps_runner.calls == [["fabro", "ps", "-a", "--json"]]
 
 
@@ -3199,7 +3210,7 @@ def test_dispatch_reclaims_dead_admission_mutex_when_no_run_is_running(
     append_work_item(path=_config(), item=item)
     _admission_mutex_path(repo=repo).parent.mkdir(parents=True, exist_ok=True)
     _admission_mutex_path(repo=repo).write_text(
-        json.dumps({"guard": "dispatch admission mutex", "pid": 999_999_999}),
+        json.dumps({"guard": "dispatch admission cap", "pid": 999_999_999}),
         encoding="utf-8",
     )
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
@@ -3236,11 +3247,12 @@ def test_dispatch_crash_lock_refuses_while_run_running_then_retry_succeeds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    _commit_host_dispatch_cap_one(repo=repo)
     item = _item()
     append_work_item(path=_config(), item=item)
     _admission_mutex_path(repo=repo).parent.mkdir(parents=True, exist_ok=True)
     _admission_mutex_path(repo=repo).write_text(
-        json.dumps({"guard": "dispatch admission mutex", "pid": 999_999_999}),
+        json.dumps({"guard": "dispatch admission cap", "pid": 999_999_999}),
         encoding="utf-8",
     )
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
@@ -3259,7 +3271,8 @@ def test_dispatch_crash_lock_refuses_while_run_running_then_retry_succeeds(
     assert main(argv=argv) == 3
     err = capsys.readouterr().err
     assert "01CRASHED" in err
-    assert "wait for run 01CRASHED to reach terminal state, then retry" in err
+    assert "host dispatch cap (1)" in err
+    assert "reach terminal state" in err
     assert fake.seen == []
 
     assert main(argv=[*argv, "--no-close-on-merge"]) == 0

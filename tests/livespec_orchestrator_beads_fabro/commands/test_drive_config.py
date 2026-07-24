@@ -47,6 +47,7 @@ def test_drive_reads_all_effective_dispatcher_settings_with_sources(tmp_path: Pa
         "review_fix_cap",
         "acceptance_rework_cap",
         "wip_cap",
+        "host_dispatch_cap",
     }
     assert by_key["auto_approve_ready"] == {
         "key": "auto_approve_ready",
@@ -222,6 +223,12 @@ def test_drive_publishes_api_configurable_key_manifest(tmp_path: Path) -> None:
             "key": "wip_cap",
             "type": "positive_integer",
             "default": 5,
+            "per_item_override": False,
+        },
+        "host_dispatch_cap": {
+            "key": "host_dispatch_cap",
+            "type": "positive_integer",
+            "default": 2,
             "per_item_override": False,
         },
     }

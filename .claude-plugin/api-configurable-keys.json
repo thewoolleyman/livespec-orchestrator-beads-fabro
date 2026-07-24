@@ -41,6 +41,12 @@
       "type": "positive_integer",
       "default": 5,
       "per_item_override": false
+    },
+    {
+      "key": "host_dispatch_cap",
+      "type": "positive_integer",
+      "default": 2,
+      "per_item_override": false
     }
   ]
 }
