@@ -104,6 +104,18 @@ files named here.)
 6. **Every blocking gate must name a remedy the blocked party can
    perform** (fleet-pin Slice-3 precedent; the n7ce4n release-target
    redesign is the worked example).
+7. **Never reword an item's text merely to flip an automatic guard's
+   decision** (verb-avoidance is retired): a guard-dodging rewrite
+   erases the fact that a safety guard objected and generalizes to
+   items that genuinely warrant the block — the same defect family as
+   hand-editing `admission:*` labels instead of using the valve. For a
+   citation-only false positive of the workflow-edit heuristic, use
+   the shipped negation declaration (an inline line stating the item
+   ships no files under the workflows dir) and journal the substantive
+   verification from the item's actual deliverables; the recorded
+   valve override that mechanically clears the block is
+   `bd-ib-imzx24`'s deliverable (the shipped message's valve remedy
+   does not yet clear it).
 
 ## Epic-close preconditions (recorded on `bd-ib-cvgjop`)
 
