@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.46.7...v0.46.8) (2026-07-24)
+
+
+### Bug Fixes
+
+* classify fabro human input required as blocked ([a8c16fb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a8c16fbd504968bdf76b55e36744e79b8f5d0d85))
+
 ## [0.46.7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.46.6...v0.46.7) (2026-07-24)
 
 
