@@ -116,6 +116,16 @@ files named here.)
    valve override that mechanically clears the block is
    `bd-ib-imzx24`'s deliverable (the shipped message's valve remedy
    does not yet clear it).
+8. **A live probe covers EVERY acceptance criterion — explicitly the
+   override, carve-out, and escape-hatch criteria, not just the
+   headline behavior.** The nga9 probe covered the positive refusal
+   and the negative no-over-match but silently skipped criterion 3
+   (the cite-only override route); tonight's first real test of that
+   route showed it does not unblock (`bd-ib-imzx24`). The unhappy
+   paths nobody exercises are, on this night's evidence, the ones that
+   ship broken — every queued item's probe plan has been extended to
+   this standard (see each item's notes) and successors hold new items
+   to it.
 
 ## Epic-close preconditions (recorded on `bd-ib-cvgjop`)
 
