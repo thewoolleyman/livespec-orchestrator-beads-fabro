@@ -1,166 +1,145 @@
 # Handoff — factory-success-rate-remediation
 
-Thread goal: raise the dark-factory merge success rate (78% fleet-wide,
-94% on this repo over 2026-06-11..2026-07-23) by remediating the
-failure causes the 2026-07-23 telemetry investigation actually
-measured — NOT by scaling the review stage, which the data cleared
-(83% first-pass approve, ~2% terminal cause, zero detected misses).
+Thread goal: raise the dark-factory merge success rate by remediating
+the measured failure causes (2026-07-23 telemetry) — NOT by scaling the
+review stage, which the data cleared. The maintainer's overriding
+directive (brief-027, 2026-07-24, autonomous overnight): restore
+PARALLEL FACTORY THROUGHPUT. **That goal is DELIVERED and CLOSED** —
+see "The parallelism arc" below.
 
 Ledger epic anchor: `bd-ib-cvgjop`. Status is always READ from the
-ledger — compose it via the
-`/livespec-orchestrator-beads-fabro:list-work-items` and
-`/livespec-orchestrator-beads-fabro:next` operations; this file
-carries no work queue of its own. (Last refreshed 2026-07-24 ~09:5xZ,
-post-pivot; re-derive anything below from the ledger and the files
-named here.)
+ledger (`list-work-items` / `next` operations); this file carries no
+work queue. Last refreshed 2026-07-24 ~12:3xZ, post-`bd-ib-sd8o`-close.
 
 ## Read first (in this order)
 
-1. `research/synthesis.md` — the cross-track conclusion and priority
-   ordering of the remediation targets.
-2. `research/failure-telemetry-2026-07-23.md` — the failure
-   distribution the priorities rest on.
-3. `research/review-fix-split-design.md` — the DECIDED o35rcx design
-   with its adversarial-review dispositions.
-4. `grooming-cut-2026-07-23.md` — the approved per-item acceptance
-   criteria and routing (§7 execution addendum).
-5. The ledger notes on `bd-ib-tyxzhv` and `bd-ib-sd8o` — the diagnosis
-   evidence the standing pivot rests on.
+1. `research/synthesis.md` — the cross-track conclusion and priorities.
+2. The ledger notes on `bd-ib-sd8o` (CLOSED) — the full parallelism
+   evidence chain, and on `bd-ib-tyxzhv` (CLOSED) — the diagnosis it
+   rests on.
+3. `research/review-fix-split-design.md` — the DECIDED o35rcx design.
+4. `grooming-cut-2026-07-23.md` — approved per-item acceptance criteria.
+5. The track supervisor journal (below) from 07:36Z onward — tonight's
+   full execution record including two live incidents and their fixes.
 
-## THE STANDING PIVOT (maintainer-directed, in force)
+## The parallelism arc (DONE — context for everything else)
 
-Restoring PARALLEL FACTORY THROUGHPUT outranks the rest of the drain.
-The diagnosis leg is DONE and reframes everything:
+Serial dispatch is formally over. What shipped 2026-07-24 (~07:30-12:30Z):
 
-- `bd-ib-tyxzhv` (sd8o deliverable a) is DISCHARGED — full evidence in
-  its ledger notes. Headline: **no contended host resource exists at
-  2x dispatch.** (1) The "bwrap namespace denial" is a HOST CONSTANT —
-  the sysctl pair `kernel.apparmor_restrict_unprivileged_userns=1` +
-  `kernel.apparmor_restrict_unprivileged_unconfined=1` silently denies
-  userns creation inside containers under EVERY security config,
-  proven solo; historical solo "successes" never invoked bwrap (codex
-  danger-full-access skips it). (2) The `--network host` doctrine is
-  FALSE: the running engine (binary commit b9b63a8) maps our
-  `allow_all` network mode to the DOCKER BRIDGE default — sandboxes
-  already have per-run network namespaces. (3) Twin real runs
-  overlapped green at the script layer AND at the LIVE ACP agent layer
-  (event-verified ~14s overlap, both succeeded). Residual: the single
-  x9o `active_time=0` hang (2026-07-23) is unreproduced and untied to
-  any host resource — a watch item, not a blocker.
-- `bd-ib-sd8o` deliverable (b) is RESCOPED on that evidence (recorded
-  prominently on the item — do NOT build per-run network isolation):
-  demote the admission mutex from binary to a config-keyed counting
-  cap + retire/re-scope the sequential doctrine in the livespec repo's
-  `.ai/dispatcher-drain-operations.md`. One small factory-safe RGR
-  unit. Cap surfaces: `drive.py` `impl:` argv hardcodes
-  `--budget 1 --parallel 1`; `loop --parallel` already runs a real
-  `ThreadPoolExecutor` over the admitted wave INSIDE one mutex claim
-  (`_dispatcher_loop_command.py:202`) — single-track parallel drains
-  work TODAY with zero code change; cross-track parallelism is what
-  needs the mutex-cap demotion; `wip_cap` (5) already permits it.
-- **NEXT ACTION 1: obtain the supervisor/maintainer scope
-  confirmation for that rescoped unit, then implement it** (shape on
-  `bd-ib-sd8o`; consider sequencing `bd-ib-j4clfi`, the pid-reuse
-  hardening, adjacent — the lock becomes a counting structure). The
-  prior session STOPPED awaiting that confirmation — check the
-  supervisor status.log (below) for a ruling posted after
-  2026-07-24T09:5xZ before asking again.
+- **Spec v047** (PR #909): `dispatcher.host_dispatch_cap` (positive
+  integer, default **2**, no per-item override) — two-gauge in-flight
+  counting (live capacity claims + observed non-terminal non-parked
+  runs, each capped separately), remedy-naming refusal, parked-run
+  exemption, honest crash-self-heal floor, Scenario 49.
+- **Impl PR #912**: `_dispatcher_admission_mutex.py` demoted from the
+  binary interim mutex to cap-N SLOT FILES
+  (`tmp/fabro-dispatch-admission.slot<i>.lock`, per-slot
+  claim/release/dead-pid-reclaim preserved) + the counting run gauge.
+  `drive.py impl:` keeps `--budget 1 --parallel 1` (concurrency comes
+  from concurrent invocations).
+- **Gauge fix PR #917** (`bd-ib-3zek` P1 + `bd-ib-4cw9`, both CLOSED):
+  the first live over-cap probe FAILED — call sites passed bare
+  `"fabro"`, unresolvable inside the credential wrapper, so the run
+  gauge had been silently fail-open-blind since the uwshxy era. Fixed
+  (resolved fabro_bin threading + non-terminal/non-parked counting +
+  LOUD ps-unobservable fail-open). Lesson: rule-8 negative probes are
+  what caught it.
+- **Doctrine retired** (livespec PR #1712):
+  `.ai/dispatcher-drain-operations.md` now teaches cap-governed
+  concurrency. The old `--network host` premise is falsified
+  (`bd-ib-tyxzhv`); the bwrap denial is a host sysctl constant
+  (`bd-ib-blk3`, backlog, host-only).
+- **Releases v0.46.5→v0.46.7**, rolled out and marker-verified on both
+  roots (`/data/projects/livespec-orchestrator-beads-fabro`,
+  `/data/projects/livespec`). Builds ≤0.46.6 have the BLIND gauge —
+  never dispatch from them.
+- **Live evidence** (all on `bd-ib-sd8o`): cross-track 2x green
+  (pums + foreign wxq, ~10min overlap); two-of-ours 2x to merged PRs
+  (mqr7wr #919, 18r #921); over-cap refusal fired live (both run ids +
+  count + cap + both remedies, zero sandbox); slot terminal-release,
+  dead-pid crash-reclaim, and parked-run capacity-free all observed in
+  production.
 
 ## Drain state (verify from the ledger)
 
-- CLOSED with live evidence (rule 5: every criterion, negatives
-  included): `bd-ib-nga9` (PR #889), `bd-ib-lgv` (PR #898),
-  `bd-ib-qq7f` (PR #905; its IN-VIVO rebase observation still pends —
-  bind it to the next real dispatch that publishes, expected pums).
-- `bd-ib-uwshxy` (interim mutex): MERGED (PR #902) and live-verified —
-  positive refusal PASS, terminal release PASS, crash-release PASS
-  (POSIX reasoning + synthetic dead-pid reclaim probe). Close
-  residuals on the item: parked-run exemption (bind to 18r's probe
-  window), AC1 run-id-naming branch (partial discharge recorded),
-  fleet root re-verification. This mutex is what the rescoped sd8o-b
-  DEMOTES.
-- Verify-first outcomes: `bd-ib-4sy` closed on evidence; `bd-ib-6vu`
-  narrowed to fork reconnect-path credential threading (host-only).
-- o35rcx arc: S1 `bd-ib-t5u62i` CLOSED (spec v046, PR #892); S2
-  `bd-ib-fe574e` queued behind `bd-ib-n7ce4n`; S3 `bd-ib-p3sjiy`
-  after S2; `bd-ib-o35rcx` closes only on S3's journaled evidence.
-- **NEXT ACTION 2 (after the parallelism ruling): resume the drain** —
-  `bd-ib-pums` → `bd-ib-18r` → `bd-ib-mqr7wr` → `bd-ib-n7ce4n` →
-  `bd-ib-fe574e` → S3. Every queued item carries groomed acceptance
-  criteria, a full-criteria probe plan (in its notes), a clean
-  brace-token sweep, and a sized description.
-- Backlog items filed by this thread, flagged for promotion rounds:
-  `bd-ib-kttyks` (work-loss hardening), `bd-ib-gbu3k6` (container
-  ownership surface), `bd-ib-efjsb4` (exit-137 doctrine chore),
-  `bd-ib-imzx24` (cite-only override that actually unblocks),
-  `bd-ib-j4clfi` (mutex pid-reuse), `bd-ib-eha3wh` (E2BIG telemetry
-  argv — the rop-sweep track claimed a fleet-wide sweep of this class
-  at 02:19Z; check their claim before working it).
+- CLOSED tonight with live evidence: `bd-ib-pums` (PR #915; also
+  discharged qq7f's in-vivo residual — note on `bd-ib-qq7f`),
+  `bd-ib-18r` (PR #921 — parked runs are now a first-class `blocked`
+  outcome; two same-night live corroborations on its trail),
+  `bd-ib-mqr7wr` (PR #919; manual-on-merged-evidence disposition,
+  justification in its close reason; `bd-ib-w2ah` closed
+  answered-by-convention), plus the parallelism items above.
+- REMAINING queue (in order): `bd-ib-n7ce4n` (staleness gate — its
+  landing RETIRES the interim refresh-and-verify rule) →
+  `bd-ib-fe574e` (S2, depends on n7ce4n) → S3 `bd-ib-p3sjiy`
+  (host-only) → `bd-ib-o35rcx` closes on S3's journaled evidence.
+- `bd-ib-j4clfi` (mutex pid-reuse hardening): maintainer-directed
+  ADJACENT follow-up — rescope to the slot-file structure, promote
+  ready, dispatch (may pair with n7ce4n under the cap; modules are
+  disjoint but verify at dispatch).
+- Backlog (flagged for promotion rounds): `bd-ib-kttyks`,
+  `bd-ib-gbu3k6`, `bd-ib-efjsb4`, `bd-ib-imzx24`, `bd-ib-eha3wh`
+  (check the rop-sweep track's claim first), `bd-ib-blk3` (apparmor,
+  host-only), `bd-ib-81l0` (reconcile valve bare-fabro — same class as
+  3zek, unfixed on that surface).
 
-## Standing operating rules a successor MUST inherit
+## Standing operating rules (post-parallelism edition)
 
-1. **Cross-track serialization** (until the rescoped sd8o-b lands AND
-   the supervisors rule to de-serialize): claim/release the factory in
-   `/data/projects/livespec/tmp/fleet-pin-propagation-supervisor/status.log`;
-   RE-READ the log immediately before claiming (TOCTOU);
-   LAUNCH-FIRST-ANNOUNCE-SECOND — post the LAUNCHING line only after
-   your container is visible; release on the prior run's
-   ARTIFACT-VERIFIED terminal state (merged PR / journal outcome, with
-   a transparency line) when its owner is a non-participant session.
-2. **Argv-proven container ownership** before ANY container action
-   (`ps -eo pid,args` → `fabro-run-config-<item>.toml`); never
-   image/timing/elimination — this track killed a foreign run that
-   way once.
-3. **Exit 137 is ambiguous** (kill vs teardown): outcome comes from
-   the artifact, never the exit code.
-4. **Refresh-and-verify before EVERY dispatch until `bd-ib-n7ce4n`
-   lands** (verified commands in that item's notes): release must
-   contain the merge (`git merge-base --is-ancestor`), then
-   `claude plugin update livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro --scope project`,
-   assert the new cache dir id == the release HEAD sha prefix,
-   marker-grep the item's symbol, and invoke every surface from the
-   NEW cache root. Self-update is skipped ENTIRELY in the read-only
-   plugin-cache mode this host runs.
-5. **Live probes are part of done** — every acceptance criterion,
-   explicitly the override/carve-out/escape-hatch ones, each with a
-   negative no-over-match case (nga9's criterion 3 shipped broken
-   because only the headline was probed).
-6. **Every blocking gate must name a remedy the blocked party can
-   perform** (three same-class instances in one night: n7ce4n's
-   original design, nga9's valve route, fleet-pin Slice-3).
-7. **Never reword an item merely to flip an automatic guard** — use
-   the inline negation declaration + substantive verification from the
-   item's actual deliverables, or the recorded valve once
-   `bd-ib-imzx24` makes it mechanically real.
-8. **Probes never use foreign runs as test subjects**; sanctioned
-   concurrency is your own argv-proven runs only, announced in the
-   serialization log with clean teardown and a findings line.
+1. **Serialization is RETIRED.** Concurrency is governed by the shipped
+   `host_dispatch_cap` (2). Do not hand-serialize; do not bypass the
+   guard; raising the cap is config-only and should follow
+   observed-safe operation.
+2. **Refresh-and-verify before EVERY dispatch until `bd-ib-n7ce4n`
+   lands** (release contains merge → `claude plugin update ... --scope
+   project` in BOTH roots → cache id == release sha prefix → exact
+   module marker → invoke from the new cache root). Verified commands
+   in n7ce4n's notes. Beware the release-branch propagation lag (a
+   refresh can land one release behind — re-check the `release` branch
+   and re-run; it happened tonight).
+3. **Argv-proven container ownership** before ANY container action;
+   ride foreign runs untouched. Exit 137 is ambiguous; outcomes from
+   artifacts (PR/journal/ledger), never exit codes or absence from
+   `fabro ps`.
+4. **Live probes cover EVERY acceptance criterion incl. negatives**
+   (rule 8). Tonight's failed negative probe is the standing proof of
+   why.
+5. **Parked (`blocked`) runs**: first-class outcome since PR #921; they
+   free capacity and never count toward the cap. Operator answer path:
+   `echo "<KEY>" | fabro attach <run>` for the R/I/A interview, then
+   `fabro steer <run> "<guidance>"` once resumed (steer is refused
+   while blocked). A dead dispatcher's run needs operator-owned
+   post-run (merge confirm → ledger disposition; mind `bd-ib-81l0` on
+   the reconcile valve).
+6. **Never background a probe/dispatch with a kill-timeout** — a
+   SIGTERMed dispatcher orphans its run (happened once tonight; the
+   `run_in_background` no-timeout path is the safe shape). Never use
+   an inner `&` inside a backgrounded launcher.
+7. **Every blocking gate names a performable remedy**; never reword an
+   item to dodge a guard (inline negation declaration or the valve
+   once `bd-ib-imzx24` lands).
 
 ## Epic-close preconditions (recorded on `bd-ib-cvgjop`)
 
 1. One-shot livespec doctor LLM objective+subjective pass (deferred at
-   the v046 revise — deferred, not dropped).
-2. Journaled live evidence for every behavior-bearing drain item.
+   v046 — deferred, not dropped; v047 ratification kept it deferred).
+2. Journaled live evidence for every behavior-bearing drain item
+   (satisfied for everything closed so far; keep the standard).
 
 ## Coordination channels
 
-- This track's supervisor journal (append milestones; questions with a
-  recommendation, then wait):
+- Track journal (append milestones; questions with a recommendation):
   `/data/projects/livespec/tmp/factory-success-rate-remediation-supervisor/status.log`
-- Cross-track factory serialization:
+- Fleet coordination (material factory moves, `date -u` stamps):
   `/data/projects/livespec/tmp/fleet-pin-propagation-supervisor/status.log`
 
 ## Next action (in order)
 
-1. Read both status.logs for rulings posted after 2026-07-24T09:5xZ
-   (especially the sd8o-b scope confirmation and any de-serialization
-   ruling on the tyxzhv evidence).
-2. Execute NEXT ACTION 1 (the rescoped sd8o-b) once confirmed; then
-   close `bd-ib-tyxzhv` (its evidence is complete) and dispose
-   `bd-ib-sd8o` per its rescope.
-3. Execute NEXT ACTION 2 (drain resume) under the standing rules;
-   pums' dispatch also delivers qq7f's pending in-vivo evidence, and
-   18r's probe window also carries uwshxy's parked-run residual.
+1. Rescope + promote `bd-ib-j4clfi`; refresh-and-verify to the release
+   carrying PR #921 (≥0.46.8); dispatch `bd-ib-n7ce4n` (and pair
+   j4clfi under the cap if file-disjointness holds).
+2. `bd-ib-fe574e` (S2) after n7ce4n lands and a refresh; then S3
+   `bd-ib-p3sjiy` host-only; close `bd-ib-o35rcx` on S3's evidence.
+3. Promotion round for the backlog items with the supervisor.
 4. When the epic's tracked items are closed and both epic-close
    preconditions hold, close `bd-ib-cvgjop` and archive this thread
    (`git mv plan/factory-success-rate-remediation/
