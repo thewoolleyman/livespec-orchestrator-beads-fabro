@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.46.4...v0.46.5) (2026-07-24)
+
+
+### Bug Fixes
+
+* demote dispatch admission mutex to the host_dispatch_cap counting cap (bd-ib-sd8o deliverable b) ([a84182e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a84182e19f60e8e36b19dd215b229bcb02d690a9))
+
 ## [0.46.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.46.3...v0.46.4) (2026-07-24)
 
 
