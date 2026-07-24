@@ -27,7 +27,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_gate import run_ledger_gate
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import ready_items
 from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import parse_janitor
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
+    journal_path,
+    store_config,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_source_preflight import (
+    journal_source_checkout_refusal,
+    source_checkout_preflight_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_spec_checks import run_spec_checks
 from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -226,6 +233,14 @@ def dispatch_preamble(
     fabro_error = _fabro_preflight_error(fabro_bin=args.fabro_bin)
     if fabro_error is not None:
         _ = write_stderr(text=fabro_error)
+        return None, _EXIT_PRECONDITION_ERROR
+    source_refusal = source_checkout_preflight_refusal(repo=repo, runner=ShellCommandRunner())
+    if source_refusal is not None:
+        journal_source_checkout_refusal(
+            journal_path=journal_path(args=args, repo=repo),
+            refusal=source_refusal,
+        )
+        _ = write_stderr(text=source_refusal.detail)
         return None, _EXIT_PRECONDITION_ERROR
     return janitor, None
 
