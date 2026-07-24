@@ -8,6 +8,11 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
     admit_and_select,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_mutex import (
+    AdmissionMutexRefusal,
+    claim_dispatch_admission_mutex,
+    release_dispatch_admission_mutex,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
     EXIT_FAILURE,
     EXIT_PRECONDITION_ERROR,
@@ -15,6 +20,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
     cost_gate_after_verdict,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
+    JournalFile,
+    ShellCommandRunner,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import (
     emit_outcomes,
@@ -43,6 +53,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
     self_update_after_verdict,
 )
 from livespec_orchestrator_beads_fabro.io import write_stderr
+from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "run_dispatch_command",
@@ -65,36 +76,19 @@ def run_dispatch_command(*, args: argparse.Namespace) -> int:
         journal=journal,
     ):
         return EXIT_FAILURE
-    ready = ready_items(items=items, repo=repo)
-    target = next((item for item in ready if item.id == args.item), None)
+    target = _target_item(args=args, repo=repo, items=items)
     if target is None:
-        all_ids = {item.id for item in items}
-        if args.item not in all_ids:
-            msg = (
-                f"ERROR: work-item {args.item} not found in the target-tenant"
-                f" ({repo.name}); --target-repo and --item must reference the same tenant\n"
-            )
-            _ = write_stderr(text=msg)
-        else:
-            _ = write_stderr(text=f"ERROR: work-item {args.item} is not in the ready set\n")
         return EXIT_PRECONDITION_ERROR
-    # The admission valve runs BEFORE the Fabro launch: a host-only item is
-    # routed away, a manual / unresolvable-assignee item is held + surfaced,
-    # and an admission-eligible item is admitted (ready -> active, assignee
-    # set) and dispatched. A targeted dispatch is an operator override, so it
-    # does NOT enforce the per-repo WIP cap (the queue-draining `loop` does).
-    admission = admit_and_select(
+    outcome = _admit_and_dispatch_target(
+        args=args,
         repo=repo,
         items=items,
-        candidates=[target],
+        target=target,
         journal=journal,
-        enforce_cap=False,
+        janitor=janitor,
     )
-    dispatched = [
-        dispatch_one(args=args, repo=repo, item=item, journal=journal, janitor=janitor)
-        for item in admission.admitted
-    ]
-    outcome = (admission.refused + dispatched)[0]
+    if isinstance(outcome, int):
+        return outcome
     emit_outcomes(outcomes=[outcome], as_json=args.as_json)
     # Verdict computed BEFORE the fail-open reflection + notification
     # stages; immutable by both (loop-reflection-gate best-practices §6 /
@@ -126,3 +120,73 @@ def run_dispatch_command(*, args: argparse.Namespace) -> int:
     )
     reflector_oob_after_verdict(args=args, repo=repo, journal=journal)
     return exit_code
+
+
+def _target_item(*, args: argparse.Namespace, repo: Path, items: list[WorkItem]) -> WorkItem | None:
+    ready = ready_items(items=items, repo=repo)
+    target = next((item for item in ready if item.id == args.item), None)
+    if target is not None:
+        return target
+    all_ids = {item.id for item in items}
+    if args.item not in all_ids:
+        msg = (
+            f"ERROR: work-item {args.item} not found in the target-tenant"
+            f" ({repo.name}); --target-repo and --item must reference the same tenant\n"
+        )
+        _ = write_stderr(text=msg)
+    else:
+        _ = write_stderr(text=f"ERROR: work-item {args.item} is not in the ready set\n")
+    return None
+
+
+def _admit_and_dispatch_target(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    items: list[WorkItem],
+    target: WorkItem,
+    journal: JournalFile,
+    janitor: tuple[str, ...] | None,
+) -> DispatchOutcome | int:
+    # The interim host-wide admission mutex runs BEFORE the admission valve
+    # mutates the Ledger or any Fabro sandbox work starts. It is deliberately
+    # recorded as bd-ib-sd8o deliverable (c), to be removed or demoted by
+    # deliverable (b).
+    guard = claim_dispatch_admission_mutex(
+        repo=repo, fabro_bin="fabro", runner=ShellCommandRunner()
+    )
+    if isinstance(guard, AdmissionMutexRefusal):
+        _journal_mutex_refusal(journal=journal, refusal=guard)
+        _ = write_stderr(text=guard.detail)
+        return EXIT_PRECONDITION_ERROR
+    try:
+        # The admission valve runs BEFORE the Fabro launch: a host-only item is
+        # routed away, a manual / unresolvable-assignee item is held + surfaced,
+        # and an admission-eligible item is admitted (ready -> active, assignee
+        # set) and dispatched. A targeted dispatch is an operator override, so it
+        # does NOT enforce the per-repo WIP cap (the queue-draining `loop` does).
+        admission = admit_and_select(
+            repo=repo,
+            items=items,
+            candidates=[target],
+            journal=journal,
+            enforce_cap=False,
+        )
+        dispatched = [
+            dispatch_one(args=args, repo=repo, item=item, journal=journal, janitor=janitor)
+            for item in admission.admitted
+        ]
+        return (admission.refused + dispatched)[0]
+    finally:
+        release_dispatch_admission_mutex(claim=guard)
+
+
+def _journal_mutex_refusal(*, journal: JournalFile, refusal: AdmissionMutexRefusal) -> None:
+    journal.append(
+        record={
+            "stage": "dispatch-admission-mutex",
+            "guard": "interim bd-ib-sd8o deliverable (c)",
+            "run_id": refusal.run_id,
+            "refused": True,
+        }
+    )
