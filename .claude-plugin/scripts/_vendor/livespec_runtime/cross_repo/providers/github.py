@@ -7,31 +7,56 @@ installed and authenticated
 runtime is consumed; absence is a configuration error surfaced by the
 caller's retry policy collapsing to `RefStatus.UNKNOWN`.
 
-Each function raises `subprocess.CalledProcessError` (or
-`json.JSONDecodeError`) on failure; the resolve-ref walker wraps
-them in `retry.retry_with_backoff` and translates retry exhaustion
-to `RefStatus.UNKNOWN`. The one expected non-failure exit — a 404
-on the branch existence probe — is detected by the stderr fingerprint
-and returned as `False` instead of propagating.
+Each function returns an `IOResult`: the ANSWER on the success track,
+and a `GithubQueryFailed` naming the command and the reason on the
+failure track. The resolve-ref walker wraps them in
+`retry.retry_with_backoff` and translates retry exhaustion to
+`RefStatus.UNKNOWN`. The one expected non-failure exit — a 404 on the
+branch existence probe — is detected by the stderr fingerprint and is
+`IOSuccess(False)`, NOT a failure: it means the branch is gone, which
+is an answer.
 
-`NonCanonicalGithubUrlError` is the only domain exception raised
-here. Per livespec/SPECIFICATION/non-functional-requirements.md,
-schema-level inputs (canonical github_url
-form) are validated at the boundary and surfaced as a typed error;
-runtime transport failures (gh exit codes, JSON decode) propagate
-as built-ins.
+⚠️ THE TWO ERROR CHANNELS ARE SPLIT ON PURPOSE, AND THE SPLIT IS NOW
+SHARPER THAN IT WAS. Per livespec/SPECIFICATION/non-functional-requirements.md,
+schema-level input (canonical github_url form) is validated at the
+boundary and surfaced as a typed error: `NonCanonicalGithubUrlError`
+still RAISES, because a malformed URL is a caller defect that no retry
+can fix and no `RefStatus` can honestly represent. Runtime TRANSPORT
+failure (gh exit codes, JSON decode, a payload missing its key) used to
+raise built-ins alongside it; those now ride the failure track, where
+the retry layer can act on them.
 """
 
 import json
-import subprocess
+import shlex
 from typing import Any
 
+from returns.io import IOFailure, IOResult, IOSuccess
+from returns.unsafe import unsafe_perform_io
+
+from livespec_runtime.cross_repo.providers.github_process import (
+    GithubBudgetUnmeasurable,
+    GithubFailure,
+    GithubQueryFailed,
+    completed_gh,
+)
+
 __all__: list[str] = [
+    "GithubBudgetUnmeasurable",
+    "GithubFailure",
+    "GithubQueryFailed",
     "NonCanonicalGithubUrlError",
     "branch_exists_on_remote",
     "branch_merged_into_default",
     "query_pull_request_state",
 ]
+
+
+# Named rather than written as bare `True`/`False` literals at the lift
+# sites: `IOSuccess(...)` takes its value positionally, and a positional
+# boolean says nothing at the call site about which answer it is.
+_A_404_MEANS_THE_BRANCH_IS_GONE = False
+_GH_ANSWERED_SO_THE_BRANCH_EXISTS = True
 
 
 class NonCanonicalGithubUrlError(Exception):
@@ -52,34 +77,23 @@ class NonCanonicalGithubUrlError(Exception):
         self.github_url = github_url
 
 
-def query_pull_request_state(*, github_url: str, number: int) -> str:
+def query_pull_request_state(*, github_url: str, number: int) -> IOResult[str, GithubFailure]:
     """Return the PR's `state` via `gh pr view --json state`.
 
     State is one of `OPEN`, `CLOSED`, `MERGED` per the GitHub REST API.
     The caller (resolve-ref walker) interprets `MERGED` or `CLOSED` as
     `RefStatus.CLOSED` and `OPEN` as `RefStatus.OPEN`.
     """
-    result = subprocess.run(
-        [
-            "gh",
-            "pr",
-            "view",
-            str(number),
-            "--repo",
-            github_url,
-            "--json",
-            "state",
-        ],
-        capture_output=True,
-        check=True,
-        text=True,
+    argv = ["gh", "pr", "view", str(number), "--repo", github_url, "--json", "state"]
+    completed = completed_gh(argv=argv)
+    if isinstance(completed, IOFailure):
+        return completed
+    return _decoded_field(
+        argv=argv, stdout=unsafe_perform_io(completed.unwrap()).stdout, key="state"
     )
-    payload: dict[str, Any] = json.loads(result.stdout)
-    state: str = payload["state"]
-    return state
 
 
-def branch_exists_on_remote(*, github_url: str, name: str) -> bool:
+def branch_exists_on_remote(*, github_url: str, name: str) -> IOResult[bool, GithubFailure]:
     """Return True iff the named branch exists on the remote.
 
     Uses `gh api repos/<owner>/<name>/branches/<branch>`. A 404 is
@@ -96,33 +110,37 @@ def branch_exists_on_remote(*, github_url: str, name: str) -> bool:
     structured response, not a substring match on stderr.
     """
     owner_name = _split_owner_name(github_url=github_url)
-    try:
-        _ = subprocess.run(
-            ["gh", "api", f"repos/{owner_name}/branches/{name}"],
-            capture_output=True,
-            check=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as exc:
-        if _stderr_indicates_http_404(stderr=exc.stderr):
-            return False
-        raise
-    return True
+    argv = ["gh", "api", f"repos/{owner_name}/branches/{name}"]
+    completed = completed_gh(argv=argv)
+    if isinstance(completed, IOFailure):
+        failure = unsafe_perform_io(completed.failure())
+        if isinstance(failure, GithubQueryFailed) and failure.http_404:
+            return IOSuccess(_A_404_MEANS_THE_BRANCH_IS_GONE)
+        return completed
+    return IOSuccess(_GH_ANSWERED_SO_THE_BRANCH_EXISTS)
 
 
-def _stderr_indicates_http_404(*, stderr: str | None) -> bool:
-    """Return True iff any stderr line carries the structured `HTTP 404` marker.
+def _decoded_field(*, argv: list[str], stdout: str, key: str) -> IOResult[str, GithubFailure]:
+    """The named string field of a `gh --json` payload, or why it is absent.
 
-    `gh` formats 4xx responses as `gh: <message> (HTTP <code>)` on a
-    dedicated stderr line. Matching on the trailing `(HTTP 404)`
-    marker — rather than a bare `404` substring — avoids
-    mis-categorizing unrelated content (URL fragments, body text
-    referencing 404 pages, etc.) as a real not-found response.
+    A malformed payload and a payload missing the key both used to raise
+    (`JSONDecodeError` / `KeyError`) and reach the retry layer's broad
+    catch, which reported neither. Both are transport-shaped — `gh`
+    answered with something unusable — so both land on the failure track
+    naming the command and the key.
     """
-    if not stderr:
-        return False
-    marker = "(HTTP 404)"
-    return any(line.rstrip().endswith(marker) for line in stderr.splitlines())
+    try:
+        payload: dict[str, Any] = json.loads(stdout)
+    except json.JSONDecodeError as undecodable:
+        return IOFailure(
+            GithubQueryFailed(argv=shlex.join(argv), detail=f"undecodable response: {undecodable}")
+        )
+    value = payload.get(key)
+    if not isinstance(value, str):
+        return IOFailure(
+            GithubQueryFailed(argv=shlex.join(argv), detail=f"response carried no {key!r} string")
+        )
+    return IOSuccess(value)
 
 
 def branch_merged_into_default(
@@ -130,7 +148,7 @@ def branch_merged_into_default(
     github_url: str,
     name: str,
     default_branch: str,
-) -> bool:
+) -> IOResult[bool, GithubFailure]:
     """Return True iff `name` is fully reachable from `default_branch`.
 
     Uses `gh api repos/<owner>/<name>/compare/<default>...<name>`. The
@@ -140,15 +158,14 @@ def branch_merged_into_default(
     `True`; `ahead` / `diverged` translate to `False`.
     """
     owner_name = _split_owner_name(github_url=github_url)
-    result = subprocess.run(
-        ["gh", "api", f"repos/{owner_name}/compare/{default_branch}...{name}"],
-        capture_output=True,
-        check=True,
-        text=True,
+    argv = ["gh", "api", f"repos/{owner_name}/compare/{default_branch}...{name}"]
+    completed = completed_gh(argv=argv)
+    if isinstance(completed, IOFailure):
+        return completed
+    decoded = _decoded_field(
+        argv=argv, stdout=unsafe_perform_io(completed.unwrap()).stdout, key="status"
     )
-    payload: dict[str, Any] = json.loads(result.stdout)
-    status: str = payload["status"]
-    return status in ("identical", "behind")
+    return decoded.map(lambda status: status in ("identical", "behind"))
 
 
 def _split_owner_name(*, github_url: str) -> str:
