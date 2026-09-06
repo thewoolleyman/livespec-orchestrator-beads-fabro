@@ -133,7 +133,7 @@ steps around. It is distinct from the containerized server the entrypoint
 provisions (below); the image's `COPY fabro` stages this same host binary from
 `$HOST_FABRO_BIN`, so the host install IS the image's staging source.
 
-**Current binary (2026-09-06):** `fabro 0.254.0 (9081419)` — built from the
+**Current binary (2026-09-07, Wave B):** `fabro 0.254.0 (7b4e3f3)` — built from the
 `factory-integration` branch (see below). Verify with `~/.fabro/bin/fabro
 --version`; the parenthesized short SHA is the integration commit, and it MUST be
 reachable from `factory-integration` — **reachability, not equality**. The branch
@@ -173,6 +173,20 @@ needs (never a subset, so the branch is always the whole truth about what runs):
 | fork-local **Wave A / jm4efv** — typed checkpoint budget (`bd-ib-jm4efv`) | a git command that hits its configured checkpoint commit budget is carried as `fabro_core::Error::CheckpointBudgetExceeded` and reaches the run as the deterministic `Error::Checkpoint`, never through the string classifier | the classifier read "timed out" in the rendered message and filed a Fabro operation-budget failure as `transient_infra`, so an exhausted budget was retried as if the network had blinked |
 | fork-local **Wave A / .3** — `AgentAcpTimedOut` progress evidence (`bd-ib-bb41.3`) | the timed-out event carries the agent's message-text tail (or an explicit "output not captured" marker), `tool_call_count`, `update_count` and `last_activity_ms`; the failure message summarises the same counters; fields are `#[serde(default)]` so stored runs replay | the event reported `stdout: ""` unconditionally, so a working agent that ran out of time was indistinguishable from one that never started (the residue of `bd-ib-b5dg`); `update_count == 0` is now the zero-activity discriminator |
 | fork-local **Wave A / .1 fork half** — script-node run identity (`bd-ib-bb41.1`) | script nodes receive `FABRO_RUN_ID`, `FABRO_WORKFLOW` and `FABRO_NODE_ID` in their env (the hook executor's trio) from `fabro-workflow/src/handler/command.rs`; workflow-declared values win | the workflow's needs-human preservation ref is run-scoped only if the script node can see the run id; without it every stranded run collided on one `refs/heads/needs-human/unknown-run` ref (the orchestrator half, PR #2198, now fails loudly with no id) |
+| fork-local **Wave B / .4** — per-tool ACP run events (`bd-ib-bb41.4`) | the ACP session read loop keeps a tool-call ledger over `session/update` `ToolCall` / `ToolCallUpdate` and the handler emits the ordinary `agent.tool.started` / `agent.tool.completed` events for every call, with a payload bounded to `{kind}` / `{kind, status, elapsed_ms}` (no tool input or output) | `attach` and `dump` showed node-level events only for ACP agents, so a working agent and a hung one looked identical from outside the sandbox; per-tool events are what makes `watch` worth anything |
+| fork-local **Wave B / js4t57** — refuse staging after a failed pre-run push (`bd-ib-js4t57`) | `pipeline/initialize.rs` refuses a remote sandbox at staging, as `Error::Precondition`, when the manifest's `push_outcome` is `Failed`, naming the branch, the source HEAD and the push error; `NotAttempted` / `Succeeded` / `Skipped*` and Local sandboxes are untouched | measured 2026-09-06: with the pre-run push refused, a docker sandbox cloned the origin branch BEHIND the operator's unpushed commit and the run succeeded silently on that base (run `01M1VQYHBAH9`); the only trace was the `push_outcome` field, which nothing read |
+| fork-local **Wave B / .6** — ACP permission requests as interview questions (`bd-ib-bb41.6`) | `acp.permission_policy="ask"` (node attr; default `auto`) parks each adapter `session/request_permission` on the workflow's `AgentQuestionRuntime` as one multiple-choice question whose options are the adapter's, keyed by option id and presented **most-permissive first**; the answer resumes the node and is resolved **identity-first** on the option id, falling back to a label only when that label is unambiguous and cancelling rather than guessing otherwise; `acp.permission_timeout` bounds the wait and its expiry ends the turn as the deterministic `AcpError::PermissionTimedOut`, so the workflow's failed edge parks the node at `needs_human`; `auto` keeps the inline most-permissive answer, byte-identical to before | `select_permission_outcome` auto-answered every permission question, so a node never parked on a question and the console's needs-attention consumer had nothing to publish; under `ask` the question is data on `GET /runs/{id}/questions`. **Three review-found traps are why the row reads as it does:** matching the answer by display NAME let two options sharing a label collapse to the first, so a human choosing reject would have GRANTED the call; without an explicit ordering, `AutoApproveInterviewer` (installed for every `approval = auto` run) answers with `options.first()`, and ACP does not order an adapter's options, so a reject-first adapter would have denied everything silently under `ask` while `auto` allowed it; and the deadline did not exist at all — the question runtime carries no clock, so `PermissionTimedOut` had no automatic producer while the error text and the docs both described one |
+
+**Known limitation of `acp.permission_policy="ask"` (`bd-ib-bb41.7`).** The
+resolver awaits the human INSIDE an `on_receive_request` handler, and
+`agent-client-protocol` documents that the dispatch loop processes no other
+message while a handler runs. So for the whole wait there is no agent text, no
+tool events and no activity heartbeat: the Wave A progress evidence is frozen
+at exactly the moment an operator inspects a run that looks stuck. It is a
+stall, not a hang — cancellation still tears the run down. The default `auto`
+policy is unaffected, and no workflow in this fleet sets `ask`, so nothing is
+exposed today. Do not set `ask` on a production workflow until `bd-ib-bb41.7`
+lands.
 
 Failure-cause attributes are queryable in Honeycomb, but not as `run_turn`
 span attributes. Filter the separate failure-event span in the same trace as
@@ -291,9 +305,9 @@ the ratified constraint forbids:
 
 To **roll back**, copy the `.bak` binary over `~/.fabro/bin/fabro`, restart, and rebuild
 the image the same way. The current rollback artifact is
-`~/.fabro/bin/fabro.8de6611-pre-wave-a.bak` (the pre-Wave-A build:
-0.254 + #568 + daemon-timeout + #552 + #576 + O1 + O2 + P2 + O4); the older
-`fabro.b9b63a8-pre-checkpoint-timeout.bak` is the pre-#552 build.
+`~/.fabro/bin/fabro.9081419-pre-wave-b.bak` (the Wave A build: everything above
+through `.1 fork half`); `fabro.8de6611-pre-wave-a.bak` is the pre-Wave-A build
+and `fabro.b9b63a8-pre-checkpoint-timeout.bak` the pre-#552 build.
 
 ### Candidate build + Enemy Unit Test comparison
 
