@@ -1232,5 +1232,13 @@
     "test": "TODO",
     "reason": "Ratified by the per-item-merge-hold revise pass (plan epic bd-ib-yqpdrt, spec carrier bd-ib-vlhp). The exercising integration-tier test is owed by plan pluggable-factory-workflow-configs once the implementation child filed under bd-ib-vlhp at this revision's revise pass lands; until then the behavior has no implementation to bind to.",
     "work_item": "bd-ib-yqpdrt"
+  },
+  {
+    "heading": "## Scenario 120 — An idle factory with dispatchable work surfaces its first dispatch",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Scenario ratified spec-first under plan idle-factory-visibility (epic bd-ib-zlpeyg, Carrier A, v102). The exercising integration test binds when the post-ratification implementation child lands the hygiene:idle-factory:<repo> composer.",
+    "work_item": "bd-ib-zlpeyg"
   }
 ]
