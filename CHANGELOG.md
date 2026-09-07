@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.139.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.138.3...v0.139.0) (2026-09-07)
+
+
+### Features
+
+* **needs-attention:** surface each attention item's effective answer disposition (bd-ib-br6nmo) ([beee503](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/beee5039a544765b79c68677d6307c47cf3bad62))
+
 ## [0.138.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.138.2...v0.138.3) (2026-09-07)
 
 
