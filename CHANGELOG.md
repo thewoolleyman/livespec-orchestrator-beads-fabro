@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.138.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.138.2...v0.138.3) (2026-09-07)
+
+
+### Bug Fixes
+
+* **dispatcher:** read the needs-human sentinel from output, not script source ([067693d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/067693db609aafcdf8a907476ed80a298892cda8))
+
 ## [0.138.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.138.1...v0.138.2) (2026-09-07)
 
 
