@@ -19,6 +19,15 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   via `monkeypatch.setattr(sys, "version_info", ...)`; the exit-127
   path is reached by monkeypatching rather than a coverage pragma
   (pragma exclusions on `bin/*.py` are forbidden).
+- `test_bootstrap_unattended_marker_forwarding.py` — covers
+  `_bootstrap._marker_forwarded_argv`, which splices `env
+  LIVESPEC_PLAN_UNATTENDED=<value>` in after the credential wrapper's
+  `--` separator so the overseer's unattended-resume marker survives
+  the wrapper's `sudo` env rebuild. Its two end-to-end cases drive the
+  real re-exec against a wrapper DOUBLE that `unset`s the marker, so a
+  forwarding that only worked by environment inheritance fails them.
+  Like the file below, the real modules are imported only inside that
+  spawned child.
 - `test_host_side_self_contained_import.py` — the end-to-end
   counterpart of `test_bootstrap.py`: it spawns a `-S` (no-site)
   subprocess that runs the real bootstrap and imports the host-side

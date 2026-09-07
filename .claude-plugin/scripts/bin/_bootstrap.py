@@ -13,11 +13,17 @@ proceed normally, re-exec the process through the project's configured
 fail with an actionable diagnostic. This covers every bin/*.py CLI that calls
 `bootstrap()` at once, so a bare invocation without `BEADS_DOLT_PASSWORD`
 self-heals instead of failing deep in the beads backend with a raw auth error.
+
+That re-exec runs through `sudo`, which rebuilds the environment from its own
+policy, so it is also the point where a non-secret session marker can be
+silently DESTROYED — see `_marker_forwarded_argv`, which carries the
+unattended-plan-resume marker across it.
 """
 
 import os
 import subprocess
 import sys
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import cast
 
@@ -36,6 +42,17 @@ _BEADS_CONFIG_RELPATH = (".beads", "config.yaml")
 _SERVER_MODE_MARKER = "dolt.mode:server"
 _LIVESPEC_CONFIG_FILENAME = ".livespec.jsonc"
 _CREDENTIAL_FAIL_EXIT = 3
+# The unattended-plan-resume marker. NOT a secret and never a member of
+# `required`: the credential self-heal neither needs it nor injects it — it
+# only has to stop DESTROYING it (see `_marker_forwarded_argv`). The name is
+# re-declared here rather than imported from
+# `commands._plan_timeline.UNATTENDED_ENV_VAR` because this runs at the
+# pre-package boundary, and a credential self-heal must not start depending on
+# the store layer importing cleanly; `tests/bin/
+# test_bootstrap_unattended_marker_forwarding.py` pins the two spellings equal.
+_PLAN_UNATTENDED_ENV_NAME = "LIVESPEC_PLAN_UNATTENDED"
+# `env` is the POSIX command that runs its own operand with NAME=value applied.
+_ENV_COMMAND = "env"
 
 
 def bootstrap(*, required: tuple[str, ...] = _REQUIRED_CREDENTIALS) -> None:
@@ -127,6 +144,51 @@ def _read_credential_wrapper() -> list[str]:
     return [str(token) for token in cast("list[object]", raw_wrapper)]
 
 
+def _marker_forwarded_argv(
+    *,
+    reexec_argv: Sequence[str],
+    credential_wrapper: Sequence[str],
+    environ: Mapping[str, str],
+) -> list[str]:
+    """Carry the unattended-resume marker across the credential re-exec.
+
+    The wrapper is a `sudo -n` escalation, and sudo rebuilds the environment
+    from its own policy: the reference `with-livespec-env.sh` forwards
+    `WRAPPER_STAGE` and `OP_ENV_WRAPPER_CACHE_TTL` and nothing else. So a
+    `LIVESPEC_PLAN_UNATTENDED` set by the overseer daemon on the session it
+    restarts does NOT survive into the wrapped process, and the plan resume
+    there reads an unattended session as attended — `ask=True`, no error, a
+    hands-off restart parked on a picker nobody is present to answer.
+
+    What sudo cannot strip is the COMMAND it was asked to run. `reexec_argv` is
+    `[*credential_wrapper, executable, *argv]`, so splicing `env NAME=value`
+    in at `len(credential_wrapper)` puts the assignment after the wrapper's
+    own `--` separator — inside the command, where it is applied by `env` in
+    the already-escalated process rather than inherited through it. That is the
+    same remedy operators are given for the wrapper by hand; the alternatives
+    were rejected on evidence. Editing `with-livespec-env.sh` would make a
+    plugin behaviour depend on a host file no clone provisions, and
+    `OPENV_PRESERVE_VARS` is applied AFTER the stage-0 escalation that already
+    dropped the variable.
+
+    Only a NON-EMPTY marker is forwarded: the empty string is not truthy to
+    `is_unattended_session`, so forwarding it would add an operand that says
+    nothing. This never AUTHORS the marker — an attended session's argv is
+    returned unchanged, which is what keeps the overseer daemon its only
+    setter.
+    """
+    marker_value = environ.get(_PLAN_UNATTENDED_ENV_NAME, "")
+    if not marker_value:
+        return list(reexec_argv)
+    separator_index = len(credential_wrapper)
+    return [
+        *reexec_argv[:separator_index],
+        _ENV_COMMAND,
+        f"{_PLAN_UNATTENDED_ENV_NAME}={marker_value}",
+        *reexec_argv[separator_index:],
+    ]
+
+
 def _self_heal_credentials(*, required: tuple[str, ...] = _REQUIRED_CREDENTIALS) -> None:
     """Decide-and-perform the credential self-heal at the bin chokepoint.
 
@@ -167,7 +229,13 @@ def _self_heal_credentials(*, required: tuple[str, ...] = _REQUIRED_CREDENTIALS)
             )
             os.environ[CREDENTIAL_REEXEC_SENTINEL] = "1"
             completed = subprocess.run(  # noqa: S603
-                list(reexec_argv), capture_output=True, check=False
+                _marker_forwarded_argv(
+                    reexec_argv=reexec_argv,
+                    credential_wrapper=credential_wrapper,
+                    environ=os.environ,
+                ),
+                capture_output=True,
+                check=False,
             )
             stdout = completed.stdout or b""
             stderr = completed.stderr or b""
