@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.141.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.141.2...v0.141.3) (2026-09-07)
+
+
+### Bug Fixes
+
+* **dispatcher:** gate the sandbox plugin cache and pin one build per run ([1f8642a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1f8642a91041e420a0cd725a29e31fdd7d477b1d))
+
 ## [0.141.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.141.1...v0.141.2) (2026-09-07)
 
 
