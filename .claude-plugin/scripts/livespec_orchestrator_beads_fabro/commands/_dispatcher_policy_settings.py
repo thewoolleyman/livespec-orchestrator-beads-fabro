@@ -50,6 +50,7 @@ __all__: list[str] = [
     "DEFAULT_ACCEPTANCE_POLICY",
     "DEFAULT_ACCEPTANCE_REWORK_CAP",
     "DEFAULT_ADMISSION_POLICY",
+    "DEFAULT_ANSWER_DISPOSITION",
     "DEFAULT_AUTOMATED_REGROOM_CAP",
     "DEFAULT_AUTO_APPROVE_READY",
     "DEFAULT_DRIFT_CAPTURE_MERGE_THRESHOLD",
@@ -63,6 +64,7 @@ __all__: list[str] = [
     "read_dispatcher_config_value",
     "resolve_acceptance_mode",
     "resolve_acceptance_rework_cap",
+    "resolve_answer_disposition",
     "resolve_auto_approve_ready",
     "resolve_automated_regroom_cap",
     "resolve_drift_capture_merge_threshold",
@@ -86,6 +88,7 @@ DEFAULT_REQUIRE_INVOKER = False
 DEFAULT_DRIFT_CAPTURE_MERGE_THRESHOLD = 1
 DEFAULT_GROOM_CUT_APPROVAL = "human"
 DEFAULT_AUTOMATED_REGROOM_CAP = 2
+DEFAULT_ANSWER_DISPOSITION = "human"
 
 _LIVESPEC_CONFIG = ".livespec.jsonc"
 _PLUGIN_BLOCK = "livespec-orchestrator-beads-fabro"
@@ -101,8 +104,10 @@ _REQUIRE_INVOKER_KEY = "require_invoker"
 _DRIFT_CAPTURE_MERGE_THRESHOLD_KEY = "drift_capture_merge_threshold"
 _GROOM_CUT_APPROVAL_KEY = "groom_cut_approval"
 _AUTOMATED_REGROOM_CAP_KEY = "automated_regroom_cap"
+_ANSWER_DISPOSITION_KEY = "answer_disposition"
 _ACCEPTANCE_POLICIES = frozenset(("ai-only", "ai-then-human", "human-only"))
 _GROOM_CUT_APPROVALS = frozenset(("human", "consensus"))
+_ANSWER_DISPOSITIONS = frozenset(("human", "consensus"))
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -165,6 +170,25 @@ def resolve_groom_cut_approval(*, cwd: Path) -> IOResult[str, PolicySettingUnrea
         key=_GROOM_CUT_APPROVAL_KEY,
         default=DEFAULT_GROOM_CUT_APPROVAL,
         allowed=_GROOM_CUT_APPROVALS,
+    )
+
+
+def resolve_answer_disposition(*, cwd: Path) -> IOResult[str, PolicySettingUnreadable]:
+    """Read `dispatcher.answer_disposition`, defaulting to `human`.
+
+    The fifth policy setting: who may answer an ATTENTION ITEM — a work-item
+    resting at `blocked` / `blocked_reason: needs-human` — through a
+    `resolve-blocked … --answer` press. As with its `groom_cut_approval`
+    sibling, `consensus` behaves as `human` until livespec core ratifies the
+    consensus tier, and that equivalence belongs to the surfaces that enforce
+    and advertise the press rather than to this read, which reports what the
+    operator wrote.
+    """
+    return _resolve_enum_setting(
+        cwd=cwd,
+        key=_ANSWER_DISPOSITION_KEY,
+        default=DEFAULT_ANSWER_DISPOSITION,
+        allowed=_ANSWER_DISPOSITIONS,
     )
 
 

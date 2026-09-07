@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 from livespec_runtime.attention_item import AttentionItem, Handoff, SourceRef
@@ -24,6 +24,9 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroPort,
     FabroPsResult,
     FabroTarget,
+)
+from livespec_orchestrator_beads_fabro.commands._needs_attention_answer_disposition import (
+    answer_disposition_summary,
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_handoffs import (
     dispatcher_loop_command,
@@ -90,8 +93,12 @@ def human_valves(
     index: dict[str, WorkItem],
     manifest: CrossRepoManifest,
     sibling_status_lookup: Callable[[str, str], RefStatus] | None = None,
+    answer_disposition_labels: Mapping[str, Sequence[str]] | None = None,
 ) -> list[WorkItemHumanValveLane]:
     lanes: list[WorkItemHumanValveLane] = []
+    answer_labels: Mapping[str, Sequence[str]] = (
+        answer_disposition_labels if answer_disposition_labels is not None else {}
+    )
     for item in items:
         item_id = item.id
         title = item.title
@@ -132,14 +139,20 @@ def human_valves(
                     verb="resolve-blocked",
                     work_item=item_id,
                     # The terminated run's own account of why the loop gave up
-                    # and where the work survived. Enrichment only: an
-                    # unreadable run leaves the title-only summary standing,
-                    # because the decision is already waiting in the ledger.
-                    summary=needs_human_question_summary(
+                    # and where the work survived, then WHO may answer the
+                    # question it parked on. Enrichment only: an unreadable run
+                    # leaves the title-only summary standing, because the
+                    # decision is already waiting in the ledger.
+                    summary=answer_disposition_summary(
                         project_root=project_root,
-                        item_id=item_id,
-                        default_summary=(
-                            f"Resolve human-needed block for work-item {item_id}: {title}"
+                        item=item,
+                        raw_labels=answer_labels.get(item_id, ()),
+                        default_summary=needs_human_question_summary(
+                            project_root=project_root,
+                            item_id=item_id,
+                            default_summary=(
+                                f"Resolve human-needed block for work-item {item_id}: {title}"
+                            ),
                         ),
                     ),
                     project_root=project_root,

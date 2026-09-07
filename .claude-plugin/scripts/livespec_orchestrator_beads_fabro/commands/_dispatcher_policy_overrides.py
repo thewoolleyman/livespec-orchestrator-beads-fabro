@@ -26,6 +26,11 @@ rather than pattern-matching:
   it is ignored and the item takes the global. A generic cap-shaped override
   would honor it, which is precisely the mistake this asymmetry exists to
   prevent.
+- `answer_disposition` is asymmetric in exactly the same shape and for the
+  same reason, so it is deliberately spelled the same way rather than
+  generalized: the two settings share an asymmetry today, and folding them
+  into one helper would make a future divergence in either a silent change to
+  the other.
 """
 
 from __future__ import annotations
@@ -35,12 +40,17 @@ from typing import TYPE_CHECKING
 
 from returns.io import IOResult, IOSuccess
 
+from livespec_orchestrator_beads_fabro._store_answer_disposition import (
+    ANSWER_DISPOSITION_LABEL_PREFIX,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
     DEFAULT_ADMISSION_POLICY,
+    DEFAULT_ANSWER_DISPOSITION,
     DEFAULT_GROOM_CUT_APPROVAL,
     PolicySettingUnreadable,
     resolve_acceptance_mode,
     resolve_acceptance_rework_cap,
+    resolve_answer_disposition,
     resolve_auto_approve_ready,
     resolve_automated_regroom_cap,
     resolve_groom_cut_approval,
@@ -63,6 +73,7 @@ __all__: list[str] = [
     "effective_acceptance_policy",
     "effective_acceptance_rework_cap",
     "effective_admission_policy",
+    "effective_answer_disposition",
     "effective_automated_regroom_cap",
     "effective_groom_cut_approval",
     "effective_merge_on_review_cap",
@@ -162,6 +173,24 @@ def effective_groom_cut_approval(
     if label_value == DEFAULT_GROOM_CUT_APPROVAL:
         return IOSuccess(DEFAULT_GROOM_CUT_APPROVAL)
     return resolve_groom_cut_approval(cwd=cwd)
+
+
+def effective_answer_disposition(
+    *, item: WorkItem, cwd: Path, raw_labels: Sequence[str] = ()
+) -> IOResult[str, PolicySettingUnreadable]:
+    """Resolve `answer_disposition`; a per-item label may only LOWER to `human`.
+
+    The item's `answer:<human|consensus>` label when it says `human`, else the
+    global `dispatcher.answer_disposition`. Everything else about the label —
+    `consensus` above all, but equally a typo or an empty value — falls through
+    to the repository's committed setting, so no single item can raise itself
+    above what the repository opted into.
+    """
+    _ = item
+    label_value = _raw_label_value(raw_labels=raw_labels, prefix=ANSWER_DISPOSITION_LABEL_PREFIX)
+    if label_value == DEFAULT_ANSWER_DISPOSITION:
+        return IOSuccess(DEFAULT_ANSWER_DISPOSITION)
+    return resolve_answer_disposition(cwd=cwd)
 
 
 def _raw_label_value(*, raw_labels: Sequence[str], prefix: str) -> str | None:
