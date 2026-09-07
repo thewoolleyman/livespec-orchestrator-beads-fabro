@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.142.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.142.0...v0.142.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **plan:** the archive sweep skips ratified spec history and gitignored paths ([8affbdc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8affbdcb1b99d50ac6f9832f55cce5362a64ca5e))
+
 ## [0.142.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.141.4...v0.142.0) (2026-09-07)
 
 
