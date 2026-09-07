@@ -41,13 +41,39 @@ from livespec_orchestrator_beads_fabro.commands._config import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._workflow_variants import (
     RESERVED_WORKFLOW_NAME,
+    WorkflowVariant,
     workflow_registry,
 )
 
 __all__: list[str] = [
     "args_with_dispatch_workflow_name",
+    "previewed_workflow_variant",
     "resolve_dispatch_workflow_name",
 ]
+
+
+def previewed_workflow_variant(
+    *,
+    repo: Path,
+    work_item_id: str,
+    name: str | None = None,
+) -> WorkflowVariant:
+    """The variant one dispatch WOULD run, resolved without writing the pin.
+
+    The whole precedence and NONE of the persistence, so a surface that has to
+    know which graph a pending dispatch will run -- the pre-dispatch
+    acceptance-criteria wall, which sits before the launch that pins -- asks the
+    question without answering it in the ledger. A wall that pinned would record
+    a dispatch that its own refusal then prevented from happening.
+
+    `resolve_dispatch_workflow_name` is written ON TOP of this rather than
+    beside it: the preview and the pinning resolution are the same precedence,
+    and two copies of it is exactly how the wall and the launch would come to
+    disagree about which variant one dispatch runs.
+    """
+    recorded = dispatch_workflow_for(path=store_config(repo=repo), work_item_id=work_item_id)
+    selected = name or _usable_recorded_name(repo=repo, recorded=recorded)
+    return resolve_workflow_variant(cwd=repo, name=selected)
 
 
 def resolve_dispatch_workflow_name(
@@ -63,12 +89,14 @@ def resolve_dispatch_workflow_name(
     ONE place that owns it rather than being restated here; this module
     decides only WHICH name to offer, and writes back what came out.
     """
-    config = store_config(repo=repo)
-    explicit = _explicit_workflow_name(args=args)
-    recorded = dispatch_workflow_for(path=config, work_item_id=work_item_id)
-    selected = explicit or _usable_recorded_name(repo=repo, recorded=recorded)
-    resolved = resolve_workflow_variant(cwd=repo, name=selected).name
-    record_dispatch_workflow(path=config, work_item_id=work_item_id, workflow=resolved)
+    resolved = previewed_workflow_variant(
+        repo=repo,
+        work_item_id=work_item_id,
+        name=_explicit_workflow_name(args=args),
+    ).name
+    record_dispatch_workflow(
+        path=store_config(repo=repo), work_item_id=work_item_id, workflow=resolved
+    )
     return resolved
 
 
