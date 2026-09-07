@@ -52,6 +52,7 @@ from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 __all__: list[str] = [
     "WORKFLOW_KIND_GROOM",
     "WORKFLOW_KIND_IMPLEMENT",
+    "WORKFLOW_KIND_INPUT_NAME",
     "declared_workflow_kind",
     "groom_variant_names",
     "is_groom_variant",
@@ -64,10 +65,20 @@ __all__: list[str] = [
 WORKFLOW_KIND_GROOM = "groom"
 WORKFLOW_KIND_IMPLEMENT = "implement"
 
-# The `[run.inputs]` name a variant declares its kind under, and the manifest
-# the name is read from -- the same file `_dispatcher_workflow_variant`
-# requires a complete variant directory to hold.
-_KIND_INPUT_NAME = "workflow_kind"
+# The `[run.inputs]` name a variant declares its kind under.
+#
+# PUBLIC because the seam-equivalence gate has to classify it. That gate holds
+# every declared input to one of the families it knows, and reports any name
+# belonging to none as a scoping rot -- which is the right rule and would
+# otherwise fire on every groom variant, since this name is the one input a
+# variant declares that is NOT a projection of anything. The gate therefore
+# reads the name from HERE rather than restating it: a second spelling is
+# exactly how the reader of the declaration and the classifier of it would come
+# to disagree about which name the kind rides.
+WORKFLOW_KIND_INPUT_NAME = "workflow_kind"
+
+# The manifest the name is read from -- the same file
+# `_dispatcher_workflow_variant` requires a complete variant directory to hold.
 _VARIANT_MANIFEST = "workflow.toml"
 
 
@@ -82,7 +93,7 @@ def declared_workflow_kind(*, committed_text: str) -> str | None:
     `workflow_kind = ""` has said nothing, and reporting the empty string as a
     kind would push the decision about what silence means out to every caller.
     """
-    declared = workflow_declared_inputs(committed_text=committed_text).get(_KIND_INPUT_NAME)
+    declared = workflow_declared_inputs(committed_text=committed_text).get(WORKFLOW_KIND_INPUT_NAME)
     if declared is None:
         return None
     stripped = declared.strip()

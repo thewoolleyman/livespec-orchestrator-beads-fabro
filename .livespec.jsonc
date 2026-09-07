@@ -175,6 +175,32 @@
       "wip_cap": 10,
       "acceptance_mode": "ai-only",
       "default_factory": "hp",
+      // NAMED WORKFLOW VARIANTS — variant name -> directory, relative to this
+      // repository's root. The reserved `implement-work-item` name is NEVER
+      // read from here and registering it is refused before any run exists;
+      // every OTHER name a dispatch may select — by `--workflow-name`, by an
+      // item's recorded `dispatch_workflow` pin, or by `default_workflow` —
+      // has to appear here or the dispatch is refused rather than silently
+      // falling back to the reserved graph under the selected name.
+      //
+      // `groom-work-item` is the two-phase groom variant of
+      // SPECIFICATION/contracts.md §"Grooming and slice-size calibration" ->
+      // "Consensus-gated automated groom cut": its propose phase drafts a
+      // decomposition, files nothing and terminates at a needs-human outcome
+      // carrying the draft, and its apply phase files the approved slices and
+      // regrooms the original out. The ratified clause requires a repository
+      // that grooms this way to register the variant HERE, and that
+      // registration is also what puts the directory in scope for the two
+      // payload gates — `check-seam-equivalence` and
+      // `check-no-fleet-toolchain-literals` read every directory this table
+      // names, exactly as they read the bundle.
+      //
+      // Deliberately NO `default_workflow` key beside it: the reserved
+      // workflow stays this repository's default, and a groom run is selected
+      // explicitly through the Dispatcher's groom door.
+      "workflows": {
+        "groom-work-item": ".fabro/workflows/groom-work-item"
+      },
       // The three DISPATCH-TIME BASELINE CONFORMANCE premises the factory
       // sandbox's prepare chain establishes: installing the commit-refuse
       // Mechanism, and the two Verifiers proving the hook and the plugin

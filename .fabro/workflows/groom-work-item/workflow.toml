@@ -1,0 +1,244 @@
+# groom-work-item — the two-phase groom variant's run config.
+#
+# TARGET-LOCAL BY CONSTRUCTION. This directory lives under the governed
+# repository's OWN `.fabro/workflows/` tree and is named by that repository's
+# `dispatcher.workflows` registry, because `SPECIFICATION/contracts.md`
+# §"Grooming and slice-size calibration" -> "Consensus-gated automated groom
+# cut" rules that "a repository that grooms this way MUST register the groom
+# variant through that registry". It is NOT bundled with the plugin: the
+# reserved `implement-work-item` workflow is the plugin's, and the ratified
+# clause forbids it to groom.
+#
+# A PEER OF THE RESERVED WORKFLOW, NOT AN EXCEPTION TO IT. Under
+# §"Self-contained plugin dispatch" -> "A registered variant is the reserved
+# workflow's peer, not its exception", every clause scoped to the reserved
+# workflow by name binds this directory identically. Two consequences shape
+# this file and its graph:
+#
+#   - the six ACP node names are the RESERVED workflow's six -- `implement`,
+#     `fix`, `review_fix`, `pr`, `review`, `disposition` -- so the
+#     per-repository adapter layer, the `dispatcher.codex_models` expansion and
+#     the per-node timeout table resolve against this variant without naming an
+#     absent node. What the six nodes DO here is a groom run's work; what they
+#     are CALLED is not this variant's to change;
+#   - the `[run.inputs]` table below declares the reserved workflow's ENTIRE
+#     input set, opting out of none of it, and the graph and prompts reference
+#     every integration input, so `dev-tooling/checks/seam_equivalence.py`
+#     holds this directory to the ONE set the Dispatcher renders exactly as it
+#     holds the bundle.
+#
+# The one input this table adds is `workflow_kind`, which is the variant's own
+# declaration of what it is rather than a projection of anything: see the note
+# on it below, and `commands/_workflow_variant_kind.py` for why the kind rides
+# `[run.inputs]` at all.
+#
+# THE CREDENTIAL CHANNEL IS THE BUNDLE'S, UNCHANGED. This committed file
+# carries no secret value and no `{{ env }}` interpolation; the Dispatcher
+# materializes the same uncommitted per-dispatch overlay over it that it
+# materializes over the bundle (absolute graph path, sibling-clone prepare
+# steps, and the `[environments.livespec-ci.env]` table carrying the real
+# CLAUDE_CODE_OAUTH_TOKEN and a freshly minted GITHUB_TOKEN). See the bundled
+# `implement-work-item/workflow.toml` header for the full rationale, including
+# why `{{ env }}` interpolation cannot work for a server-mediated run.
+_version = 1
+
+[workflow]
+graph = "workflow.fabro"
+
+[run]
+goal = "Draft or apply one work-item's decomposition per the ratified two-phase groom cut"
+
+# A groom run reaches the forge for nothing: it neither pushes a branch nor
+# opens a pull request. `contents = "write"` is nevertheless requested for the
+# same reason the bundle requests it -- it is what makes Fabro's
+# `is_token_requested()` true and therefore what makes Fabro OWN a MINTABLE
+# GITHUB_TOKEN that it re-projects fresh into every node's launch environment.
+# Without the block, a long groom run's later nodes inherit the Dispatcher's
+# static overlay token and 401 past its installation-token TTL.
+[run.integrations.github.permissions]
+contents = "write"
+pull_requests = "write"
+
+[run.inputs]
+# WHAT THIS VARIANT IS. Read by `commands/_workflow_variant_kind.py` off this
+# very file: the Dispatcher's groom door admits a `backlog` item into `active`
+# only under a variant whose directory declares `groom` here, and the apply
+# gate refuses an item carrying an approved groom draft whose selected variant
+# does not. An undeclared kind reads as `implement`, so this line is the one
+# thing that has to be SAID.
+#
+# It is declared HERE, in the free-form `[run.inputs]` string map, rather than
+# in fabro's own `[workflow]` table, because whether the pinned engine tolerates
+# a key it does not define is not measurable from a dispatched sandbox. It also
+# means the graph can read `inputs.workflow_kind` if it ever needs to.
+workflow_kind = "groom"
+
+# ONE ADAPTER INPUT PER ACP NODE, the reserved workflow's six names and no
+# others, so `dispatcher.acp_nodes` and `dispatcher.codex_models` move a node
+# here exactly as they move the same node in the bundle. The defaults below are
+# the bundle's defaults; a dispatch overrides each from the target's own
+# configuration. See the bundled run config for why every Claude adapter is
+# deliberately version-LESS (the package version is pinned by the sandbox image
+# named under `[environments.livespec-ci.image]`, and a second `@version` here
+# would have to move in lockstep with it by hand forever).
+#
+# The implementer tier is what DRAFTS and what APPLIES a cut: deciding where a
+# coherent "done" ends is the same judgement work implementing one is, so the
+# groom node takes the implementer tier rather than the cheap publish tier.
+implement_adapter = "ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
+fix_adapter = "ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
+review_fix_adapter = "ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
+
+# The `pr` node here FILES the approved slices into the ledger; it is the apply
+# phase's publication point, and the ledger is this run's publication surface.
+# That is real judgement work -- a mis-filed slice is a mis-cut backlog -- so
+# unlike the bundle's fixed publish recipe this default carries the implementer
+# tier rather than the cheap one.
+pr_adapter = "ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
+
+# The review tier is the bundle's: a second, differently-modelled reader whose
+# lens on a cut is the same senior-engineer lens it brings to a diff. The model
+# is pinned through the adapter's OWN env because `model` / `reasoning_effort`
+# are API-only attributes fabro REJECTS on acp nodes.
+review_adapter = "ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
+
+disposition_adapter = "npx -y @agentclientprotocol/claude-agent-acp"
+
+# THE PER-ITEM POLICY FAMILY, all three, because the Dispatcher renders all
+# three on EVERY dispatch and fabro rejects an `--input` naming an input the run
+# config does not declare. A variant that dropped one would not merely disagree
+# with the bundle: every dispatch through it would die before a node ran. The
+# seam-equivalence check's `undeclared-policy-input` finding is what holds this
+# variant to the bundle's set for the family the token equality cannot speak
+# about.
+#
+# Only the visit cap is REFERENCED by this graph. A groom run's review loop is
+# bounded exactly as the bundle's is, but there is no ship-on-cap escape hatch
+# here -- a cut the reviewer still objects to must not be filed on a budget
+# ceiling -- and no branch to hold back, so `merge_on_review_cap_outcome` and
+# `merge_hold` are declared and carried rather than acted on. Differing in
+# review discipline is precisely what the peer clause permits a variant to do.
+review_fix_visit_cap = 4
+merge_on_review_cap_outcome = "__merge_on_review_cap_disabled__"
+merge_hold = false
+
+# THE INTEGRATION-CONTRACT INPUTS, the projection's closed `CONTRACT_INPUT_NAMES`
+# in full. Each is one field of the governed repository's
+# `RepoIntegrationContract`, resolved once by the Dispatcher on the host and
+# rendered here; this run config, the graph and the prompts read the SAME
+# `inputs.<name>` token. The defaults carry no fleet-toolchain premise, exactly
+# as the bundle's do not: the toolchain and conformance premises default to the
+# ratified explicit no-op (the empty word-list, whose prepare step runs
+# nothing), and `sandbox_check_suite` defaults to a command that FAILS LOUDLY
+# naming the input so a bare `fabro run` of this file cannot read a value it was
+# never given as a real one.
+sandbox_check_suite = "sh -c 'echo LIVESPEC_INPUT_NOT_RENDERED: sandbox_check_suite was not supplied by the Dispatcher >&2; exit 1'"
+prepare_toolchain_mise = ""
+prepare_toolchain_lefthook = ""
+conformance_hook_install = ""
+conformance_verify_commit_refuse_hook = ""
+conformance_verify_plugin_resolution = ""
+sandbox_exempt_marker = "livespec.sandboxExempt"
+default_branch = "master"
+merge_mode = "rebase"
+
+[run.environment]
+id = "livespec-ci"
+
+[environments.livespec-ci]
+provider = "docker"
+
+[environments.livespec-ci.image]
+# The same GHCR family sandbox image the bundle pins, and the same
+# `python-agent-` layer prefix: the bare `python-` tag is the slim CI image and
+# carries NO ACP adapters, under which the version-less `npx -y` adapters above
+# would silently re-download an untested build per run instead of resolving the
+# baked global. The shared `bump-pin` autodiscovery walks the top-level
+# `.fabro/workflows/` root as well as the plugin's own, so this tag is rewritten
+# in lockstep with the bundle's rather than drifting behind it.
+docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.52.12"
+
+[environments.livespec-ci.resources]
+cpu = 4
+memory = "8GB"
+
+# NOTE: deliberately NO [environments.livespec-ci.env] table here, exactly as in
+# the bundle. The Dispatcher's per-dispatch overlay APPENDS that table, and TOML
+# forbids declaring one table twice.
+
+[run.clone]
+enabled = true
+
+# Fabro-managed run/meta branches stay LOCAL to the sandbox. A groom run
+# publishes to the LEDGER, never to a ref, so unlike the bundle there is no
+# later stage that pushes a feature branch either: the only ref a groom run can
+# push is the needs-human preserve ref its terminal node writes.
+[run.run_branch]
+enabled = true
+push = false
+
+[run.meta_branch]
+enabled = true
+push = false
+
+[run.checkpoint]
+commit_timeout = "10m"
+skip_git_hooks = false
+exclude_globs = ["**/.venv/**", "**/node_modules/**", "**/.cache/**"]
+
+# Fabro's native PR surface stays off. Nothing in this variant opens one.
+[run.pull_request]
+enabled = false
+
+# --- Prepare steps: the bundle's provisioning, unchanged.
+#
+# A groom run is held to the SAME dispatch-time baseline conformance gate as an
+# implement run, and for a reason that is easy to get backwards: a groom run
+# writes to the LEDGER, not to the tree, so it is tempting to read the
+# commit-refuse and worktree-discipline premises as inapplicable. They are not.
+# The sandbox is still a fresh full clone that reads structurally as a primary
+# checkout, the run still takes fabro checkpoint commits, and the exemption
+# marker is still what lets those commits proceed. Dropping the chain here would
+# make the groom variant the one dispatch path in this repository that runs
+# unconformant.
+#
+# Every premise below is a PROJECTION of the resolved integration contract, not
+# a literal: a premise the repository does not carry resolves to the ratified
+# explicit no-op and the step runs nothing, by construction rather than by a
+# silent skip. The `set --` idiom re-tokenizes the one shell word-list the
+# Dispatcher rendered with `shlex.join`, `test $# -eq 0` makes the empty no-op a
+# clean exit rather than a syntax error, and `"$@"` runs the argv with its
+# quoting intact.
+
+[[run.prepare.steps]]
+# Fabro's sandbox clone is hardcoded shallow; the conformance node below diffs
+# the default branch..HEAD, which needs that merge-base present.
+script = "git fetch --unshallow --quiet"
+
+[[run.prepare.steps]]
+# Toolchain premise #1 — the version-manager install.
+script = "set -- {{ inputs.prepare_toolchain_mise }}; test $# -eq 0 || \"$@\""
+
+[[run.prepare.steps]]
+script = "uv sync --all-groups"
+
+[[run.prepare.steps]]
+# Toolchain premise #2 — the hook-manager install.
+script = "set -- {{ inputs.prepare_toolchain_lefthook }}; test $# -eq 0 || \"$@\""
+
+[[run.prepare.steps]]
+# Conformance MECHANISM — install the canonical structural commit-refuse hook.
+script = "set -- {{ inputs.conformance_hook_install }}; test $# -eq 0 || \"$@\""
+
+[[run.prepare.steps]]
+# Declare the sandbox EXEMPT from the commit-refuse refuse branch. The marker
+# NAME is the resolved contract field, projected rather than spelled.
+script = "git config {{ inputs.sandbox_exempt_marker }} true"
+
+[[run.prepare.steps]]
+# Conformance Verifier #1 — the hook is actually present.
+script = "set -- {{ inputs.conformance_verify_commit_refuse_hook }}; test $# -eq 0 || \"$@\""
+
+[[run.prepare.steps]]
+# Conformance Verifier #2 — the declaration-integrity plugin-resolution check.
+script = "set -- {{ inputs.conformance_verify_plugin_resolution }}; test $# -eq 0 || \"$@\""
