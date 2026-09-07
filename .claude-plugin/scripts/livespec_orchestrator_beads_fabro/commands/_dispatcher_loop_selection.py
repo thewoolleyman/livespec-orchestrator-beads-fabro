@@ -283,8 +283,17 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
     # groom-pinned run that terminated needs-human carries the drafted
     # decomposition, and the comment written here is where that draft rests
     # and what the later apply dispatch reads. A no-op for every other run.
-    record_groom_draft(args=args, repo=repo, item=item, outcome=outcome, journal=journal)
-    escalate_needs_human_block(repo=repo, item=item, outcome=outcome, journal=journal)
+    #
+    # An APPLY run publishes a FILING PLAN over that same channel instead, and
+    # the seam files it host-side. When it does, there is no human decision
+    # left and the original has already CLOSED as regroomed-out, so escalating
+    # would move a closed regroom target to `blocked` — undoing the very
+    # disposition the contract calls this run's terminal one.
+    groom_cut_filed = record_groom_draft(
+        args=args, repo=repo, item=item, outcome=outcome, journal=journal
+    )
+    if not groom_cut_filed:
+        escalate_needs_human_block(repo=repo, item=item, outcome=outcome, journal=journal)
     bounce_non_convergence_to_backlog(repo=repo, item=item, outcome=outcome, journal=journal)
     emit_calibration(
         args=args,

@@ -16,8 +16,10 @@ Read, in this order:
    you which of the two products below exists.
 2. `/tmp/livespec-groom-draft` — the propose phase's one-line draft, when
    the phase is `propose`.
-3. `/tmp/livespec-groom-plan` — the apply phase's filing plan, when the
-   phase is `apply`.
+3. `/tmp/livespec-groom-plan` — the apply phase's one-line filing plan,
+   when the phase is `apply`. The Dispatcher executes this plan verbatim
+   host-side once the run terminates; no node in this run files anything,
+   because the sandbox holds no ledger credential by design.
 4. The ledger comments in the assignment above — the earlier draft and
    the approving answer, when there are any.
 
@@ -39,9 +41,13 @@ one that would make the filed backlog wrong:
   A cut that quietly drops part of the work is worse than no cut.
 - **Filing plan fidelity (apply phase only).** The plan matches the
   APPROVED draft as amended by the answer comment, and does not add,
-  drop or reshape a slice the human did not approve. It also names the
-  approving invoker's identity and the route the approval arrived on —
-  the filing seam refuses a call carrying neither.
+  drop or reshape a slice the human did not approve. Its header names
+  the approving invoker's identity (`approver=`) and the route the
+  approval arrived on (`route=`), both read off the answer comment and
+  neither synthesized — the filing seam refuses a call carrying neither,
+  and an invented identity is worse than that refusal. Every
+  `blockers=` handle names an EARLIER slice in the same plan. This is
+  BLOCKING: the plan is executed verbatim against a ledger with no undo.
 
 An ADVISORY finding is a real improvement that would not make the filed
 backlog wrong. Say so and move on.
