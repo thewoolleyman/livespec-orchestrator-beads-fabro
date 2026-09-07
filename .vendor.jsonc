@@ -1,7 +1,7 @@
 // .vendor.jsonc — vendored library manifest.
 //
 // - livespec_runtime, vendored from the upstream source repository
-//   at upstream commit 5213a6c into
+//   at upstream commit eeeb8b4 into
 //   .claude-plugin/scripts/_vendor/livespec_runtime/. impl-beads's
 //   shipped skills import livespec_runtime.cross_repo.*, work_items.*, and needs-attention helpers; this
 //   vendored copy makes those imports resolve from the published
@@ -34,8 +34,8 @@
     {
       "name": "livespec_runtime",
       "upstream_url": "https://github.com/thewoolleyman/livespec-runtime",
-      "upstream_ref": "v0.21.1",
-      "vendored_at": "2026-08-17T20:35:49Z"
+      "upstream_ref": "v0.27.0",
+      "vendored_at": "2026-09-07T12:58:10Z"
     },
     {
       "name": "livespec_spec_clauses",

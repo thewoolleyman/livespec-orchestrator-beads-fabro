@@ -78,14 +78,19 @@ sys.path.insert(0, str(bundle_root / "_vendor"))
 from livespec_runtime.github_auth.config import load_github_app_config
 from livespec_runtime.github_auth.errors import GithubAppAuthError
 from livespec_runtime.github_auth.provider import InstallationTokenProvider
+from returns.pipeline import is_successful
 
 if len(sys.argv) != 1:
     sys.stderr.write("usage: mint_app_token.py\\n")
     raise SystemExit(2)
 
+config = load_github_app_config(environ=os.environ)
+if not is_successful(config):
+    sys.stderr.write(f"ERROR: {config.failure().detail}\\n")
+    raise SystemExit(3)
+
 try:
-    config = load_github_app_config(environ=os.environ)
-    token = InstallationTokenProvider(config=config).token()
+    token = InstallationTokenProvider(config=config.unwrap()).token()
 except GithubAppAuthError as exc:
     sys.stderr.write(f"ERROR: {exc.detail}\\n")
     raise SystemExit(3) from exc

@@ -59,6 +59,9 @@ from pathlib import Path
 from livespec_runtime.attention_item import AttentionItem, Handoff, SourceRef
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import plugin_root
+from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
+    ConformanceContext,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_release_adoption import (
     read_build_version,
     release_tip_version,
@@ -149,7 +152,7 @@ def currency_staleness_items(
     if lag is None:
         return []
     return [
-        AttentionItem(
+        ConformanceContext(project_root=project_root, repo=repo).candidate(
             id=f"hygiene:{_FACT_TYPE}:{repo}",
             kind="hygiene",
             urgency="medium",

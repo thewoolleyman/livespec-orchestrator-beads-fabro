@@ -9,6 +9,9 @@ from typing import Any, Protocol, cast
 
 from livespec_runtime.attention_item import AttentionItem, Handoff, SourceRef
 
+from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
+    ConformanceContext,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_handoffs import (
     pr_view_command,
     reconcile_merged_command,
@@ -248,7 +251,7 @@ def _stranded_dispatch_item(
     stranded_dispatch: _StrandedDispatch,
 ) -> AttentionItem:
     evidence = stranded_dispatch.evidence
-    return AttentionItem(
+    return ConformanceContext(project_root=project_root, repo=repo).candidate(
         id=f"host-only:{_STRANDED_REASON}:{work_item.id}",
         kind="host-only",
         urgency="high",

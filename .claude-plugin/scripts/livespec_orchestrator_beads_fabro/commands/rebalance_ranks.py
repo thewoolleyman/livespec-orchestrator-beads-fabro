@@ -25,6 +25,7 @@ Two pure entry points back it:
 
 import argparse
 from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from pathlib import Path
 
 from livespec_runtime.work_items.lifecycle import ready_sort_key
@@ -66,7 +67,10 @@ def rebalanced(*, items: list[WorkItem]) -> list[WorkItem]:
     evenly-spaced fresh keys. The output preserves that order; only each
     item's `rank` changes. An empty input yields an empty list.
     """
-    ordered = sorted(items, key=ready_sort_key)
+    # Built ONCE per rebalance, with no `ready_since_lookup`: the aging
+    # tiebreak stays inert, so the ordering is the `(rank, id)` one this
+    # command has always assigned against.
+    ordered = sorted(items, key=ready_sort_key(now=datetime.now(tz=timezone.utc)))
     keys = n_keys_between(a=None, b=None, n=len(ordered))
     return [replace(item, rank=key) for item, key in zip(ordered, keys, strict=True)]
 

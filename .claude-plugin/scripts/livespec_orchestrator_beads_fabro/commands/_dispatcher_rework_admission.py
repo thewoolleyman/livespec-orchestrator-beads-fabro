@@ -13,6 +13,7 @@ terminal disposition clears it through the store's lifecycle write seams.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 from livespec_runtime.work_items.lifecycle import ready_sort_key
@@ -99,7 +100,10 @@ def rework_pending_candidates(
             for item in items
             if item.id in marked and (rework.scope_ids is None or item.id in rework.scope_ids)
         ),
-        key=ready_sort_key,
+        # Built ONCE per pass, with no `ready_since_lookup` injected, so the
+        # aging tiebreak stays inert and this leg keeps the exact `(rank, id)`
+        # ordering the ready queue composes.
+        key=ready_sort_key(now=datetime.now(tz=timezone.utc)),
     )
     if rework.budget is None:
         return tuple(selected)

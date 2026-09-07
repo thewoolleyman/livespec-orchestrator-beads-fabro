@@ -50,6 +50,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_recor
     ReconciledRun,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_stamp import repo_run_attribution
+from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
+    ConformanceContext,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_handoffs import (
     reconcile_runs_command,
 )
@@ -164,7 +167,7 @@ def _survey(
 
 
 def _orphan_item(*, project_root: Path, repo: str, run: ReconciledRun) -> AttentionItem:
-    return AttentionItem(
+    return ConformanceContext(project_root=project_root, repo=repo).candidate(
         id=f"hygiene:orphaned-factory-run:{run.run_id}",
         kind="hygiene",
         urgency="high",

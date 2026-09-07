@@ -44,6 +44,7 @@ import sys
 from livespec_runtime.github_auth.config import load_github_app_config
 from livespec_runtime.github_auth.errors import GithubAppAuthError
 from livespec_runtime.github_auth.provider import InstallationTokenProvider
+from returns.pipeline import is_successful
 
 from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 
@@ -101,9 +102,15 @@ def main(*, argv: list[str] | None = None) -> int:
         )
         return _EXIT_USAGE
 
+    # `load_github_app_config` is on the Result railway since livespec-runtime
+    # v0.21.2; the mint itself still raises, so the two failure shapes are
+    # discharged separately onto the SAME operator-facing refusal.
+    config = load_github_app_config(environ=os.environ)
+    if not is_successful(config):
+        _ = write_stderr(text=f"ERROR: {config.failure().detail}\n")
+        return _EXIT_MINT_FAILED
     try:
-        config = load_github_app_config(environ=os.environ)
-        token = InstallationTokenProvider(config=config).token()
+        token = InstallationTokenProvider(config=config.unwrap()).token()
     except GithubAppAuthError as exc:
         _ = write_stderr(text=f"ERROR: {exc.detail}\n")
         return _EXIT_MINT_FAILED

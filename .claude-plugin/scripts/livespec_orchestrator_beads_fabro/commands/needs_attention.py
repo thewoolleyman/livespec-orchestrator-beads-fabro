@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import asdict
+from functools import partial
 from pathlib import Path
 
 from livespec_runtime.attention_item import AttentionItem
@@ -22,7 +23,7 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_capacity import
 from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
     ConformanceContext,
     composed_conformant,
-    conformant_items,
+    conformant_lane,
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_currency_staleness import (
     currency_staleness_items,
@@ -141,14 +142,24 @@ def build_attention(
     # item's reported disposition comes from one authority rather than from a
     # per-lane re-read that could disagree with the next row down.
     answer_disposition_labels = read_answer_disposition_labels(path=config)
-    hygiene_scan = (
-        scan_hygiene(repo_path=project_root, repo_name=repo_name) if include_hygiene else []
-    )
-    # Every candidate crosses a conformance gate before it reaches the wire: a
+    # Every candidate crosses a conformance boundary before it reaches the wire: a
     # runtime-validator rejection surfaces as a visible failure item rather than
-    # shortening the list, because a manufacturable absence reads as resolution
-    # downstream (the machine-envelope contract in SPECIFICATION/contracts.md).
+    # shortening the list OR aborting the pass, because a manufacturable absence
+    # reads as resolution downstream (the machine-envelope contract in
+    # SPECIFICATION/contracts.md). The lanes this repository composes DIRECTLY
+    # carry that boundary at their own construction; the hygiene scan builds its
+    # items inside the runtime, so it crosses the lane-granular one here.
     context = ConformanceContext(project_root=project_root, repo=repo_name)
+    hygiene_scan = (
+        conformant_lane(
+            context=context,
+            subject=f"hygiene scan of {repo_name}",
+            key=f"hygiene-scan-{repo_name}",
+            compose=partial(scan_hygiene, repo_path=project_root, repo_name=repo_name),
+        )
+        if include_hygiene
+        else []
+    )
     return composed_conformant(
         context=context,
         spec_next=spec_next(project_root=project_root),
@@ -167,84 +178,79 @@ def build_attention(
             answer_disposition_labels=answer_disposition_labels,
         ),
         plan_threads=plans(project_root=project_root, config=config, items=materialized),
-    ) + conformant_items(
-        context=context,
-        candidates=(
-            auto_admission_items(project_root=project_root, repo=repo_name, items=materialized)
-            + provider_exhaustion_items(
-                project_root=project_root, repo=repo_name, items=materialized
-            )
-            + host_only_items(project_root=project_root, repo=repo_name, items=materialized)
-            + stranded_dispatch_items(
+    ) + (
+        auto_admission_items(project_root=project_root, repo=repo_name, items=materialized)
+        + provider_exhaustion_items(project_root=project_root, repo=repo_name, items=materialized)
+        + host_only_items(project_root=project_root, repo=repo_name, items=materialized)
+        + stranded_dispatch_items(
+            project_root=project_root,
+            repo=repo_name,
+            items=materialized,
+            held_work_item_ids=held_work_item_ids,
+        )
+        # A hold parks an item in exactly the shape every other lane here is
+        # taught to ignore, so this row is the one thing standing between a
+        # deliberate merge window and an invisible one.
+        + merge_hold_items(
+            project_root=project_root,
+            repo=repo_name,
+            items=materialized,
+            held_work_item_ids=held_work_item_ids,
+        )
+        + capacity_items(project_root=project_root, repo=repo_name, items=materialized)
+        # A run the ledger disowns holds a factory scheduler slot, and no
+        # surface keyed on THIS repo's records can see it: the projection is
+        # the reconciler's own dry run, so the lane and the remedy it prints
+        # can never disagree about what an orphan is.
+        + orphan_run_items(project_root=project_root, repo=repo_name, items=materialized)
+        # Detection recency is a REPOSITORY property computed from the
+        # completed coverage records on the committed anchor. Neither fact
+        # invokes a detector: both are surfaced triggers naming the skill.
+        + detection_staleness_items(project_root=project_root, repo=repo_name, config=config)
+        # Ambient plugin-currency staleness is SURFACED here and nowhere
+        # else: the dispatch-admission gate lost its blocking authority over
+        # it in v089, so this fact is what carries the freshness pressure.
+        # It never gates a dispatch — only a committed
+        # `dispatcher.minimum_release` floor can refuse on currency.
+        + currency_staleness_items(
+            project_root=project_root,
+            repo=repo_name,
+            seams=default_currency_staleness_seams(),
+        )
+        # Adoption is a HOST fact, not a tenant fact: the pin is a moving
+        # branch, so the only per-repo evidence that a release actually
+        # arrived lives in this machine's install records.
+        + release_adoption_items(
+            project_root=project_root,
+            repo=repo_name,
+            bases=default_release_adoption_bases(),
+        )
+        + ready_aging_items(
+            context=ReadyAgingContext(
                 project_root=project_root,
                 repo=repo_name,
-                items=materialized,
-                held_work_item_ids=held_work_item_ids,
-            )
-            # A hold parks an item in exactly the shape every other lane here is
-            # taught to ignore, so this row is the one thing standing between a
-            # deliberate merge window and an invisible one.
-            + merge_hold_items(
-                project_root=project_root,
-                repo=repo_name,
-                items=materialized,
-                held_work_item_ids=held_work_item_ids,
-            )
-            + capacity_items(project_root=project_root, repo=repo_name, items=materialized)
-            # A run the ledger disowns holds a factory scheduler slot, and no
-            # surface keyed on THIS repo's records can see it: the projection is
-            # the reconciler's own dry run, so the lane and the remedy it prints
-            # can never disagree about what an orphan is.
-            + orphan_run_items(project_root=project_root, repo=repo_name, items=materialized)
-            # Detection recency is a REPOSITORY property computed from the
-            # completed coverage records on the committed anchor. Neither fact
-            # invokes a detector: both are surfaced triggers naming the skill.
-            + detection_staleness_items(project_root=project_root, repo=repo_name, config=config)
-            # Ambient plugin-currency staleness is SURFACED here and nowhere
-            # else: the dispatch-admission gate lost its blocking authority over
-            # it in v089, so this fact is what carries the freshness pressure.
-            # It never gates a dispatch — only a committed
-            # `dispatcher.minimum_release` floor can refuse on currency.
-            + currency_staleness_items(
-                project_root=project_root,
-                repo=repo_name,
-                seams=default_currency_staleness_seams(),
-            )
-            # Adoption is a HOST fact, not a tenant fact: the pin is a moving
-            # branch, so the only per-repo evidence that a release actually
-            # arrived lives in this machine's install records.
-            + release_adoption_items(
-                project_root=project_root,
-                repo=repo_name,
-                bases=default_release_adoption_bases(),
-            )
-            + ready_aging_items(
-                context=ReadyAgingContext(
-                    project_root=project_root,
-                    repo=repo_name,
-                    manifest=manifest,
-                ),
-                items=materialized,
-                ready_dwell_instants=read_ready_dwell_instants(path=config.work_items_path),
-                sibling_status_lookup=sibling_status_lookup,
-                seams=ReadyAgingSeams(
-                    live_lock_lookup=live_dispatch_lock_lookup,
-                    watchable_run_item_ids=watchable_fabro_run_item_ids,
-                    now_iso=_utc_now_iso(),
-                ),
-            )
-            # A second raw read of the tenant: the triage marker is a label and the
-            # urgency tier is the beads-native `priority` column, and the
-            # materialized `WorkItem` above carries neither (labels are decoded into
-            # named fields; `priority` was dropped for `rank`). Same shape as the
-            # other narrow raw read, `read_work_item_native_priorities`.
-            + untriaged_backlog_items(
-                project_root=project_root,
-                repo=repo_name,
-                records=read_intake_triage_records(path=config.work_items_path),
-            )
-            + hygiene_scan
-        ),
+                manifest=manifest,
+            ),
+            items=materialized,
+            ready_dwell_instants=read_ready_dwell_instants(path=config.work_items_path),
+            sibling_status_lookup=sibling_status_lookup,
+            seams=ReadyAgingSeams(
+                live_lock_lookup=live_dispatch_lock_lookup,
+                watchable_run_item_ids=watchable_fabro_run_item_ids,
+                now_iso=_utc_now_iso(),
+            ),
+        )
+        # A second raw read of the tenant: the triage marker is a label and the
+        # urgency tier is the beads-native `priority` column, and the
+        # materialized `WorkItem` above carries neither (labels are decoded into
+        # named fields; `priority` was dropped for `rank`). Same shape as the
+        # other narrow raw read, `read_work_item_native_priorities`.
+        + untriaged_backlog_items(
+            project_root=project_root,
+            repo=repo_name,
+            records=read_intake_triage_records(path=config.work_items_path),
+        )
+        + hygiene_scan
     )
 
 

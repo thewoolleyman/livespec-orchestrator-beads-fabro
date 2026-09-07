@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable
 from dataclasses import asdict, replace
+from datetime import datetime, timezone
 from pathlib import Path
 
 from livespec_runtime.cross_repo.types import CrossRepoManifest, RefStatus
@@ -163,8 +164,10 @@ def ready_items(*, items: list[WorkItem], repo: Path) -> list[WorkItem]:
     ]
     # Compose the single canonical ranking authority so the Dispatcher's
     # drain order never diverges from what `next` advertises (i3jiny):
-    # (rank, id) — the fractional rank is the sole ordering key.
-    return sorted(ready, key=ready_sort_key)
+    # (rank, id) — the fractional rank is the sole ordering key. The key is
+    # built ONCE per pass, and with no `ready_since_lookup` injected the aging
+    # tiebreak stays inert, so the ordering is exactly what it was.
+    return sorted(ready, key=ready_sort_key(now=datetime.now(tz=timezone.utc)))
 
 
 def is_dispatch_candidate(

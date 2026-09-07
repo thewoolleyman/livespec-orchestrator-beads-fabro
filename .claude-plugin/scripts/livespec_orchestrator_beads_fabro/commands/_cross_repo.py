@@ -92,11 +92,9 @@ def parse_entry(*, raw: object) -> DependsOnEntry | None:
         return LocalDependency(work_item_id=raw)
     if isinstance(raw, dict):
         typed_raw = cast("dict[str, Any]", raw)
-        entry = attempt(
-            action=lambda: parse_depends_on_entry(parsed=typed_raw),
-            exceptions=(CrossRepoSchemaError,),
-        )
-        if isinstance(entry, AttemptFailure):
-            return None
-        return entry
+        # `parse_depends_on_entry` is total since livespec-runtime v0.21.2: it
+        # discharges every schema violation onto the Result failure track
+        # instead of raising, so the flatten to the caller's `None` sentinel is
+        # `value_or` rather than an exception boundary.
+        return parse_depends_on_entry(parsed=typed_raw).value_or(None)
     return None
