@@ -10,6 +10,9 @@ from pathlib import Path
 from livespec_runtime.attention_item import AttentionItem
 from livespec_runtime.hygiene_scan import scan_hygiene
 
+from livespec_orchestrator_beads_fabro._store_answer_disposition import (
+    read_answer_disposition_labels,
+)
 from livespec_orchestrator_beads_fabro._store_merge_hold import read_merge_held_work_item_ids
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
@@ -133,6 +136,11 @@ def build_attention(
     # authorities on one question, and disagreeing would report a held item as
     # stranded AND as held in the same snapshot.
     held_work_item_ids = read_merge_held_work_item_ids(path=config)
+    # The same narrow-raw-read shape, for the `answer:` per-item override of the
+    # ratified answer disposition: one read for the whole pass, so every parked
+    # item's reported disposition comes from one authority rather than from a
+    # per-lane re-read that could disagree with the next row down.
+    answer_disposition_labels = read_answer_disposition_labels(path=config)
     hygiene_scan = (
         scan_hygiene(repo_path=project_root, repo_name=repo_name) if include_hygiene else []
     )
@@ -156,6 +164,7 @@ def build_attention(
             index=index,
             manifest=manifest,
             sibling_status_lookup=sibling_status_lookup,
+            answer_disposition_labels=answer_disposition_labels,
         ),
         plan_threads=plans(project_root=project_root, config=config, items=materialized),
     ) + conformant_items(
