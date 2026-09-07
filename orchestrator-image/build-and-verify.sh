@@ -15,7 +15,7 @@
 # so the injected secrets are present:
 #
 #   /data/projects/1password-env-wrapper/with-livespec-env.sh -- \
-#     bash orchestrator-image/build-and-verify.sh
+#     ./orchestrator-image/build-and-verify.sh
 #
 # NO secret is ever printed: tokens flow via `-e VAR` (docker reads the value
 # from this process's env, never logging it), and all probe output is captured
@@ -97,11 +97,33 @@ docker run -d --name "$CONTAINER" \
   sleep infinity >/dev/null
 
 # Wait for the entrypoint to finish provisioning (dockerd + fabro).
+#
+# The wait is ASSERTED, not merely attempted. A loop that runs out and falls
+# through leaves every check below probing a container that never came up:
+# `set -e` cannot see that, the first check dies when the exec is SIGKILLed,
+# and the run reads as a verification that passed while it verified NOTHING.
+# A wait that cannot distinguish "ready" from "never came up" is not a wait.
 log "waiting for in-container provisioning"
-for _ in $(seq 1 90); do
-  if docker exec "$CONTAINER" docker info >/dev/null 2>&1; then break; fi
+PROVISION_WAIT_SECONDS="${PROVISION_WAIT_SECONDS:-90}"
+provisioned=""
+for _ in $(seq 1 "$PROVISION_WAIT_SECONDS"); do
+  if docker exec "$CONTAINER" docker info >/dev/null 2>&1; then provisioned=yes; break; fi
   sleep 1
 done
+if [ -z "$provisioned" ]; then
+  {
+    echo "FATAL: in-container provisioning never completed."
+    echo "  'docker exec $CONTAINER docker info' never succeeded within ${PROVISION_WAIT_SECONDS}s."
+    echo "  The tier-1 checks are ABORTED rather than run against a container that"
+    echo "  never came up — they would verify nothing while reading as a pass."
+    echo "  The container's own logs carry the real cause:"
+    echo "--- docker logs $CONTAINER (redacted) ---"
+    docker logs "$CONTAINER" 2>&1 | sed -E 's/[A-Za-z0-9_-]{24,}/<redacted>/g' \
+      || echo "(docker logs $CONTAINER failed)"
+    echo "--- end docker logs $CONTAINER ---"
+  } >&2
+  exit 1
+fi
 
 # T1.a — inner storage driver must be overlay2 / overlayfs, NOT vfs.
 log "T1.0 gh version"
