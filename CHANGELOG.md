@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.140.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.139.0...v0.140.0) (2026-09-07)
+
+
+### Features
+
+* **dispatcher:** make the pre-dispatch criteria wall variant-aware (bd-ib-5k27yw) ([d20db47](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d20db472288a9ad1d52ef309658058980d6b2fad))
+
 ## [0.139.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.138.3...v0.139.0) (2026-09-07)
 
 
