@@ -12,6 +12,16 @@ and it is not approved. A reader asking merely "does this item have an approval
 comment" would answer yes and let the stale consent authorise the new cut. The
 cases below drive exactly that sequence.
 
+WHY POSITION IS NOT ENOUGH EITHER. Ordering makes a NEWER draft win; it never
+makes a send-back stop reading as consent. `resolve-blocked:<id>:backlog` is a
+REJECTION, and `drive` accepts `--answer` on it — so an operator who bounces a
+cut as too coarse and says why has written an answer comment after the draft.
+Reading position alone, that rejection authorises the filing of the very
+decomposition it rejected, in the window before any re-draft lands and forever
+if none ever does. The two cases below are the control pair: they differ in
+nothing but the disposition their action id carries, so a reader that cannot
+separate them is wrong by construction.
+
 The strictness of the marker match is the other rule worth a case. Only a
 comment whose FIRST LINE opens with the marker is a draft, so an operator
 explaining the mechanism, or a failure write-up quoting a body, cannot satisfy
@@ -25,7 +35,11 @@ from pathlib import Path
 from typing import Any
 
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
-from livespec_orchestrator_beads_fabro.commands._drive_answer import ANSWER_COMMENT_MARKER
+from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import InvokerIdentity
+from livespec_orchestrator_beads_fabro.commands._drive_answer import (
+    ANSWER_COMMENT_MARKER,
+    render_answer_comment,
+)
 from livespec_orchestrator_beads_fabro.store import append_work_item, append_work_item_comment
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
@@ -57,8 +71,26 @@ def _config() -> StoreConfig:
     )
 
 
+def _answer(
+    *, disposition: str, invoker: str = "human:maintainer", answer: str = "Ship it."
+) -> str:
+    """One operator answer, rendered by the writer the gate has to read.
+
+    Built through `render_answer_comment` rather than hand-written so the two
+    dispositions differ in nothing this test controls: the same invoker, the
+    same timestamp, the same body, the same header shape. What is left is the
+    disposition, which is exactly the signal under test.
+    """
+    return render_answer_comment(
+        answer=answer,
+        aid=f"resolve-blocked:{_ITEM_ID}:{disposition}",
+        identity=InvokerIdentity(invoker=invoker, invoker_source="cli"),
+        at=_AT,
+    )
+
+
 def _approval(*, invoker: str = "human:maintainer") -> str:
-    return f"{ANSWER_COMMENT_MARKER} ({invoker} via cli, {_AT}, resolve-blocked):\nApproved."
+    return _answer(disposition="ready", invoker=invoker, answer="Approved.")
 
 
 def _rendered(*, variant: str = _GROOM_VARIANT, draft: str = "Layer 1: slice A.") -> str:
@@ -121,6 +153,55 @@ def test_a_draft_followed_by_an_approval_is_approved_under_its_own_variant() -> 
     approved = module.approved_groom_draft(comments=(_rendered(), _approval()))
 
     assert approved == _GROOM_VARIANT
+
+
+def test_a_draft_answered_with_the_ready_disposition_is_approved() -> None:
+    """Half of the control pair: `ready` is the one disposition that consents."""
+    module = _draft_module()
+
+    approval = _answer(disposition="ready", answer="Approved as drafted.")
+
+    assert approval.startswith(ANSWER_COMMENT_MARKER)
+    assert module.approved_groom_draft(comments=(_rendered(), approval)) == _GROOM_VARIANT
+
+
+def test_a_draft_sent_back_with_the_backlog_disposition_is_not_approved() -> None:
+    """The other half: a send-back carrying feedback must not read as consent.
+
+    The first assertion is the control, not decoration. This comment IS an
+    answer comment — a reader keying on the marker alone answers "approved"
+    here and files the decomposition the operator just rejected. Only the
+    disposition in the action id separates it from the case above.
+    """
+    module = _draft_module()
+
+    send_back = _answer(disposition="backlog", answer="Too coarse; cut layer 2 finer.")
+
+    assert send_back.startswith(ANSWER_COMMENT_MARKER)
+    assert module.approved_groom_draft(comments=(_rendered(), send_back)) is None
+
+
+def test_a_send_back_after_an_approval_revokes_it() -> None:
+    """The newest answer is the operator's standing verdict on the draft."""
+    module = _draft_module()
+
+    comments = (
+        _rendered(),
+        _approval(),
+        _answer(disposition="backlog", answer="On reflection, no."),
+    )
+
+    assert module.approved_groom_draft(comments=comments) is None
+
+
+def test_an_ordinary_rider_after_a_draft_is_not_an_answer() -> None:
+    """A rider is not a verdict, so it neither approves the draft nor revokes one."""
+    module = _draft_module()
+
+    assert module.approved_groom_draft(comments=(_rendered(), "an ordinary operator rider")) is None
+    assert module.approved_groom_draft(comments=(_rendered(), _approval(), "a rider")) == (
+        _GROOM_VARIANT
+    )
 
 
 def test_a_re_draft_after_an_approval_is_not_approved() -> None:

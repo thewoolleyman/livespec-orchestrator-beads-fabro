@@ -26,17 +26,28 @@ ledger comments the assignment already carries, under its
   counts: a comment that merely quotes or discusses that marker further
   down is not a draft.
 - A comment whose FIRST LINE opens with `livespec-human-answer` is an
-  operator's answer recorded through the `resolve-blocked` valve.
+  operator's answer recorded through the `resolve-blocked` valve. That
+  first line ENDS with the action id the answer was written under, in
+  the form `resolve-blocked:<work-item-id>:ready` or
+  `resolve-blocked:<work-item-id>:backlog`. The trailing word is the
+  operator's DISPOSITION and you must read it: `ready` approves the
+  draft, `backlog` sends it BACK for re-drafting. An answer is not an
+  approval — a `ready` answer is.
 
 Now decide:
 
-- **APPLY** — the assignment carries a draft comment AND an answer
-  comment appears AFTER the NEWEST draft comment. That answer is the
-  approval, and it is the consent for filing.
+- **APPLY** — the assignment carries a draft comment AND the NEWEST
+  answer comment appearing AFTER the NEWEST draft comment carries the
+  `ready` disposition. Only a `ready` disposition is consent for
+  filing.
 - **PROPOSE** — anything else. No draft at all; a draft with no answer
-  after it; or a draft that was re-drafted after an earlier approval
-  (the newer draft invalidates the older consent — that is deliberate,
-  it is how a send-back for re-drafting works).
+  after it; a draft whose newest following answer carries the `backlog`
+  disposition (that answer is a REJECTION, and an operator who bounces
+  a cut and explains why in the same breath must never have the
+  explanation read as consent to file the cut they just rejected); or a
+  draft that was re-drafted after an earlier approval (the newer draft
+  invalidates the older consent — that is deliberate, it is how a
+  send-back for re-drafting works).
 
 Write your answer, and nothing else, to the phase file:
 

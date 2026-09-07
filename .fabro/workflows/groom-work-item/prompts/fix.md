@@ -15,9 +15,12 @@ things and reports exactly one:
    something other than `propose` or `apply`. Re-derive the phase from
    the ledger comments in the assignment above — a draft comment whose
    first line opens with `livespec-groom-draft (`, followed by a comment
-   whose first line opens with `livespec-human-answer`, means APPLY;
-   anything else means PROPOSE — and write that one word to the file
-   with `printf`, with no newline and no other text.
+   whose first line opens with `livespec-human-answer` AND ends with an
+   action id whose disposition is `ready`, means APPLY. Anything else
+   means PROPOSE, including an answer whose action id ends in
+   `:backlog`: that is a send-back for re-drafting, never a consent to
+   file. Write that one word to the file with `printf`, with no newline
+   and no other text.
 2. **The tree differs from the dispatch base.** A groom run files into
    the LEDGER and must change no tracked file. Something wrote into the
    working tree. Restore it: `git checkout -- .` and remove any
