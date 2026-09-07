@@ -1,0 +1,14 @@
+digraph Ask6Probe {
+    graph [goal="bd-ib-bb41.6 Wave B control: ask-policy request_permission -> fabro interview question"]
+    start [shape=Mdiamond, label="Start"]
+    exit  [shape=Msquare, label="Exit"]
+    ask [
+        label="Ask probe"
+        backend="acp"
+        acp.command="ANTHROPIC_MODEL=claude-sonnet-5 npx -y @agentclientprotocol/claude-agent-acp"
+        acp.permission_policy="ask"
+        acp.permission_timeout="300s"
+        prompt="Run exactly one shell command using your Bash/terminal tool: echo PERMISSION_PROBE_OK. Do nothing else before or after. Once that single command has run, end your turn."
+    ]
+    start -> ask -> exit
+}

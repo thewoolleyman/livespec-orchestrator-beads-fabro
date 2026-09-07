@@ -1,0 +1,258 @@
+{
+  "title": "bd-ib-bb41.6 Wave B control: ask-policy permission question",
+  "spec": {
+    "run_id": "01M1XWT6TA9CZQK237FH8VSDMH",
+    "settings": {
+      "project": {
+        "name": null,
+        "description": null,
+        "metadata": {}
+      },
+      "workflow": {
+        "name": null,
+        "description": null,
+        "graph": "workflow.fabro",
+        "metadata": {}
+      },
+      "run": {
+        "goal": {
+          "type": "inline",
+          "value": "bd-ib-bb41.6 Wave B control: ask-policy permission question"
+        },
+        "working_dir": null,
+        "metadata": {},
+        "inputs": {},
+        "model": {
+          "provider": "anthropic",
+          "name": "claude-sonnet-4-6",
+          "fallbacks": [],
+          "controls": {
+            "reasoning_effort": null,
+            "speed": null
+          }
+        },
+        "git": {
+          "author": null
+        },
+        "prepare": {
+          "commands": [
+            "sh -c 'mise trust 2>/dev/null || true; mise install --quiet 2>/dev/null || true'"
+          ],
+          "timeout_ms": 300000
+        },
+        "execution": {
+          "mode": "normal",
+          "approval": "prompt"
+        },
+        "checkpoint": {
+          "exclude_globs": [],
+          "skip_git_hooks": false,
+          "commit_timeout_ms": 30000
+        },
+        "clone": {
+          "enabled": true
+        },
+        "run_branch": {
+          "enabled": true,
+          "push": false
+        },
+        "meta_branch": {
+          "enabled": true,
+          "push": true
+        },
+        "environment": {
+          "id": "probe",
+          "provider": "docker",
+          "image": {
+            "docker": "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.52.12",
+            "dockerfile": null
+          },
+          "resources": {
+            "cpu": 2,
+            "memory": "4GB",
+            "disk": null
+          },
+          "network": {
+            "mode": "allow_all",
+            "allow": []
+          },
+          "lifecycle": {
+            "preserve": false,
+            "stop_on_terminal": true,
+            "auto_stop": null
+          },
+          "labels": {},
+          "volumes": [],
+          "env": {
+            "CLAUDE_CODE_OAUTH_TOKEN": "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"
+          }
+        },
+        "notifications": {},
+        "interviews": {
+          "provider": null,
+          "slack": null
+        },
+        "agent": {
+          "fabro_tools": false,
+          "permissions": null,
+          "mcps": {}
+        },
+        "hooks": [],
+        "scm": {
+          "provider": null,
+          "owner": null,
+          "repository": null,
+          "github": null
+        },
+        "pull_request": null,
+        "artifacts": {
+          "include": []
+        },
+        "integrations": {
+          "github": {
+            "permissions": {}
+          }
+        }
+      }
+    },
+    "graph": {
+      "name": "Ask6Probe",
+      "nodes": {
+        "start": {
+          "id": "start",
+          "attrs": {
+            "shape": {
+              "String": "Mdiamond"
+            },
+            "label": {
+              "String": "Start"
+            }
+          }
+        },
+        "exit": {
+          "id": "exit",
+          "attrs": {
+            "label": {
+              "String": "Exit"
+            },
+            "shape": {
+              "String": "Msquare"
+            }
+          }
+        },
+        "ask": {
+          "id": "ask",
+          "attrs": {
+            "backend": {
+              "String": "acp"
+            },
+            "acp.command": {
+              "String": "ANTHROPIC_MODEL=claude-sonnet-5 npx -y @agentclientprotocol/claude-agent-acp"
+            },
+            "prompt": {
+              "String": "Run exactly one shell command using your Bash/terminal tool: echo PERMISSION_PROBE_OK. Do nothing else before or after. Once that single command has run, end your turn."
+            },
+            "acp.permission_timeout": {
+              "Duration": {
+                "secs": 300,
+                "nanos": 0
+              }
+            },
+            "acp.permission_policy": {
+              "String": "ask"
+            },
+            "label": {
+              "String": "Ask probe"
+            }
+          }
+        }
+      },
+      "edges": [
+        {
+          "from": "start",
+          "to": "ask",
+          "attrs": {}
+        },
+        {
+          "from": "ask",
+          "to": "exit",
+          "attrs": {}
+        }
+      ],
+      "attrs": {
+        "goal": {
+          "String": "bd-ib-bb41.6 Wave B control: ask-policy permission question"
+        }
+      }
+    },
+    "graph_source": "digraph Ask6Probe {\n    graph [goal=\"bd-ib-bb41.6 Wave B control: ask-policy request_permission -> fabro interview question\"]\n    start [shape=Mdiamond, label=\"Start\"]\n    exit  [shape=Msquare, label=\"Exit\"]\n    ask [\n        label=\"Ask probe\"\n        backend=\"acp\"\n        acp.command=\"ANTHROPIC_MODEL=claude-sonnet-5 npx -y @agentclientprotocol/claude-agent-acp\"\n        acp.permission_policy=\"ask\"\n        acp.permission_timeout=\"300s\"\n        prompt=\"Run exactly one shell command using your Bash/terminal tool: echo PERMISSION_PROBE_OK. Do nothing else before or after. Once that single command has run, end your turn.\"\n    ]\n    start -> ask -> exit\n}\n",
+    "workflow_slug": "ask6-probe",
+    "source_directory": "/tmp/claude-1000/-data-projects-livespec-orchestrator-beads-fabro/6955178d-c6b4-4734-beed-a9b23f994c18/scratchpad/ask6-clone",
+    "provenance": {
+      "server": {
+        "version": "0.254.0"
+      },
+      "client": {
+        "user_agent": "fabro-cli/0.254.0",
+        "name": "fabro-cli",
+        "version": "0.254.0"
+      },
+      "subject": {
+        "kind": "user",
+        "identity": {
+          "issuer": "fabro:dev",
+          "subject": "dev"
+        },
+        "login": "dev",
+        "auth_method": "dev_token"
+      }
+    },
+    "manifest_blob": "1bf614c7fe6010bea6eaa66bf1f3f97d23fea0a57b13f64911f63b65873b0a3d",
+    "definition_blob": "5798da012b90965db9426ca58632a1d8241de72618932d9c8724adb3ea7136bc",
+    "git": {
+      "origin_url": "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+      "branch": "master",
+      "sha": "fc688ef1f60b4d95c5f033af1be1c30a6165a295",
+      "dirty": "clean",
+      "push_outcome": {
+        "type": "not_attempted"
+      }
+    }
+  },
+  "web_url": "https://vps.perch-rudd.ts.net:32276/runs/01M1XWT6TA9CZQK237FH8VSDMH",
+  "start": null,
+  "status": {
+    "kind": "starting"
+  },
+  "status_updated_at": "2026-09-07T12:17:14.906333321Z",
+  "last_event_at": "2026-09-07T12:17:23.712379806Z",
+  "pending_control": null,
+  "checkpoints": [],
+  "conclusion": null,
+  "sandbox": {
+    "kind": "ready",
+    "plan": {
+      "provider": "docker",
+      "image": "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.52.12"
+    },
+    "instance": {
+      "provider": "docker",
+      "image": "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.52.12",
+      "runtime": {
+        "id": "4f892cf40dde5aba6597d1f52df4ee8b13db5edbd8f5752a612d2d60d37a33f1",
+        "working_directory": "/workspace/livespec-orchestrator-beads-fabro",
+        "repo_cloned": true,
+        "clone_origin_url": "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+        "clone_branch": "master",
+        "workspace_root": "/workspace",
+        "repos_root": "/repos",
+        "primary_repo_path": "/repos/thewoolleyman/livespec-orchestrator-beads-fabro",
+        "primary_repo_link": "/workspace/livespec-orchestrator-beads-fabro"
+      }
+    }
+  },
+  "pull_request": null,
+  "superseded_by": null,
+  "pending_interviews": {},
+  "stages": {}
+}
