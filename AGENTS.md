@@ -1132,6 +1132,14 @@ references passes with its guidance orphaned.
 - Read `.ai/supervisor-protocol.md` before driving a worker as supervisor —
   the HALT-first preconditions, and the rule that new supervisor handoffs
   are ledger epic entries, never files under `plan/<topic>/`.
+- Read `.ai/master-ci-green-preflight.md` BEFORE watching master CI to open a
+  dispatch window. The green-master preflight gates on the aggregate job
+  `ci-green`, resolved from `dispatcher.master_ci.job`; that name shares no
+  prefix with the `check-` family, so an anchored check-run filter assembled
+  from the names you remember can EXCLUDE the deciding job and report GREEN
+  falsely. The file also records why `gh run list` and the per-commit
+  check-runs endpoint can disagree, and that any merge to master re-queues CI
+  and closes the window.
 
 ## Decision authority — when to ask, proceed, or self-resolve
 
