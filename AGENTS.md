@@ -1156,6 +1156,13 @@ references passes with its guidance orphaned.
 - Read `.ai/supervisor-protocol.md` before driving a worker as supervisor —
   the HALT-first preconditions, and the rule that new supervisor handoffs
   are ledger epic entries, never files under `plan/<topic>/`.
+- Read `.ai/plan-archive-completeness-gate.md` BEFORE archiving a plan, and
+  before closing any plan epic whose directory is already under
+  `plan/archive/`. Moving that directory BY HAND in a pull request runs
+  NEITHER of `archive_thread`'s two gates, so a merged archive move is not
+  evidence the archive is complete — and the completeness review it skips is
+  the only thing that catches debt an OWNED `test: "TODO"` entry hides from
+  `check-no-todo-registry` and from the child-disposition gate alike.
 - Read `.ai/master-ci-green-preflight.md` BEFORE watching master CI to open a
   dispatch window. The green-master preflight gates on the aggregate job
   `ci-green`, resolved from `dispatcher.master_ci.job`; that name shares no
