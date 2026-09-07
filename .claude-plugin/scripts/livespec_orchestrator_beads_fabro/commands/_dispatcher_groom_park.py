@@ -1,4 +1,14 @@
-"""Record a groom run's drafted decomposition when it terminates needs-human.
+"""Consume a groom run's terminal account: park its draft, or file its cut.
+
+BOTH PHASES TERMINATE HERE, because both publish over the one channel a dead
+run has. The propose phase publishes a DRAFT and this module records it as a
+ledger comment; the apply phase publishes a FILING PLAN and this module hands
+it to `_dispatcher_groom_apply`, which files it HOST-SIDE with the tenant
+credential the Dispatcher legitimately holds and the factory sandbox
+deliberately never gets. The payload's own leading marker discriminates the
+two, and that discrimination is load-bearing: recording a plan as a draft
+comment would land a fresh draft after the approval and revoke the consent the
+plan was published under.
 
 The PARK half of the ratified two-phase groom cut
 (`SPECIFICATION/contracts.md` section "Grooming and slice-size calibration" ->
@@ -52,6 +62,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_goal import (
     minijinja_openers_in_text,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_groom_apply import file_groom_plan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_groom_draft import (
     render_groom_draft_comment,
 )
@@ -65,6 +76,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_needs_human_question impo
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
 from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroRunner
+from livespec_orchestrator_beads_fabro.commands._groom_filing_plan import is_groom_filing_plan
 from livespec_orchestrator_beads_fabro.commands._workflow_variant_kind import groom_variant_names
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
@@ -75,7 +87,7 @@ from livespec_orchestrator_beads_fabro.errors import (
     WorkItemNotFoundError,
 )
 from livespec_orchestrator_beads_fabro.store import append_work_item_comment
-from livespec_orchestrator_beads_fabro.types import WorkItem
+from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 __all__: list[str] = [
     "GROOM_DRAFT_RECORDED_STAGE",
@@ -115,8 +127,16 @@ def record_groom_draft(
     outcome: DispatchOutcome,
     journal: JournalWriter,
     runner: FabroRunner | None = None,
-) -> None:
-    """Write the drafted decomposition to the ledger, or journal why it was not.
+) -> bool:
+    """Record the propose phase's draft, or execute the apply phase's filing plan.
+
+    Returns whether the APPLY phase's approved cut was filed host-side. `True`
+    says the slices exist in the ledger and the original closed against them,
+    so the caller must NOT then rest the item at `blocked / needs-human`: the
+    item is closed, and moving a closed regroom target to `blocked` would undo
+    the very disposition the contract calls this run's terminal one. Every
+    other path — the propose park, a skip, a non-groom run — returns `False`,
+    which leaves the ordinary escalation exactly as it was.
 
     Fail-soft as a WHOLE, in the same shape `escalate_needs_human_block` is,
     and the placement of that softness is the point: a ledger or a factory this
@@ -140,6 +160,8 @@ def record_groom_draft(
                 "reason": type(recorded.error).__name__,
             }
         )
+        return False
+    return recorded
 
 
 def _record_groom_draft(
@@ -150,9 +172,9 @@ def _record_groom_draft(
     outcome: DispatchOutcome,
     journal: JournalWriter,
     runner: FabroRunner | None,
-) -> None:
+) -> bool:
     if outcome.status != "blocked":
-        return
+        return False
     config = store_config(repo=repo)
     variant = dispatch_workflow_for(path=config, work_item_id=item.id)
     if variant is None or variant not in groom_variant_names(repo=repo):
@@ -160,18 +182,44 @@ def _record_groom_draft(
         # path and has no draft to record. Silent rather than journaled: it is
         # the common case, and a skip row on every human-gated run would bury
         # the three skips below that DO name something an operator can act on.
-        return
+        return False
     run_id = outcome.fabro_run_id
     server_url = _factory_server(args=args)
     if run_id is None or server_url is None:
         _skip(journal=journal, item=item, reason="missing-run-or-server", variant=variant)
-        return
+        return False
     draft = _drafted_decomposition(
         args=args, repo=repo, run_id=run_id, server_url=server_url, runner=runner
     )
     if draft is None:
         _skip(journal=journal, item=item, reason="no-draft-in-run-record", variant=variant)
-        return
+        return False
+    # THE TWO PHASES SHARE ONE CHANNEL, so the payload's own leading marker is
+    # what tells them apart. Discriminated BEFORE the poison check below and
+    # before any comment is written, because recording an apply phase's filing
+    # plan as a draft comment would land a fresh draft AFTER the approval and
+    # thereby revoke the consent the plan was published under — the one
+    # mistake on this seam that no later dispatch can repair.
+    if is_groom_filing_plan(text=draft):
+        return file_groom_plan(
+            repo=repo, item=item, text=draft, variant=variant, run_id=run_id, journal=journal
+        )
+    _park_draft(
+        config=config, item=item, draft=draft, variant=variant, run_id=run_id, journal=journal
+    )
+    return False
+
+
+def _park_draft(
+    *,
+    config: StoreConfig,
+    item: WorkItem,
+    draft: str,
+    variant: str,
+    run_id: str,
+    journal: JournalWriter,
+) -> None:
+    """The PROPOSE phase's ending: the draft as a ledger comment, or a named skip."""
     openers = minijinja_openers_in_text(source=_DRAFT_SOURCE, text=draft)
     if openers:
         _skip(

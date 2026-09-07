@@ -129,16 +129,43 @@ says. The answer is authoritative where the two differ: the operator
 may have edited the cut, the acceptance, the dependencies or the tiers
 while approving.
 
-Produce a FILING PLAN and write it to `/tmp/livespec-groom-plan`. That
-file never crosses the sentinel channel, so it may span as many lines as
-it needs. The plan states, per slice: title, description, acceptance,
-autonomy tier, repo target, blockers, and whether it is a spec change.
-It must also state the approving invoker's identity and the route the
-approval arrived on, both read off the answer comment — the filing seam
-refuses a call that carries no approval record naming those two things.
+Produce a FILING PLAN and write it as ONE LINE to
+`/tmp/livespec-groom-plan`.
 
-**YOU STILL FILE NOTHING IN THIS NODE.** The `pr` node files. Your job
-is to make the plan reviewable before anything becomes permanent.
+The plan crosses the SAME single-line sentinel channel the draft crosses,
+for the same reason and with the same consequence: the Dispatcher reads
+the terminated run's needs-human sentinel, which is a stderr LINE, and a
+plan spanning several lines would arrive truncated to its first. A
+truncated plan is worse than a truncated draft — it is a cut the
+Dispatcher would FILE with slices missing, and the ledger has no undo. It
+must also contain NO BRACE CHARACTER, exactly as the draft must not.
+
+Encode it like this, on the one line:
+
+    livespec-groom-plan | approver=<who> | route=<how> ;; slice=<title> | tier=<factory or human-gated> | repo=<repo name> | acceptance=<one assertion> | blockers=<comma-separated earlier slice titles, or none> | spec=<yes or no> | scope=<the slice body> ;; slice=<next slice> | ...
+
+- The leading `livespec-groom-plan` token is required and is what tells
+  the Dispatcher this is a plan to FILE rather than a draft to record. A
+  plan missing it is read as a fresh draft, which would revoke the very
+  approval you are applying.
+- `approver` and `route` are read off the approving answer comment —
+  WHO approved, and HOW (the `resolve-blocked` valve plus the ledger
+  comment the answer landed as). **Do NOT synthesize either value.** An
+  identity you invented attributes a maintainer-tier mutation to someone
+  who never approved it. If the answer comment names no approver, use
+  the needs-human protocol.
+- Every slice field is required except `blockers` and `spec`, which
+  default to `none` and `no`. An empty acceptance parses to zero
+  gradeable assertions and the filed slice is later refused at dispatch.
+- `spec=yes` marks a spec-change slice: it is NOT filed into the factory
+  ledger and is returned for `propose-change` routing instead.
+- Use ` ;; ` between records and ` | ` between a record's fields, so a
+  human reading the plan reads it the same way they read a draft.
+
+**YOU STILL FILE NOTHING IN THIS NODE, AND NEITHER DOES ANY LATER NODE.**
+This sandbox holds no ledger credential by design; the Dispatcher files
+the plan host-side once this run terminates. Your job is to make the plan
+correct and reviewable, because it is executed verbatim.
 
 ## Hard rules (non-negotiable)
 

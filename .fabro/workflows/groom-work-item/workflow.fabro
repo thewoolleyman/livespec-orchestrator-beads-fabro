@@ -9,9 +9,25 @@
 //   draft. The Dispatcher journals that termination and records the draft on
 //   the item as a ledger comment; the item rests at blocked / needs-human.
 //
-//   APPLY — file the approved slices and regroom the original out. It runs
-//   only on a later dispatch of the same item whose rendered goal carries the
-//   recorded approval.
+//   APPLY — produce the FILING PLAN for the approved cut, file nothing, and
+//   terminate carrying that plan. It runs only on a later dispatch of the same
+//   item whose rendered goal carries the recorded approval. The Dispatcher
+//   reads the plan off the terminated run and performs the filing HOST-SIDE.
+//
+// WHY THE APPLY PHASE DOES NOT FILE, which is the one place this graph departs
+// from the obvious reading of the ratified clause. A factory sandbox is
+// deliberately given NO ledger credential -- the run-scoped environment carries
+// the model and forge tokens and nothing else, and the credential wrapper a
+// `bd` call falls back to is a HOST path absent from the container -- so an
+// apply node that filed would reach for a secret this sandbox is designed never
+// to hold, and no retry could change that. Measured 2026-09-07 on run
+// 01M1XNN6C8WHCW4EGDC7CWK6WW: implement, conformance, review and phase_gate all
+// succeeded and the filing node died on the missing credential with the ledger
+// untouched. The clause's MUSTs constrain WHAT is filed and HOW, never WHERE
+// the call executes, and the same clause already assigns a ledger write to the
+// Dispatcher on the propose side. Projecting the tenant password into a groom
+// sandbox was the alternative and is rejected: it hands a tenant-write
+// credential to an agent-driven container to save a seam the Dispatcher has.
 //
 // THE PHASE IS DERIVED FROM THE RENDERED GOAL, NEVER FROM AN INPUT. The
 // Dispatcher folds the item's ledger comments into the goal verbatim, so the
@@ -24,8 +40,11 @@
 // divergence.
 //
 // NEVER A WAITING RUN. Neither phase parks. The propose phase's product is a
-// dead run plus a ledger comment, which is the only shape §"A factory run
-// never awaits a human" permits.
+// dead run plus a ledger comment, and the apply phase's is a dead run plus a
+// filed cut -- which is the only shape §"A factory run never awaits a human"
+// permits. Neither phase ends green, and neither reaches the `exit` node:
+// a groom run publishes to the LEDGER and never to the forge, so its whole
+// product is a ledger effect the Dispatcher performs from the run's account.
 //
 // PEER PARITY. The six ACP node names below are the reserved workflow's six,
 // because §"Self-contained plugin dispatch" -> "A registered variant is the
@@ -59,6 +78,13 @@ digraph GroomWorkItem {
     ]
 
     start [shape=Mdiamond, label="Start"]
+    // Declared as this graph's terminal MARKER, and deliberately unreachable:
+    // see "NEVER A WAITING RUN" above. Both phases end at `needs_human`, which
+    // is the one channel MEASURED to carry a node's own output through to
+    // `fabro inspect` -- and therefore the only one the Dispatcher can read a
+    // draft or a filing plan off. A green ending would route this run into the
+    // pull-request and merge-confirmation path, which a groom run has no pull
+    // request for.
     exit  [shape=Msquare, label="Exit"]
 
     // The groom node. It derives the phase from the rendered goal, then either
@@ -91,24 +117,27 @@ digraph GroomWorkItem {
     //      the machine-checkable form of "a groom run files nothing into the
     //      repository". The dispatch base is the governed repository's DEFAULT
     //      BRANCH, rendered from the resolved contract rather than spelled;
-    //   3. in the propose phase, the draft exists, is exactly ONE non-empty
-    //      line, and carries no brace character.
+    //   3. the phase's PRODUCT -- the draft in the propose phase, the filing
+    //      plan in the apply phase -- exists, is exactly ONE non-empty line,
+    //      and carries no brace character.
     //
-    // The one-line rule is not style. The Dispatcher recovers the draft from
-    // the terminated run's needs-human sentinel, which is a stderr LINE, and it
-    // records the text following the sentinel ON THAT LINE -- so a draft
-    // spanning several lines would reach the ledger truncated to its first,
-    // SILENTLY. The brace rule is the same kind of hazard one step further on:
-    // a ledger comment is append-only, and a comment carrying a template
-    // opening delimiter poisons every future goal render for that item
-    // permanently. The Dispatcher refuses such a draft rather than escaping it;
-    // this node refuses it earlier, while the run can still be sent back to
-    // `fix` to re-encode it.
+    // The one-line rule is not style. The Dispatcher recovers both products
+    // from the terminated run's needs-human sentinel, which is a stderr LINE,
+    // and it reads the text following the sentinel ON THAT LINE -- so a product
+    // spanning several lines would arrive truncated to its first, SILENTLY.
+    // It binds the apply phase for the sharper reason: a truncated PLAN is a
+    // cut the Dispatcher would file with slices missing, which no later
+    // dispatch can undo. The brace rule is the same kind of hazard one step
+    // further on: a ledger comment is append-only, and a comment carrying a
+    // template opening delimiter poisons every future goal render for that
+    // item permanently. The Dispatcher refuses such a draft rather than
+    // escaping it; this node refuses it earlier, while the run can still be
+    // sent back to `fix` to re-encode it.
     conformance [
-        label="Conformance: phase named, tree untouched, draft single-line and brace-free"
+        label="Conformance: phase named, tree untouched, product single-line and brace-free"
         shape=parallelogram
         timeout="600s"
-        script="phase=$(cat /tmp/livespec-groom-phase 2>/dev/null || true); if test \"$phase\" != propose && test \"$phase\" != apply; then echo 'LIVESPEC_GROOM_MALFORMED: the groom node named no phase; expected propose or apply in /tmp/livespec-groom-phase' >&2; exit 1; fi; if ! git diff --quiet origin/{{ inputs.default_branch }}...HEAD; then echo 'LIVESPEC_GROOM_MALFORMED: the working tree differs from dispatch base origin/{{ inputs.default_branch }}; a groom run files into the ledger and must change no tracked file' >&2; exit 1; fi; if test \"$phase\" = apply; then exit 0; fi; if ! test -s /tmp/livespec-groom-draft; then echo 'LIVESPEC_GROOM_MALFORMED: the propose phase produced no draft at /tmp/livespec-groom-draft' >&2; exit 1; fi; if test \"$(wc -l < /tmp/livespec-groom-draft)\" -gt 1; then echo 'LIVESPEC_GROOM_MALFORMED: the draft spans more than one line; only its first line would reach the ledger' >&2; exit 1; fi; if grep -q '{' /tmp/livespec-groom-draft; then echo 'LIVESPEC_GROOM_MALFORMED: the draft carries a brace, which would poison every future goal render of this item' >&2; exit 1; fi; exit 0"
+        script="phase=$(cat /tmp/livespec-groom-phase 2>/dev/null || true); if test \"$phase\" != propose && test \"$phase\" != apply; then echo 'LIVESPEC_GROOM_MALFORMED: the groom node named no phase; expected propose or apply in /tmp/livespec-groom-phase' >&2; exit 1; fi; if ! git diff --quiet origin/{{ inputs.default_branch }}...HEAD; then echo 'LIVESPEC_GROOM_MALFORMED: the working tree differs from dispatch base origin/{{ inputs.default_branch }}; a groom run files into the ledger and must change no tracked file' >&2; exit 1; fi; if test \"$phase\" = apply; then product=/tmp/livespec-groom-plan; else product=/tmp/livespec-groom-draft; fi; if ! test -s \"$product\"; then echo \"LIVESPEC_GROOM_MALFORMED: the $phase phase produced nothing at $product\" >&2; exit 1; fi; if test \"$(wc -l < \"$product\")\" -gt 1; then echo \"LIVESPEC_GROOM_MALFORMED: $product spans more than one line; only its first line would reach the Dispatcher\" >&2; exit 1; fi; if grep -q '{' \"$product\"; then echo \"LIVESPEC_GROOM_MALFORMED: $product carries a brace, which would poison every future goal render of this item\" >&2; exit 1; fi; if test \"$phase\" = apply && ! grep -q '^livespec-groom-plan' \"$product\"; then echo 'LIVESPEC_GROOM_MALFORMED: the filing plan does not open with the livespec-groom-plan marker, so the Dispatcher would read it as a draft and revoke the approval' >&2; exit 1; fi; exit 0"
     ]
 
     // Repairs a draft or filing plan the conformance gate refused. Mirrors the
@@ -184,13 +213,16 @@ digraph GroomWorkItem {
         script="phase=$(cat /tmp/livespec-groom-phase 2>/dev/null || true); if test \"$phase\" = apply; then exit 0; fi; echo 'LIVESPEC_GROOM_PROPOSE: propose phase complete; parking the draft for a human decision without filing anything' >&2; exit 1"
     ]
 
-    // The apply phase's publication node. The ledger is this run's publication
-    // surface: it files the approved slices through the filing seam, which
-    // REFUSES a call carrying no approval record, and regrooms the original
-    // out. It carries the same goal gate and single retry the reserved
-    // workflow's publish node carries.
+    // The apply phase's publication node, and what it publishes is the FILING
+    // PLAN -- not the slices. It re-reads the reviewed plan, takes the
+    // approving invoker's identity and the approval route off the answer
+    // comment, and writes the finished one-line plan back to
+    // /tmp/livespec-groom-plan for the terminal below to carry. The ledger
+    // write itself is the Dispatcher's, host-side, for the credential reason
+    // stated at the top of this file. It carries the same goal gate and single
+    // retry the reserved workflow's publish node carries.
     pr [
-        label="File the approved slices and regroom out the original"
+        label="Publish the filing plan for the Dispatcher to file host-side"
         backend="acp"
         acp.command="{{ inputs.pr_adapter }}"
         timeout="1800s"
@@ -200,28 +232,32 @@ digraph GroomWorkItem {
         prompt="@prompts/pr.md"
     ]
 
-    // The needs-human TERMINAL, and the propose phase's normal ending. It is
-    // the same dead-end shape the reserved workflow's terminal is: it preserves
-    // the tree on a run-scoped ref best-effort, writes the LIVESPEC_NEEDS_HUMAN
-    // sentinel to stderr, and exits 1 with no outgoing edge, so the run
-    // terminates non-green and the item rests at blocked / needs-human.
+    // The TERMINAL, and BOTH phases' normal ending. It is the same dead-end
+    // shape the reserved workflow's terminal is: it preserves the tree on a
+    // run-scoped ref best-effort, writes the LIVESPEC_NEEDS_HUMAN sentinel to
+    // stderr, and exits 1 with no outgoing edge, so the run terminates
+    // non-green.
     //
-    // What differs is the sentinel's PAYLOAD. When the propose phase left a
-    // draft, the sentinel carries it, because that stderr line is the channel
-    // the Dispatcher reads the draft off before recording it as the ledger
-    // comment the apply phase will later read. The draft is emitted through
-    // `head -n 1` so a draft that somehow reached here spanning several lines
-    // is truncated HERE, where the truncation is visible in the run record,
-    // rather than silently inside the Dispatcher's line-scoped reader.
+    // What differs between the phases is the sentinel's PAYLOAD, and the
+    // Dispatcher tells them apart by the payload's own leading marker. The
+    // apply phase's FILING PLAN is preferred when present, because an apply run
+    // may also have left the propose phase's draft file behind from an earlier
+    // read; the propose phase never writes a plan, so the order is
+    // unambiguous in both directions. The Dispatcher records a draft as the
+    // ledger comment the apply phase will later read, and FILES a plan
+    // host-side. Either is emitted through `head -n 1` so a product that
+    // somehow reached here spanning several lines is truncated HERE, where the
+    // truncation is visible in the run record, rather than silently inside the
+    // Dispatcher's line-scoped reader.
     //
     // The ref is derived ONLY from FABRO_RUN_ID with no placeholder fallback:
     // the pinned fabro exports that variable to hooks and not to script nodes,
     // and a defaulted name silently collapses every run onto one shared ref.
     needs_human [
-        label="Needs human: terminate, carry the draft to the ledger, preserve the tree"
+        label="Terminate: carry the draft or the filing plan to the Dispatcher, preserve the tree"
         shape=parallelogram
         timeout="600s"
-        script="if test -n \"${FABRO_RUN_ID:-}\"; then ref=\"refs/heads/needs-human/$FABRO_RUN_ID\"; git add -A >/dev/null 2>&1 || true; git -c user.name=fabro -c user.email=fabro@livespec.invalid commit -q -m 'needs-human: preserve tree before terminating' >/dev/null 2>&1 || true; if git push origin \"HEAD:$ref\" >/dev/null 2>&1; then echo \"LIVESPEC_NEEDS_HUMAN_PRESERVED: $ref\" >&2; else echo 'LIVESPEC_NEEDS_HUMAN_PUSH_FAILED: tree not pushed; rely on the preserve-by-reference dump pointer' >&2; fi; else echo 'LIVESPEC_NEEDS_HUMAN_NO_RUN_ID: no FABRO_RUN_ID in this script environment, so no run-scoped ref exists to push and nothing was pushed; rely on the preserve-by-reference dump pointer' >&2; fi; if test -s /tmp/livespec-groom-draft; then echo \"LIVESPEC_NEEDS_HUMAN: $(head -n 1 /tmp/livespec-groom-draft)\" >&2; else echo 'LIVESPEC_NEEDS_HUMAN: the groom run could not auto-resolve this work-item and produced no draft; run terminated, decision routed to the ledger (blocked / needs-human)' >&2; fi; exit 1"
+        script="if test -n \"${FABRO_RUN_ID:-}\"; then ref=\"refs/heads/needs-human/$FABRO_RUN_ID\"; git add -A >/dev/null 2>&1 || true; git -c user.name=fabro -c user.email=fabro@livespec.invalid commit -q -m 'needs-human: preserve tree before terminating' >/dev/null 2>&1 || true; if git push origin \"HEAD:$ref\" >/dev/null 2>&1; then echo \"LIVESPEC_NEEDS_HUMAN_PRESERVED: $ref\" >&2; else echo 'LIVESPEC_NEEDS_HUMAN_PUSH_FAILED: tree not pushed; rely on the preserve-by-reference dump pointer' >&2; fi; else echo 'LIVESPEC_NEEDS_HUMAN_NO_RUN_ID: no FABRO_RUN_ID in this script environment, so no run-scoped ref exists to push and nothing was pushed; rely on the preserve-by-reference dump pointer' >&2; fi; if test -s /tmp/livespec-groom-plan; then echo \"LIVESPEC_NEEDS_HUMAN: $(head -n 1 /tmp/livespec-groom-plan)\" >&2; elif test -s /tmp/livespec-groom-draft; then echo \"LIVESPEC_NEEDS_HUMAN: $(head -n 1 /tmp/livespec-groom-draft)\" >&2; else echo 'LIVESPEC_NEEDS_HUMAN: the groom run could not auto-resolve this work-item and produced neither a draft nor a filing plan; run terminated, decision routed to the ledger (blocked / needs-human)' >&2; fi; exit 1"
     ]
 
     // Terminal non-converged node, the conformance loop's cap. Same sentinel
@@ -276,13 +312,16 @@ digraph GroomWorkItem {
     disposition -> needs_human [label="unmatched disposition outcome"]
     review_fix -> conformance
 
-    // The two endings. Apply files; propose parks with its draft.
+    // The two endings. Apply publishes its filing plan; propose parks with its
+    // draft. Both reach the same terminal, because both hand their product to
+    // the Dispatcher over that terminal's sentinel.
     phase_gate -> pr [label="apply", condition="outcome=succeeded"]
     phase_gate -> needs_human [label="propose"]
 
-    // A failed filing terminates at the human gate. The filing seam refuses a
-    // call carrying no approval record, so a filing that fails that way has
-    // found a real fault in the dispatch, not a transient one.
-    pr -> needs_human [label="Blocked", condition="outcome=failed"]
-    pr -> exit
+    // Unconditional: a `pr` node that could not publish a plan terminates
+    // carrying whatever it left behind, and one that DID publish terminates
+    // carrying the plan. The Dispatcher discriminates on the payload, and a
+    // plan it cannot parse is journaled as a refusal with the item left where
+    // the ordinary needs-human escalation rests it.
+    pr -> needs_human [label="Plan published; the Dispatcher files it host-side"]
 }
