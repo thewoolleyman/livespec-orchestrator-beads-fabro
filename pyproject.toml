@@ -431,11 +431,21 @@ destructive_cli_allowlist = [
 #   interpreter to prove the host-side dispatcher import path resolves
 #   from `_vendor/` alone (the flattened plugin cache); `-S` + the
 #   restricted sys.path it asserts cannot be reproduced in-process.
+# - test_bootstrap_unattended_marker_forwarding.py asserts what the
+#   RE-EXECUTED process sees after the credential self-heal spawns it
+#   through the credential wrapper. The question is definitionally about a
+#   second process, so no in-process `main()` can stand in. Note the spawn
+#   itself is issued by the production `_self_heal_credentials` performer,
+#   not by the test body, so this check's AST scan does not flag the file;
+#   it is listed anyway so the exception is declared rather than merely
+#   undetected, and the file scrubs the child env exactly as an
+#   allowlisted spawn must.
 #
 # This key MUST stay above the `[[...mirror_pairings]]` array-of-tables
 # below (same TOML attachment reason as `destructive_cli_allowlist`).
 subprocess_spawn_allowlist = [
     "tests/bin/test_host_side_self_contained_import.py",
+    "tests/bin/test_bootstrap_unattended_marker_forwarding.py",
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]

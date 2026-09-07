@@ -177,6 +177,12 @@ def test_self_heal_reexec_supervises_subprocess_and_propagates_output_and_exit(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv(CREDENTIAL_REEXEC_SENTINEL, raising=False)
+    # The performer splices an `env LIVESPEC_PLAN_UNATTENDED=<value>` operand
+    # into the argv when the outer session carries that marker (covered in
+    # test_bootstrap_unattended_marker_forwarding.py). Clear it so this
+    # argv-identity assertion holds when the suite itself is run from an
+    # unattended plan session rather than an operator's terminal.
+    monkeypatch.delenv("LIVESPEC_PLAN_UNATTENDED", raising=False)
     reexec_argv = ("/usr/local/bin/with-livespec-env.sh", "--", "/usr/bin/python3", "next.py")
     monkeypatch.setattr(
         "livespec_runtime.credentials.decide_credentials",
