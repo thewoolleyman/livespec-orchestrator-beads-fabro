@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.138.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.138.1...v0.138.2) (2026-09-07)
+
+
+### Bug Fixes
+
+* **dispatcher:** let the groom door's own claim reach the launch leg ([bbb4e3f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bbb4e3f252d545724aeb71ef6c2d2bea1046d805))
+
 ## [0.138.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.138.0...v0.138.1) (2026-09-07)
 
 
