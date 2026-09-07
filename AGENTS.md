@@ -877,6 +877,30 @@ reached a run holding a live human gate and answered it. Concluding that a remot
 run is unreachable because a bare invocation found nothing is the same trap one
 level on.
 
+**To ROUTE a dispatch to a chosen factory, name it — and note that `drive.py`
+cannot.** The paragraph above is about pointing a QUERY at the right host; this
+one is about pointing a DISPATCH, and it has a different mechanism and a worse
+failure mode. `dispatcher.py dispatch` takes `--factory <name>`, and the
+environment variable `LIVESPEC_FABRO_FACTORY=<name>` does the same job through
+any entry point; `_explicit_factory` in
+`commands/_dispatcher_factory_ledger.py` reads both, and either wins over the
+item's recorded factory and over `dispatcher.default_factory`. **`drive.py` has
+NO `--factory` flag**, so through `drive --action impl:<id>` the environment
+variable is the only route.
+
+This matters whenever a dispatch is EVIDENCE ABOUT A BUILD rather than merely
+work to be done, because the two factories can carry different fabro binaries
+and nothing in a run's own output announces which engine it ran on. Measured
+2026-09-07: vps had been re-pinned to `7b4e3f3` while hp still ran `8de6611`,
+so an unrouted control dispatch would have exercised the NEW workflow on the
+OLD engine and returned a completely normal green run. That is the
+wrong-population trap from the catalogue above, arriving through the default
+rather than through a typo — there is no error, no warning, and the result
+looks exactly like success.
+
+So: when a dispatch is a control, route it explicitly and record which factory
+it ran on. When it is ordinary work, the default is fine.
+
 **A Fabro run being `blocked` does not mean the work is incomplete.** This gets its
 own Fabro-section entry because the discriminator is operational: use
 `fabro inspect --server <factory> <run>` before attaching or reaping. Measured
