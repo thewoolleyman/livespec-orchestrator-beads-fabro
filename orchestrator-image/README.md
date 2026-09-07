@@ -48,7 +48,7 @@ so the injected secrets are present:
 
 ```bash
 /data/projects/1password-env-wrapper/with-livespec-env.sh -- \
-  bash orchestrator-image/build-and-verify.sh
+  ./orchestrator-image/build-and-verify.sh
 ```
 
 This stages the fabro binary, builds `livespec-orchestrator:dev`, runs a
