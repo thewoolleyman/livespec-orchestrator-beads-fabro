@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.141.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.141.3...v0.141.4) (2026-09-07)
+
+
+### Bug Fixes
+
+* **deps:** bump livespec-runtime to v0.27.0 and absorb its breaking changes ([5f9b4b4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5f9b4b479cb47078d89e101cbff02072124a3579))
+
 ## [0.141.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.141.2...v0.141.3) (2026-09-07)
 
 
