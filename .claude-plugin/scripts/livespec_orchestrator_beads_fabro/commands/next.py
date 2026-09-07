@@ -32,9 +32,12 @@ Algorithm:
    `depends_on` entry resolves to `OPEN`). Missing local references
    resolve to `UNKNOWN` and therefore do NOT exclude (the doctor's
    `no-orphan-dependency` invariant is the right surface for that).
-3. Score by the canonical `lifecycle.ready_sort_key` = `(rank, id)`:
-   the fractional `rank` is the sole ordering authority, with `id` as
-   the deterministic tie-break.
+3. Score by the canonical, AGING-AWARE `lifecycle.ready_sort_key`: the
+   fractional `rank` is the sole ordering authority, equal-`rank` ties
+   break by ready-age past `dispatcher.ready_aging_threshold_hours`
+   (oldest-ready first), and everything the bound has not aged — and
+   every item whose ready instant is unknowable — keeps the `id`
+   lexicographic tie-break.
 4. Enumerate ALL ready items in ranked order as candidates.
 5. Apply `--offset` then `--limit` to produce the returned slice.
 6. Emit a `{candidates[], pagination}` envelope. Each candidate
@@ -59,6 +62,11 @@ from livespec_runtime.work_items.lifecycle import is_item_ready, ready_sort_key
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
+from livespec_orchestrator_beads_fabro.commands._ready_aging_order import (
+    ReadyAgingOrder,
+    ready_aging_order,
+    unaged_ready_order,
+)
 from livespec_orchestrator_beads_fabro.commands._sibling_status_lookup import (
     make_sibling_status_lookup,
 )
@@ -105,6 +113,11 @@ def main(*, argv: list[str] | None = None) -> int:
         manifest=manifest,
         sibling_status_lookup=sibling_status_lookup,
         dispatch_factories=_dispatch_factories(path=config.work_items_path, items=materialized),
+        # The ranking authority is aging-aware from the CLI in: the durable
+        # ready instants and the bound both come off this project root, which
+        # is what makes the Dispatcher's identically-composed order the same
+        # order rather than a coincidentally similar one.
+        ready_aging=ready_aging_order(project_root=project_root),
     )
     envelope = _slice_envelope(ranked=ranked, offset=offset, limit=limit)
     if args.as_json:
@@ -121,8 +134,17 @@ def rank_candidates(
     manifest: CrossRepoManifest | None = None,
     sibling_status_lookup: Callable[[str, str], RefStatus] | None = None,
     dispatch_factories: dict[str, str | None] | None = None,
+    ready_aging: ReadyAgingOrder | None = None,
 ) -> list[dict[str, Any]]:
     """Return the full ranked list of candidate envelopes (no slicing).
+
+    `ready_aging` carries the two ready-age inputs the ordering key needs — the
+    durable `ready_since` lookup and the bound it is measured against. It is
+    optional because this is the PURE-function tier: a caller handing items
+    straight in has no project root to resolve a tenant from, and
+    `unaged_ready_order` is the ratified unknowable-instant path for it, under
+    which the ordering degrades to `(rank, id)`. The CLI above always resolves a
+    real one.
 
     Each candidate dict carries:
 
@@ -149,10 +171,17 @@ def rank_candidates(
             sibling_status_lookup=sibling_status_lookup,
         )
     ]
-    # Compose the canonical ordering key ONCE per ranking pass. No
-    # `ready_since_lookup` is injected, so the aging tiebreak stays inert and
-    # the key degrades to the `(rank, id)` ordering this ranker already had.
-    ready.sort(key=ready_sort_key(now=datetime.now(tz=timezone.utc)))
+    # Compose the canonical ordering key ONCE per ranking pass, carrying both
+    # aging inputs. The Dispatcher's drain composes the identical call, so the
+    # queue `next` advertises is the queue the Dispatcher drains.
+    order = ready_aging if ready_aging is not None else unaged_ready_order()
+    ready.sort(
+        key=ready_sort_key(
+            now=datetime.now(tz=timezone.utc),
+            ready_since_lookup=order.ready_since_lookup,
+            ready_aging_threshold_hours=order.ready_aging_threshold_hours,
+        )
+    )
     return [
         _candidate_for(
             item=item,
@@ -180,6 +209,12 @@ def build_envelope(
     inputs plus `total` (the full ripe-candidate count BEFORE
     slicing) and `has_more` (`true` iff `offset + len(candidates) <
     total`).
+
+    Deliberately carries NO `ready_aging` parameter: this is the
+    slice-a-list-of-items convenience, and its callers hold items rather than a
+    project root, so it composes `rank_candidates`' un-aged tier. The CLI slices
+    `rank_candidates` directly, which is where the aging inputs are resolved and
+    where the ordering the Dispatcher must match is produced.
     """
     ranked = rank_candidates(
         items=items,

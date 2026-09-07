@@ -53,6 +53,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_registered_install_c
 from livespec_orchestrator_beads_fabro.commands._dispatcher_staleness_gate import (
     apply_dispatcher_staleness_gate,
 )
+from livespec_orchestrator_beads_fabro.commands._ready_aging_order import ready_aging_order
 from livespec_orchestrator_beads_fabro.commands._sibling_status_lookup import (
     make_sibling_status_lookup,
 )
@@ -162,12 +163,22 @@ def ready_items(*, items: list[WorkItem], repo: Path) -> list[WorkItem]:
             repo=repo,
         )
     ]
-    # Compose the single canonical ranking authority so the Dispatcher's
-    # drain order never diverges from what `next` advertises (i3jiny):
-    # (rank, id) — the fractional rank is the sole ordering key. The key is
-    # built ONCE per pass, and with no `ready_since_lookup` injected the aging
-    # tiebreak stays inert, so the ordering is exactly what it was.
-    return sorted(ready, key=ready_sort_key(now=datetime.now(tz=timezone.utc)))
+    # Compose the single canonical ranking authority so the Dispatcher's drain
+    # order never diverges from what `next` advertises (i3jiny): the fractional
+    # rank stays the sole primary key, with the equal-rank ready-age tiebreak
+    # inside each rank tier. Both aging inputs are resolved from the SAME
+    # project root `next` resolves them from — the Dispatcher does not re-sort
+    # ready work by age on its own, which the ratified clause forbids. The key
+    # is built ONCE per pass, so the tenant's ready instants are read once.
+    order = ready_aging_order(project_root=repo)
+    return sorted(
+        ready,
+        key=ready_sort_key(
+            now=datetime.now(tz=timezone.utc),
+            ready_since_lookup=order.ready_since_lookup,
+            ready_aging_threshold_hours=order.ready_aging_threshold_hours,
+        ),
+    )
 
 
 def is_dispatch_candidate(

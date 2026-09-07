@@ -28,6 +28,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._ready_aging_order import (
+    ReadyAgingOrder,
+    ready_aging_order,
+    unaged_ready_order,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -82,28 +87,35 @@ def rework_pending_candidates(
     items: list[WorkItem],
     accounting: ActiveClaimAccounting,
     rework: ReworkPass,
+    ready_aging: ReadyAgingOrder | None = None,
 ) -> tuple[WorkItem, ...]:
-    """The marked, lock-less `active` rows to re-dispatch, in `(rank, id)` order.
+    """The marked, lock-less `active` rows to re-dispatch, in ready-queue order.
 
     Membership is the ACCOUNTING's verdict, never a fresh read of the ledger
     label: `rework_pending_active_ids` is exposed precisely so ONE authority
     answers "is this row a sanctioned rework park?", and the accounting is also
     where the double-selection guard lives — a marked row holding a live
     dispatch lock is classified as a live lock and never reaches this list.
-    The ordering authority is the same `(rank, id)` key the ready queue uses,
-    so the two legs of one drain cannot rank the same tenant differently.
+    The ordering authority is the same key the ready queue uses, composed with
+    the same `ready_aging` inputs, so the two legs of one drain cannot rank the
+    same tenant differently. `ready_aging` is optional for the same reason it is
+    on `rank_candidates`: a caller with no project root to resolve a tenant from
+    orders by the ratified unknowable-instant path.
     """
     marked = set(accounting.rework_pending_active_ids)
+    order = ready_aging if ready_aging is not None else unaged_ready_order()
     selected = sorted(
         (
             item
             for item in items
             if item.id in marked and (rework.scope_ids is None or item.id in rework.scope_ids)
         ),
-        # Built ONCE per pass, with no `ready_since_lookup` injected, so the
-        # aging tiebreak stays inert and this leg keeps the exact `(rank, id)`
-        # ordering the ready queue composes.
-        key=ready_sort_key(now=datetime.now(tz=timezone.utc)),
+        # Built ONCE per pass, exactly as the ready queue builds it.
+        key=ready_sort_key(
+            now=datetime.now(tz=timezone.utc),
+            ready_since_lookup=order.ready_since_lookup,
+            ready_aging_threshold_hours=order.ready_aging_threshold_hours,
+        ),
     )
     if rework.budget is None:
         return tuple(selected)
@@ -180,7 +192,12 @@ def projected_rework_candidates(
     question that never dispatched anything.
     """
     projection = claimed_active_projection(repo=repo, items=items, journal=journal)
-    return rework_pending_candidates(items=items, accounting=projection, rework=rework)
+    return rework_pending_candidates(
+        items=items,
+        accounting=projection,
+        rework=rework,
+        ready_aging=ready_aging_order(project_root=repo),
+    )
 
 
 def rework_redispatch_eligible_ids(
