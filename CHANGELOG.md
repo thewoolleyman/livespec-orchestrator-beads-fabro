@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.141.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.141.1...v0.141.2) (2026-09-07)
+
+
+### Bug Fixes
+
+* **groom:** file the apply phase's approved cut host-side (bd-ib-nl2tec) ([bde1dbd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bde1dbd6feb457d3875a8d05c4788782fc9d3348))
+* **groom:** resolve every blocker handle before filing any slice (bd-ib-cebp3u) ([f6767ac](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f6767accc81506f0e0b531e8aea0d2557af243c2))
+
 ## [0.141.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.141.0...v0.141.1) (2026-09-07)
 
 
