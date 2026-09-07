@@ -58,6 +58,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_DRIFT_CAPTURE_MERGE_THRESHOLD,
     resolve_drift_capture_merge_threshold,
 )
+from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
+    ConformanceContext,
+)
 from livespec_orchestrator_beads_fabro.spec_reader import current_specification_version
 
 if TYPE_CHECKING:
@@ -122,6 +125,7 @@ def _gap_items(
     )
     return [
         _item(
+            project_root=project_root,
             key="gap-capture-staleness",
             repo=repo,
             summary=summary,
@@ -161,6 +165,7 @@ def _drift_items(
     )
     return [
         _item(
+            project_root=project_root,
             key="drift-staleness",
             repo=repo,
             summary=summary,
@@ -212,8 +217,8 @@ def _merge_count(*, project_root: Path, runner: CommandRunner, since: str | None
     return int(counted)
 
 
-def _item(*, key: str, repo: str, summary: str, command: str) -> AttentionItem:
-    return AttentionItem(
+def _item(*, project_root: Path, key: str, repo: str, summary: str, command: str) -> AttentionItem:
+    return ConformanceContext(project_root=project_root, repo=repo).candidate(
         id=f"hygiene:{key}:{repo}",
         kind="hygiene",
         urgency="medium",

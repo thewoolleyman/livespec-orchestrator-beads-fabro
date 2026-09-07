@@ -17,6 +17,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_READY_AGING_THRESHOLD_HOURS,
     resolve_ready_aging_threshold_hours,
 )
+from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
+    ConformanceContext,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -94,7 +97,7 @@ def ready_aging_items(
     unknown = [age.item.id for age in ages if age.age_hours is None]
     oldest = max(aged, key=lambda age: age.age_hours or 0)
     return [
-        AttentionItem(
+        ConformanceContext(project_root=context.project_root, repo=context.repo).candidate(
             id=f"hygiene:ready-aging:{context.repo}",
             kind="hygiene",
             urgency="high",

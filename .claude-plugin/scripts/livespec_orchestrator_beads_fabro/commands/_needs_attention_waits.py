@@ -12,6 +12,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import utc_now_is
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion import (
     dispatch_provider_exhaustion,
 )
+from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
+    ConformanceContext,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_handoffs import (
     dispatcher_loop_command,
     host_only_command,
@@ -104,7 +107,7 @@ def _provider_exhaustion_item(
     item: WorkItem,
     provider: str,
 ) -> AttentionItem:
-    return AttentionItem(
+    return ConformanceContext(project_root=project_root, repo=repo).candidate(
         # `provider-exhaustion` is not a ratified stable-ID prefix, so this id
         # failed the runtime validator outright. It rides the orchestrator-owned
         # `hygiene:<type>:<resource>` form instead; the resource keeps both
@@ -180,7 +183,7 @@ def _host_only_item(
     work_item: str,
     reason: str,
 ) -> AttentionItem:
-    return AttentionItem(
+    return ConformanceContext(project_root=project_root, repo=repo).candidate(
         id=f"host-only:{reason}:{work_item}",
         kind="host-only",
         urgency="high",

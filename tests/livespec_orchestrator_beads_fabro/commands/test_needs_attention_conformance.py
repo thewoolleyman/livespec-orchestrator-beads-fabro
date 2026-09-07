@@ -7,7 +7,6 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
     ConformanceContext,
     composed_conformant,
-    conformant_items,
 )
 from livespec_runtime.attention_item import (
     AttentionItem,
@@ -29,8 +28,9 @@ def _context() -> ConformanceContext:
     return ConformanceContext(project_root=Path("/repo"), repo="repo")
 
 
-def _item(*, id_: str) -> AttentionItem:
-    return AttentionItem(
+def _candidate(*, id_: str) -> AttentionItem:
+    """One directly-composed candidate, built through the conformance boundary."""
+    return _context().candidate(
         id=id_,
         kind="hygiene",
         urgency="low",
@@ -123,26 +123,24 @@ def test_absent_singleton_primitives_compose_nothing_at_all() -> None:
 
 
 def test_directly_built_candidates_pass_through_when_their_ids_are_valid() -> None:
-    candidates = [_item(id_="hygiene:capacity:repo"), _item(id_="host-only:reason:bd-1")]
+    ids = ["hygiene:capacity:repo", "host-only:reason:bd-1", "internal:awaiting-admission:bd-1"]
 
-    assert conformant_items(context=_context(), candidates=candidates) == candidates
+    assert [_candidate(id_=identifier).id for identifier in ids] == ids
 
 
 def test_a_directly_built_candidate_with_an_unratified_prefix_surfaces_loudly() -> None:
     """The prefix, not just the shape, is what the runtime validator governs."""
-    attention = conformant_items(
-        context=_context(), candidates=[_item(id_="internal:awaiting-admission:bd-1")]
-    )
+    failure = _candidate(id_="provider-exhaustion:codex:bd-1")
 
-    [failure] = attention
-    assert failure.id == f"{_FAILURE_ID_PREFIX}candidate-internal:awaiting-admission:bd-1"
-    assert "internal:awaiting-admission:bd-1" in failure.summary
+    assert failure.id == f"{_FAILURE_ID_PREFIX}candidate-provider-exhaustion:codex:bd-1"
+    assert "provider-exhaustion:codex:bd-1" in failure.summary
+    assert failure.urgency == "high"
     assert validate_attention_item_id(id=failure.id)
 
 
 def test_a_degenerate_candidate_id_still_yields_a_valid_failure_item() -> None:
     """The fixed prefix is what keeps the loud half itself un-droppable."""
-    attention = conformant_items(context=_context(), candidates=[_item(id_=""), _item(id_="12345")])
+    attention = [_candidate(id_=""), _candidate(id_="12345")]
 
     assert all(validate_attention_item_id(id=item.id) for item in attention)
     assert [item.id for item in attention] == [
@@ -152,7 +150,7 @@ def test_a_degenerate_candidate_id_still_yields_a_valid_failure_item() -> None:
 
 
 def test_the_failure_handoff_is_a_runnable_shell_command_naming_the_repo() -> None:
-    [failure] = conformant_items(context=_context(), candidates=[_item(id_="bogus")])
+    failure = _candidate(id_="bogus")
 
     assert failure.handoff.kind == "shell"
     assert failure.handoff.command.startswith("cd /repo && codex exec ")

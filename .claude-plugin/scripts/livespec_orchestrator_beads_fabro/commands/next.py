@@ -50,6 +50,7 @@ the wrapper emits `candidates: []` with `has_more: false`.
 import argparse
 import json
 from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -148,7 +149,10 @@ def rank_candidates(
             sibling_status_lookup=sibling_status_lookup,
         )
     ]
-    ready.sort(key=ready_sort_key)
+    # Compose the canonical ordering key ONCE per ranking pass. No
+    # `ready_since_lookup` is injected, so the aging tiebreak stays inert and
+    # the key degrades to the `(rank, id)` ordering this ranker already had.
+    ready.sort(key=ready_sort_key(now=datetime.now(tz=timezone.utc)))
     return [
         _candidate_for(
             item=item,

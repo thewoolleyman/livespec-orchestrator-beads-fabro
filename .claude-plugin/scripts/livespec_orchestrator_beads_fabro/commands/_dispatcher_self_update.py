@@ -29,6 +29,7 @@ from typing import Any, Protocol, cast
 from livespec_runtime.github_auth.config import load_github_app_config
 from livespec_runtime.github_auth.errors import GithubAppAuthError
 from livespec_runtime.github_auth.provider import InstallationTokenProvider
+from returns.pipeline import is_successful
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
@@ -131,14 +132,13 @@ def github_token_supplier() -> Callable[[], str] | str:
     refusal routed as data at the `github-app-auth` stage — NEVER a
     silent fall-through to a fleet PAT or an ambient `gh` login.
     """
-    config = attempt(
-        action=lambda: load_github_app_config(environ=os.environ),
-        exceptions=(GithubAppAuthError,),
-    )
-    if isinstance(config, AttemptFailure):
-        exc = cast("GithubAppAuthError", config.error)
-        return f"C-mode dispatch refused: {exc.detail}"
-    return InstallationTokenProvider(config=config).token
+    # `load_github_app_config` is on the Result railway since livespec-runtime
+    # v0.21.2 — the absent-App-env refusal arrives as data on the failure
+    # track, so no `attempt` exception boundary is needed to route it.
+    config = load_github_app_config(environ=os.environ)
+    if not is_successful(config):
+        return f"C-mode dispatch refused: {config.failure().detail}"
+    return InstallationTokenProvider(config=config.unwrap()).token
 
 
 def _github_token_error_supplier(*, detail: str) -> Callable[[], str]:

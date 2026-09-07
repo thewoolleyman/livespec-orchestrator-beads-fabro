@@ -34,6 +34,9 @@ from typing import cast
 from livespec_runtime.attention_item import AttentionItem, Handoff, SourceRef
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_probe_cycle import journal_records
+from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
+    ConformanceContext,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_handoffs import drive_command
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -74,7 +77,7 @@ def _merge_hold_item(
     pr_number: int | None,
 ) -> AttentionItem:
     action_id = f"set-merge-hold:{work_item.id}:off"
-    return AttentionItem(
+    return ConformanceContext(project_root=project_root, repo=repo).candidate(
         id=f"hygiene:merge-hold:{work_item.id}",
         kind="hygiene",
         urgency="medium",

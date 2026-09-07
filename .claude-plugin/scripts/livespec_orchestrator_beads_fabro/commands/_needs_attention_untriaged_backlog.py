@@ -13,6 +13,9 @@ from pathlib import Path
 
 from livespec_runtime.attention_item import AttentionItem, Handoff, SourceRef
 
+from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
+    ConformanceContext,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_handoffs import (
     untriaged_backlog_command,
     untriaged_backlog_summary_command,
@@ -88,7 +91,7 @@ def _untriaged_backlog_item(
     repo: str,
     record: IntakeTriageRecord,
 ) -> AttentionItem:
-    return AttentionItem(
+    return ConformanceContext(project_root=project_root, repo=repo).candidate(
         id=f"hygiene:untriaged-backlog:{record.id}",
         kind="hygiene",
         urgency="high",
@@ -106,7 +109,7 @@ def _untriaged_backlog_item(
 
 
 def _remainder_item(*, project_root: Path, repo: str, count: int) -> AttentionItem:
-    return AttentionItem(
+    return ConformanceContext(project_root=project_root, repo=repo).candidate(
         id="hygiene:untriaged-backlog-remainder:count",
         kind="hygiene",
         urgency="low",

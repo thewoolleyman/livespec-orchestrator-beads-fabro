@@ -28,6 +28,9 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port import (
 from livespec_orchestrator_beads_fabro.commands._needs_attention_answer_disposition import (
     answer_disposition_summary,
 )
+from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
+    ConformanceContext,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_handoffs import (
     dispatcher_loop_command,
     drive_command,
@@ -243,11 +246,13 @@ def _fabro_ps(*, repo: Path) -> FabroPsResult:
 
 
 def _awaiting_admission_item(*, project_root: Path, repo: str, item: WorkItem) -> AttentionItem:
-    return AttentionItem(
-        # `internal` is a ratified `kind`, but it is NOT a ratified stable-ID
-        # PREFIX, so `internal:...` failed the runtime validator outright. The
-        # orchestrator-owned fact form is `hygiene:<type>:<resource>`; the kind
-        # is unchanged because the validator governs the id alone.
+    return ConformanceContext(project_root=project_root, repo=repo).candidate(
+        # `internal` is a ratified `kind`, and livespec-runtime v0.21.4 also
+        # ratified it as a stable-ID PREFIX — but the id stays on the
+        # orchestrator-owned `hygiene:<type>:<resource>` fact form it was moved
+        # to when `internal:...` still failed the validator outright, because
+        # the stable id is what a consumer keys on across snapshots. The kind
+        # was never affected: the validator governs the id alone.
         id=f"hygiene:awaiting-admission:{item.id}",
         kind="internal",
         urgency="medium",

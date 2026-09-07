@@ -18,6 +18,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_WIP_CAP,
     resolve_wip_cap,
 )
+from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
+    ConformanceContext,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -76,7 +79,7 @@ def _aggregate_item(
     *, project_root: Path, repo: str, wip_cap: int, counted_count: int
 ) -> AttentionItem:
     free_slots = max(0, wip_cap - counted_count)
-    return AttentionItem(
+    return ConformanceContext(project_root=project_root, repo=repo).candidate(
         id=f"hygiene:capacity:{repo}",
         kind="hygiene",
         urgency="high",
@@ -94,7 +97,7 @@ def _aggregate_item(
 
 
 def _hold_item(*, project_root: Path, repo: str, hold: ActiveClaimHold) -> AttentionItem:
-    return AttentionItem(
+    return ConformanceContext(project_root=project_root, repo=repo).candidate(
         id=f"hygiene:capacity-hold:{hold.work_item_id}",
         kind="hygiene",
         urgency="high",

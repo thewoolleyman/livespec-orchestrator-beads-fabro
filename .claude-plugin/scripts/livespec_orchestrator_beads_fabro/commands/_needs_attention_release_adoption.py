@@ -53,6 +53,9 @@ from typing import Any, cast
 
 from livespec_runtime.attention_item import AttentionItem, Handoff, SourceRef
 
+from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
+    ConformanceContext,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_core_roots import version_key
 from livespec_orchestrator_beads_fabro.effects import (
     AttemptFailure,
@@ -257,7 +260,7 @@ def _resolution_item(
     tip_version: str,
 ) -> AttentionItem:
     verdict = "BEHIND" if resolution.behind else "current"
-    return AttentionItem(
+    return ConformanceContext(project_root=project_root, repo=repo).candidate(
         id=f"hygiene:{_FACT_TYPE}:{resolution.adopter}",
         kind="hygiene",
         urgency="high" if resolution.behind else "low",
@@ -276,7 +279,7 @@ def _resolution_item(
 
 
 def _unresolved_tip_item(*, project_root: Path, repo: str, count: int) -> AttentionItem:
-    return AttentionItem(
+    return ConformanceContext(project_root=project_root, repo=repo).candidate(
         id=f"hygiene:{_FACT_TYPE}:unresolved-release-tip",
         kind="hygiene",
         urgency="high",
