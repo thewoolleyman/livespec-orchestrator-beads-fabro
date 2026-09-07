@@ -27,6 +27,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     MERGE_HELD_STAGE,
     DispatchOutcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_groom_door import groom_door_claimed
 from livespec_orchestrator_beads_fabro.commands._dispatcher_groom_park import record_groom_draft
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import invoker_from_args
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile, utc_now_iso
@@ -157,6 +158,7 @@ def ready_items(*, items: list[WorkItem], repo: Path) -> list[WorkItem]:
             index=index,
             manifest=manifest,
             sibling_status_lookup=sibling_status_lookup,
+            repo=repo,
         )
     ]
     # Compose the single canonical ranking authority so the Dispatcher's
@@ -171,11 +173,31 @@ def is_dispatch_candidate(
     index: dict[str, WorkItem],
     manifest: CrossRepoManifest,
     sibling_status_lookup: Callable[[str, str], RefStatus] | None = None,
+    repo: Path | None = None,
 ) -> bool:
+    """Whether this row is one the Dispatcher may launch on this pass.
+
+    Three members, and the third is the narrow one: a `ready` row, a
+    `pending-approval` row whose dependencies are clear, and an `active` row
+    the GROOM DOOR itself claimed and pinned. The door opens `backlog ->
+    active` under a claim and a groom-variant pin and then returns, so without
+    the third arm the row it prepared is one no launch path can pick up — it
+    is not `ready`, so this predicate refused it, and the `--item` preflight
+    that consumes this predicate read the door's own claim as somebody else's
+    in-flight dispatch. `groom_door_claimed` owns that recognition, and it is
+    scoped to the door's own claim: an ordinary `active` row is unaffected, so
+    this is NOT a widening to `active` work in general. The status test that
+    scopes it stays INSIDE that predicate rather than being restated as a guard
+    here, so ONE module answers "is this the door's claim?" end to end.
+
+    `repo` is the target repository the claim and pin are read against; it
+    defaults, like `sibling_status_lookup`, to the working directory.
+    """
+    effective_repo = repo if repo is not None else Path.cwd()
     effective_sibling_status_lookup = (
         sibling_status_lookup
         if sibling_status_lookup is not None
-        else make_sibling_status_lookup(project_root=Path.cwd())
+        else make_sibling_status_lookup(project_root=effective_repo)
     )
     if is_item_ready(
         item=item,
@@ -183,6 +205,8 @@ def is_dispatch_candidate(
         manifest=manifest,
         sibling_status_lookup=effective_sibling_status_lookup,
     ):
+        return True
+    if groom_door_claimed(repo=effective_repo, item=item):
         return True
     if item.status != "pending-approval":
         return False

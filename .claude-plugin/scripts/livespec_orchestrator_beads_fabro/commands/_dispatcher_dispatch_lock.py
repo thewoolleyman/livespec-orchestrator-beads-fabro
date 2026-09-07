@@ -22,6 +22,7 @@ __all__: list[str] = [
     "DispatchLock",
     "dispatch_lock_path",
     "live_dispatch_lock",
+    "recorded_dispatch_lock",
     "release_dispatch_lock",
     "write_dispatch_lock",
 ]
@@ -86,9 +87,23 @@ def release_dispatch_lock(*, path: Path) -> None:
     _ = attempt(action=path.unlink, exceptions=(FileNotFoundError, OSError))
 
 
+def recorded_dispatch_lock(*, repo: Path, work_item_id: str) -> DispatchLock | None:
+    """The claim written for this row, whether or not its writer is still running.
+
+    `live_dispatch_lock` answers "is a dispatch in flight?"; this answers the
+    prior question "was a claim written, and by whom?". They differ for exactly
+    one caller that matters: the groom door writes its claim and then EXITS, so
+    a reader that gates on the writer being alive cannot recognise the door's
+    own claim at all — which is what made a door-claimed item unlaunchable.
+    """
+    return _read_dispatch_lock(
+        path=dispatch_lock_path(repo=repo, work_item_id=work_item_id),
+        work_item_id=work_item_id,
+    )
+
+
 def live_dispatch_lock(*, repo: Path, work_item_id: str) -> DispatchLock | None:
-    path = dispatch_lock_path(repo=repo, work_item_id=work_item_id)
-    lock = _read_dispatch_lock(path=path, work_item_id=work_item_id)
+    lock = recorded_dispatch_lock(repo=repo, work_item_id=work_item_id)
     if lock is None or not _lock_holder_matches_pid(lock=lock):
         return None
     return lock
