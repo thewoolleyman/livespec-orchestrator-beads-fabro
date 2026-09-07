@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.142.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.141.4...v0.142.0) (2026-09-07)
+
+
+### Features
+
+* **next:** break equal-rank ready ties by ready-age ([232bb1b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/232bb1b546173f9313f02ca61e36697047a1fb75))
+
 ## [0.141.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.141.3...v0.141.4) (2026-09-07)
 
 
