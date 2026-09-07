@@ -20,6 +20,9 @@ from livespec_orchestrator_beads_fabro.commands._drive_answer import (
     answer_note,
     deliver_answer,
 )
+from livespec_orchestrator_beads_fabro.commands._drive_answer_disposition import (
+    answer_press_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._drive_config_schema import (
     CONFIG_KEYS,
     ConfigKey,
@@ -92,6 +95,13 @@ def resolve_blocked_item(
     exact miss this route exists to close. Writing first also makes a refused
     answer free: nothing has moved, so the operator rewords and re-runs the
     identical action.
+
+    WHO may answer is graded before WHAT they answered, and both before
+    anything is written. `answer_press_refusal` enforces the item's effective
+    answer disposition (`_drive_answer_disposition`); it runs first because a
+    press the disposition does not admit is refused whatever its text says, so
+    grading the text first would only tell an unadmitted presser how to reword
+    an answer that was never going to land.
     """
     if item.status != "blocked" or item.blocked_reason != "needs-human":
         return valve_refusal(
@@ -101,6 +111,9 @@ def resolve_blocked_item(
             msg="resolve-blocked requires a blocked needs-human item.",
         )
     if delivery is not None:
+        unadmitted = answer_press_refusal(config=config, item=item, aid=aid, delivery=delivery)
+        if unadmitted is not None:
+            return unadmitted
         refusal = deliver_answer(config=config, item=item, aid=aid, delivery=delivery)
         if refusal is not None:
             return refusal
