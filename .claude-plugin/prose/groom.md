@@ -158,6 +158,13 @@ If the draft files NO local factory slice (an all-spec-change cut), groom
 REFUSES (`GroomExitRefusedError`) and the original STAYS `backlog` —
 escalate-don't-drop. A `depends_on` handle naming no earlier factory
 slice is a malformed cut (`GroomDraftError`); surface it and re-draft.
+The whole cut is resolved BEFORE the first slice is filed, so that refusal
+leaves the ledger untouched and the corrected draft simply re-runs. Note
+what the handle rule implies: a spec-change slice routes to
+`propose-change` and is never minted, so a factory slice CANNOT name one
+as a blocker even though it may genuinely be blocked by it. Draft that
+ordering constraint as prose in the dependent slice's description and
+route the spec change first.
 
 An absent `approval`, or one naming no approver identity or no route, is
 refused with `GroomApprovalRequiredError` BEFORE any slice is filed, so a
