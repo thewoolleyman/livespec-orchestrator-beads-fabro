@@ -20,7 +20,11 @@ from pathlib import Path
 from typing import TypeVar
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import _config, _dispatcher_overlay
+from livespec_orchestrator_beads_fabro.commands import (
+    _config,
+    _dispatcher_overlay,
+    _dispatcher_plugin_cache_gate,
+)
 from livespec_orchestrator_beads_fabro.commands._config import (
     resolve_credential_wrapper,
     resolve_fabro_bin,
@@ -734,6 +738,9 @@ def test_render_run_config_overlay_without_sandbox_image_override_is_byte_identi
         + "\n# --- Dispatcher-materialized sandbox-local tmux socket root ---\n"
         + "[[run.prepare.steps]]\n"
         + 'script = "mkdir -p /workspace/.tmux && chmod 700 /workspace/.tmux"\n'
+        # Rendered from the gate module rather than restated: the script is the
+        # gate's own text, and a second copy here would diverge silently.
+        + _dispatcher_plugin_cache_gate.plugin_cache_gate_prepare_steps_block()
         + "\n# --- Dispatcher-materialized run-scoped credential projection"
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
         + "[environments.livespec-ci.env]\n"
@@ -769,7 +776,7 @@ def test_render_run_config_overlay_image_override_is_scope_fenced(tmp_path: Path
     assert f'graph = "{tmp_path / "workflow.fabro"}"' in pre_env_table
     assert "[environments.livespec-ci.env]" in rendered
     assert "[environments.other-env.env]" not in rendered
-    assert rendered.count("[[run.prepare.steps]]") == 2
+    assert rendered.count("[[run.prepare.steps]]") == 3
     assert 'script = "just bootstrap"' in rendered
     assert 'script = "curl example.test"' not in rendered
     assert "other.fabro" in pre_env_table

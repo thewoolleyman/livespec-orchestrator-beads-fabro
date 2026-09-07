@@ -17,6 +17,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
     refreshing_gh_env_lines,
     refreshing_gh_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
+    plugin_cache_gate_prepare_steps_block,
+)
 
 __all__: list[str] = [
     "CORE_PLUGIN_ROOT_ENV_VAR",
@@ -248,12 +251,14 @@ def render_run_config_overlay(  # noqa: PLR0913 — kw-only pure overlay builder
     gh_refresh_env_lines = refreshing_gh_env_lines()
     codex_steps = _codex_auth_prepare_steps_block(codex_auth_snapshot=codex_auth_snapshot)
     codex_env_lines = _codex_auth_env_lines(codex_auth_snapshot=codex_auth_snapshot)
+    plugin_cache_steps = plugin_cache_gate_prepare_steps_block()
     return (
         rewritten
         + sibling_steps
         + tmux_steps
         + gh_refresh_steps
         + codex_steps
+        + plugin_cache_steps
         + "\n# --- Dispatcher-materialized run-scoped credential projection"
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
         + f"[environments.{environment_id}.env]\n"
