@@ -27,6 +27,22 @@ That ordering is what makes a re-draft self-invalidating: the contract's
 and the re-draft's comment lands after the old approval, which correctly reads
 as an unapproved draft again. A boolean "has an approval" flag would have kept
 the stale consent alive across the bounce.
+
+WHY POSITION IS NOT SUFFICIENT ON ITS OWN. Ordering makes a newer DRAFT win; it
+never makes a send-back stop reading as consent. `drive` accepts `--answer` on
+`resolve-blocked:<work-item-id>:backlog` -- attaching feedback to a bounce is
+the documented path, not a misuse -- so an operator who rejects a cut as too
+coarse and says why has written an answer comment after that draft. A reader
+keying on the answer MARKER alone therefore turns that rejection into the
+consent for filing the very decomposition it rejected: in the window before
+any re-draft lands, and permanently when none ever does, which is the ordinary
+outcome for an item that is abandoned, hand-groomed or re-scoped instead.
+
+So the DISPOSITION is read, not just the position. The action id already rides
+in the answer comment's header, and `ready` is the only disposition that
+consents; every other answer leaves the draft unapproved and a `backlog` one
+revokes an earlier consent, because the newest answer is the operator's
+standing verdict on the draft it follows.
 """
 
 from __future__ import annotations
@@ -34,7 +50,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from livespec_orchestrator_beads_fabro.commands._drive_answer import ANSWER_COMMENT_MARKER
+from livespec_orchestrator_beads_fabro.commands._drive_answer import answering_action_id
 from livespec_orchestrator_beads_fabro.store import read_work_item_comments
 
 if TYPE_CHECKING:
@@ -55,6 +71,11 @@ GROOM_DRAFT_COMMENT_MARKER = "livespec-groom-draft"
 
 _OPEN = " ("
 _CLOSE = ","
+
+# The tail of the ONE `resolve-blocked` disposition that is consent to file.
+# Matched as a suffix of the whole action id so `resolve-blocked:<id>:ready`
+# qualifies and `resolve-blocked:<id>:backlog` does not.
+_READY_DISPOSITION = ":ready"
 
 
 def render_groom_draft_comment(*, draft: str, variant: str, run_id: str, at: str) -> str:
@@ -87,12 +108,17 @@ def drafting_groom_variant(*, text: str) -> str | None:
 
 
 def approved_groom_draft(*, comments: Sequence[str]) -> str | None:
-    """The variant of the newest draft, when an approval follows it; else None.
+    """The variant of the newest draft, when a READY answer follows it; else None.
 
-    `None` covers three genuinely different items with one answer, and that is
+    `None` covers four genuinely different items with one answer, and that is
     correct here: an item with no draft, an item whose draft is still awaiting
-    a human, and an item whose draft was bounced back for re-drafting are all
-    items with NO approved draft awaiting an apply dispatch.
+    a human, an item whose draft was sent back with a `backlog` disposition,
+    and an item whose draft was bounced and then re-drafted are all items with
+    NO approved draft awaiting an apply dispatch.
+
+    A comment that is neither a draft nor a readable answer -- an ordinary
+    operator rider -- is passed over rather than treated as either, so a rider
+    appended after an approval does not silently withdraw it.
     """
     drafted: str | None = None
     approved: str | None = None
@@ -101,8 +127,11 @@ def approved_groom_draft(*, comments: Sequence[str]) -> str | None:
         if variant is not None:
             drafted = variant
             approved = None
-        elif drafted is not None and text.startswith(ANSWER_COMMENT_MARKER):
-            approved = drafted
+            continue
+        aid = answering_action_id(text=text)
+        if aid is None or drafted is None:
+            continue
+        approved = drafted if aid.endswith(_READY_DISPOSITION) else None
     return approved
 
 

@@ -482,7 +482,10 @@ def test_a_cleared_pin_falling_through_to_the_default_is_refused_end_to_end(
     append_work_item_comment(
         path=config,
         work_item_id="bd-ib-apply",
-        body=f"{ANSWER_COMMENT_MARKER} (human:maintainer via cli, x, y):\nApproved.",
+        body=(
+            f"{ANSWER_COMMENT_MARKER} (human:maintainer via cli, "
+            f"2026-09-06T00:00:00Z, resolve-blocked:bd-ib-apply:ready):\nApproved."
+        ),
     )
     journal = _RecordingJournal()
 

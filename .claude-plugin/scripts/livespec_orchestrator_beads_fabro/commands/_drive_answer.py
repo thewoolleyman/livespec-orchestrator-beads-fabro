@@ -58,6 +58,7 @@ __all__: list[str] = [
     "AnswerDelivery",
     "answer_delivery",
     "answer_note",
+    "answering_action_id",
     "deliver_answer",
     "render_answer_comment",
 ]
@@ -68,6 +69,13 @@ __all__: list[str] = [
 # rider appended after filing.
 ANSWER_COMMENT_MARKER = "livespec-human-answer"
 ANSWER_JOURNAL_STAGE = "human-valve-resolve-blocked-answer"
+
+# The header's opening and closing punctuation, and the separator between its
+# fields. Named because `answering_action_id` below is the exact inverse of
+# `render_answer_comment` and both ends must move together.
+_HEADER_OPEN = " ("
+_HEADER_CLOSE = "):"
+_HEADER_FIELD_SEPARATOR = ", "
 
 _JOURNAL_RELATIVE_PATH = ("tmp", "fabro-dispatch-journal.jsonl")
 # The source label the preflight's findings carry. It names the OPERATOR's
@@ -167,9 +175,32 @@ def render_answer_comment(*, answer: str, aid: str, identity: InvokerIdentity, a
     so it has to be in the text if the next run is to see it at all.
     """
     return (
-        f"{ANSWER_COMMENT_MARKER} ({identity.invoker} via {identity.invoker_source}, "
-        f"{at}, {aid}):\n{answer}"
+        f"{ANSWER_COMMENT_MARKER}{_HEADER_OPEN}{identity.invoker} via {identity.invoker_source}"
+        f"{_HEADER_FIELD_SEPARATOR}{at}{_HEADER_FIELD_SEPARATOR}{aid}{_HEADER_CLOSE}\n{answer}"
     )
+
+
+def answering_action_id(*, text: str) -> str | None:
+    """The valve action id an answer comment was written under, or None.
+
+    The exact inverse of `render_answer_comment`, and it lives beside it for
+    that reason: the header is the ONLY place the DISPOSITION an answer
+    carried survives into the ledger, so a reader that re-derives the header's
+    shape elsewhere drifts from the writer silently — and the drift's symptom
+    is a `resolve-blocked:<id>:backlog` send-back read as a `:ready` consent,
+    not a parse error anyone would notice.
+
+    `None` means the text is not an answer comment this reader can speak for:
+    the marker does not open its first line, or that line's header is not
+    closed. Both are refused rather than salvaged, because a header whose
+    disposition cannot be read must never be treated as one that consents.
+    """
+    head = text.split("\n", 1)[0]
+    prefix = f"{ANSWER_COMMENT_MARKER}{_HEADER_OPEN}"
+    if not head.startswith(prefix) or not head.endswith(_HEADER_CLOSE):
+        return None
+    fields = head[len(prefix) : -len(_HEADER_CLOSE)]
+    return fields.rsplit(_HEADER_FIELD_SEPARATOR, 1)[-1].strip()
 
 
 def _answer_refusal(*, aid: str, wid: str, answer: str) -> dict[str, Any] | None:

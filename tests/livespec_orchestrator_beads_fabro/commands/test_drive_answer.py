@@ -14,6 +14,7 @@ from livespec_orchestrator_beads_fabro.commands._drive_answer import (
     AnswerDelivery,
     answer_delivery,
     answer_note,
+    answering_action_id,
     deliver_answer,
     render_answer_comment,
 )
@@ -194,3 +195,39 @@ def test_the_answer_note_reports_delivery_and_is_silent_without_one(tmp_path: Pa
     note = answer_note(delivery=_delivery(answer="yes", repo=tmp_path))
 
     assert "the answer is on the ledger" in note
+
+
+def test_the_action_id_round_trips_through_the_rendered_comment() -> None:
+    """The reader is the writer's inverse, so drive it against the writer's own output.
+
+    Reading the disposition back is what lets a `backlog` send-back be told
+    apart from a `:ready` approval. A hand-written fixture would prove only
+    that the parser matches THIS test's idea of the header; rendering it
+    proves the pair cannot drift.
+    """
+    for disposition in ("ready", "backlog"):
+        body = render_answer_comment(
+            answer="Multi-line answers are ordinary.\nSecond line.",
+            aid=f"resolve-blocked:bd-ib-x:{disposition}",
+            identity=_identity(),
+            at="2026-09-06T12:00:00Z",
+        )
+
+        assert answering_action_id(text=body) == f"resolve-blocked:bd-ib-x:{disposition}"
+
+
+def test_a_comment_that_is_not_an_answer_names_no_action_id() -> None:
+    assert answering_action_id(text="an ordinary operator rider") is None
+    assert answering_action_id(text=f"A write-up quoting {ANSWER_COMMENT_MARKER} (a, b):") is None
+
+
+def test_an_answer_whose_header_is_not_closed_names_no_action_id() -> None:
+    """An unreadable header must not be salvaged into a disposition.
+
+    A disposition this reader cannot read is one it must not treat as consent,
+    so the whole comment reports as "not an answer I can speak for" rather
+    than yielding whatever trailing text happened to be there.
+    """
+    truncated = f"{ANSWER_COMMENT_MARKER} (operator:cwoolley via flag, at, resolve-blocked:x:ready"
+
+    assert answering_action_id(text=truncated) is None
