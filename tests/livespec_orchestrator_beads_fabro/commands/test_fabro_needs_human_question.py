@@ -17,6 +17,21 @@ _PROMPT = (
 )
 _REF = "refs/heads/needs-human/01M10CYZ8S9TNPZ2MW096NJW7V"
 
+# The two workflows shipping a `needs_human` terminal. Their scripts are READ
+# from the workflows rather than transcribed here, so a workflow edit cannot
+# leave these fixtures asserting against shell text no run ever carried.
+_RESERVED_WORKFLOW = Path(".claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro")
+_GROOM_WORKFLOW = Path(".fabro/workflows/groom-work-item/workflow.fabro")
+
+# What a groom propose phase actually publishes: one line naming several
+# slices, each with its layer, its acceptance and its blockers. Substituting
+# shell source for THIS is the defect these two cases pin down.
+_GROOM_DRAFT = (
+    "Layer 1 (tier: impl) slice A — acceptance: the reader excludes script "
+    "source; blockers: none. Layer 2 slice B — acceptance: the groom draft "
+    "comment carries the decomposition; blockers: slice A."
+)
+
 
 def _terminated(*, stderr: str, checkpoints: list[object] | None = None) -> list[object]:
     """A `fabro inspect --json` payload for a run that TERMINATED non-green.
@@ -84,8 +99,8 @@ def test_a_run_that_did_not_end_at_the_terminal_node_yields_nothing() -> None:
     )
 
 
-def test_the_sentinel_alone_is_enough_wherever_in_the_record_it_sits() -> None:
-    """Which field carries a script node's stderr is the unknown; the token is ours."""
+def test_the_sentinel_alone_is_enough_wherever_the_output_field_sits() -> None:
+    """An unmodelled nesting depth is still read, so long as OUTPUT carries it."""
     module = importlib.import_module(_MODULE_NAME)
 
     question = module.needs_human_question_from_payload(
@@ -148,6 +163,89 @@ def test_an_empty_or_malformed_sentinel_line_does_not_masquerade_as_content() ->
 
     assert question is not None
     assert question.prompt is None
+
+
+def _terminal_script(*, workflow: Path) -> str:
+    """The `needs_human` node's own script line, straight out of the workflow.
+
+    It is the script that ECHOES every sentinel, so it necessarily CONTAINS
+    each literal — which is precisely why a record carrying it must never be
+    allowed to answer for what the run said.
+    """
+    lines = [
+        line
+        for line in workflow.read_text(encoding="utf-8").splitlines()
+        if line.strip().startswith("script=") and "LIVESPEC_NEEDS_HUMAN_PRESERVED" in line
+    ]
+    assert len(lines) == 1
+    return lines[0]
+
+
+def _stage_carrying_script_and_output(*, script: str, output: str) -> list[object]:
+    """A terminated run whose stage carries BOTH its script source and its output.
+
+    The script-source fields come FIRST, which is the order a real record has
+    and the order under which a first-match, whole-record reader returns shell
+    text. `notes` is the measured carrier — a fabro stage status note reads
+    `Script completed: <the whole script>` — and `script` is the same text
+    under the name the workflow gives it.
+    """
+    return [
+        {
+            "run_id": "01M1X6JBV2M1CCQCCEVNTJ2YXE",
+            "status": {"kind": "failed"},
+            "stages": [
+                {
+                    "id": "needs_human",
+                    "script": script,
+                    "notes": f"Script completed: {script}",
+                    "status": {"failure_reason": output},
+                }
+            ],
+        }
+    ]
+
+
+def test_the_nodes_own_script_source_cannot_supply_the_sentinel_line() -> None:
+    """MEASURED 2026-09-07, run 01M1X6JBV2M1CCQCCEVNTJ2YXE, groom propose phase.
+
+    The run wrote its drafted decomposition behind the sentinel and the reader
+    returned 333 characters of the shell that echoes it, because the script
+    source sits earlier in the record than the output does.
+    """
+    module = importlib.import_module(_MODULE_NAME)
+
+    question = module.needs_human_question_from_payload(
+        payload=_stage_carrying_script_and_output(
+            script=_terminal_script(workflow=_GROOM_WORKFLOW),
+            output=f"LIVESPEC_NEEDS_HUMAN: {_GROOM_DRAFT}",
+        )
+    )
+
+    assert question is not None
+    assert question.prompt == _GROOM_DRAFT
+
+
+def test_the_reserved_workflows_terminal_reports_its_own_output_not_its_script() -> None:
+    """The blast radius beyond groom: the same reader feeds the attention row.
+
+    Every sentinel is asserted, not just the prompt — the reserved script
+    contains the PUSH_FAILED literal too, so a reader matching script source
+    reports an unpreserved tree for a run that pushed one.
+    """
+    module = importlib.import_module(_MODULE_NAME)
+
+    question = module.needs_human_question_from_payload(
+        payload=_stage_carrying_script_and_output(
+            script=_terminal_script(workflow=_RESERVED_WORKFLOW),
+            output=f"LIVESPEC_NEEDS_HUMAN_PRESERVED: {_REF}\nLIVESPEC_NEEDS_HUMAN: {_PROMPT}",
+        )
+    )
+
+    assert question is not None
+    assert question.prompt == _PROMPT
+    assert question.preserved_ref == _REF
+    assert question.tree_preserved is True
 
 
 def test_a_top_level_checkpoint_and_a_bare_wrapper_are_both_read() -> None:

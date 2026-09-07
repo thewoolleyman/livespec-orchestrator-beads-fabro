@@ -25,18 +25,36 @@ is the terminal node's own evidence, in two independent forms:
   exiting 1, and
 - a checkpoint whose `next_node_id` names the `needs_human` terminal.
 
-Either alone is sufficient. Reading BOTH is what makes the discriminator
-robust to the one thing that is genuinely unknown here: WHICH field of an
-`inspect` record carries a script node's stderr. No captured payload for a
-needs-human run exists in this repository and the implementation sandbox
-reaches no factory, so rather than guess a key name, the sentinel is searched
-for across every string in the record. That is sound precisely because the
-token is OURS — the workflow's own `needs_human` script emits it (keep the
-literal in lockstep via `_dispatcher_plan.NEEDS_HUMAN_MARKER`) — so it cannot
-collide with fabro's vocabulary, and a schema change that moves stderr to a
-different key cannot break the read. The checkpoint leg reuses
-`_fabro_escalation`, whose `next_node_id` structure was MEASURED on run
-01M10CYZ8S9TNPZ2MW096NJW7V.
+Either alone is sufficient, and reading BOTH is what lets the sentinel leg be
+narrow. The checkpoint leg reuses `_fabro_escalation`, whose `next_node_id`
+structure was MEASURED on run 01M10CYZ8S9TNPZ2MW096NJW7V. Keep the sentinel
+literal in lockstep with the workflows via `_dispatcher_plan.NEEDS_HUMAN_MARKER`.
+
+THE ALL-STRINGS SEARCH THIS MODULE ONCE PERFORMED WAS WRONG, and the premise
+that justified it — "the token is OURS, so it cannot appear by accident" — was
+true and beside the point. The token does not appear by ACCIDENT; it appears
+BY CONSTRUCTION, in the one place present in every record this reader ever
+runs against. A fabro stage record carries the node's OWN SCRIPT SOURCE (its
+status note reads `Script completed: <the whole script>`), and the
+`needs_human` script CONTAINS every sentinel literal because it is the script
+that echoes them. The script source sits earlier in the record than the output
+does, so the first match was shell text.
+
+MEASURED 2026-09-07 on run 01M1X6JBV2M1CCQCCEVNTJ2YXE, the groom propose phase
+for bd-ib-z2ctra. The run wrote a 3,237-character drafted decomposition behind
+the sentinel; what this reader returned, and what reached the ledger as the
+approvable groom draft, was 333 characters of shell beginning
+`$(head -n 1 /tmp/livespec-groom-draft)" >&2; else echo ...`.
+
+So the sentinel is read from the run's OUTPUT: `_sentinel_lines` collects only
+under output-bearing keys and refuses SCRIPT-SOURCE keys outright, at every
+depth. Preferring the LAST match instead would not have fixed this — it would
+make the answer depend on the serialization order of a record this code does
+not own. Losing the read outright is the fail-CLOSED direction and is
+survivable: the checkpoint leg still reports the routing, the attention row
+degrades to "the run record carries no needs-human message", and the groom
+park journals a skip naming the absent draft. Returning the WRONG text is not
+survivable, because the groom apply phase acts on it.
 
 WHY THE PAYLOAD CARRIES NO OFFERED OPTIONS, which is a deliberate absence and
 not an oversight. Under v093 a terminated run cannot offer any: the former
@@ -83,6 +101,41 @@ NEEDS_HUMAN_NODE_ID = ESCALATION_NODE_ID
 _PROMPT_SENTINEL = f"{NEEDS_HUMAN_MARKER}: "
 _PRESERVED_SENTINEL = f"{NEEDS_HUMAN_MARKER}_PRESERVED: "
 _PUSH_FAILED_SENTINEL = f"{NEEDS_HUMAN_MARKER}_PUSH_FAILED"
+
+# Keys whose value is a node's OWN SCRIPT SOURCE rather than anything the run
+# emitted, refused at EVERY depth including inside an output subtree. `notes`
+# is the measured carrier — a fabro stage status note reads `Script completed:
+# <the whole script>` — and the rest are the names a record could plausibly
+# give the same text.
+_SCRIPT_SOURCE_KEYS = frozenset(
+    {
+        "acp.command",
+        "args",
+        "argv",
+        "cmd",
+        "command",
+        "notes",
+        "script",
+        "script_source",
+    }
+)
+
+# Keys carrying what a node WROTE. The sentinel is read from under these and
+# nowhere else, so no literal a node merely CONTAINS can answer for what it
+# said. `failure_reason` is the field the measured run's terminal stage status
+# carried the real line in; the rest are the ordinary output names.
+_OUTPUT_KEYS = frozenset(
+    {
+        "error",
+        "failure_reason",
+        "log",
+        "logs",
+        "message",
+        "output",
+        "stderr",
+        "stdout",
+    }
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -184,30 +237,49 @@ def _after(*, lines: tuple[str, ...], sentinel: str) -> str | None:
 
 
 def _sentinel_lines(*, value: object) -> tuple[str, ...]:
-    """Every line carrying a needs-human sentinel, from anywhere in the record.
+    """Every line carrying a needs-human sentinel, from the record's OUTPUT.
 
-    Searched across all strings rather than at a known key: which field holds a
-    script node's stderr is the one thing genuinely unknown here, while the
-    token itself is this workflow's own and cannot appear by accident.
+    Collected under output-bearing keys only and never under a script-source
+    key, so the `needs_human` node's own script — which contains every sentinel
+    literal by construction — cannot supply a line. The module docstring
+    carries the measured substitution this rule exists to prevent.
 
     Lines are kept VERBATIM rather than stripped. The sentinels this feeds are
     colon-and-space terminated, so trimming a line would silently unmatch a
     sentinel whose message is empty — and that is precisely the case `_after`
     exists to reject rather than report as content.
     """
-    found: list[str] = []
-    for text in _strings(value=value):
-        found.extend(line for line in text.splitlines() if NEEDS_HUMAN_MARKER in line)
-    return tuple(found)
+    return _lines_in(value=value, under_output=False)
 
 
-def _strings(*, value: object) -> tuple[str, ...]:
+def _lines_in(*, value: object, under_output: bool) -> tuple[str, ...]:
+    """The sentinel lines in one subtree; `under_output` names the key it hangs from.
+
+    A string answers only when an output-bearing key is above it. Containers
+    are walked either way, because the output key can sit at any depth and the
+    record's shape is fabro's to change.
+    """
     if isinstance(value, str):
-        return (value,)
+        if not under_output:
+            return ()
+        return tuple(line for line in value.splitlines() if NEEDS_HUMAN_MARKER in line)
     if isinstance(value, dict):
-        nested = cast("dict[str, Any]", value).values()
-        return tuple(text for item in nested for text in _strings(value=item))
+        return _lines_in_mapping(mapping=cast("dict[str, Any]", value), under_output=under_output)
     if isinstance(value, list):
         entries = cast("list[object]", value)
-        return tuple(text for item in entries for text in _strings(value=item))
+        return tuple(
+            line for item in entries for line in _lines_in(value=item, under_output=under_output)
+        )
     return ()
+
+
+def _lines_in_mapping(*, mapping: dict[str, Any], under_output: bool) -> tuple[str, ...]:
+    """One mapping's sentinel lines, script-source keys dropped whole."""
+    found: list[str] = []
+    for key, item in mapping.items():
+        folded = key.casefold()
+        if folded in _SCRIPT_SOURCE_KEYS:
+            continue
+        nested = under_output or folded in _OUTPUT_KEYS
+        found.extend(_lines_in(value=item, under_output=nested))
+    return tuple(found)
