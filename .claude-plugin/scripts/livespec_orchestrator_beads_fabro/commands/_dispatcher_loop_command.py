@@ -121,7 +121,9 @@ def run_loop_command(*, args: argparse.Namespace) -> int:
     # The pre-dispatch wall guards the DRAIN too, and it sits after the dry-run
     # return deliberately: `--dry-run` creates no run, so it stays a reporting
     # surface that shows the operator exactly which candidate needs criteria.
-    ungradeable = pre_dispatch_criteria_refusal(items=selected_candidates, cwd=repo)
+    ungradeable = pre_dispatch_criteria_refusal(
+        items=selected_candidates, cwd=repo, workflow_name=args.workflow_name
+    )
     if ungradeable is not None:
         _ = write_stderr(text=ungradeable)
         return EXIT_UNGRADEABLE_CRITERIA

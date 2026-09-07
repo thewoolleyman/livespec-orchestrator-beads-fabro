@@ -98,8 +98,13 @@ def run_dispatch_command(*, args: argparse.Namespace) -> int:
         return EXIT_PRECONDITION_ERROR
     target, marked = selected
     # The pre-dispatch wall runs after selection and BEFORE admission, so a
-    # refused item is never claimed and no factory run exists to reap.
-    ungradeable = pre_dispatch_criteria_refusal(items=[target], cwd=repo)
+    # refused item is never claimed and no factory run exists to reap. It is
+    # handed this dispatch's explicit `--workflow-name` because the wall is
+    # variant-aware: it resolves which graph the target would run and exempts a
+    # groom-kind dispatch, whose acceptance is the human approval of the draft.
+    ungradeable = pre_dispatch_criteria_refusal(
+        items=[target], cwd=repo, workflow_name=args.workflow_name
+    )
     if ungradeable is not None:
         _ = write_stderr(text=ungradeable)
         return EXIT_UNGRADEABLE_CRITERIA

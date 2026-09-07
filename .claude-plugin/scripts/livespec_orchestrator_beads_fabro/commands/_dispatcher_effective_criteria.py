@@ -52,6 +52,9 @@ from returns.unsafe import unsafe_perform_io
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria import (
     criteria_lines,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_criteria_wall_variant import (
+    criteria_wall_variant,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_overrides import (
     effective_acceptance_policy,
 )
@@ -228,23 +231,56 @@ def ungradeable_criteria_refusal(*, item: WorkItem, cwd: Path) -> str | None:
     )
 
 
-def pre_dispatch_criteria_refusal(*, items: Sequence[WorkItem], cwd: Path) -> str | None:
+def pre_dispatch_criteria_refusal(
+    *,
+    items: Sequence[WorkItem],
+    cwd: Path,
+    workflow_name: str | None = None,
+) -> str | None:
     """The pre-dispatch wall's operator-facing refusal, or `None` to proceed.
 
     Applied to the SELECTED candidates of both dispatch paths — the hand-picked
     `dispatch --item` target and the `loop` drain's wave — before any factory
     run is created, so a refused item is never claimed, never admitted, and
     never leaves a run behind to reap.
+
+    VARIANT-AWARE, unlike the shared predicate it composes. The wall resolves
+    the workflow variant each candidate would dispatch under BEFORE deciding,
+    because a groom-kind dispatch is exempt: a groom target is sent to the door
+    precisely because it is not yet decomposed into gradeable slices, and the
+    run's whole output is the draft that PRODUCES those criteria.
+    `_dispatcher_criteria_wall_variant` owns that resolution and the reason the
+    exemption is narrow; `workflow_name` is the dispatch's explicit
+    `--workflow-name`, the one step of the precedence this module's callers
+    hold and the item does not.
     """
     details = [
         detail
-        for detail in (ungradeable_criteria_refusal(item=item, cwd=cwd) for item in items)
+        for detail in (
+            _dispatch_refusal(item=item, cwd=cwd, workflow_name=workflow_name) for item in items
+        )
         if detail is not None
     ]
     if not details:
         return None
     lines = "".join(f"  {detail}\n" for detail in details)
     return f"ERROR: refusing to dispatch; no factory run was created:\n{lines}"
+
+
+def _dispatch_refusal(*, item: WorkItem, cwd: Path, workflow_name: str | None) -> str | None:
+    """One candidate's refusal detail, named for the variant it would run under.
+
+    The variant is resolved for EVERY candidate rather than only for the ones
+    that would otherwise refuse. A wave dispatches item by item, so the exemption
+    has to be a property of the candidate, not of the wave.
+    """
+    variant = criteria_wall_variant(repo=cwd, work_item_id=item.id, workflow_name=workflow_name)
+    if variant.exempt:
+        return None
+    detail = ungradeable_criteria_refusal(item=item, cwd=cwd)
+    if detail is None:
+        return None
+    return f"{detail}; {variant.clause()}"
 
 
 def _is_ai_dispositive(*, item: WorkItem, cwd: Path) -> bool:

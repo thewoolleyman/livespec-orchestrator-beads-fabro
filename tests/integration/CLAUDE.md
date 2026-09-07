@@ -215,6 +215,28 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   no-run on two independent instruments: the launch seam was never entered, and
   no `dispatch-id` record was written.
 
+- `test_groom_variant_criteria_wall.py` — the variant-aware pre-dispatch
+  acceptance-criteria wall, where `SPECIFICATION/contracts.md` §"Effective
+  acceptance criteria" meets §"Consensus-gated automated groom cut": the wall
+  refuses an AI-dispositive item with zero gradeable assertions, and a groom
+  target has zero by construction because the groom run's own output is the
+  draft that produces them. Every case drives the real
+  `dispatcher.main(argv=[...])` CLI with only `run_dispatch` stood in, over ONE
+  fixture repository registering both a groom-kind and an implement-kind
+  variant; the legs differ only in the item's `dispatch_workflow` pin, written
+  through the production writer. The pairing is load-bearing: the exempted leg
+  alone would be satisfied just as well by a wall that had been disarmed
+  altogether, so the implement-pinned control asserts the refusal still fires
+  with the dedicated exit code (compared against the precondition code too,
+  since a dedicated code is only useful if it is DISTINCT). The launch is read
+  off the recording stand-in rather than the exit code, because a dispatch can
+  exit 0 without creating a run and the wall's whole claim is about what happens
+  before one exists. The implement leg declares no kind at all rather than
+  declaring `implement`, because an undeclared kind is the shape of every
+  variant registered before that key existed — the one the exemption must not
+  open on. A fourth case runs the same groom-pinned item through `loop`, since
+  the two dispatch paths reach the wall through separate call sites.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read
