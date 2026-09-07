@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.141.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.141.0...v0.141.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **orchestrator-image:** make build-and-verify executable and its wait fail closed (bd-ib-bb41.8) ([dfe50ca](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/dfe50caf54bc19f620600a6f397867e6de600feb))
+
 ## [0.141.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.140.1...v0.141.0) (2026-09-07)
 
 
