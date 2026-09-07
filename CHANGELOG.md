@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.138.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.137.0...v0.138.0) (2026-09-07)
+
+
+### Features
+
+* **groom:** register a two-phase groom workflow variant under .fabro/workflows/ ([e740ab2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e740ab2591a6918801738171ed1bac20c0b7a04b))
+
+
+### Bug Fixes
+
+* **otel-receiver:** allowlist the sccache and registry cache attributes ([f183676](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f183676789171448e69a6f769f2e5ebe480f9597))
+
 ## [0.137.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.136.0...v0.137.0) (2026-09-06)
 
 
