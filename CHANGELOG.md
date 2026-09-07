@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.138.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.138.0...v0.138.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **bootstrap:** forward LIVESPEC_PLAN_UNATTENDED through the credential re-exec ([a8e3dc4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a8e3dc4cd22efe16d98409415c894f526f9b006b))
+
 ## [0.138.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.137.0...v0.138.0) (2026-09-07)
 
 
