@@ -1256,5 +1256,13 @@
     "test": "TODO",
     "reason": "Ratified by the attention-item-answer-policy revise pass (plan control-plane-accounts-and-dispatch-policy, epic bd-ib-rh3iyd, child bd-ib-rh3iyd.1). The exercising integration-tier test is owed by the leg-1 implementation slices (needs-attention effective-policy surfacing; drive answer-press refusal) re-groomed under bd-ib-rh3iyd.1 after this revision lands; until then the behavior has no implementation to bind to.",
     "work_item": "bd-ib-rh3iyd"
+  },
+  {
+    "heading": "## Scenario 123 — The ready ordering breaks equal-rank ties by ready-age past the bound",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified by the ready-aging-dispatch-tiebreak revise pass (plan control-plane-accounts-and-dispatch-policy, epic bd-ib-rh3iyd, child bd-ib-rh3iyd.2). The exercising integration-tier test is owed by the leg-4 implementation slice (the aging-aware ready_sort_key in livespec_runtime.work_items.lifecycle, composed identically by next and the Dispatcher), which depends on a livespec-runtime change; until it lands the behavior has no implementation to bind to.",
+    "work_item": "bd-ib-rh3iyd"
   }
 ]
