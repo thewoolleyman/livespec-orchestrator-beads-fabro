@@ -62,6 +62,14 @@ _DRAFT = "Layer 1: slice A (acceptance: it lands). Layer 2: slice B depends on A
 # phase publishes its draft on. Kept as a literal rather than imported so a
 # rename of the marker fails this test loudly instead of silently agreeing.
 _SENTINEL_LINE = f"LIVESPEC_NEEDS_HUMAN: {_DRAFT}"
+# The tail of the groom terminal's own script, which is what reached the ledger
+# in place of the draft on 2026-09-07 (run 01M1X6JBV2M1CCQCCEVNTJ2YXE).
+_SCRIPT_FRAGMENT = '$(head -n 1 /tmp/livespec-groom-draft)" >&2; else echo'
+_TERMINAL_SCRIPT = (
+    f'if test -s /tmp/livespec-groom-draft; then echo "LIVESPEC_NEEDS_HUMAN: '
+    f"{_SCRIPT_FRAGMENT} 'LIVESPEC_NEEDS_HUMAN: the groom run could not "
+    "auto-resolve this work-item and produced no draft' >&2; fi; exit 1"
+)
 
 
 def _park_module() -> Any:
@@ -203,6 +211,24 @@ def _inspect_payload(*, line: str) -> str:
     return json.dumps({"run": {"id": _RUN_ID, "stderr": line}})
 
 
+def _inspect_payload_with_script(*, line: str) -> str:
+    """A record carrying the terminal's SCRIPT SOURCE ahead of its output.
+
+    `notes` is the measured carrier: a fabro stage status note reads `Script
+    completed: <the whole script>`, and that script necessarily contains the
+    sentinel because it is what echoes it.
+    """
+    return json.dumps(
+        {
+            "run": {
+                "id": _RUN_ID,
+                "notes": f"Script completed: {_TERMINAL_SCRIPT}",
+                "stderr": line,
+            }
+        }
+    )
+
+
 def _comments() -> tuple[str, ...]:
     return tuple(
         comment.text for comment in read_work_item_comments(path=_config(), work_item_id=_ITEM_ID)
@@ -233,6 +259,36 @@ def test_a_groom_pinned_needs_human_termination_records_the_draft_as_a_comment(
     assert _GROOM_VARIANT in bodies[0].split("\n", 1)[0]
     assert [row["stage"] for row in journal.records] == [module.GROOM_DRAFT_RECORDED_STAGE]
     assert journal.records[0]["workflow_name"] == _GROOM_VARIANT
+
+
+def test_the_recorded_comment_carries_the_draft_not_the_script_that_echoed_it(
+    tmp_path: Path,
+) -> None:
+    """The end-to-end shape of the substitution measured on 2026-09-07.
+
+    The terminal node's script CONTAINS the sentinel — it is the script that
+    echoes it — and a stage record carries that script beside the run's output.
+    What has to reach the item is the decomposition, so both halves are
+    asserted: the draft is present, and the shell that published it is not.
+    """
+    module = _park_module()
+    repo = _repo(tmp_path=tmp_path)
+    journal = _RecordingJournal()
+
+    module.record_groom_draft(
+        args=_args(),
+        repo=repo,
+        item=_filed(pin=_GROOM_VARIANT),
+        outcome=_outcome(),
+        journal=journal,
+        runner=_Runner(payload=_inspect_payload_with_script(line=_SENTINEL_LINE)),
+    )
+
+    bodies = _comments()
+    assert len(bodies) == 1
+    assert _DRAFT in bodies[0]
+    assert _SCRIPT_FRAGMENT not in bodies[0]
+    assert [row["stage"] for row in journal.records] == [module.GROOM_DRAFT_RECORDED_STAGE]
 
 
 def test_an_implement_pinned_termination_records_nothing_and_journals_nothing(
