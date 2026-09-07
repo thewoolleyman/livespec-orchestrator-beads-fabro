@@ -191,6 +191,22 @@ ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
         "work_item_id",
         "build.cache.tier",
         "build.cache.hit",
+        # Per-cache-tier build telemetry from the same shim's sccache leg
+        # (livespec-dev-tooling npsqeu). 44ca04f5 admitted only the two
+        # `build.cache.tier` / `build.cache.hit` keys above, so every attribute
+        # below was scrubbed on receipt and the factory `build.cargo-*` span
+        # arrived carrying no cache signal at all. Bounded scalars: a bool
+        # enablement flag, three counters, a ratio, and two bounded labels
+        # (the sccache storage backend and its read/write mode), plus the
+        # registry leg's own bool hit. Scrub-safe.
+        "build.cache.sccache.enabled",
+        "build.cache.sccache.hits",
+        "build.cache.sccache.misses",
+        "build.cache.sccache.errors",
+        "build.cache.sccache.hit_ratio",
+        "build.cache.sccache.backend",
+        "build.cache.sccache.rw_mode",
+        "build.cache.registry.hit",
     }
 )
 

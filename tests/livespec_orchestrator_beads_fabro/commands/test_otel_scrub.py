@@ -181,3 +181,28 @@ def test_factory_build_phase_attrs_are_allowlisted() -> None:
     ):
         assert key in ATTRIBUTE_ALLOWLIST
         assert is_allowed_attr(key=key) is True
+
+
+def test_factory_sccache_and_registry_cache_attrs_are_allowlisted() -> None:
+    """The sccache shim's per-cache-tier scalars reach Honeycomb.
+
+    44ca04f5 widened this allowlist to `build.cache.tier` + `build.cache.hit`
+    ONLY, so every attribute the livespec-dev-tooling sccache shim attaches to
+    a `build.cargo-*` span was scrubbed on receipt and the factory span arrived
+    bare. All are bounded bool / count / ratio / enum scalars, scrub-safe.
+    """
+    for key in (
+        "build.cache.sccache.enabled",
+        "build.cache.sccache.hits",
+        "build.cache.sccache.misses",
+        "build.cache.sccache.errors",
+        "build.cache.sccache.hit_ratio",
+        "build.cache.sccache.backend",
+        "build.cache.sccache.rw_mode",
+        "build.cache.registry.hit",
+    ):
+        assert key in ATTRIBUTE_ALLOWLIST
+        assert is_allowed_attr(key=key) is True
+    # Still an allowlist, never a `build.cache.sccache.*` prefix match.
+    assert "build.cache.sccache.unknown" not in ATTRIBUTE_ALLOWLIST
+    assert is_allowed_attr(key="build.cache.sccache.unknown") is False
