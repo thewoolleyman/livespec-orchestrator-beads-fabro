@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro._beads_client import FakeBeadsClient, make_beads_client
+from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import InvokerIdentity
 from livespec_orchestrator_beads_fabro.commands._drive_valves import run_human_valve_action
 from livespec_orchestrator_beads_fabro.commands.drive import run_action
 from livespec_orchestrator_beads_fabro.store import append_work_item, read_work_item_comments
@@ -27,6 +28,17 @@ def _fake() -> FakeBeadsClient:
     client = make_beads_client(config=_config())
     assert isinstance(client, FakeBeadsClient)
     return client
+
+
+def _human() -> InvokerIdentity:
+    """A press asserting a named human operator.
+
+    Required by any press carrying an answer since v104 gated who may answer an
+    attention item: the effective answer disposition admits only the `human`
+    role, and an invocation asserting nothing resolves to the unattributed MARK
+    (`test_drive_answer_disposition` owns that gate's own coverage).
+    """
+    return InvokerIdentity(invoker="human:cw", invoker_source="flag")
 
 
 def _write_fake_config(repo: Path, *, auto_approve_ready: bool = False) -> None:
@@ -172,6 +184,7 @@ def test_resolve_blocked_writes_the_answer_before_the_transition(tmp_path: Path)
     result = run_human_valve_action(
         repo=repo,
         action_id="resolve-blocked:bd-ib-nh:ready",
+        identity=_human(),
         answer="Take option B; the guard stays fail-closed.",
     )
 
@@ -212,6 +225,7 @@ def test_a_poisoned_answer_leaves_the_item_blocked(tmp_path: Path) -> None:
     result = run_human_valve_action(
         repo=repo,
         action_id="resolve-blocked:bd-ib-nh3:ready",
+        identity=_human(),
         answer="run " + "{" + "{ recipe }}",
     )
 
