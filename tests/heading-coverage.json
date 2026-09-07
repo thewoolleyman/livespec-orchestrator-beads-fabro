@@ -1264,5 +1264,21 @@
     "test": "TODO",
     "reason": "Ratified by the ready-aging-dispatch-tiebreak revise pass (plan control-plane-accounts-and-dispatch-policy, epic bd-ib-rh3iyd, child bd-ib-rh3iyd.2). The exercising integration-tier test is owed by the leg-4 implementation slice (the aging-aware ready_sort_key in livespec_runtime.work_items.lifecycle, composed identically by next and the Dispatcher), which depends on a livespec-runtime change; until it lands the behavior has no implementation to bind to.",
     "work_item": "bd-ib-rh3iyd"
+  },
+  {
+    "heading": "## Scenario 124 — The human answer lands as a marked ledger comment before the transition, and a poisoned answer is refused",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified by the ratify-b3-answer-route revise pass (plan control-plane-accounts-and-dispatch-policy, epic bd-ib-rh3iyd, child bd-ib-rh3iyd.7). The b3 answer route already ships (bd-ib-aqith2 PR #2168, bd-ib-uuohty PR #2200); the exercising integration-tier test binding this scenario heading to the marker/poison-refusal/write-before-transition assertions is owed as a scenario-binding deliverable and is not a by-product of this ratification.",
+    "work_item": "bd-ib-rh3iyd.7"
+  },
+  {
+    "heading": "## Scenario 125 — The needs-attention valve item carries the terminated run's account and fails soft",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified by the ratify-b3-answer-route revise pass (plan control-plane-accounts-and-dispatch-policy, epic bd-ib-rh3iyd, child bd-ib-rh3iyd.7). The valve run-account enrichment already ships (bd-ib-uuohty PR #2200); the exercising integration-tier test binding this scenario heading to the account-fields and fail-soft assertions is owed as a scenario-binding deliverable and is not a by-product of this ratification.",
+    "work_item": "bd-ib-rh3iyd.7"
   }
 ]
