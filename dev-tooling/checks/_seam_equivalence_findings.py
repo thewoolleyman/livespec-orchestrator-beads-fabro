@@ -1,7 +1,7 @@
 # pyright: reportMissingImports=none, reportMissingTypeStubs=none
 """_seam_equivalence_findings — what a disagreement between the surfaces IS, and its name.
 
-The comparison half of `seam_equivalence`. It owns the three input FAMILIES the
+The comparison half of `seam_equivalence`. It owns the four input FAMILIES the
 `[run.inputs]` table carries, and the four ways those inputs can fail to say one
 thing: a position the engine will not render, either direction of the
 token/rendered-input equality, a scoping rot, and a schema-leg mismatch. It is
@@ -9,19 +9,30 @@ deliberately free of filesystem and reporting concerns -- every function here
 takes sets and returns findings -- so the rules can be read and tested without a
 payload on disk.
 
-THREE DISJOINT FAMILIES, AND ONLY THE EQUALITY IS SCOPED TO ONE OF THEM. The
+FOUR DISJOINT FAMILIES, AND ONLY THE EQUALITY IS SCOPED TO ONE OF THEM. The
 `[run.inputs]` table carries the integration inputs, the six ACP adapter inputs,
-and the PER-ITEM POLICY inputs -- `review_fix_visit_cap`,
-`merge_on_review_cap_outcome` and `merge_hold`. The ratified
-typed-workflow-inputs clause names all three and draws the line between them
-exactly once: the token/rendered-input EQUALITY ranges over the integration
-inputs alone, because only those are projections of the
-`ResolvedIntegrationContract`, while the RESOLVED-POSITION rule binds every
+the PER-ITEM POLICY inputs -- `review_fix_visit_cap`,
+`merge_on_review_cap_outcome` and `merge_hold` -- and the variant's own KIND
+DECLARATION. The ratified typed-workflow-inputs clause names the first three and
+draws the line between them exactly once: the token/rendered-input EQUALITY
+ranges over the integration inputs alone, because only those are projections of
+the `ResolvedIntegrationContract`, while the RESOLVED-POSITION rule binds every
 declared input whatever family it is in. A policy token in a `timeout` would
 leave the node with no timeout and report nothing, exactly as an integration one
 would; the engine does not know which family a name belongs to.
 
-The scoping is checked rather than assumed: the three name sets must be pairwise
+WHY THE KIND DECLARATION IS A FAMILY OF ITS OWN rather than folded into one of
+the other three. It is the one declared input that projects NOTHING: the
+integration inputs are fields of a resolved contract, the adapter inputs name a
+node, the policy inputs carry an item's effective policy, and this one is the
+variant's statement about ITSELF -- what kind of work its graph does, read back
+off this very table by `_workflow_variant_kind`. Folding it into the policy
+family would be worse than untidy: that family's declaration leg requires EVERY
+payload to declare EVERY name in it, and the reserved workflow deliberately
+declares no kind, because its kind is stated by the contract and answered
+without reading a file. So the kind is classified, and NOT required.
+
+The scoping is checked rather than assumed: the four name sets must be pairwise
 disjoint, and every input the payload declares must fall in one of them, so an
 input added tomorrow cannot be silently dropped out of every comparison by
 belonging to nothing.
@@ -46,11 +57,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projecti
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_schema import (
     INTEGRATION_FIELDS,
 )
+from livespec_orchestrator_beads_fabro.commands._workflow_variant_kind import (
+    WORKFLOW_KIND_INPUT_NAME,
+)
 
 __all__: list[str] = [
     "ADAPTER_INPUT_NAMES",
     "POLICY_INPUT_NAMES",
     "SCHEMA_PROJECTABLE_INPUTS",
+    "VARIANT_KIND_INPUT_NAMES",
     "Finding",
     "classified_input_names",
     "equivalence_findings",
@@ -81,16 +96,29 @@ POLICY_INPUT_NAMES: frozenset[str] = frozenset(
     {"review_fix_visit_cap", "merge_on_review_cap_outcome", "merge_hold"}
 )
 
+# The variant's own KIND declaration, read off the module that reads it from
+# the payload rather than respelled here. That module is the one place that
+# decides which `[run.inputs]` name carries a variant's kind, and a second
+# spelling in this gate would let the reader and the classifier drift apart --
+# after which every groom variant would earn an `unclassified-declared-input`
+# finding for the one input it is REQUIRED to declare.
+VARIANT_KIND_INPUT_NAMES: frozenset[str] = frozenset({WORKFLOW_KIND_INPUT_NAME})
+
 
 def classified_input_names() -> frozenset[str]:
-    """Every name the three families cover, unioned AT CALL TIME.
+    """Every name the four families cover, unioned AT CALL TIME.
 
-    Read live rather than frozen into a module constant so the three families
+    Read live rather than frozen into a module constant so the four families
     stay the single source of the classification: a test that substitutes one
     family, and any future change that computes one of them, cannot leave a
     stale union behind for a second caller to read.
     """
-    return SCHEMA_PROJECTABLE_INPUTS | ADAPTER_INPUT_NAMES | POLICY_INPUT_NAMES
+    return (
+        SCHEMA_PROJECTABLE_INPUTS
+        | ADAPTER_INPUT_NAMES
+        | POLICY_INPUT_NAMES
+        | VARIANT_KIND_INPUT_NAMES
+    )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -114,7 +142,7 @@ def referenced_integration_inputs(*, occurrences: Iterable[Occurrence]) -> froze
 def non_rendered_occurrences(*, occurrences: Iterable[Occurrence]) -> list[Occurrence]:
     """Every CLASSIFIED token sitting where the pinned engine would not expand it.
 
-    All three families, not just the integration one: the resolved-position rule
+    All four families, not just the integration one: the resolved-position rule
     is about what the ENGINE does with a position, and the engine has never
     known which family a name belongs to. A policy or adapter token in a typed
     attribute leaves the node with no value and reports nothing, which is the
@@ -191,6 +219,7 @@ def scoping_findings(*, declared: Mapping[str, str]) -> list[Finding]:
         ("schema-projectable", SCHEMA_PROJECTABLE_INPUTS),
         ("acp-adapter", ADAPTER_INPUT_NAMES),
         ("per-item-policy", POLICY_INPUT_NAMES),
+        ("variant-kind", VARIANT_KIND_INPUT_NAMES),
     )
     findings = [
         Finding(
@@ -207,8 +236,8 @@ def scoping_findings(*, declared: Mapping[str, str]) -> list[Finding]:
             kind="unclassified-declared-input",
             subject=name,
             detail=(
-                f"`{name}` is declared by the payload but is neither an integration field, "
-                "an ACP adapter, nor a per-item policy input"
+                f"`{name}` is declared by the payload but is none of an integration field, "
+                "an ACP adapter, a per-item policy input, or the variant kind declaration"
             ),
         )
         for name in sorted(set(declared) - classified)

@@ -8,17 +8,27 @@ read back through the check's own scan path, never against the return value of
 a write call. Since C5-payload the committed payload references every
 integration input, so the equality is also exercised for real.
 
-THE VARIANT CASES USE A FIXTURE REGISTRY, not the repository's own
-`.livespec.jsonc`, which registers no variant. Each seeds a throwaway root
-carrying a real `dispatcher.workflows` table plus real copies of the bundle,
-and the defect is introduced in ONE registered copy: the assertion that matters
-is that the finding names THAT directory while the bundle beside it still
-passes, which no single-payload gate could produce.
+THE VARIANT CASES USE A FIXTURE REGISTRY, never the repository's own. `_seed_repo`
+STRIPS the real `dispatcher.workflows` table out of the copied config, so a
+seeded root starts from the bundle alone and each case declares exactly the
+variants it means to reason about. That strip is load-bearing rather than
+tidiness: this repository now registers a real groom variant whose directory a
+seeded root does not hold, so a config copied verbatim would make every seeded
+case report a completeness failure for a directory the case never mentioned.
+The real registry is exercised where it belongs — in the four whole-repo cases
+above, which run the check against `_REPO_ROOT` itself.
+
+Each variant case seeds a throwaway root carrying a fixture
+`dispatcher.workflows` table plus real copies of the bundle, and the defect is
+introduced in ONE registered copy: the assertion that matters is that the
+finding names THAT directory while the bundle beside it still passes, which no
+single-payload gate could produce.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -35,6 +45,12 @@ _BUNDLE_WHERE = ".claude-plugin/.fabro/workflows/implement-work-item"
 # once before every splice, so a config reshape breaks the fixture loudly
 # instead of silently seeding a repo with no registry at all.
 _DISPATCHER_OPENER = '"dispatcher": {'
+
+# The repository's OWN `dispatcher.workflows` table, matched so `_seed_repo` can
+# strip it. Asserted to match exactly once, so a config that stops declaring one
+# — or starts declaring two — breaks the fixture loudly rather than silently
+# seeding a root whose registry is not the one the case wrote.
+_REAL_WORKFLOWS_TABLE = re.compile(r'"workflows"\s*:\s*\{[^}]*\}\s*,')
 
 # A run config carrying one token per position class: a prepare-step script
 # (rendered), an input default (not rendered), and a comment (no attribute at
@@ -88,11 +104,22 @@ def _payloads_fixture(check: ModuleType) -> ModuleType:
 
 
 def _seed_repo(*, repo_root: Path, check: ModuleType) -> Path:
-    """Copy the real payload, config and control fixture into a throwaway root."""
+    """Copy the real payload and control fixture, and a REGISTRY-LESS config.
+
+    The config is stripped of its own `dispatcher.workflows` table on the way
+    in. A seeded root holds the bundle and whatever the case itself registers;
+    carrying the repository's real registry across would name a directory this
+    root does not hold, and every case would then report a completeness failure
+    about a variant it never meant to reason about.
+    """
     source = check.payload_dir(repo_root=_REPO_ROOT)
     target = check.payload_dir(repo_root=repo_root)
     _ = shutil.copytree(source, target)
-    _ = shutil.copy2(_REPO_ROOT / ".livespec.jsonc", repo_root / ".livespec.jsonc")
+    config, stripped = _REAL_WORKFLOWS_TABLE.subn(
+        "", (_REPO_ROOT / ".livespec.jsonc").read_text(encoding="utf-8")
+    )
+    assert stripped == 1
+    _ = (repo_root / ".livespec.jsonc").write_text(config, encoding="utf-8")
     fixture = check.fixture_path(repo_root=repo_root)
     fixture.parent.mkdir(parents=True, exist_ok=True)
     _ = shutil.copy2(check.fixture_path(repo_root=_REPO_ROOT), fixture)
@@ -393,19 +420,52 @@ def test_a_token_in_a_non_rendered_graph_position_fails_the_payload(
 # ---------------------------------------------------------------------------
 
 
-def test_the_three_input_families_are_disjoint_and_cover_what_the_payload_declares(
+def test_the_four_input_families_are_disjoint_and_cover_what_the_payload_declares(
     rules: ModuleType,
 ) -> None:
     assert frozenset() == rules.SCHEMA_PROJECTABLE_INPUTS & rules.ADAPTER_INPUT_NAMES
     assert frozenset() == rules.SCHEMA_PROJECTABLE_INPUTS & rules.POLICY_INPUT_NAMES
+    assert frozenset() == rules.SCHEMA_PROJECTABLE_INPUTS & rules.VARIANT_KIND_INPUT_NAMES
+    assert frozenset() == rules.ADAPTER_INPUT_NAMES & rules.VARIANT_KIND_INPUT_NAMES
+    assert frozenset() == rules.POLICY_INPUT_NAMES & rules.VARIANT_KIND_INPUT_NAMES
     assert (
         frozenset({"review_fix_visit_cap", "merge_on_review_cap_outcome", "merge_hold"})
         == rules.POLICY_INPUT_NAMES
     )
+    assert frozenset({"workflow_kind"}) == rules.VARIANT_KIND_INPUT_NAMES
     assert rules.classified_input_names() == (
-        rules.SCHEMA_PROJECTABLE_INPUTS | rules.ADAPTER_INPUT_NAMES | rules.POLICY_INPUT_NAMES
+        rules.SCHEMA_PROJECTABLE_INPUTS
+        | rules.ADAPTER_INPUT_NAMES
+        | rules.POLICY_INPUT_NAMES
+        | rules.VARIANT_KIND_INPUT_NAMES
     )
     assert rules.scoping_findings(declared={}) == []
+
+
+def test_a_variants_kind_declaration_is_classified_but_never_required(
+    rules: ModuleType,
+) -> None:
+    """The kind is the one declared input that is classified and NOT demanded.
+
+    A groom variant MUST declare it — the door reads it off that table — so an
+    `unclassified-declared-input` finding against it would fire on every groom
+    variant for the one input it is required to carry. The reserved workflow
+    declares NO kind, deliberately, because its kind is stated by the contract
+    and answered without reading a file; so unlike the policy family, whose
+    declaration leg demands every name of every payload, this family imposes no
+    declaration obligation at all.
+    """
+    assert rules.scoping_findings(declared={"workflow_kind": "groom"}) == []
+    assert (
+        rules.policy_declaration_findings(
+            declared={
+                "review_fix_visit_cap": "4",
+                "merge_on_review_cap_outcome": "x",
+                "merge_hold": "false",
+            }
+        )
+        == []
+    )
 
 
 def test_the_bundle_declares_the_merge_hold_and_dropping_it_from_the_family_fails(
@@ -632,11 +692,14 @@ def test_a_repository_declaring_no_registry_is_checked_as_the_bundle_alone(
     checked = payloads.checked_payloads(repo_root=tmp_path)
 
     assert [payload.where for payload in checked] == [_BUNDLE_WHERE]
-    # And the same holds for THIS repository, which registers no variant: the
-    # deferral of a real second variant is a fact about the config, not a gap
-    # in the gate.
+    # THIS repository no longer declares none: it registers the two-phase groom
+    # variant, so its own checked set is the bundle plus that directory. The
+    # pair of assertions is the point — the seeded root proves an empty registry
+    # yields the bundle alone, and the real root proves a declared one is
+    # actually picked up rather than quietly ignored.
     assert [payload.where for payload in payloads.checked_payloads(repo_root=_REPO_ROOT)] == [
-        _BUNDLE_WHERE
+        _BUNDLE_WHERE,
+        ".fabro/workflows/groom-work-item",
     ]
 
 

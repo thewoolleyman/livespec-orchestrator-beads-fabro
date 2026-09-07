@@ -1,0 +1,288 @@
+// groom-work-item — the two-phase groom cut's phase graph.
+//
+// The ratified clause this graph realizes is SPECIFICATION/contracts.md
+// §"Grooming and slice-size calibration" -> "Consensus-gated automated groom
+// cut". One run consumes ONE work-item and runs exactly ONE of two phases:
+//
+//   PROPOSE — draft the decomposition exactly as the `groom` front-end drafts
+//   it, file NOTHING, and terminate at a needs-human outcome carrying the
+//   draft. The Dispatcher journals that termination and records the draft on
+//   the item as a ledger comment; the item rests at blocked / needs-human.
+//
+//   APPLY — file the approved slices and regroom the original out. It runs
+//   only on a later dispatch of the same item whose rendered goal carries the
+//   recorded approval.
+//
+// THE PHASE IS DERIVED FROM THE RENDERED GOAL, NEVER FROM AN INPUT. The
+// Dispatcher folds the item's ledger comments into the goal verbatim, so the
+// drafting comment and the operator's approval answer are both IN the brief
+// every ACP node reads. The `implement` node reads them and decides; it writes
+// the decision to a sandbox scratch file so the two script nodes below can
+// route on it. That is what keeps this variant's declared input token set
+// identical to the reserved workflow's -- a phase input would have been a
+// token the bundle does not declare, and the peer clause forbids the
+// divergence.
+//
+// NEVER A WAITING RUN. Neither phase parks. The propose phase's product is a
+// dead run plus a ledger comment, which is the only shape §"A factory run
+// never awaits a human" permits.
+//
+// PEER PARITY. The six ACP node names below are the reserved workflow's six,
+// because §"Self-contained plugin dispatch" -> "A registered variant is the
+// reserved workflow's peer, not its exception" requires the per-repository
+// adapter layer, the `dispatcher.codex_models` expansion and the per-node
+// timeout table to resolve against this graph without naming an absent node. A
+// variant differs in its EDGES, its retry and review discipline, its prompts,
+// its run configuration and its sandbox image -- never in those six names. So
+// `pr` here is the apply phase's publication node with the LEDGER as its
+// publication surface, and `fix` repairs a malformed draft rather than a red
+// check suite. (Keep brace tokens out of comments BEFORE the digraph line --
+// a brace there breaks Fabro's graph render in the web UI.)
+digraph GroomWorkItem {
+    // Retry discipline mirrors the reserved workflow's: single-shot by
+    // default, one explicit retry on the two goal-gated nodes, and the engine's
+    // own failure-category awareness decides which failures spend it
+    // (transient infrastructure faults re-execute; deterministic ones fail
+    // straight through the `outcome=failed` edges to the human gate).
+    //
+    // Every duration here is a DEFAULT the Dispatcher rewrites from the
+    // target's `dispatcher.node_timeouts` table before `fabro run` sees the
+    // payload. The values match the resolution's own defaults so a direct
+    // `fabro run` of this file behaves like an unconfigured dispatch. Do NOT
+    // template a `timeout` from a workflow input: the pinned build types a
+    // quoted duration at parse time and never re-types a rendered string, so a
+    // templated timeout leaves the node with NO timeout and reports nothing.
+    graph [
+        goal="Draft or apply one work-item's decomposition per the ratified two-phase groom cut"
+        default_max_retries=0
+        stall_timeout="7200s"
+    ]
+
+    start [shape=Mdiamond, label="Start"]
+    exit  [shape=Msquare, label="Exit"]
+
+    // The groom node. It derives the phase from the rendered goal, then either
+    // drafts the cut (propose) or prepares the filing plan (apply). It writes
+    // NOTHING to the ledger in either phase -- the apply phase's filing is the
+    // `pr` node's job, which is what makes "the propose phase files nothing" a
+    // structural property of the graph rather than a promise in a prompt: the
+    // propose phase never reaches the node that can file.
+    implement [
+        label="Groom: derive the phase, then draft the cut or plan the filing"
+        backend="acp"
+        acp.command="{{ inputs.implement_adapter }}"
+        timeout="1800s"
+        max_retries=1
+        goal_gate=true
+        retry_target="implement"
+        prompt="@prompts/implement.md"
+    ]
+
+    // The groom run's own hard gate, and the reason it is NOT the repository's
+    // declared check suite. A groom run changes no tracked file, so the suite
+    // would verify an untouched tree at the cost of a full run of it; what
+    // actually needs proving about a groom run is the opposite fact -- that the
+    // tree really is untouched -- plus the shape of what the groom node
+    // produced. Both are cheap and mechanical, so they are asserted here rather
+    // than delegated:
+    //
+    //   1. the phase file names exactly one of the two phases;
+    //   2. the working tree is byte-identical to the dispatch base, which is
+    //      the machine-checkable form of "a groom run files nothing into the
+    //      repository". The dispatch base is the governed repository's DEFAULT
+    //      BRANCH, rendered from the resolved contract rather than spelled;
+    //   3. in the propose phase, the draft exists, is exactly ONE non-empty
+    //      line, and carries no brace character.
+    //
+    // The one-line rule is not style. The Dispatcher recovers the draft from
+    // the terminated run's needs-human sentinel, which is a stderr LINE, and it
+    // records the text following the sentinel ON THAT LINE -- so a draft
+    // spanning several lines would reach the ledger truncated to its first,
+    // SILENTLY. The brace rule is the same kind of hazard one step further on:
+    // a ledger comment is append-only, and a comment carrying a template
+    // opening delimiter poisons every future goal render for that item
+    // permanently. The Dispatcher refuses such a draft rather than escaping it;
+    // this node refuses it earlier, while the run can still be sent back to
+    // `fix` to re-encode it.
+    conformance [
+        label="Conformance: phase named, tree untouched, draft single-line and brace-free"
+        shape=parallelogram
+        timeout="600s"
+        script="phase=$(cat /tmp/livespec-groom-phase 2>/dev/null || true); if test \"$phase\" != propose && test \"$phase\" != apply; then echo 'LIVESPEC_GROOM_MALFORMED: the groom node named no phase; expected propose or apply in /tmp/livespec-groom-phase' >&2; exit 1; fi; if ! git diff --quiet origin/{{ inputs.default_branch }}...HEAD; then echo 'LIVESPEC_GROOM_MALFORMED: the working tree differs from dispatch base origin/{{ inputs.default_branch }}; a groom run files into the ledger and must change no tracked file' >&2; exit 1; fi; if test \"$phase\" = apply; then exit 0; fi; if ! test -s /tmp/livespec-groom-draft; then echo 'LIVESPEC_GROOM_MALFORMED: the propose phase produced no draft at /tmp/livespec-groom-draft' >&2; exit 1; fi; if test \"$(wc -l < /tmp/livespec-groom-draft)\" -gt 1; then echo 'LIVESPEC_GROOM_MALFORMED: the draft spans more than one line; only its first line would reach the ledger' >&2; exit 1; fi; if grep -q '{' /tmp/livespec-groom-draft; then echo 'LIVESPEC_GROOM_MALFORMED: the draft carries a brace, which would poison every future goal render of this item' >&2; exit 1; fi; exit 0"
+    ]
+
+    // Repairs a draft or filing plan the conformance gate refused. Mirrors the
+    // reserved workflow's `fix` node -- implementer adapter, re-enters the gate
+    // it failed -- and differs only in what it is repairing.
+    fix [
+        label="Fix conformance failures"
+        backend="acp"
+        acp.command="{{ inputs.fix_adapter }}"
+        timeout="1800s"
+        max_visits=3
+        prompt="@prompts/fix.md"
+    ]
+
+    // The review gate, applied to a CUT rather than to a diff. It reads the
+    // draft or the filing plan and asks the questions the maintainer would ask
+    // of a decomposition: is each slice one coherent, autonomously-verifiable
+    // done; are the dependency layers right; is a spec-change slice routed to
+    // the propose-change path rather than to the factory. Deliberately NO
+    // max_visits: the review<->review_fix loop is bounded GRACEFULLY by the
+    // edge guard below, and a hard visit ceiling would abort on the very visit
+    // that must route onward.
+    review [
+        label="Review the cut: coherence, verifiability, layering, routing"
+        backend="acp"
+        acp.command="{{ inputs.review_adapter }}"
+        timeout="1800s"
+        max_retries=1
+        prompt="@prompts/review.md"
+    ]
+
+    // Read-only triage of the reviewer's BLOCKING findings before any rework,
+    // exactly as in the reserved workflow: accept in-scope correct findings,
+    // reject out-of-scope, not-applicable, factually wrong or scope-expanding
+    // ones with a one-line rationale. `max_visits` is the ungraceful
+    // runaway-loop backstop and MUST exceed the largest supported
+    // `review_fix_visit_cap` override; the graceful bound is the review edge
+    // guard.
+    disposition [
+        label="Disposition review findings"
+        backend="acp"
+        acp.command="{{ inputs.disposition_adapter }}"
+        timeout="1800s"
+        max_retries=1
+        max_visits=10
+        prompt="@prompts/disposition.md"
+    ]
+
+    // Revises the draft or the filing plan for ONLY those findings the
+    // disposition record marks ACCEPTED, then re-enters the conformance gate --
+    // a revision can perfectly well break the single-line or brace-free rule,
+    // so it must be re-proved rather than assumed.
+    review_fix [
+        label="Revise the cut for accepted findings"
+        backend="acp"
+        acp.command="{{ inputs.review_fix_adapter }}"
+        timeout="1800s"
+        max_visits=10
+        prompt="@prompts/review-fix.md"
+    ]
+
+    // WHICH PHASE PUBLISHES. Reached only once the cut has been reviewed and
+    // approved, this is the fork between the two endings, and it is a SCRIPT
+    // node on purpose: the phase was decided once, by the node that read the
+    // goal, and re-deriving it here from a second agent's reading is exactly
+    // how the two could come to disagree about which phase this run is. Exit 0
+    // routes the apply phase to the filing node; any other exit routes the
+    // propose phase to the needs-human terminal, which carries the draft.
+    phase_gate [
+        label="Which phase publishes: apply files, propose parks"
+        shape=parallelogram
+        timeout="600s"
+        script="phase=$(cat /tmp/livespec-groom-phase 2>/dev/null || true); if test \"$phase\" = apply; then exit 0; fi; echo 'LIVESPEC_GROOM_PROPOSE: propose phase complete; parking the draft for a human decision without filing anything' >&2; exit 1"
+    ]
+
+    // The apply phase's publication node. The ledger is this run's publication
+    // surface: it files the approved slices through the filing seam, which
+    // REFUSES a call carrying no approval record, and regrooms the original
+    // out. It carries the same goal gate and single retry the reserved
+    // workflow's publish node carries.
+    pr [
+        label="File the approved slices and regroom out the original"
+        backend="acp"
+        acp.command="{{ inputs.pr_adapter }}"
+        timeout="1800s"
+        max_retries=1
+        goal_gate=true
+        retry_target="pr"
+        prompt="@prompts/pr.md"
+    ]
+
+    // The needs-human TERMINAL, and the propose phase's normal ending. It is
+    // the same dead-end shape the reserved workflow's terminal is: it preserves
+    // the tree on a run-scoped ref best-effort, writes the LIVESPEC_NEEDS_HUMAN
+    // sentinel to stderr, and exits 1 with no outgoing edge, so the run
+    // terminates non-green and the item rests at blocked / needs-human.
+    //
+    // What differs is the sentinel's PAYLOAD. When the propose phase left a
+    // draft, the sentinel carries it, because that stderr line is the channel
+    // the Dispatcher reads the draft off before recording it as the ledger
+    // comment the apply phase will later read. The draft is emitted through
+    // `head -n 1` so a draft that somehow reached here spanning several lines
+    // is truncated HERE, where the truncation is visible in the run record,
+    // rather than silently inside the Dispatcher's line-scoped reader.
+    //
+    // The ref is derived ONLY from FABRO_RUN_ID with no placeholder fallback:
+    // the pinned fabro exports that variable to hooks and not to script nodes,
+    // and a defaulted name silently collapses every run onto one shared ref.
+    needs_human [
+        label="Needs human: terminate, carry the draft to the ledger, preserve the tree"
+        shape=parallelogram
+        timeout="600s"
+        script="if test -n \"${FABRO_RUN_ID:-}\"; then ref=\"refs/heads/needs-human/$FABRO_RUN_ID\"; git add -A >/dev/null 2>&1 || true; git -c user.name=fabro -c user.email=fabro@livespec.invalid commit -q -m 'needs-human: preserve tree before terminating' >/dev/null 2>&1 || true; if git push origin \"HEAD:$ref\" >/dev/null 2>&1; then echo \"LIVESPEC_NEEDS_HUMAN_PRESERVED: $ref\" >&2; else echo 'LIVESPEC_NEEDS_HUMAN_PUSH_FAILED: tree not pushed; rely on the preserve-by-reference dump pointer' >&2; fi; else echo 'LIVESPEC_NEEDS_HUMAN_NO_RUN_ID: no FABRO_RUN_ID in this script environment, so no run-scoped ref exists to push and nothing was pushed; rely on the preserve-by-reference dump pointer' >&2; fi; if test -s /tmp/livespec-groom-draft; then echo \"LIVESPEC_NEEDS_HUMAN: $(head -n 1 /tmp/livespec-groom-draft)\" >&2; else echo 'LIVESPEC_NEEDS_HUMAN: the groom run could not auto-resolve this work-item and produced no draft; run terminated, decision routed to the ledger (blocked / needs-human)' >&2; fi; exit 1"
+    ]
+
+    // Terminal non-converged node, the conformance loop's cap. Same sentinel
+    // and same Dispatcher consumer as the reserved workflow's: a groom run that
+    // cannot produce a conformant draft after its budget of repairs is an
+    // item the loop should stop spending on, and the Dispatcher marks it
+    // needs-regroom rather than retrying it forever.
+    non_converged [
+        label="Non-converged: conformance loop cap hit; route back to Dispatcher (needs-regroom)"
+        shape=parallelogram
+        timeout="600s"
+        script="echo 'LIVESPEC_NON_CONVERGED: groom conformance loop cap hit without converging; routing back to the Dispatcher for needs-regroom' >&2; exit 1"
+    ]
+
+    start -> implement
+
+    // A failed groom node routes to the terminal; everything else is proved
+    // conformant before any review turn is spent on it.
+    implement -> needs_human [label="Blocked", condition="outcome=failed", weight=100]
+    implement -> conformance
+
+    // Conformance routing. The cap is enforced as a visit guard on the GATE's
+    // own visit count, not by `fix`'s max_visits alone: a node that reaches
+    // max_visits aborts the whole run at entry rather than emitting a routable
+    // failure, so no edge could carry the exhaustion onward. Gate visit N means
+    // N-1 completed repairs; `< 3` allows two, then the third failure falls
+    // through to the non-converged terminal. `fix`'s own max_visits stays as
+    // the abort backstop.
+    conformance -> review [label="Conformant", condition="outcome=succeeded"]
+    conformance -> fix [label="Malformed", condition="outcome!=succeeded && context.internal.node_visit_count < 3"]
+    conformance -> non_converged [label="Exhausted (conformance loop cap)"]
+    fix -> conformance
+
+    // Review routing. `review_fix_visit_cap` is one larger than the configured
+    // fix-round cap because the guard counts review VISITS including the first
+    // review, so the default cap of three rounds renders as `< 4`.
+    //
+    // NO SHIP-ON-CAP ESCAPE HATCH, deliberately, and this is where the groom
+    // variant's review discipline departs from the reserved workflow's. The
+    // bundle may ship a still-objected-to diff at the cap because a merged PR
+    // is revisable. A filed cut is not comparably cheap to undo -- it becomes
+    // the backlog other work is planned against -- so a cut the reviewer still
+    // objects to parks for a human instead.
+    review -> needs_human [label="Blocked", condition="outcome=failed", weight=100]
+    review -> disposition [label="fix", condition="preferred_label=fix && context.internal.node_visit_count < {{ inputs.review_fix_visit_cap }}"]
+    review -> phase_gate [label="approve", condition="preferred_label=approve"]
+    review -> needs_human [label="unmatched review outcome"]
+
+    disposition -> needs_human [label="Blocked", condition="outcome=failed", weight=100]
+    disposition -> review_fix [label="fix accepted", condition="preferred_label=fix"]
+    disposition -> review     [label="all rejected", condition="preferred_label=all_rejected"]
+    disposition -> needs_human [label="unmatched disposition outcome"]
+    review_fix -> conformance
+
+    // The two endings. Apply files; propose parks with its draft.
+    phase_gate -> pr [label="apply", condition="outcome=succeeded"]
+    phase_gate -> needs_human [label="propose"]
+
+    // A failed filing terminates at the human gate. The filing seam refuses a
+    // call carrying no approval record, so a filing that fails that way has
+    // found a real fault in the dispatch, not a transient one.
+    pr -> needs_human [label="Blocked", condition="outcome=failed"]
+    pr -> exit
+}

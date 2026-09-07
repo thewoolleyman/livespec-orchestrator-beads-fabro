@@ -20,6 +20,7 @@ _CHECK_PATH = _REPO_ROOT / "dev-tooling" / "checks" / "no_fleet_toolchain_litera
 
 _PACKAGE_RELPATH = ".claude-plugin/scripts/livespec_orchestrator_beads_fabro"
 _PAYLOAD_RELPATH = ".claude-plugin/.fabro/workflows/implement-work-item"
+_GROOM_VARIANT_RELPATH = ".fabro/workflows/groom-work-item"
 _FIXTURE_RELPATH = "dev-tooling/checks/fixtures/fleet_toolchain_literal_control.py.txt"
 _CONFORMANT_PAYLOAD = 'script = "uv sync"\n'
 _SCHEMA_SOURCE = (
@@ -343,13 +344,35 @@ def test_main_returns_nonzero_for_a_reintroduced_literal(
 # ---------------------------------------------------------------------------
 
 
-def test_the_repository_registers_no_variant_so_the_bundle_is_the_whole_scan() -> None:
-    """The deferral of a real second variant is a config fact, not a gap in the gate."""
-    check = _load_check()
+def test_the_repositorys_registered_variant_is_scanned_beside_the_bundle() -> None:
+    """The real registry reaches the real scan, and the scan reaches nothing else.
 
-    assert {
-        path.relative_to(_REPO_ROOT).parts[:4] for path in check.payload_paths(repo_root=_REPO_ROOT)
-    } == {tuple(_PAYLOAD_RELPATH.split("/"))}
+    Both halves matter and they fail in opposite directions. If the registry
+    were ignored, the groom variant's files would be absent from the walk and a
+    fleet literal committed there would never be found; if the walk strayed
+    outside the declared directories, findings would be reported against files
+    no registry entry names.
+    """
+    check = _load_check()
+    declared = {
+        payload.where
+        for payload in sys.modules["_checked_workflow_payloads"].checked_payloads(
+            repo_root=_REPO_ROOT
+        )
+    }
+
+    assert declared == {_PAYLOAD_RELPATH, _GROOM_VARIANT_RELPATH}
+
+    walked = [
+        path.relative_to(_REPO_ROOT).as_posix()
+        for path in check.payload_paths(repo_root=_REPO_ROOT)
+    ]
+
+    # The instrument must be able to return a hit before its scope claim means
+    # anything: both directories really do contribute files to the walk.
+    assert any(path.startswith(f"{_PAYLOAD_RELPATH}/") for path in walked)
+    assert any(path.startswith(f"{_GROOM_VARIANT_RELPATH}/") for path in walked)
+    assert all(any(path.startswith(f"{where}/") for where in declared) for path in walked)
 
 
 def test_a_registered_variant_with_a_fleet_literal_fails_while_the_bundle_passes(
