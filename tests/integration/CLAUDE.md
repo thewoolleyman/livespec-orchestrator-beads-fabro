@@ -35,6 +35,24 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   the export-before-terminate ordering is OBSERVED rather than inferred from
   the end state.
 
+- `test_ready_aging_tiebreak_scenario123.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 123 — The ready ordering breaks
+  equal-rank ties by ready-age past the bound". All four of the heading's
+  gherkin scenarios are asserted over ONE ordering of ONE tenant, because they
+  are four properties of a single sort key and splitting them would let each
+  pass against a key the others reject. The tenant is seeded through the REAL
+  store seam, so every `ready_since` is the durable instant the store itself
+  stamps on a transition into `ready` rather than a value poked into the
+  ordering; and both ranked surfaces run as production entry points that
+  resolve their own aging inputs — `next.main` and the Dispatcher's
+  `ready_items` — so "the two agree" is an observation, not a consequence of
+  the test handing both the same argument. Every id is chosen so the expected
+  order DIFFERS from what the pre-aging `(rank, id)` key produced: the aged
+  item of each pair carries the lexicographically later id, the below-bound
+  pair's older member carries the later id, the unknowable-instant item carries
+  an earlier id than its aged sibling, and the highest-`rank` item is the
+  newest row in the tenant.
+
 - `test_governed_repo_seams_scenario102.py` and
   `test_sandbox_exempt_hook_honor_scenario108.py` — bind
   `SPECIFICATION/scenarios.md` Scenarios 102 and 108 and the

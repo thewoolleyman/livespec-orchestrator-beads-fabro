@@ -60,6 +60,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     resolve_assignee,
     resolve_wip_cap,
 )
+from livespec_orchestrator_beads_fabro.commands._ready_aging_order import ready_aging_order
 from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.store import update_work_item_status
 from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -129,7 +130,14 @@ def admit_and_select(
     rework_admittable, refused = _filter_host_only_candidates(
         repo=repo,
         candidates=list(
-            rework_pending_candidates(items=items, accounting=accounting, rework=rework_pass)
+            rework_pending_candidates(
+                items=items,
+                accounting=accounting,
+                rework=rework_pass,
+                # The same aging inputs the ready queue this pass drains was
+                # ordered by, resolved off the same repository root.
+                ready_aging=ready_aging_order(project_root=repo),
+            )
         ),
         journal=journal,
     )

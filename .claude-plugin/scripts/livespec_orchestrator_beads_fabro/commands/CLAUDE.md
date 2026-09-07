@@ -114,12 +114,26 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   (`resolve_store_config`).
 - `_cross_repo.py` — cross-repo manifest loading (`load_manifest`) and
   raw `depends_on` entry parsing (`parse_entry`). The readiness predicate
-  (`is_item_ready`), the canonical `ready_sort_key` (= `(rank, id)`), and
+  (`is_item_ready`), the canonical `ready_sort_key` (`rank` first, then the
+  equal-`rank` ready-age tiebreak, then `id`), and
   `lane_of` now live in the shared
   `livespec_runtime.work_items.lifecycle` (pure functions over an
   in-memory `index: dict[str, WorkItem]`); callers (`next`,
   `list-work-items`, the Dispatcher) import them from there.
 - `_jsonc.py` — JSONC parsing for `.livespec.jsonc`.
+- `_ready_aging_order.py` — the orchestrator-side ready-AGE inputs
+  `ready_sort_key` needs, injected for the same reason
+  `_sibling_status_lookup` is: the durable, clone-independent `ready_since`
+  instant lives in the beads tenant, so reading it inside `livespec_runtime`
+  would be a `runtime -> beads` back-edge. `ready_aging_order(project_root=)`
+  resolves BOTH inputs — the lookup and
+  `dispatcher.ready_aging_threshold_hours` — from ONE project root, which is
+  what makes `next` and the Dispatcher's drain compose the identical ordering
+  rather than two similar ones. The tenant read is lazy, memoized per pass, and
+  fail-soft onto the ratified unknowable-instant path (`id` tiebreak, no age
+  advantage); `unaged_ready_order()` is that path for a caller holding no
+  project root. `rebalance_ranks` deliberately composes NEITHER input — stored
+  `rank` keys must not absorb a transient dwell.
 - `_dispatcher_integration_schema.py` / `_dispatcher_integration_field.py` /
   `_dispatcher_integration_defaults.py` /
   `_dispatcher_integration_declaration.py` /

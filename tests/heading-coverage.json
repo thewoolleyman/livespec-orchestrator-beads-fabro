@@ -1261,8 +1261,8 @@
     "heading": "## Scenario 123 — The ready ordering breaks equal-rank ties by ready-age past the bound",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified by the ready-aging-dispatch-tiebreak revise pass (plan control-plane-accounts-and-dispatch-policy, epic bd-ib-rh3iyd, child bd-ib-rh3iyd.2). The exercising integration-tier test is owed by the leg-4 implementation slice (the aging-aware ready_sort_key in livespec_runtime.work_items.lifecycle, composed identically by next and the Dispatcher), which depends on a livespec-runtime change; until it lands the behavior has no implementation to bind to.",
+    "test": "tests.integration.test_ready_aging_tiebreak_scenario123.test_scenario123_ready_aging_breaks_equal_rank_ties_and_both_surfaces_agree",
+    "reason": "Bound by the leg-4 implementation slice (bd-ib-rh3iyd.6), which opted the ready-dispatch surfaces into the aging-aware ready_sort_key the livespec-runtime v0.27.0 re-vendor landed. The bound test seeds one tenant through the real store seam and reads the ordering back off both production entry points — next.main and the Dispatcher's ready_items — so all four of the heading's gherkin scenarios, including that the two surfaces agree, are asserted over one ordering.",
     "work_item": "bd-ib-rh3iyd"
   },
   {
