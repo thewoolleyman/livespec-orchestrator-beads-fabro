@@ -25,16 +25,29 @@ the APPLY dispatch of an approved draft under a non-groom variant. They are not
 redundant: the pin can be changed, cleared, or overridden by an explicit
 `--workflow-name` between the two moments, so a check at the door alone would
 guard only the first of the two dispatches the ratified two-phase cut makes.
+
+WHY THE READ-BACK PREDICATE LIVES HERE TOO. `groom_door_claimed` recognises
+what `groom_dispatch` wrote, and the two halves are one fact: change the claim
+the door leaves and the reader that finds it must change with it. Splitting
+them across modules is how a door would come to write a claim no launch path
+recognises — which is precisely the gap this predicate closes.
 """
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro._store_dispatch_workflow import record_dispatch_workflow
+from livespec_orchestrator_beads_fabro._store_dispatch_workflow import (
+    dispatch_workflow_for,
+    record_dispatch_workflow,
+)
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_self_update as selfup
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import (
+    DispatchLock,
+    live_dispatch_lock,
+    recorded_dispatch_lock,
     write_dispatch_lock,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import JournalWriter
@@ -52,6 +65,7 @@ __all__: list[str] = [
     "GroomDispatch",
     "GroomDoorRefusal",
     "groom_dispatch",
+    "groom_door_claimed",
 ]
 
 # Two stages, never one. A reader counting how many groom dispatches a
@@ -66,6 +80,7 @@ GROOM_DOOR_NOT_BACKLOG = "not-backlog"
 GROOM_DOOR_NOT_A_GROOM_VARIANT = "not-a-groom-variant"
 
 _BACKLOG_STATUS = "backlog"
+_ACTIVE_STATUS = "active"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -138,6 +153,43 @@ def groom_dispatch(
         assignee=assignee,
         dispatch_id=dispatch_id,
     )
+
+
+def groom_door_claimed(*, repo: Path, item: WorkItem) -> bool:
+    """Is this `active` row the door's OWN claim, still waiting to be launched?
+
+    The three facts `groom_dispatch` wrote, read back in the order that costs
+    least: the status, then the claim (one local file), then the pin (a store
+    read). An ordinary `active` row fails at the claim and never pays for the
+    store read, which matters because the drain asks this of every row it sees.
+
+    A CLAIM HELD BY A DIFFERENT LIVE PROCESS IS NOT THE DOOR'S CLAIM. That is a
+    groom dispatch already in flight, and answering True for it would let a
+    second drain launch the same row again. A claim held by THIS process is the
+    door's, opened moments ago; a claim whose holder has exited is also the
+    door's, because the door writes and returns — the measured field case, and
+    the one a liveness-only reading refuses. So liveness alone answers neither
+    question: the discriminator is WHOSE process, not whether one is running.
+
+    THE DISPATCH ID IS LOAD-BEARING, not decoration. The door stamps one on
+    every claim it writes; a lock payload carrying none was not written by a
+    dispatching path this predicate should hand to a launch.
+    """
+    if item.status != _ACTIVE_STATUS:
+        return False
+    lock = recorded_dispatch_lock(repo=repo, work_item_id=item.id)
+    if lock is None or lock.dispatch_id is None:
+        return False
+    if _held_by_another_live_process(repo=repo, lock=lock):
+        return False
+    pin = dispatch_workflow_for(path=store_config(repo=repo), work_item_id=item.id)
+    return pin in groom_variant_names(repo=repo)
+
+
+def _held_by_another_live_process(*, repo: Path, lock: DispatchLock) -> bool:
+    if lock.pid == os.getpid():
+        return False
+    return live_dispatch_lock(repo=repo, work_item_id=lock.work_item_id) is not None
 
 
 def _refusal(*, repo: Path, item: WorkItem, variant: str) -> GroomDoorRefusal | None:
