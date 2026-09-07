@@ -133,7 +133,7 @@ steps around. It is distinct from the containerized server the entrypoint
 provisions (below); the image's `COPY fabro` stages this same host binary from
 `$HOST_FABRO_BIN`, so the host install IS the image's staging source.
 
-**Current binary (2026-09-07, Wave B):** `fabro 0.254.0 (7b4e3f3)` — built from the
+**Current binary (2026-09-07, Wave C):** `fabro 0.254.0 (af624d5)` — built from the
 `factory-integration` branch (see below). Verify with `~/.fabro/bin/fabro
 --version`; the parenthesized short SHA is the integration commit, and it MUST be
 reachable from `factory-integration` — **reachability, not equality**. The branch
@@ -176,17 +176,11 @@ needs (never a subset, so the branch is always the whole truth about what runs):
 | fork-local **Wave B / .4** — per-tool ACP run events (`bd-ib-bb41.4`) | the ACP session read loop keeps a tool-call ledger over `session/update` `ToolCall` / `ToolCallUpdate` and the handler emits the ordinary `agent.tool.started` / `agent.tool.completed` events for every call, with a payload bounded to `{kind}` / `{kind, status, elapsed_ms}` (no tool input or output) | `attach` and `dump` showed node-level events only for ACP agents, so a working agent and a hung one looked identical from outside the sandbox; per-tool events are what makes `watch` worth anything |
 | fork-local **Wave B / js4t57** — refuse staging after a failed pre-run push (`bd-ib-js4t57`) | `pipeline/initialize.rs` refuses a remote sandbox at staging, as `Error::Precondition`, when the manifest's `push_outcome` is `Failed`, naming the branch, the source HEAD and the push error; `NotAttempted` / `Succeeded` / `Skipped*` and Local sandboxes are untouched | measured 2026-09-06: with the pre-run push refused, a docker sandbox cloned the origin branch BEHIND the operator's unpushed commit and the run succeeded silently on that base (run `01M1VQYHBAH9`); the only trace was the `push_outcome` field, which nothing read |
 | fork-local **Wave B / .6** — ACP permission requests as interview questions (`bd-ib-bb41.6`) | `acp.permission_policy="ask"` (node attr; default `auto`) parks each adapter `session/request_permission` on the workflow's `AgentQuestionRuntime` as one multiple-choice question whose options are the adapter's, keyed by option id and presented **most-permissive first**; the answer resumes the node and is resolved **identity-first** on the option id, falling back to a label only when that label is unambiguous and cancelling rather than guessing otherwise; `acp.permission_timeout` bounds the wait and its expiry ends the turn as the deterministic `AcpError::PermissionTimedOut`, so the workflow's failed edge parks the node at `needs_human`; `auto` keeps the inline most-permissive answer, byte-identical to before | `select_permission_outcome` auto-answered every permission question, so a node never parked on a question and the console's needs-attention consumer had nothing to publish; under `ask` the question is data on `GET /runs/{id}/questions`. **Three review-found traps are why the row reads as it does:** matching the answer by display NAME let two options sharing a label collapse to the first, so a human choosing reject would have GRANTED the call; without an explicit ordering, `AutoApproveInterviewer` (installed for every `approval = auto` run) answers with `options.first()`, and ACP does not order an adapter's options, so a reject-first adapter would have denied everything silently under `ask` while `auto` allowed it; and the deadline did not exist at all — the question runtime carries no clock, so `PermissionTimedOut` had no automatic producer while the error text and the docs both described one |
+| fork-local **Wave C / .7** — non-blocking ask-policy permission (`bd-ib-bb41.7`) | under `acp.permission_policy="ask"` the `session/request_permission` handler resolves and responds from a SPAWNED TASK, so the connection's dispatch loop keeps processing `session/update` — agent text, tool events and the activity heartbeat — while the human is deciding; the per-request timeout record is a bounded `Option` (`get_or_insert`, first-writer-wins) and each spawned task is turn-scoped (a drop-guard cancellation token releases a still-parked task when the turn ends, answering `Cancelled`); `auto` stays byte-identical | before Wave C the resolver awaited the human INLINE in the handler, and `agent-client-protocol`'s Deadlock Risk means the loop processes no other message while a handler runs, so the whole wait froze every update — the Wave A progress evidence went stale at exactly the moment an operator inspects a run that looks stuck (a stall, not a hang). Proven by a mutation-verified non-blocking unit test and a live ask-policy control (an interleaved update reached the run WHILE the permission was parked) |
 
-**Known limitation of `acp.permission_policy="ask"` (`bd-ib-bb41.7`).** The
-resolver awaits the human INSIDE an `on_receive_request` handler, and
-`agent-client-protocol` documents that the dispatch loop processes no other
-message while a handler runs. So for the whole wait there is no agent text, no
-tool events and no activity heartbeat: the Wave A progress evidence is frozen
-at exactly the moment an operator inspects a run that looks stuck. It is a
-stall, not a hang — cancellation still tears the run down. The default `auto`
-policy is unaffected, and no workflow in this fleet sets `ask`, so nothing is
-exposed today. Do not set `ask` on a production workflow until `bd-ib-bb41.7`
-lands.
+The Wave B "known limitation" note for `bd-ib-bb41.7` is **resolved by the Wave C
+row above**: under `ask` the permission handler no longer blocks the dispatch
+loop. `auto` remains the default and no workflow in this fleet sets `ask`.
 
 Failure-cause attributes are queryable in Honeycomb, but not as `run_turn`
 span attributes. Filter the separate failure-event span in the same trace as
@@ -260,10 +254,21 @@ for a drain window:
 ```bash
 scp ~/.fabro/bin/fabro root@hp-xubuntu.perch-rudd.ts.net:/home/cwoolley/.fabro/bin/fabro.new
 ssh root@hp-xubuntu.perch-rudd.ts.net 'chown cwoolley:cwoolley /home/cwoolley/.fabro/bin/fabro.new \
+  && chmod 0755 /home/cwoolley/.fabro/bin/fabro.new \
   && cp -p /home/cwoolley/.fabro/bin/fabro /home/cwoolley/.fabro/bin/fabro.<outgoing-sha>.bak \
   && mv -f /home/cwoolley/.fabro/bin/fabro.new /home/cwoolley/.fabro/bin/fabro \
   && systemctl restart fabro-server && /home/cwoolley/.fabro/bin/fabro --version'
 ```
+
+`chmod 0755` is load-bearing, not decoration: `scp` as root lands the file
+**mode 0644** (it does not preserve the source exec bit without `-p`, and even
+`-p` from a differently-umasked source is not guaranteed), so `chown` alone
+leaves it non-executable. The `cwoolley`-run unit then fails
+`status=203/EXEC ... Permission denied`, systemd sits in `activating`/`start-post`
+while its readiness curl loops on `Could not connect to 127.0.0.1:32276`, and the
+tailnet API returns **502** — a failure that reads like the server crashed rather
+than a mode bit. Measured 2026-09-07 during the Wave C re-pin. vps never hits this
+because it runs as the file's owner.
 
 When gating a restart on `fabro ps --server <host>` being idle, match run ROWS
 (for example `grep -E '^ ?01[A-Z0-9]{10,}.*running'`): the idle message
