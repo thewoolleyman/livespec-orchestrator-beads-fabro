@@ -94,3 +94,33 @@ def test_outside_path_reference_refusal_names_every_referencing_file() -> None:
     assert str(error) == (
         "files outside plan/ reference plan/upgrade/: tests/test_a.py, tests/test_b.py"
     )
+
+
+def test_the_sweep_skips_ratified_spec_history_and_gitignored_paths(tmp_path: Path) -> None:
+    """History snapshots and ignored runtime files are not repointable hits.
+
+    Both were reported when archiving `pluggable-factory-workflow-configs` on
+    2026-09-07, and neither is the hazard this sweep exists for: a ratified
+    proposal under `SPECIFICATION/history/` is an immutable record of what was
+    said when it was ratified, so repointing it would falsify history, and a
+    gitignored runtime file is not in the pull request the move lands in. The
+    live hit that IS repointable — a workflow comment citing a research note —
+    must still be reported, so the widening is proved against a positive
+    control rather than on its own.
+    """
+    import subprocess
+
+    gates = importlib.import_module(_MODULE)
+    slug = "some-plan"
+    _ = subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    _write(path=tmp_path / ".gitignore", text="tmp/\n")
+    _write(path=tmp_path / "plan" / slug / "research" / "001.md", text="notes\n")
+
+    reference = f"see plan/{slug}/research/001.md\n"
+    _write(path=tmp_path / "SPECIFICATION" / "history" / "v099" / "proposal.md", text=reference)
+    _write(path=tmp_path / "tmp" / "journal.jsonl", text=reference)
+    _write(path=tmp_path / "workflows" / "workflow.toml", text=f"# {reference}")
+
+    hits = gates.outside_plan_path_references(project_root=tmp_path, slug=slug)
+
+    assert hits == ("workflows/workflow.toml",), hits
