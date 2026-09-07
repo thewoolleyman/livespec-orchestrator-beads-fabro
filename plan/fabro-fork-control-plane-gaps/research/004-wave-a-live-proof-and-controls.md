@@ -109,13 +109,36 @@ is what was tested.
 - **Two consecutive runs, two distinct refs, both resolvable.** Probe
   `WaveAProbeS` ran the exact preservation script from `workflow.fabro` (exit 0)
   and pushed `refs/heads/needs-human/01M1VNZN8AY7ZJG9S9M5F8AHGP` →
-  `5c8f7954ec42`; `git ls-remote` shows both, and no `unknown-run` ref exists.
-  The probe ref is deleted once this note lands; the real one stays.
-- **Negative control: no id → loud failure, no placeholder.** hp run
-  `01M1V4T2ZXC2` (OLD fabro, NEW workflow after PR #2198) reported
-  `LIVESPEC_NEEDS_HUMAN_PUSH_FAILED`. This is also why the hp re-pin is
-  urgent: until hp carries `9081419`, every needs-human preservation there
-  fails to push.
+  `5c8f7954ec42`; `git ls-remote` showed both at the time. The probe ref is
+  deleted once this note lands; the real one stays.
+- **CORRECTED 2026-09-07 — an `unknown-run` ref DOES exist on this repo's
+  origin, and the negative control cited below was the wrong run.** The
+  sentence this bullet replaces claimed "no `unknown-run` ref exists" and
+  attributed the loud-failure control to hp run `01M1V4T2ZXC2`. Both halves
+  were wrong, and each was wrong in the reassuring direction.
+  - The ref exists. Measured 2026-09-07 with
+    `git ls-remote origin 'refs/heads/needs-human/*'` against this repo:
+    `refs/heads/needs-human/unknown-run` resolves to `0194fd98`, whose commit
+    subject is `fabro(01M1VP54H84KW396YJJJWVHV2T): implement (failed)`, dated
+    `2026-09-06 15:49:01 +0000` — about an hour after the note's original
+    claim. It is left in place as evidence.
+  - The mechanism is a stale plugin cache, not a stale fabro build. A dispatch
+    driven through a plugin cache older than the `0.133.1` release still
+    renders the placeholder-carrying preservation script, so it can push
+    `unknown-run` no matter which fabro binary the factory runs. That is why
+    the ref appeared on a day when both the workflow fix and the fork fix were
+    already live.
+  - hp run `01M1V4T2ZXC2` is not this repo's negative control: it was a
+    `livespec-overseer` run, so it cannot evidence a claim about this repo's
+    refs. The loud-failure behaviour it showed is real and is still the reason
+    the hp re-pin matters — until hp carries `9081419`, every needs-human
+    preservation there fails to push — but it is a separate observation, not
+    the control for criterion 3.
+  - **What criterion 3 actually rests on** is the fork-side change plus its
+    unit coverage, and the absence of any NEW `unknown-run` push from a
+    current-cache dispatch. It is not evidenced by a global claim that no such
+    ref exists anywhere, which is falsifiable by any stale cache in the fleet
+    and was in fact falsified within the hour.
 
 ### 3.5 `bd-ib-bb41.3` — `AgentAcpTimedOut` progress evidence — ACCEPTED
 
@@ -152,6 +175,13 @@ does. Criterion 3 (disposition of `bd-ib-b5dg`) belongs to plan
 - **The wrong-parent A/B** (§3.1). A control that returns the same answer in
   both arms has not isolated the mechanism; ask what would differ if the fix
   worked before reading the result.
+- **A negative existence claim about refs is falsifiable by anyone else's
+  stale cache.** §3.4 asserted "no `unknown-run` ref exists" from one
+  `git ls-remote` reading. The reading was correct when taken and false about
+  an hour later, because a dispatch through an older plugin cache pushed one.
+  A claim of the form "this ref does not exist" is a claim about every writer
+  to the remote, not about the build under test; scope it to what the fix
+  controls, and timestamp the reading.
 - **A four-second docker run is not a local run.** Probe S/T finished in 4s
   and 6s, which looked like they had executed in the primary checkout; the
   dumps show `provider: docker`, a cached image and a fast clone. Check the
