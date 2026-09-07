@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.140.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.140.0...v0.140.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **groom:** read the answer disposition before treating it as consent (bd-ib-it2df2) ([578fdab](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/578fdab58944c3d1ca768e39ac3c9907fd063def))
+
 ## [0.140.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.139.0...v0.140.0) (2026-09-07)
 
 
