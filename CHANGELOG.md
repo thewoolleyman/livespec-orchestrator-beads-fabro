@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.141.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.140.1...v0.141.0) (2026-09-07)
+
+
+### Features
+
+* **drive:** refuse an answer press the effective disposition does not admit (bd-ib-3vhgjf) ([5e1ba5b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5e1ba5b312cd1b5bc39d40e34f9df9fd32ecb690))
+
 ## [0.140.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.140.0...v0.140.1) (2026-09-07)
 
 
