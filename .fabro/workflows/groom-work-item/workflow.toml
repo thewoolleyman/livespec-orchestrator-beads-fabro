@@ -156,7 +156,7 @@ provider = "docker"
 # baked global. The shared `bump-pin` autodiscovery walks the top-level
 # `.fabro/workflows/` root as well as the plugin's own, so this tag is rewritten
 # in lockstep with the bundle's rather than drifting behind it.
-docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.58.2"
+docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.58.3"
 
 [environments.livespec-ci.resources]
 cpu = 4
