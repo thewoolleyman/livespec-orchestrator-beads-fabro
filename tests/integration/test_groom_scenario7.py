@@ -261,6 +261,146 @@ def test_dependency_on_unknown_draft_title_is_rejected() -> None:
 
 
 # --------------------------------------------------------------------------
+# All-or-nothing dependency resolution (bd-ib-cebp3u).
+#
+# The whole approved cut is resolved BEFORE the first write, so a malformed
+# draft leaves the ledger exactly as it found it — the same guarantee an
+# absent approval already carried. The discriminating fixture puts a VALID
+# factory slice BETWEEN the spec-change slice and the slice that names it:
+# a seam that resolved dependencies mid-loop would have filed that middle
+# slice, routed it through intake and stamped its approval before raising,
+# and there is no compensating delete. A one-slice draft cannot tell the two
+# implementations apart, because neither files anything before the raise.
+# --------------------------------------------------------------------------
+
+
+def _spec_change_slice(*, title: str) -> CandidateSlice:
+    return CandidateSlice(
+        title=title,
+        description=f"{title} body",
+        acceptance="propose-change accepted",
+        autonomy_tier="human-gated",
+        repo_target="livespec",
+        is_spec_change=True,
+    )
+
+
+def _cut_depending_on_a_spec_change_slice() -> list[CandidateSlice]:
+    """The 2026-09-07 shape: slice 3 is blocked by a never-minted slice 1."""
+    return [
+        _spec_change_slice(title="slice 1 spec change"),
+        _factory_slice(title="slice 2 factory"),
+        _factory_slice(
+            title="slice 3 factory",
+            depends_on=("slice 1 spec change", "slice 2 factory"),
+        ),
+    ]
+
+
+def test_dependency_on_a_spec_change_slice_files_no_work_item() -> None:
+    """The refusal lands before the first write, so the ledger holds no slice."""
+    _seed_backlog_item(issue_id="li-epic")
+
+    with pytest.raises(GroomDraftError):
+        file_approved_slices(
+            path=_config(),
+            regroom_item_id="li-epic",
+            local_repo=_LOCAL_REPO,
+            approval=_APPROVAL,
+            slices=_cut_depending_on_a_spec_change_slice(),
+        )
+
+    # ZERO slices filed — not "the ones after the raise are missing".
+    assert set(_all_items()) == {"li-epic"}
+
+
+def test_a_refused_spec_change_dependency_leaves_the_original_unclosed() -> None:
+    """The regroom target is untouched, so a corrected cut can simply re-run."""
+    _seed_backlog_item(issue_id="li-epic")
+
+    with pytest.raises(GroomDraftError):
+        file_approved_slices(
+            path=_config(),
+            regroom_item_id="li-epic",
+            local_repo=_LOCAL_REPO,
+            approval=_APPROVAL,
+            slices=_cut_depending_on_a_spec_change_slice(),
+        )
+
+    assert _item_status(issue_id="li-epic") == "backlog"
+    assert groom_approval_for(path=_config(), work_item_id="li-epic") is None
+
+
+def test_the_spec_change_dependency_refusal_names_both_slices() -> None:
+    """The message must say WHICH slice depends on WHICH unmintable slice."""
+    _seed_backlog_item(issue_id="li-epic")
+
+    with pytest.raises(GroomDraftError) as excinfo:
+        file_approved_slices(
+            path=_config(),
+            regroom_item_id="li-epic",
+            local_repo=_LOCAL_REPO,
+            approval=_APPROVAL,
+            slices=_cut_depending_on_a_spec_change_slice(),
+        )
+
+    detail = excinfo.value.detail
+    assert "slice 3 factory" in detail
+    assert "slice 1 spec change" in detail
+    assert "spec-change" in detail
+    assert "never minted" in detail
+
+
+def test_an_unresolvable_handle_after_a_valid_slice_files_nothing() -> None:
+    """The all-or-nothing guarantee is the handle rule's, not just the spec-change case."""
+    _seed_backlog_item(issue_id="li-epic")
+
+    with pytest.raises(GroomDraftError, match="not an earlier factory slice"):
+        file_approved_slices(
+            path=_config(),
+            regroom_item_id="li-epic",
+            local_repo=_LOCAL_REPO,
+            approval=_APPROVAL,
+            slices=[
+                _factory_slice(title="valid earlier slice"),
+                _factory_slice(title="orphan", depends_on=("ghost-layer",)),
+            ],
+        )
+
+    assert set(_all_items()) == {"li-epic"}
+    assert _item_status(issue_id="li-epic") == "backlog"
+
+
+def test_a_resolvable_cut_still_files_every_factory_slice_and_regrooms_out() -> None:
+    """The control: validating first must not stop a well-formed cut landing.
+
+    Same three-slice shape as the refused cut above, differing only in that
+    the last slice names the factory slice rather than the spec-change one.
+    Without this leg, a seam that refused EVERY cut would pass the refusal
+    cases just as well.
+    """
+    _seed_backlog_item(issue_id="li-epic")
+
+    result = file_approved_slices(
+        path=_config(),
+        regroom_item_id="li-epic",
+        local_repo=_LOCAL_REPO,
+        approval=_APPROVAL,
+        slices=[
+            _spec_change_slice(title="slice 1 spec change"),
+            _factory_slice(title="slice 2 factory"),
+            _factory_slice(title="slice 3 factory", depends_on=("slice 2 factory",)),
+        ],
+    )
+
+    base_id, dependent_id = result.filed_slice_ids
+    items = materialize_work_items(records=read_work_items(path=_config()))
+    assert items[dependent_id].depends_on == ({"kind": "local", "work_item_id": base_id},)
+    assert result.regroomed_out is True
+    assert _item_status(issue_id="li-epic") == "done"
+
+
+# --------------------------------------------------------------------------
 # Read-only-until-approval + refuse-don't-drop guarantees.
 # --------------------------------------------------------------------------
 
