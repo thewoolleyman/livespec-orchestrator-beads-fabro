@@ -37,15 +37,41 @@ at when the run prepares, and records that resolution at
 `<plugins root>/livespec-run-plugin-pin.json`. The rewrite is what a later
 session's marketplace refresh resolves; the record is what makes a drift
 diagnosable from the run's own filesystem afterwards rather than by inference.
+
+WHY THE PIN ALONE WAS NOT ENOUGH, and what re-entry adds (bd-ib-cewr.3). Prepare
+runs ONCE; the registry it verified is mutated afterwards, because every later
+ACP session runs its own plugin update. Measured 2026-09-08 across three console
+runs, `installed_plugins.json` carried NO orchestrator record at janitor time —
+the TUI e2e suite resolved the sandbox clone and went 12/12 green — and named
+build `1efcb86825de` by the pr stage, whose cache directory had no `scripts/bin`.
+The pre-push hook then failed on a plugin root the run never resolved, twice per
+run, after a green janitor and an approved review. Recording a pin cannot prevent
+that on its own: nothing re-reads the record. So the gate is RE-ENTRANT. The
+prepare pass materializes the gate program at
+`<plugins root>/livespec-run-plugin-gate.py` and records the pin; the pr stage
+re-runs that program before it pushes (`plugin_pin_gate_command`), which drops
+every record naming a build the run did not resolve at start and refuses, by
+name, on an unmaterialized cache it cannot repair.
+
+WHY THE PR PROMPT AND NOT A GRAPH NODE. The registry advances INSIDE a later
+session, after that session's plugin update and before the push. A script node on
+the edges into `pr` runs before that session exists, so it cannot observe the
+mutation it would exist to catch — and interposing one would also rewrite the
+ratified `review -> pr` routing. The pr recipe's first step is the earliest point
+in the run that is downstream of the update and upstream of the pre-push hook.
 """
 
 from __future__ import annotations
 
 __all__: list[str] = [
+    "PLUGIN_BUILD_ADVANCED_MARKER",
     "PLUGIN_BUILD_PIN_FILENAME",
+    "PLUGIN_CACHE_UNMATERIALIZED_MARKER",
+    "PLUGIN_GATE_PROGRAM_FILENAME",
     "SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR",
     "plugin_cache_gate_prepare_steps_block",
     "plugin_cache_gate_script",
+    "plugin_pin_gate_command",
 ]
 
 # The Claude plugins root the gate reads inside the sandbox. `$HOME/.claude/
@@ -62,6 +88,20 @@ SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR = "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT"
 # session of this run resolves. Named for the run rather than for a plugin: it
 # covers every marketplace the sandbox carries, not just this orchestrator.
 PLUGIN_BUILD_PIN_FILENAME = "livespec-run-plugin-pin.json"
+
+# The gate program itself, written below the plugins root by the prepare step so
+# a later stage can RE-ENTER it. A heredoc piped into `python3 -` is a one-shot:
+# it cannot be re-run by anything that did not already carry the whole program,
+# and the pr stage carries a prompt, not a program. Landing it on disk also makes
+# the verification an operator can read and re-run inside a live sandbox.
+PLUGIN_GATE_PROGRAM_FILENAME = "livespec-run-plugin-gate.py"
+
+# The two named conditions the gate prints to stderr. They are constants rather
+# than prose because three consumers must agree on one string: the sandbox that
+# emits it, the pr prompt that tells the agent what to report, and the test that
+# proves the emission. A signature nobody can grep for is not a signature.
+PLUGIN_CACHE_UNMATERIALIZED_MARKER = "LIVESPEC_PLUGIN_CACHE_UNMATERIALIZED"
+PLUGIN_BUILD_ADVANCED_MARKER = "LIVESPEC_PLUGIN_BUILD_ADVANCED"
 
 # The gate program, run as `python3 - <<'PY'` by the rendered prepare step. It
 # is deliberately stdlib-only and free of any livespec import: the sandbox clone
@@ -84,6 +124,8 @@ cache_root = root / "cache"
 registry_path = root / "installed_plugins.json"
 marketplaces_path = root / "known_marketplaces.json"
 pin_path = root / "PIN_FILENAME"
+unmaterialized = "UNMATERIALIZED_MARKER"
+advanced = "ADVANCED_MARKER"
 
 
 def note(message):
@@ -162,7 +204,7 @@ def repair_registry():
                 kept.append(record)
                 continue
             for finding in findings:
-                note(plugin + " " + finding)
+                note(unmaterialized + ": " + plugin + " " + finding)
             if remove_cache_dir(path):
                 note(plugin + " incomplete cache removed; the agent SDK"
                      " re-materializes this build before the agent runs")
@@ -174,7 +216,8 @@ def repair_registry():
     if changed:
         registry_path.write_text(json.dumps(registry, indent=2), encoding="utf-8")
     for entry in unrepaired:
-        note("REFUSED to remove a cache outside " + str(cache_root) + ": " + entry)
+        note(unmaterialized + ": REFUSED to remove a cache outside "
+             + str(cache_root) + ": " + entry)
     return 1 if unrepaired else 0
 
 
@@ -229,29 +272,122 @@ def registered_builds():
     return builds
 
 
+def pinned_builds():
+    """The build set this run resolved at prepare time, or None before it exists.
+
+    None is what distinguishes the PREPARE pass from a stage-boundary RE-ENTRY,
+    and the two must behave differently: prepare records the resolution, and a
+    re-entry enforces it. Deriving the distinction from the pin file rather than
+    from an argument keeps the one program correct at both call sites.
+    """
+    pin = read_json(pin_path)
+    builds = pin.get("builds") if isinstance(pin, dict) else None
+    return builds if isinstance(builds, dict) else None
+
+
+def enforce_pin(pinned):
+    """Drop every record naming a build this run did not resolve at start.
+
+    The CACHE is left alone. A build registered mid-run may be perfectly
+    materialized -- it is simply not this run's -- and removing a sound cache
+    would destroy work the next run reuses. Only the registry decides what a
+    session resolves, so the registry is the only thing this reverts.
+    """
+    registry = read_json(registry_path)
+    plugins = registry.get("plugins") if isinstance(registry, dict) else None
+    if not isinstance(plugins, dict):
+        return
+    changed = False
+    for plugin in sorted(plugins):
+        records = plugins[plugin]
+        if not isinstance(records, list):
+            continue
+        allowed = pinned.get(plugin)
+        allowed = allowed if isinstance(allowed, list) else []
+        kept = []
+        for record in records:
+            build = str(record.get("version")) if isinstance(record, dict) else None
+            if build in allowed:
+                kept.append(record)
+                continue
+            note(advanced + ": " + plugin + " registered build " + str(build)
+                 + " after this run resolved " + repr(allowed) + "; dropping that"
+                 " record so every stage resolves the build the run started with")
+            changed = True
+        plugins[plugin] = kept
+    if changed:
+        registry_path.write_text(json.dumps(registry, indent=2), encoding="utf-8")
+
+
+pinned = pinned_builds()
 status = repair_registry()
-pin = dict(marketplaces=pin_marketplaces(), builds=registered_builds())
-root.mkdir(parents=True, exist_ok=True)
-pin_path.write_text(json.dumps(pin, indent=2, sort_keys=True), encoding="utf-8")
-note("recorded this run's plugin build at " + str(pin_path))
+if pinned is None:
+    pin = dict(marketplaces=pin_marketplaces(), builds=registered_builds())
+    root.mkdir(parents=True, exist_ok=True)
+    pin_path.write_text(json.dumps(pin, indent=2, sort_keys=True), encoding="utf-8")
+    note("recorded this run's plugin build at " + str(pin_path))
+else:
+    enforce_pin(pinned)
+    note("re-entered at a stage boundary; enforced the build pinned at "
+         + str(pin_path))
 raise SystemExit(status)
 '''
 
 
-def plugin_cache_gate_script() -> str:
-    """The bash prepare-step body: verify, re-materialize, then pin.
+def _plugins_root_expansion() -> str:
+    """The shell expansion both entry points resolve the plugins root through.
 
-    `set -eu` plus the heredoc means the gate's own exit code IS the step's, so
+    Written once because a re-entry that resolved a DIFFERENT root than the
+    prepare pass would find no pin, silently take the prepare arm, and record a
+    second pin over the first -- an advance reported as a fresh resolution.
+    """
+    return f"${{{SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR}:-$HOME/.claude/plugins}}"
+
+
+def _gate_program() -> str:
+    """The gate program with its three deployment-time tokens substituted in."""
+    program = _GATE_SOURCE
+    for token, value in (
+        ("PIN_FILENAME", PLUGIN_BUILD_PIN_FILENAME),
+        ("UNMATERIALIZED_MARKER", PLUGIN_CACHE_UNMATERIALIZED_MARKER),
+        ("ADVANCED_MARKER", PLUGIN_BUILD_ADVANCED_MARKER),
+    ):
+        program = program.replace(token, value)
+    return program.strip()
+
+
+def plugin_cache_gate_script() -> str:
+    """The bash prepare-step body: materialize the program, verify, then pin.
+
+    `set -eu` plus the `exec` means the gate's own exit code IS the step's, so
     an incomplete cache that could not be repaired aborts the run in setup —
     seconds of a prepare step instead of the hour of agent nodes the observed
     failure spent before surfacing the same fact.
+
+    The program is WRITTEN before it is run, rather than piped into `python3 -`,
+    because the pr stage has to re-enter the same verification and a pipe leaves
+    nothing behind to re-enter.
     """
     return (
         "set -eu\n"
-        "python3 - <<'PY'\n"
-        f"{_GATE_SOURCE.replace('PIN_FILENAME', PLUGIN_BUILD_PIN_FILENAME).strip()}\n"
-        "PY"
+        f'root="{_plugins_root_expansion()}"\n'
+        'mkdir -p "$root"\n'
+        f"cat > \"$root/{PLUGIN_GATE_PROGRAM_FILENAME}\" <<'PY'\n"
+        f"{_gate_program()}\n"
+        "PY\n"
+        f'exec python3 "$root/{PLUGIN_GATE_PROGRAM_FILENAME}"'
     )
+
+
+def plugin_pin_gate_command() -> str:
+    """The one command a later stage runs to re-enter the gate before pushing.
+
+    A single argv rather than a script body: its consumer is the pr prompt, and
+    an agent asked to run a multi-line recipe transcribes it. Its exit code is
+    the whole contract — zero means the registry now names only builds this run
+    resolved at start, non-zero means it does not and could not be repaired.
+    """
+    return f'python3 "{_plugins_root_expansion()}/{PLUGIN_GATE_PROGRAM_FILENAME}"'
 
 
 def plugin_cache_gate_prepare_steps_block() -> str:
