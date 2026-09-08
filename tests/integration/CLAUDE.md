@@ -255,6 +255,23 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   open on. A fourth case runs the same groom-pinned item through `loop`, since
   the two dispatch paths reach the wall through separate call sites.
 
+- `test_needs_attention_idle_factory_scenario120.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 120 — An idle factory with
+  dispatchable work surfaces its first dispatch" and the contract it realizes,
+  `SPECIFICATION/contracts.md` §"Orchestrator-owned attention facts" →
+  "Idle-factory". The fact is composed through the real `build_attention` pass
+  over the real store/client seam; nothing but the spec lane is stood in.
+  Driving the whole snapshot is what makes the positive case mean anything: the
+  scenario claims exactly ONE fact appears and that its handoff is one `drive`
+  accepts, and a lane called in isolation could show neither. The three clearing
+  cases each remove exactly ONE trigger condition from the SAME otherwise-idle
+  fixture — a counted claim, an unexpired provider-exhaustion record, an empty
+  admission-eligible set — because "the fact appeared" is otherwise
+  indistinguishable from "the fact always appears". The positive case also
+  asserts the mirror capacity fact is absent and that the journal is unchanged,
+  since the fact's counted-claim read is the side-effect-free half of an
+  accounting pair whose sibling writes as it reads.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

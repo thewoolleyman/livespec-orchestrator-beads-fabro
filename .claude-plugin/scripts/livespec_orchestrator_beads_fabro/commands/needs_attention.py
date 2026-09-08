@@ -38,6 +38,9 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_envelope import
 from livespec_orchestrator_beads_fabro.commands._needs_attention_handoffs import (
     plans,
 )
+from livespec_orchestrator_beads_fabro.commands._needs_attention_idle_factory import (
+    idle_factory_items,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_merge_hold import (
     merge_hold_items,
 )
@@ -198,6 +201,12 @@ def build_attention(
             held_work_item_ids=held_work_item_ids,
         )
         + capacity_items(project_root=project_root, repo=repo_name, items=materialized)
+        # The mirror image of the capacity fact above: that one reports a
+        # factory too busy to take more, this one a factory taking nothing
+        # while dispatchable work waits. An idle queue is silent on every
+        # other lane here — nothing is stranded, held, or aging past a
+        # bound — so without this row it is visible only by being noticed.
+        + idle_factory_items(project_root=project_root, repo=repo_name, items=materialized)
         # A run the ledger disowns holds a factory scheduler slot, and no
         # surface keyed on THIS repo's records can see it: the projection is
         # the reconciler's own dry run, so the lane and the remedy it prints

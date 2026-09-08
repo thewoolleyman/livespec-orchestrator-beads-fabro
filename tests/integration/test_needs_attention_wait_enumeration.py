@@ -269,7 +269,11 @@ def test_a_state_drive_refuses_by_construction_is_never_advertised(
     assert refusal["status"] == "failed"
     assert refusal["summary"] == "approve requires an effective-manual pending-approval item."
     assert "approve:bd-auto" not in {item.handoff.action_id for item in attention}
-    # It is surfaced — just not as an action the enforcer would reject.
-    [awaiting] = [item for item in attention if item.source_ref.work_item == "bd-auto"]
+    # It is surfaced — just not as an action the enforcer would reject. The
+    # awaiting-admission lane is selected by id rather than by referent, because
+    # an auto-admissible item on an idle factory is also the idle-factory fact's
+    # first ranked dispatch, and that row names the same work-item.
+    [awaiting] = [item for item in attention if item.id.startswith("hygiene:awaiting-admission:")]
     assert awaiting.id == "hygiene:awaiting-admission:bd-auto"
     assert awaiting.handoff.kind == "shell"
+    assert awaiting.source_ref.work_item == "bd-auto"
