@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.142.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.142.1...v0.142.2) (2026-09-08)
+
+
+### Bug Fixes
+
+* **dispatcher:** provision Codex [otel] config so spend telemetry is emitted ([9e2fa2c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9e2fa2c5be36f922286b9ae8b23659c1077b3587))
+
 ## [0.142.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.142.0...v0.142.1) (2026-09-07)
 
 
