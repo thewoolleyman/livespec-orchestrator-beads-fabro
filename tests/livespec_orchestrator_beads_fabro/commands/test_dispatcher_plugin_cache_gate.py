@@ -11,6 +11,17 @@ The gate runs as a `[[run.prepare.steps]]` entry, which fabro executes BEFORE
 any ACP session. "Repaired before the agent runs" is therefore a property of
 where the step sits, and `test_overlay_appends_the_gate_as_a_prepare_step`
 pins that placement.
+
+RE-ENTRY AT THE PR STAGE BOUNDARY (bd-ib-cewr.3). Prepare runs once, and the
+registry it verified is mutated afterwards: every later ACP session runs its own
+plugin update. Measured 2026-09-08 across three console runs, the sandbox
+registry carried NO orchestrator record at janitor time (the TUI e2e suite was
+12/12 green) and named build `1efcb86825de` by the pr stage, whose cache had no
+`scripts/bin` — so the pre-push hook failed on a plugin root the run never
+resolved. The gate is therefore re-entrant: the prepare pass RECORDS the run's
+build resolution and materializes the gate program, and the pr stage re-runs
+that program before it pushes, reverting any build the run did not start with
+and refusing by name on an unmaterialized cache it cannot repair.
 """
 
 from __future__ import annotations
@@ -26,7 +37,25 @@ _MODULE_PATH = _REPO_ROOT.joinpath(
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands"
     "/_dispatcher_plugin_cache_gate.py"
 )
+_PR_PROMPT_PATH = _REPO_ROOT.joinpath(
+    ".claude-plugin/.fabro/workflows/implement-work-item/prompts/pr.md"
+)
 _MANIFEST = {"required_paths": ["plugin.json", "scripts/bin"]}
+# The plugin key and build id the three console runs failed on, kept verbatim so
+# the regression test reproduces the measured signature rather than a paraphrase.
+_ORCHESTRATOR_KEY = "livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro"
+_UNMATERIALIZED_BUILD = "1efcb86825de"
+
+
+def module_marker(*, name: str) -> str:
+    """The gate's named-marker constant, read from the module under test.
+
+    Read rather than spelled: the marker the sandbox emits and the marker a
+    test looks for must be ONE string, or the test passes on a signature the
+    run never prints.
+    """
+    module = importlib.import_module(_MODULE_NAME)
+    return str(getattr(module, name))
 
 
 def _write_json(*, path: Path, payload: object) -> None:
@@ -49,6 +78,15 @@ def _incomplete_cache(*, cache_dir: Path) -> Path:
     return cache_dir
 
 
+def _gate_env(*, plugins_root: Path, tmp_path: Path) -> dict[str, str]:
+    module = importlib.import_module(_MODULE_NAME)
+    return {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "HOME": str(tmp_path / "unused-home"),
+        module.SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(plugins_root),
+    }
+
+
 def _run_gate(*, plugins_root: Path, tmp_path: Path) -> subprocess.CompletedProcess[str]:
     module = importlib.import_module(_MODULE_NAME)
     script = tmp_path / "gate.sh"
@@ -58,12 +96,35 @@ def _run_gate(*, plugins_root: Path, tmp_path: Path) -> subprocess.CompletedProc
         capture_output=True,
         text=True,
         check=False,
-        env={
-            "PATH": "/usr/local/bin:/usr/bin:/bin",
-            "HOME": str(tmp_path / "unused-home"),
-            module.SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(plugins_root),
-        },
+        env=_gate_env(plugins_root=plugins_root, tmp_path=tmp_path),
     )
+
+
+def _run_pin_gate(*, plugins_root: Path, tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    """Re-enter the gate the way the pr stage does — through its published command."""
+    module = importlib.import_module(_MODULE_NAME)
+    return subprocess.run(
+        ["bash", "-c", module.plugin_pin_gate_command()],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_gate_env(plugins_root=plugins_root, tmp_path=tmp_path),
+    )
+
+
+def _register(*, plugins_root: Path, plugin: str, cache_dir: Path, build: str) -> None:
+    """Append one installed-plugin record, the way a session's update would."""
+    registry_path = plugins_root / "installed_plugins.json"
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    records = registry["plugins"].setdefault(plugin, [])
+    records.append({"installPath": str(cache_dir), "version": build})
+    _write_json(path=registry_path, payload=registry)
+
+
+def _registered_builds(*, plugins_root: Path, plugin: str) -> list[str]:
+    registry_path = plugins_root / "installed_plugins.json"
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    return [str(record["version"]) for record in registry["plugins"][plugin]]
 
 
 def test_the_gate_module_is_present() -> None:
@@ -238,3 +299,129 @@ def test_overlay_appends_the_gate_as_a_prepare_step() -> None:
     assert "cache-manifest.json" in block
     assert "required_paths" in block
     assert module.plugin_cache_gate_script() in block
+
+
+def test_the_prepare_pass_materializes_the_gate_program_for_later_stages(
+    tmp_path: Path,
+) -> None:
+    """A one-shot heredoc cannot be re-entered; the program has to land on disk."""
+    module = importlib.import_module(_MODULE_NAME)
+    plugins_root = tmp_path / "plugins"
+
+    result = _run_gate(plugins_root=plugins_root, tmp_path=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    program = plugins_root / module.PLUGIN_GATE_PROGRAM_FILENAME
+    assert program.is_file()
+    assert "cache-manifest.json" in program.read_text(encoding="utf-8")
+
+
+def test_a_later_stage_keeps_the_build_the_run_resolved_at_start(tmp_path: Path) -> None:
+    """Criterion 1: a release registered mid-run does not move the run's build.
+
+    The newer cache here is COMPLETE on purpose. Cache repair cannot explain the
+    outcome, so the assertion isolates the per-run pin: only the pin knows the
+    build is one this run never resolved.
+    """
+    plugins_root = tmp_path / "plugins"
+    cache = plugins_root / "cache" / "mkt" / "plug"
+    started_with = _complete_cache(cache_dir=cache / "39cf53dee07c")
+    _write_json(
+        path=plugins_root / "installed_plugins.json",
+        payload={
+            "version": 2,
+            "plugins": {
+                "plug@mkt": [{"installPath": str(started_with), "version": "39cf53dee07c"}]
+            },
+        },
+    )
+    prepare = _run_gate(plugins_root=plugins_root, tmp_path=tmp_path)
+    assert prepare.returncode == 0, prepare.stderr
+
+    newer = _complete_cache(cache_dir=cache / _UNMATERIALIZED_BUILD)
+    _register(
+        plugins_root=plugins_root,
+        plugin="plug@mkt",
+        cache_dir=newer,
+        build=_UNMATERIALIZED_BUILD,
+    )
+
+    boundary = _run_pin_gate(plugins_root=plugins_root, tmp_path=tmp_path)
+
+    assert boundary.returncode == 0, boundary.stderr
+    assert module_marker(name="PLUGIN_BUILD_ADVANCED_MARKER") in boundary.stderr
+    assert _registered_builds(plugins_root=plugins_root, plugin="plug@mkt") == ["39cf53dee07c"]
+
+
+def test_an_unmaterialized_build_outside_the_cache_refuses_by_name(tmp_path: Path) -> None:
+    """Criterion 2: an unrepairable entry refuses, naming the condition."""
+    plugins_root = tmp_path / "plugins"
+    outside = _incomplete_cache(cache_dir=tmp_path / "not-the-cache" / _UNMATERIALIZED_BUILD)
+    _write_json(
+        path=plugins_root / "installed_plugins.json",
+        payload={
+            "version": 2,
+            "plugins": {
+                _ORCHESTRATOR_KEY: [{"installPath": str(outside), "version": _UNMATERIALIZED_BUILD}]
+            },
+        },
+    )
+
+    result = _run_gate(plugins_root=plugins_root, tmp_path=tmp_path)
+
+    assert result.returncode == 1
+    assert module_marker(name="PLUGIN_CACHE_UNMATERIALIZED_MARKER") in result.stderr
+    assert "missing required path scripts/bin" in result.stderr
+
+
+def test_the_console_missing_scripts_bin_signature_is_cleared_before_the_push(
+    tmp_path: Path,
+) -> None:
+    """Criterion 3: the measured console signature, reproduced end to end.
+
+    Prepare sees a sandbox with no orchestrator record — the state the three
+    console runs' janitor observed, with the TUI suite 12/12 green. A later ACP
+    session's plugin update then registers `1efcb86825de` with a cache carrying
+    no `scripts/bin`, which is the root the TUI refused. Re-entering the gate at
+    the pr stage boundary leaves nothing for that resolution to reach.
+    """
+    plugins_root = tmp_path / "plugins"
+    _write_json(
+        path=plugins_root / "installed_plugins.json",
+        payload={"version": 2, "plugins": {}},
+    )
+    prepare = _run_gate(plugins_root=plugins_root, tmp_path=tmp_path)
+    assert prepare.returncode == 0, prepare.stderr
+
+    unmaterialized = _incomplete_cache(
+        cache_dir=plugins_root
+        / "cache"
+        / "livespec-orchestrator-beads-fabro"
+        / "livespec-orchestrator-beads-fabro"
+        / _UNMATERIALIZED_BUILD
+    )
+    _register(
+        plugins_root=plugins_root,
+        plugin=_ORCHESTRATOR_KEY,
+        cache_dir=unmaterialized,
+        build=_UNMATERIALIZED_BUILD,
+    )
+
+    boundary = _run_pin_gate(plugins_root=plugins_root, tmp_path=tmp_path)
+
+    assert boundary.returncode == 0, boundary.stderr
+    assert module_marker(name="PLUGIN_CACHE_UNMATERIALIZED_MARKER") in boundary.stderr
+    assert "missing required path scripts/bin" in boundary.stderr
+    assert not unmaterialized.exists()
+    assert _registered_builds(plugins_root=plugins_root, plugin=_ORCHESTRATOR_KEY) == []
+
+
+def test_the_pr_stage_prompt_re_enters_the_gate_before_it_pushes() -> None:
+    """The stage boundary is only a guarantee if the pr recipe actually runs it."""
+    module = importlib.import_module(_MODULE_NAME)
+    prompt = _PR_PROMPT_PATH.read_text(encoding="utf-8")
+
+    command_index = prompt.index(module.plugin_pin_gate_command())
+    push_index = prompt.index("git push -u origin HEAD:refs/heads/feat/<work-item-id>")
+    assert command_index < push_index
+    assert module.PLUGIN_CACHE_UNMATERIALIZED_MARKER in prompt

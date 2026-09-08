@@ -1989,11 +1989,25 @@ def _write_executable(*, path: Path, source: str) -> None:
 
 
 def _gh_refresh_prepare_scripts(*, rendered: str) -> list[str]:
-    """Every prepare-step script the gh-refresh block emits, in order."""
+    """Every prepare-step script the gh-refresh block emits, in order.
+
+    Bounded at the NEXT dispatcher-materialized block, not at the environment
+    table: the overlay appends further blocks after this one, and the caller
+    EXECUTES what this returns against the runner's own environment. Reading to
+    the table therefore handed a later block's steps to a `bash` that has the
+    real `$HOME` — the plugin-cache gate then materialized its program under
+    `~/.claude/plugins` on every suite run, which is both a write outside the
+    fixture and a Python file the coverage gate then measured.
+    """
     marker = "# --- Dispatcher-materialized livespec-refreshing-gh-wrapper ---"
     start = rendered.index(marker)
-    tail = rendered[start:]
-    end = tail.index("[environments.") if "[environments." in tail else len(tail)
+    tail = rendered[start + len(marker) :]
+    boundaries = [
+        offset
+        for offset in (tail.find("\n# --- Dispatcher-materialized"), tail.find("[environments."))
+        if offset != -1
+    ]
+    end = min(boundaries) if boundaries else len(tail)
     found = re.findall(r"script = '''\n(.*?)\n'''", tail[:end], re.DOTALL)
     assert found
     return list(found)
