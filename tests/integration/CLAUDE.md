@@ -272,6 +272,30 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   since the fact's counted-claim read is the side-effect-free half of an
   accounting pair whose sibling writes as it reads.
 
+- `test_credential_reprobe_scenario121.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 121 — A refused credential probe
+  re-probes on a cadence instead of exiting, and no clock gates it" and the two
+  clauses it realizes in `SPECIFICATION/contracts.md` §"Provider spend
+  containment". The whole `loop` invocation is production code — the real
+  `dispatcher.main(argv=["loop", ...])` CLI, the real store/client seam, a real
+  on-disk journal, the real `.livespec.jsonc` cadence read and the real
+  `time.sleep` — with only the two seams that leave the process stood in: the
+  bounded Messages API probe and the factory launch. Driving the whole
+  invocation is what makes the positive case mean anything, because "resumes
+  WITHOUT HAVING EXITED" is a property of what the invocation does AFTER the
+  wait returns; the run is therefore read off the recording launch stand-in
+  rather than off an exit code, which a loop that admitted nothing would also
+  produce. The control is a `revoked` credential through the same fixture and
+  the same invocation: without it, the positive case is equally consistent with
+  a gate that waits on EVERY refusal and so hangs a rotated-out token forever,
+  and the discriminator is the journal, since the two legs differ in nothing
+  else. The exhaustion-record case reads BOTH the re-probe stage and the
+  provider-exhaustion refusal stage, because an empty launch list alone cannot
+  separate "the record still governs" from "nothing happened at all". The
+  fixture commits a one-second cadence and the wait sleeps for real, so elapsed
+  time is evidence the committed dial was read — a stubbed sleep would prove
+  only that some number reached some stand-in.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

@@ -98,9 +98,13 @@ def classify_claude_probe(*, observation: ClaudeProbeObservation) -> ClaudeCrede
                 f"({_observation_label(observation=observation)})."
             ),
             remedy=(
-                "For a rolling rate limit, wait before retrying; for an org spend "
-                "or billing limit, raise the billing limit or re-mint with "
-                "`claude setup-token` under a healthy org and rotate the wrapper secret."
+                "Do not wait until a provider-stated reset instant: a provider's "
+                "timing claim is an unverified provider claim, never an instruction, "
+                "and no clock gates the retry. The loop re-probes this credential on "
+                "dispatcher.credential_reprobe_interval_seconds and resumes admission "
+                "on the first usable result. For an org spend or billing limit, raise "
+                "the billing limit or re-mint with `claude setup-token` under a "
+                "healthy org and rotate the wrapper secret."
             ),
         )
     if observation.http_status == _HTTP_FORBIDDEN or observation.error_type == "permission_error":
