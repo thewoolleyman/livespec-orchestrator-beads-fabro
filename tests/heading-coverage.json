@@ -1245,9 +1245,9 @@
     "heading": "## Scenario 121 — A refused credential probe re-probes on a cadence instead of exiting, and no clock gates it",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "work_item": "bd-ib-zlpeyg",
-    "reason": "Scenario ratified spec-first under plan idle-factory-visibility (epic bd-ib-zlpeyg, Carrier B, v103). The exercising integration test binds when the post-ratification implementation child lands the bounded credential re-probe on the loop path."
+    "test": "tests.integration.test_credential_reprobe_scenario121.test_the_loop_reprobes_and_resumes_on_the_first_usable_result",
+    "work_item": "bd-ib-set4vm",
+    "reason": "Integration-tier acceptance for the bounded credential re-probe on the loop path (livespec_orchestrator_beads_fabro.commands._dispatcher_credential_reprobe), landed by Carrier B's implementation child under plan idle-factory-visibility (epic bd-ib-zlpeyg). The bound node id is the positive journey — a provider-limit refusal journaled, the committed cadence slept, and admission resumed on the first usable result without the invocation exiting — driven through the real dispatcher.main loop CLI with only the Messages API probe and the factory launch stood in. The heading's second gherkin scenario (a usable probe retires no unexpired exhaustion record), the not-governed-refusal control, and the no-timing-claim remedy assertion are sibling tests in the same module."
   },
   {
     "heading": "## Scenario 122 — An attention item's answer disposition governs who may answer it",

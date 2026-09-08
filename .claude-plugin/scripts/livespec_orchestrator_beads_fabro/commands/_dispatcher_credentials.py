@@ -56,6 +56,7 @@ from livespec_orchestrator_beads_fabro.store import (
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
+    "assess_credential_status",
     "check_credential_env",
     "credential_wrapper_text",
     "dispatch_required_credentials_text",
@@ -287,6 +288,31 @@ def credential_wrapper_text(*, repo: Path) -> str:
     return repr(list(wrapper))
 
 
+def assess_credential_status(
+    *,
+    repo: Path,
+    probe: Callable[..., ClaudeCredentialStatus] | None = None,
+) -> ClaudeCredentialStatus:
+    """Assess the projected worker credential: absence locally, else ONE bounded probe.
+
+    Public because the refusal STRING is not the whole answer. The loop's
+    bounded credential re-probe -- the admission-time probe-refusal clause of
+    the provider spend-containment rules in `SPECIFICATION/contracts.md` --
+    waits on ONE condition — a provider-limit or rate-limit refusal —
+    and must exit its wait on every other, so it needs the typed
+    `condition` rather than prose it would have to pattern-match. Keeping the
+    assessment here rather than duplicating it in the re-probe module also
+    keeps ONE probe seam: `probe_claude_credential` is resolved through this
+    module's namespace, so a caller that stands the probe in stands in the one
+    the whole dispatch path uses.
+    """
+    token = os.environ.get(CLAUDE_OAUTH_TOKEN_ENV, "")
+    if token == "":
+        return absent_claude_credential_status(wrapper_text=credential_wrapper_text(repo=repo))
+    selected_probe = probe if probe is not None else probe_claude_credential
+    return selected_probe(token=token)
+
+
 def check_credential_env(
     *,
     repo: Path,
@@ -299,12 +325,7 @@ def check_credential_env(
     before launch when it is revoked, exhausted/rate-limited, denied, or
     cannot be assessed. Values and response bodies are never logged.
     """
-    token = os.environ.get(CLAUDE_OAUTH_TOKEN_ENV, "")
-    if token == "":
-        status = absent_claude_credential_status(wrapper_text=credential_wrapper_text(repo=repo))
-    else:
-        selected_probe = probe if probe is not None else probe_claude_credential
-        status = selected_probe(token=token)
+    status = assess_credential_status(repo=repo, probe=probe)
     if status.usable:
         return None
     return (

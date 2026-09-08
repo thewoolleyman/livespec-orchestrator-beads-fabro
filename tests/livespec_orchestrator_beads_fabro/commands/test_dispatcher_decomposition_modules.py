@@ -108,6 +108,10 @@ def test_completion_cluster_importable_from_new_module_and_dispatcher() -> None:
 
 def test_credentials_cluster_importable_from_new_module_and_private_names_removed() -> None:
     credential_public_names = {
+        # The typed assessment the loop's bounded credential re-probe waits on:
+        # the refusal STRING cannot tell a rate limit from a revoked token, and
+        # the wait governs only the first.
+        "assess_credential_status",
         "check_credential_env",
         "credential_wrapper_text",
         "dispatch_required_credentials_text",
@@ -403,4 +407,33 @@ def test_run_commands_cluster_importable_from_new_module_and_private_names_remov
     assert not hasattr(run_commands, "run_loop_command")
     assert not hasattr(run_commands, "_alarm_on_terminal_failure")
     for name in old_dispatcher_names:
+        assert not hasattr(dispatcher, name)
+
+
+def test_loop_wave_cluster_importable_from_new_module_and_private_names_removed() -> None:
+    """The wave — credential wait, admission valve, parallel launch — is its own module.
+
+    Split out of `_dispatcher_loop_command`, which stood exactly at the 250-LLOC
+    hard ceiling. The private launch helper moved WITH its public entry point
+    rather than being imported back across the seam, which is what the absent
+    old names assert.
+    """
+    module_path = Path(dispatcher.__file__).parent / "_dispatcher_loop_wave.py"
+    loop_wave_public_names = {
+        "dispatch_loop_wave",
+    }
+
+    assert module_path.is_file()
+    loop_wave = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_wave"
+    )
+    loop_command = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_command"
+    )
+    assert set(loop_wave.__all__) == loop_wave_public_names
+    for name in loop_wave_public_names:
+        assert hasattr(loop_wave, name)
+    assert loop_command.dispatch_loop_wave is loop_wave.dispatch_loop_wave
+    for name in ("_dispatch_loop_wave", "_admit_and_dispatch_loop_wave"):
+        assert not hasattr(loop_command, name)
         assert not hasattr(dispatcher, name)

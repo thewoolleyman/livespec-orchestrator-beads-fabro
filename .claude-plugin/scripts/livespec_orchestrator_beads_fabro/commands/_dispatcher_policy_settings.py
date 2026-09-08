@@ -53,6 +53,7 @@ __all__: list[str] = [
     "DEFAULT_ANSWER_DISPOSITION",
     "DEFAULT_AUTOMATED_REGROOM_CAP",
     "DEFAULT_AUTO_APPROVE_READY",
+    "DEFAULT_CREDENTIAL_REPROBE_INTERVAL_SECONDS",
     "DEFAULT_DRIFT_CAPTURE_MERGE_THRESHOLD",
     "DEFAULT_GROOM_CUT_APPROVAL",
     "DEFAULT_MERGE_ON_REVIEW_CAP",
@@ -67,6 +68,7 @@ __all__: list[str] = [
     "resolve_answer_disposition",
     "resolve_auto_approve_ready",
     "resolve_automated_regroom_cap",
+    "resolve_credential_reprobe_interval_seconds",
     "resolve_drift_capture_merge_threshold",
     "resolve_groom_cut_approval",
     "resolve_merge_on_review_cap",
@@ -89,6 +91,7 @@ DEFAULT_DRIFT_CAPTURE_MERGE_THRESHOLD = 1
 DEFAULT_GROOM_CUT_APPROVAL = "human"
 DEFAULT_AUTOMATED_REGROOM_CAP = 2
 DEFAULT_ANSWER_DISPOSITION = "human"
+DEFAULT_CREDENTIAL_REPROBE_INTERVAL_SECONDS = 300
 
 _LIVESPEC_CONFIG = ".livespec.jsonc"
 _PLUGIN_BLOCK = "livespec-orchestrator-beads-fabro"
@@ -105,6 +108,7 @@ _DRIFT_CAPTURE_MERGE_THRESHOLD_KEY = "drift_capture_merge_threshold"
 _GROOM_CUT_APPROVAL_KEY = "groom_cut_approval"
 _AUTOMATED_REGROOM_CAP_KEY = "automated_regroom_cap"
 _ANSWER_DISPOSITION_KEY = "answer_disposition"
+_CREDENTIAL_REPROBE_INTERVAL_SECONDS_KEY = "credential_reprobe_interval_seconds"
 _ACCEPTANCE_POLICIES = frozenset(("ai-only", "ai-then-human", "human-only"))
 _GROOM_CUT_APPROVALS = frozenset(("human", "consensus"))
 _ANSWER_DISPOSITIONS = frozenset(("human", "consensus"))
@@ -241,6 +245,31 @@ def resolve_drift_capture_merge_threshold(*, cwd: Path) -> IOResult[int, PolicyS
         cwd=cwd,
         key=_DRIFT_CAPTURE_MERGE_THRESHOLD_KEY,
         default=DEFAULT_DRIFT_CAPTURE_MERGE_THRESHOLD,
+        minimum=1,
+    )
+
+
+def resolve_credential_reprobe_interval_seconds(
+    *, cwd: Path
+) -> IOResult[int, PolicySettingUnreadable]:
+    """Read `dispatcher.credential_reprobe_interval_seconds`, defaulting to 300.
+
+    The cadence on which a `loop` invocation re-runs the admission-time
+    credential-usability probe after a provider-limit refusal, per the
+    re-probe clause among the provider spend-containment rules in
+    `SPECIFICATION/contracts.md`.
+
+    COMMITTED-ONLY, exactly as that clause ratifies it, so — like
+    `require_invoker` above — it is deliberately NOT a member of the
+    API-configurable key manifest and is editable only by a committed
+    `.livespec.jsonc` change. The manifest is what makes a setting reachable
+    over the `drive --action set-config` surface, so an absent declaration is
+    the mechanism rather than a documentation choice.
+    """
+    return _resolve_int_setting(
+        cwd=cwd,
+        key=_CREDENTIAL_REPROBE_INTERVAL_SECONDS_KEY,
+        default=DEFAULT_CREDENTIAL_REPROBE_INTERVAL_SECONDS,
         minimum=1,
     )
 
