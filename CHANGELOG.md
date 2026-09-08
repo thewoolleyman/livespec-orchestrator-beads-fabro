@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.143.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.142.2...v0.143.0) (2026-09-08)
+
+
+### Features
+
+* **needs-attention:** compose the hygiene:idle-factory attention fact ([348f323](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/348f323d81ccbc47aaa1385acf562b23802b7788))
+
 ## [0.142.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.142.1...v0.142.2) (2026-09-08)
 
 
