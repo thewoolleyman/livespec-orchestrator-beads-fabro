@@ -13,6 +13,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_otel_config import (
+    codex_otel_env_lines,
+    codex_otel_prepare_steps_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
     refreshing_gh_env_lines,
     refreshing_gh_prepare_steps_block,
@@ -197,6 +201,7 @@ def render_run_config_overlay(  # noqa: PLR0913 — kw-only pure overlay builder
     siblings: SiblingClones | None,
     otel_env: dict[str, str] | None = None,
     codex_auth_snapshot: str | None = None,
+    codex_otel_config: str | None = None,
     fabro_sandbox_image: str | None = None,
     graph_override: Path | None = None,
     prepare_inputs: Mapping[str, str] | None = None,
@@ -251,6 +256,8 @@ def render_run_config_overlay(  # noqa: PLR0913 — kw-only pure overlay builder
     gh_refresh_env_lines = refreshing_gh_env_lines()
     codex_steps = _codex_auth_prepare_steps_block(codex_auth_snapshot=codex_auth_snapshot)
     codex_env_lines = _codex_auth_env_lines(codex_auth_snapshot=codex_auth_snapshot)
+    codex_otel_steps = codex_otel_prepare_steps_block(codex_otel_config=codex_otel_config)
+    codex_otel_env = codex_otel_env_lines(codex_otel_config=codex_otel_config)
     plugin_cache_steps = plugin_cache_gate_prepare_steps_block()
     return (
         rewritten
@@ -258,6 +265,7 @@ def render_run_config_overlay(  # noqa: PLR0913 — kw-only pure overlay builder
         + tmux_steps
         + gh_refresh_steps
         + codex_steps
+        + codex_otel_steps
         + plugin_cache_steps
         + "\n# --- Dispatcher-materialized run-scoped credential projection"
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
@@ -271,6 +279,7 @@ def render_run_config_overlay(  # noqa: PLR0913 — kw-only pure overlay builder
         + currency_gate_env_line
         + otel_env_lines
         + codex_env_lines
+        + codex_otel_env
     )
 
 

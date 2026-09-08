@@ -25,6 +25,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
     CodexProjectionRefusal,
     project_codex_auth,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_otel_config import (
+    codex_otel_config_toml,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     GITHUB_TOKEN_ENV_VAR,
 )
@@ -195,10 +198,22 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
     codex_snapshot = project_codex_auth(now_epoch=int(time.time()))
     if isinstance(codex_snapshot, CodexProjectionRefusal):
         return codex_snapshot.message
+    sandbox_otel_endpoint = resolve_sandbox_otel_endpoint(environ=dict(os.environ))
     otel_env = cc_otel_overlay_env(
         work_item_id=work_item_id,
         dispatch_id=dispatch_id,
-        endpoint=resolve_sandbox_otel_endpoint(environ=dict(os.environ)),
+        endpoint=sandbox_otel_endpoint,
+    )
+    # Codex honors no `OTEL_*` variable, so the overlay above reaches Claude
+    # Code only. Codex resolves its exporters from `$CODEX_HOME/config.toml`
+    # alone, and projecting that file is what makes Codex spend telemetry
+    # exist at all (work-item bd-ib-dbzp). Rendered unconditionally, exactly
+    # like the credential snapshot beside it: this path has already returned
+    # on a projection refusal, so `$CODEX_HOME` is always provisioned here.
+    codex_otel_config = codex_otel_config_toml(
+        endpoint=sandbox_otel_endpoint,
+        work_item_id=work_item_id,
+        dispatch_id=dispatch_id,
     )
     rendered = render_run_config_overlay(
         committed_text=committed.read_text(encoding="utf-8"),
@@ -208,6 +223,7 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
         siblings=siblings,
         otel_env=otel_env,
         codex_auth_snapshot=codex_snapshot,
+        codex_otel_config=codex_otel_config,
         # An unreadable `.livespec.jsonc` falls back to "no image override",
         # visibly and here rather than inside the reader. `unsafe_perform_io`
         # is required: `IOResult.value_or` returns `IO[value]`, not the value.
