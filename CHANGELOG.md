@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.144.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.143.0...v0.144.0) (2026-09-08)
+
+
+### Features
+
+* **dispatcher:** re-probe a rate-limited credential on the loop path ([6c3c30e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6c3c30e962515bae19e1def8490e7d68fac63842))
+
 ## [0.143.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.142.2...v0.143.0) (2026-09-08)
 
 
