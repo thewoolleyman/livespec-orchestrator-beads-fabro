@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.144.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.144.0...v0.144.1) (2026-09-08)
+
+
+### Bug Fixes
+
+* **dispatcher:** re-enter the plugin-cache gate at the pr stage boundary ([df75340](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/df7534078287d8979f72c3925c29d5f558046d68))
+
 ## [0.144.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.143.0...v0.144.0) (2026-09-08)
 
 
