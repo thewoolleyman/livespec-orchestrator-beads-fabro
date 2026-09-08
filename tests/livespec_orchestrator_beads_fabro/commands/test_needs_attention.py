@@ -225,11 +225,14 @@ def test_build_attention_composes_impl_human_valves_plan_threads_and_spec_next(
         "impl:bd-ready",
         "spec:revise:SPECIFICATION",
         "plan:needs-attention",
+        # Nothing is claimed and `bd-ready` is admission-eligible, so this
+        # fixture is an idle factory by construction.
+        "hygiene:idle-factory:repo",
     ]
     assert attention[0].handoff.action_id == "approve:bd-approval"
     assert attention[1].handoff.command.endswith("--action accept:bd-accept --json")
     assert attention[3].handoff.command.endswith("--action impl:bd-ready --json")
-    assert attention[-1].source_ref.path == "plan/needs-attention/"
+    assert attention[5].source_ref.path == "plan/needs-attention/"
 
 
 def test_build_attention_reads_ledger_held_plan_without_handoff_file(
@@ -328,6 +331,9 @@ def test_build_attention_advertises_approve_only_for_effective_manual_policy(
     assert [item.id for item in attention] == [
         "valve:approve:bd-manual",
         "hygiene:awaiting-admission:bd-auto",
+        # The effective-`auto` item is admission-eligible and nothing is
+        # claimed, so the same pass reports the factory as idle.
+        "hygiene:idle-factory:repo",
     ]
     assert attention[0].handoff.action_id == "approve:bd-manual"
     assert attention[1].kind == "internal"
@@ -358,6 +364,9 @@ def test_build_attention_surfaces_ready_factory_safety_item_as_host_only(
     assert [(item.id, item.kind, item.handoff.kind) for item in attention] == [
         ("impl:bd-ready", "impl", "drive"),
         ("host-only:needs-host-secrets:bd-host", "host-only", "shell"),
+        # The host-only row is NOT admission-eligible, so the idle-factory fact
+        # that follows names `bd-ready` — the only dispatchable row here.
+        ("hygiene:idle-factory:repo", "hygiene", "drive"),
     ]
     host_only = attention[1]
     assert host_only.source_ref.work_item == "bd-host"
@@ -1040,7 +1049,10 @@ def test_build_attention_omits_triaged_backlog_and_non_backlog_items(tmp_path, m
         include_hygiene=False,
     )
 
-    assert [item.id for item in attention if item.kind == "hygiene"] == []
+    # Scoped to this lane's own id family: the ready `bd-elsewhere` row makes
+    # the same pass an idle factory, and that unrelated hygiene fact would
+    # otherwise read as an untriaged-backlog emission.
+    assert [item.id for item in attention if item.id.startswith("hygiene:untriaged-backlog")] == []
 
 
 def test_build_attention_drops_spec_item_when_spec_next_none(tmp_path, monkeypatch) -> None:
