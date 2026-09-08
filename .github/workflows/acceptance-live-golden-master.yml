@@ -7,9 +7,13 @@
 #   - needs the disposable `livespec-e2e` org token + the Fabro LLM key +
 #     Claude model auth + Honeycomb ingest key (the 1Password-provisioned
 #     operator secrets);
-#   - needs a privileged DinD-capable host with the pinned `fabro` binary and
-#     `bd`/`dolt` available (the production orchestrator runtime) — a stock
-#     GitHub-hosted runner cannot provide this;
+#   - needs the pinned `fabro` binary with `bd`/`dolt` available (the
+#     production orchestrator runtime) on the host itself.
+#     THE CONSTRAINT IS THE SECRETS AND THE HOST-LOCAL RUNTIME, NOT DinD:
+#     GitHub-hosted runners do provide Docker-in-Docker, so naming DinD as the
+#     reason misdirects anyone re-evaluating this choice. What a hosted runner
+#     cannot provide is the 1Password-injected operator secret environment
+#     above and the pinned orchestrator binaries;
 #   - CHURNS GitHub repos (creates + deletes throwaway `livespec-e2e-*` repos)
 #     and consumes real LLM budget.
 #
@@ -78,9 +82,32 @@ permissions:
 jobs:
   live-golden-master:
     name: live-golden-master
-    # Self-hosted: the live tier needs privileged DinD + the pinned Fabro/bd/
-    # Dolt runtime + the operator secret environment, none of which a
-    # GitHub-hosted runner provides.
+    # Self-hosted: the live tier needs the pinned Fabro/bd/Dolt runtime and the
+    # operator secret environment. NOT DinD — hosted runners have that; the
+    # secrets and the host-local binaries are the actual constraint.
+    #
+    # NOTHING SERVES THIS `runs-on` TODAY, and it fails by HANGING rather than
+    # by erroring, so a dispatch looks merely slow. Verified 2026-09-08:
+    # this repository has six self-hosted runners registered, and none of them
+    # can take this job. They are ARC (gha-runner-scale-set) ephemeral runners
+    # from the PowerEdge pool, and ARC selects by SCALE SET NAME, not by label:
+    # they report an EMPTY labels array to the runners API, and the repository
+    # variable CI_RUNNER_LABELS that ci.yml reads is ["livespec-orchestrator-k3s"],
+    # the scale set's name. A label-based `runs-on` like the one below matches
+    # none of them.
+    #
+    # Do NOT "fix" this by pointing the job at livespec-orchestrator-k3s. Those
+    # runners are pool workflow pods; they carry neither the operator secret
+    # environment nor the Fabro/bd/Dolt runtime, so the job would then FAIL
+    # mid-run instead of queueing — later, and less legibly. The fix is to
+    # register a runner that genuinely carries both: livespec-ifwnqj.2
+    # (Carrier G2) in the livespec repository owns it.
+    #
+    # One reading caveat for whoever re-checks the registration: ARC runners are
+    # only visible in the runners API while they exist, so an idle pool answers
+    # this query with zero rows. "No runners registered" read at a quiet moment
+    # is not evidence about the labelled runner this job needs — check for a
+    # runner carrying the label, not for a non-empty list.
     runs-on: [self-hosted, livespec-orchestrator]
     steps:
       - name: Checkout
