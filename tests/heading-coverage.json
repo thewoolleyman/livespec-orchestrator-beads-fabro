@@ -4,63 +4,72 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "spec.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scope boundary",
     "spec_root": "SPECIFICATION",
     "spec_file": "spec.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Terminology",
     "spec_root": "SPECIFICATION",
     "spec_file": "spec.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Substrate properties",
     "spec_root": "SPECIFICATION",
     "spec_file": "spec.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## What this spec is not",
     "spec_root": "SPECIFICATION",
     "spec_file": "spec.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Lifecycle and evolution",
     "spec_root": "SPECIFICATION",
     "spec_file": "spec.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Plugin namespace",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## The skill surface",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## pi skill surface",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
-    "reason": "Added by the pi-skill-surface ratification: the pi packaging, flat skill-name prefix, thin-binding, and trust-gate contract for this plugin's pi surface; structural coverage lands with the pi package implementation's check-pi-plugin-structure gate and tests."
+    "reason": "Added by the pi-skill-surface ratification: the pi packaging, flat skill-name prefix, thin-binding, and trust-gate contract for this plugin's pi surface; structural coverage lands with the pi package implementation's check-pi-plugin-structure gate and tests.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Interactive dialogue ownership (orchestrator-side)",
@@ -73,168 +82,192 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
-    "reason": "Added by the store-write-consent-discipline revise pass (work-item livespec-impl-beads-nip). The discipline governs SKILL.md dialogue prose; a mechanical test binding lands via the governed propose-change/revise resulting_files[] mechanism once the consent-form prose gains an enforceable code surface."
+    "reason": "Added by the store-write-consent-discipline revise pass (work-item livespec-impl-beads-nip). The discipline governs SKILL.md dialogue prose; a mechanical test binding lands via the governed propose-change/revise resulting_files[] mechanism once the consent-form prose gains an enforceable code surface.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Grooming and slice-size calibration",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
-    "reason": "Added by the grooming-and-slice-size-calibration-realization revise pass. The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; a real test id is populated by the governed propose-change/revise loop's resulting_files[] mechanism once this heading gains an exercising test."
+    "reason": "Added by the grooming-and-slice-size-calibration-realization revise pass. The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; a real test id is populated by the governed propose-change/revise loop's resulting_files[] mechanism once this heading gains an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Planning Lane realization",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
-    "reason": "Added by the planning-lane-realization revise pass (epic livespec-zs22, increment 3a / work-items livespec-zs22.5 + livespec-zs22.3). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; the plan front-end's behavior is exercised by the e2e-cli fixture and the handoff self-sufficiency gate rather than a unit test, so a real test id is populated by the governed propose-change/revise resulting_files[] mechanism once this heading gains an exercising test."
+    "reason": "Added by the planning-lane-realization revise pass (epic livespec-zs22, increment 3a / work-items livespec-zs22.5 + livespec-zs22.3). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; the plan front-end's behavior is exercised by the e2e-cli fixture and the handoff self-sufficiency gate rather than a unit test, so a real test id is populated by the governed propose-change/revise resulting_files[] mechanism once this heading gains an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Dispatch-time baseline conformance gate",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
-    "reason": "Added by the dispatch-time-baseline-gate revise pass (epic livespec-zs22, increment 5 Conformance Pattern / work-item livespec-zs22.7.7 M6-f). Realizes the Conformance Pattern's dispatch-time tier: the Dispatcher's Fabro prepare chain installs the baseline Mechanism + Exemption and then runs the baseline Verifiers (commit-refuse-hook-installed + plugin-resolution) before driving any work, aborting on violation. The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; the gate's behavior is enforced by the Fabro prepare chain (.fabro/workflows/implement-work-item/workflow.toml) rather than a unit test, so a real test id is populated by the governed propose-change/revise resulting_files[] mechanism once this heading gains an exercising test."
+    "reason": "Added by the dispatch-time-baseline-gate revise pass (epic livespec-zs22, increment 5 Conformance Pattern / work-item livespec-zs22.7.7 M6-f). Realizes the Conformance Pattern's dispatch-time tier: the Dispatcher's Fabro prepare chain installs the baseline Mechanism + Exemption and then runs the baseline Verifiers (commit-refuse-hook-installed + plugin-resolution) before driving any work, aborting on violation. The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; the gate's behavior is enforced by the Fabro prepare chain (.fabro/workflows/implement-work-item/workflow.toml) rather than a unit test, so a real test id is populated by the governed propose-change/revise resulting_files[] mechanism once this heading gains an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Self-contained plugin dispatch",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
-    "reason": "Added by the self-contained-plugin-dispatch revise pass (v021). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; this contract is enforced by the dispatcher's plugin-root workflow resolution plus the implement-work-item workflow payload shipped under the plugin root (.claude-plugin/), not a unit test, so a real test id is populated by the governed propose-change/revise resulting_files[] mechanism once this heading gains an exercising test."
+    "reason": "Added by the self-contained-plugin-dispatch revise pass (v021). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; this contract is enforced by the dispatcher's plugin-root workflow resolution plus the implement-work-item workflow payload shipped under the plugin root (.claude-plugin/), not a unit test, so a real test id is populated by the governed propose-change/revise resulting_files[] mechanism once this heading gains an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Beads connection model",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Work-item beads-issue mapping",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Spec Reader internal API",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Persistent Agent Knowledge realization",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## `compat` block",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Cross-boundary handoffs",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Inherited from livespec",
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Beads substrate constraints",
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Fabro runtime constraints",
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "test": "TODO",
-    "reason": "Operator-procedure constraint over an EXTERNAL runtime the plugin does not own (the Fabro engine binary): it governs which Fabro build the factory may pin - the `factory-integration` carrier branch, its composition, the < 0.256 base ceiling, and the rebuild/re-pin duty - none of which is a code path the plugin executes, so there is no plugin-side behavior for a test to exercise. Per the amended file preamble, the deciding command is `fabro --version` and enforcement is review-time verification against it. A real test ID becomes bindable if the ceiling is later enforced by a dispatch-preflight engine-version gate (ledger bd-ib-j9x), which WOULD be plugin-observable behavior and would carry its own scenario."
+    "reason": "Operator-procedure constraint over an EXTERNAL runtime the plugin does not own (the Fabro engine binary): it governs which Fabro build the factory may pin - the `factory-integration` carrier branch, its composition, the < 0.256 base ceiling, and the rebuild/re-pin duty - none of which is a code path the plugin executes, so there is no plugin-side behavior for a test to exercise. Per the amended file preamble, the deciding command is `fabro --version` and enforcement is review-time verification against it. A real test ID becomes bindable if the ceiling is later enforced by a dispatch-preflight engine-version gate (ledger bd-ib-j9x), which WOULD be plugin-observable behavior and would carry its own scenario.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Fabro factory host provisioning constraints",
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "test": "TODO",
-    "reason": "Operator-procedure constraint over an EXTERNAL runtime the plugin does not own (the Fabro engine binary and its host operating system): it governs how a factory host must be reachable (loopback + external network name) and how it must source fleet-shared secrets, neither of which is a code path the plugin executes -- the plugin has no factory-host-provisioning code of its own to test. Per the section's Verification subsection, the deciding checks are two `curl` invocations against the host's loopback and external origins, plus a comparison of the new host's secret-sourcing invocation against the fleet's existing hosts, and enforcement is review-time verification against those, mirroring the sibling `Fabro runtime constraints` heading immediately above it."
+    "reason": "Operator-procedure constraint over an EXTERNAL runtime the plugin does not own (the Fabro engine binary and its host operating system): it governs how a factory host must be reachable (loopback + external network name) and how it must source fleet-shared secrets, neither of which is a code path the plugin executes -- the plugin has no factory-host-provisioning code of its own to test. Per the section's Verification subsection, the deciding checks are two `curl` invocations against the host's loopback and external origins, plus a comparison of the new host's secret-sourcing invocation against the fleet's existing hosts, and enforcement is review-time verification against those, mirroring the sibling `Fabro runtime constraints` heading immediately above it.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Process boundaries",
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Spec Reader implementation constraints",
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Skill orchestration constraints",
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Persistent Agent Knowledge constraints",
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Forbidden patterns",
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 1 — Gap-tied fix cycle",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 4 — Freeform bug fix",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 5 — Doctor cross-boundary read",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 6 — Cross-repo dispatch via the Dispatcher",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 7 — Regroom an oversized work-item",
@@ -345,14 +378,16 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Added by the grooming-gherkin-and-gap-detectability revise pass. This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop."
+    "reason": "Added by the grooming-gherkin-and-gap-detectability revise pass. This scenario heading will be bound to an integration/consumer-tier (e2e-cli) test exercising user-observable behavior, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Closed-item integrity",
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "test": "TODO",
-    "reason": "Added by the closed-item-integrity revise pass (v007). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; the closed-item-integrity invariant's mechanical guard (the closed_item_integrity check) is not yet built, so this constraint heading binds to its real test via the governed propose-change/revise resulting_files[] loop once the gap-tied impl work-item that wires the check lands its exercising test. The clauses[] gap-id->scenario link is deferred to that implementation step (impl-beads ships no clauses[] entries or livespec_spec_clauses extractor yet; adopting the clauses[] map is itself the first implementation work-item)."
+    "reason": "Added by the closed-item-integrity revise pass (v007). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; the closed-item-integrity invariant's mechanical guard (the closed_item_integrity check) is not yet built, so this constraint heading binds to its real test via the governed propose-change/revise resulting_files[] loop once the gap-tied impl work-item that wires the check lands its exercising test. The clauses[] gap-id->scenario link is deferred to that implementation step (impl-beads ships no clauses[] entries or livespec_spec_clauses extractor yet; adopting the clauses[] map is itself the first implementation work-item).",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 16 — Closed-item-integrity check rejects \"closed but unproven\"",
@@ -380,7 +415,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Rebind pending the drive rename rename impl follow-up (proposal drive-rename-and-next-asymmetry, Change F/J): Scenario 17 was re-scoped to drive and its bare-drive-walkthrough sub-scenario RETIRED, so the prior bound test (retired bare-drive walkthrough test) no longer describes a live scenario. The real integration-tier node id for the surviving cwd-default + Markdown-default drive defaults is populated when the drive-rename impl follow-up binds it via the governed resulting_files[] loop."
+    "reason": "Rebind pending the drive rename rename impl follow-up (proposal drive-rename-and-next-asymmetry, Change F/J): Scenario 17 was re-scoped to drive and its bare-drive-walkthrough sub-scenario RETIRED, so the prior bound test (retired bare-drive walkthrough test) no longer describes a live scenario. The real integration-tier node id for the surviving cwd-default + Markdown-default drive defaults is populated when the drive-rename impl follow-up binds it via the governed resulting_files[] loop.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Worker credential projection",
@@ -422,7 +458,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
-    "reason": "Ratified at the approval-model restoration (design record: repo thewoolleyman/livespec, plan/archive/work-item-state-machine, decisions 26/32): plain-English semantics for the seven lifecycle states, the approve-is-pending-approval-to-ready transition rule, the maintainer's verbatim rationale, and the intent-preservation clauses. Definitional semantics + process clauses; the transition behaviors are exercised via Scenarios 8/10/23/31/33's bindings, and the post-ratification rework slice binds the re-targeted behaviors when its tests land."
+    "reason": "Ratified at the approval-model restoration (design record: repo thewoolleyman/livespec, plan/archive/work-item-state-machine, decisions 26/32): plain-English semantics for the seven lifecycle states, the approve-is-pending-approval-to-ready transition rule, the maintainer's verbatim rationale, and the intent-preservation clauses. Definitional semantics + process clauses; the transition behaviors are exercised via Scenarios 8/10/23/31/33's bindings, and the post-ratification rework slice binds the re-targeted behaviors when its tests land.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Dispatcher admission, WIP cap, and post-merge acceptance",
@@ -464,42 +501,48 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it."
+    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 27 — next ranks ready items by rank",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it."
+    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 28 — append_work_item registers and lands a custom status in two steps",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it."
+    "reason": "Added by the work-item-state-machine L1a revise pass (epic bd-ib-vvrxcb). This scenario heading will be bound to an integration/consumer-tier test exercising user-observable Dispatcher/store behavior against the in-memory FakeBeadsClient, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implement slice binds it.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 29 — Factory GitHub App token on the dispatch path",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Added by the v023 revise pass (claude-fable-5 critique follow-up): acceptance scenarios for the v022 factory GitHub App auth MUSTs (fail-closed refusal without App env + credential_wrapper, first-class remint across long operations, ephemeral-only sandbox token projection). Will be bound to an integration/consumer-tier test exercising the Dispatcher's token-provider and refusal seams against hermetic fakes, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implementing work-item binds it."
+    "reason": "Added by the v023 revise pass (claude-fable-5 critique follow-up): acceptance scenarios for the v022 factory GitHub App auth MUSTs (fail-closed refusal without App env + credential_wrapper, first-class remint across long operations, ephemeral-only sandbox token projection). Will be bound to an integration/consumer-tier test exercising the Dispatcher's token-provider and refusal seams against hermetic fakes, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implementing work-item binds it.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 30 — Dispatch-time baseline conformance gate",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Added by the v023 revise pass (claude-fable-5 critique follow-up): acceptance scenarios for the dispatch-time baseline conformance gate (green provisioning path + abort-on-Verifier-failure before any work is driven). The gate's behavior lives in the Fabro prepare chain (.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml); it will be bound to an integration/consumer-tier test exercising the prepare-chain gating, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implementing work-item binds it."
+    "reason": "Added by the v023 revise pass (claude-fable-5 critique follow-up): acceptance scenarios for the dispatch-time baseline conformance gate (green provisioning path + abort-on-Verifier-failure before any work is driven). The gate's behavior lives in the Fabro prepare chain (.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml); it will be bound to an integration/consumer-tier test exercising the prepare-chain gating, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node id populated via the governed propose-change/revise resulting_files[] loop when the implementing work-item binds it.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 32 — Adopter-target dispatch compatibility",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Added by the github-app-auth-adopter-dispatch revise pass (maintainer-ordered spec wave, openbrain adopter dogfood 2026-07-03): per-tenant engine identity + App-reach/workflows-grant preflight, target-local workflow with target-toolchain prepare steps, and default-branch pull-primary resolution. Will be bound to integration/consumer-tier tests exercising the dispatcher preflight, workflow-override, and janitor default-branch seams against hermetic fakes, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node ids populated via the governed propose-change/revise resulting_files[] loop when the implementing work-items (bd-ib-z2ctra, bd-ib-hkzcfb, bd-ib-w4iaaf) bind them."
+    "reason": "Added by the github-app-auth-adopter-dispatch revise pass (maintainer-ordered spec wave, openbrain adopter dogfood 2026-07-03): per-tenant engine identity + App-reach/workflows-grant preflight, target-local workflow with target-toolchain prepare steps, and default-branch pull-primary resolution. Will be bound to integration/consumer-tier tests exercising the dispatcher preflight, workflow-override, and janitor default-branch seams against hermetic fakes, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement. Real node ids populated via the governed propose-change/revise resulting_files[] loop when the implementing work-items (bd-ib-z2ctra, bd-ib-hkzcfb, bd-ib-w4iaaf) bind them.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 31 — drive human valve actions",
@@ -513,7 +556,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "spec.md",
     "test": "TODO",
-    "reason": "Dispatcher-policy-settings revise: the spec-altitude statement of the independent dispatcher.* policy settings (each a global default, each except the per-repo wip_cap overridable per work-item by a ledger label that WINS over the global), settable via the orchestrator API and the console, with every safety floor preserved. Integration-tier test id populated as the clause->scenario->test binding lands; the behaviors are exercised by Scenarios 33-37."
+    "reason": "Dispatcher-policy-settings revise: the spec-altitude statement of the independent dispatcher.* policy settings (each a global default, each except the per-repo wip_cap overridable per work-item by a ledger label that WINS over the global), settable via the orchestrator API and the console, with every safety floor preserved. Integration-tier test id populated as the clause->scenario->test binding lands; the behaviors are exercised by Scenarios 33-37.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Dispatcher policy settings",
@@ -521,84 +565,95 @@
     "spec_file": "contracts.md",
     "test": "TODO",
     "reason": "Dispatcher-policy-settings revise, retitled by the v100 consensus-gated-automated-groom-cut revise: the wire surface of the FOUR policy settings of '### The four policy settings' (auto_approve_ready, acceptance_mode, merge_on_review_cap, and groom_cut_approval, whose per-item label may only LOWER an item to human), the THREE rework caps of '### The three rework caps' (review_fix_cap, acceptance_rework_cap, automated_regroom_cap), the per-item merge hold, the no-per-item-override wip_cap, the always-escalate-needs-human floor, the per-disposition audit journal, and the API-configurable completeness principle. The two v100 settings are parsed and manifested by bd-ib-v6nexg and stay inert there; the integration-tier test id is populated as the clause->scenario->test binding lands, and the behaviors are exercised by Scenarios 33-37.",
-    "work_item": "bd-ib-v6nexg"
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Dispatcher policy settings constraints",
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "test": "TODO",
-    "reason": "Dispatcher-policy-settings revise: the mechanically-checkable safety rails (safe defaults; audit every auto-disposition; still escalate the truly-unresolvable and hold the no-release-with-zero-verification floor; console Settings / inline help / settings-doc completeness). Integration-tier test id populated as the clause->scenario->test binding lands; Scenario 37 binds the safe-defaults rail."
+    "reason": "Dispatcher-policy-settings revise: the mechanically-checkable safety rails (safe defaults; audit every auto-disposition; still escalate the truly-unresolvable and hold the no-release-with-zero-verification floor; console Settings / inline help / settings-doc completeness). Integration-tier test id populated as the clause->scenario->test binding lands; Scenario 37 binds the safe-defaults rail.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 33 — auto_approve_ready governs admission and a per-item label wins",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Dispatcher-policy-settings revise: an unlabeled routine item inherits the global dispatcher.auto_approve_ready and is auto-approved into ready; an explicit per-item admission_policy: manual label BEATS the permissive global and rests the item at pending-approval; a design-human-gated (spec-change-tier) item is never auto-approved under any setting or label. Integration-tier test id populated when the implementing slice binds it."
+    "reason": "Dispatcher-policy-settings revise: an unlabeled routine item inherits the global dispatcher.auto_approve_ready and is auto-approved into ready; an explicit per-item admission_policy: manual label BEATS the permissive global and rests the item at pending-approval; a design-human-gated (spec-change-tier) item is never auto-approved under any setting or label. Integration-tier test id populated when the implementing slice binds it.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 34 — acceptance_mode governs the acceptance leg",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Dispatcher-policy-settings revise: dispatcher.acceptance_mode selects the acceptance leg (ai-only accepts to done on a passing AI pass; ai-then-human parks for the human accept valve; human-only parks with the AI pass advisory), a per-item acceptance_policy label overrides the global, and every path carries at least one AI pass. Integration-tier test id populated when the implementing slice binds it."
+    "reason": "Dispatcher-policy-settings revise: dispatcher.acceptance_mode selects the acceptance leg (ai-only accepts to done on a passing AI pass; ai-then-human parks for the human accept valve; human-only parks with the AI pass advisory), a per-item acceptance_policy label overrides the global, and every path carries at least one AI pass. Integration-tier test id populated when the implementing slice binds it.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 35 — A failing AI acceptance pass reworks only in the AI-dispositive modes",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Dispatcher-policy-settings revise: a FAILING AI acceptance pass auto-reworks the item to active ONLY when the effective acceptance_policy is ai-only or ai-then-human, bounded by dispatcher.acceptance_rework_cap (past the cap it escalates to blocked / needs-human); under human-only the failing pass is ADVISORY - the item stays parked and the human keeps the accept / reject decision. Integration-tier test id populated when the implementing slice binds it."
+    "reason": "Dispatcher-policy-settings revise: a FAILING AI acceptance pass auto-reworks the item to active ONLY when the effective acceptance_policy is ai-only or ai-then-human, bounded by dispatcher.acceptance_rework_cap (past the cap it escalates to blocked / needs-human); under human-only the failing pass is ADVISORY - the item stays parked and the human keeps the accept / reject decision. Integration-tier test id populated when the implementing slice binds it.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 36 — Every needs-human block always escalates",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Dispatcher-policy-settings revise: no policy setting auto-disposes a blocked_reason: needs-human item or a design-human-gated decision (drift acceptance, spec-change slice, regroom / backlog bounce, human-only acceptance) - each is surfaced to a human even at high confidence, and the escalation is queryable from the journal. Integration-tier test id populated when the implementing slice binds it."
+    "reason": "Dispatcher-policy-settings revise: no policy setting auto-disposes a blocked_reason: needs-human item or a design-human-gated decision (drift acceptance, spec-change slice, regroom / backlog bounce, human-only acceptance) - each is surfaced to a human even at high confidence, and the escalation is queryable from the journal. Integration-tier test id populated when the implementing slice binds it.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 37 — Safe defaults hold when nothing is configured",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Dispatcher-policy-settings revise: with no dispatcher.* policy settings configured and no per-item policy label, auto_approve_ready and merge_on_review_cap are false, acceptance_mode is ai-then-human, review_fix_cap is 3 and acceptance_rework_cap is 2 - and no UNLABELED item is auto-approved, no past-cap review ships, and no acceptance reaches done without a human (the constraints.md safe-defaults rail; scoped to unlabeled items because a per-item label legitimately beats a safe global). Integration-tier test id populated when the implementing slice binds it."
+    "reason": "Dispatcher-policy-settings revise: with no dispatcher.* policy settings configured and no per-item policy label, auto_approve_ready and merge_on_review_cap are false, acceptance_mode is ai-then-human, review_fix_cap is 3 and acceptance_rework_cap is 2 - and no UNLABELED item is auto-approved, no past-cap review ships, and no acceptance reaches done without a human (the constraints.md safe-defaults rail; scoped to unlabeled items because a per-item label legitimately beats a safe global). Integration-tier test id populated when the implementing slice binds it.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 38 — capture-spec-drift surfaces ledger intent missing from spec",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "capture-spec-drift ledger-intent scan scenario; integration-tier test pending (li follow-up)"
+    "reason": "capture-spec-drift ledger-intent scan scenario; integration-tier test pending (li follow-up)",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Dispatch-brief lessons injection",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
-    "reason": "Dispatch-brief lessons-injection consumer contract (reflection gate's human-ratified lessons loop); integration-tier test id populated when work-item livespec-impl-beads-29f.10 lands its clause->scenario->test binding."
+    "reason": "Dispatch-brief lessons-injection consumer contract (reflection gate's human-ratified lessons loop); integration-tier test id populated when work-item livespec-impl-beads-29f.10 lands its clause->scenario->test binding.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 39 — Ratified lesson injects into dispatch briefs",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Ratified-lesson injection scenario; integration-tier test id populated when the lessons-brief-injection consumer (livespec-impl-beads-29f.10) lands."
+    "reason": "Ratified-lesson injection scenario; integration-tier test id populated when the lessons-brief-injection consumer (livespec-impl-beads-29f.10) lands.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 40 — Unratified or absent lessons never alter briefs",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Never-inject (absent / placeholder / unmerged / unreadable fail-open) scenario; integration-tier test id populated when the lessons-brief-injection consumer (livespec-impl-beads-29f.10) lands."
+    "reason": "Never-inject (absent / placeholder / unmerged / unreadable fail-open) scenario; integration-tier test id populated when the lessons-brief-injection consumer (livespec-impl-beads-29f.10) lands.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 41 — standalone analysis lands in a plan, not a root research tree",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Analysis-placement scenario for the no-root-research-tree invariant, renamed to plan vocabulary by the planning-lane-realization-core-v197-v198 proposal; the covering test is the bd-ib-mrqoy2.3 plan-operation implementation follow-up and must land at the integration tier or above per the scenario-tier rule."
+    "reason": "Analysis-placement scenario for the no-root-research-tree invariant, renamed to plan vocabulary by the planning-lane-realization-core-v197-v198 proposal; the covering test is the bd-ib-mrqoy2.3 plan-operation implementation follow-up and must land at the integration tier or above per the scenario-tier rule.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 42 — list-plans enumerates unarchived plans",
@@ -612,42 +667,48 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
-    "reason": "TODO: bind to the exercising test. Added by the retire-mode-flag revise (v036), which retired the `--mode` run-mode flag and contracted the `loop` invocation surface (ranked-queue drain by default, `--dry-run`, and the `--item`-keyed fail-closed cost gate) for the first time. The exercising test lands with the impl work-item that realizes the new surface."
+    "reason": "TODO: bind to the exercising test. Added by the retire-mode-flag revise (v036), which retired the `--mode` run-mode flag and contracted the `loop` invocation surface (ranked-queue drain by default, `--dry-run`, and the `--item`-keyed fail-closed cost gate) for the first time. The exercising test lands with the impl work-item that realizes the new surface.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 43 — loop drains the ranked queue by default",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test — a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` §\"Heading taxonomy\"). Added by the retire-mode-flag revise (v036), which retired the `--mode` run-mode flag: `loop` now drains the ranked queue by default, `--dry-run` plans without dispatching, and the fail-closed cost gate keys on `--item` presence. The exercising test lands with the impl work-item that realizes the new `loop` surface."
+    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test — a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` §\"Heading taxonomy\"). Added by the retire-mode-flag revise (v036), which retired the `--mode` run-mode flag: `loop` now drains the ranked queue by default, `--dry-run` plans without dispatching, and the fail-closed cost gate keys on `--item` presence. The exercising test lands with the impl work-item that realizes the new `loop` surface.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 44 — --dry-run plans the ranked queue and dispatches nothing",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test — a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` §\"Heading taxonomy\"). Added by the retire-mode-flag revise (v036), which retired the `--mode` run-mode flag: `loop` now drains the ranked queue by default, `--dry-run` plans without dispatching, and the fail-closed cost gate keys on `--item` presence. The exercising test lands with the impl work-item that realizes the new `loop` surface."
+    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test — a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` §\"Heading taxonomy\"). Added by the retire-mode-flag revise (v036), which retired the `--mode` run-mode flag: `loop` now drains the ranked queue by default, `--dry-run` plans without dispatching, and the fail-closed cost gate keys on `--item` presence. The exercising test lands with the impl work-item that realizes the new `loop` surface.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 45 — Unobservable cost fails closed on an unattended drain and warns on a hand-picked dispatch",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test — a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` §\"Heading taxonomy\"). Added by the retire-mode-flag revise (v036), which retired the `--mode` run-mode flag: `loop` now drains the ranked queue by default, `--dry-run` plans without dispatching, and the fail-closed cost gate keys on `--item` presence. The exercising test lands with the impl work-item that realizes the new `loop` surface."
+    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test — a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` §\"Heading taxonomy\"). Added by the retire-mode-flag revise (v036), which retired the `--mode` run-mode flag: `loop` now drains the ranked queue by default, `--dry-run` plans without dispatching, and the fail-closed cost gate keys on `--item` presence. The exercising test lands with the impl work-item that realizes the new `loop` surface.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 46 — Per-item cap overrides set a label or clear to reinherit the global default",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test — a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` §\"Heading taxonomy\"). Added by the enumerate-per-item-override-and-move-drive-actions revise: the three per-item cap-override drive verbs (set-merge-on-review-cap boolean, set-review-fix-cap / set-acceptance-rework-cap positive-int) write a per-item cap label without touching status, and the reserved `clear` value removes the label so the item reinherits the global dispatcher.* default, with clear-when-absent a green no-op. The exercising test binds through drive.run_action and the FakeBeadsClient-backed store seam (b620304 + the clear-to-inherit commit)."
+    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test — a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` §\"Heading taxonomy\"). Added by the enumerate-per-item-override-and-move-drive-actions revise: the three per-item cap-override drive verbs (set-merge-on-review-cap boolean, set-review-fix-cap / set-acceptance-rework-cap positive-int) write a per-item cap label without touching status, and the reserved `clear` value removes the label so the item reinherits the global dispatcher.* default, with clear-when-absent a green no-op. The exercising test binds through drive.run_action and the FakeBeadsClient-backed store seam (b620304 + the clear-to-inherit commit).",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 47 — The guarded move relocates within the operator-movable statuses only",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test — a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` §\"Heading taxonomy\"). Added by the enumerate-per-item-override-and-move-drive-actions revise: the guarded move drive action writes ONLY the item's status among the operator-movable set {backlog, ready, blocked, active} and refuses done / acceptance / pending-approval with a clear error, preserving the accept-from-acceptance ship-guard. The exercising test binds through drive.run_action and the FakeBeadsClient-backed store seam (b620304)."
+    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test — a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` §\"Heading taxonomy\"). Added by the enumerate-per-item-override-and-move-drive-actions revise: the guarded move drive action writes ONLY the item's status among the operator-movable set {backlog, ready, blocked, active} and refuses done / acceptance / pending-approval with a clear error, preserving the accept-from-acceptance ship-guard. The exercising test binds through drive.run_action and the FakeBeadsClient-backed store seam (b620304).",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 48 — Dispatcher refuses a not-factory-safe item at admission",
@@ -668,14 +729,16 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "test": "TODO",
-    "reason": "External-runtime posture constraint over Codex and the OpenAI Codex companion plugin: the deciding signals are the local opt-in/marker gate, the canary's exact-expression classification of the active companion source, the fail-closed-on-authorization default, and the rendered raw codex exec full-access/EOF behavior. Unit coverage for the gate and canary exists under tests/hooks and tests/hooks_plugin; a single bindable test ID for the whole constraint awaits an integration-tier test that exercises the gate and canary end to end."
+    "reason": "External-runtime posture constraint over Codex and the OpenAI Codex companion plugin: the deciding signals are the local opt-in/marker gate, the canary's exact-expression classification of the active companion source, the fail-closed-on-authorization default, and the rendered raw codex exec full-access/EOF behavior. Unit coverage for the gate and canary exists under tests/hooks and tests/hooks_plugin; a single bindable test ID for the whole constraint awaits an integration-tier test that exercises the gate and canary end to end.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Factory sandbox credential constraints",
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "test": "TODO",
-    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test."
+    "reason": "Baseline heading-coverage backfill for the beads substrate (Phase E). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; real test IDs are populated as the governed propose-change/revise loop's resulting_files[] mechanism binds each heading to an exercising test.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 51 — The rework-return valve leaves a durable journal record",
@@ -689,28 +752,32 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test — a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` §\"Heading taxonomy\"). Added by the guarded-bd-entrypoint-no-mise revise (v052): a beads-backed repository must resolve the public lifecycle guard, must not declare bd in mise, and normal callers must not invoke the guard's private delegate."
+    "reason": "TODO: bind to an INTEGRATION-TIER-or-above test (never a unit-tier test — a scenario describes user-observable behavior, per `SPECIFICATION/constraints.md` §\"Heading taxonomy\"). Added by the guarded-bd-entrypoint-no-mise revise (v052): a beads-backed repository must resolve the public lifecycle guard, must not declare bd in mise, and normal callers must not invoke the guard's private delegate.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 53 — A dispatch proceeds when the host is busy; the scheduler queues it",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Ratified with the retire-host-dispatch-cap proposal (bd-ib-vmve.1): the Orchestrator owns no host-level dispatch concurrency limit, so a dispatch is never refused on host-concurrency grounds and excess runs queue in the Fabro scheduler instead. Per the test-pyramid tier requirement this scenario binds to an INTEGRATION-tier test (never unit-tier); the exercising integration test lands with the code-deletion slice bd-ib-vmve.2 and this entry is bound to its real node id in that change."
+    "reason": "Ratified with the retire-host-dispatch-cap proposal (bd-ib-vmve.1): the Orchestrator owns no host-level dispatch concurrency limit, so a dispatch is never refused on host-concurrency grounds and excess runs queue in the Fabro scheduler instead. Per the test-pyramid tier requirement this scenario binds to an INTEGRATION-tier test (never unit-tier); the exercising integration test lands with the code-deletion slice bd-ib-vmve.2 and this entry is bound to its real node id in that change.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 54 — Host-side dispatch runs a released payload, never the working tree",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Ratified with the pin-host-direct-dispatch-to-release proposal (bd-ib-4zif.1): host-side dispatch executes a released payload rather than a working tree, self-update triggers on a running-release vs latest-release comparison, and every promotion is gated on a canary of the candidate artifact. Per the test-pyramid tier requirement this scenario binds to an INTEGRATION-tier test (never unit-tier); the exercising test lands with the implementation slice bd-ib-4zif.2 and this entry is bound to its real node id in that change."
+    "reason": "Ratified with the pin-host-direct-dispatch-to-release proposal (bd-ib-4zif.1): host-side dispatch executes a released payload rather than a working tree, self-update triggers on a running-release vs latest-release comparison, and every promotion is gated on a canary of the candidate artifact. Per the test-pyramid tier requirement this scenario binds to an INTEGRATION-tier test (never unit-tier); the exercising test lands with the implementation slice bd-ib-4zif.2 and this entry is bound to its real node id in that change.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 55 — plan archive commissions a missing independent completeness review",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Added by the automatic-archive-completeness-review revision. The behavior requires an integration-tier or higher exercising test because it coordinates a real plan, ledger evidence, and archive state; the implementation slice bd-ib-ydjf7k supplies that binding."
+    "reason": "Added by the automatic-archive-completeness-review revision. The behavior requires an integration-tier or higher exercising test because it coordinates a real plan, ledger evidence, and archive state; the implementation slice bd-ib-ydjf7k supplies that binding.",
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Not-human-gated decision constraints",
@@ -718,7 +785,7 @@
     "spec_file": "constraints.md",
     "test": "TODO",
     "reason": "Ratified with the positive-floor-complement revision (plan epic bd-ib-idgwyk, child bd-ib-idgwyk.3). The rule governs how a session decides whether to escalate, which no in-repo test can decide mechanically today; the heading is bound to a real test id when a session-decision harness exists.",
-    "work_item": "bd-ib-idgwyk.3"
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 56 — A not-human-gated decision is taken by the session, never escalated",
@@ -726,7 +793,7 @@
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Ratified with the positive-floor-complement revision (plan epic bd-ib-idgwyk, child bd-ib-idgwyk.3). The rule governs how a session decides whether to escalate, which no in-repo test can decide mechanically today. When a session-decision harness exists this heading binds to an integration/consumer-tier (e2e-cli) test exercising the observable escalate-or-take outcome, never a unit-tier test, per the heading taxonomy's pyramid-tier requirement.",
-    "work_item": "bd-ib-idgwyk.3"
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 60 — An observed provider exhaustion refuses admission, and expires",
@@ -861,7 +928,7 @@
   {
     "heading": "## Scenario 78 — A temporary throttle carries its own restore work-item",
     "spec_root": "SPECIFICATION",
-    "work_item": "bd-ib-w3if5j",
+    "work_item": "bd-ib-heat",
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Ratified by the temporary-setting-restore revise (plan homelab-loop-hardening-orchestrator, epic bd-ib-ujihbw). TERMINAL non-test binding, per the Scenario-56 precedent: both clauses of this scenario are review obligations discharged when a settings change is reviewed for merge, and no in-repo test can mechanically decide whether a reviewer named a missing restore work-item. The negative half — that no configuration schema offers a temporary variant or restore-condition field to reach for — is an absence in the schema rather than a behavior a test can exercise. Owned by bd-ib-w3if5j, which closes with this entry deliberately left as a reasoned TODO rather than bound; any future binding would be integration/consumer-tier, never unit-tier."
@@ -942,7 +1009,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "work_item": "bd-ib-tsna",
+    "work_item": "bd-ib-heat",
     "reason": "Ratified by the commission item B revise (plan homelab-loop-hardening-orchestrator): layered adapter resolution and the journaled supplying layer; bd-ib-tsna lands the exercising integration test."
   },
   {
@@ -950,7 +1017,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "work_item": "bd-ib-tsna",
+    "work_item": "bd-ib-heat",
     "reason": "Ratified by the commission item B revise (plan homelab-loop-hardening-orchestrator): arbitrary adapters with env maps and args, proven hermetically; bd-ib-tsna lands the exercising integration test."
   },
   {
@@ -983,7 +1050,7 @@
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Ratified with the wip-cap-naming-collision revision; capacity surfaces must name which ceiling they mean. Awaits a consumer-tier (integration) test per the scenario-tier requirement; real test ID to follow.",
-    "work_item": "bd-ib-snyquw.4"
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 58 — Rows at status active are not the counted quantity",
@@ -991,7 +1058,7 @@
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Ratified with the wip-cap-bound-honesty revision; wip_cap bounds counted claims, not rows at status active. Awaits a consumer-tier (integration) test per the scenario-tier requirement; real test ID to follow.",
-    "work_item": "bd-ib-snyquw.5"
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 59 — The hand-picked operator override admits over the cap",
@@ -999,7 +1066,7 @@
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Ratified with the wip-cap-bound-honesty revision; the hand-picked dispatch --item override is sanctioned and may exceed the cap. Awaits a consumer-tier (integration) test per the scenario-tier requirement; real test ID to follow.",
-    "work_item": "bd-ib-snyquw.5"
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 92 — Dry-run reports why a ready item was not picked",
@@ -1014,7 +1081,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "work_item": "bd-ib-hdjke3",
+    "work_item": "bd-ib-heat",
     "reason": "Ratified with the adopter-neutral-janitor-bootstrap revision; the janitor-bootstrap step resolves the governed repository's DECLARED hook-install recipe (dispatcher.janitor_bootstrap.recipe) with a declared fleet default, refuses on an unresolvable recipe naming the attempted resolution, and honors the committed janitor-bootstrap step waiver. Awaits a dispatcher-tier test per the scenario-tier requirement; real test ID to follow."
   },
   {
@@ -1022,7 +1089,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "work_item": "bd-ib-yhbsd4.1",
+    "work_item": "bd-ib-heat",
     "reason": "Ratified with the factory-spend-expiry-clause revision; the exhaustion record expiry is a bounded default in every case regardless of provider/account/hosting arrangement, no assumption is made about whether or how a provider communicates availability timing, and a successful dispatch against the same provider retires an unexpired record early. Awaits a dispatcher-tier test per the scenario-tier requirement; real test ID to follow."
   },
   {
@@ -1062,7 +1129,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "work_item": "bd-ib-xmom",
+    "work_item": "bd-ib-heat",
     "reason": "Ratified with the empty-diff-acceptance-integrity revision (plan epic bd-ib-xmom). For a change-implying item an empty merged diff resolves the merged-diff leg ungradeable and the acceptance pass returns NEEDS_ATTENTION (never PASS, never NO_CHANGE_NEEDED) parking one attention item whose summary names the empty-diff leg; a file-scoped check matching zero files reports a distinct vacuous-match outcome a gate counts toward neither passing nor failing; a real-change merge still grades normally; and a declared change-optional item with an empty diff is not misclassified. Awaits the integration-tier binding test delivered by the four impl_followups children (acceptance-empty-diff-refusal, scoped-check-vacuous-match, dispatcher-empty-diff-composition, change-implying-criteria-default); real test ID to follow."
   },
   {
@@ -1223,7 +1290,7 @@
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Ratified by the consensus-gated-automated-groom-cut revise pass (plan epic bd-ib-yqpdrt, spec carrier bd-ib-e38q). The exercising integration-tier test is owed by plan pluggable-factory-workflow-configs once the groom workflow variant child (filed under bd-ib-yqpdrt at this revision's revise pass) and bd-ib-ouoq (the required approval record on file_approved_slices) land; until then the behavior has no implementation to bind to.",
-    "work_item": "bd-ib-yqpdrt"
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 119 — A per-item merge hold publishes the pull request and merges only on release",
@@ -1231,7 +1298,7 @@
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Ratified by the per-item-merge-hold revise pass (plan epic bd-ib-yqpdrt, spec carrier bd-ib-vlhp). The exercising integration-tier test is owed by plan pluggable-factory-workflow-configs once the implementation child filed under bd-ib-vlhp at this revision's revise pass lands; until then the behavior has no implementation to bind to.",
-    "work_item": "bd-ib-yqpdrt"
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 120 — An idle factory with dispatchable work surfaces its first dispatch",
@@ -1255,7 +1322,7 @@
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Ratified by the attention-item-answer-policy revise pass (plan control-plane-accounts-and-dispatch-policy, epic bd-ib-rh3iyd, child bd-ib-rh3iyd.1). The exercising integration-tier test is owed by the leg-1 implementation slices (needs-attention effective-policy surfacing; drive answer-press refusal) re-groomed under bd-ib-rh3iyd.1 after this revision lands; until then the behavior has no implementation to bind to.",
-    "work_item": "bd-ib-rh3iyd"
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 123 — The ready ordering breaks equal-rank ties by ready-age past the bound",
@@ -1271,7 +1338,7 @@
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Ratified by the ratify-b3-answer-route revise pass (plan control-plane-accounts-and-dispatch-policy, epic bd-ib-rh3iyd, child bd-ib-rh3iyd.7). The b3 answer route already ships (bd-ib-aqith2 PR #2168, bd-ib-uuohty PR #2200); the exercising integration-tier test binding this scenario heading to the marker/poison-refusal/write-before-transition assertions is owed as a scenario-binding deliverable and is not a by-product of this ratification.",
-    "work_item": "bd-ib-rh3iyd.7"
+    "work_item": "bd-ib-heat"
   },
   {
     "heading": "## Scenario 125 — The needs-attention valve item carries the terminated run's account and fails soft",
@@ -1279,6 +1346,6 @@
     "spec_file": "scenarios.md",
     "test": "TODO",
     "reason": "Ratified by the ratify-b3-answer-route revise pass (plan control-plane-accounts-and-dispatch-policy, epic bd-ib-rh3iyd, child bd-ib-rh3iyd.7). The valve run-account enrichment already ships (bd-ib-uuohty PR #2200); the exercising integration-tier test binding this scenario heading to the account-fields and fail-soft assertions is owed as a scenario-binding deliverable and is not a by-product of this ratification.",
-    "work_item": "bd-ib-rh3iyd.7"
+    "work_item": "bd-ib-heat"
   }
 ]
