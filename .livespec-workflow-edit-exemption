@@ -1,0 +1,19 @@
+# Workflow-edit exemption — one exemption binds to one reviewed change.
+#
+# The change: a COMMENT-ONLY correction to
+# .github/workflows/acceptance-live-golden-master.yml. Every changed line is a
+# `#` comment; `runs-on: [self-hosted, livespec-orchestrator]` is byte-identical
+# on both sides, so the workflow's behaviour is unchanged.
+#
+# The named work item carries `approval:workflow-edit`, recording the
+# maintainer's explicit in-session authorization of 2026-09-09. That item's
+# description holds the provenance, because a label alone cannot show who
+# authorized it.
+#
+# It names an item in THIS repository's ledger deliberately. The livespec epic's
+# handoff pointed at livespec-ifwnqj.2, which lives in the `livespec` tenant;
+# this gate runs `bd show <work_item> --json` against THIS repository's ledger,
+# where that id does not resolve, so naming it would fail the gate closed rather
+# than pass it.
+work_item=bd-ib-z6k4
+reason=Comment-only correction to acceptance-live-golden-master.yml: DinD is not the golden-master runner constraint (hosted runners provide it; the operator secret environment and host-local Fabro/bd/Dolt runtime are), and nothing serves this runs-on today because ARC selects by scale set name rather than by label, so a dispatch hangs instead of erroring. Maintainer-authorized in session 2026-09-09.
