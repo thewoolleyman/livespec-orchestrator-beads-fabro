@@ -165,6 +165,59 @@ def test_render_overlay_projects_codex_auth_snapshot(tmp_path: Path) -> None:
     assert decoded == _FAKE_SNAPSHOT
 
 
+def test_render_overlay_projects_the_codex_otel_config(tmp_path: Path) -> None:
+    """A non-None `[otel]` body adds its prepare step + env line (work-item bd-ib-dbzp).
+
+    Codex reads its OTLP exporters from `$CODEX_HOME/config.toml` and honors
+    no `OTEL_*` variable, so without this file it resolves its trace exporter
+    to None and exports no span — which is why no Codex token span ever
+    reached the host receiver.
+    """
+    rendered = render_run_config_overlay(
+        committed_text=_COMMITTED_WORKFLOW_TOML,
+        workflow_dir=tmp_path,
+        token=_FAKE_TOKEN,
+        github_token=_FAKE_GITHUB_TOKEN,
+        siblings=None,
+        codex_auth_snapshot=_FAKE_SNAPSHOT,
+        codex_otel_config='[otel]\nenvironment = "livespec"\n',
+    )
+    assert rendered is not None
+    prepare_region, env_table = rendered.split("[environments.livespec-ci.env]", 1)
+    # Written before the agent nodes, and read back so an empty projection
+    # aborts the run here rather than surfacing as telemetry absence later.
+    assert (
+        'printf %s \\"$CODEX_OTEL_CONFIG_TOML\\" > \\"$CODEX_HOME/config.toml\\"'
+        ' && chmod 600 \\"$CODEX_HOME/config.toml\\"'
+        ' && test -s \\"$CODEX_HOME/config.toml\\"'
+    ) in prepare_region
+    # The body round-trips through the env table (json.dumps single-lines it).
+    otel_line = next(
+        line for line in env_table.splitlines() if line.startswith("CODEX_OTEL_CONFIG_TOML = ")
+    )
+    assert json.loads(otel_line[len("CODEX_OTEL_CONFIG_TOML = ") :]) == (
+        '[otel]\nenvironment = "livespec"\n'
+    )
+
+
+def test_render_overlay_omits_codex_otel_config_when_absent(tmp_path: Path) -> None:
+    """No `[otel]` projection: neither the step nor the env line appears.
+
+    The Claude-OAuth-only shape has no Codex node and no `$CODEX_HOME`, so
+    writing a telemetry config there would be a step that cannot succeed.
+    """
+    rendered = render_run_config_overlay(
+        committed_text=_COMMITTED_WORKFLOW_TOML,
+        workflow_dir=tmp_path,
+        token=_FAKE_TOKEN,
+        github_token=_FAKE_GITHUB_TOKEN,
+        siblings=None,
+    )
+    assert rendered is not None
+    assert "CODEX_OTEL_CONFIG_TOML" not in rendered
+    assert "config.toml" not in rendered
+
+
 def test_render_overlay_contains_the_refresh_sentinel_to_a_closed_loopback_port(
     tmp_path: Path,
 ) -> None:
