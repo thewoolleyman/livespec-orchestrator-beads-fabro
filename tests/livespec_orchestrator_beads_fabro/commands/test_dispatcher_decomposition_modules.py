@@ -109,6 +109,7 @@ def test_completion_cluster_importable_from_new_module_and_dispatcher() -> None:
 def test_credentials_cluster_importable_from_new_module_and_private_names_removed() -> None:
     credential_public_names = {
         "check_credential_env",
+        "credential_status",
         "credential_wrapper_text",
         "dispatch_required_credentials_text",
         "fetch_fleet_manifest_text",
@@ -350,6 +351,31 @@ def test_run_checks_cluster_importable_from_new_module_and_private_names_removed
         assert not hasattr(dispatcher, name)
 
 
+def _assert_loop_wave_moved_out_of_the_loop_command() -> None:
+    """The wave (admission drain + parallel launch) is its own cohesive module.
+
+    Split out so `_dispatcher_loop_command` stays under the file LLOC ceiling.
+    The public entry moved and the private helper moved WITH it: a private name
+    left behind and imported back across the boundary is what pyright strict
+    and the `private_calls` check refuse, so both halves are asserted.
+    """
+    wave_path = Path(dispatcher.__file__).parent / "_dispatcher_loop_wave.py"
+    assert wave_path.is_file()
+    wave = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_wave"
+    )
+    loop_command = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_command"
+    )
+
+    assert set(wave.__all__) == {"dispatch_loop_wave"}
+    assert callable(wave.dispatch_loop_wave)
+    assert loop_command.dispatch_loop_wave is wave.dispatch_loop_wave
+    for gone in ("_dispatch_loop_wave", "_admit_and_dispatch_loop_wave"):
+        assert not hasattr(loop_command, gone)
+    assert not hasattr(wave, "_dispatch_loop_wave")
+
+
 def test_run_commands_cluster_importable_from_new_module_and_private_names_removed() -> None:
     module_path = Path(dispatcher.__file__).parent / "_dispatcher_run_commands.py"
     loop_command_path = Path(dispatcher.__file__).parent / "_dispatcher_loop_command.py"
@@ -401,6 +427,7 @@ def test_run_commands_cluster_importable_from_new_module_and_private_names_remov
     assert dispatcher.run_dispatch_command is run_commands.run_dispatch_command
     assert dispatcher.run_loop_command is loop_command.run_loop_command
     assert not hasattr(run_commands, "run_loop_command")
+    _assert_loop_wave_moved_out_of_the_loop_command()
     assert not hasattr(run_commands, "_alarm_on_terminal_failure")
     for name in old_dispatcher_names:
         assert not hasattr(dispatcher, name)

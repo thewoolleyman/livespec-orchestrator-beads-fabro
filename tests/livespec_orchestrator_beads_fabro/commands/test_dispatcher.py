@@ -48,6 +48,8 @@ from livespec_orchestrator_beads_fabro._beads_client import FakeBeadsClient, mak
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_admission,
     _dispatcher_completion,
+    _dispatcher_credential_reprobe,
+    _dispatcher_credentials,
     _dispatcher_dispatch_lock,
     _dispatcher_goal,
     _dispatcher_ledger_close,
@@ -72,6 +74,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_check_suite_view imp
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_reclaim import (
     ActiveClaimAccounting,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
+    ClaudeCredentialStatus,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_core_provisioning_view import (
     FLEET_JANITOR_CORE_REPO_URL,
@@ -5747,6 +5752,109 @@ def test_loop_dispatches_named_items_within_budget(
     )
     assert pick["picked"] == ["a-1"]
     assert pick["dry_run"] is False
+
+
+def _rate_limited_credential_status() -> ClaudeCredentialStatus:
+    return ClaudeCredentialStatus(
+        condition="exhausted",
+        present=True,
+        usable=False,
+        http_status=429,
+        error_type="rate_limit_error",
+        input_tokens=None,
+        output_tokens=None,
+        message="CLAUDE_CODE_OAUTH_TOKEN is exhausted or rate-limited (HTTP 429).",
+        remedy="Stand-in remedy.",
+    )
+
+
+def _usable_credential_status() -> ClaudeCredentialStatus:
+    return ClaudeCredentialStatus(
+        condition="usable",
+        present=True,
+        usable=True,
+        http_status=200,
+        error_type=None,
+        input_tokens=8,
+        output_tokens=1,
+        message="CLAUDE_CODE_OAUTH_TOKEN is usable.",
+        remedy="No action required.",
+    )
+
+
+def test_loop_re_probes_a_rate_limited_credential_instead_of_exiting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The loop holds an unspent budget open across a provider-limit refusal.
+
+    The whole `loop` entry point runs; only the probe, the sleep and
+    `run_dispatch` are stood in. Three instruments are read rather than one,
+    because each alone is satisfied by a wrong implementation:
+
+    - The dispatch HAPPENED. Exit 0 alone does not carry it — a loop that found
+      nothing to launch also exits 0 — so the launch seam is asked directly.
+    - Two waits of the default 300-second cadence elapsed. Without this, a
+      probe that simply returned usable on its first call would pass.
+    - Two refusal records were journaled, one per refused probe, and the
+      journal holds no `provider-exhaustion-cleared` line: the wait is not
+      silent, and a usable probe is not a fourth retirement route.
+    """
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item(id="a-1", rank="a1")
+    append_work_item(path=_config(), item=item)
+    fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
+    statuses = [
+        _rate_limited_credential_status(),
+        _rate_limited_credential_status(),
+        _usable_credential_status(),
+    ]
+    probed: list[str] = []
+
+    def refusing_then_usable(*, token: str) -> ClaudeCredentialStatus:
+        probed.append(token)
+        return statuses[min(len(probed) - 1, len(statuses) - 1)]
+
+    monkeypatch.setattr(_dispatcher_credentials, "probe_claude_credential", refusing_then_usable)
+    slept: list[float] = []
+
+    def record_wait(*, seconds: float) -> None:
+        slept.append(seconds)
+
+    # The module's OWN wait seam, not the shared `time.sleep`: a whole loop
+    # pass performs other waits (a poll, a retry backoff), and patching the
+    # shared one would fold those into this assertion.
+    monkeypatch.setattr(_dispatcher_credential_reprobe, "sleep_for_reprobe_cadence", record_wait)
+
+    exit_code = main(
+        argv=[
+            "loop",
+            "--repo",
+            str(repo),
+            "--budget",
+            "1",
+            "--workflow",
+            str(workflow),
+            "--item",
+            item.id,
+            "--no-close-on-merge",
+        ]
+    )
+
+    assert exit_code == 0
+    assert [kwargs["plan"].work_item_id for kwargs in fake.seen] == [item.id]  # pyright: ignore[reportAttributeAccessIssue]
+    assert slept == [300, 300]
+    records = [
+        json.loads(line)
+        for line in (repo / "tmp" / "fabro-dispatch-journal.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    refusals = [record for record in records if record["stage"] == "credential-reprobe-refused"]
+    assert [record["refused_probes"] for record in refusals] == [1, 2]
+    assert {record["reprobe_interval_seconds"] for record in refusals} == {300}
+    assert not any(record["stage"] == "provider-exhaustion-cleared" for record in records)
 
 
 def test_loop_finalize_invokes_cost_gate_once(

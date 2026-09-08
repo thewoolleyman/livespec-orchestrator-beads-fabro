@@ -57,6 +57,7 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "check_credential_env",
+    "credential_status",
     "credential_wrapper_text",
     "dispatch_required_credentials_text",
     "fetch_fleet_manifest_text",
@@ -287,6 +288,31 @@ def credential_wrapper_text(*, repo: Path) -> str:
     return repr(list(wrapper))
 
 
+def credential_status(
+    *,
+    repo: Path,
+    probe: Callable[..., ClaudeCredentialStatus] | None = None,
+) -> ClaudeCredentialStatus:
+    """Assess the exact sandbox model credential, without deciding on it.
+
+    Presence is not sufficient: an absent token answers the distinct
+    absent-credential status, and a present one is assessed by a bounded live
+    probe against the same ``CLAUDE_CODE_OAUTH_TOKEN`` projected into the
+    sandbox. Values and response bodies are never logged.
+
+    Separated from `check_credential_env` because the two callers need
+    DIFFERENT halves of the answer: a dispatch needs the refusal MESSAGE, while
+    the loop's bounded re-probe needs the classified CONDITION — it holds the
+    pass open for a provider-limit refusal and returns on every other one, a
+    distinction a refusal string cannot carry.
+    """
+    token = os.environ.get(CLAUDE_OAUTH_TOKEN_ENV, "")
+    if token == "":
+        return absent_claude_credential_status(wrapper_text=credential_wrapper_text(repo=repo))
+    selected_probe = probe if probe is not None else probe_claude_credential
+    return selected_probe(token=token)
+
+
 def check_credential_env(
     *,
     repo: Path,
@@ -299,12 +325,7 @@ def check_credential_env(
     before launch when it is revoked, exhausted/rate-limited, denied, or
     cannot be assessed. Values and response bodies are never logged.
     """
-    token = os.environ.get(CLAUDE_OAUTH_TOKEN_ENV, "")
-    if token == "":
-        status = absent_claude_credential_status(wrapper_text=credential_wrapper_text(repo=repo))
-    else:
-        selected_probe = probe if probe is not None else probe_claude_credential
-        status = selected_probe(token=token)
+    status = credential_status(repo=repo, probe=probe)
     if status.usable:
         return None
     return (

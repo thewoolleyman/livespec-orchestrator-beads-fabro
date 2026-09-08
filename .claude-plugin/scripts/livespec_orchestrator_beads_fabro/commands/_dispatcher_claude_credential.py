@@ -97,10 +97,23 @@ def classify_claude_probe(*, observation: ClaudeProbeObservation) -> ClaudeCrede
                 f"{CLAUDE_OAUTH_TOKEN_ENV} is exhausted or rate-limited "
                 f"({_observation_label(observation=observation)})."
             ),
+            # ⛔ NO WAIT-UNTIL-CLOCK INSTRUCTION. This remedy previously read
+            # "for a rolling rate limit, wait before retrying", which named no
+            # duration and so invited the operator to adopt whatever reset
+            # instant the provider's refusal body happened to state. That is
+            # what the ratified provider-spend-containment clause forbids, and
+            # the measured cost was a factory idle for hours behind resumers
+            # sleeping to a provider clock while the credential had already
+            # recovered. A provider timing claim is unverified provenance, never
+            # an instruction, and never a gate on the re-probe cadence; the
+            # probe's OWN next result is the signal the loop resumes on.
             remedy=(
-                "For a rolling rate limit, wait before retrying; for an org spend "
-                "or billing limit, raise the billing limit or re-mint with "
-                "`claude setup-token` under a healthy org and rotate the wrapper secret."
+                "Take no provider-stated reset instant as an instruction: the "
+                "probe's own next result is the signal, and the loop re-probes "
+                "on the committed dispatcher.credential_reprobe_interval_seconds "
+                "cadence. For an org spend or billing limit, raise the billing "
+                "limit or re-mint with `claude setup-token` under a healthy org "
+                "and rotate the wrapper secret."
             ),
         )
     if observation.http_status == _HTTP_FORBIDDEN or observation.error_type == "permission_error":
