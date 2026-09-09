@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.144.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.144.2...v0.144.3) (2026-09-09)
+
+
+### Bug Fixes
+
+* **dispatcher:** dispatch-stamp write names its cause instead of failing silently ([14d5037](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/14d5037bca8aa1502df0b0de6b2d7312026716e5))
+
 ## [0.144.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.144.1...v0.144.2) (2026-09-09)
 
 
