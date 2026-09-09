@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -27,6 +28,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_otel_config import (
     codex_otel_config_toml,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
+    select_factory_credential,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     GITHUB_TOKEN_ENV_VAR,
@@ -216,10 +220,15 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
         work_item_id=work_item_id,
         dispatch_id=dispatch_id,
     )
+    credential_choice = select_factory_credential(
+        environ=os.environ,
+        home=Path.home(),
+        warn=lambda message: sys.stderr.write(f"livespec-dispatch: {message}\n"),
+    )
     rendered = render_run_config_overlay(
         committed_text=committed.read_text(encoding="utf-8"),
         workflow_dir=committed.parent.resolve(),
-        token=os.environ[CLAUDE_OAUTH_TOKEN_ENV],
+        token=os.environ[credential_choice.env_name],
         github_token=github_token,
         siblings=siblings,
         otel_env=otel_env,
@@ -306,7 +315,12 @@ def assess_credential_status(
     module's namespace, so a caller that stands the probe in stands in the one
     the whole dispatch path uses.
     """
-    token = os.environ.get(CLAUDE_OAUTH_TOKEN_ENV, "")
+    credential_choice = select_factory_credential(
+        environ=os.environ,
+        home=Path.home(),
+        warn=lambda message: sys.stderr.write(f"livespec-dispatch: {message}\n"),
+    )
+    token = os.environ.get(credential_choice.env_name, "")
     if token == "":
         return absent_claude_credential_status(wrapper_text=credential_wrapper_text(repo=repo))
     selected_probe = probe if probe is not None else probe_claude_credential
