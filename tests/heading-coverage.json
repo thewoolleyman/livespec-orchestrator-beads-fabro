@@ -827,6 +827,14 @@
     "reason": "Ratified by the acp-node-adapter-configuration revise (plan homelab-loop-hardening-orchestrator, commission item B), implemented by bd-ib-tsna. Bound to the MOST SPECIFIC layer's negative control, which is the one assertion that exercises all three layers at once: it sets a conflicting value at each of the workflow, repository and per-dispatch layers and asserts the per-dispatch value renders while the repository's other env keys survive. The sibling controls for the two less specific layers, the contractual render order, the arbitrary-adapter cases of Scenario 88, and every refusal live in the same module. A contracts.md heading MAY bind a unit-tier test."
   },
   {
+    "heading": "## Factory-configurable ACP fallback priority",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "Ratified by the factory-configurable-model-fallback-priority revise pass (plan/epic bd-ib-jxvgq5). The contract spans Dispatcher admission/observability and a pinned Fabro capability that do not yet exist; integration and consumer-tier test bindings are filed by the required post-revise implementation-gap capture.",
+    "work_item": "bd-ib-jxvgq5"
+  },
+  {
     "heading": "## ACP node timeouts",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
@@ -1355,5 +1363,13 @@
     "test": "TODO",
     "reason": "Ratified by the adopt-native-open-assigns-rank revise pass, closing impl->spec drift on the Dispatcher's existing `open`->`backlog` / `in_progress`->`active` self-heal (`_NATIVE_STATUS_REMAP` in `commands/_dispatcher_ledger_close.py`) and adding a NEW requirement -- assigning a real, non-sentinel rank on adoption -- that is not yet implemented. The exercising integration/consumer-tier test binding this scenario heading to the rank-assignment behavior is owed as a follow-up impl work-item (bd-ib-0026, filed backlog), per the heading taxonomy's pyramid-tier requirement (a scenario is never bound to a unit-tier test).",
     "work_item": "bd-ib-0026"
+  },
+  {
+    "heading": "## Scenario 127 — Ordered ACP fallback preserves primary resolution, failure honesty, and one node visit",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified by the factory-configurable-model-fallback-priority revise pass (plan/epic bd-ib-jxvgq5). The scenario introduces unimplemented cross-repository Dispatcher and pinned-Fabro behavior; integration and consumer-tier bindings are filed from the required post-revise implementation-gap capture rather than misrepresented as existing unit coverage.",
+    "work_item": "bd-ib-jxvgq5"
   }
 ]
