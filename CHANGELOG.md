@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.144.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.144.1...v0.144.2) (2026-09-09)
+
+
+### Bug Fixes
+
+* **dispatcher:** pr node inherits the workflow Claude default unless a codex_models.pr table is set ([ef06f9a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ef06f9ab97e62b98e9bff703e7f9ffd9ba02e555))
+
 ## [0.144.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.144.0...v0.144.1) (2026-09-08)
 
 
