@@ -155,8 +155,9 @@ High-risk controls:
   data or rendered/run-record surfaces.
 
 Primary candidate ids: `gap-l4psyed6`, `gap-s445a6la`, `gap-4skovge4`,
-`gap-3gcxoobc`, `gap-geg5ne3u`, `gap-eotln3fu`, `gap-qspq7y5k`,
-`gap-ettinkup`, `gap-im3yns7h`, `gap-zu7qhh5o`, `gap-o3vebjra`.
+`gap-3gcxoobc`, `gap-3go3fnbd`, `gap-geg5ne3u`, `gap-eotln3fu`,
+`gap-qspq7y5k`, `gap-2yzt6aym`, `gap-ettinkup`, `gap-im3yns7h`,
+`gap-zu7qhh5o`, `gap-o3vebjra`.
 
 ### S2 — typed classifier, versioned holds, legacy compatibility, and valves
 
