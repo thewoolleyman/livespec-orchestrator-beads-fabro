@@ -69,9 +69,10 @@ def test_each_acp_node_has_its_own_adapter_input() -> None:
 def test_pr_node_is_the_only_node_on_the_pr_adapter() -> None:
     """The publish node is separated from the implementer tier, and only it.
 
-    The split is what lets the pr node take a cheaper Codex model than
-    implement / fix / review_fix; if another node drifted onto `pr_adapter` it
-    would silently inherit that cheaper tier.
+    The split is what lets the pr node take a cheaper model than
+    implement / fix / review_fix — the Claude Haiku default, or a per-repo
+    Codex/other override; if another node drifted onto `pr_adapter` it would
+    silently inherit that cheaper tier.
     """
     dot = _WORKFLOW_DOT.read_text(encoding="utf-8")
     pr_block = re.search(r"\n    pr \[(.*?)\n    \]", dot, re.DOTALL)
@@ -97,12 +98,18 @@ def test_toml_declares_every_implementer_adapter_defaulting_to_claude_opus_5() -
         ), node
 
 
-def test_toml_declares_pr_adapter_defaulting_to_claude() -> None:
+def test_toml_declares_pr_adapter_defaulting_to_claude_haiku() -> None:
+    """The publish input pins Claude Haiku 4.5 + high effort via the adapter's
+    own env (v107): the pr fleet default is a model-agnostic Claude adapter, so
+    a bare `fabro run` and an unconfigured dispatch both render Haiku rather than
+    a Codex model. `model`/`reasoning_effort` are API-only attributes fabro
+    rejects on acp nodes, so the model rides ANTHROPIC_MODEL on the command."""
     toml = _WORKFLOW_TOML.read_text(encoding="utf-8")
-    assert re.search(
-        r'^\s*pr_adapter\s*=\s*"' + re.escape(_CLAUDE_ADAPTER) + r'"',
-        toml,
-        re.MULTILINE,
+    pr_line = re.search(r'^\s*pr_adapter\s*=\s*"(.+)"', toml, re.MULTILINE)
+    assert pr_line is not None
+    value = pr_line.group(1)
+    assert value == (
+        "ANTHROPIC_MODEL=claude-haiku-4-5 CLAUDE_CODE_EFFORT_LEVEL=high " f"{_CLAUDE_ADAPTER}"
     )
 
 

@@ -422,6 +422,10 @@ def resolve_test_acp_nodes() -> ResolveAcpNodes:
     def _resolve(*, repo: Path) -> Any:
         claude = "npx -y @agentclientprotocol/claude-agent-acp"
         implementer = f"ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high {claude}"
+        # The publish node's committed default is the Claude Haiku adapter
+        # (workflow.toml pr_adapter, v107), mirrored here so a test asserting
+        # the un-configured publish node grades against the real default.
+        publish = f"ANTHROPIC_MODEL=claude-haiku-4-5 CLAUDE_CODE_EFFORT_LEVEL=high {claude}"
         overlays = resolve_acp_node_overlays(cwd=repo)
         assert not isinstance(overlays, str), overlays
         resolution = resolve_acp_nodes(
@@ -429,7 +433,7 @@ def resolve_test_acp_nodes() -> ResolveAcpNodes:
                 "implement_adapter": implementer,
                 "fix_adapter": implementer,
                 "review_fix_adapter": implementer,
-                "pr_adapter": claude,
+                "pr_adapter": publish,
                 "review_adapter": claude,
                 "disposition_adapter": claude,
             },

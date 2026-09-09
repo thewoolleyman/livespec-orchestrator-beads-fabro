@@ -298,29 +298,21 @@
       // inspected and none is held — which is the escape hatch for a factory
       // whose parked runs must be left strictly alone.
       "blocked_run_grace_seconds": 1800,
-      // Codex model pins for the factory's Codex ACP nodes (maintainer-directed
-      // 2026-08-22, to hold steady-state Codex subscription burn under one
-      // subscription). Omit this whole block to inherit the plugin's built-in
-      // fleet defaults, which are these same values; the values are restated
-      // here because this repo is the one that measured them.
+      // No "dispatcher.codex_models" block: this repo inherits the plugin's
+      // built-in fleet default ACP adapters for every node class (contracts.md
+      // section "Codex ACP node model pins", v107) -- the implementer nodes run
+      // the Claude Opus 5 adapter and the publish (pr) node runs the Claude
+      // Haiku 4.5 adapter. Both are model-agnostic Claude adapters with no
+      // OpenAI/Codex catalog exposure.
       //
-      //   implementer -> the implement / fix / review_fix nodes
-      //   pr          -> the publish node only
-      //
-      // Set a tier's "model" to "" to opt that node class out of pinning
-      // entirely and restore the pre-pin behaviour (codex-acp picks its own
-      // default). See commands/_codex_model_tiers.py for the reachable-tier
-      // measurement, re-taken 2026-08-26 against the successor codex-acp at its
-      // baked path: the whole gpt-5.6 line is reachable now, and the refusal
-      // that used to block it is gone.
-      // No "implementer" entry: per contracts.md section "Codex ACP node model
-      // pins" (v080), an ABSENT implementer entry renders the fleet default
-      // Claude adapter (claude-opus-5, high effort). Writing an implementer
-      // table here -- pinned or with the empty-string opt-out -- routes the
-      // implement/fix/review_fix nodes back to Codex.
-      "codex_models": {
-        "pr": { "model": "gpt-5.4-mini", "reasoning_effort": "high" }
-      },
+      // This repo formerly pinned "codex_models.pr" to the Codex model
+      // "gpt-5.4-mini" (maintainer-directed 2026-08-22, to hold steady-state
+      // Codex subscription burn). That slug was dropped from the ChatGPT-account
+      // Codex catalog, breaking the pr stage of every unconfigured repo; v107
+      // moved the pr fleet default to Claude Haiku and this repo dropped its
+      // override to take that default. To route a node class back to Codex,
+      // add a "codex_models.<implementer|pr>" table (any model), or use
+      // "acp_nodes.<node>" for any adapter.
       // Per-node ACP adapters (contracts.md, the "ACP node adapter
       // configuration" material), the PER-REPOSITORY layer. There is NO
       // `acp_nodes` override as of 2026-08-28: the review node reverts to the
@@ -330,8 +322,9 @@
       // removed after three consecutive review non-convergences at the Codex
       // review gate: each exhausted review_fix_cap and escalated
       // otherwise-correct work to a human. Maintainer direction 2026-08-28:
-      // move review back to Opus. The `pr` node stays on gpt-5.4-mini above (a
-      // mechanical git/gh node with no design judgement); only review reverts.
+      // move review back to Opus. The `pr` node now takes the fleet Claude
+      // Haiku default (see the codex_models note above; a mechanical git/gh
+      // node with no design judgement); review reverts to Opus.
       // The repo-config negative control lives in
       // tests/integration/test_codex_adapter_baked_path_scenarios90_91.py.
       //

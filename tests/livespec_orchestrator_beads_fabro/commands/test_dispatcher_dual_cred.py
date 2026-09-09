@@ -399,19 +399,21 @@ def test_fabro_port_run_routes_implementer_to_codex_adapter(
         value for index, value in enumerate(argv[1:], start=1) if argv[index - 1] == "--input"
     ]
     # `tmp_path` carries no .livespec.jsonc, so implementation work uses the
-    # fleet's Claude Opus 5 default while the PR node keeps the Codex publish
-    # tier.
+    # fleet's Claude Opus 5 default while the PR node takes the Claude Haiku
+    # publish default (v107) — neither class is a Codex adapter absent a pin.
     claude_opus_5 = (
         "ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high "
+        "npx -y @agentclientprotocol/claude-agent-acp"
+    )
+    claude_haiku_pr = (
+        "ANTHROPIC_MODEL=claude-haiku-4-5 CLAUDE_CODE_EFFORT_LEVEL=high "
         "npx -y @agentclientprotocol/claude-agent-acp"
     )
     assert input_values == [
         "disposition_adapter=npx -y @agentclientprotocol/claude-agent-acp",
         f"fix_adapter={claude_opus_5}",
         f"implement_adapter={claude_opus_5}",
-        'pr_adapter=CODEX_CONFIG=\'{"approval_policy":"never","model":"gpt-5.4-mini",'
-        '"model_reasoning_effort":"high","sandbox_mode":"danger-full-access"}\' '
-        "INITIAL_AGENT_MODE=agent-full-access /opt/livespec/codex-acp/bin/codex-acp",
+        f"pr_adapter={claude_haiku_pr}",
         "review_adapter=npx -y @agentclientprotocol/claude-agent-acp",
         f"review_fix_adapter={claude_opus_5}",
         "review_fix_visit_cap=4",
@@ -423,18 +425,16 @@ def test_fabro_port_run_routes_implementer_to_codex_adapter(
         "INITIAL_AGENT_MODE=agent-full-access /opt/livespec/codex-acp/bin/codex-acp"
     )
     assert expected_base == CODEX_ADAPTER_BASE
-    # The publish adapter still carries the Codex sandbox and approval posture
-    # alongside its model pin -- pinning ADDS keys to `CODEX_CONFIG` and changes
-    # nothing else. Keyed by input NAME rather than by position: the pairs are
-    # rendered in sorted-name order, so an index would bind to the ordering
-    # rather than to the publish node.
+    # Absent an explicit `codex_models.pr` table the publish node renders the
+    # Claude Haiku adapter, not a Codex one. Keyed by input NAME rather than by
+    # position: the pairs are rendered in sorted-name order.
     [pr_input] = [pair for pair in input_values if pair.startswith("pr_adapter=")]
-    assert '"approval_policy":"never"' in pr_input
-    assert '"sandbox_mode":"danger-full-access"' in pr_input
-    assert pr_input.endswith(
-        " INITIAL_AGENT_MODE=agent-full-access /opt/livespec/codex-acp/bin/codex-acp"
-    )
-    # The un-pinned adapter is no longer emitted bare on any node.
+    assert "codex-acp" not in pr_input
+    assert "CODEX_CONFIG" not in pr_input
+    assert pr_input.endswith(" npx -y @agentclientprotocol/claude-agent-acp")
+    # No node emits a Codex adapter by default.
+    assert not [pair for pair in input_values if "codex-acp" in pair]
+    # The un-pinned Codex base is no longer emitted bare on any node.
     assert not [pair for pair in input_values if pair.endswith(f"={expected_base}")]
     # The routing inputs precede --no-upgrade-check.
     assert argv.index("--input") < argv.index("--no-upgrade-check")

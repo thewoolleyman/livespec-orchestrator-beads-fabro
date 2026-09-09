@@ -79,12 +79,23 @@ _TIER_COMPACTION_KEY = "compaction_token_limit"
 # The implementer holds `gpt-5.5` and drops only its reasoning effort: a
 # weaker implementer buys token savings at the cost of extra `review_fix`
 # rounds, which are themselves Codex turns, so the cut that does not risk
-# paying for itself twice is effort rather than model. The `pr` node is a
-# scripted `git`/`gh` recipe with no design judgement in it, so it takes the
-# cheap model outright.
+# paying for itself twice is effort rather than model.
+#
+# THESE ARE NO LONGER THE FLEET DEFAULT FOR EITHER NODE. Since the v107
+# revision the pr node's fleet default is the workflow's model-agnostic
+# Claude Haiku adapter, and the implementer node's is the Claude Opus
+# adapter; a tier's Codex overlay is emitted ONLY when its `codex_models`
+# entry is an explicit table (`_acp_node_repository._has_explicit_*_tier`).
+# So these `_DEFAULT_*` values are consumed ONLY as the PARTIAL-TABLE
+# fallback: a repository that writes a `codex_models.pr` (or `.implementer`)
+# table but omits `model` or `reasoning_effort` inherits the missing key
+# from here. `_DEFAULT_PR_MODEL` is therefore held at a LIVE Codex slug
+# (`gpt-5.3-codex-spark`, measured reachable on the ChatGPT-account catalog
+# 2026-09-09) rather than the retired `gpt-5.4-mini`, so a partial pr table
+# never renders a slug the account catalog has dropped.
 _DEFAULT_IMPLEMENTER_MODEL = "gpt-5.5"
 _DEFAULT_IMPLEMENTER_EFFORT = "low"
-_DEFAULT_PR_MODEL = "gpt-5.4-mini"
+_DEFAULT_PR_MODEL = "gpt-5.3-codex-spark"
 _DEFAULT_PR_EFFORT = "high"
 
 

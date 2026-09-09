@@ -26,16 +26,22 @@ _CLAUDE_OPUS_5_ADAPTER = (
     "npx -y @agentclientprotocol/claude-agent-acp"
 )
 _CLAUDE_ADAPTER = "npx -y @agentclientprotocol/claude-agent-acp"
+_CLAUDE_HAIKU_PR_ADAPTER = (
+    "ANTHROPIC_MODEL=claude-haiku-4-5 CLAUDE_CODE_EFFORT_LEVEL=high "
+    "npx -y @agentclientprotocol/claude-agent-acp"
+)
 
 # The workflow-defaults layer these tests resolve against — one adapter
 # input per ACP node, mirroring this repo's committed workflow. The
 # `codex_models` shorthand is a PER-REPOSITORY layer, so it must be seen
-# beating these defaults rather than asserted in isolation.
+# beating these defaults rather than asserted in isolation. The `pr_adapter`
+# default is the Claude Haiku publish adapter, mirroring the committed
+# workflow.toml since the v107 revision.
 _WORKFLOW_INPUTS = {
     "implement_adapter": _CLAUDE_OPUS_5_ADAPTER,
     "fix_adapter": _CLAUDE_OPUS_5_ADAPTER,
     "review_fix_adapter": _CLAUDE_OPUS_5_ADAPTER,
-    "pr_adapter": _CLAUDE_ADAPTER,
+    "pr_adapter": _CLAUDE_HAIKU_PR_ADAPTER,
     "review_adapter": _CLAUDE_ADAPTER,
     "disposition_adapter": _CLAUDE_ADAPTER,
 }
@@ -79,17 +85,16 @@ def _input(*, inputs: tuple[str, ...], name: str) -> str:
     return matches[0]
 
 
-def test_default_dispatch_acp_adapter_is_claude_opus_5(tmp_path: Path) -> None:
-    """An unconfigured target defaults implementation work to Claude Opus 5."""
+def test_default_dispatch_adapters_are_claude(tmp_path: Path) -> None:
+    """An unconfigured target defaults BOTH classes to Claude: Opus 5 for the
+    implementer nodes, Haiku for the publish node — no Codex adapter absent an
+    explicit tier."""
     inputs = _dispatch_inputs(repo=tmp_path)
     implement = _input(inputs=inputs, name="implement_adapter")
     assert implement == f"implement_adapter={_CLAUDE_OPUS_5_ADAPTER}"
     assert "@agentclientprotocol/claude-agent-acp" in implement
-    assert _input(inputs=inputs, name="pr_adapter") == (
-        'pr_adapter=CODEX_CONFIG=\'{"approval_policy":"never","model":"gpt-5.4-mini",'
-        '"model_reasoning_effort":"high","sandbox_mode":"danger-full-access"}\' '
-        "INITIAL_AGENT_MODE=agent-full-access /opt/livespec/codex-acp/bin/codex-acp"
-    )
+    assert _input(inputs=inputs, name="pr_adapter") == f"pr_adapter={_CLAUDE_HAIKU_PR_ADAPTER}"
+    assert "codex-acp" not in _input(inputs=inputs, name="pr_adapter")
 
 
 def test_a_plan_without_a_resolution_passes_no_adapter_input(tmp_path: Path) -> None:
@@ -162,13 +167,17 @@ def test_implementer_table_without_model_keeps_codex_default_adapter(
     )
 
 
-def test_absent_config_resolves_the_builtin_fleet_default_tiers(tmp_path: Path) -> None:
-    """No config at all still pins both tiers — the fleet inherits the policy."""
+def test_absent_config_resolves_the_builtin_partial_table_fallback_tiers(tmp_path: Path) -> None:
+    """The raw tier resolver returns each tier's built-in Codex fallback — the
+    values a partial `codex_models.<tier>` table inherits for a missing key.
+    These are NO LONGER the fleet default adapters (those are the Claude
+    workflow defaults resolved through the overlay layer); a tier's Codex
+    overlay is emitted only for an explicit table."""
     tiers = _config.resolve_codex_model_tiers(cwd=tmp_path)
     assert tiers.implementer.model == "gpt-5.5"
     assert tiers.implementer.reasoning_effort == "low"
     assert tiers.implementer.pinned is True
-    assert tiers.pr.model == "gpt-5.4-mini"
+    assert tiers.pr.model == "gpt-5.3-codex-spark"
     assert tiers.pr.reasoning_effort == "high"
     assert tiers.pr.pinned is True
 
@@ -199,7 +208,7 @@ def test_partial_tier_entry_falls_back_per_key(tmp_path: Path) -> None:
     tiers = _config.resolve_codex_model_tiers(cwd=tmp_path)
     assert tiers.implementer.model == "gpt-5.4"
     assert tiers.implementer.reasoning_effort == "low"
-    assert tiers.pr.model == "gpt-5.4-mini"
+    assert tiers.pr.model == "gpt-5.3-codex-spark"
 
 
 def test_empty_model_is_the_explicit_opt_out(tmp_path: Path) -> None:
@@ -223,4 +232,4 @@ def test_malformed_tier_entries_fall_back_to_defaults(tmp_path: Path) -> None:
     )
     tiers = _config.resolve_codex_model_tiers(cwd=tmp_path)
     assert tiers.implementer.model == "gpt-5.5"
-    assert tiers.pr.model == "gpt-5.4-mini"
+    assert tiers.pr.model == "gpt-5.3-codex-spark"

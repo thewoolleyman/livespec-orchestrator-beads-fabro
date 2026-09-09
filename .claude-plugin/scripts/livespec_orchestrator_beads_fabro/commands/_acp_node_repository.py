@@ -11,15 +11,17 @@ the whole content of this module:
   for the same node WINS over the expansion, so a repository can keep its
   tier configuration while moving one node off Codex entirely.
 
-WHY THE TWO TIERS EXPAND ASYMMETRICALLY, which is behaviour preserved
-rather than chosen here. The `pr` tier expands UNCONDITIONALLY -- the
-publish node has run the Codex adapter on the built-in `gpt-5.4-mini`
-default since the pins landed, with no configuration required -- while the
-implementer tier expands ONLY when `codex_models.implementer` is an
-explicit table. That asymmetry is what routes implementer work to Codex on
-request while leaving the workflow's own default implementer adapter
-standing otherwise, and collapsing it in either direction would silently
-re-provider live dispatches.
+BOTH TIERS EXPAND ONLY WHEN EXPLICITLY CONFIGURED. Each tier's overlay is
+emitted ONLY when its `codex_models` entry is an explicit table -- `pr` when
+`codex_models.pr` is a table, the implementer nodes when
+`codex_models.implementer` is a table. Absent that table the tier contributes
+NO overlay, so the node runs the workflow's own default adapter (the Claude
+publish default for `pr`, the Claude implementer default for the implementer
+nodes -- see contracts.md section "Codex ACP node model pins"). This is the
+symmetry the v107 revision established: it moved the `pr` fleet default off a
+baked Codex model onto the workflow's model-agnostic Claude adapter, so a
+repository routes `pr` to Codex by writing the table and takes the Claude
+default by omitting it, exactly as the implementer tier already worked.
 """
 
 from __future__ import annotations
@@ -44,6 +46,7 @@ __all__: list[str] = [
 _ACP_NODES_KEY = "acp_nodes"
 _CODEX_MODELS_KEY = "codex_models"
 _IMPLEMENTER_TIER_KEY = "implementer"
+_PR_TIER_KEY = "pr"
 
 # The nodes the Codex implementer tier backs when it is explicitly
 # configured. `pr` is absent on purpose: it takes the `pr` tier instead.
@@ -106,13 +109,19 @@ def _codex_shorthand_overlays(*, block: dict[str, Any]) -> Mapping[str, AcpNodeO
     merging with it. That matters concretely: the workflow's implementer
     default pins `ANTHROPIC_MODEL`, and merging that onto a Codex command
     line would prefix an Anthropic model onto a Codex adapter.
+
+    A tier contributes an overlay ONLY when its `codex_models` entry is an
+    explicit table. Absent the table the node keeps the workflow's own
+    default adapter -- the Claude publish default for `pr`, the Claude
+    implementer default for the implementer nodes -- rather than a baked
+    Codex model, per contracts.md section "Codex ACP node model pins".
     """
     tiers = codex_model_tiers_from_block(block=block)
-    overlays = {
-        "pr": overlay_from_string(
+    overlays: dict[str, AcpNodeOverlay] = {}
+    if _has_explicit_pr_tier(block=block):
+        overlays["pr"] = overlay_from_string(
             text=codex_adapter(tier=tiers.pr), replaces_env=True, from_shorthand=True
         )
-    }
     if _has_explicit_implementer_tier(block=block):
         implementer = overlay_from_string(
             text=codex_adapter(tier=tiers.implementer), replaces_env=True, from_shorthand=True
@@ -123,7 +132,17 @@ def _codex_shorthand_overlays(*, block: dict[str, Any]) -> Mapping[str, AcpNodeO
 
 def _has_explicit_implementer_tier(*, block: dict[str, Any]) -> bool:
     """Whether the target explicitly routes implementer work to Codex."""
+    return _has_explicit_tier(block=block, tier_key=_IMPLEMENTER_TIER_KEY)
+
+
+def _has_explicit_pr_tier(*, block: dict[str, Any]) -> bool:
+    """Whether the target explicitly routes the publish node to Codex."""
+    return _has_explicit_tier(block=block, tier_key=_PR_TIER_KEY)
+
+
+def _has_explicit_tier(*, block: dict[str, Any], tier_key: str) -> bool:
+    """Whether a `codex_models` tier entry is an explicit table."""
     models_raw = block.get(_CODEX_MODELS_KEY)
     if not isinstance(models_raw, dict):
         return False
-    return isinstance(cast("dict[str, Any]", models_raw).get(_IMPLEMENTER_TIER_KEY), dict)
+    return isinstance(cast("dict[str, Any]", models_raw).get(tier_key), dict)
