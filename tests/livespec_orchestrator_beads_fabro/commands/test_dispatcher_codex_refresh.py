@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from hypothesis import given
+from hypothesis import example, given
 from hypothesis import strategies as st
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 
@@ -149,6 +149,14 @@ def test_should_invoke_codex_refresh_matches_present_well_formed_due_status(
     )
 
 
+# One pinned example per outcome branch, so every assert below executes on
+# every run rather than only when Hypothesis happens to generate it: a fresh
+# worktree has no example database, and the pre-push per-file coverage gate
+# reported the still-stale assert unexecuted on a run CI had passed.
+@example(before_remaining=400, after_remaining=0, codex_ok=True)
+@example(before_remaining=100, after_remaining=0, codex_ok=False)
+@example(before_remaining=100, after_remaining=500, codex_ok=True)
+@example(before_remaining=100, after_remaining=50, codex_ok=True)
 @given(
     before_remaining=st.integers(min_value=-1_000, max_value=1_000),
     after_remaining=st.integers(min_value=-1_000, max_value=1_000),
