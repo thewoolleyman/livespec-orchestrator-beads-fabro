@@ -63,6 +63,13 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # default `review_fix_visit_cap` of four review visits with three
 # disposition / review_fix rounds under it.
 #
+# The two SCRIPT breakers on the main path -- `implementation_diff` after
+# `implement` and `verify_pr` after `pr` -- each carry the budget of the
+# retryable node they guard, because either can be reached once per attempt
+# of it. They are cheap in practice (one `git` call apiece) and budgeting
+# them at the guarded node's count is what keeps the ceiling ABOVE the
+# graph rather than level with an optimistic reading of it.
+#
 # The three TERMINAL sentinel nodes (`dead_implementer`, `abandon`,
 # `non_converged`) are deliberately absent: each ENDS the run, so they are
 # mutually exclusive with one another and with the tail of the main path,
@@ -78,6 +85,7 @@ _WORST_CASE_VISITS: Mapping[str, int] = {
     "disposition": 3,
     "review_fix": 3,
     "pr": 2,
+    "verify_pr": 2,
 }
 
 # Sandbox-provisioning slack on top of the derived worst case. Carried over
