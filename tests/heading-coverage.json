@@ -1360,8 +1360,7 @@
     "heading": "## Scenario 126 — Ledger normalization adopts a beads-native `open` row and assigns it a real rank",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified by the adopt-native-open-assigns-rank revise pass, closing impl->spec drift on the Dispatcher's existing `open`->`backlog` / `in_progress`->`active` self-heal (`_NATIVE_STATUS_REMAP` in `commands/_dispatcher_ledger_close.py`) and adding a NEW requirement -- assigning a real, non-sentinel rank on adoption -- that is not yet implemented. The exercising integration/consumer-tier test binding this scenario heading to the rank-assignment behavior is owed as a follow-up impl work-item (bd-ib-0026, filed backlog), per the heading taxonomy's pyramid-tier requirement (a scenario is never bound to a unit-tier test).",
+    "test": "tests.integration.test_ledger_adoption_rank_scenario126.test_scenario126_every_cadence_adopts_the_native_rows_onto_a_status_and_a_real_rank",
     "work_item": "bd-ib-0026"
   },
   {

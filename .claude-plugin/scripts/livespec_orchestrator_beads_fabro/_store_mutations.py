@@ -25,6 +25,7 @@ from livespec_orchestrator_beads_fabro._store_blocked_mutations import (
     blocked_reason_label_removals,
 )
 from livespec_orchestrator_beads_fabro._store_metadata import (
+    rank_metadata,
     work_item_metadata,
     work_item_metadata_preserving_existing,
 )
@@ -120,6 +121,7 @@ def update_work_item_status(
     status: str,
     assignee: str | None = None,
     clear_assignee: bool = False,
+    rank: str | None = None,
 ) -> None:
     """Transition an existing item's `status` (and optional `assignee`) IN PLACE.
 
@@ -144,14 +146,14 @@ def update_work_item_status(
     any status other than `blocked` clears the `blocked-reason:` label the
     same way, so an operator valve move out of `blocked` cannot leave the
     item advertising a human gate it no longer has.
+
+    `rank` is the ledger-normalization adoption's other half: a beads-native
+    row being adopted onto its livespec status carries its freshly assigned
+    order key in the SAME mutation, so no call path can write the status and
+    leave the row resting on the bottom-sentinel.
     """
     client = make_beads_client(config=path)
-    metadata = None
-    if status == "ready":
-        metadata = ready_transition_metadata(
-            existing_metadata=_existing_metadata(client=client, issue_id=item_id),
-            now_iso=_utc_now_iso(),
-        )
+    metadata = _transition_metadata(client=client, item_id=item_id, status=status, rank=rank)
     client.update_issue(
         issue_id=item_id,
         status=beads_status_for(status=status),
@@ -164,6 +166,30 @@ def update_work_item_status(
         )
         or None,
     )
+
+
+def _transition_metadata(
+    *,
+    client: BeadsClient,
+    item_id: str,
+    status: str,
+    rank: str | None,
+) -> dict[str, Any] | None:
+    """The metadata overlay a transition carries, or None when it carries none.
+
+    A transition into `ready` stamps the durable ready-dwell instant; an
+    adoption of a rank-less beads-native row carries its freshly assigned order
+    key. Both overlay the EXISTING metadata, and the single read here is what
+    keeps `audit` and every unmodeled key intact through either write.
+    """
+    if status != "ready" and rank is None:
+        return None
+    metadata = _existing_metadata(client=client, issue_id=item_id)
+    if status == "ready":
+        metadata = ready_transition_metadata(existing_metadata=metadata, now_iso=_utc_now_iso())
+    if rank is not None:
+        metadata = rank_metadata(existing_metadata=metadata, rank=rank)
+    return metadata
 
 
 def register_custom_statuses(*, path: StoreConfig) -> None:

@@ -13,6 +13,8 @@ import json
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
+from livespec_runtime.work_items.rank import BOTTOM_SENTINEL, key_between
+
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_checks import (
@@ -60,31 +62,65 @@ _NATIVE_STATUS_REMAP: dict[str, _NativeRemap] = {
     "in_progress": _NativeRemap(to="active", reason="raw claim normalized to active"),
 }
 
+# The one livespec status whose rows are NOT part of the live order: a `done`
+# row's key cannot be the bottom a fresh insert lands after, and the
+# non-sentinel-rank invariant the adoption satisfies exempts it too.
+_LIVESPEC_DONE = "done"
+
 
 def plan_native_status_remaps(*, items: list[WorkItem]) -> list[dict[str, str]]:
-    """Plan the beads-native → livespec status remaps for `items` (PURE).
+    """Plan the beads-native → livespec status + rank adoptions for `items` (PURE).
 
     Returns one `{item_id, from, to, reason}` dict per row whose stored
     status is a KEY of `_NATIVE_STATUS_REMAP`; every other row (already-
     conformant, parked, hooked, ad-hoc, unknown) contributes nothing.
-    Performs NO store mutation and NO journaling, so the dispatch path and
-    the standalone `ledger-normalize` CLI share identical remap logic.
+    A planned row whose `rank` reads back through `BOTTOM_SENTINEL` — the
+    adapter's stand-in for metadata carrying no real key — additionally
+    carries a `rank`: a fresh key from a single bottom-of-order insert, so the
+    adopted row satisfies the "every live head has a real, non-sentinel rank"
+    invariant without an on-demand `rebalance-ranks`. Successive rank-less
+    rows chain off each other's fresh key, so each lands at its own position
+    and NO already-ranked row is re-keyed — this is a run of single inserts,
+    never a rebalance.
+    Performs NO store mutation and NO journaling, so all four normalization
+    cadences share identical adoption logic.
     """
     plan: list[dict[str, str]] = []
+    bottom = _bottom_live_rank(items=items)
     for item in items:
         stored_status = str(item.status)
         remap = _NATIVE_STATUS_REMAP.get(stored_status)
         if remap is None:
             continue
-        plan.append(
-            {
-                "item_id": item.id,
-                "from": stored_status,
-                "to": remap.to,
-                "reason": remap.reason,
-            }
-        )
+        planned = {
+            "item_id": item.id,
+            "from": stored_status,
+            "to": remap.to,
+            "reason": remap.reason,
+        }
+        if item.rank == BOTTOM_SENTINEL:
+            bottom = key_between(a=bottom, b=None)
+            planned["rank"] = bottom
+        plan.append(planned)
     return plan
+
+
+def _bottom_live_rank(*, items: list[WorkItem]) -> str | None:
+    """The greatest REAL key among the live rows — the bottom of the live order (PURE).
+
+    `done` rows are excluded because they are not part of the live order, and
+    the sentinel is excluded because it is the ABSENCE of a key rather than one
+    (it sorts after every real key precisely so a rank-less row does not crash a
+    listing, so taking it as the bottom would make every fresh insert land after
+    a value no row really holds). `None` — no live row carries a real key — is
+    the open start `key_between` accepts.
+    """
+    live = [
+        item.rank
+        for item in items
+        if str(item.status) != _LIVESPEC_DONE and item.rank != BOTTOM_SENTINEL
+    ]
+    return max(live) if live else None
 
 
 def apply_native_status_remaps(
@@ -92,9 +128,19 @@ def apply_native_status_remaps(
     remaps: list[dict[str, str]],
     config: StoreConfig,
 ) -> None:
-    """Write each planned remap to the store via the `update_work_item_status` seam."""
+    """Write each planned adoption through the `update_work_item_status` seam.
+
+    The status and any assigned `rank` ride ONE call, so no call path — and no
+    interrupted partial heal — can adopt a row status-only and leave it resting
+    on the bottom-sentinel.
+    """
     for remap in remaps:
-        update_work_item_status(path=config, item_id=remap["item_id"], status=remap["to"])
+        update_work_item_status(
+            path=config,
+            item_id=remap["item_id"],
+            status=remap["to"],
+            rank=remap.get("rank"),
+        )
 
 
 def project_native_status_remaps(
@@ -102,17 +148,22 @@ def project_native_status_remaps(
     items: list[WorkItem],
     remaps: list[dict[str, str]],
 ) -> list[WorkItem]:
-    """Return `items` with each planned remap applied in memory (PURE).
+    """Return `items` with each planned adoption applied in memory (PURE).
 
-    The post-remap view the store would read back — the dispatch path and
+    The post-adoption view the store would read back — the dispatch path and
     the CLI dry-run both use it so residual ledger checks run against the
-    same projected rows without a second store round-trip.
+    same projected rows without a second store round-trip. A planned row that
+    was already ranked keeps its existing key.
     """
-    remapped_status = {remap["item_id"]: remap["to"] for remap in remaps}
-    return [
-        replace(item, status=remapped_status[item.id]) if item.id in remapped_status else item
-        for item in items
-    ]
+    planned_by_id = {remap["item_id"]: remap for remap in remaps}
+    return [_projected(item=item, remap=planned_by_id.get(item.id)) for item in items]
+
+
+def _projected(*, item: WorkItem, remap: dict[str, str] | None) -> WorkItem:
+    """One row's post-adoption view: unplanned rows pass through untouched (PURE)."""
+    if remap is None:
+        return item
+    return replace(item, status=remap["to"], rank=remap.get("rank", item.rank))
 
 
 def _normalize_native_statuses(

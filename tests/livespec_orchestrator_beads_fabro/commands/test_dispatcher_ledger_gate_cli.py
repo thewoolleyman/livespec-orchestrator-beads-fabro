@@ -17,6 +17,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro._beads_client import IssueDraft, make_beads_client
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_ledger_close,
     _dispatcher_ledger_gate,
@@ -86,6 +87,27 @@ def _write_config(*, tmp_path: Path, text: str) -> None:
     _ = (tmp_path / ".livespec.jsonc").write_text(text, encoding="utf-8")
 
 
+def _raw_native_row(*, item_id: str) -> None:
+    """Write one row a writer performing no second step leaves at beads `open`.
+
+    `create_issue` carries exactly the metadata handed to it, so an empty
+    object genuinely holds no `rank` and reads back through the adapter's
+    bottom-sentinel — the state `append_work_item` cannot produce.
+    """
+    _ = make_beads_client(config=_config()).create_issue(
+        draft=IssueDraft(
+            issue_id=item_id,
+            issue_type="task",
+            title=item_id,
+            description=item_id,
+            assignee=None,
+            created_at="2026-06-11T00:00:00Z",
+            labels=["origin:freeform"],
+            metadata={},
+        )
+    )
+
+
 def test_gate_clean_tenant_exits_zero_with_clean_marker(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
@@ -118,6 +140,31 @@ def test_gate_open_item_heals_in_place_and_exits_zero(
     assert "native-open: open -> backlog" in out
     assert LEDGER_GATE_DRIFT_MARKER not in out
     assert _current_statuses(config=config) == {"native-open": "backlog"}
+
+
+def test_gate_loud_audit_line_names_the_rank_it_assigned(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """A rank-less adoption prints its assigned key beside the status remap.
+
+    The gate's loud-audit guarantee is one line per WRITE, so an adoption whose
+    write carries a rank must say so; the already-ranked row is the control
+    that the fragment is not printed unconditionally.
+    """
+    _write_config(tmp_path=tmp_path, text=_PREFIX_ONLY_CONFIG)
+    config = _config()
+    append_work_item(path=config, item=_item(id="ranked-open", status="open", rank="a5"))
+    _raw_native_row(item_id="rankless-open")
+
+    exit_code = main(argv=["ledger-normalize", "--project-root", str(tmp_path), "--gate"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assigned = materialize_work_items(records=read_work_items(path=config))["rankless-open"].rank
+    assert f"rankless-open: open -> backlog (rank {assigned})\n" in out
+    assert "ranked-open: open -> backlog\n" in out
+    assert assigned > "a5"
 
 
 def test_gate_deferred_item_is_parked_and_conformant(
@@ -190,8 +237,8 @@ def test_gate_fail_soft_skips_and_exits_two_on_heal_write_error(
     _write_config(tmp_path=tmp_path, text=_PREFIX_ONLY_CONFIG)
     append_work_item(path=_config(), item=_item(id="native-open", status="open"))
 
-    def _raise(*, path: StoreConfig, item_id: str, status: str) -> None:
-        _ = (path, item_id, status)
+    def _raise(*, path: StoreConfig, item_id: str, status: str, rank: str | None = None) -> None:
+        _ = (path, item_id, status, rank)
         raise BeadsConnectionError(detail="write refused")
 
     # The heal WRITE seam raises an expected beads error mid-heal.
@@ -221,11 +268,11 @@ def test_gate_partial_heal_prints_each_written_remap_before_skipping(
     real = _dispatcher_ledger_close.update_work_item_status
     calls = {"n": 0}
 
-    def _flaky(*, path: StoreConfig, item_id: str, status: str) -> None:
+    def _flaky(*, path: StoreConfig, item_id: str, status: str, rank: str | None = None) -> None:
         calls["n"] += 1
         if calls["n"] >= 2:
             raise BeadsConnectionError(detail="write refused mid-heal")
-        real(path=path, item_id=item_id, status=status)
+        real(path=path, item_id=item_id, status=status, rank=rank)
 
     monkeypatch.setattr(_dispatcher_ledger_close, "update_work_item_status", _flaky)
 
@@ -269,8 +316,14 @@ def test_gate_fresh_mappable_arrival_during_heal_does_not_block(
 
     monkeypatch.setattr(_dispatcher_ledger_gate, "load_items", _staged_load)
 
-    def _noop_write(*, path: StoreConfig, item_id: str, status: str) -> None:
-        _ = (path, item_id, status)
+    def _noop_write(
+        *,
+        path: StoreConfig,
+        item_id: str,
+        status: str,
+        rank: str | None = None,
+    ) -> None:
+        _ = (path, item_id, status, rank)
 
     # The heal write is a no-op here (reads are stubbed, so there is no store).
     monkeypatch.setattr(_dispatcher_ledger_close, "update_work_item_status", _noop_write)
