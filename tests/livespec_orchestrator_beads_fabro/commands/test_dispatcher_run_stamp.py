@@ -18,7 +18,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_c
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import build_plan
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroRunSummary
 from livespec_orchestrator_beads_fabro.commands._run_attribution import RunAttribution
-from livespec_orchestrator_beads_fabro.errors import BeadsConnectionError
+from livespec_orchestrator_beads_fabro.errors import (
+    BeadsCommandError,
+    BeadsConnectionError,
+    BeadsMappingError,
+)
 
 _MODULE_PATH = (
     Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
@@ -124,6 +128,7 @@ def test_stamp_writes_both_dispatch_keys_and_journals_the_write(tmp_path: Path) 
             "dispatch_factory": "hp",
             "dispatch_factory_server": "https://hp-xubuntu.perch-rudd.ts.net:32276",
             "stamped": True,
+            "stamp_failure_detail": None,
         }
     ]
     assert attribution.work_item_id_for(run=_row(run_id="01M199TWET07", work_item_id=None)) == (
@@ -132,8 +137,11 @@ def test_stamp_writes_both_dispatch_keys_and_journals_the_write(tmp_path: Path) 
 
 
 def test_stamp_fails_open_and_says_so_when_the_repo_carries_no_livespec_config(
+    *,
+    capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
 ) -> None:
+    """An absent `.livespec.jsonc` is a diagnosed cause, not a bare silent no-write."""
     module = _module()
     journal = _Journal()
 
@@ -144,11 +152,22 @@ def test_stamp_fails_open_and_says_so_when_the_repo_carries_no_livespec_config(
     )
 
     assert journal.records[0]["stamped"] is False
+    detail = journal.records[0].get("stamp_failure_detail")
+    assert isinstance(detail, str)
+    assert ".livespec.jsonc" in detail
+    warning = capsys.readouterr().err
+    assert "bd-ib-owner" in warning
+    assert "01NOCONFIG" in warning
+    assert ".livespec.jsonc" in warning
     assert attribution.metadata_run_ids == {"01NOCONFIG": "bd-ib-owner"}
 
 
-def test_stamp_fails_open_when_the_ledger_write_itself_refuses(tmp_path: Path) -> None:
-    """The run is the expensive thing; a beads hiccup must not end it."""
+def test_stamp_fails_open_when_the_ledger_write_itself_refuses(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """The run is the expensive thing; a beads hiccup must not end it — but it must speak."""
     module = _module()
     _write_livespec_config(repo=tmp_path)
     journal = _Journal()
@@ -161,6 +180,49 @@ def test_stamp_fails_open_when_the_ledger_write_itself_refuses(tmp_path: Path) -
     )
 
     assert journal.records[0]["stamped"] is False
+    detail = journal.records[0].get("stamp_failure_detail")
+    assert isinstance(detail, str)
+    assert "record_dispatch_run" in detail
+    assert "bd-ib-owner" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        BeadsCommandError(command="bd update", exit_code=1, stderr="refused"),
+        BeadsConnectionError(detail="tenant unreachable"),
+        BeadsMappingError(record_id="bd-ib-owner", detail="unmappable"),
+    ],
+    ids=["command", "connection", "mapping"],
+)
+def test_stamp_names_the_ledger_error_class_that_refused_the_write(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    error: Exception,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Each of the three swallowed beads errors reaches the journal AND stderr by name."""
+    module = _module()
+    _write_livespec_config(repo=tmp_path)
+    journal = _Journal()
+
+    def _refuse(**kwargs: object) -> None:
+        _ = kwargs
+        raise error
+
+    monkeypatch.setattr(module, "record_dispatch_run", _refuse)
+
+    _ = module.stamp_dispatch_run(
+        plan=_plan(repo=tmp_path),
+        journal=journal,
+        run_id="01REFUSED",
+    )
+
+    detail = journal.records[0].get("stamp_failure_detail")
+    assert isinstance(detail, str)
+    assert type(error).__name__ in detail
+    assert type(error).__name__ in capsys.readouterr().err
 
 
 def test_stamped_attribution_is_a_no_op_before_any_run_is_discovered(tmp_path: Path) -> None:
