@@ -230,6 +230,15 @@ def test_watched_launcher_reaps_queued_run_after_item_closes(
     assert runner.rm_calls == ["01QUEUED"]
     assert result.abandoned_run_id == "01QUEUED"
     assert result.abandoned_item_status == "done"
+    # The unstamped dispatch names its own cause; the text is the stamp module's
+    # to word, so it is read off the record rather than restated here.
+    stamp_failure_detail = next(
+        record["stamp_failure_detail"]
+        for record in journal.records
+        if record["stage"] == "dispatch-run-stamp"
+    )
+    assert isinstance(stamp_failure_detail, str)
+    assert "record_dispatch_run" in stamp_failure_detail
     assert journal.records == [
         {
             "work_item_id": "bd-ib-queued",
@@ -253,6 +262,7 @@ def test_watched_launcher_reaps_queued_run_after_item_closes(
             # The item is absent from the hermetic tenant, so the ledger write
             # fails open — and says so, rather than leaving the miss silent.
             "stamped": False,
+            "stamp_failure_detail": stamp_failure_detail,
         },
         {
             "work_item_id": "bd-ib-queued",
