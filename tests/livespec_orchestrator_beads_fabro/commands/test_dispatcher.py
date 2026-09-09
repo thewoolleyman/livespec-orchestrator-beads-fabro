@@ -699,9 +699,14 @@ def test_dispatch_gate_auto_normalizes_beads_native_open(
         item_id: str,
         status: str,
         assignee: str | None = None,
+        rank: str | None = None,
     ) -> None:
         assert path.prefix == "bd-ib"
         assert assignee is None
+        # Every fixture row already carries a real `rank`, so the adoption
+        # writes the status alone: `rank` is the assignment an already-ranked
+        # row must NOT receive.
+        assert rank is None
         calls.append((item_id, status))
 
     def fake_read_work_items(*, path: StoreConfig) -> object:

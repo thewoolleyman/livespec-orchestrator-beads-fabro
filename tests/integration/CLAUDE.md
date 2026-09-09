@@ -296,6 +296,27 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   time is evidence the committed dial was read — a stubbed sleep would prove
   only that some number reached some stand-in.
 
+- `test_ledger_adoption_rank_scenario126.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 126 — Ledger normalization adopts a
+  beads-native `open` row and assigns it a real rank" and the
+  `SPECIFICATION/contracts.md` §"Work-item beads-issue mapping" adoption
+  clause it realizes. All FIVE of the heading's gherkin scenarios are asserted
+  over ONE seeded tenant run through ALL FOUR cadences, each a real
+  `dispatcher.main(argv=[...])` invocation over the real store/client seam:
+  the fifth scenario's "every cadence adopts the same row identically" is only
+  meaningful if the other four are graded against what each cadence produced.
+  The three adoptable rows are seeded through the client's own `create_issue`,
+  which lands beads `open` with exactly the metadata handed to it, so "carries
+  no real rank" is the absence the adapter really reports rather than a
+  sentinel the test poked in. Every assertion carries a control the adoption
+  must leave alone — a live already-ranked anchor, an adopted row that is
+  ALREADY ranked, a parked `deferred` row that must stay unranked, and a
+  `done` row whose key sorts after every live one, which is the discriminator
+  for "bottom of the LIVE order": were `done` part of the bottom, every
+  assigned key would land after it and the run would still look successful.
+  The single-dispatch leg names an id the tenant does not hold, so it refuses
+  at target selection — AFTER normalization — and launches nothing.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

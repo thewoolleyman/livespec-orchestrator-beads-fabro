@@ -7,6 +7,7 @@ from typing import Any, cast
 from livespec_orchestrator_beads_fabro.types import AuditRecord, DependsOnRaw, WorkItem
 
 __all__: list[str] = [
+    "rank_metadata",
     "work_item_metadata",
     "work_item_metadata_preserving_existing",
 ]
@@ -33,6 +34,20 @@ def work_item_metadata(*, item: WorkItem) -> dict[str, Any]:
     non_local = _non_local_depends_on_list(depends_on=item.depends_on)
     if non_local:
         metadata[_META_NON_LOCAL_DEPENDS_ON] = non_local
+    return metadata
+
+
+def rank_metadata(*, existing_metadata: dict[str, Any], rank: str) -> dict[str, Any]:
+    """Overlay a real order key onto existing metadata, retaining every other key.
+
+    The rank half of the ledger-normalization adoption write, which holds an id
+    and a freshly generated key but no `WorkItem` to rebuild metadata from. It
+    therefore overlays `rank` alone: `audit` and every unmodeled key survive
+    verbatim, which matters because `bd update --metadata` replaces a nested
+    object wholesale with whatever the payload carries.
+    """
+    metadata = dict(existing_metadata)
+    metadata[_META_RANK] = rank
     return metadata
 
 

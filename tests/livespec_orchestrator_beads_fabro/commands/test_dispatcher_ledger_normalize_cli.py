@@ -8,6 +8,11 @@ beads-native statuses WITHOUT needing a dispatch: `open` → `backlog`,
 `in_progress` → `active`, everything else left for the status-conformance
 check. `--dry-run` plans + reports without writing; a real run applies via
 the store and reports the residual non-conformant rows.
+
+An adopted row that carries no real `rank` is also assigned one, so the
+planner cases below come in pairs: an already-ranked row plans the status
+alone, and a rank-less row plans a `rank` beside it. `_item`'s default `rank`
+is a real key, so every pre-existing case here is the already-ranked leg.
 """
 
 from __future__ import annotations
@@ -17,8 +22,10 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro._beads_client import IssueDraft, make_beads_client
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import (
     plan_native_status_remaps,
+    project_native_status_remaps,
 )
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
 from livespec_orchestrator_beads_fabro.store import (
@@ -27,6 +34,7 @@ from livespec_orchestrator_beads_fabro.store import (
     read_work_items,
 )
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
+from livespec_runtime.work_items.rank import BOTTOM_SENTINEL
 
 
 def _config() -> StoreConfig:
@@ -61,6 +69,28 @@ def _item(**overrides: object) -> WorkItem:
         acceptance_policy="ai-only",
     )
     return replace(base, **overrides)
+
+
+def _raw_native_row(*, item_id: str) -> None:
+    """Write one row the way a writer performing no second step leaves it.
+
+    `create_issue` lands beads `open` carrying exactly the metadata handed to
+    it, so an empty metadata object genuinely holds no `rank` key and reads
+    back through the adapter's bottom-sentinel — the state `append_work_item`
+    cannot produce, since it always writes the item's non-null `rank`.
+    """
+    _ = make_beads_client(config=_config()).create_issue(
+        draft=IssueDraft(
+            issue_id=item_id,
+            issue_type="task",
+            title=item_id,
+            description=item_id,
+            assignee=None,
+            created_at="2026-06-11T00:00:00Z",
+            labels=["origin:freeform"],
+            metadata={},
+        )
+    )
 
 
 def _current_statuses(*, config: StoreConfig) -> dict[str, str]:
@@ -121,6 +151,55 @@ def test_plan_remaps_leaves_parked_and_unknown_statuses_untouched() -> None:
         _item(id="ready-1", status="ready"),
     ]
     assert plan_native_status_remaps(items=items) == []
+
+
+def test_plan_assigns_a_bottom_of_order_rank_to_each_rank_less_adopted_row() -> None:
+    """A rank-less adoption plans a fresh key after the greatest LIVE real key.
+
+    The `done` row carries a key sorting after every live one, so a plan that
+    took it for the bottom would produce keys after `zz` instead of before it;
+    the already-ranked `open` row is the control that no other row is re-keyed.
+    """
+    items = [
+        _item(id="anchor", status="backlog", rank="a1"),
+        _item(id="ranked-open", status="open", rank="a5"),
+        _item(id="rankless-open", status="open", rank=BOTTOM_SENTINEL),
+        _item(id="rankless-claim", status="in_progress", rank=BOTTOM_SENTINEL),
+        _item(id="closed-tail", status="done", rank="zz"),
+    ]
+
+    planned = {remap["item_id"]: remap for remap in plan_native_status_remaps(items=items)}
+
+    assert "rank" not in planned["ranked-open"]
+    assigned = [planned["rankless-open"]["rank"], planned["rankless-claim"]["rank"]]
+    assert all("a5" < key < "zz" for key in assigned)
+    assert assigned[0] != assigned[1]
+
+
+def test_plan_assigns_a_rank_when_no_live_row_carries_a_real_key() -> None:
+    """With the live order empty, the insert takes `key_between`'s open start."""
+    items = [_item(id="only-open", status="open", rank=BOTTOM_SENTINEL)]
+
+    planned = plan_native_status_remaps(items=items)
+
+    assert planned[0]["rank"] != BOTTOM_SENTINEL
+
+
+def test_project_applies_the_assigned_rank_and_leaves_unplanned_rows_alone() -> None:
+    """The in-memory view carries the adoption's rank half, not the status half alone."""
+    items = [
+        _item(id="rankless-open", status="open", rank=BOTTOM_SENTINEL),
+        _item(id="ranked-open", status="open", rank="a5"),
+        _item(id="untouched", status="ready", rank="a1"),
+    ]
+    remaps = plan_native_status_remaps(items=items)
+
+    projected = {item.id: item for item in project_native_status_remaps(items=items, remaps=remaps)}
+
+    assert projected["rankless-open"].status == "backlog"
+    assert projected["rankless-open"].rank != BOTTOM_SENTINEL
+    assert (projected["ranked-open"].status, projected["ranked-open"].rank) == ("backlog", "a5")
+    assert (projected["untouched"].status, projected["untouched"].rank) == ("ready", "a1")
 
 
 def test_plan_remaps_mixed_set_plans_only_native_statuses() -> None:
@@ -231,6 +310,51 @@ def test_ledger_normalize_real_run_all_clean_exits_zero(
         "native-open": "backlog",
         "raw-claim": "active",
     }
+
+
+def test_ledger_normalize_assigns_and_persists_a_rank_for_a_rank_less_adopted_row(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """The CLI reports the assigned key AND the store reads it back.
+
+    Reported and persisted are separate claims: a summary naming a key the
+    write never carried would satisfy either one alone. The already-ranked
+    anchor is the control that no other row was re-keyed.
+    """
+    config = _config()
+    append_work_item(path=config, item=_item(id="ranked-anchor", status="backlog", rank="a5"))
+    _raw_native_row(item_id="rankless-open")
+
+    exit_code = main(argv=["ledger-normalize", "--project-root", str(tmp_path), "--json"])
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    remapped = {remap["item_id"]: remap for remap in payload["remapped"]}
+    assigned = remapped["rankless-open"]["rank"]
+    assert assigned > "a5"
+    stored = materialize_work_items(records=read_work_items(path=config))
+    assert stored["rankless-open"].rank == assigned
+    assert stored["ranked-anchor"].rank == "a5"
+
+
+def test_ledger_normalize_dry_run_plans_a_rank_and_writes_none(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """`--dry-run` reports the key it WOULD assign and leaves the row unranked."""
+    config = _config()
+    _raw_native_row(item_id="rankless-open")
+
+    exit_code = main(
+        argv=["ledger-normalize", "--project-root", str(tmp_path), "--dry-run", "--json"]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["remapped"][0]["rank"] != BOTTOM_SENTINEL
+    stored = materialize_work_items(records=read_work_items(path=config))
+    assert stored["rankless-open"].rank == BOTTOM_SENTINEL
 
 
 def test_ledger_normalize_reports_unknown_status_residual(

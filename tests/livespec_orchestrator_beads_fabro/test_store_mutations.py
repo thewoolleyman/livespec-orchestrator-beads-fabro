@@ -131,6 +131,28 @@ def test_update_work_item_status_transitions_and_sets_assignee_in_place() -> Non
     assert (read_back.status, read_back.assignee) == ("acceptance", "fabro")
 
 
+def test_update_work_item_status_writes_an_assigned_rank_in_the_same_mutation() -> None:
+    """The adoption seam writes status AND rank at once, keeping unmodeled keys.
+
+    The unmodeled key is the discriminator: a rank write that rebuilt metadata
+    from scratch would leave the status right and silently drop it.
+    """
+    append_work_item(
+        path=_config(),
+        item=_minimal_work_item(id_="li-adopt", status="backlog", rank="a2"),
+    )
+    _fake().update_issue(issue_id="li-adopt", metadata={"rank": "a2", "unmodeled": "keep-me"})
+
+    update_work_item_status(path=_config(), item_id="li-adopt", status="active", rank="a6")
+
+    [read_back] = list(read_work_items(path=_config()))
+    assert (read_back.status, read_back.rank) == ("active", "a6")
+    assert _fake().show_issue(issue_id="li-adopt")["metadata"] == {
+        "rank": "a6",
+        "unmodeled": "keep-me",
+    }
+
+
 def test_transitions_out_of_active_clear_the_rework_pending_marker() -> None:
     """The clear rides the write SEAMS, so no disposition can forget it.
 

@@ -200,8 +200,14 @@ def decide_ledger_gate(
 
 
 def _healed_line(*, remap: dict[str, str]) -> str:
-    """One indented `id: from -> to` audit line for an applied remap (PURE)."""
-    return f"  {remap['item_id']}: {remap['from']} -> {remap['to']}\n"
+    """One indented `id: from -> to` audit line for an applied remap (PURE).
+
+    An adoption that also assigned a real order key appends `(rank <key>)`, so
+    the loud audit names the WHOLE write rather than the status half of it.
+    """
+    rank = remap.get("rank")
+    assigned = "" if rank is None else f" (rank {rank})"
+    return f"  {remap['item_id']}: {remap['from']} -> {remap['to']}{assigned}\n"
 
 
 def _drift_message(*, residual: list[LedgerFinding]) -> str:
