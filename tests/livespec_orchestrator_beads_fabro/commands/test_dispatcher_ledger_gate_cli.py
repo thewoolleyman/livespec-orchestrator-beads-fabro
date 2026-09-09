@@ -190,8 +190,8 @@ def test_gate_fail_soft_skips_and_exits_two_on_heal_write_error(
     _write_config(tmp_path=tmp_path, text=_PREFIX_ONLY_CONFIG)
     append_work_item(path=_config(), item=_item(id="native-open", status="open"))
 
-    def _raise(*, path: StoreConfig, item_id: str, status: str) -> None:
-        _ = (path, item_id, status)
+    def _raise(*, path: StoreConfig, item_id: str, status: str, rank: str | None) -> None:
+        _ = (path, item_id, status, rank)
         raise BeadsConnectionError(detail="write refused")
 
     # The heal WRITE seam raises an expected beads error mid-heal.
@@ -221,11 +221,11 @@ def test_gate_partial_heal_prints_each_written_remap_before_skipping(
     real = _dispatcher_ledger_close.update_work_item_status
     calls = {"n": 0}
 
-    def _flaky(*, path: StoreConfig, item_id: str, status: str) -> None:
+    def _flaky(*, path: StoreConfig, item_id: str, status: str, rank: str | None) -> None:
         calls["n"] += 1
         if calls["n"] >= 2:
             raise BeadsConnectionError(detail="write refused mid-heal")
-        real(path=path, item_id=item_id, status=status)
+        real(path=path, item_id=item_id, status=status, rank=rank)
 
     monkeypatch.setattr(_dispatcher_ledger_close, "update_work_item_status", _flaky)
 
@@ -269,8 +269,8 @@ def test_gate_fresh_mappable_arrival_during_heal_does_not_block(
 
     monkeypatch.setattr(_dispatcher_ledger_gate, "load_items", _staged_load)
 
-    def _noop_write(*, path: StoreConfig, item_id: str, status: str) -> None:
-        _ = (path, item_id, status)
+    def _noop_write(*, path: StoreConfig, item_id: str, status: str, rank: str | None) -> None:
+        _ = (path, item_id, status, rank)
 
     # The heal write is a no-op here (reads are stubbed, so there is no store).
     monkeypatch.setattr(_dispatcher_ledger_close, "update_work_item_status", _noop_write)

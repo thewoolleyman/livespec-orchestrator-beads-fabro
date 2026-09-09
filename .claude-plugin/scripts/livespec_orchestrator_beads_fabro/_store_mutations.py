@@ -25,6 +25,7 @@ from livespec_orchestrator_beads_fabro._store_blocked_mutations import (
     blocked_reason_label_removals,
 )
 from livespec_orchestrator_beads_fabro._store_metadata import (
+    metadata_with_rank,
     work_item_metadata,
     work_item_metadata_preserving_existing,
 )
@@ -120,6 +121,7 @@ def update_work_item_status(
     status: str,
     assignee: str | None = None,
     clear_assignee: bool = False,
+    rank: str | None = None,
 ) -> None:
     """Transition an existing item's `status` (and optional `assignee`) IN PLACE.
 
@@ -144,14 +146,16 @@ def update_work_item_status(
     any status other than `blocked` clears the `blocked-reason:` label the
     same way, so an operator valve move out of `blocked` cannot leave the
     item advertising a human gate it no longer has.
+
+    A non-null `rank` assigns `metadata.rank` in the SAME mutation as the
+    status. That is the ledger normalization's adoption insert (the beads-native
+    `open` -> `backlog` / `in_progress` -> `active` self-heal): an adopted row
+    reading back through the bottom sentinel gets a real key here, so status and
+    rank land together rather than leaving a window in which the row is a live
+    head with no real rank.
     """
     client = make_beads_client(config=path)
-    metadata = None
-    if status == "ready":
-        metadata = ready_transition_metadata(
-            existing_metadata=_existing_metadata(client=client, issue_id=item_id),
-            now_iso=_utc_now_iso(),
-        )
+    metadata = _transition_metadata(client=client, item_id=item_id, status=status, rank=rank)
     client.update_issue(
         issue_id=item_id,
         status=beads_status_for(status=status),
@@ -164,6 +168,30 @@ def update_work_item_status(
         )
         or None,
     )
+
+
+def _transition_metadata(
+    *,
+    client: BeadsClient,
+    item_id: str,
+    status: str,
+    rank: str | None,
+) -> dict[str, Any] | None:
+    """The metadata one status transition writes, or `None` when it writes none.
+
+    Both overlays read the CURRENT metadata ONCE and preserve every other key,
+    so an adoption insert never drops the `audit` a closed-then-reopened issue
+    holds nor the `ready_since` a prior ready transition stamped — and a
+    transition needing neither overlay still writes no metadata at all.
+    """
+    if status != "ready" and rank is None:
+        return None
+    metadata = _existing_metadata(client=client, issue_id=item_id)
+    if status == "ready":
+        metadata = ready_transition_metadata(existing_metadata=metadata, now_iso=_utc_now_iso())
+    if rank is not None:
+        metadata = metadata_with_rank(existing_metadata=metadata, rank=rank)
+    return metadata
 
 
 def register_custom_statuses(*, path: StoreConfig) -> None:

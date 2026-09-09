@@ -296,6 +296,34 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   time is evidence the committed dial was read — a stubbed sleep would prove
   only that some number reached some stand-in.
 
+- `test_ledger_adoption_rank_scenario126.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 126 — Ledger normalization adopts a
+  beads-native `open` row and assigns it a real rank" and the contract it
+  realizes, `SPECIFICATION/contracts.md` §"Work-item beads-issue mapping" →
+  the adoption bullet. Nothing is stood in: every case is a real
+  `dispatcher.main(argv=...)` invocation over the real store/client seam. The
+  heading's fifth gherkin scenario is a claim about FOUR cadences, so the bound
+  test runs all four — `loop`, `dispatch`, the standalone `ledger-normalize`
+  CLI and the pre-push `ledger-normalize --gate` — each over its own
+  freshly-seeded tenant, and compares the four resulting tenants TO EACH OTHER
+  as well as to the expected outcome; four legs asserted only against one
+  expected map would pass just as well for four cadences implementing the same
+  wrong thing. Three fixture rows are controls. The `done` row carries the
+  VALID order key `az`, which sorts after every live key, so an insert that
+  read the whole tenant rather than the live order would derive `b00` and the
+  expected `a6` positively discriminates the two; a sentinel there could
+  discriminate nothing. The already-ranked `open` row carries `a3`,
+  deliberately NOT the live maximum, so "it keeps its rank" and "the fresh key
+  came from the maximum" stay separable — with the maximum on a `ready` row no
+  cadence touches, a build that re-keyed the adopted row in place could not
+  still land the expected key. And the two rank-less adopted rows are asserted
+  DISTINCT, because one shared key satisfies "a real, non-sentinel rank was
+  assigned" per row while leaving the pair tied, which is the ordering
+  ambiguity `rank` exists to remove. The two dispatch-path cadences name the
+  adopted item and then refuse at their requested-item preflight, which is
+  itself evidence the invocation reached PAST normalization rather than
+  short-circuiting ahead of it.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

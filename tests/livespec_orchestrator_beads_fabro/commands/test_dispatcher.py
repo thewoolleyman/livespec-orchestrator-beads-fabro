@@ -699,9 +699,14 @@ def test_dispatch_gate_auto_normalizes_beads_native_open(
         item_id: str,
         status: str,
         assignee: str | None = None,
+        rank: str | None = None,
     ) -> None:
         assert path.prefix == "bd-ib"
         assert assignee is None
+        # `native-open` already carries a real rank (`a2`), so its adoption asks
+        # for NO re-key: the bottom-of-order insert fires only for a row reading
+        # back through the bottom sentinel.
+        assert rank is None
         calls.append((item_id, status))
 
     def fake_read_work_items(*, path: StoreConfig) -> object:

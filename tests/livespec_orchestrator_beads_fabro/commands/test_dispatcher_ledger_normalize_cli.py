@@ -8,6 +8,12 @@ beads-native statuses WITHOUT needing a dispatch: `open` → `backlog`,
 `in_progress` → `active`, everything else left for the status-conformance
 check. `--dry-run` plans + reports without writing; a real run applies via
 the store and reports the residual non-conformant rows.
+
+Every fixture item here carries the real rank `a2`, so the adoption's
+bottom-of-order rank insert (Scenario 126, bound at the integration tier by
+`tests/integration/test_ledger_adoption_rank_scenario126.py`) does not fire and
+the plans below carry no `rank` key. The one exception is the empty-live-order
+planner case, which is the shape no tenant with any real key can produce.
 """
 
 from __future__ import annotations
@@ -27,6 +33,7 @@ from livespec_orchestrator_beads_fabro.store import (
     read_work_items,
 )
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
+from livespec_runtime.work_items.rank import BOTTOM_SENTINEL
 
 
 def _config() -> StoreConfig:
@@ -66,6 +73,11 @@ def _item(**overrides: object) -> WorkItem:
 def _current_statuses(*, config: StoreConfig) -> dict[str, str]:
     materialized = materialize_work_items(records=read_work_items(path=config))
     return {item.id: str(item.status) for item in materialized.values()}
+
+
+def _current_ranks(*, config: StoreConfig) -> dict[str, str]:
+    materialized = materialize_work_items(records=read_work_items(path=config))
+    return {item.id: item.rank for item in materialized.values()}
 
 
 @pytest.fixture(autouse=True)
@@ -109,6 +121,24 @@ def test_plan_remaps_in_progress_to_active() -> None:
             "reason": "raw claim normalized to active",
         }
     ]
+
+
+def test_plan_remaps_opens_the_order_when_no_live_row_carries_a_real_rank() -> None:
+    """With every live key the bottom sentinel, the insert starts the order.
+
+    `key_between(a=None, b=None)` is the open-start key `a0`. The `done` row is
+    the control: it carries a real key, and including it would make the insert
+    read `zz`'s successor instead — so `a0` says the maximum was taken over the
+    LIVE rows alone.
+    """
+    items = [
+        _item(id="o-1", status="open", rank=BOTTOM_SENTINEL),
+        _item(id="d-1", status="done", rank="zz1"),
+    ]
+
+    plan = plan_native_status_remaps(items=items)
+
+    assert [remap["rank"] for remap in plan] == ["a0"]
 
 
 def test_plan_remaps_leaves_parked_and_unknown_statuses_untouched() -> None:
@@ -231,6 +261,25 @@ def test_ledger_normalize_real_run_all_clean_exits_zero(
         "native-open": "backlog",
         "raw-claim": "active",
     }
+
+
+def test_ledger_normalize_real_run_assigns_a_rank_to_a_rank_less_adoption(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """The CLI writes the adoption's real rank through, and re-keys nothing else."""
+    config = _config()
+    append_work_item(path=config, item=_item(id="native-open", rank=BOTTOM_SENTINEL, status="open"))
+    append_work_item(path=config, item=_item(id="ready-1", rank="a2", status="ready"))
+
+    exit_code = main(argv=["ledger-normalize", "--project-root", str(tmp_path), "--json"])
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    remapped_by_id = {remap["item_id"]: remap for remap in payload["remapped"]}
+    # A single bottom-of-order insert below the live maximum `a2`.
+    assert remapped_by_id["native-open"]["rank"] == "a3"
+    assert _current_ranks(config=config) == {"native-open": "a3", "ready-1": "a2"}
 
 
 def test_ledger_normalize_reports_unknown_status_residual(
