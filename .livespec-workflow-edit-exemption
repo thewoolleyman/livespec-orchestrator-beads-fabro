@@ -16,4 +16,4 @@
 # where that id does not resolve, so naming it would fail the gate closed rather
 # than pass it.
 work_item=bd-ib-z6k4
-reason=Comment-only correction to acceptance-live-golden-master.yml: DinD is not the golden-master runner constraint (hosted runners provide it; the operator secret environment and host-local Fabro/bd/Dolt runtime are), and nothing serves this runs-on today because ARC selects by scale set name rather than by label, so a dispatch hangs instead of erroring. Maintainer-authorized in session 2026-09-09.
+reason=Comment-only correction to acceptance-live-golden-master.yml: the runs-on is SERVED since 2026-09-09 by vps-livespec-orchestrator (livespec-dev-tooling ansible/roles/gha_runner; preflight run 34322895648 green), replacing the now-false 'nothing serves this runs-on today' paragraph while keeping the ARC-selects-by-scale-set-name explanation. runs-on byte-identical. Same maintainer-authorized comment-only scope as the 2026-09-09 correction, anchored on the same work item.

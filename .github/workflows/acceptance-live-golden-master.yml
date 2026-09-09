@@ -86,17 +86,26 @@ jobs:
     # operator secret environment. NOT DinD — hosted runners have that; the
     # secrets and the host-local binaries are the actual constraint.
     #
-    # NOTHING SERVES THIS `runs-on` TODAY, and it fails by HANGING rather than
-    # by erroring, so a dispatch looks merely slow. Verified 2026-09-08:
-    # this repository has six self-hosted runners registered, and none of them
-    # can take this job. They are ARC (gha-runner-scale-set) ephemeral runners
-    # from the PowerEdge pool, and ARC selects by SCALE SET NAME, not by label:
-    # they report an EMPTY labels array to the runners API, and the repository
-    # variable CI_RUNNER_LABELS that ci.yml reads is ["livespec-orchestrator-k3s"],
-    # the scale set's name. A label-based `runs-on` like the one below matches
-    # none of them.
+    # SERVED SINCE 2026-09-09 by `vps-livespec-orchestrator`, a systemd-managed
+    # runner on vps installed by livespec-dev-tooling's `ansible/roles/gha_runner`
+    # (`just ansible-apply ansible/fabro-hosts.yml --limit vps --tags gha_runner`),
+    # registered with labels self-hosted,livespec-orchestrator through the
+    # github-ci-runners App and run under with-livespec-env.sh so the job
+    # environment carries the operator secrets. First proof: run 34322895648
+    # (mode=preflight) picked up 3 s after dispatch, green (livespec-ifwnqj.2).
     #
-    # Do NOT "fix" this by pointing the job at livespec-orchestrator-k3s. Those
+    # WHY A LABEL-BASED `runs-on` NEEDS THAT DEDICATED RUNNER, and cannot be
+    # served by the PowerEdge pool: the pool's runners are ARC
+    # (gha-runner-scale-set) ephemeral runners, and ARC selects by SCALE SET
+    # NAME, not by label — they report an EMPTY labels array to the runners
+    # API, and the repository variable CI_RUNNER_LABELS that ci.yml reads is
+    # ["livespec-orchestrator-k3s"], the scale set's name. A label-based
+    # `runs-on` matches none of them, and it fails by HANGING rather than by
+    # erroring (verified 2026-09-08). If the dedicated runner is ever absent,
+    # that is the failure shape to expect; the role's verifier fails on a
+    # runner missing any selected label for exactly this reason.
+    #
+    # Do NOT "fix" a hang by pointing the job at livespec-orchestrator-k3s. Those
     # runners are pool workflow pods; they carry neither the operator secret
     # environment nor the Fabro/bd/Dolt runtime, so the job would then FAIL
     # mid-run instead of queueing — later, and less legibly. The fix is to
