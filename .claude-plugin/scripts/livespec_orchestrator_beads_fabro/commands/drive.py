@@ -33,6 +33,11 @@ from livespec_orchestrator_beads_fabro.commands._drive_config import (
     is_config_action,
     run_config_action,
 )
+from livespec_orchestrator_beads_fabro.commands._drive_driver_dispatch import (
+    DRIVER_DISPATCH_PREFIX,
+    is_driver_dispatch_action,
+    run_driver_dispatch,
+)
 from livespec_orchestrator_beads_fabro.commands._drive_impl_dispatch import (
     CommandRun,
     CommandRunner,
@@ -65,7 +70,8 @@ _RESOLVE_BLOCKED_PREFIX = "resolve-blocked:"
 _READ_ONLY_ACTIONS = frozenset({"config", "config-manifest"})
 
 _UNSUPPORTED_ACTION_SUMMARY = (
-    "Unsupported action id; expected 'impl:<id>', 'approve:<id>', "
+    "Unsupported action id; expected 'impl:<id>', 'driver-dispatch:<id>', "
+    "'approve:<id>', "
     "'accept:<id>', 'reject:<id>:rework|regroom', "
     "'set-admission:<id>:auto|manual', "
     "'set-acceptance:<id>:ai-only|human-only|ai-then-human', "
@@ -88,6 +94,14 @@ _ANSWER_SCOPE_SUMMARY = (
     "answer written to the work-item's ledger so the next dispatch's brief carries it."
 )
 
+# `--driver-session` is scoped the same way and for the same reason: a reference
+# accepted here and dropped would journal the wrong session on some later door,
+# or none at all, while the operator saw a green result.
+_DRIVER_SESSION_SCOPE_SUMMARY = (
+    "--driver-session is accepted only by 'driver-dispatch:<id>'; it is the reference "
+    "to the session driving the item, journaled with the transition it opens."
+)
+
 
 def run_action(  # noqa: PLR0913 — kw-only router; `answer` is one more independent transport input, not a coupled one.
     *,
@@ -99,6 +113,7 @@ def run_action(  # noqa: PLR0913 — kw-only router; `answer` is one more indepe
     workflow_name: str | None = None,
     identity: InvokerIdentity | None = None,
     answer: str | None = None,
+    driver_session: str | None = None,
 ) -> dict[str, Any]:
     """Run one selected action-id.
 
@@ -118,17 +133,23 @@ def run_action(  # noqa: PLR0913 — kw-only router; `answer` is one more indepe
     supervisor passes the identity it resolved, flag included.
 
     `answer` is the operator's answer to the question a terminated run
-    published. It is refused here for any action that cannot deliver it, so a
-    mis-aimed answer is reported rather than dropped.
+    published, and `driver_session` the reference to the session that will drive
+    a host-only item by hand. Each is refused here for any action that cannot
+    deliver it, so a mis-aimed input is reported rather than dropped.
     """
     resolved_identity = default_invoker_identity() if identity is None else identity
-    if answer is not None and not action_id.startswith(_RESOLVE_BLOCKED_PREFIX):
-        return {
-            "action_id": action_id,
-            "kind": "unknown",
-            "status": "failed",
-            "summary": _ANSWER_SCOPE_SUMMARY,
-        }
+    misaimed = _misaimed_input_refusal(
+        action_id=action_id, answer=answer, driver_session=driver_session
+    )
+    if misaimed is not None:
+        return misaimed
+    if is_driver_dispatch_action(action_id=action_id):
+        return run_driver_dispatch(
+            repo=repo,
+            action_id=action_id,
+            identity=resolved_identity,
+            driver_session=driver_session,
+        )
     if is_human_valve_action(action_id=action_id):
         return run_human_valve_action(
             repo=repo,
@@ -157,6 +178,32 @@ def run_action(  # noqa: PLR0913 — kw-only router; `answer` is one more indepe
     )
 
 
+def _misaimed_input_refusal(
+    *, action_id: str, answer: str | None, driver_session: str | None
+) -> dict[str, Any] | None:
+    """Refuse a transport input the SELECTED action cannot deliver.
+
+    An input accepted and discarded in silence is the worst available outcome:
+    the operator sees a green result and believes the value reached the item.
+    Both scoped inputs are graded here, in the router, so neither can reach a
+    handler that has no idea what to do with it.
+    """
+    if answer is not None and not action_id.startswith(_RESOLVE_BLOCKED_PREFIX):
+        return _scope_refusal(action_id=action_id, summary=_ANSWER_SCOPE_SUMMARY)
+    if driver_session is not None and not action_id.startswith(DRIVER_DISPATCH_PREFIX):
+        return _scope_refusal(action_id=action_id, summary=_DRIVER_SESSION_SCOPE_SUMMARY)
+    return None
+
+
+def _scope_refusal(*, action_id: str, summary: str) -> dict[str, Any]:
+    return {
+        "action_id": action_id,
+        "kind": "unknown",
+        "status": "failed",
+        "summary": summary,
+    }
+
+
 def main(*, argv: list[str] | None = None, runner: CommandRunner | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -179,6 +226,7 @@ def main(*, argv: list[str] | None = None, runner: CommandRunner | None = None) 
         workflow_name=args.workflow_name,
         identity=invoker_from_args(args=args),
         answer=args.answer,
+        driver_session=args.driver_session,
     )
     _emit_payload(payload=result, as_json=args.as_json)
     return _exit_code_for_status(status=str(result["status"]))
@@ -266,6 +314,21 @@ def _build_parser() -> argparse.ArgumentParser:
             "the answer to the question a terminated run published, for "
             "resolve-blocked only; written to the work-item's ledger before the "
             "transition so the re-dispatched brief carries it"
+        ),
+    )
+    # The driver-dispatch door's one input: WHICH session is taking the
+    # host-only item. An ARGUMENT for the same reason `--acp-node` is one — the
+    # reference belongs in the recorded argv and on the journal record, not in
+    # an environment variable no reader of either can see.
+    _ = parser.add_argument(
+        "--driver-session",
+        dest="driver_session",
+        default=None,
+        metavar="REF",
+        help=(
+            "reference to the session that will drive the item by hand, for "
+            "driver-dispatch only; journaled with the ready -> active transition. "
+            "Defaults to the resolved invoker."
         ),
     )
     add_invoker_argument(parser=parser)
