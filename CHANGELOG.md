@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.144.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.144.3...v0.144.4) (2026-09-09)
+
+
+### Bug Fixes
+
+* **audit:** derive factory-bypass product prefixes per repo and honor Factory-Override ([c544464](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c544464c1826364a4fce98285ee2741309c9e9db))
+
 ## [0.144.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.144.2...v0.144.3) (2026-09-09)
 
 
