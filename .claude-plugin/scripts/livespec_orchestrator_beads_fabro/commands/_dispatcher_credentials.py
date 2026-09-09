@@ -180,6 +180,11 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
     Honeycomb ingest key is NOT among them (the sandbox ships plaintext;
     the host egress stage holds the key).
 
+    It declares the sandbox's FACTORY PROVENANCE: a prepare step writing
+    `dispatch_id` to the sandbox clone's local `livespec.factoryRunId` git
+    config, which is what lets the dev-tooling commit gate tell a factory
+    commit from a hand-cranked one (`_dispatcher_factory_provenance`).
+
     Finally it projects the dual-credential Codex snapshot (scenarios.md
     Scenario 18 / Scenario 19): the host `auth.json` is read, freshness-
     gated against the run budget, and projected non-rotatably into the
@@ -247,6 +252,10 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
         # re-derived: the caller passes the SAME resolved contract the
         # `--input` pairs come from.
         prepare_inputs=prepare_inputs,
+        # The pre-launch dispatch id the sandbox declares as its
+        # factory-provenance marker. This function runs BEFORE `fabro run`,
+        # which is why the marker cannot carry the Fabro run id.
+        dispatch_id=dispatch_id,
     )
     if rendered is None:
         return (
