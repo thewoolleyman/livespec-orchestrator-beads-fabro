@@ -830,16 +830,20 @@ file such a failure with the U+27E6 / U+27E7 substitution, never verbatim.
 The Dispatcher's host-direct path (`dispatcher.py loop` run on the host, NOT in
 the orchestrator container) connects to a long-lived Fabro server on
 **`127.0.0.1:32276`**. Installing the plugin does NOT start it; the maintainer
-runs it directly from `~/.fabro/bin/fabro`. As of 2026-07-30 the host binary is
-`fabro 0.254.0 (8de6611)`, built from **`factory-integration`** — the ONE standing
-branch in our fork (`thewoolleyman/fabro`) that carries every fabro fix the
-factory needs but upstream has not released (today: PR #568 credential refresh,
+runs it directly from `~/.fabro/bin/fabro`. As of 2026-09-09 the host binary on
+BOTH factory servers — `hp` and `vps` — is `fabro 0.254.0 (977cb67)`, built from
+**`factory-integration`** — the ONE standing branch in our fork
+(`thewoolleyman/fabro`) that carries every fabro fix the factory needs but
+upstream has not released (today: PR #568 credential refresh,
 the env-configurable daemon-readiness timeout, PR #552 configurable checkpoint
 git timeout, PR #576 OTLP export transport, the fork-local O1 worker-OTLP env
 re-injection + O2 W3C-traceparent join that light that transport up for the Codex
 era, the fork-local P2 that decouples OTLP export from `FABRO_LOG` so quieting
-logs cannot silently zero telemetry, and the fork-local O4 `run_turn` ACP turn
-span that makes per-turn command/stop-reason queryable).
+logs cannot silently zero telemetry, the fork-local O4 `run_turn` ACP turn
+span that makes per-turn command/stop-reason queryable, and the `bd-ib-cewr.4`
+fix that makes the pre-run push precondition ASK origin via `ls-remote` instead
+of pushing — fast-forwarded onto `factory-integration` and deployed to both
+hosts on 2026-09-09).
 Never pin a fabro build from any other branch, and never modernize the base: any
 fabro ≥ 0.256 breaks `workflow.fabro` (fabro #474 de-templates `acp.command`, so
 every dispatch dies `exit 127`). These rules are NORMATIVE — `SPECIFICATION/constraints.md`
@@ -889,14 +893,26 @@ NO `--factory` flag**, so through `drive --action impl:<id>` the environment
 variable is the only route.
 
 This matters whenever a dispatch is EVIDENCE ABOUT A BUILD rather than merely
-work to be done, because the two factories can carry different fabro binaries
+work to be done, because the two factories CAN carry different fabro binaries
 and nothing in a run's own output announces which engine it ran on. Measured
-2026-09-07: vps had been re-pinned to `7b4e3f3` while hp still ran `8de6611`,
+2026-09-07, and recorded here as the worked example rather than as current
+state: vps had been re-pinned to `7b4e3f3` while hp still ran `8de6611`,
 so an unrouted control dispatch would have exercised the NEW workflow on the
 OLD engine and returned a completely normal green run. That is the
 wrong-population trap from the catalogue above, arriving through the default
 rather than through a typo — there is no error, no warning, and the result
 looks exactly like success.
+
+**That particular divergence is CLOSED: as of 2026-09-09 both hp and vps run
+`fabro 0.254.0 (977cb67)`, the build described at the top of this section.** Do
+NOT read today's parity as a standing guarantee — a re-pin lands on one host at
+a time, so the two hosts diverge for as long as the second rollout takes, and
+the paragraph above describes what that window looks like from a dispatch. When
+a dispatch is EVIDENCE ABOUT A BUILD, establish the engine per dispatch instead
+of quoting this line: read `fabro --version` ON the factory host itself (the
+per-host invocations are in `orchestrator-image/README.md`), because
+`~/.fabro/bin/fabro --version` run locally reports the LOCAL client, not the
+engine the dispatch will land on.
 
 So: when a dispatch is a control, route it explicitly and record which factory
 it ran on. When it is ordinary work, the default is fine.
