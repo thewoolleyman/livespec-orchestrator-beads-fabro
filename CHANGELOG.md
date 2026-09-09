@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.146.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.145.0...v0.146.0) (2026-09-09)
+
+
+### Features
+
+* **dispatch:** assign a real rank on native ledger adoption (bd-ib-0026) ([a7dc1b9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a7dc1b90f2c492047584f0ac929f40aa2145ecbd))
+* **dispatch:** declare factory provenance in every sandbox (bd-ib-dosmpm) ([28ebd8b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/28ebd8becdb14c85a9dce8a6eb5276b848580a89))
+* **drive:** add the driver-dispatch:&lt;id&gt; door for host-only items (bd-ib-y4mb) ([8948f55](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8948f55c925808419b5b322b1d70646421f90b6d))
+
+
+### Bug Fixes
+
+* **workflow:** fail loud when the pr stage publishes no PR (bd-ib-32xd) ([af366d5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/af366d59901f50331761c0533d46d918671b798b))
+
 ## [0.145.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.144.4...v0.145.0) (2026-09-09)
 
 
