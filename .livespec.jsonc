@@ -272,14 +272,14 @@
       // is a consent-native act, not something the implementation may do on the
       // operator's behalf — and its id is then written here.
       //
-      // The EMPTY STRING is the committed spelling of "not yet provisioned", and
-      // it is deliberately not an absence: an absent key and an empty value read
-      // identically to the resolver, but the key being HERE is what tells the next
-      // operator that the anchor is owed. While it is empty, record_detection_run
-      // REFUSES rather than appending bookkeeping to a guessed id, and both
-      // staleness facts fire — no completed pass is on record, so every ratified
-      // revision and every merge is genuinely unaccounted for.
-      "detection_coverage_anchor": "",
+      // Provisioned 2026-09-09 through capture-work-item as bd-ib-j5fzyo while
+      // working plan bd-ib-jxvgq5, after the v109 post-revise capture proved that
+      // an empty value prevents even an aborted ATTEMPT from being recorded.
+      // This is a standing anchor, not a unit of work: it MUST remain backlog and
+      // MUST NOT be closed, regroomed, dispatched, or parented to a plan. Only
+      // record_detection_run may append comments; a hand-authored coverage-shaped
+      // comment could falsely advance a computed coverage point and is forbidden.
+      "detection_coverage_anchor": "bd-ib-j5fzyo",
       // Merge-count trigger for the drift-staleness fact. Declared
       // API-configurable (see .claude-plugin/api-configurable-keys.json); left at
       // its ratified default of 1 here, so any landing on the default branch since
