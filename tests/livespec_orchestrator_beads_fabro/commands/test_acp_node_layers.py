@@ -236,6 +236,39 @@ def test_an_acp_nodes_entry_wins_over_the_codex_models_shorthand() -> None:
     assert resolution.nodes["pr"].rendered == "uvx explicit-acp"
 
 
+def test_pr_expands_to_codex_only_for_an_explicit_pr_tier() -> None:
+    """The publish tier expands ONLY when `codex_models.pr` is an explicit table.
+
+    This is the v107 symmetry: absent that table the publish node keeps the
+    workflow's own default adapter (a model-agnostic Claude adapter) rather
+    than a baked Codex model, exactly as the implementer tier already worked.
+    An explicit `codex_models.pr` table still routes the publish node to Codex.
+    """
+    # No codex_models block at all -> the workflow pr default stands.
+    assert _resolve(repository={}).nodes["pr"].rendered == _CLAUDE
+    # A block configuring only the implementer leaves the publish node alone.
+    assert (
+        _resolve(repository={"codex_models": {"implementer": {"model": "gpt-5.5"}}})
+        .nodes["pr"]
+        .rendered
+        == _CLAUDE
+    )
+    # A non-table pr entry is not an explicit tier, so pr keeps its default.
+    assert (
+        _resolve(repository={"codex_models": {"pr": "not-a-table"}}).nodes["pr"].rendered == _CLAUDE
+    )
+    # An explicit pr table DOES route the publish node to the Codex adapter.
+    codex_pr = (
+        _resolve(
+            repository={"codex_models": {"pr": {"model": "gpt-5.5", "reasoning_effort": "high"}}}
+        )
+        .nodes["pr"]
+        .rendered
+    )
+    assert codex_pr.endswith(" /opt/livespec/codex-acp/bin/codex-acp")
+    assert '"model":"gpt-5.5"' in codex_pr
+
+
 def test_the_codex_shorthand_replaces_the_workflow_env_rather_than_merging() -> None:
     """A Codex command line must never inherit the workflow's Anthropic pins.
 
@@ -313,7 +346,8 @@ def test_nodes_sharing_one_input_refuse_when_they_resolve_differently() -> None:
     resolution = _resolve(workflow_inputs=shared)
     # One pair per DECLARED INPUT, not one per node: the three implementer
     # nodes agree here, so they collapse onto the single input they share.
-    # `pr_adapter` carries the Codex shorthand, which expands unconditionally.
+    # `pr_adapter` is a declared input, so it always renders a pair — here at
+    # its workflow default, since no `codex_models.pr` tier is configured.
     assert [pair.split("=", 1)[0] for pair in resolution.run_inputs] == [
         "acp_adapter",
         "disposition_adapter",

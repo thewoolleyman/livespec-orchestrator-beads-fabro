@@ -31,6 +31,10 @@ _CLAUDE_OPUS_5_ADAPTER = (
     "ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high "
     "npx -y @agentclientprotocol/claude-agent-acp"
 )
+_CLAUDE_HAIKU_PR_ADAPTER = (
+    "ANTHROPIC_MODEL=claude-haiku-4-5 CLAUDE_CODE_EFFORT_LEVEL=high "
+    "npx -y @agentclientprotocol/claude-agent-acp"
+)
 
 
 def _plan(*, repo: Path, resolve: ResolveAcpNodes):
@@ -85,10 +89,12 @@ def test_default_dispatch_acp_adapter_is_claude_opus_5(
     assert _input_value(inputs=inputs, name="implement_adapter") == _CLAUDE_OPUS_5_ADAPTER
 
 
-def test_scenario64_dispatcher_renders_pinned_codex_adapters_and_true_opt_out(
+def test_scenario64_dispatcher_renders_claude_defaults_and_codex_on_explicit_pins(
     tmp_path: Path, resolve_test_acp_nodes: ResolveAcpNodes
 ) -> None:
-    """Scenario 64: dispatch inputs carry explicit Codex pins and the PR tier."""
+    """Scenario 64: absent config both classes render Claude fleet defaults; an
+    explicit `codex_models` table routes each class to Codex; the empty model is
+    a true opt-out."""
     default_inputs = dispatch_fabro_run_inputs(
         plan=_plan(repo=tmp_path, resolve=resolve_test_acp_nodes)
     )
@@ -96,10 +102,10 @@ def test_scenario64_dispatcher_renders_pinned_codex_adapters_and_true_opt_out(
     default_pr = _input_value(inputs=default_inputs, name="pr_adapter")
 
     assert default_implementer == _CLAUDE_OPUS_5_ADAPTER
-    assert default_pr.endswith(f" {CODEX_ADAPTER_COMMAND}")
-    assert '"model":"gpt-5.4-mini"' in default_pr
-    assert '"model_reasoning_effort":"high"' in default_pr
-    assert " -c model=" not in default_pr
+    # Absent an explicit `codex_models.pr` table the publish node renders the
+    # Claude Haiku fleet default, NOT a Codex adapter.
+    assert default_pr == _CLAUDE_HAIKU_PR_ADAPTER
+    assert CODEX_ADAPTER_COMMAND not in default_pr
     assert default_implementer != default_pr
 
     _write_dispatcher_config(

@@ -9,9 +9,10 @@ repository layer and the render order, not of the tier renderer by itself.
 
 The workflow layer is read from THIS repository's own committed
 `workflow.toml` rather than synthesized, and the last test resolves against
-this repository's own `.livespec.jsonc`, so the negative control (the
-implementer stays on Claude while the review node moves to Codex) is graded
-against what a dispatch from here would really carry.
+this repository's own `.livespec.jsonc`, so the negative control (all three
+node classes render Claude adapters — implementer Opus 5, review Opus 4.8,
+publish Haiku 4.5 — with none on Codex) is graded against what a dispatch from
+here would really carry.
 """
 
 from __future__ import annotations
@@ -55,6 +56,15 @@ _UNPINNED_BASE = (
     'CODEX_CONFIG=\'{"approval_policy":"never","sandbox_mode":"danger-full-access"}\' '
     "INITIAL_AGENT_MODE=agent-full-access /opt/livespec/codex-acp/bin/codex-acp"
 )
+# The publish node's fleet DEFAULT since v107: the Claude Haiku adapter,
+# read from this repository's committed workflow.toml `pr_adapter` input.
+_PUBLISH_DEFAULT_HAIKU = (
+    "ANTHROPIC_MODEL=claude-haiku-4-5 CLAUDE_CODE_EFFORT_LEVEL=high "
+    "npx -y @agentclientprotocol/claude-agent-acp"
+)
+# The rendered Codex publish adapter for a repository that EXPLICITLY pins its
+# `pr` tier to Codex via `dispatcher.codex_models.pr` — no longer the default.
+_EXPLICIT_CODEX_PR = {"codex_models": {"pr": {"model": "gpt-5.4-mini", "reasoning_effort": "high"}}}
 _PUBLISH_ADAPTER = (
     'CODEX_CONFIG=\'{"approval_policy":"never","model":"gpt-5.4-mini",'
     '"model_reasoning_effort":"high","sandbox_mode":"danger-full-access"}\' '
@@ -109,10 +119,21 @@ def _rendered_adapters(*, repo: Path) -> dict[str, str]:
     return rendered
 
 
-def test_scenario90_a_default_dispatch_renders_both_adapters_in_their_ratified_forms(
+def test_a_default_dispatch_renders_the_claude_haiku_publish_adapter(tmp_path: Path) -> None:
+    """The v107 default: an unconfigured target renders the publish node as the
+    Claude Haiku adapter (from the committed workflow.toml), not a Codex one."""
+    adapters = _rendered_adapters(repo=tmp_path)
+    assert adapters["pr"] == _PUBLISH_DEFAULT_HAIKU
+    assert "codex-acp" not in adapters["pr"]
+    assert adapters["implement"] == _CLAUDE_OPUS_5_ADAPTER
+
+
+def test_scenario90_a_codex_pinned_publish_dispatch_renders_both_adapters_in_their_ratified_forms(
     tmp_path: Path,
 ) -> None:
-    """The publish adapter is env-then-baked-path; the implementer is unchanged."""
+    """With an explicit `codex_models.pr` table the publish adapter is
+    env-then-baked-path; the implementer is unchanged."""
+    _write_dispatcher_config(repo=tmp_path, dispatcher=_EXPLICIT_CODEX_PR)
     adapters = _rendered_adapters(repo=tmp_path)
 
     assert adapters["pr"] == _PUBLISH_ADAPTER
@@ -134,7 +155,8 @@ def test_scenario90_a_default_dispatch_renders_both_adapters_in_their_ratified_f
 
 
 def test_scenario90_the_publish_adapter_declares_agent_full_access(tmp_path: Path) -> None:
-    """A write-capable class carries INITIAL_AGENT_MODE=agent-full-access."""
+    """A write-capable Codex class carries INITIAL_AGENT_MODE=agent-full-access."""
+    _write_dispatcher_config(repo=tmp_path, dispatcher=_EXPLICIT_CODEX_PR)
     assert "INITIAL_AGENT_MODE=agent-full-access" in _rendered_adapters(repo=tmp_path)["pr"]
 
 
@@ -170,8 +192,11 @@ def test_scenario90_package_name_resolution_is_never_used_to_identify_the_adapte
     The discriminating token is `codex-acp` rather than `npx`: the Claude
     adapter legitimately uses `npx -y`, so a bare `npx` count would report the
     same number whether or not the Codex adapter were fixed. Every rendering
-    that mentions codex-acp at all must mention it as the baked path.
+    that mentions codex-acp at all must mention it as the baked path. An
+    explicit `codex_models.pr` table is written so at least one node actually
+    renders the Codex adapter rather than the Claude publish default.
     """
+    _write_dispatcher_config(repo=tmp_path, dispatcher=_EXPLICIT_CODEX_PR)
     for node, rendered in _rendered_adapters(repo=tmp_path).items():
         if "codex-acp" not in rendered:
             continue
@@ -204,10 +229,11 @@ def test_this_repository_reviews_on_opus_while_its_implementer_stays_on_claude_o
     dispatcher.acp_nodes.review gpt-5.6-terra override was removed 2026-08-28
     after repeated review non-convergence at the Codex review gate; the
     contracts material makes review NOT Codex-backed by default), the publish
-    node keeps gpt-5.4-mini on the Codex adapter, and the implementer class does
-    not move at all. Asserting them together is the point — a change that
-    accidentally re-providered the implementer or the reviewer would pass any
-    one of these assertions taken alone.
+    node takes the v107 fleet Claude Haiku default (this repository dropped its
+    former Codex `pr` pin so it now inherits that default), and the implementer
+    class stays on Claude Opus 5. None of the three is a Codex adapter. Asserting
+    them together is the point — a change that accidentally re-providered any one
+    would pass any single assertion taken alone.
     """
     adapters = _rendered_adapters(repo=_REPO_ROOT)
 
@@ -220,4 +246,5 @@ def test_this_repository_reviews_on_opus_while_its_implementer_stays_on_claude_o
     assert "claude-opus-5" in adapters["implement"]
     assert "gpt-5.6-terra" not in adapters["implement"]
 
-    assert adapters["pr"] == _PUBLISH_ADAPTER
+    assert adapters["pr"] == _PUBLISH_DEFAULT_HAIKU
+    assert _CODEX_ADAPTER_COMMAND not in adapters["pr"]
