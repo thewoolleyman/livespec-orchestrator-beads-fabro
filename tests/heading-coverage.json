@@ -1347,5 +1347,13 @@
     "test": "TODO",
     "reason": "Ratified by the ratify-b3-answer-route revise pass (plan control-plane-accounts-and-dispatch-policy, epic bd-ib-rh3iyd, child bd-ib-rh3iyd.7). The valve run-account enrichment already ships (bd-ib-uuohty PR #2200); the exercising integration-tier test binding this scenario heading to the account-fields and fail-soft assertions is owed as a scenario-binding deliverable and is not a by-product of this ratification.",
     "work_item": "bd-ib-heat"
+  },
+  {
+    "heading": "## Scenario 126 — Ledger normalization adopts a beads-native `open` row and assigns it a real rank",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified by the adopt-native-open-assigns-rank revise pass, closing impl->spec drift on the Dispatcher's existing `open`->`backlog` / `in_progress`->`active` self-heal (`_NATIVE_STATUS_REMAP` in `commands/_dispatcher_ledger_close.py`) and adding a NEW requirement -- assigning a real, non-sentinel rank on adoption -- that is not yet implemented. The exercising integration/consumer-tier test binding this scenario heading to the rank-assignment behavior is owed as a follow-up impl work-item (bd-ib-0026, filed backlog), per the heading taxonomy's pyramid-tier requirement (a scenario is never bound to a unit-tier test).",
+    "work_item": "bd-ib-0026"
   }
 ]
