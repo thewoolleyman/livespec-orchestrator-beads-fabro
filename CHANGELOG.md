@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.145.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.144.4...v0.145.0) (2026-09-09)
+
+
+### Features
+
+* **dispatch:** select the caam-published factory credential slot (bd-ib-4132) ([7ef05af](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7ef05af1928b620ef94fb86d65ae09d31529f9d8))
+
 ## [0.144.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.144.3...v0.144.4) (2026-09-09)
 
 
