@@ -1,19 +1,22 @@
 # Workflow-edit exemption — one exemption binds to one reviewed change.
 #
-# The change: a COMMENT-ONLY correction to
-# .github/workflows/acceptance-live-golden-master.yml. Every changed line is a
-# `#` comment; `runs-on: [self-hosted, livespec-orchestrator]` is byte-identical
-# on both sides, so the workflow's behaviour is unchanged.
+# The change: wiring `check-fabro-graph-validity` into `.github/workflows/ci.yml`
+# as a fail-closed job, so an invalid factory graph cannot reach master through a
+# path that never runs the host pre-push. The gate itself already merged (PR 2435,
+# c162939b); what is missing is venue coverage on the merge path.
 #
-# The named work item carries `approval:workflow-edit`, recording the
-# maintainer's explicit in-session authorization of 2026-09-09. That item's
-# description holds the provenance, because a label alone cannot show who
-# authorized it.
+# The named work item carries `approval:workflow-edit`, applied by the maintainer
+# on 2026-09-10 as part of the re-dispatch rider on bd-ib-6t4. That item's
+# description and comments hold the provenance, because a label alone cannot show
+# who authorized it or for which change.
 #
-# It names an item in THIS repository's ledger deliberately. The livespec epic's
-# handoff pointed at livespec-ifwnqj.2, which lives in the `livespec` tenant;
-# this gate runs `bd show <work_item> --json` against THIS repository's ledger,
-# where that id does not resolve, so naming it would fail the gate closed rather
-# than pass it.
-work_item=bd-ib-z6k4
-reason=Comment-only correction to acceptance-live-golden-master.yml: the runs-on is SERVED since 2026-09-09 by vps-livespec-orchestrator (livespec-dev-tooling ansible/roles/gha_runner; preflight run 34322895648 green), replacing the now-false 'nothing serves this runs-on today' paragraph while keeping the ARC-selects-by-scale-set-name explanation. runs-on byte-identical. Same maintainer-authorized comment-only scope as the 2026-09-09 correction, anchored on the same work item.
+# READ THIS BEFORE ASSUMING THE EDIT IS PRESENT. A Fabro factory run CANNOT carry
+# the `.github/workflows/` half of this change: `check-no-workflow-edits` verifies
+# the approval label through `bd`, no `bd` exists inside the sandbox, and the guard
+# fails closed at exit 2 with no environment escape by design. Measured in the
+# bd-ib-6t4 sandbox on 2026-09-10, with this very declaration in place. The
+# workflow edit therefore lands maintainer-side, alongside this declaration, per
+# the factory-branch boundary's "restore that file, publish the rest, report the
+# dropped diff" rule. Landing them together is what makes this declaration true.
+work_item=bd-ib-6t4
+reason=Wire check-fabro-graph-validity into ci.yml as a fail-closed required job (LIVESPEC_FABRO_GRAPH_VALIDATION=fail_when_fabro_absent) so an invalid factory graph cannot merge through a path that skips the host pre-push. Root-cause fix for two all_conditional_edges outages (2026-07-16 and release 0.146.0 on 2026-09-09), each of which took the whole factory down. Authorized by the maintainer's approval:workflow-edit label on bd-ib-6t4, 2026-09-10.
