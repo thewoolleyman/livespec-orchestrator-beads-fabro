@@ -1187,6 +1187,14 @@ references passes with its guidance orphaned.
   falsely. The file also records why `gh run list` and the per-commit
   check-runs endpoint can disagree, and that any merge to master re-queues CI
   and closes the window.
+- Read `.ai/plugin-cache-lease-and-rebind.md` BEFORE concluding anything about
+  which plugin build a running session is executing — and before removing a
+  plugin cache build. Each cache build's `.in_use` lease directory is the
+  instrument for "is any live session still bound to this build"; a running
+  session binds its plugin root once at session start; and the OLD build's lease
+  file survives a rebind, so a stale lease file's presence is NOT evidence of
+  current binding. The file also records that the plugin prune verb is not an
+  eviction verb.
 
 ## Decision authority — when to ask, proceed, or self-resolve
 
