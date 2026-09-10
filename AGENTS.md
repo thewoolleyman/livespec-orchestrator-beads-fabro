@@ -587,6 +587,18 @@ Measured instances from 2026-08-21 and 2026-08-22:
   cosmetic for `find | sort -rn | head -1`, because `head` exits first and `sort`
   takes EPIPE. That pipeline was verified over 60 real worktrees, 60/60 valid.
 
+- **A forge search whose query syntax cannot match the title it was given.**
+  `gh pr list --search "chore(deps): bump livespec-dev-tooling"` returned ZERO
+  rows in every one of nine fleet repos on 2026-09-10, exit 0, no warning — while
+  twenty-three such pull requests existed in this repo alone. GitHub search treats
+  `(` and `)` as grouping, so a conventional-commit scope turns the query into
+  one that matches nothing; the same string without the parentheses plus
+  `in:title`, or a `--json number,title --jq 'select(.title|test(...))'` filter,
+  returned every PR. The survey had a stated scope (nine named repos) and a
+  healthy instrument (`gh` worked), and was still worthless. The positive
+  control is the one this catalogue already prescribes: search for a PR you KNOW
+  exists before believing an empty survey.
+
 **The existing "state the scope you searched" rule is necessary and NOT sufficient**
 — see "Verification discipline (repo-additive)" below, whose Rule 1 this extends. In
 the anchored-regex instance the scope was stated and correct (ten repos, every `.py`,
