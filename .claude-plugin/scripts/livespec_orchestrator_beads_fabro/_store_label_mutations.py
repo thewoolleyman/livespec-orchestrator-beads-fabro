@@ -1,7 +1,7 @@
 """Label-only field mutations for the beads-backed work-item store.
 
 Split from `_store_mutations`, which had reached its LLOC ceiling, along the
-cohesion seam these three writes already shared: each edits the labels
+cohesion seam these writes already shared: each edits the labels
 carrying a livespec field with no native beads home, and each deliberately
 sends NO status or assignee mutation, so an edit cannot surprise-transition
 the item. `_store_cap_mutations` is the sibling module holding the same shape
@@ -19,14 +19,26 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "update_work_item_awaits_scope_override",
+    "update_work_item_factory_safety",
     "update_work_item_policy",
     "update_work_item_workflow_scope_override",
 ]
 
 _LABEL_ADMISSION = "admission:"
 _LABEL_ACCEPTANCE = "acceptance:"
+_LABEL_FACTORY_SAFETY = "factory-safety:"
 _LABEL_WORKFLOW_SCOPE_OVERRIDE = "workflow-scope-override:"
 _LABEL_AWAITS_SCOPE_OVERRIDE = "awaits-scope-override"
+
+# The closed `factory_safety` enum, listed here so a write can REMOVE whichever
+# member the item already carried. The reader (`store._factory_safety_from_labels`)
+# takes the first `factory-safety:` label it finds, so leaving a stale member
+# beside a fresh one would make which reason wins an artifact of label ordering.
+_FACTORY_SAFETY_VALUES = (
+    "needs-host-secrets",
+    "mutates-host-machinery",
+    "needs-privileged-host",
+)
 
 
 def update_work_item_policy(
@@ -59,6 +71,29 @@ def update_work_item_policy(
         client.update_issue(issue_id=item_id, remove_labels=remove_labels)
     if add_labels:
         client.update_issue(issue_id=item_id, add_labels=add_labels)
+
+
+def update_work_item_factory_safety(
+    *,
+    path: StoreConfig,
+    item_id: str,
+    value: str,
+) -> None:
+    """Record the item's host-only reason without changing its status.
+
+    The store seam behind `drive --action set-factory-safety:<id>:<reason>`.
+    Every canonical reason is removed before the supplied one is added, so a
+    re-set REPLACES the recorded reason rather than leaving two labels whose
+    reader would have to pick between them. Like its siblings here the write is
+    label-only: the field is an intrinsic runnability axis orthogonal to the
+    lifecycle, so recording it must not move the item.
+    """
+    client = make_beads_client(config=path)
+    client.update_issue(
+        issue_id=item_id,
+        remove_labels=[f"{_LABEL_FACTORY_SAFETY}{known}" for known in _FACTORY_SAFETY_VALUES],
+    )
+    client.update_issue(issue_id=item_id, add_labels=[f"{_LABEL_FACTORY_SAFETY}{value}"])
 
 
 def update_work_item_workflow_scope_override(

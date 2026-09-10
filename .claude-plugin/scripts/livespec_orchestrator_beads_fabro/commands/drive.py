@@ -44,10 +44,8 @@ from livespec_orchestrator_beads_fabro.commands._drive_impl_dispatch import (
     build_dispatcher_argv,
     run_impl_dispatch,
 )
-from livespec_orchestrator_beads_fabro.commands._drive_valves import (
-    is_human_valve_action,
-    run_human_valve_action,
-)
+from livespec_orchestrator_beads_fabro.commands._drive_valve_grammar import is_human_valve_action
+from livespec_orchestrator_beads_fabro.commands._drive_valves import run_human_valve_action
 from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 
 __all__: list[str] = [
@@ -75,6 +73,8 @@ _UNSUPPORTED_ACTION_SUMMARY = (
     "'accept:<id>', 'reject:<id>:rework|regroom', "
     "'set-admission:<id>:auto|manual', "
     "'set-acceptance:<id>:ai-only|human-only|ai-then-human', "
+    "'set-factory-safety:<id>:"
+    "needs-host-secrets|mutates-host-machinery|needs-privileged-host', "
     "'set-workflow-scope-override:<id>:citation-only', "
     "'set-merge-on-review-cap:<id>:true|false', "
     "'set-review-fix-cap:<id>:<positive-int>', "
