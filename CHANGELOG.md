@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.147.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.146.2...v0.147.0) (2026-09-10)
+
+
+### Features
+
+* **dispatcher:** closed ACP candidate schema and chain resolution (bd-ib-qu3htl) ([3805d17](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3805d173ad07a47088f32ad5517b03c3a179eef0))
+
 ## [0.146.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.146.1...v0.146.2) (2026-09-10)
 
 
