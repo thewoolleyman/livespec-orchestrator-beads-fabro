@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.148.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.148.3...v0.148.4) (2026-09-10)
+
+
+### Bug Fixes
+
+* **dispatcher:** add a re-grade arm to reconcile-merged (bd-ib-6hwx) ([0696e98](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0696e981e2ba41e00597fa938aebff6e0835a1dc))
+
 ## [0.148.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.148.2...v0.148.3) (2026-09-10)
 
 
