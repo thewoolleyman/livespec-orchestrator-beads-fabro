@@ -471,7 +471,13 @@ def _journal(*, tmp_path: Path) -> JournalFile:
 
 
 def _journal_dispatch(*, journal: JournalFile, item_id: str, run_id: str) -> None:
-    journal.append(record={"stage": "fabro-run", "work_item_id": item_id, "fabro_run_id": run_id})
+    journal.append(
+        record={
+            "stage": "dispatch-run-stamp",
+            "work_item_id": item_id,
+            "fabro_run_id": run_id,
+        }
+    )
 
 
 def _records(*, journal: JournalFile) -> list[dict[str, Any]]:

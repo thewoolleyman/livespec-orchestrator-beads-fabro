@@ -91,6 +91,8 @@ class ReconciledRun:
     export_comment_id: str | None
     parked_seconds: float | None = None
     grace_seconds: int | None = None
+    tenant: str = ""
+    attribution_source: str = "journal"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -133,6 +135,8 @@ def reconciled_from(
         factory_server_url=orphan.factory_server_url,
         status_kind=orphan.status_kind,
         work_item_id=orphan.work_item_id,
+        tenant=orphan.tenant,
+        attribution_source=orphan.attribution_source,
         work_item_status=orphan.work_item_status,
         orphan_reason=orphan.orphan_reason,
         termination_route=(TERMINATION_ROUTE_NONE if termination is None else termination.route),
@@ -157,6 +161,8 @@ def journal_reconciled(*, journal: JournalWriter, run: ReconciledRun) -> None:
         "factory_server_url": run.factory_server_url,
         "status_kind": run.status_kind,
         "work_item_id": run.work_item_id,
+        "tenant": run.tenant,
+        "attribution_source": run.attribution_source,
         "work_item_status": run.work_item_status,
         "orphan_reason": run.orphan_reason,
         "termination_route": run.termination_route,

@@ -65,6 +65,10 @@ def test_reconcile_runs_emits_a_json_projection_and_wires_every_input(
     # `repo_run_attribution` built for THIS repo.
     assert calls["attribution_repo"] == tmp_path
     assert inputs["metadata_run_ids"] == {"01STAMPED": "bd-ib-stamped"}
+    assert inputs["telemetry_spans_path"] == (
+        tmp_path / "tmp" / "fabro-dispatch-journal-calibration-spans.jsonl"
+    )
+    assert inputs["cancelling_actor"] == "agent:test"
 
 
 def test_the_retired_stale_run_sweep_name_fails_as_an_unknown_subcommand(
@@ -394,6 +398,8 @@ def _stub(
             "invoker": inputs.journal.identity.invoker,
             "metadata_run_ids": dict(inputs.attribution.metadata_run_ids),
             "blocked_run_grace_seconds": inputs.blocked_run_grace_seconds,
+            "telemetry_spans_path": inputs.telemetry_spans_path,
+            "cancelling_actor": inputs.cancelling_actor,
         }
         calls["factory_targets"] = factories
         calls["dry_run"] = dry_run

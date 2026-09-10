@@ -35,7 +35,9 @@ def test_a_run_is_joined_to_its_item_with_the_ledgers_own_reason() -> None:
 
 
 def test_a_live_remote_run_carries_no_moot_reason_at_all() -> None:
-    journal = json.dumps({"stage": "fabro-run", "work_item_id": "bd-ib-live", "run_id": "01LIVE"})
+    journal = json.dumps(
+        {"stage": "dispatch-run-stamp", "work_item_id": "bd-ib-live", "run_id": "01LIVE"}
+    )
 
     rows = attributed_runs(
         inventory=_inventory(
@@ -55,9 +57,30 @@ def test_superseded_and_missing_and_terminal_and_foreign_runs() -> None:
             json.dumps(["not-a-mapping"]),
             json.dumps({"stage": "dispatch-id", "work_item_id": "bd-ib-super"}),
             json.dumps({"stage": "fabro-run", "run_id": "01ORPHANED"}),
+            json.dumps({"stage": "dispatch-run-stamp", "work_item_id": "bd-ib-no-run"}),
+            json.dumps({"stage": "dispatch-run-stamp", "run_id": "01NOITEM"}),
             json.dumps({"work_item_id": "bd-ib-super", "run_id": ""}),
-            json.dumps({"work_item_id": "bd-ib-super", "fabro_run_id": "01OLD"}),
-            json.dumps({"work_item_id": "bd-ib-super", "fabro_run_id": "01NEW"}),
+            json.dumps(
+                {
+                    "stage": "dispatch-run-stamp",
+                    "work_item_id": "bd-ib-super",
+                    "fabro_run_id": "01OLD",
+                }
+            ),
+            json.dumps(
+                {
+                    "stage": "dispatch-run-stamp",
+                    "work_item_id": "bd-ib-super",
+                    "fabro_run_id": "01NEW",
+                }
+            ),
+            json.dumps(
+                {
+                    "stage": "dispatch-run-stamp",
+                    "work_item_id": "bd-ib-gone",
+                    "run_id": "01GONE",
+                }
+            ),
         ]
     )
 
@@ -85,7 +108,9 @@ def test_superseded_and_missing_and_terminal_and_foreign_runs() -> None:
 
 
 def test_journal_attribution_wins_over_the_goal_regex() -> None:
-    journal = json.dumps({"work_item_id": "bd-ib-real", "run_id": "01RUN"})
+    journal = json.dumps(
+        {"stage": "dispatch-run-stamp", "work_item_id": "bd-ib-real", "run_id": "01RUN"}
+    )
 
     rows = attributed_runs(
         inventory=_inventory(
@@ -118,21 +143,55 @@ def test_a_ledger_stamped_run_is_spared_though_its_goal_text_names_a_closed_item
     assert [(row.work_item_id, row.base_reason) for row in rows] == [("bd-ib-active", None)]
 
 
-def test_the_same_run_without_the_stamp_reads_as_an_orphan() -> None:
+def test_the_same_run_without_a_recorded_stamp_is_out_of_scope() -> None:
     rows = attributed_runs(
         inventory=_inventory(
             runs=[_run(run_id="01RUN", work_item_id="bd-ib-closed", status_kind="running")],
             item_statuses={"bd-ib-closed": "closed", "bd-ib-active": "active"},
+            journal="",
         )
     )
 
-    assert [(row.work_item_id, row.base_reason) for row in rows] == [
-        ("bd-ib-closed", ORPHAN_REASON_ITEM_NOT_ACTIVE)
-    ]
+    assert rows == ()
+
+
+def test_an_untyped_precomputed_journal_map_cannot_bypass_the_launch_stamp_filter() -> None:
+    rows = attributed_runs(
+        inventory=_inventory(
+            runs=[_run(run_id="01RUN", work_item_id="bd-ib-closed", status_kind="running")],
+            item_statuses={"bd-ib-closed": "closed"},
+            journal="",
+            attribution=RunAttribution(journal_run_ids={"01RUN": "bd-ib-closed"}),
+        )
+    )
+
+    assert rows == ()
+
+
+def test_goal_text_is_an_explicitly_labeled_read_only_hint_with_tenant_scope() -> None:
+    rows = attributed_runs(
+        inventory=_inventory(
+            runs=[
+                _run(run_id="01LOCAL", work_item_id="bd-ib-closed", status_kind="running"),
+                _run(run_id="01FOREIGN", work_item_id="overseer-closed", status_kind="running"),
+            ],
+            item_statuses={"bd-ib-closed": "closed"},
+            journal="",
+            allow_goal_text_attribution=True,
+        )
+    )
+
+    assert [(row.run.run_id, row.attribution_source) for row in rows] == [("01LOCAL", "goal-text")]
 
 
 def test_ledger_metadata_outranks_the_journal_which_outranks_the_goal_text() -> None:
-    journal = json.dumps({"work_item_id": "bd-ib-journaled", "run_id": "01RUN"})
+    journal = json.dumps(
+        {
+            "stage": "dispatch-run-stamp",
+            "work_item_id": "bd-ib-journaled",
+            "run_id": "01RUN",
+        }
+    )
 
     rows = attributed_runs(
         inventory=_inventory(
@@ -152,7 +211,7 @@ def test_ledger_metadata_outranks_the_journal_which_outranks_the_goal_text() -> 
     ]
 
 
-def test_a_foreign_tenants_stamped_run_stays_out_of_scope() -> None:
+def test_recorded_metadata_ownership_does_not_depend_on_an_item_prefix() -> None:
     rows = attributed_runs(
         inventory=_inventory(
             runs=[_run(run_id="01RUN", work_item_id="bd-ib-goal", status_kind="running")],
@@ -161,13 +220,16 @@ def test_a_foreign_tenants_stamped_run_stays_out_of_scope() -> None:
         )
     )
 
-    assert rows == ()
+    assert [(row.work_item_id, row.attribution_source) for row in rows] == [
+        ("overseer-abc", "metadata")
+    ]
 
 
 def test_read_journaled_runs_reads_a_file_and_tolerates_an_absent_one(tmp_path: Path) -> None:
     present = tmp_path / "journal.jsonl"
     _ = present.write_text(
-        json.dumps({"work_item_id": "bd-ib-one", "run_id": "01ONE"}) + "\n",
+        json.dumps({"stage": "dispatch-run-stamp", "work_item_id": "bd-ib-one", "run_id": "01ONE"})
+        + "\n",
         encoding="utf-8",
     )
 
@@ -206,8 +268,20 @@ def test_a_merge_held_items_terminal_run_is_left_alone_rather_than_reaped() -> N
     """
     journal = "\n".join(
         [
-            json.dumps({"work_item_id": "bd-ib-held", "run_id": "01SUPERSEDED"}),
-            json.dumps({"stage": "fabro-run", "work_item_id": "bd-ib-held", "run_id": "01HELD"}),
+            json.dumps(
+                {
+                    "stage": "dispatch-run-stamp",
+                    "work_item_id": "bd-ib-held",
+                    "run_id": "01SUPERSEDED",
+                }
+            ),
+            json.dumps(
+                {
+                    "stage": "dispatch-run-stamp",
+                    "work_item_id": "bd-ib-held",
+                    "run_id": "01HELD",
+                }
+            ),
         ]
     )
 
@@ -254,17 +328,33 @@ def _inventory(
     *,
     runs: Sequence[FabroRunSummary],
     item_statuses: dict[str, str],
-    journal: str = "",
+    journal: str | None = None,
     attribution: RunAttribution | None = None,
+    allow_goal_text_attribution: bool = False,
 ) -> FactoryRunInventory:
     return FactoryRunInventory(
         runs=runs,
         item_statuses=item_statuses,
-        journaled=journaled_runs(text=journal),
+        journaled=journaled_runs(text=_fixture_journal(runs=runs) if journal is None else journal),
         id_prefix="bd-ib",
         factory_name="hp",
         factory_server_url="https://hp.example:32276",
+        allow_goal_text_attribution=allow_goal_text_attribution,
         **({} if attribution is None else {"attribution": attribution}),
+    )
+
+
+def _fixture_journal(*, runs: Sequence[FabroRunSummary]) -> str:
+    return "\n".join(
+        json.dumps(
+            {
+                "stage": "dispatch-run-stamp",
+                "run_id": run.run_id,
+                "work_item_id": run.work_item_id,
+            }
+        )
+        for run in runs
+        if run.work_item_id is not None
     )
 
 

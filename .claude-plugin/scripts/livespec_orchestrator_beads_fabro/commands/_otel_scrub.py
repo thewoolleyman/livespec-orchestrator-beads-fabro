@@ -146,6 +146,21 @@ ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
         "fabro.failure.cause",
         "fabro.failure.category",
         "fabro.failure.signature",
+        # Reconciliation ownership and termination evidence. These are all
+        # bounded identifiers, enums, counts, or booleans; no goal text or
+        # other free-form run content is forwarded.
+        "livespec.tenant",
+        "fabro.status.kind",
+        "reconcile.factories_surveyed",
+        "reconcile.orphans_found",
+        "reconcile.orphans_reconciled",
+        "reconcile.dry_run",
+        "reconcile.errors",
+        "reconcile.orphan_reason",
+        "reconcile.termination_route",
+        "reconcile.termination_succeeded",
+        "reconcile.attribution_source",
+        "reconcile.cancelling_actor",
         # Dispatcher calibration scalars, emitted as `dispatcher.calibration`
         # spans so the calibration journal record has a Honeycomb egress leg.
         "converged",

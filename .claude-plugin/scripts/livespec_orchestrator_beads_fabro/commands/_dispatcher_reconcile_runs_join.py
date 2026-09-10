@@ -76,6 +76,8 @@ class OrphanRun:
     orphan_reason: str
     parked_seconds: float | None = None
     grace_seconds: int | None = None
+    tenant: str = ""
+    attribution_source: str = "journal"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -105,6 +107,8 @@ def classify_orphans(
                 factory_server_url=inventory.factory_server_url,
                 status_kind=str(row.run.status_kind),
                 work_item_id=row.work_item_id,
+                tenant=inventory.id_prefix,
+                attribution_source=row.attribution_source,
                 work_item_status=row.work_item_status,
                 orphan_reason=reading.reason,
                 parked_seconds=reading.parked_seconds,

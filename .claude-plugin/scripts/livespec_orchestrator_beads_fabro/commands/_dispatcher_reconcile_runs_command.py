@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from dataclasses import asdict
 from pathlib import Path
 
@@ -54,7 +55,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     ShellCommandRunner,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import load_items
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import journal_path, store_config
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
+    calibration_spans_path,
+    journal_path,
+    store_config,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs import (
     ReconcileRunsSummary,
     reconcile_runs,
@@ -76,6 +81,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_pass 
     ReconcilePassSummary,
     journal_reconcile_pass,
     reconcile_pass_summary,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_spans import (
+    emit_reconcile_pass_span,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_stamp import (
     repo_run_attribution,
@@ -112,6 +120,8 @@ def run_reconcile_runs_command(*, args: argparse.Namespace) -> int:
             journal=journal,
             ledger=make_beads_client(config=store),
             attribution=repo_run_attribution(repo=repo),
+            telemetry_spans_path=calibration_spans_path(args=args, repo=repo),
+            cancelling_actor=journal.identity.invoker,
             blocked_run_grace_seconds=unsafe_perform_io(
                 resolve_blocked_run_grace_seconds(cwd=repo).value_or(
                     DEFAULT_BLOCKED_RUN_GRACE_SECONDS
@@ -123,6 +133,13 @@ def run_reconcile_runs_command(*, args: argparse.Namespace) -> int:
     )
     record = reconcile_pass_summary(factories=factories, summary=summary)
     journal_reconcile_pass(journal=journal, summary=record)
+    emit_reconcile_pass_span(
+        summary=record,
+        tenant=store.prefix,
+        cancelling_actor=journal.identity.invoker,
+        spans_path=calibration_spans_path(args=args, repo=repo),
+        now_ns=time.time_ns(),
+    )
     _emit(summary=summary, record=record, as_json=args.as_json)
     return 1 if _has_failure(summary=summary, record=record) else 0
 

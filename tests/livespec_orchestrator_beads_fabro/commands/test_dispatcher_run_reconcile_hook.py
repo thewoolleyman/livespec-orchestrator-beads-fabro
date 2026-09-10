@@ -139,6 +139,7 @@ def test_the_stamped_factory_is_the_only_one_surveyed(tmp_path: Path) -> None:
     repo = _repo(tmp_path=tmp_path)
     append_work_item(path=_config(), item=_item(status="done"))
     record_dispatch_factory(path=_config(), work_item_id="bd-ib-1", factory="vps")
+    _journal_dispatch(repo=repo, item_id="bd-ib-1", run_id="01ORPHAN")
     runner = _Runner(ps_by_server={_VPS: _ps(run_id="01ORPHAN", kind="blocked")})
 
     summary = hook.reconcile_runs_for_item(
@@ -171,6 +172,8 @@ def test_only_the_named_items_run_is_reconciled(tmp_path: Path) -> None:
     repo = _repo(tmp_path=tmp_path)
     append_work_item(path=_config(), item=_item(status="done"))
     append_work_item(path=_config(), item=_item(item_id="bd-ib-2", status="done"))
+    _journal_dispatch(repo=repo, item_id="bd-ib-1", run_id="01MINE")
+    _journal_dispatch(repo=repo, item_id="bd-ib-2", run_id="01THEIRS")
     runner = _Runner(
         ps_by_server={
             _HP: _ps(run_id="01MINE", kind="blocked", work_item_id="bd-ib-1"),
@@ -272,6 +275,22 @@ def _journal_records(*, repo: Path) -> list[dict[str, object]]:
     hook = importlib.import_module(_MODULE)
     text = hook.dispatch_journal_path(repo=repo).read_text(encoding="utf-8")
     return [json.loads(line) for line in text.splitlines() if line]
+
+
+def _journal_dispatch(*, repo: Path, item_id: str, run_id: str) -> None:
+    path = repo / "tmp" / "fabro-dispatch-journal.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        _ = handle.write(
+            json.dumps(
+                {
+                    "stage": "dispatch-run-stamp",
+                    "work_item_id": item_id,
+                    "run_id": run_id,
+                }
+            )
+            + "\n"
+        )
 
 
 def _repo(*, tmp_path: Path, factories: dict[str, str] | None = None) -> Path:

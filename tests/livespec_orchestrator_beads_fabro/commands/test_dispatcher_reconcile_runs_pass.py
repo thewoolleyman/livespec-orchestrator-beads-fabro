@@ -15,6 +15,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_recor
     ReconcileError,
     ReconcileRunsSummary,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_spans import (
+    emit_reconcile_pass_span,
+)
 from livespec_orchestrator_beads_fabro.errors import LivespecConfigUnreadableError
 
 _MODULE_PATH = (
@@ -25,6 +28,29 @@ _MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile
 
 _HP = FactoryTarget(name="hp", server="https://hp.example:32276", dev_token=None)
 _VPS = FactoryTarget(name="vps", server="https://vps.example:32276", dev_token=None)
+
+
+def test_an_unwritable_telemetry_path_never_breaks_reconciliation(tmp_path: Path) -> None:
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("occupied", encoding="utf-8")
+
+    emit_reconcile_pass_span(
+        summary=importlib.import_module(_MODULE_NAME).ReconcilePassSummary(
+            factories_surveyed=0,
+            factory_names=(),
+            dry_run=False,
+            orphans_found=0,
+            orphans_reconciled=0,
+            errors=0,
+            failure_detail=None,
+        ),
+        tenant="bd-ib",
+        cancelling_actor="timer:reconcile-runs",
+        spans_path=blocker / "spans.jsonl",
+        now_ns=1,
+    )
+
+    assert blocker.read_text(encoding="utf-8") == "occupied"
 
 
 def test_a_pass_surveys_every_factory_and_journals_its_own_summary(
@@ -56,6 +82,17 @@ def test_a_pass_surveys_every_factory_and_journals_its_own_summary(
     assert captured["dry_run"] is False
     assert captured["attribution_repo"] == tmp_path
     assert summary.factory_names == ("hp", "vps")
+    spans = _spans(path=tmp_path / "journal-calibration-spans.jsonl")
+    assert [span["name"] for span in spans] == ["dispatcher.reconcile-runs-pass"]
+    assert _span_attrs(span=spans[0]) == {
+        "livespec.tenant": "bd-ib",
+        "reconcile.factories_surveyed": 2,
+        "reconcile.orphans_found": 2,
+        "reconcile.orphans_reconciled": 1,
+        "reconcile.dry_run": False,
+        "reconcile.errors": 0,
+        "reconcile.cancelling_actor": "agent:test",
+    }
     assert _pass_records(tmp_path=tmp_path) == [
         {
             "stage": "reconcile-runs-pass",
@@ -227,6 +264,22 @@ def _pass_records(*, tmp_path: Path) -> list[dict[str, object]]:
         for record in records
         if record.get("stage") == "reconcile-runs-pass"
     ]
+
+
+def _spans(*, path: Path) -> list[dict[str, Any]]:
+    request = json.loads(path.read_text(encoding="utf-8"))
+    return request["resourceSpans"][0]["scopeSpans"][0]["spans"]
+
+
+def _span_attrs(*, span: dict[str, Any]) -> dict[str, object]:
+    attrs: dict[str, object] = {}
+    for attribute in span["attributes"]:
+        encoded = attribute["value"]
+        value = next(iter(encoded.values()))
+        if "intValue" in encoded:
+            value = int(value)
+        attrs[attribute["key"]] = value
+    return attrs
 
 
 def _reconciled(*, run_id: str, succeeded: bool = True) -> ReconciledRun:

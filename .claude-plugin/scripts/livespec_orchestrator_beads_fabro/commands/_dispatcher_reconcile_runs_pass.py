@@ -38,6 +38,7 @@ surveyed without knowing which one asked.
 from __future__ import annotations
 
 import argparse
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -53,7 +54,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     ShellCommandRunner,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import load_items
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import journal_path, store_config
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
+    calibration_spans_path,
+    journal_path,
+    store_config,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs import (
     ReconcileRunsSummary,
     reconcile_runs,
@@ -70,6 +75,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_grace
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_inputs import (
     ReconcileInputs,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_spans import (
+    emit_reconcile_pass_span,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_stamp import repo_run_attribution
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
@@ -154,6 +162,7 @@ def reconcile_runs_pass(*, args: argparse.Namespace, repo: Path) -> ReconcilePas
     )
     summary = _failed_pass(outcome=outcome) if isinstance(outcome, AttemptFailure) else outcome
     journal_reconcile_pass(journal=journal, summary=summary)
+    _emit_pass_span(args=args, repo=repo, journal=journal, summary=summary)
     return summary
 
 
@@ -209,6 +218,7 @@ def _survey(
         # it can do nothing with.
         return reconcile_pass_summary(factories=(), summary=_NOTHING_SURVEYED)
     store = store_config(repo=repo)
+    telemetry_path = calibration_spans_path(args=args, repo=repo)
     summary = reconcile_runs(
         inputs=ReconcileInputs(
             repo=repo,
@@ -220,6 +230,8 @@ def _survey(
             journal=journal,
             ledger=make_beads_client(config=store),
             attribution=repo_run_attribution(repo=repo),
+            telemetry_spans_path=telemetry_path,
+            cancelling_actor=journal.identity.invoker,
             blocked_run_grace_seconds=unsafe_perform_io(
                 resolve_blocked_run_grace_seconds(cwd=repo).value_or(
                     DEFAULT_BLOCKED_RUN_GRACE_SECONDS
@@ -230,6 +242,32 @@ def _survey(
         dry_run=False,
     )
     return reconcile_pass_summary(factories=factories, summary=summary)
+
+
+def _emit_pass_span(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    journal: JournalFile,
+    summary: ReconcilePassSummary,
+) -> None:
+    if summary.factories_surveyed == 0:
+        emit_reconcile_pass_span(
+            summary=summary,
+            tenant=repo.name,
+            cancelling_actor=journal.identity.invoker,
+            spans_path=calibration_spans_path(args=args, repo=repo),
+            now_ns=time.time_ns(),
+        )
+        return
+    resolved = attempt(action=lambda: store_config(repo=repo), exceptions=_RECOVERABLE)
+    emit_reconcile_pass_span(
+        summary=summary,
+        tenant=repo.name if isinstance(resolved, AttemptFailure) else resolved.prefix,
+        cancelling_actor=journal.identity.invoker,
+        spans_path=calibration_spans_path(args=args, repo=repo),
+        now_ns=time.time_ns(),
+    )
 
 
 def _failed_pass(*, outcome: AttemptFailure) -> ReconcilePassSummary:

@@ -80,8 +80,16 @@ def test_a_superseded_run_for_an_active_item_also_fails_the_invariant(tmp_path: 
     _journal(
         repo=repo,
         records=[
-            {"work_item_id": "bd-ib-1", "fabro_run_id": "01OLD"},
-            {"work_item_id": "bd-ib-1", "fabro_run_id": "01NEW"},
+            {
+                "stage": "dispatch-run-stamp",
+                "work_item_id": "bd-ib-1",
+                "fabro_run_id": "01OLD",
+            },
+            {
+                "stage": "dispatch-run-stamp",
+                "work_item_id": "bd-ib-1",
+                "fabro_run_id": "01NEW",
+            },
         ],
     )
     runner = _Runner(ps_by_server={_HP: _ps(run_id="01OLD", kind="running")})

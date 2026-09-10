@@ -6,10 +6,10 @@ the dispatcher at all — nothing tells an operator the slot is gone, because a
 run that no dispatcher process is watching is invisible to every surface keyed
 on this repo's own records.
 
-The projection is the reconciler's OWN `--dry-run`, not a second join. A lane
-with its own orphan rule would be free to disagree with the command whose name
-it prints as the remedy, and the disagreement would surface as an operator
-running a remedy that finds nothing.
+The projection uses the reconciler's OWN `--dry-run` machinery, not a second
+join. As an observation-only lane it opts into goal text as an explicitly
+labeled hint; the mutating remedy repeats the join with that hint disabled and
+therefore cannot cancel a run without recorded ownership.
 
 Reading must not be an act, and that guarantee is STRUCTURAL here rather than a
 convention: the seams handed to the reconciler are `InertJournal` and
@@ -159,6 +159,7 @@ def _survey(
             journal=InertJournal(),
             ledger=InertLedger(),
             attribution=repo_run_attribution(repo=project_root),
+            allow_goal_text_attribution=True,
         ),
         factories=reconcile_factory_targets(repo=project_root),
         dry_run=True,
@@ -176,7 +177,8 @@ def _orphan_item(*, project_root: Path, repo: str, run: ReconciledRun) -> Attent
             f"({run.factory_server_url}) is {run.status_kind} while work-item "
             f"{run.work_item_id} is "
             f"{run.work_item_status if run.work_item_status is not None else _ABSENT_ITEM_STATUS}"
-            f"; orphan reason {run.orphan_reason}. It holds a Fabro scheduler "
+            f"; orphan reason {run.orphan_reason}; attribution source "
+            f"{run.attribution_source}. It holds a Fabro scheduler "
             "slot the ledger says nothing is waiting on."
         ),
         source_ref=SourceRef(repo=repo, work_item=run.work_item_id),
