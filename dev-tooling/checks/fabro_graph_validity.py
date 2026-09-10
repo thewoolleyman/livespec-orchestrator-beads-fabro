@@ -31,26 +31,35 @@ present: a `fabro` that accepts everything, a wrong subcommand, or a graph path
 the binary never read all make the mutant pass, and a passing mutant is a
 control failure here rather than a clean report.
 
+THE SETTINGS BESIDE A GRAPH ARE NORMALIZED, NARROWLY, IN A SCRATCH COPY. Every
+validation — of the committed graph and of its mutant — runs in a copy of the
+payload directory, never in the worktree, and that copy's `workflow.toml` loses
+exactly the fork-only keys `_fork_only_settings` names and nothing else. That is
+what lets CI pin the verifiable UPSTREAM fabro 0.254.0 release, which otherwise
+refuses even a valid graph; the sibling module carries why, and the SETTINGS
+CONTROL that the removal took nothing else. Each stripped key is logged, so the
+normalization CI relies on is reported rather than invisible.
+
 THE ONE LEVER, AND WHY ITS DEFAULT IS NOT FAIL-CLOSED. `fabro validate` needs the
 `fabro` binary, resolved exactly the way a dispatch resolves it
-(`resolve_fabro_bin`). The binary is a HOST artifact: it is present for a
-developer, for a pre-push, and for the post-merge janitor's fresh host checkout,
-and it is structurally ABSENT in a GitHub Actions runner and inside a Fabro
-sandbox — where this repository's own in-run janitor gate executes this very
-aggregate. A fail-closed default would therefore not harden the factory, it would
-stop it: every dispatch would fail its janitor before any graph could be checked.
+(`resolve_fabro_bin`). The binary is present for a developer, for a pre-push, for
+the post-merge janitor's fresh host checkout, and in CI, whose metadata batch
+installs the pinned, checksum-verified upstream release first. It is
+structurally ABSENT inside a Fabro sandbox — where this repository's own in-run
+janitor gate executes this very aggregate. A fail-closed default would therefore
+not harden the factory, it would stop it: every dispatch would fail its janitor
+before any graph could be checked.
 
 So absence is never SILENT and never a pass in disguise. When the binary does not
 resolve the check emits, at error level, one record per graph naming what was NOT
 looked at, plus a summary saying so in as many words, and `LIVESPEC_FABRO_GRAPH_VALIDATION`
 selects whether that is fatal:
 
-- `warn_when_fabro_absent` (the default) — report loudly, exit 0. This is what a
-  CI job sets EXPLICITLY, so the skip is a declaration visible in the workflow
-  file rather than an accident of the runner image.
-- `fail_when_fabro_absent` — an unresolvable binary is a FAILURE. Set it wherever
-  the binary is expected, so a host that has lost its `fabro` cannot quietly
-  degrade into the warn path.
+- `warn_when_fabro_absent` (the default) — report loudly, exit 0. This is the
+  sandbox janitor's venue, which carries no binary by construction.
+- `fail_when_fabro_absent` — an unresolvable binary is a FAILURE. CI sets it on
+  the metadata batch, so a lost or unresolvable install fails the merge path
+  rather than quietly degrading into the warn path.
 
 The lever NEVER suppresses a validation that could have run: it is consulted only
 on the branch where no binary resolved. A value outside that closed space is a
@@ -79,7 +88,8 @@ for _path in (_SCRIPT_DIR, _SCRIPTS, _SCRIPTS / "_vendor"):
         sys.path.insert(0, str(_path))
 
 # structlog is the only sanctioned stderr surface for an enforcement script; it
-# is imported from the installed shared dev-tooling package's vendored copy.
+# is imported from the installed shared dev-tooling package's vendored copy, as
+# is the tomli that `_fork_only_settings` reads settings with.
 import livespec_dev_tooling  # noqa: E402
 
 _DT_VENDOR = Path(livespec_dev_tooling.__file__).resolve().parent / "_vendor"
@@ -92,21 +102,33 @@ from _checked_workflow_payloads import (  # noqa: E402  — sibling private impo
     checked_payloads,
     incompleteness,
 )
+from _fork_only_settings import (  # noqa: E402  — sibling private import
+    FORK_ONLY_SETTINGS,
+    SETTINGS_NAME,
+    Normalized,
+    normalized_settings,
+    settings_failures,
+)
 from livespec_orchestrator_beads_fabro.commands._config import resolve_fabro_bin  # noqa: E402
 
 __all__: list[str] = [
     "FAIL_WHEN_ABSENT",
+    "FORK_ONLY_SETTINGS",
     "GRAPH_NAME",
     "LEVER",
     "LEVER_VALUES",
+    "SETTINGS_NAME",
     "WARN_WHEN_ABSENT",
+    "Normalized",
     "Report",
     "Validation",
     "control_failures",
     "main",
     "mutant_text",
+    "normalized_settings",
     "report",
     "resolved_binary",
+    "settings_failures",
     "unenumerated_graphs",
     "validate_graph",
     "validation_findings",
@@ -144,10 +166,15 @@ class Validation:
 
 @dataclass(frozen=True, kw_only=True)
 class Report:
-    """What the check saw. `findings` block the gate; `warnings` are loud and do not."""
+    """What the check saw. `findings` block the gate; `warnings` are loud and do not.
+
+    `normalized` names every fork-only key stripped from a scratch copy, so the
+    normalization CI relies on is reported rather than silent.
+    """
 
     findings: list[str]
     warnings: list[str]
+    normalized: list[str]
 
 
 def resolved_binary(*, repo_root: Path) -> str | None:
@@ -232,7 +259,8 @@ def validation_findings(*, binary: str, payloads: list[CheckedPayload]) -> list[
         graph = payload.directory / GRAPH_NAME
         if not graph.is_file():
             continue
-        result = validate_graph(binary=binary, graph=graph)
+        text = graph.read_text(encoding="utf-8")
+        result = _validate_copy(binary=binary, payload=payload, graph_text=text)
         if result.returncode != 0:
             verdict = f"`fabro validate` REJECTED {GRAPH_NAME} (exit {result.returncode})"
             found.append(f"{payload.where}: {verdict}: {_condensed(text=result.output)}")
@@ -256,7 +284,7 @@ def _matcher_failures(*, binary: str, payload: CheckedPayload, graph: Path) -> l
         unmutatable = "no node has a single unconditional edge to make conditional"
         why = f"{unmutatable}, so no negative control could be built for {GRAPH_NAME}"
         return [f"matcher control: {payload.where}: {why}"]
-    result = _validate_mutant(binary=binary, payload=payload, mutant=mutant)
+    result = _validate_copy(binary=binary, payload=payload, graph_text=mutant)
     if result.returncode != 0 and _REJECTION_CODE in result.output:
         return []
     verdict = f"the {_REJECTION_CODE} mutant of {GRAPH_NAME} was not rejected as such"
@@ -264,20 +292,45 @@ def _matcher_failures(*, binary: str, payload: CheckedPayload, graph: Path) -> l
     return [f"matcher control: {payload.where}: {verdict} {detail}"]
 
 
-def _validate_mutant(*, binary: str, payload: CheckedPayload, mutant: str) -> Validation:
-    """Validate the mutant in a scratch COPY of the payload, never in the worktree.
+def _validate_copy(*, binary: str, payload: CheckedPayload, graph_text: str) -> Validation:
+    """Validate `graph_text` in a scratch COPY of the payload, never in the worktree.
 
     The whole directory is copied rather than the graph alone: a node prompt
-    reference that failed to resolve would make the mutant fail for the wrong
+    reference that failed to resolve would make the graph fail for the wrong
     reason, and a wrong-reason rejection is indistinguishable from the right one
-    at the exit code.
+    at the exit code. The copy's settings lose exactly the fork-only keys.
     """
     with tempfile.TemporaryDirectory() as scratch:
         clone = Path(scratch) / payload.directory.name
         _ = shutil.copytree(payload.directory, clone)
         graph = clone / GRAPH_NAME
-        _ = graph.write_text(mutant, encoding="utf-8")
+        _ = graph.write_text(graph_text, encoding="utf-8")
+        settings = clone / SETTINGS_NAME
+        if settings.is_file():
+            normalized = normalized_settings(text=settings.read_text(encoding="utf-8"))
+            _ = settings.write_text(normalized.text, encoding="utf-8")
         return validate_graph(binary=binary, graph=graph)
+
+
+def _settings_review(*, payloads: list[CheckedPayload]) -> tuple[list[str], list[str]]:
+    """Settings-control findings, and one note per fork-only key a copy will lose."""
+    findings: list[str] = []
+    notes: list[str] = []
+    copy = f"a scratch copy of {SETTINGS_NAME}"
+    for payload in payloads:
+        path = payload.directory / SETTINGS_NAME
+        if not path.is_file():
+            continue
+        original = path.read_text(encoding="utf-8")
+        normalized = normalized_settings(text=original)
+        findings.extend(
+            settings_failures(where=payload.where, original=original, normalized=normalized)
+        )
+        notes.extend(
+            f"{payload.where}: fork-only {dotted} stripped from {copy} before validating"
+            for dotted in normalized.stripped
+        )
+    return findings, notes
 
 
 def _condensed(*, text: str) -> str:
@@ -293,6 +346,8 @@ def report(*, repo_root: Path) -> Report:
         f"enumeration control: {graph} {stray}; register it under `dispatcher.workflows`"
         for graph in unenumerated_graphs(payloads=payloads)
     ]
+    settings_findings, notes = _settings_review(payloads=payloads)
+    findings.extend(settings_findings)
     lever = os.environ.get(LEVER, WARN_WHEN_ABSENT)
     if lever not in LEVER_VALUES:
         space = f"outside the closed value space {', '.join(LEVER_VALUES)}"
@@ -301,11 +356,11 @@ def report(*, repo_root: Path) -> Report:
     if binary is None:
         absent = _absence_records(payloads=payloads)
         if lever == FAIL_WHEN_ABSENT:
-            return Report(findings=[*findings, *absent], warnings=[])
-        return Report(findings=findings, warnings=absent)
+            return Report(findings=[*findings, *absent], warnings=[], normalized=notes)
+        return Report(findings=findings, warnings=absent, normalized=notes)
     findings.extend(validation_findings(binary=binary, payloads=payloads))
     findings.extend(control_failures(binary=binary, payloads=payloads))
-    return Report(findings=findings, warnings=[])
+    return Report(findings=findings, warnings=[], normalized=notes)
 
 
 def _absence_records(*, payloads: list[CheckedPayload]) -> list[str]:
@@ -332,11 +387,19 @@ def main() -> int:
     )
     log = structlog.get_logger("fabro_graph_validity")
     found = report(repo_root=Path.cwd())
-    for warning in found.warnings:
-        log.error(warning, kind="not-validated")
-    for finding in found.findings:
-        log.error(finding, kind="control" if "control:" in finding else "graph")
+    records = [
+        *(("info", note, "normalized") for note in found.normalized),
+        *(("error", warning, "not-validated") for warning in found.warnings),
+        *(("error", finding, _finding_kind(finding=finding)) for finding in found.findings),
+    ]
+    for level, event, kind in records:
+        getattr(log, level)(event, kind=kind)
     return 1 if found.findings else 0
+
+
+def _finding_kind(*, finding: str) -> str:
+    """Whether a finding is about the instrument or about a graph."""
+    return "control" if "control:" in finding else "graph"
 
 
 if __name__ == "__main__":  # pragma: no cover
