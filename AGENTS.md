@@ -1074,8 +1074,9 @@ that repo from this one.
   The active→closed valve on merge is a DIFFERENT subcommand driven PER
   ITEM: `dispatcher.py reconcile-merged --repo <repo> --item <id> --invoker
   <role:name>`. It runs the per-item post-merge janitor (fresh checkout +
-  baseline checks — expect it to exceed a 600s foreground timeout; background
-  it) and closes the item, printing e.g. `bd-ib-cwhos6  green at done PR#2146
+  baseline checks — expect it to exceed a 600s foreground timeout; launch it
+  through `just gate-start` per the bullet below, NOT as a harness background
+  task) and closes the item, printing e.g. `bd-ib-cwhos6  green at done PR#2146
   merged, post-merge janitor green`. Consequence: after a slice's PR merges,
   any downstream item blocked on it stays blocked until you run
   `reconcile-merged` for the merged item. Measured 2026-09-04 on
@@ -1086,6 +1087,52 @@ that repo from this one.
   never lists a `pending-approval` item, so an `admission:auto` item is
   invisible to `next` but selectable by the dispatcher drain, and `drive
   --action impl:<id>` admits and dispatches such an item in one step.
+- **A `drive` or `dispatcher.py` invocation launched as an AGENT-HARNESS
+  BACKGROUND TASK can be killed mid post-merge, stranding merged work
+  `active` — and the task's death is NOT the dispatch's verdict.** One
+  `drive --action impl:<id>` spans the Fabro run, the PR, the merge, the
+  post-merge janitor and acceptance, so it outlives any agent turn. Measured
+  2026-09-10: two dispatches launched from one Claude Code session as
+  `run_in_background` Bash tasks died **37 ms apart** after 34m55s and
+  34m52s — the 3.3 s launch gap did not survive, so ONE event ended both,
+  and a per-task lifetime cap is therefore excluded. Each task's only output
+  was the harness line `exited with code 144`, and each `drive --json` log
+  was 0 bytes because `drive` prints its result only on exit. There was no
+  OOM (~57 GB free, no kernel OOM kill). **Both Fabro runs had SUCCEEDED and
+  both PRs had MERGED** (PR 2458 as `52783f67`; PR 2459 as `51d99744`, 18 s
+  before the kill); the kill landed in the post-merge janitor and acceptance
+  stage, leaving both items `active`, assignee `fabro`, with no merge audit.
+  So a dead background task tells you NOTHING about the dispatch — read the
+  forge and the ledger before concluding anything failed. **The remedy is the
+  detached gate runner**, which runs the command in its own session that
+  survives the tool call and reports a durable `PASSED` / `FAILED` /
+  `RUNNING` / `DIED_WITHOUT_VERDICT`:
+
+  ```bash
+  run_id=$(mise exec -- just gate-start -- <the drive or dispatcher invocation, env wrapper and all>)
+  mise exec -- just gate-wait "$run_id"
+  ```
+
+  `gate-start` runs the argv it is given, unchanged, so the gate command is
+  whatever you would otherwise have typed — including the
+  `with-<project>-env.sh` credential wrapper this repo's beads prerequisites
+  require. Launching through the runner does NOT license routing around a
+  stale plugin build by explicit path; §"Stop the line for breakages" still
+  governs WHICH build you invoke. The `gate-*` recipes come from the
+  livespec-dev-tooling worktree-discipline pack through the OPTIONAL
+  `import? 'dev-tooling/worktree.just'`, which is gitignored and therefore
+  ABSENT until `just install-worktree-pack` (run from `just bootstrap`)
+  materializes it — so `Justfile does not contain recipe gate-start` means
+  the pack is not installed, NOT that the runner is the wrong route. Install
+  the pack; never fall back to a harness background task.
+
+  `gate-wait` exits with the gate's own exit code (75 for
+  `DIED_WITHOUT_VERDICT`, which is neither a pass nor a fail); killing the
+  waiter does not touch the gate, so it is the safe thing to background and
+  it can simply be re-issued. **The recovery for a merged item left `active`
+  is `dispatcher.py reconcile-merged --repo <repo> --item <id> --invoker
+  <role:name>`, per item** — the bullet above; launch that through
+  `just gate-start` too, for exactly the same reason.
 
 ## Daily commands
 
