@@ -42,6 +42,8 @@ _NO_RUN_ID_MARKER = "LIVESPEC_NEEDS_HUMAN_NO_RUN_ID"
 _REF_PREFIX = "refs/heads/needs-human/"
 _RUN_ID = "01M1TESTRUNIDPRESERVE"
 _FORMER_GATE_SOURCES = ("implement", "review", "disposition", "pr")
+_OPERATOR_NAME = "Chad Woolley"
+_OPERATOR_EMAIL = "thewoolleyman@gmail.com"
 
 
 def _dot() -> str:
@@ -201,6 +203,8 @@ def _sandbox(*, tmp_path: Path) -> tuple[Path, Path]:
 
 def _run_preservation(*, work: Path, run_id: str | None) -> subprocess.CompletedProcess[str]:
     env = {key: value for key, value in os.environ.items() if key != "FABRO_RUN_ID"}
+    env["LIVESPEC_GIT_AUTHOR_NAME"] = _OPERATOR_NAME
+    env["LIVESPEC_GIT_AUTHOR_EMAIL"] = _OPERATOR_EMAIL
     if run_id is not None:
         env["FABRO_RUN_ID"] = run_id
     return subprocess.run(

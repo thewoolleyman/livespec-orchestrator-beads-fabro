@@ -165,6 +165,10 @@ def _repo(*, tmp_path: Path) -> Path:
     _ = (repo / ".livespec.jsonc").write_text(
         json.dumps(
             {
+                "git_author": {
+                    "operator_name": "Chad Woolley",
+                    "operator_email": "thewoolleyman@gmail.com",
+                },
                 "livespec-orchestrator-beads-fabro": {
                     "connection": {"prefix": "bd-ib"},
                     "dispatcher": {
@@ -172,7 +176,7 @@ def _repo(*, tmp_path: Path) -> Path:
                         "acceptance_mode": "ai-only",
                         "credential_reprobe_interval_seconds": _CADENCE_SECONDS,
                     },
-                }
+                },
             }
         ),
         encoding="utf-8",

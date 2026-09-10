@@ -35,6 +35,7 @@ from livespec_orchestrator_beads_fabro.commands import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     materialize_overlay,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import GitAuthor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
     render_run_config_overlay,
 )
@@ -44,6 +45,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
 # reads the name from the implementation cannot detect the name changing, and
 # the dev-tooling hook gate reads this exact string.
 _MARKER = "livespec.factoryRunId"
+_GIT_AUTHOR = GitAuthor(name="Operator", email="operator@example.com")
 
 # A committed workflow config with the canonical [workflow] graph + the
 # [run.environment] id the overlay rewrites/targets (mirrors the shape the
@@ -171,6 +173,7 @@ def test_materialize_overlay_declares_the_pre_launch_dispatch_id(
         work_item_id="wi-1",
         dispatch_id="01M23CD51JNGY3R1AKN2WNP4WB",
         token=lambda: _FAKE_GITHUB_TOKEN,
+        git_author=_GIT_AUTHOR,
     )
     assert error is None
     rendered = overlay.read_text(encoding="utf-8")

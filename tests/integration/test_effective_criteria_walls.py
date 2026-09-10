@@ -195,7 +195,9 @@ def _repo_with_workflow(*, tmp_path: Path) -> tuple[Path, Path]:
     repo = tmp_path / "repo"
     repo.mkdir()
     _ = (repo / ".livespec.jsonc").write_text(
-        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"},'
+        '{"git_author": {"operator_name": "Chad Woolley", '
+        '"operator_email": "thewoolleyman@gmail.com"}, '
+        '"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"},'
         ' "dispatcher": {"wip_cap": 3, "acceptance_mode": "ai-only"}}}',
         encoding="utf-8",
     )

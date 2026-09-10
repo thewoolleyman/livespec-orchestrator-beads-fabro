@@ -36,6 +36,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import (
     prepare_acp_nodes,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import JournalWriter
+from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import (
+    GitAuthor,
+    read_dispatch_git_author,
+    workflow_git_author_error,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_groom_draft import (
     approved_groom_draft_for,
 )
@@ -78,6 +83,7 @@ _LEDGER_ERRORS = (
 )
 
 _WORKFLOW_PAYLOAD_STAGE = "workflow-payload"
+_GIT_AUTHOR_STAGE = "git-author"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -88,6 +94,7 @@ class MaterializedDispatch:
     workflow_name: str
     payload: WorkflowPayload
     acp_nodes: AcpNodeResolution
+    git_author: GitAuthor
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -134,6 +141,20 @@ def materialize_dispatch(
     # that workflow's graph as literal durations; a config typo refuses here,
     # before any Fabro run exists.
     committed_workflow = workflow_toml(args=args, variant_directory=variant.directory)
+    author_policy = read_dispatch_git_author(repo=repo)
+    if isinstance(author_policy, str):
+        return MaterializationRefusal(stage=_GIT_AUTHOR_STAGE, detail=author_policy)
+    committed_text = attempt(
+        action=lambda: committed_workflow.read_text(encoding="utf-8"),
+        exceptions=(OSError,),
+    )
+    if not isinstance(committed_text, AttemptFailure):
+        author_error = workflow_git_author_error(
+            committed_text=committed_text,
+            author=author_policy.operator,
+        )
+        if author_error is not None:
+            return MaterializationRefusal(stage=_GIT_AUTHOR_STAGE, detail=author_error)
     payload = prepare_workflow_payload(
         repo=repo,
         committed=committed_workflow,
@@ -167,6 +188,7 @@ def materialize_dispatch(
         workflow_name=variant.name,
         payload=payload,
         acp_nodes=acp_nodes,
+        git_author=author_policy.operator,
     )
 
 

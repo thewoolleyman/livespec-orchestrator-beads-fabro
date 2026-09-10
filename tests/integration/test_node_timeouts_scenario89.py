@@ -164,7 +164,16 @@ def _repo_with_workflow(*, tmp_path: Path, dispatcher: dict[str, object]) -> tup
     if dispatcher:
         block["dispatcher"] = dispatcher
     _ = (repo / ".livespec.jsonc").write_text(
-        json.dumps({"livespec-orchestrator-beads-fabro": block}), encoding="utf-8"
+        json.dumps(
+            {
+                "git_author": {
+                    "operator_name": "Chad Woolley",
+                    "operator_email": "thewoolleyman@gmail.com",
+                },
+                "livespec-orchestrator-beads-fabro": block,
+            }
+        ),
+        encoding="utf-8",
     )
     workflow = tmp_path / "workflow.toml"
     _ = workflow.write_text(_COMMITTED_WORKFLOW_TOML, encoding="utf-8")

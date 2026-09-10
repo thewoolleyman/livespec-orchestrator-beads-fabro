@@ -160,7 +160,11 @@ def _item(**overrides: object) -> WorkItem:
 def _repo_with_workflow(*, tmp_path: Path, wip_cap: int | None = None) -> tuple[Path, Path]:
     repo = tmp_path / "repo"
     repo.mkdir()
-    block = '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}'
+    block = (
+        '{"git_author": {"operator_name": "Chad Woolley", '
+        '"operator_email": "thewoolleyman@gmail.com"}, '
+        '"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}'
+    )
     if wip_cap is not None:
         block += f', "dispatcher": {{"wip_cap": {wip_cap}}}'
     block += "}}"

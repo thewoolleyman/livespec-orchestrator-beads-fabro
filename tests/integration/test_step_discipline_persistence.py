@@ -264,7 +264,9 @@ def _repo(
     repo = tmp_path / "repo"
     repo.mkdir()
     _ = (repo / ".livespec.jsonc").write_text(
-        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}'
+        '{"git_author": {"operator_name": "Chad Woolley", '
+        '"operator_email": "thewoolleyman@gmail.com"}, '
+        '"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}'
         f"{dispatcher}}}}}",
         encoding="utf-8",
     )

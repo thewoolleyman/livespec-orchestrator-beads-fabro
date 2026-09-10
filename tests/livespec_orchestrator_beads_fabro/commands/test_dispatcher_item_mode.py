@@ -129,7 +129,9 @@ def _repo_with_workflow(*, tmp_path: Path) -> tuple[Path, Path]:
     # connection.prefix (decoupled from the tenant DB name); a real governed
     # repo always carries one, so the hermetic repo mirrors that.
     _ = (repo / ".livespec.jsonc").write_text(
-        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        '{"git_author": {"operator_name": "Chad Woolley", '
+        '"operator_email": "thewoolleyman@gmail.com"}, '
+        '"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
         encoding="utf-8",
     )
     workflow = tmp_path / "workflow.toml"
@@ -529,7 +531,9 @@ def test_loop_with_item_at_wip_cap_emits_capacity_deferred_result(
 ) -> None:
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     _ = (repo / ".livespec.jsonc").write_text(
-        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"},'
+        '{"git_author": {"operator_name": "Chad Woolley", '
+        '"operator_email": "thewoolleyman@gmail.com"}, '
+        '"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"},'
         ' "dispatcher": {"wip_cap": 1}}}',
         encoding="utf-8",
     )

@@ -189,8 +189,7 @@ def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL ST
         integration=plan.integration,
         merge_hold=plan.merge_hold,
     )
-    token_supplier = selfup.github_token_supplier()
-    if isinstance(token_supplier, str):
+    if isinstance(token_supplier := selfup.github_token_supplier(), str):
         return failed_dispatch_outcome(
             journal=journal,
             work_item_id=item.id,
@@ -210,6 +209,7 @@ def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL ST
         # `{{ inputs.* }}`, and the pinned engine renders that site for the
         # graph but not for `run.prepare`.
         prepare_inputs=contract_prompt_variables(resolved=plan.integration),
+        git_author=materialized.git_author,
     )
     if overlay_error is not None:
         return failed_dispatch_outcome(

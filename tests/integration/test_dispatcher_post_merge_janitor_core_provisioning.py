@@ -271,6 +271,10 @@ def _target_repo(*, tmp_path: Path) -> Path:
         """{
   "template": "livespec",
   "spec_root": "SPECIFICATION",
+  "git_author": {
+    "operator_name": "Chad Woolley",
+    "operator_email": "thewoolleyman@gmail.com"
+  },
   "implementation": { "plugin": "livespec-orchestrator-beads-fabro" },
   "livespec-orchestrator-beads-fabro": {
     "format": "beads",
