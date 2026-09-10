@@ -817,13 +817,38 @@ The dispatcher now journals a `dispatcher-registered-install-lag` warning when
 the executing build is older than the target repository's registered install
 (`_dispatcher_registered_install_currency.py`). It is surfaced, never enforced,
 per the ratified currency contract, so READ the dispatcher stderr the `drive`
-result carries before concluding anything about the factory. The remedy is per
-session: restart it, or invoke the registered build's `scripts/bin/` entry
-point by explicit path. To REFUSE a known-broken build range outright, commit a
-`dispatcher.minimum_release` floor in the target repository's `.livespec.jsonc`.
-Second-order trap, same incident: the failure write-up quoted the literal
+result carries before concluding anything about the factory. The remedy brings
+the SESSION onto the current build and dispatches on the NORMAL path: restart
+the session, or issue a human-typed `/reload-plugins` — either rebinds it
+afresh (confirm the rebind by lease ownership per
+`.ai/plugin-cache-lease-and-rebind.md`, not by the reload's confirmation line).
+Do NOT keep your own work moving by invoking the registered build's
+`scripts/bin/` entry point by explicit path, or otherwise routing a live
+session around the stale build: that normalizes the outage and validates only
+your private path, never the one every other session dispatches through —
+§"Stop the line for breakages" below governs. To REFUSE a known-broken build
+range outright before it can execute, commit a `dispatcher.minimum_release`
+floor in the target repository's `.livespec.jsonc` through the ordinary release
+path. Second-order trap, same incident: the failure write-up quoted the literal
 opener into the item's own comment, which is exactly the poisoning case above —
 file such a failure with the U+27E6 / U+27E7 substitution, never verbatim.
+
+**Stop the line for breakages.** When shared factory or fleet tooling is
+BROKEN — a bad model/adapter config, a stale-but-fixable plugin build a session
+dispatches through, a mint/credential outage, or a gate wedged by a defect —
+HALT, fix the root cause or notify its owner and WAIT for the fix, and resume
+only on the NORMAL path once the fix rolls out through the ordinary channel
+(release → `ensure-plugins` → reload → normal dispatch). Never pin a build,
+re-route to another factory, or otherwise route around a breakage to keep your
+own work moving: a broken-window workaround normalizes the outage, hides it from
+a real fix, and validates only your private path, not the one every other
+session and fleet member uses. A transient — a rate-limit window that resets, an
+intermittent ENOSPC — is waited out and retried on the normal path; a permanent
+tool limitation is designed within — neither is a bypass. The stale-build trap
+above is the canonical instance: rebind the session (restart or
+`/reload-plugins`) rather than invoke a fixed build by explicit path to sidestep
+the stale one. Fleet source: the livespec `agent-disciplines.md` discipline
+§"A factory or tooling BREAKAGE stops the line" (maintainer ruling 2026-09-10).
 
 ## Host Fabro server (self-hosted dark factory)
 
@@ -980,9 +1005,14 @@ ssh <factory-host> df -h /
 
 The blast radius is every repo routed to that factory, not the one item that
 reported first; on 2026-08-22 two different repos failed with this signature
-within 44 seconds. If a second declared factory is available, route the dispatch
-there immediately, for example `--factory vps`, while the full factory cleanup
-proceeds. livespec-overseer carries the phantom-claim list where this signature is
+within 44 seconds. Factory ENOSPC is a transient breakage of a shared host: do
+NOT re-route the dispatch to the second declared factory to keep your own work
+moving — §"Stop the line for breakages" above treats an intermittent ENOSPC as
+a transient that is WAITED OUT and retried on the NORMAL path. Notify the
+factory owner (or clear the space yourself) so the full factory cleanup
+proceeds, WAIT for the host to recover, and re-dispatch on the normal path once
+`ssh <factory-host> df -h /` shows headroom. livespec-overseer carries the
+phantom-claim list where this signature is
 a sibling-repo update; route that update to livespec-overseer instead of editing
 that repo from this one.
 
