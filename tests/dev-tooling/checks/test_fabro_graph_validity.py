@@ -122,6 +122,71 @@ def _seed_payload(*, root: Path, graph: str, with_run_config: bool = True) -> Pa
     return directory
 
 
+# A stub that models the UPSTREAM fabro 0.254.0 release CI pins: it cannot parse
+# the fork-only `run.checkpoint.commit_timeout` key (fork PR #552), and refuses
+# before reading the graph. Its refusal never names `all_conditional_edges`, so
+# a mutant handed to it un-normalized fails the matcher control rather than
+# passing it for the wrong reason.
+_UPSTREAM_STUB = (
+    "#!/bin/sh\n"
+    "if [ -f workflow.toml ] && grep -q '^[[:space:]]*commit_timeout[[:space:]]*=' workflow.toml;"
+    " then\n"
+    "    echo 'settings file is not valid TOML: unknown field commit_timeout in run.checkpoint'\n"
+    "    exit 1\n"
+    "fi\n" + _RULE_FAITHFUL_STUB.split("\n", 1)[1]
+)
+
+_FORK_ONLY_SETTINGS = '[run.checkpoint]\ncommit_timeout = "10m"\nskip_git_hooks = false\n'
+
+
+def test_this_repositorys_real_graphs_pass_an_engine_that_refuses_fork_only_settings(
+    check: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The CI venue: the pinned upstream engine cannot parse the fork-only key."""
+    _use_stub(monkeypatch=monkeypatch, root=tmp_path, body=_UPSTREAM_STUB)
+
+    found = check.report(repo_root=_REPO_ROOT)
+
+    assert found.findings == []
+
+
+def test_a_fork_only_setting_is_stripped_named_and_never_edited_in_place(
+    check: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _use_stub(monkeypatch=monkeypatch, root=tmp_path, body=_UPSTREAM_STUB)
+    directory = _seed_payload(root=tmp_path, graph=_VALID_GRAPH)
+    settings = directory / "workflow.toml"
+    _ = settings.write_text(_FORK_ONLY_SETTINGS, encoding="utf-8")
+
+    found = check.report(repo_root=tmp_path)
+
+    assert found.findings == []
+    assert [note for note in found.normalized if "run.checkpoint.commit_timeout" in note] != []
+    assert settings.read_text(encoding="utf-8") == _FORK_ONLY_SETTINGS
+
+
+def test_a_same_named_key_in_another_table_is_left_alone(check: ModuleType) -> None:
+    text = '[run.other]\ncommit_timeout = "1m"\n\n' + _FORK_ONLY_SETTINGS
+
+    result = check.normalized_settings(text=text)
+
+    assert result.stripped == ["run.checkpoint.commit_timeout"]
+    assert '[run.other]\ncommit_timeout = "1m"' in result.text
+    assert result.text.count("commit_timeout") == 1
+
+
+def test_unparseable_settings_are_a_finding_rather_than_a_silent_pass(
+    check: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _use_stub(monkeypatch=monkeypatch, root=tmp_path, body=_RULE_FAITHFUL_STUB)
+    directory = _seed_payload(root=tmp_path, graph=_VALID_GRAPH)
+    _ = (directory / "workflow.toml").write_text("[run\n", encoding="utf-8")
+
+    found = check.report(repo_root=tmp_path)
+
+    assert [finding for finding in found.findings if "settings control" in finding] != []
+
+
 def test_this_repositorys_real_graphs_pass_and_their_mutants_are_rejected(
     check: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

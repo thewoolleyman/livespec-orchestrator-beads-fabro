@@ -146,14 +146,21 @@ Current checks:
   control instead of certifying the graph. The ONE lever,
   `LIVESPEC_FABRO_GRAPH_VALIDATION`, is consulted only on the branch where NO
   binary resolved, and never suppresses a validation that could have run. Its
-  default `warn_when_fabro_absent` is deliberate rather than lax: `fabro` is a
-  host artifact, absent by construction in a GitHub Actions runner and inside a
-  Fabro sandbox — where this aggregate runs as the in-run janitor gate — so
-  fail-closed would stop the factory rather than harden it. The absence is never
-  silent: one error-level record per graph not looked at, plus a summary saying
-  so. `fail_when_fabro_absent` makes that absence fatal and belongs wherever the
-  binary is expected; a value outside that closed space is a failure, never a
-  fallback.
+  default `warn_when_fabro_absent` is deliberate rather than lax: `fabro` is
+  absent by construction inside a Fabro sandbox — where this aggregate runs as
+  the in-run janitor gate — so fail-closed would stop the factory rather than
+  harden it. The absence is never silent: one error-level record per graph not
+  looked at, plus a summary saying so. `fail_when_fabro_absent` makes that
+  absence fatal; CI sets it on the metadata batch after installing the pinned,
+  checksum-verified UPSTREAM fabro 0.254.0 release, and a value outside that
+  closed space is a failure, never a fallback. Every validation runs in a
+  scratch COPY of the payload whose `workflow.toml` loses exactly the keys
+  `FORK_ONLY_SETTINGS` names (today `run.checkpoint.commit_timeout`, fork PR
+  #552, which upstream 0.254.0 cannot parse and then drops the whole settings
+  file over). A settings control requires the copy to equal the original minus
+  those keys, and each stripped key is logged, so CI's normalization is
+  reported rather than invisible; a new fork-only key makes the upstream engine
+  refuse, failing the gate loudly rather than passing it.
 - `work_item_state_invariants.py` — the beads-private work-item-state
   doctor check (SPECIFICATION/contracts.md §"Work-item beads-issue
   mapping" invariants block; L1a slice S6). Walks every materialized
