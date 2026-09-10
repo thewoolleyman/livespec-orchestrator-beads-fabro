@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.146.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.146.1...v0.146.2) (2026-09-10)
+
+
+### Bug Fixes
+
+* **dev-tooling:** gate every factory graph on fabro validate (bd-ib-6t4) ([c162939](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c162939b5c722d528977bfa795012ab067d48e10))
+
 ## [0.146.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.146.0...v0.146.1) (2026-09-10)
 
 
