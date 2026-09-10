@@ -3,6 +3,13 @@
 The merged-PR RESOLUTION half lives in `_dispatcher_reconcile_merged_pr` and is
 re-exported here, so this module stays the command supervisor — preflight,
 journal, janitor, acceptance, outcome — and its published surface is unchanged.
+
+The `--regrade` ARM lives in `_dispatcher_reconcile_regrade` for the same
+reason: it answers a different question (has the criteria repair made an
+already-merged item gradeable?) with different evidence and no janitor at all,
+so it is a sibling of the janitor path rather than a branch inside it. Both
+arms end at the one outcome tail below, which is what keeps the journal record,
+the emitted payload and the exit code identical between them.
 """
 
 from __future__ import annotations
@@ -62,6 +69,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_merged_pr 
     parse_merged_pr_list,
     resolve_merged_pr,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_regrade import run_regrade
 from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -81,14 +89,30 @@ _REWORK_PENDING_REFUSAL = (
     "dispatch already COMPLETED its post-run disposition and that disposition's outcome "
     "was rework. Drive the fix-forward rework re-dispatch instead — the next dispatcher "
     "drain pass, or `dispatcher.py dispatch --repo {repo} --item {item_id}`. --force does "
-    "not bypass this refusal.\n"
+    "not bypass this refusal. When the work is ALREADY merged and only the acceptance "
+    "criteria have since been repaired, re-run with --regrade to re-grade the merge "
+    "instead of re-implementing it.\n"
+)
+# The mirror refusal: `--regrade` revisits a verdict, so an item that never
+# reached a failing one has nothing for the arm to do.
+_REGRADE_UNMARKED_REFUSAL = (
+    "ERROR: reconcile-merged --regrade refused: work-item {item_id} does not carry "
+    "rework:pending, so no acceptance verdict is waiting to be revisited. Run "
+    "reconcile-merged without --regrade.\n"
 )
 
 
 def run_reconcile_merged_command(
     *, args: argparse.Namespace, runner: CommandRunner | None = None
 ) -> int:
-    """Run the post-merge janitor + acceptance valve for a stranded merged item."""
+    """Run the reconcile valve for a stranded merged item, on its selected arm.
+
+    Without `--regrade` that is the post-merge janitor plus the acceptance
+    path; with it, the re-grade of an already-merged `rework:pending` item
+    against its repaired criteria. Both arms share this function's preflight,
+    journal and outcome tail, so the two differ in what they DO and never in
+    how they report it.
+    """
     repo = Path(args.repo)
     # FIRST, ahead of the tenant read and of every write: an unattributed
     # invocation under `dispatcher.require_invoker` is refused here so the
@@ -108,7 +132,34 @@ def run_reconcile_merged_command(
         identity=invoker_from_args(args=args),
     )
     plan = reconcile_plan(repo=repo, item=item, janitor=janitor, runner=command_runner)
-    merged = resolve_merged_pr(plan=plan, item=item, runner=command_runner, journal=journal)
+    outcome = (
+        run_regrade(repo=repo, item=item, plan=plan, runner=command_runner, journal=journal)
+        if args.regrade
+        else _janitor_and_accept(
+            repo=repo, item=item, plan=plan, runner=command_runner, journal=journal
+        )
+    )
+    if isinstance(outcome, int):
+        return outcome
+    journal.append(record={"stage": "outcome", "outcome": _outcome_payload(outcome=outcome)})
+    emit_outcomes(outcomes=[outcome], as_json=args.as_json)
+    return 0 if outcome.status == "green" and outcome.stage == "done" else EXIT_FAILURE
+
+
+def _janitor_and_accept(
+    *,
+    repo: Path,
+    item: WorkItem,
+    plan: DispatchPlan,
+    runner: CommandRunner,
+    journal: JournalFile,
+) -> DispatchOutcome | int:
+    """The ordinary arm: resolve the merge, re-run the janitor, then accept.
+
+    Returns the terminal outcome for the shared tail to journal and emit, or an
+    exit code when no single merged pull request resolves.
+    """
+    merged = resolve_merged_pr(plan=plan, item=item, runner=runner, journal=journal)
     if isinstance(merged, str):
         _ = write_stderr(text=merged)
         return EXIT_PRECONDITION_ERROR
@@ -118,15 +169,13 @@ def run_reconcile_merged_command(
     outcome = post_merge(
         outcome_type=DispatchOutcome,
         plan=plan,
-        runner=command_runner,
+        runner=runner,
         journal=journal,
         merged=merged,
     )
     if outcome.status == "green" and outcome.stage == "done":
         complete_and_accept(repo=repo, item=item, outcome=outcome, journal=journal)
-    journal.append(record={"stage": "outcome", "outcome": _outcome_payload(outcome=outcome)})
-    emit_outcomes(outcomes=[outcome], as_json=args.as_json)
-    return 0 if outcome.status == "green" and outcome.stage == "done" else EXIT_FAILURE
+    return outcome
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -144,7 +193,7 @@ def _reconcile_preflight(*, args: argparse.Namespace, repo: Path) -> _ReconcileP
     if item is None:
         _ = write_stderr(text=f"ERROR: work-item {args.item} not found\n")
         return EXIT_PRECONDITION_ERROR
-    item_refusal = _item_precondition_refusal(item=item, repo=repo)
+    item_refusal = _item_precondition_refusal(item=item, repo=repo, regrade=args.regrade)
     if item_refusal is not None:
         _ = write_stderr(text=item_refusal)
         return EXIT_PRECONDITION_ERROR
@@ -183,16 +232,26 @@ def _janitor_preflight(
     return janitor, None
 
 
-def _item_precondition_refusal(*, item: WorkItem, repo: Path) -> str | None:
-    """The two refusals decided by the item's own ledger state, in order.
+def _item_precondition_refusal(*, item: WorkItem, repo: Path, regrade: bool) -> str | None:
+    """The refusals decided by the item's own ledger state, in order.
 
     Rework-pending is checked FIRST because it binds WHATEVER the item's
     status is, so a marked `acceptance` item is refused here rather than
     reaching the status gate; and it sits ahead of the `--force`-gated live
     lock check in the caller so `--force` cannot reach past it.
+
+    `--regrade` is the ONE thing that reaches past it, and only onto the marked
+    item the arm exists for. The two flags are deliberately not
+    interchangeable: `--force` bypasses the live-dispatch heartbeat and is
+    explicitly refused here, while `--regrade` selects a different arm that
+    re-grades rather than re-dispositions. An UNMARKED item is refused the arm
+    for the mirror-image reason — its acceptance never failed, so there is no
+    verdict to revisit and the ordinary valve is the route.
     """
-    if item.rework_pending:
+    if item.rework_pending and not regrade:
         return _REWORK_PENDING_REFUSAL.format(item_id=item.id, repo=repo)
+    if regrade and not item.rework_pending:
+        return _REGRADE_UNMARKED_REFUSAL.format(item_id=item.id)
     if item.status not in _RECONCILE_MERGED_ALLOWED_STATUSES:
         return (
             f"ERROR: reconcile-merged expected active or parked item {item.id}; "

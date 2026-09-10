@@ -42,8 +42,11 @@ def add_probe_arguments(*, parser: argparse.ArgumentParser) -> None:
     _ = parser.add_argument("--item", dest="item", default=None)
     # The reconcile valve's live-dispatch bypass is never the probe's to take:
     # the probe drives its own cycle, so there is no dead dispatcher process to
-    # reach around. Defaulted rather than exposed so no invocation can arm it.
-    parser.set_defaults(force=False)
+    # reach around. Its re-grade arm is never the probe's either — the probe's
+    # item reaches acceptance for the first time, so it carries no failed
+    # verdict to revisit. Both are defaulted rather than exposed so no
+    # invocation can arm them.
+    parser.set_defaults(force=False, regrade=False)
 
 
 def add_dispatch_common(*, parser: argparse.ArgumentParser) -> None:

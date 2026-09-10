@@ -11,6 +11,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_completion,
     _dispatcher_dispatch_lock,
@@ -606,6 +607,223 @@ def test_parse_merged_pr_list_accepts_branch_or_title_and_rejects_unusable_shape
     assert [(match.number, match.merge_sha) for match in matches] == [(4, "ddd"), (5, "eee")]
 
 
+def test_reconcile_merged_declares_the_regrade_option(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The arm is reachable at all: `--regrade` is on the subcommand's surface."""
+    with pytest.raises(SystemExit):
+        main(argv=["reconcile-merged", "--help"])
+
+    assert "--regrade" in capsys.readouterr().out
+
+
+def test_regrade_pass_closes_the_item_and_clears_rework_pending(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The PASS arm, driven through the REAL acceptance pass.
+
+    Nothing about the verdict is stood in: the criteria are the item's own
+    field, the merged diff is what `gh pr diff` returns, and the grade is the
+    shipped `criteria_checks`. Stubbing the pass here would assert only that a
+    PASS closes an item, which is the half that was never in doubt.
+    """
+    repo = _repo(tmp_path=tmp_path)
+    item = _item(acceptance_criteria="- The regrade arm reconciles a stranded merge.\n")
+    append_work_item(path=_config(), item=item)
+    _seed_rework_pending(item_id=item.id, failed_ai_passes=1)
+    runner = _Runner(
+        queue=[
+            *_plan_build_probe(),
+            _ok(stdout=_pr_json(number=2459, state="MERGED", sha="51d99744")),
+            # `git merge-base --is-ancestor <sha> origin/master` answers yes.
+            _ok(),
+            _ok(stdout=_regrade_diff()),
+        ]
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=runner)
+
+    exit_code = main(
+        argv=["reconcile-merged", "--repo", str(repo), "--item", item.id, "--regrade", "--json"]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload[0]["status"] == "green"
+    assert payload[0]["stage"] == "done"
+    assert payload[0]["merge_sha"] == "51d99744"
+    stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
+    assert (stored.status, stored.resolution) == ("done", "completed")
+    assert stored.rework_pending is False
+    stages = [record["stage"] for record in _journal_records(repo=repo)]
+    # No Fabro run and no janitor: the arm re-grades a merge that already landed.
+    assert "fabro-run" not in stages
+    assert not [stage for stage in stages if str(stage).startswith("janitor-")]
+    assert stages == [
+        "reconcile-pr-view-branch",
+        "regrade-merge-containment",
+        "acceptance-ai-pass",
+        "ledger-regrade-accept",
+        "outcome",
+    ]
+    # The containment probe asked about the resolved merge against the tip.
+    assert runner.calls[2][0][-3:] == ["--is-ancestor", "51d99744", "origin/master"]
+
+
+def test_regrade_fail_leaves_status_labels_and_failed_passes_untouched(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The FAIL arm writes NOTHING — the re-grade must not cost the item.
+
+    `acceptance_failed_ai_passes` is seeded to the value the original failing
+    disposition wrote, because an arm that re-charged the rework cap for a
+    second look would burn exactly the item this recovery exists to rescue,
+    and an unseeded metadata field could not observe that.
+    """
+    repo = _repo(tmp_path=tmp_path)
+    item = _item(acceptance_criteria="- The merged diff carries a wholly unrelated subject.\n")
+    append_work_item(path=_config(), item=item)
+    _seed_rework_pending(item_id=item.id, failed_ai_passes=1)
+    runner = _Runner(
+        queue=[
+            *_plan_build_probe(),
+            _ok(stdout=_pr_json(number=2459, state="MERGED", sha="51d99744")),
+            _ok(),
+            _ok(stdout=_regrade_diff()),
+        ]
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=runner)
+
+    exit_code = main(
+        argv=["reconcile-merged", "--repo", str(repo), "--item", item.id, "--regrade", "--json"]
+    )
+
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)[0]["stage"] == "regrade"
+    assert "left unchanged" in captured.err
+    stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
+    assert (stored.status, stored.resolution) == ("active", None)
+    assert stored.rework_pending is True
+    ledger_row = make_beads_client(config=_config()).show_issue(issue_id=item.id)
+    assert ledger_row["metadata"]["acceptance_failed_ai_passes"] == 1
+    stages = [record["stage"] for record in _journal_records(repo=repo)]
+    assert "ledger-regrade-accept" not in stages
+
+
+def test_regrade_refuses_every_merge_it_cannot_prove(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each way the unfabricatable evidence can fail, refusing on its own.
+
+    The three legs are: no merged PR resolves at all; several do, so the arm
+    cannot say WHICH merge it would be closing the item against; and one
+    resolves whose merge commit this repository cannot show on the default
+    branch. Any leg alone would leave the others unproven, and all three must
+    refuse BEFORE the acceptance pass runs — the whole point of the arm is that
+    it grades a merge it has established, never one it was told about.
+    """
+    repo = _repo(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    _seed_rework_pending(item_id=item.id, failed_ai_passes=1)
+    unmerged = _Runner(
+        queue=[
+            *_plan_build_probe(),
+            CommandResult(exit_code=1, stdout="", stderr="not found"),
+            _ok(stdout="[]"),
+        ]
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=unmerged)
+
+    unmerged_exit = main(
+        argv=["reconcile-merged", "--repo", str(repo), "--item", item.id, "--regrade"]
+    )
+
+    ambiguous = _Runner(
+        queue=[
+            *_plan_build_probe(),
+            CommandResult(exit_code=1, stdout="", stderr="not found"),
+            _ok(
+                stdout=json.dumps(
+                    [
+                        _list_pr(number=4, title=f"fix {item.id}", sha="ddd"),
+                        _list_pr(number=5, title=f"follow-up {item.id}", sha="eee"),
+                    ]
+                )
+            ),
+        ]
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=ambiguous)
+
+    ambiguous_exit = main(
+        argv=["reconcile-merged", "--repo", str(repo), "--item", item.id, "--regrade"]
+    )
+
+    uncontained = _Runner(
+        queue=[
+            *_plan_build_probe(),
+            _ok(stdout=_pr_json(number=2459, state="MERGED", sha="51d99744")),
+            CommandResult(exit_code=1, stdout="", stderr=""),
+        ]
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=uncontained)
+
+    uncontained_exit = main(
+        argv=["reconcile-merged", "--repo", str(repo), "--item", item.id, "--regrade"]
+    )
+
+    assert (unmerged_exit, ambiguous_exit, uncontained_exit) == (3, 3, 3)
+    err = capsys.readouterr().err
+    assert "no merged PR resolves" in err
+    assert "ambiguous merged PR candidates" in err
+    assert "is not an ancestor of origin/master" in err
+    stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
+    assert (stored.status, stored.rework_pending) == ("active", True)
+    stages = [record["stage"] for record in _journal_records(repo=repo)]
+    assert "acceptance-ai-pass" not in stages
+
+
+def test_regrade_is_refused_on_an_item_carrying_no_rework_marker(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    _assert_reconcile_command_registered(capsys=capsys)
+    repo = _repo(tmp_path=tmp_path)
+    item = _item(status="active")
+    append_work_item(path=_config(), item=item)
+
+    exit_code = main(argv=["reconcile-merged", "--repo", str(repo), "--item", item.id, "--regrade"])
+
+    assert exit_code == 3
+    assert "does not carry rework:pending" in capsys.readouterr().err
+
+
+def test_reconcile_merged_keeps_the_rework_pending_refusal_without_regrade(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """The unchanged default: a marked item is still refused, and told the arm."""
+    repo = _repo(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    _seed_rework_pending(item_id=item.id, failed_ai_passes=1)
+
+    exit_code = main(argv=["reconcile-merged", "--repo", str(repo), "--item", item.id])
+
+    assert exit_code == 3
+    err = capsys.readouterr().err
+    assert "carries rework:pending" in err
+    assert "--force does not bypass this refusal" in err
+    assert "--regrade" in err
+    assert not (repo / "tmp" / "fabro-dispatch-journal.jsonl").exists()
+
+
 def test_reconcile_merged_does_not_relax_forbidden_move_targets(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -711,6 +929,39 @@ def _item(**overrides: object) -> WorkItem:
         acceptance_policy="ai-only",
     )
     return replace(base, **overrides)
+
+
+def _seed_rework_pending(*, item_id: str, failed_ai_passes: int) -> None:
+    """Seed the ledger state a FAILING acceptance disposition leaves behind.
+
+    Written through the raw label and the raw metadata key the store
+    materializes those two fields FROM, so the fixture states the ledger fact
+    rather than borrowing either writer. `append_work_item` cannot seed the
+    marker at all — only the two entries the rework-pending contract names may
+    stamp it — so passing `rework_pending=True` to the item would read back
+    False and the arm under test would never be reached.
+
+    The metadata is MERGED rather than replaced: the fake's `update_issue`
+    overwrites the whole column, and the rank the append just wrote lives
+    there.
+    """
+    client = make_beads_client(config=_config())
+    metadata = dict(client.show_issue(issue_id=item_id).get("metadata", {}))
+    metadata["acceptance_failed_ai_passes"] = failed_ai_passes
+    client.update_issue(issue_id=item_id, add_labels=["rework:pending"], metadata=metadata)
+
+
+def _regrade_diff() -> str:
+    """A merged patch carrying the PASS criterion's vocabulary and not the FAIL's."""
+    return (
+        "diff --git a/commands/_dispatcher_reconcile_regrade.py "
+        "b/commands/_dispatcher_reconcile_regrade.py\n"
+        "--- a/commands/_dispatcher_reconcile_regrade.py\n"
+        "+++ b/commands/_dispatcher_reconcile_regrade.py\n"
+        "@@ -0,0 +1,2 @@\n"
+        "+# The regrade arm reconciles a stranded merge.\n"
+        "+REGRADE_STAGE = 'regrade'\n"
+    )
 
 
 def _plan_build_probe() -> list[CommandResult]:

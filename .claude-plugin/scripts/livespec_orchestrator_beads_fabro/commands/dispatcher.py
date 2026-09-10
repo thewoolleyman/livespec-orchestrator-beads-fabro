@@ -28,7 +28,8 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
   dispatcher.py clear-provider-exhaustion --provider <name> --reason <text>
                                           [--repo <path>] [--invoker <id>]
                                           [--journal <path>]
-  dispatcher.py reconcile-merged --repo <path> --item <id> [--invoker <id>] [--json]
+  dispatcher.py reconcile-merged --repo <path> --item <id> [--invoker <id>]
+                                 [--regrade] [--json]
   dispatcher.py probe --repo <path> --item <id> [common flags]
   dispatcher.py dispatch --repo <path> --item <id> [common flags]
   dispatcher.py loop --repo <path> --budget <n> [--parallel <k>]
@@ -60,6 +61,19 @@ dispatch-safety trio.
 active item whose dispatch process died before post-run disposition: it
 resolves the merged PR from GitHub, re-runs only the post-merge janitor,
 and then enters the existing acceptance path without relaunching Fabro.
+`--regrade` selects its second arm, for the OTHER stranding: an item whose
+dispatch completed, whose PR merged, and whose acceptance then failed on
+criteria that have since been repaired. That item carries `rework:pending`
+and the ordinary arm refuses it, because re-implementing already-merged work
+cuts an empty branch and spends an `acceptance_rework_cap` attempt to fail.
+The regrade arm re-grades instead: it proceeds only when the merged PR
+resolves AND its merge commit is an ancestor of `origin/<default branch>`,
+runs the same acceptance pass against the item's current effective criteria,
+closes the item on PASS (which clears the marker through the lifecycle write
+seam), and on any other verdict leaves the item's status, labels and
+`acceptance_failed_ai_passes` exactly as it found them. It launches no Fabro
+run, cuts no branch, and runs no janitor (see
+`_dispatcher_reconcile_regrade`).
 `probe` is the loop probe of contracts.md: the take-never-file health command
 that drives ONE designated, ALREADY-FILED work-item through the whole cycle
 with an assertion at each stage. It refuses
@@ -462,6 +476,17 @@ def _add_reconcile_merged(*, parser: argparse.ArgumentParser) -> None:
         help=(
             "bypass only the live-dispatch heartbeat refusal after confirming the "
             "original dispatcher process is dead"
+        ),
+    )
+    _ = parser.add_argument(
+        "--regrade",
+        dest="regrade",
+        action="store_true",
+        help=(
+            "re-grade an already-merged rework:pending item against its current "
+            "effective acceptance criteria instead of refusing it; proceeds only "
+            "when the merged PR resolves and its merge commit is an ancestor of the "
+            "default branch, and leaves the item untouched on any non-PASS verdict"
         ),
     )
     _ = parser.add_argument("--json", dest="as_json", action="store_true")
