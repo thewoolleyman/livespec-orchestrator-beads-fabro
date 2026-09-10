@@ -5,6 +5,13 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_evidence_scope import (
+    DiffEvidence,
+    EvidenceScope,
+    diff_evidence,
+    scope_for,
+)
+
 __all__: list[str] = [
     "CriterionCheck",
     "criteria_checks",
@@ -114,11 +121,11 @@ def criteria_checks(
     criteria = criteria_lines(criteria_text=criteria_text)
     if not criteria:
         return ()
-    normalized_diff = "" if merged_diff is None else merged_diff.lower()
+    evidence = diff_evidence(merged_diff=merged_diff)
     return tuple(
         _judge_criterion(
             criterion=criterion,
-            normalized_diff=normalized_diff,
+            evidence=evidence,
             telemetry_passed=telemetry_passed,
         )
         for criterion in criteria
@@ -292,10 +299,11 @@ def _is_non_assertion_line(*, text: str) -> bool:
 
 
 def _judge_criterion(
-    *, criterion: str, normalized_diff: str, telemetry_passed: bool
+    *, criterion: str, evidence: DiffEvidence, telemetry_passed: bool
 ) -> CriterionCheck:
     terms = _significant_terms(text=criterion)
-    if _has_diff_evidence(terms=terms, normalized_diff=normalized_diff):
+    scope = scope_for(evidence=evidence, criterion=criterion)
+    if _has_diff_evidence(terms=terms, scope=scope):
         return CriterionCheck(text=criterion, passed=True, reason="matched merged diff evidence")
     if telemetry_passed and _is_verification_assertion(terms=terms):
         return CriterionCheck(
@@ -304,12 +312,12 @@ def _judge_criterion(
     return CriterionCheck(
         text=criterion,
         passed=False,
-        reason=_failure_reason(terms=terms, normalized_diff=normalized_diff),
+        reason=_failure_reason(terms=terms, scope=scope),
     )
 
 
-def _has_diff_evidence(*, terms: tuple[str, ...], normalized_diff: str) -> bool:
-    matched = tuple(term for term in terms if term in normalized_diff)
+def _has_diff_evidence(*, terms: tuple[str, ...], scope: EvidenceScope) -> bool:
+    matched = tuple(term for term in terms if term in scope.text)
     return len(matched) >= _DIFF_EVIDENCE_MINIMUM_TERMS
 
 
@@ -332,10 +340,10 @@ def _is_verification_assertion(*, terms: tuple[str, ...]) -> bool:
     return bool(matched) and len(matched) * _VERIFICATION_DOMINANCE_DIVISOR >= len(terms)
 
 
-def _failure_reason(*, terms: tuple[str, ...], normalized_diff: str) -> str:
-    if any(term in normalized_diff for term in terms):
+def _failure_reason(*, terms: tuple[str, ...], scope: EvidenceScope) -> str:
+    if any(term in scope.text for term in terms):
         return "insufficient merged diff evidence"
-    return "no merged diff or telemetry evidence"
+    return scope.absent_reason
 
 
 def _significant_terms(*, text: str) -> tuple[str, ...]:
