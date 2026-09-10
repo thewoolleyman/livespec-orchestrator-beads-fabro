@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.148.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.148.0...v0.148.1) (2026-09-10)
+
+
+### Bug Fixes
+
+* **dispatcher:** enforce operator Git author for Fabro runs ([ba3e6ab](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ba3e6aba81f4e0566b309ed333f4c085b16e014f))
+
 ## [0.148.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.147.0...v0.148.0) (2026-09-10)
 
 
