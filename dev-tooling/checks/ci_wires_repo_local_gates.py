@@ -54,10 +54,14 @@ import structlog  # noqa: E402
 __all__: list[str] = ["REQUIRED_SLUGS", "findings", "main"]
 
 # The repo-local gates that MUST run in CI and on a payload-only push, plus
-# this guard itself.
+# this guard itself. `check-fabro-graph-validity` joined after it sat in the
+# local aggregate for a whole release while CI never ran it (bd-ib-6t4): an
+# invalid factory graph takes the whole factory down, so its absence from CI is
+# the most expensive one this guard can catch.
 REQUIRED_SLUGS: tuple[str, ...] = (
     "check-no-fleet-toolchain-literals",
     "check-seam-equivalence",
+    "check-fabro-graph-validity",
     "check-ci-wires-repo-local-gates",
 )
 

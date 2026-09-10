@@ -21,7 +21,11 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _CHECK_PATH = _REPO_ROOT / "dev-tooling" / "checks" / "ci_wires_repo_local_gates.py"
 
-_GATES = ("check-no-fleet-toolchain-literals", "check-seam-equivalence")
+_GATES = (
+    "check-no-fleet-toolchain-literals",
+    "check-seam-equivalence",
+    "check-fabro-graph-validity",
+)
 
 
 def _load_check() -> ModuleType:
@@ -87,7 +91,7 @@ def _seed(
     _ = (root / "justfile").write_text(_justfile(slugs=recipe_slugs), encoding="utf-8")
 
 
-def test_the_guarded_slugs_are_the_two_integration_gates_and_the_guard_itself(
+def test_the_guarded_slugs_are_the_repo_local_payload_gates_and_the_guard_itself(
     check: ModuleType,
 ) -> None:
     assert set(check.REQUIRED_SLUGS) == {*_GATES, "check-ci-wires-repo-local-gates"}

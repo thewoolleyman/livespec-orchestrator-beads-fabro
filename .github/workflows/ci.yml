@@ -825,8 +825,18 @@ jobs:
       - name: Install canonical worktree pack (satisfy invariant)
         run: just install-worktree-pack
 
+      # bd-ib-6t4: the factory-graph gate needs a real `fabro` binary, and until
+      # this step CI had none, so the gate never ran here at all. The pinned,
+      # sha256-verified upstream release is installed first, and the batch runs
+      # the gate FAIL-CLOSED: an unresolvable binary is a failure, not a skip.
+      - name: Install pinned fabro for the factory-graph gate
+        run: just install-ci-fabro
+
       - name: Run the batched metadata checks
         env:
+          LIVESPEC_FABRO_GRAPH_VALIDATION: fail_when_fabro_absent
+          LIVESPEC_FABRO_BIN: /usr/local/bin/fabro
+          FABRO_NO_UPGRADE_CHECK: "1"
           LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST: "true"
           # Arm the PR-gate-parity guard (livespec plan pr-gate-master-parity
           # R3, epic livespec-citqsd): flip check-ci-gate-parity from warn
@@ -851,6 +861,7 @@ jobs:
           just check-self-hosted-routing || failed="$failed check-self-hosted-routing"
           just check-tool-backed-check-completeness || failed="$failed check-tool-backed-check-completeness"
           just check-codex-plugin-structure || failed="$failed check-codex-plugin-structure"
+          just check-fabro-graph-validity || failed="$failed check-fabro-graph-validity"
           just check-bd-guard || failed="$failed check-bd-guard"
           just check-codex-skill-picker || failed="$failed check-codex-skill-picker"
           just check-agents-ai-references-resolve || failed="$failed check-agents-ai-references-resolve"

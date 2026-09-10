@@ -767,6 +767,14 @@ check-ci-wires-repo-local-gates:
 check-fabro-graph-validity:
     uv run python dev-tooling/checks/fabro_graph_validity.py
 
+# `install-ci-fabro` — CI's metadata batch runs this before
+# `check-fabro-graph-validity`, which it runs with
+# LIVESPEC_FABRO_GRAPH_VALIDATION=fail_when_fabro_absent. It installs the pinned,
+# sha256-verified upstream fabro v0.254.0 musl release; the script records why
+# upstream and not the factory's fork build.
+install-ci-fabro:
+    bash dev-tooling/install-ci-fabro.sh
+
 # livespec core's doctor STATIC phase (reference-discipline + out-of-band
 # invariants) against THIS repo's SPECIFICATION/ tree, wired fleet-wide per
 # livespec epic livespec-6jfq. core ships the checker: doctor_static.py is
