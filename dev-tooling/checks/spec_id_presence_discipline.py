@@ -65,6 +65,7 @@ diagnostics flow through structlog (JSON to stderr).
 from __future__ import annotations
 
 import ast
+import os
 import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -288,8 +289,24 @@ def fixture_path(*, repo_root: Path) -> Path:
 
 
 def module_paths(*, root: Path) -> list[Path]:
-    """Every module the scan walks under `root`."""
-    return sorted(root.rglob("*.py"))
+    """Every module the scan walks under `root`.
+
+    The walked tree is LIVE, so it can change underneath the walk. `os.walk`
+    rather than `Path.rglob` because pathlib lists a directory and then opens
+    it, and lets a `FileNotFoundError` from that open escape: a `__pycache__`
+    removed concurrently between the two steps took this whole check down and
+    turned master CI red on a pure version bump. `os.walk` ignores a `scandir`
+    error by default, so a vanished subtree is dropped rather than fatal.
+
+    `__pycache__` is pruned from the descent as well as tolerated: it can
+    never hold a scanned `.py` module, and it is the directory that actually
+    races here.
+    """
+    paths: list[Path] = []
+    for parent, dirnames, filenames in os.walk(root):
+        dirnames[:] = [dirname for dirname in dirnames if dirname != "__pycache__"]
+        paths.extend(Path(parent) / name for name in filenames if name.endswith(".py"))
+    return sorted(paths)
 
 
 def path_findings(*, paths: Iterable[Path], root: Path) -> list[Finding]:
