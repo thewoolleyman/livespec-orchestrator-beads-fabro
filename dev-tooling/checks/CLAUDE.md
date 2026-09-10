@@ -129,6 +129,31 @@ Current checks:
   testable with no payload on disk; the sibling private
   `_checked_workflow_payloads.py` owns which directories a payload gate reads
   and is shared with `no_fleet_toolchain_literals.py`.
+- `fabro_graph_validity.py` — hands every committed factory graph to
+  `fabro validate` itself. A `workflow.fabro` the engine rejects takes the WHOLE
+  factory down the moment it merges, and it has happened twice —
+  `all_conditional_edges` on 2026-07-16 and again in release 0.146.0 on
+  2026-09-09 — both times past tests that checked DOT structure or the built plan
+  instead of asking the engine. It reads the SAME payload set the two other
+  payload gates read (`_checked_workflow_payloads.py`), then globs those
+  directories' parents for a `workflow.fabro` the enumeration does not name, so
+  an unregistered sibling graph is a finding rather than an unvalidated file. Its
+  matcher control is a MUTANT OF THE REAL GRAPH rather than a hand-authored
+  fixture: for each graph it makes one node's single unconditional edge
+  conditional — the exact shape both outages had — and requires the engine to
+  REJECT that mutant naming `all_conditional_edges`, so a `fabro` that accepts
+  everything, a wrong subcommand, or a path the binary never read all fail the
+  control instead of certifying the graph. The ONE lever,
+  `LIVESPEC_FABRO_GRAPH_VALIDATION`, is consulted only on the branch where NO
+  binary resolved, and never suppresses a validation that could have run. Its
+  default `warn_when_fabro_absent` is deliberate rather than lax: `fabro` is a
+  host artifact, absent by construction in a GitHub Actions runner and inside a
+  Fabro sandbox — where this aggregate runs as the in-run janitor gate — so
+  fail-closed would stop the factory rather than harden it. The absence is never
+  silent: one error-level record per graph not looked at, plus a summary saying
+  so. `fail_when_fabro_absent` makes that absence fatal and belongs wherever the
+  binary is expected; a value outside that closed space is a failure, never a
+  fallback.
 - `work_item_state_invariants.py` — the beads-private work-item-state
   doctor check (SPECIFICATION/contracts.md §"Work-item beads-issue
   mapping" invariants block; L1a slice S6). Walks every materialized

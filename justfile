@@ -428,6 +428,7 @@ check:
         check-spec-governance-default-block
         check-seam-equivalence
         check-ci-wires-repo-local-gates
+        check-fabro-graph-validity
         check-no-workflow-edits
         check-fresh-clone-setup
         check-doctor-static
@@ -741,6 +742,30 @@ check-seam-equivalence:
 # the doc-only target list. Pure-filesystem.
 check-ci-wires-repo-local-gates:
     uv run python dev-tooling/checks/ci_wires_repo_local_gates.py
+
+# `check-fabro-graph-validity` — hands every committed factory graph to
+# `fabro validate` itself, so an invalid graph can never merge and take the
+# whole factory down (2026-07-16 and again 2026-09-09, both `all_conditional_edges`,
+# both merged past tests that checked DOT structure instead of asking the
+# engine). It reads the same payload set the other two payload gates read — the
+# bundle plus every directory registered under `dispatcher.workflows` — globs
+# their parents for a graph the enumeration does not name, and proves the
+# instrument can return a hit by requiring the engine to REJECT an
+# all-conditional-edges mutant of each graph.
+#
+# THE ONE LEVER IS `LIVESPEC_FABRO_GRAPH_VALIDATION`, and its default is
+# `warn_when_fabro_absent` deliberately. `fabro` is a HOST artifact: present for
+# a developer, a pre-push and the post-merge janitor's fresh host checkout, and
+# structurally absent in a GitHub Actions runner and inside a Fabro sandbox —
+# where this very aggregate runs as the in-run janitor gate. Fail-closed there
+# would stop the factory rather than harden it. Absence is never silent: the
+# check logs, at error level, one record per graph it did not look at plus a
+# summary saying so. Set `LIVESPEC_FABRO_GRAPH_VALIDATION=fail_when_fabro_absent`
+# wherever the binary is expected, so a host that has lost its `fabro` cannot
+# quietly degrade into the warn path. Not a canonical livespec-dev-tooling slug,
+# so it is wired in the private block.
+check-fabro-graph-validity:
+    uv run python dev-tooling/checks/fabro_graph_validity.py
 
 # livespec core's doctor STATIC phase (reference-discipline + out-of-band
 # invariants) against THIS repo's SPECIFICATION/ tree, wired fleet-wide per

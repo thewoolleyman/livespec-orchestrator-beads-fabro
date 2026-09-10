@@ -17,6 +17,10 @@ targets=(
     check-no-fleet-toolchain-literals
     check-seam-equivalence
     check-ci-wires-repo-local-gates
+    # The factory-graph validity gate is here for the same reason, and it is the
+    # one whose absence has twice taken the factory down: a `workflow.fabro` edit
+    # is a zero-.py changeset, so this is the only pre-commit path it takes.
+    check-fabro-graph-validity
 )
 authored_unowned_heading_coverage_todo() {
     uv run python - <<'PY'
