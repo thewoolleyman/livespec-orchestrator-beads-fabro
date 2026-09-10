@@ -29,6 +29,7 @@ held set is carried separately from the reconciled set precisely so that
 
 from __future__ import annotations
 
+import time
 from collections.abc import Sequence
 
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
@@ -62,6 +63,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_recor
     journal_reconciled,
     journal_unauthenticated,
     reconciled_from,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_spans import (
+    emit_reconcile_termination_spans,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_terminate import (
     terminate_orphan_run,
@@ -163,6 +167,7 @@ def _reconcile_one_factory(
         factory_server_url=str(factory.server),
         attribution=inputs.attribution,
         only_work_item_id=inputs.only_work_item_id,
+        allow_goal_text_attribution=inputs.allow_goal_text_attribution,
     )
     grace = measured_grace(
         port=port,
@@ -221,4 +226,11 @@ def _reconcile_one_run(
         export_comment_id=export.comment_id,
     )
     journal_reconciled(journal=inputs.journal, run=run)
+    if inputs.telemetry_spans_path is not None and inputs.cancelling_actor is not None:
+        emit_reconcile_termination_spans(
+            run=run,
+            cancelling_actor=inputs.cancelling_actor,
+            spans_path=inputs.telemetry_spans_path,
+            now_ns=time.time_ns(),
+        )
     return run

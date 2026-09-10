@@ -5,12 +5,12 @@ Fabro run exists only for a work-item that is `active` under the newest run the
 dispatch journal recorded for it. Any other non-terminal run is holding a
 scheduler slot for a question the ledger has already answered.
 
-It reads the reconciler's `--dry-run` PROJECTION rather than re-deriving the
-join, so the check and the act cannot disagree about what an orphan is; a
-divergence between "what doctor reports" and "what reconcile-runs would do" is
-exactly the failure a second implementation would introduce. Being a dry run it
-exports nothing, terminates nothing, and journals nothing: surveying is not an
-act.
+It reads through the reconciler's `--dry-run` machinery rather than re-deriving
+the join. This observation-only call opts into goal text as a labeled hint, so
+it can flag a run whose launch record is missing; the mutating command repeats
+the join with that hint disabled and cannot act without recorded ownership.
+Being a dry run it exports nothing, terminates nothing, and journals nothing:
+surveying is not an act.
 
 FAIL-CLOSED, and specifically about the unreachable case. A factory that cannot
 be surveyed produces its OWN finding rather than an empty orphan set, because
@@ -93,6 +93,7 @@ def orphaned_factory_run_findings(
             # inputs record requires one, not because this survey writes.
             journal=JournalFile(path=journal),
             ledger=make_beads_client(config=config),
+            allow_goal_text_attribution=True,
         ),
         factories=factories,
         dry_run=True,
@@ -107,7 +108,8 @@ def _orphan_findings(*, summary: ReconcileRunsSummary) -> list[LedgerFinding]:
             item_id=run.work_item_id,
             message=(
                 f"non-terminal run {run.run_id} ({run.status_kind}) on factory "
-                f"{run.factory_name} is attributed to a work-item whose ledger status "
+                f"{run.factory_name} is attributed via {run.attribution_source} to a "
+                "work-item whose ledger status "
                 f"is {run.work_item_status!r}, not 'active' ({run.orphan_reason}); "
                 f"reconcile it with: dispatcher.py reconcile-runs --factory "
                 f"{run.factory_name}"

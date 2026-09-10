@@ -83,6 +83,13 @@ class ReconcileInputs:
     # nothing is held — and the moot-question join stands alone.
     blocked_run_grace_seconds: int = DEFAULT_BLOCKED_RUN_GRACE_SECONDS
     now_epoch: float | None = None
+    # Reconciliation telemetry shares calibration's already-tailed OTLP file.
+    # Both values are optional so pure/read-only callers keep no IO obligation.
+    telemetry_spans_path: Path | None = None
+    cancelling_actor: str | None = None
+    # Observation-only callers may use goal text as a hint. Destructive and
+    # destructive-projection callers retain the fail-safe default.
+    allow_goal_text_attribution: bool = False
 
 
 def port_for(*, inputs: ReconcileInputs, factory: FactoryTarget) -> FabroPort:

@@ -13,27 +13,20 @@ run is never an orphan, even when no dispatcher process is watching it. A
 remote run outlives the process that launched it, so "no local process is
 watching" is a statement about this host, never about the work.
 
-Attribution runs through the shared `RunAttribution` precedence — ledger
-metadata, then the journal, then the goal text. The goal regex parses prose
-the run itself carries, so a goal-template edit silently breaks it; the
-journal is what this repo recorded when it launched the run; the ledger
-stamp is what the ledger itself names. Ordering them here rather than
-locally is what keeps a run the LEDGER puts on an ACTIVE item off the
-orphan list even when its goal text names a closed one — the case the
-regex alone gets wrong, and gets wrong in the direction of terminating live
-work.
+Destructive attribution accepts recorded facts only: ledger metadata, then
+the journal. Goal text is intentionally excluded. It is rendered prose from
+the run rather than an ownership record, so it may inform read-only surfaces
+but can never authorize cancellation.
 
-The caller's attribution is composed with THIS pass's journal index rather
-than replacing it: the reconciler reads the journal for the supersession
-arm regardless, and that reading is the freshest run-to-item evidence the
-pass has. Composing keeps the metadata leg on top of both.
+The caller contributes only its ledger metadata index. THIS pass builds its
+own journal index from typed launch stamps; accepting a caller's untyped
+journal map would let outcome or reconciliation records bypass that filter.
 
-Runs whose attributed work-item id does not carry this tenant's id prefix
-are OUT OF SCOPE entirely. The family factories are shared — a dozen
-tenants submit to the same server — so without the prefix scope every other
-tenant's healthy run would read as `item-missing` against this ledger and be
-terminated. That failure would be silent and would look exactly like correct
-operation, because a foreign run is genuinely absent from this ledger.
+Runs that neither this tenant's ledger stamp nor this tenant's dispatch
+journal names are OUT OF SCOPE entirely. The family factories are shared —
+a dozen tenants submit to the same server — so a text-prefix test is not an
+ownership boundary: one tenant prefix can be a prefix of another tenant's
+work-item ids. Recorded launch data is the boundary.
 
 Every status kind Fabro can hold that is not terminal is considered. The
 predecessor sweep looked only at `runnable` / `running`, which is precisely
@@ -60,6 +53,9 @@ from livespec_orchestrator_beads_fabro.effects import (
 )
 
 __all__: list[str] = [
+    "ATTRIBUTION_SOURCE_GOAL_TEXT",
+    "ATTRIBUTION_SOURCE_JOURNAL",
+    "ATTRIBUTION_SOURCE_METADATA",
     "NON_TERMINAL_STATUS_KINDS",
     "ORPHAN_REASON_ITEM_MISSING",
     "ORPHAN_REASON_ITEM_NOT_ACTIVE",
@@ -85,9 +81,14 @@ ORPHAN_REASON_ITEM_NOT_ACTIVE = "item-not-active"
 ORPHAN_REASON_SUPERSEDED_RUN = "superseded-run"
 
 _ACTIVE_STATUS = "active"
-# The two spellings a dispatch journal record uses for the Fabro run it
-# names. `fabro-run` outcome records carry `fabro_run_id`; the
-# preserve-by-reference records carry `run_id`.
+ATTRIBUTION_SOURCE_METADATA = "metadata"
+ATTRIBUTION_SOURCE_JOURNAL = "journal"
+ATTRIBUTION_SOURCE_GOAL_TEXT = "goal-text"
+# Only the launch stamp is an ownership fact. Outcome and reconciliation
+# records may repeat a run id, but accepting those would let an earlier
+# inference bootstrap authority for a later destructive pass.
+_OWNERSHIP_JOURNAL_STAGES = ("dispatch-run-stamp",)
+# Retain both historical spellings within launch stamps.
 _RUN_ID_KEYS = ("fabro_run_id", "run_id")
 
 
@@ -107,10 +108,9 @@ class JournaledRuns:
 class FactoryRunInventory:
     """One factory's run inventory and everything the join reads it against.
 
-    `attribution` defaults to the regex-only value, which is a legitimate
-    answer rather than a degraded one: a caller with no ledger to hand still
-    resolves through the same precedence, so the day it gains one the stronger
-    leg wins with no edit here.
+    `allow_goal_text_attribution` is observation-only. Destructive callers keep
+    it false so rendered prose can never authorize cancellation; diagnostic
+    callers may opt in and expose that weaker source explicitly on the row.
 
     `only_work_item_id` narrows the GRACE arm alone, and only because that arm
     costs a `fabro inspect` per governed run: a targeted pass measures its own
@@ -127,6 +127,7 @@ class FactoryRunInventory:
     factory_server_url: str
     attribution: RunAttribution = GOAL_TEXT_ONLY
     only_work_item_id: str | None = None
+    allow_goal_text_attribution: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -140,17 +141,20 @@ class AttributedRun:
 
     run: FabroRunSummary
     work_item_id: str
+    attribution_source: str
     work_item_status: str | None
     base_reason: str | None
 
 
 def journaled_runs(*, text: str) -> JournaledRuns:
-    """Index a dispatch journal's raw text by work-item and by run id."""
+    """Index authoritative launch stamps by work-item and by run id."""
     newest: dict[str, str] = {}
     item_by_run: dict[str, str] = {}
     for line in text.splitlines():
         record = _record(line=line)
         if record is None:
+            continue
+        if record.get("stage") not in _OWNERSHIP_JOURNAL_STAGES:
             continue
         work_item_id = _str_value(value=record.get("work_item_id"))
         run_id = _run_id(record=record)
@@ -179,16 +183,21 @@ def attributed_runs(*, inventory: FactoryRunInventory) -> tuple[AttributedRun, .
     resolved = _resolved_attribution(inventory=inventory)
     rows: list[AttributedRun] = []
     for run in inventory.runs:
-        work_item_id = _attributed_item_id(
-            run=run, attribution=resolved, id_prefix=inventory.id_prefix
+        attributed = _recorded_attribution(
+            run=run,
+            attribution=resolved,
+            id_prefix=inventory.id_prefix,
+            allow_goal_text=inventory.allow_goal_text_attribution,
         )
-        if run.status_kind not in NON_TERMINAL_STATUS_KINDS or work_item_id is None:
+        if run.status_kind not in NON_TERMINAL_STATUS_KINDS or attributed is None:
             continue
+        work_item_id, attribution_source = attributed
         work_item_status = inventory.item_statuses.get(work_item_id)
         rows.append(
             AttributedRun(
                 run=run,
                 work_item_id=work_item_id,
+                attribution_source=attribution_source,
                 work_item_status=work_item_status,
                 base_reason=_orphan_reason(
                     work_item_id=work_item_id,
@@ -204,23 +213,27 @@ def attributed_runs(*, inventory: FactoryRunInventory) -> tuple[AttributedRun, .
 def _resolved_attribution(*, inventory: FactoryRunInventory) -> RunAttribution:
     return RunAttribution(
         metadata_run_ids=inventory.attribution.metadata_run_ids,
-        journal_run_ids={
-            **inventory.attribution.journal_run_ids,
-            **inventory.journaled.item_id_by_run,
-        },
+        journal_run_ids=inventory.journaled.item_id_by_run,
     )
 
 
-def _attributed_item_id(
+def _recorded_attribution(
     *,
     run: FabroRunSummary,
     attribution: RunAttribution,
     id_prefix: str,
-) -> str | None:
-    attributed = attribution.work_item_id_for(run=run)
-    if attributed is None or not attributed.startswith(f"{id_prefix}-"):
-        return None
-    return attributed
+    allow_goal_text: bool,
+) -> tuple[str, str] | None:
+    metadata = attribution.metadata_run_ids.get(run.run_id)
+    if metadata is not None:
+        return metadata, ATTRIBUTION_SOURCE_METADATA
+    journaled = attribution.journal_run_ids.get(run.run_id)
+    if journaled is not None:
+        return journaled, ATTRIBUTION_SOURCE_JOURNAL
+    goal_text = run.work_item_id
+    if allow_goal_text and goal_text is not None and goal_text.startswith(f"{id_prefix}-"):
+        return goal_text, ATTRIBUTION_SOURCE_GOAL_TEXT
+    return None
 
 
 def _orphan_reason(

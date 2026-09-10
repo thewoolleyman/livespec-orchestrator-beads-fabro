@@ -234,6 +234,50 @@ def test_an_unresolved_credential_is_journaled_before_the_rm_fallback(tmp_path: 
     assert "~/.fabro/auth.json" in str(journal.written[0]["detail"])
 
 
+def test_an_actual_termination_emits_queryable_ownership_and_cancellation_spans(
+    tmp_path: Path,
+) -> None:
+    spans_path = tmp_path / "reconcile-spans.jsonl"
+    runner = _Runner(ps_by_server={_HP.server or "": _ps(run_id="01ORPHAN", kind="running")})
+
+    summary = reconcile.reconcile_runs(
+        inputs=_inputs(
+            tmp_path=tmp_path,
+            runner=runner,
+            transport=_Transport(),
+            journal=_Journal(),
+            ledger=_Ledger(),
+            items=[_item(id="bd-ib-orphan", status="closed")],
+            telemetry_spans_path=spans_path,
+            cancelling_actor="timer:reconcile-runs",
+        ),
+        factories=[_HP],
+    )
+
+    assert summary.reconciled[0].termination_succeeded is True
+    spans = _spans(path=spans_path)
+    assert [span["name"] for span in spans] == [
+        "dispatcher.reconcile-runs-termination",
+        "dispatcher.calibration",
+    ]
+    termination = _span_attrs(span=spans[0])
+    assert termination == {
+        "fabro.run_id": "01ORPHAN",
+        "work.item.id": "bd-ib-orphan",
+        "livespec.tenant": "bd-ib",
+        "reconcile.orphan_reason": "item-not-active",
+        "fabro.status.kind": "running",
+        "reconcile.termination_route": "cancel",
+        "reconcile.termination_succeeded": True,
+        "reconcile.attribution_source": "journal",
+        "reconcile.cancelling_actor": "timer:reconcile-runs",
+    }
+    calibration = _span_attrs(span=spans[1])
+    assert calibration["work.item.id"] == "bd-ib-orphan"
+    assert calibration["fabro.failure.category"] == "canceled"
+    assert calibration["reconcile.cancelling_actor"] == "timer:reconcile-runs"
+
+
 def test_a_failing_factory_is_journaled_and_the_other_still_reconciles(tmp_path: Path) -> None:
     runner = _Runner(
         ps_by_server={_VPS.server or "": _ps(run_id="01ORPHAN", kind="running")},
@@ -372,6 +416,59 @@ def test_an_item_missing_orphan_preserves_its_pointer_in_the_journal(tmp_path: P
     assert isinstance(body, str)
     assert body.startswith(PRESERVE_POINTER_MARKER)
     assert ledger.verbs == []
+
+
+@pytest.mark.parametrize(
+    ("tenant_prefix", "foreign_work_item_id"),
+    [
+        ("livespec", "livespec-console-beads-fabro-x.1"),
+        ("bd-ib", "livespec-console-beads-fabro-x.1"),
+    ],
+)
+def test_goal_text_alone_never_authorizes_termination_of_a_foreign_run(
+    tmp_path: Path,
+    tenant_prefix: str,
+    foreign_work_item_id: str,
+) -> None:
+    runner = _Runner(
+        ps_by_server={
+            _HP.server or "": _ps(
+                run_id="01FOREIGN",
+                kind="running",
+                work_item_id=foreign_work_item_id,
+            )
+        }
+    )
+    transport = _Transport()
+    journal = _Journal()
+    ledger = _Ledger()
+
+    summary = reconcile.reconcile_runs(
+        inputs=_inputs(
+            tmp_path=tmp_path,
+            runner=runner,
+            transport=transport,
+            journal=journal,
+            ledger=ledger,
+            items=[],
+            id_prefix=tenant_prefix,
+            journal_text=json.dumps(
+                {
+                    "stage": "orphan-run-reconciled",
+                    "run_id": "01FOREIGN",
+                    "work_item_id": foreign_work_item_id,
+                }
+            ),
+        ),
+        factories=[_HP],
+    )
+
+    assert summary.reconciled == ()
+    assert summary.errors == ()
+    assert journal.written == []
+    assert ledger.verbs == []
+    assert transport.calls == []
+    assert [call[1] for call in runner.calls] == ["ps"]
 
 
 def test_an_unverified_export_leaves_the_run_untouched(
@@ -659,6 +756,10 @@ def _inputs(
     journal: _Journal,
     ledger: _Ledger,
     items: list[WorkItem],
+    id_prefix: str = "bd-ib",
+    journal_text: str | None = None,
+    telemetry_spans_path: Path | None = None,
+    cancelling_actor: str | None = None,
     only_work_item_id: str | None = None,
     attribution: RunAttribution = GOAL_TEXT_ONLY,
     now_epoch: float | None = None,
@@ -667,10 +768,12 @@ def _inputs(
     return ReconcileInputs(
         repo=tmp_path,
         fabro_bin="fabro",
-        id_prefix="bd-ib",
+        id_prefix=id_prefix,
         items=items,
         only_work_item_id=only_work_item_id,
-        journaled=journaled_runs(text=""),
+        journaled=journaled_runs(
+            text=_fixture_journal_text(runner=runner) if journal_text is None else journal_text
+        ),
         runner=runner,
         journal=journal,
         ledger=ledger,
@@ -678,7 +781,41 @@ def _inputs(
         http=transport,
         blocked_run_grace_seconds=grace_seconds,
         now_epoch=now_epoch,
+        telemetry_spans_path=telemetry_spans_path,
+        cancelling_actor=cancelling_actor,
     )
+
+
+def _fixture_journal_text(*, runner: _Runner) -> str:
+    records: list[str] = []
+    for raw_runs in runner.ps_by_server.values():
+        for run in json.loads(raw_runs):
+            goal = str(run["goal"])
+            work_item_id = goal.splitlines()[0].removeprefix("Work-item: ")
+            records.append(
+                json.dumps(
+                    {
+                        "stage": "dispatch-run-stamp",
+                        "run_id": run["run_id"],
+                        "work_item_id": work_item_id,
+                    }
+                )
+            )
+    return "\n".join(records)
+
+
+def _spans(*, path: Path) -> list[dict[str, Any]]:
+    request = json.loads(path.read_text(encoding="utf-8"))
+    return request["resourceSpans"][0]["scopeSpans"][0]["spans"]
+
+
+def _span_attrs(*, span: dict[str, Any]) -> dict[str, object]:
+    attrs: dict[str, object] = {}
+    for attribute in span["attributes"]:
+        encoded = attribute["value"]
+        value = next(iter(encoded.values()))
+        attrs[attribute["key"]] = value
+    return attrs
 
 
 def _ps(*, run_id: str, kind: str, work_item_id: str = "bd-ib-orphan") -> str:

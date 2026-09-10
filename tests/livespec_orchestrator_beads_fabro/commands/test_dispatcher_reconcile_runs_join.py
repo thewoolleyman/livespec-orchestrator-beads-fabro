@@ -40,7 +40,9 @@ def test_blocked_run_whose_item_closed_is_an_orphan() -> None:
 
 
 def test_live_remote_run_is_not_an_orphan_with_nobody_watching() -> None:
-    journal = json.dumps({"stage": "fabro-run", "work_item_id": "bd-ib-live", "run_id": "01LIVE"})
+    journal = json.dumps(
+        {"stage": "dispatch-run-stamp", "work_item_id": "bd-ib-live", "run_id": "01LIVE"}
+    )
 
     orphans = classify_orphans(
         inventory=_inventory(
@@ -67,8 +69,27 @@ def test_active_item_with_no_journaled_run_is_left_alone() -> None:
 def test_superseded_and_missing_runs_are_reported_with_their_own_reasons() -> None:
     journal = "\n".join(
         [
-            json.dumps({"work_item_id": "bd-ib-super", "fabro_run_id": "01OLD"}),
-            json.dumps({"work_item_id": "bd-ib-super", "fabro_run_id": "01NEW"}),
+            json.dumps(
+                {
+                    "stage": "dispatch-run-stamp",
+                    "work_item_id": "bd-ib-super",
+                    "fabro_run_id": "01OLD",
+                }
+            ),
+            json.dumps(
+                {
+                    "stage": "dispatch-run-stamp",
+                    "work_item_id": "bd-ib-super",
+                    "fabro_run_id": "01NEW",
+                }
+            ),
+            json.dumps(
+                {
+                    "stage": "dispatch-run-stamp",
+                    "work_item_id": "bd-ib-gone",
+                    "run_id": "01GONE",
+                }
+            ),
         ]
     )
 
@@ -149,7 +170,24 @@ def test_a_zero_grace_disables_the_arm_and_restores_the_moot_question_reading() 
 
 
 def test_a_superseded_parked_run_keeps_the_moot_reading_and_never_waits() -> None:
-    journal = json.dumps({"work_item_id": "bd-ib-live", "fabro_run_id": "01NEW"})
+    journal = "\n".join(
+        [
+            json.dumps(
+                {
+                    "stage": "dispatch-run-stamp",
+                    "work_item_id": "bd-ib-live",
+                    "fabro_run_id": "01OLD",
+                }
+            ),
+            json.dumps(
+                {
+                    "stage": "dispatch-run-stamp",
+                    "work_item_id": "bd-ib-live",
+                    "fabro_run_id": "01NEW",
+                }
+            ),
+        ]
+    )
     inventory = _inventory(
         runs=[_run(run_id="01OLD", work_item_id="bd-ib-live", status_kind="blocked")],
         item_statuses={"bd-ib-live": "active"},
@@ -174,13 +212,14 @@ def test_only_a_blocked_run_with_a_live_item_is_worth_measuring() -> None:
             runs=[
                 _run(run_id="01PARKED", work_item_id="bd-ib-live", status_kind="blocked"),
                 _run(run_id="01BUSY", work_item_id="bd-ib-busy", status_kind="blocked"),
-                _run(run_id="01RUNNING", work_item_id="bd-ib-busy", status_kind="running"),
+                _run(run_id="01RUNNING", work_item_id="bd-ib-running", status_kind="running"),
                 _run(run_id="01DONE", work_item_id="bd-ib-closed", status_kind="blocked"),
                 _run(run_id="01GONE", work_item_id="bd-ib-gone", status_kind="blocked"),
             ],
             item_statuses={
                 "bd-ib-live": "blocked",
                 "bd-ib-busy": "active",
+                "bd-ib-running": "active",
                 "bd-ib-closed": "closed",
             },
         )
@@ -234,17 +273,31 @@ def _inventory(
     *,
     runs: Sequence[FabroRunSummary],
     item_statuses: dict[str, str],
-    journal: str = "",
+    journal: str | None = None,
     only_work_item_id: str | None = None,
 ) -> FactoryRunInventory:
     return FactoryRunInventory(
         runs=runs,
         item_statuses=item_statuses,
-        journaled=journaled_runs(text=journal),
+        journaled=journaled_runs(text=_fixture_journal(runs=runs) if journal is None else journal),
         id_prefix="bd-ib",
         factory_name="hp",
         factory_server_url="https://hp.example:32276",
         only_work_item_id=only_work_item_id,
+    )
+
+
+def _fixture_journal(*, runs: Sequence[FabroRunSummary]) -> str:
+    return "\n".join(
+        json.dumps(
+            {
+                "stage": "dispatch-run-stamp",
+                "run_id": run.run_id,
+                "work_item_id": run.work_item_id,
+            }
+        )
+        for run in runs
+        if run.work_item_id is not None
     )
 
 
