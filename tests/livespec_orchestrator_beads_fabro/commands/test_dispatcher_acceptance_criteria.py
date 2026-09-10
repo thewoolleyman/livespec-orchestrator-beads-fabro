@@ -126,6 +126,47 @@ _CODE_ONLY_TERMS = ("dispatcher", "journals", "released", "ledger", "claim")
 # A merged diff about something else entirely: it carries none of the terms of
 # any criterion above, so it supplies diff evidence to none of them.
 _UNRELATED_DIFF = "diff --git a/x b/x\n+the acceptance pass records its own verdict\n"
+# The bd-ib-6t4 / PR 2446 shape, measured 2026-09-10. The merged diff touched
+# exactly two paths — the workflow-edit exemption DECLARATION and a test file —
+# and nothing under `.github/`. The declaration's prose DESCRIBES the CI change
+# it authorizes, so every CI-workflow criterion found its own vocabulary there
+# and the item was accepted and CLOSED with the workflow edit never made.
+_PR_2446_CRITERIA = (
+    "- The CI workflow file installs or pins the fabro binary.\n"
+    "- The CI workflow file sets LIVESPEC_FABRO_GRAPH_VALIDATION to fail_when_fabro_absent.\n"
+)
+# A criterion that names NO path class, whose vocabulary lives only in the
+# declaration's prose. It is the second half of the same false pass: excluding
+# the declaration is what makes it fail, independently of any path rule.
+_DECLARATION_ONLY_CRITERION = "The dispatch installs a pinned fabro binary.\n"
+_PR_2446_DIFF = (
+    "diff --git a/.livespec-workflow-edit-exemption b/.livespec-workflow-edit-exemption\n"
+    "new file mode 100644\n"
+    "--- /dev/null\n"
+    "+++ b/.livespec-workflow-edit-exemption\n"
+    "@@ -0,0 +1,2 @@\n"
+    "+reason=wire check-fabro-graph-validity into the CI workflow file, installs a\n"
+    "+pinned fabro binary and sets LIVESPEC_FABRO_GRAPH_VALIDATION=fail_when_fabro_absent\n"
+    "diff --git a/tests/dev-tooling/checks/test_fabro_graph_validity.py"
+    " b/tests/dev-tooling/checks/test_fabro_graph_validity.py\n"
+    "--- a/tests/dev-tooling/checks/test_fabro_graph_validity.py\n"
+    "+++ b/tests/dev-tooling/checks/test_fabro_graph_validity.py\n"
+    "@@ -1,0 +2,2 @@\n"
+    "+def test_the_check_fails_closed_when_no_fabro_is_resolvable() -> None:\n"
+    "+    assert True\n"
+)
+# The same merge with the CI workflow edit actually landed. The criteria are
+# unchanged, so this is the discriminating control: the path rule must admit the
+# evidence when a path of the named class genuinely carries it.
+_PR_2446_LANDED_DIFF = _PR_2446_DIFF + (
+    "diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml\n"
+    "--- a/.github/workflows/ci.yml\n"
+    "+++ b/.github/workflows/ci.yml\n"
+    "@@ -1,0 +2,3 @@\n"
+    "+      - name: install the pinned fabro binary\n"
+    "+        run: LIVESPEC_FABRO_GRAPH_VALIDATION=fail_when_fabro_absent"
+    " just check-fabro-graph-validity\n"
+)
 
 
 def _wrapped(*, text: str, width: int) -> str:
@@ -452,3 +493,44 @@ def test_the_diff_evidence_arm_still_requires_its_minimum_matching_terms() -> No
     assert short_checks[0].reason == "insufficient merged diff evidence"
     assert [check.passed for check in exact_checks] == [True]
     assert exact_checks[0].reason == "matched merged diff evidence"
+
+
+def test_the_pr_2446_shape_leaves_its_ci_workflow_criteria_unmet() -> None:
+    # The regression itself: a merge that touched only the exemption declaration
+    # and a test file was graded as having made the CI workflow edit, because the
+    # declaration's prose restates that edit's own vocabulary.
+    checks = criteria_checks(
+        criteria_text=_PR_2446_CRITERIA, merged_diff=_PR_2446_DIFF, telemetry_passed=True
+    )
+
+    assert len(checks) == 2
+    assert [check.passed for check in checks] == [False, False]
+    assert {check.reason for check in checks} == {"no merged diff change under .github/workflows/"}
+
+
+def test_a_criterion_evidenced_only_by_the_exemption_declaration_is_unmet() -> None:
+    # The declaration exclusion on its own, with no path class named: a criterion
+    # whose terms appear only in a DECLARATION of the change has no evidence that
+    # the change was made.
+    checks = criteria_checks(
+        criteria_text=_DECLARATION_ONLY_CRITERION,
+        merged_diff=_PR_2446_DIFF,
+        telemetry_passed=True,
+    )
+
+    assert [check.passed for check in checks] == [False]
+    assert checks[0].reason == "insufficient merged diff evidence"
+
+
+def test_a_ci_workflow_criterion_is_met_when_the_workflow_path_carries_its_terms() -> None:
+    # The discriminating control: the same criteria against the same merge with
+    # the `.github/workflows/` edit actually landed. Scoping the search to the
+    # named path class must admit real evidence, not merely refuse false evidence.
+    checks = criteria_checks(
+        criteria_text=_PR_2446_CRITERIA,
+        merged_diff=_PR_2446_LANDED_DIFF,
+        telemetry_passed=False,
+    )
+
+    assert [check.passed for check in checks] == [True, True]
+    assert {check.reason for check in checks} == {"matched merged diff evidence"}
