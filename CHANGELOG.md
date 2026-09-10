@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.148.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.148.2...v0.148.3) (2026-09-10)
+
+
+### Bug Fixes
+
+* **dispatcher:** scope acceptance diff evidence by path (bd-ib-25w53f) ([51d9974](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/51d99744e7552122e6465de72dea2511d7e4352a))
+
 ## [0.148.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.148.1...v0.148.2) (2026-09-10)
 
 
