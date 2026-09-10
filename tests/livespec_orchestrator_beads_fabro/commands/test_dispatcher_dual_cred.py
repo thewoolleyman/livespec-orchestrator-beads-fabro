@@ -43,6 +43,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     dispatch_fabro_run_inputs,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import GitAuthor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     CODEX_ADAPTER_BASE,
@@ -100,6 +101,7 @@ _MINIMAL_GRAPH = (
 # S106 (hardcoded password) does not flag the literals.
 _FAKE_TOKEN = "test-oauth-token"
 _FAKE_GITHUB_TOKEN = "test-github-token"
+_GIT_AUTHOR = GitAuthor(name="Operator", email="operator@example.com")
 
 # A small fake auth.json snapshot string — the projection input. Multi-line
 # so the test proves the env-table encoding survives newlines (json.dumps
@@ -566,6 +568,7 @@ def test_materialize_overlay_refuses_on_stale_host_credential(
         work_item_id="wi-1",
         dispatch_id="disp-1",
         token=lambda: _FAKE_GITHUB_TOKEN,
+        git_author=_GIT_AUTHOR,
     )
     assert error is not None
     assert "codex login" in error
@@ -592,6 +595,7 @@ def test_materialize_overlay_refuses_on_missing_host_credential(
         work_item_id="wi-1",
         dispatch_id="disp-1",
         token=lambda: _FAKE_GITHUB_TOKEN,
+        git_author=_GIT_AUTHOR,
     )
     assert error is not None
     assert "codex login" in error
@@ -623,6 +627,7 @@ def test_materialize_overlay_writes_codex_projection_when_fresh(
         work_item_id="wi-1",
         dispatch_id="disp-1",
         token=lambda: _FAKE_GITHUB_TOKEN,
+        git_author=_GIT_AUTHOR,
     )
     assert error is None
     rendered = overlay.read_text(encoding="utf-8")
@@ -656,6 +661,7 @@ def test_materialize_overlay_refuses_a_config_without_a_run_environment_id(
         work_item_id="wi-1",
         dispatch_id="disp-1",
         token=lambda: _FAKE_GITHUB_TOKEN,
+        git_author=_GIT_AUTHOR,
     )
     assert error is not None
     assert "is not materializable" in error

@@ -28,6 +28,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
     refreshing_gh_env_lines,
     refreshing_gh_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import (
+    GitAuthor,
+    git_author_env_lines,
+    resolve_workflow_git_author,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
     plugin_cache_gate_prepare_steps_block,
 )
@@ -177,7 +182,7 @@ def _absolute_graph(*, graph_value: str, workflow_dir: Path) -> Path:
     return graph_path if graph_path.is_absolute() else workflow_dir / graph_path
 
 
-def render_run_config_overlay(  # noqa: PLR0913 — kw-only pure overlay builder; each field is an independent projection input.
+def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overlay builder; each field is an independent projection input.
     *,
     committed_text: str,
     workflow_dir: Path,
@@ -191,6 +196,7 @@ def render_run_config_overlay(  # noqa: PLR0913 — kw-only pure overlay builder
     graph_override: Path | None = None,
     prepare_inputs: Mapping[str, str] | None = None,
     dispatch_id: str | None = None,
+    git_author: GitAuthor | None = None,
 ) -> str | None:
     """Render the dispatch-time run-config overlay.
 
@@ -231,6 +237,9 @@ def render_run_config_overlay(  # noqa: PLR0913 — kw-only pure overlay builder
     )
     if rewritten is None:
         return None
+    rewritten = resolve_workflow_git_author(committed_text=rewritten, author=git_author)
+    if rewritten is None:
+        return None
     rewritten = _substitute_input_tokens(text=rewritten, prepare_inputs=prepare_inputs)
     token_literal = json.dumps(token)
     github_token_literal = json.dumps(github_token)
@@ -253,6 +262,7 @@ def render_run_config_overlay(  # noqa: PLR0913 — kw-only pure overlay builder
     codex_otel_env = codex_otel_env_lines(codex_otel_config=codex_otel_config)
     plugin_cache_steps = plugin_cache_gate_prepare_steps_block()
     factory_provenance_steps = factory_run_id_prepare_steps_block(dispatch_id=dispatch_id)
+    author_env_lines = git_author_env_lines(author=git_author)
     return (
         rewritten
         + factory_provenance_steps
@@ -267,6 +277,7 @@ def render_run_config_overlay(  # noqa: PLR0913 — kw-only pure overlay builder
         + f"[environments.{environment_id}.env]\n"
         + f"CLAUDE_CODE_OAUTH_TOKEN = {token_literal}\n"
         + f"GITHUB_TOKEN = {github_token_literal}\n"
+        + author_env_lines
         + tmux_env_line
         + gh_refresh_env_lines
         + sibling_env_line

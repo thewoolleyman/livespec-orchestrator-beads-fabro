@@ -141,7 +141,10 @@ def _repo_with_workflow(*, tmp_path: Path, require_invoker: bool = False) -> tup
     repo.mkdir()
     dial = ', "dispatcher": {"require_invoker": true}' if require_invoker else ""
     _ = (repo / ".livespec.jsonc").write_text(
-        '{"livespec-orchestrator-beads-fabro": ' f'{{"connection": {{"prefix": "bd-ib"}}{dial}}}}}',
+        '{"git_author": {"operator_name": "Chad Woolley", '
+        '"operator_email": "thewoolleyman@gmail.com"}, '
+        '"livespec-orchestrator-beads-fabro": '
+        f'{{"connection": {{"prefix": "bd-ib"}}{dial}}}}}',
         encoding="utf-8",
     )
     workflow = tmp_path / "workflow.toml"

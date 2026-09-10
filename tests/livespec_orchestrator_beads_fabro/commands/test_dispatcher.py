@@ -381,7 +381,9 @@ def _tmp_repo_connection_config(tmp_path: Path) -> None:
     repos get their own copy in `_repo_with_workflow`).
     """
     _ = (tmp_path / ".livespec.jsonc").write_text(
-        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        '{"git_author": {"operator_name": "Chad Woolley", '
+        '"operator_email": "thewoolleyman@gmail.com"}, '
+        '"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
         encoding="utf-8",
     )
 
@@ -3376,7 +3378,9 @@ def _repo_with_workflow(*, tmp_path: Path) -> tuple[Path, Path]:
     # connection.prefix (decoupled from the tenant DB name); a real governed
     # repo always carries one, so the hermetic repo mirrors that.
     _ = (repo / ".livespec.jsonc").write_text(
-        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        '{"git_author": {"operator_name": "Chad Woolley", '
+        '"operator_email": "thewoolleyman@gmail.com"}, '
+        '"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
         encoding="utf-8",
     )
     workflow = tmp_path / "workflow.toml"
@@ -5297,7 +5301,9 @@ def test_dispatch_default_workflow_materializes_from_repo_fabro_tree(
     repo = tmp_path / "repo"
     repo.mkdir()
     _ = (repo / ".livespec.jsonc").write_text(
-        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        '{"git_author": {"operator_name": "Chad Woolley", '
+        '"operator_email": "thewoolleyman@gmail.com"}, '
+        '"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
         encoding="utf-8",
     )
     item = _item()
@@ -5381,6 +5387,10 @@ def test_dispatch_fails_fast_when_oauth_token_env_is_absent_or_empty(
         json.dumps(
             {
                 "credential_wrapper": [target_wrapper, "--"],
+                "git_author": {
+                    "operator_name": "Chad Woolley",
+                    "operator_email": "thewoolleyman@gmail.com",
+                },
                 "livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}},
             }
         ),
@@ -5503,7 +5513,9 @@ def test_dispatch_fails_when_workflow_config_is_not_materializable(
     repo = tmp_path / "repo"
     repo.mkdir()
     _ = (repo / ".livespec.jsonc").write_text(
-        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        '{"git_author": {"operator_name": "Chad Woolley", '
+        '"operator_email": "thewoolleyman@gmail.com"}, '
+        '"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
         encoding="utf-8",
     )
     bare = tmp_path / "bare.toml"

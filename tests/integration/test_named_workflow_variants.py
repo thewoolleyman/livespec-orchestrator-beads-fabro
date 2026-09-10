@@ -187,10 +187,14 @@ def _repo(
     _ = (repo / ".livespec.jsonc").write_text(
         json.dumps(
             {
+                "git_author": {
+                    "operator_name": "Chad Woolley",
+                    "operator_email": "thewoolleyman@gmail.com",
+                },
                 "livespec-orchestrator-beads-fabro": {
                     "connection": {"prefix": "bd-ib"},
                     "dispatcher": dispatcher,
-                }
+                },
             }
         ),
         encoding="utf-8",

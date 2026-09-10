@@ -92,7 +92,15 @@ def _write_workflow(*, tmp_path: Path, text: str = _WORKFLOW_TOML) -> Path:
 
 def _write_dispatcher_config(*, repo: Path, dispatcher_block: dict[str, object]) -> None:
     _ = (repo / ".livespec.jsonc").write_text(
-        json.dumps({"livespec-orchestrator-beads-fabro": {"dispatcher": dispatcher_block}}),
+        json.dumps(
+            {
+                "git_author": {
+                    "operator_name": "Operator",
+                    "operator_email": "operator@example.com",
+                },
+                "livespec-orchestrator-beads-fabro": {"dispatcher": dispatcher_block},
+            }
+        ),
         encoding="utf-8",
     )
 

@@ -29,6 +29,7 @@ from livespec_orchestrator_beads_fabro.commands import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     materialize_overlay,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import GitAuthor
 
 _COMMITTED_WORKFLOW_TOML = (
     "_version = 1\n"
@@ -65,6 +66,7 @@ _FLEET_MANIFEST_TEXT = (
 _FAKE_CLAUDE_TOKEN = "test-oauth-token"
 _FAKE_GITHUB_TOKEN = "test-github-token"
 _HOST_REFRESH_TOKEN = "host-refresh-token"
+_GIT_AUTHOR = GitAuthor(name="Chad Woolley", email="thewoolleyman@gmail.com")
 
 
 def _auth_json_with_exp(*, exp: int) -> str:
@@ -116,6 +118,7 @@ def test_scenario18_dispatch_overlay_projects_dual_credentials(
         work_item_id="bd-ib-webwai",
         dispatch_id="dispatch-1",
         token=lambda: _FAKE_GITHUB_TOKEN,
+        git_author=_GIT_AUTHOR,
     )
 
     assert error is None
@@ -150,6 +153,7 @@ def test_scenario19_stale_codex_credential_refuses_before_overlay(
         work_item_id="bd-ib-webwai",
         dispatch_id="dispatch-1",
         token=lambda: _FAKE_GITHUB_TOKEN,
+        git_author=_GIT_AUTHOR,
     )
 
     assert error is not None

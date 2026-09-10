@@ -32,6 +32,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_otel_config im
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
     select_factory_credential,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import GitAuthor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     GITHUB_TOKEN_ENV_VAR,
 )
@@ -144,6 +145,7 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
     work_item_id: str,
     dispatch_id: str,
     token: Callable[[], str],
+    git_author: GitAuthor,
     graph_override: Path | None = None,
     prepare_inputs: Mapping[str, str] | None = None,
 ) -> str | None:
@@ -256,6 +258,7 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
         # factory-provenance marker. This function runs BEFORE `fabro run`,
         # which is why the marker cannot carry the Fabro run id.
         dispatch_id=dispatch_id,
+        git_author=git_author,
     )
     if rendered is None:
         return (

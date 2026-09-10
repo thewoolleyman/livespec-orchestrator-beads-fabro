@@ -48,6 +48,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _COMMITTED_WORKFLOW = (
     _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item" / "workflow.toml"
 )
+_GIT_AUTHOR = {"operator_name": "Operator", "operator_email": "operator@example.com"}
 
 
 class _RecordingJournal:
@@ -62,7 +63,12 @@ class _RecordingJournal:
 
 def _write_dispatcher_config(*, repo: Path, block: dict[str, object]) -> None:
     _ = (repo / ".livespec.jsonc").write_text(
-        json.dumps({"livespec-orchestrator-beads-fabro": {"dispatcher": block}}),
+        json.dumps(
+            {
+                "git_author": _GIT_AUTHOR,
+                "livespec-orchestrator-beads-fabro": {"dispatcher": block},
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -419,6 +425,7 @@ def test_a_cleared_pin_falling_through_to_the_default_is_refused_end_to_end(
     _ = (repo / ".livespec.jsonc").write_text(
         json.dumps(
             {
+                "git_author": _GIT_AUTHOR,
                 "livespec-orchestrator-beads-fabro": {
                     "connection": {
                         "tenant": "livespec-impl-beads",
@@ -435,7 +442,7 @@ def test_a_cleared_pin_falling_through_to_the_default_is_refused_end_to_end(
                         },
                         "default_workflow": "codex-first",
                     },
-                }
+                },
             }
         ),
         encoding="utf-8",
