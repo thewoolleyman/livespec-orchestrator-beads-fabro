@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.146.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.146.0...v0.146.1) (2026-09-10)
+
+
+### Bug Fixes
+
+* **workflow:** restore an implement graph fabro validate accepts (bd-ib-kwat) ([bc71a9e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bc71a9eb07c2c0d349d1c2313d7f9c6e2ffb3002))
+
 ## [0.146.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.145.0...v0.146.0) (2026-09-09)
 
 
