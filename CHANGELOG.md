@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.148.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.148.1...v0.148.2) (2026-09-10)
+
+
+### Bug Fixes
+
+* **dispatcher:** scope reconciliation by recorded ownership (bd-ib-piir76) ([6f05601](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6f0560132f216b5e901b04c794eba339fe7b8a71))
+
 ## [0.148.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.148.0...v0.148.1) (2026-09-10)
 
 
