@@ -205,17 +205,34 @@ def _run_inputs(
     return tuple(pairs)
 
 
-def acp_nodes_journal_record(*, resolution: AcpNodeResolution) -> dict[str, object]:
+def acp_nodes_journal_record(
+    *,
+    resolution: AcpNodeResolution,
+    redacted: Mapping[str, Mapping[str, object]] | None = None,
+) -> dict[str, object]:
     """Project the resolved adapters for the dispatch record.
 
     Every node reports the RENDERED string it will actually run plus the
     layer behind each of `command`, `args` and each `env` key, so a reader
     can tell a workflow default from a repository override from a
     per-dispatch override without re-deriving the resolution.
+
+    A node named in `redacted` reports its STRUCTURAL form instead of that
+    rendered string. `SPECIFICATION/contracts.md` section
+    "Factory-configurable ACP fallback priority" narrows the journal rule
+    for a fallback-enabled node -- command and args, env KEY NAMES and
+    their layers, plus the deterministic digests, and never raw env values
+    -- while a no-fallback legacy node keeps this record verbatim. That is
+    why the substitution is per node and why the default is empty: the
+    narrowing applies exactly where the operator opted into the new
+    grammar, and nowhere else.
     """
+    structural = redacted or {}
     return {
         "acp_nodes": {
-            node: {
+            node: {"input": resolution.inputs[node], **structural[node]}
+            if node in structural
+            else {
                 "input": resolution.inputs[node],
                 "adapter": resolved.rendered,
                 "layers": {

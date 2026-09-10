@@ -96,6 +96,12 @@ NODE_INPUT_CANDIDATES: Mapping[str, tuple[str, ...]] = {
 # ends the env prefix and begins the command.
 _ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
+# The three fields a table spelling may set on the PRIMARY adapter. Presence
+# of the KEY is what counts, not the value it carries: `env: {}` is a
+# deliberate (if inert) statement about the primary, while an entry that
+# never mentions `env` at all has made none.
+_PRIMARY_FIELDS: tuple[str, ...] = ("command", "env", "args")
+
 
 @dataclass(frozen=True, kw_only=True)
 class AcpAdapter:
@@ -124,6 +130,17 @@ class AcpNodeOverlay:
     expands even for a target that configured nothing -- so treating it as
     a request would make every workflow that parameterizes no adapter
     undispatchable over a key nobody set.
+
+    `declares_primary` records whether the layer's own spelling mentioned
+    ANY of `command` / `env` / `args`. It is `False` only for a TABLE that
+    names none of them -- an entry carrying nothing but fallback-priority
+    metadata. `SPECIFICATION/contracts.md` section "Factory-configurable
+    ACP fallback priority" makes such an entry attach AFTER the
+    `codex_models` shorthand resolves rather than shadowing it, and the
+    flag is what lets `_acp_node_repository` tell the two apart: an entry
+    that sets a primary field keeps the pre-existing `acp_nodes`-wins rule
+    verbatim, and one that sets none of them no longer replaces the
+    primary the shorthand already resolved.
     """
 
     command: str | None = None
@@ -131,6 +148,7 @@ class AcpNodeOverlay:
     args: tuple[str, ...] | None = None
     env_replaces: bool = False
     from_shorthand: bool = False
+    declares_primary: bool = True
 
 
 def parse_adapter_string(*, text: str) -> AcpAdapter:
@@ -240,7 +258,12 @@ def overlay_from_table(*, entry: Mapping[str, Any], key: str) -> AcpNodeOverlay 
     env = _string_map(value=entry.get("env"))
     if env is None:
         return f"{key}.env must be a table of string to string; got {entry.get('env')!r}"
-    return AcpNodeOverlay(command=command_raw, env=env, args=args)
+    return AcpNodeOverlay(
+        command=command_raw,
+        env=env,
+        args=args,
+        declares_primary=any(name in entry for name in _PRIMARY_FIELDS),
+    )
 
 
 def resolve_node_inputs(*, declared: Mapping[str, str]) -> Mapping[str, str]:
