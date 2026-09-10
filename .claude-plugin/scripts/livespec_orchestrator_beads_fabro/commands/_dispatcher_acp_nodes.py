@@ -21,6 +21,10 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._acp_builtin_candidates import (
+    builtin_acp_identities,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import attach_acp_chains
 from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import (
     NODE_INPUT_CANDIDATES,
     AcpNodeOverlay,
@@ -31,7 +35,11 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_layers import (
     acp_nodes_journal_record,
     resolve_acp_nodes,
 )
-from livespec_orchestrator_beads_fabro.commands._config import resolve_acp_node_overlays
+from livespec_orchestrator_beads_fabro.commands._acp_node_repository import repository_acp_chains
+from livespec_orchestrator_beads_fabro.commands._config import (
+    dispatcher_block,
+    resolve_acp_node_overlays,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
     workflow_declared_inputs,
 )
@@ -133,18 +141,61 @@ def prepare_acp_nodes(
     dispatch = dispatch_acp_overlays(overrides=overrides)
     if isinstance(dispatch, str):
         return dispatch
+    workflow_inputs = workflow_adapter_inputs(committed_text=committed_text)
     resolution = resolve_acp_nodes(
-        workflow_inputs=workflow_adapter_inputs(committed_text=committed_text),
+        workflow_inputs=workflow_inputs,
         repository=repository,
         dispatch=dispatch,
     )
     if isinstance(resolution, str):
         return resolution
+    chains = _resolve_chains(
+        repo=repo, resolution=resolution, dispatch=dispatch, workflow_inputs=workflow_inputs
+    )
+    if isinstance(chains, str):
+        return chains
     journal.append(
         record={
             "stage": ACP_NODES_STAGE,
             "work_item_id": work_item_id,
-            **acp_nodes_journal_record(resolution=resolution),
+            **acp_nodes_journal_record(resolution=resolution, redacted=chains),
         }
     )
     return resolution
+
+
+def _resolve_chains(
+    *,
+    repo: Path,
+    resolution: AcpNodeResolution,
+    dispatch: Mapping[str, AcpNodeOverlay],
+    workflow_inputs: Mapping[str, str],
+) -> Mapping[str, Mapping[str, object]] | str:
+    """Attach each node's candidate chain to its resolved primary, or refuse.
+
+    The chain is attached STRICTLY AFTER `resolve_acp_nodes` has finished,
+    which is the ordering `SPECIFICATION/contracts.md` section
+    "Factory-configurable ACP fallback priority" requires: candidate zero
+    comes through the existing layers first, and identity or fallback
+    metadata may only attach to what those layers produced.
+
+    What comes back is the REDACTED structural record for each
+    new-grammar-enabled node, which is all this slice's journal needs. The
+    resolved chains themselves have no consumer yet -- preflight,
+    classification and the runtime transition are later slices -- so the
+    value of resolving them here is the set of refusals it fires BEFORE any
+    claim or run exists.
+    """
+    block = dispatcher_block(cwd=repo)
+    declared = repository_acp_chains(block=block)
+    if isinstance(declared, str):
+        return declared
+    attached = attach_acp_chains(
+        resolution=resolution,
+        chains=declared,
+        dispatch=dispatch,
+        builtins=builtin_acp_identities(workflow_inputs=workflow_inputs, block=block),
+    )
+    if isinstance(attached, str):
+        return attached
+    return attached.redacted_nodes
