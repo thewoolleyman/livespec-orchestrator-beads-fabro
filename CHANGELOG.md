@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.148.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.147.0...v0.148.0) (2026-09-10)
+
+
+### Features
+
+* **ci:** run the factory-graph gate fail-closed in CI with a pinned upstream fabro (bd-ib-6t4) ([9bc31ec](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9bc31ecaadf02521961e18d67ced6d3d58de2077))
+* **dev-tooling:** validate factory graphs through a normalized settings copy (bd-ib-6t4) ([830fd43](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/830fd43edf1d6d6eae1b2bbab16f44427eb97a03))
+
 ## [0.147.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.146.2...v0.147.0) (2026-09-10)
 
 
