@@ -27,6 +27,7 @@ default by omitting it, exactly as the implementer tier already worked.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import (
@@ -34,12 +35,17 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import (
     overlay_from_string,
     overlay_from_table,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_node_chains import (
+    AcpNodeChain,
+    parse_node_chains,
+)
 from livespec_orchestrator_beads_fabro.commands._codex_model_tiers import (
     codex_model_tiers_from_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_argv import codex_adapter
 
 __all__: list[str] = [
+    "repository_acp_chains",
     "repository_acp_overlays",
 ]
 
@@ -70,8 +76,60 @@ def repository_acp_overlays(*, block: dict[str, Any]) -> Mapping[str, AcpNodeOve
     explicit = _explicit_overlays(block=block)
     if isinstance(explicit, str):
         return explicit
-    overlays.update(explicit)
+    for node, overlay in explicit.items():
+        overlays[node] = _explicit_wins(shorthand=overlays.get(node), explicit=overlay)
     return overlays
+
+
+def _explicit_wins(*, shorthand: AcpNodeOverlay | None, explicit: AcpNodeOverlay) -> AcpNodeOverlay:
+    """Decide what an explicit entry does to the shorthand overlay beneath it.
+
+    The pre-existing `acp_nodes`-wins rule is preserved VERBATIM for any
+    entry that sets a primary field: the whole shorthand overlay is
+    replaced, so a repository moving one node off Codex keeps behaving
+    exactly as it did before fallback priority existed. That includes the
+    known legacy cross-provider merge problem recorded as `bd-ib-5j4b`,
+    which this slice deliberately preserves rather than silently decides.
+
+    An entry that sets NONE of them is the case
+    `SPECIFICATION/contracts.md` section "Factory-configurable ACP fallback
+    priority" separates out: identity-only and fallback-only fields attach
+    AFTER the `codex_models` shorthand resolves, and a fallback-only table
+    must not shadow a `codex_models` primary or restore the workflow
+    default. So the shorthand's adapter STANDS and only its
+    shorthand-provenance flag is cleared -- the operator did name this
+    node, so a node the workflow cannot reach must still refuse rather
+    than be quietly dropped.
+    """
+    if explicit.declares_primary or shorthand is None:
+        return explicit
+    return replace(shorthand, from_shorthand=False)
+
+
+def repository_acp_chains(*, block: dict[str, Any]) -> Mapping[str, AcpNodeChain] | str:
+    """Read each node's fallback-priority metadata off the same table, or refuse.
+
+    This is a SECOND, INDEPENDENT read of `dispatcher.acp_nodes`, and the
+    independence is the point rather than an oversight: `repository_acp_overlays`
+    above resolves the legacy `command` / `env` / `args` OVERLAY that feeds
+    the three-layer merge, while this reads the identity, signature,
+    pricing and `fallbacks` metadata that may only attach AFTER that merge
+    has finished (the "resolve the primary before attaching the chain" rule
+    of `SPECIFICATION/contracts.md` section "Factory-configurable ACP
+    fallback priority"). One reader returning both would have to hand the
+    merge something it must not see until afterwards.
+
+    A non-table `acp_nodes` yields the empty mapping rather than a second
+    copy of that refusal: `repository_acp_overlays` already names the key,
+    and the caller resolves overlays first, so the operator gets exactly
+    one message about it.
+    """
+    table_raw = block.get(_ACP_NODES_KEY)
+    if not isinstance(table_raw, dict):
+        return {}
+    return parse_node_chains(
+        table=cast("dict[str, Any]", table_raw), key_prefix=f"dispatcher.{_ACP_NODES_KEY}"
+    )
 
 
 def _explicit_overlays(*, block: dict[str, Any]) -> Mapping[str, AcpNodeOverlay] | str:
