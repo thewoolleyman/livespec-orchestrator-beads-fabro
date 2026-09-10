@@ -373,3 +373,32 @@ def test_main_logs_the_absence_at_error_level_while_exiting_zero(
     captured = capsys.readouterr().err
     assert "NO factory graph was validated" in captured
     assert '"level": "error"' in captured
+
+
+def test_main_exits_non_zero_when_the_lever_demands_a_binary_that_is_absent(
+    check: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The mirror of the warn case above, and the arm a fail-closed venue rests on.
+
+    Setting `fail_when_fabro_absent` DECLARES that the binary is expected here, so
+    an unresolvable `fabro` has to redden the venue rather than report a clean pass
+    over graphs nothing looked at. The sibling `report`-level test proves the
+    absence becomes a finding; it cannot prove what a caller SEES, because a
+    calling venue reads the process EXIT CODE and only `main` produces one. That
+    gap is not hypothetical: this gate shipped inside `just check` while every CI
+    job ran it on the default warn lever, so CI validated no graph and exited zero
+    for a whole release.
+    """
+    root = tmp_path / "repo"
+    _seed_payload(root=root, graph=_VALID_GRAPH)
+    monkeypatch.setenv("LIVESPEC_FABRO_BIN", str(tmp_path / "absent" / "fabro"))
+    monkeypatch.setenv("LIVESPEC_FABRO_GRAPH_VALIDATION", check.FAIL_WHEN_ABSENT)
+    monkeypatch.chdir(root)
+
+    assert check.main() == 1
+    captured = capsys.readouterr().err
+    assert "NO factory graph was validated" in captured
+    assert '"level": "error"' in captured
