@@ -18,8 +18,10 @@ a write call.
 from __future__ import annotations
 
 import importlib.util
+import os
 import shutil
 import sys
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import ModuleType
 
@@ -128,6 +130,128 @@ def test_discovery_anchors_are_reached_by_the_package_walk(check: ModuleType) ->
     walked = {path.relative_to(root).as_posix() for path in check.module_paths(root=root)}
 
     assert set(check.DISCOVERY_ANCHORS) <= walked
+
+
+# ---------------------------------------------------------------------------
+# The walk reads a LIVE tree, so it must tolerate that tree changing.
+# ---------------------------------------------------------------------------
+
+
+class _ListedEntries:
+    """A `scandir` result whose entries were listed BEFORE the directory changed.
+
+    Listing eagerly is what makes the race deterministic: the walk receives a
+    directory entry that existed a moment ago and is gone by the time it opens
+    it, which is exactly the sequence the live `__pycache__` hit.
+    """
+
+    def __init__(self, *, entries: list[os.DirEntry[str]]) -> None:
+        self._entries = iter(entries)
+
+    def __next__(self) -> os.DirEntry[str]:
+        return next(self._entries)
+
+    def __enter__(self) -> _ListedEntries:
+        return self
+
+    def __exit__(self, *_details: object) -> None:
+        return None
+
+
+def _scandir_removing(
+    *,
+    doomed: Path,
+    removed: list[Path],
+) -> Callable[[Path | str], _ListedEntries | Iterator[os.DirEntry[str]]]:
+    """A `scandir` that deletes `doomed` the moment its parent is listed.
+
+    The production race is a concurrent process removing a directory between
+    the walk listing it and the walk opening it. Reproducing that by timing
+    would be flaky, so it is driven off the walk's own `scandir` call instead:
+    the removal is appended to `removed`, which lets the test PROVE the vanish
+    fired during collection rather than trusting that it did.
+    """
+    real = os.scandir
+
+    def hooked(path: Path | str) -> _ListedEntries | Iterator[os.DirEntry[str]]:
+        entries = real(path)
+        if str(path) != str(doomed.parent):
+            return entries
+        with entries:
+            listed = list(entries)
+        shutil.rmtree(doomed)
+        removed.append(doomed)
+        return _ListedEntries(entries=listed)
+
+    return hooked
+
+
+def _seed_walk_tree(*, root: Path, throwaway: str) -> Path:
+    """Two modules, one non-module file, and a throwaway directory holding a third."""
+    (root / "commands").mkdir(parents=True)
+    _ = (root / "store.py").write_text("", encoding="utf-8")
+    _ = (root / "commands" / "_plan_anchor.py").write_text("", encoding="utf-8")
+    _ = (root / "commands" / "CLAUDE.md").write_text("", encoding="utf-8")
+    doomed = root / "commands" / throwaway
+    doomed.mkdir()
+    _ = (doomed / "stale.py").write_text("", encoding="utf-8")
+    return doomed
+
+
+def test_module_paths_skips_pycache_directories(check: ModuleType, tmp_path: Path) -> None:
+    # The pruning arm ISOLATED, with nothing vanishing: a `.py` under
+    # `__pycache__` is never a scanned module, and the walk must not descend
+    # there at all — that descent is the one that races.
+    root = tmp_path / "package"
+    doomed = _seed_walk_tree(root=root, throwaway="__pycache__")
+
+    walked = {path.relative_to(root).as_posix() for path in check.module_paths(root=root)}
+
+    assert doomed.is_dir()
+    assert walked == {"store.py", "commands/_plan_anchor.py"}
+
+
+def test_module_paths_survives_a_pycache_vanishing_mid_walk(
+    check: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Master run 34530040885 went red on a pure version bump because a
+    # concurrently-removed `__pycache__` raised `FileNotFoundError` out of the
+    # walk. A `FileNotFoundError` escaping this call is that failure.
+    root = tmp_path / "package"
+    doomed = _seed_walk_tree(root=root, throwaway="__pycache__")
+    removed: list[Path] = []
+    monkeypatch.setattr(os, "scandir", _scandir_removing(doomed=doomed, removed=removed))
+
+    walked = {path.relative_to(root).as_posix() for path in check.module_paths(root=root)}
+
+    # PROOF THE VANISH LANDED, and landed DURING collection: without it this
+    # test would pass by never exercising the race, printing exactly the green
+    # a tolerant walk prints.
+    assert removed == [doomed]
+    assert not doomed.exists()
+    assert walked == {"store.py", "commands/_plan_anchor.py"}
+
+
+def test_module_paths_returns_the_remaining_modules_when_a_directory_vanishes_mid_walk(
+    check: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The tolerance arm ISOLATED: an ORDINARY directory vanishes, so pruning
+    # cannot account for the pass. The walk must drop the subtree it can no
+    # longer open and still report every module it did reach.
+    root = tmp_path / "package"
+    doomed = _seed_walk_tree(root=root, throwaway="nested")
+    removed: list[Path] = []
+    monkeypatch.setattr(os, "scandir", _scandir_removing(doomed=doomed, removed=removed))
+
+    walked = {path.relative_to(root).as_posix() for path in check.module_paths(root=root)}
+
+    assert removed == [doomed]
+    assert not doomed.exists()
+    assert walked == {"store.py", "commands/_plan_anchor.py"}
 
 
 # ---------------------------------------------------------------------------
