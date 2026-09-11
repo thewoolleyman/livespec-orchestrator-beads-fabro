@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.148.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.148.5...v0.148.6) (2026-09-11)
+
+
+### Bug Fixes
+
+* **workflow:** re-land the verify_pr publish breaker with both fallbacks (bd-ib-b6zc) ([067cd3d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/067cd3da1d50758bcb2905d8986cf81ed0b61661))
+
 ## [0.148.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.148.4...v0.148.5) (2026-09-11)
 
 
