@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.148.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.148.4...v0.148.5) (2026-09-11)
+
+
+### Bug Fixes
+
+* **factory:** retire vps from active reconciliation inventory ([12ca3cd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/12ca3cd74f38e61c8f3f2e4d7096788dd8508e47))
+
 ## [0.148.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.148.3...v0.148.4) (2026-09-10)
 
 
