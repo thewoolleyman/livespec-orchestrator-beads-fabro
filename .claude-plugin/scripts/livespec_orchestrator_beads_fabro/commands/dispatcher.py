@@ -28,6 +28,11 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
   dispatcher.py clear-provider-exhaustion --provider <name> --reason <text>
                                           [--repo <path>] [--invoker <id>]
                                           [--journal <path>]
+  dispatcher.py clear-acp-availability-hold --scope <scope> --hold-key <key>
+                                            --reason <text>
+                                            [--candidate-key <key>]
+                                            [--repo <path>] [--invoker <id>]
+                                            [--journal <path>]
   dispatcher.py reconcile-merged --repo <path> --item <id> [--invoker <id>]
                                  [--regrade] [--json]
   dispatcher.py probe --repo <path> --item <id> [common flags]
@@ -98,6 +103,16 @@ it rewrites and deletes nothing. It refuses a blank `--reason` and refuses
 outright any invocation resolving to the unattributed invoker mark, so it stays
 a human act rather than becoming a second automatic-expiry path (see
 `_dispatcher_provider_exhaustion_clear`).
+`clear-acp-availability-hold` is the TYPED sibling of that valve, and a
+separate one: it retires the schema-v1 observed-availability records of the
+"Factory-configurable ACP fallback priority" contract, which are scoped to an
+exact `(scope, hold_key[, candidate_key])` target rather than to a whole
+vendor. It carries the same two human-only refusals (blank `--reason`,
+unattributed invoker) plus an exactness refusal — a candidate-scoped clearance
+must name its `--candidate-key` and a domain-scoped one must not — and it
+refuses a target holding no live observation. It writes its own
+`acp-availability-cleared` stage, which the legacy provider scan never reads,
+so neither valve can retire the other's records (see `_acp_hold_clear`).
 `ledger-normalize` is the standalone self-heal surface: it reuses the
 dispatch-path status normalizer (`open` → `backlog`, `in_progress` →
 `active`; every other status is left for the status-conformance check)
@@ -245,6 +260,10 @@ fail-closed-when-unobservable behavior 5v9 built stays the live path.
 import argparse
 from collections.abc import Callable
 
+from livespec_orchestrator_beads_fabro.commands._acp_hold_clear import (
+    add_clear_acp_availability_hold_arguments,
+    run_clear_acp_availability_hold_command,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
     admit_and_select,
 )
@@ -348,6 +367,7 @@ __all__: list[str] = [
     "reflector_oob_after_verdict",
     "requested_items_preflight_error",
     "run_claude_cred_status",
+    "run_clear_acp_availability_hold_command",
     "run_clear_provider_exhaustion_command",
     "run_codex_cred_refresh",
     "run_codex_cred_status",
@@ -365,6 +385,7 @@ __all__: list[str] = [
 
 _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "claude-cred-status": run_claude_cred_status,
+    "clear-acp-availability-hold": run_clear_acp_availability_hold_command,
     "clear-provider-exhaustion": run_clear_provider_exhaustion_command,
     "codex-cred-refresh": run_codex_cred_refresh,
     "codex-cred-status": run_codex_cred_status,
@@ -396,6 +417,9 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_cred_status(parser=subparsers.add_parser("claude-cred-status"))
     add_clear_provider_exhaustion_arguments(
         parser=subparsers.add_parser("clear-provider-exhaustion")
+    )
+    add_clear_acp_availability_hold_arguments(
+        parser=subparsers.add_parser("clear-acp-availability-hold")
     )
     _add_spec_check(parser=subparsers.add_parser("spec-check"))
     _add_janitor_check(parser=subparsers.add_parser("janitor-check"))
