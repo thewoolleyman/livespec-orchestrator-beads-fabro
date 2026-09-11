@@ -12,6 +12,11 @@ import os
 import subprocess
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_factories import (
+    declared_factory_names,
+)
+
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SERVICE_DIR = _REPO_ROOT / "orchestrator-image" / "services" / "reconcile-runs"
 _SERVICE = _SERVICE_DIR / "reconcile-runs.service"
@@ -42,6 +47,13 @@ def test_the_committed_exec_start_names_the_env_wrapper_and_the_reconcile_runs_v
     assert exec_start.startswith(f"ExecStart={_ENV_WRAPPER} -- ")
     assert "scripts/bin/dispatcher.py reconcile-runs" in exec_start
     assert "--repo @PRIMARY_REPO@" in exec_start
+
+
+def test_the_host_timer_surveys_only_the_live_hp_factory() -> None:
+    """A retired backend must not remain in the timer's active inventory."""
+    configured = dispatcher_block(cwd=_REPO_ROOT)
+
+    assert declared_factory_names(block=configured) == ("hp",)
 
 
 def test_the_timer_fires_every_ten_minutes_and_catches_up_after_downtime() -> None:

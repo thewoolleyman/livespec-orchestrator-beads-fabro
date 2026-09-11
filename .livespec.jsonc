@@ -386,10 +386,10 @@
         "janitor": 3600,
         "fix": 3600
       },
+      // ACTIVE inventory, not endpoint history: an unnamed `reconcile-runs`
+      // pass surveys every entry. Intentionally stopped or retired factories
+      // must stay absent so the host timer never contacts them.
       "factories": {
-        "vps": {
-          "server": "https://vps.perch-rudd.ts.net:32276"
-        },
         "hp": {
           "server": "https://hp-xubuntu.perch-rudd.ts.net:32276"
         }
