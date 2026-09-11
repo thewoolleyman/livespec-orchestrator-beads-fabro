@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.149.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.148.6...v0.149.0) (2026-09-11)
+
+
+### Features
+
+* **dispatcher:** exact operator clearance for a typed ACP hold (bd-ib-5ltgny) ([69d401e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/69d401ee74eb2787a347cb326232ec9459cd54c6))
+* **dispatcher:** typed ACP availability classifier (bd-ib-5ltgny) ([883d173](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/883d17373569cfb87e61c354f582367813213092))
+* **dispatcher:** versioned ACP availability holds and exact clearance (bd-ib-5ltgny) ([e6d88e1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e6d88e1002ebc81e061156d4135d3c7fd94307e1))
+
 ## [0.148.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.148.5...v0.148.6) (2026-09-11)
 
 
