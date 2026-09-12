@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.151.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.150.0...v0.151.0) (2026-09-12)
+
+
+### Features
+
+* **dispatcher:** select viable ACP candidate chains before admission (bd-ib-okf3om) ([9390589](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/939058995b2bda0548ea073af972279d15957e68))
+
+
+### Bug Fixes
+
+* **dispatcher:** gate the reprobe wait on the wave's own verdict (bd-ib-okf3om) ([8472393](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/847239372fa5058e42d653d7d32a4991a0f710a5))
+
 ## [0.150.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.149.0...v0.150.0) (2026-09-12)
 
 
