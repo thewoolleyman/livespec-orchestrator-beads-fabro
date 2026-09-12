@@ -111,10 +111,12 @@ def await_usable_credential(
     about in the record they are reading, and the wait would then be
     unreproducible from its own journal.
 
-    `preflight` is the pass's ACP candidate-chain verdict, resolved by the
-    admission valve. An ABSENT verdict leaves the legacy behaviour exactly as
-    it was, which is the right default for every caller that has none: this
-    gate can only ever SUPPRESS a wait, never start one.
+    `preflight` is the pass's ACP candidate-chain verdict. The loop wave — the
+    one caller that can hold a loop — resolves it and supplies it on every
+    invocation, which is what makes the gate below reachable in production
+    rather than only from a test that hands one in. An ABSENT verdict leaves
+    the legacy behaviour exactly as it was: this gate can only ever SUPPRESS a
+    wait, never start one.
     """
     if preflight is not None and not credential_reprobe_wait_applies(verdict=preflight):
         return
