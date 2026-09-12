@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.151.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.151.0...v0.151.1) (2026-09-12)
+
+
+### Bug Fixes
+
+* consume manager credentials per run (bd-ib-wqhes7) ([8dde3ed](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8dde3ed8ad6b7c9206877d83a32e7a540b08d0b9))
+
 ## [0.151.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.150.0...v0.151.0) (2026-09-12)
 
 
