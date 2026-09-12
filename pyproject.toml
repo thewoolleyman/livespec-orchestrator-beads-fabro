@@ -244,6 +244,7 @@ omit = [
     "*/.venv/*",
     "*/site-packages/*",
     "*/__pycache__/*",
+    "/usr/local/bin/*",
     "tests/e2e/*",
     "tests/e2e-cli/*",
     "tests/prompts/*",

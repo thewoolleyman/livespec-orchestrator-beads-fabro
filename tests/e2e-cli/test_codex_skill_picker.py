@@ -281,7 +281,10 @@ def test_skills_picker_finds_drive_by_short_name() -> None:
     master_fd, slave_fd = pty.openpty()
     _prepare_pty(master_fd=master_fd, slave_fd=slave_fd)
     env = os.environ.copy()
-    env["TERM"] = env.get("TERM", "xterm-256color")
+    inherited_term = env.get("TERM", "").strip()
+    env["TERM"] = (
+        inherited_term if inherited_term and inherited_term != "dumb" else "xterm-256color"
+    )
     env["COLUMNS"] = "120"
     env["LINES"] = "40"
     env["NO_COLOR"] = "1"
