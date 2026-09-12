@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.150.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.149.0...v0.150.0) (2026-09-12)
+
+
+### Features
+
+* **drive:** add the set-factory-safety valve with a mandatory rationale (bd-ib-jhn2jw) ([4552bd6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4552bd6e7f6e19782ff78da9b3d5bce4de8a3416))
+
+
+### Refactoring
+
+* **drive:** extract the action-id grammar into its own module (bd-ib-jhn2jw) ([d51e371](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d51e3712d3f6b23a4104ffb4d6369beb12b6929e))
+
 ## [0.149.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.148.6...v0.149.0) (2026-09-11)
 
 
