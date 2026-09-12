@@ -44,10 +44,8 @@ from livespec_orchestrator_beads_fabro.commands._drive_impl_dispatch import (
     build_dispatcher_argv,
     run_impl_dispatch,
 )
-from livespec_orchestrator_beads_fabro.commands._drive_valves import (
-    is_human_valve_action,
-    run_human_valve_action,
-)
+from livespec_orchestrator_beads_fabro.commands._drive_valve_grammar import is_human_valve_action
+from livespec_orchestrator_beads_fabro.commands._drive_valves import run_human_valve_action
 from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 
 __all__: list[str] = [

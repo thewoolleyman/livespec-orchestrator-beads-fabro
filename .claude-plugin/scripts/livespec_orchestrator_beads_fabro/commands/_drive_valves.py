@@ -1,9 +1,10 @@
-"""Action parsing, routing, and the ledger-only human valves for `drive`.
+"""Routing, and the ledger-only human valves, for `drive`.
 
 The `reject` valve lives in `_drive_reject_valve`, the merge-hold valve in
-`_drive_merge_hold_valve`, and the policy / cap / queue / blocked-state valves
-in `_drive_policy_valves`; what stays here is the action-id grammar, the router
-that dispatches on it, and the two valves that do nothing but write the ledger.
+`_drive_merge_hold_valve`, the policy / cap / queue / blocked-state valves in
+`_drive_policy_valves`, and the action-id grammar the router dispatches on in
+`_drive_valve_grammar`; what stays here is that router, and the two valves that
+do nothing but write the ledger.
 """
 
 from dataclasses import dataclass
@@ -37,6 +38,9 @@ from livespec_orchestrator_beads_fabro.commands._drive_reject_valve import (
     journal_rework_return,
     reject_item,
 )
+from livespec_orchestrator_beads_fabro.commands._drive_valve_grammar import (
+    parse_human_valve_action,
+)
 from livespec_orchestrator_beads_fabro.commands._drive_valve_predicates import can_approve_item
 from livespec_orchestrator_beads_fabro.commands._drive_valve_result import (
     invalid_source_state,
@@ -45,22 +49,7 @@ from livespec_orchestrator_beads_fabro.commands._drive_valve_result import (
 )
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
-__all__: list[str] = ["is_human_valve_action", "run_human_valve_action"]
-
-ACTION_WITH_ITEM_PARTS = 2
-ACTION_WITH_VALUE_PARTS = 3
-APPROVAL_ACTIONS = frozenset({"approve", "accept"})
-VALUE_ALLOWLISTS = {
-    "reject": frozenset({"rework", "regroom"}),
-    "resolve-blocked": frozenset({"ready", "backlog"}),
-    "set-admission": frozenset({"auto", "manual"}),
-    "set-acceptance": frozenset({"ai-only", "human-only", "ai-then-human"}),
-    "set-workflow-scope-override": frozenset({"citation-only"}),
-    # The hold's value space is exactly the switch it is: `on` writes the label,
-    # `off` removes it. Anything else in that position is not a weaker hold, it
-    # is a typo, and the grammar refuses it before the store is ever read.
-    "set-merge-hold": frozenset({"on", "off"}),
-}
+__all__: list[str] = ["run_human_valve_action"]
 
 
 def run_human_valve_action(
@@ -83,7 +72,7 @@ def run_human_valve_action(
     an unusable answer is, is the one that knows where it will be written.
     """
     resolved_identity = default_invoker_identity() if identity is None else identity
-    parsed = _parse_human_valve_action(action_id=action_id)
+    parsed = parse_human_valve_action(action_id=action_id)
     if parsed is None:
         return valve_refusal(
             aid=action_id,
@@ -209,58 +198,6 @@ def _policy_edit(*, call: _ValveCall) -> dict[str, Any] | None:
             runner=call.runner,
         )
     return None
-
-
-def is_human_valve_action(*, action_id: str) -> bool:
-    return action_id.startswith(
-        (
-            "approve:",
-            "accept:",
-            "reject:",
-            "resolve-blocked:",
-            "set-admission:",
-            "set-acceptance:",
-            "set-workflow-scope-override:",
-            "set-merge-on-review-cap:",
-            "set-review-fix-cap:",
-            "set-acceptance-rework-cap:",
-            "set-merge-hold:",
-            "move:",
-        )
-    )
-
-
-def _parse_human_valve_action(*, action_id: str) -> tuple[str, str, str | None] | None:
-    parts = action_id.split(":")
-    parsed = _parse_action_with_item(parts=parts)
-    if parsed is not None:
-        return parsed
-    return _parse_action_with_value(parts=parts)
-
-
-def _parse_action_with_item(*, parts: list[str]) -> tuple[str, str, str | None] | None:
-    if len(parts) != ACTION_WITH_ITEM_PARTS:
-        return None
-    action, item = parts
-    if item == "" or action not in APPROVAL_ACTIONS:
-        return None
-    return (action, item, None)
-
-
-def _parse_action_with_value(*, parts: list[str]) -> tuple[str, str, str | None] | None:
-    if len(parts) != ACTION_WITH_VALUE_PARTS:
-        return None
-    action, item, value = parts
-    if item == "":
-        return None
-    if action in CAP_ACTION_VERBS:
-        return (action, item, value)
-    if action == "move":
-        return ("move", item, value)
-    allowed_values = VALUE_ALLOWLISTS.get(action)
-    if allowed_values is None or value not in allowed_values:
-        return None
-    return (action, item, value)
 
 
 def _find_item(*, items: list[WorkItem], item_id: str) -> WorkItem | None:
