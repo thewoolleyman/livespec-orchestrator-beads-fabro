@@ -47,6 +47,7 @@ from coverage.files import GlobMatcher, prep_patterns
 from livespec_orchestrator_beads_fabro._beads_client import FakeBeadsClient, make_beads_client
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_admission,
+    _dispatcher_admission_eligibility,
     _dispatcher_completion,
     _dispatcher_dispatch_lock,
     _dispatcher_goal,
@@ -3861,7 +3862,7 @@ def test_provider_usage_limit_refuses_matching_provider_before_admission(
         }
     )
     monkeypatch.setattr(
-        _dispatcher_admission,
+        _dispatcher_admission_eligibility,
         "utc_now_iso",
         lambda: "2026-08-23T10:10:00Z",
         raising=False,
@@ -3917,7 +3918,7 @@ def test_provider_usage_limit_gate_recovers_after_derived_expiry(
         }
     )
     monkeypatch.setattr(
-        _dispatcher_admission,
+        _dispatcher_admission_eligibility,
         "utc_now_iso",
         lambda: "2026-08-23T10:16:00Z",
         raising=False,
@@ -3988,7 +3989,7 @@ def test_provider_usage_limit_gate_is_provider_selective(
     assert covered.provider == "anthropic"
     assert uncovered is None
     monkeypatch.setattr(
-        _dispatcher_admission,
+        _dispatcher_admission_eligibility,
         "utc_now_iso",
         lambda: "2026-08-23T10:10:00Z",
         raising=False,

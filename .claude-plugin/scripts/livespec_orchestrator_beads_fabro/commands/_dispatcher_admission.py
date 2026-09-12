@@ -10,10 +10,19 @@ It also SEQUENCES the two legs of one pass. The rework leg
 (`_dispatcher_rework_admission`) runs FIRST and consumes capacity before any
 new `ready` item is admitted, because the ratified rework-pending re-dispatch
 contract orders it that way: promised fix-forward work outranks work not yet
-started. Both legs pass through the SAME mechanical eligibility filter below,
-so a marked row is refused by a host-only route, a non-null `factory_safety`,
-an unreadable label read, or an unexpired provider-exhaustion record on
-exactly the terms a ready candidate is.
+started. Both legs pass through the SAME mechanical eligibility filter --
+`_dispatcher_admission_eligibility.filter_eligible_candidates` -- so a marked
+row is refused by a host-only route, a non-null `factory_safety`, an unreadable
+label read, an unexpired provider-exhaustion record, or an exhausted
+success-critical ACP candidate chain on exactly the terms a ready candidate is.
+
+THE ACP PREFLIGHT IS EVALUATED ONCE PER PASS, NOT ONCE PER CANDIDATE, and the
+single evaluation is what the contract's "Each credential is assessed at most
+once per admission evaluation" means operationally. It is also what makes
+"both paths consume the same pure preflight verdict" structural rather than a
+convention two call sites have to keep: one verdict is computed here and both
+legs read it through the one filter, so there is no second computation that
+could disagree.
 """
 
 from __future__ import annotations
@@ -24,15 +33,20 @@ from pathlib import Path
 from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_self_update as selfup
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
+    resolve_acp_preflight,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_admission_eligibility import (
+    filter_eligible_candidates,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_capacity_deferred import (
     CapacitySnapshot,
     capacity_deferred_outcomes,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_reclaim import (
+    ActiveClaimAccounting,
     claimed_active_accounting,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import host_only_refusal
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import read_dispatch_labels
 from livespec_orchestrator_beads_fabro.commands._dispatcher_decision_journal import (
     auto_disposition_journal_record,
 )
@@ -41,13 +55,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile, utc_now_iso
-from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
-    failed_dispatch_outcome,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
-from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion import (
-    provider_exhaustion_refusal,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import (
     ReworkPass,
     admit_rework,
@@ -124,29 +132,22 @@ def admit_and_select(
     BEFORE the ready plan and its admissions occupy capacity first, which is
     what makes "marked rows before any new `ready` item" a property of the
     valve rather than of one caller's ordering.
+
+    The pass's ACP candidate-chain verdict is resolved HERE, once, and is
+    deliberately not a parameter: a caller able to supply its own verdict is a
+    caller able to supply a stale one, and "both paths consume the same pure
+    preflight verdict" would then hold only by convention.
     """
     accounting = claimed_active_accounting(repo=repo, items=items, journal=journal)
     rework_pass = rework if rework is not None else ReworkPass()
-    rework_admittable, refused = _filter_host_only_candidates(
+    rework_admittable, admittable, refused = _eligible_legs(
         repo=repo,
-        candidates=list(
-            rework_pending_candidates(
-                items=items,
-                accounting=accounting,
-                rework=rework_pass,
-                # The same aging inputs the ready queue this pass drains was
-                # ordered by, resolved off the same repository root.
-                ready_aging=ready_aging_order(project_root=repo),
-            )
-        ),
-        journal=journal,
-    )
-    admittable, ready_refused = _filter_host_only_candidates(
-        repo=repo,
+        items=items,
         candidates=candidates,
         journal=journal,
+        accounting=accounting,
+        rework=rework_pass,
     )
-    refused.extend(ready_refused)
     wip_cap = (
         # An unreadable `.livespec.jsonc` falls back to the documented cap,
         # visibly and here rather than inside the reader. `unsafe_perform_io`
@@ -228,6 +229,54 @@ def admit_and_select(
     )
 
 
+def _eligible_legs(
+    *,
+    repo: Path,
+    items: list[WorkItem],
+    candidates: list[WorkItem],
+    journal: JournalFile,
+    accounting: ActiveClaimAccounting,
+    rework: ReworkPass,
+) -> tuple[list[WorkItem], list[WorkItem], list[DispatchOutcome]]:
+    """Both legs' eligible rows, and every refusal, against ONE shared verdict.
+
+    The verdict is resolved here rather than per leg, which is what the
+    contract's "Each credential is assessed at most once per admission
+    evaluation" requires operationally. No credential probe is supplied: no
+    per-candidate credential channel is ratified yet, so the admission-time
+    assessment seam stays unwired for the same reason `resolve_acp_preflight`
+    leaves it absent by default.
+    """
+    verdict = resolve_acp_preflight(
+        repo=repo,
+        journal_path=getattr(journal, "path", None),
+        now_iso=utc_now_iso(),
+    )
+    rework_admittable, refused = filter_eligible_candidates(
+        repo=repo,
+        preflight=verdict,
+        candidates=list(
+            rework_pending_candidates(
+                items=items,
+                accounting=accounting,
+                rework=rework,
+                # The same aging inputs the ready queue this pass drains was
+                # ordered by, resolved off the same repository root.
+                ready_aging=ready_aging_order(project_root=repo),
+            )
+        ),
+        journal=journal,
+    )
+    admittable, ready_refused = filter_eligible_candidates(
+        repo=repo,
+        preflight=verdict,
+        candidates=candidates,
+        journal=journal,
+    )
+    refused.extend(ready_refused)
+    return rework_admittable, admittable, refused
+
+
 def _budget_left(*, rework: ReworkPass, taken: int) -> int | None:
     """What is left of the pass's `--budget` after the rework leg took its share.
 
@@ -251,48 +300,6 @@ def _ready_free_slots(
     if budget_left is None:
         return slots
     return min(slots, budget_left)
-
-
-def _filter_host_only_candidates(
-    *,
-    repo: Path,
-    candidates: list[WorkItem],
-    journal: JournalFile,
-) -> tuple[list[WorkItem], list[DispatchOutcome]]:
-    admittable: list[WorkItem] = []
-    refused: list[DispatchOutcome] = []
-    for item in candidates:
-        exhaustion_refusal = provider_exhaustion_refusal(
-            work_item_id=item.id,
-            journal=journal,
-            journal_path=getattr(journal, "path", None),
-            now_iso=utc_now_iso(),
-        )
-        if exhaustion_refusal is not None:
-            refused.append(exhaustion_refusal)
-            continue
-        raw_labels = read_dispatch_labels(repo=repo, item=item)
-        if isinstance(raw_labels, str):
-            refused.append(
-                failed_dispatch_outcome(
-                    journal=journal,
-                    work_item_id=item.id,
-                    stage="ledger-labels",
-                    detail=raw_labels,
-                )
-            )
-            continue
-        host_refusal = host_only_refusal(
-            repo=repo,
-            item=item,
-            journal=journal,
-            raw_labels=raw_labels,
-        )
-        if host_refusal is not None:
-            refused.append(host_refusal)
-        else:
-            admittable.append(item)
-    return admittable, refused
 
 
 def _auto_approve_governing_settings(*, item: WorkItem) -> tuple[str, ...]:

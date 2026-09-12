@@ -8,6 +8,9 @@ from typing import Any, cast
 
 from livespec_runtime.attention_item import AttentionItem, Handoff, SourceRef
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
+    resolve_acp_preflight,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import utc_now_iso
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion import (
     dispatch_provider_exhaustion,
@@ -24,6 +27,7 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "acceptance_wait_summary",
+    "acp_chain_wait_active",
     "host_only_items",
     "provider_exhaustion_items",
     "provider_exhaustion_wait_active",
@@ -98,6 +102,27 @@ def provider_exhaustion_wait_active(*, project_root: Path) -> bool:
         )
         is not None
     )
+
+
+def acp_chain_wait_active(*, project_root: Path) -> bool:
+    """Whether an exhausted success-critical ACP candidate chain holds dispatch.
+
+    This is the WAIT-ATTENTION half of the one preflight verdict admission
+    consumes, and it consumes it the way `SPECIFICATION/contracts.md` section
+    "Factory-configurable ACP fallback priority" requires: "Idle-factory and
+    wait attention consume this identical verdict."
+
+    No probe is supplied, so the read performs no credential assessment and no
+    other external call -- it composes this repository's own committed
+    configuration, workflow graph and journal, and nothing else. That is what
+    lets the idle-factory row it gates stay byte-identical across two passes
+    over an unchanged store.
+    """
+    return not resolve_acp_preflight(
+        repo=project_root,
+        journal_path=project_root / _DISPATCHER_JOURNAL_PATH,
+        now_iso=utc_now_iso(),
+    ).viable
 
 
 def _provider_exhaustion_item(

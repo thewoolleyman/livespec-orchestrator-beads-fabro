@@ -9,14 +9,21 @@ dispatch that would start it.
 
 Three properties are load-bearing rather than incidental.
 
-The three trigger conditions are CONJUNCTIVE and each one clears the row on its
+The trigger conditions are CONJUNCTIVE and each one clears the row on its
 own. Ready work must be admission-eligible under the admission valve's
 non-capacity conditions, the capacity verdict must report ZERO counted claims,
-and no unexpired provider-exhaustion record may be held. A busy factory is not
-idle, a factory with nothing dispatchable is not idle either, and a provider
-wait already composes its own row under the provider spend-containment clause of
-`SPECIFICATION/contracts.md` — a second row for the same wait would double-report
-one condition.
+no unexpired provider-exhaustion record may be held, and the per-node fallback
+preflight must leave at least one candidate for every success-critical ACP
+node. A busy factory is not idle, a factory with nothing dispatchable is not
+idle either, and a provider wait already composes its own row under the
+provider spend-containment clause of `SPECIFICATION/contracts.md` — a second
+row for the same wait would double-report one condition.
+
+The ACP condition reads the SAME verdict admission reads, through
+`acp_chain_wait_active`, and supplies it no credential probe. That is the
+clause's requirement literally: a factory held back because a success-critical
+chain is exhausted is not idle, it is waiting, and the row must not claim
+otherwise.
 
 The counted-claim read goes through `claimed_active_projection`, the
 SIDE-EFFECT-FREE half of the accounting pair. Its sibling
@@ -57,6 +64,7 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance imp
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_handoffs import drive_command
 from livespec_orchestrator_beads_fabro.commands._needs_attention_waits import (
+    acp_chain_wait_active,
     provider_exhaustion_wait_active,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -82,6 +90,8 @@ def idle_factory_items(
     empty list is the whole answer.
     """
     if provider_exhaustion_wait_active(project_root=project_root):
+        return []
+    if acp_chain_wait_active(project_root=project_root):
         return []
     if counted_claims(project_root=project_root, items=items) != 0:
         return []
