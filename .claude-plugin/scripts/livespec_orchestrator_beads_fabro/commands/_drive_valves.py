@@ -24,6 +24,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_lifecycle_writes imp
     write_work_item_status_and_reconcile,
 )
 from livespec_orchestrator_beads_fabro.commands._drive_answer import answer_delivery
+from livespec_orchestrator_beads_fabro.commands._drive_factory_safety_valve import (
+    FACTORY_SAFETY_ACTION,
+    set_factory_safety,
+)
 from livespec_orchestrator_beads_fabro.commands._drive_merge_hold_valve import set_merge_hold
 from livespec_orchestrator_beads_fabro.commands._drive_policy_valves import (
     CAP_ACTION_VERBS,
@@ -164,10 +168,21 @@ def _policy_edit(*, call: _ValveCall) -> dict[str, Any] | None:
     """The valves that write ONE field of an item and never its status, or `None`.
 
     Grouped because the contract groups them: a policy edit, the workflow-scope
-    assertion, a cap override and the merge hold each modify only the named
-    field and MUST NOT move the item. The merge hold is the one member that also
-    reaches the forge, which is why it alone is handed the command runner.
+    assertion, the factory-safety opt-out, a cap override and the merge hold each
+    modify only the named field and MUST NOT move the item. The merge hold is the
+    one member that also reaches the forge, which is why it alone is handed the
+    command runner; the factory-safety opt-out is the one that also journals,
+    which is why it alone is handed the repo path and the identity.
     """
+    if call.action == FACTORY_SAFETY_ACTION:
+        return set_factory_safety(
+            repo=call.repo,
+            config=call.config,
+            item=call.item,
+            aid=call.action_id,
+            value=call.value,
+            identity=call.identity,
+        )
     if call.action in {"set-admission", "set-acceptance"}:
         return set_policy(
             config=call.config,

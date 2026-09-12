@@ -14,6 +14,9 @@ here, beside the constants they read.
 
 from __future__ import annotations
 
+from livespec_orchestrator_beads_fabro.commands._drive_factory_safety_valve import (
+    FACTORY_SAFETY_ACTION,
+)
 from livespec_orchestrator_beads_fabro.commands._drive_policy_valves import CAP_ACTION_VERBS
 
 __all__: list[str] = [
@@ -40,6 +43,16 @@ VALUE_ALLOWLISTS = {
     "set-merge-hold": frozenset({"on", "off"}),
 }
 
+# The verbs whose third field this grammar passes through UNGRADED, because the
+# valve behind each owns that value domain and can say something useful about a
+# bad value. The caps and `move` join because their spaces are unbounded or
+# stated by the valve's own refusal; `set-factory-safety` joins even though its
+# enum IS closed, because contracts.md requires a refusal NAMING the three
+# canonical reasons, and an id rejected here reaches the operator as the generic
+# "Unsupported human valve action id." — the one message that cannot tell a
+# typo'd reason from a typo'd verb.
+_UNGRADED_VALUE_ACTIONS: frozenset[str] = CAP_ACTION_VERBS | {"move", FACTORY_SAFETY_ACTION}
+
 
 def is_human_valve_action(*, action_id: str) -> bool:
     """Does `action_id` select one of the human valves?"""
@@ -51,6 +64,7 @@ def is_human_valve_action(*, action_id: str) -> bool:
             "resolve-blocked:",
             "set-admission:",
             "set-acceptance:",
+            f"{FACTORY_SAFETY_ACTION}:",
             "set-workflow-scope-override:",
             "set-merge-on-review-cap:",
             "set-review-fix-cap:",
@@ -85,10 +99,8 @@ def _parse_action_with_value(*, parts: list[str]) -> tuple[str, str, str | None]
     action, item, value = parts
     if item == "":
         return None
-    if action in CAP_ACTION_VERBS:
+    if action in _UNGRADED_VALUE_ACTIONS:
         return (action, item, value)
-    if action == "move":
-        return ("move", item, value)
     allowed_values = VALUE_ALLOWLISTS.get(action)
     if allowed_values is None or value not in allowed_values:
         return None
