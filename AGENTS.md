@@ -867,8 +867,12 @@ the stale one. Fleet source: the livespec `agent-disciplines.md` discipline
 The Dispatcher's host-direct path (`dispatcher.py loop` run on the host, NOT in
 the orchestrator container) connects to a long-lived Fabro server on
 **`127.0.0.1:32276`**. Installing the plugin does NOT start it; the maintainer
-runs it directly from `~/.fabro/bin/fabro`. As of 2026-09-09 the host binary on
-BOTH factory servers — `hp` and `vps` — is `fabro 0.254.0 (977cb67)`, built from
+runs it directly from `~/.fabro/bin/fabro`. Measured 2026-09-12, the two
+factory hosts DIVERGE: `hp` runs `fabro 0.254.0 (4b8cc85 2026-09-12)` (fork
+PR 8, `bd-ib-bindom`) and `vps` still runs `fabro 0.254.0 (977cb67
+2026-09-09)`; neither carries the S4 ACP fallback chain merged into the
+carrier on 2026-09-12 (`bd-ib-mujvyn`, fork PR 9), whose deployment is S7 of
+plan `bd-ib-jxvgq5`. Both builds come from
 **`factory-integration`** — the ONE standing branch in our fork
 (`thewoolleyman/fabro`) that carries every fabro fix the factory needs but
 upstream has not released (today: PR #568 credential refresh,
@@ -940,9 +944,9 @@ wrong-population trap from the catalogue above, arriving through the default
 rather than through a typo — there is no error, no warning, and the result
 looks exactly like success.
 
-**That particular divergence is CLOSED: as of 2026-09-09 both hp and vps run
-`fabro 0.254.0 (977cb67)`, the build described at the top of this section.** Do
-NOT read today's parity as a standing guarantee — a re-pin lands on one host at
+**That divergence closed on 2026-09-09 (both hosts at `977cb67`) and RE-OPENED
+on 2026-09-12: hp is at `4b8cc85`, vps at `977cb67`, as measured at the top of
+this section.** Do NOT read any day's parity as a standing guarantee — a re-pin lands on one host at
 a time, so the two hosts diverge for as long as the second rollout takes, and
 the paragraph above describes what that window looks like from a dispatch. When
 a dispatch is EVIDENCE ABOUT A BUILD, establish the engine per dispatch instead
@@ -1284,6 +1288,15 @@ references passes with its guidance orphaned.
   file survives a rebind, so a stale lease file's presence is NOT evidence of
   current binding. The file also records that the plugin prune verb is not an
   eviction verb.
+- Read `.ai/fabro-fork-hand-build.md` BEFORE starting a work-item whose
+  implementation lands in the Fabro fork (`thewoolleyman/fabro`,
+  `factory-integration`). The fork has no ledger tenant, so neither the
+  factory sandbox nor the execution-mirror convention can carry it; the file
+  records the host-routed door (`driver-dispatch` in, `close-work-item` with
+  the merge SHA out), the shared build cache, the pinned nightly the fork's
+  own CI uses, and the fact that a fork pull request against the carrier
+  branch shows NO checks — the merge gate is local and must be recorded before
+  merging. It also records that merging into the carrier deploys nothing.
 
 ## Decision authority — when to ask, proceed, or self-resolve
 
