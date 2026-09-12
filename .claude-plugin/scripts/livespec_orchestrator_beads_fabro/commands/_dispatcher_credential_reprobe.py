@@ -39,6 +39,16 @@ cannot refuse: returning is "admission may proceed under every OTHER
 admission-valve condition". The one bound on the wait is the invocation's own
 budget — an invocation with no dispatch slots to spend has nothing to wait for,
 so it never enters the loop at all.
+
+IT DOES NOT GOVERN A CHAIN THAT STILL HAS A CANDIDATE. `SPECIFICATION/
+contracts.md` section "Factory-configurable ACP fallback priority": "The
+re-probe wait applies to a legacy single candidate and a genuinely exhausted
+fallback chain, never a primary-only probe refusal with a viable fallback."
+A legacy single candidate is exactly what a repository with no fallback
+configuration has, so the pre-existing behaviour is the unchanged default; the
+new case is a fallback-enabled repository whose success-critical chains still
+hold a candidate, where waiting would idle a factory that can run the work on
+the next candidate in configured order.
 """
 
 from __future__ import annotations
@@ -49,6 +59,10 @@ from pathlib import Path
 
 from returns.unsafe import unsafe_perform_io
 
+from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
+    credential_reprobe_wait_applies,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
     ClaudeCredentialStatus,
 )
@@ -84,6 +98,7 @@ def await_usable_credential(
     budget: int,
     probe: Callable[..., ClaudeCredentialStatus] | None = None,
     sleep: Callable[[float], None] = time.sleep,
+    preflight: AcpPreflightVerdict | None = None,
 ) -> None:
     """Hold the loop's admission while the projected credential is provider-limited.
 
@@ -95,7 +110,14 @@ def await_usable_credential(
     would let a mid-wait config edit change the interval the operator was told
     about in the record they are reading, and the wait would then be
     unreproducible from its own journal.
+
+    `preflight` is the pass's ACP candidate-chain verdict, resolved by the
+    admission valve. An ABSENT verdict leaves the legacy behaviour exactly as
+    it was, which is the right default for every caller that has none: this
+    gate can only ever SUPPRESS a wait, never start one.
     """
+    if preflight is not None and not credential_reprobe_wait_applies(verdict=preflight):
+        return
     interval = unsafe_perform_io(
         resolve_credential_reprobe_interval_seconds(cwd=repo).value_or(
             DEFAULT_CREDENTIAL_REPROBE_INTERVAL_SECONDS

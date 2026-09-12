@@ -11,6 +11,7 @@ from livespec_orchestrator_beads_fabro._store_acceptance_rework import Acceptanc
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_acceptance_rework,
     _dispatcher_admission,
+    _dispatcher_admission_eligibility,
     _dispatcher_completion,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_decision_journal import (
@@ -73,7 +74,7 @@ def test_auto_approve_path_journals_governing_setting(
     journal = _MemoryJournal()
     monkeypatch.setattr(_dispatcher_admission, "store_config", lambda **_: tmp_path)
     monkeypatch.setattr(_dispatcher_admission, "update_work_item_status", lambda **_: None)
-    monkeypatch.setattr(_dispatcher_admission, "read_dispatch_labels", lambda **_: ())
+    monkeypatch.setattr(_dispatcher_admission_eligibility, "read_dispatch_labels", lambda **_: ())
 
     _dispatcher_admission.admit_and_select(
         repo=tmp_path,
@@ -97,7 +98,7 @@ def test_global_auto_approve_path_journals_governing_setting(
     journal = _MemoryJournal()
     monkeypatch.setattr(_dispatcher_admission, "store_config", lambda **_: tmp_path)
     monkeypatch.setattr(_dispatcher_admission, "update_work_item_status", lambda **_: None)
-    monkeypatch.setattr(_dispatcher_admission, "read_dispatch_labels", lambda **_: ())
+    monkeypatch.setattr(_dispatcher_admission_eligibility, "read_dispatch_labels", lambda **_: ())
 
     _dispatcher_admission.admit_and_select(
         repo=tmp_path,
@@ -119,7 +120,7 @@ def test_admission_refuses_when_workflow_scope_labels_cannot_be_read(
 ) -> None:
     journal = _MemoryJournal()
     monkeypatch.setattr(
-        _dispatcher_admission,
+        _dispatcher_admission_eligibility,
         "read_dispatch_labels",
         lambda **_: "ledger label read failed for bd-ib-123",
     )
