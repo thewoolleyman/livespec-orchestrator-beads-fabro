@@ -246,7 +246,7 @@ withdrawn, so it is **still downloadable**: this is a live hazard, not history.
 The current stable is **v1.2.2**, which is a recovery release re-issuing the
 tested 1.1 line. **This host's `/usr/local/bin/bd-real` was cut over to v1.2.2
 on 2026-08-31 and every family tenant is at schema v53** (receipt:
-`plan/beads-v1-1-2-upgrade/research/cutover-receipt-2026-08-31.md`). Two facts
+`plan/archive/beads-v1-1-2-upgrade/research/cutover-receipt-2026-08-31.md`). Two facts
 from that cutover that bite any future upgrade: `bd migrate --dry-run` is NOT a
 preview — a v1.2.x binary migrates an older store ON OPEN, before printing
 "Version matches" — so probe an un-migrated tenant only through mysql, never
@@ -265,7 +265,7 @@ improvise: roll the schema cursor back per upstream's `docs/RECOVERY-1.2.1.md`
 re-migrates. Measured 2026-08-20: nothing in this repo or the eleven sibling
 repos resolves a beads version dynamically, so the exposure is human, not
 mechanical. Full evidence:
-`plan/beads-v1-1-2-upgrade/research/release-target-restatement-2026-08-20.md`;
+`plan/archive/beads-v1-1-2-upgrade/research/release-target-restatement-2026-08-20.md`;
 ledger item `bd-ib-3kolea.4`.
 
 **Run beads commands from the target repo root.** Per-command `bd` resolves its
