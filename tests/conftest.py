@@ -37,7 +37,7 @@ import os
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -76,6 +76,72 @@ def _hermetic_claude_credential_probe(monkeypatch: pytest.MonkeyPatch) -> None:
         "_dispatcher_claude_credential_command.probe_claude_credential",
         successful_probe,
     )
+
+
+HERMETIC_MANAGER_CREDENTIAL = "hermetic-manager-oauth-token"
+HERMETIC_MANAGER_RECORD_ID = "5f1b7a0c-0000-4000-8000-00000000cafe"
+HERMETIC_MANAGER_ACCOUNT_ID = "anthropic-hermetic"
+
+
+@dataclass(kw_only=True)
+class HermeticCredentialManager:
+    """A stand-in `CredentialManagerClient` that provisions without a manager process.
+
+    The Dispatcher now obtains every run's Anthropic credential from the
+    `llm-provider-manager` executable, which is an AMBIENT HOST DEPENDENCY of exactly the
+    kind this file exists to replace: it is absent on CI, it holds real credentials for
+    real accounts where it IS installed, and a dispatch that reached it would neither be
+    hermetic nor safe. So every dispatch test provisions through this fake by default.
+
+    It records the reports it receives so a test can assert what the dispatch told the
+    credential authority, and `refusal` lets a test drive the refusal arm without
+    replacing the whole fixture.
+    """
+
+    refusal: Any = None
+    reports: list[Any] = field(default_factory=list)
+
+    def provision(self, *, consumer_run_id: str) -> Any:
+        from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_manager import (
+            CredentialReceipt,
+            ProvisionedCredential,
+        )
+
+        _ = consumer_run_id
+        if self.refusal is not None:
+            return self.refusal
+        return ProvisionedCredential(
+            receipt=CredentialReceipt(
+                record_id=HERMETIC_MANAGER_RECORD_ID,
+                account_id=HERMETIC_MANAGER_ACCOUNT_ID,
+                validated_at="2026-09-12T00:00:00Z",
+                purpose="factory",
+                lease_expires_at="2026-09-12T06:00:00Z",
+            ),
+            value=HERMETIC_MANAGER_CREDENTIAL,
+        )
+
+    def report(self, *, report: Any) -> Any:
+        self.reports.append(report)
+        return None
+
+
+@pytest.fixture(autouse=True)
+def hermetic_credential_manager(monkeypatch: pytest.MonkeyPatch) -> HermeticCredentialManager:
+    """Provision every dispatch from the fake manager, never the host executable.
+
+    Patched at the two modules that CONSTRUCT the default client, matching how the
+    Claude-probe fixture above patches the name in each consuming module. A test wanting
+    a refusal sets `.refusal` on the object this fixture returns; a test wanting to
+    assert a failure report reads `.reports`.
+    """
+    manager = HermeticCredentialManager()
+    for module in ("_dispatcher_credentials", "_dispatcher_loop"):
+        monkeypatch.setattr(
+            f"livespec_orchestrator_beads_fabro.commands.{module}.LlmProviderManagerClient",
+            lambda **_kwargs: manager,
+        )
+    return manager
 
 
 def _fresh_codex_auth_json() -> str:

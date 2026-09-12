@@ -54,6 +54,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_ledger_close,
     _dispatcher_loop,
     _dispatcher_loop_command,
+    _dispatcher_loop_reports,
     _dispatcher_loop_selection,
     _dispatcher_provider_exhaustion,
     _dispatcher_reflection,
@@ -1688,10 +1689,12 @@ def test_parse_pr_view_reads_context_connection_shaped_status_check_rollup() -> 
     assert view.terminal_required_check_failures == ("check-coverage",)
 
 
-# The fake token the autouse fixture plants in the process env; the
-# overlay must carry it VERBATIM (and nothing else may — journals,
-# argvs, and the committed config stay token-free).
-_FAKE_TOKEN_LINE = 'CLAUDE_CODE_OAUTH_TOKEN = "test-oauth-token"'
+# The credential the autouse hermetic llm-provider-manager provisions for the run
+# (`conftest.HERMETIC_MANAGER_CREDENTIAL`); the overlay must carry it VERBATIM (and
+# nothing else may — journals, argvs, and the committed config stay token-free). It no
+# longer comes from the process env: the Dispatcher asks the manager for a run-scoped
+# credential instead of reading a legacy `CLAUDE_CODE_OAUTH_TOKEN*` pool slot.
+_FAKE_TOKEN_LINE = 'CLAUDE_CODE_OAUTH_TOKEN = "hermetic-manager-oauth-token"'
 _FAKE_GITHUB_TOKEN = "test-github-token"
 # Projected under the FULL name GITHUB_TOKEN, never the short GH_TOKEN:
 # gh/git prefer GH_TOKEN, so a projected GH_TOKEN would shadow Fabro's
@@ -1737,7 +1740,7 @@ _MINIMAL_GRAPH = (
 def test_render_run_config_overlay_rewrites_graph_and_appends_env_token(
     tmp_path: Path,
 ) -> None:
-    overlay_token = "test-oauth-token"
+    overlay_token = "hermetic-manager-oauth-token"
     rendered = render_run_config_overlay(
         committed_text=_COMMITTED_WORKFLOW_TOML,
         workflow_dir=tmp_path,
@@ -1773,7 +1776,7 @@ def test_render_run_config_overlay_prepares_refreshing_gh_wrapper(
     """
     monkeypatch.setenv("GITHUB_APP_ID", "42")
     monkeypatch.setenv("GITHUB_PRIVATE_KEY", "stub-pem")
-    overlay_token = "test-oauth-token"
+    overlay_token = "hermetic-manager-oauth-token"
 
     rendered = render_run_config_overlay(
         committed_text=_COMMITTED_WORKFLOW_TOML,
@@ -1804,7 +1807,7 @@ def test_render_run_config_overlay_projects_gh_mint_helper_for_target_without_sc
     """The gh wrapper must not resolve helpers from the target repo checkout."""
     monkeypatch.setenv("GITHUB_APP_ID", "42")
     monkeypatch.setenv("GITHUB_PRIVATE_KEY", "stub-pem")
-    overlay_token = "test-oauth-token"
+    overlay_token = "hermetic-manager-oauth-token"
 
     rendered = render_run_config_overlay(
         committed_text=_COMMITTED_WORKFLOW_TOML,
@@ -1833,7 +1836,7 @@ def test_render_run_config_overlay_ignores_target_repo_mint_helper_when_present(
     target_helper = tmp_path / ".claude-plugin" / "scripts" / "bin" / "mint_app_token.py"
     target_helper.parent.mkdir(parents=True)
     target_helper.write_text("raise SystemExit('target helper must not run')\n", encoding="utf-8")
-    overlay_token = "test-oauth-token"
+    overlay_token = "hermetic-manager-oauth-token"
 
     rendered = render_run_config_overlay(
         committed_text=_COMMITTED_WORKFLOW_TOML,
@@ -2026,7 +2029,7 @@ def test_render_run_config_overlay_keeps_absolute_graph_path(tmp_path: Path) -> 
     committed = _COMMITTED_WORKFLOW_TOML.replace(
         'graph = "workflow.fabro"', f'graph = "{absolute_graph}"'
     )
-    overlay_token = "test-oauth-token"
+    overlay_token = "hermetic-manager-oauth-token"
     rendered = render_run_config_overlay(
         committed_text=committed,
         workflow_dir=tmp_path / "workflow-dir",
@@ -2040,7 +2043,7 @@ def test_render_run_config_overlay_keeps_absolute_graph_path(tmp_path: Path) -> 
 
 
 def test_render_run_config_overlay_rejects_unusable_shapes(tmp_path: Path) -> None:
-    overlay_token = "test-oauth-token"
+    overlay_token = "hermetic-manager-oauth-token"
     assert (
         render_run_config_overlay(
             committed_text="_version = 1\n",
@@ -2200,7 +2203,7 @@ def test_parse_fleet_members_accepts_legacy_members_key() -> None:
 def test_render_run_config_overlay_appends_sibling_clone_steps_and_env_root(
     tmp_path: Path,
 ) -> None:
-    overlay_token = "test-oauth-token"
+    overlay_token = "hermetic-manager-oauth-token"
     rendered = render_run_config_overlay(
         committed_text=_COMMITTED_WORKFLOW_TOML,
         workflow_dir=tmp_path,
@@ -2242,7 +2245,7 @@ def test_render_run_config_overlay_sibling_clone_steps_are_valid_bash(
     itself whether it is well-formed — a property no fixture can
     accidentally get wrong in lockstep with the implementation.
     """
-    overlay_token = "test-oauth-token"
+    overlay_token = "hermetic-manager-oauth-token"
     rendered = render_run_config_overlay(
         committed_text=_COMMITTED_WORKFLOW_TOML,
         workflow_dir=tmp_path,
@@ -2287,7 +2290,7 @@ def test_render_run_config_overlay_sibling_clone_steps_tolerate_bad_members(
     rather than as an auth failure, and exits 0 on either failure so the
     surviving members still clone.
     """
-    overlay_token = "test-oauth-token"
+    overlay_token = "hermetic-manager-oauth-token"
     rendered = render_run_config_overlay(
         committed_text=_COMMITTED_WORKFLOW_TOML,
         workflow_dir=tmp_path,
@@ -2325,7 +2328,7 @@ def test_render_run_config_overlay_sibling_clone_steps_tolerate_bad_members(
 def test_render_run_config_overlay_without_siblings_appends_no_clone_steps(
     tmp_path: Path,
 ) -> None:
-    overlay_token = "test-oauth-token"
+    overlay_token = "hermetic-manager-oauth-token"
     rendered = render_run_config_overlay(
         committed_text=_COMMITTED_WORKFLOW_TOML,
         workflow_dir=tmp_path,
@@ -2353,7 +2356,7 @@ def test_render_run_config_overlay_projects_core_plugin_root(tmp_path: Path) -> 
     INSIDE [environments.<id>.env] alongside the credential so it reaches every
     node's `just check` subprocesses.
     """
-    overlay_token = "test-oauth-token"
+    overlay_token = "hermetic-manager-oauth-token"
     rendered = render_run_config_overlay(
         committed_text=_COMMITTED_WORKFLOW_TOML,
         workflow_dir=tmp_path,
@@ -2377,7 +2380,7 @@ def test_render_run_config_overlay_without_core_sibling_omits_core_plugin_root(
         repos=("livespec-dev-tooling",),
         clones_root="/workspace/siblings",
     )
-    overlay_token = "test-oauth-token"
+    overlay_token = "hermetic-manager-oauth-token"
     rendered = render_run_config_overlay(
         committed_text=_COMMITTED_WORKFLOW_TOML,
         workflow_dir=tmp_path,
@@ -2411,7 +2414,7 @@ def test_committed_implement_workflow_overlay_carries_full_fleet_sandbox_env() -
         / "implement-work-item"
         / "workflow.toml"
     )
-    overlay_token = "test-oauth-token"
+    overlay_token = "hermetic-manager-oauth-token"
     rendered = render_run_config_overlay(
         committed_text=workflow_toml.read_text(encoding="utf-8"),
         workflow_dir=workflow_toml.parent,
@@ -4207,7 +4210,7 @@ def test_dispatch_id_journal_records_resolved_factory_without_rewriting_existing
     monkeypatch.setattr(_dispatcher_loop, "post_run_dispositions", lambda **_: None)
     review_gate_emissions: list[ReviewGateEmission] = []
     monkeypatch.setattr(
-        _dispatcher_loop,
+        _dispatcher_loop_reports,
         "emit_review_gate_from_fabro_events",
         lambda *, emission: review_gate_emissions.append(emission),
     )
@@ -4264,7 +4267,9 @@ def test_dispatch_threads_its_dispatch_id_into_the_watchdog_launcher(
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
     monkeypatch.setattr(_dispatcher_loop, "post_run_dispositions", lambda **_: None)
-    monkeypatch.setattr(_dispatcher_loop, "emit_review_gate_from_fabro_events", lambda **_: None)
+    monkeypatch.setattr(
+        _dispatcher_loop_reports, "emit_review_gate_from_fabro_events", lambda **_: None
+    )
 
     outcome = _dispatcher_loop.dispatch_one(
         args=argparse.Namespace(
@@ -4368,7 +4373,7 @@ def test_dispatch_id_journal_omits_factory_when_target_was_not_resolved(
     monkeypatch.setattr(_dispatcher_loop, "post_run_dispositions", lambda **_: None)
     review_gate_emissions: list[ReviewGateEmission] = []
     monkeypatch.setattr(
-        _dispatcher_loop,
+        _dispatcher_loop_reports,
         "emit_review_gate_from_fabro_events",
         lambda *, emission: review_gate_emissions.append(emission),
     )
@@ -4474,7 +4479,9 @@ def test_dispatch_fabro_run_failure_without_run_id_releases_admitted_claim(
     )
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
     monkeypatch.setattr(_dispatcher_loop, "post_run_dispositions", lambda **_: None)
-    monkeypatch.setattr(_dispatcher_loop, "emit_review_gate_from_fabro_events", lambda **_: None)
+    monkeypatch.setattr(
+        _dispatcher_loop_reports, "emit_review_gate_from_fabro_events", lambda **_: None
+    )
 
     outcome = _dispatcher_loop.dispatch_one(
         args=argparse.Namespace(
@@ -4592,7 +4599,9 @@ def test_dispatch_does_not_release_claim_after_fabro_run_exists(
     )
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
     monkeypatch.setattr(_dispatcher_loop, "post_run_dispositions", lambda **_: None)
-    monkeypatch.setattr(_dispatcher_loop, "emit_review_gate_from_fabro_events", lambda **_: None)
+    monkeypatch.setattr(
+        _dispatcher_loop_reports, "emit_review_gate_from_fabro_events", lambda **_: None
+    )
 
     outcome = _dispatcher_loop.dispatch_one(
         args=argparse.Namespace(
@@ -5065,7 +5074,10 @@ def test_dispatch_materializes_mode600_overlay_and_cleans_up(
     assert payload_graph.parent != workflow.parent
     assert not payload_graph.parent.exists()
     journal_text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
-    assert "test-oauth-token" not in journal_text
+    # Name the credential the overlay ACTUALLY carries. `test-oauth-token` is now only
+    # the legacy pool value the pre-launch probe reads, so its absence here would prove
+    # nothing about the manager-provisioned credential this run authenticates with.
+    assert "hermetic-manager-oauth-token" not in journal_text
     assert "test-github-token" not in journal_text
 
 
@@ -6196,7 +6208,7 @@ def test_dispatch_fails_at_ledger_comments_stage_when_read_raises(
         raise BeadsCommandError(command="bd comments", exit_code=1, stderr="connection lost")
 
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands._dispatcher_credentials.read_work_item_comments",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_reads.read_work_item_comments",
         _boom,
     )
     exit_code = main(

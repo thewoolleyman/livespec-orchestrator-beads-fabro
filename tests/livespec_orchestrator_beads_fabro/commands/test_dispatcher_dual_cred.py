@@ -27,7 +27,9 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_codex_auth,
     _dispatcher_credentials,
+    _dispatcher_ledger_reads,
     _dispatcher_loop,
+    _dispatcher_loop_lease,
     _dispatcher_sibling_clones,
 )
 from livespec_orchestrator_beads_fabro.commands._codex_model_tiers import CodexModelTier
@@ -741,7 +743,7 @@ def _store_config_stub(*, repo: Path) -> object:
 def test_read_dispatch_labels_returns_raw_string_labels(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(_dispatcher_credentials, "store_config", _store_config_stub)
+    monkeypatch.setattr(_dispatcher_ledger_reads, "store_config", _store_config_stub)
 
     def show_issue(*, issue_id: str) -> dict[str, object]:
         _ = issue_id
@@ -751,7 +753,7 @@ def test_read_dispatch_labels_returns_raw_string_labels(
         _ = config
         return SimpleNamespace(show_issue=show_issue)
 
-    monkeypatch.setattr(_dispatcher_credentials, "make_beads_client", make_client)
+    monkeypatch.setattr(_dispatcher_ledger_reads, "make_beads_client", make_client)
     assert _dispatcher_credentials.read_dispatch_labels(repo=tmp_path, item=_policy_item()) == (
         "merge-on-review-cap:true",
         "review-fix-cap:5",
@@ -765,13 +767,13 @@ def test_read_dispatch_labels_returns_refusal_on_beads_error(
         _ = issue_id
         raise BeadsCommandError(command="bd show x-1", exit_code=1, stderr="boom")
 
-    monkeypatch.setattr(_dispatcher_credentials, "store_config", _store_config_stub)
+    monkeypatch.setattr(_dispatcher_ledger_reads, "store_config", _store_config_stub)
 
     def make_client(*, config: object) -> SimpleNamespace:
         _ = config
         return SimpleNamespace(show_issue=fail_show)
 
-    monkeypatch.setattr(_dispatcher_credentials, "make_beads_client", make_client)
+    monkeypatch.setattr(_dispatcher_ledger_reads, "make_beads_client", make_client)
     result = _dispatcher_credentials.read_dispatch_labels(repo=tmp_path, item=_policy_item())
     assert isinstance(result, str)
     assert result.startswith("ledger label read failed for x-1 (BeadsCommandError:")
@@ -780,7 +782,7 @@ def test_read_dispatch_labels_returns_refusal_on_beads_error(
 def test_read_dispatch_labels_treats_missing_labels_as_no_overrides(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(_dispatcher_credentials, "store_config", _store_config_stub)
+    monkeypatch.setattr(_dispatcher_ledger_reads, "store_config", _store_config_stub)
 
     def show_issue(*, issue_id: str) -> dict[str, object]:
         _ = issue_id
@@ -790,7 +792,7 @@ def test_read_dispatch_labels_treats_missing_labels_as_no_overrides(
         _ = config
         return SimpleNamespace(show_issue=show_issue)
 
-    monkeypatch.setattr(_dispatcher_credentials, "make_beads_client", make_client)
+    monkeypatch.setattr(_dispatcher_ledger_reads, "make_beads_client", make_client)
     assert _dispatcher_credentials.read_dispatch_labels(repo=tmp_path, item=_policy_item()) == ()
 
 
@@ -828,7 +830,7 @@ def test_dispatch_one_releases_dispatch_lock_when_locked_body_raises(
         assert payload["dispatch_id"] == "dispatch-lock-test"
         raise RuntimeError("label backend crashed")
 
-    monkeypatch.setattr(_dispatcher_loop, "run_id", lambda: "dispatch-lock-test")
+    monkeypatch.setattr(_dispatcher_loop_lease, "run_id", lambda: "dispatch-lock-test")
     monkeypatch.setattr(_dispatcher_loop, "read_dispatch_labels", label_failure)
 
     with pytest.raises(RuntimeError, match="label backend crashed"):

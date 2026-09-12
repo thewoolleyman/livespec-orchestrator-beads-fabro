@@ -10,12 +10,18 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_self_update as selfup,
 )
-from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
     warn_item_sizing,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_conformance_premises import (
     emit_conformance_premise_notices,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_manager import (
+    CredentialManagerClient,
+    CredentialReceipt,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_manager_io import (
+    LlmProviderManagerClient,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     materialize_overlay,
@@ -27,10 +33,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_id_journal 
     append_dispatch_id_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import (
-    dispatch_lock_path,
-    live_dispatch_lock,
     release_dispatch_lock,
-    write_dispatch_lock,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     DispatchOutcome,
@@ -40,13 +43,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projecti
     contract_prompt_variables,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
-    GithubTokenEnvRunner,
     JournalFile,
     ShellCommandRunner,
     WatchedFabroLauncher,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_lessons import (
     read_ratified_lessons,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_lease import (
+    resolve_dispatch_lease,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_materialize import (
     MaterializationRefusal,
@@ -60,16 +65,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_plan import (
     goal_file_path,
     overlay_file_path,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_reports import (
+    emit_post_run_reports,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_run import (
     DispatchRunContext,
     run_dispatch_with_watchdog,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
     post_run_dispositions,
-    run_id,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
-    spans_path,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     minijinja_findings_detail,
@@ -78,10 +82,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_run_claim import (
     release_pre_run_claim_if_needed,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_review_gate import (
-    ReviewGateEmission,
-    emit_review_gate_from_fabro_events,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -98,37 +98,22 @@ def dispatch_one(
     journal: JournalFile,
     janitor: tuple[str, ...] | None,
 ) -> DispatchOutcome:
-    raw_factory_target = getattr(args, "fabro_factory_target", None)
-    dispatch_factory = (
-        raw_factory_target.name if isinstance(raw_factory_target, FactoryTarget) else None
-    )
-    if not isinstance(raw_factory_target, FactoryTarget):
-        args.fabro_factory_target = FactoryTarget(name="default", server=None, dev_token=None)
-    lock = live_dispatch_lock(repo=repo, work_item_id=item.id)
-    if lock is None or lock.dispatch_id is None:
-        dispatch_id = run_id()
-        lock_path = write_dispatch_lock(repo=repo, work_item_id=item.id, dispatch_id=dispatch_id)
-    else:
-        dispatch_id = lock.dispatch_id
-        lock_path = dispatch_lock_path(repo=repo, work_item_id=item.id)
+    lease = resolve_dispatch_lease(args=args, repo=repo, work_item_id=item.id)
     with ExitStack() as stack:
-        _ = stack.callback(lambda: release_dispatch_lock(path=lock_path))
+        _ = stack.callback(lambda: release_dispatch_lock(path=lease.lock_path))
         outcome = _dispatch_one_locked(
             args=args,
             repo=repo,
             item=item,
             journal=journal,
             janitor=janitor,
-            identity=DispatchJournalIdentity(
-                dispatch_id=dispatch_id,
-                dispatch_factory=dispatch_factory,
-            ),
+            identity=lease.identity,
         )
         release_pre_run_claim_if_needed(repo=repo, item=item, outcome=outcome, journal=journal)
         return outcome
 
 
-def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL STAGE (ledger labels, dispatch materialization, ledger comments, GitHub App auth, run-config overlay, goal preflight) plus the dispatched outcome; each names its own stage in the journal and collapsing any two would report the wrong one.
+def _dispatch_one_locked(  # noqa: PLR0911, PLR0913 — one return per PRE-RUN REFUSAL STAGE (ledger labels, dispatch materialization, ledger comments, GitHub App auth, run-config overlay, goal preflight) plus the dispatched outcome; each names its own stage in the journal and collapsing any two would report the wrong one. `credential_manager` is the injected llm-provider-manager seam, kw-only and defaulted, so a hermetic test drives this path without an installed manager executable.
     *,
     args: argparse.Namespace,
     repo: Path,
@@ -136,9 +121,17 @@ def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL ST
     journal: JournalFile,
     janitor: tuple[str, ...] | None,
     identity: DispatchJournalIdentity,
+    credential_manager: CredentialManagerClient | None = None,
 ) -> DispatchOutcome:
     goal_file = goal_file_path(work_item_id=item.id)
     overlay_file = overlay_file_path(work_item_id=item.id)
+    # The credential authority for this dispatch, resolved ONCE so the provisioning
+    # request and any later failure report reach the SAME manager. `receipts` collects
+    # the one secret-free receipt the overlay materializer obtains; it stays empty when
+    # the dispatch refuses before provisioning, which is what tells the post-run report
+    # there is no record identity to report against.
+    manager = credential_manager or LlmProviderManagerClient(temp_dir=overlay_file.parent)
+    receipts: list[CredentialReceipt] = []
     raw_labels = read_dispatch_labels(repo=repo, item=item)
     if isinstance(raw_labels, str):
         return failed_dispatch_outcome(
@@ -210,6 +203,8 @@ def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL ST
         # graph but not for `run.prepare`.
         prepare_inputs=contract_prompt_variables(resolved=plan.integration),
         git_author=materialized.git_author,
+        credential_manager=manager,
+        receipt_sink=receipts.append,
     )
     if overlay_error is not None:
         return failed_dispatch_outcome(
@@ -259,16 +254,17 @@ def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL ST
         dispatch_context_size=len(goal_text),
         token_supplier=token_supplier,
     )
-    emit_review_gate_from_fabro_events(
-        emission=ReviewGateEmission(
-            plan=plan,
-            runner=GithubTokenEnvRunner(inner=ShellCommandRunner(), token=token_supplier),
-            journal=journal,
-            spans_path=spans_path(args=args, repo=repo),
-            work_item_id=item.id,
-            dispatch_id=identity.dispatch_id,
-            run_id=outcome.fabro_run_id,
-            dispatch_factory=identity.dispatch_factory,
-        )
+    emit_post_run_reports(
+        args=args,
+        repo=repo,
+        plan=plan,
+        journal=journal,
+        outcome=outcome,
+        identity=identity,
+        work_item_id=item.id,
+        token_supplier=token_supplier,
+        credential_manager=manager,
+        receipts=receipts,
+        now_epoch=time.time(),
     )
     return outcome

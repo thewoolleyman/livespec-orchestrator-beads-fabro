@@ -12,7 +12,6 @@ from typing import cast
 from livespec_runtime.github_auth.errors import GithubAppAuthError
 from returns.unsafe import unsafe_perform_io
 
-from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._config import resolve_fabro_sandbox_image
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
     CLAUDE_OAUTH_TOKEN_ENV,
@@ -29,6 +28,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_otel_config import (
     codex_otel_config_toml,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_manager import (
+    CredentialManagerClient,
+    CredentialReceipt,
+    ManagerRefusal,
+    manager_refusal_detail,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_manager_io import (
+    LlmProviderManagerClient,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
     select_factory_credential,
 )
@@ -36,7 +44,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import Gi
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     GITHUB_TOKEN_ENV_VAR,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_reads import (
+    read_dispatch_comments,
+    read_dispatch_labels,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     cc_otel_overlay_env,
     render_run_config_overlay,
@@ -48,17 +59,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones impor
 )
 from livespec_orchestrator_beads_fabro.commands._jsonc import JsoncFailure, parse
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
-from livespec_orchestrator_beads_fabro.errors import (
-    BeadsCommandError,
-    BeadsConnectionError,
-    BeadsMappingError,
-    BeadsTenantMissingError,
-)
-from livespec_orchestrator_beads_fabro.store import (
-    WorkItemComment,
-    read_work_item_comments,
-)
-from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "assess_credential_status",
@@ -80,64 +80,9 @@ _DISPATCH_REQUIRED_CREDENTIALS = (
     CLAUDE_OAUTH_TOKEN_ENV,
 )
 _GITHUB_TOKEN_ENV = GITHUB_TOKEN_ENV_VAR  # single-sourced from _dispatcher_io
-_LEDGER_READ_ERRORS = (
-    BeadsCommandError,
-    BeadsConnectionError,
-    BeadsMappingError,
-    BeadsTenantMissingError,
-)
 
 
-def read_dispatch_comments(
-    *,
-    repo: Path,
-    item: WorkItem,
-) -> tuple[WorkItemComment, ...] | str:
-    """Read the item's ledger comments for the goal; error string on failure.
-
-    Comments are operator riders appended after filing (e.g.
-    pre-authorizations); a brief without them silently re-creates bn4
-    finding (c), so a failed read REFUSES the dispatch (error-as-data,
-    routed at the `ledger-comments` stage) instead of proceeding
-    comment-blind.
-    """
-    comments = attempt(
-        action=lambda: read_work_item_comments(path=store_config(repo=repo), work_item_id=item.id),
-        exceptions=_LEDGER_READ_ERRORS,
-    )
-    if isinstance(comments, AttemptFailure):
-        return (
-            f"ledger comments read failed for {item.id} "
-            f"({type(comments.error).__name__}: {comments.error})"
-        )
-    return comments
-
-
-def read_dispatch_labels(
-    *,
-    repo: Path,
-    item: WorkItem,
-) -> tuple[str, ...] | str:
-    """Read raw beads labels that carry per-item dispatcher policy overrides."""
-    record = attempt(
-        action=lambda: make_beads_client(config=store_config(repo=repo)).show_issue(
-            issue_id=item.id
-        ),
-        exceptions=_LEDGER_READ_ERRORS,
-    )
-    if isinstance(record, AttemptFailure):
-        return (
-            f"ledger label read failed for {item.id} "
-            f"({type(record.error).__name__}: {record.error})"
-        )
-    labels = record.get("labels")
-    if not isinstance(labels, list):
-        return ()
-    raw_labels = cast("list[object]", labels)
-    return tuple(label for label in raw_labels if isinstance(label, str))
-
-
-def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each argument is an independent projection input, matching `render_run_config_overlay` it feeds.
+def materialize_overlay(  # noqa: PLR0913, PLR0911 — kw-only overlay materializer; each argument is an independent projection input, matching `render_run_config_overlay` it feeds, and each early return is one independent precondition refusing as data. Collapsing them would hide WHICH precondition refused, which is the whole content of the refusal.
     *,
     committed: Path,
     overlay: Path,
@@ -148,6 +93,8 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
     git_author: GitAuthor,
     graph_override: Path | None = None,
     prepare_inputs: Mapping[str, str] | None = None,
+    credential_manager: CredentialManagerClient | None = None,
+    receipt_sink: Callable[[CredentialReceipt], object] | None = None,
 ) -> str | None:
     """Write the uncommitted mode-600 run-config overlay.
 
@@ -156,7 +103,8 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
     `run-config-overlay` stage). The overlay is the RUN-SCOPED
     credential projection: the committed config (graph path absolutized)
     plus an appended env table carrying the CLAUDE_CODE_OAUTH_TOKEN
-    value read from this process's environment and a GITHUB_TOKEN freshly
+    value the llm-provider-manager selected for THIS run and a
+    GITHUB_TOKEN freshly
     minted from the App installation-token provider (`token` is the
     provider's accessor — the sandbox receives an ephemeral installation
     token, never the durable App key and never a fleet PAT; projected
@@ -166,6 +114,24 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
     docstring), so the value MUST be materialized. The token never
     reaches a log, journal, or argv; the overlay file is deleted when
     the run returns.
+
+    The Anthropic credential is obtained through `credential_manager` —
+    an injectable llm-provider-manager client requesting provider
+    `anthropic`, the `claude-code-oauth` inference capability, purpose
+    `factory` and this dispatch's run identity — rather than by reading a
+    legacy `CLAUDE_CODE_OAUTH_TOKEN*` environment-pool slot. The manager
+    writes the selected value into a per-run isolated target and answers
+    with a SECRET-FREE receipt; the value crosses exactly one seam (that
+    target to this overlay) and the receipt goes to `receipt_sink`, which
+    is what lets a later run failure be reported against the credential's
+    record identity. A manager refusal returns its typed, actionable
+    detail HERE, before any overlay byte is written, so a refused
+    dispatch leaves an existing overlay untouched. There is deliberately
+    NO fallback to the legacy pool: a silent fallback would leave the
+    factory believing it runs on manager-selected accounts when it does
+    not. The env-pool PROBE (`check_credential_env`, above) is unchanged
+    — the legacy pool survives until the manager's coexistence proof
+    completes.
 
     The overlay ALSO provisions the sandbox sibling clones: one depth-1
     prepare-step clone per fleet member (minus the dispatch target,
@@ -227,15 +193,16 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
         work_item_id=work_item_id,
         dispatch_id=dispatch_id,
     )
-    credential_choice = select_factory_credential(
-        environ=os.environ,
-        home=Path.home(),
-        warn=lambda message: sys.stderr.write(f"livespec-dispatch: {message}\n"),
-    )
+    manager = credential_manager or LlmProviderManagerClient(temp_dir=overlay.parent)
+    provisioned = manager.provision(consumer_run_id=dispatch_id)
+    if isinstance(provisioned, ManagerRefusal):
+        return manager_refusal_detail(refusal=provisioned)
+    if receipt_sink is not None:
+        _ = receipt_sink(provisioned.receipt)
     rendered = render_run_config_overlay(
         committed_text=committed.read_text(encoding="utf-8"),
         workflow_dir=committed.parent.resolve(),
-        token=os.environ[credential_choice.env_name],
+        token=provisioned.value,
         github_token=github_token,
         siblings=siblings,
         otel_env=otel_env,

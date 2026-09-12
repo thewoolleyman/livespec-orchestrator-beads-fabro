@@ -63,7 +63,13 @@ _FLEET_MANIFEST_TEXT = (
     "}\n"
 )
 
+# The credential the autouse hermetic llm-provider-manager provisions for the run
+# (`conftest.HERMETIC_MANAGER_CREDENTIAL`). The Claude half of this dual projection is
+# no longer read from the process environment: the Dispatcher asks the manager for a
+# run-scoped credential, so the env below is the LEGACY POOL the pre-launch probe still
+# reads, not the value the overlay must carry.
 _FAKE_CLAUDE_TOKEN = "test-oauth-token"
+_MANAGER_CLAUDE_TOKEN = "hermetic-manager-oauth-token"
 _FAKE_GITHUB_TOKEN = "test-github-token"
 _HOST_REFRESH_TOKEN = "host-refresh-token"
 _GIT_AUTHOR = GitAuthor(name="Chad Woolley", email="thewoolleyman@gmail.com")
@@ -124,7 +130,7 @@ def test_scenario18_dispatch_overlay_projects_dual_credentials(
     assert error is None
     rendered = overlay.read_text(encoding="utf-8")
     assert stat.S_IMODE(overlay.stat().st_mode) == 0o600
-    assert f'CLAUDE_CODE_OAUTH_TOKEN = "{_FAKE_CLAUDE_TOKEN}"' in rendered
+    assert f'CLAUDE_CODE_OAUTH_TOKEN = "{_MANAGER_CLAUDE_TOKEN}"' in rendered
     assert 'CODEX_HOME = "/workspace/.codex"' in rendered
     assert "CODEX_AUTH_JSON = " in rendered
     assert (
