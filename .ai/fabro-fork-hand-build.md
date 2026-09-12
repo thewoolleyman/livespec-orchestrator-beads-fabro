@@ -63,10 +63,27 @@ clippy; a different nightly reports different lints and is not evidence.
 Record which gates ran, against which commit, on the ledger item before
 merging. A gate that was killed before it reported is not a gate that ran:
 the S4 session's wind-down killed the server and CLI test targets and the
-clippy run mid-flight, and the next session had to re-run them. Long gates
-should be launched detached (the `just gate-start` runner from this
-repository, or an equivalent that survives the launching turn), never as a
-foreground call that a session wind-down can cancel.
+clippy run mid-flight, and the next session had to re-run them. Launch long
+gates DETACHED through this repository's runner and watch the log, never as
+a foreground call a wind-down can cancel and never as an agent-harness
+background task:
+
+```bash
+cd ~/.worktrees/livespec-orchestrator-beads-fabro/<branch>   # any worktree with the pack
+run_id=$(mise exec -- just gate-start -- /path/to/gate-script.sh)
+mise exec -- just gate-status "$run_id"    # exit 75 while still running
+```
+
+Measured 2026-09-12 on vps: a `run_in_background` harness task running the
+same nextest gate was killed three times in a row with "stopped because the
+system is running low on memory" during the `fabro-server` test-binary
+link, and so was a background `gate-wait` waiter, while `free -g` showed 52
+to 54 GB available each time. The trigger is the harness's own heuristic,
+not the kernel. The detached gate-runner job launched for the identical
+script survived that window untouched and reported 2,317 passed. Wait on it
+with a polling watch of `tmp/gate-runs/<run_id>/output.log` for the
+script's own done marker, and keep `CARGO_BUILD_JOBS` at 4 to 6 with
+`nice -n 10` on this shared box regardless.
 
 ## Merging and the runbook duty
 
