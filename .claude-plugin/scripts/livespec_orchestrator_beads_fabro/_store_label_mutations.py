@@ -10,23 +10,34 @@ for the per-item cap overrides.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, get_args
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
+from livespec_orchestrator_beads_fabro.types import FactorySafety
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
+    "FACTORY_SAFETY_REASONS",
     "update_work_item_awaits_scope_override",
+    "update_work_item_factory_safety",
     "update_work_item_policy",
     "update_work_item_workflow_scope_override",
 ]
 
 _LABEL_ADMISSION = "admission:"
 _LABEL_ACCEPTANCE = "acceptance:"
+_LABEL_FACTORY_SAFETY = "factory-safety:"
 _LABEL_WORKFLOW_SCOPE_OVERRIDE = "workflow-scope-override:"
 _LABEL_AWAITS_SCOPE_OVERRIDE = "awaits-scope-override"
+
+# The closed host-only reason vocabulary, read off the `FactorySafety` alias
+# rather than restated, so the label writer and the operator valve that grades a
+# typed reason can never disagree with the field's own enum. A tuple, not a set:
+# the refusal message enumerates the reasons, and the declaration order is the
+# order contracts.md names them in.
+FACTORY_SAFETY_REASONS: tuple[str, ...] = get_args(FactorySafety)
 
 
 def update_work_item_policy(
@@ -59,6 +70,30 @@ def update_work_item_policy(
         client.update_issue(issue_id=item_id, remove_labels=remove_labels)
     if add_labels:
         client.update_issue(issue_id=item_id, add_labels=add_labels)
+
+
+def update_work_item_factory_safety(
+    *,
+    path: StoreConfig,
+    item_id: str,
+    reason: str,
+) -> None:
+    """Set the intrinsic host-only opt-out label without changing status.
+
+    The write seam behind `drive --action set-factory-safety:<id>:<reason>`.
+    Like `update_work_item_policy` it enumerates the field's finite enum to know
+    which prior label to remove, so re-pressing the verb with a different reason
+    REPLACES the recorded one rather than leaving the item carrying two. It
+    deliberately sends no status or assignee mutation: `factory_safety` is
+    orthogonal to the lifecycle, and an opt-out that moved the item would be the
+    surprise-transition the whole label-only family exists to avoid.
+    """
+    client = make_beads_client(config=path)
+    client.update_issue(
+        issue_id=item_id,
+        remove_labels=[f"{_LABEL_FACTORY_SAFETY}{value}" for value in FACTORY_SAFETY_REASONS],
+    )
+    client.update_issue(issue_id=item_id, add_labels=[f"{_LABEL_FACTORY_SAFETY}{reason}"])
 
 
 def update_work_item_workflow_scope_override(

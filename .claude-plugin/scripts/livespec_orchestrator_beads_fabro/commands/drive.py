@@ -73,6 +73,7 @@ _UNSUPPORTED_ACTION_SUMMARY = (
     "'accept:<id>', 'reject:<id>:rework|regroom', "
     "'set-admission:<id>:auto|manual', "
     "'set-acceptance:<id>:ai-only|human-only|ai-then-human', "
+    "'set-factory-safety:<id>:needs-host-secrets|mutates-host-machinery|needs-privileged-host', "
     "'set-workflow-scope-override:<id>:citation-only', "
     "'set-merge-on-review-cap:<id>:true|false', "
     "'set-review-fix-cap:<id>:<positive-int>', "
