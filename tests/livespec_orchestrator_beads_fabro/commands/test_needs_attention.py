@@ -150,6 +150,24 @@ def _stub_spec_next(monkeypatch: pytest.MonkeyPatch, *, output: SpecNextOutput |
     monkeypatch.setattr(needs_attention, "spec_next", _fake)
 
 
+@pytest.fixture(autouse=True)
+def _neutralize_host_currency_staleness(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep build_attention composition independent of this host's plugin build.
+
+    The currency-staleness lane reads the operator-provisioned plugin build and
+    the marketplace release clone; a mid-session release makes those diverge and
+    leaks a hygiene row into every build_attention snapshot, reddening these
+    composition tests on any host whose install lags. Stubbing the lane to empty
+    here isolates composition from host plugin state. The lane keeps its own
+    dedicated coverage in test_needs_attention_currency_staleness.py (a lagging
+    pair surfaces the row; a converged, ahead, unorderable, or unreadable pair
+    emits nothing) and its wiring into build_attention in
+    test_dispatcher_plugin_currency_scenario95.py, so this stub removes no honest
+    coverage.
+    """
+    monkeypatch.setattr(needs_attention, "currency_staleness_items", lambda **_kwargs: [])
+
+
 def _item(
     *,
     id_: str,

@@ -35,6 +35,22 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 from livespec_runtime.needs_attention import SpecNextOutput
 from livespec_runtime.work_items.types import StoredBlockedReason, WorkItemStatus
 
+
+@pytest.fixture(autouse=True)
+def _neutralize_host_currency_staleness(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep build_attention composition independent of this host's plugin build.
+
+    The currency-staleness lane reads the operator-provisioned plugin build and
+    the marketplace release clone; a mid-session release makes those diverge and
+    leaks a hygiene row into every build_attention snapshot, reddening these
+    composition tests on any host whose install lags. Stubbing the lane to empty
+    here isolates composition from host plugin state; the lane keeps its own
+    dedicated coverage in test_needs_attention_currency_staleness.py and its
+    wiring into build_attention in test_dispatcher_plugin_currency_scenario95.py.
+    """
+    monkeypatch.setattr(needs_attention, "currency_staleness_items", lambda **_kwargs: [])
+
+
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _RESOLVER_SOURCE = (
     _REPO_ROOT

@@ -48,6 +48,13 @@ _CRITERIA = "The change is verified green by the check suite."
 @pytest.fixture(autouse=True)
 def _hermetic_fake_backend(monkeypatch: pytest.MonkeyPatch) -> object:
     monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
+    # Keep build_attention composition independent of this host's plugin build:
+    # the currency-staleness lane reads the provisioned build vs the marketplace
+    # release clone, and a mid-session release makes those diverge and leaks a
+    # hygiene row into the snapshot. The lane keeps its own dedicated coverage in
+    # test_needs_attention_currency_staleness.py and its build_attention wiring in
+    # test_dispatcher_plugin_currency_scenario95.py.
+    monkeypatch.setattr(needs_attention, "currency_staleness_items", lambda **_kwargs: [])
     reset_fake_singleton()
     yield
     reset_fake_singleton()
