@@ -32,6 +32,7 @@ nothing launches an adapter and nothing reaches a provider.
 
 from __future__ import annotations
 
+import argparse
 import importlib
 import json
 from dataclasses import dataclass, field
@@ -838,6 +839,70 @@ def test_the_credential_reprobe_wait_is_skipped_while_a_fallback_is_viable(
     )
 
     assert journal.records == []
+
+
+def test_the_loop_wave_hands_its_resolved_verdict_to_the_reprobe_wait(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The PRODUCTION wave gates the wait, not just a hand-supplied unit call.
+
+    The sibling above proves the gate refuses to wait when it is GIVEN a viable
+    fallback verdict. That is worth nothing unless the one production caller
+    supplies one: a wave that calls `await_usable_credential` with no verdict
+    leaves the gate permanently unreachable, and the contract clause "never a
+    primary-only probe refusal with a viable fallback" would hold only in the
+    test suite. So this drives `dispatch_loop_wave` itself and asserts the
+    credential is never even ASSESSED — the observable the gate exists to
+    suppress, and the one a preflight-less wave cannot avoid reaching.
+    """
+    modules = _modules()
+    wave = importlib.import_module(f"{_PACKAGE}._dispatcher_loop_wave")
+    reprobe = importlib.import_module(f"{_PACKAGE}._dispatcher_credential_reprobe")
+    admission_module = importlib.import_module(f"{_PACKAGE}._dispatcher_admission")
+    rework_module = importlib.import_module(f"{_PACKAGE}._dispatcher_rework_admission")
+    journal_file = importlib.import_module(f"{_PACKAGE}._dispatcher_io").JournalFile(
+        path=tmp_path / "journal.jsonl"
+    )
+    viable = modules["_acp_preflight_verdict"].AcpPreflightVerdict(
+        fallback_enabled=True, success_critical=("implement",)
+    )
+    resolved: list[dict[str, object]] = []
+
+    def fake_resolve(**kwargs: object) -> object:
+        resolved.append(kwargs)
+        return viable
+
+    monkeypatch.setattr(wave, "resolve_acp_preflight", fake_resolve, raising=False)
+    monkeypatch.setattr(
+        reprobe,
+        "assess_credential_status",
+        lambda **_: pytest.fail("a viable fallback chain must not be assessed"),
+    )
+    monkeypatch.setattr(
+        wave,
+        "admit_and_select",
+        lambda **_: admission_module.Admission(admitted=[], deferred=[], refused=[]),
+    )
+
+    outcomes = wave.dispatch_loop_wave(
+        args=_wave_args(),
+        repo=tmp_path,
+        items=[],
+        selected_candidates=[],
+        journal=journal_file,
+        janitor=None,
+        rework=rework_module.ReworkPass(),
+    )
+
+    assert outcomes == []
+    assert [call["repo"] for call in resolved] == [tmp_path]
+    assert [call["journal_path"] for call in resolved] == [journal_file.path]
+    assert all("probe" not in call for call in resolved)
+
+
+def _wave_args() -> Any:
+    """The two `argparse.Namespace` fields one wave reads."""
+    return argparse.Namespace(budget=1, parallel=1)
 
 
 def test_wait_attention_and_idle_factory_consume_the_same_probe_free_verdict(

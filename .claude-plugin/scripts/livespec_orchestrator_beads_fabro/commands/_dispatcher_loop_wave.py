@@ -21,6 +21,9 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
+    resolve_acp_preflight,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
     admit_and_select,
 )
@@ -33,6 +36,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
+    utc_now_iso,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import dispatch_one
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import ReworkPass
@@ -60,7 +64,25 @@ def dispatch_loop_wave(  # noqa: PLR0913 — kw-only wave inputs; `rework` is th
     # ending the invocation: the probe's own next result retires the wait, and
     # no provider-stated reset instant gates it. Every other probe condition
     # returns immediately and is reported by the dispatch path's own refusal.
-    await_usable_credential(repo=repo, journal=journal, budget=args.budget)
+    #
+    # The wait is GATED on this pass's own ACP preflight verdict, because
+    # `SPECIFICATION/contracts.md` section "Factory-configurable ACP fallback
+    # priority" admits the wait only for "a legacy single candidate and a
+    # genuinely exhausted fallback chain, never a primary-only probe refusal
+    # with a viable fallback". The verdict has to be resolved HERE rather than
+    # taken from the admission valve below: the wait runs strictly before
+    # admission, so there is no earlier verdict to inherit. Resolving it twice
+    # in one pass costs nothing observable — no probe is supplied on either
+    # side, so the resolution reads only committed configuration, the workflow
+    # graph and the journal, and writes nothing.
+    await_usable_credential(
+        repo=repo,
+        journal=journal,
+        budget=args.budget,
+        preflight=resolve_acp_preflight(
+            repo=repo, journal_path=journal.path, now_iso=utc_now_iso()
+        ),
+    )
     return _admit_and_dispatch_loop_wave(
         args=args,
         repo=repo,
