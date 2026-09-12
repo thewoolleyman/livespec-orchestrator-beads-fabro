@@ -1635,6 +1635,25 @@ the third near-miss.
      same one read again. Another tenant found a free-form value that the first
      tenant's data structurally could not contain — that is corroboration in the
      sense the shared-method census was not.
+   - *Why a SECOND PARTY is load-bearing, and what cannot replace it (2026-09-12,
+     this repo, plan `bd-ib-uy4lp7`):* an instrument failure is invisible to its
+     OWN author for the same structural reason the other party's is invisible to
+     them — each returns a clean, plausible answer **at exit 0**. Three of the
+     implementing session's claims failed that way in one thread: a
+     `/proc/<pid>/environ` scan for `CLAUDE_PLUGIN_ROOT` that could not hit for
+     ANY process, including the scanning session's own; a "no resolution-source
+     field" discriminator naming a field NO dispatch writes, which as stated
+     would have disqualified the two canaries the same item counted; and a
+     "residual VERIFIED DISCHARGED" proved on a green run that structurally
+     cannot enter the fail-fast branch it was meant to test. TWO were caught by
+     the independent reviewer; one by a control the session happened to run.
+     The reviewer's own first probe failed identically from the opposite
+     direction — a `grep -rl` by run id across sibling trees returning a clean
+     zero that WOULD HAVE FALSIFIED a requirement — and it disclosed that rather
+     than letting the zero stand. So the asymmetry is the point, not the credit:
+     a single agent running both roles banks the same greens twice. Reviewing
+     your own work harder is not a substitute for a party whose blind spots are
+     not yours.
 
 5. **A next-action line EXECUTES — author it from evidence, not from status.**
    Under an unattended resume (`LIVESPEC_PLAN_UNATTENDED`), `resume_directive`

@@ -113,3 +113,39 @@ wrote. Run it against both ids before closing the epic, and confirm
 
 `reviewer-identity` must differ from the archive actor (`plan-archive`), and
 `separate-reviewer` must be `true`, or the record is not evidence.
+
+## The gate is honest-actor dependent
+
+`_is_valid_evidence` checks exactly four things: the evidence id matches,
+`reviewer-identity` differs from `plan-archive`, `separate-reviewer` is `true`,
+and `attests-complete-requirement-coverage` is `true`. **Nothing in it can tell
+a genuine independent review from an archiving session writing those four
+fields about its own work.** The gate records the claim; it cannot verify the
+independence the claim asserts. The load-bearing act is therefore commissioning
+a reviewer that actually had no role in the implementation — the mechanism only
+certifies that you say you did.
+
+Measured 2026-09-12 on `bd-ib-uy4lp7`: the independent reviewer caught two
+instrument failures the implementing session could not see in its own work (a
+discriminator naming a field no dispatch writes, and a "verified discharged"
+claim proved on a green run that cannot enter the fail-fast branch it tested),
+and disclosed one of its own — a `grep -rl` probe returning a clean zero that
+would have falsified a requirement. See `AGENTS.md` Rule 4's second-party
+corollary for why that symmetry is the argument for the split.
+
+## The evidence decays — re-measure before quoting it
+
+A recorded attestation is **a claim with a timestamp, not a standing
+guarantee**: it attests a measurement taken on one day against the tree as it
+stood then. This is Rule 3's case — the danger is not writing something false,
+it is writing something true that STOPS being true while still reading as
+authoritative in the place a successor trusts instead of checking, and a closed
+plan's evidence comment is exactly such a place.
+
+Before citing an evidence id, re-measure whatever that plan's claims actually
+turn on. For an archived factory-graph plan that means the graph's unconditional
+edges and a `fabro validate` exit 0 (shape alone does not discriminate — the
+broken build had the same node and edge counts as the fixed one), the CI gate's
+fail-closed wiring read from the JOB LOG rather than the job's green (a skipped
+check and a passing check are the same colour), and whether any nominal
+follow-up carrier is still undispatchable.
