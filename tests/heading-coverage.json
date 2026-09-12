@@ -1370,5 +1370,13 @@
     "test": "TODO",
     "reason": "Ratified by the factory-configurable-model-fallback-priority revise pass (plan/epic bd-ib-jxvgq5). The scenario introduces unimplemented cross-repository Dispatcher and pinned-Fabro behavior; integration and consumer-tier bindings are filed from the required post-revise implementation-gap capture rather than misrepresented as existing unit coverage.",
     "work_item": "bd-ib-jxvgq5"
+  },
+  {
+    "heading": "## Scenario 128 — An unrunnable ready item is visible but never advertised for dispatch",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Integration-tier coverage is owed by the post-revise implementation mirror for livespec-n33rwg.10. The test must drive the real store and candidate-composition seams across next, the needs-attention implementation item composed from next, idle-factory output, and the Dispatcher drain, with discriminating human-only, groom-kind, and repaired-gradeable controls; no current implementation can honestly bind the new behavior before that mirror lands.",
+    "work_item": "livespec-n33rwg.10"
   }
 ]
