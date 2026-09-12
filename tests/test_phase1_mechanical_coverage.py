@@ -36,6 +36,16 @@ def test_phase1_mechanical_checks_have_no_newly_covered_warnings(capsys) -> None
     assert '"newly_covered": true' not in captured.err
 
 
+def test_coverage_omits_host_global_python() -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    pyproject = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
+    run_config = pyproject.split("[tool.coverage.run]", maxsplit=1)[1].split(
+        "[tool.coverage.report]", maxsplit=1
+    )[0]
+
+    assert '"/usr/local/bin/*"' in run_config
+
+
 def test_check_wrapper_shape_uses_strict_shared_gate(monkeypatch) -> None:
     """The check-wrapper-shape gate must invoke the strict SHARED
     livespec_dev_tooling wrapper_shape module — never a locally-forked,
