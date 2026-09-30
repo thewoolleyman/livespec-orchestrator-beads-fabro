@@ -42,14 +42,19 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from typing import Any
 
-from livespec_orchestrator_beads_fabro.commands._acp_agent_entry import AcpAgentEntry
+from livespec_orchestrator_beads_fabro.commands._acp_agent_entry import (
+    AcpAgentEntry,
+    parse_agent_entry,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_agent_mechanism import (
     ENV_MECHANISM,
     JSON_ENV_MECHANISM,
     PROTOCOL_MECHANISM,
     AcpModelMechanism,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_catalog_overrides import catalog_overrides
 
 __all__: list[str] = [
     "AGENT_CATALOG_KEY",
@@ -60,6 +65,7 @@ __all__: list[str] = [
     "REGISTRY_SNAPSHOT_DATE",
     "agent_catalog_digest",
     "builtin_agent_catalog",
+    "resolve_agent_catalog",
 ]
 
 # The per-repository additions key, in the committed-configuration-only class
@@ -166,6 +172,30 @@ _BUILTIN_AGENTS: tuple[AcpAgentEntry, ...] = (
 def builtin_agent_catalog() -> Mapping[str, AcpAgentEntry]:
     """The shipped snapshot, keyed by registry agent id."""
     return {entry.agent_id: entry for entry in _BUILTIN_AGENTS}
+
+
+def resolve_agent_catalog(*, block: Mapping[str, Any]) -> Mapping[str, AcpAgentEntry] | str:
+    """The shipped snapshot with this repository's own entries applied, or refuse.
+
+    A repository entry REPLACES a shipped one of the same id rather than
+    merging into it, which is what `parse_agent_entry` requires a complete entry
+    for. The shipped entries a repository does not name are untouched, so
+    overriding `claude-acp` cannot silently change what `codex-acp` renders.
+    """
+    overrides = catalog_overrides(block=block, config_key=AGENT_CATALOG_KEY)
+    if isinstance(overrides, str):
+        return overrides
+    catalog = dict(builtin_agent_catalog())
+    for agent_id, entry in overrides.items():
+        parsed = parse_agent_entry(
+            agent_id=agent_id,
+            entry=entry,
+            key=f"dispatcher.{AGENT_CATALOG_KEY}.{agent_id}",
+        )
+        if isinstance(parsed, str):
+            return parsed
+        catalog[agent_id] = parsed
+    return catalog
 
 
 def agent_catalog_digest(*, catalog: Mapping[str, AcpAgentEntry]) -> str:

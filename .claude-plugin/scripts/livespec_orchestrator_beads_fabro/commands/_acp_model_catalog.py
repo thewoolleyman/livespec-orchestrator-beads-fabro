@@ -40,17 +40,23 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands._acp_agent_catalog import (
     ANTHROPIC_PROVIDER,
     OPENAI_PROVIDER,
 )
-from livespec_orchestrator_beads_fabro.commands._acp_model_entry import AcpModelEntry
+from livespec_orchestrator_beads_fabro.commands._acp_catalog_overrides import catalog_overrides
+from livespec_orchestrator_beads_fabro.commands._acp_model_entry import (
+    AcpModelEntry,
+    parse_model_entry,
+)
 
 __all__: list[str] = [
     "MODEL_CATALOG_KEY",
     "builtin_model_catalog",
     "model_catalog_digest",
+    "resolve_model_catalog",
 ]
 
 # The per-repository additions key, in the same committed-configuration-only
@@ -107,6 +113,24 @@ def builtin_model_catalog() -> Mapping[str, AcpModelEntry]:
         for model, display_name in models
     ]
     return {entry.key: entry for entry in entries}
+
+
+def resolve_model_catalog(*, block: Mapping[str, Any]) -> Mapping[str, AcpModelEntry] | str:
+    """The shipped snapshot with this repository's own entries applied, or refuse."""
+    overrides = catalog_overrides(block=block, config_key=MODEL_CATALOG_KEY)
+    if isinstance(overrides, str):
+        return overrides
+    catalog = dict(builtin_model_catalog())
+    for catalog_key, entry in overrides.items():
+        parsed = parse_model_entry(
+            catalog_key=catalog_key,
+            entry=entry,
+            key=f"dispatcher.{MODEL_CATALOG_KEY}.{catalog_key}",
+        )
+        if isinstance(parsed, str):
+            return parsed
+        catalog[catalog_key] = parsed
+    return catalog
 
 
 def model_catalog_digest(*, catalog: Mapping[str, AcpModelEntry]) -> str:
