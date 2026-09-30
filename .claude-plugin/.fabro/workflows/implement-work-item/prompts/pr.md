@@ -20,7 +20,7 @@ you must NEVER `cd` to it or treat the absence of any such path as
 
 ## Your assignment (for the PR description)
 
-{{ goal }}
+The complete work-item goal is in the Fabro-injected `Goal:` preamble above.
 
 ## What to do, in order
 

@@ -7,7 +7,7 @@ adjudication authority in this stage.
 
 ## Your assignment (unchanged)
 
-{{ goal }}
+The complete work-item goal is in the Fabro-injected `Goal:` preamble above.
 
 ## What to do
 
