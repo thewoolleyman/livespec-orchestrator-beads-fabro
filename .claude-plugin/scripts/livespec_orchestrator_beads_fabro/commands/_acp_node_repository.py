@@ -30,6 +30,11 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any, cast
 
+from livespec_orchestrator_beads_fabro.commands._acp_candidate_forms import (
+    is_structured_entry,
+    parse_structured_entry,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_catalogs import AcpCatalogs
 from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import (
     AcpNodeOverlay,
     overlay_from_string,
@@ -38,6 +43,10 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import (
 from livespec_orchestrator_beads_fabro.commands._acp_node_chains import (
     AcpNodeChain,
     parse_node_chains,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_structured_render import (
+    READ_ONLY_NODES,
+    render_structured_entry,
 )
 from livespec_orchestrator_beads_fabro.commands._codex_model_tiers import (
     codex_model_tiers_from_block,
@@ -59,7 +68,9 @@ _PR_TIER_KEY = "pr"
 _IMPLEMENTER_NODES: tuple[str, ...] = ("implement", "fix", "review_fix")
 
 
-def repository_acp_overlays(*, block: dict[str, Any]) -> Mapping[str, AcpNodeOverlay] | str:
+def repository_acp_overlays(
+    *, block: dict[str, Any], catalogs: AcpCatalogs
+) -> Mapping[str, AcpNodeOverlay] | str:
     """Resolve the per-repository adapter overlays, or refuse.
 
     Returns one overlay per configured node, or an actionable refusal
@@ -73,7 +84,7 @@ def repository_acp_overlays(*, block: dict[str, Any]) -> Mapping[str, AcpNodeOve
     committed record to show for it.
     """
     overlays = dict(_codex_shorthand_overlays(block=block))
-    explicit = _explicit_overlays(block=block)
+    explicit = _explicit_overlays(block=block, catalogs=catalogs)
     if isinstance(explicit, str):
         return explicit
     for node, overlay in explicit.items():
@@ -132,7 +143,9 @@ def repository_acp_chains(*, block: dict[str, Any]) -> Mapping[str, AcpNodeChain
     )
 
 
-def _explicit_overlays(*, block: dict[str, Any]) -> Mapping[str, AcpNodeOverlay] | str:
+def _explicit_overlays(
+    *, block: dict[str, Any], catalogs: AcpCatalogs
+) -> Mapping[str, AcpNodeOverlay] | str:
     """Parse `dispatcher.acp_nodes` into one overlay per named node."""
     table_raw = block.get(_ACP_NODES_KEY)
     if table_raw is None:
@@ -145,18 +158,62 @@ def _explicit_overlays(*, block: dict[str, Any]) -> Mapping[str, AcpNodeOverlay]
     table = cast("dict[str, Any]", table_raw)
     overlays: dict[str, AcpNodeOverlay] = {}
     for node in sorted(table):
-        entry: object = table[node]
-        key = f"dispatcher.{_ACP_NODES_KEY}.{node}"
-        if isinstance(entry, str):
-            overlays[node] = overlay_from_string(text=entry)
-            continue
-        if not isinstance(entry, dict):
-            return f"{key} must be an adapter string or a table; got {entry!r}"
-        parsed = overlay_from_table(entry=cast("dict[str, Any]", entry), key=key)
+        parsed = _one_overlay(node=node, entry=table[node], catalogs=catalogs)
         if isinstance(parsed, str):
             return parsed
         overlays[node] = parsed
     return overlays
+
+
+def _one_overlay(*, node: str, entry: object, catalogs: AcpCatalogs) -> AcpNodeOverlay | str:
+    """One node's overlay from whichever form its entry is written in.
+
+    A STRING entry is the legacy whole-adapter spelling and stays valid. A TABLE
+    is either of the two ratified forms, discriminated on the presence of
+    `agent` -- which is safe because the closed grammar refuses an object
+    carrying `agent` together with any manual field, so the two cannot overlap.
+    """
+    key = f"dispatcher.{_ACP_NODES_KEY}.{node}"
+    if isinstance(entry, str):
+        return overlay_from_string(text=entry)
+    if not isinstance(entry, dict):
+        return f"{key} must be an adapter string or a table; got {entry!r}"
+    table = cast("dict[str, Any]", entry)
+    if not is_structured_entry(entry=table):
+        return overlay_from_table(entry=table, key=key)
+    return _structured_overlay(node=node, table=table, catalogs=catalogs, key=key)
+
+
+def _structured_overlay(
+    *, node: str, table: Mapping[str, Any], catalogs: AcpCatalogs, key: str
+) -> AcpNodeOverlay | str:
+    """Render a structured entry and hand the merge an ORDINARY overlay.
+
+    This is where `SPECIFICATION/contracts.md` section "ACP node adapter
+    configuration"'s "render ... before any layer merge" becomes structural:
+    what leaves this function is indistinguishable from a hand-written manual
+    entry, so every downstream rule applies to the rendered candidate unchanged
+    without any of them having to know the structured form exists.
+
+    `env_replaces` is set because a rendered structured entry is a COMPLETE
+    adapter. Merging the workflow default's environment into it would prefix one
+    provider's model pin onto another provider's command -- the exact defect the
+    `codex_models` expansion below sets the same flag for.
+    """
+    parsed = parse_structured_entry(entry=table, key=key)
+    if isinstance(parsed, str):
+        return parsed
+    rendered = render_structured_entry(
+        entry=parsed, catalogs=catalogs, key=key, read_only=node in READ_ONLY_NODES
+    )
+    if isinstance(rendered, str):
+        return rendered
+    return AcpNodeOverlay(
+        command=rendered.adapter.command,
+        env=rendered.adapter.env,
+        args=rendered.adapter.args,
+        env_replaces=True,
+    )
 
 
 def _codex_shorthand_overlays(*, block: dict[str, Any]) -> Mapping[str, AcpNodeOverlay]:

@@ -28,6 +28,7 @@ import json
 import shlex
 from itertools import takewhile
 
+from livespec_orchestrator_beads_fabro.commands._acp_catalogs import builtin_catalogs
 from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import (
     AcpAdapter,
     parse_adapter_string,
@@ -121,6 +122,7 @@ def test_an_explicit_acp_nodes_table_renders_a_codex_config_that_survives_tokeni
     scope of the fix rather than a second flavour of the same assertion.
     """
     overlays = repository_acp_overlays(
+        catalogs=builtin_catalogs(),
         block={
             "acp_nodes": {
                 "review": {
@@ -129,7 +131,7 @@ def test_an_explicit_acp_nodes_table_renders_a_codex_config_that_survives_tokeni
                     "args": [],
                 }
             }
-        }
+        },
     )
     assert not isinstance(overlays, str), overlays
     resolution = resolve_acp_nodes(

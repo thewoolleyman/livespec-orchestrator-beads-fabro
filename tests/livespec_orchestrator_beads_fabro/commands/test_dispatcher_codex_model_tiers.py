@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro.commands import _config
+from livespec_orchestrator_beads_fabro.commands import _config, _config_acp
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import resolve_acp_nodes
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import (
     dispatch_acp_overlays,
@@ -56,7 +56,7 @@ def _write_dispatcher_config(*, cwd: Path, dispatcher: dict[str, object]) -> Non
 
 def _dispatch_inputs(*, repo: Path) -> tuple[str, ...]:
     """The `--input` pairs a dispatch of `repo` renders, adapters resolved."""
-    overlays = _config.resolve_acp_node_overlays(cwd=repo)
+    overlays = _config_acp.resolve_acp_node_overlays(cwd=repo)
     assert not isinstance(overlays, str), overlays
     resolution = resolve_acp_nodes(
         workflow_inputs=_WORKFLOW_INPUTS,

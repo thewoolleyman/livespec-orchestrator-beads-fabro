@@ -43,7 +43,7 @@ from typing import Any, Protocol
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import resolve_acp_nodes
-from livespec_orchestrator_beads_fabro.commands._config import resolve_acp_node_overlays
+from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
 
 
 @pytest.fixture(autouse=True)

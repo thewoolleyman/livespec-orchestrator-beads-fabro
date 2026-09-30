@@ -36,10 +36,8 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_layers import (
     resolve_acp_nodes,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_node_repository import repository_acp_chains
-from livespec_orchestrator_beads_fabro.commands._config import (
-    dispatcher_block,
-    resolve_acp_node_overlays,
-)
+from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
+from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
     workflow_declared_inputs,
 )

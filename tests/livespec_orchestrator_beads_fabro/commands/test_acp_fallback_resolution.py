@@ -130,7 +130,8 @@ def _resolve(
     repository = _module(name="_acp_node_repository")
     layers = _module(name="_acp_node_layers")
     seam = _module(name="_dispatcher_acp_nodes")
-    overlays = repository.repository_acp_overlays(block=block)
+    catalogs = _module(name="_acp_catalogs").builtin_catalogs()
+    overlays = repository.repository_acp_overlays(block=block, catalogs=catalogs)
     assert not isinstance(overlays, str), overlays
     declared = repository.repository_acp_chains(block=block)
     assert not isinstance(declared, str), declared
@@ -484,7 +485,13 @@ def test_a_non_table_acp_nodes_value_yields_one_refusal_not_two() -> None:
     repository = _module(name="_acp_node_repository")
     assert repository.repository_acp_chains(block={"acp_nodes": "uvx acp"}) == {}
     assert repository.repository_acp_chains(block={}) == {}
-    assert isinstance(repository.repository_acp_overlays(block={"acp_nodes": "uvx acp"}), str)
+    assert isinstance(
+        repository.repository_acp_overlays(
+            block={"acp_nodes": "uvx acp"},
+            catalogs=_module(name="_acp_catalogs").builtin_catalogs(),
+        ),
+        str,
+    )
 
 
 def test_a_built_in_table_maps_rendered_bytes_onto_a_domain_and_a_stable_key() -> None:
