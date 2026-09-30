@@ -200,6 +200,35 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `_dispatcher_plan_build.build_plan`, and rides `DispatchPlan.integration`;
   every seam reads it from there. A seam that resolves an integration point of
   its own is the defect the resolve-once-project-everywhere clause retires.
+- The ACP **agent and model catalogs**, and the STRUCTURED candidate form that
+  resolves through them (`contracts.md` §"Agent and model catalogs" and §"ACP
+  node adapter configuration"). The dependency direction is load-bearing and
+  reads bottom-up:
+  `_acp_agent_mechanism` (how one agent takes `model`/`effort` — exactly one of
+  `protocol`, `env`, `json_env` or `arg`) → `_acp_agent_entry` /
+  `_acp_model_entry` (one catalog entry each, closed grammar) →
+  `_acp_agent_catalog` / `_acp_model_catalog` (the COMMITTED snapshots plus each
+  one's digest and the per-repository merge) → `_acp_catalogs` (both as one
+  frozen value plus the snapshot record) → `_acp_structured_render` (the pure
+  render of one entry into the manual-form triple) → `_acp_candidate_forms` (the
+  closed two-form grammar and the per-field identity override) →
+  `_acp_structured_identity` (the derived triple) → `_acp_candidate_structured`
+  (one structured candidate, end to end). `_acp_catalog_overrides` is the shared
+  reader for both `dispatcher.agent_catalog` and `dispatcher.model_catalog`.
+  Two rules an editor must not invert. The catalogs contain no network, HTTP,
+  socket or subprocess import, because "the Dispatcher MUST NOT fetch a registry,
+  a provider, or a catalog service at dispatch time" — a fetch cannot exist if
+  the API to perform one is absent. And the DISPATCH between the two candidate
+  forms lives in `_acp_node_chains`, downstream of both, because the structured
+  path needs the identity type `_acp_candidate_schema` owns: making the manual
+  parser dispatch closes an import cycle.
+- `_config_acp` is the config-reading seam for the above — the dispatch target's
+  catalogs and its per-node overlay layer, resolved from ONE read of the
+  dispatcher block. `_dispatcher_acp_nodes.prepare_acp_nodes` resolves both ONCE
+  per dispatch and passes them down for the same resolve-once reason the
+  integration contract does: a second read of the same file cannot be proven to
+  agree with the first, and the disagreement would be invisible because both
+  reads produce a well-formed catalog.
 
 Rules an agent editing this tree must follow:
 
