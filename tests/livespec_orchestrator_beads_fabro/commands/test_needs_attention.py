@@ -70,7 +70,7 @@ def _seed_raw(
             issue_id=id_,
             issue_type="task",
             title=title if title is not None else f"{id_} title",
-            description="d",
+            description=_CONFORMING_DESCRIPTION,
             priority=priority,
             assignee=None,
             created_at="2026-05-19T00:00:00Z",
@@ -81,6 +81,24 @@ def _seed_raw(
         )
     )
     client.update_issue(issue_id=id_, status=status)
+
+
+# Every implement-kind item has carried a Definition of Done section since v114,
+# and a `ready` item WITHOUT one is refused by the shared eligibility decision —
+# which the unrunnable-acceptance lane then reports. The default fixture item is
+# therefore a CONFORMING one: a fixture that omitted the section would put
+# `impl:<id>` and `hygiene:unrunnable-acceptance:<id>` in the same snapshot, and
+# the composed expectations below would be asserting a self-contradiction rather
+# than the lanes they name.
+_CONFORMING_DESCRIPTION = (
+    "d\n"
+    "\n"
+    "## Definition of Done\n"
+    "\n"
+    "- The lane composes this item.\n"
+    "\n"
+    "References: ## Effective acceptance criteria\n"
+)
 
 
 def _write_config(
@@ -185,7 +203,7 @@ def _item(
         type=type_,  # type: ignore[arg-type]
         status=status,  # type: ignore[arg-type]
         title=f"{id_} title",
-        description="d",
+        description=_CONFORMING_DESCRIPTION,
         origin="freeform",
         gap_id=None,
         rank=rank,
