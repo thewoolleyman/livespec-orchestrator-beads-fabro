@@ -279,6 +279,33 @@ that a secret is missing. Re-run under your project's configured env wrapper
 (`with-<project>-env.sh`) -- `<command>`. Never hand-hunt the secret or reach
 around the seam with raw `mysql` / `dolt` / `sudo`.
 
+**But when EVERY tenant refuses at once while you ARE under the wrapper, the
+wrapper's own 300-second cache is poisoned — not 1Password, not the credstore,
+not Dolt.** Discriminate it in one line, probe-only:
+`with-livespec-env.sh -- sh -c 'printenv BEADS_DOLT_PASSWORD | wc -c'` printing
+`0` while `OP_ENV_WRAPPER_CACHE_TTL=0 with-livespec-env.sh -- sh -c '...'`
+prints the normal length in the same minute. Measured 2026-10-01 01:03–01:10
+on this host: `bd` returned `Error 1045 Access denied` for both this tenant and
+`livespec-dev-tooling`, the default path injected zero bytes, the cache-bypass
+form injected 29, sibling wrappers (`with-openbrain-env.sh`, `with-homelab-env.sh`)
+were unaffected, and the default path healed itself at 01:10 with nothing
+changed. Mechanism (from the rendered wrapper): on a cache miss it stores the
+DIFF between the caller's environment and what `op run` injected, in the
+invoker's kernel persistent keyring, and replays that diff to every caller
+until the key's timeout; a NESTED caller — a process already running under the
+wrapper that re-invokes it for `bd` or `gh`, which every long-running `drive`
+dispatch does from its janitor — already holds the secrets, so its diff is
+nearly empty, and for the next five minutes everyone else gets nothing. Filed
+upstream as `thewoolleyman/1password-env-wrapper` issue #17 with the suggested
+fix; expect recurrence while any wrapped dispatch is alive on the host until it
+lands. Do NOT touch the keyring, do NOT hunt the secret, and do NOT flip any
+credential configuration: the entry expires on its own, and the TTL=0 form is
+the wrapper's documented per-call knob, useful as the DISCRIMINATOR, not as a
+standing bypass. Note also the instrument-aim trap inside this trap: the cache
+lives in the INVOKER's persistent keyring (uid 1000 — the wrapper drops
+privileges before stage 2), so inspecting root's keyring reports "empty" with
+perfect confidence about the wrong population.
+
 **`bd list --status open` matches NOTHING here.** This store holds livespec
 lifecycle statuses — `backlog`, `ready`, `blocked`, `active`, `acceptance`,
 `pending-approval`, `closed`. The beads-native `open` / `in_progress` names are
@@ -1619,6 +1646,15 @@ the third near-miss.
      (missing backticks; a line break inside a code block; another repo's
      invocation syntax; a `| head` that truncated the hits). **A verification
      that can only fail silently is not a verification.**
+   - *Corollary — never list environment variable NAMES with a line-oriented
+     filter when secrets may be present.* `env | cut -d= -f1` printed the
+     continuation lines of a multi-line PEM private key whole into a session
+     transcript on 2026-10-01, because those lines carry no `=` and newline
+     framing cannot tell a value's own line breaks from record boundaries.
+     Only NUL framing can: use `printenv NAME | wc -c` per name, or
+     `env -0` split on the NUL byte and keep the part before the first `=`.
+     The same trap defeats `grep`/`cut` over `keyctl pipe`, a bare `printenv`,
+     and any `.env` dump.
 
 3. **An instruction can outlive the condition that made it correct.** The danger
    is not writing something false — it is writing something **true that stops
