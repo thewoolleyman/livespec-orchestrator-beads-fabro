@@ -11,20 +11,26 @@ walls the spec ratifies had nothing to be implemented against.
 
 The resolution order, which is the spec's:
 
-1. The item's MATERIALIZED criteria value — the merged store read in which the
-   native `acceptance_criteria` field wins over a metadata-held one, so a
-   criteria field written into metadata by an older writer is NOT read as
+1. The item description's Definition of Done section (parsed by
+   `_dispatcher_definition_of_done`, the ONE path the clause permits) when it
+   yields gradeable content.
+2. Otherwise the item's MATERIALIZED criteria value — the merged store read in
+   which the native `acceptance_criteria` field wins over a metadata-held one,
+   so a criteria field written into metadata by an older writer is NOT read as
    absent — when it yields gradeable content. That materialization IS the
    merged read; nothing here re-reads raw metadata separately.
-2. Otherwise the item description's "Exit criteria" section (a heading whose
+3. Otherwise the item description's "Exit criteria" section (a heading whose
    title case-insensitively equals "Exit criteria"; the section body is the
    criteria text).
 
-The resolved source is reported as exactly one of the two ratified values,
-`criteria-field` or `description-exit-criteria`. Gradeability is defined at the
-ASSERTION level, so an effective-criteria set is empty when the shipped parser
-(`criteria_lines`) yields no assertion — never when a physical-line count
-happens to reach zero.
+The resolved source is reported as exactly one of the three ratified values,
+`description-definition-of-done`, `criteria-field` or
+`description-exit-criteria`. Steps 2 and 3 are LEGACY: an item that resolves
+from either carries no Definition of Done section that yields assertions, and
+the parse display says so, so the gap is repaired when the item is next touched.
+Gradeability is defined at the ASSERTION level, so an effective-criteria set is
+empty when the shipped parser (`criteria_lines`) yields no assertion — never
+when a physical-line count happens to reach zero.
 
 The two walls share `ungradeable_criteria_refusal` deliberately. An item that
 the approve valve refuses and an item the pre-dispatch gate refuses are the
@@ -55,6 +61,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_criteria_wall_variant import (
     criteria_wall_variant,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    definition_of_done,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_overrides import (
     effective_acceptance_policy,
 )
@@ -72,6 +81,7 @@ __all__: list[str] = [
     "CHANGE_OPTIONAL_CLASSIFICATION",
     "CHANGE_OPTIONAL_LABEL",
     "CRITERIA_FIELD_SOURCE",
+    "DESCRIPTION_DEFINITION_OF_DONE_SOURCE",
     "DESCRIPTION_EXIT_CRITERIA_SOURCE",
     "ChangeClassification",
     "EffectiveCriteria",
@@ -82,6 +92,7 @@ __all__: list[str] = [
 ]
 
 CRITERIA_FIELD_SOURCE = "criteria-field"
+DESCRIPTION_DEFINITION_OF_DONE_SOURCE = "description-definition-of-done"
 DESCRIPTION_EXIT_CRITERIA_SOURCE = "description-exit-criteria"
 CHANGE_IMPLYING_CLASSIFICATION = "change-implying"
 CHANGE_OPTIONAL_CLASSIFICATION = "change-optional"
@@ -190,12 +201,20 @@ def change_classification(*, raw_labels: Sequence[str] = ()) -> ChangeClassifica
 def effective_criteria(*, item: WorkItem) -> EffectiveCriteria:
     """Resolve one item's effective acceptance criteria and report the source.
 
-    The merged criteria value wins whenever it yields gradeable content;
-    otherwise the description's "Exit criteria" section is the fallback, and it
-    is reported as the source even when that section is absent — the fallback is
-    the step that was resolved, and an absent section is an ungradeable result
-    rather than a third source value.
+    The Definition of Done section wins whenever it yields gradeable content,
+    then the merged criteria value; otherwise the description's "Exit criteria"
+    section is the fallback, and it is reported as the source even when that
+    section is absent — the fallback is the step that was resolved, and an absent
+    section is an ungradeable result rather than a fourth source value.
     """
+    section = definition_of_done(description=item.description)
+    section_assertions = criteria_lines(criteria_text=section.criteria_text)
+    if section_assertions:
+        return EffectiveCriteria(
+            text=section.criteria_text,
+            source=DESCRIPTION_DEFINITION_OF_DONE_SOURCE,
+            assertions=section_assertions,
+        )
     field_assertions = criteria_lines(criteria_text=item.acceptance_criteria)
     if field_assertions:
         return EffectiveCriteria(
