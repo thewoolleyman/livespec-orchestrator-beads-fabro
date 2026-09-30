@@ -85,6 +85,7 @@ __all__: list[str] = [
     "CHANGE_OPTIONAL_CLASSIFICATION",
     "CHANGE_OPTIONAL_LABEL",
     "CRITERIA_FIELD_SOURCE",
+    "DEFINITION_OF_DONE_MISSING_MARKER",
     "DESCRIPTION_DEFINITION_OF_DONE_SOURCE",
     "DESCRIPTION_EXIT_CRITERIA_SOURCE",
     "ChangeClassification",
@@ -96,6 +97,10 @@ __all__: list[str] = [
 ]
 
 CRITERIA_FIELD_SOURCE = "criteria-field"
+# The marker the capture, groom and approve displays render for an item that
+# resolved from a legacy source. The wording is the clause's own, so a grep
+# for it finds the spec text and every surface that honours it.
+DEFINITION_OF_DONE_MISSING_MARKER = "definition-of-done: missing"
 DESCRIPTION_DEFINITION_OF_DONE_SOURCE = "description-definition-of-done"
 DESCRIPTION_EXIT_CRITERIA_SOURCE = "description-exit-criteria"
 CHANGE_IMPLYING_CLASSIFICATION = "change-implying"
@@ -157,11 +162,27 @@ class EffectiveCriteria:
         )
 
     def parse_display(self) -> str:
-        """The one-line parse result the capture and groom front-ends display."""
-        return (
+        """The one-line parse result the capture, groom and approve displays render.
+
+        A LEGACY source carries the `definition-of-done: missing` marker the
+        clause requires, so the gap is visible on the surface an operator is
+        already looking at when they touch the item. Without it the line reads as
+        a clean parse — a positive assertion count from a source the walls will
+        refuse — and the display that exists to prompt the repair instead
+        reassures.
+
+        The marker is APPENDED rather than substituted: the count and the resolved
+        source are what tell an operator WHICH repair applies (author a section,
+        or move criteria that already exist), so dropping them to make room for
+        the marker would remove the information the marker is pointing at.
+        """
+        line = (
             f"effective acceptance criteria: {len(self.assertions)} gradeable"
             f" assertion(s) resolved from {self.source}"
         )
+        if self.source == DESCRIPTION_DEFINITION_OF_DONE_SOURCE:
+            return line
+        return f"{line}; {DEFINITION_OF_DONE_MISSING_MARKER}"
 
     def as_record(self) -> dict[str, object]:
         """The leak-free projection of the parse for a journal or JSON envelope."""

@@ -298,3 +298,44 @@ def test_a_sub_heading_that_is_not_human_attested_returns_the_mode_to_the_defaul
         ("A human attests this one.", "human_attested"),
         ("The factory captures this one.", "factory_captured"),
     ]
+
+
+# --- the parse display: the legacy-source gap is reported, not silent ---------
+
+
+def test_the_parse_display_reports_the_gap_for_a_legacy_criteria_field() -> None:
+    # The capture, groom and approve displays all render `parse_display()`, and
+    # the clause requires an item resolved from a LEGACY source to be reported as
+    # `definition-of-done: missing` so the gap is repaired when it is next
+    # touched. Without the marker the display reads as a clean parse: it reports
+    # a positive assertion count from a source the walls will refuse.
+    resolved = effective_criteria(item=_item(acceptance_criteria=_LEGACY_FIELD))
+
+    assert resolved.source == "criteria-field"
+    assert "definition-of-done: missing" in resolved.parse_display()
+
+
+def test_the_parse_display_reports_the_gap_for_a_legacy_exit_criteria_section() -> None:
+    description = "## Exit criteria\n\nThe legacy section carries one assertion.\n"
+
+    resolved = effective_criteria(item=_item(description=description))
+
+    assert resolved.source == "description-exit-criteria"
+    assert "definition-of-done: missing" in resolved.parse_display()
+
+
+def test_the_parse_display_reports_no_gap_for_a_definition_of_done_source() -> None:
+    # The control. A marker printed unconditionally would carry no information —
+    # every item would report the gap, including the conforming ones.
+    #
+    # The needle is the WHOLE marker, not a bare `definition-of-done`: the
+    # conforming source is NAMED `description-definition-of-done`, so a probe on
+    # the shorter form matches the source name itself and could never return the
+    # answer this control asks for.
+    resolved = effective_criteria(item=_item(description=_DEFINITION_OF_DONE))
+
+    assert resolved.source == "description-definition-of-done"
+    assert "definition-of-done: missing" not in resolved.parse_display()
+    # The parse itself is unchanged: the marker is ADDED to the existing line,
+    # never a replacement for the count and source the displays already show.
+    assert "2 gradeable assertion(s)" in resolved.parse_display()
