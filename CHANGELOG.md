@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.152.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.152.0...v0.152.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* revert unusable manager consumer (bd-ib-zsxwmf) ([6a03db9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6a03db9342131b50a49c689b6f4d0e263de1c5c4))
+
 ## [0.152.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.151.1...v0.152.0) (2026-09-30)
 
 
