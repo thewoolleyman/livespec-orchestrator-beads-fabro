@@ -65,6 +65,9 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_release_adoptio
 from livespec_orchestrator_beads_fabro.commands._needs_attention_spec_next_run import (
     spec_next,
 )
+from livespec_orchestrator_beads_fabro.commands._needs_attention_unrunnable_acceptance import (
+    unrunnable_acceptance_items,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_untriaged_backlog import (
     untriaged_backlog_items,
 )
@@ -210,6 +213,12 @@ def build_attention(
         # other lane here — nothing is stranded, held, or aging past a
         # bound — so without this row it is visible only by being noticed.
         + idle_factory_items(project_root=project_root, repo=repo_name, items=materialized)
+        # The other half of that pair, and the one the idle-factory fact cannot
+        # report: an item resting in `ready` that NO dispatch will ever take,
+        # because the shared eligibility decision refuses it. Such a row is
+        # silent on every lane here — nothing is stranded, held, or aging — so
+        # without it an unrunnable item is visible only by being noticed.
+        + unrunnable_acceptance_items(project_root=project_root, repo=repo_name, items=materialized)
         # A run the ledger disowns holds a factory scheduler slot, and no
         # surface keyed on THIS repo's records can see it: the projection is
         # the reconciler's own dry run, so the lane and the remedy it prints
