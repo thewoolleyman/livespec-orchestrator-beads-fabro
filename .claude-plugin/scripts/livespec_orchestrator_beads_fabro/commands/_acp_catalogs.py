@@ -21,16 +21,19 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands._acp_agent_catalog import (
     REGISTRY_SNAPSHOT_DATE,
     agent_catalog_digest,
     builtin_agent_catalog,
+    resolve_agent_catalog,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_agent_entry import AcpAgentEntry
 from livespec_orchestrator_beads_fabro.commands._acp_model_catalog import (
     builtin_model_catalog,
     model_catalog_digest,
+    resolve_model_catalog,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_model_entry import AcpModelEntry
 
@@ -38,6 +41,7 @@ __all__: list[str] = [
     "AcpCatalogs",
     "builtin_catalogs",
     "catalog_snapshot_record",
+    "resolve_acp_catalogs",
 ]
 
 
@@ -61,6 +65,24 @@ class AcpCatalogs:
 def builtin_catalogs() -> AcpCatalogs:
     """The shipped snapshot of both catalogs, with no repository additions."""
     return AcpCatalogs(agents=builtin_agent_catalog(), models=builtin_model_catalog())
+
+
+def resolve_acp_catalogs(*, block: Mapping[str, Any]) -> AcpCatalogs | str:
+    """Both catalogs resolved against one dispatcher block, or ONE refusal.
+
+    A fault in EITHER catalog refuses the whole resolution rather than
+    degrading to the half that parsed. A dispatch holding a valid agent catalog
+    and a broken model catalog cannot resolve a single structured candidate, so
+    returning it would only move the same refusal later -- past the point where
+    the message can still name the configuration key.
+    """
+    agents = resolve_agent_catalog(block=block)
+    if isinstance(agents, str):
+        return agents
+    models = resolve_model_catalog(block=block)
+    if isinstance(models, str):
+        return models
+    return AcpCatalogs(agents=agents, models=models)
 
 
 def catalog_snapshot_record() -> Mapping[str, str]:
