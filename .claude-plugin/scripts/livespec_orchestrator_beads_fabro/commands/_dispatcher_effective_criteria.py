@@ -64,6 +64,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria 
     criteria_lines,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    PROOF_MODE_HUMAN_ATTESTED,
     definition_of_done,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_overrides import (
@@ -79,6 +80,7 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
+    "AI_ONLY_POLICY",
     "CHANGE_IMPLYING_CLASSIFICATION",
     "CHANGE_OPTIONAL_CLASSIFICATION",
     "CHANGE_OPTIONAL_LABEL",
@@ -89,6 +91,7 @@ __all__: list[str] = [
     "EffectiveCriteria",
     "change_classification",
     "effective_criteria",
+    "effective_policy",
     "ungradeable_criteria_refusal",
 ]
 
@@ -102,10 +105,14 @@ CHANGE_OPTIONAL_CLASSIFICATION = "change-optional"
 # whether the item is expected to change any files.
 CHANGE_OPTIONAL_LABEL = "change-optional:"
 
+# The one policy under which a machine may close the item WITHOUT a human, and
+# therefore the one the derived proof routing has to refuse for an item carrying
+# a human-attested assertion.
+AI_ONLY_POLICY = "ai-only"
 # The two effective `acceptance_policy` values under which a machine grades the
 # item. `human-only` is deliberately outside the walls: a human judgement call
 # is exactly the case where machine-gradeable criteria are inapplicable.
-_AI_DISPOSITIVE_POLICIES = frozenset({"ai-only", "ai-then-human"})
+_AI_DISPOSITIVE_POLICIES = frozenset({AI_ONLY_POLICY, "ai-then-human"})
 _EXIT_CRITERIA_TITLE = "exit criteria"
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 # The ONE marker value that DECLARES the exemption. Anything else — a typo, an
@@ -134,6 +141,20 @@ class EffectiveCriteria:
     def gradeable(self) -> bool:
         """Whether the set carries at least one gradeable assertion."""
         return bool(self.assertions)
+
+    @property
+    def human_attested_assertions(self) -> tuple[str, ...]:
+        """The assertions a human must attest, in the section's own order.
+
+        Empty for a legacy source, which declares no mode at all: the item-level
+        routing derived from this is therefore the factory-captured one, matching
+        the pre-v114 behaviour for work already in flight.
+        """
+        return tuple(
+            assertion
+            for assertion, mode in zip(self.assertions, self.proof_modes, strict=False)
+            if mode == PROOF_MODE_HUMAN_ATTESTED
+        )
 
     def parse_display(self) -> str:
         """The one-line parse result the capture and groom front-ends display."""
@@ -260,19 +281,28 @@ def ungradeable_criteria_refusal(*, item: WorkItem, cwd: Path) -> str | None:
     )
 
 
-def _is_ai_dispositive(*, item: WorkItem, cwd: Path) -> bool:
-    """Whether a machine grades this item's acceptance.
+def effective_policy(*, item: WorkItem, cwd: Path) -> str:
+    """The item's effective `acceptance_policy`, resolved ONCE for every reader.
 
     ⚠️ `unsafe_perform_io` is not ceremony. `IOResult.value_or` returns
-    `IO[value]`, not the value — without it the membership test is against an
+    `IO[value]`, not the value — without it a membership test is against an
     `IO` wrapper and is False for EVERY item, which silently disarms both walls.
     An unreadable config falls back to the `ai-then-human` default, so the walls
     stay armed rather than opening on a config the operator got wrong.
+
+    It is PUBLIC because the shared eligibility decision needs the same answer to
+    derive the item's proof routing. Resolving the policy a second time there is
+    how the gradeability wall and the routing wall would come to disagree about
+    which policy an item is actually under.
     """
-    policy = unsafe_perform_io(
+    return unsafe_perform_io(
         effective_acceptance_policy(item=item, cwd=cwd).value_or(DEFAULT_ACCEPTANCE_POLICY)
     )
-    return policy in _AI_DISPOSITIVE_POLICIES
+
+
+def _is_ai_dispositive(*, item: WorkItem, cwd: Path) -> bool:
+    """Whether a machine grades this item's acceptance."""
+    return effective_policy(item=item, cwd=cwd) in _AI_DISPOSITIVE_POLICIES
 
 
 def _change_optional_marker(*, raw_labels: Sequence[str]) -> str | None:
