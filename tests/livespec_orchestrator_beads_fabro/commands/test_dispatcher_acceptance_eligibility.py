@@ -47,6 +47,20 @@ _SECTION = (
     "\n"
     f"References: {_SPEC_HEADING}\n"
 )
+_HUMAN_ATTESTED_ASSERTION = "A human confirms the console renders the new row."
+_MIXED_SECTION = (
+    "## Definition of Done\n"
+    "\n"
+    "- The wall refuses an item whose section is absent.\n"
+    "\n"
+    "### Human-attested\n"
+    "\n"
+    "Reason: the proof needs a session on an external administrative console.\n"
+    "\n"
+    f"- {_HUMAN_ATTESTED_ASSERTION}\n"
+    "\n"
+    f"References: {_SPEC_HEADING}\n"
+)
 
 
 def _item(**overrides: object) -> WorkItem:
@@ -359,3 +373,113 @@ def test_dispatch_gets_past_the_wall_for_an_item_carrying_a_valid_section(
     )
 
     assert rc != _EXIT_UNGRADEABLE_CRITERIA
+
+
+# --- derived routing: never stored, computed from the assertion modes ---------
+
+
+def test_an_all_factory_captured_item_routes_as_factory_captured_only(
+    tmp_path: Path,
+) -> None:
+    repo = _valve_repo(tmp_path=tmp_path)
+
+    decision = acceptance_eligibility(item=_item(description=_SECTION), cwd=repo)
+
+    assert decision.proof_routing == "factory-captured-only"
+
+
+def test_one_human_attested_assertion_routes_the_whole_item_to_parking(
+    tmp_path: Path,
+) -> None:
+    # The routing is a property of the ITEM derived from its assertions: one
+    # human-attested assertion among three factory-captured ones parks the item,
+    # because the human leg has to land before it can close.
+    repo = _valve_repo(tmp_path=tmp_path)
+    item = _item(description=_MIXED_SECTION, acceptance_policy="ai-then-human")
+
+    decision = acceptance_eligibility(item=item, cwd=repo)
+
+    assert decision.proof_routing == "parks-for-human-attestation"
+
+
+def test_ai_only_is_refused_for_a_human_attested_assertion_naming_both_remedies(
+    tmp_path: Path,
+) -> None:
+    repo = _valve_repo(tmp_path=tmp_path)
+    item = _item(description=_MIXED_SECTION, acceptance_policy="ai-only")
+
+    decision = acceptance_eligibility(item=item, cwd=repo)
+
+    assert decision.eligible is False
+    assert decision.refusal is not None
+    assert _HUMAN_ATTESTED_ASSERTION in decision.refusal
+    # Both ratified remedies, named: change the policy, or make the assertion
+    # factory-capturable.
+    assert "ai-then-human" in decision.refusal
+    assert "human-only" in decision.refusal
+    assert "factory-capturable" in decision.refusal
+
+
+def test_a_parked_policy_admits_the_same_mixed_item(tmp_path: Path) -> None:
+    # The PARKED-POLICY CONTROL. Without it, the refusal above is equally
+    # consistent with a wall that refuses every human-attested item outright,
+    # which would make the ratified remedy unreachable.
+    repo = _valve_repo(tmp_path=tmp_path)
+
+    for policy in ("ai-then-human", "human-only"):
+        item = _item(description=_MIXED_SECTION, acceptance_policy=policy)
+
+        decision = acceptance_eligibility(item=item, cwd=repo)
+
+        assert decision.eligible is True, policy
+        assert decision.proof_routing == "parks-for-human-attestation", policy
+
+
+def test_an_ordinary_ai_only_item_is_not_refused_by_the_routing_check(
+    tmp_path: Path,
+) -> None:
+    # The ORDINARY-ITEM CONTROL: `ai-only` stays legal for an item whose every
+    # assertion is factory-captured, which is the whole default case.
+    repo = _valve_repo(tmp_path=tmp_path)
+    item = _item(description=_SECTION, acceptance_policy="ai-only")
+
+    assert acceptance_eligibility(item=item, cwd=repo).eligible is True
+
+
+@pytest.mark.parametrize(
+    "argv_tail",
+    [
+        pytest.param(["--item", "bd-ib-v114wall"], id="hand-picked-dispatch"),
+        pytest.param(["--budget", "1"], id="autonomous-drain"),
+    ],
+)
+def test_every_dispatch_entry_path_returns_the_same_ai_only_refusal(
+    argv_tail: list[str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # ONE decision consumed by every entry path: the same item must receive the
+    # same verdict whether it is hand-picked or drained.
+    repo = _origin_backed_repo(tmp_path=tmp_path)
+    append_work_item(
+        path=_config(),
+        item=_item(description=_MIXED_SECTION, acceptance_policy="ai-only"),
+    )
+    command = "dispatch" if "--item" in argv_tail else "loop"
+
+    rc = main(
+        argv=[
+            command,
+            "--repo",
+            str(repo),
+            *argv_tail,
+            "--journal",
+            str(tmp_path / "journal.jsonl"),
+        ]
+    )
+
+    assert rc == _EXIT_UNGRADEABLE_CRITERIA
+    err = capsys.readouterr().err
+    assert _HUMAN_ATTESTED_ASSERTION in err
+    assert "ai-then-human" in err
+    assert next(iter(read_work_items(path=_config()))).status == "ready"

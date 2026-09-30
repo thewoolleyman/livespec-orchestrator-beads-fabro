@@ -45,8 +45,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_f
     definition_of_done_findings,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
+    AI_ONLY_POLICY,
     EffectiveCriteria,
     effective_criteria,
+    effective_policy,
     ungradeable_criteria_refusal,
 )
 
@@ -56,10 +58,20 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
+    "PROOF_ROUTING_FACTORY_CAPTURED_ONLY",
+    "PROOF_ROUTING_PARKS_FOR_HUMAN_ATTESTATION",
     "AcceptanceEligibility",
     "acceptance_eligibility",
     "pre_dispatch_criteria_refusal",
 ]
+
+# The two DERIVED item-level proof routings. The clause forbids storing an
+# item-level proof mode in any field, label or metadata key, so these are
+# computed from the assertions every time and never written anywhere. The names
+# are self-describing, as the enumeration rule requires of every mode-adjacent
+# value: they say what the item DOES, not which tier it sits in.
+PROOF_ROUTING_FACTORY_CAPTURED_ONLY = "factory-captured-only"
+PROOF_ROUTING_PARKS_FOR_HUMAN_ATTESTATION = "parks-for-human-attestation"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -71,6 +83,11 @@ class AcceptanceEligibility:
     findings separately, because the `dod_gate` node's needs-human question and
     the capture and groom displays render them without the wall's framing.
 
+    `proof_routing` is the DERIVED item-level consequence of the assertions'
+    modes. It is reported even for a REFUSED item, because the refusal's whole
+    remedy is about the routing: an operator told only "ai-only is refused" has
+    to re-derive why, and the routing is the why.
+
     `variant` and `criteria` ride along deliberately: a consumer that needed
     either would otherwise resolve it a second time, which is precisely the
     disagreement this one decision exists to prevent.
@@ -80,6 +97,7 @@ class AcceptanceEligibility:
     variant: CriteriaWallVariant
     criteria: EffectiveCriteria
     findings: tuple[str, ...]
+    proof_routing: str
     refusal: str | None
 
     @property
@@ -112,7 +130,7 @@ def acceptance_eligibility(
         variant=variant,
         criteria=criteria,
         findings=findings,
-        refusal=_refusal(item=item, variant=variant, findings=findings, cwd=cwd),
+        refusal=_refusal(item=item, variant=variant, criteria=criteria, findings=findings, cwd=cwd),
     )
 
 
@@ -159,17 +177,56 @@ def _verdict(
         variant=variant,
         criteria=criteria,
         findings=findings,
+        proof_routing=_proof_routing(criteria=criteria),
         refusal=refusal,
     )
 
 
+def _proof_routing(*, criteria: EffectiveCriteria) -> str:
+    """The item-level routing its assertions' modes imply.
+
+    ONE human-attested assertion decides the whole item, however many
+    factory-captured ones sit beside it: the item cannot close until the human
+    leg lands, so a routing that averaged the modes would close it early.
+    """
+    if criteria.human_attested_assertions:
+        return PROOF_ROUTING_PARKS_FOR_HUMAN_ATTESTATION
+    return PROOF_ROUTING_FACTORY_CAPTURED_ONLY
+
+
 def _refusal(
-    *, item: WorkItem, variant: CriteriaWallVariant, findings: tuple[str, ...], cwd: Path
+    *,
+    item: WorkItem,
+    variant: CriteriaWallVariant,
+    criteria: EffectiveCriteria,
+    findings: tuple[str, ...],
+    cwd: Path,
 ) -> str | None:
     """The one refusal detail for a non-exempt item, or `None` to proceed."""
     if findings:
         return f"{'; '.join(findings)}; {variant.clause()}"
+    human_attested = criteria.human_attested_assertions
+    if human_attested and effective_policy(item=item, cwd=cwd) == AI_ONLY_POLICY:
+        return _ai_only_routing_refusal(item=item, human_attested=human_attested)
     detail = ungradeable_criteria_refusal(item=item, cwd=cwd)
     if detail is None:
         return None
     return f"{detail}; {variant.clause()}"
+
+
+def _ai_only_routing_refusal(*, item: WorkItem, human_attested: tuple[str, ...]) -> str:
+    """The refusal for an `ai-only` item whose Definition of Done needs a human.
+
+    It names the assertions rather than counting them, because the remedy is a
+    judgement about THOSE assertions: either the policy is wrong for this item or
+    the assertion was declared human-attested when the sandbox could in fact
+    exercise it, and a count cannot tell an operator which.
+    """
+    named = "; ".join(repr(assertion) for assertion in human_attested)
+    return (
+        f"work-item {item.id}: the effective acceptance_policy is"
+        f" {AI_ONLY_POLICY!r}, which cannot close an item whose Definition of Done"
+        f" carries a human-attested assertion ({named}); declare ai-then-human or"
+        " human-only, or make the assertion factory-capturable and drop its"
+        " Human-attested sub-heading"
+    )
