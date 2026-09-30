@@ -230,9 +230,15 @@ def test_effective_criteria_falls_through_an_ungradeable_criteria_field() -> Non
 def test_effective_criteria_projects_the_parse_for_a_display_and_a_journal() -> None:
     resolved = effective_criteria(item=_item(acceptance_criteria=_TWO_ASSERTIONS))
 
+    # This item resolves from a LEGACY source, so since v114 the display carries
+    # the `definition-of-done: missing` marker alongside the count and source.
     assert resolved.parse_display() == (
-        "effective acceptance criteria: 2 gradeable assertion(s) resolved from criteria-field"
+        "effective acceptance criteria: 2 gradeable assertion(s) resolved from"
+        " criteria-field; definition-of-done: missing"
     )
+    # The RECORD is deliberately unchanged: it is the leak-free journal
+    # projection, and the marker is a display affordance derived from `source`,
+    # which the record already carries.
     assert resolved.as_record() == {
         "source": CRITERIA_FIELD_SOURCE,
         "gradeable_assertions": 2,
@@ -533,6 +539,12 @@ def test_groom_reports_the_criteria_parse_for_every_filed_slice_without_refusing
     assert parse.slice_id == result.filed_slice_ids[0]
     assert parse.criteria.source == DESCRIPTION_EXIT_CRITERIA_SOURCE
     assert not parse.criteria.gradeable
+    # The groom display is one of the three the v114 clause names: a slice
+    # resolved from a legacy source must be reported as
+    # `definition-of-done: missing` so the gap is repaired at the next touch.
+    # Asserted on the GROOM RESULT rather than on the primitive, because the
+    # obligation is the front-end's and only the result proves it reaches it.
+    assert "definition-of-done: missing" in parse.criteria.parse_display()
 
 
 # --- consumer 4 + the clause itself: ONE primitive, no second path ----------
