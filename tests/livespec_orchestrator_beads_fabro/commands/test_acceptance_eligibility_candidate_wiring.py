@@ -313,3 +313,77 @@ def test_exactly_one_fact_names_the_missing_definition_of_done_section(
     # The excluded row is not merely absent from the queue: it is REPORTED, and
     # the handoff is the repair, never an `impl:` the wall would refuse.
     assert fact.handoff.action_id is None
+
+
+# --- no backfill, no exemption list, and the repair clears it ----------------
+
+
+def test_authoring_the_section_clears_the_fact_and_restores_every_surface(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The repair is the ONLY exit, and it restores all four surfaces at once.
+
+    Asserted on the SAME id as every exclusion case above, differing in nothing
+    but the description: that is what makes this the clearing case rather than a
+    second fixture that happens to be conforming. Without it, every exclusion
+    assertion in this file is equally consistent with a filter that excludes the
+    id forever — which is precisely the backfill-or-exemption posture the clause
+    forbids, arrived at from the other end.
+    """
+    project_root = _project(tmp_path)
+    repaired = _item(id_=_UNRUNNABLE_ID, description=_SECTION)
+    append_work_item(path=_config(), item=repaired)
+
+    assert (
+        unrunnable_acceptance_items(project_root=project_root, repo="repo", items=[repaired]) == []
+    )
+    payload = _next_payload(project_root=project_root, capsys=capsys)
+    refs = [candidate["work_item_ref"] for candidate in payload["candidates"]]  # pyright: ignore[reportIndexIssue, reportGeneralTypeIssues]
+    assert refs == [_UNRUNNABLE_ID]
+    assert payload["pagination"]["total"] == 1  # pyright: ignore[reportIndexIssue, reportGeneralTypeIssues]
+    selected = candidates(args=_drain_args(), items=[repaired], repo=project_root)
+    assert [item.id for item in selected] == [_UNRUNNABLE_ID]
+    idle = idle_factory_items(project_root=project_root, repo="repo", items=[repaired])
+    assert [fact.handoff.action_id for fact in idle] == [f"impl:{_UNRUNNABLE_ID}"]
+    composed = impl_next(
+        project_root=project_root, items=[repaired], manifest=CrossRepoManifest(targets={})
+    )
+    assert composed is not None
+    assert composed.work_item == _UNRUNNABLE_ID
+
+
+def test_an_item_filed_long_before_the_wall_is_treated_exactly_like_a_fresh_one(
+    tmp_path: Path,
+) -> None:
+    """No backfill and no exemption list: filing date buys nothing, either way.
+
+    Two rows differing ONLY in `captured_at` — one filed nearly a year before the
+    wall existed, one filed today — must receive the same verdict from the same
+    decision. This is the discriminating test for the two shapes a migration
+    carve-out would take: a cutoff instant that grandfathers everything older, and
+    a per-id allowlist, which a date-pair cannot distinguish from a cutoff and so
+    is asserted from the other side — the conforming legacy row below must NOT be
+    excluded merely for being old.
+    """
+    project_root = _project(tmp_path)
+    legacy = _item(id_="bd-ib-legacy", captured_at="2025-11-02T00:00:00Z")
+    fresh = _item(id_="bd-ib-fresh", captured_at="2026-09-30T00:00:00Z")
+    legacy_repaired = _item(
+        id_="bd-ib-legacyok", captured_at="2025-11-02T00:00:00Z", description=_SECTION
+    )
+
+    selected = candidates(
+        args=_drain_args(), items=[legacy, fresh, legacy_repaired], repo=project_root
+    )
+    facts = unrunnable_acceptance_items(
+        project_root=project_root, repo="repo", items=[legacy, fresh, legacy_repaired]
+    )
+
+    # Age grants no exemption from the exclusion...
+    assert [item.id for item in selected] == ["bd-ib-legacyok"]
+    # ...and it earns no extra fact either: the section, and only the section,
+    # decides. Both unrepaired rows are reported; the repaired legacy row is not.
+    assert sorted(fact.id for fact in facts) == [
+        "hygiene:unrunnable-acceptance:bd-ib-fresh",
+        "hygiene:unrunnable-acceptance:bd-ib-legacy",
+    ]
