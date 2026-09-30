@@ -885,15 +885,23 @@ span that makes per-turn command/stop-reason queryable, and the `bd-ib-cewr.4`
 fix that makes the pre-run push precondition ASK origin via `ls-remote` instead
 of pushing — fast-forwarded onto `factory-integration` and deployed to both
 hosts on 2026-09-09).
-Never pin a fabro build from any other branch, and never modernize the base: any
-fabro ≥ 0.256 breaks `workflow.fabro` (fabro #474 de-templates `acp.command`, so
-every dispatch dies `exit 127`). These rules are NORMATIVE — `SPECIFICATION/constraints.md`
-§"Fabro runtime constraints" (ratified in `v035`). The build/pin/rollback commands are in
-`orchestrator-image/README.md`. Rollout/revert state is ledger `bd-ib-2nq.4`
-(currently dispatchable; its parent `bd-ib-2nq` is poisoned by ledger text and is
-not the dispatch target); deferred modernization is `bd-ib-6qu` (currently
-undispatchable because both its description and an append-only ledger comment are
-poisoned).
+Never pin a fabro build from any other branch. The base-version ceiling is
+CONDITIONAL, not permanent: `SPECIFICATION/constraints.md` §"Fabro runtime
+constraints" (ratified in `v035`) says the base "MAY move forward" and that the
+`< 0.256` prohibition "lifts ONLY when the `workflow.fabro` migration lands"
+(fabro #474 de-templates `acp.command`, so on any unmigrated graph every
+dispatch dies `exit 127`). **The maintainer's standing direction (2026-09-30) is
+to STAY CURRENT on Fabro and to build what the factory needs on top of it —
+preferably by contributing it upstream — never to freeze on the fork.** The
+2026-09-06 backlog sweep (`bd-ib-j81s`) closed `bd-ib-6qu` and `bd-ib-2nq.4`
+with a "fork-only posture is ratified" reading that the ratified text does not
+contain; that was the sweep's misreading, not a maintainer ruling, and both
+records are poisoned by ledger text so neither can carry the correction. The
+live successor is plan `fabro-currency` (epic `bd-ib-6tcjfx`;
+`plan/fabro-currency/research/001-currency-assessment-2026-09-30.md`), which
+also records that upstream re-platformed onto the Petri engine on
+2026-09-17..21, so "staying current" is a migration, not a pin bump. The
+build/pin/rollback commands are in `orchestrator-image/README.md`.
 
 **THIS REPO'S DISPATCHES DO NOT GO TO `127.0.0.1` — check the configured factory
 before concluding a run is missing.** The local server described in this section is
