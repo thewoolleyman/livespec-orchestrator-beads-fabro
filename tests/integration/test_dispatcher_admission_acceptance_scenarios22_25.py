@@ -135,7 +135,15 @@ def _item(**overrides: object) -> WorkItem:
         type="task",
         status="pending-approval",
         title="A dispatched slice",
-        description="Implement the slice.",
+        description=(
+            "Implement the slice.\n"
+            "\n"
+            "## Definition of Done\n"
+            "\n"
+            "- The dispatched slice lands its change.\n"
+            "\n"
+            "References: ## Effective acceptance criteria\n"
+        ),
         origin="freeform",
         gap_id=None,
         rank="a2",
@@ -364,7 +372,14 @@ def test_loop_refuses_declared_workflow_edit_before_launch(
         id="bd-ib-workflow-edit",
         status="ready",
         description=(
-            "Scope: edit `.github/workflows/ci.yml` so the dispatch gate " "uses the new helper."
+            "Scope: edit `.github/workflows/ci.yml` so the dispatch gate "
+            "uses the new helper.\n"
+            "\n"
+            "## Definition of Done\n"
+            "\n"
+            "- The dispatched slice lands its change.\n"
+            "\n"
+            "References: ## Effective acceptance criteria\n"
         ),
     )
     append_work_item(path=_config(), item=item)
@@ -413,7 +428,15 @@ def test_set_workflow_scope_override_clears_awaiting_signal_and_admits(
     item = _item(
         id="bd-ib-workflow-citation",
         status="ready",
-        description="Scope cites `.github/workflows/ci.yml`; update Python only.",
+        description=(
+            "Scope cites `.github/workflows/ci.yml`; update Python only.\n"
+            "\n"
+            "## Definition of Done\n"
+            "\n"
+            "- The dispatched slice lands its change.\n"
+            "\n"
+            "References: ## Effective acceptance criteria\n"
+        ),
     )
     append_work_item(path=_config(), item=item)
     fake_singleton().update_issue(issue_id=item.id, add_labels=["awaits-scope-override"])
@@ -461,7 +484,13 @@ def test_dispatch_clears_stale_awaiting_signal_when_text_no_longer_declares_work
         status="ready",
         description=(
             "Scope: edit `.github/actions/bump-pin/action.yml` and no files under "
-            "`.github/workflows/`."
+            "`.github/workflows/`.\n"
+            "\n"
+            "## Definition of Done\n"
+            "\n"
+            "- The dispatched slice lands its change.\n"
+            "\n"
+            "References: ## Effective acceptance criteria\n"
         ),
     )
     append_work_item(path=_config(), item=item)
@@ -527,7 +556,13 @@ def test_loop_admits_composite_action_edit_under_github_actions(
         status="ready",
         description=(
             "Scope: edit `.github/actions/bump-pin-rewrite/action.yml` "
-            "and no files under `.github/workflows/`."
+            "and no files under `.github/workflows/`.\n"
+            "\n"
+            "## Definition of Done\n"
+            "\n"
+            "- The dispatched slice lands its change.\n"
+            "\n"
+            "References: ## Effective acceptance criteria\n"
         ),
     )
     append_work_item(path=_config(), item=item)

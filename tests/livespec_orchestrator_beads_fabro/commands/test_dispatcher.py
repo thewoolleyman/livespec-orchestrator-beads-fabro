@@ -406,7 +406,15 @@ def _item(**overrides: object) -> WorkItem:
         type="task",
         status="ready",
         title="A ready task",
-        description="Do the thing.",
+        description=(
+            "Do the thing.\n"
+            "\n"
+            "## Definition of Done\n"
+            "\n"
+            "- The dispatched slice lands its change.\n"
+            "\n"
+            "References: ## Effective acceptance criteria\n"
+        ),
         origin="freeform",
         gap_id=None,
         rank="a2",
@@ -6215,7 +6223,9 @@ def test_dispatch_refuses_minijinja_goal_before_fabro_and_releases_claim(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
-    item = _item(description="poisoned {{ goal }}")
+    item = _item(
+        description="poisoned {{ goal }}\n\n## Definition of Done\n\n- The dispatched slice lands its change.\n\nReferences: ## Effective acceptance criteria\n"
+    )
     append_work_item(path=_config(), item=item)
     monkeypatch.setattr(
         _dispatcher_loop,
@@ -6255,7 +6265,11 @@ def test_dispatch_warns_on_oversized_item_without_blocking(
     """Sizing heuristics are WARN-only (journal record + stderr line): an
     oversized item still dispatches — the dispatcher never blocks on them."""
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
-    item = _item(description="multi-RGR scope: " + "z" * 1600)
+    item = _item(
+        description="multi-RGR scope: "
+        + "z" * 1600
+        + "\n\n## Definition of Done\n\n- The dispatched slice lands its change.\n\nReferences: ## Effective acceptance criteria\n"
+    )
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)

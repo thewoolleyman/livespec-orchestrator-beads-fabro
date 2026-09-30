@@ -121,7 +121,15 @@ def _item(**overrides: object) -> WorkItem:
         type="task",
         status="ready",
         title="A dispatched slice",
-        description="Implement the slice.",
+        description=(
+            "Implement the slice.\n"
+            "\n"
+            "## Definition of Done\n"
+            "\n"
+            "- The dispatched slice lands its change.\n"
+            "\n"
+            "References: ## Effective acceptance criteria\n"
+        ),
         origin="freeform",
         gap_id=None,
         rank="a2",

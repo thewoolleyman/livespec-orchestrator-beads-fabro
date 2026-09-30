@@ -119,7 +119,15 @@ def _item(**overrides: object) -> WorkItem:
         type="task",
         status="pending-approval",
         title="A ready task",
-        description="Do the thing.",
+        description=(
+            "Do the thing.\n"
+            "\n"
+            "## Definition of Done\n"
+            "\n"
+            "- The dispatched slice lands its change.\n"
+            "\n"
+            "References: ## Effective acceptance criteria\n"
+        ),
         origin="freeform",
         gap_id=None,
         rank="a2",
@@ -209,7 +217,15 @@ def test_dispatch_holds_manual_admission_item_without_launching_fabro(
     item = _item(
         status="pending-approval",
         title="Revise the boundary rule",
-        description="Spec-change slice.",
+        description=(
+            "Spec-change slice.\n"
+            "\n"
+            "## Definition of Done\n"
+            "\n"
+            "- The dispatched slice lands its change.\n"
+            "\n"
+            "References: ## Effective acceptance criteria\n"
+        ),
     )
     append_work_item(path=_config(), item=item)
     recording = _RecordingRunDispatch()

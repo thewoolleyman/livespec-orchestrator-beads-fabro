@@ -246,7 +246,19 @@ def _ready_ai_accepted_item() -> WorkItem:
         type="task",
         status="ready",
         title="Drive full dispatch acceptance",
-        description="Exercise the real post-merge janitor and acceptance path.",
+        description=(
+            "Exercise the real post-merge janitor and acceptance path.\n"
+            "\n"
+            "## Definition of Done\n"
+            "\n"
+            "- The dispatched slice lands its change.\n"
+            "\n"
+            # The reference names the ONE H2 the e2e skeleton's own spec tree
+            # carries. This fixture repository really has a spec tree, so the
+            # reference check is OBSERVABLE here and a heading borrowed from
+            # this repository's spec would not resolve against the target's.
+            "References: ## Scenario 1 - Greeting one supplied name\n"
+        ),
         origin="freeform",
         gap_id=None,
         rank="a2",

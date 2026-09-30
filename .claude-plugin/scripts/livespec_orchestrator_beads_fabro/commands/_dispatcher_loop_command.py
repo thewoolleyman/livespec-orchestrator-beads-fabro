@@ -9,6 +9,9 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._acp_projection_posture import (
     acp_projection_posture,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
+    pre_dispatch_criteria_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
     EXIT_FAILURE,
     EXIT_PRECONDITION_ERROR,
@@ -18,9 +21,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
     cost_gate_after_verdict,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
-    pre_dispatch_criteria_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,

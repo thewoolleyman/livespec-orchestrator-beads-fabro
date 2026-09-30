@@ -122,7 +122,15 @@ def _item(**overrides: object) -> WorkItem:
         type="task",
         status="ready",
         title="A ready task",
-        description="Do the thing.",
+        description=(
+            "Do the thing.\n"
+            "\n"
+            "## Definition of Done\n"
+            "\n"
+            "- The dispatched slice lands its change.\n"
+            "\n"
+            "References: ## Effective acceptance criteria\n"
+        ),
         origin="freeform",
         gap_id=None,
         rank="a2",
@@ -332,7 +340,15 @@ def test_dispatch_refuses_host_only_item_without_launching_fabro(
 ) -> None:
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     item = _item(
-        description="Touch the commit-hook self-machinery.",
+        description=(
+            "Touch the commit-hook self-machinery.\n"
+            "\n"
+            "## Definition of Done\n"
+            "\n"
+            "- The dispatched slice lands its change.\n"
+            "\n"
+            "References: ## Effective acceptance criteria\n"
+        ),
         factory_safety="mutates-host-machinery",
     )
     append_work_item(path=_config(), item=item)
@@ -394,7 +410,17 @@ def test_dispatch_does_not_refuse_ordinary_item(
 ) -> None:
     """Guard against over-broad matching: an ordinary item still dispatches."""
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
-    item = _item(description="A perfectly ordinary impl task, no markers.")
+    item = _item(
+        description=(
+            "A perfectly ordinary impl task, no markers.\n"
+            "\n"
+            "## Definition of Done\n"
+            "\n"
+            "- The dispatched slice lands its change.\n"
+            "\n"
+            "References: ## Effective acceptance criteria\n"
+        )
+    )
     append_work_item(path=_config(), item=item)
     recording = _RecordingRunDispatch()
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", recording)
