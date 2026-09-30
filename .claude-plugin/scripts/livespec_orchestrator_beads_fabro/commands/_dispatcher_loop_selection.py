@@ -16,6 +16,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_projection_terminal import 
     project_terminal_run_events,
 )
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
+    acceptance_eligible_candidates,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_emit import (
     emit_calibration,
 )
@@ -118,11 +121,26 @@ def candidates(
     items: list[WorkItem],
     repo: Path,
 ) -> list[WorkItem]:
+    """The drain's selection for one pass, in the canonical ranked order.
+
+    The AUTONOMOUS pass applies the shared acceptance-eligibility filter, which
+    is what the ranking algorithm means by the drain consuming the same filtered
+    set as `next`: a legacy row the wall would refuse is never selected, so it
+    can neither spend the budget nor stop the queue behind it with a wave-level
+    refusal.
+
+    A NAMED id is narrowed to and deliberately NOT filtered. The clause keeps the
+    hand-picked path protected by the wall "even when candidate enumerations
+    filtered the item earlier", and that only holds if the named row still
+    reaches it — dropping it here would report the drain as having nothing to do
+    for an id the operator typed, which is the absence-reads-as-resolution
+    failure the attention contract forbids.
+    """
     ranked = ready_items(items=items, repo=repo)
     requested = set(args.items or [])
     if requested:
         return [item for item in ranked if item.id in requested]
-    return ranked
+    return acceptance_eligible_candidates(items=ranked, cwd=repo, workflow_name=args.workflow_name)
 
 
 def janitor_core_ref(*, repo: Path) -> str:

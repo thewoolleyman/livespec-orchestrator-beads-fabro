@@ -62,6 +62,7 @@ __all__: list[str] = [
     "PROOF_ROUTING_PARKS_FOR_HUMAN_ATTESTATION",
     "AcceptanceEligibility",
     "acceptance_eligibility",
+    "acceptance_eligible_candidates",
     "pre_dispatch_criteria_refusal",
 ]
 
@@ -132,6 +133,42 @@ def acceptance_eligibility(
         findings=findings,
         refusal=_refusal(item=item, variant=variant, criteria=criteria, findings=findings, cwd=cwd),
     )
+
+
+def acceptance_eligible_candidates(
+    *,
+    items: Sequence[WorkItem],
+    cwd: Path,
+    workflow_name: str | None = None,
+) -> list[WorkItem]:
+    """The candidates of ONE enumeration, with every ineligible row dropped.
+
+    The projection of the decision that candidate ENUMERATION needs, as against
+    the operator-facing refusal `pre_dispatch_criteria_refusal` renders for a
+    SELECTED wave. The two are deliberately different shapes of one decision
+    because they answer different questions: an enumeration asks which rows it
+    may advertise, and a wall asks why this named row may not run. Sharing the
+    decision and not the rendering is what keeps `next`, the drain's autonomous
+    pass, the needs-attention implementation item and the idle-factory handoff
+    from advertising an `impl:<id>` the wall would then refuse.
+
+    The caller's ORDER is preserved rather than re-sorted. Every consumer hands
+    in a set already carrying the canonical ranking authority, and the
+    idle-factory fact reads its first-ranked id straight off the result, so
+    re-ordering here would put a second ordering authority behind that id.
+
+    An enumeration DROPS the row where the wall REFUSES it, and the asymmetry is
+    the ratified migration posture rather than laxity: the affected physical
+    `ready` row stays exactly where it is, the `hygiene:unrunnable-acceptance`
+    fact reports it, and the wall still refuses it on the hand-picked path. What
+    the drop buys is that one unrepaired legacy row cannot stop the queue behind
+    it — which is what a wave-level refusal of an autonomous drain does.
+    """
+    return [
+        item
+        for item in items
+        if acceptance_eligibility(item=item, cwd=cwd, workflow_name=workflow_name).eligible
+    ]
 
 
 def pre_dispatch_criteria_refusal(

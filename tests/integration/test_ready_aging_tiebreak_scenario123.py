@@ -57,6 +57,9 @@ _PLUGIN_BLOCK = "livespec-orchestrator-beads-fabro"
 _TENANT = "livespec-orchestrator-beads-fabro"
 _PREFIX = "bd-ib"
 _THRESHOLD_HOURS = 24
+# The heading every seeded item's Definition of Done reference names; written
+# into the repository's own spec tree by `_repo` below.
+_SPEC_HEADING = "## Effective acceptance criteria"
 
 # The `_utc_now_iso` seam the store stamps `ready_since` through.
 _STORE_CLOCK = "livespec_orchestrator_beads_fabro._store_mutations._utc_now_iso"
@@ -164,6 +167,11 @@ def _repo(*, tmp_path: Path) -> Path:
         ),
         encoding="utf-8",
     )
+    spec = repo / "SPECIFICATION"
+    spec.mkdir(parents=True, exist_ok=True)
+    _ = (spec / "contracts.md").write_text(
+        f"# Contracts\n\n{_SPEC_HEADING}\n\nSome prose.\n", encoding="utf-8"
+    )
     return repo
 
 
@@ -191,7 +199,7 @@ def _item(*, item_id: str, rank: str, status: str = "ready") -> WorkItem:
         type="task",
         status=status,  # type: ignore[arg-type]
         title=item_id,
-        description=item_id,
+        description=_definition_of_done(item_id=item_id),
         origin="freeform",
         gap_id=None,
         rank=rank,
@@ -202,6 +210,24 @@ def _item(*, item_id: str, rank: str, status: str = "ready") -> WorkItem:
         reason=None,
         audit=None,
         superseded_by=None,
+    )
+
+
+def _definition_of_done(*, item_id: str) -> str:
+    """A conforming Definition of Done, so the row is a DISPATCH candidate.
+
+    `next` applies the shared acceptance-eligibility filter as step 1 of the
+    ranking algorithm, so an item with no section is absent from the ranked list
+    entirely — and an ordering assertion over an empty list passes nothing. The
+    section is fixture here; the filter itself is asserted in
+    `tests/livespec_orchestrator_beads_fabro/commands/test_acceptance_eligibility_candidate_wiring.py`.
+    """
+    return (
+        "## Definition of Done\n"
+        "\n"
+        f"- The ranked order places {item_id} where the bound requires.\n"
+        "\n"
+        f"References: {_SPEC_HEADING}\n"
     )
 
 

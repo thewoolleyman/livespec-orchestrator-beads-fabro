@@ -10,9 +10,18 @@ degrade to any legacy single-object shape.
 `list[WorkItem]` and carry verbatim from the plaintext sibling. The
 `main`-level integration tests seed the hermetic `FakeBeadsClient` (autouse
 fixture) via `append_work_item` with a `fake=True` connection descriptor.
+
+Every `main`-level fixture item carries a conforming `## Definition of Done`
+section, because step 1 of the ratified ranking algorithm applies the shared
+variant-aware acceptance-eligibility decision and a row with no section is not
+a dispatch candidate. That filter is asserted in
+`test_acceptance_eligibility_candidate_wiring.py`, which owns the exclusion and
+its controls; here the section is fixture, not subject, so these tests keep
+covering the envelope, the slicing and the ordering rather than the filter.
 """
 
 import json
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -24,6 +33,15 @@ from livespec_orchestrator_beads_fabro.commands.next import (
 )
 from livespec_orchestrator_beads_fabro.store import append_work_item, record_dispatch_factory
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
+
+_SPEC_HEADING = "## Effective acceptance criteria"
+_DEFINITION_OF_DONE = (
+    "## Definition of Done\n"
+    "\n"
+    "- The ranker enumerates this item.\n"
+    "\n"
+    f"References: {_SPEC_HEADING}\n"
+)
 
 
 def _config() -> StoreConfig:
@@ -41,6 +59,28 @@ def _seed(item: WorkItem) -> None:
     append_work_item(path=_config(), item=item)
 
 
+def _project(root: Path) -> list[str]:
+    """A governed project root, returned as the `--project-root` argv pair.
+
+    The CLI's own project root, rather than the ambient repository checkout: the
+    eligibility filter grades each item's reference line against the spec tree at
+    this root, so a hermetic root keeps these tests independent of which headings
+    the repository's own specification happens to carry today.
+    """
+    _ = (root / ".livespec.jsonc").write_text(
+        json.dumps(
+            {"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib", "fake": True}}}
+        ),
+        encoding="utf-8",
+    )
+    spec = root / "SPECIFICATION"
+    spec.mkdir(parents=True, exist_ok=True)
+    _ = (spec / "contracts.md").write_text(
+        f"# Contracts\n\n{_SPEC_HEADING}\n\nSome prose.\n", encoding="utf-8"
+    )
+    return ["--project-root", str(root)]
+
+
 def _item(
     *,
     id_: str,
@@ -55,7 +95,7 @@ def _item(
         type="task",
         status=status,  # type: ignore[arg-type]
         title=id_,
-        description="d",
+        description=_DEFINITION_OF_DONE,
         origin=origin,  # type: ignore[arg-type]
         gap_id="G1" if origin == "gap-tied" else None,
         rank=rank,
@@ -283,9 +323,10 @@ def test_main_empty_store_human_output_says_no_work(
 
 def test_main_json_output_envelope_shape(
     capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
 ) -> None:
     _seed(_item(id_="li-x"))
-    rc = main(argv=["--json"])
+    rc = main(argv=["--json", *_project(tmp_path)])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -305,6 +346,7 @@ def test_main_json_output_envelope_shape(
 def test_main_json_output_includes_dispatch_factory(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     _seed(_item(id_="li-x"))
     record_dispatch_factory(path=_config(), work_item_id="li-x", factory="remote")
@@ -315,7 +357,7 @@ def test_main_json_output_includes_dispatch_factory(
         Mock(side_effect=AssertionError("next must not read dispatch-factory comments")),
     )
 
-    rc = main(argv=["--json"])
+    rc = main(argv=["--json", *_project(tmp_path)])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -324,9 +366,10 @@ def test_main_json_output_includes_dispatch_factory(
 
 def test_main_human_output_lists_each_candidate(
     capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
 ) -> None:
     _seed(_item(id_="li-x"))
-    rc = main(argv=[])
+    rc = main(argv=_project(tmp_path))
     captured = capsys.readouterr()
     assert rc == 0
     assert "li-x" in captured.out
@@ -335,10 +378,11 @@ def test_main_human_output_lists_each_candidate(
 
 def test_main_limit_applied_in_json(
     capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
 ) -> None:
     for i in range(7):
         _seed(_item(id_=f"li-{i:02d}", rank=f"a{i}"))
-    rc = main(argv=["--json", "--limit", "3"])
+    rc = main(argv=["--json", "--limit", "3", *_project(tmp_path)])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)
@@ -350,10 +394,11 @@ def test_main_limit_applied_in_json(
 
 def test_main_offset_applied_in_json(
     capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
 ) -> None:
     for i in range(5):
         _seed(_item(id_=f"li-{i:02d}", rank=f"a{i}"))
-    rc = main(argv=["--json", "--offset", "2", "--limit", "2"])
+    rc = main(argv=["--json", "--offset", "2", "--limit", "2", *_project(tmp_path)])
     captured = capsys.readouterr()
     assert rc == 0
     payload = json.loads(captured.out)

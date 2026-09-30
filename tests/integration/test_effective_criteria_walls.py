@@ -333,6 +333,8 @@ def test_the_drain_refuses_the_same_candidate_with_exit_five(
             "loop",
             "--repo",
             str(repo),
+            "--item",
+            item.id,
             "--budget",
             "3",
             "--workflow",
@@ -341,9 +343,41 @@ def test_the_drain_refuses_the_same_candidate_with_exit_five(
         ]
     )
 
-    # The drain reaches the same wall as `dispatch --item`, so an unverifiable
-    # item cannot slip through by being picked automatically instead of by hand.
+    # The drain command reaches the same wall as `dispatch --item` when the id is
+    # NAMED to it, so an unverifiable item cannot slip through by being routed to
+    # the drain instead of picked by hand.
     assert (exit_code, calls) == (_EXIT_UNGRADEABLE_CRITERIA, [])
+
+
+def test_the_autonomous_drain_excludes_the_same_candidate_and_spends_nothing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item(acceptance_criteria=None)
+    append_work_item(path=_config(), item=item)
+    calls: list[str] = []
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _recording(calls=calls))
+
+    exit_code = main(
+        argv=[
+            "loop",
+            "--repo",
+            str(repo),
+            "--budget",
+            "3",
+            "--workflow",
+            str(workflow),
+            "--no-close-on-merge",
+        ]
+    )
+
+    # The autonomous pass never selects the row, so no token is spent HERE
+    # either — the same guarantee, reached by exclusion rather than refusal, and
+    # without a wave-level refusal that would also stop conforming work behind
+    # it. The row stays exactly where it was.
+    assert (exit_code, calls) == (0, [])
+    assert _stored()[item.id].status == "ready"
 
 
 def test_the_approve_valve_refuses_and_the_item_rests_at_pending_approval(
