@@ -48,13 +48,13 @@ _GIT_HOOK_ENV_VARS = (
 )
 _HOST_CODEX_HOME = Path.home() / ".codex"
 _CODEX_TEST_CONFIG = f"""
-model = "gpt-5.5"
+model = "gpt-5.6-sol"
 
 [tui.model_availability_nux]
-"gpt-5.5" = 4
+"gpt-5.6-sol" = 4
 
 [notice.model_migrations]
-"gpt-5.4" = "gpt-5.5"
+"gpt-5.5" = "gpt-5.6-sol"
 
 [projects."{_REPO_ROOT}"]
 trust_level = "trusted"
