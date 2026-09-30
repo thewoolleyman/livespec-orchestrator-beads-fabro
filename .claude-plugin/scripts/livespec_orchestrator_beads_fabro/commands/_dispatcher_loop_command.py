@@ -6,6 +6,9 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._acp_projection_posture import (
+    acp_projection_posture,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
     EXIT_FAILURE,
     EXIT_PRECONDITION_ERROR,
@@ -194,4 +197,18 @@ def _start_loop(*, args: argparse.Namespace, repo: Path) -> _LoopStart | int:
         if preflight_error is not None:
             _ = write_stderr(text=preflight_error)
             return EXIT_PRECONDITION_ERROR
+    # BEFORE CLAIM, and before any candidate is selected: an unresolved ACP
+    # projection-failure fact means a run's fallback evidence was never read,
+    # so an UNATTENDED pass stops picking for this repository while an
+    # ATTENDED `--item` pass proceeds once the high-urgency warning is
+    # surfaced. Neither path clears the fact.
+    posture = acp_projection_posture(
+        journal_path=journal_path(args=args, repo=repo), attended=bool(requested_ids)
+    )
+    if posture.warning is not None:
+        _ = write_stderr(text=posture.warning)
+        journal.append(record=posture.journal_record())
+    if posture.stop_picking:
+        emit_outcomes(outcomes=[], as_json=args.as_json)
+        return 0
     return _LoopStart(janitor=janitor, items=items, journal=journal)

@@ -33,6 +33,9 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
                                             [--candidate-key <key>]
                                             [--repo <path>] [--invoker <id>]
                                             [--journal <path>]
+  dispatcher.py clear-model-fallback-projection --fact-id <id> --reason <text>
+                                                [--repo <path>] [--invoker <id>]
+                                                [--journal <path>]
   dispatcher.py reconcile-merged --repo <path> --item <id> [--invoker <id>]
                                  [--regrade] [--json]
   dispatcher.py probe --repo <path> --item <id> [common flags]
@@ -113,6 +116,17 @@ must name its `--candidate-key` and a domain-scoped one must not — and it
 refuses a target holding no live observation. It writes its own
 `acp-availability-cleared` stage, which the legacy provider scan never reads,
 so neither valve can retire the other's records (see `_acp_hold_clear`).
+`clear-model-fallback-projection` is the THIRD valve of that family and it
+retires no record at all: it retires one `hygiene:model-fallback-projection:
+<repo>:<run>:<node>` attention fact, the one raised when a run's ACP fallback
+event stream could not be read from its resolved factory. Such a fact stops
+unattended picking for the repository, and its only automatic resolution is a
+later successful projection of that run and node -- run absence never resolves
+it -- so an operator who knows the run is gone for good needs a way to say so.
+It carries the same two human-only refusals plus an exactness refusal: a
+`--fact-id` naming nothing currently unresolved is refused rather than
+appended. It writes its own `acp-projection-failure-cleared` stage and touches
+no availability hold (see `_acp_projection_clear`).
 `ledger-normalize` is the standalone self-heal surface: it reuses the
 dispatch-path status normalizer (`open` → `backlog`, `in_progress` →
 `active`; every other status is left for the status-conformance check)
@@ -264,6 +278,10 @@ from livespec_orchestrator_beads_fabro.commands._acp_hold_clear import (
     add_clear_acp_availability_hold_arguments,
     run_clear_acp_availability_hold_command,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_projection_clear import (
+    add_clear_model_fallback_projection_arguments,
+    run_clear_model_fallback_projection_command,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
     admit_and_select,
 )
@@ -368,6 +386,7 @@ __all__: list[str] = [
     "requested_items_preflight_error",
     "run_claude_cred_status",
     "run_clear_acp_availability_hold_command",
+    "run_clear_model_fallback_projection_command",
     "run_clear_provider_exhaustion_command",
     "run_codex_cred_refresh",
     "run_codex_cred_status",
@@ -386,6 +405,7 @@ __all__: list[str] = [
 _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "claude-cred-status": run_claude_cred_status,
     "clear-acp-availability-hold": run_clear_acp_availability_hold_command,
+    "clear-model-fallback-projection": run_clear_model_fallback_projection_command,
     "clear-provider-exhaustion": run_clear_provider_exhaustion_command,
     "codex-cred-refresh": run_codex_cred_refresh,
     "codex-cred-status": run_codex_cred_status,
@@ -420,6 +440,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     add_clear_acp_availability_hold_arguments(
         parser=subparsers.add_parser("clear-acp-availability-hold")
+    )
+    add_clear_model_fallback_projection_arguments(
+        parser=subparsers.add_parser("clear-model-fallback-projection")
     )
     _add_spec_check(parser=subparsers.add_parser("spec-check"))
     _add_janitor_check(parser=subparsers.add_parser("janitor-check"))

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shlex
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -20,7 +21,9 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 __all__: list[str] = [
     "dispatcher_loop_command",
     "drive_command",
+    "fabro_events_command",
     "host_only_command",
+    "model_fallback_journal_command",
     "plans",
     "pr_view_command",
     "reconcile_merged_command",
@@ -31,6 +34,8 @@ __all__: list[str] = [
 ]
 
 _PLUGIN_NAME = "livespec-orchestrator-beads-fabro"
+
+_DISPATCH_JOURNAL_SUBPATH = "tmp/fabro-dispatch-journal.jsonl"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -164,6 +169,39 @@ def reconcile_runs_command(*, project_root: Path, factory: str) -> str:
         f"reconcile-runs --repo {_quote(path=project_root)} "
         f"--factory {shlex.quote(factory)} --json"
     )
+
+
+def fabro_events_command(*, fabro_bin: str, run_id: str, server_url: str) -> str:
+    """The SERVER-QUALIFIED events read, spelled exactly as the port spells it.
+
+    `SPECIFICATION/contracts.md` section "Factory-configurable ACP
+    fallback priority" requires the projection-failure fact to carry "a
+    `shell` handoff containing the same executable server-qualified
+    inspection command reconciliation uses", so the argv below mirrors
+    `FabroPort.events` term for term -- including `--server` AFTER the
+    subcommand, which the pinned 0.254.0 CLI requires and a top-level
+    `--server` hard-errors on. A handoff an operator pastes and watches
+    fail is worse than none: it reads as the factory being broken when
+    the command was.
+    """
+    return (
+        f"{shlex.quote(fabro_bin)} events {shlex.quote(run_id)} "
+        f"--json --server {shlex.quote(server_url)}"
+    )
+
+
+def model_fallback_journal_command(*, project_root: Path, node: str) -> str:
+    """Show every model-fallback record this repository holds for ONE node.
+
+    Read-only by construction: the warning "never refuses or disposes
+    work", so its handoff must not offer an act. What it offers is the
+    append-only evidence itself -- the observed, cleared and superseded
+    lines for that node, in journal order -- which is what an operator
+    needs to decide whether the primary is genuinely back.
+    """
+    journal = shlex.quote(f"{project_root}/{_DISPATCH_JOURNAL_SUBPATH}")
+    node_field = shlex.quote(json.dumps({"node": node})[1:-1])
+    return f"grep -F acp-model-fallback {journal} | grep -F {node_field}"
 
 
 def pr_view_command(*, project_root: Path, pr_number: int) -> str:

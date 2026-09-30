@@ -12,6 +12,9 @@ from livespec_runtime.cross_repo.types import CrossRepoManifest, RefStatus
 from livespec_runtime.work_items.lifecycle import is_item_ready, ready_sort_key
 
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_self_update as selfup
+from livespec_orchestrator_beads_fabro.commands._acp_projection_terminal import (
+    project_terminal_run_events,
+)
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_emit import (
     emit_calibration,
@@ -271,6 +274,13 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
         journal=journal,
         now_iso=utc_now_iso(),
     )
+    # "After a run reaches any terminal outcome ... read the run's events
+    # through the existing events seam against the dispatch's resolved factory
+    # target." It runs on EVERY terminal, green or not, because a hold "may
+    # come from ... an idempotently projected `agent.acp.failover` event from a
+    # run of ANY eventual outcome" -- a run that failed in a later node still
+    # observed the outage that made its earlier node fall back.
+    _ = project_terminal_run_events(outcome=outcome, repo=repo, journal=journal)
     record_dead_implementer_truncation_if_observed(outcome=outcome, journal=journal)
     journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
     preserved = attempt(
