@@ -33,6 +33,7 @@ import re
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    REASON_PREFIX,
     REFERENCES_PREFIX,
     definition_of_done,
 )
@@ -106,6 +107,10 @@ def definition_of_done_findings(*, item: WorkItem, cwd: Path) -> tuple[str, ...]
         _unresolved_reference_finding(item=item, reference=reference)
         for reference in _unresolved_references(section_references=section.references, cwd=cwd)
     )
+    findings.extend(
+        _malformed_proof_mode_finding(item=item, sub_heading=sub_heading)
+        for sub_heading in section.malformed_proof_modes
+    )
     return tuple(findings)
 
 
@@ -139,4 +144,13 @@ def _unresolved_reference_finding(*, item: WorkItem, reference: str) -> str:
         f"work-item {item.id}: the Definition of Done reference {reference!r} does not"
         " resolve to an H2 heading of the governed spec tree; correct the heading"
         " text to match the spec tree verbatim"
+    )
+
+
+def _malformed_proof_mode_finding(*, item: WorkItem, sub_heading: str) -> str:
+    return (
+        f"work-item {item.id}: the Definition of Done `{sub_heading}` sub-heading"
+        f" carries no non-empty `{REASON_PREFIX}` line, so its `human_attested`"
+        f" proof-mode declaration is malformed; add a `{REASON_PREFIX} <text>` line"
+        " naming the capability no factory sandbox has"
     )

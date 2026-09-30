@@ -179,6 +179,82 @@ def test_an_empty_reference_line_is_no_reference_line(tmp_path: Path) -> None:
     assert "References:" in findings[0]
 
 
+def test_a_human_attested_sub_heading_with_no_reason_line_is_a_finding(
+    tmp_path: Path,
+) -> None:
+    description = (
+        "## Definition of Done\n"
+        "\n"
+        "### Human-attested\n"
+        "\n"
+        "- A human attests this one.\n"
+        "\n"
+        f"References: {_PLAIN_HEADING}\n"
+    )
+
+    findings = definition_of_done_findings(
+        item=_item(description=description), cwd=_spec_tree(tmp_path=tmp_path)
+    )
+
+    assert len(findings) == 1
+    assert "bd-ib-v114" in findings[0]
+    assert "Human-attested" in findings[0]
+    assert "Reason:" in findings[0]
+
+
+def test_a_reasonless_sub_heading_closed_by_another_heading_is_still_a_finding(
+    tmp_path: Path,
+) -> None:
+    # The sub-heading ends at the NEXT heading rather than at the end of the
+    # section, so the missing `Reason:` line has to be caught on that boundary
+    # too — otherwise an author could silence the finding by adding any heading
+    # after the opt-out, which is the cheapest possible evasion of it.
+    description = (
+        "## Definition of Done\n"
+        "\n"
+        "### Human-attested\n"
+        "\n"
+        "- A human attests this one.\n"
+        "\n"
+        "### Host walls\n"
+        "\n"
+        "- The factory captures this one.\n"
+        "\n"
+        f"References: {_PLAIN_HEADING}\n"
+    )
+
+    findings = definition_of_done_findings(
+        item=_item(description=description), cwd=_spec_tree(tmp_path=tmp_path)
+    )
+
+    assert len(findings) == 1
+    assert "Human-attested" in findings[0]
+    assert "Reason:" in findings[0]
+
+
+def test_a_human_attested_sub_heading_with_a_reason_line_is_no_finding(
+    tmp_path: Path,
+) -> None:
+    description = (
+        "## Definition of Done\n"
+        "\n"
+        "### Human-attested\n"
+        "\n"
+        "Reason: the proof needs a session on an external administrative console.\n"
+        "\n"
+        "- A human attests this one.\n"
+        "\n"
+        f"References: {_PLAIN_HEADING}\n"
+    )
+
+    assert (
+        definition_of_done_findings(
+            item=_item(description=description), cwd=_spec_tree(tmp_path=tmp_path)
+        )
+        == ()
+    )
+
+
 def test_an_unobservable_spec_tree_skips_the_reference_check_and_keeps_the_parse_checks(
     tmp_path: Path,
 ) -> None:
