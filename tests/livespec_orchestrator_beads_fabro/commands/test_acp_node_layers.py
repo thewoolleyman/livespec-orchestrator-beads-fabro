@@ -69,7 +69,10 @@ def _resolve(
     layers = _module(name="_acp_node_layers")
     repo_module = _module(name="_acp_node_repository")
     seam = _module(name="_dispatcher_acp_nodes")
-    repo_overlays = repo_module.repository_acp_overlays(block=repository or {})
+    repo_overlays = repo_module.repository_acp_overlays(
+        block=repository or {},
+        catalogs=_module(name="_acp_catalogs").builtin_catalogs(),
+    )
     if isinstance(repo_overlays, str):
         return repo_overlays
     dispatch_overlays = seam.dispatch_acp_overlays(overrides=dispatch)

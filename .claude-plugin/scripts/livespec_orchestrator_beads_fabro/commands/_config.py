@@ -53,7 +53,6 @@ signature only for call-site compatibility.
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -62,10 +61,6 @@ from returns.io import IOFailure, IOResult, IOSuccess
 from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro.commands import _jsonc
-from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import AcpNodeOverlay
-from livespec_orchestrator_beads_fabro.commands._acp_node_repository import (
-    repository_acp_overlays,
-)
 from livespec_orchestrator_beads_fabro.commands._codex_model_tiers import (
     CodexModelTiers,
     codex_model_tiers_from_block,
@@ -94,7 +89,6 @@ __all__: list[str] = [
     "dispatcher_block",
     "has_fabro_factories",
     "has_fabro_factory",
-    "resolve_acp_node_overlays",
     "resolve_codex_model_tiers",
     "resolve_credential_wrapper",
     "resolve_fabro_bin",
@@ -230,18 +224,6 @@ def resolve_codex_model_tiers(*, cwd: Path) -> CodexModelTiers:
     this is the config-reading seam that feeds it.
     """
     return codex_model_tiers_from_block(block=dispatcher_block(cwd=cwd))
-
-
-def resolve_acp_node_overlays(*, cwd: Path) -> Mapping[str, AcpNodeOverlay] | str:
-    """Resolve the dispatch target's per-node adapter overlays from its .livespec.jsonc.
-
-    The policy itself -- the two spellings, the `codex_models` shorthand
-    and its asymmetric expansion -- lives in `_acp_node_repository`; this
-    is the config-reading seam that feeds it. A refusal comes back as its
-    message so the caller can report it as a failed dispatch before any
-    run exists.
-    """
-    return repository_acp_overlays(block=dispatcher_block(cwd=cwd))
 
 
 def resolve_node_timeouts(*, cwd: Path) -> NodeTimeouts | str:

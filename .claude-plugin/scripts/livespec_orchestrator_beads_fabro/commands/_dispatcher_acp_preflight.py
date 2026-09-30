@@ -55,10 +55,8 @@ from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import (
     build_acp_preflight_verdict,
     no_fallback_verdict,
 )
-from livespec_orchestrator_beads_fabro.commands._config import (
-    dispatcher_block,
-    resolve_acp_node_overlays,
-)
+from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
+from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import (
     workflow_adapter_inputs,
 )
