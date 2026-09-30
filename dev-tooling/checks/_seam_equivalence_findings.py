@@ -10,7 +10,7 @@ takes sets and returns findings -- so the rules can be read and tested without a
 payload on disk.
 
 FOUR DISJOINT FAMILIES, AND ONLY THE EQUALITY IS SCOPED TO ONE OF THEM. The
-`[run.inputs]` table carries the integration inputs, the six ACP adapter inputs,
+`[run.inputs]` table carries the integration inputs, the per-node ACP adapter inputs,
 the PER-ITEM POLICY inputs -- `review_fix_visit_cap`,
 `merge_on_review_cap_outcome` and `merge_hold` -- and the variant's own KIND
 DECLARATION. The ratified typed-workflow-inputs clause names the first three and

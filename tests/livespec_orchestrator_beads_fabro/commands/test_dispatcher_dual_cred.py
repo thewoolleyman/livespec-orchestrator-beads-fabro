@@ -413,6 +413,7 @@ def test_fabro_port_run_routes_implementer_to_codex_adapter(
     )
     assert input_values == [
         "disposition_adapter=npx -y @agentclientprotocol/claude-agent-acp",
+        "dod_gate_adapter=npx -y @agentclientprotocol/claude-agent-acp",
         f"fix_adapter={claude_opus_5}",
         f"implement_adapter={claude_opus_5}",
         f"pr_adapter={claude_haiku_pr}",

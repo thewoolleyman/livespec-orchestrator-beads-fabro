@@ -317,6 +317,27 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   The single-dispatch leg names an id the tenant does not hold, so it refuses
   at target selection — AFTER normalization — and launches nothing.
 
+- `test_workflow_dod_gate_scenario131.py` — binds `SPECIFICATION/scenarios.md`
+  "Scenario 131 — The Definition of Done gate admits a coherent item, refuses a
+  malformed one host-side, and rests an incoherent one at needs-human" and the
+  `SPECIFICATION/contracts.md` clauses it realizes (ratified v114): the reserved
+  workflow's `dod_gate` node and its position, its own adapter input and
+  built-in default, its worst-case timeout budget, its routing, and the
+  registered variant's declare-but-do-not-reach parity. The graph and run config
+  are read as committed bytes, and every derived claim goes through the
+  PRODUCTION derivation rather than a restated literal — the timeout budget is
+  read off `derive_fabro_timeout_seconds` (a node absent from that derivation is
+  budgeted at ZERO, so asserting the visit table directly would pass for a
+  budget the Dispatcher never applies), and admission-requiredness is read off
+  the dominator derivation, which is also what proves the widened graph is a
+  shape that derivation still understands rather than one it refuses. The
+  adapter default is compared to the review input's own line instead of to a
+  model name written here, because a default pinned by copying a literal drifts
+  silently the moment the review pin moves. The needs-human rest state and the
+  prompt's verification duties are bound in the sibling cases of the same
+  module; the `fabro validate` leg belongs to `check-fabro-graph-validity`,
+  which reads this same payload.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

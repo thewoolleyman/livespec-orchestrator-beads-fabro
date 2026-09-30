@@ -104,6 +104,15 @@ review_adapter = "ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL=h
 
 disposition_adapter = "npx -y @agentclientprotocol/claude-agent-acp"
 
+# Declared for the `dod_gate` node this graph declares and never reaches, on the
+# bundle's own default (the review entry) so a target that pins the node once
+# gets the same adapter through either graph. It is carried rather than acted on,
+# exactly as `merge_on_review_cap_outcome` and `merge_hold` are below: a groom
+# run PRODUCES Definitions of Done and has none of its own to grade. The node's
+# declaration comment in `workflow.fabro` carries why declaring it is still
+# required.
+dod_gate_adapter = "ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
+
 # THE PER-ITEM POLICY FAMILY, all three, because the Dispatcher renders all
 # three on EVERY dispatch and fabro rejects an `--input` naming an input the run
 # config does not declare. A variant that dropped one would not merely disagree

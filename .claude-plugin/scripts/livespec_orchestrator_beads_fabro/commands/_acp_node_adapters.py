@@ -63,6 +63,7 @@ __all__: list[str] = [
 # `implementation_diff` and `janitor` are deliberately absent: they are
 # `script` nodes with no adapter to configure.
 ACP_NODES: tuple[str, ...] = (
+    "dod_gate",
     "implement",
     "fix",
     "review_fix",
@@ -82,6 +83,7 @@ ACP_NODES: tuple[str, ...] = (
 # an `--input` name its own workflow does not define -- which fabro would
 # reject outright.
 NODE_INPUT_CANDIDATES: Mapping[str, tuple[str, ...]] = {
+    "dod_gate": ("dod_gate_adapter",),
     "implement": ("implement_adapter", "acp_adapter"),
     "fix": ("fix_adapter", "acp_adapter"),
     "review_fix": ("review_fix_adapter", "acp_adapter"),

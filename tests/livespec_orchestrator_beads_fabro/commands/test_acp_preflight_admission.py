@@ -195,13 +195,19 @@ def _filter(*, chain: Any, inputs: Any, assessed: dict[str, str] | None = None) 
     )
 
 
-def test_the_committed_graph_resolves_exactly_implement_review_and_pr() -> None:
+def test_the_committed_graph_resolves_exactly_dod_gate_implement_review_and_pr() -> None:
     """The contract's named set, derived rather than spelled.
 
     This is the one control that ties the derivation to the real workflow. It
     also proves the negative half that matters: `fix`, `review_fix` and
     `disposition` are ACP nodes on green paths and are NOT admission-required,
     because a run that never goes Red reaches `exit` without any of them.
+
+    `dod_gate` joins the set for the opposite reason, and it is the sharpest
+    case in the graph: it sits on the ONLY edge out of `start`, so no green path
+    can avoid it. A gate that could not start its own adapter would therefore
+    strand every run at its first node, which is exactly the condition
+    admission-required exists to refuse before claim.
     """
     modules = _modules()
     graph = modules["_acp_workflow_graph"].parse_workflow_graph(
@@ -209,10 +215,11 @@ def test_the_committed_graph_resolves_exactly_implement_review_and_pr() -> None:
     )
     critical = modules["_acp_success_critical"].derive_success_critical(graph=graph)
 
-    assert set(critical.nodes) == {"implement", "review", "pr"}
+    assert set(critical.nodes) == {"dod_gate", "implement", "review", "pr"}
     assert critical.start == "start"
     assert critical.green_terminal == "exit"
     assert set(graph.acp_names) == {
+        "dod_gate",
         "implement",
         "fix",
         "review_fix",
@@ -1166,7 +1173,7 @@ def test_a_repository_with_no_committed_workflow_is_graded_against_the_bundled_o
     )
 
     assert verdict.fallback_enabled is True
-    assert set(verdict.success_critical) == {"implement", "review", "pr"}
+    assert set(verdict.success_critical) == {"dod_gate", "implement", "review", "pr"}
     assert verdict.viable is True
 
 

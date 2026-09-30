@@ -436,6 +436,7 @@ def resolve_test_acp_nodes() -> ResolveAcpNodes:
                 "pr_adapter": publish,
                 "review_adapter": claude,
                 "disposition_adapter": claude,
+                "dod_gate_adapter": claude,
             },
             repository=overlays,
             dispatch={},
