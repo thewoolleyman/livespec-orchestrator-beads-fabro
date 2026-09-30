@@ -42,6 +42,18 @@ from livespec_runtime.needs_attention import SpecNextOutput
 
 _JOURNAL = Path("tmp") / "fabro-dispatch-journal.jsonl"
 _IDLE_FACT_ID = "hygiene:idle-factory:repo"
+# The spec heading each seeded item's Definition of Done reference resolves
+# against. The eligible set is evaluated AFTER the shared acceptance refusal
+# filter, so a seeded row with no conforming section is not admission-eligible
+# and the positive case would assert against an absent fact.
+_SPEC_HEADING = "## Effective acceptance criteria"
+_DEFINITION_OF_DONE = (
+    "## Definition of Done\n"
+    "\n"
+    "- The idle-factory fact advertises this item's dispatch.\n"
+    "\n"
+    f"References: {_SPEC_HEADING}\n"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -69,7 +81,7 @@ def _item(*, id_: str, status: str, rank: str) -> WorkItem:
         type="task",
         status="ready",
         title=f"{id_} title",
-        description="d",
+        description=_DEFINITION_OF_DONE,
         origin="freeform",
         gap_id=None,
         rank=rank,
@@ -107,6 +119,11 @@ def _write_project(*, root: Path) -> None:
             indent=2,
         ),
         encoding="utf-8",
+    )
+    spec = root / "SPECIFICATION"
+    spec.mkdir(parents=True, exist_ok=True)
+    (spec / "contracts.md").write_text(
+        f"# Contracts\n\n{_SPEC_HEADING}\n\nSome prose.\n", encoding="utf-8"
     )
 
 

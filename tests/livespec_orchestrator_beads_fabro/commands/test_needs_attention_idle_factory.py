@@ -1,4 +1,13 @@
-"""Coverage for the one attention row an idle factory produces."""
+"""Coverage for the one attention row an idle factory produces.
+
+Every fixture item carries a conforming `## Definition of Done` section, because
+the eligible set is evaluated AFTER the shared variant-aware acceptance refusal
+filter: the count, the first-ranked id and the `impl:<id>` handoff all read off
+the filtered list, so a row the pre-dispatch wall would refuse is not eligible
+here either. That exclusion and its controls are asserted in
+`test_acceptance_eligibility_candidate_wiring.py`; the section is fixture rather
+than subject in this file.
+"""
 
 import importlib
 import json
@@ -21,6 +30,14 @@ _MODULE_PATH = (
 )
 _MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._needs_attention_idle_factory"
 _FACT_ID = "hygiene:idle-factory:repo"
+_SPEC_HEADING = "## Effective acceptance criteria"
+_DEFINITION_OF_DONE = (
+    "## Definition of Done\n"
+    "\n"
+    "- The idle-factory row names this item.\n"
+    "\n"
+    f"References: {_SPEC_HEADING}\n"
+)
 
 
 def _item(*, id_: str, status: str = "ready", rank: str = "a1", **overrides: object) -> WorkItem:
@@ -29,7 +46,7 @@ def _item(*, id_: str, status: str = "ready", rank: str = "a1", **overrides: obj
         type="task",
         status=status,  # pyright: ignore[reportArgumentType]
         title=f"{id_} title",
-        description="d",
+        description=_DEFINITION_OF_DONE,
         origin="freeform",
         gap_id=None,
         rank=rank,
@@ -48,6 +65,14 @@ def _write_project(root: Path) -> None:
     (root / ".livespec.jsonc").write_text(
         json.dumps({"livespec-orchestrator-beads-fabro": {"dispatcher": {"wip_cap": 5}}}),
         encoding="utf-8",
+    )
+    # The governed spec tree each item's Definition of Done reference resolves
+    # against. Without it the reference check is skipped rather than failed, so
+    # writing it keeps these fixtures honest about being conforming items.
+    spec = root / "SPECIFICATION"
+    spec.mkdir(parents=True, exist_ok=True)
+    (spec / "contracts.md").write_text(
+        f"# Contracts\n\n{_SPEC_HEADING}\n\nSome prose.\n", encoding="utf-8"
     )
 
 

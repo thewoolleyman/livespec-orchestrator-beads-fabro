@@ -49,6 +49,9 @@ from pathlib import Path
 
 from livespec_runtime.attention_item import AttentionItem, Handoff, SourceRef
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
+    acceptance_eligible_candidates,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_reclaim import (
     claimed_active_projection,
 )
@@ -123,17 +126,28 @@ def admission_eligible_ready_items(
 ) -> list[WorkItem]:
     """The ready candidates the admission valve would admit if capacity allowed.
 
-    Composed from the drain's OWN two stages rather than from a look-alike
+    Composed from the drain's OWN three stages rather than from a look-alike
     predicate: `ready_items` supplies the dispatch-candidate set in the
-    Dispatcher's ranked order, and `plan_admissions` — run with as many free
-    slots as there are candidates, which is what "capacity excepted" means —
-    drops each candidate it would hold for a manual approval or an unresolvable
-    assignee. What survives is exactly the drain's non-capacity eligibility, in
-    the drain's order, so the first element is the first ranked such item.
+    Dispatcher's ranked order, `acceptance_eligible_candidates` applies the
+    shared variant-aware acceptance-eligibility decision, and `plan_admissions`
+    — run with as many free slots as there are candidates, which is what
+    "capacity excepted" means — drops each candidate it would hold for a manual
+    approval or an unresolvable assignee. What survives is exactly the drain's
+    non-capacity eligibility, in the drain's order, so the first element is the
+    first ranked such item.
+
+    The acceptance filter is not an extra precaution here; the clause states it
+    outright for this fact, because all three of the row's subjects are read off
+    this list. A legacy row the wall would refuse would otherwise inflate the
+    count, and — being the first ranked one — become the `impl:<id>` the handoff
+    advertises, which the Dispatcher then refuses with exit 5. An attention row
+    that hands the operator a failing command is worse than none at all.
     """
     candidates = [
         item
-        for item in ready_items(items=items, repo=project_root)
+        for item in acceptance_eligible_candidates(
+            items=ready_items(items=items, repo=project_root), cwd=project_root
+        )
         if not is_host_only_item(item=item)
     ]
     plan = plan_admissions(

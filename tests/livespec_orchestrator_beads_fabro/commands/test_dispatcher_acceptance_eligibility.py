@@ -333,6 +333,38 @@ def test_dispatch_refuses_an_absent_section_before_any_run_with_exit_5(
 def test_the_drain_refuses_an_absent_section_before_any_run_with_exit_5(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    # `loop --item` is the drain command's HAND-PICK, which the clause keeps
+    # protected by this refusal "even when candidate enumerations filtered the
+    # item earlier"; the autonomous pass is the sibling case below.
+    repo = _origin_backed_repo(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=_item())
+
+    rc = main(
+        argv=[
+            "loop",
+            "--repo",
+            str(repo),
+            "--item",
+            "bd-ib-v114wall",
+            "--budget",
+            "1",
+            "--journal",
+            str(tmp_path / "journal.jsonl"),
+        ]
+    )
+
+    assert rc == _EXIT_UNGRADEABLE_CRITERIA
+    assert "Definition of Done" in capsys.readouterr().err
+    assert next(iter(read_work_items(path=_config()))).status == "ready"
+
+
+def test_the_autonomous_drain_excludes_an_absent_section_instead_of_refusing(
+    tmp_path: Path,
+) -> None:
+    # The migration posture for the population predating the wall: the row is
+    # excluded from the enumeration, stays physically `ready`, and is reported by
+    # the unrunnable-acceptance fact — so one unrepaired legacy item does not
+    # stop the whole drain with a wave-level exit 5.
     repo = _origin_backed_repo(tmp_path=tmp_path)
     append_work_item(path=_config(), item=_item())
 
@@ -348,8 +380,7 @@ def test_the_drain_refuses_an_absent_section_before_any_run_with_exit_5(
         ]
     )
 
-    assert rc == _EXIT_UNGRADEABLE_CRITERIA
-    assert "Definition of Done" in capsys.readouterr().err
+    assert rc == 0
     assert next(iter(read_work_items(path=_config()))).status == "ready"
 
 
@@ -449,8 +480,8 @@ def test_an_ordinary_ai_only_item_is_not_refused_by_the_routing_check(
 @pytest.mark.parametrize(
     "argv_tail",
     [
-        pytest.param(["--item", "bd-ib-v114wall"], id="hand-picked-dispatch"),
-        pytest.param(["--budget", "1"], id="autonomous-drain"),
+        pytest.param(["dispatch", "--item", "bd-ib-v114wall"], id="hand-picked-dispatch"),
+        pytest.param(["loop", "--item", "bd-ib-v114wall", "--budget", "1"], id="hand-picked-drain"),
     ],
 )
 def test_every_dispatch_entry_path_returns_the_same_ai_only_refusal(
@@ -458,21 +489,23 @@ def test_every_dispatch_entry_path_returns_the_same_ai_only_refusal(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # ONE decision consumed by every entry path: the same item must receive the
-    # same verdict whether it is hand-picked or drained.
+    # ONE decision consumed by every entry path that REACHES the item: the same
+    # item must receive the same verdict whether it is named to `dispatch` or
+    # named to the drain. The autonomous drain never reaches it — it excludes the
+    # row at enumeration, which the sibling test above asserts.
     repo = _origin_backed_repo(tmp_path=tmp_path)
     append_work_item(
         path=_config(),
         item=_item(description=_MIXED_SECTION, acceptance_policy="ai-only"),
     )
-    command = "dispatch" if "--item" in argv_tail else "loop"
+    command, *flags = argv_tail
 
     rc = main(
         argv=[
             command,
             "--repo",
             str(repo),
-            *argv_tail,
+            *flags,
             "--journal",
             str(tmp_path / "journal.jsonl"),
         ]

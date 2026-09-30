@@ -76,6 +76,11 @@ def impl_next(
         items=[item for item in items if item.factory_safety is None],
         manifest=manifest,
         sibling_status_lookup=sibling_status_lookup,
+        # This row ADVERTISES an `impl:<id>` command, so it consumes the same
+        # step-1 acceptance-eligibility filter `next` does. Without the project
+        # root the ranker reports readiness only, and the row would hand the
+        # operator a dispatch the pre-dispatch wall refuses.
+        project_root=project_root,
     )
     if not ranked:
         return None

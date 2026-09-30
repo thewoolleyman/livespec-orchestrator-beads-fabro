@@ -32,15 +32,21 @@ Algorithm:
    `depends_on` entry resolves to `OPEN`). Missing local references
    resolve to `UNKNOWN` and therefore do NOT exclude (the doctor's
    `no-orphan-dependency` invariant is the right surface for that).
-3. Score by the canonical, AGING-AWARE `lifecycle.ready_sort_key`: the
+3. Drop, from that ready set, every row the SHARED variant-aware
+   acceptance-eligibility decision refuses — the same decision the
+   pre-dispatch wall, the Dispatcher drain and the idle-factory handoff
+   consume, never a second parser. An excluded row is absent from the
+   candidates AND from the pagination total, stays physically `ready`,
+   and is reported by the `hygiene:unrunnable-acceptance:<id>` fact.
+4. Score by the canonical, AGING-AWARE `lifecycle.ready_sort_key`: the
    fractional `rank` is the sole ordering authority, equal-`rank` ties
    break by ready-age past `dispatcher.ready_aging_threshold_hours`
    (oldest-ready first), and everything the bound has not aged — and
    every item whose ready instant is unknowable — keeps the `id`
    lexicographic tie-break.
-4. Enumerate ALL ready items in ranked order as candidates.
-5. Apply `--offset` then `--limit` to produce the returned slice.
-6. Emit a `{candidates[], pagination}` envelope. Each candidate
+5. Enumerate ALL surviving ready items in ranked order as candidates.
+6. Apply `--offset` then `--limit` to produce the returned slice.
+7. Emit a `{candidates[], pagination}` envelope. Each candidate
    carries `action`, `reason`, `urgency`, and `work_item_ref`,
    plus impl-beads-specific `rank` and `origin` fields
    (the cross-plugin contract permits additional fields).
@@ -62,6 +68,9 @@ from livespec_runtime.work_items.lifecycle import is_item_ready, ready_sort_key
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
+    acceptance_eligible_candidates,
+)
 from livespec_orchestrator_beads_fabro.commands._ready_aging_order import (
     ReadyAgingOrder,
     ready_aging_order,
@@ -118,6 +127,10 @@ def main(*, argv: list[str] | None = None) -> int:
         # is what makes the Dispatcher's identically-composed order the same
         # order rather than a coincidentally similar one.
         ready_aging=ready_aging_order(project_root=project_root),
+        # Step 1 of the ranking algorithm: the shared acceptance-eligibility
+        # decision, resolved against this same project root so `next` cannot
+        # advertise an `impl:<id>` the pre-dispatch wall would refuse.
+        project_root=project_root,
     )
     envelope = _slice_envelope(ranked=ranked, offset=offset, limit=limit)
     if args.as_json:
@@ -135,6 +148,7 @@ def rank_candidates(
     sibling_status_lookup: Callable[[str, str], RefStatus] | None = None,
     dispatch_factories: dict[str, str | None] | None = None,
     ready_aging: ReadyAgingOrder | None = None,
+    project_root: Path | None = None,
 ) -> list[dict[str, Any]]:
     """Return the full ranked list of candidate envelopes (no slicing).
 
@@ -145,6 +159,17 @@ def rank_candidates(
     `unaged_ready_order` is the ratified unknowable-instant path for it, under
     which the ordering degrades to `(rank, id)`. The CLI above always resolves a
     real one.
+
+    `project_root` is step 1 of the ratified ranking algorithm: the shared
+    variant-aware acceptance-eligibility decision, applied to the physically
+    ready set so a row no dispatch would take is absent from the list AND from
+    the pagination total. It is optional for the SAME reason `ready_aging` is —
+    the decision resolves a workflow variant and grades a spec reference, and
+    neither is answerable from items alone — but the degradation is a different
+    kind: without it this tier reports readiness only, which is not a
+    dispatch-candidate set and MUST NOT be advertised as one. Every advertising
+    caller (the CLI here and the needs-attention implementation item) holds a
+    project root and passes it.
 
     Each candidate dict carries:
 
@@ -171,6 +196,13 @@ def rank_candidates(
             sibling_status_lookup=sibling_status_lookup,
         )
     ]
+    # Step 1's second half: drop the physically-ready rows the shared decision
+    # refuses. It runs on the READY set rather than on `items`, because `index`
+    # above resolves every candidate's `depends_on` — filtering the input would
+    # turn a filtered-out OPEN blocker into an UNKNOWN one, which does not
+    # exclude, so an item would become ready BECAUSE its blocker was unrunnable.
+    if project_root is not None:
+        ready = acceptance_eligible_candidates(items=ready, cwd=project_root)
     # Compose the canonical ordering key ONCE per ranking pass, carrying both
     # aging inputs. The Dispatcher's drain composes the identical call, so the
     # queue `next` advertises is the queue the Dispatcher drains.

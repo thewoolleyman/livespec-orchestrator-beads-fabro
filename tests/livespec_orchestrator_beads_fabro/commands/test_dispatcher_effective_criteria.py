@@ -462,6 +462,39 @@ def test_dispatch_refuses_an_ungradeable_item_before_any_run_with_exit_5(
 def test_loop_refuses_an_ungradeable_candidate_before_any_run_with_exit_5(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    # The drain path still meets the wall for a NAMED id: the clause keeps the
+    # hand-picked dispatch protected by the refusal "even when candidate
+    # enumerations filtered the item earlier", and `loop --item` is that
+    # hand-pick on the drain command.
+    repo = _origin_backed_repo(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=_item())
+
+    rc = main(
+        argv=[
+            "loop",
+            "--repo",
+            str(repo),
+            "--item",
+            "bd-ib-v072",
+            "--budget",
+            "1",
+            "--journal",
+            str(tmp_path / "journal.jsonl"),
+        ]
+    )
+
+    assert rc == _EXIT_UNGRADEABLE_CRITERIA
+    assert "bd-ib-v072" in capsys.readouterr().err
+    assert next(iter(read_work_items(path=_config()))).status == "ready"
+
+
+def test_the_autonomous_drain_leaves_an_ungradeable_candidate_unselected(
+    tmp_path: Path,
+) -> None:
+    # The migration posture, and the discriminator against the refusal above:
+    # the autonomous pass EXCLUDES the row rather than refusing the wave, so one
+    # unrepaired legacy item cannot stop the queue behind it. The row itself
+    # stays exactly where it is and the unrunnable-acceptance fact reports it.
     repo = _origin_backed_repo(tmp_path=tmp_path)
     append_work_item(path=_config(), item=_item())
 
@@ -477,8 +510,7 @@ def test_loop_refuses_an_ungradeable_candidate_before_any_run_with_exit_5(
         ]
     )
 
-    assert rc == _EXIT_UNGRADEABLE_CRITERIA
-    assert "bd-ib-v072" in capsys.readouterr().err
+    assert rc == 0
     assert next(iter(read_work_items(path=_config()))).status == "ready"
 
 
