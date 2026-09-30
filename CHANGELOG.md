@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.152.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.151.1...v0.152.0) (2026-09-30)
+
+
+### Features
+
+* **dispatcher:** project ACP fallback events into holds, warnings and a fact ([009b15d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/009b15d08038848ee0bb648ea30c666e9ca9084a))
+
 ## [0.151.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.151.0...v0.151.1) (2026-09-12)
 
 
