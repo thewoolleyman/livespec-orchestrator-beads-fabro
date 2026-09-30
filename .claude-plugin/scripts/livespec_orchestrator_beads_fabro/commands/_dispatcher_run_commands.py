@@ -5,6 +5,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
+    pre_dispatch_criteria_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
     admit_and_select,
 )
@@ -17,9 +20,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
     cost_gate_after_verdict,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
-    pre_dispatch_criteria_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (

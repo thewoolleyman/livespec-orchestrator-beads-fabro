@@ -77,7 +77,15 @@ def _seed(*, id_: str, status: str, rank: str, **overrides: object) -> None:
         type="task",
         status="active",
         title=f"{id_} title",
-        description="d",
+        description=(
+            "d\n"
+            "\n"
+            "## Definition of Done\n"
+            "\n"
+            "- The dispatched slice lands its change.\n"
+            "\n"
+            "References: ## Effective acceptance criteria\n"
+        ),
         origin="freeform",
         gap_id=None,
         rank=rank,

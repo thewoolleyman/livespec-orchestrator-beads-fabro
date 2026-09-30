@@ -20,6 +20,9 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import FakeBeadsClient, make_beads_client
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
+    pre_dispatch_criteria_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
     CHANGE_IMPLYING_CLASSIFICATION,
     CHANGE_OPTIONAL_CLASSIFICATION,
@@ -28,7 +31,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria i
     DESCRIPTION_EXIT_CRITERIA_SOURCE,
     change_classification,
     effective_criteria,
-    pre_dispatch_criteria_refusal,
     ungradeable_criteria_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._drive_valves import run_human_valve_action
@@ -50,11 +52,25 @@ _COMMANDS_DIR = (
 )
 _PROSE_DIR = Path(__file__).resolve().parents[3] / ".claude-plugin" / "prose"
 _PRIMITIVE_MODULE = "_dispatcher_effective_criteria"
+_DECISION_MODULE = "_dispatcher_acceptance_eligibility"
 _EXIT_UNGRADEABLE_CRITERIA = 5
 
 _TWO_ASSERTIONS = (
     "The dispatcher refuses an ungradeable item before any run is created.\n"
     "The refusal names the work-item id and the resolved source.\n"
+)
+
+# The Definition of Done section every implement-kind item must carry since
+# v114. It is deliberately BULLET-LESS: this file's subject is the resolution
+# order and the wall's GRADEABILITY verdict, which the two legacy sources decide,
+# so the section satisfies the section-presence and reference-line checks while
+# contributing no gradeable assertion of its own. A section carrying a bullet
+# would make every fixture here gradeable from step 1, and each leg below would
+# pass without exercising the leg it names. The fixture repositories carry no
+# spec tree, so the reference check is unobservable and it is the reference
+# line's PRESENCE that is satisfied here.
+_EMPTY_DEFINITION_OF_DONE = (
+    "## Definition of Done\n" "\n" "References: ## Effective acceptance criteria\n"
 )
 
 
@@ -64,7 +80,7 @@ def _item(**overrides: object) -> WorkItem:
         type="task",
         status="ready",
         title="A gated task",
-        description="Do the thing.",
+        description=f"Do the thing.\n\n{_EMPTY_DEFINITION_OF_DONE}",
         origin="freeform",
         gap_id=None,
         rank="a2",
@@ -523,17 +539,33 @@ def test_groom_reports_the_criteria_parse_for_every_filed_slice_without_refusing
 
 
 def test_every_criteria_gate_resolves_through_the_one_primitive() -> None:
-    """Each ratified gate imports the primitive rather than re-deriving criteria."""
-    consumers = (
+    """Each ratified gate reaches the primitive rather than re-deriving criteria.
+
+    Two shapes satisfy the clause, and v114 introduced the second. A gate that
+    holds only the ITEM imports the primitive directly. A gate that also needs
+    the REPOSITORY — the workflow variant and the governed spec tree — imports
+    the ONE shared acceptance-eligibility decision, which composes the primitive
+    with those reads. What the clause forbids is a THIRD shape: a gate deriving
+    criteria for itself, which is what the assertion below still catches, because
+    a module doing that would name neither module.
+    """
+    item_only_gates = (
         "_dispatcher_acceptance_ai.py",
+        "groom.py",
+    )
+    repository_aware_gates = (
         "_drive_valves.py",
         "_dispatcher_run_commands.py",
         "_dispatcher_loop_command.py",
-        "groom.py",
     )
 
-    for name in consumers:
+    for name in item_only_gates:
         assert _PRIMITIVE_MODULE in (_COMMANDS_DIR / name).read_text(encoding="utf-8"), name
+    for name in repository_aware_gates:
+        assert _DECISION_MODULE in (_COMMANDS_DIR / name).read_text(encoding="utf-8"), name
+    # The decision is not a second resolution: it composes the one primitive.
+    decision_source = (_COMMANDS_DIR / f"{_DECISION_MODULE}.py").read_text(encoding="utf-8")
+    assert _PRIMITIVE_MODULE in decision_source
 
 
 def test_the_acceptance_pass_no_longer_carries_its_own_criteria_resolution() -> None:

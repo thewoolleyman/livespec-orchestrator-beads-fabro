@@ -143,7 +143,15 @@ def _item(**overrides: object) -> WorkItem:
         type="task",
         status="pending-approval",
         title="A dispatched slice",
-        description="Implement the slice.",
+        description=(
+            "Implement the slice.\n"
+            "\n"
+            "## Definition of Done\n"
+            "\n"
+            "- The dispatched slice lands its change.\n"
+            "\n"
+            "References: ## Effective acceptance criteria\n"
+        ),
         origin="freeform",
         gap_id=None,
         rank="a2",
@@ -206,7 +214,10 @@ def _acceptance_pass_over(
     still reach the acceptance pass with zero gradeable assertions now that the
     pre-dispatch wall exists: an item that carried gradeable criteria when it
     was dispatched and had them edited away before the post-merge pass read the
-    ledger row back.
+    ledger row back. Since v114 the criteria resolve from the description's
+    Definition of Done section FIRST, so "edited away" has to remove the section
+    as well as the native field — clearing the field alone leaves the section
+    standing and the pass still reads gradeable assertions out of it.
     """
     runner = _StubRunner(stdout=stdout)
 
@@ -218,7 +229,9 @@ def _acceptance_pass_over(
         raw_labels: Sequence[str] = (),
     ) -> AcceptancePassResult:
         judged = (
-            replace(item, acceptance_criteria=None) if criteria_removed_after_dispatch else item
+            replace(item, acceptance_criteria=None, description="Do the thing.")
+            if criteria_removed_after_dispatch
+            else item
         )
         return run_acceptance_pass(
             repo=repo, item=judged, outcome=outcome, runner=runner, raw_labels=raw_labels

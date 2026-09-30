@@ -39,7 +39,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_ai import
     AcceptancePassResult,
     run_acceptance_pass,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
     pre_dispatch_criteria_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
@@ -69,8 +69,23 @@ _LOCAL_REPO = "livespec-orchestrator-beads-fabro"
 # description section, so a gate that reads the criteria field alone resolves
 # nothing and the comparison below cannot pass by accident.
 _CRITERION = "The dispatched slice is verified green by the check suite."
+
+# The Definition of Done section every implement-kind item must carry since
+# v114. It is deliberately BULLET-LESS: this file's subject is the resolution
+# order and the wall's gradeability verdict, which the two LEGACY sources decide,
+# so the section has to satisfy the section-presence and reference-line checks
+# while contributing no gradeable assertion of its own. A section carrying a
+# bullet would make every fixture here gradeable from step 1 and each leg below
+# would then pass without exercising the leg it names. The fixture repository
+# carries no spec tree, so the reference check is unobservable and the
+# reference-line PRESENCE is what is being satisfied.
+_EMPTY_DEFINITION_OF_DONE = (
+    "## Definition of Done\n" "\n" "References: ## Effective acceptance criteria\n"
+)
 _EXIT_CRITERIA_BODY = (
     "Implement the slice.\n"
+    "\n"
+    f"{_EMPTY_DEFINITION_OF_DONE}"
     "\n"
     "## Exit criteria\n"
     "\n"
@@ -174,7 +189,7 @@ def _item(**overrides: object) -> WorkItem:
         type="task",
         status="ready",
         title="A dispatched slice",
-        description="Implement the slice.",
+        description=f"Implement the slice.\n\n{_EMPTY_DEFINITION_OF_DONE}",
         origin="freeform",
         gap_id=None,
         rank="a2",

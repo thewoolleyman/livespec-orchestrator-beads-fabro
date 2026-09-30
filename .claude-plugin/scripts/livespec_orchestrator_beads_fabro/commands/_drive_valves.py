@@ -13,8 +13,8 @@ from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro import store
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
-from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
-    ungradeable_criteria_refusal,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
+    acceptance_eligibility,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
     InvokerIdentity,
@@ -232,15 +232,18 @@ def _approve_item(
             msg="approve requires an effective-manual pending-approval item.",
         )
     # The entry-to-`ready` wall (the effective-acceptance-criteria clause of contracts.md).
+    # It consumes the SAME shared eligibility decision the pre-dispatch wall
+    # does, so an item this valve admits is one the dispatch path will accept —
+    # the two disagreeing is exactly what that clause's single decision prevents.
     # The refusal writes NOTHING: the item rests at `pending-approval` rather
     # than being routed to `backlog` or `blocked` on these grounds.
-    ungradeable = ungradeable_criteria_refusal(item=item, cwd=repo)
-    if ungradeable is not None:
+    refusal = acceptance_eligibility(item=item, cwd=repo).refusal
+    if refusal is not None:
         return valve_refusal(
             aid=action_id,
             wid=item.id,
             err="ungradeable-acceptance-criteria",
-            msg=f"approve refused: {ungradeable}.",
+            msg=f"approve refused: {refusal}.",
         )
     store.update_work_item_status(path=config, item_id=item.id, status="ready")
     return valve_success(

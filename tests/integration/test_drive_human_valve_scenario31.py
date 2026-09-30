@@ -59,7 +59,15 @@ def _item(**overrides: object) -> WorkItem:
         type="task",
         status="pending-approval",
         title="A pending task",
-        description="Do the thing.",
+        description=(
+            "Do the thing.\n"
+            "\n"
+            "## Definition of Done\n"
+            "\n"
+            "- The dispatched slice lands its change.\n"
+            "\n"
+            "References: ## Effective acceptance criteria\n"
+        ),
         origin="freeform",
         gap_id=None,
         rank="a2",

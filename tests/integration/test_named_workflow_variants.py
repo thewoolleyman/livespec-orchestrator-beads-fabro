@@ -134,7 +134,15 @@ def _seed_item() -> WorkItem:
         type="task",
         status="pending-approval",
         title="A dispatched slice",
-        description="Implement the slice.",
+        description=(
+            "Implement the slice.\n"
+            "\n"
+            "## Definition of Done\n"
+            "\n"
+            "- The dispatched slice lands its change.\n"
+            "\n"
+            "References: ## Effective acceptance criteria\n"
+        ),
         origin="freeform",
         gap_id=None,
         rank="a2",

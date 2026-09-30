@@ -134,7 +134,18 @@ def _seed_item() -> WorkItem:
         type="task",
         status="ready",
         title="An epic awaiting decomposition",
-        description="Decompose this into gradeable slices.",
+        # The section is PRESENT but carries no bullet, which is exactly a
+        # groom target: an epic awaiting decomposition has nothing gradeable
+        # yet. The section-presence check therefore clears and the
+        # empty-criteria refusal is the one the implement-pinned control
+        # must still meet.
+        description=(
+            "Decompose this into gradeable slices.\n"
+            "\n"
+            "## Definition of Done\n"
+            "\n"
+            "References: ## Effective acceptance criteria\n"
+        ),
         origin="freeform",
         gap_id=None,
         rank="a2",
