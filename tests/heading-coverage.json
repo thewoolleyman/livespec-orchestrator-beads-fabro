@@ -106,8 +106,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
-    "reason": "Added by the dispatch-time-baseline-gate revise pass (epic livespec-zs22, increment 5 Conformance Pattern / work-item livespec-zs22.7.7 M6-f). Realizes the Conformance Pattern's dispatch-time tier: the Dispatcher's Fabro prepare chain installs the baseline Mechanism + Exemption and then runs the baseline Verifiers (commit-refuse-hook-installed + plugin-resolution) before driving any work, aborting on violation. The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; the gate's behavior is enforced by the Fabro prepare chain (.fabro/workflows/implement-work-item/workflow.toml) rather than a unit test, so a real test id is populated by the governed propose-change/revise resulting_files[] mechanism once this heading gains an exercising test.",
-    "work_item": "bd-ib-heat"
+    "reason": "The original baseline-provisioning gate is enforced by the packaged Fabro prepare chain. The fabro-currency revise pass (plan/epic bd-ib-6tcjfx) adds the target-aware pre-claim currency leg specified by Scenario 130; its integration-tier binding must exercise direct, hand-picked, drain, and autonomous-loop admission and is owed by the required post-revise implementation-gap capture rather than represented as existing coverage.",
+    "work_item": "bd-ib-6tcjfx"
   },
   {
     "heading": "## Self-contained plugin dispatch",
@@ -186,8 +186,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "test": "TODO",
-    "reason": "Operator-procedure constraint over an EXTERNAL runtime the plugin does not own (the Fabro engine binary): it governs which Fabro build the factory may pin - the `factory-integration` carrier branch, its composition, the < 0.256 base ceiling, and the rebuild/re-pin duty - none of which is a code path the plugin executes, so there is no plugin-side behavior for a test to exercise. Per the amended file preamble, the deciding command is `fabro --version` and enforcement is review-time verification against it. A real test ID becomes bindable if the ceiling is later enforced by a dispatch-preflight engine-version gate (ledger bd-ib-j9x), which WOULD be plugin-observable behavior and would carry its own scenario.",
-    "work_item": "bd-ib-heat"
+    "reason": "Ratified by the fabro-currency revise pass (plan/epic bd-ib-6tcjfx). The external-runtime pinning rules are decided by release-publication evidence, ancestry, `fabro --version` on both factory hosts, image identity, and the carried-patch disposition table; the plugin-observable dispatch-admission half is specified by Scenario 130. Integration-tier binding is owed by the post-revise implementation-gap capture rather than represented as existing coverage.",
+    "work_item": "bd-ib-6tcjfx"
   },
   {
     "heading": "## Fabro factory host provisioning constraints",
@@ -1394,5 +1394,13 @@
     "test": "TODO",
     "reason": "Ratified by the structured-acp-candidate-form revise pass (plan/epic bd-ib-jxvgq5). Integration-tier coverage is owed: the catalogs and structured rendering do not exist yet, and the binding must drive the real configuration, catalog and rendering seams rather than a unit-tier stub. It is filed from the post-revise implementation-gap capture as the committed item acp-structured-candidate-dispatcher.",
     "work_item": "bd-ib-jxvgq5"
+  },
+  {
+    "heading": "## Scenario 130 — Dispatch admits only a current, identifiable Fabro base",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified by the fabro-currency revise pass (plan/epic bd-ib-6tcjfx). Integration-tier coverage must exercise the shared target-aware predicate through direct, hand-picked, drain, and autonomous-loop admission, including exact-tag ancestry, publication-window, transition-deadline, stale-observation, release-class, and two-target controls; it is owed by the required post-revise implementation-gap capture.",
+    "work_item": "bd-ib-6tcjfx"
   }
 ]
