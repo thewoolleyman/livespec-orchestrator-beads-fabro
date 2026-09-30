@@ -36,6 +36,19 @@ _DEFINITION_OF_DONE = (
     "References: ## Effective acceptance criteria\n"
 )
 _LEGACY_FIELD = "The legacy criteria field carries one assertion.\n"
+_MIXED_SECTION = (
+    "## Definition of Done\n"
+    "\n"
+    "- The factory captures this one.\n"
+    "\n"
+    "### Human-attested\n"
+    "\n"
+    "Reason: the proof needs a session on an external administrative console.\n"
+    "\n"
+    "- A human attests this one.\n"
+    "\n"
+    "References: ## Effective acceptance criteria\n"
+)
 
 
 def _item(**overrides: object) -> WorkItem:
@@ -172,3 +185,116 @@ def test_a_present_but_empty_section_falls_through_to_the_legacy_field() -> None
     assert section.present is True
     assert section.criteria_text is None
     assert resolved.source == "criteria-field"
+
+
+# --- per-assertion proof mode ------------------------------------------------
+
+
+def test_the_reason_line_is_not_a_gradeable_assertion() -> None:
+    # The `Reason:` line is required PROSE, not an assertion. It is flush-left,
+    # is not a heading and is not the reference line, so nothing in the shared
+    # segmenter's own rules would keep it out of the gradeable set.
+    resolved = effective_criteria(item=_item(description=_MIXED_SECTION))
+
+    assert resolved.assertions == (
+        "The factory captures this one.",
+        "A human attests this one.",
+    )
+
+
+def test_each_assertion_carries_the_mode_its_position_declares() -> None:
+    # The default is the STRICT case: an assertion is `factory_captured` unless
+    # it sits under a `### Human-attested` sub-heading. The modes are parallel to
+    # the assertions and in the section's own order, because the proof record and
+    # the acceptance evidence leg both index one against the other.
+    resolved = effective_criteria(item=_item(description=_MIXED_SECTION))
+
+    assert resolved.proof_modes == ("factory_captured", "human_attested")
+
+
+def test_a_legacy_source_declares_no_proof_mode_at_all() -> None:
+    # An item resolved from a legacy source carries no mode declarations, which
+    # is DISTINCT from declaring every assertion `factory_captured`: the
+    # acceptance pass keeps grading a legacy item by merged-diff vocabulary and
+    # must be able to tell the two apart.
+    resolved = effective_criteria(item=_item(acceptance_criteria=_LEGACY_FIELD))
+
+    assert resolved.source == "criteria-field"
+    assert resolved.assertions != ()
+    assert resolved.proof_modes == ()
+
+
+def test_a_well_formed_human_attested_sub_heading_is_not_malformed() -> None:
+    section = definition_of_done(description=_MIXED_SECTION)
+
+    assert section.malformed_proof_modes == ()
+    assert section.human_attested_assertions == ("A human attests this one.",)
+
+
+def test_a_human_attested_sub_heading_with_no_reason_line_is_malformed() -> None:
+    description = (
+        "## Definition of Done\n"
+        "\n"
+        "- The factory captures this one.\n"
+        "\n"
+        "### Human-attested\n"
+        "\n"
+        "- A human attests this one.\n"
+        "\n"
+        "References: ## Effective acceptance criteria\n"
+    )
+
+    section = definition_of_done(description=description)
+
+    assert section.malformed_proof_modes == ("Human-attested",)
+    # The assertion itself still parses and still carries the human mode: the
+    # sub-heading is malformed, not absent, and a wall that silently downgraded
+    # the mode would let the item auto-close without the human leg.
+    assert section.human_attested_assertions == ("A human attests this one.",)
+
+
+def test_a_reason_line_with_no_text_is_no_reason_line() -> None:
+    description = (
+        "## Definition of Done\n"
+        "\n"
+        "### Human-attested\n"
+        "\n"
+        "Reason:\n"
+        "\n"
+        "- A human attests this one.\n"
+        "\n"
+        "References: ## Effective acceptance criteria\n"
+    )
+
+    assert definition_of_done(description=description).malformed_proof_modes == ("Human-attested",)
+
+
+def test_a_sub_heading_that_is_not_human_attested_returns_the_mode_to_the_default() -> None:
+    # Only `### Human-attested` opts out. Any other sub-heading is ordinary
+    # grouping, needs no `Reason:` line, and its bullets are factory-captured —
+    # otherwise a section could opt out of mechanical proof by accident.
+    description = (
+        "## Definition of Done\n"
+        "\n"
+        "### Human-attested\n"
+        "\n"
+        "Reason: the proof needs a physical device.\n"
+        "\n"
+        "- A human attests this one.\n"
+        "\n"
+        "### Host walls\n"
+        "\n"
+        "- The factory captures this one.\n"
+        "\n"
+        "References: ## Effective acceptance criteria\n"
+    )
+
+    section = definition_of_done(description=description)
+
+    assert section.malformed_proof_modes == ()
+    # Read through the attributes rather than the dataclass so the assertion
+    # names the two facts under test — text and mode, in section order.
+    assert [(one.text, one.proof_mode) for one in section.assertions] == [
+        ("A human attests this one.", "human_attested"),
+        ("The factory captures this one.", "factory_captured"),
+    ]

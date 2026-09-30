@@ -114,11 +114,20 @@ _DECLARED_CHANGE_OPTIONAL_VALUE = "true"
 
 @dataclass(frozen=True, kw_only=True)
 class EffectiveCriteria:
-    """One work-item's resolved criteria text, its source, and its assertions."""
+    """One work-item's resolved criteria text, its source, and its assertions.
+
+    `proof_modes` is EITHER empty or parallel to `assertions`. Empty means the
+    item resolved from a legacy source and therefore declared no mode at all,
+    which is deliberately distinguishable from declaring every assertion
+    `factory_captured`: the acceptance pass keeps grading a legacy item by
+    merged-diff vocabulary, and applying that matching to an assertion that
+    DOES carry a mode is exactly what the proof evidence leg forbids.
+    """
 
     text: str | None
     source: str
     assertions: tuple[str, ...]
+    proof_modes: tuple[str, ...] = ()
 
     @property
     def gradeable(self) -> bool:
@@ -208,12 +217,12 @@ def effective_criteria(*, item: WorkItem) -> EffectiveCriteria:
     section is an ungradeable result rather than a fourth source value.
     """
     section = definition_of_done(description=item.description)
-    section_assertions = criteria_lines(criteria_text=section.criteria_text)
-    if section_assertions:
+    if section.assertions:
         return EffectiveCriteria(
             text=section.criteria_text,
             source=DESCRIPTION_DEFINITION_OF_DONE_SOURCE,
-            assertions=section_assertions,
+            assertions=tuple(one.text for one in section.assertions),
+            proof_modes=tuple(one.proof_mode for one in section.assertions),
         )
     field_assertions = criteria_lines(criteria_text=item.acceptance_criteria)
     if field_assertions:

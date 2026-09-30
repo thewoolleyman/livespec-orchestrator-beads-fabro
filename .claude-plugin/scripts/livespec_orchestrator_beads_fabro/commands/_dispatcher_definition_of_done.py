@@ -32,15 +32,31 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria import (
+    criteria_lines,
+)
+
 __all__: list[str] = [
     "DEFINITION_OF_DONE_TITLE",
+    "HUMAN_ATTESTED_SUB_HEADING_TITLE",
+    "PROOF_MODE_FACTORY_CAPTURED",
+    "PROOF_MODE_HUMAN_ATTESTED",
+    "REASON_PREFIX",
     "REFERENCES_PREFIX",
     "DefinitionOfDone",
+    "DefinitionOfDoneAssertion",
     "definition_of_done",
 ]
 
 DEFINITION_OF_DONE_TITLE = "definition of done"
 REFERENCES_PREFIX = "References:"
+REASON_PREFIX = "Reason:"
+HUMAN_ATTESTED_SUB_HEADING_TITLE = "human-attested"
+# The closed proof-mode enumeration. Both values are SELF-DESCRIBING names on
+# every surface that renders, journals or configures them, which the clause
+# requires explicitly: a numbered or tiered label MUST NOT be used.
+PROOF_MODE_FACTORY_CAPTURED = "factory_captured"
+PROOF_MODE_HUMAN_ATTESTED = "human_attested"
 
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 # Where ONE reference ends and the next begins. The clause writes the line as
@@ -56,6 +72,14 @@ _REFERENCE_SEPARATOR = re.compile(r",\s+(?=#)")
 
 
 @dataclass(frozen=True, kw_only=True)
+class DefinitionOfDoneAssertion:
+    """One gradeable assertion of a Definition of Done, with the mode it declared."""
+
+    text: str
+    proof_mode: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class DefinitionOfDone:
     """One description's Definition of Done section, as the ratified parse reads it.
 
@@ -64,20 +88,42 @@ class DefinitionOfDone:
     for every consumer, which is that this item has no Definition of Done.
 
     `criteria_text` is the section body with every heading line and the
-    `References:` line removed, so it is exactly the text the shared segmenter
-    should see. It is `None` for an absent section AND for a present one whose
-    body carries no bullet, so a caller cannot accidentally read an empty
-    section as gradeable.
+    `References:` and `Reason:` lines removed, so it is exactly the text the
+    shared segmenter should see. It is `None` for an absent section AND for a
+    present one whose body carries no bullet, so a caller cannot accidentally
+    read an empty section as gradeable.
+
+    `assertions` carries the same segmentation in the section's own order, each
+    one paired with the mode its POSITION declared. Document order is preserved
+    rather than grouped by mode, because the proof record is published "per
+    assertion in Definition of Done order" and the acceptance evidence leg
+    indexes one against the other.
 
     `references` is the heading texts the reference line named, verbatim and in
     order. An empty tuple covers BOTH an absent reference line and one whose
     payload is blank, because the clause treats each the same way: the section
     carries no valid reference line.
+
+    `malformed_proof_modes` carries the verbatim title of every `Human-attested`
+    sub-heading that reached no non-empty `Reason:` line. The assertions under
+    such a sub-heading KEEP the human-attested mode: the declaration is
+    malformed, not absent, and silently downgrading it to the default would let
+    the item auto-close with no human leg at all — the one outcome the
+    sub-heading exists to prevent.
     """
 
     present: bool
     criteria_text: str | None
+    assertions: tuple[DefinitionOfDoneAssertion, ...]
     references: tuple[str, ...]
+    malformed_proof_modes: tuple[str, ...]
+
+    @property
+    def human_attested_assertions(self) -> tuple[str, ...]:
+        """The assertion texts a human must attest, in section order."""
+        return tuple(
+            one.text for one in self.assertions if one.proof_mode == PROOF_MODE_HUMAN_ATTESTED
+        )
 
 
 def definition_of_done(*, description: str) -> DefinitionOfDone:
@@ -85,22 +131,114 @@ def definition_of_done(*, description: str) -> DefinitionOfDone:
     lines = description.splitlines()
     opening = _opening_heading(lines=lines)
     if opening is None:
-        return DefinitionOfDone(present=False, criteria_text=None, references=())
+        return _absent()
     index, level, title = opening
     if title != DEFINITION_OF_DONE_TITLE:
-        return DefinitionOfDone(present=False, criteria_text=None, references=())
+        return _absent()
     body = _section_body(lines=lines, start=index + 1, level=level)
-    assertion_lines = [
-        line
-        for line in body
-        if _HEADING.match(line) is None and not line.strip().startswith(REFERENCES_PREFIX)
-    ]
-    text = "\n".join(assertion_lines).strip()
+    assertions = _assertions(body=body)
+    text = "\n".join(one.text for one in assertions)
     return DefinitionOfDone(
         present=True,
         criteria_text=text or None,
+        assertions=assertions,
         references=_references(body=body),
+        malformed_proof_modes=_malformed_proof_modes(body=body),
     )
+
+
+def _absent() -> DefinitionOfDone:
+    return DefinitionOfDone(
+        present=False,
+        criteria_text=None,
+        assertions=(),
+        references=(),
+        malformed_proof_modes=(),
+    )
+
+
+def _assertions(*, body: list[str]) -> tuple[DefinitionOfDoneAssertion, ...]:
+    """Segment the section body into assertions, each carrying its declared mode.
+
+    The body is walked in order and split into RUNS of consecutive lines sharing
+    one mode; each run is handed whole to the shared segmenter, so a bullet that
+    carries two sentences yields two assertions exactly as it does from a legacy
+    source. Segmenting run by run rather than line by line is what keeps an
+    indented continuation attached to the bullet it wraps.
+    """
+    assertions: list[DefinitionOfDoneAssertion] = []
+    mode = PROOF_MODE_FACTORY_CAPTURED
+    run: list[str] = []
+    for raw in body:
+        heading = _HEADING.match(raw)
+        if heading is not None:
+            assertions.extend(_segment(run=run, mode=mode))
+            run = []
+            mode = _mode_for(sub_heading=heading.group(2).strip())
+            continue
+        if _is_section_prose(text=raw):
+            continue
+        run.append(raw)
+    assertions.extend(_segment(run=run, mode=mode))
+    return tuple(assertions)
+
+
+def _segment(*, run: list[str], mode: str) -> list[DefinitionOfDoneAssertion]:
+    text = "\n".join(run).strip()
+    return [
+        DefinitionOfDoneAssertion(text=one, proof_mode=mode)
+        for one in criteria_lines(criteria_text=text or None)
+    ]
+
+
+def _mode_for(*, sub_heading: str) -> str:
+    """The mode the bullets under one sub-heading declare.
+
+    Only `Human-attested` opts out. Any other sub-heading is ordinary grouping
+    and returns the mode to the default, so a section cannot drift out of
+    mechanical proof by introducing a heading that merely looks related.
+    """
+    if sub_heading.casefold() == HUMAN_ATTESTED_SUB_HEADING_TITLE:
+        return PROOF_MODE_HUMAN_ATTESTED
+    return PROOF_MODE_FACTORY_CAPTURED
+
+
+def _is_section_prose(*, text: str) -> bool:
+    """Whether a body line is required prose rather than a gradeable assertion."""
+    return text.strip().startswith((REFERENCES_PREFIX, REASON_PREFIX))
+
+
+def _malformed_proof_modes(*, body: list[str]) -> tuple[str, ...]:
+    """The `Human-attested` sub-headings that reached no non-empty `Reason:` line.
+
+    "Before its first bullet" is read as "before the sub-heading ends", which is
+    the same thing for a conforming section and the forgiving reading for one
+    whose author put the reason after the bullets. The strict reading would
+    refuse an item whose reason IS stated, and the finding exists to make the
+    missing capability visible, not to police line order.
+    """
+    malformed: list[str] = []
+    pending: str | None = None
+    for raw in body:
+        heading = _HEADING.match(raw)
+        if heading is not None:
+            title = heading.group(2).strip()
+            if pending is not None:
+                malformed.append(pending)
+            pending = title if title.casefold() == HUMAN_ATTESTED_SUB_HEADING_TITLE else None
+            continue
+        if pending is not None and _states_a_reason(text=raw):
+            pending = None
+    if pending is not None:
+        malformed.append(pending)
+    return tuple(malformed)
+
+
+def _states_a_reason(*, text: str) -> bool:
+    stripped = text.strip()
+    if not stripped.startswith(REASON_PREFIX):
+        return False
+    return bool(stripped[len(REASON_PREFIX) :].strip())
 
 
 def _references(*, body: list[str]) -> tuple[str, ...]:
