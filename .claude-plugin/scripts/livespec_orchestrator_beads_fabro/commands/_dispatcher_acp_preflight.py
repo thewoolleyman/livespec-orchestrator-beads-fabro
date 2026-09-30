@@ -42,6 +42,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_builtin_candidates import (
     builtin_acp_identities,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import PreflightInputs
+from livespec_orchestrator_beads_fabro.commands._acp_catalogs import resolve_acp_catalogs
 from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import (
     ResolvedAcpChain,
     attach_acp_chains,
@@ -113,7 +114,10 @@ def resolve_acp_preflight(
     free of any external call.
     """
     block = dispatcher_block(cwd=repo)
-    declared = repository_acp_chains(block=block)
+    catalogs = resolve_acp_catalogs(block=block)
+    if isinstance(catalogs, str):
+        return AcpPreflightVerdict(fallback_enabled=True, refusal=catalogs)
+    declared = repository_acp_chains(block=block, catalogs=catalogs)
     if isinstance(declared, str):
         return AcpPreflightVerdict(fallback_enabled=True, refusal=declared)
     if not any(chain.enabled for chain in declared.values()):
@@ -160,7 +164,10 @@ def resolve_acp_primary_generations(*, repo: Path) -> Mapping[str, str]:
     no warning and reports no fact, which is the conservative answer.
     """
     block = dispatcher_block(cwd=repo)
-    declared = repository_acp_chains(block=block)
+    catalogs = resolve_acp_catalogs(block=block)
+    if isinstance(catalogs, str):
+        return {}
+    declared = repository_acp_chains(block=block, catalogs=catalogs)
     if isinstance(declared, str) or not any(chain.enabled for chain in declared.values()):
         return {}
     resolved = _resolve_chains(repo=repo, block=block, declared=declared)

@@ -32,6 +32,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
+from livespec_orchestrator_beads_fabro.commands._acp_candidate_forms import (
+    candidate_form_refusal,
+    is_structured_entry,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_pricing import AcpCandidatePricing
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import (
     CANDIDATE_KEYS,
@@ -47,10 +51,15 @@ from livespec_orchestrator_beads_fabro.commands._acp_candidate_secrets import (
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_signatures import (
     AcpAvailabilitySignature,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_candidate_structured import (
+    parse_structured_candidate,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_catalogs import AcpCatalogs
 from livespec_orchestrator_beads_fabro.commands._acp_schema_fields import (
     string_map,
     string_tuple,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_structured_render import READ_ONLY_NODES
 
 __all__: list[str] = [
     "EMPTY_CHAIN",
@@ -69,7 +78,7 @@ NODE_ENTRY_KEYS: frozenset[str] = CANDIDATE_KEYS | {"command", "env", "args", _F
 # The keys whose mere PRESENCE opts a node into the new grammar. `fallbacks`
 # is absent on purpose: an empty array is the contract's byte-identical
 # no-op, so enabling is decided on the parsed array instead.
-_ENABLING_KEYS: frozenset[str] = CANDIDATE_KEYS - {"command", "env", "args"}
+_ENABLING_KEYS: frozenset[str] = (CANDIDATE_KEYS - {"command", "env", "args"}) | {"agent"}
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -90,7 +99,7 @@ EMPTY_CHAIN = AcpNodeChain()
 
 
 def parse_node_chains(
-    *, table: Mapping[str, Any], key_prefix: str
+    *, table: Mapping[str, Any], key_prefix: str, catalogs: AcpCatalogs
 ) -> Mapping[str, AcpNodeChain] | str:
     """Parse every configured node's chain metadata, or refuse.
 
@@ -100,32 +109,98 @@ def parse_node_chains(
     """
     chains: dict[str, AcpNodeChain] = {}
     for node in sorted(table):
-        parsed = parse_node_chain(entry=table[node], key=f"{key_prefix}.{node}")
+        parsed = parse_node_chain(
+            entry=table[node], key=f"{key_prefix}.{node}", node=node, catalogs=catalogs
+        )
         if isinstance(parsed, str):
             return parsed
         chains[node] = parsed
     return chains
 
 
-def parse_node_chain(*, entry: object, key: str) -> AcpNodeChain | str:
+def parse_node_chain(
+    *, entry: object, key: str, node: str, catalogs: AcpCatalogs
+) -> AcpNodeChain | str:
     """Parse one node entry's chain metadata, or refuse naming the key.
 
     A STRING entry is the legacy whole-adapter spelling and carries no
     metadata at all, so it resolves to the empty chain rather than
     refusing: the legacy spelling stays valid for a legacy node.
+
+    A STRUCTURED entry takes a different route entirely, because its identity is
+    DERIVED rather than declared: the whole entry is resolved as one candidate
+    through the catalogs, and the identity, pricing and signatures that come back
+    are the chain's. It is always new-grammar-enabled -- "the structured form
+    (`agent`)" is named in the contract's own definition of the predicate.
     """
     if not isinstance(entry, dict):
         return EMPTY_CHAIN
     table = cast("dict[str, Any]", entry)
-    fallbacks = _fallbacks(table=table, key=key)
+    fallbacks = _fallbacks(table=table, key=key, node=node, catalogs=catalogs)
     if isinstance(fallbacks, str):
         return fallbacks
+    if is_structured_entry(entry=table):
+        return _structured_chain(
+            table=table, key=key, node=node, catalogs=catalogs, fallbacks=fallbacks
+        )
+    return _manual_chain(table=table, key=key, fallbacks=fallbacks)
+
+
+def _manual_chain(
+    *, table: Mapping[str, Any], key: str, fallbacks: tuple[AcpCandidate, ...]
+) -> AcpNodeChain | str:
+    """The chain a MANUAL-form node entry declares, or a refusal.
+
+    `config_options` is refused here as well as on a structured entry, and the
+    check is a separate branch rather than part of the closed key set because a
+    LEGACY entry keeps the pre-existing key tolerance: the contract closes the set
+    only from the first fallback-capable release onward, and only for an entry
+    that opted in. `config_options` is illegal regardless, so it cannot ride that
+    tolerance.
+    """
+    config_options = candidate_form_refusal(entry=table, key=key)
+    if config_options is not None:
+        return config_options
     identity = parse_candidate_identity(entry=table, key=key)
     if isinstance(identity, str):
         return identity
     if not _enabled(table=table, fallbacks=fallbacks):
         return EMPTY_CHAIN
     return _enabled_chain(table=table, key=key, identity=identity, fallbacks=fallbacks)
+
+
+def _structured_chain(
+    *,
+    table: Mapping[str, Any],
+    key: str,
+    node: str,
+    catalogs: AcpCatalogs,
+    fallbacks: tuple[AcpCandidate, ...],
+) -> AcpNodeChain | str:
+    """The chain a STRUCTURED node entry declares, resolved through the catalogs.
+
+    The entry is parsed as a CANDIDATE rather than as a metadata table, because
+    for the structured form those are the same object: the identity, pricing and
+    signatures it contributes are exactly the ones its own candidate resolution
+    produces. Reading them a second way here is how the chain's identity and the
+    rendered primary's would come to disagree about which model ran.
+    """
+    candidate = parse_structured_candidate(
+        entry=table,
+        key=key,
+        catalogs=catalogs,
+        read_only=node in READ_ONLY_NODES,
+        extra_allowed=frozenset({_FALLBACKS_KEY}),
+    )
+    if isinstance(candidate, str):
+        return candidate
+    return AcpNodeChain(
+        identity=candidate.identity,
+        signatures=candidate.signatures,
+        pricing=candidate.pricing,
+        fallbacks=fallbacks,
+        enabled=True,
+    )
 
 
 def _enabled_chain(
@@ -161,7 +236,9 @@ def _enabled(*, table: Mapping[str, Any], fallbacks: tuple[AcpCandidate, ...]) -
     return bool(fallbacks) or any(name in table for name in _ENABLING_KEYS)
 
 
-def _fallbacks(*, table: Mapping[str, Any], key: str) -> tuple[AcpCandidate, ...] | str:
+def _fallbacks(
+    *, table: Mapping[str, Any], key: str, node: str, catalogs: AcpCatalogs
+) -> tuple[AcpCandidate, ...] | str:
     """Parse the ordered `fallbacks` array, preserving configured order.
 
     A present-but-wrong-typed `fallbacks` refuses even for an otherwise
@@ -178,11 +255,36 @@ def _fallbacks(*, table: Mapping[str, Any], key: str) -> tuple[AcpCandidate, ...
     entries = cast("list[object]", raw)
     candidates: list[AcpCandidate] = []
     for index, entry in enumerate(entries):
-        parsed = parse_fallback_candidate(entry=entry, key=f"{key}.{_FALLBACKS_KEY}[{index}]")
+        parsed = _one_fallback(
+            entry=entry, key=f"{key}.{_FALLBACKS_KEY}[{index}]", node=node, catalogs=catalogs
+        )
         if isinstance(parsed, str):
             return parsed
         candidates.append(parsed)
     return tuple(candidates)
+
+
+def _one_fallback(
+    *, entry: object, key: str, node: str, catalogs: AcpCatalogs
+) -> AcpCandidate | str:
+    """One fallback entry, in whichever of the two forms it is written.
+
+    The DISPATCH lives here rather than inside either parser because this is the
+    one place downstream of both: the structured path needs the identity type the
+    manual path's module owns, so making the manual parser dispatch would close
+    an import cycle.
+    """
+    if not isinstance(entry, dict):
+        return f"{key} must be a fallback candidate table; got {entry!r}"
+    table = cast("dict[str, Any]", entry)
+    if is_structured_entry(entry=table):
+        return parse_structured_candidate(
+            entry=table, key=key, catalogs=catalogs, read_only=node in READ_ONLY_NODES
+        )
+    form = candidate_form_refusal(entry=table, key=key)
+    if form is not None:
+        return form
+    return parse_fallback_candidate(entry=table, key=key)
 
 
 def _enabled_entry_refusal(*, table: Mapping[str, Any], key: str) -> str | None:

@@ -117,7 +117,9 @@ def _explicit_wins(*, shorthand: AcpNodeOverlay | None, explicit: AcpNodeOverlay
     return replace(shorthand, from_shorthand=False)
 
 
-def repository_acp_chains(*, block: dict[str, Any]) -> Mapping[str, AcpNodeChain] | str:
+def repository_acp_chains(
+    *, block: dict[str, Any], catalogs: AcpCatalogs
+) -> Mapping[str, AcpNodeChain] | str:
     """Read each node's fallback-priority metadata off the same table, or refuse.
 
     This is a SECOND, INDEPENDENT read of `dispatcher.acp_nodes`, and the
@@ -139,7 +141,9 @@ def repository_acp_chains(*, block: dict[str, Any]) -> Mapping[str, AcpNodeChain
     if not isinstance(table_raw, dict):
         return {}
     return parse_node_chains(
-        table=cast("dict[str, Any]", table_raw), key_prefix=f"dispatcher.{_ACP_NODES_KEY}"
+        table=cast("dict[str, Any]", table_raw),
+        key_prefix=f"dispatcher.{_ACP_NODES_KEY}",
+        catalogs=catalogs,
     )
 
 

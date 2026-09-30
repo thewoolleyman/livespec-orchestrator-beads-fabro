@@ -24,6 +24,10 @@ from typing import TYPE_CHECKING
 from livespec_orchestrator_beads_fabro.commands._acp_builtin_candidates import (
     builtin_acp_identities,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_catalogs import (
+    AcpCatalogs,
+    resolve_acp_catalogs,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import attach_acp_chains
 from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import (
     NODE_INPUT_CANDIDATES,
@@ -35,9 +39,11 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_layers import (
     acp_nodes_journal_record,
     resolve_acp_nodes,
 )
-from livespec_orchestrator_beads_fabro.commands._acp_node_repository import repository_acp_chains
+from livespec_orchestrator_beads_fabro.commands._acp_node_repository import (
+    repository_acp_chains,
+    repository_acp_overlays,
+)
 from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
-from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
     workflow_declared_inputs,
 )
@@ -133,9 +139,11 @@ def prepare_acp_nodes(
     )
     if isinstance(committed_text, AttemptFailure):
         return f"workflow config {committed} is unreadable: {committed_text.error}"
-    repository = resolve_acp_node_overlays(cwd=repo)
-    if isinstance(repository, str):
-        return repository
+    block = dispatcher_block(cwd=repo)
+    layers = _repository_layer(block=block)
+    if isinstance(layers, str):
+        return layers
+    catalogs, repository = layers
     dispatch = dispatch_acp_overlays(overrides=overrides)
     if isinstance(dispatch, str):
         return dispatch
@@ -148,7 +156,11 @@ def prepare_acp_nodes(
     if isinstance(resolution, str):
         return resolution
     chains = _resolve_chains(
-        repo=repo, resolution=resolution, dispatch=dispatch, workflow_inputs=workflow_inputs
+        block=block,
+        catalogs=catalogs,
+        resolution=resolution,
+        dispatch=dispatch,
+        workflow_inputs=workflow_inputs,
     )
     if isinstance(chains, str):
         return chains
@@ -162,9 +174,29 @@ def prepare_acp_nodes(
     return resolution
 
 
+def _repository_layer(
+    *,
+    block: dict[str, object],
+) -> tuple[AcpCatalogs, Mapping[str, AcpNodeOverlay]] | str:
+    """The catalogs and the repository overlay layer, from ONE read of the block.
+
+    Both come back together because the chain reader downstream needs the same
+    catalogs the overlay render used -- a fallback and its node's primary resolve
+    against one snapshot by contract.
+    """
+    catalogs = resolve_acp_catalogs(block=block)
+    if isinstance(catalogs, str):
+        return catalogs
+    overlays = repository_acp_overlays(block=block, catalogs=catalogs)
+    if isinstance(overlays, str):
+        return overlays
+    return (catalogs, overlays)
+
+
 def _resolve_chains(
     *,
-    repo: Path,
+    block: dict[str, object],
+    catalogs: AcpCatalogs,
     resolution: AcpNodeResolution,
     dispatch: Mapping[str, AcpNodeOverlay],
     workflow_inputs: Mapping[str, str],
@@ -177,6 +209,12 @@ def _resolve_chains(
     comes through the existing layers first, and identity or fallback
     metadata may only attach to what those layers produced.
 
+    The BLOCK and the CATALOGS are the caller's, resolved once for the whole
+    dispatch. Re-reading them here would make the chain resolve against a
+    second read of the same file, which nothing can prove agrees with the first
+    -- and the disagreement would be invisible, because both reads produce a
+    perfectly well-formed catalog.
+
     What comes back is the REDACTED structural record for each
     new-grammar-enabled node, which is all this slice's journal needs. The
     resolved chains themselves have no consumer yet -- preflight,
@@ -184,8 +222,7 @@ def _resolve_chains(
     value of resolving them here is the set of refusals it fires BEFORE any
     claim or run exists.
     """
-    block = dispatcher_block(cwd=repo)
-    declared = repository_acp_chains(block=block)
+    declared = repository_acp_chains(block=block, catalogs=catalogs)
     if isinstance(declared, str):
         return declared
     attached = attach_acp_chains(
