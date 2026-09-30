@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.153.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.152.1...v0.153.0) (2026-09-30)
+
+
+### Features
+
+* **dispatcher:** carry a proof mode per Definition of Done assertion (bd-ib-uczggw) ([c47f6e6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c47f6e639e047eae52ce055e06d03b63fb982a0e))
+* **dispatcher:** derive the item proof routing and refuse ai-only for a human leg (bd-ib-uczggw) ([72b00aa](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/72b00aacdd4ddfdb70ce2e990ac77c3727edc8ff))
+* **dispatcher:** grade Definition of Done references against the spec tree (bd-ib-uczggw) ([1032c9c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1032c9cd33d77eff2546dbfa094f240706659722))
+* **dispatcher:** report definition-of-done: missing on a legacy criteria source (bd-ib-uczggw) ([8d3b0a2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8d3b0a270391c6c1b60b74e2d374834ebf719317))
+* **dispatcher:** resolve the Definition of Done section first (bd-ib-uczggw) ([5c40a41](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5c40a413599fa1c4b4d595e738d02dfb008ba8a1))
+* **dispatcher:** widen the two walls to the Definition of Done section (bd-ib-uczggw) ([e916a3f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e916a3feeb5684c9896c269d0e445125778c3308))
+* **needs-attention:** surface an unrunnable ready item as a hygiene fact (bd-ib-uczggw) ([a9279c6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a9279c628dd9190efccaca41549c12b453088fcf))
+
 ## [0.152.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.152.0...v0.152.1) (2026-09-30)
 
 
