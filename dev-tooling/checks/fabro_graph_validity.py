@@ -93,8 +93,16 @@ for _path in (_SCRIPT_DIR, _SCRIPTS, _SCRIPTS / "_vendor"):
 import livespec_dev_tooling  # noqa: E402
 
 _DT_VENDOR = Path(livespec_dev_tooling.__file__).resolve().parent / "_vendor"
+# APPEND, never insert at the front: since livespec-dev-tooling v1.90.0 that
+# `_vendor` also carries a PARTIAL `livespec_runtime` (the github_budget
+# modules only, no `work_items`), and putting it ahead of this repo's own
+# `_vendor` shadowed the full copy every plugin module imports, so every
+# check in this directory died on `No module named
+# 'livespec_runtime.work_items'` (livespec-dev-tooling-8o8e.24 is the
+# two-copies class). Appending keeps `structlog` resolvable while this
+# repo's full vendored runtime keeps precedence.
 if str(_DT_VENDOR) not in sys.path:
-    sys.path.insert(0, str(_DT_VENDOR))
+    sys.path.append(str(_DT_VENDOR))
 
 import structlog  # noqa: E402
 from _checked_workflow_payloads import (  # noqa: E402  — sibling private import
