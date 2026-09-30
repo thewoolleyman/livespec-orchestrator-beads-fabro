@@ -85,10 +85,15 @@ OPENAI_PROVIDER = "openai"
 
 # The Codex adapter's baked path and its posture object, restated here rather
 # than imported. Section "Built-in ACP node defaults" requires a reader to be
-# able to predict the rendered string from the specification alone, and the
-# binding between this catalog entry and the renderer's own constant is asserted
-# by a test -- so a renderer change has to be made twice before the binding
-# stops failing, which is exactly the property a transcribed literal buys.
+# able to predict the rendered string from the specification alone, and a chain
+# of imports defeats that. Restating is only safe because
+# `test_acp_agent_catalog_pinned_versions` FAILS when this entry, the argv
+# renderer's own constant, and the sandbox image's provisioning script disagree
+# -- which is the agreement `SPECIFICATION/constraints.md` section "Pinned agent
+# versions" requires. That module also records which half of the constraint is
+# NOT checkable here: the VERSION each entry pins is a measurement receipt, not
+# a value any committed file can be compared against, because the image's baked
+# version arrives as an operator argument.
 _CODEX_BAKED_PATH = "/opt/livespec/codex-acp/bin/codex-acp"
 _CODEX_POSTURE_JSON = '{"approval_policy":"never","sandbox_mode":"danger-full-access"}'
 
