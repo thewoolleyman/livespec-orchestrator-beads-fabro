@@ -96,6 +96,11 @@ def _chains() -> Any:
     return _module(name="_acp_node_chains")
 
 
+def _catalogs() -> Any:
+    """The shipped catalog snapshot, which every node-entry case resolves against."""
+    return _module(name="_acp_catalogs").builtin_catalogs()
+
+
 def _candidate(**overrides: Any) -> dict[str, Any]:
     """A COMPLETE fallback candidate table, with the named fields replaced."""
     return {**_IDENTITY, "command": "uvx claude-acp", **overrides}
@@ -350,7 +355,9 @@ def test_a_node_entry_without_new_grammar_metadata_carries_no_chain() -> None:
     """
     chains = _chains()
     for entry in ("uvx claude-acp", {"command": "uvx claude-acp"}, {"fallbacks": []}, {}):
-        parsed = chains.parse_node_chain(entry=entry, key="k")
+        parsed = chains.parse_node_chain(
+            entry=entry, key="k", node="implement", catalogs=_catalogs()
+        )
         assert not isinstance(parsed, str), entry
         assert parsed.enabled is False
         assert parsed.fallbacks == ()
@@ -366,7 +373,9 @@ def test_each_new_grammar_field_on_its_own_enables_the_node() -> None:
         {"pricing": _PRICING},
         _fallback_node(),
     ):
-        parsed = chains.parse_node_chain(entry=entry, key="k")
+        parsed = chains.parse_node_chain(
+            entry=entry, key="k", node="implement", catalogs=_catalogs()
+        )
         assert not isinstance(parsed, str), entry
         assert parsed.enabled is True
 
@@ -385,12 +394,20 @@ def test_an_enabled_node_entry_closes_its_key_set_and_its_committed_data() -> No
         {"fallbacks": "not-an-array"},
         {"fallbacks": [{"command": "uvx acp"}]},
     ):
-        assert isinstance(chains.parse_node_chain(entry=entry, key="k"), str), entry
+        assert isinstance(
+            chains.parse_node_chain(entry=entry, key="k", node="implement", catalogs=_catalogs()),
+            str,
+        ), entry
 
 
 def test_a_wrong_typed_fallbacks_array_refuses_even_on_a_legacy_entry() -> None:
     """An unreadable `fallbacks` value is never silently dropped."""
-    refusal = _chains().parse_node_chain(entry={"command": "uvx acp", "fallbacks": 3}, key="k")
+    refusal = _chains().parse_node_chain(
+        entry={"command": "uvx acp", "fallbacks": 3},
+        key="k",
+        node="implement",
+        catalogs=_catalogs(),
+    )
     assert isinstance(refusal, str)
     assert "fallbacks" in refusal
 
@@ -399,13 +416,17 @@ def test_parsing_every_configured_node_propagates_the_first_refusal() -> None:
     """A table of nodes refuses on the first malformed one, in sorted order."""
     chains = _chains()
     parsed = chains.parse_node_chains(
-        table={"pr": _fallback_node(), "review": "uvx acp"}, key_prefix="dispatcher.acp_nodes"
+        catalogs=_catalogs(),
+        table={"pr": _fallback_node(), "review": "uvx acp"},
+        key_prefix="dispatcher.acp_nodes",
     )
     assert not isinstance(parsed, str), parsed
     assert parsed["pr"].enabled is True
     assert parsed["review"].enabled is False
     refusal = chains.parse_node_chains(
-        table={"pr": {**_IDENTITY, "bogus": 1}}, key_prefix="dispatcher.acp_nodes"
+        catalogs=_catalogs(),
+        table={"pr": {**_IDENTITY, "bogus": 1}},
+        key_prefix="dispatcher.acp_nodes",
     )
     assert isinstance(refusal, str)
     assert "dispatcher.acp_nodes.pr" in refusal
@@ -416,6 +437,7 @@ def test_the_same_entitlement_pair_may_be_reused_across_two_nodes() -> None:
     parsed = _chains().parse_node_chains(
         table={"pr": dict(_IDENTITY), "review": dict(_IDENTITY)},
         key_prefix="dispatcher.acp_nodes",
+        catalogs=_catalogs(),
     )
     assert not isinstance(parsed, str), parsed
     assert parsed["pr"].identity is not None

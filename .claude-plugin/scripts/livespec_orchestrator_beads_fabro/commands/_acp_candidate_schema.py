@@ -27,7 +27,7 @@ inheriting one.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_pricing import (
@@ -102,12 +102,21 @@ class AcpCandidate:
     identity-less arbitrary adapter with no fallback metadata, which the
     contract keeps covered by every live legacy provider record. Every
     candidate in a fallback-enabled chain carries one.
+
+    `config_options` is the ACP session config options the rendered CHAIN
+    carries for a candidate whose agent declares the `protocol` mechanism. It is
+    never configuration -- `_acp_candidate_forms` refuses the key in a committed
+    table -- and it is empty for every candidate whose agent renders model and
+    effort into the adapter instead, which is the "the two mechanisms MUST NOT be
+    combined for one candidate" rule of `SPECIFICATION/contracts.md` section
+    "Factory-configurable ACP fallback priority".
     """
 
     adapter: AcpAdapter
     identity: AcpCandidateIdentity | None = None
     signatures: tuple[AcpAvailabilitySignature, ...] = ()
     pricing: AcpCandidatePricing | None = None
+    config_options: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, kw_only=True)
