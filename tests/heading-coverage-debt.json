@@ -1,0 +1,674 @@
+[
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## Beads substrate constraints",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## Closed-item integrity",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-19"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## Codex full-access runtime constraints",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-19"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## Dispatcher policy settings constraints",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## Fabro factory host provisioning constraints",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-08-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## Fabro runtime constraints",
+    "work_item": "bd-ib-6tcjfx",
+    "first_seen": "2026-07-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## Factory sandbox credential constraints",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-20"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## Forbidden patterns",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## Inherited from livespec",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## Not-human-gated decision constraints",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-08-20"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## Persistent Agent Knowledge constraints",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## Process boundaries",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## Skill orchestration constraints",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## Spec Reader implementation constraints",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Agent and model catalogs",
+    "work_item": "bd-ib-jxvgq5",
+    "first_seen": "2026-09-29"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Beads connection model",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Cross-boundary handoffs",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Dispatch-brief lessons injection",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Dispatch-time baseline conformance gate",
+    "work_item": "bd-ib-6tcjfx",
+    "first_seen": "2026-06-26"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Dispatcher loop invocation surface",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Dispatcher policy settings",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Factory-configurable ACP fallback priority",
+    "work_item": "bd-ib-jxvgq5",
+    "first_seen": "2026-09-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Grooming and slice-size calibration",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-19"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Persistent Agent Knowledge realization",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Planning Lane realization",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-25"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Plugin namespace",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Proof credential projection",
+    "work_item": "bd-ib-7sjdzv",
+    "first_seen": "2026-09-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Self-contained plugin dispatch",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-29"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Spec Reader internal API",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Store-write consent discipline",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## The skill surface",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Work-item beads-issue mapping",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Work-item state semantics",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## `compat` block",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## pi skill surface",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-08-15"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 1 — Gap-tied fix cycle",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 118 — A groom workflow variant drafts a cut, parks it in the ledger, and files only on a recorded approval",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-09-06"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 119 — A per-item merge hold publishes the pull request and merges only on release",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-09-06"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 122 — An attention item's answer disposition governs who may answer it",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-09-06"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 124 — The human answer lands as a marked ledger comment before the transition, and a poisoned answer is refused",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-09-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 125 — The needs-attention valve item carries the terminated run's account and fails soft",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-09-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 127 — Ordered ACP fallback preserves primary resolution, failure honesty, and one node visit",
+    "work_item": "bd-ib-jxvgq5",
+    "first_seen": "2026-09-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 128 — An unrunnable ready item is visible but never advertised for dispatch",
+    "work_item": "livespec-n33rwg.10",
+    "first_seen": "2026-09-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 129 — A structured candidate renders through the catalogs and keeps the manual form as the escape hatch",
+    "work_item": "bd-ib-jxvgq5",
+    "first_seen": "2026-09-29"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 130 — Dispatch admits only a current, identifiable Fabro base",
+    "work_item": "bd-ib-6tcjfx",
+    "first_seen": "2026-09-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 131 — The Definition of Done gate admits a coherent item, refuses a malformed one host-side, and rests an incoherent one at needs-human",
+    "work_item": "bd-ib-7sjdzv",
+    "first_seen": "2026-09-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 132 — A factory-captured proof is captured on a draft pull request, reviewed, replayed and published",
+    "work_item": "bd-ib-7sjdzv",
+    "first_seen": "2026-09-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 133 — A mixed item is refused ai-only from every entry path, parks for its human-attested leg, and the accept valve refuses until the record exists",
+    "work_item": "bd-ib-7sjdzv",
+    "first_seen": "2026-09-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 134 — A declared proof credential is projected by name and a withheld, absent, credential-shaped or over-scoped declaration is refused",
+    "work_item": "bd-ib-7sjdzv",
+    "first_seen": "2026-09-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 15 — Dispatcher composes next's ranking",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-19"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 17 — drive operator-surface defaults",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-06"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 26 — list-work-items emits lane and lane_reason",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-29"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 27 — next ranks ready items by rank",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-29"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 28 — append_work_item registers and lands a custom status in two steps",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-29"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 29 — Factory GitHub App token on the dispatch path",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 30 — Dispatch-time baseline conformance gate",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 32 — Adopter-target dispatch compatibility",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 33 — auto_approve_ready governs admission and a per-item label wins",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 34 — acceptance_mode governs the acceptance leg",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 35 — A failing AI acceptance pass reworks only in the AI-dispositive modes",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 36 — Every needs-human block always escalates",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 37 — Safe defaults hold when nothing is configured",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 38 — capture-spec-drift surfaces ledger intent missing from spec",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-03"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 39 — Ratified lesson injects into dispatch briefs",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 4 — Freeform bug fix",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 40 — Unratified or absent lessons never alter briefs",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 41 — standalone analysis lands in a plan, not a root research tree",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-08-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 43 — loop drains the ranked queue by default",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 44 — --dry-run plans the ranked queue and dispatches nothing",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 45 — Unobservable cost fails closed on an unattended drain and warns on a hand-picked dispatch",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 46 — Per-item cap overrides set a label or clear to reinherit the global default",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 47 — The guarded move relocates within the operator-movable statuses only",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 5 — Doctor cross-boundary read",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 52 — A repository mise tool cannot shadow the lifecycle-guarded bd entry point",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 53 — A dispatch proceeds when the host is busy; the scheduler queues it",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 54 — Host-side dispatch runs a released payload, never the working tree",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-08-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 55 — plan archive commissions a missing independent completeness review",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-08-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 56 — A not-human-gated decision is taken by the session, never escalated",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-08-20"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 57 — A capacity refusal names which ceiling it means",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-08-28"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 58 — Rows at status active are not the counted quantity",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-08-28"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 59 — The hand-picked operator override admits over the cap",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-08-28"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 6 — Cross-repo dispatch via the Dispatcher",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 78 — A temporary throttle carries its own restore work-item",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-08-25"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 87 — A node's adapter resolves through three layers and the record names the supplying layer",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-08-25"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 88 — An arbitrary adapter with an env map and args renders without a code change",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-08-25"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 92 — Dry-run reports why a ready item was not picked",
+    "work_item": "bd-ib-nt3cjv",
+    "first_seen": "2026-08-29"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 93 — The janitor-bootstrap step resolves a declared hook-install recipe and falls back to a declared default",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-08-29"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 94 — A provider's availability claim does not extend an exhaustion record's expiry",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-08-29"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 99 — Empty-diff acceptance integrity: a zero-change merge is ungradeable, not delivered",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-08-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "spec.md",
+    "heading": "## Dispatcher policy settings",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-07-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "spec.md",
+    "heading": "## Lifecycle and evolution",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "spec.md",
+    "heading": "## Purpose",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "spec.md",
+    "heading": "## Scope boundary",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "spec.md",
+    "heading": "## Substrate properties",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "spec.md",
+    "heading": "## Terminology",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "spec.md",
+    "heading": "## What this spec is not",
+    "work_item": "bd-ib-heat",
+    "first_seen": "2026-06-08"
+  }
+]
