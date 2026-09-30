@@ -812,11 +812,11 @@
     "work_item": "bd-ib-aw58"
   },
   {
-    "heading": "## Codex ACP node model pins",
+    "heading": "## Built-in ACP node defaults",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "tests.livespec_orchestrator_beads_fabro.commands.test_dispatcher_dual_cred.test_codex_adapter_appends_model_overrides_for_a_pinned_tier",
-    "reason": "Ratified as retroactive cover for PR #1711 (already live fleet-wide). Bound to the unit-tier test that asserts the literal rendered adapter string, which is exactly this section's stated control — a reader must be able to predict the live adapter string from the spec alone. A contracts.md heading MAY bind a unit-tier test."
+    "reason": "Ratified as retroactive cover for PR #1711 (already live fleet-wide). Bound to the unit-tier test that asserts the literal rendered adapter string, which is exactly this section's stated control — a reader must be able to predict the live adapter string from the spec alone. A contracts.md heading MAY bind a unit-tier test. Retitled by the structured-acp-candidate-form revise (plan/epic bd-ib-jxvgq5); the bound test still asserts the literal rendered Codex adapter string this section ratifies."
   },
   {
     "heading": "## ACP node adapter configuration",
@@ -825,6 +825,14 @@
     "test": "tests.livespec_orchestrator_beads_fabro.commands.test_acp_node_layers.test_dispatch_layer_overrides_both_less_specific_layers",
     "work_item": "bd-ib-tsna",
     "reason": "Ratified by the acp-node-adapter-configuration revise (plan homelab-loop-hardening-orchestrator, commission item B), implemented by bd-ib-tsna. Bound to the MOST SPECIFIC layer's negative control, which is the one assertion that exercises all three layers at once: it sets a conflicting value at each of the workflow, repository and per-dispatch layers and asserts the per-dispatch value renders while the repository's other env keys survive. The sibling controls for the two less specific layers, the contractual render order, the arbitrary-adapter cases of Scenario 88, and every refusal live in the same module. A contracts.md heading MAY bind a unit-tier test."
+  },
+  {
+    "heading": "## Agent and model catalogs",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "Ratified by the structured-acp-candidate-form revise pass (plan/epic bd-ib-jxvgq5). Integration-tier coverage is owed: the catalogs and structured rendering do not exist yet, and the binding must drive the real configuration, catalog and rendering seams rather than a unit-tier stub. It is filed from the post-revise implementation-gap capture as the committed item acp-structured-candidate-dispatcher.",
+    "work_item": "bd-ib-jxvgq5"
   },
   {
     "heading": "## Factory-configurable ACP fallback priority",
@@ -1378,5 +1386,13 @@
     "test": "TODO",
     "reason": "Integration-tier coverage is owed by the post-revise implementation mirror for livespec-n33rwg.10. The test must drive the real store and candidate-composition seams across next, the needs-attention implementation item composed from next, idle-factory output, and the Dispatcher drain, with discriminating human-only, groom-kind, and repaired-gradeable controls; no current implementation can honestly bind the new behavior before that mirror lands.",
     "work_item": "livespec-n33rwg.10"
+  },
+  {
+    "heading": "## Scenario 129 — A structured candidate renders through the catalogs and keeps the manual form as the escape hatch",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified by the structured-acp-candidate-form revise pass (plan/epic bd-ib-jxvgq5). Integration-tier coverage is owed: the catalogs and structured rendering do not exist yet, and the binding must drive the real configuration, catalog and rendering seams rather than a unit-tier stub. It is filed from the post-revise implementation-gap capture as the committed item acp-structured-candidate-dispatcher.",
+    "work_item": "bd-ib-jxvgq5"
   }
 ]
