@@ -44,6 +44,9 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_idle_factory im
 from livespec_orchestrator_beads_fabro.commands._needs_attention_merge_hold import (
     merge_hold_items,
 )
+from livespec_orchestrator_beads_fabro.commands._needs_attention_model_fallback import (
+    model_fallback_items,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_orphan_runs import (
     orphan_run_items,
 )
@@ -212,6 +215,12 @@ def build_attention(
         # the reconciler's own dry run, so the lane and the remedy it prints
         # can never disagree about what an orphan is.
         + orphan_run_items(project_root=project_root, repo=repo_name, items=materialized)
+        # The two ACP fallback rows. They are composed TOGETHER because the
+        # absence of one changes what the other means: a repository whose
+        # event projection is broken shows no model-fallback warnings, and
+        # that emptiness reads as "nothing fell back" unless the
+        # projection-failure row is standing beside it saying nobody looked.
+        + model_fallback_items(project_root=project_root, repo=repo_name)
         # Detection recency is a REPOSITORY property computed from the
         # completed coverage records on the committed anchor. Neither fact
         # invokes a detector: both are surfaced triggers naming the skill.

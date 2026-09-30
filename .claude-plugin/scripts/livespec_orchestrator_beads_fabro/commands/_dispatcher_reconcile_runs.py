@@ -33,6 +33,9 @@ import time
 from collections.abc import Sequence
 
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_acp_projection import (
+    replay_acp_projection,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attribution import (
     FactoryRunInventory,
 )
@@ -175,6 +178,13 @@ def _reconcile_one_factory(
         grace_seconds=inputs.blocked_run_grace_seconds,
         now_epoch=inputs.now_epoch,
     )
+    # "Replay projection during reconciliation." The replay rides the survey
+    # the reconciler already performed rather than a second one: it reuses this
+    # factory's port, so the events read is server-qualified against the same
+    # target, and it is skipped on a dry run because a dry run is a projection
+    # of what WOULD happen and must write nothing.
+    if not dry_run:
+        _ = replay_acp_projection(inputs=inputs, factory=factory)
     for orphan in classify_orphans(inventory=inventory, grace=grace):
         if inputs.only_work_item_id is not None and orphan.work_item_id != inputs.only_work_item_id:
             continue

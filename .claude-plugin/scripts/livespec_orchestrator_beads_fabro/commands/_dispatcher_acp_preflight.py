@@ -81,6 +81,7 @@ __all__: list[str] = [
     "acp_preflight_refusal",
     "credential_reprobe_wait_applies",
     "resolve_acp_preflight",
+    "resolve_acp_primary_generations",
 ]
 
 # The journal stage a before-claim preflight refusal is recorded under.
@@ -138,6 +139,37 @@ def resolve_acp_preflight(
             probe=probe,
         ),
     )
+
+
+def resolve_acp_primary_generations(*, repo: Path) -> Mapping[str, str]:
+    """Each fallback-enabled node's CURRENT primary-generation fingerprint.
+
+    The event projection needs this for two different questions, and
+    answering both from one resolution is what keeps them consistent: the
+    KEYS are the nodes a projection-failure fact may be reported for, and
+    the VALUES are what the model-fallback supersede pass compares each
+    live warning's recorded generation against.
+
+    It is deliberately the same lazy, fail-soft shape as
+    `resolve_acp_preflight` above. A repository declaring no fallback
+    metadata short-circuits to the empty mapping before any workflow
+    variant, graph or journal is touched -- so projection is a total
+    no-op on the v107 path -- and a configuration that will not resolve
+    also yields the empty mapping rather than a refusal. That direction is
+    chosen: the refusal belongs to admission, which runs before claim,
+    while this runs AFTER a run has already finished, where refusing would
+    strand the very evidence an operator needs. An empty mapping retires
+    no warning and reports no fact, which is the conservative answer.
+    """
+    block = dispatcher_block(cwd=repo)
+    declared = repository_acp_chains(block=block)
+    if isinstance(declared, str) or not any(chain.enabled for chain in declared.values()):
+        return {}
+    resolved = _resolve_chains(repo=repo, block=block, declared=declared)
+    if isinstance(resolved, str):
+        return {}
+    chains, _graph_text, _builtin_pairs = resolved
+    return {node: chain.primary_generation for node, chain in chains.items() if chain.enabled}
 
 
 def acp_preflight_refusal(
