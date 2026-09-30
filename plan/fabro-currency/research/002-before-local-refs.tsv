@@ -1,0 +1,14 @@
+2e002d51308d9074c8e937e19185f490839f1b95	refs/heads/clone-creds-pull-requests-scope
+8de661118f24c43ad5b3516b9b7820525f5a5932	refs/heads/factory-integration
+7b4e3f3db942cc0cb002e2d4aa690ad6fd5b4272	refs/heads/factory-wave-b
+9cfc69d22fa4cb65b6c5f96f9f6ee191fafb509b	refs/heads/factory-wave-c
+e0f2b08b529a97515b767c00b7edef08f9400d1e	refs/heads/feat/configurable-checkpoint-commit-timeout
+3b37818887c8daf80bbb28fb6e30056a32b22db1	refs/heads/fix/classify-provider-spend-limit-not-transient
+f7ff19eea92fce59cb22765be6f3f3eece5ed233	refs/heads/fork-0254-backport
+d5947297c5cf1133bf0092192092eb11ddf2ef33	refs/heads/fork-selfhost
+b5885b15dc19b9e787c15d4de0869e25c62e5e27	refs/heads/main
+da277a4e5945e98827866fb407b7aa1d28a1d4d8	refs/heads/otlp-span-export
+9048a8d52afb2089f5f16798f8b8e11389784b68	refs/heads/p2-fabro-log-decouple
+613e962d01817520b4cca1f0d11ff061bae58b53	refs/heads/push-credential-refresh-ahead
+8de661118f24c43ad5b3516b9b7820525f5a5932	refs/heads/trial/factory-rebase
+c50fa595b1014fc34e0b29da1b604eed693a9343	refs/heads/worker-otel-reinject
