@@ -229,6 +229,23 @@ review_adapter = "ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL=h
 # here; see the version-less rationale in the adapter-defaults block above.
 disposition_adapter = "npx -y @agentclientprotocol/claude-agent-acp"
 
+# ACP adapter for the DOD_GATE node (S3 / bd-ib-s5fj5e). Its built-in default is
+# the entry this workflow declares for its REVIEW input — contracts.md section
+# "Built-in ACP node defaults" puts `dod_gate` and `proof_verify` there, not on
+# the implementer entry. The reason is what the node does: grading whether a
+# Definition of Done is coherent against its referenced spec heading is a
+# judgement of the same kind the review node makes, and it must NOT inherit a
+# tier a target moved for IMPLEMENTATION — a repo that pins a cheap implementer
+# has said nothing about how carefully its Definitions of Done should be graded.
+#
+# THIS VALUE IS THEREFORE A DELIBERATE DUPLICATE of `review_adapter` above, and
+# the two are held equal by test, not by hope. Keep them in lockstep: moving the
+# review pin without moving this one silently downgrades the gate. The Opus
+# pin's model-versus-adapter rationale, the API-only-attribute constraint that
+# forces the model into the adapter's own env, and the version-less package
+# rationale all live on `review_adapter` — they are not restated here.
+dod_gate_adapter = "ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
+
 # Review fix rounds count implementer repair rounds, not review visits. The
 # workflow guard reads review node visits, so the default three fix rounds render
 # as a visit guard of four: initial review visit plus three fix rounds.

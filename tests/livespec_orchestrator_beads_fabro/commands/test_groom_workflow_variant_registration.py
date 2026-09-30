@@ -2,7 +2,7 @@
 
 `SPECIFICATION/contracts.md` requires a repository that grooms through a
 factory run to register the groom variant in its own `dispatcher.workflows`
-table, and holds a registered variant to the reserved workflow's six ACP node
+table, and holds a registered variant to the reserved workflow's ACP node
 names and its input token set — a registered variant is that workflow's peer,
 not its exception.
 
@@ -111,14 +111,30 @@ def test_the_resolved_variant_declares_the_groom_kind() -> None:
     assert _workflow_variant_kind.groom_variant_names(repo=_REPO_ROOT) == (_GROOM_VARIANT_NAME,)
 
 
-def test_the_groom_variant_declares_the_bundles_six_acp_nodes() -> None:
-    """Peer parity for the names the adapter, model and timeout layers address."""
+def test_the_groom_variant_declares_the_bundles_acp_nodes() -> None:
+    """Peer parity for the names the adapter, model and timeout layers address.
+
+    Parity is about DECLARATION, not reachability. The variant declares
+    `dod_gate` and deliberately routes no edge to it, which is the latitude the
+    peer clause grants a groom-kind variant: declaring it keeps a target that
+    pins `dispatcher.acp_nodes.dod_gate` dispatchable through this graph, while
+    reaching it would gate a groom run on the quality of a Definition of Done
+    the run has not written yet.
+    """
     bundle_nodes = _acp_nodes(directory=_BUNDLE_DIRECTORY)
 
-    # A control on the reader itself: the bundle's six are what these layers
-    # resolve against, so a parse that returned some other count would make the
-    # comparison below meaningless rather than false.
-    assert bundle_nodes == {"implement", "fix", "review_fix", "pr", "review", "disposition"}
+    # A control on the reader itself: these are what the layers resolve against,
+    # so a parse that returned some other set would make the comparison below
+    # meaningless rather than false.
+    assert bundle_nodes == {
+        "dod_gate",
+        "implement",
+        "fix",
+        "review_fix",
+        "pr",
+        "review",
+        "disposition",
+    }
     assert _acp_nodes(directory=_GROOM_VARIANT_DIRECTORY) == bundle_nodes
 
 

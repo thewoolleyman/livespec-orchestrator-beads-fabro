@@ -87,6 +87,32 @@ digraph GroomWorkItem {
     // request for.
     exit  [shape=Msquare, label="Exit"]
 
+    // DECLARED SO THE LAYERS RESOLVE, AND DELIBERATELY UNREACHED BY ANY EDGE --
+    // the same latitude the `exit` marker above takes, for a different reason.
+    // SPECIFICATION/contracts.md holds a registered variant to the reserved
+    // workflow's ACP node names so the per-repository adapter layer and the
+    // per-node timeout table resolve against it without naming an absent node,
+    // and in the same breath permits a GROOM-kind variant to leave `dod_gate`
+    // unreached by its edges. Both halves are load-bearing here:
+    //
+    // DECLARING it is what keeps a target that configures
+    // `dispatcher.acp_nodes.dod_gate` or `dispatcher.node_timeouts.dod_gate`
+    // dispatchable through this variant. A layer naming a node the payload does
+    // not declare is a pre-run refusal, so an absent declaration would make a
+    // perfectly ordinary repository-level pin break groom dispatch alone, with
+    // nothing in the item to explain which of its two graphs objected.
+    //
+    // NOT REACHING it is what keeps the variant coherent. `dod_gate` GRADES a
+    // Definition of Done; this graph's entire purpose is to PRODUCE one for each
+    // slice it cuts. Gating a groom run on the quality of a Definition of Done
+    // it has not written yet would refuse every run at its first node.
+    dod_gate [
+        label="Definition-of-Done gate: declared for the layers, unreached by design"
+        backend="acp"
+        acp.command="{{ inputs.dod_gate_adapter }}"
+        timeout="1800s"
+    ]
+
     // The groom node. It derives the phase from the rendered goal, then either
     // drafts the cut (propose) or prepares the filing plan (apply). It writes
     // NOTHING to the ledger in either phase -- the apply phase's filing is the

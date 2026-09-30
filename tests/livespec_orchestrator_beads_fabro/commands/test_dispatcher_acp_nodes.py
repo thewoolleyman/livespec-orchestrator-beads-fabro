@@ -41,7 +41,7 @@ _COMMITTED_WORKFLOW = (
     _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item" / "workflow.toml"
 )
 _CLAUDE = "npx -y @agentclientprotocol/claude-agent-acp"
-_ACP_NODES = ("implement", "fix", "review_fix", "pr", "review", "disposition")
+_ACP_NODES = ("dod_gate", "implement", "fix", "review_fix", "pr", "review", "disposition")
 
 _WORKFLOW_TOML = """_version = 1
 
@@ -55,6 +55,7 @@ review_fix_adapter = "npx -y claude-acp"
 pr_adapter = "npx -y claude-acp"
 review_adapter = "npx -y claude-acp"
 disposition_adapter = "npx -y claude-acp"
+dod_gate_adapter = "npx -y claude-acp"
 review_fix_visit_cap = 4
 merge_on_review_cap_outcome = "__merge_on_review_cap_disabled__"
 

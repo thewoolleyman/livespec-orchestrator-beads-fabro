@@ -14,7 +14,9 @@ The PR node stays separate so the publish step -- a fixed `git`/`gh` recipe
 with no design judgement in it -- can run on a cheaper tier than the
 implementer. The REVIEW node (egms32) is separate so it can run on a
 different provider/model (Claude Opus 4.8 + high thinking), and the
-DISPOSITION node so adjudication can be pinned independently. All inputs
+DISPOSITION node so adjudication can be pinned independently, and the
+DOD_GATE node so grading a Definition of Done takes the review tier rather
+than inheriting whatever tier a target moved for implementation. All inputs
 default in workflow.toml, so the default dispatch behavior is
 parameter-driven and never hard-coded.
 """
@@ -36,7 +38,7 @@ _CLAUDE_OPUS_5_ADAPTER = (
 # One adapter input per ACP node, keyed by the node it belongs to.
 _NODE_ACP = {
     node: 'acp.command="{{ inputs.' + node + '_adapter }}"'
-    for node in ("implement", "fix", "review_fix", "pr", "review", "disposition")
+    for node in ("dod_gate", "implement", "fix", "review_fix", "pr", "review", "disposition")
 }
 _IMPLEMENTER_NODES = ("implement", "fix", "review_fix")
 

@@ -5,7 +5,8 @@
 // architecture"). One run consumes ONE ready work-item and produces one
 // merged-or-failed implementation attempt:
 //
-//   implement (Red-Green-Replay) -> janitor hard gate (the repository's
+//   dod_gate (grade the Definition of Done before any implementation spend)
+//   -> implement (Red-Green-Replay) -> janitor hard gate (the repository's
 //   declared check suite, rendered from `inputs.sandbox_check_suite`;
 //   bounded fix loop) -> Claude review gate (blocking by default,
 //   merge-on-cap only via explicit escape hatch; work-item bd-ib-egms32) -> PR + rebase auto-merge
@@ -74,6 +75,44 @@ digraph ImplementWorkItem {
 
     start [shape=Mdiamond, label="Start"]
     exit  [shape=Msquare, label="Exit"]
+
+    // Definition-of-Done gate (S3 / bd-ib-s5fj5e; SPECIFICATION/contracts.md
+    // "Definition-of-Done and Proof-of-Done stages", ratified v114): the FIRST
+    // node after `start` and before `implement`. It grades the item's
+    // Definition of Done section against the rendered goal before a single
+    // implementation turn is spent, and its whole value is the position — a
+    // wrong or ungradeable Definition of Done discovered by the implementer has
+    // already bought the implement turn it was supposed to prevent.
+    //
+    // WHAT IS HERE AND WHAT IS ON THE HOST, because the split is ratified and
+    // not an optimization. The MECHANICAL half — section present, references
+    // resolve, proof modes parse — ALSO runs in the host-side pre-dispatch wall
+    // ("Effective acceptance criteria"), so a malformed item never spends a
+    // sandbox at all and never reaches this node. What is left for this node is
+    // the SEMANTIC half, which no host-side parse can perform: whether a
+    // competent engineer could recognise these assertions as satisfied or
+    // unsatisfied from the referenced heading. So this node is not a second copy
+    // of the wall; it is the only surface that can fail on COHERENCE.
+    //
+    // Runs on `dod_gate_adapter`, whose built-in default is the entry the
+    // workflow declares for its REVIEW input rather than its implementer one
+    // ("Built-in ACP node defaults"). That is deliberate: this is an
+    // adjudication node, and it must not inherit a tier a target moved for
+    // implementation. The shared `acp_adapter` is not a candidate input for it.
+    //
+    // max_retries=1 is the same bn4 retry discipline every ACP node here
+    // carries: a transient ACP blip earns one auto-retry, while a deterministic
+    // failure routes straight to `needs_human` via the Blocked edge below
+    // without consuming the budget. No max_visits and no goal_gate — the node is
+    // entered exactly once per run, from `start`.
+    dod_gate [
+        label="Definition-of-Done gate: grade the section before any implement turn"
+        backend="acp"
+        acp.command="{{ inputs.dod_gate_adapter }}"
+        timeout="1800s"
+        max_retries=1
+        prompt="@prompts/dod-gate.md"
+    ]
 
     // The implement timeout is the per-turn ceiling for the ACP backend:
     // two heavy multi-RGR items (dev-tooling p60, git-jsonl tenpup, both
@@ -366,7 +405,26 @@ digraph ImplementWorkItem {
         script="echo 'LIVESPEC_NON_CONVERGED: janitor fix-loop cap hit without converging; routing back to the Dispatcher for needs-regroom' >&2; exit 1"
     ]
 
-    start -> implement
+    start -> dod_gate
+
+    // Definition-of-Done gate routing (S3 / bd-ib-s5fj5e). A gate failure is
+    // the structured needs-human ending of @prompts/dod-gate.md, carrying the
+    // Definition-of-Done findings as its failure reason; the Dispatcher reads
+    // them off the failed fabro-run stage detail and rests the item at
+    // `blocked / needs-human` with the findings as the recorded question. A
+    // coherent Definition of Done FALLS THROUGH to implement.
+    //
+    // THE FALLTHROUGH IS UNCONDITIONAL, AND THAT IS LOAD-BEARING RATHER THAN
+    // STYLISTIC. Inserting this node CONSUMED `start`'s own fallthrough, and
+    // fabro rejects a node whose every outgoing edge carries a condition
+    // (`all_conditional_edges`) — the defect that took the whole factory down
+    // twice, on `review` in 2026-07-16 and on `pr`/`verify_pr` in release
+    // 0.146.0, each time dying before any node ran. So the shape here is the one
+    // `implement -> implementation_diff -> dead_implementer` already uses: name
+    // the exceptional route with a condition, and let the ordinary route be the
+    // unconditional fallback that conditional edges outrank.
+    dod_gate -> needs_human [label="Blocked", condition="outcome=failed"]
+    dod_gate -> implement
 
     // A failed implement (structured needs-human ending, see
     // prompts/implement.md) routes to the needs_human terminal —
