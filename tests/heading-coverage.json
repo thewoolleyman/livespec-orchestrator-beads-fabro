@@ -1402,5 +1402,45 @@
     "test": "TODO",
     "reason": "Ratified by the fabro-currency revise pass (plan/epic bd-ib-6tcjfx). Integration-tier coverage must exercise the shared target-aware predicate through direct, hand-picked, drain, and autonomous-loop admission, including exact-tag ancestry, publication-window, transition-deadline, stale-observation, release-class, and two-target controls; it is owed by the required post-revise implementation-gap capture.",
     "work_item": "bd-ib-6tcjfx"
+  },
+  {
+    "heading": "## Scenario 131 — The Definition of Done gate admits a coherent item, refuses a malformed one host-side, and rests an incoherent one at needs-human",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Integration-tier coverage is owed by the implementing children of plan definition-and-proof-of-done (epic bd-ib-7sjdzv): the host-side wall (S2) and the dod_gate node (S3). The test must drive the real store, the approve valve, the pre-dispatch wall with exit 5, and a dispatch whose dod_gate ends through the needs-human ending, with the coherent-item control; no current implementation can honestly bind the new behavior before those slices land.",
+    "work_item": "bd-ib-7sjdzv"
+  },
+  {
+    "heading": "## Scenario 132 — A factory-captured proof is captured on a draft pull request, reviewed, replayed and published",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Integration-tier coverage is owed by the implementing children of plan definition-and-proof-of-done (epic bd-ib-7sjdzv): publish_draft and proof_capture (S5), proof_verify and the review-cap edge (S6), and the host pointer write plus the proof evidence leg (S7). The test must drive a real dispatch graph and forge, with the not-reproduced and stale-pointer controls; no current implementation can honestly bind it before those slices land.",
+    "work_item": "bd-ib-7sjdzv"
+  },
+  {
+    "heading": "## Scenario 133 — A mixed item is refused ai-only from every entry path, parks for its human-attested leg, and the accept valve refuses until the record exists",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Integration-tier coverage is owed by the implementing children of plan definition-and-proof-of-done (epic bd-ib-7sjdzv): the shared decision's derived routing (S2), the deliverable policy in dod_gate (S3), and the accept-valve refusal plus the unevidenced verdict (S7). The test must drive every dispatch entry path against the same item and the real accept valve; no current implementation can honestly bind it before those slices land.",
+    "work_item": "bd-ib-7sjdzv"
+  },
+  {
+    "heading": "## Scenario 134 — A declared proof credential is projected by name and a withheld, absent, credential-shaped or over-scoped declaration is refused",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Integration-tier coverage is owed by the implementing child of plan definition-and-proof-of-done (epic bd-ib-7sjdzv) that lands proof credentials (S8), sequenced after plan fabro-currency lands native secrets projection. The test must drive the real projection channel and the pre-claim refusals with the read-only positive control; no current implementation can honestly bind it before that slice lands.",
+    "work_item": "bd-ib-7sjdzv"
+  },
+  {
+    "heading": "## Proof credential projection",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "Bound by the same S8 child of plan definition-and-proof-of-done (epic bd-ib-7sjdzv) that binds Scenario 134; the section's refusals and the minted-or-copied journal record are its integration-tier deliverable.",
+    "work_item": "bd-ib-7sjdzv"
   }
 ]
