@@ -37,6 +37,14 @@ from livespec_orchestrator_beads_fabro.commands._acp_success_critical import (
     derive_success_critical,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_workflow_graph import parse_workflow_graph
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal import (
+    fabro_run_terminal_outcome,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
+    NEEDS_HUMAN_MARKER,
+    DispatchPlan,
+)
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     DEFAULT_FABRO_TIMEOUT_SECONDS,
     default_node_timeouts,
@@ -79,6 +87,39 @@ def _edges(*, text: str) -> list[str]:
         for line in text.splitlines()
         if "->" in line and not line.strip().startswith("//")
     ]
+
+
+def _prompt() -> str:
+    """The gate prompt with every whitespace run collapsed to one space.
+
+    The prompt is hard-wrapped, so a needle straddling a line break fails while
+    the prose says exactly the thing — a probe that can only fail SILENTLY.
+    Collapsing first is what makes these assertions able to return the other
+    answer.
+    """
+    text = (_BUNDLE / "prompts" / "dod-gate.md").read_text(encoding="utf-8")
+    return re.sub(r"\s+", " ", text)
+
+
+def _plan(*, tmp_path: Path) -> DispatchPlan:
+    return DispatchPlan(
+        repo=tmp_path,
+        work_item_id="bd-ib-s5fj5e",
+        branch="feat/bd-ib-s5fj5e",
+        workflow_toml=tmp_path / "workflow.toml",
+        goal_file=tmp_path / "goal.txt",
+        fabro_bin="fabro",
+        fabro_factory_name="hp",
+        fabro_factory_server="https://hp.example:32276",
+        fabro_factory_dev_token=None,
+        janitor=None,
+        janitor_checkout=tmp_path / ".janitor",
+        janitor_core_checkout=tmp_path / ".janitor" / ".livespec-core",
+        janitor_core_repo_url="https://github.com/thewoolleyman/livespec.git",
+        janitor_core_ref="master",
+        review_fix_visit_cap=3,
+        merge_on_review_cap_outcome="succeeded",
+    )
 
 
 def _acp_node_names(*, payload: Path) -> set[str]:
@@ -212,3 +253,112 @@ def test_the_variant_leaves_the_gate_unreached_by_its_edges() -> None:
     edges = _edges(text=_dot(payload=_VARIANT))
 
     assert not any(_GATE in edge for edge in edges)
+
+
+def test_the_gate_prompt_verifies_all_four_definition_of_done_duties() -> None:
+    """Section presence, reference resolution, proof-mode validity, coherence.
+
+    Each needle is chosen so it CANNOT be present unless the prompt carries that
+    duty, rather than merely mentioning the vocabulary somewhere: the
+    proof-mode leg names the deliverable policy's own refusal (an assertion the
+    sandbox could exercise must not be `human_attested`), and the coherence leg
+    names the recognisability test the contract states, not the word "coherent".
+    """
+    prompt = _prompt()
+
+    # Presence, and where the section must sit — the FIRST heading, which is the
+    # one placement a later-heading parse would silently accept.
+    assert "first heading" in prompt
+    assert "Definition of Done" in prompt
+    # Reference resolution, against the governed spec tree's own H2 set.
+    assert "References:" in prompt
+    assert "H2 heading" in prompt
+    # Proof-mode validity, including the deliverable policy's refusal.
+    assert "factory_captured" in prompt
+    assert "human_attested" in prompt
+    assert "Reason:" in prompt
+    assert "the sandbox could exercise" in prompt
+    # Coherence — the recognisability test, stated as the contract states it.
+    assert "could not recognise as satisfied or unsatisfied" in prompt
+    assert "referenced heading" in prompt
+
+
+def test_the_gate_prompt_falls_through_to_implement_on_success() -> None:
+    """A coherent Definition of Done proceeds, and says so in as many words.
+
+    The fallthrough is a property of the GRAPH, not of anything the node emits —
+    the edge is unconditional. So what the prompt owes is that it tells the node
+    what a pass looks like, and that it FORBIDS inventing a routing label the
+    graph would ignore.
+
+    The prohibition is asserted as a prohibition, not as the absence of the
+    token. A prompt that says "do NOT emit `preferred_next_label`" CONTAINS that
+    token, so an absence probe would fail on the very text that satisfies the
+    requirement — presence is not assertion, and a count is not a verdict.
+    """
+    prompt = _prompt()
+
+    assert "falls through to the implement" in prompt
+    assert "Do NOT emit a routing label" in prompt
+
+
+def test_the_gate_prompt_is_read_only() -> None:
+    """The gate GRADES; it never repairs. A Definition of Done is the human's.
+
+    An implementer that finds the section wrong takes the SAME needs-human
+    route rather than editing it, so a gate that edited it would be the one
+    surface able to make the run's own brief disagree with the ledger it is
+    graded against.
+    """
+    prompt = _prompt()
+
+    assert "MUST NOT edit" in prompt
+    assert "do NOT repair" in prompt
+
+
+def test_the_gate_prompt_ends_a_failure_through_the_structured_needs_human_ending() -> None:
+    """The findings ride the failure reason, one line each, with their remedies.
+
+    The shape is load-bearing rather than cosmetic: the Dispatcher records the
+    failure reason verbatim as the needs-human question, so a finding that names
+    no remedy rests the item with a question nobody can act on.
+    """
+    prompt = _prompt()
+
+    assert '{"outcome": "failed", "failure_reason":' in prompt
+    assert "one line per finding" in prompt
+    assert "the remedy" in prompt
+    # The item id is what makes a finding actionable once it is off the run.
+    assert "work-item id" in prompt
+
+
+def test_the_dispatcher_rests_a_gate_failure_at_blocked_needs_human(tmp_path: Path) -> None:
+    """A gate failure's findings reach the ledger as the recorded question.
+
+    Driven through the PRODUCTION terminal mapper on the sentinel the graph's
+    own `needs_human` node emits, because the gate introduces no state
+    transition, exit code or claim-release path of its own — its whole ledger
+    consequence is that it reaches that terminal like any other ACP node.
+    """
+    findings = (
+        "work-item bd-ib-s5fj5e: the Definition of Done assertion 'it works' cannot be "
+        "recognised as satisfied or unsatisfied from the referenced heading; remedy: "
+        "restate it as a checkable claim about a named surface"
+    )
+
+    outcome = fabro_run_terminal_outcome(
+        outcome_type=DispatchOutcome,
+        plan=_plan(tmp_path=tmp_path),
+        run_id="01M3DODGATEFINDINGS",
+        inspect=None,
+        exit_code=1,
+        stderr=f"{findings}\n{NEEDS_HUMAN_MARKER}: definition-of-done findings\n",
+    )
+
+    assert outcome is not None
+    assert outcome.status == "blocked"
+    assert outcome.stage == "fabro-run"
+    assert outcome.fabro_run_id == "01M3DODGATEFINDINGS"
+    # The ledger valve the human uses after editing the section, not a park.
+    assert "resolve-blocked:bd-ib-s5fj5e:ready" in outcome.detail
+    assert "fabro attach" not in outcome.detail
