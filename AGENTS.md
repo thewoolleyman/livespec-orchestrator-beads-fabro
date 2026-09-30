@@ -871,8 +871,9 @@ runs it directly from `~/.fabro/bin/fabro`. Measured 2026-09-12, the two
 factory hosts DIVERGE: `hp` runs `fabro 0.254.0 (4b8cc85 2026-09-12)` (fork
 PR 8, `bd-ib-bindom`) and `vps` still runs `fabro 0.254.0 (977cb67
 2026-09-09)`; neither carries the S4 ACP fallback chain merged into the
-carrier on 2026-09-12 (`bd-ib-mujvyn`, fork PR 9), whose deployment is S7 of
-plan `bd-ib-jxvgq5`. Both builds come from
+carrier on 2026-09-12 (`bd-ib-mujvyn`, fork PR 9) nor the in-protocol model
+and effort selection merged on 2026-09-30 (`bd-ib-afcn3d`, fork PR 10),
+whose deployment is S7 of plan `bd-ib-jxvgq5`. Both builds come from
 **`factory-integration`** — the ONE standing branch in our fork
 (`thewoolleyman/fabro`) that carries every fabro fix the factory needs but
 upstream has not released (today: PR #568 credential refresh,
