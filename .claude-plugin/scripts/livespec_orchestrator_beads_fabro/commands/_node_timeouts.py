@@ -56,7 +56,8 @@ REPOSITORY_LAYER = "repository"
 WORKFLOW_DEFAULT_LAYER = "default"
 
 # The graph's worst-case path, expressed as the visit budget each node can
-# actually consume in one run -- read off `workflow.fabro`: `implement` and
+# actually consume in one run -- read off `workflow.fabro`: `dod_gate`,
+# `implement` and
 # `pr` carry `max_retries=1` (two attempts each), the janitor fix loop is
 # bounded by the `< 3` visit guard on the janitor's own visit count (three
 # janitor visits, two fix attempts), and the review loop is bounded by the
@@ -77,6 +78,7 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # resolve their timeouts from configuration like every other node; they just
 # do not contribute to the ceiling.
 _WORST_CASE_VISITS: Mapping[str, int] = {
+    "dod_gate": 2,
     "implement": 2,
     "implementation_diff": 2,
     "janitor": 3,
