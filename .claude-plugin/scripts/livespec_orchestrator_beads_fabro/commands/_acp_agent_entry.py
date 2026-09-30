@@ -26,11 +26,13 @@ several accounts (a router), so neither determines the other.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands._acp_agent_mechanism import (
+    JSON_ENV_MECHANISM,
     AcpModelMechanism,
     parse_model_mechanism,
 )
@@ -41,6 +43,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_schema_fields import (
     string_tuple,
     unknown_keys_refusal,
 )
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [
     "AGENT_ENTRY_KEYS",
@@ -135,7 +138,9 @@ def parse_agent_entry(*, agent_id: str, entry: Mapping[str, Any], key: str) -> A
     launch = _launch_fields(entry=entry, key=key)
     if isinstance(launch, str):
         return launch
-    provider = _provider(entry=entry, key=key)
+    provider = _cross_field_checks(
+        entry=entry, key=key, mechanism=mechanism, envs=(launch[1], launch[2])
+    )
     if isinstance(provider, str):
         return provider
     return AcpAgentEntry(
@@ -211,6 +216,60 @@ def _launch_fields(
             return f"{key}.{name} must be a table of string to string; got {entry[name]!r}"
         maps.append(table)
     return (tuples[0], maps[0], maps[1], tuples[1])
+
+
+def _cross_field_checks(
+    *,
+    entry: Mapping[str, Any],
+    key: str,
+    mechanism: AcpModelMechanism,
+    envs: tuple[Mapping[str, str], Mapping[str, str]],
+) -> tuple[str, bool] | str:
+    """The two checks that need MORE THAN ONE field at once, and the provider pair.
+
+    They travel together because each one is a question about a COMBINATION, and
+    a single-field reader cannot ask either: the provider rule is about
+    `provider` and `multi_provider`, and the carrier rule is about `mechanism`
+    and `env`. Keeping them here rather than in the field readers is what makes
+    every message above attributable to the one field it names.
+    """
+    carrier = _json_carrier_refusal(key=key, mechanism=mechanism, envs=envs)
+    if carrier is not None:
+        return carrier
+    return _provider(entry=entry, key=key)
+
+
+def _json_carrier_refusal(
+    *,
+    key: str,
+    mechanism: AcpModelMechanism,
+    envs: tuple[Mapping[str, str], Mapping[str, str]],
+) -> str | None:
+    """Refuse a `json_env` carrier whose declared value is not a JSON OBJECT.
+
+    The render MERGES the model into that object, so a carrier holding a scalar,
+    an array or unparseable text has nothing to merge into. Catching it at parse
+    time is what lets the renderer stay a total function: the alternative is a
+    crash inside layer resolution, which surfaces nowhere near the configuration
+    line that caused it.
+
+    An ABSENT carrier is admissible -- an agent may take its whole session
+    configuration from the pin alone, so the render starts from the empty object.
+    """
+    if mechanism.kind != JSON_ENV_MECHANISM:
+        return None
+    for env in envs:
+        carried = env.get(mechanism.env)
+        if carried is None:
+            continue
+        decoded = attempt(action=lambda text=carried: json.loads(text), exceptions=(ValueError,))
+        if isinstance(decoded, AttemptFailure) or not isinstance(decoded, dict):
+            return (
+                f"{key}.env[{mechanism.env!r}] must hold a JSON object for the "
+                f"{JSON_ENV_MECHANISM!r} mechanism to merge model and effort into; "
+                f"got {carried!r}"
+            )
+    return None
 
 
 def _provider(*, entry: Mapping[str, Any], key: str) -> tuple[str, bool] | str:

@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import resolve_acp_nodes
-from livespec_orchestrator_beads_fabro.commands._config import resolve_acp_node_overlays
+from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import (
     workflow_adapter_inputs,
 )
