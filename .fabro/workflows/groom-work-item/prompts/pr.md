@@ -2,7 +2,7 @@
 
 ## Your assignment
 
-{{ goal }}
+The complete work-item goal is in the Fabro-injected `Goal:` preamble above.
 
 ## Where you are, and what "publish" means here
 

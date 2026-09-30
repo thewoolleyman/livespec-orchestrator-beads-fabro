@@ -10,9 +10,7 @@ make. You do NOT edit code — you read the diff and emit a verdict.
 ## Scope — hard limits
 
 - Review ONLY the change on this branch: `git diff origin/{{ inputs.default_branch }}...HEAD`.
-- The work-item being implemented:
-
-  {{ goal }}
+- The complete work-item goal is in the Fabro-injected `Goal:` preamble above.
 
 - Judge solely: does this diff correctly, minimally, and well accomplish
   THAT work-item?

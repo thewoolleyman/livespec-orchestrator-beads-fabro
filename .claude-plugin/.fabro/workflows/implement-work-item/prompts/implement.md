@@ -1,8 +1,28 @@
 # Implement stage — one work-item, family discipline
 
-## Your assignment
+## Test-first assertion loop — start here
 
-{{ goal }}
+The complete work-item goal is in the Fabro-injected `Goal:` preamble
+above. Read the repository binding rules named below, then execute this
+loop once for EACH gradeable acceptance assertion, in order:
+
+1. Pick exactly one acceptance assertion.
+2. Write one failing test for that assertion. Run that test and observe
+   it fail on a genuine assertion, not at collection or import time.
+3. Red-commit that test alone.
+4. While HEAD is that open Red, write the minimum product implementation
+   that makes the assertion pass, run the test, and Green-amend the Red.
+5. Repeat from step 1 for the next assertion. One assertion gets one
+   observable Red-Green cycle.
+
+Product-write order is mechanical: no product file may be created or
+modified before the first Red commit, and every later product write
+requires HEAD to be an open Red. The ONLY carveout is a new-module
+failing stub: after its test is written and still uncommitted, a product
+file that does not exist at HEAD may be created with the minimum surface
+needed to import and reach the assertion. The stub must make that
+assertion FAIL; it must never satisfy it. Modifying an existing product
+file outside an open Red is never part of this carveout.
 
 ## Where you are
 
@@ -155,10 +175,11 @@ mechanical line-count cut, a re-export shim, or an exemption.
    `fix:`/`feat:` subject. The `red_green_replay` hook runs pytest on
    the staged tree; the staged test MUST fail (non-zero). Prefer a
    genuine assertion failure over ImportError: if the impl module does
-   not exist yet, create a minimal STUB on disk so the test imports and
-   runs but its assertion FAILS; the stub must NOT make the test pass
-   (that trips `test-passed-at-red`). The impl must be UNMODIFIED on
-   disk at Red (the hook's pytest reads the on-disk module).
+   not exist yet, use the new-module failing-stub carveout above so the
+   test imports and runs but its assertion FAILS; the stub must NOT make
+   the test pass (that trips `test-passed-at-red`). Every existing
+   product file must be UNMODIFIED on disk at Red (the hook's pytest
+   reads the on-disk module).
    - **A COLLECTION ERROR IS NOT AN ACCEPTABLE RED.** If the staged test
      dies at COLLECTION (e.g. a top-level `import <new_module>` that does
      not exist yet → `ModuleNotFoundError`, zero assertions run), the Red
@@ -208,17 +229,15 @@ waits for that answer. Reserve it for
 genuine blockers — a failing check you can fix is YOUR job, not the
 operator's.
 
-## What to do
+## Finish the run
 
-1. Read the assignment and the relevant code/spec until you understand
-   the change.
-2. Implement it via the ritual above, in as few cohesive commits as the
-   work naturally splits into (test+impl land atomically in one commit).
-3. Run the repo's check suite yourself (`{{ inputs.sandbox_check_suite }}`) and
+After every acceptance assertion has completed its own loop:
+
+1. Run the repo's check suite yourself (`{{ inputs.sandbox_check_suite }}`) and
    fix what it surfaces — a later janitor stage re-runs it as a hard
    gate, so hand it a green tree. Green must be earned honestly — see
    the HONEST checks rule above; a check-vs-legitimate-pattern conflict
    is a needs-human `failed` outcome, not something to evade.
-4. In your final reply, summarize what you changed, list the commits
+2. In your final reply, summarize what you changed, list the commits
    (`git log --oneline origin/{{ inputs.default_branch }}..HEAD`), and report any deviation
    or hook output verbatim.

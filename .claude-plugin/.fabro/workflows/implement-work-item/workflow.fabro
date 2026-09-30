@@ -22,10 +22,12 @@
 // the sandbox and checks out a managed run branch before the first node
 // runs — the graph never creates worktrees and never touches the host.
 // The per-item brief (work-item id, title, description, publish branch)
-// arrives via the run goal (`--goal-file`), rendered into the prompts
-// as the `goal` template variable. (Keep brace tokens out of comments
-// BEFORE the digraph line — a brace there breaks Fabro's graph render in
-// the web UI; cosmetic, execution is unaffected. See fabro-sh/fabro#508.)
+// arrives via the run goal (`--goal-file`), which overrides the graph goal.
+// Fabro's adapter-independent non-full-fidelity preamble injects that complete
+// goal into every ACP node; prompts refer to that single injected copy. (Keep
+// brace tokens out of comments BEFORE the digraph line — a brace there breaks
+// Fabro's graph render in the web UI; cosmetic, execution is unaffected. See
+// fabro-sh/fabro#508.)
 //
 // Agent nodes use the ACP backend: the Claude Code adapter reads
 // CLAUDE_CODE_OAUTH_TOKEN from the sandbox environment, injected at
