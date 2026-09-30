@@ -133,7 +133,7 @@ def _resolve(
     catalogs = _module(name="_acp_catalogs").builtin_catalogs()
     overlays = repository.repository_acp_overlays(block=block, catalogs=catalogs)
     assert not isinstance(overlays, str), overlays
-    declared = repository.repository_acp_chains(block=block)
+    declared = repository.repository_acp_chains(block=block, catalogs=catalogs)
     assert not isinstance(declared, str), declared
     dispatch_overlays = seam.dispatch_acp_overlays(overrides=dispatch)
     assert not isinstance(dispatch_overlays, str), dispatch_overlays
@@ -483,8 +483,9 @@ def test_the_dispatch_seam_reports_an_attachment_refusal_before_journalling(
 def test_a_non_table_acp_nodes_value_yields_one_refusal_not_two() -> None:
     """The overlay reader already names the key; the chain reader stays quiet."""
     repository = _module(name="_acp_node_repository")
-    assert repository.repository_acp_chains(block={"acp_nodes": "uvx acp"}) == {}
-    assert repository.repository_acp_chains(block={}) == {}
+    catalogs = _module(name="_acp_catalogs").builtin_catalogs()
+    assert repository.repository_acp_chains(block={"acp_nodes": "uvx acp"}, catalogs=catalogs) == {}
+    assert repository.repository_acp_chains(block={}, catalogs=catalogs) == {}
     assert isinstance(
         repository.repository_acp_overlays(
             block={"acp_nodes": "uvx acp"},
