@@ -830,9 +830,8 @@
     "heading": "## Agent and model catalogs",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "test": "TODO",
-    "reason": "Ratified by the structured-acp-candidate-form revise pass (plan/epic bd-ib-jxvgq5). Integration-tier coverage is owed: the catalogs and structured rendering do not exist yet, and the binding must drive the real configuration, catalog and rendering seams rather than a unit-tier stub. It is filed from the post-revise implementation-gap capture as the committed item acp-structured-candidate-dispatcher.",
-    "work_item": "bd-ib-jxvgq5"
+    "test": "tests.integration.test_acp_structured_catalogs_scenario129.test_a_per_repository_catalog_addition_reaches_the_render",
+    "reason": "Integration-tier acceptance for the two committed catalogs, driven from a `.livespec.jsonc` on disk through the real `resolve_acp_catalogs`, repository overlay and three-layer merge seams. The bound node id is the per-repository addition journey, because that is the case which proves the catalogs are a CONFIGURATION surface rather than a constant: it names a model the shipped catalog does not declare, so a build ignoring `dispatcher.model_catalog` refuses instead of rendering. Sibling tests in the same module cover the unknown-key refusal, the recorded snapshot digest and seed date, and the no-fetch invariant, which is asserted as an ABSENT CAPABILITY — no fetch-capable import in any catalog module — because observing that one resolution issued no traffic would pass equally against a build that fetches only on a cache miss."
   },
   {
     "heading": "## Factory-configurable ACP fallback priority",
@@ -1391,9 +1390,8 @@
     "heading": "## Scenario 129 — A structured candidate renders through the catalogs and keeps the manual form as the escape hatch",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified by the structured-acp-candidate-form revise pass (plan/epic bd-ib-jxvgq5). Integration-tier coverage is owed: the catalogs and structured rendering do not exist yet, and the binding must drive the real configuration, catalog and rendering seams rather than a unit-tier stub. It is filed from the post-revise implementation-gap capture as the committed item acp-structured-candidate-dispatcher.",
-    "work_item": "bd-ib-jxvgq5"
+    "test": "tests.integration.test_acp_structured_catalogs_scenario129.test_a_structured_codex_entry_renders_from_the_catalogs_with_derived_identity",
+    "reason": "Integration-tier acceptance for Scenario 129, every case resolved from a committed `.livespec.jsonc` through the real configuration, catalog, render and merge seams rather than a unit-tier stub. The bound node id is the structured Codex journey — rendered bytes plus derived `candidate_key` and `availability_key`; the heading's other four scenarios are sibling tests in the same module: the multi-provider provider-qualified reference (with the bare-id refusal as its control), the manual-form escape hatch asserted to derive NOTHING from any catalog, the three refusing faults, and determinism across two independent resolutions rather than two calls to one function."
   },
   {
     "heading": "## Scenario 130 — Dispatch admits only a current, identifiable Fabro base",
