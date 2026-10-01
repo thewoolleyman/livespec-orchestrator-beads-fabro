@@ -49,6 +49,11 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_repository import (
     repository_acp_chains,
     repository_acp_overlays,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_structured_render import READ_ONLY_NODES
+from livespec_orchestrator_beads_fabro.commands._acp_structured_text import (
+    is_structured_text,
+    rendered_structured_text,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_workflow_defaults import (
     rendered_workflow_defaults,
 )
@@ -100,15 +105,27 @@ def workflow_adapter_inputs(*, committed_text: str) -> Mapping[str, str]:
     }
 
 
-def dispatch_acp_overlays(*, overrides: tuple[str, ...]) -> Mapping[str, AcpNodeOverlay] | str:
-    """Parse `--acp-node <node>=<adapter>` values into per-node overlays.
+def dispatch_acp_overlays(
+    *, overrides: tuple[str, ...], catalogs: AcpCatalogs
+) -> Mapping[str, AcpNodeOverlay] | str:
+    """Parse `--acp-node <node>=<value>` values into per-node overlays.
 
-    The value is a COMPLETE adapter command line -- env assignments,
+    THE VALUE MAY BE EITHER FORM, and the two behave differently on purpose.
+
+    A MANUAL value is a COMPLETE adapter command line -- env assignments,
     command and arguments, exactly as the node will run it. Its command
     replaces the less specific layers' outright, while its env assignments
     MERGE over theirs: moving one node's model for one dispatch must not
     require restating the base URL and auth token that repository's
     configuration already carries for it (Scenario 87).
+
+    A STRUCTURED value -- a JSON object naming an `agent` and a `model` -- is
+    rendered through the catalogs into the manual form first, and REPLACES the
+    environment rather than merging into it. The difference is not an
+    inconsistency: a rendered structured entry is a whole adapter belonging to
+    one agent, so merging the layer beneath it would prefix another provider's
+    variables onto that agent's command line. The same reasoning, and the same
+    flag, as the repository layer's structured entries.
 
     A repeated node refuses rather than silently taking the last value: two
     `--acp-node implement=` arguments on one command line is a mistake, and
@@ -122,8 +139,32 @@ def dispatch_acp_overlays(*, overrides: tuple[str, ...]) -> Mapping[str, AcpNode
             return f"--acp-node expects <node>=<adapter command>; got {override!r}"
         if node in overlays:
             return f"--acp-node names node {node!r} more than once"
-        overlays[node] = overlay_from_string(text=value)
+        parsed = _dispatch_overlay(node=node, value=value, catalogs=catalogs)
+        if isinstance(parsed, str):
+            return parsed
+        overlays[node] = parsed
     return overlays
+
+
+def _dispatch_overlay(*, node: str, value: str, catalogs: AcpCatalogs) -> AcpNodeOverlay | str:
+    """One `--acp-node` value in whichever form it is written.
+
+    The discriminator is the same one the workflow layer uses -- an opening
+    brace -- and it is complete rather than a heuristic: a manual adapter is a
+    command line, whose first token is an environment assignment or an
+    executable, and neither can begin with a brace.
+    """
+    if not is_structured_text(value=value):
+        return overlay_from_string(text=value)
+    rendered, refusal = rendered_structured_text(
+        value=value,
+        key=f"--acp-node {node}",
+        catalogs=catalogs,
+        read_only=node in READ_ONLY_NODES,
+    )
+    if refusal is not None:
+        return refusal
+    return overlay_from_string(text=rendered, replaces_env=True)
 
 
 def prepare_acp_nodes(
@@ -149,7 +190,7 @@ def prepare_acp_nodes(
     if isinstance(layers, str):
         return layers
     catalogs, repository = layers
-    dispatch = dispatch_acp_overlays(overrides=overrides)
+    dispatch = dispatch_acp_overlays(overrides=overrides, catalogs=catalogs)
     if isinstance(dispatch, str):
         return dispatch
     workflow_inputs = workflow_layer(committed=committed, catalogs=catalogs)

@@ -144,7 +144,7 @@ def _resolve(
     assert not isinstance(overlays, str), overlays
     declared = repository.repository_acp_chains(block=block, catalogs=catalogs)
     assert not isinstance(declared, str), declared
-    dispatch_overlays = seam.dispatch_acp_overlays(overrides=dispatch)
+    dispatch_overlays = seam.dispatch_acp_overlays(overrides=dispatch, catalogs=catalogs)
     assert not isinstance(dispatch_overlays, str), dispatch_overlays
     resolution = layers.resolve_acp_nodes(
         workflow_inputs=declared_inputs, repository=overlays, dispatch=dispatch_overlays
