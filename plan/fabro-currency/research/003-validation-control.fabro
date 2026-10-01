@@ -1,0 +1,6 @@
+digraph CurrencyValidationControl {
+    start [shape=Mdiamond]
+    probe [shape=parallelogram, script="printf currency-control"]
+    exit [shape=Msquare]
+    start -> probe -> exit
+}

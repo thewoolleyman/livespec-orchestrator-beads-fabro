@@ -25,7 +25,7 @@ The checked manifests are:
 | `002-after-origin-refs.tsv` | 15 | `e18e782fea1b4732052e379e5d7db8b4871b2f0c890433954cf9b4176f17dd79` |
 | `002-deleted-origin-refs.tsv` | 1,433 | `5b538e60a83fb6fa83c8166d59ad670b8e04f98c587b34df3fab1cde72a7a724` |
 | `002-before-local-refs.tsv` | 14 | `4f2a26d77690f98fba045e10df30c521b2ff1e0cd7bab4fdefd4c6099d9b3ccb` |
-| `002-after-local-refs.tsv` (refreshed 2026-10-01) | 8 | `8c2736aaae0b6dc1cc252803c67a269975c0b332414092058d71e3168c8489e5` |
+| `002-after-local-refs.tsv` (refreshed 2026-10-01) | 8 | `1f56de53abdd9a93a300af826f1e4897d134b623db0e03d70eecb62177c6f68a` |
 
 The remote delta is exact:
 
@@ -75,6 +75,10 @@ The clean `factory-wave-b` worktree was removed with its branch.
 
 Local `main` was moved from stale `b5885b15d` to
 `upstream/main` at `5879ebf09` and now tracks that authority.
+The 2026-10-01 live remote check found new upstream commits; after fetching
+and proving ancestry, local `main` was fast-forwarded again to
+`e7b485903898c93c1d2d53710cf43c676a98ff68`. The inventory's historical
+`5879ebf09` source anchor and the released candidate tag remain unchanged.
 `trial/factory-rebase` could not and was not removed because its worktree is
 in an unresolved rebase. The following state was intentionally preserved:
 
