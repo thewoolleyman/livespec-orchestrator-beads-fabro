@@ -43,7 +43,6 @@ __all__: list[str] = [
     "REASON_TRAILER_FREE_HEAD",
     "RED_TRAILER_KEY",
     "REFUSE",
-    "STRUCTURED_WRITE_TOOLS",
     "Decision",
     "decide",
     "head_state",
@@ -63,8 +62,6 @@ REASON_OPEN_RED = "open-red"
 REASON_CLOSED_HEAD = "closed-head"
 REASON_TRAILER_FREE_HEAD = "trailer-free-head"
 REASON_STUB_WITHOUT_PENDING_TEST = "stub-without-pending-test"
-
-STRUCTURED_WRITE_TOOLS = ("Write", "Edit", "MultiEdit")
 
 RED_TRAILER_KEY = "TDD-Red-Test-File-Checksum:"
 GREEN_TRAILER_KEY = "TDD-Green-Verified-At:"
