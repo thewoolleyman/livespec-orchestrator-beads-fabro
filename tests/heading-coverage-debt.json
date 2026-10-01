@@ -184,13 +184,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "heading": "## Proof credential projection",
-    "work_item": "bd-ib-7sjdzv",
-    "first_seen": "2026-09-30"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "contracts.md",
     "heading": "## Self-contained plugin dispatch",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-29"
@@ -332,13 +325,6 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 133 — A mixed item is refused ai-only from every entry path, parks for its human-attested leg, and the accept valve refuses until the record exists",
-    "work_item": "bd-ib-7sjdzv",
-    "first_seen": "2026-09-30"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 134 — A declared proof credential is projected by name and a withheld, absent, credential-shaped or over-scoped declaration is refused",
     "work_item": "bd-ib-7sjdzv",
     "first_seen": "2026-09-30"
   },
