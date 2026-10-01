@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.158.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.157.0...v0.158.0) (2026-10-01)
+
+
+### Features
+
+* **dispatcher:** grade a factory-captured assertion from the verified record (bd-ib-u6uxjv) ([72ad77d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/72ad77d2c616765f80586487c1122fddb1795b08))
+* **dispatcher:** write the Proof of Done pointer after merge (bd-ib-u6uxjv) ([d7c10d8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d7c10d877e172030718aca54d8758cc81e2c4b96))
+* **drive:** carry both record links on the pointer when the human leg lands (bd-ib-u6uxjv) ([f6ffbf1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f6ffbf1bf758ae7895385a7e208722e8d3c60ae6))
+* **drive:** refuse accept until the human-attested record exists (bd-ib-u6uxjv) ([bc6edf2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bc6edf2b7552a857d898fa153cc850b8befca0f9))
+* **needs-attention:** surface the pending human leg and the stale proof pointer (bd-ib-u6uxjv) ([0302d69](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0302d692b070dc2a88c3e38e671fb4a8824240f5))
+
 ## [0.157.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.156.0...v0.157.0) (2026-10-01)
 
 
