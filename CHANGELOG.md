@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.154.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.153.0...v0.154.0) (2026-10-01)
+
+
+### Features
+
+* **next:** exclude an unrunnable ready item from every candidate enumeration (bd-ib-3nq2tn) ([ad46e20](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ad46e206fbda7454b885974fb7e2e7133e6af3df))
+
 ## [0.153.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.152.1...v0.153.0) (2026-09-30)
 
 
