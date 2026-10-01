@@ -12,7 +12,10 @@
 //   DRAFT pull request the proof is captured on) -> proof_capture (author and
 //   execute the reproduction steps, post the Proof of Done record; S5 /
 //   bd-ib-b4u6b7) -> Claude review gate (blocking by default,
-//   merge-on-cap only via explicit escape hatch; work-item bd-ib-egms32) -> PR
+//   merge-on-cap only via explicit escape hatch; work-item bd-ib-egms32) ->
+//   proof_verify (replay those steps on a different adapter; the ONLY route to
+//   publication, so the escape hatch skips the reviewer and never the proof;
+//   S6 / bd-ib-msnlnv) -> PR
 //   marked ready + rebase auto-merge
 //   arming, with a `needs_human` TERMINAL node (plan
 //   ledger-is-the-only-gate, epic bd-ib-n77djm; contracts.md "A factory
@@ -663,21 +666,31 @@ digraph ImplementWorkItem {
     // review_fix.max_visits are hard abort backstops for the same budget and
     // MUST exceed the largest supported review_fix_visit_cap override.
     //
+    // S6 / bd-ib-msnlnv: BOTH former `review -> pr` edges now target
+    // `proof_verify`, and no `review -> pr` edge remains. The contract requires it
+    // of the ship-on-review-cap edge specifically — `merge_on_review_cap` must
+    // skip only the reviewer's approval and never the replay — and the APPROVE
+    // edge moves for the same reason one step sharper: approve is the ORDINARY
+    // path, so leaving it on `pr` would publish almost every run unreplayed while
+    // the escape hatch alone looked correct. Nothing reaches `pr` except through
+    // the replay now, which is what makes "no unreplayed proof ships" a property
+    // of the graph rather than of the reviewer's mood.
+    //
     // Routing:
-    //   - approve                 -> pr, by explicit condition only.
+    //   - approve                 -> proof_verify, by explicit condition only.
     //   - fix & under cap         -> disposition, then accepted findings route
     //                                to review_fix and all-rejected rounds
     //                                route directly back to review.
-    //   - fix & cap + escape hatch -> pr, only when merge_on_review_cap is
-    //                                rendered to outcome=succeeded.
+    //   - fix & cap + escape hatch -> proof_verify, only when merge_on_review_cap
+    //                                is rendered to outcome=succeeded.
     //   - fix & cap + default      -> needs_human; the reviewer said fix
     //                                this, so the run must not ship.
     //   - node failure             -> needs_human; weight=100 keeps that
     //                                deterministic against other conditions.
     review -> needs_human [label="Blocked", condition="outcome=failed", weight=100]
     review -> disposition [label="fix", condition="preferred_label=fix && context.internal.node_visit_count < {{ inputs.review_fix_visit_cap }}"]
-    review -> pr         [label="approve", condition="preferred_label=approve"]
-    review -> pr         [label="ship on review cap", condition="preferred_label=fix && context.internal.node_visit_count >= {{ inputs.review_fix_visit_cap }} && outcome={{ inputs.merge_on_review_cap_outcome }}"]
+    review -> proof_verify [label="approve", condition="preferred_label=approve"]
+    review -> proof_verify [label="ship on review cap", condition="preferred_label=fix && context.internal.node_visit_count >= {{ inputs.review_fix_visit_cap }} && outcome={{ inputs.merge_on_review_cap_outcome }}"]
     review -> needs_human [label="needs-human", condition="preferred_label=fix && context.internal.node_visit_count >= {{ inputs.review_fix_visit_cap }} && outcome!={{ inputs.merge_on_review_cap_outcome }}"]
     review -> needs_human [label="unmatched review outcome"]
     disposition -> needs_human [label="Blocked", condition="outcome=failed", weight=100]

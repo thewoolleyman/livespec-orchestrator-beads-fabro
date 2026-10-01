@@ -222,7 +222,14 @@ def test_the_committed_graph_resolves_exactly_the_nodes_dominating_every_green_p
     )
     critical = modules["_acp_success_critical"].derive_success_critical(graph=graph)
 
-    assert set(critical.nodes) == {"dod_gate", "implement", "proof_capture", "review", "pr"}
+    assert set(critical.nodes) == {
+        "dod_gate",
+        "implement",
+        "proof_capture",
+        "review",
+        "proof_verify",
+        "pr",
+    }
     assert critical.start == "start"
     assert critical.green_terminal == "exit"
     assert set(graph.acp_names) == {
@@ -1187,6 +1194,7 @@ def test_a_repository_with_no_committed_workflow_is_graded_against_the_bundled_o
         "implement",
         "proof_capture",
         "review",
+        "proof_verify",
         "pr",
     }
     assert verdict.viable is True
