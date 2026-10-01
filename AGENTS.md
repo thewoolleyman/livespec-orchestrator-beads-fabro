@@ -1478,7 +1478,13 @@ it there; the bullets below are what this repo was missing.
   with a `repository.pullRequest(number:)` GraphQL query, then call
   `revertPullRequest` with that id, passing the query and mutation body from
   files. Prefer re-landing the reverted change paired with whatever it broke in
-  one PR, not re-landing it alone.
+  one PR, not re-landing it alone. A revert that touches product Python is a
+  maintainer-authored pull request, so the required `check-factory-provenance`
+  job (R6b of plan `mechanically-enforce-factory-usage`) goes RED on it until
+  it carries the `factory-override` label with the reason in the body; the
+  check reads labels from the pull_request event payload, so apply the label
+  BEFORE opening the revert PR, or push or reopen after labelling. A rerun of
+  the failed job does not see a label added afterwards.
 - **Name the OWNING SESSION when attributing work to another session**
   (maintainer-declared 2026-07-26). When you report that another session made a
   change — a dirty file, a live branch, an in-flight PR, a concurrent worktree —
