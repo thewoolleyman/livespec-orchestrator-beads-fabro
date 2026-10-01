@@ -239,6 +239,19 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   and every built-in identity would silently stop attaching. And the closed
   grammar binds here too: the workflow layer is the hardest one to notice a
   typo in, because nothing in a repository mentions it.
+- `_acp_capability_gate` and `_acp_factory_capabilities` are the PURE and
+  IMPURE halves of one rule: a chain carrying `config_options` refuses before
+  claim unless the resolved factory advertises
+  `acp.candidate_config_options.v1`. The split is the usual one — the decision
+  is a pure function of a capability set, and a decision that reached for the
+  network itself could not be exercised without one. Two properties an editor
+  must not invert. The gate FAILS CLOSED when the capability list is
+  unreadable, because a gauge that passes when blinded turns a refusal into a
+  pass and leaves a record that reads healthy. And the reader is a CALLABLE,
+  consulted only when some chain actually carries options, so the ordinary
+  dispatch — every dispatch in this fleet today — pays no round trip.
+  `_dispatcher_acp_nodes._resolve_chains` is where it is called, before the
+  attach.
 - Three small modules carry rules that are ABOUT the structured form without
   belonging to any one stage of it, which is why each is its own file rather
   than a branch inside the renderer:
