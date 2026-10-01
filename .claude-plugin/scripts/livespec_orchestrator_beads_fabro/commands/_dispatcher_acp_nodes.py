@@ -25,7 +25,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_builtin_candidates import (
     builtin_acp_identities,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_capability_gate import (
-    config_options_capability_refusal,
+    acp_capability_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_catalogs import (
     AcpCatalogs,
@@ -312,10 +312,14 @@ def _resolve_chains(
     if isinstance(declared, str):
         return declared
     # BEFORE the attach, because this is a refusal about the chain as
-    # CONFIGURED: a chain asking the handler to set session options against a
-    # factory that cannot set them would otherwise run green on whatever model
-    # the agent chose for itself.
-    uncapable = config_options_capability_refusal(
+    # CONFIGURED: a chain asking the engine to advance candidates or to set
+    # session options against a factory that can do neither would otherwise run
+    # green on whatever single adapter and model the agent chose for itself.
+    #
+    # ONE reader for both of the gate's arms, built here and passed in, so the
+    # dispatch issues at most one `GET /system/info` however many nodes and
+    # capabilities are in question.
+    uncapable = acp_capability_refusal(
         chains=declared,
         factory_name=_factory_name(factory=factory),
         capabilities=factory_capability_reader(factory=factory),
