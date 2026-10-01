@@ -889,6 +889,22 @@ jobs:
           just check-shell-quality || failed="$failed check-shell-quality"
           just check-source-trees-scoped-to-consumer || failed="$failed check-source-trees-scoped-to-consumer"
           just check-vendor-manifest || failed="$failed check-vendor-manifest"
+          # Repo-local slugs (no canonical checks/<slug>.py behind them) that
+          # `just check` runs and that CAN run here: the four ledger doctors
+          # select the fake store through LIVESPEC_BEADS_FAKE=1 in their own
+          # recipes, the rest are pure filesystem guards. Mirrored by hand
+          # because the canonical reconciler never sees repo-local slugs
+          # (livespec-dev-tooling-8o8e.18); check-ci-matrix-completeness fails
+          # this batch if one goes missing (bd-ib-74sqh7).
+          just check-closed-item-integrity || failed="$failed check-closed-item-integrity"
+          just check-needs-attention-surface-ownership || failed="$failed check-needs-attention-surface-ownership"
+          just check-no-fleet-pat-dispatch-surface || failed="$failed check-no-fleet-pat-dispatch-surface"
+          just check-pi-plugin-structure || failed="$failed check-pi-plugin-structure"
+          just check-spec-governance-default-block || failed="$failed check-spec-governance-default-block"
+          just check-spec-id-presence-discipline || failed="$failed check-spec-id-presence-discipline"
+          just check-status-conformance || failed="$failed check-status-conformance"
+          just check-work-item-merge-evidence || failed="$failed check-work-item-merge-evidence"
+          just check-work-item-state-invariants || failed="$failed check-work-item-state-invariants"
           if [ -n "$failed" ]; then
             echo "Failed targets:$failed"
             exit 1

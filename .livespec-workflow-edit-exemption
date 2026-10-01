@@ -1,35 +1,9 @@
-# Workflow-edit exemption — one exemption binds to one reviewed change.
+# Workflow-edit exemption - one exemption binds to one reviewed change.
 #
-# The change: wiring `check-fabro-graph-validity` into `.github/workflows/ci.yml`
-# as a FAIL-CLOSED gate, so an invalid factory graph cannot reach master through
-# a path that never runs the host pre-push. The gate itself already merged
-# (PR 2435, c162939b); what is missing is venue coverage on the merge path.
-#
-# The named work item carries `approval:workflow-edit`, applied by the maintainer
-# on 2026-09-10 as part of the re-dispatch rider on bd-ib-6t4. That item's
-# description and comments hold the provenance, because a label alone cannot show
-# who authorized it or for which change.
-#
-# READ THIS BEFORE ASSUMING THE `.github/workflows/` EDIT IS PRESENT — IT IS NOT.
-# A Fabro factory run CANNOT carry it. Measured in the bd-ib-6t4 sandbox on
-# 2026-09-10, with a well-formed declaration in place and a workflow file
-# touched, `check-no-workflow-edits` exits 2:
-#
-#     no usable bd binary (LIVESPEC_BD_PATH unset or not executable, and no bd
-#     on PATH)
-#     the ledger-held authorization could not be evaluated — FAILING CLOSED
-#
-# The guard verifies the approval label through `bd`; no `bd` exists inside the
-# sandbox, and the guard carries no environment escape by design. So the
-# workflow edit lands MAINTAINER-SIDE, per the factory-branch boundary's
-# "restore that file, publish the rest, report the dropped diff" rule. The
-# dispatched run reports the dropped unified diff in full.
-#
-# CONSEQUENCE FOR WHOEVER LANDS THAT DIFF: this declaration must be RE-AUTHORED
-# in the branch that carries the workflow edit. The guard rejects a declaration
-# it finds only in the base — "inherited from origin/master, not authored by
-# this change", exit 1 — and once this file merges ahead of the edit it is
-# exactly that. Touching it in the landing branch (refreshing this note, or the
-# reason below) re-authors it and clears the guard.
-work_item=bd-ib-6t4
-reason=Wire check-fabro-graph-validity into ci.yml's metadata batch fail-closed (LIVESPEC_FABRO_GRAPH_VALIDATION=fail_when_fabro_absent) after a new step installs the pinned, sha256-verified upstream fabro-sh/fabro v0.254.0 x86_64 musl release, so an invalid factory graph cannot merge through a path that skips the host pre-push. Root-cause fix for two all_conditional_edges outages (2026-07-16, and release 0.146.0 on 2026-09-09) that each took the whole factory down. Authorized by the maintainer's approval:workflow-edit label on bd-ib-6t4, 2026-09-10.
+# The change: mirror nine repo-local `just check` slugs into the
+# check-metadata-batch job of .github/workflows/ci.yml, so the gates the
+# aggregate already runs locally also run on every pull request, and delete
+# their PROVISIONAL repo_local_ci_skips entries from pyproject.toml. No product
+# code changes; the slugs' own recipes are unchanged.
+work_item=bd-ib-74sqh7
+reason=Mirror nine CI-runnable repo-local check slugs (four ledger doctors on the fake store, five filesystem guards) into the check-metadata-batch job and delete their provisional repo_local_ci_skips entries, closing the CI-invisible-slug gap livespec-dev-tooling v1.90.0's check-ci-matrix-completeness reports (livespec-dev-tooling-8o8e.18). Maintainer pre-approved all human gates for plan mechanically-enforce-factory-usage on 2026-10-01 and the approval:workflow-edit label was applied on that instruction.
