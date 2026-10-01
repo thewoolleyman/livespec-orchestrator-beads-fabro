@@ -29,7 +29,7 @@ operator who opts in gets the strict grammar they opted into.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_forms import (
@@ -83,13 +83,23 @@ _ENABLING_KEYS: frozenset[str] = (CANDIDATE_KEYS - {"command", "env", "args"}) |
 
 @dataclass(frozen=True, kw_only=True)
 class AcpNodeChain:
-    """One node's declared identity, metadata and ordered fallback candidates."""
+    """One node's declared identity, metadata and ordered fallback candidates.
+
+    `config_options` is the PRIMARY's requested ACP session options, and it is
+    non-empty only for a STRUCTURED entry whose agent declares the `protocol`
+    mechanism. It rides the chain rather than the adapter because that is where
+    the contract puts it: a protocol agent takes its model in-protocol, so there
+    is nothing to put on a command line. A manual entry never carries one --
+    `config_options` is refused in committed configuration -- so the field is
+    empty for every other spelling.
+    """
 
     identity: AcpCandidateIdentity | None = None
     signatures: tuple[AcpAvailabilitySignature, ...] = ()
     pricing: AcpCandidatePricing | None = None
     fallbacks: tuple[AcpCandidate, ...] = ()
     enabled: bool = False
+    config_options: Mapping[str, str] = field(default_factory=dict)
 
 
 # What a node with no new-grammar metadata resolves to. Shared rather than
@@ -200,6 +210,7 @@ def _structured_chain(
         pricing=candidate.pricing,
         fallbacks=fallbacks,
         enabled=True,
+        config_options=candidate.config_options,
     )
 
 

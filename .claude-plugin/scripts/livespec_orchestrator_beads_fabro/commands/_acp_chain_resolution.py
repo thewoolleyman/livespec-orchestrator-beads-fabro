@@ -146,6 +146,11 @@ def _attach_one(
         identity=chain.identity or builtins.get(resolved.rendered),
         signatures=chain.signatures,
         pricing=chain.pricing,
+        # The requested session options the chain declared for its primary. A
+        # fallback keeps them because it IS parsed as a candidate; the primary
+        # is rebuilt here from the resolved adapter, so they have to be carried
+        # across explicitly or a protocol agent silently runs its own default.
+        config_options=chain.config_options,
     )
     duplicate = _duplicate_identity_refusal(node=node, primary=primary, fallbacks=chain.fallbacks)
     if duplicate is not None:
