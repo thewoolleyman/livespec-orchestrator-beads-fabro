@@ -85,6 +85,16 @@ def _edges(*, text: str) -> list[str]:
     ]
 
 
+def _edges_from(*, text: str, node: str) -> list[str]:
+    return [edge for edge in _edges(text=text) if edge.startswith(f"{node} ->")]
+
+
+def _verify_edges_to(*, target: str) -> list[str]:
+    """Every committed `proof_verify -> <target>` edge line."""
+    edges = _edges_from(text=_dot(payload=_BUNDLE), node=_VERIFY)
+    return [edge for edge in edges if edge.startswith(f"{_VERIFY} -> {target}")]
+
+
 def _input_value(*, toml: str, name: str) -> str | None:
     """One `[run.inputs]` string value, or `None` when the payload declares none."""
     match = re.search(rf'^\s*{name}\s*=\s*"(?P<value>.+)"', toml, re.MULTILINE)
@@ -208,6 +218,86 @@ def test_the_registered_variant_declares_the_verify_node_and_leaves_it_unreached
     assert _acp_node_names(payload=_VARIANT) == _acp_node_names(payload=_BUNDLE)
     assert _input_value(toml=_toml(payload=_VARIANT), name=_VERIFY_ADAPTER_INPUT) is not None
     assert not any(_VERIFY in edge for edge in _edges(text=_dot(payload=_VARIANT)))
+
+
+def test_a_verified_verdict_is_the_only_thing_that_reaches_pr() -> None:
+    """One `pr` edge, and it is CONDITIONAL on the approve label.
+
+    Both halves are the assertion. "There is an edge to `pr`" would be satisfied
+    just as well by an unconditional fallthrough — which is precisely the shape
+    the contract forbids, because every verdict other than `verified` would then
+    publish. So the `pr` edge is asserted to carry a condition, and to be the
+    only one of its kind.
+    """
+    published = _verify_edges_to(target="pr")
+
+    assert len(published) == 1, f"expected exactly one proof_verify -> pr edge, got {published}"
+    assert "condition=" in published[0]
+    assert "preferred_label=approve" in published[0]
+
+
+def test_a_non_reproduction_routes_to_fix_under_a_visit_bound_of_three() -> None:
+    """`not_reproduced` goes back to `fix`, and only below the third visit.
+
+    The bound is read off the EDGE GUARD rather than off a node attribute, and
+    the guard is on this node's OWN visit count — the same shape the janitor fix
+    loop uses, for the same engine reason: a `max_visits` abort emits no outcome,
+    so nothing could route the exhaustion onward.
+
+    The literal `3` is asserted rather than a rendered input token, because
+    `constraints.md` forbids these nodes from referencing an `inputs.*` token
+    inside an edge condition: the pinned engine expands graph templates at
+    run-create time and an un-expanded token in a condition is a guard that
+    never matches.
+    """
+    repaired = _verify_edges_to(target="fix")
+
+    assert len(repaired) == 1, f"expected exactly one proof_verify -> fix edge, got {repaired}"
+    assert "preferred_label=fix" in repaired[0]
+    assert "context.internal.node_visit_count < 3" in repaired[0]
+    assert "inputs." not in repaired[0]
+
+
+def test_the_third_non_reproduction_routes_to_the_non_converged_terminal() -> None:
+    """Exhaustion reaches the EXISTING terminal, not a new one and not a park.
+
+    `non_converged` is what the Dispatcher reads as `needs-regroom`: a slice
+    whose proof will not replay three times running is the empirical too-big
+    signal and belongs in grooming. Its guard is asserted as the exact
+    complement of the `fix` edge's, so no verdict can fall between the two.
+    """
+    exhausted = _verify_edges_to(target="non_converged")
+
+    assert len(exhausted) == 1, f"expected one proof_verify -> non_converged edge, {exhausted}"
+    assert "preferred_label=fix" in exhausted[0]
+    assert "context.internal.node_visit_count >= 3" in exhausted[0]
+    assert "inputs." not in exhausted[0]
+
+
+def test_a_failed_replay_parks_and_an_unmatched_verdict_falls_through_to_needs_human() -> None:
+    """The node's two `needs_human` routes, and why the fallthrough is one of them.
+
+    A FAILED outcome is the structured needs-human ending every ACP node here
+    shares, weighted so it stays deterministic against the label conditions. The
+    UNCONDITIONAL fallback also lands at `needs_human`, and that choice is
+    load-bearing twice over: the engine rejects a node whose every outgoing edge
+    carries a condition (`all_conditional_edges`, the defect that took the whole
+    factory down twice), and of the four possible fallthrough targets it is the
+    only one that neither publishes an unreplayed proof nor reports an unreadable
+    verdict as a converged non-reproduction.
+    """
+    edges = _edges_from(text=_dot(payload=_BUNDLE), node=_VERIFY)
+    parked = _verify_edges_to(target="needs_human")
+
+    fallthrough = [edge for edge in edges if "condition=" not in edge]
+    assert len(fallthrough) == 1, f"expected exactly one unconditional edge, got {fallthrough}"
+    assert fallthrough[0].startswith(f"{_VERIFY} -> needs_human")
+    assert "unmatched proof_verify outcome" in fallthrough[0]
+    assert len(parked) == 2
+    blocked = [edge for edge in parked if "condition=" in edge]
+    assert len(blocked) == 1
+    assert 'condition="outcome=failed"' in blocked[0]
+    assert "weight=100" in blocked[0]
 
 
 def test_the_verify_prompt_exists_and_replays_the_published_steps_verbatim() -> None:

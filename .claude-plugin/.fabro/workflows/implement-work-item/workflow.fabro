@@ -686,6 +686,44 @@ digraph ImplementWorkItem {
     disposition -> needs_human [label="unmatched disposition outcome"]
     review_fix -> janitor
 
+    // Proof-replay routing (S6 / bd-ib-msnlnv). The replay node emits a routing
+    // verdict on its last line (prompts/proof-verify.md), mapping its RECORD
+    // verdict onto the label vocabulary the graph already uses:
+    // `verified` -> approve, `not_reproduced` -> fix. Reusing the existing
+    // vocabulary is what constraints.md asks of these nodes, so the graph stays
+    // loadable on the engine the factory moves onto.
+    //
+    // THE `pr` EDGE CARRIES A CONDITION, AND THAT IS THE WHOLE POINT OF THE NODE.
+    // The contract forbids any route from here to `pr` on a verdict other than
+    // `verified`, so publication cannot be the unconditional fallthrough — a
+    // fallthrough to `pr` would ship every unreadable verdict and every
+    // non-reproduction, which is exactly what this stage exists to stop. The
+    // fallthrough position therefore goes to `needs_human`, which also satisfies
+    // `all_conditional_edges` (a node whose every outgoing edge is conditional is
+    // rejected outright by the engine, before any node runs).
+    //
+    // THE VISIT BOUND IS A LITERAL 3, not a rendered input, because
+    // constraints.md forbids these nodes from referencing an `inputs.*` token
+    // inside an edge condition: the engine expands graph templates at run-create
+    // time and an un-expanded token in a condition is a guard that never matches.
+    // It reads this node's OWN visit count, exactly as the janitor's fix-loop
+    // guard reads the janitor's: visits 1 and 2 route a non-reproduction back to
+    // `fix`, and the THIRD falls to `non_converged`, which the Dispatcher reads as
+    // `needs-regroom` — a proof that will not replay three times running is the
+    // empirical too-big signal and belongs in grooming. The two guards are exact
+    // complements (`< 3` and `>= 3`), so no `fix` verdict can slip between them
+    // into the fallthrough.
+    //
+    // A `fix` round re-enters `janitor`, which re-earns a green janitor and
+    // therefore re-enters `publish_draft`, `proof_capture` and `review` before
+    // returning here — so a proof loop costs a review visit, counted against the
+    // review-fix budget like any other, which is what the contract says it is.
+    proof_verify -> needs_human   [label="Blocked", condition="outcome=failed", weight=100]
+    proof_verify -> pr            [label="verified", condition="preferred_label=approve"]
+    proof_verify -> fix           [label="not reproduced", condition="preferred_label=fix && context.internal.node_visit_count < 3"]
+    proof_verify -> non_converged [label="Exhausted (proof-replay cap)", condition="preferred_label=fix && context.internal.node_visit_count >= 3"]
+    proof_verify -> needs_human   [label="unmatched proof_verify outcome"]
+
     // A failed pr stage (hook rejection, gh failure — structured
     // needs-human ending per prompts/pr.md) terminates at needs_human too.
     // A pr stage that reports success is NOT trusted on its own word: it
