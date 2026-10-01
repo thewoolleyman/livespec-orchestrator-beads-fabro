@@ -981,6 +981,44 @@ jobs:
           HONEYCOMB_GITHUB_CI_INGEST_KEY_LIVESPEC: ${{ secrets.HONEYCOMB_GITHUB_CI_INGEST_KEY_LIVESPEC }}
         run: bash .github/scripts/export-ci-telemetry.sh
 
+  # Factory-provenance merge gate (R6b of plan mechanically-enforce-factory-usage,
+  # bd-ib-xugp7m; the check body is R6a, bd-ib-s3cxrl). A pull request that
+  # touches product Python must be authored by the factory GitHub App unless it
+  # carries the `factory-override` label with the reason in its body. The check
+  # reads the pull_request event payload and `git diff base..head` ONLY: no
+  # tenant, no forge API, no secret, so a credential outage cannot wedge it.
+  # pull_request-only because a push event carries no pull_request payload
+  # (ci_gate_parity classifies that condition as stricter-only). It becomes
+  # required through ci-green's needs list, the single protected context.
+  check-factory-provenance:
+    name: check-factory-provenance
+    if: github.event_name == 'pull_request'
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.91.2
+    env:
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+    steps:
+      - name: Checkout (full history; the check diffs base..head itself)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Trust workspace for git (container root-vs-checkout uid)
+        run: git config --global --add safe.directory '*'
+
+      - name: mise trust + install (baked tools; install is a near-no-op)
+        run: |
+          mise trust
+          mise install
+
+      - name: uv sync (all groups)
+        run: uv sync --all-groups
+
+      - name: just check-factory-provenance
+        run: just check-factory-provenance
+
   # fleet-ci-aggregate-coverage (epic livespec-cf4bcu) slice 5: the single
   # all-green gate job. It `needs:` every check-bearing job and fails if any
   # dependency failed or was cancelled — a pure GitHub-expression gate (no
@@ -995,7 +1033,7 @@ jobs:
   # (push-only, not a gate) is intentionally absent from `needs:`.
   ci-green:
     name: ci-green
-    needs: [check-python, check-per-file-coverage, check-coverage, check-python-batch, check-doctor-static, check-metadata, check-metadata-batch, e2e-cli, acceptance]
+    needs: [check-python, check-per-file-coverage, check-coverage, check-python-batch, check-doctor-static, check-metadata, check-metadata-batch, e2e-cli, acceptance, check-factory-provenance]
     if: always()
     runs-on: ubuntu-latest
     steps:

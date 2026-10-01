@@ -1,9 +1,10 @@
 # Workflow-edit exemption - one exemption binds to one reviewed change.
 #
-# The change: mirror nine repo-local `just check` slugs into the
-# check-metadata-batch job of .github/workflows/ci.yml, so the gates the
-# aggregate already runs locally also run on every pull request, and delete
-# their PROVISIONAL repo_local_ci_skips entries from pyproject.toml. No product
-# code changes; the slugs' own recipes are unchanged.
-work_item=bd-ib-74sqh7
-reason=Mirror nine CI-runnable repo-local check slugs (four ledger doctors on the fake store, five filesystem guards) into the check-metadata-batch job and delete their provisional repo_local_ci_skips entries, closing the CI-invisible-slug gap livespec-dev-tooling v1.90.0's check-ci-matrix-completeness reports (livespec-dev-tooling-8o8e.18). Maintainer pre-approved all human gates for plan mechanically-enforce-factory-usage on 2026-10-01 and the approval:workflow-edit label was applied on that instruction.
+# The change: add the check-factory-provenance job to .github/workflows/ci.yml
+# (pull_request-only, container shape mirrored from check-doctor-static, full
+# history checkout, invoking the scripts/bin factory_provenance_check wrapper
+# shipped by R6a) and append it to the ci-green aggregate's needs list so it
+# becomes required through the single protected context. No product code
+# changes; the check body landed in bd-ib-s3cxrl.
+work_item=bd-ib-xugp7m
+reason=Wire the R6a factory-provenance merge check into CI as a required pull_request job (R6b of plan mechanically-enforce-factory-usage, epic bd-ib-btr5do) so a product-Python pull request not authored by the factory GitHub App fails unless it carries the factory-override label. Maintainer pre-approved all human gates for this plan on 2026-10-01 and the approval:workflow-edit label was applied on that instruction.
