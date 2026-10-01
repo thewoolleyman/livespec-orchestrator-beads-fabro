@@ -11,6 +11,8 @@ make. You do NOT edit code — you read the diff and emit a verdict.
 
 - Review ONLY the change on this branch: `git diff origin/{{ inputs.default_branch }}...HEAD`.
 - The complete work-item goal is in the Fabro-injected `Goal:` preamble above.
+- Review the CAPTURED PROOF alongside the code — see the next section. It is
+  part of this review, not a step that follows your verdict.
 
 - Judge solely: does this diff correctly, minimally, and well accomplish
   THAT work-item?
@@ -21,6 +23,49 @@ make. You do NOT edit code — you read the diff and emit a verdict.
   broader refactors, or tests the work-item did not ask for.
   Scope-expansion is itself a review error — you guard against a Rube
   Goldberg machine, you do not build one.
+
+## The captured Proof of Done is part of this review
+
+Before this stage, `publish_draft` opened a DRAFT pull request for this
+item's publish branch and `proof_capture` posted a Proof of Done record on
+it. Read the LATEST such record — its first line begins
+`Proof of Done — captured — run ` — alongside the diff:
+
+    gh pr list --head <publish branch> --state open --json number
+    gh pr view <number> --json comments
+
+Take the latest one, not the first: every accepted fix round re-earns a green
+janitor and therefore re-captures, so earlier records describe trees that no
+longer exist.
+
+Judge the record on three things, in the work-item's own scope:
+
+- **Do the steps prove the assertion they are filed under?** A step that
+  demonstrates something adjacent, or that asserts the conclusion rather than
+  showing it, is a `[BLOCKING]` finding — the next stage replays these steps
+  and a `verified` verdict on steps that prove the wrong thing is worse than
+  no proof at all.
+- **Could a stranger follow them?** The replay runs on a different adapter
+  with no access to the capturing agent's reasoning. Steps that are
+  ambiguous, that skip a precondition, or that name no expected observation
+  are `[BLOCKING]`.
+- **Does the record leak a credential?** A value, a fragment of one, or a
+  command whose output would print one is `[BLOCKING]` without exception.
+  Steps name credentials by environment-variable name and nothing else.
+
+A record that names every `human_attested` assertion as pending attestation
+is correct and complete — the factory is not meant to have captured those.
+
+### A record older than the tree is `[BLOCKING]`
+
+If the latest captured record was posted BEFORE the tree you are reviewing —
+or if no captured record exists on the pull request at all — that is a
+`[BLOCKING]` finding, not an advisory one, and it is blocking even when the
+code itself is perfect. The whole point of capturing before review is that
+the record and the tree stay in lockstep; a record older than the tree means
+the proof the replay is about to reproduce describes code nobody shipped.
+Compare the record's own timestamp and run id against the branch's commit
+timestamps, and say which you compared in the finding.
 
 ## The lens — what a senior engineer weighs
 
