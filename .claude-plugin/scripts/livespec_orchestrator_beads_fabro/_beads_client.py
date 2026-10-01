@@ -128,6 +128,7 @@ class BeadsClient(Protocol):
         metadata: dict[str, Any] | None = None,
         acceptance_criteria: str | None = None,
         notes: str | None = None,
+        description: str | None = None,
     ) -> None:
         """Mutate an existing issue's status / assignee / parent / labels / content.
 
@@ -259,6 +260,7 @@ class ShellBeadsClient:
         metadata: dict[str, Any] | None = None,
         acceptance_criteria: str | None = None,
         notes: str | None = None,
+        description: str | None = None,
     ) -> None:
         verb_args = build_update_argv(
             issue_id=issue_id,
@@ -271,6 +273,7 @@ class ShellBeadsClient:
             metadata=metadata,
             acceptance_criteria=acceptance_criteria,
             notes=notes,
+            description=description,
         )
         if len(verb_args) <= _UPDATE_ARGV_NO_OP_LENGTH:
             return

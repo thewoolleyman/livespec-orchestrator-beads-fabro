@@ -46,6 +46,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     is_non_convergence_outcome,
     item_sizing_warnings,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_pointer_write import (
+    write_proof_pointer,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_ACCEPTANCE_POLICY,
     acceptance_decision,
@@ -127,6 +130,17 @@ def complete_and_accept(
         raw_labels=() if isinstance(labels, str) else labels,
     )
     journal.append(record=acceptance_pass.journal_record(work_item_id=item.id, policy=policy))
+    # The pointer is written BEFORE any disposition branch, because every branch
+    # is a possible end state for the item and the pointer is provenance of the
+    # merge rather than of the verdict: an item that parks keeps the record its
+    # pass read, and one that closes carries the pointer into `done`.
+    write_proof_pointer(
+        repo=repo,
+        item=item,
+        outcome=outcome,
+        proof=acceptance_pass.proof,
+        journal=journal,
+    )
     decision = acceptance_decision(policy=policy)
     if acceptance_pass.verdict == NEEDS_ATTENTION_VERDICT:
         # A cannot-judge verdict NEVER disposes, under EVERY acceptance_policy

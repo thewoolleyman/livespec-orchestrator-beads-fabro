@@ -130,6 +130,7 @@ class FakeBeadsClient:
         metadata: dict[str, Any] | None = None,
         acceptance_criteria: str | None = None,
         notes: str | None = None,
+        description: str | None = None,
     ) -> None:
         record = self._issues.get(issue_id)
         if record is None:
@@ -139,11 +140,16 @@ class FakeBeadsClient:
             )
         _update_scalar_fields(
             record=record,
-            status=status,
-            parent_id=parent_id,
-            metadata=metadata,
-            acceptance_criteria=acceptance_criteria,
-            notes=notes,
+            fields={
+                "status": status,
+                "parent_id": parent_id,
+                # The only field that is COPIED rather than referenced: the
+                # caller's dict must not become the tenant's own.
+                "metadata": None if metadata is None else dict(metadata),
+                "acceptance_criteria": acceptance_criteria,
+                "notes": notes,
+                "description": description,
+            },
         )
         _update_assignee(record=record, assignee=assignee, clear_assignee=clear_assignee)
         _add_labels(record=record, labels=add_labels)
@@ -202,25 +208,17 @@ class FakeBeadsClient:
 _FAKE_HOLDER: list[FakeBeadsClient] = []
 
 
-def _update_scalar_fields(
-    *,
-    record: BeadsRecord,
-    status: str | None,
-    parent_id: str | None,
-    metadata: dict[str, Any] | None,
-    acceptance_criteria: str | None,
-    notes: str | None,
-) -> None:
-    if status is not None:
-        record["status"] = status
-    if parent_id is not None:
-        record["parent_id"] = parent_id
-    if metadata is not None:
-        record["metadata"] = dict(metadata)
-    if acceptance_criteria is not None:
-        record["acceptance_criteria"] = acceptance_criteria
-    if notes is not None:
-        record["notes"] = notes
+def _update_scalar_fields(*, record: BeadsRecord, fields: dict[str, Any]) -> None:
+    """Apply every field the caller supplied, leaving the ones it did not alone.
+
+    The fields ride as a mapping rather than as one parameter each because
+    `update_issue` is a PARTIAL update: every column it can touch is an
+    independent optional mutation, so a per-column parameter list grows with the
+    schema and the body is the same two lines repeated once per column.
+    """
+    for key, value in fields.items():
+        if value is not None:
+            record[key] = value
 
 
 def _update_assignee(
