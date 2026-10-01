@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.157.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.156.0...v0.157.0) (2026-10-01)
+
+
+### Features
+
+* **factory:** replay the Proof of Done before publication (bd-ib-msnlnv) ([b0a38e5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b0a38e5accbe7dc329c054a217fd712e76ac1f47))
+
 ## [0.156.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.155.0...v0.156.0) (2026-10-01)
 
 
