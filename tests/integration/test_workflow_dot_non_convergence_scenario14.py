@@ -129,7 +129,16 @@ def test_dead_implementer_routes_unchanged_work_away_from_review() -> None:
 
 
 def test_changed_implementation_still_reaches_review_normally() -> None:
-    """A non-empty diff keeps the existing janitor-to-review gate path."""
+    """A non-empty diff still reaches the review gate on the green path.
+
+    The green janitor no longer edges STRAIGHT to `review`. Since S5
+    (bd-ib-b4u6b7) it edges to `publish_draft`, which publishes the draft pull
+    request and falls through to `proof_capture`, which is what reaches `review`.
+    So the claim this case makes — a changed tree is reviewed rather than
+    short-circuited — is asserted along the whole route rather than on the one
+    edge that used to carry it; keying on the old single edge would now fail on a
+    graph that reviews perfectly well.
+    """
     text = _dot_text()
 
     assert (
@@ -140,5 +149,8 @@ def test_changed_implementation_still_reaches_review_normally() -> None:
         is not None
     )
     assert (
-        re.search(r'janitor\s*->\s*review\b[^\n]*condition="outcome=succeeded"', text) is not None
+        re.search(r'janitor\s*->\s*publish_draft\b[^\n]*condition="outcome=succeeded"', text)
+        is not None
     )
+    assert re.search(r"publish_draft\s*->\s*proof_capture\b", text) is not None
+    assert re.search(r"proof_capture\s*->\s*review\b", text) is not None

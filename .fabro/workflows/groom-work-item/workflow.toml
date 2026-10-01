@@ -113,6 +113,15 @@ disposition_adapter = "npx -y @agentclientprotocol/claude-agent-acp"
 # required.
 dod_gate_adapter = "ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
 
+# Declared for the `proof_capture` node this graph declares and never reaches, on
+# the bundle's own default for it (the implementer entry) so a target that pins
+# the node once gets the same adapter through either graph. Carried rather than
+# acted on, for the same reason `dod_gate_adapter` above is: a groom run
+# publishes a plan, so there is no implementation tree to prove. The node's
+# declaration comment in `workflow.fabro` carries why declaring it is still
+# required.
+proof_capture_adapter = "ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
+
 # THE PER-ITEM POLICY FAMILY, all three, because the Dispatcher renders all
 # three on EVERY dispatch and fabro rejects an `--input` naming an input the run
 # config does not declare. A variant that dropped one would not merely disagree

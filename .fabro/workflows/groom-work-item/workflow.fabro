@@ -113,6 +113,27 @@ digraph GroomWorkItem {
         timeout="1800s"
     ]
 
+    // Peer parity for `proof_capture` (S5 / bd-ib-b4u6b7), declared for exactly
+    // the reason `dod_gate` above is: the adapter, model and timeout layers
+    // address every ACP node name the RESERVED workflow carries, and a layer
+    // naming a node this payload does not declare is a pre-run refusal -- so an
+    // absent declaration would make an ordinary repository-level
+    // `dispatcher.acp_nodes.proof_capture` pin break groom dispatch alone, with
+    // nothing in the item to explain which of its two graphs objected.
+    //
+    // NOT REACHING it is what keeps the variant coherent. `proof_capture` proves
+    // a Definition of Done against a published pull request; this graph's entire
+    // purpose is to PRODUCE Definitions of Done for the slices it cuts, and what
+    // it publishes is a plan rather than an implementation. There is no
+    // implementation tree to prove, and on the propose phase no pull request to
+    // prove it on.
+    proof_capture [
+        label="Proof capture: declared for the layers, unreached by design"
+        backend="acp"
+        acp.command="{{ inputs.proof_capture_adapter }}"
+        timeout="1800s"
+    ]
+
     // The groom node. It derives the phase from the rendered goal, then either
     // drafts the cut (propose) or prepares the filing plan (apply). It writes
     // NOTHING to the ledger in either phase -- the apply phase's filing is the

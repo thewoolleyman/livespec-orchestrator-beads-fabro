@@ -38,7 +38,16 @@ _CLAUDE_OPUS_5_ADAPTER = (
 # One adapter input per ACP node, keyed by the node it belongs to.
 _NODE_ACP = {
     node: 'acp.command="{{ inputs.' + node + '_adapter }}"'
-    for node in ("dod_gate", "implement", "fix", "review_fix", "pr", "review", "disposition")
+    for node in (
+        "dod_gate",
+        "implement",
+        "fix",
+        "review_fix",
+        "proof_capture",
+        "pr",
+        "review",
+        "disposition",
+    )
 }
 _IMPLEMENTER_NODES = ("implement", "fix", "review_fix")
 

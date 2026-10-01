@@ -77,12 +77,21 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # and summing all three would bill a worst case no run can reach. They still
 # resolve their timeouts from configuration like every other node; they just
 # do not contribute to the ceiling.
+#
+# `publish_draft` and `proof_capture` (S5 / bd-ib-b4u6b7) sit between a GREEN
+# janitor and `review`, so each is reached once per green janitor and its budget
+# tracks the REVIEW loop's rather than the janitor fix loop's: a run whose
+# reviewer asks for the default three fix rounds earns a green janitor four times
+# and therefore passes through this pair four times. Budgeting them at the
+# janitor's three would under-bill the one path that actually spends them most.
 _WORST_CASE_VISITS: Mapping[str, int] = {
     "dod_gate": 2,
     "implement": 2,
     "implementation_diff": 2,
     "janitor": 3,
     "fix": 2,
+    "publish_draft": 4,
+    "proof_capture": 4,
     "review": 4,
     "disposition": 3,
     "review_fix": 3,
