@@ -335,3 +335,174 @@ def test_an_unreachable_receiver_reports_a_failed_emission_rather_than_raising(
         parent_span_id="",
         now_ns=_NOW_NS,
     )
+
+
+# --- endpoint resolution: absence is a successful no-op -------------------
+
+
+def test_a_configured_endpoint_is_resolved_from_the_sandbox_env_var() -> None:
+    span = _load_span()
+    assert span.ENDPOINT_ENV_VAR == "LIVESPEC_SANDBOX_OTEL_ENDPOINT"
+    assert span.resolve_endpoint(environ={span.ENDPOINT_ENV_VAR: _ENDPOINT}) == _ENDPOINT
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_a_blank_endpoint_resolves_to_no_endpoint(value: str) -> None:
+    span = _load_span()
+    assert span.resolve_endpoint(environ={span.ENDPOINT_ENV_VAR: value}) == ""
+
+
+def test_an_absent_endpoint_resolves_to_no_endpoint() -> None:
+    span = _load_span()
+    assert span.resolve_endpoint(environ={}) == ""
+
+
+def test_the_exporter_is_a_successful_no_op_when_no_endpoint_is_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No endpoint must mean no post, no error, and no raise.
+
+    A human session with no receiver is the normal case for this guard, so the
+    exporter has to stay silent there rather than erroring once per decision.
+    """
+    span = _load_span()
+    posted: list[object] = []
+
+    def _record(request: Any, timeout: float) -> _FakeResponse:  # noqa: ARG001
+        posted.append(request)
+        return _FakeResponse(status=200)
+
+    monkeypatch.setattr(span.urllib.request, "urlopen", _record)
+    assert not span.emit_decision_span(
+        decision=_decision(),
+        endpoint="",
+        trace_id=_TRACE_ID,
+        span_id=_SPAN_ID,
+        parent_span_id="",
+        now_ns=_NOW_NS,
+    )
+    assert span.emit_for_decision(decision=_decision(), environ={}) == span.NO_ENDPOINT
+    assert posted == []
+
+    # Positive control for the assertion above: the SAME double does record a
+    # post once an endpoint is configured, so the empty list is a measurement
+    # rather than a double that was never wired in.
+    configured = {span.ENDPOINT_ENV_VAR: _ENDPOINT}
+    assert span.emit_for_decision(decision=_decision(), environ=configured) == span.EMITTED
+    assert len(posted) == 1
+
+
+# --- W3C trace context ----------------------------------------------------
+
+
+def test_a_valid_traceparent_supplies_the_trace_and_parent_span_ids() -> None:
+    span = _load_span()
+    assert span.TRACE_CONTEXT_ENV_VAR == "TRACEPARENT"
+    traceparent = f"00-{_TRACE_ID}-{_PARENT_SPAN_ID}-01"
+    assert span.trace_context(
+        environ={span.TRACE_CONTEXT_ENV_VAR: traceparent}, fallback_trace_id="f" * 32
+    ) == (_TRACE_ID, _PARENT_SPAN_ID)
+
+
+def test_an_uppercase_traceparent_is_accepted_and_normalized() -> None:
+    span = _load_span()
+    traceparent = f"00-{_TRACE_ID.upper()}-{_PARENT_SPAN_ID.upper()}-01"
+    assert span.trace_context(
+        environ={span.TRACE_CONTEXT_ENV_VAR: traceparent}, fallback_trace_id="f" * 32
+    ) == (_TRACE_ID, _PARENT_SPAN_ID)
+
+
+@pytest.mark.parametrize(
+    "traceparent",
+    [
+        "",
+        "   ",
+        "not-a-traceparent",
+        f"01-{_TRACE_ID}-{_PARENT_SPAN_ID}-01",
+        f"00-{_TRACE_ID}-{_PARENT_SPAN_ID}",
+        f"00-{_TRACE_ID[:-1]}-{_PARENT_SPAN_ID}-01",
+        f"00-{_TRACE_ID}-{_PARENT_SPAN_ID[:-1]}-01",
+        f"00-{'z' * 32}-{_PARENT_SPAN_ID}-01",
+        f"00-{'0' * 32}-{_PARENT_SPAN_ID}-01",
+        f"00-{_TRACE_ID}-{'0' * 16}-01",
+    ],
+)
+def test_an_absent_or_malformed_traceparent_starts_a_root_trace(traceparent: str) -> None:
+    span = _load_span()
+    fallback = "a" * 32
+    assert span.trace_context(
+        environ={span.TRACE_CONTEXT_ENV_VAR: traceparent}, fallback_trace_id=fallback
+    ) == (fallback, "")
+
+
+def test_a_missing_traceparent_variable_starts_a_root_trace() -> None:
+    span = _load_span()
+    fallback = "b" * 32
+    assert span.trace_context(environ={}, fallback_trace_id=fallback) == (fallback, "")
+
+
+# --- the resolved emission preserves the run's trace context --------------
+
+
+def test_the_emitted_span_joins_the_run_trace_named_by_traceparent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    span = _load_span()
+    seen: dict[str, Any] = {}
+
+    def _urlopen(request: Any, timeout: float) -> _FakeResponse:  # noqa: ARG001
+        seen["data"] = request.data
+        return _FakeResponse(status=200)
+
+    monkeypatch.setattr(span.urllib.request, "urlopen", _urlopen)
+    environ = {
+        span.ENDPOINT_ENV_VAR: _ENDPOINT,
+        span.TRACE_CONTEXT_ENV_VAR: f"00-{_TRACE_ID}-{_PARENT_SPAN_ID}-01",
+    }
+    assert span.emit_for_decision(decision=_decision(), environ=environ) == span.EMITTED
+    emitted = _only_span(body=json.loads(seen["data"].decode("utf-8")))
+    assert emitted["traceId"] == _TRACE_ID
+    assert emitted["parentSpanId"] == _PARENT_SPAN_ID
+    assert emitted["spanId"] != _PARENT_SPAN_ID
+    assert len(emitted["spanId"]) == 16
+    assert int(emitted["startTimeUnixNano"]) > 0
+
+
+def test_an_emission_with_no_traceparent_is_a_root_span(monkeypatch: pytest.MonkeyPatch) -> None:
+    span = _load_span()
+    seen: dict[str, Any] = {}
+
+    def _urlopen(request: Any, timeout: float) -> _FakeResponse:  # noqa: ARG001
+        seen["data"] = request.data
+        return _FakeResponse(status=200)
+
+    monkeypatch.setattr(span.urllib.request, "urlopen", _urlopen)
+    assert (
+        span.emit_for_decision(decision=_decision(), environ={span.ENDPOINT_ENV_VAR: _ENDPOINT})
+        == span.EMITTED
+    )
+    emitted = _only_span(body=json.loads(seen["data"].decode("utf-8")))
+    assert "parentSpanId" not in emitted
+    assert len(emitted["traceId"]) == 32
+
+
+def test_an_undelivered_emission_is_reported_as_such(monkeypatch: pytest.MonkeyPatch) -> None:
+    span = _load_span()
+
+    def _urlopen(request: Any, timeout: float) -> _FakeResponse:  # noqa: ARG001
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(span.urllib.request, "urlopen", _urlopen)
+    assert (
+        span.emit_for_decision(decision=_decision(), environ={span.ENDPOINT_ENV_VAR: _ENDPOINT})
+        == span.UNDELIVERED
+    )
+
+
+def test_the_three_emission_statuses_are_distinct_and_self_describing() -> None:
+    span = _load_span()
+    assert {span.EMITTED, span.NO_ENDPOINT, span.UNDELIVERED} == {
+        "emitted",
+        "no-endpoint",
+        "undelivered",
+    }
