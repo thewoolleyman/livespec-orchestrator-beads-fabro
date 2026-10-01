@@ -26,6 +26,7 @@ this module reuses that scan rather than growing a second vocabulary.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast
@@ -33,11 +34,18 @@ from typing import cast
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_secrets import secret_marker
 
 __all__: list[str] = [
+    "COPIED_PROVISIONING",
+    "MINTED_PER_RUN_CREDENTIALS",
+    "MINTED_PROVISIONING",
     "PROOF_CREDENTIALS_KEY",
     "PROOF_CREDENTIAL_CAPABILITIES",
     "READ_ONLY_CAPABILITY",
+    "WITHHELD_DISPATCH_CREDENTIALS",
     "ProofCredential",
     "parse_proof_credentials",
+    "proof_credential_provisioning",
+    "proof_credentials_env_lines",
+    "proof_credentials_refusal",
 ]
 
 PROOF_CREDENTIALS_KEY = "proof_credentials"
@@ -57,6 +65,43 @@ PROOF_CREDENTIAL_CAPABILITIES: tuple[str, ...] = (READ_ONLY_CAPABILITY,)
 # graded against the enumeration; `name` and `purpose` are scanned for a pasted
 # value, because a declaration carrying one has already committed a secret.
 _DECLARATION_FIELDS: tuple[str, ...] = ("name", "purpose", "capability")
+
+# The withheld dispatch credentials, each mapped to the class the contract names
+# it under. A proof credential may never be one of these: the sandbox is a
+# read-only consumer of what the host projects, and these two are precisely what
+# the host keeps.
+#
+# TWO ENTRIES, NOT FOUR, AND THE ABSENCES ARE DELIBERATE. The contract names four
+# classes; only two of them carry an environment-variable NAME in this build, and
+# a predicate must key on the narrowest surface that actually requires the
+# withheld capability rather than approximate it. There is no long-lived
+# personal access token to name — the fleet-PAT fallback is retired and
+# `mint-app-token` resolves fail-closed with no second route — and the host
+# provider refresh credential lives in the host's own agent credential file, not
+# in the environment, so no declared `name` can reach it. A future name for
+# either belongs HERE, as a named entry; it does not belong in a substring
+# heuristic over `name`, which would refuse dispatchable declarations.
+WITHHELD_DISPATCH_CREDENTIALS: Mapping[str, str] = {
+    "BEADS_DOLT_PASSWORD": "the work-items store credential",
+    "GITHUB_PRIVATE_KEY": "the durable GitHub App private key",
+}
+
+# How a projected proof credential was provisioned, which the dispatch journal
+# records per declaration. `minted` is the preferred form wherever the provider
+# offers a management interface that can mint a scoped, expiring credential,
+# because a minted credential expires on its own rather than handing the sandbox
+# a copy of the host's.
+MINTED_PROVISIONING = "minted"
+COPIED_PROVISIONING = "copied"
+
+# The names this build MINTS per run rather than copying from its own
+# environment. `GITHUB_TOKEN` is the GitHub App installation token the Dispatcher
+# mints fresh for every dispatch and the overlay already projects: scoped,
+# expiring, and never the durable App key. A declaration naming it is therefore
+# minted, needs no host value, and must NOT be projected a second time — a
+# duplicate key would make the whole overlay unparseable, turning one
+# repository's declaration into a dispatch-wide failure.
+MINTED_PER_RUN_CREDENTIALS: tuple[str, ...] = ("GITHUB_TOKEN",)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -135,7 +180,25 @@ def _parse_entry(*, entry: object, index: int) -> ProofCredential | str:
 
 
 def _declaration_refusal(*, credential: ProofCredential) -> str | None:
-    """The capability and value-shape grades over one well-shaped entry."""
+    """The withheld, capability and value-shape grades over one well-shaped entry.
+
+    WITHHELD IS GRADED FIRST, and that ordering is load-bearing rather than
+    stylistic. Every withheld name is ITSELF credential-shaped —
+    `BEADS_DOLT_PASSWORD` case-folds to text carrying `password`,
+    `GITHUB_PRIVATE_KEY` to text carrying `private_key` — so a ladder that ran the
+    marker scan first would report the generic "reads as a literal credential"
+    fault for the two declarations this module most needs to refuse by name, and
+    the withheld refusal would be unreachable in practice while looking perfectly
+    well tested.
+    """
+    if credential.name in WITHHELD_DISPATCH_CREDENTIALS:
+        return (
+            f"{_DECLARED_KEY} declaration {credential.name} names a withheld "
+            f"dispatch credential ({WITHHELD_DISPATCH_CREDENTIALS[credential.name]}); "
+            "the factory sandbox is a read-only consumer of what the host projects "
+            "and never holds this one, so work needing it must be host-routed "
+            "rather than declared as a proof credential"
+        )
     if credential.capability not in PROOF_CREDENTIAL_CAPABILITIES:
         return (
             f"{_DECLARED_KEY} declaration {credential.name} declares capability "
@@ -153,8 +216,21 @@ def _credential_shaped_refusal(*, credential: ProofCredential) -> str | None:
 
     Scanned in declaration order — `name` then `purpose` — so a declaration that
     pasted a value into both is reported at the field an operator reads first.
+
+    A name the Dispatcher ITSELF provisions is exempt from the `name` arm, and the
+    exemption is narrow by construction: those names are credential-NAMED
+    (`GITHUB_TOKEN` carries the `token` marker), and what this scan exists to catch
+    is a pasted VALUE, not a well-known key the Dispatcher already projects under
+    that spelling. `purpose` is scanned either way, because free prose is where a
+    pasted value actually lands. The withheld names are refused above and never
+    reach here, so the exempt set is exactly the minted one.
     """
-    for position, text in (("name", credential.name), ("purpose", credential.purpose)):
+    scanned = (
+        (("purpose", credential.purpose),)
+        if credential.name in MINTED_PER_RUN_CREDENTIALS
+        else (("name", credential.name), ("purpose", credential.purpose))
+    )
+    for position, text in scanned:
         marker = secret_marker(text=text)
         if marker is not None:
             return (
@@ -164,3 +240,76 @@ def _credential_shaped_refusal(*, credential: ProofCredential) -> str | None:
                 "own environment through the target's credential wrapper"
             )
     return None
+
+
+def proof_credential_provisioning(*, credential: ProofCredential) -> str:
+    """Whether this declaration's credential is MINTED per run or COPIED from the host."""
+    if credential.name in MINTED_PER_RUN_CREDENTIALS:
+        return MINTED_PROVISIONING
+    return COPIED_PROVISIONING
+
+
+def proof_credentials_refusal(
+    *, block: Mapping[str, object], environ: Mapping[str, str], wrapper_text: str
+) -> str | None:
+    """The pre-dispatch gate over one repository's declaration: None to proceed.
+
+    Two grades, in this order. The DECLARATION grades come first, through the
+    parse, because they are faults in committed configuration and hold regardless
+    of what any environment carries. The ENVIRONMENT grade follows: a declared
+    name whose value the Dispatcher does not hold cannot be projected, and the
+    refusal names the target's credential wrapper because injecting it is that
+    wrapper's job and the Dispatcher has no other route to the value.
+
+    A MINTED name is exempt from the environment grade. Its value is provisioned
+    by the Dispatcher itself, later on the same dispatch, so refusing it for an
+    absent host value would refuse a credential that is about to exist.
+    """
+    parsed = parse_proof_credentials(block=block)
+    if isinstance(parsed, str):
+        return parsed
+    for credential in parsed:
+        if proof_credential_provisioning(credential=credential) == MINTED_PROVISIONING:
+            continue
+        if not environ.get(credential.name, ""):
+            return (
+                f"{_DECLARED_KEY} declaration {credential.name} is declared but its "
+                "value is absent from the Dispatcher's own environment; the target's "
+                f"credential_wrapper ({wrapper_text}) must inject it before a proof "
+                "stage can exercise the service it observes"
+            )
+    return None
+
+
+def proof_credentials_env_lines(*, block: Mapping[str, object], environ: Mapping[str, str]) -> str:
+    """The overlay env lines projecting this repository's declared proof credentials.
+
+    Rendered as inline values in the uncommitted, mode-600 run-configuration
+    overlay — the SAME channel that already carries the dispatch credential set,
+    rather than a second one. That transport is implementation-owned: the pinned
+    engine offers no secret-reference syntax, so a by-name reference the worker
+    could resolve does not exist yet, and a change of transport must not change
+    the declaration this reads.
+
+    FAIL-CLOSED ON EVERY DOUBT. A declaration the parse refuses renders NOTHING,
+    and a name whose value is absent is skipped rather than projected empty. The
+    gate above runs before this on every dispatch path, so neither arm should be
+    reachable in production; they are written this way because the opposite shape
+    — render whatever parses — would project a credential nobody admitted, and
+    that is the expensive direction to be wrong in.
+    """
+    parsed = parse_proof_credentials(block=block)
+    if isinstance(parsed, str):
+        return ""
+    rendered: list[str] = []
+    for credential in parsed:
+        # A minted name is already projected by the overlay's own credential
+        # table; a second TOML line under the same key would make the whole
+        # overlay unparseable.
+        if proof_credential_provisioning(credential=credential) == MINTED_PROVISIONING:
+            continue
+        value = environ.get(credential.name, "")
+        if not value:
+            continue
+        rendered.append(f"{credential.name} = {json.dumps(value)}\n")
+    return "".join(rendered)
