@@ -39,6 +39,7 @@ __all__: list[str] = [
     "HEAD_OPEN_RED",
     "REASON_CLOSED_HEAD",
     "REASON_OPEN_RED",
+    "REASON_STUB_CARVEOUT",
     "REASON_STUB_WITHOUT_PENDING_TEST",
     "REASON_TRAILER_FREE_HEAD",
     "RED_TRAILER_KEY",
@@ -59,6 +60,7 @@ ALLOW = "allow"
 REFUSE = "refuse"
 
 REASON_OPEN_RED = "open-red"
+REASON_STUB_CARVEOUT = "new-module-stub-carveout"
 REASON_CLOSED_HEAD = "closed-head"
 REASON_TRAILER_FREE_HEAD = "trailer-free-head"
 REASON_STUB_WITHOUT_PENDING_TEST = "stub-without-pending-test"
@@ -163,7 +165,13 @@ def _verdict(
 ) -> tuple[str, str]:
     if head_state == HEAD_OPEN_RED:
         return ALLOW, REASON_OPEN_RED
-    if not exists_at_head and not test_change_pending:
+    if not exists_at_head:
+        # The ONE carveout: a module absent from HEAD may be created as a
+        # failing stub while its test is being written. It is gated on that
+        # pending test change precisely so it cannot license building a whole
+        # item out of "stubs" before any Red exists.
+        if test_change_pending:
+            return ALLOW, REASON_STUB_CARVEOUT
         return REFUSE, REASON_STUB_WITHOUT_PENDING_TEST
     if head_state == HEAD_CLOSED:
         return REFUSE, REASON_CLOSED_HEAD
