@@ -100,13 +100,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "heading": "## Agent and model catalogs",
-    "work_item": "bd-ib-jxvgq5",
-    "first_seen": "2026-09-29"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "contracts.md",
     "heading": "## Beads connection model",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-08"
@@ -292,13 +285,6 @@
     "heading": "## Scenario 128 — An unrunnable ready item is visible but never advertised for dispatch",
     "work_item": "livespec-n33rwg.10",
     "first_seen": "2026-09-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 129 — A structured candidate renders through the catalogs and keeps the manual form as the escape hatch",
-    "work_item": "bd-ib-jxvgq5",
-    "first_seen": "2026-09-29"
   },
   {
     "spec_root": "SPECIFICATION",
