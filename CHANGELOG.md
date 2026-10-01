@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.159.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.158.0...v0.159.0) (2026-10-01)
+
+
+### Features
+
+* **tdd-order-guard:** admit a new-module stub paired with an uncommitted test (bd-ib-2alvyt) ([167b293](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/167b29300a22752e55fa06060539dbb9b806031e))
+* **tdd-order-guard:** arm the guard on every write surface and trace each decision (bd-ib-2alvyt) ([cc6c6fc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cc6c6fc7bf47e4ce77fae945fea41122e8c0af24))
+* **tdd-order-guard:** decide a parsed shell write exactly as a structured write (bd-ib-2alvyt) ([9af9a6f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9af9a6fdb10a360cc89a4fa29970c4cb0c5d85b3))
+* **tdd-order-guard:** emit a scrubbed OTLP span for every order decision (bd-ib-2alvyt) ([9094363](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9094363fe1eb878ee1cedd1bd49ce58882443650))
+* **tdd-order-guard:** join the run trace and no-op without an endpoint (bd-ib-2alvyt) ([254f436](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/254f436bd2b78012b7eed91bcd17f2cdd31f7417))
+* **tdd-order-guard:** refuse a product write outside an open Red (bd-ib-2alvyt) ([9b6c04a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9b6c04a4fe7fd5ef745d5f216416e045e4976ba4))
+
 ## [0.158.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.157.0...v0.158.0) (2026-10-01)
 
 
