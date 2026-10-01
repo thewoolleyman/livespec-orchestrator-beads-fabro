@@ -108,10 +108,20 @@ own verification discipline turns on.
 
 ## 4. The affected items
 
-**NOT YET ENUMERATED — owed by one host-side run of the §2 command.**
+**ENUMERATED 2026-10-01T22:00Z** by one host-side run of the §2 command against
+the live tenant, through the repository's own `.claude-plugin/scripts/bin/needs_attention.py`
+at master `2cc26a8f` (release 0.160.0). The run was taken twice independently —
+first by the plan's independent completeness reviewer, then by the archiving
+session — and the two id sets are identical (symmetric difference empty).
+Instrument trap recorded for the next reader: the SAME command through a plugin
+cache build older than S2/S9 (measured on `9156657d7716`, v0.152.1) returns ZERO
+facts with exit 0, because that build predates the fact lane; the §2 command
+names the repository path for exactly this reason, so run it there. The §2
+independent second reading at the same instant: 47 rows physically `ready` off
+the raw ledger versus `next` advertising a total of 5 (the five archive-time
+carriers of this plan), which agrees in direction with the 44 refusals below.
 
-Paste its output into the table below, one row per id, and record the date of
-the run. The `summary` each row carries already states the resolved
+One row per id, as the instrument reported it on that date. The `summary` each row carries already states the resolved
 effective-criteria source and the gradeable-assertion count, which is what says
 WHICH repair applies: a row resolved from `criteria-field` or
 `description-exit-criteria` has criteria in a legacy place and needs them MOVED
@@ -121,11 +131,57 @@ reference line is missing or does not resolve.
 
 | Work-item id | Resolved criteria source | Gradeable assertions | Repair |
 | --- | --- | --- | --- |
-| _(pending the host run)_ | | | |
+| bd-ib-07qe | description-exit-criteria | 0 | move the criteria into a `## Definition of Done` section |
+| bd-ib-40vz | criteria-field | 4 | move the criteria into a `## Definition of Done` section |
+| bd-ib-4ouajy | criteria-field | 5 | move the criteria into a `## Definition of Done` section |
+| bd-ib-bc2fno | criteria-field | 7 | move the criteria into a `## Definition of Done` section |
+| bd-ib-bic7hb | description-exit-criteria | 0 | move the criteria into a `## Definition of Done` section |
+| bd-ib-bvg2w2 | description-exit-criteria | 0 | move the criteria into a `## Definition of Done` section |
+| bd-ib-bxlt3m | criteria-field | 2 | move the criteria into a `## Definition of Done` section |
+| bd-ib-cewr.2 | criteria-field | 6 | move the criteria into a `## Definition of Done` section |
+| bd-ib-cgvifj | criteria-field | 9 | move the criteria into a `## Definition of Done` section |
+| bd-ib-ckocwc | description-exit-criteria | 0 | move the criteria into a `## Definition of Done` section |
+| bd-ib-e26omv | criteria-field | 9 | move the criteria into a `## Definition of Done` section |
+| bd-ib-eguh | criteria-field | 3 | move the criteria into a `## Definition of Done` section |
+| bd-ib-elvxv2 | description-exit-criteria | 0 | move the criteria into a `## Definition of Done` section |
+| bd-ib-f728 | criteria-field | 3 | move the criteria into a `## Definition of Done` section |
+| bd-ib-fhjqbv | criteria-field | 4 | move the criteria into a `## Definition of Done` section |
+| bd-ib-fmwyjz | criteria-field | 6 | move the criteria into a `## Definition of Done` section |
+| bd-ib-gajho2 | description-exit-criteria | 0 | move the criteria into a `## Definition of Done` section |
+| bd-ib-i7ag | criteria-field | 5 | move the criteria into a `## Definition of Done` section |
+| bd-ib-kgo6f6 | criteria-field | 5 | move the criteria into a `## Definition of Done` section |
+| bd-ib-knnhbn | description-exit-criteria | 0 | move the criteria into a `## Definition of Done` section |
+| bd-ib-lijsh5 | description-exit-criteria | 0 | move the criteria into a `## Definition of Done` section |
+| bd-ib-lza6.1 | criteria-field | 1 | move the criteria into a `## Definition of Done` section |
+| bd-ib-nqw5t3 | description-exit-criteria | 0 | move the criteria into a `## Definition of Done` section |
+| bd-ib-p38r | criteria-field | 23 | move the criteria into a `## Definition of Done` section |
+| bd-ib-pq7zu3 | description-exit-criteria | 0 | move the criteria into a `## Definition of Done` section |
+| bd-ib-pz7x | description-exit-criteria | 0 | move the criteria into a `## Definition of Done` section |
+| bd-ib-q8ox | criteria-field | 6 | move the criteria into a `## Definition of Done` section |
+| bd-ib-qfv9 | criteria-field | 2 | move the criteria into a `## Definition of Done` section |
+| bd-ib-rrhbmm | criteria-field | 2 | move the criteria into a `## Definition of Done` section |
+| bd-ib-s6frql | description-exit-criteria | 0 | move the criteria into a `## Definition of Done` section |
+| bd-ib-t2m6kx | criteria-field | 6 | move the criteria into a `## Definition of Done` section |
+| bd-ib-tbgxm4 | criteria-field | 5 | move the criteria into a `## Definition of Done` section |
+| bd-ib-tk6e | criteria-field | 5 | move the criteria into a `## Definition of Done` section |
+| bd-ib-tmgt7v | criteria-field | 8 | move the criteria into a `## Definition of Done` section |
+| bd-ib-tw4v | description-exit-criteria | 0 | move the criteria into a `## Definition of Done` section |
+| bd-ib-ugzoyj | criteria-field | 5 | move the criteria into a `## Definition of Done` section |
+| bd-ib-vcq9 | description-exit-criteria | 0 | move the criteria into a `## Definition of Done` section |
+| bd-ib-w4h4 | description-exit-criteria | 0 | move the criteria into a `## Definition of Done` section |
+| bd-ib-wc35 | criteria-field | 15 | move the criteria into a `## Definition of Done` section |
+| bd-ib-wmuxvy | criteria-field | 8 | move the criteria into a `## Definition of Done` section |
+| bd-ib-xigh7o | criteria-field | 8 | move the criteria into a `## Definition of Done` section |
+| bd-ib-xvhecz | description-exit-criteria | 0 | move the criteria into a `## Definition of Done` section |
+| bd-ib-y1b7 | criteria-field | 14 | move the criteria into a `## Definition of Done` section |
+| bd-ib-zp2axi | description-exit-criteria | 0 | move the criteria into a `## Definition of Done` section |
 
-This section is the one part of S9's Definition of Done that a factory run
-structurally cannot discharge, and it is recorded as outstanding rather than
-reported as empty.
+This section was the one part of S9's Definition of Done that a factory run
+structurally could not discharge; it was recorded as outstanding when S9 merged
+and discharged by the host-side run above at the plan's archive (44 affected
+rows: 27 resolved from `criteria-field`, 17 from `description-exit-criteria`,
+none from a `description-definition-of-done` section with an unresolved
+reference).
 
 ## 5. Why there is no backfill and no exemption list
 

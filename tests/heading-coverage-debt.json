@@ -311,21 +311,21 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 131 — The Definition of Done gate admits a coherent item, refuses a malformed one host-side, and rests an incoherent one at needs-human",
-    "work_item": "bd-ib-7sjdzv",
+    "work_item": "bd-ib-ymy7xq",
     "first_seen": "2026-09-30"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 132 — A factory-captured proof is captured on a draft pull request, reviewed, replayed and published",
-    "work_item": "bd-ib-7sjdzv",
+    "work_item": "bd-ib-nfp3ux",
     "first_seen": "2026-09-30"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 133 — A mixed item is refused ai-only from every entry path, parks for its human-attested leg, and the accept valve refuses until the record exists",
-    "work_item": "bd-ib-7sjdzv",
+    "work_item": "bd-ib-qm4luz",
     "first_seen": "2026-09-30"
   },
   {
