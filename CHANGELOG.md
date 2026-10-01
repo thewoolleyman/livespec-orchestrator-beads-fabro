@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.161.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.160.0...v0.161.0) (2026-10-01)
+
+
+### Features
+
+* accept a structured JSON object as an --acp-node value (bd-ib-kc7vzk) ([a8ede58](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a8ede5861167cc4fc05a55721dfb4402eb3a11dd))
+* carry a protocol candidate's config_options onto the chain primary (bd-ib-kc7vzk) ([ad03833](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ad03833ed79cba49c5e0991fb20f088bbef40b10))
+* close the two-form candidate grammar and derive identity from the catalogs (bd-ib-kc7vzk) ([a94bbf0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a94bbf076247de0524887097841705d383005486))
+* express the workflow's built-in ACP defaults structurally (bd-ib-kc7vzk) ([ae230ed](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ae230ed04916071d87026b67a80b4e48c067650b))
+* gate a config_options chain on the factory capability (bd-ib-kc7vzk) ([ea0d6c6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ea0d6c69294e96c68dad70ecd3af53f641aeb400))
+* read per-repository ACP catalog additions under the closed grammar (bd-ib-kc7vzk) ([26ecbd5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/26ecbd5d4c71ddb473c39cd72365cbfbd2b3641d))
+* refuse the retired dispatcher.codex_models shorthand (bd-ib-kc7vzk) ([a737e47](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a737e4744cf4944e687ad2470bd777903e9bdd80))
+* render a structured ACP candidate into the manual form (bd-ib-kc7vzk) ([8e1f8b5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8e1f8b58016488ebc0e7b3fabda3822cce920b37))
+* require model and effort on every codex-acp candidate (bd-ib-kc7vzk) ([43b4618](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/43b4618e45cfe7f1b8399fd6107e056bab1591f8))
+* ship the committed ACP agent and model catalogs (bd-ib-kc7vzk) ([c6552bd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c6552bde241e6f80ef15b2e2499c9858da16d3f4))
+
 ## [0.160.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.159.0...v0.160.0) (2026-10-01)
 
 
