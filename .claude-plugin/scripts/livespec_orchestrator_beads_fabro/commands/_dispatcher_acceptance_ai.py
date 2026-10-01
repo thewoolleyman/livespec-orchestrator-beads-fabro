@@ -16,6 +16,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_diff impo
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
     ChangeClassification,
+    EffectiveCriteria,
     change_classification,
     effective_criteria,
 )
@@ -24,6 +25,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     DispatchOutcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import (
+    ProofLeg,
+    read_proof_leg,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -74,6 +79,7 @@ class AcceptancePassResult:
     criteria: tuple[CriterionCheck, ...]
     absent_evidence: tuple[str, ...]
     classification: ChangeClassification
+    proof: ProofLeg | None = None
 
     def journal_record(self, *, work_item_id: str, policy: str) -> dict[str, object]:
         return {
@@ -101,6 +107,11 @@ class AcceptancePassResult:
                 "passed": self.telemetry_passed,
                 "reason": self.telemetry_reason,
             },
+            # Named per assertion, which the proof-evidence-leg clause requires
+            # of the pass's journal record: "the evidence leg it used and the
+            # record comment it read". `None` for a legacy-source item, which
+            # declares no proof mode and is graded on merged-diff vocabulary.
+            "proof": None if self.proof is None else self.proof.as_record(),
         }
 
 
@@ -127,15 +138,30 @@ def run_acceptance_pass(
     classification = change_classification(raw_labels=raw_labels)
     diff_result = read_merged_diff(repo=repo, outcome=outcome, runner=active_runner)
     telemetry = _telemetry_evidence(outcome=outcome)
-    checks = criteria_checks(
-        criteria_text=effective_criteria(item=item).text,
-        merged_diff=diff_result.merged_diff,
-        telemetry_passed=telemetry.passed,
+    criteria = effective_criteria(item=item)
+    # A non-empty `proof_modes` is exactly the condition the clause draws the line
+    # on: it is populated only by the Definition of Done source, and an item with
+    # modes MUST NOT be graded by merged-diff vocabulary. A legacy-source item
+    # declares no mode, so it keeps the pre-v114 leg and never reaches the forge.
+    proof = (
+        read_proof_leg(repo=repo, criteria=criteria, outcome=outcome, runner=active_runner)
+        if criteria.proof_modes
+        else None
+    )
+    checks = (
+        proof.checks
+        if proof is not None
+        else criteria_checks(
+            criteria_text=criteria.text,
+            merged_diff=diff_result.merged_diff,
+            telemetry_passed=telemetry.passed,
+        )
     )
     absent = _absent_evidence(
         diff=diff_result,
         telemetry=telemetry,
-        checks=checks,
+        criteria=criteria,
+        proof=proof,
         classification=classification,
     )
     return AcceptancePassResult(
@@ -148,6 +174,7 @@ def run_acceptance_pass(
         criteria=checks,
         absent_evidence=absent,
         classification=classification,
+        proof=proof,
     )
 
 
@@ -185,10 +212,18 @@ def _absent_evidence(
     *,
     diff: DiffResult,
     telemetry: _TelemetryEvidence,
-    checks: tuple[CriterionCheck, ...],
+    criteria: EffectiveCriteria,
+    proof: ProofLeg | None,
     classification: ChangeClassification,
 ) -> tuple[str, ...]:
-    """Name every evidence leg the pass could not observe, in judging order."""
+    """Name every evidence leg the pass could not observe, in judging order.
+
+    The criteria leg is read off the PARSE rather than off the check set, because
+    the two stopped being the same thing when the proof leg arrived: a proof-graded
+    item whose record evidences nothing yields zero checks from criteria that
+    parsed perfectly well, and naming the criteria leg for it would report an
+    ungradeable Definition of Done where the real absence is the record.
+    """
     legs: list[str] = []
     if not telemetry.observed:
         legs.append(_TELEMETRY_LEG)
@@ -203,8 +238,10 @@ def _absent_evidence(
         # zero-change merge surfaces as itself rather than as a diff nobody
         # could read.
         legs.append(_EMPTY_MERGED_DIFF_LEG if diff.empty else _MERGED_DIFF_LEG)
-    if not checks:
+    if not criteria.assertions:
         legs.append(_EFFECTIVE_CRITERIA_LEG)
+    if proof is not None:
+        legs.extend(proof.absent_evidence)
     return tuple(legs)
 
 
