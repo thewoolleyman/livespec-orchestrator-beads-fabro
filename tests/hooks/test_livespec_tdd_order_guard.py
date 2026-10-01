@@ -33,6 +33,7 @@ import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 
@@ -46,6 +47,8 @@ _OTHER_PRODUCT_PATH = "hooks/other_guard.py"
 _TEST_PATH = "tests/hooks/test_some_guard.py"
 _RED_TRAILER = "TDD-Red-Test-File-Checksum: sha256:abc"
 _GREEN_TRAILER = "TDD-Green-Verified-At: 2026-10-01T00:00:00Z"
+_TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
+_PARENT_SPAN_ID = "00f067aa0ba902b7"
 
 _FIXTURE_PYPROJECT = """\
 [project]
@@ -492,3 +495,179 @@ def test_a_project_dir_that_is_not_a_repository_refuses_rather_than_admitting(
     )
     assert denial is not None
     assert "no-trailers" in str(denial["reason"])
+
+
+# --- telemetry: one span per decision -------------------------------------
+
+
+class _FakeResponse:
+    def __init__(self, *, status: int) -> None:
+        self.status = status
+
+    def __enter__(self) -> _FakeResponse:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+
+def _capture_posts(*, guard: ModuleType, monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """Intercept the span exporter's POSTs and return the captured list."""
+    posted: list[Any] = []
+
+    def _urlopen(request: Any, timeout: float) -> _FakeResponse:  # noqa: ARG001
+        posted.append(request)
+        return _FakeResponse(status=200)
+
+    monkeypatch.setattr(guard.span.urllib.request, "urlopen", _urlopen)
+    return posted
+
+
+def _posted_attributes(*, request: Any) -> dict[str, Any]:
+    body = json.loads(request.data.decode("utf-8"))
+    emitted = body["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    return {entry["key"]: entry["value"]["stringValue"] for entry in emitted["attributes"]}
+
+
+def test_a_refusal_emits_one_decision_span_on_the_runs_trace(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    guard = _load_guard()
+    posted = _capture_posts(guard=guard, monkeypatch=monkeypatch)
+    _commit_product(repo=repo, message=f"feat: thing\n\n{_RED_TRAILER}\n{_GREEN_TRAILER}\n")
+    monkeypatch.setenv(guard.span.ENDPOINT_ENV_VAR, "http://172.17.0.1:4318")
+    monkeypatch.setenv(guard.span.TRACE_CONTEXT_ENV_VAR, f"00-{_TRACE_ID}-{_PARENT_SPAN_ID}-01")
+
+    denial = _drive(
+        guard=guard,
+        payload=_structured(tool="Write", path=_PRODUCT_PATH),
+        repo=repo,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    assert denial is not None
+    assert len(posted) == 1
+    assert posted[0].full_url == "http://172.17.0.1:4318/v1/traces"
+
+    attributes = _posted_attributes(request=posted[0])
+    assert attributes["tdd.decision"] == "refuse"
+    assert attributes["tdd.path"] == _PRODUCT_PATH
+    assert attributes["tdd.head_state"] == "closed"
+    assert attributes["tdd.reason"] == "closed-head"
+    assert attributes["tdd.tool"] == "Write"
+
+    body = json.loads(posted[0].data.decode("utf-8"))
+    emitted = body["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    assert emitted["traceId"] == _TRACE_ID
+    assert emitted["parentSpanId"] == _PARENT_SPAN_ID
+
+
+def test_an_allow_also_emits_a_decision_span(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    guard = _load_guard()
+    posted = _capture_posts(guard=guard, monkeypatch=monkeypatch)
+    _commit_product(repo=repo, message=f"feat: thing\n\n{_RED_TRAILER}\n")
+    monkeypatch.setenv(guard.span.ENDPOINT_ENV_VAR, "http://172.17.0.1:4318")
+
+    assert (
+        _drive(
+            guard=guard,
+            payload=_structured(tool="Edit", path=_PRODUCT_PATH),
+            repo=repo,
+            monkeypatch=monkeypatch,
+            capsys=capsys,
+        )
+        is None
+    )
+    assert len(posted) == 1
+    attributes = _posted_attributes(request=posted[0])
+    assert attributes["tdd.decision"] == "allow"
+    assert attributes["tdd.reason"] == "open-red"
+    assert attributes["tdd.tool"] == "Edit"
+
+
+def test_a_write_outside_the_product_universe_emits_no_span(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A non-product write is not a decision of this guard, so it is not a span.
+
+    The positive control below is what makes the empty list evidence: the same
+    interception records a post for a product path in the same test.
+    """
+    guard = _load_guard()
+    posted = _capture_posts(guard=guard, monkeypatch=monkeypatch)
+    _commit_product(repo=repo, message=f"feat: thing\n\n{_RED_TRAILER}\n")
+    monkeypatch.setenv(guard.span.ENDPOINT_ENV_VAR, "http://172.17.0.1:4318")
+
+    assert (
+        _drive(
+            guard=guard,
+            payload=_structured(tool="Write", path="README.md"),
+            repo=repo,
+            monkeypatch=monkeypatch,
+            capsys=capsys,
+        )
+        is None
+    )
+    assert posted == []
+
+    assert (
+        _drive(
+            guard=guard,
+            payload=_structured(tool="Write", path=_PRODUCT_PATH),
+            repo=repo,
+            monkeypatch=monkeypatch,
+            capsys=capsys,
+        )
+        is None
+    )
+    assert len(posted) == 1
+
+
+def test_no_span_is_posted_when_no_sandbox_endpoint_is_configured(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    guard = _load_guard()
+    posted = _capture_posts(guard=guard, monkeypatch=monkeypatch)
+    _commit_product(repo=repo, message=f"feat: thing\n\n{_RED_TRAILER}\n{_GREEN_TRAILER}\n")
+    monkeypatch.delenv(guard.span.ENDPOINT_ENV_VAR, raising=False)
+
+    denial = _drive(
+        guard=guard,
+        payload=_structured(tool="Write", path=_PRODUCT_PATH),
+        repo=repo,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    assert denial is not None, "the refusal must stand with or without telemetry"
+    assert posted == []
+
+
+# --- registration: the guard is actually wired to the tool surface --------
+
+
+def test_the_guard_is_registered_as_a_pretooluse_hook_on_every_write_surface() -> None:
+    """An unregistered guard is an unarmed guard, so the wiring is asserted.
+
+    The matcher has to name the three structured write tools AND `Bash`: the
+    shell write forms are exactly the leg a structured-only matcher would miss.
+    """
+    settings = json.loads((_REPO_ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    commands = [
+        hook["command"]
+        for entry in settings["hooks"]["PreToolUse"]
+        for hook in entry["hooks"]
+        if "livespec_tdd_order_guard.py" in hook["command"]
+    ]
+    assert len(commands) == 1, "the guard must be registered exactly once"
+
+    matchers = [
+        entry["matcher"]
+        for entry in settings["hooks"]["PreToolUse"]
+        for hook in entry["hooks"]
+        if "livespec_tdd_order_guard.py" in hook["command"]
+    ]
+    assert len(matchers) == 1
+    for tool in ("Write", "Edit", "MultiEdit", "Bash"):
+        assert tool in matchers[0]
