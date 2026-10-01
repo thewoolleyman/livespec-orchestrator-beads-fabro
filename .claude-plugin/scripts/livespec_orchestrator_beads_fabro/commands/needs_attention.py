@@ -50,6 +50,10 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_model_fallback 
 from livespec_orchestrator_beads_fabro.commands._needs_attention_orphan_runs import (
     orphan_run_items,
 )
+from livespec_orchestrator_beads_fabro.commands._needs_attention_proof import (
+    pending_human_attestation_items,
+    stale_proof_pointer_items,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_ready_aging import (
     ReadyAgingContext,
     ReadyAgingSeams,
@@ -219,6 +223,15 @@ def build_attention(
         # silent on every lane here — nothing is stranded, held, or aging — so
         # without it an unrunnable item is visible only by being noticed.
         + unrunnable_acceptance_items(project_root=project_root, repo=repo_name, items=materialized)
+        # The two Proof of Done hygiene rows. A parked item awaiting its human
+        # attestation is otherwise indistinguishable from any other parked
+        # acceptance, and a stale pointer is silent on every lane here, so
+        # without these two the first is visible only by reading the item's
+        # Definition of Done and the second only by reading its pull request.
+        + pending_human_attestation_items(
+            project_root=project_root, repo=repo_name, items=materialized
+        )
+        + stale_proof_pointer_items(project_root=project_root, repo=repo_name, items=materialized)
         # A run the ledger disowns holds a factory scheduler slot, and no
         # surface keyed on THIS repo's records can see it: the projection is
         # the reconciler's own dry run, so the lane and the remedy it prints
