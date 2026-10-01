@@ -894,13 +894,17 @@ the stale one. Fleet source: the livespec `agent-disciplines.md` discipline
 The Dispatcher's host-direct path (`dispatcher.py loop` run on the host, NOT in
 the orchestrator container) connects to a long-lived Fabro server on
 **`127.0.0.1:32276`**. Installing the plugin does NOT start it; the maintainer
-runs it directly from `~/.fabro/bin/fabro`. Measured 2026-09-12, the two
-factory hosts DIVERGE: `hp` runs `fabro 0.254.0 (4b8cc85 2026-09-12)` (fork
-PR 8, `bd-ib-bindom`) and `vps` still runs `fabro 0.254.0 (977cb67
-2026-09-09)`; neither carries the S4 ACP fallback chain merged into the
-carrier on 2026-09-12 (`bd-ib-mujvyn`, fork PR 9) nor the in-protocol model
-and effort selection merged on 2026-09-30 (`bd-ib-afcn3d`, fork PR 10),
-whose deployment is S7 of plan `bd-ib-jxvgq5`. Both builds come from
+runs it directly from `~/.fabro/bin/fabro`. Measured 2026-10-01: `hp` runs
+`fabro 0.254.0 (8869e88 2026-10-01)`, the carrier tip, which carries the S4
+ACP fallback chain (`bd-ib-mujvyn`, fork PR 9) and the in-protocol model and
+effort selection (`bd-ib-afcn3d`, fork PR 10); S7a of plan `bd-ib-jxvgq5`
+(`bd-ib-q32gs5`) deployed it with `fabro.4b8cc85-pre-s7.bak` retained. `vps`
+is a RETIRED factory — its unit has been stopped and disabled since
+2026-09-11 by maintainer direction (`bd-ib-3ysb6k`) and it is absent from
+`.livespec.jsonc` `factories` — but its on-disk `~/.fabro/bin/fabro` was
+re-pinned to the same build (`fabro.977cb67-pre-s7.bak` retained) so the
+Dispatcher's local client matches the hp engine. The `dispatcher.minimum_release`
+floor and the end-to-end fallback proof are S7b (`bd-ib-jamtsf`). Both builds come from
 **`factory-integration`** — the ONE standing branch in our fork
 (`thewoolleyman/fabro`) that carries every fabro fix the factory needs but
 upstream has not released (today: PR #568 credential refresh,
@@ -980,9 +984,10 @@ wrong-population trap from the catalogue above, arriving through the default
 rather than through a typo — there is no error, no warning, and the result
 looks exactly like success.
 
-**That divergence closed on 2026-09-09 (both hosts at `977cb67`) and RE-OPENED
-on 2026-09-12: hp is at `4b8cc85`, vps at `977cb67`, as measured at the top of
-this section.** Do NOT read any day's parity as a standing guarantee — a re-pin lands on one host at
+**That divergence closed on 2026-09-09 (both hosts at `977cb67`), RE-OPENED
+on 2026-09-12 (hp `4b8cc85`, vps `977cb67`), and closed again on 2026-10-01
+when S7a put `8869e88` on both (vps as a staged client only; its unit is
+retired), as measured at the top of this section.** Do NOT read any day's parity as a standing guarantee — a re-pin lands on one host at
 a time, so the two hosts diverge for as long as the second rollout takes, and
 the paragraph above describes what that window looks like from a dispatch. When
 a dispatch is EVIDENCE ABOUT A BUILD, establish the engine per dispatch instead
