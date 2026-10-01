@@ -35,6 +35,7 @@ __all__: list[str] = [
     "PROOF_OF_DONE_POINTER_TITLE",
     "ProofPointer",
     "description_with_pointer",
+    "description_with_updated_pointer",
     "pointer_in",
 ]
 
@@ -117,6 +118,29 @@ def description_with_pointer(*, description: str, pointer: ProofPointer) -> str 
     tail = _without_pointer_section(lines=lines[end:], level=level)
     body = [*head, *pointer.render(heading_level=level).splitlines(), "", *tail]
     return "\n".join(body).rstrip("\n") + "\n"
+
+
+def description_with_updated_pointer(*, description: str, pointer: ProofPointer) -> str:
+    """Rewrite an EXISTING pointer section in place, leaving everything else alone.
+
+    Deliberately TOTAL where `description_with_pointer` is partial, because the
+    two answer different questions. That one WRITES a pointer and therefore needs
+    the Definition of Done section to anchor after; this one UPDATES a pointer
+    that is already standing — the accept valve has just read it back — so the
+    section's own position is the anchor and no second one is needed. A
+    description carrying no pointer section is returned unchanged, which is the
+    same answer as "there was nothing to update".
+    """
+    lines = description.splitlines()
+    for index, raw in enumerate(lines):
+        heading = _HEADING.match(raw)
+        if heading is None or heading.group(2).strip().casefold() != _POINTER_TITLE_FOLDED:
+            continue
+        level = len(heading.group(1))
+        end = _section_end(lines=lines, start=index + 1, level=level)
+        body = [*lines[:index], *pointer.render(heading_level=level).splitlines(), *lines[end:]]
+        return "\n".join(body).rstrip("\n") + "\n"
+    return description
 
 
 def pointer_in(*, description: str) -> ProofPointer | None:

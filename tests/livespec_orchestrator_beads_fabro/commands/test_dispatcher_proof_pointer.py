@@ -24,6 +24,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_pointer import (
     ProofPointer,
     description_with_pointer,
+    description_with_updated_pointer,
     pointer_in,
 )
 
@@ -191,3 +192,31 @@ def test_a_pointer_section_carrying_only_the_pull_request_reads_back_with_empty_
     )
 
     assert read == ProofPointer(pull_request=7, record_url="", run_id="", timestamp="", verdict="")
+
+
+def test_the_in_place_update_rewrites_a_standing_pointer_and_nothing_else() -> None:
+    """Total where the splice is partial, and both arms of that totality.
+
+    The accept valve updates a pointer it has just READ BACK, so it needs no
+    Definition of Done anchor — only the section's own position. The second
+    assertion is the arm that makes "total" mean something: a description with no
+    pointer section comes back unchanged rather than gaining one somewhere.
+    """
+    standing = description_with_pointer(
+        description=_description(trailer="\n## Context\n\nSome notes.\n"), pointer=_pointer()
+    )
+
+    assert standing is not None
+    updated = description_with_updated_pointer(
+        description=standing, pointer=_pointer(human=_HUMAN_URL)
+    )
+
+    assert updated.count("## Proof of Done") == 1
+    assert f"- Human-attested record: {_HUMAN_URL}" in updated
+    assert f"- Verified record: {_RECORD_URL}" in updated
+    assert updated.rstrip("\n").endswith("## Context\n\nSome notes.")
+    assert updated.startswith(_description().rstrip("\n").split("## Definition of Done")[0])
+
+    untouched = _description()
+
+    assert description_with_updated_pointer(description=untouched, pointer=_pointer()) == untouched
