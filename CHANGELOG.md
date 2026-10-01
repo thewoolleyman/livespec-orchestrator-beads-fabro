@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.160.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.159.0...v0.160.0) (2026-10-01)
+
+
+### Features
+
+* **dispatcher:** journal every declared proof credential by name and how it was provisioned (bd-ib-77vny7) ([18ecb11](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/18ecb11d7baf02c9a5115e4fb370e13a2100dae1))
+* **dispatcher:** parse dispatcher.proof_credentials and refuse malformed declarations (bd-ib-77vny7) ([58a23b0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/58a23b05a7c37c700bb61d07d8f2716f6bc14783))
+* **dispatcher:** refuse a withheld or value-absent proof credential and project the rest (bd-ib-77vny7) ([3594300](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3594300ca0e8ae264168fc3a1dda3879990a4dcc))
+* **dispatcher:** wire the proof-credential gate and projection into both dispatch paths (bd-ib-77vny7) ([7874b2e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7874b2e24e96e35ab3e495e7d2c10bf378924c24))
+
 ## [0.159.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.158.0...v0.159.0) (2026-10-01)
 
 
