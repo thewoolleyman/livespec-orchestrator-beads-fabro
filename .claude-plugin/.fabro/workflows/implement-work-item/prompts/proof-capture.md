@@ -139,10 +139,15 @@ measured for this repository and projected as
   Reference it as ONE authenticated link per image instead:
   `[<slug> (proof NN) — authenticated link](<asset url>)`.
 
-Use whichever the variable says. Do not decide it yourself, and do not
-fall back silently if the variable is absent: an absent value means the
-Dispatcher's store resolution did not reach this run, so STOP and end with
-the needs-human protocol.
+Use whichever the variable says; do not decide it yourself.
+
+When the variable is ABSENT, use `authenticated_link`. That is the measured
+fail-safe rather than a guess: an unset value means no visibility
+measurement reached this run, and of the two forms only the inline one can
+publish a reference that leaks from a repository nobody established was
+public. The waiver costs an inline rendering; it never costs the proof. Say
+in your final reply that you took the fallback, so a reader can tell it
+from a measured `authenticated_link`.
 
 ## Step 5 — publish the record
 
@@ -245,7 +250,7 @@ re-earns a green janitor and re-enters this stage with a fresh tree.
 
 If capture is blocked in a way that is NOT an implementation defect and
 that you cannot legitimately resolve — no run id resolvable, no
-`$LIVESPEC_PROOF_ASSET_RENDERING` value, no draft pull request on the
+`$LIVESPEC_PROOF_ASSETS_RELEASE_TAG` value, no draft pull request on the
 publish branch, the asset upload refused, `gh` auth failure — end your
 final reply with the failed outcome and a STRUCTURED reason, as a JSON
 object on the last line:

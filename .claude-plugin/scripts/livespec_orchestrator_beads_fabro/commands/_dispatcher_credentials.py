@@ -42,6 +42,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     render_run_config_overlay,
     resolve_sandbox_otel_endpoint,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (
+    proof_store_env_lines,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones import (
     fetch_fleet_manifest_text,
     resolve_sibling_clones,
@@ -254,6 +257,12 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
         # re-derived: the caller passes the SAME resolved contract the
         # `--input` pairs come from.
         prepare_inputs=prepare_inputs,
+        # The publish branch the `publish_draft` command node pushes, plus this
+        # repository's resolved proof asset store. Resolved HERE rather than
+        # threaded from the caller, which is already at its file-size ceiling;
+        # the branch comes from the single shared derivation rather than a second
+        # spelling of `feat/<id>` (S5 / bd-ib-b4u6b7).
+        proof_store_env=proof_store_env_lines(repo=repo, work_item_id=work_item_id),
         # The pre-launch dispatch id the sandbox declares as its
         # factory-provenance marker. This function runs BEFORE `fabro run`,
         # which is why the marker cannot carry the Fabro run id.

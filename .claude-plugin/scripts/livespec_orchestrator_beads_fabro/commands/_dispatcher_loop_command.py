@@ -24,6 +24,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
+    ShellCommandRunner,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import (
     emit_outcomes,
@@ -46,6 +47,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_post_verdict import (
     reflector_oob_after_verdict,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (
+    proof_assets_refusal_for_items,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection import reflect
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import ReworkPass
@@ -121,6 +125,17 @@ def run_loop_command(*, args: argparse.Namespace) -> int:
     if ungradeable is not None:
         _ = write_stderr(text=ungradeable)
         return EXIT_UNGRADEABLE_CRITERIA
+    # The proof-assets gate, beside the criteria wall and for the same positional
+    # reason: "before any run exists". An item carrying a `factory_captured`
+    # assertion needs this repository's standing proof-assets prerelease to exist
+    # before its capture stage can store an image, so the Dispatcher creates it
+    # here and refuses naming the tag when it still does not (S5 / bd-ib-b4u6b7).
+    proof_refusal = proof_assets_refusal_for_items(
+        runner=ShellCommandRunner(), repo=repo, items=selected_candidates, journal=journal
+    )
+    if proof_refusal is not None:
+        _ = write_stderr(text=proof_refusal)
+        return EXIT_PRECONDITION_ERROR
     outcomes = dispatch_loop_wave(
         args=args,
         repo=repo,
