@@ -47,6 +47,11 @@ def _isolated_worktree_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> 
 
 @dataclass(frozen=True, kw_only=True)
 class _AcceptancePass:
+    # The proof leg the real pass carries. `None` is what a legacy-source item
+    # resolves to, and it is the right stand-in here: these cases are about the
+    # DISPOSITION the verdict routes to, and the pointer write skips an item
+    # with no record rather than changing which branch runs.
+    proof: None = None
     verdict: str
     absent_evidence: tuple[str, ...] = ()
 
@@ -146,6 +151,9 @@ def test_reconcile_merged_active_item_runs_post_merge_janitor_then_accepts(
         "janitor-checkout-remove",
         "ledger-complete",
         "acceptance-ai-pass",
+        # The pointer write runs on every disposition; this fake pass carries no
+        # proof leg, so it journals the skip and writes nothing.
+        "proof-pointer-skipped",
         "ledger-accept",
         "auto-disposition",
         "outcome",

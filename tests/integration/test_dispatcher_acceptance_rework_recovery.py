@@ -112,6 +112,12 @@ def _outcome(*, item_id: str, pr_number: int | None, merge_sha: str | None) -> D
 class _FailingAcceptancePass:
     """The acceptance pass seam, standing in a dispositive FAIL verdict."""
 
+    # The proof leg the real pass carries. `None` is what a legacy-source item
+    # resolves to, and it is the right stand-in here: these cases are about the
+    # DISPOSITION the verdict routes to, and the pointer write skips an item
+    # with no record rather than changing which branch runs.
+    proof: None = None
+
     verdict: str = "FAIL"
     absent_evidence: tuple[str, ...] = ()
 

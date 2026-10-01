@@ -344,3 +344,56 @@ def test_a_verified_record_for_the_merging_run_grades_the_assertion_and_accepts(
     assert ai_pass["verdict"] == "PASS"
     assert ai_pass["absent_evidence"] == []
     assert _stored()[item.id].status == "done"
+
+
+def test_the_pointer_is_written_after_an_unchanged_definition_of_done_section(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scenario 132 — "The pointer is written after merge".
+
+    The pointer clause requires the section to sit AFTER the Definition of Done
+    section, to preserve that section BYTE-FOR-BYTE, and to carry ONLY the
+    pointer — "The section MUST NOT copy proof content."
+
+    All three are asserted separately and none is redundant. The byte-for-byte
+    claim is checked by slicing the stored description at the pointer heading and
+    comparing the prefix to the description that was FILED, because a build that
+    rewrote the section while adding the pointer would satisfy an
+    `in`-containment check just as well. The no-proof-content claim is checked
+    against the record's own proof vocabulary, which is present in the record
+    body the same dispatch read and must be absent from the description.
+    """
+    item = _item(id="bd-ib-proofpointerwrite")
+
+    exit_code, records = _dispatch(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        comments=_comments_payload(bodies=[_record_body(verdict="verified")]),
+        item=item,
+    )
+
+    assert exit_code == 0
+    description = _stored()[item.id].description
+    head, _, pointer = description.partition("## Proof of Done")
+    assert pointer != ""
+    # Byte-for-byte: everything before the pointer heading is the filed
+    # description, trailing separator aside.
+    assert head.rstrip("\n") == _definition_of_done().rstrip("\n")
+    assert pointer.splitlines()[1:] == [
+        "",
+        f"- Pull request: #{_PR_NUMBER}",
+        f"- Verified record: {_RECORD_URL}",
+        f"- Run: {_RUN_ID}",
+        "- Timestamp: 2026-10-01T09:00:00Z",
+        "- Verdict: verified",
+    ]
+    # The section carries the POINTER, never the proof: no reproduction step, no
+    # proof mode line, no reproduction verdict from the record body.
+    assert "Reproduced:" not in description
+    assert "Proof mode:" not in description
+    written = _record(records=records, stage="proof-pointer")
+    assert written["work_item_id"] == item.id
+    assert written["pull_request"] == _PR_NUMBER
+    assert written["record_comment"] == _RECORD_URL
+    assert written["run_id"] == _RUN_ID

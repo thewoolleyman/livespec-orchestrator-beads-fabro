@@ -78,6 +78,11 @@ _MINIMAL_GRAPH = (
 
 @dataclass(frozen=True, kw_only=True)
 class _FakeAcceptancePass:
+    # The proof leg the real pass carries. `None` is what a legacy-source item
+    # resolves to, and it is the right stand-in here: these cases are about the
+    # DISPOSITION the verdict routes to, and the pointer write skips an item
+    # with no record rather than changing which branch runs.
+    proof: None = None
     verdict: str
     absent_evidence: tuple[str, ...] = ()
 

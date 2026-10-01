@@ -146,6 +146,7 @@ def build_update_argv(  # noqa: PLR0913 — kw-only argv builder mirroring updat
     clear_assignee: bool = False,
     acceptance_criteria: str | None = None,
     notes: str | None = None,
+    description: str | None = None,
 ) -> list[str]:
     """Build the `bd update <id> ...` verb argv (pure; fully covered).
 
@@ -171,6 +172,10 @@ def build_update_argv(  # noqa: PLR0913 — kw-only argv builder mirroring updat
     _extend_repeated_flag(argv=argv, flag="--remove-label", values=remove_labels)
     _extend_optional_pair(argv=argv, flag="--acceptance", value=acceptance_criteria)
     _extend_optional_pair(argv=argv, flag="--notes", value=notes)
+    # `bd update` spells this `-d, --description`, leading with the SHORT flag in
+    # its own help output. The long form is emitted here because an argv is read
+    # by people as well as by bd, and the short one says nothing on its own.
+    _extend_optional_pair(argv=argv, flag="--description", value=description)
     if metadata is not None:
         argv.extend(["--metadata", json.dumps(metadata, separators=(",", ":"), sort_keys=True)])
     return argv

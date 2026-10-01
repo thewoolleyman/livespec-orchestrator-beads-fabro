@@ -3411,6 +3411,11 @@ def _green_outcome(*, item_id: str, sha: str | None = "feed01") -> DispatchOutco
 
 @dataclass(frozen=True, kw_only=True)
 class _FakeAcceptancePass:
+    # The proof leg the real pass carries. `None` is what a legacy-source item
+    # resolves to, and it is the right stand-in here: these cases are about the
+    # DISPOSITION the verdict routes to, and the pointer write skips an item
+    # with no record rather than changing which branch runs.
+    proof: None = None
     verdict: str
     absent_evidence: tuple[str, ...] = ()
 
@@ -4188,6 +4193,9 @@ def test_dispatch_green_closes_item_and_journals(
         "dispatch-id",
         "ledger-complete",
         "acceptance-ai-pass",
+        # The pointer write runs on every disposition; this fake pass carries no
+        # proof leg, so it journals the skip and writes nothing.
+        "proof-pointer-skipped",
         "ledger-accept",
         "auto-disposition",
         "outcome",
@@ -4760,6 +4768,9 @@ def test_complete_and_accept_empty_diff_closes_no_change_needed(
     assert stages == [
         "ledger-complete",
         "acceptance-ai-pass",
+        # The pointer write runs on every disposition; this fake pass carries no
+        # proof leg, so it journals the skip and writes nothing.
+        "proof-pointer-skipped",
         "ledger-accept-no-change-needed",
         "auto-disposition",
     ]
@@ -4988,7 +4999,15 @@ def test_complete_and_accept_needs_attention_parks_under_every_acceptance_policy
     assert "acceptance_failed_ai_passes" not in record["metadata"]
     records = [json.loads(line) for line in journal.path.read_text(encoding="utf-8").splitlines()]
     stages = {entry["stage"] for entry in records}
-    assert stages == {"ledger-complete", "acceptance-ai-pass", "acceptance-parked"}
+    assert stages == {
+        "ledger-complete",
+        "acceptance-ai-pass",
+        # The pointer write runs on EVERY disposition and journals why it wrote
+        # nothing: this fake pass carries no proof leg, which is what a legacy
+        # criteria source resolves to.
+        "proof-pointer-skipped",
+        "acceptance-parked",
+    }
     parked = next(entry for entry in records if entry["stage"] == "acceptance-parked")
     assert parked["acceptance_verdict"] == "NEEDS_ATTENTION"
     assert parked["absent_evidence"] == ["telemetry"]
