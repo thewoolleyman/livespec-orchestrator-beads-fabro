@@ -47,6 +47,7 @@ import sys
 from pathlib import Path
 
 import livespec_tdd_order_policy as policy
+import livespec_tdd_order_span as span
 import livespec_tdd_order_targets as targets
 from livespec_dev_tooling.config import derive_source_prefixes, load_config
 
@@ -72,7 +73,14 @@ def main() -> int:
 
 
 def _run(*, raw: str, environ: dict[str, str]) -> int:
-    """Emit the deny payload for the first out-of-order product write."""
+    """Emit the deny payload for the first out-of-order product write.
+
+    Every verdict over a product path — allow as well as refuse — is traced
+    before it is acted on, so the refusal rate is queryable rather than
+    anecdotal. A path that is NOT a product path is not a verdict of this
+    guard and is not traced. The loop stops at the first refusal, so any
+    target behind it is left undecided and untraced.
+    """
     payload = _payload(raw=raw)
     tool_name = payload.get("tool_name")
     tool_input = payload.get("tool_input")
@@ -95,6 +103,7 @@ def _run(*, raw: str, environ: dict[str, str]) -> int:
             exists_at_head=_exists_at_head(repo_root=repo_root, path=path),
             test_change_pending=test_change_pending,
         )
+        _ = span.emit_for_decision(decision=decision, environ=environ)
         if decision.decision == policy.REFUSE:
             _ = sys.stdout.write(_deny_payload(decision=decision) + "\n")
             return 0
