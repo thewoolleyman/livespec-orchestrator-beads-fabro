@@ -159,6 +159,16 @@ def _parse_start(*, record: Mapping[str, Any]) -> AcpNodeStart | None:
     honest reading of that absence is "this engine does not report which
     candidate ran" -- not "it ran the primary". Returning `None` keeps a
     warning standing rather than clearing it on an assumption.
+
+    THE CONFIRMED MODEL AND EFFORT ARE READ BUT NEVER REQUIRED, which is the
+    opposite posture to `candidate_index` above and deliberately so. A candidate
+    that requested no session options confirms none, and an explicit `null` is
+    what the engine emits for an option it did not set -- so `non_empty_text`
+    folds absent, null, blank and wrong-typed into the one answer the protocol
+    can actually mean, "nothing was confirmed". Promoting either to a required
+    field would discard every start from an agent that takes its model in the
+    environment, and a discarded start is not inert: it is the evidence the
+    model-fallback warning's clearance rule reads.
     """
     index = _index(value=record.get("candidate_index"))
     node = non_empty_text(value=record.get("node"))
@@ -172,6 +182,8 @@ def _parse_start(*, record: Mapping[str, Any]) -> AcpNodeStart | None:
         candidate_index=index,
         occurred_at=occurred_at,
         primary_generation=generation,
+        confirmed_model=non_empty_text(value=record.get("model")),
+        confirmed_effort=non_empty_text(value=record.get("effort")),
     )
 
 

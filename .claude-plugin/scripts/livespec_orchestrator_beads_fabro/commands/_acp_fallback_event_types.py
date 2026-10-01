@@ -109,13 +109,30 @@ class AcpFallbackEvent:
 
 @dataclass(frozen=True, kw_only=True)
 class AcpNodeStart:
-    """One `agent.acp.started`: which candidate began a node visit, and when."""
+    """One `agent.acp.started`: which candidate began a node visit, and when.
+
+    `confirmed_model` and `confirmed_effort` are the values the handler
+    established in the agent's own `configOptions` before the first prompt, which
+    section "In-protocol model and effort selection" requires the event to carry
+    "as additive non-secret fields so a reader can verify which model actually ran
+    without reading the command".
+
+    THEY ARE OPTIONAL, AND NOT MERELY TOLERATED. A candidate whose agent takes
+    its model in the environment or on the command line requests no session
+    options at all and confirms none, so `None` here is the ORDINARY answer for
+    most of this fleet rather than a degraded one. That is why their absence
+    costs the start nothing: `candidate_index` decides whether a start can be
+    read, and a start discarded for want of a confirmation would silently strand
+    the model-fallback warning whose clearance rule depends on it.
+    """
 
     node: str
     node_visit: int
     candidate_index: int
     occurred_at: str
     primary_generation: str
+    confirmed_model: str | None = None
+    confirmed_effort: str | None = None
 
     @property
     def primary(self) -> bool:
