@@ -24,11 +24,17 @@ from typing import TYPE_CHECKING
 from livespec_orchestrator_beads_fabro.commands._acp_builtin_candidates import (
     builtin_acp_identities,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_capability_gate import (
+    config_options_capability_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_catalogs import (
     AcpCatalogs,
     resolve_acp_catalogs,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import attach_acp_chains
+from livespec_orchestrator_beads_fabro.commands._acp_factory_capabilities import (
+    factory_capability_reader,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import (
     NODE_INPUT_CANDIDATES,
     AcpNodeOverlay,
@@ -46,7 +52,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_repository import (
 from livespec_orchestrator_beads_fabro.commands._acp_workflow_defaults import (
     rendered_workflow_defaults,
 )
-from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
+from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget, dispatcher_block
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
     workflow_declared_inputs,
 )
@@ -127,6 +133,7 @@ def prepare_acp_nodes(
     overrides: tuple[str, ...],
     journal: JournalWriter,
     work_item_id: str,
+    factory: FactoryTarget | None = None,
 ) -> AcpNodeResolution | str:
     """Resolve every node's adapter through the three layers and journal it.
 
@@ -161,6 +168,7 @@ def prepare_acp_nodes(
         resolution=resolution,
         dispatch=dispatch,
         workflow_inputs=workflow_inputs,
+        factory=factory,
     )
     if isinstance(chains, str):
         return chains
@@ -219,6 +227,16 @@ def _repository_layer(
     return (catalogs, overlays)
 
 
+def _factory_name(*, factory: FactoryTarget | None) -> str:
+    """The resolved factory's name for a refusal message.
+
+    A dispatch path always pins one; the fallback covers the non-dispatching
+    entry points that reach this code with a Namespace that never carried it,
+    so a refusal names something rather than crashing on `None`.
+    """
+    return "(unresolved)" if factory is None else factory.name
+
+
 def _resolve_chains(
     *,
     block: dict[str, object],
@@ -226,6 +244,7 @@ def _resolve_chains(
     resolution: AcpNodeResolution,
     dispatch: Mapping[str, AcpNodeOverlay],
     workflow_inputs: Mapping[str, str],
+    factory: FactoryTarget | None,
 ) -> Mapping[str, Mapping[str, object]] | str:
     """Attach each node's candidate chain to its resolved primary, or refuse.
 
@@ -251,6 +270,17 @@ def _resolve_chains(
     declared = repository_acp_chains(block=block, catalogs=catalogs)
     if isinstance(declared, str):
         return declared
+    # BEFORE the attach, because this is a refusal about the chain as
+    # CONFIGURED: a chain asking the handler to set session options against a
+    # factory that cannot set them would otherwise run green on whatever model
+    # the agent chose for itself.
+    uncapable = config_options_capability_refusal(
+        chains=declared,
+        factory_name=_factory_name(factory=factory),
+        capabilities=factory_capability_reader(factory=factory),
+    )
+    if uncapable is not None:
+        return uncapable
     attached = attach_acp_chains(
         resolution=resolution,
         chains=declared,
