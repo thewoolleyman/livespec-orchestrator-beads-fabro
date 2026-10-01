@@ -10,10 +10,10 @@ fork `main` was retired, while local `main` now tracks `upstream/main`.
 No open-PR head, unpublished branch, dirty worktree, or published commit was
 rewritten.
 
-P0 remains active for one owner-controlled local condition: the
-`factory-integration` worktree contains two pre-existing uncommitted files
-and is therefore still 18 commits behind the carrier. This session preserved
-those files and did not stash, reset, commit, or overwrite them.
+The remaining local condition was resolved on 2026-10-01 after the maintainer
+authorized preservation. The two unpublished files are committed byte-for-byte
+on a local safety branch and exported in a complete recovery bundle. The
+`factory-integration` worktree is clean at `8869e88b2`, aligned with origin.
 
 ## Ref manifests
 
@@ -25,7 +25,7 @@ The checked manifests are:
 | `002-after-origin-refs.tsv` | 15 | `e18e782fea1b4732052e379e5d7db8b4871b2f0c890433954cf9b4176f17dd79` |
 | `002-deleted-origin-refs.tsv` | 1,433 | `5b538e60a83fb6fa83c8166d59ad670b8e04f98c587b34df3fab1cde72a7a724` |
 | `002-before-local-refs.tsv` | 14 | `4f2a26d77690f98fba045e10df30c521b2ff1e0cd7bab4fdefd4c6099d9b3ccb` |
-| `002-after-local-refs.tsv` | 7 | `191f1a05e2a2950d92e10a14721db2110b0b82fa92221971a98223239aeb3583` |
+| `002-after-local-refs.tsv` (refreshed 2026-10-01) | 8 | `8c2736aaae0b6dc1cc252803c67a269975c0b332414092058d71e3168c8489e5` |
 
 The remote delta is exact:
 
@@ -78,9 +78,11 @@ Local `main` was moved from stale `b5885b15d` to
 `trial/factory-rebase` could not and was not removed because its worktree is
 in an unresolved rebase. The following state was intentionally preserved:
 
-- `factory-integration` at `8de661118`, behind the carrier by 18, with
-  modifications to `fabro-manifest/src/lib.rs` and
-  `fabro-workflow/src/git.rs`;
+- the original `factory-integration` modifications to
+  `fabro-manifest/src/lib.rs` and `fabro-workflow/src/git.rs`, now preserved
+  on `safety/factory-integration-unpublished-2026-10-01` at
+  `61e6a4dfed458a4cb5b8c61b8734973d78f3982c`, with original parent
+  `8de661118f24c43ad5b3516b9b7820525f5a5932`;
 - `clone-creds-pull-requests-scope`, one unpublished commit ahead of its
   old base;
 - open-PR worktrees `otlp-span-export` and
@@ -98,6 +100,26 @@ changing the worktree, to:
 Its SHA-256 is
 `2532004c4b0b48260684d79b795c256631f0f446fe51fc42eb161e2e18fc0942`
 and its size is 22,263 bytes.
+
+On 2026-10-01 the live diff still matched that checksum. The safety commit's
+diff matches it too, and its two blob ids match the original working files:
+`73dcbf3bf86f5dcd3090c530cbc2d1c8341cabf8` (manifest) and
+`2ab1493f1c410e90ce2a3893fbe3731acc34dd05` (workflow Git). The archival commit
+was intentionally not merged or pushed: it preserves unpublished work, not a
+reviewed change to the carrier. After verification, switching back to
+`factory-integration` and merging `origin/factory-integration --ff-only`
+advanced it by 18 already-published commits without a conflict.
+
+The safety branch also has a verified complete-history bundle:
+`/home/ubuntu/.local/state/fabro-ref-backups/factory-integration-unpublished-2026-10-01.bundle`,
+SHA-256 `4a7d15b193fbea3100f2be13ee91aa7c63563e3323e2b0f77058ac37f91dd0c9`.
+Restore it without publishing:
+
+```bash
+git fetch \
+  /home/ubuntu/.local/state/fabro-ref-backups/factory-integration-unpublished-2026-10-01.bundle \
+  refs/heads/safety/factory-integration-unpublished-2026-10-01:refs/heads/recovered/unpublished-origin-check
+```
 
 ## Fork-main policy and recovery
 
@@ -131,9 +153,9 @@ git fetch \
   'refs/remotes/origin/*:refs/heads/recovered/origin/*'
 ```
 
-The dirty-worktree patch can be checked with `git apply --check` and then
-applied to an owner-selected branch. It is not a substitute for consulting
-the worktree owner before changing the live files.
+The original patch can also be applied to a clean checkout of its original
+base `8de661118`. The safety branch and bundle preserve that base explicitly;
+applying the patch to today's carrier is not required for recovery.
 
 ## Carrier patch inventory
 
@@ -190,14 +212,15 @@ Verified after cleanup:
 - No `fabro/run/*`, `fabro/meta/*`, or `arc/run/*` head remains.
 - Both open upstream PR heads remain reachable.
 - Local `main` is clean at `upstream/main`.
+- Local `factory-integration` is clean and equals its origin authority.
+- The safety commit preserves both original blobs and the original diff hash.
 - The temporary cleanup worktree and branch were removed.
 - The recovery bundle verifies as complete.
 
 No product source changed, so no Fabro product test was warranted for this
 ref-only operation.
 
-To finish P0, the owner of
-`/home/ubuntu/.worktrees/fabro/factory-integration` must first resolve or
-relocate its two uncommitted files. Then fast-forward the branch to
-`origin/factory-integration`, verify a clean status, refresh
-`002-after-local-refs.tsv`, and park `bd-ib-kqbuju` at acceptance.
+The local alignment and preservation complete P0's ref-hygiene assertions.
+The work item's lifecycle and acceptance remain authoritative in the ledger.
+The in-session exception is `mutates-host-machinery`: this work changes host
+Git references and research records, not factory product source.
