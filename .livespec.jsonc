@@ -201,7 +201,7 @@
       "wip_cap": 10,
       "acceptance_mode": "ai-only",
       "default_factory": "hp",
-      "fabro_sandbox_image": "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.85.3",
+      "fabro_sandbox_image": "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.91.2",
       // NAMED WORKFLOW VARIANTS — variant name -> directory, relative to this
       // repository's root. The reserved `implement-work-item` name is NEVER
       // read from here and registering it is refused before any run exists;
