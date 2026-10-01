@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.155.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.154.0...v0.155.0) (2026-10-01)
+
+
+### Features
+
+* **dispatcher:** carry a dod_gate ACP node ahead of implement (bd-ib-s5fj5e) ([2c38e17](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2c38e17a259f3637511065b17aebf706232f3721))
+* **dispatcher:** verify the Definition of Done in the dod_gate prompt (bd-ib-s5fj5e) ([b9043cb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b9043cb844d395e7d5542264a4b7cb38c32275c2))
+
 ## [0.154.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.153.0...v0.154.0) (2026-10-01)
 
 
