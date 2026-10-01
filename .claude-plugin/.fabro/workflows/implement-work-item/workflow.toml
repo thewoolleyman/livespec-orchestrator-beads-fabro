@@ -162,9 +162,9 @@ pull_requests = "write"
 # defaulted to Haiku. The first dispatch after this default switch lands must
 # verify the resolved model in the run transcript; an adapter string assertion
 # does not prove runtime behavior.
-implement_adapter = "ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
-fix_adapter = "ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
-review_fix_adapter = "ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
+implement_adapter = '{"agent": "claude-acp", "model": "claude-opus-5", "effort": "high"}'
+fix_adapter = '{"agent": "claude-acp", "model": "claude-opus-5", "effort": "high"}'
+review_fix_adapter = '{"agent": "claude-acp", "model": "claude-opus-5", "effort": "high"}'
 
 # ACP adapter for the PR node. This is the SINGLE SOURCE of the publish
 # node's fleet default (contracts.md section "Codex ACP node model pins",
@@ -184,7 +184,7 @@ review_fix_adapter = "ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=hig
 # (any adapter); absent that, this default stands. It exists as a SEPARATE
 # input from the implementer adapters so the publish node's model moves
 # independently of theirs.
-pr_adapter = "ANTHROPIC_MODEL=claude-haiku-4-5 CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
+pr_adapter = '{"agent": "claude-acp", "model": "claude-haiku-4-5", "effort": "high"}'
 
 # ACP adapter for the REVIEW node (Slice A / bd-ib-egms32) — the Claude
 # subscription, pinned to Opus 4.8 + high thinking. The model CANNOT be set
@@ -261,7 +261,7 @@ dod_gate_adapter = "ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL
 # graded against, so pinning the capture is a decision of its own rather than a
 # consequence of an implementer tier moving. The shared `acp_adapter` is
 # deliberately not a candidate for it.
-proof_capture_adapter = "ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
+proof_capture_adapter = '{"agent": "claude-acp", "model": "claude-opus-5", "effort": "high"}'
 
 # ACP adapter for the PROOF_VERIFY node (S6 / bd-ib-msnlnv). Its built-in default
 # is the entry this workflow declares for its REVIEW input — the same table that

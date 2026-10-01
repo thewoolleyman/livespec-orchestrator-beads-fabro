@@ -43,6 +43,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_repository import (
     repository_acp_chains,
     repository_acp_overlays,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_workflow_defaults import (
+    rendered_workflow_defaults,
+)
 from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
     workflow_declared_inputs,
@@ -57,6 +60,7 @@ __all__: list[str] = [
     "dispatch_acp_overlays",
     "prepare_acp_nodes",
     "workflow_adapter_inputs",
+    "workflow_layer",
 ]
 
 ACP_NODES_STAGE = "acp-nodes"
@@ -133,12 +137,6 @@ def prepare_acp_nodes(
     table, is a config error, and the honest place to discover one is the
     dispatch that would otherwise have run the default it meant to replace.
     """
-    committed_text = attempt(
-        action=lambda: committed.read_text(encoding="utf-8"),
-        exceptions=(OSError,),
-    )
-    if isinstance(committed_text, AttemptFailure):
-        return f"workflow config {committed} is unreadable: {committed_text.error}"
     block = dispatcher_block(cwd=repo)
     layers = _repository_layer(block=block)
     if isinstance(layers, str):
@@ -147,7 +145,9 @@ def prepare_acp_nodes(
     dispatch = dispatch_acp_overlays(overrides=overrides)
     if isinstance(dispatch, str):
         return dispatch
-    workflow_inputs = workflow_adapter_inputs(committed_text=committed_text)
+    workflow_inputs = workflow_layer(committed=committed, catalogs=catalogs)
+    if isinstance(workflow_inputs, str):
+        return workflow_inputs
     resolution = resolve_acp_nodes(
         workflow_inputs=workflow_inputs,
         repository=repository,
@@ -172,6 +172,32 @@ def prepare_acp_nodes(
         }
     )
     return resolution
+
+
+def workflow_layer(*, committed: Path, catalogs: AcpCatalogs) -> Mapping[str, str] | str:
+    """The workflow layer's adapter inputs, read and RENDERED, or a refusal.
+
+    Reading the committed text and rendering its structured entries is ONE
+    concern -- "what does the least specific layer declare" -- so they live
+    together and every caller gets the rendered answer or a refusal, never the
+    raw text to render for itself.
+
+    The render happens HERE, as the inputs are read, because section "ACP node
+    adapter configuration" requires a structured entry rendered into the manual
+    form "before any layer merge, journal, digest or run input". It also keeps
+    the built-in identity table honest: that table keys on EXACT RENDERED BYTES,
+    so raw structured JSON reaching it would key on text no resolved node can
+    equal, and every built-in identity would silently stop attaching.
+    """
+    committed_text = attempt(
+        action=lambda: committed.read_text(encoding="utf-8"),
+        exceptions=(OSError,),
+    )
+    if isinstance(committed_text, AttemptFailure):
+        return f"workflow config {committed} is unreadable: {committed_text.error}"
+    return rendered_workflow_defaults(
+        declared=workflow_adapter_inputs(committed_text=committed_text), catalogs=catalogs
+    )
 
 
 def _repository_layer(

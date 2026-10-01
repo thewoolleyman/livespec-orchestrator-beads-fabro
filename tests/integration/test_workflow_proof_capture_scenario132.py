@@ -261,6 +261,23 @@ def test_both_new_nodes_carry_a_worst_case_visit_budget() -> None:
         ) == DEFAULT_FABRO_TIMEOUT_SECONDS + 4 * (raised - 1800)
 
 
+def _declared(*, toml: str, name: str) -> str | None:
+    """One `[run.inputs]` string value, in either TOML string spelling.
+
+    A structured adapter default is a JSON object, so it carries double quotes
+    of its own and is declared as a TOML LITERAL string. A basic-string-only
+    pattern returns `None` for it, and the caller then reports "the workflow
+    declares no such input" about an input that is right there.
+    """
+    match = re.search(
+        rf"""^\s*{name}\s*=\s*(?:"(?P<basic>.+)"|'(?P<literal>.+)')""", toml, re.MULTILINE
+    )
+    if match is None:
+        return None
+    basic = match.group("basic")
+    return match.group("literal") if basic is None else basic
+
+
 def test_the_bundle_declares_the_capture_adapter_at_the_implementer_default() -> None:
     """The built-in default is the implementer entry, compared line to line.
 
@@ -270,12 +287,16 @@ def test_the_bundle_declares_the_capture_adapter_at_the_implementer_default() ->
     literal drifts silently the moment the implementer pin moves.
     """
     toml = _toml(payload=_BUNDLE)
-    capture = re.search(rf'^\s*{_CAPTURE_ADAPTER_INPUT}\s*=\s*"(?P<value>.+)"', toml, re.MULTILINE)
-    implement = re.search(r'^\s*implement_adapter\s*=\s*"(?P<value>.+)"', toml, re.MULTILINE)
+    capture = _declared(toml=toml, name=_CAPTURE_ADAPTER_INPUT)
+    implement = _declared(toml=toml, name="implement_adapter")
 
     assert implement is not None
     assert capture is not None, "the reserved workflow declares no proof_capture_adapter input"
-    assert capture.group("value") == implement.group("value")
+    assert capture == implement
+    # The control that makes the two assertions above mean anything: the reader
+    # CAN return None, so "is not None" is evidence the input is declared rather
+    # than evidence the helper never reports an absence.
+    assert _declared(toml=toml, name="no_such_adapter") is None
 
 
 def test_proof_capture_is_a_registered_acp_node_with_its_own_input_candidate() -> None:

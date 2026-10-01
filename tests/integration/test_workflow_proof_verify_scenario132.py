@@ -116,9 +116,22 @@ def _verify_edges_to(*, target: str) -> list[str]:
 
 
 def _input_value(*, toml: str, name: str) -> str | None:
-    """One `[run.inputs]` string value, or `None` when the payload declares none."""
-    match = re.search(rf'^\s*{name}\s*=\s*"(?P<value>.+)"', toml, re.MULTILINE)
-    return None if match is None else match.group("value")
+    """One `[run.inputs]` string value, or `None` when the payload declares none.
+
+    BOTH TOML string spellings are matched. A structured adapter default is a
+    JSON object, so it carries double quotes of its own and is declared as a
+    TOML LITERAL string; a basic-string-only pattern would return `None` for it
+    and the caller would report "the payload declares no such input" about an
+    input that is right there -- an instrument that cannot return a hit,
+    reporting no hits.
+    """
+    match = re.search(
+        rf"""^\s*{name}\s*=\s*(?:"(?P<basic>.+)"|'(?P<literal>.+)')""", toml, re.MULTILINE
+    )
+    if match is None:
+        return None
+    basic = match.group("basic")
+    return match.group("literal") if basic is None else basic
 
 
 def _acp_node_names(*, payload: Path) -> set[str]:
@@ -182,6 +195,11 @@ def test_the_bundle_declares_the_verify_adapter_off_the_implementer_tier() -> No
     verify = _input_value(toml=toml, name=_VERIFY_ADAPTER_INPUT)
     review = _input_value(toml=toml, name="review_adapter")
     implement = _input_value(toml=toml, name="implement_adapter")
+
+    # The control that makes the two assertions above mean anything: the reader
+    # CAN return None, so "is not None" is evidence the input is declared rather
+    # than evidence the helper never reports an absence.
+    assert _input_value(toml=toml, name="no_such_adapter") is None
 
     assert review is not None
     assert implement is not None

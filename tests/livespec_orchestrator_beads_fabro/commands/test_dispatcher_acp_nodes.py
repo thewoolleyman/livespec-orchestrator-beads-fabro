@@ -129,8 +129,14 @@ def test_the_committed_workflow_declares_an_adapter_input_for_every_acp_node() -
         committed_text=_COMMITTED_WORKFLOW.read_text(encoding="utf-8")
     )
     assert set(declared) == {f"{node}_adapter" for node in _ACP_NODES}
-    assert declared["implement_adapter"].endswith(_CLAUDE)
-    assert "ANTHROPIC_MODEL=claude-opus-5" in declared["implement_adapter"]
+    # The implementer default is a STRUCTURED entry since the built-in defaults
+    # moved off class-shaped strings; `workflow_layer` is what turns it into the
+    # v107 bytes, and `test_acp_workflow_defaults` grades those bytes.
+    assert json.loads(declared["implement_adapter"]) == {
+        "agent": "claude-acp",
+        "model": "claude-opus-5",
+        "effort": "high",
+    }
 
 
 def test_reading_adapter_inputs_ignores_non_adapter_inputs() -> None:
