@@ -62,14 +62,22 @@ _PUBLISH_DEFAULT_HAIKU = (
     "ANTHROPIC_MODEL=claude-haiku-4-5 CLAUDE_CODE_EFFORT_LEVEL=high "
     "npx -y @agentclientprotocol/claude-agent-acp"
 )
-# The rendered Codex publish adapter for a repository that EXPLICITLY pins its
-# `pr` tier to Codex via `dispatcher.codex_models.pr` — no longer the default.
-_EXPLICIT_CODEX_PR = {"codex_models": {"pr": {"model": "gpt-5.4-mini", "reasoning_effort": "high"}}}
+# The rendered Codex publish adapter for a repository that EXPLICITLY routes its
+# `pr` node to Codex — no longer the default. Scenario 90 names the STRUCTURED
+# entry, whose wording is: sets the pr node to agent codex-acp with a model and
+# an effort. That entry is what replaced the retired codex_models.pr tier.
+_EXPLICIT_CODEX_PR = {
+    "acp_nodes": {"pr": {"agent": "codex-acp", "model": "gpt-5.4-mini", "effort": "high"}}
+}
 _PUBLISH_ADAPTER = (
     'CODEX_CONFIG=\'{"approval_policy":"never","model":"gpt-5.4-mini",'
     '"model_reasoning_effort":"high","sandbox_mode":"danger-full-access"}\' '
     "INITIAL_AGENT_MODE=agent-full-access /opt/livespec/codex-acp/bin/codex-acp"
 )
+# The posture-only CODEX_CONFIG object: the un-pinned opt-out's own value,
+# carrying no `model` key. Spelled out rather than imported so a renderer change
+# has to be made twice before this stops failing.
+_UNPINNED_CODEX_CONFIG = '{"approval_policy":"never","sandbox_mode":"danger-full-access"}'
 _TERRA_CODEX_CONFIG = (
     '{"approval_policy":"never","model":"gpt-5.6-terra",'
     '"model_reasoning_effort":"xhigh","sandbox_mode":"danger-full-access"}'
@@ -131,7 +139,7 @@ def test_a_default_dispatch_renders_the_claude_haiku_publish_adapter(tmp_path: P
 def test_scenario90_a_codex_pinned_publish_dispatch_renders_both_adapters_in_their_ratified_forms(
     tmp_path: Path,
 ) -> None:
-    """With an explicit `codex_models.pr` table the publish adapter is
+    """With a structured codex-acp `pr` entry the publish adapter is
     env-then-baked-path; the implementer is unchanged."""
     _write_dispatcher_config(repo=tmp_path, dispatcher=_EXPLICIT_CODEX_PR)
     adapters = _rendered_adapters(repo=tmp_path)
@@ -192,8 +200,8 @@ def test_scenario90_package_name_resolution_is_never_used_to_identify_the_adapte
     The discriminating token is `codex-acp` rather than `npx`: the Claude
     adapter legitimately uses `npx -y`, so a bare `npx` count would report the
     same number whether or not the Codex adapter were fixed. Every rendering
-    that mentions codex-acp at all must mention it as the baked path. An
-    explicit `codex_models.pr` table is written so at least one node actually
+    that mentions codex-acp at all must mention it as the baked path. A
+    structured codex-acp `pr` entry is written so at least one node actually
     renders the Codex adapter rather than the Claude publish default.
     """
     _write_dispatcher_config(repo=tmp_path, dispatcher=_EXPLICIT_CODEX_PR)
@@ -208,17 +216,33 @@ def test_scenario90_package_name_resolution_is_never_used_to_identify_the_adapte
 def test_scenario91_the_empty_model_opt_out_omits_the_keys_rather_than_emptying_them(
     tmp_path: Path,
 ) -> None:
-    """An empty model renders the un-pinned base string byte-for-byte."""
+    """The manual-form opt-out renders the un-pinned base string byte-for-byte.
+
+    Scenario 91 names the MANUAL form explicitly -- "the manual form naming the
+    baked codex-acp path with a CODEX_CONFIG that carries no model key" -- because
+    section "Built-in ACP node defaults" gives the opt-out no structured spelling:
+    every structured codex-acp candidate must carry a model and an effort, so an
+    operator who disables the pin does so visibly, in the escape-hatch form.
+
+    THE NODE IS `disposition` BECAUSE ITS WORKFLOW DEFAULT DECLARES NO
+    ENVIRONMENT, and that isolates the claim this scenario actually makes. A
+    repository-layer entry MERGES its `env` with the layer beneath it, so
+    asserting byte-identity on a node whose default carries
+    `ANTHROPIC_MODEL` / `CLAUDE_CODE_EFFORT_LEVEL` would grade the
+    cross-provider merge recorded as `bd-ib-5j4b` rather than the opt-out
+    rendering. `disposition` has no such default, so what is compared here is
+    the opt-out's own bytes and nothing else.
+    """
     _write_dispatcher_config(
         repo=tmp_path,
-        dispatcher={"codex_models": {"implementer": {"model": "", "reasoning_effort": "high"}}},
+        dispatcher={"acp_nodes": {"disposition": _UNPINNED_BASE}},
     )
-    implement = _rendered_adapters(repo=tmp_path)["implement"]
+    disposition = _rendered_adapters(repo=tmp_path)["disposition"]
 
-    assert '"model"' not in implement
-    assert '"model_reasoning_effort"' not in implement
-    assert implement == _UNPINNED_BASE
-    assert implement == CODEX_ADAPTER_BASE
+    assert '"model"' not in disposition
+    assert '"model_reasoning_effort"' not in disposition
+    assert disposition == _UNPINNED_BASE
+    assert disposition == CODEX_ADAPTER_BASE
 
 
 def test_this_repository_reviews_on_opus_while_its_implementer_stays_on_claude_opus_5() -> None:

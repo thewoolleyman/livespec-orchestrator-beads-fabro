@@ -113,7 +113,7 @@ def _attached(*, block: dict[str, Any]) -> Any:
         chains=declared,
         dispatch={},
         builtins=modules["_acp_builtin_candidates"].builtin_acp_identities(
-            workflow_inputs=_WORKFLOW_INPUTS, block=block
+            workflow_inputs=_WORKFLOW_INPUTS
         ),
     )
 

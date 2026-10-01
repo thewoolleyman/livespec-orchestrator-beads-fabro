@@ -228,64 +228,35 @@ def test_an_arbitrary_adapter_renders_its_provider_definition_args() -> None:
     )
 
 
-def test_an_acp_nodes_entry_wins_over_the_codex_models_shorthand() -> None:
-    """`codex_models` stays valid, and an explicit entry for the same node beats it."""
-    resolution = _resolve(
-        repository={
-            "codex_models": {"pr": {"model": "gpt-5.4-mini", "reasoning_effort": "high"}},
-            "acp_nodes": {"pr": "uvx explicit-acp"},
-        }
-    )
-    assert resolution.nodes["pr"].rendered == "uvx explicit-acp"
-
-
-def test_pr_expands_to_codex_only_for_an_explicit_pr_tier() -> None:
-    """The publish tier expands ONLY when `codex_models.pr` is an explicit table.
-
-    This is the v107 symmetry: absent that table the publish node keeps the
-    workflow's own default adapter (a model-agnostic Claude adapter) rather
-    than a baked Codex model, exactly as the implementer tier already worked.
-    An explicit `codex_models.pr` table still routes the publish node to Codex.
-    """
-    # No codex_models block at all -> the workflow pr default stands.
-    assert _resolve(repository={}).nodes["pr"].rendered == _CLAUDE
-    # A block configuring only the implementer leaves the publish node alone.
-    assert (
-        _resolve(repository={"codex_models": {"implementer": {"model": "gpt-5.5"}}})
-        .nodes["pr"]
-        .rendered
-        == _CLAUDE
-    )
-    # A non-table pr entry is not an explicit tier, so pr keeps its default.
-    assert (
-        _resolve(repository={"codex_models": {"pr": "not-a-table"}}).nodes["pr"].rendered == _CLAUDE
-    )
-    # An explicit pr table DOES route the publish node to the Codex adapter.
-    codex_pr = (
-        _resolve(
-            repository={"codex_models": {"pr": {"model": "gpt-5.5", "reasoning_effort": "high"}}}
-        )
-        .nodes["pr"]
-        .rendered
-    )
-    assert codex_pr.endswith(" /opt/livespec/codex-acp/bin/codex-acp")
-    assert '"model":"gpt-5.5"' in codex_pr
-
-
-def test_the_codex_shorthand_replaces_the_workflow_env_rather_than_merging() -> None:
+def test_a_structured_codex_entry_replaces_the_workflow_env_rather_than_merging() -> None:
     """A Codex command line must never inherit the workflow's Anthropic pins.
 
-    The implementer tier expands only when named explicitly, and when it
-    does the whole adapter is Codex's -- an `ANTHROPIC_MODEL` merged onto it
-    would pin an Anthropic model on a command that is not Anthropic's.
+    THIS CLAIM OUTLIVED THE SHORTHAND THAT USED TO CARRY IT. Three cases here
+    asserted the retired `dispatcher.codex_models` expansion: that an explicit
+    `acp_nodes` entry beat it, that a tier expanded only when named, and that
+    its rendered command replaced the workflow environment. Section "Built-in
+    ACP node defaults" retired the key, so the first two have no subject left
+    -- there is one layer and one key, with nothing to arbitrate. The third
+    survives unchanged in substance, because a STRUCTURED entry renders a
+    COMPLETE adapter for exactly the same reason: merging the workflow's
+    `ANTHROPIC_MODEL` into a Codex command line would pin an Anthropic model on
+    a command that is not Anthropic's.
+
+    The rendered bytes are the same bytes the retired shorthand produced for
+    the same model and effort, which is what makes the migration a copy rather
+    than a re-specification.
     """
     resolution = _resolve(
-        repository={"codex_models": {"implementer": {"model": "gpt-5.5"}}},
+        repository={
+            "acp_nodes": {"implement": {"agent": "codex-acp", "model": "gpt-5.5", "effort": "low"}}
+        },
     )
+
     rendered = resolution.nodes["implement"].rendered
     assert "ANTHROPIC_MODEL" not in rendered
     assert rendered.endswith(" /opt/livespec/codex-acp/bin/codex-acp")
     assert '"model":"gpt-5.5"' in rendered
+    assert '"model_reasoning_effort":"low"' in rendered
 
 
 def test_a_layer_naming_an_unknown_node_refuses_naming_it() -> None:

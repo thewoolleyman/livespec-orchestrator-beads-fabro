@@ -1,53 +1,43 @@
-"""The Codex compaction token limit as per-node configuration.
+"""The Codex compaction token limit, as the rendered adapter carries it.
 
 Reaching Codex's auto-compaction threshold mid-turn is what made a long
 implement turn fatal: at the threshold Codex calls a remote compaction
 endpoint that is dead, with no local fallback. A node still backed by Codex
-therefore needs that threshold movable WITHOUT an orchestrator code change,
-so it resolves from the same per-node `dispatcher.codex_models` surface the
-model pins do. Unlike those pins, which moved onto the adapter's `CODEX_CONFIG`
-environment channel with the package succession, the limit stays an adapter
-ARGUMENT (`-c model_auto_compact_token_limit=`) — which is where contracts.md
-section "ACP node timeouts" puts it.
+therefore needs that threshold movable WITHOUT an orchestrator code change.
+Unlike the model pin, which rides the adapter's `CODEX_CONFIG` environment
+channel, the limit stays an adapter ARGUMENT
+(`-c model_auto_compact_token_limit=`) — which is where contracts.md section
+"ACP node timeouts" puts it.
+
+THESE CASES DRIVE THE RENDERER RATHER THAN A CONFIGURATION READER, AND THE
+REASON IS THE RETIREMENT. The limit used to resolve from
+`dispatcher.codex_models` alongside the model pins; contracts.md section
+"Built-in ACP node defaults" retired that key, so there is no class-shaped
+reader left to assert against. The surviving claim is about what
+`codex_adapter` RENDERS from the settings it is handed — which is exactly
+what a node needing the threshold moved now writes as an ordinary manual-form
+`args` entry.
 """
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
-from livespec_orchestrator_beads_fabro.commands import _config
+from livespec_orchestrator_beads_fabro.commands._codex_model_tiers import CodexModelTier
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_argv import (
     CODEX_ADAPTER_BASE,
     codex_adapter,
 )
 
-_CONFIG_NAME = ".livespec.jsonc"
 
-
-def _write_dispatcher_config(*, cwd: Path, dispatcher: dict[str, object]) -> None:
-    _ = (cwd / _CONFIG_NAME).write_text(
-        json.dumps({"livespec-orchestrator-beads-fabro": {"dispatcher": dispatcher}}),
-        encoding="utf-8",
-    )
-
-
-def test_configured_compaction_limit_rides_the_adapter_c_channel(tmp_path: Path) -> None:
+def test_configured_compaction_limit_rides_the_adapter_c_channel() -> None:
     """A configured limit renders as `-c model_auto_compact_token_limit=`.
 
     The model pin rides `CODEX_CONFIG` while the limit rides the argument
     channel, so this also pins the two apart: a regression that moved the limit
     into `CODEX_CONFIG` alongside the model would change this string.
     """
-    _write_dispatcher_config(
-        cwd=tmp_path,
-        dispatcher={
-            "codex_models": {"implementer": {"model": "gpt-5.5", "compaction_token_limit": 300000}}
-        },
-    )
-    tiers = _config.resolve_codex_model_tiers(cwd=tmp_path)
-    assert tiers.implementer.compaction_token_limit == 300000
-    assert codex_adapter(tier=tiers.implementer) == (
+    tier = CodexModelTier(model="gpt-5.5", reasoning_effort="low", compaction_token_limit=300000)
+
+    assert codex_adapter(tier=tier) == (
         'CODEX_CONFIG=\'{"approval_policy":"never","model":"gpt-5.5",'
         '"model_reasoning_effort":"low","sandbox_mode":"danger-full-access"}\' '
         "INITIAL_AGENT_MODE=agent-full-access /opt/livespec/codex-acp/bin/codex-acp "
@@ -55,38 +45,32 @@ def test_configured_compaction_limit_rides_the_adapter_c_channel(tmp_path: Path)
     )
 
 
-def test_unconfigured_compaction_limit_renders_nothing(tmp_path: Path) -> None:
-    """No configured limit leaves the adapter byte-identical to the pin form."""
-    tiers = _config.resolve_codex_model_tiers(cwd=tmp_path)
-    assert tiers.implementer.compaction_token_limit == 0
-    assert "model_auto_compact_token_limit" not in codex_adapter(tier=tiers.implementer)
+def test_unconfigured_compaction_limit_renders_nothing() -> None:
+    """ZERO is "unset": the argument is absent, not present-and-zero."""
+    tier = CodexModelTier(model="gpt-5.5", reasoning_effort="low")
+
+    assert tier.compaction_token_limit == 0
+    assert "model_auto_compact_token_limit" not in codex_adapter(tier=tier)
 
 
-def test_compaction_limit_survives_the_model_opt_out(tmp_path: Path) -> None:
+def test_compaction_limit_survives_the_model_opt_out() -> None:
     """A node opting out of the model pin still carries its own limit.
 
     Folding the limit into the pinned branch would drop it for exactly this
     configuration — a node letting `codex-acp` pick its model while still
     needing its compaction threshold moved.
     """
-    _write_dispatcher_config(
-        cwd=tmp_path,
-        dispatcher={"codex_models": {"pr": {"model": "", "compaction_token_limit": 120000}}},
-    )
-    tiers = _config.resolve_codex_model_tiers(cwd=tmp_path)
-    assert tiers.pr.pinned is False
-    assert codex_adapter(tier=tiers.pr) == (
+    tier = CodexModelTier(model="", reasoning_effort="", compaction_token_limit=120000)
+
+    assert tier.pinned is False
+    assert codex_adapter(tier=tier) == (
         f"{CODEX_ADAPTER_BASE} -c model_auto_compact_token_limit=120000"
     )
 
 
-def test_non_positive_or_non_integer_limits_resolve_to_unset(tmp_path: Path) -> None:
-    """A bogus limit is unset, never a one-token threshold that compacts always."""
-    for value in (0, -1, True, "300000", 1.5):
-        _write_dispatcher_config(
-            cwd=tmp_path,
-            dispatcher={"codex_models": {"implementer": {"compaction_token_limit": value}}},
-        )
-        tiers = _config.resolve_codex_model_tiers(cwd=tmp_path)
-        assert tiers.implementer.compaction_token_limit == 0
-        assert "model_auto_compact_token_limit" not in codex_adapter(tier=tiers.implementer)
+def test_a_non_positive_limit_renders_nothing() -> None:
+    """A zero or negative threshold is not a one-token threshold that always compacts."""
+    for value in (0, -1):
+        tier = CodexModelTier(model="gpt-5.5", reasoning_effort="low", compaction_token_limit=value)
+
+        assert "model_auto_compact_token_limit" not in codex_adapter(tier=tier)

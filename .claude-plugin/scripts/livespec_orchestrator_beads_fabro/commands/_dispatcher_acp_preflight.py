@@ -36,7 +36,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
 
 from livespec_orchestrator_beads_fabro.commands._acp_builtin_candidates import (
     builtin_acp_identities,
@@ -122,7 +122,7 @@ def resolve_acp_preflight(
         return AcpPreflightVerdict(fallback_enabled=True, refusal=declared)
     if not any(chain.enabled for chain in declared.values()):
         return no_fallback_verdict()
-    resolved = _resolve_chains(repo=repo, block=block, declared=declared)
+    resolved = _resolve_chains(repo=repo, declared=declared)
     if isinstance(resolved, str):
         return AcpPreflightVerdict(fallback_enabled=True, refusal=resolved)
     chains, graph_text, builtin_pairs = resolved
@@ -170,7 +170,7 @@ def resolve_acp_primary_generations(*, repo: Path) -> Mapping[str, str]:
     declared = repository_acp_chains(block=block, catalogs=catalogs)
     if isinstance(declared, str) or not any(chain.enabled for chain in declared.values()):
         return {}
-    resolved = _resolve_chains(repo=repo, block=block, declared=declared)
+    resolved = _resolve_chains(repo=repo, declared=declared)
     if isinstance(resolved, str):
         return {}
     chains, _graph_text, _builtin_pairs = resolved
@@ -240,7 +240,6 @@ def _legacy_providers(*, journal_path: Path | None, now_iso: str) -> frozenset[s
 def _resolve_chains(
     *,
     repo: Path,
-    block: dict[str, Any],
     declared: Mapping[str, AcpNodeChain],
 ) -> tuple[Mapping[str, ResolvedAcpChain], str | None, frozenset[tuple[str, str]]] | str:
     """Resolve each node's primary, attach its chain, and read the graph text."""
@@ -260,7 +259,7 @@ def _resolve_chains(
     )
     if isinstance(resolution, str):
         return resolution
-    builtins = builtin_acp_identities(workflow_inputs=workflow_inputs, block=block)
+    builtins = builtin_acp_identities(workflow_inputs=workflow_inputs)
     attached = attach_acp_chains(
         resolution=resolution,
         chains=declared,

@@ -2,8 +2,7 @@
 
 Binds the resolution half of `SPECIFICATION/contracts.md` section
 "Factory-configurable ACP fallback priority": candidate zero comes through
-the existing workflow-default / `codex_models` / repository / per-dispatch
-layers FIRST, identity and fallbacks attach only afterwards, built-in
+the existing workflow-default / repository / per-dispatch layers FIRST, identity and fallbacks attach only afterwards, built-in
 identity survives only while the resolved adapter still matches the
 built-in, and the records this produces are structurally redacted.
 
@@ -46,9 +45,19 @@ _WORKFLOW_INPUTS: dict[str, str] = {
     "disposition_adapter": _CLAUDE,
 }
 
-_CODEX_PR_TIER: dict[str, Any] = {
-    "codex_models": {"pr": {"model": "gpt-5.5", "reasoning_effort": "high"}}
-}
+# The ratified replacement for the retired `codex_models.pr` tier these cases
+# used to configure: the STRUCTURED entry section "Built-in ACP node defaults"
+# prints as that tier's migration. It renders the identical bytes, which is
+# what makes the migration a copy rather than a re-specification.
+_CODEX_PR_ENTRY: dict[str, Any] = {"agent": "codex-acp", "model": "gpt-5.5", "effort": "high"}
+_CODEX_PR_PRIMARY: dict[str, Any] = {"acp_nodes": {"pr": dict(_CODEX_PR_ENTRY)}}
+
+# The UN-PINNED Codex base string, which is what the built-in identity table
+# keys its `codex` domain on now that no shorthand renders a pinned adapter.
+_CODEX_UNPINNED = (
+    'CODEX_CONFIG=\'{"approval_policy":"never","sandbox_mode":"danger-full-access"}\' '
+    "INITIAL_AGENT_MODE=agent-full-access /opt/livespec/codex-acp/bin/codex-acp"
+)
 
 _IDENTITY: dict[str, Any] = {
     "display_name": "Claude Haiku 4.5",
@@ -142,7 +151,7 @@ def _resolve(
     )
     assert not isinstance(resolution, str), resolution
     builtins = _module(name="_acp_builtin_candidates").builtin_acp_identities(
-        workflow_inputs=declared_inputs, block=block
+        workflow_inputs=declared_inputs
     )
     attached = _module(name="_acp_chain_resolution").attach_acp_chains(
         resolution=resolution,
@@ -168,50 +177,49 @@ def test_no_fallback_metadata_and_an_empty_array_render_identical_bytes() -> Non
 
     Three configurations must agree byte for byte: nothing configured,
     `fallbacks: []` on the unconfigured Claude `pr` default, and
-    `fallbacks: []` on an explicit `codex_models.pr` primary.
+    `fallbacks: []` on an explicit STRUCTURED `pr` primary.
     """
     baseline = _rendered(block={})
     assert baseline["pr"] == _CLAUDE
     assert _rendered(block={"acp_nodes": {"pr": {"fallbacks": []}}}) == baseline
-    codex_baseline = _rendered(block=_CODEX_PR_TIER)
+    codex_baseline = _rendered(block=_CODEX_PR_PRIMARY)
     assert codex_baseline["pr"] != baseline["pr"]
-    assert _rendered(block={**_CODEX_PR_TIER, "acp_nodes": {"pr": {"fallbacks": []}}}) == (
-        codex_baseline
+    assert (
+        _rendered(block={"acp_nodes": {"pr": {**_CODEX_PR_ENTRY, "fallbacks": []}}})
+        == codex_baseline
     )
 
 
-def test_a_fallback_only_table_does_not_shadow_an_explicit_codex_primary() -> None:
-    """Fallback-only fields attach AFTER the `codex_models` shorthand resolves.
+def test_a_fallback_only_table_leaves_the_workflow_default_standing() -> None:
+    """A table declaring no primary field contributes no adapter bytes.
 
-    The negative control is the whole point: without it, a table carrying
-    nothing but `fallbacks` replaces the shorthand overlay and the node
-    silently reverts to the workflow's Claude default -- a plausible,
-    green, wrong result.
+    THIS CASE LOST ITS SECOND LAYER AND KEPT ITS POINT. It used to assert that
+    a fallback-only table did not shadow a `codex_models` primary beneath it;
+    section "Built-in ACP node defaults" retired that key, so there is no
+    lower repository layer left for a table to shadow. The rule underneath
+    survives and is still worth a negative control: an entry that names none
+    of `command` / `env` / `args` must leave the WORKFLOW default standing
+    rather than blanking the node, while still attaching its chain.
     """
-    codex_baseline = _rendered(block=_CODEX_PR_TIER)
-    attached = _rendered(block={**_CODEX_PR_TIER, "acp_nodes": {"pr": {"fallbacks": [_FALLBACK]}}})
-    assert attached["pr"] == codex_baseline["pr"]
-    assert attached["pr"] != _CLAUDE
+    attached = _rendered(block={"acp_nodes": {"pr": {"fallbacks": [_FALLBACK]}}})
+
+    assert attached["pr"] == _CLAUDE
+    assert attached["pr"] != _FALLBACK["command"]
 
 
-def test_an_identity_only_table_does_not_restore_the_workflow_default() -> None:
+def test_an_identity_only_table_leaves_the_workflow_default_standing() -> None:
     """Identity attaches to the resolved primary; it never replaces one."""
-    codex_baseline = _rendered(block=_CODEX_PR_TIER)
-    identified = _rendered(block={**_CODEX_PR_TIER, "acp_nodes": {"pr": dict(_IDENTITY)}})
-    assert identified["pr"] == codex_baseline["pr"]
+    identified = _rendered(block={"acp_nodes": {"pr": dict(_IDENTITY)}})
+
+    assert identified["pr"] == _CLAUDE
 
 
-def test_a_table_that_sets_a_primary_field_still_wins_over_the_shorthand() -> None:
-    """The pre-existing `acp_nodes`-wins rule is preserved verbatim.
+def test_a_structured_primary_carrying_a_chain_still_renders_its_own_bytes() -> None:
+    """The primary resolves FIRST; attaching a chain does not disturb it."""
+    attached = _rendered(block={"acp_nodes": {"pr": {**_CODEX_PR_ENTRY, "fallbacks": [_FALLBACK]}}})
 
-    This is the `bd-ib-5j4b` boundary: v109 does not silently decide that
-    older legacy cross-provider merge issue, so a table SETTING a primary
-    field keeps replacing the shorthand overlay exactly as before.
-    """
-    replaced = _rendered(
-        block={**_CODEX_PR_TIER, "acp_nodes": {"pr": {"command": "uvx other-acp"}}}
-    )
-    assert replaced["pr"] == "uvx other-acp"
+    assert attached["pr"] == _rendered(block=_CODEX_PR_PRIMARY)["pr"]
+    assert attached["pr"] != _CLAUDE
 
 
 def test_built_in_identity_attaches_only_while_the_adapter_matches() -> None:
@@ -221,7 +229,7 @@ def test_built_in_identity_attaches_only_while_the_adapter_matches() -> None:
     _, attached = outcome
     assert attached.chains["pr"].primary.identity is not None
     assert attached.chains["pr"].primary.identity.availability_key == "anthropic"
-    codex = _resolve(block=_CODEX_PR_TIER)
+    codex = _resolve(block={"acp_nodes": {"pr": _CODEX_UNPINNED}})
     assert not isinstance(codex, str), codex
     assert codex[1].chains["pr"].primary.identity is not None
     assert codex[1].chains["pr"].primary.identity.availability_key == "codex"
@@ -371,12 +379,7 @@ def test_the_digests_are_stable_across_two_identical_resolutions() -> None:
 
 def test_the_redacted_record_carries_structure_and_digests_but_no_env_value() -> None:
     """Command, args, env KEY NAMES, layers and digests -- and nothing else."""
-    outcome = _resolve(
-        block={
-            **_CODEX_PR_TIER,
-            "acp_nodes": {"pr": {"fallbacks": [_FALLBACK]}},
-        }
-    )
+    outcome = _resolve(block={"acp_nodes": {"pr": {**_CODEX_PR_ENTRY, "fallbacks": [_FALLBACK]}}})
     assert not isinstance(outcome, str), outcome
     resolution, attached = outcome
     record = attached.chains["pr"].redacted
@@ -498,7 +501,7 @@ def test_a_non_table_acp_nodes_value_yields_one_refusal_not_two() -> None:
 def test_a_built_in_table_maps_rendered_bytes_onto_a_domain_and_a_stable_key() -> None:
     """Both provenances appear, and neither key is parsed out of command text."""
     identities = _module(name="_acp_builtin_candidates").builtin_acp_identities(
-        workflow_inputs=_WORKFLOW_INPUTS, block=_CODEX_PR_TIER
+        workflow_inputs=_WORKFLOW_INPUTS
     )
     domains = {identity.availability_key for identity in identities.values()}
     assert domains == {"anthropic", "codex"}
@@ -507,7 +510,7 @@ def test_a_built_in_table_maps_rendered_bytes_onto_a_domain_and_a_stable_key() -
     assert claude.candidate_key.startswith("builtin-anthropic-")
     assert "claude" not in claude.candidate_key
     repeat = _module(name="_acp_builtin_candidates").builtin_acp_identities(
-        workflow_inputs=_WORKFLOW_INPUTS, block=_CODEX_PR_TIER
+        workflow_inputs=_WORKFLOW_INPUTS
     )
     assert repeat[_CLAUDE].candidate_key == claude.candidate_key
 

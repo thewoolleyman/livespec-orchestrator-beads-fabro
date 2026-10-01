@@ -1,10 +1,9 @@
 """The per-node ACP adapter VALUE, and the two ways configuration spells it.
 
-Split out of `_config` for the same reason `_codex_model_tiers` and
-`_node_timeouts` are: the policy -- what a node's adapter IS, how a
-configured value is spelled, and how the rendered string is ordered --
-belongs next to its own resolver rather than inside the general
-connection-resolution module.
+Split out of `_config` for the same reason `_node_timeouts` is: the policy
+-- what a node's adapter IS, how a configured value is spelled, and how the
+rendered string is ordered -- belongs next to its own resolver rather than
+inside the general connection-resolution module.
 
 WHY AN ADAPTER IS A TRIPLE AND NOT A PROVIDER ENUM. A node's adapter is
 `(command, env, args)`, and model and reasoning effort are NOT fields of
@@ -32,11 +31,12 @@ whole adapter STRING or a TABLE of the three fields:
 In BOTH spellings `env` MERGES key by key with the more specific layer
 winning. That is what lets `--acp-node implement=ANTHROPIC_MODEL=... <cmd>`
 move one variable while the base URL and auth token a repository
-configured for that node survive (Scenario 87). The one exception is
-internal: the `dispatcher.codex_models` shorthand expands into a whole
-rendered Codex command line and REPLACES the environment, because merging
-the workflow default's `ANTHROPIC_MODEL` onto a Codex adapter would pin an
-Anthropic model on a command that is not Anthropic's.
+configured for that node survive (Scenario 87). The one exception is a
+COMPLETE rendered adapter -- a structured entry resolved through the agent
+and model catalogs, or a whole-string override -- which REPLACES the
+environment, because merging the workflow default's `ANTHROPIC_MODEL` into a
+Codex command line would pin an Anthropic model on a command that is not
+Anthropic's.
 """
 
 from __future__ import annotations
@@ -111,12 +111,6 @@ NODE_INPUT_CANDIDATES: Mapping[str, tuple[str, ...]] = {
 # ends the env prefix and begins the command.
 _ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
-# The three fields a table spelling may set on the PRIMARY adapter. Presence
-# of the KEY is what counts, not the value it carries: `env: {}` is a
-# deliberate (if inert) statement about the primary, while an entry that
-# never mentions `env` at all has made none.
-_PRIMARY_FIELDS: tuple[str, ...] = ("command", "env", "args")
-
 
 @dataclass(frozen=True, kw_only=True)
 class AcpAdapter:
@@ -137,33 +131,28 @@ class AcpNodeOverlay:
     the module docstring: a whole-string layer sets it, a table layer does
     not.
 
-    `from_shorthand` marks an overlay the `dispatcher.codex_models`
-    expansion produced rather than one an operator wrote. It changes ONE
-    thing: when the workflow declares no adapter input for that node, the
-    overlay is DROPPED instead of refusing the dispatch. The distinction
-    matters because that expansion is unconditional -- the `pr` tier
-    expands even for a target that configured nothing -- so treating it as
-    a request would make every workflow that parameterizes no adapter
-    undispatchable over a key nobody set.
+    THERE IS NO PROVENANCE OR PRIMARY-DECLARATION FLAG. A `declares_primary`
+    flag recorded whether a layer's spelling mentioned any of `command` /
+    `env` / `args`, and a shorthand flag recorded which overlays the expansion
+    produced. Both existed only to arbitrate between the retired
+    `dispatcher.codex_models` expansion and an `acp_nodes` entry for the same
+    node, and with one key left there is nothing to arbitrate: an entry naming
+    no primary field simply contributes none, so the less specific layer's
+    value stands by the ordinary per-field merge rather than by a rule.
 
-    `declares_primary` records whether the layer's own spelling mentioned
-    ANY of `command` / `env` / `args`. It is `False` only for a TABLE that
-    names none of them -- an entry carrying nothing but fallback-priority
-    metadata. `SPECIFICATION/contracts.md` section "Factory-configurable
-    ACP fallback priority" makes such an entry attach AFTER the
-    `codex_models` shorthand resolves rather than shadowing it, and the
-    flag is what lets `_acp_node_repository` tell the two apart: an entry
-    that sets a primary field keeps the pre-existing `acp_nodes`-wins rule
-    verbatim, and one that sets none of them no longer replaces the
-    primary the shorthand already resolved.
+    THE SHORTHAND FLAG'S ABSENCE IS LOAD-BEARING IN ONE FURTHER PLACE. It
+    also exempted an expanded overlay from the unreachable-node refusal,
+    because the expansion was UNCONDITIONAL -- the `pr` tier expanded even for
+    a target that configured nothing -- so without the exemption a workflow
+    parameterizing no adapter would have been undispatchable over a key nobody
+    set. Every overlay reaching here is now one an operator wrote, so all of
+    them answer to that refusal alike.
     """
 
     command: str | None = None
     env: Mapping[str, str] = field(default_factory=dict)
     args: tuple[str, ...] | None = None
     env_replaces: bool = False
-    from_shorthand: bool = False
-    declares_primary: bool = True
 
 
 def parse_adapter_string(*, text: str) -> AcpAdapter:
@@ -224,9 +213,7 @@ def render_adapter(*, adapter: AcpAdapter) -> str:
     return " ".join([*pairs, adapter.command, *adapter.args])
 
 
-def overlay_from_string(
-    *, text: str, replaces_env: bool = False, from_shorthand: bool = False
-) -> AcpNodeOverlay:
+def overlay_from_string(*, text: str, replaces_env: bool = False) -> AcpNodeOverlay:
     """A COMPLETE-adapter overlay from one adapter command line.
 
     `command` and `args` are always set -- the whole command line lives in
@@ -239,12 +226,11 @@ def overlay_from_string(
     restate the whole environment on the command line
     (`SPECIFICATION/scenarios.md` Scenario 87).
 
-    `replaces_env` is the ONE exception and it is not user-facing: the
-    `dispatcher.codex_models` shorthand expands into a whole rendered Codex
-    command line, and merging the workflow default's `ANTHROPIC_MODEL` onto
-    a Codex adapter would prefix an Anthropic model pin onto a command that
-    is not Anthropic's. That expansion replaces the environment for the
-    same reason the pre-existing whole-input override did.
+    `replaces_env` is the ONE exception: a COMPLETE rendered adapter -- a
+    structured entry resolved through the catalogs, or a whole-input
+    override -- carries its own provider's environment, and merging the
+    workflow default's `ANTHROPIC_MODEL` into it would prefix an Anthropic
+    model pin onto a command that is not Anthropic's.
     """
     adapter = parse_adapter_string(text=text)
     return AcpNodeOverlay(
@@ -252,7 +238,6 @@ def overlay_from_string(
         env=adapter.env,
         args=(),
         env_replaces=replaces_env,
-        from_shorthand=from_shorthand,
     )
 
 
@@ -273,12 +258,7 @@ def overlay_from_table(*, entry: Mapping[str, Any], key: str) -> AcpNodeOverlay 
     env = _string_map(value=entry.get("env"))
     if env is None:
         return f"{key}.env must be a table of string to string; got {entry.get('env')!r}"
-    return AcpNodeOverlay(
-        command=command_raw,
-        env=env,
-        args=args,
-        declares_primary=any(name in entry for name in _PRIMARY_FIELDS),
-    )
+    return AcpNodeOverlay(command=command_raw, env=env, args=args)
 
 
 def resolve_node_inputs(*, declared: Mapping[str, str]) -> Mapping[str, str]:
