@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
@@ -20,6 +21,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
     cost_gate_after_verdict,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_wrapper import (
+    credential_wrapper_text,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
@@ -47,6 +51,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_post_verdict import (
     reflector_oob_after_verdict,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credentials import (
+    proof_credentials_refusal_for_items,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (
     proof_assets_refusal_for_items,
@@ -180,6 +187,13 @@ def _pre_dispatch_wall_exit(
     Its exit code is the generic precondition one rather than a dedicated code: the
     fault is a missing repository-level resource, which is the same class every
     other pre-dispatch precondition reports.
+
+    The proof-CREDENTIAL gate closes the sequence (S8 / bd-ib-77vny7), in the same
+    position and for the same reason: an unusable `dispatcher.proof_credentials`
+    declaration must refuse before a run exists, because the overlay this dispatch
+    is about to materialize would otherwise project it. It reads the environment
+    here rather than resolving one of its own, so the values it grades are the ones
+    the overlay will actually read.
     """
     ungradeable = pre_dispatch_criteria_refusal(
         items=[target], cwd=repo, workflow_name=args.workflow_name
@@ -192,6 +206,16 @@ def _pre_dispatch_wall_exit(
     )
     if proof_refusal is not None:
         _ = write_stderr(text=proof_refusal)
+        return EXIT_PRECONDITION_ERROR
+    credentials_refusal = proof_credentials_refusal_for_items(
+        repo=repo,
+        environ=os.environ,
+        wrapper_text=credential_wrapper_text(repo=repo),
+        work_item_ids=[target.id],
+        journal=journal,
+    )
+    if credentials_refusal is not None:
+        _ = write_stderr(text=credentials_refusal)
         return EXIT_PRECONDITION_ERROR
     return None
 

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,6 +23,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
     cost_gate_after_verdict,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_wrapper import (
+    credential_wrapper_text,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
@@ -47,6 +52,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_post_verdict import (
     reflector_oob_after_verdict,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credentials import (
+    proof_credentials_refusal_for_items,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (
     proof_assets_refusal_for_items,
@@ -78,6 +86,62 @@ class _LoopStart:
     janitor: tuple[str, ...] | None
     items: list[WorkItem]
     journal: JournalFile
+
+
+def _pre_dispatch_wall_exit(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    selected_candidates: Sequence[WorkItem],
+    journal: JournalFile,
+) -> int | None:
+    """The drain's three pre-dispatch walls, as ONE decision: an exit code, or None.
+
+    The same composition `_dispatcher_run_commands` uses for the single-dispatch
+    path, and for the same two reasons. The three walls share one POSITION and one
+    guarantee -- each runs after selection and BEFORE admission, so a refused
+    candidate is never claimed and no factory run exists to reap -- and reading
+    them as one gate keeps the drain's own return count honest, rather than
+    suppressing a rule that exists to notice the entry point growing another exit.
+
+    It sits after the `--dry-run` return deliberately: a dry run creates no run, so
+    it stays a reporting surface that shows the operator exactly which candidate
+    needs criteria.
+
+    The criteria wall is first and is variant-aware (it exempts a groom-kind
+    dispatch, whose acceptance is the human approval of the draft). The
+    proof-ASSETS gate follows (S5 / bd-ib-b4u6b7): an item carrying a
+    `factory_captured` assertion needs this repository's standing proof-assets
+    prerelease before its capture stage can store an image. The proof-CREDENTIAL
+    gate closes it (S8 / bd-ib-77vny7): an unusable `dispatcher.proof_credentials`
+    declaration must refuse before a run exists, because the overlay each of these
+    candidates is about to materialize would otherwise project it. That declaration
+    is repository-level, so one refusal covers the whole wave, while the journal
+    records are written per candidate.
+    """
+    ungradeable = pre_dispatch_criteria_refusal(
+        items=selected_candidates, cwd=repo, workflow_name=args.workflow_name
+    )
+    if ungradeable is not None:
+        _ = write_stderr(text=ungradeable)
+        return EXIT_UNGRADEABLE_CRITERIA
+    proof_refusal = proof_assets_refusal_for_items(
+        runner=ShellCommandRunner(), repo=repo, items=selected_candidates, journal=journal
+    )
+    if proof_refusal is not None:
+        _ = write_stderr(text=proof_refusal)
+        return EXIT_PRECONDITION_ERROR
+    credentials_refusal = proof_credentials_refusal_for_items(
+        repo=repo,
+        environ=os.environ,
+        wrapper_text=credential_wrapper_text(repo=repo),
+        work_item_ids=[item.id for item in selected_candidates],
+        journal=journal,
+    )
+    if credentials_refusal is not None:
+        _ = write_stderr(text=credentials_refusal)
+        return EXIT_PRECONDITION_ERROR
+    return None
 
 
 def run_loop_command(*, args: argparse.Namespace) -> int:
@@ -116,26 +180,11 @@ def run_loop_command(*, args: argparse.Namespace) -> int:
         )
         emit_outcomes(outcomes=picked, as_json=args.as_json)
         return 0
-    # The pre-dispatch wall guards the DRAIN too, and it sits after the dry-run
-    # return deliberately: `--dry-run` creates no run, so it stays a reporting
-    # surface that shows the operator exactly which candidate needs criteria.
-    ungradeable = pre_dispatch_criteria_refusal(
-        items=selected_candidates, cwd=repo, workflow_name=args.workflow_name
+    wall_exit = _pre_dispatch_wall_exit(
+        args=args, repo=repo, selected_candidates=selected_candidates, journal=journal
     )
-    if ungradeable is not None:
-        _ = write_stderr(text=ungradeable)
-        return EXIT_UNGRADEABLE_CRITERIA
-    # The proof-assets gate, beside the criteria wall and for the same positional
-    # reason: "before any run exists". An item carrying a `factory_captured`
-    # assertion needs this repository's standing proof-assets prerelease to exist
-    # before its capture stage can store an image, so the Dispatcher creates it
-    # here and refuses naming the tag when it still does not (S5 / bd-ib-b4u6b7).
-    proof_refusal = proof_assets_refusal_for_items(
-        runner=ShellCommandRunner(), repo=repo, items=selected_candidates, journal=journal
-    )
-    if proof_refusal is not None:
-        _ = write_stderr(text=proof_refusal)
-        return EXIT_PRECONDITION_ERROR
+    if wall_exit is not None:
+        return wall_exit
     outcomes = dispatch_loop_wave(
         args=args,
         repo=repo,

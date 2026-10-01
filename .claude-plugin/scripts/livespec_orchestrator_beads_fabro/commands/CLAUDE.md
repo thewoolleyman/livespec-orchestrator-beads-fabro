@@ -134,6 +134,29 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   advantage); `unaged_ready_order()` is that path for a caller holding no
   project root. `rebalance_ranks` deliberately composes NEITHER input — stored
   `rank` keys must not absorb a transient dwell.
+- `_dispatcher_credential_wrapper.py` — the dispatch target's committed
+  `credential_wrapper` declaration, as read. Split out of
+  `_dispatcher_credentials` by cohesion once the proof-credential gate became
+  its third caller: that module PROJECTS credentials, while this one answers
+  the narrower configuration question of what argv prefix the target declares
+  as the thing that injects its credential environment. Every arm fails soft
+  onto "not declared" rather than raising, because every consumer is building a
+  DIAGNOSTIC naming the wrapper to fix and an exception there would replace an
+  actionable refusal with a traceback about the file it was about to name.
+- `_dispatcher_proof_credentials.py` — the repository-declared proof
+  credentials of `SPECIFICATION/contracts.md`'s proof-credential-projection
+  clause: the `dispatcher.proof_credentials` parse, the pre-dispatch gate the
+  two dispatch paths call, the overlay env lines the sandbox reads, and the
+  per-declaration journal record naming whether the credential was minted or
+  copied. Two orderings inside it are load-bearing and are asserted by its
+  tests. The WITHHELD grade runs before the credential-shaped marker scan,
+  because every withheld name is itself credential-shaped and a
+  value-shape-first ladder would make the withheld refusal unreachable; and a
+  name the Dispatcher MINTS per run is exempt from the `name` arm of that scan
+  and from the absent-value grade, because it is credential-NAMED by
+  construction and its value is one the Dispatcher itself supplies. The
+  projection is fail-closed in both arms: a declaration the parse refuses, or a
+  name whose value is absent, renders NO overlay line.
 - `_dispatcher_integration_schema.py` / `_dispatcher_integration_field.py` /
   `_dispatcher_integration_defaults.py` /
   `_dispatcher_integration_declaration.py` /
