@@ -152,16 +152,19 @@ def test_a_workflow_with_no_run_inputs_table_declares_nothing() -> None:
     assert workflow_adapter_inputs(committed_text="_version = 1\n") == {}
 
 
-def test_prepare_refuses_a_config_options_chain_the_factory_cannot_configure(
+def test_prepare_refuses_a_new_grammar_chain_the_factory_cannot_honour(
     tmp_path: Path,
 ) -> None:
     """The capability gate is REACHED from the dispatch path, not merely owned.
 
-    A structured entry whose agent takes its model in-protocol makes the chain
-    carry `config_options`, and this dispatch pins no factory -- so the
-    capability cannot be established and the gate fails closed. Asserting the
-    gate's own function elsewhere proves it can produce this message; only
-    driving `prepare_acp_nodes` proves a dispatch ever asks it.
+    A structured entry is new-grammar-enabled by definition, and this dispatch
+    pins no factory -- so no capability can be established and the gate fails
+    closed on its BASE arm, `acp.fallback_chain.v1`. That is the string an
+    unpinned dispatch owes: the narrower `config_options` capability cannot
+    arrive on an engine lacking the base one, so naming it here would send an
+    operator after the wrong deployment. Which arm fires for which advertised
+    set is isolated in the gate's own tests; only driving `prepare_acp_nodes`
+    proves a dispatch ever asks the gate at all.
 
     The journal is asserted EMPTY of the ACP record for the same reason: a
     refusal that still journaled a resolved node set would read, afterwards,
@@ -188,7 +191,7 @@ def test_prepare_refuses_a_config_options_chain_the_factory_cannot_configure(
     )
 
     assert isinstance(refusal, str), refusal
-    assert "acp.candidate_config_options.v1" in refusal
+    assert "acp.fallback_chain.v1" in refusal
     assert "implement" in refusal
     assert [entry for entry in journal.records if entry["stage"] == ACP_NODES_STAGE] == []
 

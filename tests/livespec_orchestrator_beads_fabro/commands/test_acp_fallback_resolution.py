@@ -25,11 +25,16 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _COMMANDS = (
     _REPO_ROOT / ".claude-plugin" / "scripts" / "livespec_orchestrator_beads_fabro" / "commands"
 )
 _PACKAGE = "livespec_orchestrator_beads_fabro.commands"
+
+# The base ACP new-grammar capability a deployed factory advertises.
+_BASE_CAPABILITY = "acp.fallback_chain.v1"
 
 _CLAUDE = "npx -y @agentclientprotocol/claude-agent-acp"
 _IMPLEMENTER_DEFAULT = f"ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high {_CLAUDE}"
@@ -403,9 +408,30 @@ def test_only_a_new_grammar_enabled_node_is_redacted() -> None:
 
 
 def _prepare(
-    *, tmp_path: Path, acp_nodes: dict[str, Any], overrides: tuple[str, ...] = ()
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    acp_nodes: dict[str, Any],
+    overrides: tuple[str, ...] = (),
 ) -> tuple[Any, _RecordingJournal]:
-    """Drive the real dispatch seam over a written-out target repository."""
+    """Drive the real dispatch seam over a written-out target repository.
+
+    The factory capability reader is replaced with one advertising the base
+    `acp.fallback_chain.v1` string, which is the condition a real dispatch to a
+    deployed factory meets. Every case below is about the LAYER RESOLUTION
+    downstream of the capability gate, and the seam's unpinned default reads as
+    "capability unestablished" -- which fails that gate closed before any of it
+    runs. The gate's own arms, that fail-closed posture included, are isolated
+    in `test_acp_capability_gate`.
+    """
+    monkeypatch.setattr(
+        _module(name="_dispatcher_acp_nodes"),
+        "factory_capability_reader",
+        # `**_` rather than a named `factory`: the stand-in answers the same for
+        # every factory, so naming the keyword it must accept would leave it
+        # provably unread.
+        lambda **_: lambda: frozenset({_BASE_CAPABILITY}),
+    )
     committed = tmp_path / "workflow.toml"
     _ = committed.write_text(_WORKFLOW_TOML, encoding="utf-8")
     repo = tmp_path / "repo"
@@ -432,12 +458,13 @@ def _prepare(
 
 
 def test_the_journal_substitutes_the_structural_record_for_enabled_nodes(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The whole dispatch seam, end to end, writing one journal record."""
     seam = _module(name="_dispatcher_acp_nodes")
     resolution, journal = _prepare(
         tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
         acp_nodes={
             "pr": {"fallbacks": [_FALLBACK]},
             "review": {"command": "uvx review-acp"},
@@ -454,17 +481,19 @@ def test_the_journal_substitutes_the_structural_record_for_enabled_nodes(
 
 
 def test_the_dispatch_seam_reports_a_chain_refusal_before_journalling(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A malformed chain refuses the dispatch and writes no adapter record."""
-    refusal, journal = _prepare(tmp_path=tmp_path, acp_nodes={"pr": {**_IDENTITY, "bogus": 1}})
+    refusal, journal = _prepare(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, acp_nodes={"pr": {**_IDENTITY, "bogus": 1}}
+    )
     assert isinstance(refusal, str)
     assert "bogus" in refusal
     assert journal.records == []
 
 
 def test_the_dispatch_seam_reports_an_attachment_refusal_before_journalling(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A refusal raised AFTER the layers resolve still precedes the record.
 
@@ -475,6 +504,7 @@ def test_the_dispatch_seam_reports_an_attachment_refusal_before_journalling(
     """
     refusal, journal = _prepare(
         tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
         acp_nodes={"pr": {"fallbacks": [_FALLBACK]}},
         overrides=("pr=uvx other-acp",),
     )

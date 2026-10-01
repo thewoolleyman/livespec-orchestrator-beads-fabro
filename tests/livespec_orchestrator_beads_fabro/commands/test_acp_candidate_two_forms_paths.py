@@ -30,7 +30,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 _PACKAGE = "livespec_orchestrator_beads_fabro.commands"
+
+# The base ACP new-grammar capability a deployed factory advertises.
+_BASE_CAPABILITY = "acp.fallback_chain.v1"
 _PREFIX = "dispatcher.acp_nodes"
 
 _OPUS_ENTRY: dict[str, Any] = {
@@ -241,9 +246,26 @@ def test_a_legacy_manual_node_entry_still_resolves_to_the_empty_chain() -> None:
     assert chains["implement"].enabled is False
 
 
-def test_the_dispatch_seam_refuses_an_unparseable_catalog_before_any_run(tmp_path: Path) -> None:
-    """`prepare_acp_nodes` runs before a run exists, so it refuses."""
+def test_the_dispatch_seam_refuses_an_unparseable_catalog_before_any_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`prepare_acp_nodes` runs before a run exists, so it refuses.
+
+    The capability reader is replaced with one advertising the base
+    `acp.fallback_chain.v1` string so the healthy CONTROL below resolves: a
+    structured entry is new-grammar-enabled, and this seam's unpinned default
+    reads as "capability unestablished", which the capability gate fails closed.
+    The refusal under test precedes that gate, so the stand-in cannot supply it.
+    """
     seam = _module(name="_dispatcher_acp_nodes")
+    monkeypatch.setattr(
+        seam,
+        "factory_capability_reader",
+        # `**_` rather than a named `factory`: the stand-in answers the same for
+        # every factory, so naming the keyword it must accept would leave it
+        # provably unread.
+        lambda **_: lambda: frozenset({_BASE_CAPABILITY}),
+    )
     repo = _repo_with(dispatcher=_BROKEN_AGENT_CATALOG, tmp_path=tmp_path)
     committed = tmp_path / "workflow.toml"
     _ = committed.write_text('[run.inputs]\nimplement_adapter = "npx -y acp"\n', encoding="utf-8")
