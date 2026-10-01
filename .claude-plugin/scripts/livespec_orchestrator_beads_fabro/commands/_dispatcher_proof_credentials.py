@@ -27,11 +27,13 @@ this module reuses that scan rather than growing a second vocabulary.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_secrets import secret_marker
+from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
 
 __all__: list[str] = [
     "COPIED_PROVISIONING",
@@ -39,13 +41,16 @@ __all__: list[str] = [
     "MINTED_PROVISIONING",
     "PROOF_CREDENTIALS_KEY",
     "PROOF_CREDENTIAL_CAPABILITIES",
+    "PROOF_CREDENTIAL_JOURNAL_STAGE",
     "READ_ONLY_CAPABILITY",
     "WITHHELD_DISPATCH_CREDENTIALS",
     "ProofCredential",
     "parse_proof_credentials",
+    "proof_credential_journal_record",
     "proof_credential_provisioning",
     "proof_credentials_env_lines",
     "proof_credentials_refusal",
+    "proof_credentials_refusal_for_items",
 ]
 
 PROOF_CREDENTIALS_KEY = "proof_credentials"
@@ -102,6 +107,9 @@ COPIED_PROVISIONING = "copied"
 # duplicate key would make the whole overlay unparseable, turning one
 # repository's declaration into a dispatch-wide failure.
 MINTED_PER_RUN_CREDENTIALS: tuple[str, ...] = ("GITHUB_TOKEN",)
+
+# The dispatch-journal stage the per-declaration record is written under.
+PROOF_CREDENTIAL_JOURNAL_STAGE = "proof-credential"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -268,6 +276,16 @@ def proof_credentials_refusal(
     parsed = parse_proof_credentials(block=block)
     if isinstance(parsed, str):
         return parsed
+    return _environment_refusal(parsed=parsed, environ=environ, wrapper_text=wrapper_text)
+
+
+def _environment_refusal(
+    *,
+    parsed: tuple[ProofCredential, ...],
+    environ: Mapping[str, str],
+    wrapper_text: str,
+) -> str | None:
+    """The first declared name whose value the Dispatcher's environment lacks."""
     for credential in parsed:
         if proof_credential_provisioning(credential=credential) == MINTED_PROVISIONING:
             continue
@@ -313,3 +331,65 @@ def proof_credentials_env_lines(*, block: Mapping[str, object], environ: Mapping
             continue
         rendered.append(f"{credential.name} = {json.dumps(value)}\n")
     return "".join(rendered)
+
+
+def proof_credential_journal_record(*, credential: ProofCredential) -> dict[str, object]:
+    """The journal body for one declaration: names and facts about it, never its value.
+
+    `provisioning` is DERIVED rather than written, so the record reports what the
+    Dispatcher actually did for this name rather than a constant that would stay
+    accurate only by coincidence once a second minting route exists.
+    """
+    return {
+        "name": credential.name,
+        "capability": credential.capability,
+        "provisioning": proof_credential_provisioning(credential=credential),
+    }
+
+
+def proof_credentials_refusal_for_items(
+    *,
+    repo: Path,
+    environ: Mapping[str, str],
+    wrapper_text: str,
+    work_item_ids: Sequence[str],
+    journal: object = None,
+) -> str | None:
+    """The pre-dispatch gate over a whole selection, journaling what it admits.
+
+    The declaration is a REPOSITORY-level fact, so the refusal is computed once
+    and returned once: enumerating it per candidate would read as N distinct
+    faults when there is one. The journal records, by contrast, ARE per item,
+    because each dispatched item gets its own run-configuration overlay and
+    therefore its own projection — a reader asking what one item's dispatch
+    projected must not be answered with a sibling's.
+
+    A refusal writes NO projection record. Nothing was projected, and a journal
+    asserting otherwise would describe a credential reaching a sandbox that was
+    never launched; the refusal itself is journaled by the caller that reports it.
+
+    `journal` is optional and is reached through its own `append`, so the gate is
+    callable from a hermetic test and from a caller holding none, without a second
+    serializer.
+    """
+    parsed = parse_proof_credentials(block=dispatcher_block(cwd=repo))
+    if isinstance(parsed, str):
+        return parsed
+    environment_refusal = _environment_refusal(
+        parsed=parsed, environ=environ, wrapper_text=wrapper_text
+    )
+    if environment_refusal is not None:
+        return environment_refusal
+    append = getattr(journal, "append", None)
+    if append is None:
+        return None
+    for work_item_id in work_item_ids:
+        for credential in parsed:
+            append(
+                record={
+                    "stage": PROOF_CREDENTIAL_JOURNAL_STAGE,
+                    "work_item_id": work_item_id,
+                    **proof_credential_journal_record(credential=credential),
+                }
+            )
+    return None
