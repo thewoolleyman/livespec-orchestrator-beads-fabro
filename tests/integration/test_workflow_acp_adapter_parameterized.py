@@ -26,6 +26,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._acp_catalogs import builtin_catalogs
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import workflow_layer
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _WORKFLOW_DIR = _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item"
 _WORKFLOW_DOT = _WORKFLOW_DIR / "workflow.fabro"
@@ -98,16 +101,28 @@ def test_no_node_hardcodes_the_claude_adapter_command() -> None:
     assert f'acp.command="{_CLAUDE_ADAPTER}"' not in dot
 
 
+def _rendered_defaults() -> dict[str, str]:
+    """The committed adapter inputs as a dispatch resolves them.
+
+    Read through `workflow_layer` rather than scanned out of the text: the
+    built-in defaults are STRUCTURED entries since contracts.md section
+    "Built-in ACP node defaults" moved them off class-shaped strings, so the
+    declared value is a catalog reference and the adapter bytes are what the
+    render produces. A regex over the raw TOML would grade the reference.
+    """
+    rendered = workflow_layer(committed=_WORKFLOW_TOML, catalogs=builtin_catalogs())
+    assert not isinstance(rendered, str), rendered
+    return dict(rendered)
+
+
 def test_toml_declares_every_implementer_adapter_defaulting_to_claude_opus_5() -> None:
     """Each implementer node declares its own input, all three on the same default."""
     toml = _WORKFLOW_TOML.read_text(encoding="utf-8")
     assert "[run.inputs]" in toml
+    rendered = _rendered_defaults()
+
     for node in _IMPLEMENTER_NODES:
-        assert re.search(
-            r"^\s*" + node + r'_adapter\s*=\s*"' + re.escape(_CLAUDE_OPUS_5_ADAPTER) + r'"',
-            toml,
-            re.MULTILINE,
-        ), node
+        assert rendered[f"{node}_adapter"] == _CLAUDE_OPUS_5_ADAPTER, node
 
 
 def test_toml_declares_pr_adapter_defaulting_to_claude_haiku() -> None:
@@ -116,11 +131,7 @@ def test_toml_declares_pr_adapter_defaulting_to_claude_haiku() -> None:
     a bare `fabro run` and an unconfigured dispatch both render Haiku rather than
     a Codex model. `model`/`reasoning_effort` are API-only attributes fabro
     rejects on acp nodes, so the model rides ANTHROPIC_MODEL on the command."""
-    toml = _WORKFLOW_TOML.read_text(encoding="utf-8")
-    pr_line = re.search(r'^\s*pr_adapter\s*=\s*"(.+)"', toml, re.MULTILINE)
-    assert pr_line is not None
-    value = pr_line.group(1)
-    assert value == (
+    assert _rendered_defaults()["pr_adapter"] == (
         "ANTHROPIC_MODEL=claude-haiku-4-5 CLAUDE_CODE_EFFORT_LEVEL=high " f"{_CLAUDE_ADAPTER}"
     )
 

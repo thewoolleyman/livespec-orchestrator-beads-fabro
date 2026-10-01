@@ -116,15 +116,40 @@ MERGE_METHOD_FLAGS: Mapping[str, str] = {
 # section-scoped regex is sufficient and dependency-free -- the same reasoning
 # `_dispatcher_overlay._toml_section_string` records.
 _RUN_INPUTS_RE = re.compile(r"(?ms)^\[run\.inputs\][ \t]*\r?$(?P<body>.*?)(?=^\[|\Z)")
-# A declaration's default is EITHER a quoted string or a bare TOML scalar. The
-# bare arm matters because two of the three per-item policy inputs are not
+# A declaration's default is a BASIC string, a LITERAL string, or a bare TOML
+# scalar, and all three arms earn their place.
+#
+# The bare arm matters because two of the three per-item policy inputs are not
 # strings -- the review-fix visit cap is an integer and the merge hold is a
 # boolean -- and a string-only scan cannot see either. That is the "instrument
 # incapable of returning a hit" failure: the seam-equivalence check's obligation
 # to classify EVERY declared input would read clean over inputs it could never
 # have found, and a variant that dropped one of them would pass vacuously.
+#
+# The LITERAL arm (`'...'`) matters for the same reason, one spelling later. A
+# structured ACP adapter default is a JSON object, so it carries double quotes of
+# its own and the basic arm -- which cannot hold one -- is unavailable to it. TOML
+# literal strings take no escapes, so the JSON reads exactly as written. WITHOUT
+# this arm such a value does not go unseen, which would at least be loud: it falls
+# through to the BARE arm and is reported WITH ITS SURROUNDING QUOTES, a plausible
+# string that no consumer can parse and that names no fault.
+# Written VERBOSE and as ONE literal deliberately: the three arms need both
+# quote characters, so neither a single-quoted nor a double-quoted one-line
+# literal can hold them without escaping, and splitting it would be an implicit
+# string concatenation (which pyright strict forbids) or an explicit one (which
+# ruff's ISC003 forbids). VERBOSE ignores whitespace OUTSIDE character classes,
+# so every `[ \t]` and `[^#\r\n]` below is preserved exactly as written.
 _INPUT_ASSIGNMENT_RE = re.compile(
-    r'(?m)^(?P<key>\w+)[ \t]*=[ \t]*(?:"(?P<quoted>[^"]*)"|(?P<bare>[^\s"#][^#\r\n]*?))[ \t]*\r?$'
+    r"""
+    ^(?P<key>\w+)[ \t]*=[ \t]*
+    (?:
+        "(?P<quoted>[^"]*)"
+      | '(?P<literal>[^']*)'
+      | (?P<bare>[^\s"'#][^#\r\n]*?)
+    )
+    [ \t]*\r?$
+    """,
+    re.MULTILINE | re.VERBOSE,
 )
 
 
@@ -248,9 +273,18 @@ def workflow_declared_inputs(*, committed_text: str) -> Mapping[str, str]:
 
 
 def _declared_default(*, match: re.Match[str]) -> str:
-    """One declaration's default, whichever of the two value arms matched."""
+    """One declaration's default, whichever of the three value arms matched.
+
+    The two string arms are checked before the bare one because only one arm
+    can match at a time: an unmatched arm is `None`, and a string default is
+    legitimately the EMPTY string, so the arms are told apart by `is None`
+    rather than by truthiness.
+    """
     quoted = match.group("quoted")
-    return match.group("bare") if quoted is None else quoted
+    if quoted is not None:
+        return quoted
+    literal = match.group("literal")
+    return match.group("bare") if literal is None else literal
 
 
 def integration_contract_journal_record(

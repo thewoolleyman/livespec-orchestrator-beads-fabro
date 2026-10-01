@@ -22,10 +22,11 @@ import shlex
 from pathlib import Path
 from typing import Any
 
+from livespec_orchestrator_beads_fabro.commands._acp_catalogs import builtin_catalogs
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import resolve_acp_nodes
 from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import (
-    workflow_adapter_inputs,
+    workflow_layer,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     dispatch_fabro_run_inputs,
@@ -99,10 +100,14 @@ def _rendered_adapters(*, repo: Path) -> dict[str, str]:
     """
     overlays = resolve_acp_node_overlays(cwd=repo)
     assert not isinstance(overlays, str), overlays
+    # Through `workflow_layer`, which is what a dispatch uses: the committed
+    # defaults are STRUCTURED entries, so a raw `workflow_adapter_inputs` read
+    # would hand the merge JSON text and every assertion below would grade the
+    # wrong bytes.
+    workflow_inputs = workflow_layer(committed=_WORKFLOW_TOML, catalogs=builtin_catalogs())
+    assert not isinstance(workflow_inputs, str), workflow_inputs
     resolution = resolve_acp_nodes(
-        workflow_inputs=workflow_adapter_inputs(
-            committed_text=_WORKFLOW_TOML.read_text(encoding="utf-8")
-        ),
+        workflow_inputs=workflow_inputs,
         repository=overlays,
         dispatch={},
     )

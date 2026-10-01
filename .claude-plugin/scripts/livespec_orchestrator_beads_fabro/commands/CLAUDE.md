@@ -229,7 +229,17 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   integration contract does: a second read of the same file cannot be proven to
   agree with the first, and the disagreement would be invisible because both
   reads produce a well-formed catalog.
-- Two small modules carry rules that are ABOUT the structured form without
+- `_acp_workflow_defaults` renders the WORKFLOW layer's own structured entries
+  into the manual form, and it runs as the inputs are READ
+  (`_dispatcher_acp_nodes.workflow_layer`) rather than at the merge — the
+  workflow layer is the least specific of the three, so rendering it at the
+  merge would be rendering it in the middle of one. Two consequences an editor
+  must not undo. The built-in identity table keys on EXACT RENDERED BYTES, so
+  raw structured JSON reaching it would key on text no resolved node can equal
+  and every built-in identity would silently stop attaching. And the closed
+  grammar binds here too: the workflow layer is the hardest one to notice a
+  typo in, because nothing in a repository mentions it.
+- Three small modules carry rules that are ABOUT the structured form without
   belonging to any one stage of it, which is why each is its own file rather
   than a branch inside the renderer:
   - `_acp_codex_pin` names the agents whose candidates MUST carry both `model`

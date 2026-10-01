@@ -1052,6 +1052,37 @@ def test_an_enabled_repository_resolves_a_viable_two_candidate_chain(tmp_path: P
     assert _keys(preflight=verdict.node_preflight(node="implement")) == ["primary", "fallback"]
 
 
+def test_a_malformed_structured_workflow_default_refuses_the_preflight(
+    tmp_path: Path,
+) -> None:
+    """The preflight renders the workflow layer too, and refuses what it cannot.
+
+    `resolve_acp_preflight` reads the same committed adapter inputs a dispatch
+    does, so a structured default naming an agent the catalogs do not declare
+    has to refuse HERE as well. Without this the preflight would hand the
+    built-in identity table raw JSON, which keys on exact rendered bytes -- so
+    every built-in identity would silently stop attaching rather than anything
+    reporting a fault.
+    """
+    modules = _modules()
+    repo = _enabled_repo(tmp_path=tmp_path)
+    manifest = repo / ".fabro" / "workflows" / "implement-work-item" / "workflow.toml"
+    manifest.write_text(
+        _ENABLED_MANIFEST.replace(
+            'implement_adapter = "adapter-primary"',
+            'implement_adapter = \'{"agent": "no-such-agent", "model": "x"}\'',
+        ),
+        encoding="utf-8",
+    )
+
+    verdict = modules["_dispatcher_acp_preflight"].resolve_acp_preflight(
+        repo=repo, journal_path=None, now_iso=_NOW
+    )
+
+    assert verdict.refusal is not None
+    assert "implement_adapter" in verdict.refusal
+
+
 def test_a_live_legacy_record_is_read_from_the_journal_at_one_evaluation_time(
     tmp_path: Path,
 ) -> None:

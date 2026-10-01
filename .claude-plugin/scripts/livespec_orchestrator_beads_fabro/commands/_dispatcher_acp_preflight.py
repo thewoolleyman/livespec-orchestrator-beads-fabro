@@ -42,19 +42,28 @@ from livespec_orchestrator_beads_fabro.commands._acp_builtin_candidates import (
     builtin_acp_identities,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_preflight import PreflightInputs
-from livespec_orchestrator_beads_fabro.commands._acp_catalogs import resolve_acp_catalogs
+from livespec_orchestrator_beads_fabro.commands._acp_catalogs import (
+    AcpCatalogs,
+    resolve_acp_catalogs,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_chain_resolution import (
     ResolvedAcpChain,
     attach_acp_chains,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_hold_ledger import read_acp_hold_ledger
 from livespec_orchestrator_beads_fabro.commands._acp_node_chains import AcpNodeChain
-from livespec_orchestrator_beads_fabro.commands._acp_node_layers import resolve_acp_nodes
+from livespec_orchestrator_beads_fabro.commands._acp_node_layers import (
+    AcpNodeResolution,
+    resolve_acp_nodes,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_node_repository import repository_acp_chains
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import (
     AcpPreflightVerdict,
     build_acp_preflight_verdict,
     no_fallback_verdict,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_workflow_defaults import (
+    rendered_workflow_defaults,
 )
 from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
 from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
@@ -122,7 +131,7 @@ def resolve_acp_preflight(
         return AcpPreflightVerdict(fallback_enabled=True, refusal=declared)
     if not any(chain.enabled for chain in declared.values()):
         return no_fallback_verdict()
-    resolved = _resolve_chains(repo=repo, declared=declared)
+    resolved = _resolve_chains(repo=repo, declared=declared, catalogs=catalogs)
     if isinstance(resolved, str):
         return AcpPreflightVerdict(fallback_enabled=True, refusal=resolved)
     chains, graph_text, builtin_pairs = resolved
@@ -170,7 +179,7 @@ def resolve_acp_primary_generations(*, repo: Path) -> Mapping[str, str]:
     declared = repository_acp_chains(block=block, catalogs=catalogs)
     if isinstance(declared, str) or not any(chain.enabled for chain in declared.values()):
         return {}
-    resolved = _resolve_chains(repo=repo, declared=declared)
+    resolved = _resolve_chains(repo=repo, declared=declared, catalogs=catalogs)
     if isinstance(resolved, str):
         return {}
     chains, _graph_text, _builtin_pairs = resolved
@@ -241,6 +250,7 @@ def _resolve_chains(
     *,
     repo: Path,
     declared: Mapping[str, AcpNodeChain],
+    catalogs: AcpCatalogs,
 ) -> tuple[Mapping[str, ResolvedAcpChain], str | None, frozenset[tuple[str, str]]] | str:
     """Resolve each node's primary, attach its chain, and read the graph text."""
     variant = prepare_workflow_variant(repo=repo)
@@ -250,7 +260,11 @@ def _resolve_chains(
     manifest_text = _read(path=manifest)
     if manifest_text is None:
         return f"acp preflight cannot read the workflow config {manifest}"
-    workflow_inputs = workflow_adapter_inputs(committed_text=manifest_text)
+    workflow_inputs = rendered_workflow_defaults(
+        declared=workflow_adapter_inputs(committed_text=manifest_text), catalogs=catalogs
+    )
+    if isinstance(workflow_inputs, str):
+        return workflow_inputs
     overlays = resolve_acp_node_overlays(cwd=repo)
     if isinstance(overlays, str):
         return overlays
@@ -259,6 +273,30 @@ def _resolve_chains(
     )
     if isinstance(resolution, str):
         return resolution
+    return _attached_chains(
+        resolution=resolution,
+        declared=declared,
+        workflow_inputs=workflow_inputs,
+        manifest=manifest,
+        manifest_text=manifest_text,
+    )
+
+
+def _attached_chains(
+    *,
+    resolution: AcpNodeResolution,
+    declared: Mapping[str, AcpNodeChain],
+    workflow_inputs: Mapping[str, str],
+    manifest: Path,
+    manifest_text: str,
+) -> tuple[Mapping[str, ResolvedAcpChain], str | None, frozenset[tuple[str, str]]] | str:
+    """Attach each node's chain to its resolved primary and read the graph text.
+
+    Split from the primary resolution above because the two are separate
+    concerns -- resolving WHAT each node runs, then attaching the chain and the
+    identities that describe it -- and because keeping them together put the
+    function over the return-count ceiling with no seam a reader could name.
+    """
     builtins = builtin_acp_identities(workflow_inputs=workflow_inputs)
     attached = attach_acp_chains(
         resolution=resolution,
