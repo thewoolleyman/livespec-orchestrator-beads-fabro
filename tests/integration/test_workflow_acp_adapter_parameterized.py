@@ -44,6 +44,7 @@ _NODE_ACP = {
         "fix",
         "review_fix",
         "proof_capture",
+        "proof_verify",
         "pr",
         "review",
         "disposition",

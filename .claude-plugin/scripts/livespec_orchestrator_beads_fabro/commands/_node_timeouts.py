@@ -84,6 +84,12 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # reviewer asks for the default three fix rounds earns a green janitor four times
 # and therefore passes through this pair four times. Budgeting them at the
 # janitor's three would under-bill the one path that actually spends them most.
+#
+# `proof_verify` (S6 / bd-ib-msnlnv) sits between `review` and `pr` and is budgeted
+# at THREE rather than at the review loop's four, because its own edge guard -- not
+# the review loop -- is what bounds it: two non-reproductions route back to `fix`
+# and the third routes to `non_converged`, so no run can enter it a fourth time
+# however many review rounds it spends.
 _WORST_CASE_VISITS: Mapping[str, int] = {
     "dod_gate": 2,
     "implement": 2,
@@ -93,6 +99,7 @@ _WORST_CASE_VISITS: Mapping[str, int] = {
     "publish_draft": 4,
     "proof_capture": 4,
     "review": 4,
+    "proof_verify": 3,
     "disposition": 3,
     "review_fix": 3,
     "pr": 2,

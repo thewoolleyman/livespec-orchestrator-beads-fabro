@@ -231,6 +231,7 @@ def test_the_committed_graph_resolves_exactly_the_nodes_dominating_every_green_p
         "fix",
         "review_fix",
         "proof_capture",
+        "proof_verify",
         "pr",
         "review",
         "disposition",

@@ -132,6 +132,7 @@ def test_the_groom_variant_declares_the_bundles_acp_nodes() -> None:
         "fix",
         "review_fix",
         "proof_capture",
+        "proof_verify",
         "pr",
         "review",
         "disposition",

@@ -396,7 +396,7 @@ def test_registered_workflow_prompts_use_the_single_injected_goal_and_stub_carve
         path for directory in _REGISTERED_PROMPT_DIRS for path in sorted(directory.glob("*.md"))
     )
 
-    assert len(prompt_paths) == 14
+    assert len(prompt_paths) == 15
     for directory in _REGISTERED_PROMPT_DIRS:
         graph = (directory.parent / "workflow.fabro").read_text(encoding="utf-8")
         assert 'default_fidelity="full"' not in graph, directory

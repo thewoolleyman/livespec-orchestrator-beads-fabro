@@ -68,6 +68,7 @@ ACP_NODES: tuple[str, ...] = (
     "fix",
     "review_fix",
     "proof_capture",
+    "proof_verify",
     "pr",
     "review",
     "disposition",
@@ -93,6 +94,12 @@ NODE_INPUT_CANDIDATES: Mapping[str, tuple[str, ...]] = {
     # record is what the reviewer reads and what the replay is graded against, so
     # a target that moved its implementer tier must not move the capture with it.
     "proof_capture": ("proof_capture_adapter",),
+    # The replay node's built-in default is the REVIEW entry, and the shared
+    # `acp_adapter` is excluded for the same reason it is on the capture node, one
+    # step stronger: the contract requires an adapter distinct from the
+    # implementer's, so a target that moved its implementer tier must not be able
+    # to move the independent second leg with it.
+    "proof_verify": ("proof_verify_adapter",),
     "pr": ("pr_adapter",),
     "review": ("review_adapter",),
     "disposition": ("disposition_adapter",),

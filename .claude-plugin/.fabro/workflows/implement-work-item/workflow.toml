@@ -263,6 +263,24 @@ dod_gate_adapter = "ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL
 # deliberately not a candidate for it.
 proof_capture_adapter = "ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
 
+# ACP adapter for the PROOF_VERIFY node (S6 / bd-ib-msnlnv). Its built-in default
+# is the entry this workflow declares for its REVIEW input — the same table that
+# puts `dod_gate` there puts this node there, and NOT on the implementer entry its
+# `proof_capture` sibling takes. The contract says so directly: the node MUST run
+# on an adapter distinct from the implementer's, because a replay sharing the
+# implementer's tier is not an independent second leg, and a repository that
+# pinned a cheap implementer has said nothing about how carefully its own proof
+# should be replayed.
+#
+# THIS VALUE IS THEREFORE A DELIBERATE DUPLICATE of `review_adapter` above, held
+# equal to it — and distinct from `implement_adapter` — by test rather than by
+# hope. Keep them in lockstep: moving the review pin without moving this one
+# silently downgrades the last gate before publication. The Opus pin's
+# model-versus-adapter rationale, the API-only-attribute constraint that forces
+# the model into the adapter's own env, and the version-less package rationale all
+# live on `review_adapter` — they are not restated here.
+proof_verify_adapter = "ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
+
 # Review fix rounds count implementer repair rounds, not review visits. The
 # workflow guard reads review node visits, so the default three fix rounds render
 # as a visit guard of four: initial review visit plus three fix rounds.
