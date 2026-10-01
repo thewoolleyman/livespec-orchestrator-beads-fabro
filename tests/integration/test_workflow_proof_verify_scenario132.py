@@ -40,6 +40,10 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import (
     ACP_NODES,
     NODE_INPUT_CANDIDATES,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_success_critical import (
+    derive_success_critical,
+)
+from livespec_orchestrator_beads_fabro.commands._acp_workflow_graph import parse_workflow_graph
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     DEFAULT_FABRO_TIMEOUT_SECONDS,
     default_node_timeouts,
@@ -85,14 +89,30 @@ def _edges(*, text: str) -> list[str]:
     ]
 
 
+def _source_of(*, edge: str) -> str:
+    return edge.split("->", 1)[0].strip()
+
+
+def _target_of(*, edge: str) -> str:
+    """One edge's target NODE NAME, tokenized rather than prefix-matched.
+
+    A prefix test is wrong here and wrong in the dangerous direction: `pr` is a
+    prefix of `proof_verify`, so `edge.startswith("review -> pr")` reports the
+    retargeted edge as still reaching `pr` and an "nothing reaches pr" assertion
+    can never pass however correct the graph is. Splitting on the arrow and
+    taking the first token of the remainder cannot confuse the two.
+    """
+    return edge.split("->", 1)[1].strip().split(maxsplit=1)[0]
+
+
 def _edges_from(*, text: str, node: str) -> list[str]:
-    return [edge for edge in _edges(text=text) if edge.startswith(f"{node} ->")]
+    return [edge for edge in _edges(text=text) if _source_of(edge=edge) == node]
 
 
 def _verify_edges_to(*, target: str) -> list[str]:
     """Every committed `proof_verify -> <target>` edge line."""
     edges = _edges_from(text=_dot(payload=_BUNDLE), node=_VERIFY)
-    return [edge for edge in edges if edge.startswith(f"{_VERIFY} -> {target}")]
+    return [edge for edge in edges if _target_of(edge=edge) == target]
 
 
 def _input_value(*, toml: str, name: str) -> str | None:
@@ -218,6 +238,66 @@ def test_the_registered_variant_declares_the_verify_node_and_leaves_it_unreached
     assert _acp_node_names(payload=_VARIANT) == _acp_node_names(payload=_BUNDLE)
     assert _input_value(toml=_toml(payload=_VARIANT), name=_VERIFY_ADAPTER_INPUT) is not None
     assert not any(_VERIFY in edge for edge in _edges(text=_dot(payload=_VARIANT)))
+
+
+def test_the_review_ship_on_cap_edge_targets_proof_verify_and_no_review_edge_reaches_pr() -> None:
+    """The escape hatch skips the reviewer's approval and never the replay.
+
+    `merge_on_review_cap` exists so an exhausted review budget can still ship;
+    the contract requires its edge to target `proof_verify`, never `pr`, so what
+    it skips is one opinion and not the proof. The APPROVE edge is retargeted for
+    the same reason, and the two are asserted together through the stronger
+    claim: NO `review -> pr` edge survives at all. Asserting only that the cap
+    edge moved would pass a graph where `approve` still published unreplayed —
+    which is the ordinary path, not the edge case.
+    """
+    review = _edges_from(text=_dot(payload=_BUNDLE), node="review")
+
+    assert review, "the reserved workflow routes nothing out of review"
+    assert not [edge for edge in review if _target_of(edge=edge) == "pr"]
+    hatch = [edge for edge in review if "ship on review cap" in edge]
+    assert len(hatch) == 1
+    assert _target_of(edge=hatch[0]) == _VERIFY
+    assert "merge_on_review_cap_outcome" in hatch[0]
+    approve = [edge for edge in review if 'label="approve"' in edge]
+    assert len(approve) == 1
+    assert _target_of(edge=approve[0]) == _VERIFY
+
+
+def test_proof_verify_is_entered_only_from_review() -> None:
+    """Nothing but `review` reaches the replay node.
+
+    The contract says "entered from `review`", and the reason is the record: the
+    replay reads the capture that `review` has already read, so an entry from
+    anywhere else could run before any capture existed — or, worse, before the
+    reviewer had seen the tree the replay is about to bless for merge.
+    """
+    entries = [
+        edge for edge in _edges(text=_dot(payload=_BUNDLE)) if _target_of(edge=edge) == _VERIFY
+    ]
+
+    assert entries, "the reserved workflow routes nothing into proof_verify"
+    assert {_source_of(edge=edge) for edge in entries} == {"review"}
+
+
+def test_the_verify_node_dominates_every_green_path_so_it_is_success_critical() -> None:
+    """The fallback-priority clause names the replay node admission-required.
+
+    Derived from the committed graph rather than asserted as a literal set: the
+    node is success-critical BECAUSE retargeting both review edges made it the
+    only route into `pr`, and reading that off the dominator derivation is also
+    what proves the widened graph is a shape that derivation still understands
+    rather than one it refuses.
+
+    `non_converged` is asserted absent from the set as the control that the
+    derivation is computing DOMINANCE and not mere reachability: the replay
+    node's exhaustion terminal is reachable, and no green path passes through it.
+    """
+    critical = derive_success_critical(graph=parse_workflow_graph(text=_dot(payload=_BUNDLE)))
+
+    assert not isinstance(critical, str), critical
+    assert _VERIFY in critical.nodes
+    assert "non_converged" not in critical.nodes
 
 
 def test_a_verified_verdict_is_the_only_thing_that_reaches_pr() -> None:

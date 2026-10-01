@@ -157,13 +157,27 @@ def _review_edge_lines(*, to_node: str) -> list[str]:
 
 
 def test_scenario20_review_approve_edge_is_conditioned() -> None:
-    """Scenario 20: approve reaches PR only through an explicit condition."""
-    pr_edges = _review_edge_lines(to_node="pr")
-    approve_edges = [line for line in pr_edges if 'label="approve"' in line]
+    """Scenario 20: approve leaves review only through an explicit condition.
+
+    S6 / bd-ib-msnlnv retargeted this edge from `pr` to `proof_verify`, so what
+    approve now reaches is the replay and not publication. The CONDITION is what
+    Scenario 20 is about and it is unchanged; the target moved because the
+    contract forbids any route to `pr` that has not replayed the proof.
+    """
+    verify_edges = _review_edge_lines(to_node="proof_verify")
+    approve_edges = [line for line in verify_edges if 'label="approve"' in line]
     assert approve_edges == [
-        'review -> pr         [label="approve", condition="preferred_label=approve"]'
+        'review -> proof_verify [label="approve", condition="preferred_label=approve"]'
     ]
-    assert all("condition=" in line for line in pr_edges)
+    assert all("condition=" in line for line in verify_edges)
+    # The retarget is total: nothing leaves review for `pr` any more. Tokenized
+    # rather than prefix-matched, because `pr` is a prefix of `proof_verify` and a
+    # prefix test could never return the other answer.
+    assert not [
+        line
+        for line in _review_edge_lines(to_node="pr")
+        if line.split("->", 1)[1].strip().split(maxsplit=1)[0] == "pr"
+    ]
 
 
 def test_scenario20_review_cap_routes_to_escape_hatch_or_needs_human() -> None:
