@@ -74,10 +74,12 @@
   // ACTIVE spec_governance overrides. Maintainer-directed fleet-wide autonomy
   // lever rollout (epic livespec-jvdvx4, child livespec-jvdvx4.15): these
   // levers were shipped in livespec core (Increments 1-2) but never armed
-  // here. The levers still at their safe defaults are enumerated in the
-  // commented reference block below, which carries their unarmed shape;
-  // `dispatcher.merge_on_review_cap` is likewise left at its safe default
-  // in the `dispatcher` block further down, not here.
+  // here. The commented reference block below carries the COMPLETE ten-key
+  // manifest at its safe defaults (the consumer-side guard
+  // `check-spec-governance-default-block` requires every installed manifest
+  // key there, armed or not); the three levers this repo has NOT armed are
+  // called out above it. `dispatcher.merge_on_review_cap` is likewise left
+  // at its safe default in the `dispatcher` block further down, not here.
   "spec_governance": {
     "propose_change_mode": "batch",
     "critique_mode": "batch",
@@ -93,8 +95,9 @@
     "ratification_reviewer_model": "sonnet",
     "spec_pr_merge": "auto-on-green"
   },
-  // Optional — spec_governance: the three levers this repo has NOT armed.
-  // Left commented at their safe defaults deliberately:
+  // Optional — spec_governance: the complete safe-default reference block.
+  // Seven of these ten levers are armed in the ACTIVE block above; the three
+  // left at their safe defaults deliberately are:
   //   doctor_dispositions: unmapped check_ids still escalate to a human —
   //     population is deferred to a dedicated follow-up (per-check_id
   //     judgment call, not a mechanical rollout).
@@ -102,14 +105,32 @@
   //     pending the not-yet-built Increment-3 cross-vendor panel.
   //   ratification_min_review_age_seconds: the shipped default of 1 second
   //     imposes no practical floor, so there is nothing to override.
+  // The guard parses the commented object below against the installed
+  // livespec-runtime manifest, so keep every key at its safe default here
+  // even when the active block overrides it (bd-ib-lj3d, bd-ib-fqjk).
   //   "spec_governance": {
+  //     // propose_change_mode (enum; allowed: "interactive", "batch")
+  //     "propose_change_mode": "interactive",
+  //     // critique_mode (enum; allowed: "interactive", "batch")
+  //     "critique_mode": "interactive",
+  //     // in_flight_alignment (enum; allowed: "prompt", "default-align")
+  //     "in_flight_alignment": "prompt",
   //     // doctor_dispositions (map; allowed values: "fix-now",
   //     // "capture-as-work-item", "propose-change", "defer", "dismiss")
   //     "doctor_dispositions": {},
+  //     // revise_decision_mode (enum; allowed: "manual", "delegated",
+  //     // "consensus")
+  //     "revise_decision_mode": "manual",
   //     // drift_acceptance_mode (enum; allowed: "human", "consensus")
   //     "drift_acceptance_mode": "human",
+  //     // ratification_review (enum; allowed: "manual-spawn", "auto-spawn")
+  //     "ratification_review": "manual-spawn",
+  //     // ratification_reviewer_model (string or null)
+  //     "ratification_reviewer_model": null,
   //     // ratification_min_review_age_seconds (integer; minimum: 1)
-  //     "ratification_min_review_age_seconds": 1
+  //     "ratification_min_review_age_seconds": 1,
+  //     // spec_pr_merge (enum; allowed: "manual", "auto-on-green")
+  //     "spec_pr_merge": "manual"
   //   }
   //
   // Cross-spec citation allowlist for doctor's no-cross-spec-reference
