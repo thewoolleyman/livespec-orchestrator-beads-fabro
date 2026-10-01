@@ -286,7 +286,16 @@ def test_unobservable_telemetry_with_readable_diff_parks_needs_attention(
     records = _journal_records(repo=repo)
     ai_pass = _record(records=records, stage="acceptance-ai-pass")
     assert ai_pass["verdict"] == "NEEDS_ATTENTION"
-    assert ai_pass["absent_evidence"] == ["telemetry"]
+    # TWO absent legs, and both are real. The telemetry leg is the one this test
+    # builds. The proof leg rides along because the item's criteria resolve from
+    # its Definition of Done section, whose single assertion is therefore
+    # `factory_captured`: a dispatch with no merged pull request number has no
+    # pull request to read a `proof_verify` record off, so that assertion is
+    # UNEVIDENCED (the proof-evidence-leg clause of contracts.md), not failed.
+    assert ai_pass["absent_evidence"] == [
+        "telemetry",
+        "proof of done record for 'The dispatched slice lands its change.'",
+    ]
     assert ai_pass["telemetry"] == {
         "observed": False,
         "passed": False,
@@ -299,9 +308,12 @@ def test_unobservable_telemetry_with_readable_diff_parks_needs_attention(
     }
     park = _record(records=records, stage="acceptance-parked")
     assert park["acceptance_verdict"] == "NEEDS_ATTENTION"
-    # The parking record names the absent leg, so the attention surface can say
+    # The parking record names the absent legs, so the attention surface can say
     # WHY the item cannot be judged rather than only that it is waiting.
-    assert park["absent_evidence"] == ["telemetry"]
+    assert park["absent_evidence"] == [
+        "telemetry",
+        "proof of done record for 'The dispatched slice lands its change.'",
+    ]
 
     # The parked item is still reachable by BOTH existing human valves.
     result = run_action(repo=repo, action_id=valve.format(item=item.id))

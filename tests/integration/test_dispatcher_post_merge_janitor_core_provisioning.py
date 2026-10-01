@@ -123,11 +123,34 @@ def test_real_post_merge_janitor_provisions_livespec_core(
     assert "janitor-post-merge" in stages
 
 
-def test_real_dispatch_reaches_done_after_post_merge_janitor_and_acceptance(
+def test_real_dispatch_parks_in_acceptance_without_a_proof_record(
     *,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The post-merge ORDERING, over a run that published no Proof of Done record.
+
+    This case owns the stage ordering — post-merge janitor BEFORE
+    `ledger-complete`, `ledger-complete` before the acceptance pass — and the
+    merge evidence the close path stamps. What it can no longer own is the
+    auto-accept to `done`: the item's criteria resolve from its Definition of
+    Done section, so its one assertion is `factory_captured`, and the
+    proof-evidence-leg clause of `SPECIFICATION/contracts.md` (v114) makes the
+    merging run's `verified` record the ONLY evidence for such an assertion.
+    This fixture's dispatch publishes no record and resolves no run id at all
+    (nothing stands in for the `proof_capture` / `proof_verify` stages, and no
+    `fabro` binary is on the stand-in PATH for the watchdog to read a run id
+    from), so the assertion is UNEVIDENCED and the ratified verdict is
+    NEEDS_ATTENTION, which parks under EVERY policy including `ai-only`.
+
+    Parking is therefore the CORRECT end state here, not a regression: a run
+    that cannot be identified cannot be the run a record is attributed to, and
+    accepting on the newest record whoever published it would grade this merge
+    against another run's tree. The `ai-only`-confirms-to-`done` arm is bound
+    where the verdict is the subject rather than the plumbing —
+    `test_dispatcher_admission_acceptance_scenarios22_25` for the disposition,
+    and the proof-leg tests for the verdict that reaches it.
+    """
     target = _target_repo(tmp_path=tmp_path)
     core_remote = _core_remote(tmp_path=tmp_path)
     tool_bin = _tool_bin(tmp_path=tmp_path)
@@ -146,17 +169,25 @@ def test_real_dispatch_reaches_done_after_post_merge_janitor_and_acceptance(
         reset_fake_singleton()
 
     assert result.exit_code == 0
-    assert result.stored.status == "done"
-    assert result.stored.resolution == "completed"
-    assert result.stored.audit is not None
-    assert result.stored.audit.merge_sha == _head(repo=target)
-    assert result.stored.audit.pr_number == 104
+    assert result.stored.status == "acceptance"
+    assert result.stored.resolution is None
     stages = [record["stage"] for record in result.records]
     assert stages.index("janitor-post-merge") < stages.index("ledger-complete")
     assert stages.index("ledger-complete") < stages.index("acceptance-ai-pass")
-    assert stages.index("acceptance-ai-pass") < stages.index("ledger-accept")
+    assert stages.index("acceptance-ai-pass") < stages.index("acceptance-parked")
+    ai_pass = next(record for record in result.records if record["stage"] == "acceptance-ai-pass")
+    assert ai_pass["verdict"] == "NEEDS_ATTENTION"
+    assert ai_pass["absent_evidence"] == [
+        "proof of done record for 'The dispatched slice lands its change.'"
+    ]
     outcome = next(record["outcome"] for record in result.records if record["stage"] == "outcome")
     assert (outcome["status"], outcome["stage"]) == ("green", "done")
+    # The merge the janitor ran against is still the merge the dispatch observed,
+    # which is what the ordering above is ordering: the park changes the item's
+    # disposition, not what was merged.
+    assert isinstance(outcome, dict)
+    assert outcome["merge_sha"] == _head(repo=target)
+    assert outcome["pr_number"] == 104
 
 
 @dataclass(frozen=True, kw_only=True)
