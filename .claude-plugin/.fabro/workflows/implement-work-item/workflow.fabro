@@ -188,12 +188,24 @@ digraph ImplementWorkItem {
         script="{{ inputs.sandbox_check_suite }}"
     ]
 
+    // max_visits=10 is the ungraceful runaway-loop backstop, raised from 3 by
+    // S6 / bd-ib-msnlnv. It MUST exceed every GRACEFUL bound that routes here,
+    // and three nodes now do: the janitor's own `< 3` visit guard (two Red
+    // attempts), `proof_capture` on a capture that needs a code change, and
+    // `proof_verify` on a non-reproduction under its own `< 3` guard (two more).
+    // Two plus two is a FOURTH entry on the ordinary contract path, and a node
+    // that reaches max_visits ABORTS the run at entry (VisitLimitExceeded)
+    // emitting NO outcome — so the run would die with nothing for any edge to
+    // route and nothing in the record to explain it. The graceful bounds are
+    // unchanged and still live on the edges; this is only the backstop behind
+    // them, now at the same value `disposition` and `review_fix` carry for
+    // exactly this role.
     fix [
         label="Fix janitor failures"
         backend="acp"
         acp.command="{{ inputs.fix_adapter }}"
         timeout="1800s"
-        max_visits=3
+        max_visits=10
         prompt="@prompts/fix.md"
     ]
 
@@ -610,8 +622,9 @@ digraph ImplementWorkItem {
     // so no edge could route the exhaustion onward. Janitor visit N means
     // N-1 completed fix attempts; the `< 3` guard allows two fix attempts,
     // then the third Red falls through to the `non_converged` terminal.
-    // fix's max_visits=3 stays as the abort backstop (unreachable unless
-    // this routing regresses).
+    // fix's max_visits is the abort backstop behind that guard, and it is no
+    // longer sized against this loop alone: `proof_capture` and `proof_verify`
+    // route here too, so it sits at 10 (see the node's own comment above).
     //
     // Scenario 14 (work-item livespec-impl-beads-rw75ym): the Exhausted
     // edge routes to `non_converged` (the non-converged EXIT EDGE back to

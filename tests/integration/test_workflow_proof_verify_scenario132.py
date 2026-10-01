@@ -380,6 +380,46 @@ def test_a_failed_replay_parks_and_an_unmatched_verdict_falls_through_to_needs_h
     assert "weight=100" in blocked[0]
 
 
+def test_the_fix_backstop_outlives_every_graceful_bound_that_now_feeds_it() -> None:
+    """`fix.max_visits` is an abort backstop, and three nodes now route into it.
+
+    This is the one existing node the replay edge changes the arithmetic of, and
+    the change is not cosmetic. A node that reaches `max_visits` ABORTS the run at
+    entry (`VisitLimitExceeded`) and emits NO outcome, so no edge can route the
+    exhaustion onward — the run simply dies with nothing to read. Before this
+    slice, `fix` was fed by the janitor loop's two attempts and by
+    `proof_capture`; `max_visits=3` was the documented "unreachable unless this
+    routing regresses" backstop against that.
+
+    Adding `proof_verify -> fix` makes it reachable on the ORDINARY contract path:
+    the janitor's two Red attempts plus two non-reproductions is a FOURTH `fix`
+    entry, so the run would abort on the very route the contract requires to
+    converge. The backstop is therefore raised to the value the repository already
+    uses for exactly this role on `disposition` and `review_fix`, and the three
+    are compared to each other rather than to a number written only here.
+
+    The PRODUCER COUNT is asserted as the tripwire. The graceful bounds live on
+    the edges, so a fourth node routing into `fix` would silently re-open this gap
+    — and this is the assertion that notices.
+    """
+    text = _dot(payload=_BUNDLE)
+    producers = {
+        _source_of(edge=edge) for edge in _edges(text=text) if _target_of(edge=edge) == "fix"
+    }
+
+    assert producers == {"janitor", "proof_capture", _VERIFY}
+    budgets = {
+        node: re.search(r"max_visits=(?P<value>\d+)", _node_body(text=text, node=node) or "")
+        for node in ("fix", "disposition", "review_fix")
+    }
+    assert all(match is not None for match in budgets.values()), budgets
+    values = {node: int(match.group("value")) for node, match in budgets.items() if match}
+    assert values["fix"] == values["disposition"] == values["review_fix"]
+    # The janitor loop admits two `fix` attempts and the replay admits two more,
+    # so four is reachable; the backstop must sit strictly above that.
+    assert values["fix"] > 4
+
+
 def test_the_review_prompt_reviews_the_latest_captured_record_alongside_the_code() -> None:
     """The record is PART of the review, not a step that follows its verdict.
 
