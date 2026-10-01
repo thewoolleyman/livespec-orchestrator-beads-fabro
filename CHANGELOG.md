@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.156.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.155.0...v0.156.0) (2026-10-01)
+
+
+### Features
+
+* **factory:** create the proof-assets prerelease and journal the measured rendering (bd-ib-b4u6b7) ([fa4a569](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fa4a569dd1536db46dda310ccd81bc3d6046d28f))
+* **factory:** publish a draft pull request and capture Proof of Done on it (bd-ib-b4u6b7) ([513a3a1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/513a3a1724f893646797ecdbeafbbad4a6eb806b))
+* **factory:** store proof images through one seam under the flat asset name (bd-ib-b4u6b7) ([37d326b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/37d326b7a440a0e8445af2612229d9d35d3a4b56))
+
+
+### Bug Fixes
+
+* **prompts:** carry the turn-end discipline section in the proof-capture prompt (bd-ib-b4u6b7) ([02bc177](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/02bc177fe84b222ac136c9ae5974e7e37df2e171))
+
 ## [0.155.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.154.0...v0.155.0) (2026-10-01)
 
 
