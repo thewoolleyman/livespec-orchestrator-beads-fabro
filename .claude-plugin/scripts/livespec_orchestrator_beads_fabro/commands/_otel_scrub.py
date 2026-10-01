@@ -222,6 +222,18 @@ ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
         "build.cache.sccache.backend",
         "build.cache.sccache.rw_mode",
         "build.cache.registry.hit",
+        # Test-first order decisions from the sandbox-side TDD order guard
+        # (`.claude/hooks/livespec_tdd_order_span.py`). Admitting them is what
+        # makes the signal exist at all: this stage rebuilds attributes from
+        # the allowlist, so an unnamed key arrives and is dropped with no
+        # error, exactly as the sccache keys above were. All five are bounded
+        # labels — an allow/refuse enum, a repo-relative path, a three-value
+        # head-state enum, a reason enum, and a tool name. Scrub-safe.
+        "tdd.decision",
+        "tdd.path",
+        "tdd.head_state",
+        "tdd.reason",
+        "tdd.tool",
     }
 )
 
