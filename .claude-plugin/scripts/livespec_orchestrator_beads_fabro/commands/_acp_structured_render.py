@@ -45,6 +45,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_agent_mechanism import (
     AcpModelMechanism,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_catalogs import AcpCatalogs
+from livespec_orchestrator_beads_fabro.commands._acp_codex_pin import codex_pin_refusal
 from livespec_orchestrator_beads_fabro.commands._acp_model_entry import (
     AcpModelEntry,
     split_model_catalog_key,
@@ -117,6 +118,12 @@ def render_structured_entry(
     effort = _resolve_effort(entry=entry, agent=agent, key=key)
     if effort is not None:
         return effort
+    # LAST, so a MALFORMED effort reports the level it names rather than the
+    # pin obligation: an operator who wrote an effort wants to know theirs was
+    # not declared, and only an entry that wrote NONE is unpinned.
+    unpinned = codex_pin_refusal(agent=entry.agent, effort=entry.effort, key=key)
+    if unpinned is not None:
+        return unpinned
     return _rendered(entry=entry, agent=agent, model=model, read_only=read_only)
 
 
