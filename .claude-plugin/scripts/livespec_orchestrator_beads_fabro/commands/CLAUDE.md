@@ -229,6 +229,17 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   integration contract does: a second read of the same file cannot be proven to
   agree with the first, and the disagreement would be invisible because both
   reads produce a well-formed catalog.
+- `_acp_structured_text` renders a structured entry written as TEXT into
+  adapter bytes, and is shared by the two layers that spell one as a string:
+  the WORKFLOW layer (a TOML scalar) and the PER-DISPATCH `--acp-node`
+  argument. The REPOSITORY layer deliberately does not use it — its entries
+  arrive from JSONC already decoded, so it hands `_acp_structured_render` a
+  mapping and a JSON round trip here would invent a serialization step. A
+  value is structured iff it opens with `{`, which is a complete
+  discriminator rather than a heuristic, and a `{` that does not parse
+  REFUSES rather than falling through to a command line: POSIX tokenization
+  strips the quotes, so it would reach the sandbox as a plausible argv whose
+  first token is not an executable.
 - `_acp_workflow_defaults` renders the WORKFLOW layer's own structured entries
   into the manual form, and it runs as the inputs are READ
   (`_dispatcher_acp_nodes.workflow_layer`) rather than at the merge — the

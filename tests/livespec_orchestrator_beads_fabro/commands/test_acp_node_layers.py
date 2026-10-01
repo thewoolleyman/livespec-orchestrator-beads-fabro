@@ -75,7 +75,9 @@ def _resolve(
     )
     if isinstance(repo_overlays, str):
         return repo_overlays
-    dispatch_overlays = seam.dispatch_acp_overlays(overrides=dispatch)
+    dispatch_overlays = seam.dispatch_acp_overlays(
+        overrides=dispatch, catalogs=_module(name="_acp_catalogs").builtin_catalogs()
+    )
     if isinstance(dispatch_overlays, str):
         return dispatch_overlays
     return layers.resolve_acp_nodes(
