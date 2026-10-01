@@ -33,6 +33,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_decision_journal import (
     auto_disposition_journal_record,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
+    effective_criteria,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_only_refusal import (
     host_only_refusal,
@@ -189,7 +192,18 @@ def complete_and_accept(
             journal=journal,
         )
         return
-    if decision.to_done and acceptance_pass.verdict == "PASS":
+    # The human-attested leg rests the item in `acceptance` "regardless of
+    # policy", so it is read here from the ONE criteria primitive rather than
+    # from the pass's verdict: the pass genuinely did PASS — its factory leg is
+    # green and the human assertions are listed as pending — and turning that
+    # into a non-PASS verdict would report a healthy run as unjudgeable. The
+    # host-side wall already refuses `ai-only` for such an item before dispatch;
+    # this is the second gate, for the item whose policy was edited after it.
+    if (
+        decision.to_done
+        and acceptance_pass.verdict == "PASS"
+        and not effective_criteria(item=item).human_attested_assertions
+    ):
         close_dispatch_item(
             repo=repo,
             item=item,
