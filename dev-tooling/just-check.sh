@@ -3,97 +3,31 @@
 # exiting non-zero.
 set -uo pipefail
 
+skip_targets=("$@")
+
+# The executed list is DERIVED from the justfile `check:` recipe's
+# `targets=(...)` array — the same declaration the shared
+# `aggregate_completeness` gate certifies. A hardcoded copy used to live here
+# and diverged by ten slugs, so the gate certified one list while this runner
+# executed another (work-item bd-ib-mxqrr4); never reintroduce one. Derived
+# BEFORE `uv sync` so a broken declaration fails fast on its own error rather
+# than behind an environment step.
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if ! targets_text="$(bash "${script_dir}/aggregate-targets.sh")"; then
+    echo "ERROR: could not derive the aggregate target list from the justfile" >&2
+    exit 1
+fi
+mapfile -t targets <<<"$targets_text"
+
 if ! uv sync --all-groups; then
     echo "ERROR: up-front 'uv sync --all-groups' failed; aborting the check aggregate" >&2
     exit 1
 fi
 export UV_NO_SYNC=1
 
-skip_targets=("$@")
-targets=(
-    check-agents-ai-references-resolve
-    check-aggregate-completeness
-    check-all-declared
-    check-assert-never-exhaustiveness
-    check-branch-protection-alignment
-    check-canonical-recipe-fidelity
-    check-check-coverage-incremental
-    check-check-mutation
-    check-check-tools
-    check-ci-matrix-completeness
-    check-claude-md-coverage
-    check-comment-line-anchors
-    check-commit-pairs-source-and-test
-    check-file-lloc
-    check-fleet-marketplace-relative-sources
-    check-global-writes
-    check-handoff-dispatch-routing
-    check-heading-coverage
-    check-hook-trees-not-io-exempt
-    check-keyword-only-args
-    check-local-memory-drift-audit
-    check-main-guard
-    check-master-ci-green
-    check-match-keyword-only
-    check-newtype-domain-primitives
-    check-no-direct-destructive-cli
-    check-no-direct-tool-invocation
-    check-no-except-outside-io
-    check-no-fmt-directives
-    check-no-inheritance
-    check-no-lloc-soft-warnings
-    check-no-raise-outside-io
-    check-no-shadow-ledger-body-identical
-    check-no-shadow-ledger-body-typechecks
-    check-no-todo-registry
-    check-no-write-direct
-    check-partition-completeness
-    check-pbt-coverage-pure-modules
-    check-per-file-coverage
-    check-plan-anchor-declared
-    check-plan-epic-parity
-    check-plan-no-tombstone
-    check-plugin-resolution
-    check-primary-checkout-commit-refuse-hook-installed
-    check-private-calls
-    check-public-api-result-typed
-    check-red-green-replay
-    check-required-role-keys-declared
-    check-rop-pipeline-shape
-    check-self-hosted-routing
-    check-shell-quality
-    check-skill-invocation-paths
-    check-source-trees-scoped-to-consumer
-    check-supervisor-discipline
-    check-tests-mirror-pairing
-    check-tests-no-subprocess-spawn
-    check-tool-backed-check-completeness
-    check-vendor-manifest
-    check-wrapper-shape
-    check-format
-    check-lint
-    check-types
-    check-coverage
-    check-work-item-merge-evidence
-    check-work-item-state-invariants
-    check-status-conformance
-    check-closed-item-integrity
-    check-needs-attention-surface-ownership
-    check-spec-id-presence-discipline
-    check-no-fleet-toolchain-literals
-    check-codex-plugin-structure
-    check-pi-plugin-structure
-    check-bd-guard
-    check-codex-skill-picker
-    check-no-fleet-pat-dispatch-surface
-    check-seam-equivalence
-    check-ci-wires-repo-local-gates
-    check-no-workflow-edits
-    check-fresh-clone-setup
-    check-doctor-static
-)
-
 failed=()
+executed=0
+skipped=0
 for target in "${targets[@]}"; do
     skip_this=0
     for skip_target in "${skip_targets[@]}"; do
@@ -104,9 +38,11 @@ for target in "${targets[@]}"; do
     done
     if [[ "$skip_this" -eq 1 ]]; then
         printf '\n::: just %s (skipped)\n' "$target"
+        skipped=$((skipped + 1))
         continue
     fi
     printf '\n::: just %s\n' "$target"
+    executed=$((executed + 1))
     if ! just "$target"; then
         failed+=("$target")
     fi
@@ -117,7 +53,18 @@ if [[ ${#failed[@]} -gt 0 ]]; then
     printf '  - %s\n' "${failed[@]}"
     exit 1
 fi
-printf '\nAll %d targets passed.\n' "${#targets[@]}"
+# The count is what RAN, never the declared length: a summary that counts
+# targets it skipped — or ones a stale hardcoded list named and never
+# invoked — reads as broader assurance than the run earned, which is the
+# false green this script's derivation removes (work-item bd-ib-mxqrr4). The
+# skipped tally is printed rather than merely subtracted, so a short count is
+# legible instead of mysterious.
+if [[ "$skipped" -gt 0 ]]; then
+    printf '\nAll %d targets passed (%d of %d declared skipped).\n' \
+        "$executed" "$skipped" "${#targets[@]}"
+else
+    printf '\nAll %d targets passed.\n' "$executed"
+fi
 if [[ ${#skip_targets[@]} -eq 0 ]]; then
     uv run python -m livespec_dev_tooling.green_token write || true
 fi
