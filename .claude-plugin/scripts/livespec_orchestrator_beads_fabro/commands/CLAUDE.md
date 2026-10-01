@@ -229,6 +229,24 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   integration contract does: a second read of the same file cannot be proven to
   agree with the first, and the disagreement would be invisible because both
   reads produce a well-formed catalog.
+- Two small modules carry rules that are ABOUT the structured form without
+  belonging to any one stage of it, which is why each is its own file rather
+  than a branch inside the renderer:
+  - `_acp_codex_pin` names the agents whose candidates MUST carry both `model`
+    and `effort` (`contracts.md` §"Built-in ACP node defaults"). It is a SET
+    rather than a general rule because an entry declaring no `effort` is
+    ordinarily admissible — it takes the adapter's own default — and making
+    effort mandatory everywhere would refuse the un-pinned Claude disposition
+    default this repository ships. It imports nothing, because
+    `_acp_structured_render` is its caller and owns the entry type.
+  - `_acp_codex_models_retired` turns the RETIRED `dispatcher.codex_models`
+    key into a refusal carrying the equivalent per-node entries.
+    `_acp_node_repository` consults it FIRST, before any `acp_nodes` parsing,
+    so a repository carrying both keys is told about the retired one rather
+    than about whichever `acp_nodes` fault it happens to hit. It holds the
+    retired built-in tier values because they no longer exist anywhere else,
+    and a migration that omitted them would silently re-point a node that had
+    relied on a partial tier table.
 
 Rules an agent editing this tree must follow:
 
