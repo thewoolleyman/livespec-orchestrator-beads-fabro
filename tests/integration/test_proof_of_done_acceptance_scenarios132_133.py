@@ -38,7 +38,11 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     make_beads_client,
     reset_fake_singleton,
 )
-from livespec_orchestrator_beads_fabro.commands import _dispatcher_completion, _dispatcher_loop
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_completion,
+    _dispatcher_loop,
+    _drive_accept_valve,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_ai import (
     AcceptancePassResult,
     run_acceptance_pass,
@@ -49,6 +53,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
+from livespec_orchestrator_beads_fabro.commands.drive import run_action
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
     materialize_work_items,
@@ -100,6 +105,54 @@ def _definition_of_done() -> str:
         - {_FACTORY_ASSERTION}
 
         References: ## Effective acceptance criteria
+        """)
+
+
+_HUMAN_ASSERTION = "The production console renders the capacity banner."
+_HUMAN_REASON = "Reason: the sandbox has no session on the production console."
+
+
+def _mixed_definition_of_done() -> str:
+    """Three factory-captured assertions beside one human-attested one."""
+    return textwrap.dedent(f"""\
+        Implement the slice.
+
+        ## Definition of Done
+
+        - {_FACTORY_ASSERTION}
+        - The journal names the evidence leg it used.
+        - The pointer cites the record the pass graded.
+
+        ### Human-attested
+
+        {_HUMAN_REASON}
+
+        - {_HUMAN_ASSERTION}
+
+        References: ## Effective acceptance criteria
+        """)
+
+
+def _mixed_record_body() -> str:
+    """A verified record: three reproduced assertions, the human leg listed pending."""
+    return textwrap.dedent(f"""\
+        Proof of Done — verified — run {_RUN_ID} — 2026-10-01T09:00:00Z
+
+        ## Assertion 1 — {_FACTORY_ASSERTION}
+
+        Reproduced: yes.
+
+        ## Assertion 2 — The journal names the evidence leg it used.
+
+        Reproduced: yes.
+
+        ## Assertion 3 — The pointer cites the record the pass graded.
+
+        Reproduced: yes.
+
+        ## Pending human attestation
+
+        - {_HUMAN_ASSERTION}
         """)
 
 
@@ -249,9 +302,18 @@ def _acceptance_pass_over(*, runner: _ForgeRunner) -> Callable[..., AcceptancePa
     return _call
 
 
+@dataclass(frozen=True, kw_only=True)
+class _Dispatched:
+    """One finished dispatch: its exit code, its journal, and the repo it ran in."""
+
+    exit_code: int
+    records: list[dict[str, object]]
+    repo: Path
+
+
 def _dispatch(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, comments: str, item: WorkItem
-) -> tuple[int, list[dict[str, object]]]:
+) -> _Dispatched:
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     append_work_item(path=_config(), item=item)
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _green_recording())
@@ -265,7 +327,24 @@ def _dispatch(
         argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
     text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
-    return exit_code, [json.loads(line) for line in text.splitlines() if line.strip()]
+    return _Dispatched(
+        exit_code=exit_code,
+        records=[json.loads(line) for line in text.splitlines() if line.strip()],
+        repo=repo,
+    )
+
+
+def _accept(
+    *,
+    repo: Path,
+    item_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+    bodies: list[str],
+) -> dict[str, object]:
+    """Drive the REAL `accept:<id>` valve with only its forge read stood in."""
+    runner = _ForgeRunner(comments=_comments_payload(bodies=bodies))
+    monkeypatch.setattr(_drive_accept_valve, "ShellCommandRunner", lambda: runner)
+    return run_action(repo=repo, action_id=f"accept:{item_id}")
 
 
 def _stored() -> dict[str, WorkItem]:
@@ -295,13 +374,14 @@ def test_an_unevidenced_assertion_parks_without_consuming_the_rework_cap(
     """
     item = _item()
 
-    exit_code, records = _dispatch(
+    dispatched = _dispatch(
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
         comments=_comments_payload(bodies=[_record_body(verdict="captured")]),
         item=item,
     )
 
+    exit_code, records = dispatched.exit_code, dispatched.records
     assert exit_code == 0
     ai_pass = _record(records=records, stage="acceptance-ai-pass")
     assert ai_pass["verdict"] == "NEEDS_ATTENTION"
@@ -332,13 +412,14 @@ def test_a_verified_record_for_the_merging_run_grades_the_assertion_and_accepts(
     """
     item = _item(id="bd-ib-proofverified")
 
-    exit_code, records = _dispatch(
+    dispatched = _dispatch(
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
         comments=_comments_payload(bodies=[_record_body(verdict="verified")]),
         item=item,
     )
 
+    exit_code, records = dispatched.exit_code, dispatched.records
     assert exit_code == 0
     ai_pass = _record(records=records, stage="acceptance-ai-pass")
     assert ai_pass["verdict"] == "PASS"
@@ -366,13 +447,14 @@ def test_the_pointer_is_written_after_an_unchanged_definition_of_done_section(
     """
     item = _item(id="bd-ib-proofpointerwrite")
 
-    exit_code, records = _dispatch(
+    dispatched = _dispatch(
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
         comments=_comments_payload(bodies=[_record_body(verdict="verified")]),
         item=item,
     )
 
+    exit_code, records = dispatched.exit_code, dispatched.records
     assert exit_code == 0
     description = _stored()[item.id].description
     head, _, pointer = description.partition("## Proof of Done")
@@ -397,3 +479,50 @@ def test_the_pointer_is_written_after_an_unchanged_definition_of_done_section(
     assert written["pull_request"] == _PR_NUMBER
     assert written["record_comment"] == _RECORD_URL
     assert written["run_id"] == _RUN_ID
+
+
+def test_a_mixed_item_parks_for_its_human_leg_and_the_accept_valve_refuses(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scenario 133 — "Parking after merge", and the accept valve's refusal.
+
+    The pass reports PASS for the factory leg, the item rests in `acceptance`,
+    and the `accept:<id>` valve refuses naming the assertion awaiting attestation
+    and the record format.
+
+    The discriminator against a valve that simply refuses mixed items forever is
+    in the sibling case: the SAME item, the SAME valve, with a human-attested
+    record on the pull request, closes to `done`. Neither case means anything
+    alone — the first would pass against a permanently-stuck valve and the second
+    against a valve that never refuses.
+    """
+    item = _item(
+        id="bd-ib-proofmixed",
+        description=_mixed_definition_of_done(),
+        acceptance_policy="ai-then-human",
+    )
+
+    dispatched = _dispatch(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        comments=_comments_payload(bodies=[_mixed_record_body()]),
+        item=item,
+    )
+
+    assert dispatched.exit_code == 0
+    ai_pass = _record(records=dispatched.records, stage="acceptance-ai-pass")
+    assert ai_pass["verdict"] == "PASS"
+    proof = ai_pass["proof"]
+    assert isinstance(proof, dict)
+    assert proof["pending_human_attested"] == [_HUMAN_ASSERTION]
+    assert _stored()[item.id].status == "acceptance"
+
+    refusal = _accept(repo=dispatched.repo, item_id=item.id, monkeypatch=monkeypatch, bodies=[])
+
+    assert refusal["status"] == "failed"
+    summary = refusal["summary"]
+    assert isinstance(summary, str)
+    assert _HUMAN_ASSERTION in summary
+    assert "Proof of Done — human_attested" in summary
+    assert _stored()[item.id].status == "acceptance"

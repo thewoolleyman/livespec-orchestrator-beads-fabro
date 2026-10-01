@@ -1,10 +1,14 @@
-"""Routing, and the ledger-only human valves, for `drive`.
+"""Routing, and the entry-to-`ready` valve, for `drive`.
 
-The `reject` valve lives in `_drive_reject_valve`, the merge-hold valve in
-`_drive_merge_hold_valve`, the policy / cap / queue / blocked-state valves in
-`_drive_policy_valves`, and the action-id grammar the router dispatches on in
-`_drive_valve_grammar`; what stays here is that router, and the two valves that
-do nothing but write the ledger.
+The `reject` valve lives in `_drive_reject_valve`, the `accept` valve in
+`_drive_accept_valve`, the merge-hold valve in `_drive_merge_hold_valve`, the
+policy / cap / queue / blocked-state valves in `_drive_policy_valves`, and the
+action-id grammar the router dispatches on in `_drive_valve_grammar`; what stays
+here is that router, and `approve`.
+
+`accept` moved out when the human-attested leg gave it a forge read: it had been
+a ledger-only sibling of `approve`, and leaving it here would have put a pull
+request read inside the module whose whole job is routing.
 """
 
 from dataclasses import dataclass
@@ -20,9 +24,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
     InvokerIdentity,
     default_invoker_identity,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_lifecycle_writes import (
-    write_work_item_status_and_reconcile,
-)
+from livespec_orchestrator_beads_fabro.commands._drive_accept_valve import accept_item
 from livespec_orchestrator_beads_fabro.commands._drive_answer import answer_delivery
 from livespec_orchestrator_beads_fabro.commands._drive_factory_safety_valve import (
     FACTORY_SAFETY_ACTION,
@@ -145,7 +147,9 @@ def _route(*, call: _ValveCall, answer: str | None) -> dict[str, Any]:
             repo=call.repo, config=call.config, item=call.item, action_id=call.action_id
         )
     if call.action == "accept":
-        return _accept_item(config=call.config, item=call.item, action_id=call.action_id)
+        return accept_item(
+            repo=call.repo, config=call.config, item=call.item, action_id=call.action_id
+        )
     if call.action == "move":
         return move_item(
             config=call.config, item=call.item, aid=call.action_id, target_status=call.value
@@ -253,18 +257,4 @@ def _approve_item(
         status="ready",
         assignee=None,
         msg=f"Approved {item.id}: pending-approval -> ready.",
-    )
-
-
-def _accept_item(*, config: StoreConfig, item: WorkItem, action_id: str) -> dict[str, Any]:
-    if item.status != "acceptance":
-        return invalid_source_state(aid=action_id, item=item, expected="acceptance")
-    write_work_item_status_and_reconcile(path=config, item_id=item.id, status="done")
-    return valve_success(
-        aid=action_id,
-        wid=item.id,
-        stage="human-valve-accept",
-        status="done",
-        assignee=None,
-        msg=f"Accepted {item.id}: acceptance -> done.",
     )
