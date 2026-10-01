@@ -252,3 +252,4 @@ def main(*, argv: list[str] | None = None, runner: CommandRunner = DEFAULT_RUNNE
     return exit_code(verdict=verdict)
 
 # throwaway factory-provenance acceptance probe (bd-ib-xugp7m); never merge
+# second probe commit: synchronize event after the factory-override label was applied
