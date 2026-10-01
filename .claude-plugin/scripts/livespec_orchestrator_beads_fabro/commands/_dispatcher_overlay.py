@@ -196,6 +196,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     graph_override: Path | None = None,
     prepare_inputs: Mapping[str, str] | None = None,
     dispatch_id: str | None = None,
+    proof_store_env: str = "",
     git_author: GitAuthor | None = None,
 ) -> str | None:
     """Render the dispatch-time run-config overlay.
@@ -263,6 +264,11 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     plugin_cache_steps = plugin_cache_gate_prepare_steps_block()
     factory_provenance_steps = factory_run_id_prepare_steps_block(dispatch_id=dispatch_id)
     author_env_lines = git_author_env_lines(author=git_author)
+    # The publish branch the `publish_draft` COMMAND node pushes, plus the resolved
+    # proof asset store the `proof_capture` node uploads through. A command node
+    # cannot read the rendered goal and `CONTRACT_INPUT_NAMES` is closed, so this
+    # env table is the seam — the same one `LIVESPEC_GIT_AUTHOR_NAME` above already
+    # uses for the needs_human node's emergency commit (S5 / bd-ib-b4u6b7).
     return (
         rewritten
         + factory_provenance_steps
@@ -286,6 +292,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + otel_env_lines
         + codex_env_lines
         + codex_otel_env
+        + proof_store_env
     )
 
 

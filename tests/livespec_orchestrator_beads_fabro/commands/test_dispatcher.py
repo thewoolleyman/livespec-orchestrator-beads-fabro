@@ -4175,6 +4175,12 @@ def test_dispatch_green_closes_item_and_journals(
         "source-checkout-origin-reachability",
         "master-ci-preflight",
         "reconcile-runs-pass",
+        # The pre-dispatch proof-assets gate (S5 / bd-ib-b4u6b7), between the
+        # reconcile pass and admission: it runs BEFORE the claim so a refused item
+        # is never claimed. This fixture has no forge, so the record it writes is
+        # the UNOBSERVABLE one -- which is the point of that arm existing, since an
+        # unreachable forge must not be reported as an absent prerelease.
+        "proof-asset-store",
         "ledger-admit",
         "node-timeouts",
         "acp-nodes",
@@ -5715,6 +5721,124 @@ def test_loop_without_item_drains_ranked_queue(
     seen_plan = fake.seen[0]["plan"]
     assert isinstance(seen_plan, DispatchPlan)
     assert seen_plan.work_item_id == item.id
+
+
+def _repo_with_unusable_proof_tag(*, tmp_path: Path) -> tuple[Path, Path]:
+    """A governed repository whose committed proof-assets tag is unusable.
+
+    A BLANK string rather than an absent key, because those are different
+    declarations: an absent key resolves the ratified `proof-assets` default and is
+    perfectly dispatchable, while a key someone wrote and left empty is the fault
+    the gate refuses. The `dispatcher` block nests under the PLUGIN block, which is
+    where the reader looks — a fixture writing it at the root would be silently
+    ignored and could never fail.
+    """
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    _ = (repo / ".livespec.jsonc").write_text(
+        json.dumps(
+            {
+                "git_author": {
+                    "operator_name": "Chad Woolley",
+                    "operator_email": "thewoolleyman@gmail.com",
+                },
+                "livespec-orchestrator-beads-fabro": {
+                    "connection": {"prefix": "bd-ib"},
+                    "dispatcher": {"proof_assets_release_tag": ""},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return repo, workflow
+
+
+def test_dispatch_refuses_an_unusable_proof_assets_tag_before_launching(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The proof-assets gate refuses BEFORE any run exists (S5 / bd-ib-b4u6b7).
+
+    The item is proof-bearing, so the gate engages; its repository declares an
+    unusable tag, so the refusal is reached with NO forge call, which is what makes
+    this case hermetic. No-run is asserted on the launch stand-in rather than on the
+    exit code, because a dispatch can exit non-zero for many reasons and the gate's
+    whole claim is about what happens before a sandbox is spent.
+    """
+    repo, workflow = _repo_with_unusable_proof_tag(tmp_path=tmp_path)
+    item = _item(
+        description=(
+            "## Definition of Done\n"
+            "\n"
+            "- The dispatched slice lands its change.\n"
+            "\n"
+            "References: ## Effective acceptance criteria\n"
+        )
+    )
+    append_work_item(path=_config(), item=item)
+    fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
+
+    exit_code = main(
+        argv=[
+            "dispatch",
+            "--repo",
+            str(repo),
+            "--item",
+            item.id,
+            "--workflow",
+            str(workflow),
+            "--no-close-on-merge",
+        ]
+    )
+
+    assert exit_code == 3
+    assert fake.seen == []
+    assert "dispatcher.proof_assets_release_tag" in capsys.readouterr().err
+
+
+def test_loop_refuses_an_unusable_proof_assets_tag_before_launching(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The DRAIN reaches the same gate, through its own call site.
+
+    Asserted separately from the single-dispatch case because the two entry points
+    reach the wall through separate code paths — the same reason the criteria wall
+    carries a loop case of its own. A gate wired into only one of them would leave
+    the autonomous drain spending sandboxes the single path refuses.
+    """
+    repo, workflow = _repo_with_unusable_proof_tag(tmp_path=tmp_path)
+    item = _item(
+        description=(
+            "## Definition of Done\n"
+            "\n"
+            "- The dispatched slice lands its change.\n"
+            "\n"
+            "References: ## Effective acceptance criteria\n"
+        )
+    )
+    append_work_item(path=_config(), item=item)
+    fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
+
+    exit_code = main(
+        argv=[
+            "loop",
+            "--repo",
+            str(repo),
+            "--budget",
+            "5",
+            "--workflow",
+            str(workflow),
+            "--no-close-on-merge",
+        ]
+    )
+
+    assert exit_code == 3
+    assert fake.seen == []
+    assert "dispatcher.proof_assets_release_tag" in capsys.readouterr().err
 
 
 def test_loop_refuses_missing_requested_item_before_dispatching(

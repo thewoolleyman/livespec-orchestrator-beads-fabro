@@ -27,6 +27,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
+    ShellCommandRunner,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import (
     emit_outcomes,
@@ -46,6 +47,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_post_verdict import (
     reflector_oob_after_verdict,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (
+    proof_assets_refusal_for_items,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_readiness_diagnostics import (
     not_ready_requested_items_error,
@@ -97,17 +101,9 @@ def run_dispatch_command(*, args: argparse.Namespace) -> int:
     if selected is None:
         return EXIT_PRECONDITION_ERROR
     target, marked = selected
-    # The pre-dispatch wall runs after selection and BEFORE admission, so a
-    # refused item is never claimed and no factory run exists to reap. It is
-    # handed this dispatch's explicit `--workflow-name` because the wall is
-    # variant-aware: it resolves which graph the target would run and exempts a
-    # groom-kind dispatch, whose acceptance is the human approval of the draft.
-    ungradeable = pre_dispatch_criteria_refusal(
-        items=[target], cwd=repo, workflow_name=args.workflow_name
-    )
-    if ungradeable is not None:
-        _ = write_stderr(text=ungradeable)
-        return EXIT_UNGRADEABLE_CRITERIA
+    wall_exit = _pre_dispatch_wall_exit(args=args, repo=repo, target=target, journal=journal)
+    if wall_exit is not None:
+        return wall_exit
     outcome = _admit_and_dispatch_target(
         args=args,
         repo=repo,
@@ -155,6 +151,49 @@ def run_dispatch_command(*, args: argparse.Namespace) -> int:
     )
     reflector_oob_after_verdict(args=args, repo=repo, journal=journal)
     return exit_code
+
+
+def _pre_dispatch_wall_exit(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    target: WorkItem,
+    journal: JournalFile,
+) -> int | None:
+    """Both pre-dispatch walls, as ONE decision: the exit code, or None to proceed.
+
+    They are combined rather than inlined side by side because they share one
+    POSITION and one guarantee: each runs after selection and BEFORE admission, so
+    a refused item is never claimed and no factory run exists to reap. Reading them
+    as one gate is also what keeps the caller's return count honest -- the
+    alternative was suppressing the too-many-returns rule, which would have hidden
+    the fact that the dispatch entry point had grown another exit.
+
+    The criteria wall is handed this dispatch's explicit `--workflow-name` because
+    it is variant-aware: it resolves which graph the target would run and exempts a
+    groom-kind dispatch, whose acceptance is the human approval of the draft.
+
+    The proof-assets gate follows it (S5 / bd-ib-b4u6b7): an item carrying a
+    `factory_captured` assertion needs this repository's standing proof-assets
+    prerelease to exist before its capture stage can store an image, so the
+    Dispatcher creates it here and refuses naming the tag when it still does not.
+    Its exit code is the generic precondition one rather than a dedicated code: the
+    fault is a missing repository-level resource, which is the same class every
+    other pre-dispatch precondition reports.
+    """
+    ungradeable = pre_dispatch_criteria_refusal(
+        items=[target], cwd=repo, workflow_name=args.workflow_name
+    )
+    if ungradeable is not None:
+        _ = write_stderr(text=ungradeable)
+        return EXIT_UNGRADEABLE_CRITERIA
+    proof_refusal = proof_assets_refusal_for_items(
+        runner=ShellCommandRunner(), repo=repo, items=[target], journal=journal
+    )
+    if proof_refusal is not None:
+        _ = write_stderr(text=proof_refusal)
+        return EXIT_PRECONDITION_ERROR
+    return None
 
 
 def _target_item(
