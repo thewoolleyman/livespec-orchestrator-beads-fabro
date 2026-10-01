@@ -67,6 +67,7 @@ diagnostics flow through structlog (JSON to stderr).
 from __future__ import annotations
 
 import ast
+import os
 import sys
 from pathlib import Path
 
@@ -142,10 +143,36 @@ _PACKAGE_RELPATH = ".claude-plugin/scripts/livespec_orchestrator_beads_fabro"
 _FIXTURE_RELPATH = "dev-tooling/checks/fixtures/fleet_toolchain_literal_control.py.txt"
 _PAYLOAD_SUFFIXES = frozenset({".fabro", ".md", ".toml"})
 _FINDING_MESSAGE = "fleet-toolchain literal outside the fleet-defaults module"
+_BYTECODE_DIRNAME = "__pycache__"
+
+
+def _walked_files(*, root: Path) -> list[Path]:
+    """Every file under `root`, tolerating that tree changing underneath the walk.
+
+    BOTH trees this gate reads are LIVE, so both can change while being walked.
+    `os.walk` rather than `Path.rglob` because pathlib lists a directory and then
+    opens it, and lets a `FileNotFoundError` from that open escape: a
+    `__pycache__` a concurrent pytest worker removed between the two steps took
+    this whole check down and turned master CI red on a pure version bump, which
+    closed the green-master preflight and so blocked every factory dispatch here.
+    `os.walk` ignores a `scandir` error by default, so a vanished subtree is
+    dropped rather than fatal. This is the walk `spec_id_presence_discipline`
+    adopted for the same race; both of this gate's walks share this one helper so
+    they cannot come to differ about it.
+
+    `__pycache__` is pruned from the descent as well as tolerated: it can hold
+    neither a scanned module nor a payload file, and it is the directory that
+    actually races here.
+    """
+    paths: list[Path] = []
+    for parent, dirnames, filenames in os.walk(root):
+        dirnames[:] = [dirname for dirname in dirnames if dirname != _BYTECODE_DIRNAME]
+        paths.extend(Path(parent) / name for name in filenames)
+    return paths
 
 
 def _module_paths(*, package: Path) -> list[Path]:
-    return sorted(package.rglob("*.py"))
+    return sorted(path for path in _walked_files(root=package) if path.suffix == ".py")
 
 
 def _payload_files(*, payload: CheckedPayload) -> list[Path]:
@@ -155,7 +182,9 @@ def _payload_files(*, payload: CheckedPayload) -> list[Path]:
     completeness and discovery controls are what turn that nothing into a
     finding naming the directory.
     """
-    return sorted(path for path in payload.directory.rglob("*") if path.suffix in _PAYLOAD_SUFFIXES)
+    return sorted(
+        path for path in _walked_files(root=payload.directory) if path.suffix in _PAYLOAD_SUFFIXES
+    )
 
 
 def payload_paths(*, repo_root: Path) -> list[Path]:

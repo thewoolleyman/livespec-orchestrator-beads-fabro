@@ -9,7 +9,10 @@ beside it still scans clean, which no single-payload gate could produce.
 from __future__ import annotations
 
 import importlib.util
+import os
+import shutil
 import sys
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import ModuleType
 
@@ -337,6 +340,186 @@ def test_main_returns_nonzero_for_a_reintroduced_literal(
     monkeypatch.chdir(tmp_path)
 
     assert check.main() == 1
+
+
+# ---------------------------------------------------------------------------
+# BOTH walked trees are LIVE, so both walks must tolerate them changing.
+# ---------------------------------------------------------------------------
+
+
+class _ListedEntries:
+    """A `scandir` result whose entries were listed BEFORE the directory changed.
+
+    Listing eagerly is what makes the race deterministic: the walk receives a
+    directory entry that existed a moment ago and is gone by the time it opens
+    it, which is exactly the sequence the live `__pycache__` hit.
+    """
+
+    def __init__(self, *, entries: list[os.DirEntry[str]]) -> None:
+        self._entries = iter(entries)
+
+    def __next__(self) -> os.DirEntry[str]:
+        return next(self._entries)
+
+    def __enter__(self) -> _ListedEntries:
+        return self
+
+    def __exit__(self, *_details: object) -> None:
+        return None
+
+
+def _scandir_removing(
+    *,
+    doomed: tuple[Path, ...],
+    removed: list[Path],
+) -> Callable[[Path | str], _ListedEntries | Iterator[os.DirEntry[str]]]:
+    """A `scandir` that deletes a doomed directory the moment its parent is listed.
+
+    The production race is a concurrent pytest worker rewriting bytecode, which
+    removes a `__pycache__` between the walk listing it and the walk opening it.
+    Reproducing that by timing would be flaky, so it is driven off the walk's own
+    `scandir` call instead: every removal is appended to `removed`, which lets a
+    test PROVE the vanish fired during the walk rather than trusting that it did.
+    Only a directory still on disk is removed, so a surface that walks a tree
+    more than once simply finds it already gone the second time.
+    """
+    real = os.scandir
+
+    def hooked(path: Path | str) -> _ListedEntries | Iterator[os.DirEntry[str]]:
+        entries = real(path)
+        targets = [
+            target for target in doomed if str(path) == str(target.parent) and target.is_dir()
+        ]
+        if not targets:
+            return entries
+        with entries:
+            listed = list(entries)
+        for target in targets:
+            shutil.rmtree(target)
+            removed.append(target)
+        return _ListedEntries(entries=listed)
+
+    return hooked
+
+
+def _seed_bytecode(*, directory: Path, name: str = "__pycache__") -> Path:
+    """A throwaway directory holding one bytecode file, as a pytest worker leaves it."""
+    pycache = directory / name
+    pycache.mkdir(parents=True)
+    _ = (pycache / "stale.cpython-310.pyc").write_bytes(b"\x00")
+    return pycache
+
+
+def test_the_package_walk_never_descends_into_a_bytecode_directory(tmp_path: Path) -> None:
+    """The pruning arm ISOLATED, with nothing vanishing.
+
+    `__pycache__` can never hold a module this gate is meant to read, and it is
+    the directory that actually races, so the walk must not descend there at
+    all. The sibling module carries the same literal, which is what proves the
+    walk still reached the tree it is supposed to read.
+    """
+    check = _load_check()
+    package = tmp_path / _PACKAGE_RELPATH
+    _write(path=package / "commands/_dispatcher_other.py", text='ARGV = ["mise", "trust"]\n')
+    pycache = _seed_bytecode(directory=package)
+    _write(path=pycache / "stale.py", text='ARGV = ["mise", "trust"]\n')
+
+    findings = check.package_findings(repo_root=tmp_path)
+
+    assert pycache.is_dir()
+    assert [finding.relpath for finding in findings] == ["commands/_dispatcher_other.py"]
+
+
+def test_the_package_walk_survives_a_bytecode_directory_vanishing_mid_walk(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Master run 36806104051 went red on a pure version bump this exact way.
+
+    A concurrently removed `__pycache__` raised `FileNotFoundError` out of the
+    package walk, so a `FileNotFoundError` escaping this call IS that failure.
+    """
+    check = _load_check()
+    package = tmp_path / _PACKAGE_RELPATH
+    _write(path=package / "commands/_dispatcher_other.py", text='ARGV = ["mise", "trust"]\n')
+    doomed = _seed_bytecode(directory=package)
+    removed: list[Path] = []
+    monkeypatch.setattr(os, "scandir", _scandir_removing(doomed=(doomed,), removed=removed))
+
+    findings = check.package_findings(repo_root=tmp_path)
+
+    # PROOF THE VANISH LANDED, and landed DURING the walk: without it this test
+    # would pass by never exercising the race, printing exactly the green a
+    # tolerant walk prints.
+    assert removed == [doomed]
+    assert not doomed.exists()
+    assert [finding.relpath for finding in findings] == ["commands/_dispatcher_other.py"]
+
+
+def test_the_package_walk_keeps_the_modules_it_reached_when_a_directory_vanishes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The tolerance arm ISOLATED: an ORDINARY directory vanishes, so pruning cannot pass it."""
+    check = _load_check()
+    package = tmp_path / _PACKAGE_RELPATH
+    _write(path=package / "commands/_dispatcher_other.py", text='ARGV = ["mise", "trust"]\n')
+    doomed = _seed_bytecode(directory=package / "commands", name="nested")
+    _write(path=doomed / "stale.py", text='ARGV = ["mise", "trust"]\n')
+    removed: list[Path] = []
+    monkeypatch.setattr(os, "scandir", _scandir_removing(doomed=(doomed,), removed=removed))
+
+    findings = check.package_findings(repo_root=tmp_path)
+
+    assert removed == [doomed]
+    assert not doomed.exists()
+    assert [finding.relpath for finding in findings] == ["commands/_dispatcher_other.py"]
+
+
+def test_the_payload_walk_survives_a_bytecode_directory_vanishing_mid_walk(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The payload walk races the same way, and it is a SECOND rglob, not the same one."""
+    check = _load_check()
+    payload = tmp_path / _PAYLOAD_RELPATH
+    _write_workflow(directory=payload)
+    _write(path=payload / "prompts/implement.md", text="prose\n")
+    doomed = _seed_bytecode(directory=payload)
+    removed: list[Path] = []
+    monkeypatch.setattr(os, "scandir", _scandir_removing(doomed=(doomed,), removed=removed))
+
+    walked = [path.name for path in check.payload_paths(repo_root=tmp_path)]
+
+    assert removed == [doomed]
+    assert not doomed.exists()
+    assert walked == ["implement.md", "workflow.fabro", "workflow.toml"]
+
+
+def test_main_still_exits_zero_when_a_bytecode_directory_vanishes_under_either_walk(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The whole check, end to end: a conforming tree stays green through the race.
+
+    Both doomed directories are proved removed, so the exit code is earned by
+    tolerance rather than by the race never having fired.
+    """
+    check = _load_check()
+    _conforming_repo(root=tmp_path, check=check)
+    doomed = (
+        _seed_bytecode(directory=tmp_path / _PACKAGE_RELPATH),
+        _seed_bytecode(directory=tmp_path / _PAYLOAD_RELPATH),
+    )
+    removed: list[Path] = []
+    monkeypatch.setattr(os, "scandir", _scandir_removing(doomed=doomed, removed=removed))
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = check.main()
+
+    assert sorted(removed) == sorted(doomed)
+    assert [path for path in doomed if path.exists()] == []
+    assert exit_code == 0
 
 
 # ---------------------------------------------------------------------------
