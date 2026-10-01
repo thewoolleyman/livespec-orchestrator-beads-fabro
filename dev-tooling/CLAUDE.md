@@ -48,3 +48,16 @@ never re-vendor a local copy.
 - The task runner (`justfile`) is the single source of truth for
   dev-tooling invocations; hooks delegate via `lefthook` →
   `just <target>`, never by calling tools directly.
+- **Never give `just-check.sh` a target list of its own.** The justfile
+  `check:` recipe's `targets=(...)` array is the aggregate's ONE
+  declaration; `aggregate-targets.sh` parses it and `just-check.sh`
+  executes exactly what that parse yields, so the set the shared
+  `aggregate_completeness` gate certifies and the set that actually runs
+  are one set. A hardcoded copy lived in `just-check.sh` for eight weeks
+  and diverged by ten slugs — `check-spec-governance-default-block` among
+  them, red on master for six weeks while `just check`, pre-push and the
+  janitor gate all reported `All 80 targets passed` against a 90-slug
+  declaration (work-item bd-ib-mxqrr4). The parity is guarded by
+  `tests/test_just_check_aggregate_target_derivation.py`, which reads the
+  executed list back through the extractor's own process and compares it
+  against an independent Python parse of the committed justfile.

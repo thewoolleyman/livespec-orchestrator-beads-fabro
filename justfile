@@ -337,6 +337,15 @@ factory-bypass-audit *args:
 # `livespec_dev_tooling/checks/<name>.py` in the dev-tooling sibling
 # repo, re-run `just stamp-canonical-slugs` in livespec, cut a template
 # release, then re-run `copier update --vcs-ref=master` here.
+#
+# The array sits inside a no-op heredoc because it is DATA, not shell this
+# recipe runs: `dev-tooling/aggregate-targets.sh` parses it and
+# `dev-tooling/just-check.sh` executes exactly what that parse yields, so this
+# block is the single declaration BOTH the shared `aggregate_completeness` gate
+# and the runner read. It was declaration-only for eight weeks while the runner
+# carried its own hardcoded copy, which left ten declared slugs unrun under
+# `just check`, pre-push and the janitor gate (work-item bd-ib-mxqrr4) — adding
+# a slug here is now sufficient to make it run.
 # ---------------------------------------------------------------
 
 # Deliberately omit errexit so the aggregate reports every failing target before exiting non-zero.
