@@ -60,13 +60,14 @@ __all__: list[str] = [
 ]
 
 # Every ACP node of the `implement-work-item` workflow, in graph order.
-# `implementation_diff` and `janitor` are deliberately absent: they are
-# `script` nodes with no adapter to configure.
+# `implementation_diff`, `janitor` and `publish_draft` are deliberately absent:
+# they are `script` nodes with no adapter to configure.
 ACP_NODES: tuple[str, ...] = (
     "dod_gate",
     "implement",
     "fix",
     "review_fix",
+    "proof_capture",
     "pr",
     "review",
     "disposition",
@@ -87,6 +88,11 @@ NODE_INPUT_CANDIDATES: Mapping[str, tuple[str, ...]] = {
     "implement": ("implement_adapter", "acp_adapter"),
     "fix": ("fix_adapter", "acp_adapter"),
     "review_fix": ("review_fix_adapter", "acp_adapter"),
+    # The capture node's built-in default is the IMPLEMENTER entry, but the
+    # shared `acp_adapter` is deliberately NOT a candidate for it: the captured
+    # record is what the reviewer reads and what the replay is graded against, so
+    # a target that moved its implementer tier must not move the capture with it.
+    "proof_capture": ("proof_capture_adapter",),
     "pr": ("pr_adapter",),
     "review": ("review_adapter",),
     "disposition": ("disposition_adapter",),

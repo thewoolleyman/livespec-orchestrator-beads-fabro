@@ -1,9 +1,16 @@
-# PR stage — publish the work and arm auto-merge
+# PR stage — mark the draft PR ready and arm auto-merge
 
-The janitor gate is green. Publish this sandbox clone's committed work
-as a PR per the family merge discipline. You are on a Fabro-managed run
-branch — its name is run-internal and MUST NOT be published; the PR
-rides a feature branch named after the work-item instead.
+The janitor gate is green, the review gate approved the tree, and the
+Proof of Done record has been captured. A DRAFT pull request for this
+item's publish branch ALREADY EXISTS — the `publish_draft` stage opened it
+before the capture, because a Proof of Done record is a comment and a
+comment needs a pull request to live on.
+
+So your job is NOT to create a pull request. It is to refresh the base,
+give that existing draft its real title and body, mark it READY, and arm
+auto-merge. You are on a Fabro-managed run branch — its name is
+run-internal and MUST NOT be published; the pull request rides the
+feature branch named after the work-item instead.
 
 ## Where you are
 
@@ -77,14 +84,17 @@ The complete work-item goal is in the Fabro-injected `Goal:` preamble above.
      the output verbatim and end with the needs-human protocol below.
      Do NOT loop and do NOT retry on any different error signature in
      this workflow-permission arm.
-   - If the remote rejects the push as `non-fast-forward` for the
-     assignment feature branch after the successful rebase above, first
-     reconcile only when you can prove the remote branch tip is this
-     run's own prior push. Fetch the assignment feature branch, inspect
-     the observed remote tip, and verify that the remote-only commits
-     are this run's own prior publication. If you cannot prove the
-     remote branch tip is this run's own prior push, report the output
-     verbatim and end with the needs-human protocol below.
+   - A `non-fast-forward` rejection for the assignment feature branch is
+     EXPECTED here rather than exceptional, and that is new: the
+     `publish_draft` stage already pushed this run's work to that branch,
+     and the rebase in step 3 has since rewritten the commits on top of a
+     fresher base. So the remote tip is normally this run's OWN prior
+     push. Reconcile only when you can PROVE that. Fetch the assignment
+     feature branch, inspect the observed remote tip, and verify that the
+     remote-only commits are this run's own prior publication. If you
+     cannot prove the remote branch tip is this run's own prior push,
+     report the output verbatim and end with the needs-human protocol
+     below.
    - When the non-fast-forward branch is proven to be this run's own
      prior publication, retry EXACTLY ONCE with an explicit lease against
      the observed assignment feature-branch tip:
@@ -96,13 +106,34 @@ The complete work-item goal is in the Fabro-injected `Goal:` preamble above.
      `--force` push remains forbidden. If the leased retry fails with a
      lease mismatch, or if any other push failure occurs, report the
      output verbatim and end with the needs-human protocol below.
-5. Open the PR against `{{ inputs.default_branch }}` with
-   `gh pr create --head feat/<work-item-id>` — title from the
-   work-item, body drafted from the work-item acceptance criteria in
-   the assignment above, and including the work-item id.
-   The body MUST end with the line:
+5. Find the EXISTING draft pull request for the publish branch and give it
+   its real title and body, then mark it ready. Do NOT create a pull
+   request, by any command or in any form — one already exists, and
+   creating a second would either fail outright or open a duplicate that
+   no reviewer and no proof record is attached to:
 
-   🤖 Generated with [Claude Code](https://claude.com/claude-code)
+       gh pr list --head feat/<work-item-id> --state open --json number,isDraft
+
+   - If that returns NO pull request, something upstream of you went
+     wrong: the `publish_draft` stage is the only thing that opens it and
+     the graph cannot reach you without passing through it. Report what
+     you observed and end with the needs-human protocol below rather than
+     creating one yourself.
+   - Set the real title and body with
+     `gh pr edit <number> --title ... --body ...` — title from the
+     work-item, body drafted from the work-item acceptance criteria in
+     the assignment above, and including the work-item id. The
+     `publish_draft` stage titled it with the branch name as a
+     placeholder, so this step is what makes it readable.
+     The body MUST end with the line:
+
+     🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+   - Mark it ready for review: `gh pr ready <number>`. This is what
+     releases it to the repository's merge automation; while it was a
+     draft, auto-merge could not take it, which is exactly why the proof
+     could be captured on it first. If it is already not a draft, that is
+     fine — `gh pr ready` is idempotent in the direction you want.
 
 6. Read the merge hold for this item: it is `{{ inputs.merge_hold }}`.
    Everything above this step is the same either way — the branch is

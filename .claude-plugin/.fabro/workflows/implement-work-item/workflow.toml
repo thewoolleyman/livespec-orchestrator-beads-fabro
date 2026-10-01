@@ -246,6 +246,23 @@ disposition_adapter = "npx -y @agentclientprotocol/claude-agent-acp"
 # rationale all live on `review_adapter` — they are not restated here.
 dod_gate_adapter = "ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
 
+# ACP adapter for the PROOF_CAPTURE node (S5 / bd-ib-b4u6b7). Its built-in
+# default is the entry this workflow declares for its IMPLEMENT input —
+# contracts.md section "Built-in ACP node defaults" groups `proof_capture` with
+# `implement` / `fix` / `review_fix`, NOT with the adjudication nodes. The reason
+# is what the node does: authoring reproduction steps for an arbitrary assertion,
+# driving a headless browser to screenshot the result, and uploading the assets
+# is implementation-grade work, and a capture the node could not produce is
+# reported as an implementation defect rather than adjudicated.
+#
+# THIS VALUE IS THEREFORE A DELIBERATE DUPLICATE of `implement_adapter` above,
+# and the two are held equal by test, not by hope. It is a SEPARATE INPUT all the
+# same: the captured record is what the reviewer reads and what the replay is
+# graded against, so pinning the capture is a decision of its own rather than a
+# consequence of an implementer tier moving. The shared `acp_adapter` is
+# deliberately not a candidate for it.
+proof_capture_adapter = "ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
+
 # Review fix rounds count implementer repair rounds, not review visits. The
 # workflow guard reads review node visits, so the default three fix rounds render
 # as a visit guard of four: initial review visit plus three fix rounds.

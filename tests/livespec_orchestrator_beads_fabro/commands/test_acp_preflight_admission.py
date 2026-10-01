@@ -195,7 +195,7 @@ def _filter(*, chain: Any, inputs: Any, assessed: dict[str, str] | None = None) 
     )
 
 
-def test_the_committed_graph_resolves_exactly_dod_gate_implement_review_and_pr() -> None:
+def test_the_committed_graph_resolves_exactly_the_nodes_dominating_every_green_path() -> None:
     """The contract's named set, derived rather than spelled.
 
     This is the one control that ties the derivation to the real workflow. It
@@ -208,6 +208,13 @@ def test_the_committed_graph_resolves_exactly_dod_gate_implement_review_and_pr()
     can avoid it. A gate that could not start its own adapter would therefore
     strand every run at its first node, which is exactly the condition
     admission-required exists to refuse before claim.
+
+    `proof_capture` joins it on the same ground (S5 / bd-ib-b4u6b7): it is the
+    only route from a green janitor to `review`, so no green path avoids it
+    either. Its `script` sibling `publish_draft` dominates every green path just
+    as hard and is deliberately ABSENT, because this set is the ACP nodes --
+    what it gates is per-node adapter fallback, and a script node has no adapter
+    to fall back along.
     """
     modules = _modules()
     graph = modules["_acp_workflow_graph"].parse_workflow_graph(
@@ -215,7 +222,7 @@ def test_the_committed_graph_resolves_exactly_dod_gate_implement_review_and_pr()
     )
     critical = modules["_acp_success_critical"].derive_success_critical(graph=graph)
 
-    assert set(critical.nodes) == {"dod_gate", "implement", "review", "pr"}
+    assert set(critical.nodes) == {"dod_gate", "implement", "proof_capture", "review", "pr"}
     assert critical.start == "start"
     assert critical.green_terminal == "exit"
     assert set(graph.acp_names) == {
@@ -223,6 +230,7 @@ def test_the_committed_graph_resolves_exactly_dod_gate_implement_review_and_pr()
         "implement",
         "fix",
         "review_fix",
+        "proof_capture",
         "pr",
         "review",
         "disposition",
@@ -1173,7 +1181,13 @@ def test_a_repository_with_no_committed_workflow_is_graded_against_the_bundled_o
     )
 
     assert verdict.fallback_enabled is True
-    assert set(verdict.success_critical) == {"dod_gate", "implement", "review", "pr"}
+    assert set(verdict.success_critical) == {
+        "dod_gate",
+        "implement",
+        "proof_capture",
+        "review",
+        "pr",
+    }
     assert verdict.viable is True
 
 

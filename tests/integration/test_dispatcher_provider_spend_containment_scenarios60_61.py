@@ -694,7 +694,12 @@ def test_scenario61_a_changed_tree_still_reaches_review_normally(
         r'\bimplementation_diff\s*->\s*janitor\b[^\n]*condition="outcome=succeeded"',
         graph,
     )
-    assert re.search(r'\bjanitor\s*->\s*review\b[^\n]*condition="outcome=succeeded"', graph)
+    # The green janitor reaches `review` THROUGH `publish_draft` and
+    # `proof_capture` since S5 (bd-ib-b4u6b7), so the route is asserted rather
+    # than the single edge that used to carry it.
+    assert re.search(r'\bjanitor\s*->\s*publish_draft\b[^\n]*condition="outcome=succeeded"', graph)
+    assert re.search(r"\bpublish_draft\s*->\s*proof_capture\b", graph)
+    assert re.search(r"\bproof_capture\s*->\s*review\b", graph)
 
 
 def test_scenario61_the_truncation_is_journaled_and_disposes_of_nothing(
