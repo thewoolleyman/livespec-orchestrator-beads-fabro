@@ -25,8 +25,10 @@ absence is unobserved evidence, and the evidence rule never disposes on absence.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
+from livespec_orchestrator_beads_fabro._store_description import update_work_item_description
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
     effective_criteria,
 )
@@ -39,6 +41,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_pointer import (
     ProofPointer,
+    description_with_updated_pointer,
     pointer_in,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
@@ -96,7 +99,28 @@ def accept_item(
             pending=pending,
             detail=f"no such record on pull request #{pointer.pull_request}",
         )
+    _carry_both_links(config=config, item=item, pointer=pointer, record=record)
     return _close(config=config, item=item, action_id=action_id)
+
+
+def _carry_both_links(
+    *, config: StoreConfig, item: WorkItem, pointer: ProofPointer, record: ProofRecord
+) -> None:
+    """Rewrite the pointer so it cites BOTH records, which is what `done` means here.
+
+    The pointer is EXTENDED, not replaced: the verified record stays exactly where
+    it was, because it is the evidence the acceptance pass actually graded and the
+    staleness fact still compares against it. The rewrite is in place and
+    idempotent, so an item accepted twice ends with one section either way.
+    """
+    update_work_item_description(
+        path=config,
+        item_id=item.id,
+        description=description_with_updated_pointer(
+            description=item.description,
+            pointer=replace(pointer, human_attested_url=record.url),
+        ),
+    )
 
 
 _NO_POINTER_DETAIL = (

@@ -220,3 +220,30 @@ def test_a_posted_human_attested_record_lets_the_same_item_close(tmp_path: Path)
     assert result["status"] == "green"
     assert runner.argvs == [["gh", "pr", "view", "11", "--json", "comments"]]
     assert _stored(item_id=item.id).status == "done"
+
+
+def test_closing_on_the_human_record_leaves_a_pointer_carrying_both_links(
+    tmp_path: Path,
+) -> None:
+    """Scenario 133 — "its pointer carries both record links".
+
+    `done` for a mixed item means BOTH records observed, and the pointer is the
+    only durable place that fact is written down: the valve's own result is a
+    transient payload and the pull request's comments are not the item's record.
+    The verified link is asserted beside the human one, because a rewrite that
+    replaced the section rather than extending it would satisfy a check for the
+    human link alone while destroying the evidence the acceptance pass graded.
+    """
+    runner = _Runner(
+        result=CommandResult(exit_code=0, stdout=_comments(bodies=[_ATTESTED_BODY]), stderr="")
+    )
+    item = _item()
+
+    result = _accept(item=item, runner=runner, tmp_path=tmp_path)
+
+    assert result["status"] == "green"
+    description = _stored(item_id=item.id).description
+    assert "- Human-attested record: https://example.test/c/2" in description
+    assert "- Verified record: https://example.test/c/1" in description
+    assert "- Pull request: #11" in description
+    assert description.count("## Proof of Done") == 1
