@@ -380,6 +380,49 @@ def test_a_failed_replay_parks_and_an_unmatched_verdict_falls_through_to_needs_h
     assert "weight=100" in blocked[0]
 
 
+def test_the_review_prompt_reviews_the_latest_captured_record_alongside_the_code() -> None:
+    """The record is PART of the review, not a step that follows its verdict.
+
+    The contract makes the reviewer read the captured record beside the diff, and
+    the reason is structural: the replay that comes next grades the steps the
+    record published, so a record nobody reviewed is a set of steps nobody
+    checked against the work-item. The needle names the record's own header
+    prefix, because that line is how a reader finds the record at all and a prompt
+    that merely says "proof" would pass while pointing at nothing.
+    """
+    prompt = _prompt(name="review.md")
+
+    assert "Proof of Done — captured — run" in prompt
+    assert "latest" in prompt
+    assert "proof_capture" in prompt
+
+
+def test_the_review_prompt_treats_a_record_older_than_the_tree_as_blocking() -> None:
+    """A stale record is a BLOCKING finding, named as such.
+
+    Severity is the whole of this clause. The review prompt defaults every
+    observation to ADVISORY, so a stale-record instruction that did not say
+    `[BLOCKING]` would be recorded and then shipped — and the run would reach the
+    replay with a record describing a tree that no longer exists, which is the
+    one state the capture-before-review ordering exists to prevent.
+
+    The absence case is asserted too: no record at all is indistinguishable, from
+    the replay's point of view, from a record for the wrong tree.
+
+    The severity is asserted as ONE literal joining the condition to the label,
+    rather than as two needles in a window. A window probe is the wrong
+    instrument here and it fails silently: this prompt says `[BLOCKING]` a dozen
+    times for a dozen unrelated conditions, so a nearby hit says nothing about
+    THIS clause and the probe can pass against a prompt that files a stale record
+    as advisory.
+    """
+    prompt = _prompt(name="review.md")
+
+    assert "A record older than the tree is `[BLOCKING]`" in prompt
+    assert "no captured record exists" in prompt
+    assert "`[BLOCKING]` finding, not an advisory one" in prompt
+
+
 def test_the_verify_prompt_exists_and_replays_the_published_steps_verbatim() -> None:
     """Replay, verbatim, on the tree it receives — and author nothing new.
 
