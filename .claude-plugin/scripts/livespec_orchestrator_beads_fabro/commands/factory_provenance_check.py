@@ -250,3 +250,5 @@ def main(*, argv: list[str] | None = None, runner: CommandRunner = DEFAULT_RUNNE
     else:
         write_stderr(text=message)
     return exit_code(verdict=verdict)
+
+# throwaway factory-provenance acceptance probe (bd-ib-xugp7m); never merge
