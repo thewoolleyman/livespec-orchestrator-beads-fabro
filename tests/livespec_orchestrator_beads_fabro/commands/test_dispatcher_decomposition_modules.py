@@ -17,6 +17,7 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_calibration_emit,
     _dispatcher_codex_auth,
+    _dispatcher_credential_wrapper,
     _dispatcher_credentials,
     _dispatcher_ledger_close,
     _dispatcher_plan,
@@ -113,13 +114,11 @@ def test_credentials_cluster_importable_from_new_module_and_private_names_remove
         # the wait governs only the first.
         "assess_credential_status",
         "check_credential_env",
-        "credential_wrapper_text",
         "dispatch_required_credentials_text",
         "fetch_fleet_manifest_text",
         "materialize_overlay",
         "read_dispatch_comments",
         "read_dispatch_labels",
-        "read_dispatch_target_credential_wrapper",
         "resolve_sibling_clones",
     }
     codex_auth_public_names = {
@@ -143,6 +142,17 @@ def test_credentials_cluster_importable_from_new_module_and_private_names_remove
         "_resolve_sibling_clones",
     }
 
+    # The target's committed `credential_wrapper` declaration reader moved into
+    # its own cohesive module when the proof-credential gate became its third
+    # caller: it answers "what does this repository declare as the thing that
+    # injects its credential environment", which is a configuration read rather
+    # than a credential projection. Pinned here, and pinned as GONE from the
+    # module it left, so the move cannot regress into a re-export shim.
+    assert set(_dispatcher_credential_wrapper.__all__) == {
+        "credential_wrapper_text",
+        "read_dispatch_target_credential_wrapper",
+    }
+    assert "read_dispatch_target_credential_wrapper" not in _dispatcher_credentials.__all__
     assert set(_dispatcher_credentials.__all__) == credential_public_names
     for name in credential_public_names:
         assert hasattr(_dispatcher_credentials, name)

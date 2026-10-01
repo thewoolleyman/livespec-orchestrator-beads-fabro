@@ -29,6 +29,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_otel_config import (
     codex_otel_config_toml,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_wrapper import (
+    credential_wrapper_text,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
     select_factory_credential,
 )
@@ -42,6 +45,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     render_run_config_overlay,
     resolve_sandbox_otel_endpoint,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credentials import (
+    proof_credentials_overlay_env,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (
     proof_store_env_lines,
 )
@@ -49,7 +55,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones impor
     fetch_fleet_manifest_text,
     resolve_sibling_clones,
 )
-from livespec_orchestrator_beads_fabro.commands._jsonc import JsoncFailure, parse
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
@@ -66,13 +71,11 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 __all__: list[str] = [
     "assess_credential_status",
     "check_credential_env",
-    "credential_wrapper_text",
     "dispatch_required_credentials_text",
     "fetch_fleet_manifest_text",
     "materialize_overlay",
     "read_dispatch_comments",
     "read_dispatch_labels",
-    "read_dispatch_target_credential_wrapper",
     "resolve_sibling_clones",
 ]
 
@@ -263,6 +266,11 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
         # the branch comes from the single shared derivation rather than a second
         # spelling of `feat/<id>` (S5 / bd-ib-b4u6b7).
         proof_store_env=proof_store_env_lines(repo=repo, work_item_id=work_item_id),
+        # This repository's DECLARED proof credentials, by name, valued from this
+        # process's environment. The pre-dispatch gate has already refused every
+        # unusable declaration, so what reaches here is admitted; the builder is
+        # nonetheless fail-closed and renders nothing it cannot account for (S8).
+        proof_credentials_env=proof_credentials_overlay_env(repo=repo, environ=os.environ),
         # The pre-launch dispatch id the sandbox declares as its
         # factory-provenance marker. This function runs BEFORE `fabro run`,
         # which is why the marker cannot carry the Fabro run id.
@@ -283,39 +291,6 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
 
 def dispatch_required_credentials_text() -> str:
     return ", ".join(_DISPATCH_REQUIRED_CREDENTIALS)
-
-
-def read_dispatch_target_credential_wrapper(*, repo: Path) -> tuple[str, ...]:
-    config_path = repo / ".livespec.jsonc"
-    config_text = attempt(
-        action=lambda: config_path.read_text(encoding="utf-8"),
-        exceptions=(OSError,),
-    )
-    if isinstance(config_text, AttemptFailure):
-        return ()
-    data = parse(text=config_text)
-    if isinstance(data, JsoncFailure):
-        return ()
-    if not isinstance(data, dict):
-        return ()
-    mapping = cast(dict[str, object], data)
-    wrapper = mapping.get("credential_wrapper")
-    if not isinstance(wrapper, list):
-        return ()
-    wrapper_parts = cast(list[object], wrapper)
-    parts: list[str] = []
-    for part in wrapper_parts:
-        if not isinstance(part, str):
-            return ()
-        parts.append(part)
-    return tuple(parts)
-
-
-def credential_wrapper_text(*, repo: Path) -> str:
-    wrapper = read_dispatch_target_credential_wrapper(repo=repo)
-    if not wrapper:
-        return f"no credential_wrapper configured in {repo / '.livespec.jsonc'}"
-    return repr(list(wrapper))
 
 
 def assess_credential_status(

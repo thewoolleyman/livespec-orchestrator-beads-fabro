@@ -1431,16 +1431,14 @@
     "heading": "## Scenario 134 — A declared proof credential is projected by name and a withheld, absent, credential-shaped or over-scoped declaration is refused",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Integration-tier coverage is owed by the implementing child of plan definition-and-proof-of-done (epic bd-ib-7sjdzv) that lands proof credentials (S8), sequenced after plan fabro-currency lands native secrets projection. The test must drive the real projection channel and the pre-claim refusals with the read-only positive control; no current implementation can honestly bind it before that slice lands.",
-    "work_item": "bd-ib-7sjdzv"
+    "test": "tests.integration.test_proof_credential_projection_scenario134.test_a_declared_read_only_credential_is_admitted_and_journaled_by_name",
+    "reason": "Integration-tier acceptance for the proof-credential declaration (S8, bd-ib-77vny7). The bound node id is the heading's read-only positive control: a repository declaring one `read_only` credential whose value the wrapper supplies is admitted through the real `dispatcher.main(argv=[\"dispatch\", ...])` CLI and its declaration is journaled by name with whether it was minted or copied. The heading's other three gherkin scenarios — the withheld, credential-shaped and over-scoped refusals — are the parametrized sibling cases in the same module, each read off the recording launch seam so \"before creating a run\" is observed rather than inferred; the absent-value refusal and the drain leg are siblings too."
   },
   {
     "heading": "## Proof credential projection",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "test": "TODO",
-    "reason": "Bound by the same S8 child of plan definition-and-proof-of-done (epic bd-ib-7sjdzv) that binds Scenario 134; the section's refusals and the minted-or-copied journal record are its integration-tier deliverable.",
-    "work_item": "bd-ib-7sjdzv"
+    "test": "tests.integration.test_proof_credential_projection_scenario134.test_the_declared_name_reaches_the_sandbox_through_the_real_overlay",
+    "reason": "Integration-tier acceptance for the section's projection clause (S8, bd-ib-77vny7). The bound node id reads the declared name out of the overlay FILE the production `materialize_overlay` writes, in the SAME `[environments.<id>.env]` table as the dispatch credential set, which is the section's own same-channel requirement; its control is the identical repository with the declaration removed and the value still present in the environment. The section's refusals and its minted-or-copied journal record are the sibling cases in the same module, and the declaration parse itself is covered at the unit tier by tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_proof_credentials.py."
   }
 ]

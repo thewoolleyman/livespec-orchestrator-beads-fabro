@@ -49,6 +49,7 @@ __all__: list[str] = [
     "proof_credential_journal_record",
     "proof_credential_provisioning",
     "proof_credentials_env_lines",
+    "proof_credentials_overlay_env",
     "proof_credentials_refusal",
     "proof_credentials_refusal_for_items",
 ]
@@ -331,6 +332,17 @@ def proof_credentials_env_lines(*, block: Mapping[str, object], environ: Mapping
             continue
         rendered.append(f"{credential.name} = {json.dumps(value)}\n")
     return "".join(rendered)
+
+
+def proof_credentials_overlay_env(*, repo: Path, environ: Mapping[str, str]) -> str:
+    """One repository's declared proof credentials as overlay env lines.
+
+    The entry point the overlay materializer calls. It exists so the
+    repository-to-block resolution lives HERE, beside the parse that consumes it,
+    rather than being a second thing the materializer has to know how to do -- the
+    same shape `proof_store_env_lines` takes for the sibling projection.
+    """
+    return proof_credentials_env_lines(block=dispatcher_block(cwd=repo), environ=environ)
 
 
 def proof_credential_journal_record(*, credential: ProofCredential) -> dict[str, object]:

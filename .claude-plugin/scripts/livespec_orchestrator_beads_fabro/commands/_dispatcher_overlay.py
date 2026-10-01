@@ -197,6 +197,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     prepare_inputs: Mapping[str, str] | None = None,
     dispatch_id: str | None = None,
     proof_store_env: str = "",
+    proof_credentials_env: str = "",
     git_author: GitAuthor | None = None,
 ) -> str | None:
     """Render the dispatch-time run-config overlay.
@@ -293,6 +294,11 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + codex_env_lines
         + codex_otel_env
         + proof_store_env
+        # The repository's declared proof credentials, rendered inline in THIS
+        # table rather than through a second channel: the pinned engine offers no
+        # secret-reference syntax, so the transport is the same uncommitted,
+        # mode-600 overlay the credential set above already rides (S8).
+        + proof_credentials_env
     )
 
 

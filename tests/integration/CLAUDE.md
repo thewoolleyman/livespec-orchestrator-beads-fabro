@@ -338,6 +338,28 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   module; the `fabro validate` leg belongs to `check-fabro-graph-validity`,
   which reads this same payload.
 
+- `test_proof_credential_projection_scenario134.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 134 — A declared proof credential is
+  projected by name and a withheld, absent, credential-shaped or over-scoped
+  declaration is refused" and the `SPECIFICATION/contracts.md` section it
+  realizes, "Proof credential projection". The projection is read out of the
+  overlay FILE the production `materialize_overlay` writes, in the same
+  `[environments.<id>.env]` table as the dispatch credential set, which is the
+  section's own same-channel requirement — a builder asserted in isolation would
+  pass just as well while nothing threaded it into the overlay. Its control is
+  the identical repository with the declaration removed and the value still
+  present in the environment, so the name's presence is evidence rather than a
+  property of every overlay. Each of the four refusals drives the real
+  `dispatcher.main(argv=["dispatch", ...])` CLI with only the launch seam stood
+  in, and is read off that seam rather than off an exit code, because "before any
+  run exists" is a claim about what did NOT happen and a dispatch can exit
+  non-zero having already created one. Every refusing case also asserts the
+  journal carries no `proof-credential` record, since a record beside a refusal
+  would describe a credential reaching a sandbox that never launched; and the
+  admitted case is the control for all four, because four refusals alone are
+  equally consistent with a gate that refuses every declaration. The drain leg is
+  here too: the two dispatch paths reach the gate through separate call sites.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read
