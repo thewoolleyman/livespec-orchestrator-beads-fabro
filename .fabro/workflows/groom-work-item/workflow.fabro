@@ -134,6 +134,26 @@ digraph GroomWorkItem {
         timeout="1800s"
     ]
 
+    // Peer parity for `proof_verify` (S6 / bd-ib-msnlnv), declared for exactly
+    // the reason the two nodes above are: the adapter, model and timeout layers
+    // address every ACP node name the RESERVED workflow carries, and a layer
+    // naming a node this payload does not declare is a pre-run refusal -- so an
+    // absent declaration would make an ordinary repository-level
+    // `dispatcher.acp_nodes.proof_verify` pin break groom dispatch alone, with
+    // nothing in the item to explain which of its two graphs objected.
+    //
+    // NOT REACHING it is what keeps the variant coherent, and the reason is one
+    // step stronger than `proof_capture`'s. This node REPLAYS a published capture
+    // record; a groom run publishes a plan, so there is no implementation tree to
+    // replay against and no capture record to replay FROM. Reaching it would route
+    // every groom run into a stage whose own first step cannot succeed.
+    proof_verify [
+        label="Proof replay: declared for the layers, unreached by design"
+        backend="acp"
+        acp.command="{{ inputs.proof_verify_adapter }}"
+        timeout="1800s"
+    ]
+
     // The groom node. It derives the phase from the rendered goal, then either
     // drafts the cut (propose) or prepares the filing plan (apply). It writes
     // NOTHING to the ledger in either phase -- the apply phase's filing is the

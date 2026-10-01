@@ -301,6 +301,49 @@ digraph ImplementWorkItem {
         prompt="@prompts/proof-capture.md"
     ]
 
+    // Proof replay (S6 / bd-ib-msnlnv; SPECIFICATION/contracts.md
+    // "Definition-of-Done and Proof-of-Done stages" and "Proof of Done record",
+    // ratified v114): entered from `review` and exiting to `pr` ONLY on a
+    // `verified` verdict. It replays the reproduction steps the capture record
+    // published, verbatim, on the tree it receives, and posts its own record
+    // carrying `verified` or `not_reproduced`.
+    //
+    // WHY IT RUNS AFTER review RATHER THAN BEFORE. The capture is what the
+    // reviewer reads (see `proof_capture` above); the REPLAY is what the merge
+    // depends on, so it belongs on the last edge before publication. That
+    // placement is also what makes the ship-on-review-cap escape hatch safe: the
+    // hatch skips the reviewer's approval and CANNOT skip this node, because
+    // every route into `pr` now passes through here.
+    //
+    // IT MUST NOT MODIFY THE TREE, THE STEPS, OR THE DEFINITION OF DONE. A
+    // replay that repairs its own input proves nothing about the record that was
+    // published, and a replay that rewrites the yardstick proves nothing at all.
+    // The prompt carries all three prohibitions; the routing carries the
+    // consequence — a non-reproduction is reported, never repaired here.
+    //
+    // Runs on its own `proof_verify_adapter`, whose built-in default is the entry
+    // this workflow declares for its REVIEW input ("Built-in ACP node defaults"),
+    // NOT the implementer one. The contract requires an adapter distinct from the
+    // implementer's, and the reason is the whole point of the stage: a replay
+    // sharing the implementer's tier is not an independent second leg, and a
+    // repository that pinned a cheap implementer has said nothing about how
+    // carefully its proof should be replayed.
+    //
+    // max_retries=1 is the same bn4 retry discipline every ACP node here carries.
+    // Deliberately NO max_visits: the graceful bound is the `< 3` guard on this
+    // node's own visit count below, and a max_visits here would hard-abort
+    // (VisitLimitExceeded) on the very visit that must route the third
+    // non-reproduction to `non_converged` — the same reason `janitor` carries the
+    // fix-loop guard on an edge rather than as a node attribute.
+    proof_verify [
+        label="Replay the Proof of Done on this tree (read-only on the tree)"
+        backend="acp"
+        acp.command="{{ inputs.proof_verify_adapter }}"
+        timeout="1800s"
+        max_retries=1
+        prompt="@prompts/proof-verify.md"
+    ]
+
     // max_retries=1 + retry_target: same bn4 retry discipline as the
     // implement node (transient -> one auto-retry; deterministic ->
     // park via the Blocked edge). The retry_target is structurally

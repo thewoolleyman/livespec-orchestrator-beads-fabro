@@ -47,6 +47,7 @@ _ACP_NODES = (
     "fix",
     "review_fix",
     "proof_capture",
+    "proof_verify",
     "pr",
     "review",
     "disposition",
@@ -66,6 +67,7 @@ review_adapter = "npx -y claude-acp"
 disposition_adapter = "npx -y claude-acp"
 dod_gate_adapter = "npx -y claude-acp"
 proof_capture_adapter = "npx -y claude-acp"
+proof_verify_adapter = "npx -y claude-acp"
 review_fix_visit_cap = 4
 merge_on_review_cap_outcome = "__merge_on_review_cap_disabled__"
 
