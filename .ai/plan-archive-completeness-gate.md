@@ -133,6 +133,31 @@ and disclosed one of its own — a `grep -rl` probe returning a clean zero that
 would have falsified a requirement. See `AGENTS.md` Rule 4's second-party
 corollary for why that symmetry is the argument for the split.
 
+## Mechanics of the move, measured 2026-10-02 (`definition-and-proof-of-done`, PR #2544)
+
+`archive_thread(...)` moves the directory with a plain filesystem rename, not
+`git mv`, and in the SAME call writes the "Archived after completeness review"
+comment and closes the epic. So point `project_root` at a worktree created for
+the archive (`just worktree-create plan/archive-<slug>`), apply the
+heading-coverage and debt-register repoints there first, call the primitive,
+then `git add -A plan tests` — git records the renames as `R100` — and commit
+`chore(plan): ...`. Running it against the primary checkout leaves the primary
+dirty with the ledger already mutated and no pull request in existence.
+
+Record the evidence BEFORE the call and prove the gate reads it:
+`valid_completeness_review_evidence_id(...)` must return the id, and
+`undisposed_plan_child_ids(...)` must be empty, or the primitive refuses after
+nothing has moved. Send the reviewer back for a second pass once carriers are
+filed; record both passes verbatim in the evidence body.
+
+One instrument trap for the review itself: a session bound to a plugin cache
+build older than the slices it is reviewing runs `needs_attention.py` and
+`next.py` from THAT build, which cannot emit facts it predates — on build
+`9156657d7716` the unrunnable-acceptance survey returned zero facts with exit 0
+while the repository's own `.claude-plugin/scripts/bin/needs_attention.py` on
+master returned 44. When a research note prescribes a survey command, run it
+from the repository path it names.
+
 ## The evidence decays — re-measure before quoting it
 
 A recorded attestation is **a claim with a timestamp, not a standing
