@@ -229,7 +229,7 @@ def _resolve_chains(
         resolution=resolution,
         chains=declared,
         dispatch=dispatch,
-        builtins=builtin_acp_identities(workflow_inputs=workflow_inputs, block=block),
+        builtins=builtin_acp_identities(workflow_inputs=workflow_inputs),
     )
     if isinstance(attached, str):
         return attached

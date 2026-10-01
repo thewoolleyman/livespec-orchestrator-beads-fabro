@@ -61,10 +61,6 @@ from returns.io import IOFailure, IOResult, IOSuccess
 from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro.commands import _jsonc
-from livespec_orchestrator_beads_fabro.commands._codex_model_tiers import (
-    CodexModelTiers,
-    codex_model_tiers_from_block,
-)
 from livespec_orchestrator_beads_fabro.commands._fabro_bin import (
     configured_fabro_bin,
     default_fabro_bin,
@@ -89,7 +85,6 @@ __all__: list[str] = [
     "dispatcher_block",
     "has_fabro_factories",
     "has_fabro_factory",
-    "resolve_codex_model_tiers",
     "resolve_credential_wrapper",
     "resolve_fabro_bin",
     "resolve_fabro_factory",
@@ -214,16 +209,6 @@ def resolve_fabro_bin(*, cwd: Path) -> str:
         .map(lambda block: configured_fabro_bin(block=block))
         .value_or(default_fabro_bin())
     )
-
-
-def resolve_codex_model_tiers(*, cwd: Path) -> CodexModelTiers:
-    """Resolve the dispatch target's Codex model pins from its .livespec.jsonc.
-
-    The policy itself -- the tier shape, the built-in fleet defaults, and the
-    measurement record behind their values -- lives in `_codex_model_tiers`;
-    this is the config-reading seam that feeds it.
-    """
-    return codex_model_tiers_from_block(block=dispatcher_block(cwd=cwd))
 
 
 def resolve_node_timeouts(*, cwd: Path) -> NodeTimeouts | str:

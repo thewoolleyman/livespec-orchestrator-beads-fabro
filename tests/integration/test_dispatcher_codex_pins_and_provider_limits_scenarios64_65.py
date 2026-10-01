@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     dispatch_fabro_run_inputs,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
-    CODEX_ADAPTER_BASE,
     CODEX_ADAPTER_COMMAND,
     build_plan,
 )
@@ -63,8 +63,8 @@ def _input_value(*, inputs: tuple[str, ...], name: str) -> str:
     return matches[0]
 
 
-def _write_dispatcher_config(*, repo: Path, codex_models: dict[str, object]) -> None:
-    config = {"livespec-orchestrator-beads-fabro": {"dispatcher": {"codex_models": codex_models}}}
+def _write_dispatcher_config(*, repo: Path, dispatcher: dict[str, object]) -> None:
+    config = {"livespec-orchestrator-beads-fabro": {"dispatcher": dispatcher}}
     (repo / _CONFIG_NAME).write_text(json.dumps(config), encoding="utf-8")
 
 
@@ -89,60 +89,76 @@ def test_default_dispatch_acp_adapter_is_claude_opus_5(
     assert _input_value(inputs=inputs, name="implement_adapter") == _CLAUDE_OPUS_5_ADAPTER
 
 
-def test_scenario64_dispatcher_renders_claude_defaults_and_codex_on_explicit_pins(
+def test_scenario64_an_unconfigured_target_renders_the_claude_structured_defaults(
     tmp_path: Path, resolve_test_acp_nodes: ResolveAcpNodes
 ) -> None:
-    """Scenario 64: absent config both classes render Claude fleet defaults; an
-    explicit `codex_models` table routes each class to Codex; the empty model is
-    a true opt-out."""
-    default_inputs = dispatch_fabro_run_inputs(
-        plan=_plan(repo=tmp_path, resolve=resolve_test_acp_nodes)
-    )
-    default_implementer = _input_value(inputs=default_inputs, name="implement_adapter")
-    default_pr = _input_value(inputs=default_inputs, name="pr_adapter")
+    """Scenario 64: no `acp_nodes` table means the built-in per-node defaults.
 
-    assert default_implementer == _CLAUDE_OPUS_5_ADAPTER
-    # Absent an explicit `codex_models.pr` table the publish node renders the
-    # Claude Haiku fleet default, NOT a Codex adapter.
-    assert default_pr == _CLAUDE_HAIKU_PR_ADAPTER
-    assert CODEX_ADAPTER_COMMAND not in default_pr
-    assert default_implementer != default_pr
+    "And neither the implementer nor the publish adapter is a Codex adapter
+    absent an explicit entry" is the load-bearing half. The two defaults also
+    have to DIFFER: a regression collapsing them onto one model would satisfy
+    each adapter's own assertion while silently re-pricing the publish node.
+    """
+    inputs = dispatch_fabro_run_inputs(plan=_plan(repo=tmp_path, resolve=resolve_test_acp_nodes))
+    implementer = _input_value(inputs=inputs, name="implement_adapter")
+    publish = _input_value(inputs=inputs, name="pr_adapter")
 
+    assert implementer == _CLAUDE_OPUS_5_ADAPTER
+    assert publish == _CLAUDE_HAIKU_PR_ADAPTER
+    assert CODEX_ADAPTER_COMMAND not in implementer
+    assert CODEX_ADAPTER_COMMAND not in publish
+    assert implementer != publish
+
+
+def test_scenario64_a_structured_codex_entry_pins_exactly_the_node_it_names(
+    tmp_path: Path, resolve_test_acp_nodes: ResolveAcpNodes
+) -> None:
+    """Scenario 64: the entry routes ONE node, and leaves every other alone.
+
+    The retired `codex_models` class-shaped shorthand is what made the second
+    half worth asserting: `implementer` moved three nodes at once, so "exactly
+    the node it names" is the behaviour that REPLACED it, not a restatement of
+    what was already true.
+    """
     _write_dispatcher_config(
         repo=tmp_path,
-        codex_models={
-            "implementer": {"model": "repo-implementer", "reasoning_effort": "high"},
-            "pr": {"model": "repo-publish", "reasoning_effort": "low"},
+        dispatcher={
+            "acp_nodes": {"implement": {"agent": "codex-acp", "model": "gpt-5.5", "effort": "high"}}
         },
     )
-    override_inputs = dispatch_fabro_run_inputs(
-        plan=_plan(repo=tmp_path, resolve=resolve_test_acp_nodes)
-    )
-    assert _input_value(inputs=override_inputs, name="implement_adapter") == (
-        'CODEX_CONFIG=\'{"approval_policy":"never","model":"repo-implementer",'
+    inputs = dispatch_fabro_run_inputs(plan=_plan(repo=tmp_path, resolve=resolve_test_acp_nodes))
+
+    assert _input_value(inputs=inputs, name="implement_adapter") == (
+        'CODEX_CONFIG=\'{"approval_policy":"never","model":"gpt-5.5",'
         '"model_reasoning_effort":"high","sandbox_mode":"danger-full-access"}\' '
         f"INITIAL_AGENT_MODE=agent-full-access {CODEX_ADAPTER_COMMAND}"
     )
-    assert _input_value(inputs=override_inputs, name="pr_adapter") == (
-        'CODEX_CONFIG=\'{"approval_policy":"never","model":"repo-publish",'
-        '"model_reasoning_effort":"low","sandbox_mode":"danger-full-access"}\' '
-        f"INITIAL_AGENT_MODE=agent-full-access {CODEX_ADAPTER_COMMAND}"
-    )
+    # The sibling nodes the retired `implementer` class would have moved too.
+    assert _input_value(inputs=inputs, name="fix_adapter") == _CLAUDE_OPUS_5_ADAPTER
+    assert _input_value(inputs=inputs, name="review_fix_adapter") == _CLAUDE_OPUS_5_ADAPTER
+    assert _input_value(inputs=inputs, name="pr_adapter") == _CLAUDE_HAIKU_PR_ADAPTER
 
+
+def test_scenario64_the_retired_codex_models_key_refuses_and_prints_its_replacement(
+    tmp_path: Path,
+) -> None:
+    """Scenario 64: the retired key refuses before claim, carrying the migration.
+
+    Asserted through `resolve_acp_node_overlays`, the repository-layer reader a
+    dispatch actually calls, so this grades the refusal a dispatch would hit
+    rather than a helper's ability to produce the message.
+    """
     _write_dispatcher_config(
         repo=tmp_path,
-        codex_models={"implementer": {"model": "", "reasoning_effort": "high"}},
+        dispatcher={"codex_models": {"implementer": {"model": "gpt-5.5"}}},
     )
-    opt_out_inputs = dispatch_fabro_run_inputs(
-        plan=_plan(repo=tmp_path, resolve=resolve_test_acp_nodes)
-    )
-    assert _input_value(inputs=opt_out_inputs, name="implement_adapter") == CODEX_ADAPTER_BASE
+    refusal = resolve_acp_node_overlays(cwd=tmp_path)
 
-    _write_dispatcher_config(repo=tmp_path, codex_models={"implementer": "repo-implementer"})
-    malformed_inputs = dispatch_fabro_run_inputs(
-        plan=_plan(repo=tmp_path, resolve=resolve_test_acp_nodes)
-    )
-    assert _input_value(inputs=malformed_inputs, name="implement_adapter") == _CLAUDE_OPUS_5_ADAPTER
+    assert isinstance(refusal, str), refusal
+    assert "dispatcher.codex_models" in refusal
+    for node in ("implement", "fix", "review_fix"):
+        assert f"dispatcher.acp_nodes.{node}" in refusal
+    assert '{"agent": "codex-acp", "model": "gpt-5.5", "effort": "low"}' in refusal
 
 
 def test_scenario65_provider_usage_ceiling_is_permanent_and_transients_stay_transient() -> None:

@@ -355,9 +355,6 @@ def test_non_object_root_names_the_shape_not_a_missing_prefix(
         pytest.param(
             lambda cwd: _config.resolve_fabro_factory(cwd=cwd), id="resolve_fabro_factory"
         ),
-        pytest.param(
-            lambda cwd: _config.resolve_codex_model_tiers(cwd=cwd), id="resolve_codex_model_tiers"
-        ),
     ],
 )
 def test_dispatcher_readers_refuse_an_unreadable_config_rather_than_reading_it_as_unset(
@@ -367,7 +364,7 @@ def test_dispatcher_readers_refuse_an_unreadable_config_rather_than_reading_it_a
 ) -> None:
     """An unreadable config is NOT "nothing is configured", for every dispatcher reader.
 
-    ⛔ THE REGRESSION THIS PINS. These four readers were added while the
+    ⛔ THE REGRESSION THIS PINS. These readers were added while the
     read-vs-write swallow fix sat unlanded, and each re-committed it: they called
     the block reader and treated a parse failure as an absent `factories` key, so
     `has_fabro_factory` answered a confident `False` for a config with a stray

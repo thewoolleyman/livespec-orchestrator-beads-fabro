@@ -171,9 +171,14 @@ def codex_adapter(*, tier: CodexModelTier, agent_mode: str = CODEX_AGENT_MODE_WR
         config["model"] = tier.model
         config["model_reasoning_effort"] = tier.reasoning_effort
     rendered_config = shlex.quote(json.dumps(config, sort_keys=True, separators=(",", ":")))
+    # NON-POSITIVE is unset, not a threshold. The clamp used to live in the
+    # `dispatcher.codex_models` reader (`max(0, value)`); section "Built-in ACP
+    # node defaults" retired that key, so the guarantee moves here rather than
+    # disappearing with the reader. A negative rendered verbatim would reach
+    # Codex as a threshold every turn exceeds immediately.
     compaction = (
         ""
-        if tier.compaction_token_limit == 0
+        if tier.compaction_token_limit <= 0
         else f" -c model_auto_compact_token_limit={tier.compaction_token_limit}"
     )
     return (

@@ -147,10 +147,11 @@ def _unconfigurable_node(
     an adapter input added to the WORKFLOW before any configuration of it
     can take effect.
 
-    An overlay the `codex_models` shorthand expanded is exempt from the
-    second check -- see `AcpNodeOverlay.from_shorthand`. It is a default
-    nobody asked for, so an unreachable one is dropped rather than made
-    fatal.
+    EVERY configured node answers to the second check. An exemption existed
+    while the retired `codex_models` shorthand expanded overlays nobody had
+    asked for; section "Built-in ACP node defaults" retired that key, so an
+    unreachable node is now always something an operator wrote and always
+    worth refusing over.
     """
     unknown = sorted(set(configured) - set(ACP_NODES))
     if unknown:
@@ -158,11 +159,7 @@ def _unconfigurable_node(
             f"{layer} layer configures unknown ACP node {unknown[0]!r}; "
             f"known nodes are {', '.join(ACP_NODES)}"
         )
-    unreachable = sorted(
-        node
-        for node, overlay in configured.items()
-        if node not in inputs and not overlay.from_shorthand
-    )
+    unreachable = sorted(node for node in configured if node not in inputs)
     if unreachable:
         node = unreachable[0]
         return (

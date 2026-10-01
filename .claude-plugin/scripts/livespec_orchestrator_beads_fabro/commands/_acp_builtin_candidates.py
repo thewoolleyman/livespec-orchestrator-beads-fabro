@@ -17,14 +17,24 @@ clause.
 
 WHERE THE DOMAIN NAME COMES FROM: PROVENANCE, NOT TEXT. There are two
 built-in sources and this build knows what each one is by construction.
-The `dispatcher.codex_models` shorthand renders Codex adapters, so its
-bytes carry the `codex` availability domain. The workflow's own declared
-adapter defaults are the Anthropic ACP adapters section "Codex ACP node
-model pins" ratified in v107 -- the Claude Haiku 4.5 publish default and
-the Claude implementer default -- so their bytes carry `anthropic`. Both
-names are the existing legacy provider aliases, which is what lets an
-unexpired legacy provider record keep covering a built-in candidate until
-retirement.
+The workflow's own declared adapter defaults are the Anthropic ACP adapters
+section "Built-in ACP node defaults" ratified in v107 -- the Claude Haiku 4.5
+publish default and the Claude implementer default -- so their bytes carry
+`anthropic`. The UN-PINNED CODEX BASE STRINGS, in both postures, are the
+other: section "Built-in ACP node defaults" spells them out literally and
+names them the explicit un-pinned opt-out, so they are bytes this build
+renders and their domain is `codex`. Both names are the existing legacy
+provider aliases, which is what lets an unexpired legacy provider record
+keep covering a built-in candidate until retirement.
+
+WHY THE CODEX ENTRIES ARE THE UN-PINNED BASES AND NOTHING ELSE. While
+`dispatcher.codex_models` existed, this table rendered both of its tiers so
+a shorthand-expanded adapter could match its own built-in. That key is
+retired, and a PINNED Codex adapter now reaches a dispatch only as a
+STRUCTURED entry -- whose identity is DERIVED from the catalogs by
+`_acp_structured_identity`, never matched by bytes. So the only Codex bytes
+left for byte-equality to attach to are the two un-pinned opt-out strings,
+which have no structured spelling and therefore no derived identity.
 
 THE CANDIDATE KEY IS A DIGEST OF THE BYTES rather than a parsed model
 name, for the same reason: a parsed name would be inference. A digest is
@@ -44,17 +54,18 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping
-from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidateIdentity
 from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import (
     parse_adapter_string,
     render_adapter,
 )
-from livespec_orchestrator_beads_fabro.commands._codex_model_tiers import (
-    codex_model_tiers_from_block,
+from livespec_orchestrator_beads_fabro.commands._codex_model_tiers import CodexModelTier
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_argv import (
+    CODEX_AGENT_MODE_READ_ONLY,
+    CODEX_AGENT_MODE_WRITE,
+    codex_adapter,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_argv import codex_adapter
 
 __all__: list[str] = [
     "ANTHROPIC_DOMAIN",
@@ -69,28 +80,27 @@ _KEY_LENGTH = 16
 
 
 def builtin_acp_identities(
-    *, workflow_inputs: Mapping[str, str], block: Mapping[str, Any]
+    *, workflow_inputs: Mapping[str, str]
 ) -> Mapping[str, AcpCandidateIdentity]:
     """Map every built-in adapter's exact rendered bytes onto its identity.
 
-    BOTH Codex tiers are rendered unconditionally, even when the target
-    configured neither. An entry no dispatch resolves to simply never
+    BOTH Codex postures are rendered unconditionally, even when no node
+    resolves to either. An entry no dispatch resolves to simply never
     matches, so including it costs a lookup miss; the alternative --
-    re-deriving which tiers were explicitly configured -- would put a
-    second copy of that predicate here, and two copies of it is how this
-    table and the overlay expansion would come to disagree about which
-    adapter a node actually runs.
+    re-deriving which nodes opted out of the pin -- would put a second copy
+    of that predicate here, and two copies of it is how this table and the
+    resolved adapter would come to disagree about which adapter a node runs.
     """
-    tiers = codex_model_tiers_from_block(block=dict(block))
     identities: dict[str, AcpCandidateIdentity] = {}
     for declared in sorted(set(workflow_inputs.values())):
         identities[_normalized(text=declared)] = _identity(
             text=declared, domain=ANTHROPIC_DOMAIN, label="Anthropic ACP adapter"
         )
-    for tier in (tiers.pr, tiers.implementer):
-        rendered = codex_adapter(tier=tier)
+    unpinned = CodexModelTier(model="", reasoning_effort="")
+    for agent_mode in (CODEX_AGENT_MODE_WRITE, CODEX_AGENT_MODE_READ_ONLY):
+        rendered = codex_adapter(tier=unpinned, agent_mode=agent_mode)
         identities[_normalized(text=rendered)] = _identity(
-            text=rendered, domain=CODEX_DOMAIN, label="Codex ACP adapter"
+            text=rendered, domain=CODEX_DOMAIN, label="un-pinned Codex ACP adapter"
         )
     return identities
 
