@@ -1,0 +1,6 @@
+digraph CurrencyFallbackProbe {
+    start [shape=Mdiamond]
+    probe [prompt="Do nothing", backend="acp", acp.command="true", acp.fallback_chain="[]"]
+    exit [shape=Msquare]
+    start -> probe -> exit
+}

@@ -2,7 +2,7 @@
 8869e88b2f7e383ec6fceb8d3f6f928dd0339b34	refs/heads/factory-integration
 3b37818887c8daf80bbb28fb6e30056a32b22db1	refs/heads/fix/classify-provider-spend-limit-not-transient
 d5947297c5cf1133bf0092192092eb11ddf2ef33	refs/heads/fork-selfhost
-5879ebf099596a107464f6d1ce97b1c91759d533	refs/heads/main
+e7b485903898c93c1d2d53710cf43c676a98ff68	refs/heads/main
 da277a4e5945e98827866fb407b7aa1d28a1d4d8	refs/heads/otlp-span-export
 61e6a4dfed458a4cb5b8c61b8734973d78f3982c	refs/heads/safety/factory-integration-unpublished-2026-10-01
 8de661118f24c43ad5b3516b9b7820525f5a5932	refs/heads/trial/factory-rebase
