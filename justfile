@@ -722,6 +722,19 @@ check-pi-plugin-structure:
 check-spec-governance-default-block:
     uv run python dev-tooling/check-spec-governance-default-block.py
 
+# `check-factory-provenance` — the factory-provenance merge gate (R6a
+# `bd-ib-s3cxrl`, wired into CI by R6b `bd-ib-xugp7m`): a pull request that
+# touches product Python must be authored by the factory GitHub App unless it
+# carries the `factory-override` label. CI-ONLY by construction: the check
+# reads the Actions pull_request payload at GITHUB_EVENT_PATH and diffs
+# base..head itself, so it is deliberately NOT in the `check` aggregate
+# (there is no payload at pre-push); the scripts/bin wrapper self-bootstraps
+# sys.path and declares an empty credential set, so it never re-execs through
+# the env wrapper. Run it locally against a saved payload with
+# `--event-path <payload.json>`.
+check-factory-provenance:
+    uv run python .claude-plugin/scripts/bin/factory_provenance_check.py
+
 # `check-seam-equivalence` — the CI half of SPECIFICATION/contracts.md
 # §"Repository integration contract", clause "Typed workflow inputs and the
 # seam-equivalence check". Asserts, over the committed `implement-work-item`
