@@ -157,6 +157,13 @@ ban-relative-imports = "all"
 # livespec-driver-claude's `C901` waiver on `no_shadow_ledger.py`.
 ".claude/hooks/livespec_footgun_guard.py" = ["PLR0911"]
 ".claude-plugin/hooks/codex_yolo_gate.py" = ["PLR0915"]
+# The TDD order guard reads repository state through ONE read-only git
+# invocation built from a fixed argv list (`_git`), which is the same
+# documented pattern the `dev-tooling/checks/*.py` entry below waives: the
+# executable name is a literal, the subcommand arguments are module
+# constants, and `git` must resolve through the mise-managed PATH rather than
+# an absolute path. No other diagnostic is waived for this file.
+".claude/hooks/livespec_tdd_order_guard.py" = ["S603", "S607"]
 # Shebang-wrapper contract: shebang → docstring → `from _bootstrap import
 # bootstrap` → `bootstrap()` → `from <pkg>.<...> import main` →
 # `raise SystemExit(main())`. The post-bootstrap() import structurally
@@ -369,6 +376,7 @@ supervisor_entry_files = [
     ".claude-plugin/scripts/bin/_bootstrap.py",
     ".claude/hooks/beads_access_guard.py",
     ".claude/hooks/livespec_footgun_guard.py",
+    ".claude/hooks/livespec_tdd_order_guard.py",
     ".claude-plugin/hooks/codex_yolo_reapply.py",
 ]
 # UNARMED, and deliberately NOT `not_applicable` — the concept applies here and
