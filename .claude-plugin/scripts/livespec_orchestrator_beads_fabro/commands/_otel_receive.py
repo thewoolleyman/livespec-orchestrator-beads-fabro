@@ -25,6 +25,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_turn_diagnostics
     successful_run_turn_export_count,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_turn_sink import RunTurnSink
+from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_order_sink import (
+    TddOrderSink,
+    record_tdd_order_decisions,
+)
 from livespec_orchestrator_beads_fabro.commands._otel_enrich import (
     CorrelationJoin,
     correlation_keys_from_attrs,
@@ -204,6 +208,7 @@ class OtelReceiver:
     exporter: SpanExporter
     heartbeat: HeartbeatSink
     cost: CostSink | None = None
+    tdd_order: TddOrderSink | None = None
     run_turn: RunTurnSink | None = None
     run_turn_diagnostics_path: Path | None = None
     join: CorrelationJoin = field(default_factory=CorrelationJoin)
@@ -275,6 +280,10 @@ class OtelReceiver:
             reply(handler=handler, status=HTTPStatus.BAD_REQUEST)
             return
         spans = ingested_spans_from_trace_request(request=parsed)
+        # Recorded at INGEST, before egress: the sandbox order guard's verdict
+        # stands whether or not its span reaches Honeycomb, so the per-dispatch
+        # aggregate must not depend on the export succeeding either.
+        _ = record_tdd_order_decisions(sink=self.tdd_order, spans=spans, at=time.time())
         for ingested in spans:
             self.join.observe(keys=correlation_keys_from_attrs(span=ingested.span))
             if self.cost is not None:

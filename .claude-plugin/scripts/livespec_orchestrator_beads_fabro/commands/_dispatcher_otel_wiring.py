@@ -30,6 +30,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     reflector_oob_spans_path,
     run_turn_sink_path,
     spans_path,
+    tdd_order_sink_path,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
     SANDBOX_OTEL_ENDPOINT_ENV_VAR,
@@ -38,6 +39,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_turn_diagnostics
     run_turn_diagnostic_path,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_turn_sink import RunTurnSink
+from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_order_sink import TddOrderSink
 from livespec_orchestrator_beads_fabro.commands._otel_receive import (
     HeartbeatSink,
     OtelReceiver,
@@ -87,6 +89,11 @@ def _build_otel_receiver(
     reads), with the fallback pricing model resolved from
     `LIVESPEC_DISPATCH_COST_MODEL`. Imported lazily so the egress transport
     is only pulled in when a dispatch actually arms the receiver.
+
+    The TDD order sink is wired the same way (plan slice S3): the sandbox
+    order guard POSTs one decision span per product-write verdict to this
+    receiver, and the sink accrues them per dispatch so calibration reads the
+    refusal count and the first-write head state out of process.
     """
     from livespec_orchestrator_beads_fabro.commands._otel_enrich import HoneycombHttpExporter
 
@@ -101,6 +108,7 @@ def _build_otel_receiver(
         exporter=exporter,
         heartbeat=heartbeat,
         cost=cost,
+        tdd_order=TddOrderSink(path=tdd_order_sink_path(args=args, repo=repo)),
         run_turn=run_turn,
         run_turn_diagnostics_path=run_turn_diagnostic_path(path=run_turn_path),
         default_model=default_model,
