@@ -14,6 +14,22 @@ from it, so those five keys are named in
 too — without that, this span would arrive carrying no signal at all and the
 loss would be silent.
 
+WHY THE SPAN ALSO CARRIES THE DISPATCH CORRELATION. The traceparent join above
+puts a refusal on the run's trace, which is what a human reading ONE trace
+needs. It is not enough for the host-side aggregate plan slice S3 builds
+(`_dispatcher_tdd_order_sink`), because that aggregate must be keyed per
+DISPATCH: a refusal count landing on a terminal calibration span has to belong
+to the run that earned it, not merely to the work-item, which may be
+dispatched more than once. The Dispatcher already injects `work.item.id` and
+`livespec.dispatch.id` into the sandbox through `OTEL_RESOURCE_ATTRIBUTES`
+(`_dispatcher_projection.cc_otel_overlay_env`), and a hook process inherits
+that environment, so `correlation_attributes` READS the pair rather than
+inventing one or opening a second channel to carry it. Both keys are already
+allowlisted — they are the family's correlation triple — so no receive-side
+change is needed for them. Outside a dispatch the variable is absent, which
+resolves to NO correlation attributes: an uncorrelated decision span rather
+than one stamped with a fabricated key.
+
 WHY THE SCRUB IS RESTATED HERE. The authoritative credential-shape scrub lives
 on the receive side, in that same `_otel_scrub`. This module cannot import it:
 `.claude/hooks/` is repo-local dev tooling that must not couple to the shipped
@@ -40,11 +56,13 @@ import livespec_tdd_order_policy as policy
 
 __all__: list[str] = [
     "ATTR_MAX_LEN",
+    "CORRELATION_KEYS",
     "CREDENTIAL_URL_RE",
     "EMITTED",
     "ENDPOINT_ENV_VAR",
     "NO_ENDPOINT",
     "REDACTION_MARKER",
+    "RESOURCE_ATTRIBUTES_ENV_VAR",
     "SCOPE_NAME",
     "SCOPE_VERSION",
     "SERVICE_NAME",
@@ -52,6 +70,7 @@ __all__: list[str] = [
     "SPAN_NAME",
     "TRACE_CONTEXT_ENV_VAR",
     "UNDELIVERED",
+    "correlation_attributes",
     "decision_span_body",
     "emit_decision_span",
     "emit_for_decision",
@@ -72,6 +91,13 @@ SPAN_NAME = "tdd.order.decision"
 
 ENDPOINT_ENV_VAR = "LIVESPEC_SANDBOX_OTEL_ENDPOINT"
 TRACE_CONTEXT_ENV_VAR = "TRACEPARENT"
+RESOURCE_ATTRIBUTES_ENV_VAR = "OTEL_RESOURCE_ATTRIBUTES"
+
+# The two members of the family correlation triple the Dispatcher injects into
+# the sandbox. `fabro.run_id` is deliberately absent: the sandbox env does not
+# carry it, and naming a key here that is never populated would advertise a
+# correlation this span cannot supply.
+CORRELATION_KEYS = ("work.item.id", "livespec.dispatch.id")
 
 # Each value NAMES the outcome it reports, so a caller logging it says
 # something a reader can act on.
@@ -115,8 +141,30 @@ def emit_for_decision(*, decision: policy.Decision, environ: Mapping[str, str]) 
         span_id=_fresh_id(nbytes=_SPAN_ID_BYTES),
         parent_span_id=parent_span_id,
         now_ns=time.time_ns(),
+        correlation=correlation_attributes(environ=environ),
     )
     return EMITTED if delivered else UNDELIVERED
+
+
+def correlation_attributes(*, environ: Mapping[str, str]) -> dict[str, str]:
+    """The dispatch correlation this sandbox's environment names, or empty.
+
+    Parses the OTLP `OTEL_RESOURCE_ATTRIBUTES` convention — a comma-separated
+    list of `key=value` pairs — and keeps only `CORRELATION_KEYS` with a
+    non-empty value. A malformed entry carrying no `=` is skipped rather than
+    treated as a bare key, and an absent variable yields an empty mapping:
+    outside a dispatch there is no dispatch to correlate to, and stamping a
+    fabricated key would make the host-side aggregate attribute one session's
+    decisions to another run.
+    """
+    resolved: dict[str, str] = {}
+    for entry in environ.get(RESOURCE_ATTRIBUTES_ENV_VAR, "").split(","):
+        key, separator, value = entry.partition("=")
+        if separator == "":
+            continue
+        if key.strip() in CORRELATION_KEYS and value.strip() != "":
+            resolved[key.strip()] = value.strip()
+    return resolved
 
 
 def resolve_endpoint(*, environ: Mapping[str, str]) -> str:
@@ -152,7 +200,7 @@ def _fresh_id(*, nbytes: int) -> str:
     return secrets.token_hex(nbytes)
 
 
-def emit_decision_span(
+def emit_decision_span(  # noqa: PLR0913 — kw-only emission seam; each field is an independent caller input.
     *,
     decision: policy.Decision,
     endpoint: str,
@@ -160,6 +208,7 @@ def emit_decision_span(
     span_id: str,
     parent_span_id: str,
     now_ns: int,
+    correlation: Mapping[str, str] | None = None,
 ) -> bool:
     """Post one decision span to `endpoint`; True iff the receiver accepted it.
 
@@ -176,6 +225,7 @@ def emit_decision_span(
         span_id=span_id,
         parent_span_id=parent_span_id,
         now_ns=now_ns,
+        correlation=correlation,
     )
     request = urllib.request.Request(  # noqa: S310 — plaintext OTLP to the configured sandbox receiver
         f"{endpoint.rstrip('/')}{_TRACES_PATH}",
@@ -197,12 +247,16 @@ def decision_span_body(
     span_id: str,
     parent_span_id: str,
     now_ns: int,
+    correlation: Mapping[str, str] | None = None,
 ) -> str:
     """Render one OTLP `ExportTraceServiceRequest` JSON body for a decision.
 
     A decision is instantaneous, so start and end timestamps are equal. An
     empty `parent_span_id` omits the field entirely rather than sending a
     zero-valued one, which an OTLP receiver would read as a malformed parent.
+
+    `correlation` carries the dispatch keys `correlation_attributes` resolved;
+    `None` renders the span with the five verdict attributes alone.
     """
     span: dict[str, object] = {
         "traceId": trace_id,
@@ -213,7 +267,7 @@ def decision_span_body(
         "endTimeUnixNano": str(now_ns),
         "attributes": [
             _attribute(key=key, value=value)
-            for key, value in _attributes(decision=decision).items()
+            for key, value in _attributes(decision=decision, correlation=correlation).items()
         ],
     }
     if parent_span_id:
@@ -239,14 +293,22 @@ def decision_span_body(
     return json.dumps(request, separators=(",", ":"), sort_keys=True)
 
 
-def _attributes(*, decision: policy.Decision) -> dict[str, str]:
-    """Map one decision onto the five allowlisted `tdd.*` attribute keys."""
+def _attributes(
+    *, decision: policy.Decision, correlation: Mapping[str, str] | None
+) -> dict[str, str]:
+    """Map one decision onto its allowlisted attribute keys.
+
+    The five `tdd.*` verdict keys come first and the resolved correlation keys
+    follow in sorted order, so the rendered attribute list is deterministic
+    for the same inputs.
+    """
     return {
         "tdd.decision": decision.decision,
         "tdd.path": decision.path,
         "tdd.head_state": decision.head_state,
         "tdd.reason": decision.reason,
         "tdd.tool": decision.tool,
+        **{key: (correlation or {})[key] for key in sorted(correlation or {})},
     }
 
 
