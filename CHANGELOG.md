@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.163.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.162.0...v0.163.0) (2026-10-02)
+
+
+### Features
+
+* **calibration:** aggregate the guard's order decisions per dispatch (bd-ib-3h5vfq) ([e047cbb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e047cbbd3dedff3ea93149908f8961db10fe0963))
+* **calibration:** derive the run's TDD order signals from its commit series (bd-ib-3h5vfq) ([bfaa3ae](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bfaa3ae0d5114d66b757c2c684ea3ae74add3e85))
+* **calibration:** gather the TDD signals per dispatch at calibration time (bd-ib-3h5vfq) ([f755d5e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f755d5ee2abb6aad95ff41b66796d7c9484f2720))
+* **calibration:** label the implement node's adapter for board grouping (bd-ib-3h5vfq) ([d77b452](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d77b4527c3516adae9967086fbdbeef2fbf1571e))
+* **calibration:** put the seven TDD order fields on the terminal span (bd-ib-3h5vfq) ([d722f7c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d722f7ca5dfa823d6f9dec365593332a863611af))
+* **tdd-order-guard:** key each decision span to its own dispatch (bd-ib-3h5vfq) ([f2c8556](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f2c855660b0d0634b0207e3ef18a4223c7ba4283))
+
 ## [0.162.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.161.0...v0.162.0) (2026-10-02)
 
 
