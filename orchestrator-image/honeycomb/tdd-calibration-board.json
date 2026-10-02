@@ -1,0 +1,125 @@
+{
+  "livespec": {
+    "definition_version": 1,
+    "work_item": "bd-ib-3h5vfq",
+    "plan": "factory-test-first-enforcement",
+    "resource": "board",
+    "dataset": "livespec-dispatcher",
+    "purpose": "Show the post-hoc Red share and its supporting TDD signals, grouped by repository and by adapter, over the terminal dispatcher.calibration span.",
+    "substitutions": {},
+    "idempotence_key": "name — the provisioner GETs /1/boards, matches on this exact name, and PUTs the existing board rather than creating a second one.",
+    "every_share_query_excludes_unknown": "A dispatch whose Red count was never observed is classified 'unknown' and is FILTERED OUT of every share query. Counting it would let a dropped signal read as a healthy run, which is the one failure mode this board exists to catch.",
+    "live_validation_owed": "The query shapes below have not been accepted by the live Honeycomb API from the build sandbox; plan child bd-ib-i56nut owns the live leg and records the created board id plus a query result containing the new calibration fields."
+  },
+  "payload": {
+    "name": "livespec factory test-first order (TDD calibration)",
+    "description": "Post-hoc Red share and supporting TDD order signals per terminal dispatch, by repository and adapter. A dispatch is post-hoc when its first product write happened outside an open Red, or when its median Red-to-Green gap is under the configured threshold — the stash-and-unstash shape the red_green_replay commit hook structurally cannot see. Source semantics for every tdd.* field are in _dispatcher_tdd_signals; the motivating fleet-wide measurement is in plan/factory-test-first-enforcement/research/opening-research-2026-09-30.md.",
+    "style": "visual",
+    "column_layout": "multi",
+    "queries": [
+      {
+        "caption": "Post-hoc Red share by repository (1.0 = every classified dispatch was post-hoc)",
+        "dataset": "livespec-dispatcher",
+        "query_style": "graph",
+        "query": {
+          "calculations": [{ "op": "AVG", "column": "tdd_post_hoc_red_flag" }],
+          "filters": [
+            { "column": "name", "op": "=", "value": "dispatcher.calibration" },
+            { "column": "tdd_post_hoc_red", "op": "!=", "value": "unknown" }
+          ],
+          "filter_combination": "AND",
+          "breakdowns": ["repo"],
+          "time_range": 604800
+        }
+      },
+      {
+        "caption": "Post-hoc Red share by implement adapter",
+        "dataset": "livespec-dispatcher",
+        "query_style": "graph",
+        "query": {
+          "calculations": [{ "op": "AVG", "column": "tdd_post_hoc_red_flag" }],
+          "filters": [
+            { "column": "name", "op": "=", "value": "dispatcher.calibration" },
+            { "column": "tdd_post_hoc_red", "op": "!=", "value": "unknown" }
+          ],
+          "filter_combination": "AND",
+          "breakdowns": ["livespec.implement.adapter"],
+          "time_range": 604800
+        }
+      },
+      {
+        "caption": "Red-to-Green gap median per dispatch — the load-bearing signal (seconds)",
+        "dataset": "livespec-dispatcher",
+        "query_style": "graph",
+        "query": {
+          "calculations": [
+            { "op": "HEATMAP", "column": "tdd.red_green_gap_seconds_median" },
+            { "op": "P50", "column": "tdd.red_green_gap_seconds_median" }
+          ],
+          "filters": [{ "column": "name", "op": "=", "value": "dispatcher.calibration" }],
+          "breakdowns": ["repo", "livespec.implement.adapter"],
+          "time_range": 604800
+        }
+      },
+      {
+        "caption": "Order-guard refusals per dispatch, by repository and adapter",
+        "dataset": "livespec-dispatcher",
+        "query_style": "graph",
+        "query": {
+          "calculations": [
+            { "op": "SUM", "column": "tdd.order_refusals" },
+            { "op": "MAX", "column": "tdd.order_refusals" }
+          ],
+          "filters": [{ "column": "name", "op": "=", "value": "dispatcher.calibration" }],
+          "filter_combination": "AND",
+          "breakdowns": ["repo", "livespec.implement.adapter"],
+          "time_range": 604800
+        }
+      },
+      {
+        "caption": "Cycles against assertions — one Red per acceptance assertion is the target",
+        "dataset": "livespec-dispatcher",
+        "query_style": "graph",
+        "query": {
+          "calculations": [
+            { "op": "AVG", "column": "tdd.red_commit_count" },
+            { "op": "AVG", "column": "tdd.green_commit_count" },
+            { "op": "AVG", "column": "tdd.assertion_count" }
+          ],
+          "filters": [{ "column": "name", "op": "=", "value": "dispatcher.calibration" }],
+          "breakdowns": ["repo"],
+          "time_range": 604800
+        }
+      },
+      {
+        "caption": "Product commits with no Red at all (suite-green leg), and first writes before Red",
+        "dataset": "livespec-dispatcher",
+        "query_style": "graph",
+        "query": {
+          "calculations": [
+            { "op": "SUM", "column": "tdd.suite_green_count" },
+            { "op": "COUNT" }
+          ],
+          "filters": [
+            { "column": "name", "op": "=", "value": "dispatcher.calibration" },
+            { "column": "tdd.first_product_write_before_red", "op": "=", "value": true }
+          ],
+          "filter_combination": "AND",
+          "breakdowns": ["repo", "livespec.implement.adapter"],
+          "time_range": 604800
+        }
+      },
+      {
+        "caption": "Classification coverage — how many dispatches are unclassifiable (a telemetry gap, not a clean run)",
+        "dataset": "livespec-dispatcher",
+        "query_style": "graph",
+        "query": {
+          "calculations": [{ "op": "COUNT" }],
+          "filters": [{ "column": "name", "op": "=", "value": "dispatcher.calibration" }],
+          "breakdowns": ["tdd_post_hoc_red", "repo"],
+          "time_range": 604800
+        }
+      }
+    ]
+  }
+}

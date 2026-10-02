@@ -1,0 +1,44 @@
+{
+  "livespec": {
+    "definition_version": 1,
+    "work_item": "bd-ib-3h5vfq",
+    "plan": "factory-test-first-enforcement",
+    "resource": "trigger",
+    "dataset": "livespec-dispatcher",
+    "purpose": "Alarm when the post-hoc Red share across classified dispatches rises above the configured monitoring threshold.",
+    "substitutions": {
+      "__POST_HOC_SHARE_THRESHOLD__": "HONEYCOMB_TDD_POST_HOC_SHARE_THRESHOLD (default 0.25) — the share of classified dispatches reading post-hoc at or above which the trigger fires. A FRACTION, because the query averages a 0/1 flag.",
+      "__POST_HOC_SHARE_PERCENT__": "the same threshold rendered as a percentage, for the operator-facing description only.",
+      "__WINDOW_SECONDS__": "HONEYCOMB_TDD_TRIGGER_WINDOW_SECONDS (default 86400) — the trailing window the share is computed over.",
+      "__FREQUENCY_SECONDS__": "HONEYCOMB_TDD_TRIGGER_FREQUENCY_SECONDS (default 7200) — how often Honeycomb evaluates it.",
+      "__GAP_SECONDS__": "HONEYCOMB_TDD_POST_HOC_GAP_SECONDS (default 120) — restated in the description so an operator reading the alarm knows what 'post-hoc' meant when it fired."
+    },
+    "why_the_window_is_a_day_not_minutes": "The factory dispatches episodically. A short window computes a share over one or two runs and flaps; it also alarms on IDLENESS rather than on a regression. The sibling run_turn dead-man trigger took the same correction (10 minutes to 8 hours) and its rationale is recorded in provision-honeycomb-run-turn-trigger.sh.",
+    "window_frequency_wall": "Honeycomb bounds time_range RELATIVE to frequency and reports the refusal only in the response body. Measured for the sibling trigger: frequency=900 refused a time_range over 3600, and frequency=7200 refused a time_range under 7200. The defaults here (86400 / 7200) satisfy the known LOWER bound; the UPPER bound for frequency=7200 was never measured. If the live API refuses this pair, 28800 / 7200 is the pair already accepted in production — use it and record the refusal text.",
+    "live_validation_owed": "Not provisioned against the live API from the build sandbox. Plan child bd-ib-i56nut owns creating it, recording the trigger id, and confirming the recipient.",
+    "tag_key_wall": "Honeycomb refuses a trigger tag KEY that is not purely lowercase letters ('key: must contain only lowercase letters'), which is why the key below is 'workitem' and not 'work-item'. The restriction is documented for KEYS only; the sibling trigger ships a hyphenated work-item id as a VALUE and was accepted. This value also carries DIGITS, which the sibling's did not — if the live API refuses it, drop to the plan slug as the value and record the refusal."
+  },
+  "payload": {
+    "name": "livespec factory post-hoc Red share",
+    "description": "The share of classified factory dispatches whose Red commits look POST-HOC rose to or above __POST_HOC_SHARE_PERCENT__% over the trailing __WINDOW_SECONDS__s. A dispatch classifies as post-hoc when its first product write happened outside an open Red, or when its median Red-to-Green gap is under __GAP_SECONDS__s — the shape produced by writing the implementation first and cutting the Red afterwards, which the red_green_replay commit hook structurally cannot see. WHAT TO DO: open the board 'livespec factory test-first order (TDD calibration)', break the share down by repo and by livespec.implement.adapter to find which lane regressed, then read tdd.order_refusals and tdd.first_product_write_before_red on the offending dispatches. Dispatches whose Red count was never observed classify as 'unknown' and are excluded from this share, so a RISING unknown count on the board is a telemetry gap to fix rather than a clean result. Threshold and window are operator-configurable; the env var names are in orchestrator-image/honeycomb/tdd-calibration-trigger.json.",
+    "tags": [
+      { "key": "owner", "value": "livespec" },
+      { "key": "workitem", "value": "bd-ib-3h5vfq" }
+    ],
+    "threshold": { "op": ">=", "value": "__POST_HOC_SHARE_THRESHOLD__", "exceeded_limit": 1 },
+    "frequency": "__FREQUENCY_SECONDS__",
+    "alert_type": "on_change",
+    "disabled": false,
+    "recipients": [],
+    "auto_investigate": false,
+    "query": {
+      "calculations": [{ "op": "AVG", "column": "tdd_post_hoc_red_flag" }],
+      "filters": [
+        { "column": "name", "op": "=", "value": "dispatcher.calibration" },
+        { "column": "tdd_post_hoc_red", "op": "!=", "value": "unknown" }
+      ],
+      "filter_combination": "AND",
+      "time_range": "__WINDOW_SECONDS__"
+    }
+  }
+}
