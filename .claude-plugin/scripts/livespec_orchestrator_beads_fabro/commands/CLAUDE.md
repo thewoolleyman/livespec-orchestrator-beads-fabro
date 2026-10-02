@@ -263,6 +263,32 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   dispatch — every dispatch in this fleet today — pays no round trip.
   `_dispatcher_acp_nodes._resolve_chains` is where it is called, before the
   attach.
+- The **TDD order calibration** modules (plan `factory-test-first-enforcement`
+  slice S3, `bd-ib-3h5vfq`) put seven `tdd.*` fields plus the implement
+  adapter on the terminal `dispatcher.calibration` span, so "is the factory
+  writing tests first, or producing the commit SHAPE afterwards" becomes a
+  Honeycomb query. The split is pure-from-impure, and the dependency
+  direction reads bottom-up:
+  `_dispatcher_tdd_commits` (PURE: commit messages → Red/Green/suite-green
+  counts and the Red-to-Green gap median) and `_dispatcher_tdd_order_sink`
+  (the persisted per-dispatch aggregate of slice S2's guard decision spans,
+  fed at ingest by `_otel_receive`) → `_dispatcher_implement_adapter` (PURE:
+  the journaled implement adapter classified against the committed agent
+  catalog) → `_dispatcher_tdd_signals` (PURE: the ONE place the eight
+  projected keys are named, plus their source semantics, and the two
+  projections — all keys with nulls for the journal, observed keys only for
+  the span) → `_dispatcher_tdd_probe` (the IO gather: the `gh pr view --json
+  commits` probe and the per-run selection).
+  Three properties an editor must not invert. Absence is `None`, NEVER zero:
+  a zero gap with zero refusals is exactly the post-hoc signature, so
+  manufacturing one from a dropped signal would invent the finding the span
+  exists to measure. The correlation is per DISPATCH, not per item — the
+  dispatch id is both the `dispatch-id` journal record and the
+  `Factory-Run-Id` commit trailer, which is what makes the commit-series
+  filter an exact per-run selection. And `tdd.assertion_count` comes from
+  `effective_criteria`, the segmentation the acceptance evaluator grades; the
+  legacy description-regex `acceptance_count` beside it is slice S4's to
+  repair and is deliberately untouched.
 - Three small modules carry rules that are ABOUT the structured form without
   belonging to any one stage of it, which is why each is its own file rather
   than a branch inside the renderer:
