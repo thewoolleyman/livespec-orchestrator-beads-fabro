@@ -275,13 +275,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 127 — Ordered ACP fallback preserves primary resolution, failure honesty, and one node visit",
-    "work_item": "bd-ib-jxvgq5",
-    "first_seen": "2026-09-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 128 — An unrunnable ready item is visible but never advertised for dispatch",
     "work_item": "livespec-n33rwg.10",
     "first_seen": "2026-09-12"
