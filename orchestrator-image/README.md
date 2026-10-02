@@ -651,6 +651,20 @@ properties worth knowing before reading a query result:
   config, which stamps the `Factory-Run-Id` trailer onto every commit the run
   authors; the commit series is selected by that trailer, so a re-dispatch of
   the same item cannot contribute to it.
+- **`tdd.suite_green_count` is NOT "product code that bypassed the ritual".**
+  `red_green_replay` reaches its `TDD-Suite-Green-*` leg from two branches:
+  product impl `.py` staged with no open Red (a refactor or a
+  behaviour-preserving chore), AND a passing TEST-ONLY change under a
+  non-`feat:`/`fix:` subject, which touches no product `.py` at all. Measured
+  on this slice's own commit series 2026-10-02 — 8 commits, 6 Red, 6 Green,
+  `suite_green_count` 2, both of them the test-and-docs commits — which
+  falsified the plan research's framing of leg 5 as "product code with no Red
+  at all". Read the count alongside the gap median and the first-write flag,
+  never as a verdict on its own. The docstrings in
+  `_dispatcher_tdd_commits.py` and `_dispatcher_tdd_signals.py` still carry
+  the narrower wording: correcting them needs an open Red, because the S2
+  order guard models no behaviour-preserving leg of its own (see the finding
+  below).
 
 The three resources are COMMITTED, VERSIONED definitions under
 `orchestrator-image/honeycomb/`, each carrying its own `livespec` metadata
@@ -714,6 +728,21 @@ Reproduce that query from the board above, or directly: dataset
 `livespec-dispatcher`, filter `name = dispatcher.calibration`, calculate
 `AVG(tdd_post_hoc_red_flag)`, break down by `repo` and
 `livespec.implement.adapter`.
+
+**A finding this slice surfaced about the S2 order guard, not about itself.**
+`.claude/hooks/livespec_tdd_order_guard.py` refuses ANY write to an existing
+product path unless HEAD is an open Red — including a comment- or
+docstring-only correction, and including a pure refactor. The commit-msg hook
+has a sanctioned leg for exactly those changes (`red_green_replay` branch 5,
+the full-suite green-verified leg, which stamps `TDD-Suite-Green-*`), and the
+order guard models no equivalent, so a behaviour-preserving product edit has
+no in-protocol route while the guard is armed. Measured here when correcting
+the `suite_green_count` wording above: the edit was refused with
+`trailer-free-head`, and the correction landed on the non-product surfaces
+instead rather than being forced through a manufactured Red. Whether the guard
+should admit a staged-diff-is-comments-only change, admit a change whose
+commit will take the suite-green leg, or stay as it is, is a decision for the
+plan epic (`bd-ib-q622ls`) rather than for this slice.
 
 ### Auth posture (OAuth-only)
 
