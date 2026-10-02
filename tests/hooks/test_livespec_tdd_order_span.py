@@ -506,3 +506,98 @@ def test_the_three_emission_statuses_are_distinct_and_self_describing() -> None:
         "no-endpoint",
         "undelivered",
     }
+
+
+# --- per-dispatch correlation (plan slice S3, bd-ib-3h5vfq) ----------------
+#
+# A decision span joins the run's TRACE through `traceparent`, which is enough
+# for a human reading one trace and NOT enough for the host-side aggregate the
+# calibration span needs: that aggregate must be keyed per DISPATCH, so the
+# refusal count on a terminal span belongs to the run that earned it. The
+# Dispatcher already injects `work.item.id` and `livespec.dispatch.id` into the
+# sandbox through `OTEL_RESOURCE_ATTRIBUTES` (`_dispatcher_projection.
+# cc_otel_overlay_env`), which the hook inherits, so the correlation is read
+# from there rather than invented or passed through a second channel.
+
+
+def test_the_hook_derives_dispatch_correlation_from_the_sandbox_resource_attributes() -> None:
+    span = _load_span()
+    derive = getattr(span, "correlation_attributes", None)
+    assert derive is not None, "correlation_attributes is not implemented yet"
+
+    resolved = derive(
+        environ={
+            "OTEL_RESOURCE_ATTRIBUTES": (
+                "service.namespace=livespec-family,"
+                "work.item.id=bd-ib-3h5vfq,"
+                "livespec.dispatch.id=dispatch-7"
+            )
+        }
+    )
+
+    assert resolved == {
+        "work.item.id": "bd-ib-3h5vfq",
+        "livespec.dispatch.id": "dispatch-7",
+    }
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "",
+        "service.namespace=livespec-family",
+        "work.item.id=",
+        "malformed-with-no-equals",
+    ],
+)
+def test_absent_or_blank_correlation_resolves_to_no_correlation_attributes(raw: str) -> None:
+    span = _load_span()
+    assert hasattr(span, "correlation_attributes"), "correlation_attributes not implemented yet"
+
+    assert span.correlation_attributes(environ={"OTEL_RESOURCE_ATTRIBUTES": raw}) == {}
+    assert span.correlation_attributes(environ={}) == {}
+
+
+def test_the_decision_span_carries_the_resolved_correlation_attributes() -> None:
+    span = _load_span()
+    assert hasattr(span, "correlation_attributes"), "correlation_attributes not implemented yet"
+
+    body = json.loads(
+        span.decision_span_body(
+            decision=_decision(),
+            trace_id=_TRACE_ID,
+            span_id=_SPAN_ID,
+            parent_span_id="",
+            now_ns=_NOW_NS,
+            correlation={"work.item.id": "bd-ib-3h5vfq", "livespec.dispatch.id": "dispatch-7"},
+        )
+    )
+    attributes = _attributes(body=body)
+
+    assert attributes["work.item.id"] == {"stringValue": "bd-ib-3h5vfq"}
+    assert attributes["livespec.dispatch.id"] == {"stringValue": "dispatch-7"}
+    assert set(attributes) <= set(ATTRIBUTE_ALLOWLIST)
+
+
+def test_an_emission_stamps_the_correlation_read_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    span = _load_span()
+    assert hasattr(span, "correlation_attributes"), "correlation_attributes not implemented yet"
+    seen: dict[str, Any] = {}
+
+    def _urlopen(request: Any, timeout: float) -> _FakeResponse:  # noqa: ARG001
+        seen["data"] = request.data
+        return _FakeResponse(status=200)
+
+    monkeypatch.setattr(span.urllib.request, "urlopen", _urlopen)
+    environ = {
+        span.ENDPOINT_ENV_VAR: _ENDPOINT,
+        "OTEL_RESOURCE_ATTRIBUTES": "work.item.id=bd-ib-3h5vfq,livespec.dispatch.id=dispatch-7",
+    }
+
+    assert span.emit_for_decision(decision=_decision(), environ=environ) == span.EMITTED
+
+    attributes = _attributes(body=json.loads(seen["data"].decode("utf-8")))
+    assert attributes["work.item.id"] == {"stringValue": "bd-ib-3h5vfq"}
+    assert attributes["livespec.dispatch.id"] == {"stringValue": "dispatch-7"}
