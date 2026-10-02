@@ -24,6 +24,7 @@ __all__: list[str] = [
     "spans_path",
     "state_root",
     "store_config",
+    "tdd_order_sink_path",
     "workflow_toml",
 ]
 
@@ -188,6 +189,17 @@ def calibration_spans_path(*, args: argparse.Namespace, repo: Path) -> Path:
     """Where calibration emission appends its `dispatcher.calibration` OTLP spans."""
     journal = journal_path(args=args, repo=repo)
     return journal.with_name(f"{journal.stem}-calibration-spans.jsonl")
+
+
+def tdd_order_sink_path(*, args: argparse.Namespace, repo: Path) -> Path:
+    """Where the live receiver accrues the sandbox order guard's decisions.
+
+    Co-located with the journal (a `<base>-tdd-order.json` sibling next to the
+    cost and heartbeat files) so calibration reads the per-dispatch order
+    aggregate out of process, exactly as the cost gate reads the cost sink.
+    """
+    journal = journal_path(args=args, repo=repo)
+    return journal.with_name(f"{journal.stem}-tdd-order.json")
 
 
 def plugin_root() -> Path:

@@ -41,6 +41,7 @@ def test_dispatcher_paths_exports_promoted_public_helpers() -> None:
         "spans_path",
         "state_root",
         "store_config",
+        "tdd_order_sink_path",
         "workflow_toml",
     ]
 

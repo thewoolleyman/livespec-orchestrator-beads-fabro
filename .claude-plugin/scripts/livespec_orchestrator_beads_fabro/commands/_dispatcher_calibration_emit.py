@@ -24,8 +24,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFil
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     calibration_spans_path,
     journal_path,
+    tdd_order_sink_path,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import post_verdict_runner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_order_sink import TddOrderSink
+from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_probe import gather_tdd_signals
 from livespec_orchestrator_beads_fabro.effects import (
     AttemptFailure,
     JsonParseFailure,
@@ -112,17 +115,31 @@ def _build_and_append_calibration(  # noqa: PLR0913 - injectable calibration sea
     dispatch_context_size: int,
     runner: CommandRunner,
 ) -> None:
+    journal_records = read_journal_records_for(args=args, repo=repo)
     record = build_calibration_record(
         item=item,
         outcome=outcome,
         repo_name=repo.name,
-        journal_records=read_journal_records_for(args=args, repo=repo),
+        journal_records=journal_records,
         wall_clock_seconds=wall_clock_seconds,
         token_cost_micros=calibration_token_cost(args=args, repo=repo, outcome=outcome),
         dispatch_context_size=dispatch_context_size,
         merged_pr_diff_size=merged_pr_diff_size(
             repo=repo,
             outcome=outcome,
+            runner=runner,
+        ),
+        # The SAME journal records feed the TDD gather: they carry this
+        # dispatch's id (which selects its own commit series by the
+        # `Factory-Run-Id` trailer) and the implement node's resolved adapter.
+        # Re-reading them would be a second read nothing can prove agrees with
+        # the first.
+        tdd=gather_tdd_signals(
+            repo=repo,
+            item=item,
+            outcome=outcome,
+            records=journal_records,
+            sink=TddOrderSink(path=tdd_order_sink_path(args=args, repo=repo)),
             runner=runner,
         ),
     )
