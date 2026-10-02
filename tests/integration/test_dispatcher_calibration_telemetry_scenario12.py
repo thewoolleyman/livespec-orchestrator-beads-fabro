@@ -46,6 +46,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_signals import (
+    TDD_PROJECTED_KEYS,
+)
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
@@ -103,6 +106,12 @@ _SIZE_PROXY_FIELDS = (
     "archetype",
     "repo",
 )
+# Plan slice S3's TDD order signals (`bd-ib-3h5vfq`). They ride the journal as
+# flat dotted sibling keys exactly as the `fabro.failure.*` detail does, which
+# is what keeps the shape this journey pins — one scalar per key, no nesting —
+# true after the field set grew. Read from the projection rather than restated,
+# so a key added to one surface cannot be forgotten here.
+_TDD_ORDER_FIELDS = TDD_PROJECTED_KEYS
 
 
 @pytest.fixture(autouse=True)
@@ -471,7 +480,13 @@ def test_journal_record_keys_are_the_enumerated_calibration_fields() -> None:
         merged_pr_diff_size=None,
     )
     journaled = calibration_journal_record(record=record)
-    expected_keys = {"stage", "work_item_id", *_OUTCOME_SIGNAL_FIELDS, *_SIZE_PROXY_FIELDS}
+    expected_keys = {
+        "stage",
+        "work_item_id",
+        *_OUTCOME_SIGNAL_FIELDS,
+        *_SIZE_PROXY_FIELDS,
+        *_TDD_ORDER_FIELDS,
+    }
     assert set(journaled.keys()) == expected_keys
     assert journaled["stage"] == "calibration"
     # Every value is a flat scalar or None (no nested map) — the OTLP enrich
