@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.162.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.161.0...v0.162.0) (2026-10-02)
+
+
+### Features
+
+* gate a new-grammar ACP chain on the resolved factory capability (bd-ib-jamtsf) ([71526bc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/71526bc40291c042cf9bdfd1d7ba169e42333e3e))
+* read the confirmed model and effort off an ACP started event (bd-ib-jamtsf) ([644f5aa](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/644f5aa946525e3e5426a714854b174693508839))
+
 ## [0.161.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.160.0...v0.161.0) (2026-10-01)
 
 
