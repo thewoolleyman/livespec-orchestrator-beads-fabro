@@ -9,6 +9,7 @@
     "substitutions": {},
     "idempotence_key": "name — the provisioner GETs /1/boards, matches on this exact name, and PUTs the existing board rather than creating a second one.",
     "every_share_query_excludes_unknown": "A dispatch whose Red count was never observed is classified 'unknown' and is FILTERED OUT of every share query. Counting it would let a dropped signal read as a healthy run, which is the one failure mode this board exists to catch.",
+    "suite_green_is_broader_than_no_red_product_code": "Do NOT read tdd.suite_green_count as 'product code landed without a Red'. red_green_replay reaches its TDD-Suite-Green-* leg from TWO branches: product impl .py staged with no open Red (a refactor or behaviour-preserving chore), AND a PASSING TEST-ONLY change under a non-feat/fix subject, which touches no product .py at all. Measured on this slice's own commit series 2026-10-02 — 8 commits, 6 Red, 6 Green, suite_green_count 2, both of them test-and-docs commits with no product impl — which falsified the plan research's framing of leg 5 as 'product code with no Red at all'. The count is a useful signal paired with the gap median and the first-write flag; it is not a verdict on its own.",
     "live_validation_owed": "The query shapes below have not been accepted by the live Honeycomb API from the build sandbox; plan child bd-ib-i56nut owns the live leg and records the created board id plus a query result containing the new calibration fields."
   },
   "payload": {
@@ -92,7 +93,7 @@
         }
       },
       {
-        "caption": "Product commits with no Red at all (suite-green leg), and first writes before Red",
+        "caption": "Suite-green commits (admitted by the full suite, not by a failing test) among dispatches whose first write preceded a Red",
         "dataset": "livespec-dispatcher",
         "query_style": "graph",
         "query": {

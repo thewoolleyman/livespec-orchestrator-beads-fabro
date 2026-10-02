@@ -289,6 +289,19 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `effective_criteria`, the segmentation the acceptance evaluator grades; the
   legacy description-regex `acceptance_count` beside it is slice S4's to
   repair and is deliberately untouched.
+  **One docstring in that tree is narrower than the behaviour, and it is
+  recorded here rather than left to be rediscovered.**
+  `_dispatcher_tdd_commits` and `_dispatcher_tdd_signals` describe
+  `tdd.suite_green_count` as "product code with no Red at all" — the plan
+  research's framing. `red_green_replay` actually reaches its
+  `TDD-Suite-Green-*` leg from TWO branches: product impl `.py` with no open
+  Red, AND a passing TEST-ONLY change under a non-`feat:`/`fix:` subject,
+  which touches no product `.py`. Measured on this slice's own series
+  2026-10-02 (8 commits, 6 Red, 6 Green, suite-green 2 — both test-and-docs
+  commits). The correct wording is in `orchestrator-image/README.md`; the
+  docstrings were not amended because the S2 order guard refuses a
+  docstring-only write to an existing product path outside an open Red, which
+  is the separate finding that README records.
 - Three small modules carry rules that are ABOUT the structured form without
   belonging to any one stage of it, which is why each is its own file rather
   than a branch inside the renderer:
