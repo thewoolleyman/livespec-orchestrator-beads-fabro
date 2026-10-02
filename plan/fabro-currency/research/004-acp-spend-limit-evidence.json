@@ -1,0 +1,170 @@
+{
+  "candidate": "v0.371.0-nightly.0",
+  "binary_sha256": "bd6366c6b1ce687c92944c48c005f042fc7cdd3e298d51ce5d849788fe478447",
+  "script_sha256": "6c54c47b1bc410715f1536e6627a664c57c8f43580035f621660cc1d1e0fef39",
+  "agent_sha256": "5033c080fe1f995cd8fcff653623aba9caac3f9efa84dfc04602e78d25ebf843",
+  "gate": "20261002T214501Z-4128768",
+  "raw_evidence_directory": "/tmp/fabro-currency-acp-uknj04zn",
+  "cases": [
+    {
+      "mode": "success",
+      "run_id": "01M3Z97VJQ5Y4M9V2X72CDVG15",
+      "cli_exit": 0,
+      "actual_prompt_attempts": 1,
+      "attempt_events": [
+        {
+          "event": "step.finished",
+          "attempt": 1,
+          "status": "success"
+        }
+      ],
+      "terminal_events": [
+        {
+          "event": "run.finished",
+          "status": "success"
+        }
+      ],
+      "inspection": {
+        "status": {
+          "kind": "succeeded",
+          "reason": "completed"
+        },
+        "failure": null,
+        "total_retries": 0
+      }
+    },
+    {
+      "mode": "exit-once",
+      "run_id": "01M3Z97Y6SJ6317GGX15VZXT8B",
+      "cli_exit": 0,
+      "actual_prompt_attempts": 2,
+      "attempt_events": [
+        {
+          "event": "step.finished",
+          "attempt": 1,
+          "status": {
+            "failure": {
+              "message": "the agent process exited before the protocol completed",
+              "class": "retry_requested"
+            }
+          }
+        },
+        {
+          "event": "step.finished",
+          "attempt": 2,
+          "status": "success"
+        }
+      ],
+      "terminal_events": [
+        {
+          "event": "run.finished",
+          "status": "success"
+        }
+      ],
+      "inspection": {
+        "status": {
+          "kind": "succeeded",
+          "reason": "completed"
+        },
+        "failure": null,
+        "total_retries": 0
+      }
+    },
+    {
+      "mode": "monthly-cap",
+      "run_id": "01M3Z986202KMN5410MYTAAA7Q",
+      "cli_exit": 1,
+      "actual_prompt_attempts": 2,
+      "attempt_events": [
+        {
+          "event": "step.finished",
+          "attempt": 1,
+          "status": {
+            "failure": {
+              "message": "the agent answered `session/prompt` with an error: You've hit your org's monthly spend limit · ask your admin to raise it at claude.ai/settings/usage",
+              "class": "retry_requested"
+            }
+          }
+        },
+        {
+          "event": "step.finished",
+          "attempt": 2,
+          "status": {
+            "failure": {
+              "message": "the agent answered `session/prompt` with an error: You've hit your org's monthly spend limit · ask your admin to raise it at claude.ai/settings/usage",
+              "class": "retry_requested"
+            }
+          }
+        }
+      ],
+      "terminal_events": [
+        {
+          "event": "run.finished",
+          "status": "failed"
+        }
+      ],
+      "inspection": {
+        "status": {
+          "kind": "failed",
+          "reason": "workflow_error"
+        },
+        "failure": {
+          "reason": "workflow_error",
+          "detail": {
+            "message": "the agent answered `session/prompt` with an error: You've hit your org's monthly spend limit · ask your admin to raise it at claude.ai/settings/usage",
+            "category": "deterministic"
+          }
+        },
+        "total_retries": 0
+      }
+    },
+    {
+      "mode": "usage-cap",
+      "run_id": "01M3Z98EC7C44JQWXB169EQZ2A",
+      "cli_exit": 1,
+      "actual_prompt_attempts": 2,
+      "attempt_events": [
+        {
+          "event": "step.finished",
+          "attempt": 1,
+          "status": {
+            "failure": {
+              "message": "the agent answered `session/prompt` with an error: You've hit your limit · resets Jul 31, 5am (UTC)",
+              "class": "retry_requested"
+            }
+          }
+        },
+        {
+          "event": "step.finished",
+          "attempt": 2,
+          "status": {
+            "failure": {
+              "message": "the agent answered `session/prompt` with an error: You've hit your limit · resets Jul 31, 5am (UTC)",
+              "class": "retry_requested"
+            }
+          }
+        }
+      ],
+      "terminal_events": [
+        {
+          "event": "run.finished",
+          "status": "failed"
+        }
+      ],
+      "inspection": {
+        "status": {
+          "kind": "failed",
+          "reason": "workflow_error"
+        },
+        "failure": {
+          "reason": "workflow_error",
+          "detail": {
+            "message": "the agent answered `session/prompt` with an error: You've hit your limit · resets Jul 31, 5am (UTC)",
+            "category": "deterministic"
+          }
+        },
+        "total_retries": 0
+      }
+    }
+  ]
+}

@@ -378,6 +378,10 @@ supervisor_entry_files = [
     ".claude/hooks/livespec_footgun_guard.py",
     ".claude/hooks/livespec_tdd_order_guard.py",
     ".claude-plugin/hooks/codex_yolo_reapply.py",
+    # Exact research entry points: the runner emits its evidence receipt and
+    # the fake agent owns ACP JSON-RPC stdout. No tree-wide exemption.
+    "plan/fabro-currency/research/004-acp-spend-limit-repro.py",
+    "plan/fabro-currency/research/004-fake-acp-agent.py",
 ]
 # UNARMED, and deliberately NOT `not_applicable` — the concept applies here and
 # is currently undischarged. This repo's own ratified
