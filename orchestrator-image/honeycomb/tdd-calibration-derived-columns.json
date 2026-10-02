@@ -1,0 +1,28 @@
+{
+  "livespec": {
+    "definition_version": 1,
+    "work_item": "bd-ib-3h5vfq",
+    "plan": "factory-test-first-enforcement",
+    "resource": "derived_column",
+    "dataset": "livespec-dispatcher",
+    "purpose": "Classify each terminal dispatch as post-hoc Red, test-first, or unclassifiable, from the calibrated Red-to-Green gap median and the first-product-write-before-Red flag.",
+    "substitutions": {
+      "__GAP_SECONDS__": "HONEYCOMB_TDD_POST_HOC_GAP_SECONDS (default 120) — the Red-to-Green gap, in seconds, at or below which a cycle is read as post-hoc rather than genuinely test-first."
+    },
+    "why_two_columns": "The CLASSIFICATION column is what a human reads and what a board groups by; the FLAG column is what an aggregate needs, because a share is AVG of a 0/1 number and cannot be computed from a string. The flag deliberately REPEATS the condition rather than referencing the classification column, so neither definition depends on Honeycomb resolving a derived column from another derived column.",
+    "unclassifiable_is_not_clean": "A dispatch with no observed Red count is 'unknown', never 'test-first'. The fields are omitted from the span when unobservable (see _dispatcher_tdd_signals), so EXISTS is the discriminator, and every share query below FILTERS unknown out rather than counting it as healthy.",
+    "live_validation_owed": "The expression STRINGS below have not been accepted by the live Honeycomb API from the build sandbox — this slice provisions against a local API fixture only. Plan child bd-ib-i56nut owns the live leg. The one syntax risk to check first is the BARE DOTTED column reference ($tdd.red_commit_count): if the expression parser rejects it, re-try the same expression with each dotted reference wrapped as $\"tdd.red_commit_count\" and record which form the API accepted."
+  },
+  "payloads": [
+    {
+      "alias": "tdd_post_hoc_red",
+      "description": "post-hoc | test-first | unknown. A dispatch is post-hoc when its first product write happened outside an open Red, or when the median Red-to-Green gap is at or below __GAP_SECONDS__ seconds. A dispatch with no observed Red count is unknown, not test-first.",
+      "expression": "IF(AND(EXISTS($tdd.red_commit_count), GT($tdd.red_commit_count, 0)), IF(OR($tdd.first_product_write_before_red, LT($tdd.red_green_gap_seconds_median, __GAP_SECONDS__)), \"post-hoc\", \"test-first\"), \"unknown\")"
+    },
+    {
+      "alias": "tdd_post_hoc_red_flag",
+      "description": "1 when this dispatch classifies as post-hoc Red, else 0. AVG over dispatches filtered to tdd_post_hoc_red != unknown is the post-hoc Red SHARE the board and trigger read.",
+      "expression": "IF(AND(EXISTS($tdd.red_commit_count), GT($tdd.red_commit_count, 0), OR($tdd.first_product_write_before_red, LT($tdd.red_green_gap_seconds_median, __GAP_SECONDS__))), 1, 0)"
+    }
+  ]
+}

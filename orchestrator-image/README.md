@@ -620,6 +620,101 @@ successful `run_turn` export. Note that the dispatcher-side half of that check i
 unreliable until the marker anomaly tracked by `bd-ib-jb7rzr.9` is resolved; the
 Honeycomb-trigger half is independent of it.
 
+### TDD order calibration (post-hoc Red): board, trigger, derived columns
+
+Plan `factory-test-first-enforcement` slice S3 (work-item `bd-ib-3h5vfq`) puts
+seven `tdd.*` fields plus `livespec.implement.adapter` on every terminal
+`dispatcher.calibration` span, and ships the Honeycomb resources that read
+them. The question the whole layer answers: **is the factory writing tests
+first, or producing the Red-Green commit SHAPE after the implementation?** The
+`red_green_replay` commit hook structurally cannot tell those apart — it
+inspects staged bytes at exactly two moments — so the discriminator is the
+interval between a commit's `TDD-Red-Captured-At` and `TDD-Green-Verified-At`
+trailers, plus whether the sandbox order guard saw a product write outside an
+open Red. The motivating fleet-wide measurement (median 197s across 147
+product-touching commits) is in
+`plan/factory-test-first-enforcement/research/opening-research-2026-09-30.md`.
+
+**Source semantics for every field** live in
+`.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_tdd_signals.py`,
+field by field, and are not restated here so the two cannot drift. Two
+properties worth knowing before reading a query result:
+
+- **An unobservable field is ABSENT from the span, never zero.** A run that
+  published no pull request has no commit series; a dispatch whose guard spans
+  never arrived has no order aggregate. The journal keeps an explicit null and
+  the span omits the attribute, so a `tdd_post_hoc_red` of `unknown` on the
+  board is a TELEMETRY GAP to fix, not a clean run. Every share query filters
+  `unknown` out rather than counting it as healthy.
+- **The correlation is per DISPATCH, not per item.** The Dispatcher's
+  `dispatch_id` is written into the sandbox clone's `livespec.factoryRunId` git
+  config, which stamps the `Factory-Run-Id` trailer onto every commit the run
+  authors; the commit series is selected by that trailer, so a re-dispatch of
+  the same item cannot contribute to it.
+
+The three resources are COMMITTED, VERSIONED definitions under
+`orchestrator-image/honeycomb/`, each carrying its own `livespec` metadata
+block (definition version, owning work-item, the substitutions the command
+applies, and what is still owed to the live leg):
+
+| Definition | Resource |
+|---|---|
+| `tdd-calibration-derived-columns.json` | `tdd_post_hoc_red` (post-hoc / test-first / unknown) and `tdd_post_hoc_red_flag` (0/1, so `AVG` is the share) |
+| `tdd-calibration-board.json` | board `livespec factory test-first order (TDD calibration)` — share by `repo` and by `livespec.implement.adapter`, the gap-median heatmap, refusals, cycles-against-assertions, and classification coverage |
+| `tdd-calibration-trigger.json` | trigger `livespec factory post-hoc Red share` — `AVG(tdd_post_hoc_red_flag)` against an operator-configurable threshold, with a description naming the threshold and what to do |
+
+**Run the provisioner THROUGH the host env wrapper** — the Honeycomb
+configuration key lives in 1Password, so never export it by hand:
+
+```bash
+with-livespec-env.sh -- \
+  orchestrator-image/provision-honeycomb-tdd-calibration.sh
+```
+
+It is idempotent by construction: derived columns are matched by `alias`,
+the board and trigger by `name`; an existing resource is `PUT` and a missing
+one `POST`ed, so re-running after editing a definition updates in place rather
+than creating a duplicate. The key never reaches argv or the log (header only,
+no `set -x`), and the recipient is DISCOVERED from the account — an unset or
+unmatched `HONEYCOMB_OPERATOR_ALERT_RECIPIENT` lists the available recipients
+with email local-parts redacted rather than defaulting to an invented address.
+
+Levers, all optional:
+
+| Variable | Default | What it sets |
+|---|---|---|
+| `HONEYCOMB_TDD_POST_HOC_GAP_SECONDS` | `120` | The gap at or below which a cycle reads post-hoc. A STARTING value, not a calibrated one — re-derive it from the board's gap heatmap. |
+| `HONEYCOMB_TDD_POST_HOC_SHARE_THRESHOLD` | `0.25` | The share (a fraction) at or above which the trigger fires. |
+| `HONEYCOMB_TDD_TRIGGER_WINDOW_SECONDS` | `86400` | The trailing window the share is computed over. |
+| `HONEYCOMB_TDD_TRIGGER_FREQUENCY_SECONDS` | `7200` | How often Honeycomb evaluates it. |
+| `HONEYCOMB_TDD_RESOURCES` | `derived_columns,board,trigger` | Narrow to re-apply one definition. |
+| `HONEYCOMB_DISPATCHER_DATASET` | `livespec-dispatcher` | The dataset, which is the calibration span's `service.name`. |
+| `HONEYCOMB_API_BASE` | `https://api.honeycomb.io` | Point at a local fixture to exercise the full create/update path offline. |
+| `DRY_RUN` | `0` | Print every payload, call nothing. |
+
+The same `time_range`-versus-`frequency` wall the `run_turn` trigger hit
+applies here; the script refuses a window smaller than the frequency with a
+message naming the fix rather than emitting a payload that 422s. The defaults
+satisfy the known lower bound; the upper bound at `frequency=7200` was never
+measured, and `28800 / 7200` is the pair already accepted in production if the
+live API refuses `86400 / 7200`.
+
+**What this repository has NOT established, and who owns it.** The hermetic
+tier (`tests/test_provision_honeycomb_tdd_calibration.py`) runs the command for
+real against a local stdlib HTTP fixture, covering create, idempotent update,
+the configured thresholds and every refusal — so the command is proven
+internally consistent, NOT proven to satisfy the live Honeycomb API. In
+particular the derived-column EXPRESSIONS have never been parsed by Honeycomb
+from this sandbox; the first syntax risk to check is the bare dotted column
+reference (`$tdd.red_commit_count`), and each definition file records the
+alternate form to try. Plan child **`bd-ib-i56nut`** owns the live leg: running
+the provisioner against the real account, recording the created resource ids,
+and capturing a query result that contains the new calibration fields.
+Reproduce that query from the board above, or directly: dataset
+`livespec-dispatcher`, filter `name = dispatcher.calibration`, calculate
+`AVG(tdd_post_hoc_red_flag)`, break down by `repo` and
+`livespec.implement.adapter`.
+
 ### Auth posture (OAuth-only)
 
 - **Never put `ANTHROPIC_API_KEY` in the server's env.** It bills API cost and
