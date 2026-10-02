@@ -1,0 +1,29 @@
+I'll start by reading the repository's binding rules and understanding the existing cost path.Now let me read the cost sink and report modules.Now let me write Cycle 1's test (criterion 4).Red committed. Now the Green implementation.Now Cycle 2's test (criterion 6).Now the Green implementation for Cycle 2.Now rewire `_dispatcher_cost_pricing` to the shared base-rate table and attach pricing to the catalog.Now attach pricing to the catalog entries and extend the digest.All green. Green-amend Cycle 2.All 13 fail genuinely. Red-commit.Now the Green: add the two event fields and the windows module.Now the windows module.Full coverage is 100%. Green-amend Cycle 4.Now writing Cycle 5's test.All 17 fail. Red-commit.Now the Green: extend the sink to record position + identity, then the attempts module.Now extend the sink's persisted record and add the `observations` reader.Now the sink's `observations` reader.Working tree is back to master-consistent. Now fix the test's float constants and re-Red.Red-commit Cycle 6.Now the Green: the chain arm in the cost report.Now the honest summary lines.Now writing Cycle 8's test.Now the Green: the composition module plus the protocol's node dimension.Now add the `node` dimension to the pricer protocol and wire the gate.Now wire `_dispatcher_cost_gate`.Now update the two existing test pricers for the new protocol arg.All 17 pass. Now the full gate.Now the second test file for cycle 8's Green (the prescribed multi-test-file pattern).Now redo the Red with the corrected test file.100% coverage. Now Green-amend Cycle 8.Now the full check suite.The green token's tree hash matches HEAD's tree exactly — the green run was taken against precisely this committed tree.
+
+## What I changed
+
+Spec v112 §"Factory-configurable ACP fallback priority" → "Cost follows every attempt in a successful fallback run", plus the cost sentence of §"Agent and model catalogs". Eight Red→Green cycles, one per acceptance assertion:
+
+| Commit | Assertion | Product |
+|---|---|---|
+| `762069d3` | exact identity (one `-YYYYMMDD` strip, no prefix match) | new `_acp_model_identity.py`; `normalize_model_id` no longer prefix-matches |
+| `14f77ca3` | catalog carries `claude-opus-5` with its four prices | new `_acp_model_prices.py` (one base-rate table feeding both the catalog and the per-token table); catalog digest extended to cover pricing |
+| `fa7ad90e` | catalog first, per-candidate table second | new `_acp_attempt_price.py` |
+| `e00c3ae1` | attribution by attempt window | new `_acp_attempt_windows.py`; event vocabulary gains `chain_deadline_epoch_ms` and `attempted_durations_ms` |
+| `f38280ee` | sums every attempt; single-candidate priced as before | new `_dispatcher_cost_attempts.py`; sink now persists each call's start instant + emitted identity and exposes `observations()` |
+| `3efde52c` | unpriceable → whole run unobservable (criterion 5) + `model_basis` names every priced identity (criterion 8) | `build_cost_report_item(chain=...)` supersedes the sink report; honest summary lines |
+| `f4936ddf` | unobservable routes through the existing `--item`-keyed fail-closed gate; terminal-unsuccessful keeps the no-cost posture | new `_dispatcher_cost_chain.py`; `derived_costs(chains=...)` |
+
+Design notes worth your eye: the successful attempt's window is deliberately **unbounded** (closing it at the chain deadline would silently drop the winner's later tokens); an observation the events cannot place still reaches the total with **no** candidate attributed; and every fail-soft arm fails toward *dark*, never toward the shipped snapshot.
+
+## Verification
+
+`mise exec -- just check` → **All 90 targets passed**; 5487 passed / 1 skipped; per-file and aggregate coverage 100%. No `.github/workflows/` file touched.
+
+## Two things to flag
+
+**1. A tension in the ratified text that I resolved rather than papered over.** The cost paragraph orders the catalog **first** and the per-candidate table second; §"Agent and model catalogs" says a per-candidate `pricing` override "wins over the catalog value". I implemented the cost paragraph's order — it governs the cost path and is what this item's acceptance criterion grades — and recorded the tension in `_acp_attempt_price.py`'s docstring with the alternative reading, keeping the precedence in one function so a ratified clarification is a one-line change. This wants a maintainer ruling eventually; it does not block anything today.
+
+**2. LLOC pressure I added, measured rather than estimated.** `_dispatcher_cost_gate.py` went 209 → **244** and `_dispatcher_cost_sink.py` 204 → **240** (hard ceiling 250). Both were already in the non-failing 201–250 soft band on master, and `check-no-lloc-soft-warnings` passes — but the gate now has 6 LLOC of headroom, so the next feature edit to it will hit the wall. The cohesion seam is clean and I'd take it as a follow-up: split the gate's *readers* (`derived_costs`, `_read_derived_costs`, `_derived_reports`, `_read_derived_reports`, the chain-cost and report-telemetry helpers) out from the *gate stage* itself. I chose not to do it inside this stage: the check is passing, it is a cross-module move touching a well-tested surface, and doing it now would mean re-earning the verified-green state for a gate that is not refusing.
+
+One deviation from the loop's letter: cycles 5 and 8 each needed their Red re-authored (a float-precision constant in my own fixture; an uncovered fake-poster body). Both times I soft-reset the unpublished Red, restored the working tree to master-consistent, fixed the test, and re-ran the Red — rather than editing a test file inside a committed Red→Green pair. Cycle 8's Green also carries a second test file, per the documented multi-test-file pattern (one test file at Red, the rest at the Green amend).
