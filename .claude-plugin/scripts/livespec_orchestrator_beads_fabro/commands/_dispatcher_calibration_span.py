@@ -9,6 +9,7 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
     CalibrationRecord,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_signals import tdd_span_fields
 from livespec_orchestrator_beads_fabro.commands._otel_scrub import attr as _attr
 
 __all__: list[str] = [
@@ -67,6 +68,13 @@ def calibration_request_line(*, record: CalibrationRecord, now_ns: int) -> str:
 
 
 def _attrs(*, record: CalibrationRecord) -> dict[str, object]:
+    """The span's attribute map.
+
+    The TDD order fields are merged through `tdd_span_fields`, which carries
+    only the OBSERVED ones: an unobservable signal must not egress, because
+    the encoder below would ship it as the literal string `"None"` into a
+    column the post-hoc derived column compares numerically.
+    """
     return {
         "work.item.id": record.work_item_id,
         "converged": record.converged,
@@ -85,6 +93,7 @@ def _attrs(*, record: CalibrationRecord) -> dict[str, object]:
         "fabro.failure.cause": record.fabro_failure_cause,
         "fabro.failure.category": record.fabro_failure_category,
         "fabro.failure.signature": record.fabro_failure_signature,
+        **tdd_span_fields(signals=record.tdd),
     }
 
 

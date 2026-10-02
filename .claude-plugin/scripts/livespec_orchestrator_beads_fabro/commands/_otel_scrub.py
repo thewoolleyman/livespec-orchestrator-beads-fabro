@@ -234,6 +234,24 @@ ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
         "tdd.head_state",
         "tdd.reason",
         "tdd.tool",
+        # Per-dispatch TDD ORDER AGGREGATES on the terminal
+        # `dispatcher.calibration` span (plan slice S3, `bd-ib-3h5vfq`), plus
+        # the implement node's adapter as the second dimension the Honeycomb
+        # board groups by. Admitting them is what makes the signal exist at
+        # all, exactly as for the five per-decision keys above: this stage
+        # rebuilds attributes from the allowlist, so an unnamed key arrives
+        # and is dropped with no error. Four counts, one whole-second median,
+        # one bool, one assertion count and one bounded registry agent id —
+        # all scalar, all scrub-safe, and none of them free-form run content.
+        # Source semantics for each live in `_dispatcher_tdd_signals`.
+        "tdd.red_commit_count",
+        "tdd.green_commit_count",
+        "tdd.suite_green_count",
+        "tdd.red_green_gap_seconds_median",
+        "tdd.first_product_write_before_red",
+        "tdd.order_refusals",
+        "tdd.assertion_count",
+        "livespec.implement.adapter",
     }
 )
 

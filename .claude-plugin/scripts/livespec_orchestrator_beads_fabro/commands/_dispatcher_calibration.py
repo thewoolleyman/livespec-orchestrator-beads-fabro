@@ -39,6 +39,11 @@ import re
 from dataclasses import dataclass
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_signals import (
+    UNOBSERVED_TDD_SIGNALS,
+    TddSignals,
+    tdd_signal_fields,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_anchor import is_spec_commitment
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -76,8 +81,18 @@ class CalibrationRecord:
     Every field is a plain scalar (or `None` when its underlying signal is
     not observable for this dispatch) so the record serializes straight
     onto the existing JSONL journal and the mechanical reflection leg ships
-    it to Honeycomb unchanged. The field set is the spec's two enumerated
-    lists, one-to-one.
+    it to Honeycomb unchanged. The scalar field set is the spec's two
+    enumerated lists, one-to-one.
+
+    `tdd` is the ONE structured field: plan slice S3's TDD order signals,
+    held as a value rather than eight more scalars so the key names and
+    their source semantics live in one place (`_dispatcher_tdd_signals`).
+    It FLATTENS to its own dotted sibling keys in
+    `calibration_journal_record`, so the journal stays a flat record and the
+    enrich stage still promotes each key to a span attribute without
+    unwrapping a nested map. It defaults to the fully-unobserved value, so a
+    path that does not gather the signals journals explicit nulls rather
+    than plausible zeros.
     """
 
     # The dispatched item, carried for per-item correlation on the journal
@@ -102,6 +117,8 @@ class CalibrationRecord:
     fabro_failure_cause: str | None = None
     fabro_failure_category: str | None = None
     fabro_failure_signature: str | None = None
+    # --- TDD order signals (plan slice S3) ---
+    tdd: TddSignals = UNOBSERVED_TDD_SIGNALS
 
 
 def build_calibration_record(  # noqa: PLR0913 — kw-only pure builder; each field is an independent observed input.
@@ -114,6 +131,7 @@ def build_calibration_record(  # noqa: PLR0913 — kw-only pure builder; each fi
     token_cost_micros: int | None,
     dispatch_context_size: int,
     merged_pr_diff_size: int | None,
+    tdd: TddSignals = UNOBSERVED_TDD_SIGNALS,
 ) -> CalibrationRecord:
     """Assemble the calibration record from already-observed dispatch inputs.
 
@@ -148,6 +166,7 @@ def build_calibration_record(  # noqa: PLR0913 — kw-only pure builder; each fi
         fabro_failure_cause=outcome.fabro_failure_cause,
         fabro_failure_category=outcome.fabro_failure_category,
         fabro_failure_signature=outcome.fabro_failure_signature,
+        tdd=tdd,
     )
 
 
@@ -255,4 +274,5 @@ def calibration_journal_record(*, record: CalibrationRecord) -> dict[str, object
         "fabro.failure.cause": record.fabro_failure_cause,
         "fabro.failure.category": record.fabro_failure_category,
         "fabro.failure.signature": record.fabro_failure_signature,
+        **tdd_signal_fields(signals=record.tdd),
     }
