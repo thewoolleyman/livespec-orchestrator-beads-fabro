@@ -25,6 +25,8 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, cast
+from urllib.error import HTTPError
+from urllib.request import urlopen
 
 import pytest
 from typing_extensions import override
@@ -452,6 +454,24 @@ def test_a_missing_api_key_is_refused_before_any_call(
     assert "HONEYCOMB_CONFIG_KEY_LIVESPEC is required" in result.stderr
     assert "with-livespec-env.sh" in result.stderr
     assert api.creates == []
+
+
+def test_the_fixture_refuses_a_path_the_provisioner_never_sends(
+    honeycomb: tuple[_FakeHoneycomb, str],
+) -> None:
+    """The fixture's own control: an unrouted path 404s rather than 500s.
+
+    Worth asserting because a silent 500 here would read, from the
+    provisioner's side, exactly like a Honeycomb outage — and the first thing
+    a future editor does when a request misroutes is ask what the fixture did
+    with it.
+    """
+    _api, api_base = honeycomb
+
+    with pytest.raises(HTTPError) as refused:
+        _ = urlopen(f"{api_base}/1/not_a_collection", timeout=5.0)  # noqa: S310 — the local test fixture.
+
+    assert refused.value.code == HTTPStatus.NOT_FOUND
 
 
 def test_the_dry_run_mode_prints_every_payload_and_calls_nothing(
