@@ -222,6 +222,39 @@
       "wip_cap": 10,
       "acceptance_mode": "ai-only",
       "default_factory": "hp",
+      // THE DELIBERATE OPERATOR FLOOR, and the only currency form with any
+      // blocking authority at admission: a dispatch refuses before claim when
+      // the EXECUTING plugin release is below this value. Ambient staleness
+      // never blocks, however far behind the executing build is, so absent this
+      // key the currency gate can only warn. A release that cannot be observed
+      // at all is recorded undetermined and the dispatch proceeds — an
+      // unobservable build must never fail open into a false refusal — and a
+      // git-checkout plugin root is exempt before the floor is even read.
+      //
+      // 0.161.0 IS THE FIRST FALLBACK-CAPABLE RELEASE, which is what Scenario
+      // 127's "New grammar is version-gated against the resolved factory"
+      // requires this value to name. It is the first PUBLISHED release in which
+      // the whole ratified new-grammar surface resolves: the closed candidate
+      // schema and ordered chain (first released in 0.147.0), plus the
+      // structured candidate form with catalog-derived identity, plus
+      // per-candidate `config_options` and the factory capability gate that
+      // keeps such a chain from running green against an engine which cannot
+      // configure it.
+      //
+      // WHY NOT 0.147.0, where `fallbacks` first parsed. A build in the
+      // 0.147.0–0.160.x range understands the array but can resolve neither a
+      // structured `agent` entry nor `config_options` — it REFUSES them as
+      // unknown keys, which is loud rather than silent, but it is also exactly
+      // the range this plan's own proof has to exclude. A build BELOW 0.147.0 is
+      // the genuinely dangerous one: it tolerates `fallbacks` as an unknown key
+      // on a legacy entry and silently ignores the operator's whole chain, so
+      // the configured fallback never happens and nothing in the record says so.
+      //
+      // This key is NOT in the API-configurable manifest, for the same reason
+      // `require_invoker` is not: a safety floor an automated surface could
+      // lower or delete is not a floor. Raise it by hand, through a committed
+      // change, when a release fixes something a dispatch must not run without.
+      "minimum_release": "0.161.0",
       "fabro_sandbox_image": "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.91.2",
       // NAMED WORKFLOW VARIANTS — variant name -> directory, relative to this
       // repository's root. The reserved `implement-work-item` name is NEVER

@@ -360,6 +360,43 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   equally consistent with a gate that refuses every declaration. The drain leg is
   here too: the two dispatch paths reach the gate through separate call sites.
 
+- `test_acp_fallback_journey_scenario127.py` — binds `SPECIFICATION/scenarios.md`
+  "Scenario 127 — Ordered ACP fallback preserves primary resolution, failure
+  honesty, and one node visit". One two-candidate structured chain, declared in a
+  `.livespec.jsonc` on disk, carried from the capability gate through to both
+  ledgers: the configuration read, the catalogs, the chain resolution, the gate,
+  the event scan, the hold and warning ledgers and the journal writes are all
+  production code. Exactly two sockets are stood in, each at a seam the product
+  publishes for the purpose — the factory's `GET /api/v1/system/info` answer
+  through `FabroHttpTransport`, and the run's own event stream through
+  `CommandRunner` — so the request path, the server qualification and the
+  `fabro events` argv remain the real ones. The agent is `glm-acp-agent`
+  deliberately: its `protocol` mechanism makes BOTH candidates carry
+  `config_options`, so one fixture owes both capability strings and can isolate
+  each gate arm by advertising the other. Every assertion is chosen to be DERIVED
+  rather than echoed, because a recorded stream can prove nothing a fixture
+  supplies: the hold's `expires_at` comes from occurrence time, the hold keys the
+  candidate that FAILED while the warning keys the one that RESCUED the node (no
+  single echoed field yields both), and the `primary_generation` the events carry
+  is computed from this repository's own resolved chain rather than transcribed,
+  so a configuration change that moved it makes the stream stop matching instead
+  of silently agreeing. `cleared` is asserted ZERO against a run that SUCCEEDED,
+  which is the scenario's own control that run success does not clear the primary.
+  The version gate is bound on both halves — the FACTORY half in all four
+  advertised states, including an unreachable server that must refuse rather than
+  pass, and the RELEASE half read from this repository's own committed
+  `dispatcher.minimum_release` floor with an at-floor control, since a refusal
+  alone is equally consistent with a floor that refuses everything. The two
+  negative controls carry the rest: an absent run reads as unobservable cost, and
+  a factory advertising neither capability refuses before any journey is
+  reachable. "Unchanged run and sandbox identity" is asserted as what the
+  orchestrator can actually observe — one run id, reached through exactly one
+  events read against the pinned factory, inside one node visit — because this
+  repository holds no per-attempt container surface and an assertion about one
+  would be an assertion against the fixture. The live controlled run on `hp` is a
+  separate operational artefact of the same work-item; this module is what makes
+  its transcript checkable.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read
