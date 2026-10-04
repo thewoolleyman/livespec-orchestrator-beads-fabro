@@ -29,6 +29,9 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_currency_stalen
     currency_staleness_items,
     default_currency_staleness_seams,
 )
+from livespec_orchestrator_beads_fabro.commands._needs_attention_definition_of_done import (
+    advisory_definition_of_done_items,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_detection_staleness import (
     detection_staleness_items,
 )
@@ -227,6 +230,14 @@ def build_attention(
         # silent on every lane here — nothing is stranded, held, or aging — so
         # without it an unrunnable item is visible only by being noticed.
         + unrunnable_acceptance_items(project_root=project_root, repo=repo_name, items=materialized)
+        # The row that lane CANNOT produce, and the asymmetry is the point: it
+        # fires on the shared eligibility decision refusing an item, while an
+        # advisory Definition-of-Done finding is forbidden from refusing anything.
+        # Such an item is dispatchable, is silent on every lane here, and becomes
+        # visible only through the sandbox it spends discovering the finding.
+        + advisory_definition_of_done_items(
+            project_root=project_root, repo=repo_name, items=materialized
+        )
         # The three Proof of Done hygiene rows. A parked item awaiting its host
         # replay or its human attestation is otherwise indistinguishable from any
         # other parked acceptance, and a stale pointer is silent on every lane
