@@ -31,9 +31,21 @@ it as an assertion the maintainer never wrote.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    SUBJECT_PLAN,
+    definition_of_done,
+)
+
+if TYPE_CHECKING:
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+        DefinitionOfDone,
+    )
 
 __all__: list[str] = [
     "PlanDefinitionOfDone",
+    "plan_definition_of_done",
     "plan_definition_of_done_section",
     "plan_research_note",
 ]
@@ -64,6 +76,19 @@ class PlanDefinitionOfDone:
 
     statement: str
     assertions: tuple[str, ...]
+
+
+def plan_definition_of_done(*, description: str) -> DefinitionOfDone:
+    """Parse one plan epic's description through the ONE primitive, as a plan.
+
+    Every plan-side reader goes through here rather than calling the primitive
+    with a `subject` argument of its own. The clause says outright that no
+    surface may parse the section by another path, and a per-caller `subject`
+    is exactly how one caller would come to read a plan epic under the
+    work-item rules — reporting a bare bullet as `factory_captured` and owing a
+    reference line the plan never needed, both of which look like real findings.
+    """
+    return definition_of_done(description=description, subject=SUBJECT_PLAN)
 
 
 def plan_definition_of_done_section(*, definition: PlanDefinitionOfDone) -> str:
