@@ -34,7 +34,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from livespec_orchestrator_beads_fabro.commands._acp_candidate_pricing import AcpCandidatePricing
 from livespec_orchestrator_beads_fabro.commands._acp_model_identity import exact_model_identity
+from livespec_orchestrator_beads_fabro.commands._acp_model_prices import (
+    builtin_model_pricing_table,
+)
 
 __all__: list[str] = [
     "DEFAULT_DISPATCH_COST_MODEL",
@@ -42,6 +46,7 @@ __all__: list[str] = [
     "ModelPrice",
     "TokenVector",
     "derive_usd_micros",
+    "model_price_of",
     "normalize_model_id",
 ]
 
@@ -51,13 +56,6 @@ __all__: list[str] = [
 # free — a spend cap must NOT under-estimate.
 DEFAULT_DISPATCH_COST_MODEL_ENV = "LIVESPEC_DISPATCH_COST_MODEL"
 DEFAULT_DISPATCH_COST_MODEL = "claude-opus-4-8"
-
-# The ephemeral-prompt-cache write multiplier. Claude Code uses the
-# default 5-minute prompt cache, whose write rate is 1.25x the base input
-# rate. Named so it is adjustable in ONE place if CC adopts the 1-hour
-# (2x) cache TTL. The cache-READ multiplier is the published 0.10x input.
-_CACHE_WRITE_MULTIPLIER = 1.25
-_CACHE_READ_MULTIPLIER = 0.10
 
 # Micro-USD per USD: cost = Σ(tokens x rate_per_MTok) where rate is USD per
 # 1_000_000 tokens, so tokens x rate is ALREADY micro-USD (1 USD == 1e6
@@ -99,33 +97,31 @@ class TokenVector:
     cache_read: int
 
 
-def _price_for(*, base_input: float, base_output: float) -> ModelPrice:
-    """Build a `ModelPrice` from the two published base rates + the cache multipliers.
+def model_price_of(*, pricing: AcpCandidatePricing) -> ModelPrice:
+    """The four-category `ModelPrice` one complete USD-per-million table names.
 
-    cache-write = 1.25x input (5-minute ephemeral prompt cache);
-    cache-read = 0.10x input. Derived from the multipliers so the cache
-    rates stay in lockstep with the base input rate.
+    The adapter between the two spellings of one price: a catalog entry's and
+    a per-candidate override's `pricing` object carry the four
+    `*_usd_per_million` fields the contract's grammar names, while this
+    module's arithmetic takes a `ModelPrice`. Written once, here, so a caller
+    pricing an attempt through the catalog cannot pair the wrong field with
+    the wrong token category.
     """
     return ModelPrice(
-        input=base_input,
-        output=base_output,
-        cache_write=base_input * _CACHE_WRITE_MULTIPLIER,
-        cache_read=base_input * _CACHE_READ_MULTIPLIER,
+        input=pricing.input_usd_per_million,
+        output=pricing.output_usd_per_million,
+        cache_write=pricing.cache_write_usd_per_million,
+        cache_read=pricing.cache_read_usd_per_million,
     )
 
 
-# Per-1M-token USD rates, authoritative as of 2026-06 (the efj price
-# table). input/output are the published per-MTok base rates; the cache
-# rates derive from the input rate via the named multipliers above
-# (opus 5.00→6.25/0.50, sonnet 3.00→3.75/0.30, haiku 1.00→1.25/0.10,
-# fable 10.00→12.50/1.00 — exactly the ratified table).
+# Per-1M-token USD rates, derived from the shared base-rate table in
+# `_acp_model_prices` — the SAME fact the committed model catalog's own
+# `pricing` entries are built from, so the legacy span path and the
+# catalog-first chain path cannot price one attempt two ways.
 _PRICE_TABLE: dict[str, ModelPrice] = {
-    "claude-opus-4-8": _price_for(base_input=5.00, base_output=25.00),
-    "claude-sonnet-4-6": _price_for(base_input=3.00, base_output=15.00),
-    "claude-haiku-4-5": _price_for(base_input=1.00, base_output=5.00),
-    "claude-fable-5": _price_for(base_input=10.00, base_output=50.00),
-    "gpt-5.5": _price_for(base_input=5.00, base_output=30.00),
-    "gpt-5.4-mini": _price_for(base_input=0.75, base_output=4.50),
+    model: model_price_of(pricing=pricing)
+    for model, pricing in builtin_model_pricing_table().items()
 }
 
 
