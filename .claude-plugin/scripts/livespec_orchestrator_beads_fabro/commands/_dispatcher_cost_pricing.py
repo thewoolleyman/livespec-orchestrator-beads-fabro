@@ -34,6 +34,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from livespec_orchestrator_beads_fabro.commands._acp_model_identity import exact_model_identity
+
 __all__: list[str] = [
     "DEFAULT_DISPATCH_COST_MODEL",
     "DEFAULT_DISPATCH_COST_MODEL_ENV",
@@ -130,22 +132,22 @@ _PRICE_TABLE: dict[str, ModelPrice] = {
 def normalize_model_id(*, raw_model: str) -> str | None:
     """Resolve a span's `model` attribute to a priced model id, or None.
 
-    CC stamps a dated model id (e.g. `claude-haiku-4-5-20251001`); this
-    strips any trailing `-<date>` suffix by prefix-matching the known
-    priced ids (longest match first so `claude-opus-4-8` is preferred over
-    a shorter prefix). An empty / unrecognized model returns None so the
-    caller falls back to the configured default model — a token sum with
-    no resolvable model is NEVER treated as free.
+    CC stamps a dated model id (e.g. `claude-haiku-4-5-20251001`), so the
+    identity is normalized by stripping one trailing `-YYYYMMDD` suffix —
+    and by nothing else. The resulting identity must match a price-table
+    key EXACTLY; a broader prefix match is not identity and selects no
+    price, per `SPECIFICATION/contracts.md` section "Factory-configurable
+    ACP fallback priority" → "Cost follows every attempt in a successful
+    fallback run".
+
+    An empty / unrecognized model returns None so the caller falls back to
+    the configured default model — a token sum with no resolvable model is
+    NEVER treated as free.
     """
-    candidate = raw_model.strip()
-    if candidate == "":
+    identity = exact_model_identity(raw_model=raw_model)
+    if identity is None or identity not in _PRICE_TABLE:
         return None
-    if candidate in _PRICE_TABLE:
-        return candidate
-    for known in sorted(_PRICE_TABLE, key=len, reverse=True):
-        if candidate.startswith(known):
-            return known
-    return None
+    return identity
 
 
 def derive_usd_micros(*, tokens: TokenVector, model_id: str) -> int:
