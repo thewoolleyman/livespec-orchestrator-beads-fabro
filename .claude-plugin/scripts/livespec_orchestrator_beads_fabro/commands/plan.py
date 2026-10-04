@@ -1,26 +1,26 @@
-"""Plan primitives backed by ledger-held handoff comments."""
+"""Plan primitives backed by ledger-held handoff comments.
+
+The AUTHORING half of the plan operation: creating a plan, appending a handoff
+entry, and recording a scope event. The ARCHIVE leg is its own cohesive module,
+`_plan_archive`, and is re-exported here so every existing caller is unaffected.
+"""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._plan_anchor import plan_anchor_epic
+from livespec_orchestrator_beads_fabro.commands._plan_archive import archive_thread
 from livespec_orchestrator_beads_fabro.commands._plan_archive_gates import (
     PlanArchiveRefusedError,
     outside_plan_path_references,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_archive_review import (
-    ArchiveCompletenessReviewRequest,
-    CompletenessReviewLauncher,
-    archive_completeness_review_request,
     blocking_dependency_ids,
     is_blocks_dependency_edge,
     record_completeness_review_evidence,
-    undisposed_plan_child_ids,
-    valid_completeness_review_evidence_id,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_disposition import (
     PlanDispositionRefusedError,
@@ -50,13 +50,14 @@ from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
     PlanTimelineEntry,
     handoff_timeline_findings,
     is_unattended_session,
+    plan_comment_body,
     read_timeline,
     recorded_next_actions,
 )
 from livespec_orchestrator_beads_fabro.store import append_work_item
 
 if TYPE_CHECKING:
-    from livespec_orchestrator_beads_fabro._beads_client import BeadsClient, BeadsRecord
+    from livespec_orchestrator_beads_fabro._beads_client import BeadsRecord
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
@@ -78,6 +79,7 @@ __all__: list[str] = [
     "create_thread",
     "handoff_timeline_findings",
     "is_unattended_session",
+    "outside_plan_path_references",
     "plan_record_rate_warnings",
     "read_timeline",
     "record_completeness_review_evidence",
@@ -89,9 +91,7 @@ __all__: list[str] = [
 ]
 
 _PLAN_DIR = "plan"
-_ARCHIVE_DIR = "archive"
 _RESEARCH_DIR = "research"
-_PLAN_ARCHIVE_ACTOR = "plan-archive"
 
 
 def create_thread(  # noqa: PLR0913 — package primitive mirrors the plan-create inputs.
@@ -147,7 +147,7 @@ def append_handoff(
     client = make_beads_client(config=config)
     client.add_comment(
         issue_id=epic_id,
-        body=_comment_body(prefix=PLAN_HANDOFF_PREFIX, author=author, now=now, body=body),
+        body=plan_comment_body(prefix=PLAN_HANDOFF_PREFIX, author=author, now=now, body=body),
     )
     set_next_action(
         config=config,
@@ -197,7 +197,7 @@ def record_scope_event(
     client = make_beads_client(config=config)
     client.add_comment(
         issue_id=epic_id,
-        body=_comment_body(
+        body=plan_comment_body(
             prefix=PLAN_SCOPE_PREFIX,
             author=author,
             now=now,
@@ -206,100 +206,12 @@ def record_scope_event(
     )
 
 
-def archive_thread(
-    *,
-    project_root: Path,
-    config: StoreConfig,
-    slug: str,
-    epic_id: str,
-    completeness_review_comment_id: str | None,
-    review_launcher: CompletenessReviewLauncher | None = None,
-) -> dict[str, str]:
-    """Archive a thread once the child, working-tree reference, and review gates pass.
-
-    The working-tree gate sits between the two ledger gates deliberately.
-    It is mechanical and cheap, like the child-disposition leg, so a plan
-    the move would break refuses BEFORE a fresh independent reviewer is
-    commissioned — and, decisively, before the epic is closed and stamped.
-    """
-    client = make_beads_client(config=config)
-    undisposed = list(undisposed_plan_child_ids(client=client, epic_id=epic_id))
-    if undisposed:
-        raise PlanArchiveRefusedError.undisposed_children(child_ids=undisposed)
-    referencing = outside_plan_path_references(project_root=project_root, slug=slug)
-    if referencing:
-        raise PlanArchiveRefusedError.outside_path_references(slug=slug, paths=referencing)
-    source = project_root / _PLAN_DIR / slug
-    evidence_id = _resolve_completeness_review_evidence(
-        client=client,
-        epic_id=epic_id,
-        completeness_review_comment_id=completeness_review_comment_id,
-        review_launcher=review_launcher,
-        request=archive_completeness_review_request(
-            client=client,
-            project_root=project_root,
-            source=source,
-            slug=slug,
-            epic_id=epic_id,
-        ),
-    )
-    if evidence_id is None:
-        raise PlanArchiveRefusedError.missing_completeness_review()
-    archive = project_root / _PLAN_DIR / _ARCHIVE_DIR / slug
-    archive.parent.mkdir(parents=True, exist_ok=True)
-    _ = source.rename(archive)
-    client.add_comment(
-        issue_id=epic_id,
-        body=_comment_body(
-            prefix=PLAN_HANDOFF_PREFIX,
-            author=_PLAN_ARCHIVE_ACTOR,
-            now=_utc_now_iso(),
-            body=f"Archived after completeness review {evidence_id}.",
-        ),
-    )
-    client.close_issue(issue_id=epic_id, reason="plan archived")
-    return {"archive_path": archive.relative_to(project_root).as_posix(), "epic_id": epic_id}
-
-
-def _resolve_completeness_review_evidence(
-    *,
-    client: BeadsClient,
-    epic_id: str,
-    completeness_review_comment_id: str | None,
-    review_launcher: CompletenessReviewLauncher | None,
-    request: ArchiveCompletenessReviewRequest,
-) -> str | None:
-    evidence_id = valid_completeness_review_evidence_id(
-        client=client,
-        epic_id=epic_id,
-        evidence_id=completeness_review_comment_id,
-        archive_actor=_PLAN_ARCHIVE_ACTOR,
-    )
-    if evidence_id is not None or review_launcher is None:
-        return evidence_id
-    launched_id = review_launcher(request=request)
-    return valid_completeness_review_evidence_id(
-        client=client,
-        epic_id=epic_id,
-        evidence_id=launched_id,
-        archive_actor=_PLAN_ARCHIVE_ACTOR,
-    )
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 def _blocking_dependency_ids(*, record: BeadsRecord) -> frozenset[str]:
     return blocking_dependency_ids(record=record)
 
 
 def _is_blocks_dependency_edge(*, edge: object) -> str | None:
     return is_blocks_dependency_edge(edge=edge)
-
-
-def _comment_body(*, prefix: str, author: str, now: str, body: str) -> str:
-    return f"{prefix}\nauthor: {author}\ntimestamp: {now}\n\n{body}"
 
 
 def _scope_body(*, requirements: tuple[str, ...], deferrals: tuple[str, ...]) -> str:

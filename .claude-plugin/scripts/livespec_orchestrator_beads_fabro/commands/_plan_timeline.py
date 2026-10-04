@@ -39,6 +39,7 @@ __all__: list[str] = [
     "PlanTimelineEntry",
     "handoff_timeline_findings",
     "is_unattended_session",
+    "plan_comment_body",
     "read_timeline",
     "recorded_next_actions",
 ]
@@ -95,6 +96,18 @@ def recorded_next_actions(*, body: str) -> tuple[str, ...]:
             continue
         actions.append(action.strip())
     return tuple(actions)
+
+
+def plan_comment_body(*, prefix: str, author: str, now: str, body: str) -> str:
+    """Render one plan-epic comment: the three-line header, a blank line, the body.
+
+    The RENDER lives beside `_parse_entry`'s read of the same header, because the
+    two are one format and a format whose halves sit in different modules drifts.
+    Every plan comment goes through here — handoff entries, scope events, and the
+    archive leg's own entry — so `read_timeline` can never meet a header shape
+    this function does not produce.
+    """
+    return f"{prefix}\nauthor: {author}\ntimestamp: {now}\n\n{body}"
 
 
 def handoff_timeline_findings(*, entries: Sequence[PlanTimelineEntry]) -> tuple[str, ...]:
