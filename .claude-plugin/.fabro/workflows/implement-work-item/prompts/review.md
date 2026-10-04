@@ -52,6 +52,18 @@ Judge the record on three things, in the work-item's own scope:
 - **Does the record leak a credential?** A value, a fragment of one, or a
   command whose output would print one is `[BLOCKING]` without exception.
   Steps name credentials by environment-variable name and nothing else.
+- **Does the proof EXERCISE the assertion, or only run the suite?** A record
+  whose proof of a behavioural assertion is **test-suite output alone** is
+  `[BLOCKING]`, and it is blocking even when every test passes and the code
+  is correct. A suite run proves a test passed; it is silent on whether the
+  delivered artifact does the thing the assertion claims, so a `verified`
+  verdict replayed from it certifies nothing. A blocking finding is what
+  sends the run back: it **re-enters `proof_capture`** through the review-fix
+  route and exercises the behaviour before any replay. A suite run attached **beside a real exercise is not a
+  finding** — that is the supporting evidence the capture prompt permits, and
+  blocking it would punish a stronger record than the rule requires. Nor is
+  this a finding where the assertion's own subject IS a test, a check or a
+  gate: suite output is the correct proof for exactly that item.
 
 A record that names every `human_attested` assertion as pending attestation
 is correct and complete — the factory is not meant to have captured those.
