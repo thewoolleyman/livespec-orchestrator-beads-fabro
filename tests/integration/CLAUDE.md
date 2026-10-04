@@ -427,6 +427,33 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   module; the `fabro validate` leg belongs to `check-fabro-graph-validity`,
   which reads this same payload.
 
+- `test_implement_amendment_scenario131.py` — binds the FIFTH gherkin scenario
+  of that same heading, the one whose subject is the stage AFTER the gate: an
+  implement node that determines the Definition of Done is wrong ends through
+  the structured needs-human ending carrying the proposed amendment, the item
+  rests at `blocked / needs-human` with that amendment as the recorded
+  question, and no code differing from the section is published. It realizes
+  the kept-current clause of `SPECIFICATION/contracts.md` §"Effective
+  acceptance criteria" (v114), which requires ONE rest state for a wrong
+  Definition of Done whichever stage notices it and says in as many words that
+  the implement prompt must state the rule. The journey is ONE case rather than
+  four because each of its four mechanisms already worked before the slice — the
+  claim under test is that they COMPOSE, and split apart every one of them
+  passes against a build that drops the amendment somewhere between the run and
+  the valve, since no case would carry the same string through two layers. Only
+  the `fabro` CLI is stood in, at the runner seam the port publishes; the
+  committed graph, the terminal mapper, the question reader, the valve summary
+  and the blocked ledger write are production code over the real store seam. The
+  publication half is asserted as REACHABILITY from the terminal (empty) with
+  the real publishing route from the implement node's other successor as its
+  control, because an absent `implement -> pr` edge would equally satisfy a
+  graph that reached `pr` through `implementation_diff`, and because an empty
+  reachable set alone is indistinguishable from a misspelt node name. The
+  prompt's own duties are a sibling case, whose needles are chosen so each can
+  only be present if the prompt carries that duty — the structured-ending needle
+  is deliberately not the bare failed-outcome shape, which the generic
+  needs-human protocol already carries.
+
 - `test_proof_credential_projection_scenario134.py` — binds
   `SPECIFICATION/scenarios.md` "Scenario 134 — A declared proof credential is
   projected by name and a withheld, absent, credential-shaped or over-scoped
