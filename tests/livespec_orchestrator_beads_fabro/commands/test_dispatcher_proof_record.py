@@ -81,6 +81,34 @@ def test_a_header_with_no_timestamp_field_still_parses_with_an_empty_timestamp()
     ]
 
 
+def test_each_identity_introducer_the_header_grammar_admits_is_parsed() -> None:
+    """`run`, `session` and `human`, each stripped to the bare identity.
+
+    The v115 host-leg records are published by an agent SESSION on an operator
+    host, so the third field carries `session <identity>` and no Fabro run exists
+    for them. A reader admitting only `run ` drops the whole host leg — and drops
+    it SILENTLY, because a comment it refuses to parse is simply not a record, so
+    the valve that reads for a `host_verified` record finds none and reports the
+    replay as unpublished when it is sitting on the pull request.
+
+    The CONTROL is the case below, which still refuses a third field carrying no
+    introducer at all: widening the grammar must not reduce to accepting anything.
+    """
+    bodies = (
+        f"Proof of Done — verified — run {_RUN_ID} — t\n",
+        "Proof of Done — host_verified — session replaying-session — t\n",
+        "Proof of Done — human_attested — human cwoolley — t\n",
+    )
+
+    records = proof_records(comments=[_record(body=body) for body in bodies])
+
+    assert [(one.verdict, one.run_id) for one in records] == [
+        (VERDICT_VERIFIED, _RUN_ID),
+        ("host_verified", "replaying-session"),
+        (VERDICT_HUMAN_ATTESTED, "cwoolley"),
+    ]
+
+
 def test_an_absent_url_reads_as_an_empty_string_rather_than_refusing_the_record() -> None:
     records = proof_records(comments=[{"body": _verified_body(assertion="X.", reproduced="yes.")}])
 

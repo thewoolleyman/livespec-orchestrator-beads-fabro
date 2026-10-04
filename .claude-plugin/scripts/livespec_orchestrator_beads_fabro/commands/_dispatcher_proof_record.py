@@ -2,8 +2,9 @@
 
 The Proof-of-Done-record clause of `SPECIFICATION/contracts.md` (v114, widened by
 v115) fixes the record's first line — `Proof of Done — <captured|not_captured|
-verified|not_reproduced|human_attested> — run <run-id or human identity> — <UTC
-timestamp>` — and
+verified|not_reproduced|host_recorded|host_verified|host_not_reproduced|
+human_attested> — <run <run-id> | session <session-identity> | human <identity>> —
+<UTC timestamp>` — and
 requires the body to carry, per assertion in Definition of Done order, the
 assertion text, its proof mode, the reproduction steps and the proof. The
 `proof_verify` prompt that PRODUCES the record writes the per-assertion
@@ -113,10 +114,19 @@ PROOF_RECORD_VERDICTS = (
     VERDICT_HOST_NOT_REPRODUCED,
 )
 
-# The ratified header separator is the em dash, with the run id introduced by the
-# literal `run `. Both are the clause's own text, not a guess at a format.
+# The ratified header separator is the em dash. The third field is the PUBLISHING
+# IDENTITY, written as one of `run <run-id> | session <session-identity> | human
+# <identity>` — the clause's own grammar, not a guess at a format. All three
+# introducers are accepted and the one that matched is stripped, because the KIND
+# of identity follows from the verdict rather than from a second field: a factory
+# record carries a run, a host record a session, a human record a forge login.
+#
+# WHY A BARE IDENTITY IS STILL NOT A RECORD. The introducer is what separates a
+# record header from prose that happens to open with the title and carry em
+# dashes. Dropping the requirement would make any three-field sentence beginning
+# `Proof of Done — verified —` into evidence.
 _HEADER_SEPARATOR = "—"
-_RUN_PREFIX = "run "
+_IDENTITY_PREFIXES = ("run ", "session ", "human ")
 _HEADER_MINIMUM_FIELDS = 3
 _TIMESTAMP_FIELD = 3
 _HEADING = re.compile(r"^#{1,6}\s")
@@ -138,6 +148,13 @@ class ProofRecord:
     `url` is the comment link the pointer section and the acceptance journal
     both cite; it is an empty string when the forge payload carried none, which
     is a degraded read rather than a different kind of record.
+
+    `run_id` is the header's third field with its introducer stripped, so it is a
+    Fabro run id on a factory record, a SESSION IDENTITY on a host-leg record and a
+    forge login on a human-attested one. The field keeps its name because the
+    acceptance pass's attribution filter reads it for factory records and nothing
+    else does; a host or human record is matched with `run_ids=None`, which is the
+    unfiltered answer, so no caller compares a session identity against a run id.
     """
 
     verdict: str
@@ -208,10 +225,13 @@ def _record(*, comment: Mapping[str, object]) -> ProofRecord | None:
     fields = _header_fields(body=body)
     if fields is None:
         return None
+    identity = _identity(field=fields[2])
+    if identity is None:
+        return None
     url = comment.get("url")
     return ProofRecord(
         verdict=fields[1],
-        run_id=fields[2][len(_RUN_PREFIX) :].strip(),
+        run_id=identity,
         timestamp=fields[_TIMESTAMP_FIELD] if len(fields) > _TIMESTAMP_FIELD else "",
         url=url if isinstance(url, str) else "",
         body=body,
@@ -228,9 +248,20 @@ def _header_fields(*, body: str) -> list[str] | None:
         return None
     if fields[0] != PROOF_RECORD_TITLE or fields[1] not in PROOF_RECORD_VERDICTS:
         return None
-    if not fields[2].startswith(_RUN_PREFIX):
-        return None
     return fields
+
+
+def _identity(*, field: str) -> str | None:
+    """The identity the header's third field carries, or `None` for no introducer.
+
+    `None` is what makes an introducer-less third field a NON-record rather than a
+    record whose identity happens to be empty, which is the distinction the
+    enumeration arm below relies on.
+    """
+    for prefix in _IDENTITY_PREFIXES:
+        if field.startswith(prefix):
+            return field[len(prefix) :].strip()
+    return None
 
 
 def _assertion_section(*, body: str, assertion: str) -> list[str] | None:

@@ -337,6 +337,40 @@ def _dispatch_merged_item(
     return exit_code, repo
 
 
+def _patch_accept_valve_forge(*, monkeypatch: pytest.MonkeyPatch, comments: str) -> None:
+    """Stand in the accept valve's OWN forge seam, which it constructs for itself.
+
+    The valve takes no runner from `drive`'s routing layer, so the seam has to be
+    replaced where it is built. Patching the acceptance pass's runner instead would
+    leave the valve shelling a real `gh`.
+    """
+    runner = _ForgeRunner(comments=comments)
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands._drive_accept_valve.ShellCommandRunner",
+        lambda: runner,
+    )
+
+
+def _host_record_body(*, verdict: str, identity: str, reproduced: str) -> str:
+    """One host-leg record, in the header shape the record clause fixes for it.
+
+    The third header field is `session <identity>`, not `run <id>`: a host record
+    is published by an agent SESSION on an operator host and no Fabro run exists
+    for it.
+    """
+    return (
+        f"Proof of Done — {verdict} — session {identity} — 2026-10-04T12:00:00Z\n"
+        "\n"
+        f"## Assertion 1 — {_HOST_ASSERTION}\n"
+        "\n"
+        "Proof mode: `host_captured`\n"
+        "\n"
+        "Build identity: release v0.165.0, installed build d709f27ac3c1\n"
+        "\n"
+        f"Reproduced: {reproduced}\n"
+    )
+
+
 def _status_of(*, item_id: str) -> str:
     return materialize_work_items(records=read_work_items(path=_config()))[item_id].status
 
@@ -503,3 +537,142 @@ def test_a_factory_only_item_still_closes_under_ai_only(
     assert exit_code == 0
     assert _emitted(capsys=capsys)["stage"] == "done"
     assert _status_of(item_id=_ITEM_ID) == "done"
+
+
+# --- "The accept valve refuses while the host leg is pending" ------------------
+
+
+def test_the_accept_valve_refuses_while_no_host_verified_record_lists_the_assertion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The valve's refusal, over the item the dispatch above left in acceptance.
+
+    The pull request it reads is the one the POINTER names, which is the only route
+    the valve has: re-deriving it from the branch would let the valve read a
+    different pull request from the one the acceptance pass graded, and a host
+    record on the wrong pull request is exactly what the clause calls not evidence.
+
+    The refusal must carry BOTH halves the clause names. The ASSERTION says what has
+    to be reproduced, and the RECORD FORMAT says what has to be posted before this
+    valve will take the item — a refusal carrying only the first leaves the operator
+    to guess the header the reader matches on.
+    """
+    _exit_code, repo = _dispatch_merged_item(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, item=_item()
+    )
+    _ = capsys.readouterr()
+    # Only the merging run's `verified` record stands on the pull request: the host
+    # leg has not been captured, let alone replayed.
+    _patch_accept_valve_forge(
+        monkeypatch=monkeypatch, comments=_comments_payload(bodies=[_verified_record_body()])
+    )
+
+    exit_code, payload = _drive_valve(repo=repo, action=f"accept:{_ITEM_ID}", capsys=capsys)
+
+    assert exit_code != 0
+    assert payload["status"] == "failed"
+    assert payload["domain_error"] == "host-replay-pending"
+    summary = str(payload["summary"])
+    assert _HOST_ASSERTION in summary
+    assert "Proof of Done — host_verified — <session identity> — <UTC timestamp>" in summary
+    assert _status_of(item_id=_ITEM_ID) == "acceptance"
+
+
+def test_a_host_recorded_capture_alone_does_not_satisfy_the_valve(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A capture with no independent replay is not the record the valve waits for.
+
+    This is the case a reader keyed on "any host record" would pass, and it is the
+    one that matters most: the whole point of the host leg is that a DIFFERENT
+    session reproduces the steps, so a `host_recorded` comment is the beginning of
+    the evidence rather than the evidence.
+    """
+    _exit_code, repo = _dispatch_merged_item(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, item=_item()
+    )
+    _ = capsys.readouterr()
+    _patch_accept_valve_forge(
+        monkeypatch=monkeypatch,
+        comments=_comments_payload(
+            bodies=[
+                _verified_record_body(),
+                _host_record_body(
+                    verdict="host_recorded", identity="session-capturing", reproduced="yes."
+                ),
+            ]
+        ),
+    )
+
+    exit_code, payload = _drive_valve(repo=repo, action=f"accept:{_ITEM_ID}", capsys=capsys)
+
+    assert exit_code != 0
+    assert payload["domain_error"] == "host-replay-pending"
+    assert _status_of(item_id=_ITEM_ID) == "acceptance"
+
+
+def test_a_host_verified_record_listing_the_assertion_lets_the_valve_accept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control for both refusals above, and the reason either is evidence.
+
+    Without it the refusals are equally consistent with a valve that refuses EVERY
+    item carrying a host-captured assertion — which would make the mode a dead end
+    rather than a gate.
+    """
+    _exit_code, repo = _dispatch_merged_item(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, item=_item()
+    )
+    _ = capsys.readouterr()
+    _patch_accept_valve_forge(
+        monkeypatch=monkeypatch,
+        comments=_comments_payload(
+            bodies=[
+                _verified_record_body(),
+                _host_record_body(
+                    verdict="host_recorded", identity="session-capturing", reproduced="yes."
+                ),
+                _host_record_body(
+                    verdict="host_verified", identity="session-replaying", reproduced="yes."
+                ),
+            ]
+        ),
+    )
+
+    exit_code, payload = _drive_valve(repo=repo, action=f"accept:{_ITEM_ID}", capsys=capsys)
+
+    assert exit_code == 0
+    assert payload["status"] == "green"
+    assert _status_of(item_id=_ITEM_ID) == "done"
+
+
+def test_a_host_verified_record_that_does_not_reproduce_still_refuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The record exists, carries the right verdict, and says the assertion failed.
+
+    The valve's condition is that a `host_verified` record LISTS THE ASSERTION AS
+    REPRODUCED, not that one exists — so a reader keyed on the verdict word alone
+    would accept an item whose own evidence says the proof did not reproduce.
+    """
+    _exit_code, repo = _dispatch_merged_item(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, item=_item()
+    )
+    _ = capsys.readouterr()
+    _patch_accept_valve_forge(
+        monkeypatch=monkeypatch,
+        comments=_comments_payload(
+            bodies=[
+                _verified_record_body(),
+                _host_record_body(
+                    verdict="host_verified", identity="session-replaying", reproduced="no."
+                ),
+            ]
+        ),
+    )
+
+    exit_code, payload = _drive_valve(repo=repo, action=f"accept:{_ITEM_ID}", capsys=capsys)
+
+    assert exit_code != 0
+    assert payload["domain_error"] == "host-replay-pending"
+    assert _status_of(item_id=_ITEM_ID) == "acceptance"
