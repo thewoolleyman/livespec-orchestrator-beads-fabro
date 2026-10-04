@@ -17,19 +17,55 @@ is the artifact you grade. Read all of it before deciding anything.
 
 ## Why this node exists, and what is NOT your job
 
-Three of the four checks below ALSO run host-side, in the pre-dispatch wall,
+The first three checks below ALSO run host-side, in the pre-dispatch wall,
 so a section that is outright missing or malformed normally never reaches a
 sandbox at all. Re-checking them here is cheap insurance against a stale or
 hand-edited brief, and you should report what you find — but do not expect
 them to fire, and do not treat a clean mechanical pass as your verdict.
 
-The fourth check is the one that brought this node into existence, because
-no host-side parse can perform it: whether the assertions are COHERENT. Spend
-your effort there.
+The last two are the ones that brought this node into existence, because no
+host-side parse can perform them: whether the assertions are COHERENT, and
+whether each proof mode matches what this sandbox can actually exercise.
+Spend your effort there.
+
+## The sandbox capability set — read it, never infer it
+
+One of the checks below asks whether a capability can exercise an assertion,
+so establish the capability set BEFORE you grade anything.
+
+A *sandbox capability* is a named surface the sandbox can exercise for proof.
+The baseline every image carries is `terminal` — a shell plus the governed
+repository's own toolchain. Additional surfaces are named the same way:
+`headless_browser`, `tmux`, `herdr`.
+
+Resolve the set in this order and use the FIRST source that answers:
+
+1. **The file `/etc/livespec/sandbox-capabilities`**, published by the sandbox
+   image you are running inside — one lowercase snake_case name per line.
+   This is the AUTHORITY.
+2. **The governed repository's committed `dispatcher.sandbox_capabilities`
+   array** in `.livespec.jsonc`, which mirrors the published list so a
+   host-side surface can show it without a sandbox.
+
+Read it; **never INFER it**. An item's own description stating that the
+sandbox carries something **is not a capability**, and neither is your
+recollection of what this image usually ships.
+
+Then report, in your own output, what you resolved:
+
+- Where the published file answered, name the capabilities it lists. Where
+  the committed mirror ALSO lists a name the file does not publish, report
+  that name as a **CONFIGURATION MISMATCH** against the repository's
+  configuration. It is a finding against the CONFIGURATION, not against the
+  item, and it **never fails the gate** — the Dispatcher journals it and the
+  run proceeds.
+- Where NEITHER source answers, the capability set is UNKNOWN. Report
+  `sandbox-capabilities: unpublished` verbatim, so a reader can tell an
+  unknown set from an empty one.
 
 ## What to check
 
-Work through all four. Read files in the repository freely to settle a
+Work through all five. Read files in the repository freely to settle a
 question of fact — the spec tree above all.
 
 1. **The section exists and parses.** The item's description must carry, as
@@ -88,6 +124,29 @@ question of fact — the spec tree above all.
    idea, whether you would have sliced it this way, or whether it is too
    large. A clear, checkable assertion you happen to disagree with PASSES.
    Judge legibility and gradeability, nothing else.
+5. **Every `factory_captured` assertion's surface is one the capability set
+   provides.** Check 3 catches a mode declared too WEAK; this catches one
+   declared too STRONG, and nothing used to. For each `factory_captured`
+   assertion, name the SURFACE its proof needs — a command line, a web
+   interface, a terminal multiplexer, a released build on an operator host —
+   and ask whether some capability in the set you resolved provides it.
+
+   An assertion whose surface **no capability** in the set provides is a
+   finding. Name the assertion, name the MISSING capability, and list these
+   remedies in exactly this order, because the modes are ordered
+   `factory_captured`, `host_captured`, `human_attested` and an assertion
+   must carry the FIRST one that can prove it:
+   - add the capability to the sandbox image;
+   - declare the assertion `host_captured` with a `Reason:` naming the host
+     surface, when its proof needs the released, normally installed build or
+     a surface of an operator host that no sandbox image can carry;
+   - declare it `human_attested` only when no agent session, in a sandbox or
+     on an operator host, can exercise the proof at all.
+
+   When the capability set is UNKNOWN, **withhold this finding and only this
+   one** — every other check in this list still applies in full, including
+   check 3's refusal of a weaker mode, which rests on your reading of the
+   deliverable rather than on the capability set.
 
 ## What you must not do
 
