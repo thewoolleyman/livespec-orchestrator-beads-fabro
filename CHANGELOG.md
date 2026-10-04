@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.166.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.165.1...v0.166.0) (2026-10-04)
+
+
+### Features
+
+* **accept-valve:** refuse an item whose host leg has not been replayed ([0e35f8f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0e35f8fddb0a3216bdc655b9709ab21769c14cd3))
+* **acceptance:** rest a merged item for its pending host-captured leg ([6bb9a89](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6bb9a89c643ba1f7cf757a747b0194754d958ad1))
+* **definition-of-done:** parse the host_captured proof mode ([0854625](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0854625a8e82d9b531cc8f113da836a81c933bf5))
+* **needs-attention:** surface an item resting for its host-captured leg ([722e227](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/722e227eb421311e0149af5888d6f6481598e681))
+
+
+### Bug Fixes
+
+* **eligibility:** report the host-captured routing instead of factory-only ([e8becb2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e8becb206b3c058d38e47087fb2bb5cd3f22b4c5))
+
 ## [0.165.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.165.0...v0.165.1) (2026-10-04)
 
 
