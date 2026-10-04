@@ -233,8 +233,9 @@ digraph ImplementWorkItem {
     //
     // WHY THE BRANCH COMES FROM THE ENVIRONMENT. `CONTRACT_INPUT_NAMES` is a
     // CLOSED set carrying no publish-branch name, so there is no input to render
-    // it from, and `verify_pr`'s own comment records why it had to ask an
-    // ancestry question instead of spelling the branch. The Dispatcher therefore
+    // it from, and `verify_pr`'s own comment records why its first leg asks an
+    // ancestry question instead of spelling the branch — and why its merged-pull-
+    // request fallback reads this same variable. The Dispatcher therefore
     // projects `LIVESPEC_PUBLISH_BRANCH` into the run environment through the
     // SAME overlay seam that already carries `LIVESPEC_GIT_AUTHOR_NAME` for the
     // needs_human node's emergency commit. With no value in the environment the
@@ -405,15 +406,13 @@ digraph ImplementWorkItem {
     // it asserts the pr stage's OWN postcondition before the run is allowed to
     // reach exit, so a publish that never happened fails LOUD instead of green.
     //
-    // WHAT IT ASSERTS, and why it is this rather than a name lookup. The
-    // publish branch is `feat/<work-item-id>`, and that id reaches the sandbox
-    // only through the rendered run goal — there is no workflow input carrying
-    // it (`CONTRACT_INPUT_NAMES` is a closed set and the pr prompt reads the
-    // branch out of the goal text), so a script node cannot spell the branch
-    // name. It therefore asks the question the name was only ever a proxy for:
-    // does origin carry a `feat/*` head that CONTAINS THIS RUN'S WORK? That is
-    // strictly stronger than a name lookup, which a re-dispatch would satisfy
-    // against the STALE branch a previous run of the same item published.
+    // WHAT IT ASSERTS, and why it is an ancestry question rather than a name
+    // lookup. The publish branch is `feat/<work-item-id>`, and the FIRST leg
+    // asks the question the name was only ever a proxy for: does origin carry a
+    // `feat/*` head that CONTAINS THIS RUN'S WORK? That is strictly stronger
+    // than a name lookup, which a re-dispatch would satisfy against the STALE
+    // branch a previous run of the same item published. This leg costs one
+    // `ls-remote` and no forge call, and it is what every healthy run takes.
     //
     // Ancestry rather than sha equality is load-bearing: fabro commits a stage
     // checkpoint after a node completes, so HEAD moves past the sha the pr
@@ -422,17 +421,61 @@ digraph ImplementWorkItem {
     // merge-base fail, which is a non-hit rather than an error — hence the
     // discarded stderr on that one call only.
     //
-    // The two failures are told apart deliberately. Only a REACHABLE origin
-    // that carries no such branch is LIVESPEC_PR_NOT_CREATED; an ls-remote
-    // that could not answer at all exits with its own status under a distinct
-    // sentinel, because "we could not look" must never be reported as "the
-    // publish did not happen". Both fail closed, and both route to needs_human
-    // via the unconditional fallback edge below.
+    // WHY BRANCH-ABSENCE IS NOT PUBLISH-ABSENCE (bd-ib-54ijva, finding F7 of
+    // plan definition-and-proof-of-done). This breaker predates the draft-first
+    // flow: since `publish_draft` opens the pull request EARLY, its CI is
+    // already green when `pr` marks it ready and arms auto-merge, so the merge
+    // can land — and the forge can DELETE the head branch — before this node
+    // ever looks. Measured 2026-10-04 on livespec-dev-tooling-74c65i, hp run
+    // 01M4355ZXMCKY8R1GP5QSW0WB4: every stage succeeded, PR #2308 merged at
+    // 10:54:06Z as 5f1d2a41, the branch was deleted, and the first leg reported
+    // LIVESPEC_PR_NOT_CREATED on work that was already on master; the run went
+    // to needs_human and the Dispatcher rested a MERGED item at
+    // blocked / needs-human, recoverable only through reconcile-merged.
+    //
+    // So a missing branch now falls back to the FORGE: ask for the MERGED pull
+    // requests on the publish branch and require one whose head commit is
+    // contained in this run's HEAD. `--state merged` is load-bearing, because
+    // `gh pr list` defaults to OPEN and the merged case can never answer an
+    // open-only query. The ancestry test on `headRefOid` is what keeps this
+    // from degrading into the name lookup the first leg deliberately avoids: a
+    // pull request a PREVIOUS run of this item merged keeps its `headRefOid`
+    // forever, but after a rebase-merge that object is unreachable from the
+    // default branch and a fresh sandbox clone never fetches it, so merge-base
+    // cannot resolve it and the stale pull request is a non-hit. THIS RUN'S own
+    // merged head is local, because this clone is what pushed it.
+    //
+    // THE BRANCH NAME COMES FROM THE ENVIRONMENT, which is what makes the
+    // fallback expressible at all. `CONTRACT_INPUT_NAMES` is a closed set
+    // carrying no publish-branch name, so there is no input to render it from
+    // and this node's earlier comment recorded that a script node therefore
+    // could not spell the branch. That stopped being true at S5: the Dispatcher
+    // projects `LIVESPEC_PUBLISH_BRANCH` into the run environment for the
+    // `publish_draft` command node, through the same overlay seam that carries
+    // `LIVESPEC_GIT_AUTHOR_NAME`, and this node reads the one value that step
+    // pushed to. A run reaching here with no value in the environment is off
+    // the contract path entirely — `publish_draft` fails closed on exactly that
+    // condition — so it is reported as an INABILITY TO LOOK, never as a publish
+    // that did not happen.
+    //
+    // THE FAILURES ARE TOLD APART DELIBERATELY. Only a REACHABLE origin AND an
+    // answering forge that between them carry no such publish are
+    // LIVESPEC_PR_NOT_CREATED, whose message now NAMES the branch it looked for
+    // so the refusal reads as a pr-stage failure rather than as a defect in the
+    // work item. An `ls-remote` that could not answer, a forge that could not
+    // be asked, and an unnamed publish branch all exit under the distinct
+    // LIVESPEC_PR_NOT_CREATED_CHECK_FAILED sentinel, because "we could not
+    // look" must never be reported as "the publish did not happen". Every arm
+    // fails closed, and all of them route to needs_human via the unconditional
+    // fallback edge below. The merged arm exits 0 under its own
+    // LIVESPEC_PR_MERGED_BEFORE_VERIFY sentinel: the run takes the edge into
+    // exit, and the Dispatcher's own `gh pr view` then reads the pull request as
+    // MERGED, arms nothing, and proceeds to the post-merge janitor.
     verify_pr [
-        label="Check pr stage published a branch"
+        label="Check pr stage published a branch or already merged one"
         shape=parallelogram
         timeout="1800s"
-        script="refs=$(git ls-remote --heads origin); status=$?; if test \"$status\" -ne 0; then echo 'LIVESPEC_PR_NOT_CREATED_CHECK_FAILED: git ls-remote origin failed, so the pr stage could not be proven to have published; failing closed before exit' >&2; exit \"$status\"; fi; hits=$(echo \"$refs\" | grep 'refs/heads/feat/' | cut -f1 | while read sha; do git merge-base --is-ancestor \"$sha\" HEAD 2>/dev/null && echo hit; done); if test -n \"$hits\"; then exit 0; fi; echo 'LIVESPEC_PR_NOT_CREATED: pr stage completed but no publish branch containing this run HEAD exists on origin, so no PR was created; likely a pr-adapter or model-refusal failure; see the pr stage output' >&2; exit 1"
+        script="refs=$(git ls-remote --heads origin); status=$?; if test \"$status\" -ne 0; then echo 'LIVESPEC_PR_NOT_CREATED_CHECK_FAILED: git ls-remote origin failed, so the pr stage could not be proven to have published; failing closed before exit' >&2; exit \"$status\"; fi; hits=$(echo \"$refs\" | grep 'refs/heads/feat/' | cut -f1 | while read sha; do git merge-base --is-ancestor \"$sha\" HEAD 2>/dev/null && echo hit; done); if test -n \"$hits\"; then exit 0; fi; branch=\"${LIVESPEC_PUBLISH_BRANCH:-}\"; if test -z \"$branch\"; then echo 'LIVESPEC_PR_NOT_CREATED_CHECK_FAILED: origin carries no publish branch and no LIVESPEC_PUBLISH_BRANCH is in this script environment, so a pull request that already merged and had its branch deleted cannot be told from a publish that never happened; failing closed before exit' >&2; exit 1; fi; oids=$(gh pr list --head \"$branch\" --state merged --json headRefOid --jq 'map(.headRefOid)|join(\" \")'); status=$?; if test \"$status\" -ne 0; then echo \"LIVESPEC_PR_NOT_CREATED_CHECK_FAILED: the forge could not be asked whether a merged pull request exists for $branch, so a publish the forge already merged cannot be told from one that never happened; failing closed before exit\" >&2; exit \"$status\"; fi; for oid in $oids; do if git merge-base --is-ancestor \"$oid\" HEAD 2>/dev/null; then echo \"LIVESPEC_PR_MERGED_BEFORE_VERIFY: origin carries no publish branch $branch because a pull request whose head $oid is contained in this run HEAD already merged and the forge deleted the branch; the pr stage published\" >&2; exit 0; fi; done; echo \"LIVESPEC_PR_NOT_CREATED: pr stage completed but origin carries no publish branch $branch containing this run HEAD, and no merged pull request for $branch carries it either, so no PR was created; likely a pr-adapter or model-refusal failure; see the pr stage output\" >&2; exit 1"
     ]
 
     // Review gate (Slice A / bd-ib-egms32): a Claude Opus 4.8 /
