@@ -190,16 +190,16 @@ digraph ImplementWorkItem {
 
     // max_visits=10 is the ungraceful runaway-loop backstop, raised from 3 by
     // S6 / bd-ib-msnlnv. It MUST exceed every GRACEFUL bound that routes here,
-    // and three nodes now do: the janitor's own `< 3` visit guard (two Red
-    // attempts), `proof_capture` on a capture that needs a code change, and
-    // `proof_verify` on a non-reproduction under its own `< 3` guard (two more).
-    // Two plus two is a FOURTH entry on the ordinary contract path, and a node
-    // that reaches max_visits ABORTS the run at entry (VisitLimitExceeded)
-    // emitting NO outcome — so the run would die with nothing for any edge to
-    // route and nothing in the record to explain it. The graceful bounds are
-    // unchanged and still live on the edges; this is only the backstop behind
-    // them, now at the same value `disposition` and `review_fix` carry for
-    // exactly this role.
+    // summed, and three nodes now carry one apiece: the janitor's own `< 3` visit
+    // guard (two Red attempts), `proof_capture` on a capture finding under its
+    // `< 3` guard (two more, added in v115), and `proof_verify` on a
+    // non-reproduction under its own `< 3` guard (two more again). SIX entries are
+    // therefore reachable on the ordinary contract path, and a node that reaches
+    // max_visits ABORTS the run at entry (VisitLimitExceeded) emitting NO outcome
+    // — so the run would die with nothing for any edge to route and nothing in the
+    // record to explain it. The graceful bounds all live on the edges; this is
+    // only the backstop behind them, at the same value `disposition` and
+    // `review_fix` carry for exactly this role.
     fix [
         label="Fix gate or proof findings"
         backend="acp"
@@ -306,10 +306,13 @@ digraph ImplementWorkItem {
     // its own rather than a consequence of the implementer tier moving.
     //
     // max_retries=1 is the same bn4 retry discipline every ACP node here carries.
-    // Deliberately NO max_visits: the node is reached once per green janitor, so
-    // its visit count tracks the review loop's, and a max_visits here would
-    // hard-abort (VisitLimitExceeded) on the very visit that must re-capture for
-    // a re-reviewed tree.
+    // Deliberately NO max_visits, now for two reasons: the node is reached once
+    // per green janitor, so its visit count tracks the review loop's, and a
+    // max_visits here would hard-abort (VisitLimitExceeded) on the very visit that
+    // must re-capture for a re-reviewed tree — and, since v115, on the very visit
+    // that must route the third capture finding to `non_converged`. The graceful
+    // bound is the `< 3` guard on this node's own visit count below, exactly as
+    // `proof_verify` and the janitor fix loop carry theirs on an edge.
     proof_capture [
         label="Capture Proof of Done on the draft PR (read-only on the tree)"
         backend="acp"
@@ -656,14 +659,45 @@ digraph ImplementWorkItem {
     publish_draft -> needs_human [label="Blocked", condition="outcome=failed"]
     publish_draft -> proof_capture
 
-    // Proof-capture routing. Three outcomes, and the split between the first two
+    // Proof-capture routing. Four outcomes, and the split between the first two
     // is the contract's own: a capture that CANNOT be produced without a code
     // change is an implementation defect, so the node ends SUCCEEDED carrying
     // `preferred_label=fix` and routes to `fix` where the loop can still
     // converge; a FAILED outcome is the structured needs-human ending every other
     // ACP node shares. `review` is the ordinary unconditional fallthrough.
+    //
+    // THE FIX ROUTE IS CAPPED (v115, work-item bd-ib-2s3kkq), and until it was,
+    // this was the one proof edge carrying no bound at all. `proof_verify` has
+    // had a `< 3` guard since S6; this edge had none, so a capture that kept
+    // finding the same defect re-entered `fix` until `fix.max_visits` aborted the
+    // run AT ENTRY (VisitLimitExceeded) emitting NO outcome — the run died with
+    // nothing for any edge to route and nothing in the record to explain it.
+    //
+    // The guard is the same shape and the same literal as the replay's, for the
+    // same two reasons. It reads this node's OWN visit count rather than relying
+    // on `max_visits`, because a max_visits abort cannot be routed onward. And
+    // the bound is a LITERAL 3 rather than a rendered input, because
+    // constraints.md forbids these nodes from referencing an `inputs.*` token
+    // inside an edge condition: the engine expands graph templates at run-create
+    // time, so an un-expanded token in a condition is a guard that never matches
+    // — it would read as present and bound nothing. Visits 1 and 2 route a
+    // capture finding back to `fix`; the THIRD falls to `non_converged`, which the
+    // Dispatcher reads as `needs-regroom` — a Definition of Done that will not
+    // capture three times running is the empirical too-big signal and belongs in
+    // grooming. The two guards are exact complements (`< 3` and `>= 3`), so no
+    // `fix` verdict can slip between them into the `review` fallthrough and reach
+    // the reviewer with the defect unreported.
+    //
+    // THE GUARD COUNTS VISITS, NOT FINDINGS, and the difference is real rather
+    // than pedantic: this node is re-entered once per accepted review-fix round
+    // too, so a run that spends two review rounds before its first capture
+    // finding sends that FIRST finding to `non_converged`. Counting findings would
+    // need state the engine does not carry on an edge, and of the two directions
+    // this is the conservative one — an exhausted slice reaches grooming rather
+    // than looping. The contract calls these visit caps for that reason.
     proof_capture -> needs_human [label="Blocked", condition="outcome=failed", weight=100]
-    proof_capture -> fix [label="capture needs a code change", condition="preferred_label=fix"]
+    proof_capture -> fix [label="capture needs a code change", condition="preferred_label=fix && context.internal.node_visit_count < 3"]
+    proof_capture -> non_converged [label="Exhausted (proof-capture cap)", condition="preferred_label=fix && context.internal.node_visit_count >= 3"]
     proof_capture -> review
 
     // Review gate routing (Slice A / bd-ib-egms32, blocking-by-default

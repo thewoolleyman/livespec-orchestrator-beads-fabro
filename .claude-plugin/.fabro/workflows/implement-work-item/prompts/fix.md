@@ -12,9 +12,44 @@ Read the most recent incoming stage and its full response (or open the
 referenced response artifact). Do not choose an older green proof record
 over that stage's current finding. When several rounds are visible, use
 the incoming stage's latest response, not an earlier round's disposition.
-If the incoming finding is missing or unreadable, use the failed outcome
-below and name the missing source/artifact; do not infer completion from
-green checks, an unchanged tree, or the absence of a PR comment.
+
+## When the preamble carries no finding, read the pull request
+
+A proof finding reaches you by TWO routes, and the second exists because
+the first can be lost: every proof stage also publishes its finding as a
+record comment on this item's pull request. So a preamble with no readable
+finding is not yet a blocker — it is an instruction to read the other
+route.
+
+Find the pull request for this run's publish branch with `gh pr list --head
+<publish branch> --state open --json number`, read its comments (`gh pr
+view <number> --comments`, or `gh api` for the full bodies), and take the
+LATEST comment whose first line opens `Proof of Done — ` and whose verdict
+field is `not_captured` (from `proof_capture`) or `not_reproduced` (from
+`proof_verify`). Its body names the assertion, the step that failed, what
+was observed and what the proof needs: that is your work order. An older
+`captured` or `verified` record is NOT a discharge of it.
+
+Only when the preamble carries no finding AND the pull request carries no such record
+is the finding missing or unreadable. Then use the failed outcome below and
+name BOTH routes you checked. Never infer completion from green checks, an
+unchanged tree, or the absence of a PR comment.
+
+## A proof finding is discharged by a tree change or by the needs-human ending
+
+A visit entered on a proof finding MUST end in exactly one of two ways:
+
+- with a TREE CHANGE addressing the finding, committed on this branch; or
+- through the structured needs-human ending below, stating why the finding
+  is wrong.
+
+It MUST NOT end succeeded with an unchanged tree. Suite success, a green
+janitor, and an older passing record are none of them a discharge — the
+proof stage SUCCEEDED at reporting a defect while requesting `fix`, so its
+status says nothing about whether the implementation passed. Before you
+end, run `git status --porcelain` and `git log --oneline
+origin/{{ inputs.default_branch }}..HEAD`: if neither shows a change of
+yours and you are not taking the needs-human ending, you have not finished.
 
 ## Your assignment (unchanged)
 
