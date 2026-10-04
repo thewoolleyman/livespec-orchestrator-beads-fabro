@@ -134,3 +134,63 @@ def test_the_gate_prompt_withholds_only_the_missing_capability_finding_when_unkn
     prompt = _prompt(name="dod-gate.md")
 
     assert "withhold this finding and only this one" in prompt
+
+
+def test_the_gate_prompt_reports_a_test_existence_assertion_with_its_remedy() -> None:
+    """A test-existence assertion is a finding unless the deliverable IS a test.
+
+    The exemption is asserted alongside the finding because the pair is the
+    whole rule: a prompt carrying only the finding would reject the
+    legitimate case Scenario 137 names — an item whose deliverable is a new
+    test module — and a prompt carrying only the exemption would reject
+    nothing at all. The remedy is asserted too, since a finding naming none
+    rests the item with a question nobody can act on.
+    """
+    prompt = _prompt(name="dod-gate.md")
+
+    assert "test-existence assertion" in prompt
+    assert "itself a test, a check or a gate" in prompt
+    assert "restate it as the behaviour the tests were meant to establish" in prompt
+
+
+def test_the_gate_prompt_exempts_a_delivered_state_assertion_from_that_finding() -> None:
+    """A configuration or documentation deliverable names the DELIVERED STATE.
+
+    This is the shape most often mistaken for a test-existence assertion, and
+    mistaking it is expensive in the refusing direction: it rests an item
+    whose assertion was exactly what the contract asks for. The
+    behaviour-preserving case is the same mistake on a refactor.
+    """
+    prompt = _prompt(name="dod-gate.md")
+
+    assert "DELIVERED STATE" in prompt
+    assert "behaviour-preserving" in prompt
+
+
+def test_the_gate_prompt_reports_a_reference_naming_only_a_non_scenario_heading() -> None:
+    """Where a scenario states the behaviour, the reference must name it.
+
+    Both halves are asserted. The finding names the governing scenario
+    heading — that is what the human adds to the reference line — and the
+    converse is explicit, because a prompt carrying only the finding would
+    reject every legitimate contracts-heading reference for an assertion no
+    scenario states.
+    """
+    prompt = _prompt(name="dod-gate.md")
+
+    assert "non-scenario H2" in prompt
+    assert "Name the scenario heading that governs the assertion" in prompt
+    assert "valid reference for an assertion no scenario states" in prompt
+
+
+def test_the_gate_prompt_directs_a_search_before_concluding_no_scenario_governs() -> None:
+    """The negative verdict is the one that needs an instrument pointed at the tree.
+
+    "No scenario states this behaviour" forecloses the finding, and nothing
+    downstream re-tests it. Recollection cannot establish it, so the prompt
+    directs a search of `scenarios.md` before the conclusion is reached.
+    """
+    prompt = _prompt(name="dod-gate.md")
+
+    assert "Search `scenarios.md`" in prompt
+    assert "before concluding none does" in prompt
