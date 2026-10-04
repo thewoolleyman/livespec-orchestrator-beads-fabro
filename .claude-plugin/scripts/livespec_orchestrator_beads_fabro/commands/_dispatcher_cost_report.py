@@ -33,6 +33,17 @@ estimate (`livespec.cost.model_basis = "default:<model>"`,
 `livespec.cost.model_resolved = false`, summary "(<model>-default
 estimate)") so the reported number is never silently mis-attributed.
 
+THAT DEFAULT IS REMOVED FOR A RUN WHOSE NODE EXECUTED A CANDIDATE CHAIN.
+`SPECIFICATION/contracts.md` section "Factory-configurable ACP fallback
+priority" → "Cost follows every attempt in a successful fallback run" makes an
+unpriceable nonzero usage component render the WHOLE run cost unobservable —
+"not a known partial subtotal", and never "priced as an unrelated default or
+treated as free". So when a `ChainCost` is supplied it SUPERSEDES the sink
+report, `model_basis` names every priced identity rather than one model, and an
+unpriceable attempt yields `usd_micros=None` instead of a confident estimate.
+Both arms stay live on purpose: the default-model arm is what keeps an ordinary
+single-candidate dispatch priced exactly as it was before that clause landed.
+
 Credential hygiene: the span carries ONLY scalar numbers, the work-item /
 dispatch ids, and a stable model-basis label — no goal text, no env values,
 no remote URLs — and every attribute passes through the shared
@@ -47,8 +58,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost import usd_micros_to_usd
+from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_attempts import ChainCost
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_pricing import (
     DEFAULT_DISPATCH_COST_MODEL,
+    TokenVector,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_report_otlp import (
     cost_report_request_line,
@@ -57,11 +70,22 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_sink import Cos
 from livespec_orchestrator_beads_fabro.io import write_stderr
 
 __all__: list[str] = [
+    "UNRESOLVED_MODEL_BASIS",
     "CostReportItem",
     "build_cost_report_item",
     "cost_report_summary_lines",
     "emit_cost_report",
 ]
+
+# The basis label for a per-attempt cost in which NO attempt emitted a model
+# identity. Deliberately not a model id: labelling an absent cost with a model
+# name is the mis-attribution the no-default rule exists to remove.
+UNRESOLVED_MODEL_BASIS = "unresolved"
+
+# The prefix that marks a basis as the configured DEFAULT model rather than an
+# emitted one. It is the discriminator the summary line reads, so it is named
+# once instead of spelled at each use.
+_DEFAULT_BASIS_PREFIX = "default:"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -95,6 +119,7 @@ def build_cost_report_item(
     work_item_id: str,
     report: CostReport | None,
     default_model: str | None = None,
+    chain: ChainCost | None = None,
 ) -> CostReportItem:
     """Build one work-item's cost report item from its sink `CostReport`.
 
@@ -105,8 +130,19 @@ def build_cost_report_item(
     model id when `report.model_resolved` else `default:<model>` (the
     configured default, mirroring the cost sink's fallback) so a
     default-priced cost is never silently mis-attributed.
+
+    `chain` is the PER-ATTEMPT cost of a run whose node executed a candidate
+    chain, and when it is present it SUPERSEDES the sink report. That
+    precedence is the contract's, not a preference: the sink report's number is
+    the sum of the per-span prices the receiver derived, each of which falls
+    back to the configured default model, and "an unknown model MUST NOT be
+    priced as an unrelated default". Preferring the report when both exist
+    would re-introduce exactly that default while still looking as though the
+    attempts had been consulted.
     """
     fallback_model = default_model if default_model is not None else DEFAULT_DISPATCH_COST_MODEL
+    if chain is not None:
+        return _chain_item(work_item_id=work_item_id, chain=chain, report=report)
     if report is None:
         return CostReportItem(
             work_item_id=work_item_id,
@@ -115,13 +151,15 @@ def build_cost_report_item(
             output_tokens=0,
             cache_creation_tokens=0,
             cache_read_tokens=0,
-            model_basis=f"default:{fallback_model}",
+            model_basis=f"{_DEFAULT_BASIS_PREFIX}{fallback_model}",
             model_resolved=False,
             observable=False,
             node_id=None,
         )
     resolved_basis = report.model_basis if report.model_basis is not None else fallback_model
-    model_basis = resolved_basis if report.model_resolved else f"default:{resolved_basis}"
+    model_basis = (
+        resolved_basis if report.model_resolved else f"{_DEFAULT_BASIS_PREFIX}{resolved_basis}"
+    )
     return CostReportItem(
         work_item_id=work_item_id,
         usd_micros=report.usd_micros,
@@ -133,6 +171,49 @@ def build_cost_report_item(
         model_resolved=report.model_resolved,
         observable=True,
         node_id=report.node_id,
+    )
+
+
+def _chain_item(
+    *, work_item_id: str, chain: ChainCost, report: CostReport | None
+) -> CostReportItem:
+    """One work-item's report item from its PER-ATTEMPT cost.
+
+    `model_basis` names every priced identity, comma-separated, which is the
+    acceptance contract's wording: a chain that failed over ran two models and
+    a single-model basis would misattribute one attempt's spend to the other's
+    rate. `UNRESOLVED_MODEL_BASIS` stands in when NO attempt emitted an
+    identity at all -- deliberately not a default model id, because labelling
+    an absent cost with a model name is the mis-attribution this path exists to
+    remove.
+
+    Token sums come from the attributed attempts rather than from the sink
+    report, so every number on the item describes one population. The
+    `node_id` is the sink's, because an attempt window names a node per
+    attempt while the item names the run's.
+    """
+    tokens = _chain_tokens(chain=chain)
+    return CostReportItem(
+        work_item_id=work_item_id,
+        usd_micros=chain.usd_micros,
+        input_tokens=tokens.input,
+        output_tokens=tokens.output,
+        cache_creation_tokens=tokens.cache_write,
+        cache_read_tokens=tokens.cache_read,
+        model_basis=", ".join(chain.priced_identities) or UNRESOLVED_MODEL_BASIS,
+        model_resolved=chain.model_resolved,
+        observable=chain.usd_micros is not None,
+        node_id=None if report is None else report.node_id,
+    )
+
+
+def _chain_tokens(*, chain: ChainCost) -> TokenVector:
+    """The four token sums across every attributed attempt."""
+    return TokenVector(
+        input=sum(attempt.tokens.input for attempt in chain.attempts),
+        output=sum(attempt.tokens.output for attempt in chain.attempts),
+        cache_write=sum(attempt.tokens.cache_write for attempt in chain.attempts),
+        cache_read=sum(attempt.tokens.cache_read for attempt in chain.attempts),
     )
 
 
@@ -175,15 +256,50 @@ def _summary_line(*, item: CostReportItem) -> str:
     """One item's stderr summary line (observable estimate or the dark note)."""
     head = f"cost (API-equiv estimate) [{item.work_item_id}]:"
     if not item.observable or item.usd_micros is None:
-        return f"{head} unobservable (no CC token telemetry arrived); report-only, never enforced"
+        return f"{head} {_dark_reason(item=item)}; report-only, never enforced"
     dollars = usd_micros_to_usd(usd_micros=item.usd_micros)
     tokens = _token_summary(item=item)
-    suffix = ""
-    if not item.model_resolved:
-        model = item.model_basis.split(":", 1)[-1]
+    return f"{head} ${dollars:.2f}  [{tokens}]  basis: {item.model_basis}{_basis_suffix(item=item)}"
+
+
+def _dark_reason(*, item: CostReportItem) -> str:
+    """Why this item's cost is unobservable, in the operator's own terms.
+
+    Two causes share one posture and take DIFFERENT remedies: a run that
+    accrued no telemetry at all is investigated, while a run whose attempts
+    emitted a model nothing could price is fixed with one
+    `dispatcher.model_catalog` entry. One message for both sends every reader
+    to the wrong half of that, so the usage counts decide which is reported --
+    telemetry that arrived is telemetry that could not be priced.
+    """
+    if _reported_tokens(item=item) == 0:
+        return "unobservable (no CC token telemetry arrived)"
+    return "unobservable (an attempt's emitted model could not be priced)"
+
+
+def _basis_suffix(*, item: CostReportItem) -> str:
+    """The honest tag for a priced total whose basis is not a plain resolved model.
+
+    Keyed on the `default:` basis PREFIX rather than on `model_resolved`,
+    because the two stopped meaning the same thing when the per-attempt path
+    landed: a chain item can carry a real, fully-derived total while one
+    zero-usage attempt went unpriced, and calling that a default estimate
+    would describe a default nothing was priced at.
+    """
+    if item.model_basis.startswith(_DEFAULT_BASIS_PREFIX):
+        model = item.model_basis.removeprefix(_DEFAULT_BASIS_PREFIX)
         family = model.removeprefix("claude-").split("-", 1)[0] or model
-        suffix = f"  ({family}-default estimate)"
-    return f"{head} ${dollars:.2f}  [{tokens}]  basis: {item.model_basis}{suffix}"
+        return f"  ({family}-default estimate)"
+    if not item.model_resolved:
+        return "  (an attempt was unpriceable)"
+    return ""
+
+
+def _reported_tokens(*, item: CostReportItem) -> int:
+    """Every token category this item reports, summed."""
+    return (
+        item.input_tokens + item.output_tokens + item.cache_creation_tokens + item.cache_read_tokens
+    )
 
 
 def _token_summary(*, item: CostReportItem) -> str:
