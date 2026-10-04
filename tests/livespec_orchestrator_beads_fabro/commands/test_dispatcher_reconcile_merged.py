@@ -422,12 +422,21 @@ def test_reconcile_plan_uses_resolved_fabro_bin(
     assert plan.fabro_bin != "fabro"
 
 
-@pytest.mark.parametrize("status", ["acceptance", "done"])
+@pytest.mark.parametrize("status", ["done", "pending-approval"])
 def test_reconcile_merged_refuses_non_active_items(
     status: str,
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
 ) -> None:
+    """`acceptance` is deliberately NOT in this list any more.
+
+    The reconcile-merged clause gives an item resting in `acceptance` its own arm —
+    re-run only the acceptance pass and write a missing pointer — so refusing it
+    would close the one route a merged, verified, pointerless item has. The arm is
+    bound in `tests/integration/test_reconcile_merged_acceptance_pointer.py`; the
+    two statuses left here are the ones no arm serves: a closed item has nothing to
+    reconcile, and an unadmitted one never dispatched.
+    """
     _assert_reconcile_command_registered(capsys=capsys)
     repo = _repo(tmp_path=tmp_path)
     item = _item(status=status)
