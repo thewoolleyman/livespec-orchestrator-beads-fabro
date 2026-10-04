@@ -142,13 +142,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "heading": "## Factory-configurable ACP fallback priority",
-    "work_item": "bd-ib-jxvgq5",
-    "first_seen": "2026-09-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "contracts.md",
     "heading": "## Grooming and slice-size calibration",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-19"
