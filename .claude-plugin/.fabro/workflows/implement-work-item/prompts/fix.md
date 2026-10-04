@@ -1,9 +1,20 @@
-# Fix stage — the janitor gate is red
+# Fix stage — repair the incoming gate or proof finding
 
-The loop routed here after a red janitor check or a human-requested
-retry from an implement, disposition, review_fix, or PR-stage failure.
-The relevant failure output or operator context is in the prior stage
-context above.
+The loop routed here after a red janitor check, a code-change finding from
+`proof_capture` or `proof_verify`, or an operator-requested retry. A proof
+stage can SUCCEED at reporting a defect while requesting `fix`: its status
+does not mean the implementation passed. A green janitor does not discharge
+a semantic proof finding.
+
+This node uses `summary:high` fidelity so the preamble includes prior
+agents' source-labelled responses, not just their status and changed files.
+Read the most recent incoming stage and its full response (or open the
+referenced response artifact). Do not choose an older green proof record
+over that stage's current finding. When several rounds are visible, use
+the incoming stage's latest response, not an earlier round's disposition.
+If the incoming finding is missing or unreadable, use the failed outcome
+below and name the missing source/artifact; do not infer completion from
+green checks, an unchanged tree, or the absence of a PR comment.
 
 ## Your assignment (unchanged)
 
@@ -11,7 +22,12 @@ The complete work-item goal is in the Fabro-injected `Goal:` preamble above.
 
 ## What to do
 
-1. Read the janitor failure output and diagnose the root cause.
+1. Identify the incoming source and quote its actionable finding. For a red
+   gate, read the janitor failure output and diagnose the root cause. For
+   `proof_capture` or `proof_verify`, identify the assertion, reproduction
+   step, expected result and observed failure in its response; reproduce
+   that failure before editing. Proof stages remain read-only: this node
+   owns the code change, and must not weaken the assertion to make it pass.
 2. Fix it IN THIS CLONE, honoring every rule from the implement
    stage: no `--no-verify` (if a hook fails, fix the cause or end with
    the needs-human protocol below, reporting its output verbatim);
@@ -22,7 +38,11 @@ The complete work-item goal is in the Fabro-injected `Goal:` preamble above.
    `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`; never
    create or switch branches, never touch `.beads/` or `core.bare`.
 3. Re-run the repository's check suite (`{{ inputs.sandbox_check_suite }}`) yourself until it is green.
-4. Summarize the diagnosis and the fix in your final reply.
+4. Re-run the failed reproduction and report the before/after result,
+   naming the source stage and assertion alongside the diagnosis and fix.
+   Suite success alone is not evidence that the semantic finding is fixed.
+   The graph still re-earns janitor, capture, review and independent replay;
+   do not claim their downstream approval on their behalf.
 
 ## When the failure is not auto-resolvable (needs-human protocol)
 
