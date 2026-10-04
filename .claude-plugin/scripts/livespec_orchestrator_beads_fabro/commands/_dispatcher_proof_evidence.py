@@ -53,6 +53,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
     DispatchOutcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attribution import (
+    MergingDispatch,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
     PROOF_RECORD_TITLE,
     VERDICT_VERIFIED,
@@ -181,31 +184,42 @@ def read_proof_leg(
     criteria: EffectiveCriteria,
     outcome: DispatchOutcome,
     runner: CommandRunner,
+    dispatch: MergingDispatch,
 ) -> ProofLeg:
-    """Read the merging run's record off the pull request and grade against it."""
+    """Read the merging dispatch's record off the pull request and grade against it.
+
+    `dispatch` carries every identifier a record may be stamped with and still
+    belong to this merge, which the clause requires the pass to accept: the
+    identifiers are resolved ONCE, by the caller, because the dispatch id lives in
+    the dispatch journal and not on the outcome.
+    """
     pr_number = outcome.pr_number
     if pr_number is None:
         return proof_leg(
-            criteria=criteria, records=(), run_id=None, reason="pull request number unavailable"
+            criteria=criteria, records=(), run_ids=(), reason="pull request number unavailable"
         )
     records = read_pull_request_records(repo=repo, pr_number=pr_number, runner=runner)
     if records is None:
         return proof_leg(
             criteria=criteria,
             records=(),
-            run_id=None,
+            run_ids=(),
             reason=f"pull request #{pr_number} comments unreadable",
         )
-    run_id = outcome.fabro_run_id
-    if run_id is None:
+    run_ids = dispatch.run_ids
+    if not run_ids:
         return proof_leg(
-            criteria=criteria, records=records, run_id=None, reason="merging run id unavailable"
+            criteria=criteria, records=records, run_ids=(), reason="merging run id unavailable"
         )
     return proof_leg(
         criteria=criteria,
         records=records,
-        run_id=run_id,
-        reason=f"pull request #{pr_number} records read for run {run_id}",
+        run_ids=run_ids,
+        # Every accepted identifier is named, not just the one that matched: a
+        # refusal is the common reading of this line, and an operator needs to see
+        # which dispatch the pass was asking about to tell a stale record from an
+        # unresolved dispatch.
+        reason=f"pull request #{pr_number} records read for run {' or '.join(run_ids)}",
     )
 
 
@@ -213,21 +227,20 @@ def proof_leg(
     *,
     criteria: EffectiveCriteria,
     records: tuple[ProofRecord, ...],
-    run_id: str | None,
+    run_ids: tuple[str, ...],
     reason: str,
 ) -> ProofLeg:
-    """Grade one item's assertions against the records published for its run.
+    """Grade one item's assertions against the records published for its dispatch.
 
-    `run_id` is `None` only where the merging run could not be identified, and
-    that is deliberately fatal to attribution rather than a reason to fall back
-    to the newest verified record whoever published it: a record from another run
-    describes another tree.
+    `run_ids` is EMPTY only where the merging dispatch could not be identified,
+    and that is deliberately fatal to attribution rather than a reason to fall
+    back to the newest verified record whoever published it: a record from another
+    dispatch describes another tree. The refusal is the record reader's own —
+    `latest_proof_record` matches nothing against an empty set — rather than a
+    guard here, so the two cannot come to disagree about what an unidentifiable
+    dispatch is owed.
     """
-    record = (
-        None
-        if run_id is None
-        else latest_proof_record(records=records, verdict=VERDICT_VERIFIED, run_id=run_id)
-    )
+    record = latest_proof_record(records=records, verdict=VERDICT_VERIFIED, run_ids=run_ids)
     return ProofLeg(
         assertions=tuple(
             _assertion_evidence(text=text, proof_mode=mode, record=record)

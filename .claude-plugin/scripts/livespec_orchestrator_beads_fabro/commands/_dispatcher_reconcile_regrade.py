@@ -206,6 +206,10 @@ def _grade_and_dispose(
         outcome=outcome,
         runner=runner,
         raw_labels=() if isinstance(labels, str) else labels,
+        # The re-grade builds its own outcome, so it carries no Fabro run id; the
+        # journal is the only place either identifier of the merging dispatch
+        # survives into this process.
+        journal_path=journal.path,
     )
     # `unsafe_perform_io` is required: `IOResult.value_or` returns `IO[value]`.
     policy = unsafe_perform_io(

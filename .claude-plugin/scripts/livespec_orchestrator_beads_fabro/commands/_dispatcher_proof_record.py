@@ -118,21 +118,28 @@ def latest_proof_record(
     *,
     records: Sequence[ProofRecord],
     verdict: str,
-    run_id: str | None = None,
+    run_ids: tuple[str, ...] | None = None,
 ) -> ProofRecord | None:
-    """The newest record carrying one verdict, optionally for one run.
+    """The newest record carrying one verdict, optionally for one dispatch.
 
-    `run_id` is the acceptance pass's attribution requirement: the clause asks
+    `run_ids` is the acceptance pass's attribution requirement: the clause asks
     for "the `proof_verify` record of the run whose pull request merged", so a
-    verified record published by some OTHER run is not this merge's evidence.
-    Callers that want the newest record of a verdict whoever published it — the
-    human-attested leg, which is published by a human and not by a run — pass
-    `None`.
+    verified record published by some OTHER dispatch is not this merge's
+    evidence. It is a SET rather than one id because the clause requires EITHER
+    identifier the Dispatcher can attribute to that dispatch to be accepted — the
+    Fabro run id, or the dispatch id it declared to the sandbox
+    (`_dispatcher_proof_attribution`).
+
+    `None` is the UNFILTERED answer — the newest record of a verdict whoever
+    published it — which the human-attested leg needs, because a human is not a
+    run. An EMPTY tuple is the opposite, and the two must not be confused: a
+    dispatch whose identifiers could not be resolved matches NO record rather
+    than inheriting whichever one is newest.
     """
     matching = [
         one
         for one in records
-        if one.verdict == verdict and (run_id is None or one.run_id == run_id)
+        if one.verdict == verdict and (run_ids is None or one.run_id in run_ids)
     ]
     if not matching:
         return None

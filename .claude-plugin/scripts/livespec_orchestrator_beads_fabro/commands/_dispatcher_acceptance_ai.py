@@ -25,6 +25,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     DispatchOutcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attribution import (
+    MergingDispatch,
+    merging_dispatch,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import (
     ProofLeg,
     read_proof_leg,
@@ -122,6 +126,7 @@ def run_acceptance_pass(
     outcome: DispatchOutcome,
     runner: CommandRunner | None = None,
     raw_labels: Sequence[str] = (),
+    journal_path: Path | None = None,
 ) -> AcceptancePassResult:
     """Read the merged diff, judge criteria, watch telemetry, and return a verdict.
 
@@ -133,6 +138,14 @@ def run_acceptance_pass(
     change-implying/change-optional classification is resolved and recorded.
     An empty sequence classifies change-implying, so a caller that cannot read
     the item's labels fails closed rather than exempting it.
+
+    `journal_path` is the dispatch journal the proof leg resolves the merging
+    dispatch's identifiers from. It is the journal rather than the outcome because
+    the dispatch id lives only there, and because the reconcile valve's outcome
+    carries no Fabro run id either (`_dispatcher_proof_attribution`). `None` is the
+    no-journal caller: the accepted set reduces to the outcome's own Fabro run id,
+    which is a narrower question and never a wider one. Every production call site
+    passes one.
     """
     active_runner = ShellCommandRunner() if runner is None else runner
     classification = change_classification(raw_labels=raw_labels)
@@ -144,7 +157,13 @@ def run_acceptance_pass(
     # modes MUST NOT be graded by merged-diff vocabulary. A legacy-source item
     # declares no mode, so it keeps the pre-v114 leg and never reaches the forge.
     proof = (
-        read_proof_leg(repo=repo, criteria=criteria, outcome=outcome, runner=active_runner)
+        read_proof_leg(
+            repo=repo,
+            criteria=criteria,
+            outcome=outcome,
+            runner=active_runner,
+            dispatch=_merging_dispatch(outcome=outcome, journal_path=journal_path),
+        )
         if criteria.proof_modes
         else None
     )
@@ -175,6 +194,17 @@ def run_acceptance_pass(
         absent_evidence=absent,
         classification=classification,
         proof=proof,
+    )
+
+
+def _merging_dispatch(*, outcome: DispatchOutcome, journal_path: Path | None) -> MergingDispatch:
+    """The identifiers this merge's record may carry, from the journal when there is one."""
+    if journal_path is None:
+        return MergingDispatch(fabro_run_id=outcome.fabro_run_id, dispatch_id=None)
+    return merging_dispatch(
+        work_item_id=outcome.work_item_id,
+        fabro_run_id=outcome.fabro_run_id,
+        journal_path=journal_path,
     )
 
 

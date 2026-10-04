@@ -36,6 +36,12 @@ _MODULE_PATH = Path(
 @dataclass(kw_only=True)
 class _Journal:
     records: list[dict[str, object]] = field(default_factory=list)
+    # The journal PATH, which `complete_and_accept` hands the acceptance pass so
+    # the proof leg can recover the merging dispatch's identifiers. These cases
+    # stand the pass in wholesale, so the path is never read — it is here because
+    # the real `JournalFile` carries one, and a double missing it would make the
+    # call fail for a reason that has nothing to do with the disposition.
+    path: Path = Path("unused-journal.jsonl")
 
     def append(self, *, record: dict[str, object]) -> None:
         self.records.append(record)

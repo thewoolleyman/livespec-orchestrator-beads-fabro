@@ -104,7 +104,7 @@ def _verified_leg(*, bodies: tuple[tuple[str, str], ...] = ()) -> ProofLeg:
     return proof_leg(
         criteria=_criteria(modes=(PROOF_MODE_FACTORY_CAPTURED,), assertions=(_ASSERTION,)),
         records=proof_records(comments=comments),
-        run_id=_RUN_ID,
+        run_ids=(_RUN_ID,),
         reason="read",
     )
 
@@ -152,7 +152,7 @@ def test_each_reason_the_pointer_is_not_written_is_journaled_in_its_own_words(
         proof = proof_leg(
             criteria=_criteria(modes=(PROOF_MODE_FACTORY_CAPTURED,), assertions=(_ASSERTION,)),
             records=(),
-            run_id=_RUN_ID,
+            run_ids=(_RUN_ID,),
             reason="nothing published",
         )
     journal = JournalFile(path=tmp_path / "journal.jsonl")
@@ -219,20 +219,20 @@ def test_the_human_attested_link_is_resolved_only_for_an_item_that_owes_one() ->
     owes_and_waiting = proof_leg(
         criteria=mixed,
         records=_verified_leg().records,
-        run_id=_RUN_ID,
+        run_ids=(_RUN_ID,),
         reason="read",
     )
     owes_and_has = proof_leg(
         criteria=mixed,
         records=_verified_leg(bodies=(attested_comment,)).records,
-        run_id=_RUN_ID,
+        run_ids=(_RUN_ID,),
         reason="read",
     )
     # The malformed header below is NOT a record, so it cannot satisfy the leg.
     owes_and_malformed = proof_leg(
         criteria=mixed,
         records=_verified_leg(bodies=(human_comment,)).records,
-        run_id=_RUN_ID,
+        run_ids=(_RUN_ID,),
         reason="read",
     )
 

@@ -131,6 +131,10 @@ def complete_and_accept(
         item=item,
         outcome=outcome,
         raw_labels=() if isinstance(labels, str) else labels,
+        # The journal is where the proof leg recovers the merging dispatch's
+        # identifiers: the dispatch id lives only in the `dispatch-id` record, and
+        # the reconcile valve reaches here with an outcome carrying no run id.
+        journal_path=journal.path,
     )
     journal.append(record=acceptance_pass.journal_record(work_item_id=item.id, policy=policy))
     # The pointer is written BEFORE any disposition branch, because every branch
