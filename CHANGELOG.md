@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.165.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.165.0...v0.165.1) (2026-10-04)
+
+
+### Bug Fixes
+
+* **dispatcher:** declare herdr in dispatcher.sandbox_capabilities (bd-ib-ihlrdr) ([eb4e0fb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/eb4e0fb9c73865160abb0231b48937cb4aa65d92))
+
 ## [0.165.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.164.4...v0.165.0) (2026-10-04)
 
 
