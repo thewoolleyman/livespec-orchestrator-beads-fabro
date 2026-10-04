@@ -183,6 +183,66 @@ def test_the_gate_prompt_reports_a_reference_naming_only_a_non_scenario_heading(
     assert "valid reference for an assertion no scenario states" in prompt
 
 
+def test_the_capture_prompt_exercises_the_behaviour_through_its_named_surface() -> None:
+    """Capture uses the delivered artifact as a user or operator would.
+
+    The positive duty is asserted before the prohibition, because a prompt
+    that only forbade the suite would leave the stage with nothing to do
+    instead of something else to do.
+    """
+    prompt = _prompt(name="proof-capture.md")
+
+    assert "exercise the behaviour through the surface the assertion names" in prompt
+    assert "as a user or operator would" in prompt
+
+
+def test_the_capture_prompt_forbids_suite_output_as_the_proof_of_a_behaviour() -> None:
+    """Suite output MUST NOT be the proof of a behavioural assertion.
+
+    Asserted with its one permitted role — supporting evidence BESIDE a real
+    exercise — because that boundary is the whole rule: a flat ban would make
+    a capture drop a genuinely useful aggregate run, and a prompt mentioning
+    the suite without the ban is what let four pytest output files stand as a
+    whole Definition of Done's proof.
+    """
+    prompt = _prompt(name="proof-capture.md")
+
+    assert "MUST NOT be the proof of a behavioural assertion" in prompt
+    assert "supporting evidence beside a real exercise" in prompt
+
+
+def test_the_capture_prompt_ends_needs_human_on_a_surface_it_cannot_reach() -> None:
+    """An unreachable surface ENDS the run; it never gets a stand-in.
+
+    The three substitutes are named individually rather than as "a
+    substitute", because each is separately attractive at the moment it is
+    reached and a capture reaching for one would produce a record that reads
+    exactly like a successful one. The structured ending is asserted as the
+    literal JSON object the graph routes on, since a paraphrase routes
+    nowhere.
+    """
+    prompt = _prompt(name="proof-capture.md")
+
+    assert "cannot be reached with the sandbox's capabilities" in prompt
+    assert "a test run, a fixture or a test double" in prompt
+    assert "naming the assertion and the missing capability" in prompt
+    assert '{"outcome": "failed", "failure_reason":' in prompt
+
+
+def test_the_capture_prompt_distinguishes_a_missing_capability_from_a_code_defect() -> None:
+    """The two non-capture endings route differently, so the prompt must tell them apart.
+
+    A missing CAPABILITY is not an implementation defect: routing it to `fix`
+    would send an implementer to repair code that is perfectly correct, and
+    routing a real defect to `needs_human` would rest an item a fix loop
+    could have closed. The discriminator has to be stated, not inferred.
+    """
+    prompt = _prompt(name="proof-capture.md")
+
+    assert "not an implementation defect" in prompt
+    assert "no code change could add the capability" in prompt
+
+
 def test_the_gate_prompt_directs_a_search_before_concluding_no_scenario_governs() -> None:
     """The negative verdict is the one that needs an instrument pointed at the tree.
 
