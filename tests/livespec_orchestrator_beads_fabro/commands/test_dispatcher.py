@@ -68,6 +68,9 @@ from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_ai import (
     run_acceptance_pass,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria import (
+    CriterionCheck,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_check_suite_view import (
     janitor_check_suite_from_block,
 )
@@ -3418,6 +3421,13 @@ class _FakeAcceptancePass:
     proof: None = None
     verdict: str
     absent_evidence: tuple[str, ...] = ()
+    # The three leg fields the PARKING RECORD reads off the pass. They carry
+    # stand-in reasons rather than being omitted, because the record names every
+    # leg it read and a stub missing them would make the park raise rather than
+    # report — which is the one thing a fail-soft disposition must never do.
+    diff_reason: str = "merged diff read"
+    telemetry_reason: str = "green merged dispatch with PR and merge sha"
+    criteria: tuple[CriterionCheck, ...] = ()
 
     def journal_record(self, *, work_item_id: str, policy: str) -> dict[str, object]:
         return {
@@ -5007,6 +5017,9 @@ def test_complete_and_accept_needs_attention_parks_under_every_acceptance_policy
         # criteria source resolves to.
         "proof-pointer-skipped",
         "acceptance-parked",
+        # The park's own ledger comment, which the parking-verdict clause requires
+        # whenever a pass leaves the item in `acceptance` under ANY policy.
+        "acceptance-parking-record",
     }
     parked = next(entry for entry in records if entry["stage"] == "acceptance-parked")
     assert parked["acceptance_verdict"] == "NEEDS_ATTENTION"

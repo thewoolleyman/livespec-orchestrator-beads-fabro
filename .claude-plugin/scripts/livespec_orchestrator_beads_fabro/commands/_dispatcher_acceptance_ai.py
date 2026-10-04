@@ -36,8 +36,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence impor
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
+    "EFFECTIVE_CRITERIA_LEG",
+    "EMPTY_MERGED_DIFF_LEG",
+    "MERGED_DIFF_LEG",
     "NEEDS_ATTENTION_VERDICT",
     "NO_CHANGE_NEEDED_VERDICT",
+    "TELEMETRY_LEG",
     "AcceptancePassResult",
     "CriterionCheck",
     "run_acceptance_pass",
@@ -46,12 +50,18 @@ __all__: list[str] = [
 NEEDS_ATTENTION_VERDICT = "NEEDS_ATTENTION"
 NO_CHANGE_NEEDED_VERDICT = "NO_CHANGE_NEEDED"
 
+# The names this pass gives the legs it reads. They are PUBLISHED because the
+# parking record has to flag each leg observed or not-observed from this pass's
+# own `absent_evidence`, and a second set of literals over there could come to
+# disagree with the set the verdict was reached on — which is precisely the
+# disagreement nothing downstream could see.
+TELEMETRY_LEG = "telemetry"
+MERGED_DIFF_LEG = "merged diff"
+EMPTY_MERGED_DIFF_LEG = "empty merged diff"
+EFFECTIVE_CRITERIA_LEG = "effective criteria"
+
 _GREEN_STATUS = "green"
 _OBSERVED_FAILING_STATUS = "failed"
-_TELEMETRY_LEG = "telemetry"
-_MERGED_DIFF_LEG = "merged diff"
-_EMPTY_MERGED_DIFF_LEG = "empty merged diff"
-_EFFECTIVE_CRITERIA_LEG = "effective criteria"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -256,7 +266,7 @@ def _absent_evidence(
     """
     legs: list[str] = []
     if not telemetry.observed:
-        legs.append(_TELEMETRY_LEG)
+        legs.append(TELEMETRY_LEG)
     if _merged_diff_leg_absent(diff=diff, classification=classification):
         # An absent merged-diff leg is named for the OBSERVATION that produced
         # it. A merge READ as changing zero files is named as the empty-diff
@@ -267,9 +277,9 @@ def _absent_evidence(
         # distinguishability rule of `SPECIFICATION/contracts.md`, so a
         # zero-change merge surfaces as itself rather than as a diff nobody
         # could read.
-        legs.append(_EMPTY_MERGED_DIFF_LEG if diff.empty else _MERGED_DIFF_LEG)
+        legs.append(EMPTY_MERGED_DIFF_LEG if diff.empty else MERGED_DIFF_LEG)
     if not criteria.assertions:
-        legs.append(_EFFECTIVE_CRITERIA_LEG)
+        legs.append(EFFECTIVE_CRITERIA_LEG)
     if proof is not None:
         legs.extend(proof.absent_evidence)
     return tuple(legs)

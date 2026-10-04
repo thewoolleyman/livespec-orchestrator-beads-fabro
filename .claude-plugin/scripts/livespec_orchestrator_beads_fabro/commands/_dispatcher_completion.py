@@ -16,6 +16,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_ai import
     NO_CHANGE_NEEDED_VERDICT,
     run_acceptance_pass,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_park import (
+    park_in_acceptance,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_rework import (
     AI_DISPOSITIVE_ACCEPTANCE_POLICIES,
     rework_or_block_failed_acceptance,
@@ -157,11 +160,12 @@ def complete_and_accept(
         # accepted, not routed to rework, not stamped `rework:pending`, and
         # `acceptance_rework_cap` is not consumed. It parks for the human
         # `accept` / `reject` valves instead.
-        _park_in_acceptance(
+        park_in_acceptance(
+            repo=repo,
             item_id=item.id,
             policy=decision.policy,
-            verdict=acceptance_pass.verdict,
-            absent_evidence=acceptance_pass.absent_evidence,
+            acceptance_pass=acceptance_pass,
+            outcome=outcome,
             journal=journal,
         )
         return
@@ -224,47 +228,14 @@ def complete_and_accept(
             )
         )
         return
-    _park_in_acceptance(
+    park_in_acceptance(
+        repo=repo,
         item_id=item.id,
         policy=decision.policy,
-        verdict=acceptance_pass.verdict,
-        absent_evidence=acceptance_pass.absent_evidence,
+        acceptance_pass=acceptance_pass,
+        outcome=outcome,
         journal=journal,
     )
-
-
-def _park_in_acceptance(
-    *,
-    item_id: str,
-    policy: str,
-    verdict: str,
-    absent_evidence: tuple[str, ...],
-    journal: JournalFile,
-) -> None:
-    """Park a merged item in `acceptance` for a human — journaled + surfaced.
-
-    `absent_evidence` names the leg(s) the AI pass could not observe, which is
-    empty for an advisory PASS/FAIL park and non-empty for a NEEDS_ATTENTION
-    park; the record carries it so the parked item's attention surface can say
-    WHY it cannot be judged rather than only that it is waiting.
-    """
-    journal.append(
-        record={
-            "stage": "acceptance-parked",
-            "work_item_id": item_id,
-            "policy": policy,
-            "advisory": policy == "human-only",
-            "acceptance_verdict": verdict,
-            "absent_evidence": list(absent_evidence),
-        }
-    )
-    surface_line = (
-        f"SURFACE: work-item {item_id} merged + live; parked in acceptance under "
-        f"acceptance_policy {policy} — awaits a human's final acceptance "
-        f"before done (no release with zero verification; the AI pass verdict was "
-        f"{verdict}).\n"
-    )
-    _ = write_stderr(text=surface_line)
 
 
 def bounce_non_convergence_to_backlog(
