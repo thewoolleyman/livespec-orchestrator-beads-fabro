@@ -202,6 +202,61 @@ def test_a_human_attested_sub_heading_with_no_reason_line_is_a_finding(
     assert "Reason:" in findings[0]
 
 
+def test_a_host_captured_sub_heading_with_no_reason_line_is_a_finding(
+    tmp_path: Path,
+) -> None:
+    # The MECHANICAL half of the gate runs on the host, so this is what withholds
+    # `ready` from the item: the approve valve consumes the same finding set.
+    description = (
+        "## Definition of Done\n"
+        "\n"
+        "### Host-captured\n"
+        "\n"
+        "- An agent session captures this one on a host.\n"
+        "\n"
+        f"References: {_PLAIN_HEADING}\n"
+    )
+
+    findings = definition_of_done_findings(
+        item=_item(description=description), cwd=_spec_tree(tmp_path=tmp_path)
+    )
+
+    assert len(findings) == 1
+    assert "bd-ib-v114" in findings[0]
+    assert "Host-captured" in findings[0]
+    assert "Reason:" in findings[0]
+    # The MODE and the REMEDY are the host ones. Both halves matter: the finding
+    # naming `human_attested` would be a true statement about a different
+    # sub-heading, and the remedy naming the sandbox capability would send the
+    # author to write a sentence that cannot clear a host-captured declaration.
+    assert "host_captured" in findings[0]
+    assert "human_attested" not in findings[0]
+    assert "released-build requirement" in findings[0]
+
+
+def test_a_host_captured_sub_heading_with_a_reason_line_is_no_finding(
+    tmp_path: Path,
+) -> None:
+    description = (
+        "## Definition of Done\n"
+        "\n"
+        "### Host-captured\n"
+        "\n"
+        "Reason: the proof needs the released build installed on an operator host.\n"
+        "\n"
+        "- An agent session captures this one on a host.\n"
+        "\n"
+        f"References: {_PLAIN_HEADING}\n"
+    )
+
+    assert (
+        definition_of_done_findings(
+            item=_item(description=description), cwd=_spec_tree(tmp_path=tmp_path)
+        )
+        == ()
+    )
+
+
 def test_a_reasonless_sub_heading_closed_by_another_heading_is_still_a_finding(
     tmp_path: Path,
 ) -> None:

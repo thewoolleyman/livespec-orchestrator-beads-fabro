@@ -33,8 +33,11 @@ import re
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    PROOF_MODE_HOST_CAPTURED,
+    PROOF_MODE_HUMAN_ATTESTED,
     REASON_PREFIX,
     REFERENCES_PREFIX,
+    declared_proof_mode,
     definition_of_done,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
@@ -58,6 +61,16 @@ _SPEC_DIRNAME = "SPECIFICATION"
 # against a clause that has since been replaced.
 _SPEC_FILE_GLOB = "*.md"
 _H2 = re.compile(r"^##\s+(.+?)\s*$")
+# What each opt-out mode's `Reason:` line owes, in the clause's own words. Keyed
+# by MODE rather than by sub-heading title so the title-to-mode mapping stays the
+# parser's one table: a second mapping here is how the wall would come to report
+# a `Host-captured` sub-heading's fault as a `human_attested` one.
+_REASON_SUBJECTS = {
+    PROOF_MODE_HOST_CAPTURED: (
+        "the host surface the proof needs, or the released-build requirement"
+    ),
+    PROOF_MODE_HUMAN_ATTESTED: "the capability no factory sandbox has",
+}
 
 
 def spec_h2_headings(*, repo: Path) -> frozenset[str]:
@@ -148,9 +161,18 @@ def _unresolved_reference_finding(*, item: WorkItem, reference: str) -> str:
 
 
 def _malformed_proof_mode_finding(*, item: WorkItem, sub_heading: str) -> str:
+    """The finding for one opt-out sub-heading that stated no reason.
+
+    The REMEDY differs per mode, and the mode is recovered from the sub-heading
+    through the parser's own table rather than re-derived here: a `Host-captured`
+    sub-heading owes the host surface or the released-build requirement, and a
+    `Human-attested` one owes the capability no sandbox has. A finding that named
+    the wrong one would send the author to write a sentence that cannot clear it.
+    """
+    mode = declared_proof_mode(sub_heading=sub_heading)
     return (
         f"work-item {item.id}: the Definition of Done `{sub_heading}` sub-heading"
-        f" carries no non-empty `{REASON_PREFIX}` line, so its `human_attested`"
+        f" carries no non-empty `{REASON_PREFIX}` line, so its `{mode}`"
         f" proof-mode declaration is malformed; add a `{REASON_PREFIX} <text>` line"
-        " naming the capability no factory sandbox has"
+        f" naming {_REASON_SUBJECTS[mode]}"
     )
