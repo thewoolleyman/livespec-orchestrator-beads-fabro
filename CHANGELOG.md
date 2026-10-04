@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.164.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.164.2...v0.164.3) (2026-10-04)
+
+
+### Bug Fixes
+
+* **proof:** keep a nested proof fence from merging two assertion sections ([7701cf1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7701cf1a6e6e46fcdb8442fc4bc3ccf7b775b127))
+* **proof:** read an assertion's Reproduced line past its fenced proof ([03bbefb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/03bbefb12a0b5903eac9773d7bf82cbdc43b310c))
+
 ## [0.164.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.164.1...v0.164.2) (2026-10-04)
 
 
