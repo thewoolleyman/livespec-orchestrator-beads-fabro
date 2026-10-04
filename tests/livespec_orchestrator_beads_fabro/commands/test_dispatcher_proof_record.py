@@ -18,6 +18,7 @@ from __future__ import annotations
 import textwrap
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
+    PROOF_RECORD_VERDICTS,
     VERDICT_HUMAN_ATTESTED,
     VERDICT_VERIFIED,
     ProofRecord,
@@ -26,6 +27,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import 
 )
 
 _RUN_ID = "01M3RECORDRUN"
+# Spelled as a literal rather than imported, for the reason the case below
+# records: a top-level import of a name the module does not carry yet turns a
+# Red into a collection error.
+_NOT_CAPTURED = "not_captured"
 
 
 def _record(*, body: str, url: str = "https://example.test/c/1") -> dict[str, object]:
@@ -210,6 +215,47 @@ def test_the_latest_record_of_a_verdict_wins_and_the_run_filter_binds() -> None:
     assert attributed.url == "second"
     assert other is not None
     assert other.url == "other-run"
+
+
+def _not_captured_body(*, run_id: str = _RUN_ID) -> str:
+    return textwrap.dedent(f"""\
+        Proof of Done — not_captured — run {run_id} — 2026-10-04T09:00:00Z
+
+        ## Assertion 1 — The command refuses an unsorted id list.
+
+        Proof mode: `factory_captured`
+
+        Could not capture: step 2 accepted the unsorted list `[z, a]`.
+        """)
+
+
+def test_a_capture_finding_record_parses_under_the_not_captured_verdict() -> None:
+    """`not_captured` is inside the closed enumeration, so its record is readable.
+
+    A `proof_capture` visit that ends with `preferred_label=fix` publishes its
+    finding as a record carrying this verdict, and the `fix` stage it routes to
+    reads the latest record on the pull request when its own preamble carries no
+    finding. A verdict OUTSIDE the enumeration is not a record at all — the
+    reader drops the whole comment, silently — so the finding would be
+    unreachable by exactly the stage that has to act on it, and the drop would
+    look identical to a stage that never published anything.
+
+    THE CONSTANT IS DELIBERATELY NOT IMPORTED AT MODULE TOP. A top-level import
+    of a name the module does not carry yet makes the Red a COLLECTION error,
+    which proves only unimportability and never that the verdict is unadmitted.
+    The literal plus the membership assertion fail as genuine assertions
+    instead, and `PROOF_RECORD_VERDICTS` is the surface every reader consults.
+
+    The near-miss verdict is the control. Without it, the first assertion is
+    equally consistent with a reader that stopped grading the field at all,
+    which would admit any comment opening with the title as proof.
+    """
+    records = proof_records(comments=[_record(body=_not_captured_body())])
+
+    assert [one.verdict for one in records] == [_NOT_CAPTURED]
+    assert _NOT_CAPTURED in PROOF_RECORD_VERDICTS
+    assert latest_proof_record(records=records, verdict=_NOT_CAPTURED) is records[0]
+    assert proof_records(comments=[_record(body="Proof of Done — not_capture — run r — t\n")]) == ()
 
 
 def test_no_record_of_the_asked_verdict_is_none() -> None:
