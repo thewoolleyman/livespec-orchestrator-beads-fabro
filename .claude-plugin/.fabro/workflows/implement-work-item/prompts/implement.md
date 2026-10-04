@@ -211,6 +211,40 @@ Every commit message body MUST end with the trailer line:
 
     Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 
+## The Definition of Done is the brief — amend it, never work around it
+
+The work-item's `## Definition of Done` section, exactly as it reached
+you in the `Goal:` preamble, is the statement the proof stages capture
+against and the post-merge acceptance pass grades against. It is read
+from the dispatch-time snapshot, so editing the ledger mid-run cannot
+change what this run is graded on.
+
+This run MUST NOT deliver behaviour that differs from the Definition of
+Done it was dispatched with. When you determine that the section is
+wrong or incomplete — an assertion that cannot be satisfied as written,
+one that contradicts the item's own title or description, a missing
+assertion the work plainly needs, or an assertion whose proof mode is
+wrong (you MUST NOT change a proof mode yourself) — do NOT widen the
+work to cover what you think it meant, do NOT narrow it to what you can
+deliver, and do NOT edit the section: the Definition of Done is the
+human's.
+
+End the run through the structured needs-human ending below, carrying
+the proposed amendment as the failure reason — the assertion as
+dispatched, what is wrong with it, and the exact replacement text you
+propose:
+
+    {"outcome": "failed", "failure_reason": "Definition of Done amendment for <work-item id>: <the assertion as dispatched> — <what is wrong with it> — proposed replacement: <the text that should stand>"}
+
+Publish no code that differs from the section. A run that ends this way
+preserves its tree by reference and publishes nothing for merge; the
+item rests at `blocked / needs-human` with your amendment as the
+recorded question, and the human edits the ledger and releases it with
+`resolve-blocked:<work-item id>:ready`. This is the ONE rest state for a
+wrong Definition of Done, whichever stage notices it — the `dod_gate`
+node that graded the section before you ran takes exactly the same
+route.
+
 ## When you are genuinely stuck (needs-human protocol)
 
 If the task is ambiguous, requires a human decision, or is proven not
