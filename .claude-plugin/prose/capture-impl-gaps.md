@@ -119,7 +119,8 @@ hashing; shape `gap-<8-char-base32-suffix>`). Then:
    skip filing.
 2. Otherwise, ask the user to confirm title + description (auto-drafted
    from the rule text). Defaults are pre-filled; the user accepts or
-   edits.
+   edits. Offer to author the item's `## Definition of Done` section as the
+   FIRST heading of that description, to the rules below.
 3. On confirm, append a new work-item JSONL record. Initialize `prev_rank` once before the per-gap filing pass; each newly filed item threads the prior value through `key_between(a=prev_rank, b=None)` so multi-item passes preserve filing order.
 
 ```python
@@ -159,6 +160,69 @@ item = WorkItem(
 )
 append_work_item(path=config, item=item)
 ```
+
+#### Authoring the Definition of Done
+
+A gap-tied item is implement-kind, so it carries a `## Definition of Done`
+section as the FIRST heading of its description. A gap's rule text names the
+spec RULE, which is a good reference line and a poor assertion — the assertion
+has to name what the delivered artifact will DO. Author the section to these
+four rules, which are the rules the `dod_gate` node and the host-side wall both
+grade it against
+(`SPECIFICATION/contracts.md` §"Definition of Done and Proof of Done").
+
+- **One behavioural assertion per bullet.** Each `- ` bullet is ONE
+  gradeable assertion naming an observable behaviour of the delivered
+  artifact on a real surface, written as a complete sentence ending in a
+  period. An assertion whose subject is the existence, coverage or passing
+  of tests or checks is a TEST-EXISTENCE assertion, and it is legitimate
+  ONLY when the item's deliverable is itself a test, a check or a gate; on
+  any other item, restate it as the behaviour those tests were meant to
+  establish.
+- **One proof mode per assertion, chosen in order.** The modes are
+  `factory_captured`, then `host_captured`, then `human_attested`, and an
+  assertion carries the FIRST of them that can actually prove it against
+  the sandbox capabilities the display reports below. `factory_captured`
+  is the default and needs no declaration. The other two are declared by
+  POSITION — put the assertion under a `### Host-captured` or
+  `### Human-attested` sub-heading inside the section, each carrying a
+  non-empty `Reason:` line before its first bullet: the host surface or
+  released-build requirement for the first, and why no agent session can
+  exercise the proof for the second.
+- **Reference the scenario that governs the assertion.** The section
+  carries exactly one `References:` line naming the verbatim text of an
+  existing H2 heading of the governed spec tree. Where a
+  `## Scenario NN — ...` heading of `scenarios.md` states the behaviour an
+  assertion names, THAT heading is the one to name — in preference to the
+  heading the gap itself was detected under — because the proof steps
+  exercise the scenario's own Given/When/Then.
+- **Never state the carrier relation inside the section.** Which plan
+  assertions a child carries is recorded only in its epic's carrier map;
+  repeat it as prose BEFORE the Definition of Done heading if it helps a
+  reader, never as a bullet inside the section.
+
+Then DISPLAY the filing before the next gap is processed, through the one
+public display primitive every filing front-end uses:
+
+```python
+from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display import (
+    filing_display,
+)
+
+filing_advice = filing_display(item=item, cwd=Path.cwd())
+```
+
+Show the user every line. It carries the effective-criteria parse, each
+assertion with its proof mode, the resolved sandbox capabilities (the committed
+`dispatcher.sandbox_capabilities` array, or `sandbox-capabilities: unpublished`
+when the key is unset), and every Definition-of-Done finding the host-side wall
+can detect, each labelled `(mechanical)` or `(advisory)`. When the filer
+declines the section it reports `definition-of-done: missing`. This is ADVICE,
+never a refusal — a gap capture MUST NOT refuse on a finding — but the two
+kinds differ in consequence: a MECHANICAL finding WITHHOLDS `ready` at the
+intake step below, while an ADVISORY one does not and is instead surfaced by
+`needs-attention` while the item rests in `ready`. Either kind is recorded on
+the filed item as a ledger comment.
 
 #### Intake Definition-of-Ready (per filed gap)
 
@@ -203,6 +267,13 @@ facet is missing and carries `blocked_reason: needs-human`. If unresolved
 blockers exist, keep their dependency edges linked in `depends_on`; linked
 blockers derive the dependency lane and MUST NOT be bypassed by direct
 `ready` routing.
+
+`apply_intake_dor` also applies the filing-time Definition-of-Done wall: an
+item carrying an outstanding MECHANICAL finding lands `pending-approval` even
+when its effective `admission_policy` is `auto`. So a `pending-approval`
+verdict on an item the six gates passed means the display's mechanical finding
+is what is holding it — say so rather than attributing it to the admission
+valve.
 
 ### Step 4 — Summary
 

@@ -513,6 +513,30 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   separate operational artefact of the same work-item; this module is what makes
   its transcript checkable.
 
+- `test_filing_definition_of_done_scenario140.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 140 — Filing displays
+  Definition-of-Done findings and withholds ready only on a mechanical one" and
+  the "Authoring at filing time" sub-clause it realizes. All six of the
+  heading's gherkin scenarios are asserted over one governed fixture
+  repository: the display primitive, both halves of the host-side wall, the
+  intake router with its ledger writes, and the needs-attention snapshot are
+  production code over the REAL store/client seam, with only the spec-side
+  `spec_next` read stood in. Two legs are worth keeping in view. The mechanical
+  and advisory filings are the SAME filing differing only in whether the
+  reference line resolves, because "the advisory item reached `ready`" is
+  otherwise equally consistent with a build that graded nothing and "the
+  mechanical one did not" with one that withholds `ready` from everything. And
+  the carrier-relation pair is asserted together — a bullet inside the section
+  is a finding, the same statement as prose above the heading is not — since
+  either half alone passes for a build that reports neither or both. The four
+  filing front-ends are PROSE with no CLI, so the authoring rules and the shared
+  display call are asserted against the shipped prose, read whitespace-collapsed
+  because the prose is hard-wrapped and a needle straddling a line break fails
+  silently while the prose says exactly the thing. The hygiene leg runs through
+  the REAL `needs_attention.main(argv=[...])` entry point rather than the lane,
+  because a lane nothing composed would satisfy a per-lane assertion while the
+  snapshot an operator reads carried no such row.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

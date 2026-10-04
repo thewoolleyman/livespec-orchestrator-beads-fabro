@@ -623,16 +623,25 @@ def test_the_acceptance_pass_no_longer_carries_its_own_criteria_resolution() -> 
 
 def test_the_capture_front_end_prose_displays_the_parse() -> None:
     # Capture is a prose-driven front-end: its call site IS the prose, so that
-    # is where the display obligation has to be checkable.
+    # is where the display obligation has to be checkable. Since v115 the prose
+    # names the FILING DISPLAY, which carries the parse as its first line along
+    # with the modes, the capabilities and the findings — so the obligation is
+    # checked one level in: the prose names the display, and the display composes
+    # this primitive. Asserting `effective_criteria` in the prose directly would
+    # now demand a SECOND resolution beside the display's, which is exactly the
+    # duplicate path the clause forbids.
     prose = (_PROSE_DIR / "capture-work-item.md").read_text(encoding="utf-8")
+    display = (_COMMANDS_DIR / "_dispatcher_filing_display.py").read_text(encoding="utf-8")
 
-    assert "effective_criteria" in prose
-    assert "parse_display" in prose
-    assert _PRIMITIVE_MODULE in prose
+    assert "_dispatcher_filing_display" in prose
+    assert "filing_display(" in prose
+    assert "effective_criteria" in display
+    assert "parse_display" in display
+    assert _PRIMITIVE_MODULE in display
 
 
 def test_the_groom_front_end_prose_displays_the_parse() -> None:
     prose = (_PROSE_DIR / "groom.md").read_text(encoding="utf-8")
 
     assert "criteria_parses" in prose
-    assert "parse_display" in prose
+    assert "filing_display(" in prose

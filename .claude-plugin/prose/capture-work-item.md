@@ -88,6 +88,45 @@ field after dispatch cannot rescue that dispatch, and the failure only
 surfaces after the work has merged. Filing conforming criteria here is
 the whole mitigation.
 
+#### Authoring the Definition of Done
+
+An implement-kind item's criteria belong in a `## Definition of Done`
+section that is the FIRST heading of its description — that section is the
+first effective-criteria source, and the criteria field above is a LEGACY
+one kept for items already in flight. Offer to author the section, and
+author it to the four rules below, which are the rules the `dod_gate` node
+and the host-side wall both grade it against
+(`SPECIFICATION/contracts.md` §"Definition of Done and Proof of Done").
+
+- **One behavioural assertion per bullet.** Each `- ` bullet is ONE
+  gradeable assertion naming an observable behaviour of the delivered
+  artifact on a real surface, written as a complete sentence ending in a
+  period. An assertion whose subject is the existence, coverage or passing
+  of tests or checks is a TEST-EXISTENCE assertion, and it is legitimate
+  ONLY when the item's deliverable is itself a test, a check or a gate; on
+  any other item, restate it as the behaviour those tests were meant to
+  establish.
+- **One proof mode per assertion, chosen in order.** The modes are
+  `factory_captured`, then `host_captured`, then `human_attested`, and an
+  assertion carries the FIRST of them that can actually prove it against
+  the sandbox capabilities the display reports below. `factory_captured`
+  is the default and needs no declaration. The other two are declared by
+  POSITION — put the assertion under a `### Host-captured` or
+  `### Human-attested` sub-heading inside the section, each carrying a
+  non-empty `Reason:` line before its first bullet: the host surface or
+  released-build requirement for the first, and why no agent session can
+  exercise the proof for the second.
+- **Reference the scenario that governs the assertion.** The section
+  carries exactly one `References:` line naming the verbatim text of an
+  existing H2 heading of the governed spec tree. Where a
+  `## Scenario NN — ...` heading of `scenarios.md` states the behaviour an
+  assertion names, THAT heading is the one to name, because the proof
+  steps exercise the scenario's own Given/When/Then.
+- **Never state the carrier relation inside the section.** Which plan
+  assertions a child carries is recorded only in its epic's carrier map;
+  repeat it as prose BEFORE the Definition of Done heading if it helps a
+  reader, never as a bullet inside the section.
+
 ### Step 2 — Confirm and file
 
 Show the user the assembled record and ask "file?". On `yes`, append:
@@ -152,28 +191,57 @@ if item.type == "epic":
 
 Print the assigned id back to the user, plus `plan_slug` for an epic.
 
-Then resolve and DISPLAY the item's effective-criteria parse, through the one
-public primitive every gate uses — never by re-reading the criteria field or
-the description by hand
-(`SPECIFICATION/contracts.md` §"Effective acceptance criteria"):
+Then resolve and DISPLAY the filing, through the one public display primitive
+every filing front-end uses — never by re-reading the criteria field or the
+description by hand
+(`SPECIFICATION/contracts.md` §"Effective acceptance criteria" and
+§"Definition of Done and Proof of Done"):
 
 ```python
-from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
-    effective_criteria,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display import (
+    filing_display,
 )
 
-criteria_advice = effective_criteria(item=item).parse_display()
+filing_advice = filing_display(item=item, cwd=Path.cwd())
 ```
 
-Show the user `criteria_advice` — it names the gradeable-assertion count and
-the resolved source (`criteria-field` or `description-exit-criteria`). This is
-ADVICE, never a refusal: capture MUST NOT refuse on an empty parse, because
-filing stays consent-gated and criteria may legitimately arrive at groom time.
-Say plainly what an empty parse costs, though: an item whose effective
-`acceptance_policy` is `ai-only` or `ai-then-human` and whose effective
-criteria parse to zero gradeable assertions is refused entry to `ready` by the
-`approve` valve, and refused at dispatch with exit code `5` — the remedy is to
-author criteria (here, or later via groom or edit), or to set the item's
+Show the user every line of `filing_advice`. It carries four things, and each
+is there because it answers a question the filer would otherwise have to go and
+re-derive:
+
+- the effective-criteria parse — the gradeable-assertion count and the resolved
+  source (`description-definition-of-done`, or the legacy `criteria-field` /
+  `description-exit-criteria`, in which case the line also carries
+  `definition-of-done: missing`);
+- each assertion with its proof mode, so the POSITION-declared modes are
+  visible as the machine read them rather than as the author intended them;
+- the resolved sandbox capabilities — the committed
+  `dispatcher.sandbox_capabilities` array, or `sandbox-capabilities:
+  unpublished` when the key is unset — which is what a `factory_captured`
+  declaration has to be chosen against;
+- every Definition-of-Done finding the host-side wall can detect, each labelled
+  `(mechanical)` or `(advisory)`.
+
+This is ADVICE, never a refusal: capture MUST NOT refuse on a finding or on an
+empty parse, because filing stays consent-gated and criteria may legitimately
+arrive at groom time. When the filer declines the section, the display reports
+`definition-of-done: missing` and the filing proceeds.
+
+Say plainly what each kind costs, though, because the two differ:
+
+- a MECHANICAL finding — the section absent, a reference that does not resolve,
+  a `### Host-captured` / `### Human-attested` sub-heading with no `Reason:`
+  line — WITHHOLDS `ready`: Step 3 below files the item but will not route it
+  onward, and the pre-dispatch wall refuses it with exit code `5`;
+- an ADVISORY finding — a test-existence form, a generic reference where a
+  scenario governs the assertion, a carrier relation stated inside the section —
+  does NOT withhold `ready`, because only the `dod_gate` node can judge it. It
+  is surfaced by `needs-attention` while the item rests in `ready`, and the gate
+  will rest the run at needs-human if it survives to dispatch.
+
+Either kind is also recorded on the filed item as a ledger comment by Step 3,
+so it is repaired where it was made. The remedy for an empty parse is to author
+the section (here, or later via groom or edit), or to set the item's
 `acceptance_policy` to `human-only` where machine grading is genuinely
 inapplicable.
 
@@ -232,6 +300,14 @@ Narrate the verdict to the user:
 - `backlog` — epic-shaped and waiting for decomposition.
 - `blocked` — not autonomously verifiable or missing a dispatch facet;
   carries `blocked_reason: needs-human` and MUST NOT be filed `ready`.
+
+`apply_intake_dor` also applies the filing-time Definition-of-Done wall from
+Step 2: an item carrying an outstanding MECHANICAL finding lands
+`pending-approval` even when its effective `admission_policy` is `auto`, and
+every finding of either kind is appended to the item as a ledger comment. So a
+`pending-approval` verdict on an item the six gates passed means the display's
+mechanical finding is what is holding it — say so rather than attributing it to
+the admission valve.
 
 If the item has unresolved blockers, make sure the dependency edges are
 linked in `depends_on`; linked blockers derive the dependency lane and

@@ -156,10 +156,74 @@ whose epic carries a dispatchable typed next action takes it. See
   `propose-change`. If it becomes ledger work, file it through
   `capture-work-item` as a child of the plan epic after the scoping
   event exists. Planning sessions file ripe work; they do not implement
-  it inline.
+  it inline. Authoring the child's Definition of Done is part of routing it
+  — see "Routing a child's Definition of Done" below.
 - Dispose a child. Close or re-parent a plan child that no longer belongs
   under this epic. See "Child disposition" below.
 - Close the thread. Run the archive gates in Step 5.
+
+#### Routing a child's Definition of Done
+
+An implementation child is implement-kind, so it carries a
+`## Definition of Done` section as the FIRST heading of its description, and
+this front-end owes the same authoring rules the capture and groom front-ends
+owe when they file one. They are the rules the `dod_gate` node and the
+host-side wall both grade the child against
+(`SPECIFICATION/contracts.md` §"Definition of Done and Proof of Done").
+
+- **One behavioural assertion per bullet.** Each `- ` bullet is ONE
+  gradeable assertion naming an observable behaviour of the delivered
+  artifact on a real surface, written as a complete sentence ending in a
+  period. An assertion whose subject is the existence, coverage or passing
+  of tests or checks is a TEST-EXISTENCE assertion, and it is legitimate
+  ONLY when the child's deliverable is itself a test, a check or a gate; on
+  any other child, restate it as the behaviour those tests were meant to
+  establish.
+- **One proof mode per assertion, chosen in order.** The modes are
+  `factory_captured`, then `host_captured`, then `human_attested`, and an
+  assertion carries the FIRST of them that can actually prove it against
+  the sandbox capabilities the display reports below. `factory_captured`
+  is the default and needs no declaration. The other two are declared by
+  POSITION — put the assertion under a `### Host-captured` or
+  `### Human-attested` sub-heading inside the section, each carrying a
+  non-empty `Reason:` line before its first bullet: the host surface or
+  released-build requirement for the first, and why no agent session can
+  exercise the proof for the second.
+- **Reference the scenario that governs the assertion.** The section
+  carries exactly one `References:` line naming the verbatim text of an
+  existing H2 heading of the governed spec tree. Where a
+  `## Scenario NN — ...` heading of `scenarios.md` states the behaviour an
+  assertion names, THAT heading is the one to name, because the proof steps
+  exercise the scenario's own Given/When/Then.
+- **Never state the carrier relation inside the section.** Which plan
+  assertions this child carries is recorded ONLY in the epic's carrier-map
+  scope event; repeat it as prose BEFORE the Definition of Done heading if
+  it helps a reader, never as a bullet inside the section. This is the rule
+  a plan front-end trips most easily, because the carrier relation is
+  exactly what the routing decision is about.
+
+After the child is filed, DISPLAY the filing through the one public display
+primitive every filing front-end uses:
+
+```python
+from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display import (
+    filing_display,
+)
+
+filing_advice = filing_display(item=child, cwd=Path.cwd())
+```
+
+Show every line. It carries the child's effective-criteria parse, each
+assertion with its proof mode, the resolved sandbox capabilities (the committed
+`dispatcher.sandbox_capabilities` array, or `sandbox-capabilities: unpublished`
+when the key is unset), and every Definition-of-Done finding the host-side wall
+can detect, each labelled `(mechanical)` or `(advisory)`. A child routed without
+the section reports `definition-of-done: missing`. The display never refuses the
+routing, but the two kinds of finding differ: a MECHANICAL finding WITHHOLDS
+`ready`, so the child waits at `pending-approval` until it is repaired, while an
+ADVISORY one does not and is instead surfaced by `needs-attention` while the
+child rests in `ready`. Either kind is recorded on the child as a ledger
+comment.
 
 #### Child disposition
 

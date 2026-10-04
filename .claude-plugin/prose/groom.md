@@ -76,7 +76,55 @@ Draft candidate slices. Each candidate is pre-filled with all of:
   slice this one is blocked by (the dependency-layer arrangement).
   Arrange the draft so blockers precede the slices they block.
 - **repo target** — the one ledger the slice lands in.
-- **scope** — the slice body.
+- **scope** — the slice body, which OPENS with the slice's
+  `## Definition of Done` section (see below) and carries the rest of the
+  scope as prose after it.
+
+#### Authoring each slice's Definition of Done
+
+Producing a Definition of Done for each slice it cuts is this operation's
+whole purpose — a groom-kind variant is exempt from carrying one itself for
+exactly that reason — so every factory slice's `description` OPENS with a
+`## Definition of Done` section, authored to the four rules below. They are
+the rules the `dod_gate` node and the host-side wall both grade each filed
+slice against
+(`SPECIFICATION/contracts.md` §"Definition of Done and Proof of Done"), and a
+slice cut without them is a slice the factory will refuse or rest at
+needs-human.
+
+- **One behavioural assertion per bullet.** Each `- ` bullet is ONE
+  gradeable assertion naming an observable behaviour of the delivered
+  artifact on a real surface, written as a complete sentence ending in a
+  period. An assertion whose subject is the existence, coverage or passing
+  of tests or checks is a TEST-EXISTENCE assertion, and it is legitimate
+  ONLY when the slice's deliverable is itself a test, a check or a gate; on
+  any other slice, restate it as the behaviour those tests were meant to
+  establish. Note what this costs the standing `just check` +
+  `/livespec:doctor` acceptance above: the janitor gate already guarantees
+  the aggregate, so an assertion restating it carries no information and
+  cannot discharge a behavioural requirement.
+- **One proof mode per assertion, chosen in order.** The modes are
+  `factory_captured`, then `host_captured`, then `human_attested`, and an
+  assertion carries the FIRST of them that can actually prove it against
+  the sandbox capabilities the display reports in Step 3.
+  `factory_captured` is the default and needs no declaration. The other two
+  are declared by POSITION — put the assertion under a `### Host-captured`
+  or `### Human-attested` sub-heading inside the section, each carrying a
+  non-empty `Reason:` line before its first bullet: the host surface or
+  released-build requirement for the first, and why no agent session can
+  exercise the proof for the second.
+- **Reference the scenario that governs the assertion.** Each section
+  carries exactly one `References:` line naming the verbatim text of an
+  existing H2 heading of the governed spec tree. Where a
+  `## Scenario NN — ...` heading of `scenarios.md` states the behaviour an
+  assertion names, THAT heading is the one to name, because the proof steps
+  exercise the scenario's own Given/When/Then.
+- **Never state the carrier relation inside the section.** Which plan
+  assertions a slice carries is recorded only in its epic's carrier map;
+  repeat it as prose BEFORE the Definition of Done heading if it helps a
+  reader, never as a bullet inside the section. This is the rule a groom cut
+  trips most easily, because the cut is exactly where the carrier relation
+  is being decided.
 
 When the draft discovers required workflow-file wiring, split that wiring
 into an explicitly maintainer-side step: factory slices never create or update
@@ -138,18 +186,40 @@ result = file_approved_slices(
 # result.spec_change_slices     — the human-gated slices to route (Step 4).
 # result.regroomed_out is True  — the original backlog item was closed explicitly.
 
-criteria_advice = [
-    f"{parse.slice_id}: {parse.criteria.parse_display()}"
-    for parse in result.criteria_parses
+from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display import (
+    filing_display,
+)
+from livespec_orchestrator_beads_fabro.store import (
+    materialize_work_items,
+    read_work_items,
+)
+
+filed = materialize_work_items(records=read_work_items(path=config))
+filing_advice = [
+    filing_display(item=filed[slice_id], cwd=Path.cwd())
+    for slice_id in result.filed_slice_ids
 ]
 ```
 
-Show the user every line of `criteria_advice`. This is ADVICE, never a
-refusal: an empty parse at groom time is legitimate — criteria may arrive at
-approve time — but the maintainer must SEE it, because an AI-dispositive slice
-whose effective acceptance criteria parse to zero gradeable assertions is later
-refused entry to `ready` and refused at dispatch
-(`SPECIFICATION/contracts.md` §"Effective acceptance criteria").
+Show the user every line of `filing_advice` — one block per filed slice, from
+the one public display primitive every filing front-end uses. Each block carries
+the slice's effective-criteria parse, each assertion with its proof mode, the
+resolved sandbox capabilities (the committed `dispatcher.sandbox_capabilities`
+array, or `sandbox-capabilities: unpublished` when the key is unset), and every
+Definition-of-Done finding the host-side wall can detect, each labelled
+`(mechanical)` or `(advisory)`. A slice cut without the section reports
+`definition-of-done: missing`.
+
+This is ADVICE, never a refusal — groom MUST NOT refuse a slice on a finding —
+but the maintainer must SEE it, and the two kinds differ in consequence. A
+MECHANICAL finding WITHHOLDS `ready`: that slice lands `pending-approval`
+however its `admission_policy` resolves, and the pre-dispatch wall refuses it
+(`SPECIFICATION/contracts.md` §"Effective acceptance criteria"). An ADVISORY
+finding does NOT withhold `ready` — only the `dod_gate` node can judge it — and
+is instead surfaced by `needs-attention` while the slice rests in `ready`.
+Either kind is recorded on the filed slice as a ledger comment, so it is
+repaired where it was cut. `result.criteria_parses` still carries the
+per-slice parse for a caller that wants only the one line.
 
 `file_approved_slices` files each factory slice via the same
 `append_work_item` machinery the `capture-work-item` operation uses, then
