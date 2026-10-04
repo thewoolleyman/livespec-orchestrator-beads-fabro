@@ -138,9 +138,14 @@ question of fact — the spec tree above all.
    `factory_captured`, `host_captured`, `human_attested` and an assertion
    must carry the FIRST one that can prove it:
    - add the capability to the sandbox image;
-   - declare the assertion `host_captured` with a `Reason:` naming the host
+   - declare the assertion `host_captured`, with a `Reason:` naming the host
      surface, when its proof needs the released, normally installed build or
-     a surface of an operator host that no sandbox image can carry;
+     a surface of an operator host that no sandbox image can carry. Check 3
+     names the modes this gate ACCEPTS today; where `host_captured` is not
+     among them, this remedy is the human's request for that mode's stages
+     rather than an edit to make right now — report it anyway, because it is
+     still the correct remedy and the human is the one who decides how to
+     sequence it;
    - declare it `human_attested` only when no agent session, in a sandbox or
      on an operator host, can exercise the proof at all.
 
