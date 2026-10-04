@@ -289,7 +289,7 @@
       // the image does not carry would make the gate pass an assertion no
       // sandbox can prove. Edit it by hand, in the same change that moves
       // `fabro_sandbox_image`.
-      "sandbox_capabilities": ["terminal", "headless_browser", "tmux"],
+      "sandbox_capabilities": ["terminal", "headless_browser", "tmux", "herdr"],
       // NAMED WORKFLOW VARIANTS — variant name -> directory, relative to this
       // repository's root. The reserved `implement-work-item` name is NEVER
       // read from here and registering it is refused before any run exists;
