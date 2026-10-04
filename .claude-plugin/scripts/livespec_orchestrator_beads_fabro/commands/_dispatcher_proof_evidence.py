@@ -27,6 +27,29 @@ They ride as passing checks whose reason SAYS they are pending, and
 `pending_human_attested` is what stops the item closing before the human record
 lands — the park is owned by the completion disposition, not by this verdict.
 
+WHY A HOST-CAPTURED ASSERTION TAKES THAT SHAPE AND NOT THE UNEVIDENCED ONE. The
+v115 host-captured leg says the same thing about the other mode: PASS "requires
+every `factory_captured` assertion passing and every `host_captured` assertion
+either passing from a `host_verified` record or pending", and "with no host record
+that is evidence the assertion is PENDING: the pass lists it as pending the host
+leg, the item rests in `acceptance` under every policy, and no
+`acceptance_rework_cap` attempt is consumed". Routing it through `absent_evidence`
+instead — which is where a mode this module does not recognise lands — yields
+NEEDS_ATTENTION on a run whose factory leg is green, and a park whose record
+reports the merging run's `verified` record as the missing thing when that record
+exists and was read. The two pending modes therefore share ONE table: each is a leg
+the AI pass does not grade, and the only thing that differs is which record the
+operator owes.
+
+WHAT THIS MODULE DOES NOT YET DO, recorded so the gap is not read as an oversight.
+A `host_verified` record on the pull request does NOT yet make a host-captured
+assertion pass here. Judging one passing needs the containment check the same
+clause demands — the named release tag must contain the merge commit on the
+default branch — alongside the identity-independence rule, and both arrive with the
+posting primitive that publishes a host record. Until then every host-captured
+assertion is pending, which is the FAIL-CLOSED direction: the item rests rather
+than closing on a record whose build identity nothing has checked.
+
 This module performs the ONE forge read of the records, and it is deliberately
 the only one in the acceptance path: the pointer write consumes the same
 `ProofLeg` rather than asking the forge again, so the record the pass graded and
@@ -44,6 +67,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria 
     CriterionCheck,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    PROOF_MODE_HOST_CAPTURED,
     PROOF_MODE_HUMAN_ATTESTED,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
@@ -66,7 +90,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import 
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 __all__: list[str] = [
+    "HOST_CAPTURED_EVIDENCE_LEG",
     "HUMAN_ATTESTED_EVIDENCE_LEG",
+    "PENDING_HOST_LEG_REASON",
     "PENDING_HUMAN_ATTESTATION_REASON",
     "PROOF_RECORD_EVIDENCE_LEG",
     "AssertionEvidence",
@@ -77,10 +103,24 @@ __all__: list[str] = [
 ]
 
 PROOF_RECORD_EVIDENCE_LEG = "proof of done record"
+HOST_CAPTURED_EVIDENCE_LEG = "host-captured record"
 HUMAN_ATTESTED_EVIDENCE_LEG = "human-attested record"
+PENDING_HOST_LEG_REASON = (
+    "pending the host leg; passes only from an independent host_verified record"
+    " naming a build identity that contains the merge"
+)
 PENDING_HUMAN_ATTESTATION_REASON = (
     "pending human attestation; graded by the accept valve, never by the AI pass"
 )
+
+# The two modes whose leg the AI pass does NOT grade, each with the evidence leg
+# it is reported under and the reason its check carries. Keyed by mode so a third
+# pending mode is one row rather than a third branch, and so the pass cannot come
+# to report one of them as absent evidence while listing the other as pending.
+_PENDING_LEGS = {
+    PROOF_MODE_HOST_CAPTURED: (HOST_CAPTURED_EVIDENCE_LEG, PENDING_HOST_LEG_REASON),
+    PROOF_MODE_HUMAN_ATTESTED: (HUMAN_ATTESTED_EVIDENCE_LEG, PENDING_HUMAN_ATTESTATION_REASON),
+}
 
 _COMMENTS_TIMEOUT_SECONDS = 30.0
 
@@ -126,11 +166,17 @@ class ProofLeg:
         return tuple(one.text for one in self.assertions if one.check is None)
 
     @property
+    def pending_host_captured(self) -> tuple[str, ...]:
+        """The assertions awaiting an independent host replay, in section order."""
+        return self._with_mode(mode=PROOF_MODE_HOST_CAPTURED)
+
+    @property
     def pending_human_attested(self) -> tuple[str, ...]:
         """The assertions awaiting a human-attested record, in section order."""
-        return tuple(
-            one.text for one in self.assertions if one.proof_mode == PROOF_MODE_HUMAN_ATTESTED
-        )
+        return self._with_mode(mode=PROOF_MODE_HUMAN_ATTESTED)
+
+    def _with_mode(self, *, mode: str) -> tuple[str, ...]:
+        return tuple(one.text for one in self.assertions if one.proof_mode == mode)
 
     @property
     def absent_evidence(self) -> tuple[str, ...]:
@@ -150,6 +196,7 @@ class ProofLeg:
             "record_comment": None if self.record is None else self.record.url,
             "record_run_id": None if self.record is None else self.record.run_id,
             "record_verdict": None if self.record is None else self.record.verdict,
+            "pending_host_captured": list(self.pending_host_captured),
             "pending_human_attested": list(self.pending_human_attested),
             "assertions": [one.as_record() for one in self.assertions],
         }
@@ -255,13 +302,15 @@ def proof_leg(
 def _assertion_evidence(
     *, text: str, proof_mode: str, record: ProofRecord | None
 ) -> AssertionEvidence:
-    if proof_mode == PROOF_MODE_HUMAN_ATTESTED:
+    pending = _PENDING_LEGS.get(proof_mode)
+    if pending is not None:
+        leg, reason = pending
         return AssertionEvidence(
             text=text,
             proof_mode=proof_mode,
-            leg=HUMAN_ATTESTED_EVIDENCE_LEG,
+            leg=leg,
             record_comment=None,
-            check=CriterionCheck(text=text, passed=True, reason=PENDING_HUMAN_ATTESTATION_REASON),
+            check=CriterionCheck(text=text, passed=True, reason=reason),
         )
     if record is None:
         return AssertionEvidence(

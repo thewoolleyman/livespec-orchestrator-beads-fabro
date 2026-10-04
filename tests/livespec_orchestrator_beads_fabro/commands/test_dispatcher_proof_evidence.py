@@ -19,6 +19,7 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
     PROOF_MODE_FACTORY_CAPTURED,
+    PROOF_MODE_HOST_CAPTURED,
     PROOF_MODE_HUMAN_ATTESTED,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
@@ -33,7 +34,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attribution im
     MergingDispatch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import (
+    HOST_CAPTURED_EVIDENCE_LEG,
     HUMAN_ATTESTED_EVIDENCE_LEG,
+    PENDING_HOST_LEG_REASON,
     PENDING_HUMAN_ATTESTATION_REASON,
     PROOF_RECORD_EVIDENCE_LEG,
     proof_leg,
@@ -47,6 +50,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import 
 
 _RUN_ID = "01M3EVIDENCERUN"
 _FACTORY_ASSERTION = "The projection carries the parent field."
+_HOST_ASSERTION = "The released build resolves the mode on an operator host."
 _HUMAN_ASSERTION = "The production console renders the banner."
 
 
@@ -270,6 +274,76 @@ def test_a_human_attested_assertion_rides_as_pending_rather_than_graded() -> Non
     ]
 
 
+def test_a_host_captured_assertion_rides_as_pending_the_host_leg() -> None:
+    """The v115 third mode reaches the leg as PENDING, never as absent evidence.
+
+    `unevidenced == ()` is the load-bearing assertion and the one that separates
+    this from the pre-repair behaviour: an assertion routed through
+    `absent_evidence` makes the whole pass NEEDS_ATTENTION, which parks the item on
+    a cannot-judge verdict and reports the merging run's `verified` record — which
+    exists here, and which the factory assertion is graded against — as the missing
+    thing.
+    """
+    criteria = _criteria(
+        modes=(PROOF_MODE_FACTORY_CAPTURED, PROOF_MODE_HOST_CAPTURED),
+        assertions=(_FACTORY_ASSERTION, _HOST_ASSERTION),
+    )
+    records = proof_records(
+        comments=[
+            {
+                "url": "https://example.test/c/9",
+                "body": (
+                    f"Proof of Done — verified — run {_RUN_ID} — t\n\n"
+                    f"## Assertion 1 — {_FACTORY_ASSERTION}\n\nReproduced: yes.\n"
+                ),
+            }
+        ]
+    )
+
+    leg = proof_leg(criteria=criteria, records=records, run_ids=(_RUN_ID,), reason="read")
+
+    assert leg.pending_host_captured == (_HOST_ASSERTION,)
+    assert leg.pending_human_attested == ()
+    assert leg.unevidenced == ()
+    assert leg.absent_evidence == ()
+    assert [check.passed for check in leg.checks] == [True, True]
+    assert [check.reason for check in leg.checks][1] == PENDING_HOST_LEG_REASON
+    assert [one.leg for one in leg.assertions] == [
+        PROOF_RECORD_EVIDENCE_LEG,
+        HOST_CAPTURED_EVIDENCE_LEG,
+    ]
+
+
+def test_a_host_verified_record_does_not_yet_grade_the_assertion_passing() -> None:
+    """The deliberate fail-CLOSED gap this slice ships, asserted rather than assumed.
+
+    Judging a host-captured assertion passing needs the containment check the
+    clause requires — the named release tag must contain the merge commit — and the
+    identity-independence rule, both of which arrive with the posting primitive. So
+    a `host_verified` record on the pull request leaves the assertion PENDING here,
+    and the item rests rather than closing on a record whose build identity nothing
+    has checked. A build that started passing it without those checks would make
+    this case fail, which is the point of writing it down.
+    """
+    criteria = _criteria(modes=(PROOF_MODE_HOST_CAPTURED,), assertions=(_HOST_ASSERTION,))
+    records = proof_records(
+        comments=[
+            {
+                "url": "https://example.test/c/9",
+                "body": (
+                    "Proof of Done — host_verified — session other-session — t\n\n"
+                    f"## Assertion 1 — {_HOST_ASSERTION}\n\nReproduced: yes.\n"
+                ),
+            }
+        ]
+    )
+
+    leg = proof_leg(criteria=criteria, records=records, run_ids=(_RUN_ID,), reason="read")
+
+    assert leg.pending_host_captured == (_HOST_ASSERTION,)
+    assert [check.reason for check in leg.checks] == [PENDING_HOST_LEG_REASON]
+
+
 def test_the_journal_projection_names_the_leg_and_record_per_assertion() -> None:
     criteria = _criteria(
         modes=(PROOF_MODE_FACTORY_CAPTURED, PROOF_MODE_HUMAN_ATTESTED),
@@ -296,6 +370,7 @@ def test_the_journal_projection_names_the_leg_and_record_per_assertion() -> None
         "record_comment": "https://example.test/c/9",
         "record_run_id": _RUN_ID,
         "record_verdict": VERDICT_VERIFIED,
+        "pending_host_captured": [],
         "pending_human_attested": [_HUMAN_ASSERTION],
         "assertions": [
             {

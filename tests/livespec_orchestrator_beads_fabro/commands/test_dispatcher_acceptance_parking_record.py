@@ -29,6 +29,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_parking_r
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
     PROOF_MODE_FACTORY_CAPTURED,
+    PROOF_MODE_HOST_CAPTURED,
     PROOF_MODE_HUMAN_ATTESTED,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
@@ -41,6 +42,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import 
 
 _ITEM_ID = "bd-ib-park"
 _ASSERTION = "The projection carries the parent field."
+_HOST_ASSERTION = "The released build resolves the mode on an operator host."
 _HUMAN_ASSERTION = "The production console renders the banner."
 _RUN_ID = "01M3PARKUNIT"
 _RECORD_URL = "https://example.test/c/1"
@@ -67,8 +69,18 @@ def _result(
     )
 
 
-def _criteria(*, modes: tuple[str, ...]) -> EffectiveCriteria:
-    assertions = (_ASSERTION, _HUMAN_ASSERTION)[: len(modes)]
+def _criteria(
+    *, modes: tuple[str, ...], assertions: tuple[str, ...] | None = None
+) -> EffectiveCriteria:
+    """One criteria set, parallel to `modes`.
+
+    `assertions` is explicit wherever the mode set is not the factory-then-human
+    pair, because the DEFAULT slice names its second assertion `_HUMAN_ASSERTION`
+    whatever mode sits beside it — which would have a host-captured case asserting
+    against a text that says a human attests it.
+    """
+    if assertions is None:
+        assertions = (_ASSERTION, _HUMAN_ASSERTION)[: len(modes)]
     return EffectiveCriteria(
         text="\n".join(f"- {one}" for one in assertions),
         assertions=assertions,
@@ -87,10 +99,12 @@ def _record_body(*, verdict: str) -> str:
     )
 
 
-def _proof(*, verdict: str, modes: tuple[str, ...]) -> object:
+def _proof(
+    *, verdict: str, modes: tuple[str, ...], assertions: tuple[str, ...] | None = None
+) -> object:
     records = proof_records(comments=({"url": _RECORD_URL, "body": _record_body(verdict=verdict)},))
     return proof_leg(
-        criteria=_criteria(modes=modes),
+        criteria=_criteria(modes=modes, assertions=assertions),
         records=records,
         run_ids=(_RUN_ID,),
         reason=f"pull request #7 records read for run {_RUN_ID}",
@@ -209,3 +223,67 @@ def test_a_pending_human_leg_is_named_even_though_the_pass_graded_it_passing() -
     # is meant rather than rendering a `#None` an operator cannot open.
     assert "the pull request of the merging run" in record.pending[0].action
     assert "Proof of Done — human_attested — <human identity>" in record.pending[0].action
+
+
+def test_a_pending_host_leg_names_both_records_and_the_two_identities() -> None:
+    """The host leg's action, whose two halves are each insufficient alone.
+
+    A `host_recorded` record with no replay is not evidence, and a replay published
+    by the RECORDING session is refused for its identity — so an action naming only
+    the capture reads as sufficient and sends an operator to do half the work twice.
+    Both verdict words and the different-identity requirement are therefore asserted
+    together.
+    """
+    record = parking_record(
+        item_id=_ITEM_ID,
+        policy="ai-only",
+        result=_result(
+            verdict="PASS",
+            proof=_proof(
+                verdict="verified",
+                modes=(PROOF_MODE_FACTORY_CAPTURED, PROOF_MODE_HOST_CAPTURED),
+                assertions=(_ASSERTION, _HOST_ASSERTION),
+            ),
+        ),
+        pull_request=7,
+    )
+
+    assert [one.name for one in record.pending] == [f"host-captured record for {_HOST_ASSERTION!r}"]
+    action = record.pending[0].action
+    assert "Proof of Done — host_recorded — session <session identity>" in action
+    assert "host_verified" in action
+    assert "DIFFERENT session identity" in action
+    assert "RELEASED build" in action
+    assert "pull request #7" in action
+    # The key line is the (verdict, pending-leg set) identity the idempotence test
+    # reads, so the host leg has to reach it: two parks differing in which leg is
+    # pending must not be the same record.
+    assert record.key_line == (
+        f"{PARKING_RECORD_TITLE} — PASS — pending: host-captured record for {_HOST_ASSERTION!r}"
+    )
+
+
+def test_a_host_and_a_human_leg_are_both_pending_host_first() -> None:
+    """Both opt-out modes on one item, in the order the deliverable policy ranks them.
+
+    An item can carry both, and listing only one would leave the operator doing one
+    leg and finding the item still parked with no record of why.
+    """
+    record = parking_record(
+        item_id=_ITEM_ID,
+        policy="ai-then-human",
+        result=_result(
+            verdict="PASS",
+            proof=_proof(
+                verdict="verified",
+                modes=(PROOF_MODE_HOST_CAPTURED, PROOF_MODE_HUMAN_ATTESTED),
+                assertions=(_HOST_ASSERTION, _HUMAN_ASSERTION),
+            ),
+        ),
+        pull_request=7,
+    )
+
+    assert [one.name for one in record.pending] == [
+        f"host-captured record for {_HOST_ASSERTION!r}",
+        f"human-attested record for {_HUMAN_ASSERTION!r}",
+    ]

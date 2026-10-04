@@ -64,6 +64,9 @@ __all__: list[str] = [
     "PROOF_RECORD_TITLE",
     "PROOF_RECORD_VERDICTS",
     "VERDICT_CAPTURED",
+    "VERDICT_HOST_NOT_REPRODUCED",
+    "VERDICT_HOST_RECORDED",
+    "VERDICT_HOST_VERIFIED",
     "VERDICT_HUMAN_ATTESTED",
     "VERDICT_NOT_CAPTURED",
     "VERDICT_NOT_REPRODUCED",
@@ -86,6 +89,14 @@ VERDICT_NOT_CAPTURED = "not_captured"
 VERDICT_VERIFIED = "verified"
 VERDICT_NOT_REPRODUCED = "not_reproduced"
 VERDICT_HUMAN_ATTESTED = "human_attested"
+# The three HOST-LEG verdicts of v115: the capture an agent session publishes on
+# an operator host, the independent replay that reproduces it, and the replay that
+# does not. They deliberately share no word with the proof MODE `host_captured`,
+# which the clause requires outright — a record verdict and a mode spelled the same
+# way would make "host_captured" ambiguous on every surface that renders either.
+VERDICT_HOST_RECORDED = "host_recorded"
+VERDICT_HOST_VERIFIED = "host_verified"
+VERDICT_HOST_NOT_REPRODUCED = "host_not_reproduced"
 # The closed set the header's second field may carry. A comment whose first line
 # is shaped like a record but names something else is NOT a record: the stages
 # render the verdict verbatim, so an unknown value is prose that happens to open
@@ -97,6 +108,9 @@ PROOF_RECORD_VERDICTS = (
     VERDICT_VERIFIED,
     VERDICT_NOT_REPRODUCED,
     VERDICT_HUMAN_ATTESTED,
+    VERDICT_HOST_RECORDED,
+    VERDICT_HOST_VERIFIED,
+    VERDICT_HOST_NOT_REPRODUCED,
 )
 
 # The ratified header separator is the em dash, with the run id introduced by the
