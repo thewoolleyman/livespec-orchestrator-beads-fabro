@@ -149,6 +149,7 @@ def _parse_event(*, record: Mapping[str, Any]) -> AcpFallbackEvent | None:
         full_chain=texts["full_chain"],
         attempted=string_tuple(value=record.get("attempted")) or (),
         skipped=string_tuple(value=record.get("skipped")) or (),
+        attempted_durations_ms=_durations(value=record.get("attempted_durations_ms")),
     )
 
 
@@ -182,9 +183,35 @@ def _parse_start(*, record: Mapping[str, Any]) -> AcpNodeStart | None:
         candidate_index=index,
         occurred_at=occurred_at,
         primary_generation=generation,
+        chain_deadline_epoch_ms=_index(value=record.get("chain_deadline_epoch_ms")),
         confirmed_model=non_empty_text(value=record.get("model")),
         confirmed_effort=non_empty_text(value=record.get("effort")),
     )
+
+
+def _durations(*, value: object) -> tuple[int, ...]:
+    """One event's per-candidate attempt durations, or `()` when unreadable.
+
+    ALL OR NOTHING, and that is the load-bearing part. A partially-readable
+    list would silently re-align every measurement after the bad element onto
+    the wrong candidate -- index 2's duration reported as index 1's -- which is
+    a confident wrong attribution rather than a visible gap. An empty tuple
+    costs the attempts their measured elapsed time and nothing else: the
+    windows still exist, because the `agent.acp.started` records place them.
+
+    A malformed field never costs the EVENT its hold, for the same reason
+    `_count` tolerates a missing visit counter: these fields are reported and
+    correlated, never the thing a hold is decided on.
+    """
+    if not isinstance(value, list):
+        return ()
+    durations: list[int] = []
+    for raw in cast("list[object]", value):
+        duration = _index(value=raw)
+        if duration is None:
+            return ()
+        durations.append(duration)
+    return tuple(durations)
 
 
 def _required_texts(*, record: Mapping[str, Any]) -> dict[str, str] | None:
