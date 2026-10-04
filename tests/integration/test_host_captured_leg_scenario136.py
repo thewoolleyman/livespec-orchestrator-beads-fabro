@@ -51,6 +51,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_completion,
     _dispatcher_loop,
     drive,
+    needs_attention,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_ai import (
     AcceptancePassResult,
@@ -389,6 +390,41 @@ def _emitted(*, capsys: pytest.CaptureFixture[str]) -> dict[str, object]:
     return first
 
 
+def _attention_facts(
+    *, repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> list[dict[str, object]]:
+    """Every attention fact the REAL `needs-attention` CLI emits for the repo.
+
+    Driving the whole snapshot rather than the lane alone is what makes the control
+    below mean anything: a lane called in isolation can show neither that exactly
+    one fact appeared nor that the factory-only item produced none.
+
+    Two seams are stood in. `spec_next` is the spec-side read, which this fixture
+    has no spec tree for and which no claim here depends on. The forge runner of the
+    two lanes that make one — the stale-pointer lane in the same module as the
+    pending-leg lanes, and the missing-pointer lane — is replaced so the snapshot
+    spawns no `gh`; the parked item here CARRIES a pointer, so the stale lane would
+    otherwise shell out for real.
+    """
+    monkeypatch.setattr(needs_attention, "spec_next", lambda **_: None)
+    for module in ("_needs_attention_proof", "_needs_attention_missing_pointer"):
+        monkeypatch.setattr(
+            f"livespec_orchestrator_beads_fabro.commands.{module}.ShellCommandRunner",
+            lambda: _ForgeRunner(comments=_comments_payload(bodies=[_verified_record_body()])),
+        )
+    assert (
+        needs_attention.main(
+            argv=["--project-root", str(repo), "--repo-name", "repo", "--skip-hygiene", "--json"]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert isinstance(payload, dict)
+    facts = payload["attention"]
+    assert isinstance(facts, list)
+    return [one for one in facts if isinstance(one, dict)]
+
+
 def _drive_valve(
     *, repo: Path, action: str, capsys: pytest.CaptureFixture[str]
 ) -> tuple[int, dict[str, object]]:
@@ -676,3 +712,81 @@ def test_a_host_verified_record_that_does_not_reproduce_still_refuses(
     assert exit_code != 0
     assert payload["domain_error"] == "host-replay-pending"
     assert _status_of(item_id=_ITEM_ID) == "acceptance"
+
+
+# --- "needs-attention surfaces the pending host leg" ---------------------------
+
+
+def test_needs_attention_surfaces_the_pending_host_leg_naming_item_request_and_assertion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The hygiene fact, over the item the dispatch left resting in acceptance.
+
+    A parked item awaiting its host replay is otherwise INDISTINGUISHABLE from any
+    other parked acceptance on every lane the snapshot carries — nothing is
+    stranded, nothing is held, nothing is aging past a bound — so without this row
+    it is visible only by reading the item's Definition of Done.
+
+    All three of the clause's named facts are asserted: the ITEM, because an
+    operator has to know which record to repair; the PULL REQUEST, because that is
+    where the records go; and the ASSERTIONS, because the host session has to know
+    what to capture. A summary carrying two of the three reads complete and sends
+    the operator somewhere they cannot act.
+    """
+    _exit_code, repo = _dispatch_merged_item(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, item=_item()
+    )
+    _ = capsys.readouterr()
+
+    facts = _attention_facts(repo=repo, monkeypatch=monkeypatch, capsys=capsys)
+    pending = [one for one in facts if str(one["id"]).startswith("hygiene:pending-host-leg")]
+
+    assert len(pending) == 1
+    assert pending[0]["id"] == f"hygiene:pending-host-leg:{_ITEM_ID}"
+    summary = str(pending[0]["summary"])
+    assert _ITEM_ID in summary
+    assert f"#{_PR_NUMBER}" in summary
+    assert _HOST_ASSERTION in summary
+    # The record format, so the operator is not left to guess the header, and the
+    # independence requirement, which is the whole content of the host leg.
+    assert "host_recorded" in summary
+    assert "host_verified" in summary
+    # The fact must NOT hand over `accept:<id>`: the accept valve is what REFUSES
+    # this item, so advertising it would hand the operator a command this very row
+    # says will fail.
+    handoff = pending[0]["handoff"]
+    assert isinstance(handoff, dict)
+    assert f"accept:{_ITEM_ID}" not in str(handoff.get("command"))
+
+
+def test_a_factory_only_parked_item_yields_no_pending_host_leg_fact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control: the lane keys on the host-captured MODE, not on resting in acceptance.
+
+    Without it, "the fact appeared" is equally consistent with a lane that reports
+    every parked item — which would make the row noise on the one surface an
+    operator reads to decide what to do next.
+    """
+    description = (
+        "Deliver the factory-only slice.\n"
+        "\n"
+        "## Definition of Done\n"
+        "\n"
+        f"- {_FACTORY_ASSERTION}\n"
+        "\n"
+        "References: ## Effective acceptance criteria\n"
+    )
+    _exit_code, repo = _dispatch_merged_item(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        item=_item(description=description, acceptance_policy="ai-then-human"),
+    )
+    _ = capsys.readouterr()
+
+    facts = _attention_facts(repo=repo, monkeypatch=monkeypatch, capsys=capsys)
+
+    # The control is only a control if the item really is parked: an item that
+    # CLOSED would yield no fact for a reason that has nothing to do with the mode.
+    assert _status_of(item_id=_ITEM_ID) == "acceptance"
+    assert [one for one in facts if str(one["id"]).startswith("hygiene:pending-host-leg")] == []
