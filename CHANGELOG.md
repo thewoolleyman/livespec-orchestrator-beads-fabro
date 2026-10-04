@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.163.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.163.0...v0.163.1) (2026-10-04)
+
+
+### Chores
+
+* **factory:** repair proof-to-fix context transport ([4164840](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/416484034dca096dc60680204ea989c48d5948be))
+
 ## [0.163.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.162.0...v0.163.0) (2026-10-02)
 
 
