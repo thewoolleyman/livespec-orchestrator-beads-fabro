@@ -90,6 +90,14 @@ For each `factory_captured` assertion, execute its numbered steps
 - A step that is ambiguous, incomplete, or impossible to follow as written
   is also a non-reproduction. Record what the step said and where you could
   not follow it.
+- **Never reconstruct a missing program.** When a step runs a program — a
+  heredoc into an interpreter, a script, a `-c` one-liner, a patch — and the
+  record publishes the invocation and the OUTPUT but not the program's
+  source, you may not infer that source from the output, from the prose, or
+  from the repository. That step is a non-reproduction; grade it so, and put
+  the missing source in the finding. Rebuilding it would make your replay a
+  test of a program YOU wrote, which proves nothing about the one the
+  capture ran — and it would report a green that no later replay can earn.
 
 ## Step 3 — capture your own proof
 
