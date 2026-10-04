@@ -837,9 +837,8 @@
     "heading": "## Factory-configurable ACP fallback priority",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "test": "TODO",
-    "reason": "Ratified by the factory-configurable-model-fallback-priority revise pass (plan/epic bd-ib-jxvgq5). The contract spans Dispatcher admission/observability and a pinned Fabro capability that do not yet exist; integration and consumer-tier test bindings are filed by the required post-revise implementation-gap capture.",
-    "work_item": "bd-ib-jxvgq5"
+    "test": "tests.integration.test_acp_fallback_journey_scenario127.test_a_two_candidate_structured_chain_resolves_both_candidates_with_prices",
+    "reason": "Integration-tier acceptance for the fallback-priority contract, bound once the capability it waited on existed: the Fabro build advertising `acp.fallback_chain.v1` and `acp.candidate_config_options.v1` was pinned on the factory on 2026-10-01 (`bd-ib-q32gs5`) and the Dispatcher's capability gate and release floor landed with `bd-ib-jamtsf`. The bound node id is the CONFIGURATION journey this heading exists for: an ordered two-candidate structured chain declared in a `.livespec.jsonc` on disk and resolved through the real configuration, catalog and chain seams into two priced candidates in declared order. Sibling tests in the same module carry the heading's admission half (the factory capability gate in every advertised state and the committed release floor) and its observability half (one failover projected into one hold and one warning, one node visit, the confirmed model on the started events, and cost attributed to the run). The per-attempt catalog-first pricing clause is implemented by `bd-ib-tmgt7v`, whose own unit-tier tests bind that behaviour."
   },
   {
     "heading": "## ACP node timeouts",
