@@ -93,6 +93,7 @@ class AcpFallbackEvent:
     full_chain: str
     attempted: tuple[str, ...]
     skipped: tuple[str, ...]
+    attempted_durations_ms: tuple[int, ...] = ()
 
     @property
     def executed_non_primary(self) -> bool:
@@ -124,6 +125,14 @@ class AcpNodeStart:
     costs the start nothing: `candidate_index` decides whether a start can be
     read, and a start discarded for want of a confirmation would silently strand
     the model-fallback warning whose clearance rule depends on it.
+
+    `chain_deadline_epoch_ms` is the chain's own ceiling as the engine reported
+    it. It is carried as REPORTED CONTEXT and deliberately not used to close an
+    attempt's window: the deadline bounds when a NEW candidate may start, not
+    when the one that succeeded must finish, so closing the winner's window
+    there would silently drop every token it spent afterwards. `None` is an
+    engine that did not report one -- never a substituted instant, which in
+    epoch-millisecond terms would be a real moment in 1970.
     """
 
     node: str
@@ -131,6 +140,7 @@ class AcpNodeStart:
     candidate_index: int
     occurred_at: str
     primary_generation: str
+    chain_deadline_epoch_ms: int | None = None
     confirmed_model: str | None = None
     confirmed_effort: str | None = None
 
