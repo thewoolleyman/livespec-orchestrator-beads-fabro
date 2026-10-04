@@ -48,6 +48,21 @@ def _fake() -> FakeBeadsClient:
     return client
 
 
+# A conforming plan epic description. The Definition of Done section is
+# load-bearing for every test here: without it, each resume reports
+# `plan-definition-of-done: missing` and an unattended one REWRITES the pointer
+# to `kind: human`, so these tests would be exercising the gap path instead of
+# the typed-pointer decision they are about. That path has its own module,
+# `test_plan_resume_definition_of_done_gap.py`.
+_SEEDED_DESCRIPTION = (
+    "Plan anchor for plan/console-control-plane-primitives.\n"
+    "\n"
+    "## Definition of Done\n"
+    "\n"
+    "- The console serves the control-plane primitives an operator reaches.\n"
+)
+
+
 def _seed_epic(*, epic_id: str = _EPIC_ID) -> None:
     reset_fake_singleton()
     _ = _fake().create_issue(
@@ -55,7 +70,7 @@ def _seed_epic(*, epic_id: str = _EPIC_ID) -> None:
             issue_id=epic_id,
             issue_type="epic",
             title="plan",
-            description="plan",
+            description=_SEEDED_DESCRIPTION,
             assignee=None,
             created_at="2026-09-04T00:00:00Z",
             metadata={"rank": "a1", "plan_slug": "console-control-plane-primitives"},
