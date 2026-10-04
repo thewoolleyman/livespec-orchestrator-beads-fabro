@@ -449,6 +449,33 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   equally consistent with a gate that refuses every declaration. The drain leg is
   here too: the two dispatch paths reach the gate through separate call sites.
 
+- `test_ai_only_entry_path_refusal_scenario133.py` — binds the two ENTRY-PATH
+  gherkin scenarios of `SPECIFICATION/scenarios.md` "Scenario 133 — A mixed item
+  is refused ai-only from every entry path …", which the unit module
+  `tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_acceptance_eligibility.py`
+  had bound against the shared decision primitive. ONE seeded mixed item — three
+  `factory_captured` assertions and one under a `Human-attested` sub-heading with
+  its `Reason:` line — runs through BOTH real dispatch entry points,
+  `dispatcher.main(argv=["dispatch", "--item", …])` and the drain command's
+  `dispatcher.main(argv=["loop", "--item", …])`, with only the launch seam stood
+  in, and the two refusals are compared BYTE FOR BYTE rather than needle by
+  needle: the clause's requirement is that the two AGREE, and two independently
+  drifting messages that each mention the assertion satisfy a containment check
+  just as well. "Before any claim or run exists" is read off the recording seam,
+  off the ledger row's status and assignee, and off the absence of any
+  `ledger-admit` or `dispatch-id` journal record, never inferred from an exit
+  code. Two siblings carry the rest. The UNNARROWED autonomous pass consumes the
+  same decision by DROPPING the row from the enumeration rather than refusing the
+  wave, so it is asserted to leave no claim, no run AND no refusal — without that
+  case the module reads as though an unnarrowed drain would print this message.
+  And the parked-policy control is the identical item under `ai-then-human`,
+  graded on the seam being ENTERED, because the refusals alone are equally
+  consistent with a wall that refuses every human-attested item outright and
+  makes the ratified remedy unreachable. The fixture commits its own spec tree so
+  the item's reference RESOLVES: the mechanical findings arm runs first and its
+  refusal shadows this one, and an unreadable tree makes that arm skip the
+  reference check, leaving the fixture passing for a reason it stopped measuring.
+
 - `test_acp_fallback_journey_scenario127.py` — binds `SPECIFICATION/scenarios.md`
   "Scenario 127 — Ordered ACP fallback preserves primary resolution, failure
   honesty, and one node visit". One two-candidate structured chain, declared in a
