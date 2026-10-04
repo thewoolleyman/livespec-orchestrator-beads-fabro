@@ -237,14 +237,52 @@ reads like `fix` would route a successful capture into the fix loop.
 ## A capture that needs a code change
 
 When an assertion cannot be proved because the IMPLEMENTATION is wrong or
-incomplete, do not edit anything. Explain which assertion failed, the step
-that failed, and what you observed, and end your final reply with exactly
-this JSON object on the last line:
+incomplete, do not edit anything. PUBLISH THE FINDING AS A RECORD, then
+route to the `fix` node.
+
+Publishing it is not optional, and the reason is that your stage output
+alone can be lost. The finding reaches `fix` by TWO routes: the engine's
+preamble of preceding stage output, and your record on the pull request.
+When the preamble carries no finding, the record is the only place left to
+read it from — so a capture that routed to `fix` while publishing nothing
+would leave a run whose only account of the defect dies with its preamble.
+
+Post it exactly as Step 5 posts a successful capture: ONE NEW comment on
+the same draft pull request, never an edit of an earlier record and never a
+deletion of one. Its FIRST LINE must be exactly:
+
+    Proof of Done — not_captured — run <run-id> — <UTC timestamp>
+
+using the run id you resolved in Step 4 and an ISO-8601 UTC timestamp.
+
+The body then carries, per assertion in Definition of Done order:
+
+1. The assertion text, verbatim — for EVERY `factory_captured` assertion you
+   could not capture, one heading each, so a reader can see how much of the
+   Definition of Done is unproved rather than only the first thing that
+   broke.
+2. Its proof mode.
+3. The numbered reproduction steps you authored and ran.
+4. The FINDING: the step that failed, the result that step expected, what
+   you observed instead, and what the implementation would have to do for
+   the step to pass. Write it as a work order for a different agent on a
+   different adapter — it is the `fix` stage's input, and a finding only you
+   could act on is a finding that stage cannot act on at all.
+
+Any assertion you DID capture in the same visit belongs in the same record,
+under its own heading with its proof, exactly as Step 5 describes. One visit
+publishes one record.
+
+Then end your final reply with exactly this JSON object on the last line:
 
     {"preferred_next_label": "fix"}
 
 That routes to the `fix` node, where a code change belongs, and the loop
-re-earns a green janitor and re-enters this stage with a fresh tree.
+re-earns a green janitor and re-enters this stage with a fresh tree. The
+route is CAPPED: the third `fix` verdict from this node in one run routes to
+the `non_converged` terminal instead, which the Dispatcher reads as
+`needs-regroom`. A Definition of Done that will not capture three times
+running is a sizing problem, not a fix-loop problem.
 
 ## When capture is blocked (needs-human protocol)
 
