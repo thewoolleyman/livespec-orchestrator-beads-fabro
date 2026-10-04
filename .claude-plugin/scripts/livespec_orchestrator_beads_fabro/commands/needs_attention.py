@@ -54,6 +54,7 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_orphan_runs imp
     orphan_run_items,
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_proof import (
+    pending_host_leg_items,
     pending_human_attestation_items,
     stale_proof_pointer_items,
 )
@@ -226,11 +227,15 @@ def build_attention(
         # silent on every lane here — nothing is stranded, held, or aging — so
         # without it an unrunnable item is visible only by being noticed.
         + unrunnable_acceptance_items(project_root=project_root, repo=repo_name, items=materialized)
-        # The two Proof of Done hygiene rows. A parked item awaiting its human
-        # attestation is otherwise indistinguishable from any other parked
-        # acceptance, and a stale pointer is silent on every lane here, so
-        # without these two the first is visible only by reading the item's
-        # Definition of Done and the second only by reading its pull request.
+        # The three Proof of Done hygiene rows. A parked item awaiting its host
+        # replay or its human attestation is otherwise indistinguishable from any
+        # other parked acceptance, and a stale pointer is silent on every lane
+        # here, so without these the first two are visible only by reading the
+        # item's Definition of Done and the third only by reading its pull
+        # request. The two pending legs are SEPARATE rows because different
+        # parties clear them: an agent session on an operator host captures and a
+        # second session replays the host leg, while a human attests the other.
+        + pending_host_leg_items(project_root=project_root, repo=repo_name, items=materialized)
         + pending_human_attestation_items(
             project_root=project_root, repo=repo_name, items=materialized
         )

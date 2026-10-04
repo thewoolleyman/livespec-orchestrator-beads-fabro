@@ -1,10 +1,11 @@
-"""Tests for the two Proof of Done hygiene lanes, at the lane boundary.
+"""Tests for the Proof of Done hygiene lanes, at the lane boundary.
 
-`tests/integration/test_needs_attention_proof_facts.py` binds the pending-leg
-fact through the whole composed snapshot, which is where the ratified arity
-claim lives. What this module owns is the staleness COMPARISON, which the
-composed pass cannot reach without a forge, and the clearing conditions of both
-lanes.
+`tests/integration/test_needs_attention_proof_facts.py` binds the pending-human
+fact and `tests/integration/test_host_captured_leg_scenario136.py` the
+pending-host one, each through the whole composed snapshot, which is where the
+ratified arity claim lives. What this module owns is the staleness COMPARISON,
+which the composed pass cannot reach without a forge, and the clearing conditions
+of all three lanes.
 
 STALENESS FAILS IN TWO INDEPENDENT WAYS and both are asserted: a re-dispatch
 publishes a verified record under a new RUN id, while a corrected record from the
@@ -26,6 +27,7 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._needs_attention_proof import (
+    pending_host_leg_items,
     pending_human_attestation_items,
     stale_proof_pointer_items,
 )
@@ -34,6 +36,7 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 _REPO = "repo"
 _RUN_ID = "01M3POINTERRUN"
 _RECORD_URL = "https://example.test/owner/repo/pull/11#issuecomment-900"
+_HOST_ASSERTION = "The released build prints its own version on an operator host."
 _HUMAN_ASSERTION = "The production console renders the capacity banner."
 
 
@@ -68,7 +71,17 @@ def _pointer_section(*, run_id: str = _RUN_ID, record_url: str = _RECORD_URL) ->
     )
 
 
-def _description(*, pointer: str = "", human: bool = False) -> str:
+def _description(*, pointer: str = "", human: bool = False, host: bool = False) -> str:
+    host_block = (
+        "### Host-captured\n"
+        "\n"
+        "Reason: the proof needs the released build installed on an operator host.\n"
+        "\n"
+        f"- {_HOST_ASSERTION}\n"
+        "\n"
+        if host
+        else ""
+    )
     human_block = (
         "### Human-attested\n"
         "\n"
@@ -83,7 +96,7 @@ def _description(*, pointer: str = "", human: bool = False) -> str:
         "## Definition of Done\n"
         "\n"
         "- The factory leg is captured and replayed.\n"
-        "\n" + human_block + "References: ## Something\n" + pointer
+        "\n" + host_block + human_block + "References: ## Something\n" + pointer
     )
 
 
@@ -214,3 +227,46 @@ def test_the_pending_lane_clears_on_every_condition_that_is_not_a_pending_leg() 
 
     assert [fact.id for fact in positive] == ["hygiene:pending-human-attestation:bd-ib-proof"]
     assert negative == []
+
+
+def test_the_host_lane_clears_on_every_condition_that_is_not_a_pending_host_leg() -> None:
+    """Three clearing conditions, each removing exactly one trigger.
+
+    Not parked in `acceptance`; no host-captured assertion; and no pointer at all.
+    The last is deliberate rather than an oversight: the clause requires the fact to
+    NAME the pull request, the pointer is the only surface that identifies it, and a
+    parked item with no pointer is already the missing-pointer lane's row.
+    """
+    pending = _item(description=_description(pointer=_pointer_section(), host=True))
+    cleared = [
+        replace(pending, status="done"),
+        _item(),
+        _item(description=_description(host=True)),
+    ]
+
+    positive = pending_host_leg_items(project_root=Path("/repo"), repo=_REPO, items=[pending])
+    negative = pending_host_leg_items(project_root=Path("/repo"), repo=_REPO, items=cleared)
+
+    assert [fact.id for fact in positive] == ["hygiene:pending-host-leg:bd-ib-proof"]
+    assert negative == []
+
+
+def test_the_two_pending_lanes_are_independent_rows_on_one_mixed_item() -> None:
+    """An item carrying BOTH opt-out modes yields one row per leg, each naming its own.
+
+    The two legs are cleared by different parties doing different work, so a merged
+    row would name a mixed assertion set under a single remedy — and an operator
+    clearing the half addressed to them would find the item still parked with
+    nothing saying which half remains.
+    """
+    mixed = _item(description=_description(pointer=_pointer_section(), host=True, human=True))
+
+    host = pending_host_leg_items(project_root=Path("/repo"), repo=_REPO, items=[mixed])
+    human = pending_human_attestation_items(project_root=Path("/repo"), repo=_REPO, items=[mixed])
+
+    assert [fact.id for fact in host] == ["hygiene:pending-host-leg:bd-ib-proof"]
+    assert [fact.id for fact in human] == ["hygiene:pending-human-attestation:bd-ib-proof"]
+    assert _HOST_ASSERTION in host[0].summary
+    assert _HUMAN_ASSERTION not in host[0].summary
+    assert _HUMAN_ASSERTION in human[0].summary
+    assert _HOST_ASSERTION not in human[0].summary
