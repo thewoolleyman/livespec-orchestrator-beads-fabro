@@ -249,7 +249,10 @@ def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL ST
         run_dispatch_func=run_dispatch,
         fabro_launcher_type=WatchedFabroLauncher,
     )
-    post_run_dispositions(
+    # REBOUND, not merely called: the post-merge acceptance valve runs inside, and
+    # the outcome it returns is the one the dispatch RESULT must report — a park
+    # reported as the janitor's own `green at done` is finding F7(b).
+    outcome = post_run_dispositions(
         args=args,
         repo=repo,
         item=item,

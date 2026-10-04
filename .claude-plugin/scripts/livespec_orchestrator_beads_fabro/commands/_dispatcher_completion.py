@@ -19,6 +19,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_ai import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_park import (
     park_in_acceptance,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_result import (
+    AcceptanceDisposition,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_rework import (
     AI_DISPOSITIVE_ACCEPTANCE_POLICIES,
     rework_or_block_failed_acceptance,
@@ -96,7 +99,7 @@ def complete_and_accept(
     item: WorkItem,
     outcome: DispatchOutcome,
     journal: JournalFile,
-) -> None:
+) -> AcceptanceDisposition:
     """Run the post-merge acceptance valve for a green dispatch.
 
     Replaces the prior straight `ready -> done` close. A green Fabro run has
@@ -114,6 +117,11 @@ def complete_and_accept(
     under EVERY `acceptance_policy`, `ai-only` included: the pass could not
     observe what a judgment needs, and absence of evidence disposes of nothing.
 
+    RETURNS the disposition so the dispatch RESULT can report it. The parking
+    verdict clause governs the result as well as the ledger, and the run terminal
+    this is handed says `green` at `done` because the janitor built it before the
+    valve ran — so a caller that reported that terminal unchanged would report a
+    parked item as a completed close, which is exactly finding F7(b).
     """
     config = store_config(repo=repo)
     write_work_item_status_and_reconcile(path=config, item_id=item.id, status="acceptance")
@@ -168,7 +176,7 @@ def complete_and_accept(
             outcome=outcome,
             journal=journal,
         )
-        return
+        return AcceptanceDisposition(verdict=acceptance_pass.verdict, closed=False)
     if acceptance_pass.verdict == NO_CHANGE_NEEDED_VERDICT and decision.to_done:
         close_dispatch_item(
             repo=repo,
@@ -186,7 +194,7 @@ def complete_and_accept(
         )
         auto_disposition["deferred"] = "pre-dispatch staleness detection"
         journal.append(record=auto_disposition)
-        return
+        return AcceptanceDisposition(verdict=acceptance_pass.verdict, closed=True)
     if acceptance_pass.verdict == "FAIL" and policy in AI_DISPOSITIVE_ACCEPTANCE_POLICIES:
         # The merge sha is the dispatch's merge evidence: it is stamped only by
         # the post-merge janitor path off a resolved merged pull request, so its
@@ -199,7 +207,7 @@ def complete_and_accept(
             merged=outcome.merge_sha is not None,
             journal=journal,
         )
-        return
+        return AcceptanceDisposition(verdict=acceptance_pass.verdict, closed=False)
     # The human-attested leg rests the item in `acceptance` "regardless of
     # policy", so it is read here from the ONE criteria primitive rather than
     # from the pass's verdict: the pass genuinely did PASS — its factory leg is
@@ -227,7 +235,7 @@ def complete_and_accept(
                 governing_settings=("acceptance_mode",),
             )
         )
-        return
+        return AcceptanceDisposition(verdict=acceptance_pass.verdict, closed=True)
     park_in_acceptance(
         repo=repo,
         item_id=item.id,
@@ -236,6 +244,7 @@ def complete_and_accept(
         outcome=outcome,
         journal=journal,
     )
+    return AcceptanceDisposition(verdict=acceptance_pass.verdict, closed=False)
 
 
 def bounce_non_convergence_to_backlog(

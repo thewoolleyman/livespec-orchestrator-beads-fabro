@@ -135,6 +135,10 @@ def test_reconcile_merged_active_item_runs_post_merge_janitor_then_accepts(
             "work_item_id": item.id,
             "status": "green",
             "stage": "done",
+            # The acceptance verdict rides the result beside stage and status, and
+            # `done` is reserved for an item the pass CLOSED — which this stubbed
+            # PASS under `ai-only` did.
+            "verdict": "PASS",
             "pr_number": 1381,
             "merge_sha": "0bd9ce1",
             "detail": "merged, post-merge janitor green",

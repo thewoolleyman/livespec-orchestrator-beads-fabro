@@ -25,7 +25,11 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_command_common,
     _dispatcher_loop,
+    _dispatcher_loop_selection,
     dispatcher,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_result import (
+    AcceptanceDisposition,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
     alarm_on_terminal_failure,
@@ -519,6 +523,16 @@ def test_loop_all_green_wave_fires_no_alarm(
         _dispatcher_loop,
         "run_dispatch",
         _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)}),
+    )
+    # This case is about the ALARM, not about acceptance, and the acceptance valve
+    # now decides whether a wave is all-green: a park reports `needs-attention`,
+    # which is correct and is exactly what this case must not be measuring. The
+    # valve is therefore stood in with the CLOSING disposition, so "all green"
+    # is a property of the fixture rather than of a forge read nobody made.
+    monkeypatch.setattr(
+        _dispatcher_loop_selection,
+        "complete_and_accept",
+        lambda **_: AcceptanceDisposition(verdict="PASS", closed=True),
     )
     exit_code = dispatcher.main(
         argv=[

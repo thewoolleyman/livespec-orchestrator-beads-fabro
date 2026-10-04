@@ -19,6 +19,9 @@ from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
     acceptance_eligible_candidates,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_result import (
+    outcome_after_acceptance,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_emit import (
     emit_calibration,
 )
@@ -264,7 +267,7 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
     wall_clock_seconds: float,
     dispatch_context_size: int,
     token_supplier: Callable[[], str],
-) -> None:
+) -> DispatchOutcome:
     """Run the machine-path dispositions after a dispatch reaches its terminal.
 
     The sequence the Dispatcher runs once a `run_dispatch` returns: on a
@@ -274,6 +277,13 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
     (n5kina), and emit the calibration telemetry (yfsv4j). Aggregated here so
     `_dispatch_one` stays a single readable sequence; every step is keyed off
     the terminal `outcome` and is independently fail-soft where it touches IO.
+
+    RETURNS the outcome as the acceptance valve left it, which is what the
+    dispatch RESULT reports. Every step below reads the REVISED outcome rather
+    than the janitor's: the revision happens first, so the journaled terminal, the
+    alarm and the exit code all describe the same dispatch — a park reported as a
+    close is the finding (`_dispatcher_acceptance_result`), and a journal that
+    disagreed with the result would just move it.
     """
     # The acceptance valve is the POST-MERGE valve, and every green outcome had
     # merged until the merge hold introduced one that has not. Completing a held
@@ -281,11 +291,14 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
     # `active` would retract the attention row that keeps the hold visible; the
     # hold is released by a person, and the merge and this valve follow then.
     if outcome.status == "green" and outcome.stage != MERGE_HELD_STAGE and args.close_on_merge:
-        complete_and_accept(
-            repo=repo,
-            item=item,
+        outcome = outcome_after_acceptance(
             outcome=outcome,
-            journal=journal,
+            disposition=complete_and_accept(
+                repo=repo,
+                item=item,
+                outcome=outcome,
+                journal=journal,
+            ),
         )
     record_provider_exhaustion_if_observed(
         outcome=outcome,
@@ -347,3 +360,4 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
         dispatch_context_size=dispatch_context_size,
         token_supplier=token_supplier,
     )
+    return outcome

@@ -33,6 +33,9 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_loop_selection as loop_selection,
 )
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_result import (
+    AcceptanceDisposition,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_id_journal import (
     DispatchJournalIdentity,
     append_dispatch_id_record,
@@ -377,9 +380,15 @@ def test_the_held_green_terminal_does_not_trip_the_post_merge_acceptance_valve(
     )
     completed: list[str] = []
 
-    def _record(*, repo: Path, item: WorkItem, outcome: DispatchOutcome, journal: object) -> None:
+    def _record(
+        *, repo: Path, item: WorkItem, outcome: DispatchOutcome, journal: object
+    ) -> AcceptanceDisposition:
         _ = (repo, item, journal)
         completed.append(outcome.stage)
+        # The real valve RETURNS its disposition, and the caller re-reports the
+        # outcome from it; a stand-in returning None would break that read rather
+        # than observing whether the valve ran at all, which is this case's claim.
+        return AcceptanceDisposition(verdict="PASS", closed=True)
 
     monkeypatch.setattr(loop_selection, "complete_and_accept", _record)
 
