@@ -13,6 +13,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_cost import (
     gate_wave,
     resolve_cost_mode,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_attempts import ChainCost
+from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_chain import chain_costs
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_pricing import (
     DEFAULT_DISPATCH_COST_MODEL_ENV,
 )
@@ -93,10 +95,23 @@ def derived_costs(
     args: argparse.Namespace,
     repo: Path,
     outcomes: list[DispatchOutcome],
+    chains: dict[str, ChainCost] | None = None,
 ) -> dict[str, int]:
-    """The CC-token-derived per-dispatch cost for each green outcome."""
+    """The CC-token-derived per-dispatch cost for each green outcome.
+
+    `chains` is the per-attempt cost of any outcome whose run executed a
+    candidate chain, and it SUPERSEDES the sink's own aggregate for that
+    outcome — including when it is unobservable, in which case the outcome is
+    ABSENT from the result. That absence is the point: the sink's aggregate for
+    the same run is a default-priced number, so leaving the gate on it would
+    gate on a price no attempt actually ran at, while the report said the cost
+    was unobservable. An outcome with no chain entry is read from the sink
+    exactly as before.
+    """
     derived = attempt(
-        action=lambda: _read_derived_costs(args=args, repo=repo, outcomes=outcomes),
+        action=lambda: _read_derived_costs(
+            args=args, repo=repo, outcomes=outcomes, chains={} if chains is None else chains
+        ),
         exceptions=(AttributeError, OSError, RuntimeError, ValueError),
     )
     if isinstance(derived, AttemptFailure):
@@ -123,18 +138,25 @@ def _cost_gate(
         cwd=repo,
     ).ps(timeout_seconds=_FABRO_PS_PROBE_TIMEOUT_SECONDS)
     ps_json = ps.command.stdout if ps.command.exit_code == 0 else ""
+    # Resolved ONCE and passed to both consumers: the gate and the report must
+    # agree about each run's cost, and two reads of a live event stream cannot
+    # be proven to agree — the disagreement would be invisible, because both
+    # produce a well-formed cost.
+    chains = _chain_costs(args=args, repo=repo, outcomes=outcomes, runner=runner)
     refusals = gate_wave(
         unattended=not bool(getattr(args, "items", None) or getattr(args, "item", None)),
         outcomes=tuple(outcomes),
         ps_json=ps_json,
         journal=journal,
         environ=dict(os.environ),
-        derived_cost_micros_by_work_item=derived_costs(args=args, repo=repo, outcomes=outcomes),
+        derived_cost_micros_by_work_item=derived_costs(
+            args=args, repo=repo, outcomes=outcomes, chains=chains
+        ),
         cost_mode=cost_mode,
         attribution=repo_run_attribution(repo=repo),
     )
     if cost_mode == COST_MODE_REPORT:
-        _emit_cost_report_telemetry(args=args, repo=repo, outcomes=outcomes)
+        _emit_cost_report_telemetry(args=args, repo=repo, outcomes=outcomes, chains=chains)
         return
     if not refusals:
         return
@@ -150,11 +172,40 @@ def _cost_gate(
     )
 
 
+def _chain_costs(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    outcomes: list[DispatchOutcome],
+    runner: CommandRunner,
+) -> dict[str, ChainCost]:
+    """The per-attempt cost of every green outcome, or `{}` — never a raise.
+
+    Fail-soft like every other seam in this stage: the cost path runs AFTER the
+    verdict, so an unreadable event stream or configuration degrades to "no
+    cost derived per attempt" (the sink's own aggregate then decides, exactly
+    as before this slice) rather than costing the wave its verdict.
+    """
+    costs = attempt(
+        action=lambda: chain_costs(
+            repo=repo,
+            outcomes=tuple(outcomes),
+            sink=CostSink(path=cost_sink_path(args=args, repo=repo)),
+            runner=runner,
+        ),
+        exceptions=(AttributeError, OSError, RuntimeError, ValueError),
+    )
+    if isinstance(costs, AttemptFailure):
+        return {}
+    return costs
+
+
 def _emit_cost_report_telemetry(
     *,
     args: argparse.Namespace,
     repo: Path,
     outcomes: list[DispatchOutcome],
+    chains: dict[str, ChainCost],
 ) -> None:
     default_model = os.environ.get(DEFAULT_DISPATCH_COST_MODEL_ENV, "").strip() or None
     reports = _derived_reports(args=args, repo=repo, outcomes=outcomes)
@@ -163,6 +214,7 @@ def _emit_cost_report_telemetry(
             work_item_id=outcome.work_item_id,
             report=reports.get(outcome.work_item_id),
             default_model=default_model,
+            chain=chains.get(outcome.work_item_id),
         )
         for outcome in outcomes
         if outcome.status == "green"
@@ -183,11 +235,17 @@ def _read_derived_costs(
     args: argparse.Namespace,
     repo: Path,
     outcomes: list[DispatchOutcome],
+    chains: dict[str, ChainCost],
 ) -> dict[str, int]:
     sink = CostSink(path=cost_sink_path(args=args, repo=repo))
     derived: dict[str, int] = {}
     for outcome in outcomes:
         if outcome.status != "green":
+            continue
+        chain = chains.get(outcome.work_item_id)
+        if chain is not None:
+            if chain.usd_micros is not None:
+                derived[outcome.work_item_id] = chain.usd_micros
             continue
         for key in cost_lookup_keys(work_item_id=outcome.work_item_id, dispatch_id=None):
             micros = sink.usd_micros(key=key)
