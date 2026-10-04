@@ -44,6 +44,23 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   unevidenced once correctly attributed, because the body splitter opens a new
   section at the `# just.log:` lines inside its fenced code block — a section
   SEGMENTATION defect, not an attribution one, left to its own work-item.
+- `test_reconcile_merged_acceptance_pointer.py` — the reconcile-merged arm for an
+  item RESTING IN ACCEPTANCE (`SPECIFICATION/contracts.md`'s reconcile-merged
+  clause, v115): re-run only the acceptance pass against the records now on the
+  pull request, apply the ordinary disposition, and write the missing Proof of
+  Done pointer. The real `dispatcher.main(argv=["reconcile-merged", ...])`
+  supervisor runs over the real store/client seam and a real on-disk journal, and
+  resolves the merging dispatch's identifiers out of that journal; only the two
+  seams that leave the process are stood in — the valve's shell runner and the
+  acceptance pass's. The clause's FIRST requirement is a negative one, so it is
+  read off the seam rather than off an exit code: the valve's runner is handed
+  exactly the two commands this arm may issue and its full call list is asserted,
+  since a janitor that ran and passed would exit 0 too. The pointer is checked
+  against a BYTE-IDENTICAL Definition of Done prefix rather than by containment,
+  which a build that rewrote the section while appending would also satisfy. The
+  control is a verified record belonging to another dispatch of the same item,
+  listing the assertion as reproduced: without it, "the pointer was written" is
+  equally consistent with a valve citing whatever record the pull request carries.
 - `test_reconcile_runs_ledger_gate_scenarios.py` — binds
   `SPECIFICATION/scenarios.md` Scenarios 104, 105 and 106: the run-inventory
   reconciler driven end to end through `reconcile_runs`, over work-items
