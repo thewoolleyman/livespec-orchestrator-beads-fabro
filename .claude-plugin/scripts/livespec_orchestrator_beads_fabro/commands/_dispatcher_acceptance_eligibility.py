@@ -60,19 +60,27 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "PROOF_ROUTING_FACTORY_CAPTURED_ONLY",
     "PROOF_ROUTING_PARKS_FOR_HUMAN_ATTESTATION",
+    "PROOF_ROUTING_RESTS_FOR_HOST_LEG",
     "AcceptanceEligibility",
     "acceptance_eligibility",
     "acceptance_eligible_candidates",
     "pre_dispatch_criteria_refusal",
 ]
 
-# The two DERIVED item-level proof routings. The clause forbids storing an
+# The three DERIVED item-level proof routings. The clause forbids storing an
 # item-level proof mode in any field, label or metadata key, so these are
 # computed from the assertions every time and never written anywhere. The names
 # are self-describing, as the enumeration rule requires of every mode-adjacent
 # value: they say what the item DOES, not which tier it sits in.
 PROOF_ROUTING_FACTORY_CAPTURED_ONLY = "factory-captured-only"
 PROOF_ROUTING_PARKS_FOR_HUMAN_ATTESTATION = "parks-for-human-attestation"
+# The v115 routing: the item rests in `acceptance` after merge under EVERY policy
+# until a `host_verified` record lists its host-captured assertions as reproduced.
+# It is deliberately NOT a refusal of `ai-only`, which is the whole asymmetry
+# between the two opt-out modes — the host leg is agent-performable, so under
+# `ai-only` such an item is admitted, merges, and closes on the pass that first
+# observes the record.
+PROOF_ROUTING_RESTS_FOR_HOST_LEG = "rests-for-host-leg"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -222,12 +230,21 @@ def _verdict(
 def _proof_routing(*, criteria: EffectiveCriteria) -> str:
     """The item-level routing its assertions' modes imply.
 
-    ONE human-attested assertion decides the whole item, however many
-    factory-captured ones sit beside it: the item cannot close until the human
-    leg lands, so a routing that averaged the modes would close it early.
+    ONE opt-out assertion decides the whole item, however many factory-captured
+    ones sit beside it: the item cannot close until that leg lands, so a routing
+    that averaged the modes would close it early.
+
+    The HUMAN leg is reported first when an item carries both, because that is the
+    leg which makes `ai-only` illegal for the item — the refusal below keys on the
+    same fact, and a routing naming the host leg would read as an item `ai-only`
+    could still take. The two legs are not alternatives: such an item must clear
+    both, and the host one is still named by the acceptance pass and by its
+    needs-attention row.
     """
     if criteria.human_attested_assertions:
         return PROOF_ROUTING_PARKS_FOR_HUMAN_ATTESTATION
+    if criteria.host_captured_assertions:
+        return PROOF_ROUTING_RESTS_FOR_HOST_LEG
     return PROOF_ROUTING_FACTORY_CAPTURED_ONLY
 
 
