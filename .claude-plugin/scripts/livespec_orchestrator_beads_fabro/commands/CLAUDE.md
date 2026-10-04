@@ -156,7 +156,12 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   and from the absent-value grade, because it is credential-NAMED by
   construction and its value is one the Dispatcher itself supplies. The
   projection is fail-closed in both arms: a declaration the parse refuses, or a
-  name whose value is absent, renders NO overlay line.
+  name whose value is absent, renders NO overlay line. A declaration whose
+  PROVIDER exposes a management interface takes the minted route instead
+  (`mint_declared_proof_credentials`, the module below): it is journaled
+  `minted`, exempt from the absent-value grade because its value is the
+  Dispatcher's to supply, and projected from this run's LEASE — never from the
+  host's own copy, which is the long-lived credential the mint exists to retire.
 - `_dispatcher_proof_credential_providers.py` — the MINTED half of that same
   clause: the provider management interface a declared proof credential can be
   minted through, the name-keyed registry a shipped adapter registers into, the

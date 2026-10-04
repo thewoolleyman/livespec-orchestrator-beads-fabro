@@ -4,10 +4,17 @@
 v114) lets a governed repository declare the credentials its proof stages need
 to exercise the deliverable's backing services from inside the sandbox. The
 declaration is committed configuration — `dispatcher.proof_credentials`, a list
-of `{name, purpose, capability}` objects — and it carries NAMES ONLY: the values
-arrive from the Dispatcher's own environment, as supplied by the target's
-configured credential wrapper, and are projected through the existing
-run-configuration overlay.
+of `{name, purpose, capability}` objects — and it carries NAMES ONLY.
+
+A VALUE REACHES THE SANDBOX BY ONE OF TWO ROUTES, and the declaration does not
+say which. Where the declared name's provider exposes a management interface, the
+Dispatcher MINTS a scoped, expiring credential for this run and revokes it when
+the run ends (`_dispatcher_proof_credential_providers`); otherwise the value is
+COPIED from the Dispatcher's own environment, as supplied by the target's
+configured credential wrapper. Either way it is projected through the existing
+run-configuration overlay, and the dispatch journal records per declaration which
+route it took. The declaration shape is closed, so the route is resolved from the
+NAME — a repository cannot and does not nominate one.
 
 WHY THE PARSE IS A REFUSAL LADDER RATHER THAN A FILTER. Every fault this module
 names is a fault in COMMITTED configuration, so there is no "mostly usable"
@@ -34,6 +41,12 @@ from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_secrets import secret_marker
 from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_providers import (
+    MintedProofCredential,
+    ProofCredentialLease,
+    mint_from_provider,
+    provider_for,
+)
 
 __all__: list[str] = [
     "COPIED_PROVISIONING",
@@ -45,6 +58,7 @@ __all__: list[str] = [
     "READ_ONLY_CAPABILITY",
     "WITHHELD_DISPATCH_CREDENTIALS",
     "ProofCredential",
+    "mint_declared_proof_credentials",
     "parse_proof_credentials",
     "proof_credential_journal_record",
     "proof_credential_provisioning",
@@ -252,10 +266,77 @@ def _credential_shaped_refusal(*, credential: ProofCredential) -> str | None:
 
 
 def proof_credential_provisioning(*, credential: ProofCredential) -> str:
-    """Whether this declaration's credential is MINTED per run or COPIED from the host."""
+    """Whether this declaration's credential is MINTED per run or COPIED from the host.
+
+    TWO ROUTES REACH `minted`, and keeping them in one predicate is what makes
+    the journal value trustworthy. The first is a name the Dispatcher provisions
+    ITSELF — the installation token it mints for every dispatch. The second is a
+    name whose PROVIDER exposes a management interface, which is the route the
+    clause's SHOULD prefers: a credential minted there is scoped and expiring,
+    and it is revoked when the run ends rather than being a copy of the host's.
+
+    Both answers are `minted` because the journal's question is what the
+    Dispatcher DID for this name, not which code path did it. A reader needing
+    the distinction has the revoke records, which exist only for the second.
+    """
     if credential.name in MINTED_PER_RUN_CREDENTIALS:
         return MINTED_PROVISIONING
+    if provider_for(name=credential.name) is not None:
+        return MINTED_PROVISIONING
     return COPIED_PROVISIONING
+
+
+def mint_declared_proof_credentials(*, repo: Path, dispatch_id: str) -> ProofCredentialLease | str:
+    """This run's lease: one minted credential per provider-backed declaration.
+
+    Called once per dispatch, BEFORE the run-configuration overlay is written,
+    because the overlay is what carries a minted value into the sandbox — and
+    discharged by `revoke_proof_credential_lease` when the run returns, which is
+    the "revoke it afterwards" half of the clause.
+
+    A declaration whose provider exposes NO management interface is skipped
+    rather than minted, which is what leaves every existing repository's
+    behaviour untouched: the clause makes minting conditional on the provider
+    offering an interface, so a declaration without one stays copied from the
+    wrapper-supplied environment.
+
+    A REFUSED MINT REFUSES THE DISPATCH, and the alternative is worth naming
+    because it is the tempting one: falling back to the host's own copy would
+    silently undo the clause for exactly the declarations it governs, and the
+    dispatch would look perfectly healthy while a long-lived credential sat in
+    the sandbox. Returned as data, like every other pre-dispatch precondition on
+    this path, so the dispatch reports it before any run exists rather than
+    raising.
+
+    The parse runs again here rather than being threaded in. The gate already
+    refused every unusable declaration before this is reached, so the string arm
+    is unreachable in production; it is honoured anyway because the opposite
+    shape — mint whatever parses — would hand a withheld name to a third-party
+    management interface.
+    """
+    parsed = parse_proof_credentials(block=dispatcher_block(cwd=repo))
+    if isinstance(parsed, str):
+        return parsed
+    minted: list[MintedProofCredential] = []
+    for credential in parsed:
+        provider = provider_for(name=credential.name)
+        if provider is None:
+            continue
+        issued = mint_from_provider(
+            provider=provider,
+            name=credential.name,
+            capability=credential.capability,
+            dispatch_id=dispatch_id,
+        )
+        if isinstance(issued, str):
+            return (
+                f"{_DECLARED_KEY} declaration {credential.name} is minted per run "
+                f"because its provider exposes a management interface, and {issued}; "
+                "the dispatch is refused before any run exists rather than falling "
+                "back to a copy of the host's own long-lived credential"
+            )
+        minted.append(issued)
+    return ProofCredentialLease(minted=tuple(minted))
 
 
 def proof_credentials_refusal(
@@ -300,7 +381,12 @@ def _environment_refusal(
     return None
 
 
-def proof_credentials_env_lines(*, block: Mapping[str, object], environ: Mapping[str, str]) -> str:
+def proof_credentials_env_lines(
+    *,
+    block: Mapping[str, object],
+    environ: Mapping[str, str],
+    lease: ProofCredentialLease | None = None,
+) -> str:
     """The overlay env lines projecting this repository's declared proof credentials.
 
     Rendered as inline values in the uncommitted, mode-600 run-configuration
@@ -320,29 +406,64 @@ def proof_credentials_env_lines(*, block: Mapping[str, object], environ: Mapping
     parsed = parse_proof_credentials(block=block)
     if isinstance(parsed, str):
         return ""
+    minted_values = {} if lease is None else lease.overlay_values()
     rendered: list[str] = []
     for credential in parsed:
-        # A minted name is already projected by the overlay's own credential
-        # table; a second TOML line under the same key would make the whole
-        # overlay unparseable.
-        if proof_credential_provisioning(credential=credential) == MINTED_PROVISIONING:
-            continue
-        value = environ.get(credential.name, "")
-        if not value:
+        value = _overlay_value(credential=credential, environ=environ, minted_values=minted_values)
+        if value is None:
             continue
         rendered.append(f"{credential.name} = {json.dumps(value)}\n")
     return "".join(rendered)
 
 
-def proof_credentials_overlay_env(*, repo: Path, environ: Mapping[str, str]) -> str:
+def _overlay_value(
+    *,
+    credential: ProofCredential,
+    environ: Mapping[str, str],
+    minted_values: Mapping[str, str],
+) -> str | None:
+    """The value one declaration projects, or None when it projects no line at all.
+
+    Three arms, and which one applies is decided by the declaration's name alone,
+    exactly as the provisioning answer beside it is.
+
+    A SELF-PROVISIONED name projects nothing here: the overlay's own credential
+    table already carries it, and a second TOML line under the same key would
+    make the WHOLE overlay unparseable — one repository's declaration turning
+    into a dispatch-wide failure.
+
+    A PROVIDER-BACKED name projects this run's LEASE value, and falls through to
+    nothing rather than to the environment when the lease carries no entry. That
+    fallback is the one worth refusing explicitly: the host's own copy of the
+    credential is precisely the long-lived thing the mint exists to retire, so
+    taking it silently would leave an overlay that looks correct while the clause
+    goes unobserved.
+
+    Every OTHER name projects the wrapper-supplied value, unchanged.
+    """
+    if credential.name in MINTED_PER_RUN_CREDENTIALS:
+        return None
+    if provider_for(name=credential.name) is not None:
+        return minted_values.get(credential.name) or None
+    return environ.get(credential.name) or None
+
+
+def proof_credentials_overlay_env(
+    *, repo: Path, environ: Mapping[str, str], lease: ProofCredentialLease | None = None
+) -> str:
     """One repository's declared proof credentials as overlay env lines.
 
     The entry point the overlay materializer calls. It exists so the
     repository-to-block resolution lives HERE, beside the parse that consumes it,
     rather than being a second thing the materializer has to know how to do -- the
     same shape `proof_store_env_lines` takes for the sibling projection.
+
+    `lease` is this dispatch's minted set, forwarded rather than re-minted: a
+    second mint would issue a second credential and revoke only one of them.
     """
-    return proof_credentials_env_lines(block=dispatcher_block(cwd=repo), environ=environ)
+    return proof_credentials_env_lines(
+        block=dispatcher_block(cwd=repo), environ=environ, lease=lease
+    )
 
 
 def proof_credential_journal_record(*, credential: ProofCredential) -> dict[str, object]:

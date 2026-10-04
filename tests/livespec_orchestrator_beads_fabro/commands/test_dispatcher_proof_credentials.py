@@ -20,6 +20,10 @@ from types import ModuleType
 from typing import Any, cast
 
 import livespec_orchestrator_beads_fabro.commands._acp_candidate_secrets as _commands_anchor
+import pytest
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_proof_credential_providers as providers,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_declaration import (
     PLUGIN_BLOCK,
 )
@@ -57,6 +61,54 @@ class _Journal:
 
     def append(self, *, record: dict[str, object]) -> None:
         self.records.append(record)
+
+
+@dataclass(kw_only=True)
+class _MintOnlyProvider:
+    """A hermetic provider management interface offering only the MINT verb.
+
+    Deliberately HALF a provider, and the omission is the point. The seam's own
+    grades — a refused mint, an over-granted capability, a re-keyed name, a
+    declined revoke — are covered in
+    `test_dispatcher_proof_credential_providers.py`, and the revoke's place in
+    the run lifecycle is covered by the integration binding for Scenario 134.
+    What the cases below measure is the DECLARATION side of the same clause:
+    which declarations reach a provider at all, what the journal says about
+    each, and what the overlay projects for one. Nothing here revokes, so
+    carrying a `revoke` would be a line asserting nothing.
+    """
+
+    refusal: str | None = None
+    mint_calls: list[tuple[str, str]] = field(default_factory=list)
+
+    def mint(
+        self, *, name: str, capability: str, dispatch_id: str
+    ) -> providers.MintedProofCredential | str:
+        self.mint_calls.append((name, dispatch_id))
+        if self.refusal is not None:
+            return self.refusal
+        return providers.MintedProofCredential(
+            name=name,
+            capability=capability,
+            value=f"minted-value-for-{name}",
+            revocation_handle=f"handle-{name}",
+        )
+
+
+def _register_provider(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    provider: _MintOnlyProvider,
+    name: str = "ACME_STATUS_READER",
+) -> None:
+    """Register one provider management interface, as a shipped adapter would be.
+
+    Patched on the PROVIDER module rather than on the module under test, because
+    that is where `provider_for` reads the registry — a double installed anywhere
+    else would leave the real (empty) registry answering every question while the
+    test looked wired.
+    """
+    monkeypatch.setattr(providers, "PROOF_CREDENTIAL_PROVIDERS", {name: provider})
 
 
 def _governed_repo(*, tmp_path: Path, declared: object | None) -> Path:
@@ -522,3 +574,222 @@ def test_a_repository_declaring_nothing_journals_nothing(tmp_path: Path) -> None
 
     assert refusal is None
     assert journal.records == []
+
+
+def test_a_provider_backed_declaration_is_journaled_as_minted_beside_a_copied_sibling(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The journal value turns on whether the declaration's provider can mint one.
+
+    The two declarations are deliberately on OPPOSITE sides of the split in ONE
+    pass, because a record that always said `minted` would satisfy a
+    single-declaration assertion just as well — and the whole point of the
+    clause's journal requirement is that a reader can tell the two apart. The
+    only difference between them is the registry: both are plain `read_only`
+    declarations whose values the environment supplies.
+    """
+    module = _module()
+    _register_provider(monkeypatch=monkeypatch, provider=_MintOnlyProvider())
+    repo = _governed_repo(
+        tmp_path=tmp_path,
+        declared=[
+            _read_only(),
+            _read_only(name="ACME_METRICS_READER", purpose="observe published metrics"),
+        ],
+    )
+    journal = _Journal()
+
+    refusal = module.proof_credentials_refusal_for_items(
+        repo=repo,
+        environ={"ACME_METRICS_READER": "metrics-value"},
+        wrapper_text="[]",
+        work_item_ids=["bd-ib-first"],
+        journal=journal,
+    )
+
+    assert refusal is None
+    assert [(record["name"], record["provisioning"]) for record in journal.records] == [
+        ("ACME_STATUS_READER", module.MINTED_PROVISIONING),
+        ("ACME_METRICS_READER", module.COPIED_PROVISIONING),
+    ]
+
+
+def test_a_provider_backed_declaration_needs_no_wrapper_supplied_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The absent-value grade does not apply to a declaration that is minted per run.
+
+    Refusing it for an absent host value would refuse a credential that is about
+    to exist — and worse, it would make adopting a provider adapter require the
+    wrapper to keep injecting the very long-lived credential the mint exists to
+    retire. The copied control beside it is what proves the grade still fires.
+    """
+    module = _module()
+    _register_provider(monkeypatch=monkeypatch, provider=_MintOnlyProvider())
+    block = _block(declared=[_read_only()])
+
+    assert module.proof_credentials_refusal(block=block, environ={}, wrapper_text="[]") is None
+    assert isinstance(
+        module.proof_credentials_refusal(
+            block=_block(declared=[_read_only(name="ACME_METRICS_READER")]),
+            environ={},
+            wrapper_text="['/usr/local/bin/with-acme-env.sh', '--']",
+        ),
+        str,
+    )
+
+
+def test_each_provider_backed_declaration_is_minted_once_for_this_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One credential per provider-backed declaration per run, carrying the dispatch id.
+
+    The DISPATCH ID reaching the provider is asserted because "one per run" is
+    the clause's own requirement: a mint that ignored it would be
+    indistinguishable from a long-lived credential fetched once and reused.
+    """
+    module = _module()
+    provider = _MintOnlyProvider()
+    _register_provider(monkeypatch=monkeypatch, provider=provider)
+    repo = _governed_repo(
+        tmp_path=tmp_path,
+        declared=[_read_only(), _read_only(name="ACME_METRICS_READER")],
+    )
+
+    lease = module.mint_declared_proof_credentials(repo=repo, dispatch_id="01DISPATCH")
+
+    assert provider.mint_calls == [("ACME_STATUS_READER", "01DISPATCH")]
+    assert [credential.name for credential in lease.minted] == ["ACME_STATUS_READER"]
+    assert lease.overlay_values() == {"ACME_STATUS_READER": "minted-value-for-ACME_STATUS_READER"}
+
+
+def test_a_repository_with_no_provider_backed_declaration_mints_nothing(
+    tmp_path: Path,
+) -> None:
+    """The copied control: the ordinary posture leases nothing and calls no provider.
+
+    This is what keeps the minting path from changing the behaviour of every
+    repository that declares a credential the host already holds — the clause
+    makes minting a SHOULD conditioned on the provider offering an interface, so
+    a declaration with no provider must come out exactly as it did before.
+    """
+    module = _module()
+    repo = _governed_repo(tmp_path=tmp_path, declared=[_read_only()])
+
+    assert module.mint_declared_proof_credentials(repo=repo, dispatch_id="01DISPATCH").minted == ()
+
+
+def test_a_refused_mint_refuses_the_dispatch_naming_the_declaration_and_the_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A provider that mints nothing refuses the dispatch rather than falling back.
+
+    The fallback is the tempting shape and it is the wrong one: copying the
+    host's own credential when the mint fails would silently undo the clause for
+    exactly the declarations it applies to, and the dispatch would look healthy.
+    The refusal names the committed key so an operator knows where to look.
+    """
+    module = _module()
+    _register_provider(
+        monkeypatch=monkeypatch,
+        provider=_MintOnlyProvider(refusal="the management API returned 503"),
+    )
+    repo = _governed_repo(tmp_path=tmp_path, declared=[_read_only()])
+
+    refusal = module.mint_declared_proof_credentials(repo=repo, dispatch_id="01DISPATCH")
+
+    assert isinstance(refusal, str)
+    assert "dispatcher.proof_credentials" in refusal
+    assert "ACME_STATUS_READER" in refusal
+    assert "the management API returned 503" in refusal
+
+
+def test_the_mint_hands_back_a_declaration_refusal_rather_than_minting(
+    tmp_path: Path,
+) -> None:
+    """Fail-closed: a declaration the parse refuses is never carried to a provider.
+
+    The pre-dispatch gate refuses this case before the mint is reached, so this
+    arm should be unreachable in production. It is asserted anyway because the
+    alternative shape — mint whatever parses — would hand a withheld name to a
+    third-party management interface.
+    """
+    module = _module()
+    repo = _governed_repo(tmp_path=tmp_path, declared=[_read_only(name="BEADS_DOLT_PASSWORD")])
+
+    refusal = module.mint_declared_proof_credentials(repo=repo, dispatch_id="01DISPATCH")
+
+    assert isinstance(refusal, str)
+    assert "withheld" in refusal
+
+
+def test_the_overlay_projects_the_minted_value_for_a_provider_backed_declaration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The lease's value reaches the sandbox under the DECLARED name.
+
+    The environment deliberately carries a DIFFERENT value under the same name,
+    so the projected line is evidence the lease won rather than evidence that
+    some value was available: a build that ignored the lease would render the
+    host's copy here and look identical in shape.
+    """
+    module = _module()
+    _register_provider(monkeypatch=monkeypatch, provider=_MintOnlyProvider())
+    lease = module.mint_declared_proof_credentials(
+        repo=_governed_repo(tmp_path=tmp_path, declared=[_read_only()]),
+        dispatch_id="01DISPATCH",
+    )
+
+    rendered = module.proof_credentials_env_lines(
+        block=_block(declared=[_read_only()]),
+        environ={"ACME_STATUS_READER": "the-hosts-own-long-lived-copy"},
+        lease=lease,
+    )
+
+    assert rendered == 'ACME_STATUS_READER = "minted-value-for-ACME_STATUS_READER"\n'
+
+
+def test_a_provider_backed_declaration_with_no_lease_projects_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fail-closed again, and in the one direction that matters most here.
+
+    A provider-backed declaration whose lease carries no entry projects NOTHING
+    rather than falling back to the host's own copy of the credential. That
+    fallback is precisely the posture the mint exists to retire, so taking it
+    silently on a missing lease would make the clause unobservable — the overlay
+    would look right and the sandbox would hold a long-lived credential.
+    """
+    module = _module()
+    _register_provider(monkeypatch=monkeypatch, provider=_MintOnlyProvider())
+
+    assert (
+        module.proof_credentials_env_lines(
+            block=_block(declared=[_read_only()]),
+            environ={"ACME_STATUS_READER": "the-hosts-own-long-lived-copy"},
+        )
+        == ""
+    )
+
+
+def test_the_copied_projection_is_unchanged_by_the_minting_path(tmp_path: Path) -> None:
+    """The copied control for the projection, read through the real repository entry point.
+
+    Unchanged from the behaviour the declaration clause landed with: a
+    declaration whose provider has no management interface is still projected
+    from the wrapper-supplied environment, and the lease parameter it now accepts
+    changes nothing for it.
+    """
+    module = _module()
+    repo = _governed_repo(tmp_path=tmp_path, declared=[_read_only()])
+
+    assert (
+        module.proof_credentials_overlay_env(
+            repo=repo, environ={"ACME_STATUS_READER": "acme-observer-value"}
+        )
+        == 'ACME_STATUS_READER = "acme-observer-value"\n'
+    )
