@@ -106,3 +106,81 @@ def test_creating_a_plan_authors_the_section_and_records_the_statement_verbatim(
         assert assertion in note
     # The research the session brought with it is not displaced by the record.
     assert "The daemon needs a pane of its own." in note
+
+
+# A plan section carrying exactly what the clause calls a bare bullet: one
+# bullet outside any sub-heading, no `Reason:` line, and no `References:` line.
+_BARE_SECTION = (
+    "Plan anchor for plan/herdr-release.\n"
+    "\n"
+    "## Definition of Done\n"
+    "\n"
+    "- The released overseer runs in a real herdr session with the daemon in the top pane.\n"
+)
+
+
+def test_a_bare_plan_bullet_is_host_captured_and_owes_no_reason_or_reference() -> None:
+    section_module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._plan_definition_of_done"
+    )
+
+    assert "plan_definition_of_done" in section_module.__all__
+
+    parsed = section_module.plan_definition_of_done(description=_BARE_SECTION)
+
+    assert parsed.present
+    # The plan default. No `factory_captured` mode exists for a plan assertion,
+    # because no factory run executes against an epic.
+    assert [one.proof_mode for one in parsed.assertions] == ["host_captured"]
+    # No finding is owed for the absent `Reason:` line: the bullet declared the
+    # plan default rather than opting out of it, so there is nothing to justify.
+    assert parsed.malformed_proof_modes == ()
+    # No finding is owed for the absent reference line either — a plan MAY
+    # precede the specification it will ratify.
+    assert parsed.references == ()
+
+
+def test_the_same_section_read_as_a_work_item_is_still_factory_captured() -> None:
+    """The control that proves the mode came from `subject`, not from a moved default.
+
+    Without it, a change that flipped the default for EVERY caller would pass the
+    test above identically — and would silently drop every work item's factory
+    leg, which is the one outcome the proof-mode enumeration exists to prevent.
+    """
+    parsed = definition_of_done(description=_BARE_SECTION)
+
+    assert [one.proof_mode for one in parsed.assertions] == ["factory_captured"]
+
+
+def test_a_plan_human_attested_sub_heading_still_owes_its_reason_line() -> None:
+    """`Human-attested` is the one plan sub-heading whose `Reason:` line is required.
+
+    `Host-captured` is permitted and REDUNDANT for a plan — it declares the
+    default — so it owes nothing. Treating the two alike in either direction is
+    the drift the shared sub-heading table exists to prevent.
+    """
+    section_module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._plan_definition_of_done"
+    )
+    description = (
+        "## Definition of Done\n"
+        "\n"
+        "- The operator drives one loop and sees the agent respond.\n"
+        "\n"
+        "### Host-captured\n"
+        "\n"
+        "- The released build answers on the operator host.\n"
+        "\n"
+        "### Human-attested\n"
+        "\n"
+        "- The maintainer agrees the loop felt right.\n"
+    )
+
+    parsed = section_module.plan_definition_of_done(description=description)
+
+    assert [one.proof_mode for one in parsed.assertions] == [
+        "host_captured",
+        "host_captured",
+        "human_attested",
+    ]
+    assert parsed.malformed_proof_modes == ("Human-attested",)
