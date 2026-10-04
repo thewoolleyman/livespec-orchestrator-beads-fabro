@@ -48,6 +48,7 @@ __all__: list[str] = [
     "derive_usd_micros",
     "model_price_of",
     "normalize_model_id",
+    "price_at",
 ]
 
 # The env-var NAME (not a secret value) for the fallback model a token sum
@@ -156,7 +157,21 @@ def derive_usd_micros(*, tokens: TokenVector, model_id: str) -> int:
     `model_id` (one not in the table) is priced at the committed default
     model rather than treated as free — a spend cap must not under-count.
     """
-    price = _PRICE_TABLE.get(model_id) or _PRICE_TABLE[DEFAULT_DISPATCH_COST_MODEL]
+    return price_at(
+        tokens=tokens,
+        price=_PRICE_TABLE.get(model_id) or _PRICE_TABLE[DEFAULT_DISPATCH_COST_MODEL],
+    )
+
+
+def price_at(*, tokens: TokenVector, price: ModelPrice) -> int:
+    """Cost in integer micro-USD for one token vector at one explicit price.
+
+    The same arithmetic `derive_usd_micros` performs, taken as a `ModelPrice`
+    rather than as a model id, because the per-attempt chain path resolves its
+    price through the model catalog and a per-candidate table — neither of
+    which is a key in this module's built-in table — and must not be able to
+    fall back to a default model to get a number out.
+    """
     micro_usd = (
         tokens.input * price.input
         + tokens.output * price.output
