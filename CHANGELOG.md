@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.164.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.163.1...v0.164.0) (2026-10-04)
+
+
+### Features
+
+* **cost:** darken a whole run cost rather than report a partial subtotal ([c4e3cd7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c4e3cd79d1663787de4bcfa8fc84b509b108c368))
+* **cost:** normalize a model identity by exact match, not a broader prefix ([10e5b1d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/10e5b1d00b20687b29481fe26e62d5d5695cab96))
+* **cost:** place each candidate attempt in its own window ([3efbbd6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3efbbd6e0d451dcade23694b437868f9881af9c6))
+* **cost:** price the shipped model catalog from one base-rate table ([53a1124](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/53a11240eb9e8ccce15c15505bdcd377676e2805))
+* **cost:** resolve an attempt's price catalog-first, candidate table second ([44dc710](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/44dc710e23c144932e65f39504c80c5f43b2cb6d))
+* **cost:** route an unobservable chain cost through the existing cost gate ([274d007](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/274d007e5fad5440cd82616becc68549f9e96be6))
+* **cost:** sum every candidate attempt into one run cost ([510113a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/510113ac3df2a5243a3911eef57b379669e523e7))
+
 ## [0.163.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.163.0...v0.163.1) (2026-10-04)
 
 
