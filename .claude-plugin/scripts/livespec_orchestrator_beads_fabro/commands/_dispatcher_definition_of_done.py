@@ -25,6 +25,16 @@ neither of them has a reference line to exclude. Leaving the exclusion to the
 segmenter is also how the sub-heading would have leaked: `### Human-attested`
 is neither short-and-shouting nor colon-terminated, so the segmenter's
 header heuristic reads it as prose and would grade it as an assertion.
+
+WHY THE TWO OPT-OUT SUB-HEADINGS SHARE ONE TABLE. `### Host-captured` (v115) and
+`### Human-attested` differ in WHICH mode they declare and in nothing else this
+parse does: each names exactly one mode, each requires a non-empty `Reason:`
+line, and each returns the mode to the default at the next heading. Adding the
+first as a second branch beside the second would have been the smaller diff, and
+its cost is the failure nobody sees — a later clause that tightens one
+sub-heading's handling and silently leaves the other where it was, which reads as
+working code because both halves still parse. One table is what makes the two
+structurally incapable of drifting apart.
 """
 
 from __future__ import annotations
@@ -38,25 +48,40 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria 
 
 __all__: list[str] = [
     "DEFINITION_OF_DONE_TITLE",
+    "HOST_CAPTURED_SUB_HEADING_TITLE",
     "HUMAN_ATTESTED_SUB_HEADING_TITLE",
     "PROOF_MODE_FACTORY_CAPTURED",
+    "PROOF_MODE_HOST_CAPTURED",
     "PROOF_MODE_HUMAN_ATTESTED",
     "REASON_PREFIX",
     "REFERENCES_PREFIX",
     "DefinitionOfDone",
     "DefinitionOfDoneAssertion",
+    "declared_proof_mode",
     "definition_of_done",
 ]
 
 DEFINITION_OF_DONE_TITLE = "definition of done"
 REFERENCES_PREFIX = "References:"
 REASON_PREFIX = "Reason:"
+HOST_CAPTURED_SUB_HEADING_TITLE = "host-captured"
 HUMAN_ATTESTED_SUB_HEADING_TITLE = "human-attested"
-# The closed proof-mode enumeration. Both values are SELF-DESCRIBING names on
+# The closed proof-mode enumeration. Every value is a SELF-DESCRIBING name on
 # every surface that renders, journals or configures them, which the clause
 # requires explicitly: a numbered or tiered label MUST NOT be used.
 PROOF_MODE_FACTORY_CAPTURED = "factory_captured"
+PROOF_MODE_HOST_CAPTURED = "host_captured"
 PROOF_MODE_HUMAN_ATTESTED = "human_attested"
+
+# The sub-headings that OPT OUT of the default mode, keyed by case-folded title.
+# This table is the WHOLE of the difference between the two: membership decides
+# which mode the bullets under a sub-heading carry AND which sub-headings owe a
+# `Reason:` line, so neither question can be answered for one of them and
+# forgotten for the other.
+_SUB_HEADING_MODES = {
+    HOST_CAPTURED_SUB_HEADING_TITLE: PROOF_MODE_HOST_CAPTURED,
+    HUMAN_ATTESTED_SUB_HEADING_TITLE: PROOF_MODE_HUMAN_ATTESTED,
+}
 
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 # Where ONE reference ends and the next begins. The clause writes the line as
@@ -104,12 +129,14 @@ class DefinitionOfDone:
     payload is blank, because the clause treats each the same way: the section
     carries no valid reference line.
 
-    `malformed_proof_modes` carries the verbatim title of every `Human-attested`
-    sub-heading that reached no non-empty `Reason:` line. The assertions under
-    such a sub-heading KEEP the human-attested mode: the declaration is
-    malformed, not absent, and silently downgrading it to the default would let
-    the item auto-close with no human leg at all — the one outcome the
-    sub-heading exists to prevent.
+    `malformed_proof_modes` carries the verbatim title of every opt-out
+    sub-heading — `Host-captured` or `Human-attested` — that reached no non-empty
+    `Reason:` line. The assertions under such a sub-heading KEEP the mode it
+    declared: the declaration is malformed, not absent, and silently downgrading
+    it to the default would let the item auto-close with no host or human leg at
+    all — the one outcome the sub-heading exists to prevent. The TITLE rather
+    than the mode is carried because the finding quotes the sub-heading the
+    author wrote; the mode is recovered from it by `declared_proof_mode`.
     """
 
     present: bool
@@ -119,11 +146,17 @@ class DefinitionOfDone:
     malformed_proof_modes: tuple[str, ...]
 
     @property
+    def host_captured_assertions(self) -> tuple[str, ...]:
+        """The assertion texts an agent session must capture on a host, in section order."""
+        return self._with_mode(mode=PROOF_MODE_HOST_CAPTURED)
+
+    @property
     def human_attested_assertions(self) -> tuple[str, ...]:
         """The assertion texts a human must attest, in section order."""
-        return tuple(
-            one.text for one in self.assertions if one.proof_mode == PROOF_MODE_HUMAN_ATTESTED
-        )
+        return self._with_mode(mode=PROOF_MODE_HUMAN_ATTESTED)
+
+    def _with_mode(self, *, mode: str) -> tuple[str, ...]:
+        return tuple(one.text for one in self.assertions if one.proof_mode == mode)
 
 
 def definition_of_done(*, description: str) -> DefinitionOfDone:
@@ -145,6 +178,22 @@ def definition_of_done(*, description: str) -> DefinitionOfDone:
         references=_references(body=body),
         malformed_proof_modes=_malformed_proof_modes(body=body),
     )
+
+
+def declared_proof_mode(*, sub_heading: str) -> str:
+    """The mode the bullets under one sub-heading declare.
+
+    Only `Host-captured` and `Human-attested` opt out. Any other sub-heading is
+    ordinary grouping and returns the mode to the default, so a section cannot
+    drift out of mechanical proof by introducing a heading that merely looks
+    related.
+
+    PUBLIC because the finding the host-side wall renders has to name the mode
+    whose declaration is malformed, and it holds the verbatim sub-heading title
+    rather than the mode. A second title-to-mode mapping over there is how the
+    wall would come to report `human_attested` for a `Host-captured` sub-heading.
+    """
+    return _SUB_HEADING_MODES.get(sub_heading.strip().casefold(), PROOF_MODE_FACTORY_CAPTURED)
 
 
 def _absent() -> DefinitionOfDone:
@@ -174,7 +223,7 @@ def _assertions(*, body: list[str]) -> tuple[DefinitionOfDoneAssertion, ...]:
         if heading is not None:
             assertions.extend(_segment(run=run, mode=mode))
             run = []
-            mode = _mode_for(sub_heading=heading.group(2).strip())
+            mode = declared_proof_mode(sub_heading=heading.group(2))
             continue
         if _is_section_prose(text=raw):
             continue
@@ -191,31 +240,19 @@ def _segment(*, run: list[str], mode: str) -> list[DefinitionOfDoneAssertion]:
     ]
 
 
-def _mode_for(*, sub_heading: str) -> str:
-    """The mode the bullets under one sub-heading declare.
-
-    Only `Human-attested` opts out. Any other sub-heading is ordinary grouping
-    and returns the mode to the default, so a section cannot drift out of
-    mechanical proof by introducing a heading that merely looks related.
-    """
-    if sub_heading.casefold() == HUMAN_ATTESTED_SUB_HEADING_TITLE:
-        return PROOF_MODE_HUMAN_ATTESTED
-    return PROOF_MODE_FACTORY_CAPTURED
-
-
 def _is_section_prose(*, text: str) -> bool:
     """Whether a body line is required prose rather than a gradeable assertion."""
     return text.strip().startswith((REFERENCES_PREFIX, REASON_PREFIX))
 
 
 def _malformed_proof_modes(*, body: list[str]) -> tuple[str, ...]:
-    """The `Human-attested` sub-headings that reached no non-empty `Reason:` line.
+    """The opt-out sub-headings that reached no non-empty `Reason:` line.
 
     "Before its first bullet" is read as "before the sub-heading ends", which is
     the same thing for a conforming section and the forgiving reading for one
     whose author put the reason after the bullets. The strict reading would
     refuse an item whose reason IS stated, and the finding exists to make the
-    missing capability visible, not to police line order.
+    missing capability or host surface visible, not to police line order.
     """
     malformed: list[str] = []
     pending: str | None = None
@@ -225,7 +262,7 @@ def _malformed_proof_modes(*, body: list[str]) -> tuple[str, ...]:
             title = heading.group(2).strip()
             if pending is not None:
                 malformed.append(pending)
-            pending = title if title.casefold() == HUMAN_ATTESTED_SUB_HEADING_TITLE else None
+            pending = title if title.casefold() in _SUB_HEADING_MODES else None
             continue
         if pending is not None and _states_a_reason(text=raw):
             pending = None

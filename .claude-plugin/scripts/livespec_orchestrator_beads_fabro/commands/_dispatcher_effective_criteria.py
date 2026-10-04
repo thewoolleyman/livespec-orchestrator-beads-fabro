@@ -64,6 +64,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria 
     criteria_lines,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    PROOF_MODE_HOST_CAPTURED,
     PROOF_MODE_HUMAN_ATTESTED,
     definition_of_done,
 )
@@ -148,6 +149,15 @@ class EffectiveCriteria:
         return bool(self.assertions)
 
     @property
+    def host_captured_assertions(self) -> tuple[str, ...]:
+        """The assertions an agent session must capture on a host, in section order.
+
+        Empty for a legacy source, exactly as the human-attested projection is and
+        for the same reason.
+        """
+        return self._with_mode(mode=PROOF_MODE_HOST_CAPTURED)
+
+    @property
     def human_attested_assertions(self) -> tuple[str, ...]:
         """The assertions a human must attest, in the section's own order.
 
@@ -155,10 +165,34 @@ class EffectiveCriteria:
         routing derived from this is therefore the factory-captured one, matching
         the pre-v114 behaviour for work already in flight.
         """
+        return self._with_mode(mode=PROOF_MODE_HUMAN_ATTESTED)
+
+    @property
+    def pending_leg_assertions(self) -> tuple[str, ...]:
+        """Every assertion whose proof leg the AI acceptance pass does not grade.
+
+        The v115 evidence rule draws ONE line here: "a PASS with any pending leg
+        (host or human) MUST NOT accept the item to `done` under any policy,
+        `ai-only` included". The two legs are otherwise unrelated — one is
+        performed by an agent session on an operator host and the other by a
+        human — so a disposition that tested them separately would be two tests
+        of one rule, and the way that fails is that a mode added later is wired
+        into one of them. Host assertions lead because the host leg is the
+        earlier one in the order the deliverable policy ranks the modes.
+        """
+        return self.host_captured_assertions + self.human_attested_assertions
+
+    def _with_mode(self, *, mode: str) -> tuple[str, ...]:
+        """The assertions declaring one mode, in the section's own order.
+
+        `strict=False` is load-bearing rather than lax: `proof_modes` is EMPTY for
+        a legacy source while `assertions` is not, and the zip has to yield
+        nothing for that item rather than raise.
+        """
         return tuple(
             assertion
-            for assertion, mode in zip(self.assertions, self.proof_modes, strict=False)
-            if mode == PROOF_MODE_HUMAN_ATTESTED
+            for assertion, declared in zip(self.assertions, self.proof_modes, strict=False)
+            if declared == mode
         )
 
     def parse_display(self) -> str:

@@ -49,6 +49,29 @@ _MIXED_SECTION = (
     "\n"
     "References: ## Effective acceptance criteria\n"
 )
+# All three modes in one section, in the order the v115 enumeration orders them.
+# A section carrying only two of them cannot tell a parse that maps each
+# sub-heading to its OWN mode from one that maps every opt-out sub-heading to the
+# single mode it already knew about.
+_THREE_MODE_SECTION = (
+    "## Definition of Done\n"
+    "\n"
+    "- The factory captures this one.\n"
+    "\n"
+    "### Host-captured\n"
+    "\n"
+    "Reason: the proof needs the released build installed on an operator host.\n"
+    "\n"
+    "- An agent session captures this one on a host.\n"
+    "\n"
+    "### Human-attested\n"
+    "\n"
+    "Reason: the proof needs a session on an external administrative console.\n"
+    "\n"
+    "- A human attests this one.\n"
+    "\n"
+    "References: ## Effective acceptance criteria\n"
+)
 
 
 def _item(**overrides: object) -> WorkItem:
@@ -267,6 +290,64 @@ def test_a_reason_line_with_no_text_is_no_reason_line() -> None:
     )
 
     assert definition_of_done(description=description).malformed_proof_modes == ("Human-attested",)
+
+
+def test_a_host_captured_sub_heading_declares_the_host_mode_for_its_bullets() -> None:
+    # The v115 third mode. The control is the FACTORY-captured bullet above the
+    # sub-heading: a parse that declared the whole section host-captured would
+    # satisfy a check on the host bullet alone, and the item would then rest for a
+    # host leg that two of its three assertions never needed.
+    section = definition_of_done(description=_THREE_MODE_SECTION)
+
+    assert [(one.text, one.proof_mode) for one in section.assertions] == [
+        ("The factory captures this one.", "factory_captured"),
+        ("An agent session captures this one on a host.", "host_captured"),
+        ("A human attests this one.", "human_attested"),
+    ]
+    assert section.host_captured_assertions == ("An agent session captures this one on a host.",)
+    assert section.human_attested_assertions == ("A human attests this one.",)
+    # A well-formed `Reason:` line under EITHER opt-out sub-heading clears the
+    # malformed finding, which is what makes the refusal below evidence of the
+    # missing line rather than of the sub-heading's mere presence.
+    assert section.malformed_proof_modes == ()
+
+
+def test_the_host_captured_mode_reaches_the_effective_criteria_primitive() -> None:
+    # The parse is consumed through the ONE criteria primitive, never directly, so
+    # a mode that stops at the section parse reaches no wall and no acceptance
+    # pass. `proof_modes` is parallel to `assertions` in section order.
+    resolved = effective_criteria(item=_item(description=_THREE_MODE_SECTION))
+
+    assert resolved.proof_modes == ("factory_captured", "host_captured", "human_attested")
+    assert resolved.host_captured_assertions == ("An agent session captures this one on a host.",)
+    # The two legs the AI pass never grades, in section order. The completion
+    # disposition reads exactly this to decide that a PASS may not close.
+    assert resolved.pending_leg_assertions == (
+        "An agent session captures this one on a host.",
+        "A human attests this one.",
+    )
+
+
+def test_a_host_captured_sub_heading_with_no_reason_line_is_malformed() -> None:
+    description = (
+        "## Definition of Done\n"
+        "\n"
+        "- The factory captures this one.\n"
+        "\n"
+        "### Host-captured\n"
+        "\n"
+        "- An agent session captures this one on a host.\n"
+        "\n"
+        "References: ## Effective acceptance criteria\n"
+    )
+
+    section = definition_of_done(description=description)
+
+    assert section.malformed_proof_modes == ("Host-captured",)
+    # The assertion still carries the host mode: the declaration is malformed, not
+    # absent, and silently downgrading it would let the item auto-close with no
+    # host leg at all — the one outcome the sub-heading exists to prevent.
+    assert section.host_captured_assertions == ("An agent session captures this one on a host.",)
 
 
 def test_a_sub_heading_that_is_not_human_attested_returns_the_mode_to_the_default() -> None:
