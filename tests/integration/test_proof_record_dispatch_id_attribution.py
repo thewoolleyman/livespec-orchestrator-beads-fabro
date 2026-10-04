@@ -22,14 +22,20 @@ pre-repair build could see — and asserts the verified record is NOT attributed
 every assertion is unevidenced. Without it, "the record graded" is equally
 consistent with a reader that would have graded it before.
 
-ONE SEPARATE DEFECT IS MEASURED HERE AND DELIBERATELY NOT REPAIRED. The fourth
-assertion of PR #2538 reads UNEVIDENCED even once its record is correctly
-attributed, because `_dispatcher_proof_record._sections` splits the body at any
-line matching `^#{1,6}\\s` — including the `# just.log:` comment lines inside that
-assertion's fenced code block — so its `Reproduced:` line lands in a later
-section than its heading. That is a fault in section SEGMENTATION, not in
-attribution, and it is recorded as an assertion here so the finding is durable
-rather than rediscovered; repairing it belongs to its own work-item.
+ONE SEPARATE DEFECT WAS MEASURED HERE AND HAS SINCE BEEN REPAIRED. While this
+module was the only reader of a real payload, the fourth assertion of PR #2538 read
+UNEVIDENCED even once its record was correctly attributed, because
+`_dispatcher_proof_record._sections` split the body at any line matching
+`^#{1,6}\\s` — including the `# just.log:` comment lines inside that assertion's
+fenced code block — so its `Reproduced:` line landed in a later section than its
+heading. That was a fault in section SEGMENTATION, not in attribution, and it was
+recorded as an assertion here so the finding would be durable rather than
+rediscovered. Work-item `bd-ib-2z5wt2` made the splitter fence-aware, so all four
+assertions now grade off this record, and this module asserts THAT instead — a
+stale expectation of three would have gone on passing while the repair was in
+place. The segmentation claim itself, over both of this repository's committed
+payloads, belongs to
+`tests/integration/test_proof_record_fenced_section_segmentation.py`.
 """
 
 from __future__ import annotations
@@ -89,8 +95,6 @@ _ASSERTIONS = (
     " nine previously unrun slugs.",
     "The aggregate's final passed-count line reports the number of targets actually" " executed.",
 )
-# The one whose section the fenced-code-block segmentation defect splits.
-_FENCE_SPLIT_ASSERTION = _ASSERTIONS[3]
 
 
 @dataclass(kw_only=True)
@@ -158,12 +162,12 @@ def test_the_real_payload_is_attributed_by_the_dispatch_id_it_is_stamped_with(
     assert leg.record.verdict == VERDICT_VERIFIED
     assert leg.record.url == _VERIFIED_RECORD_URL
     assert leg.record.timestamp == "2026-10-01T21:15:01Z"
-    # Three of the four assertions grade REPRODUCED off that record. The fourth is
-    # the separate section-segmentation defect this module's docstring records: its
-    # `Reproduced:` line sits past a `# just.log:` line inside a fenced block, so
-    # the splitter has already opened a new section by the time it is reached.
-    assert [check.passed for check in leg.checks] == [True, True, True]
-    assert leg.unevidenced == (_FENCE_SPLIT_ASSERTION,)
+    # All four assertions grade REPRODUCED off that record. The fourth did not until
+    # `bd-ib-2z5wt2` made the body splitter fence-aware — its `Reproduced:` line sits
+    # past a `# just.log:` line inside a fenced block — and that repair's own claim
+    # lives in the segmentation module this module's docstring names.
+    assert [check.passed for check in leg.checks] == [True, True, True, True]
+    assert leg.unevidenced == ()
 
 
 def test_the_same_payload_is_unobserved_when_only_the_fabro_run_id_is_accepted(

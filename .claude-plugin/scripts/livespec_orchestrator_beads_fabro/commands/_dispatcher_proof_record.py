@@ -27,6 +27,31 @@ finds nothing for exactly the assertions most likely to be long. The body is
 therefore split into per-assertion SECTIONS at its headings and each section is
 normalized whole before the search, which is wrap-independent for the same reason
 the criteria segmenter is.
+
+WHY THE SPLIT IS FENCE-AWARE. A heading-like line is only a heading when it is
+PROSE, and the bulk of a record is not prose: the clause requires a fenced code
+block per text capture, and the lines inside one routinely begin with a hash —
+shell comments, Python comments, the printed headings of a Markdown file. Splitting
+at those opened a new section mid-proof, so an assertion's section ended BEFORE its
+own `Reproduced:` line and the reader answered `None` for an assertion the record
+states was reproduced. Measured 2026-10-04 against the pre-repair reader, over two
+verified records that were correctly attributed and correctly published: PR #2561
+graded `[None, None, True, True]` and PR #2538 graded `[True, True, True, None]`,
+so five of eight assertions read as unobserved and both items parked on
+NEEDS_ATTENTION although every one of those sections carries `Reproduced: yes.`
+The blast radius was any proof that prints a comment or a heading, which is most of
+them.
+
+WHY ONLY THE FENCE, AND NOT "SPLIT AT THE ASSERTION HEADINGS ONLY". The narrower
+rule is the one that looks right and is measurably wrong. Recognising the record's
+own `## Assertion N — ` form and treating nothing else as a boundary would still
+split inside a fence, because a proof's SHELL COMMENTS take that form too: PR
+#2561's captured record carries four fenced lines reading `# Assertion 2, Step 2:
+…`, `# Assertion 3, Step 2: …` and the like. It would also stop splitting at a
+trailing `## Verdict` or `## Summary`, which is the fail-OPEN direction — an
+assertion whose own `Reproduced:` line is missing would absorb a later section's
+and report evidence nobody published. Fence state answers the question the defect
+actually asks, so it is the whole of the rule.
 """
 
 from __future__ import annotations
@@ -81,6 +106,11 @@ _RUN_PREFIX = "run "
 _HEADER_MINIMUM_FIELDS = 3
 _TIMESTAMP_FIELD = 3
 _HEADING = re.compile(r"^#{1,6}\s")
+# A CommonMark fenced-code delimiter: three or more backticks or tildes, indented
+# no more than three spaces. The info string an OPENING delimiter may carry is not
+# captured, because the only question asked of this pattern is whether the line
+# delimits a fence.
+_FENCE = re.compile(r"^ {0,3}(?:`{3,}|~{3,})")
 _WHITESPACE = re.compile(r"\s+")
 _REPRODUCED_PREFIX = "reproduced:"
 _REPRODUCED_YES = "yes"
@@ -200,16 +230,24 @@ def _assertion_section(*, body: str, assertion: str) -> list[str] | None:
 
 
 def _sections(*, body: str) -> list[list[str]]:
-    """The record body split at its headings, each heading opening a section.
+    """The record body split at its PROSE headings, each heading opening a section.
 
     The accumulator starts as one OPEN section rather than as an empty list, so
     there is no end-of-body flush to get wrong: the lines before the first
     heading — the header line itself — are that open section, and a body with no
     lines at all is one empty section, which matches no assertion.
+
+    A heading-like line INSIDE a fenced code block is proof output, not a heading,
+    and never opens a section — the module docstring records what splitting at one
+    cost. The delimiter line itself is never a heading either, so the fence arm and
+    the heading arm are exclusive.
     """
     sections: list[list[str]] = [[]]
+    fenced = False
     for line in body.splitlines():
-        if _HEADING.match(line) is not None and sections[-1]:
+        if _FENCE.match(line) is not None:
+            fenced = not fenced
+        elif not fenced and _HEADING.match(line) is not None and sections[-1]:
             sections.append([])
         sections[-1].append(line)
     return sections

@@ -39,11 +39,35 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   record graded" is evidence of the repair rather than of a reader that would
   always have graded it. A third case asserts the fixture is the forge shape,
   reading the argv off the seam, since every other claim rides on the payload
-  being what the production read returns. The module also records, as an
-  assertion rather than as prose, that PR #2538's fourth assertion stays
-  unevidenced once correctly attributed, because the body splitter opens a new
+  being what the production read returns. The module also recorded, as an
+  assertion rather than as prose, that PR #2538's fourth assertion stayed
+  unevidenced once correctly attributed, because the body splitter opened a new
   section at the `# just.log:` lines inside its fenced code block — a section
-  SEGMENTATION defect, not an attribution one, left to its own work-item.
+  SEGMENTATION defect, not an attribution one. That defect is repaired, so the
+  assertion now reads all four passing; the segmentation claim itself lives in
+  the module below.
+- `test_proof_record_fenced_section_segmentation.py` — the body splitter's
+  fence-awareness (`SPECIFICATION/contracts.md` §"Post-merge acceptance
+  (`acceptance -> done`)" → "The proof evidence leg"), read by the real
+  proof-evidence leg against BOTH of this repository's committed payloads, PR
+  #2561 and PR #2538. Real payloads are the whole point: a hand-written record
+  body carries no fenced proof, and the hazard arrives only when a proof PRINTS
+  something — shell comments, Python comments, the printed headings of a
+  Markdown file — which is what every real proof does. Pre-repair, PR #2561's
+  verified record graded `[None, None, True, True]` and PR #2538's graded
+  `[True, True, True, None]`, so five of eight assertions across two correctly
+  attributed, correctly published records read as unobserved and both items
+  parked on NEEDS_ATTENTION. Three controls carry the module, because "all four
+  passed" has three independent ways to be vacuous: a fabricated fifth assertion
+  rides in the SAME criteria and must stay unevidenced, so a reader answering
+  `True` for everything cannot pass; each record's surplus of heading-like lines
+  over its four assertion headings is counted off the committed bytes, since a
+  payload with no fenced hash line would have graded identically before the
+  repair; and PR #2561's live `not_reproduced` record — whose first assertion
+  says `Reproduced: NO.` while its other three say yes — is graded in the same
+  breath, so a reader that had stopped reading the load-bearing line is excluded
+  too. A fourth case asserts both fixtures are the forge shape and a fifth reads
+  the production argv off the seam.
 - `test_reconcile_merged_acceptance_pointer.py` — the reconcile-merged arm for an
   item RESTING IN ACCEPTANCE (`SPECIFICATION/contracts.md`'s reconcile-merged
   clause, v115): re-run only the acceptance pass against the records now on the
