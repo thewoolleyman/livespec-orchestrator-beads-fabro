@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.164.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.164.1...v0.164.2) (2026-10-04)
+
+
+### Bug Fixes
+
+* **proof:** admit the not_captured verdict into the proof-record enumeration ([c88ac21](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c88ac2173c539db116add968d96d17d0cfb0e199))
+
 ## [0.164.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.164.0...v0.164.1) (2026-10-04)
 
 
