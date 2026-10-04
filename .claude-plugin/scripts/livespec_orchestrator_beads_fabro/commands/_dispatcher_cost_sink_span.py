@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import cast
 
+from livespec_orchestrator_beads_fabro.commands._acp_model_identity import exact_model_identity
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_pricing import (
     DEFAULT_DISPATCH_COST_MODEL,
     TokenVector,
@@ -33,6 +34,16 @@ _REQUEST_ID_ATTR = "request_id"
 _GEN_AI_RESPONSE_ID_ATTR = "gen_ai.response.id"
 _NODE_ID_ATTR = "node_id"
 
+# OTLP stamps span times in nanoseconds; the ACP event stream reports attempt
+# durations in milliseconds. Named so the one conversion between them is
+# auditable rather than an inline literal.
+_NANOS_PER_MS = 1_000_000
+
+# The model-naming attributes a span may carry, MOST-authoritative first. One
+# tuple, read by both the priced-model resolver and the emitted-identity reader,
+# so the two cannot come to prefer different attributes of the same span.
+_MODEL_ATTR_PREFERENCE = (_MODEL_ATTR, _GEN_AI_RESPONSE_MODEL_ATTR, _GEN_AI_REQUEST_MODEL_ATTR)
+
 # The correlation keys a CC span may carry, MOST-specific first; the cost
 # sink is keyed by the FIRST present so the dispatcher's gate can look the
 # derived cost up by `work_item_id`.
@@ -54,7 +65,23 @@ _TOKEN_ATTRS = (
 
 @dataclass(frozen=True, kw_only=True)
 class SpanCost:
-    """The cost contribution of one token-bearing CC span (leak-free)."""
+    """The cost contribution of one token-bearing CC span (leak-free).
+
+    `started_at_ms` and `model_identity` are what make the per-attempt
+    attribution of `SPECIFICATION/contracts.md` section "Factory-configurable
+    ACP fallback priority" -> "Cost follows every attempt in a successful
+    fallback run" possible at all: the cost gate reads this record OUT OF
+    PROCESS, after the run is over, so a record carrying only a derived
+    micro-USD cannot be re-attributed to an attempt window however good the
+    window is.
+
+    `model_identity` is the EXACT emitted identity, normalized by the one
+    date-suffix rule and nothing else, and it is kept even when this build's
+    built-in table cannot price it -- the committed model catalog or the
+    candidate's own table may, and that decision belongs to the cost path
+    rather than to the receiver. It is deliberately NOT `model_basis`, which is
+    a priced-model LABEL that falls back to the configured default.
+    """
 
     correlation_key: str
     dedup_key: str
@@ -63,6 +90,8 @@ class SpanCost:
     model_basis: str
     model_resolved: bool
     node_id: str | None
+    started_at_ms: int | None = None
+    model_identity: str | None = None
 
 
 def span_cost(*, span: dict[str, object], default_model: str | None = None) -> SpanCost | None:
@@ -101,7 +130,55 @@ def span_cost(*, span: dict[str, object], default_model: str | None = None) -> S
         model_basis=model_id,
         model_resolved=model_resolved,
         node_id=_node_id(attrs=attrs),
+        started_at_ms=_started_at_ms(span=span),
+        model_identity=_emitted_identity(attrs=attrs),
     )
+
+
+def _started_at_ms(*, span: dict[str, object]) -> int | None:
+    """The span's own start instant in epoch MILLISECONDS, or None when absent.
+
+    OTLP carries `startTimeUnixNano` as nanoseconds, and as a STRING on the
+    JSON transport because the value exceeds what JSON numbers are trusted to
+    round-trip. Milliseconds is the unit the engine reports attempt durations
+    in, so the conversion happens here, once, rather than at each comparison --
+    mixing the two units puts a boundary a million-fold away from where the
+    events put it.
+
+    Read through `str()` rather than a type ladder because every transport
+    shape collapses to one question -- are these digits? A digit string is the
+    JSON transport's form and a bare int is the protobuf one; `None`, a bool, a
+    float and a negative all answer no, which is the honest answer for each,
+    since none of them is an instant this span began at.
+    """
+    digits = str(span.get("startTimeUnixNano", ""))
+    return int(digits) // _NANOS_PER_MS if digits.isdigit() else None
+
+
+def _emitted_identity(*, attrs: dict[str, object]) -> str | None:
+    """The exact emitted model identity, whatever this build can price.
+
+    Independent of the built-in price table on purpose: an identity the table
+    does not carry may still be priced through the committed model catalog or
+    the candidate's own explicit table, and filtering it here would make the
+    catalog-first resolution unreachable for exactly the models the table was
+    missing.
+
+    An attribute that is present but BLANK is treated exactly as an absent one
+    -- neither carries an identity -- so the scan continues to the next
+    preference rather than stopping on a key that merely exists.
+    """
+    for key in _MODEL_ATTR_PREFERENCE:
+        identity = exact_model_identity(raw_model=_text_attr(attrs=attrs, key=key))
+        if identity is not None:
+            return identity
+    return None
+
+
+def _text_attr(*, attrs: dict[str, object], key: str) -> str:
+    """One attribute as text, with every non-text shape reading as absent."""
+    value = attrs.get(key)
+    return value if isinstance(value, str) else ""
 
 
 def _string_and_int_attrs(*, span: dict[str, object]) -> dict[str, object]:
@@ -166,12 +243,10 @@ def _preferred_correlation_key(*, attrs: dict[str, object]) -> str | None:
 
 def _resolve_model(*, attrs: dict[str, object], fallback_model: str) -> tuple[str, bool]:
     """Resolve the priced model id + whether it came from the span's own model."""
-    for key in (_MODEL_ATTR, _GEN_AI_RESPONSE_MODEL_ATTR, _GEN_AI_REQUEST_MODEL_ATTR):
-        raw_model = attrs.get(key)
-        if isinstance(raw_model, str):
-            normalized = normalize_model_id(raw_model=raw_model)
-            if normalized is not None:
-                return normalized, True
+    for key in _MODEL_ATTR_PREFERENCE:
+        normalized = normalize_model_id(raw_model=_text_attr(attrs=attrs, key=key))
+        if normalized is not None:
+            return normalized, True
     return fallback_model, False
 
 

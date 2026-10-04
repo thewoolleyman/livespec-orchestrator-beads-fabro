@@ -46,6 +46,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_attempts import CostObservation
+from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_pricing import TokenVector
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_sink_span import (
     SpanCost,
     span_cost,
@@ -58,6 +60,7 @@ from livespec_orchestrator_beads_fabro.effects import (
 )
 
 __all__: list[str] = [
+    "CostObservation",
     "CostReport",
     "CostSink",
     "SpanCost",
@@ -128,6 +131,8 @@ _CACHE_READ_FIELD = "cache_read"
 _MODEL_BASIS_FIELD = "model_basis"
 _MODEL_RESOLVED_FIELD = "model_resolved"
 _NODE_ID_FIELD = "node_id"
+_STARTED_AT_MS_FIELD = "started_at_ms"
+_MODEL_IDENTITY_FIELD = "model_identity"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -148,6 +153,8 @@ class _DedupRecord:
     model_basis: str | None
     model_resolved: bool
     node_id: str | None
+    started_at_ms: int | None = None
+    model_identity: str | None = None
 
 
 @dataclass(kw_only=True)
@@ -202,6 +209,8 @@ class CostSink:
                 model_basis=cost.model_basis,
                 model_resolved=cost.model_resolved,
                 node_id=cost.node_id,
+                started_at_ms=cost.started_at_ms,
+                model_identity=cost.model_identity,
             )
             self._write(accruals=accruals)
 
@@ -243,6 +252,34 @@ class CostSink:
             model_basis=_model_basis(records=records),
             model_resolved=all(r.model_resolved for r in records),
             node_id=_node_id(records=records),
+        )
+
+    def observations(self, *, key: str) -> tuple[CostObservation, ...] | None:
+        """Every distinct API call recorded for `key`, or None if never accrued.
+
+        The per-attempt attribution read: each call with the instant it started
+        and the exact identity it emitted, which is what lets the cost path
+        place it inside one candidate attempt's window after the run is over.
+        Ordered by dedup key so one sink file yields one sequence.
+        """
+        with self._lock:
+            per_key = self._read().get(key)
+        if not per_key:
+            return None
+        return tuple(
+            CostObservation(
+                dedup_key=dedup_key,
+                started_at_ms=record.started_at_ms,
+                model_identity=record.model_identity,
+                tokens=TokenVector(
+                    input=record.input_tokens,
+                    output=record.output_tokens,
+                    cache_write=record.cache_write_tokens,
+                    cache_read=record.cache_read_tokens,
+                ),
+                node_id=record.node_id,
+            )
+            for dedup_key, record in sorted(per_key.items())
         )
 
     def _read(self) -> dict[str, dict[str, _DedupRecord]]:
@@ -307,6 +344,12 @@ def _record_to_dict(*, record: _DedupRecord) -> dict[str, object]:
         _MODEL_BASIS_FIELD: record.model_basis or "",
         _MODEL_RESOLVED_FIELD: record.model_resolved,
         _NODE_ID_FIELD: record.node_id or "",
+        # Written as -1 for "absent" rather than omitted, because 0 is a real
+        # epoch instant and an omitted key is indistinguishable from a record
+        # this build wrote before the field existed. The reader turns any
+        # negative value back into None.
+        _STARTED_AT_MS_FIELD: record.started_at_ms if record.started_at_ms is not None else -1,
+        _MODEL_IDENTITY_FIELD: record.model_identity or "",
     }
 
 
@@ -346,7 +389,21 @@ def _record_from_stored(*, stored: object) -> _DedupRecord | None:
         model_basis=_str_field(block=block, field_name=_MODEL_BASIS_FIELD),
         model_resolved=block.get(_MODEL_RESOLVED_FIELD) is True,
         node_id=_str_field(block=block, field_name=_NODE_ID_FIELD),
+        started_at_ms=_instant_field(block=block),
+        model_identity=_str_field(block=block, field_name=_MODEL_IDENTITY_FIELD),
     )
+
+
+def _instant_field(*, block: dict[str, object]) -> int | None:
+    """The recorded span start instant, or None when it is absent.
+
+    A record written before this field existed has no key at all, and one
+    written for a span carrying no start time has the `-1` sentinel. Both are
+    the same fact -- this call cannot be positioned on the timeline -- so both
+    read as None rather than as the epoch.
+    """
+    value = _int_field(block=block, field_name=_STARTED_AT_MS_FIELD)
+    return None if value is None or value < 0 else value
 
 
 def _int_field(*, block: dict[str, object], field_name: str) -> int | None:
