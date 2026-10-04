@@ -448,6 +448,26 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   admitted case is the control for all four, because four refusals alone are
   equally consistent with a gate that refuses every declaration. The drain leg is
   here too: the two dispatch paths reach the gate through separate call sites.
+  The MINTED route is bound in the same module, against a hermetic provider
+  double registered into the production registry exactly as a shipped adapter
+  would be — no provider adapter ships, so reaching for a real management
+  interface would need a credential and a network and would measure the vendor
+  rather than the Dispatcher. Its load-bearing assertion is an ORDER, not a
+  count: "revoked after the run ends" is a claim about sequence, and every
+  cheaper instrument is satisfied by a build that revokes too early, so the
+  mint, the run and the revoke share ONE timeline the provider double and the
+  `run_dispatch` stand-in both write to. The declared value is absent from the
+  environment in that leg, which is what makes it the minted path rather than a
+  copied one wearing its name: nothing but the provider could have supplied a
+  value. Its control is the identical declaration, item and CLI with the
+  registry left EMPTY, journaling `copied` and writing no revoke record — which
+  is also the regression control for every repository already declaring a proof
+  credential. The refused-mint leg asserts the `minted` PROJECTION record is
+  still written, and says why: that record states the resolved ROUTE and the
+  selection gate writes it before any overlay exists, exactly as it does for
+  `copied`, whose overlay write can also fail afterwards. The record that
+  genuinely claims a credential existed is the REVOKE record, and its absence is
+  the discriminator that leg turns on.
 
 - `test_acp_fallback_journey_scenario127.py` — binds `SPECIFICATION/scenarios.md`
   "Scenario 127 — Ordered ACP fallback preserves primary resolution, failure

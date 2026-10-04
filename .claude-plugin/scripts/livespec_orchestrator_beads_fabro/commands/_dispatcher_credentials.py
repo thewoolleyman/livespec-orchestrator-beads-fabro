@@ -45,6 +45,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     render_run_config_overlay,
     resolve_sandbox_otel_endpoint,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_providers import (
+    ProofCredentialLease,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credentials import (
     proof_credentials_overlay_env,
 )
@@ -154,6 +157,7 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
     git_author: GitAuthor,
     graph_override: Path | None = None,
     prepare_inputs: Mapping[str, str] | None = None,
+    proof_credential_lease: ProofCredentialLease | None = None,
 ) -> str | None:
     """Write the uncommitted mode-600 run-config overlay.
 
@@ -266,11 +270,16 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
         # the branch comes from the single shared derivation rather than a second
         # spelling of `feat/<id>` (S5 / bd-ib-b4u6b7).
         proof_store_env=proof_store_env_lines(repo=repo, work_item_id=work_item_id),
-        # This repository's DECLARED proof credentials, by name, valued from this
-        # process's environment. The pre-dispatch gate has already refused every
-        # unusable declaration, so what reaches here is admitted; the builder is
-        # nonetheless fail-closed and renders nothing it cannot account for (S8).
-        proof_credentials_env=proof_credentials_overlay_env(repo=repo, environ=os.environ),
+        # This repository's DECLARED proof credentials, by name. A declaration
+        # whose provider exposes a management interface is valued from this
+        # dispatch's own LEASE — minted scoped and expiring, revoked when the run
+        # returns; every other declaration is valued from this process's
+        # environment. The pre-dispatch gate has already refused every unusable
+        # declaration, so what reaches here is admitted; the builder is
+        # nonetheless fail-closed and renders nothing it cannot account for.
+        proof_credentials_env=proof_credentials_overlay_env(
+            repo=repo, environ=os.environ, lease=proof_credential_lease
+        ),
         # The pre-launch dispatch id the sandbox declares as its
         # factory-provenance marker. This function runs BEFORE `fabro run`,
         # which is why the marker cannot carry the Fabro run id.

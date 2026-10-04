@@ -25,6 +25,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_payload import (
     remove_workflow_payload,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_providers import (
+    ProofCredentialLease,
+    revoke_proof_credential_lease,
+)
 
 __all__: list[str] = [
     "DispatchRunContext",
@@ -48,6 +52,12 @@ class DispatchRunContext:
     # watchdog's heartbeat probe can look beats up by the SAME id
     # `cc_otel_overlay_env` projected into the sandbox.
     dispatch_id: str | None = None
+    # This dispatch's minted proof credentials. Revoked with the overlay when the
+    # run returns, so the credential's two lifetimes — the local file holding its
+    # value and the grant living at the provider — end at the same moment. `None`
+    # is the ordinary case: a repository that declared none, or only names no
+    # provider manages, leases nothing.
+    proof_credential_lease: ProofCredentialLease | None = None
 
 
 def run_dispatch_with_watchdog(
@@ -61,6 +71,20 @@ def run_dispatch_with_watchdog(
     with ExitStack() as stack:
         _ = stack.callback(lambda: context.overlay_file.unlink(missing_ok=True))
         _ = stack.callback(lambda: remove_workflow_payload(payload_dir=context.payload_dir))
+        # Registered LAST, so the stack unwinds it FIRST: the provider-side grant
+        # is withdrawn the moment the run returns, before the local overlay and
+        # payload are swept. The callback is unconditional and the `None` case is
+        # handled inside, because a teardown that had to test the lease first
+        # would be a teardown that could be skipped — and the runs most likely to
+        # skip it are the ones that failed partway through, which are exactly the
+        # ones leaving a live credential behind.
+        _ = stack.callback(
+            lambda: revoke_proof_credential_lease(
+                lease=context.proof_credential_lease,
+                journal=context.journal,
+                work_item_id=context.plan.work_item_id,
+            )
+        )
         outcome = run_dispatch_func(
             plan=context.plan,
             # Pillar 1 (first-class remint): the decorator re-resolves

@@ -185,6 +185,23 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   build (no provider adapter ships; the mechanism is proved against a hermetic
   double) — that is recorded in the module docstring, and it is not a reason to
   drop the path.
+- `_dispatcher_loop_projection.py` — one dispatch's RUN-SCOPED CREDENTIAL
+  PROJECTION: mint the proof-credential lease, then write the run-configuration
+  overlay. Split out of `_dispatcher_loop` by cohesion when that file reached
+  its LLOC hard ceiling, and the two stages belong together rather than merely
+  being adjacent — the overlay is the channel that carries a minted value in, so
+  the mint must resolve before the overlay renders and the lease must survive
+  both. It returns the LEASE on success, because that is the one thing the
+  caller still needs: the lease rides into the run so the teardown can revoke
+  it. Both faults route as data through ONE `RunCredentialRefusal` carrying the
+  STAGE that earned it — mirroring `MaterializationRefusal` rather than
+  inventing a second convention — which keeps the stage names with the code that
+  can produce them instead of making the caller guess which fault it is holding.
+  `materialized` and `plan` are passed as the already-resolved aggregates the
+  pipeline holds anyway, so the integration contract stays resolved ONCE in the
+  plan build; re-resolving it here could not be proven to agree with the first
+  read, and the disagreement would be invisible because both produce a
+  well-formed contract.
 - `_dispatcher_integration_schema.py` / `_dispatcher_integration_field.py` /
   `_dispatcher_integration_defaults.py` /
   `_dispatcher_integration_declaration.py` /

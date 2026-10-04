@@ -39,6 +39,7 @@ import base64
 import json
 import tempfile
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
@@ -48,12 +49,21 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_credentials,
     _dispatcher_loop,
 )
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_proof_credential_providers as credential_providers,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import materialize_overlay
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import GitAuthor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_providers import (
+    PROOF_CREDENTIAL_REVOKE_STAGE,
+    MintedProofCredential,
+    ProofCredentialLease,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credentials import (
     COPIED_PROVISIONING,
+    MINTED_PROVISIONING,
     PROOF_CREDENTIAL_JOURNAL_STAGE,
 )
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
@@ -233,13 +243,23 @@ def _repo(*, tmp_path: Path, declared: list[dict[str, str]] | None) -> Path:
     return repo
 
 
-def _recording_run_dispatch(*, calls: list[str]) -> Callable[..., DispatchOutcome]:
-    """A `run_dispatch` stand-in recording that a factory run WAS created."""
+def _recording_run_dispatch(
+    *, calls: list[str], timeline: list[str] | None = None
+) -> Callable[..., DispatchOutcome]:
+    """A `run_dispatch` stand-in recording that a factory run WAS created.
+
+    `timeline` is the SHARED event log the provider double below also writes to.
+    That sharing is what makes "revoked after the run ends" an observation rather
+    than an inference: the mint, the run and the revoke land in one ordered list,
+    so a revoke that fired before or during the run is a different list.
+    """
 
     def _run_dispatch(**kwargs: object) -> DispatchOutcome:
         plan = kwargs["plan"]
         assert isinstance(plan, DispatchPlan)
         calls.append(plan.work_item_id)
+        if timeline is not None:
+            timeline.append(f"run:{plan.work_item_id}")
         return DispatchOutcome(
             work_item_id=plan.work_item_id,
             status="green",
@@ -252,15 +272,62 @@ def _recording_run_dispatch(*, calls: list[str]) -> Callable[..., DispatchOutcom
     return _run_dispatch
 
 
+_MINTED_VALUE = "acme-minted-for-this-run"
+
+
+@dataclass(kw_only=True)
+class _ProviderDouble:
+    """A hermetic provider management interface writing to the shared timeline.
+
+    The double is registered into the production registry exactly as a shipped
+    adapter would be, which is the only honest way to exercise this path: no
+    provider adapter ships in this build, so reaching for a real management
+    interface would need a credential and a network and would measure the vendor
+    rather than the Dispatcher.
+    """
+
+    timeline: list[str]
+    mint_refusal: str | None = None
+    mint_dispatch_ids: list[str] = field(default_factory=list)
+
+    def mint(self, *, name: str, capability: str, dispatch_id: str) -> MintedProofCredential | str:
+        self.timeline.append(f"mint:{name}")
+        self.mint_dispatch_ids.append(dispatch_id)
+        if self.mint_refusal is not None:
+            return self.mint_refusal
+        return MintedProofCredential(
+            name=name,
+            capability=capability,
+            value=_MINTED_VALUE,
+            revocation_handle=f"handle-for-{name}",
+        )
+
+    def revoke(self, *, minted: MintedProofCredential) -> str | None:
+        self.timeline.append(f"revoke:{minted.name}")
+        return None
+
+
+def _register_provider(*, monkeypatch: pytest.MonkeyPatch, provider: _ProviderDouble) -> None:
+    """Register the double for the declared name, as a shipped adapter would be."""
+    monkeypatch.setattr(
+        credential_providers, "PROOF_CREDENTIAL_PROVIDERS", {_DECLARED_NAME: provider}
+    )
+
+
 def _dispatch(
     *,
     repo: Path,
     monkeypatch: pytest.MonkeyPatch,
     subcommand: str = "dispatch",
+    timeline: list[str] | None = None,
 ) -> tuple[int, list[str]]:
     """Drive one real dispatch and report its exit code plus what it launched."""
     calls: list[str] = []
-    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _recording_run_dispatch(calls=calls))
+    monkeypatch.setattr(
+        _dispatcher_loop,
+        "run_dispatch",
+        _recording_run_dispatch(calls=calls, timeline=timeline),
+    )
     argv = [subcommand, "--repo", str(repo), "--item", _ITEM_ID, "--no-close-on-merge"]
     if subcommand == "loop":
         argv += ["--budget", "3"]
@@ -451,6 +518,199 @@ def test_a_declared_name_the_wrapper_does_not_inject_refuses_naming_the_wrapper(
     assert _DECLARED_NAME in stderr
     assert "with-acme-env.sh" in stderr
     assert _credential_records(repo=repo) == []
+
+
+def test_a_provider_backed_declaration_is_minted_for_the_run_and_revoked_after_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The minted route, end to end through the real dispatch CLI.
+
+    The ORDER is the load-bearing assertion. "Revokes it after the run ends" is a
+    claim about SEQUENCE, and every cheaper instrument is satisfied by a build
+    that revokes too early: a recorded revoke call proves only that one happened,
+    and a journal record carrying `revoked: true` proves only that one was
+    written. The mint, the run and the revoke therefore share ONE ordered
+    timeline, so a revoke that fired before the sandbox launched — which would
+    hand the proof stage a dead credential while every other assertion still
+    passed — produces a different list.
+
+    The declared value is deliberately ABSENT from the environment, which the
+    module fixture guarantees. That is what makes this the minted path rather
+    than a copied one wearing its name: nothing but the provider could have
+    supplied a value here, so the dispatch proceeding at all is evidence the mint
+    ran, and the journal's `minted` is evidence the Dispatcher knows it did.
+    """
+    timeline: list[str] = []
+    provider = _ProviderDouble(timeline=timeline)
+    _register_provider(monkeypatch=monkeypatch, provider=provider)
+    _ = _seed_item()
+    repo = _repo(tmp_path=tmp_path, declared=[_READ_ONLY_DECLARATION])
+
+    exit_code, calls = _dispatch(repo=repo, monkeypatch=monkeypatch, timeline=timeline)
+
+    assert (exit_code, calls) == (0, [_ITEM_ID])
+    assert timeline == [
+        f"mint:{_DECLARED_NAME}",
+        f"run:{_ITEM_ID}",
+        f"revoke:{_DECLARED_NAME}",
+    ]
+    # One credential per RUN, carrying this dispatch's own id: a mint that
+    # ignored it would be indistinguishable from one long-lived credential
+    # fetched once and reused across every dispatch.
+    assert len(provider.mint_dispatch_ids) == 1
+    assert provider.mint_dispatch_ids[0] != ""
+    assert [
+        (record["name"], record["provisioning"]) for record in _credential_records(repo=repo)
+    ] == [(_DECLARED_NAME, MINTED_PROVISIONING)]
+    assert [
+        (record["name"], record["revoked"], record["work_item_id"])
+        for record in _journal_records(repo=repo)
+        if record.get("stage") == PROOF_CREDENTIAL_REVOKE_STAGE
+    ] == [(_DECLARED_NAME, True, _ITEM_ID)]
+    # A journal is durable, and the clause requires records to carry names, never
+    # values. Asserted over the WHOLE journal, since a minted value leaking into
+    # some other stage's record is the same disclosure.
+    assert _MINTED_VALUE not in json.dumps(_journal_records(repo=repo))
+
+
+def test_a_declaration_with_no_provider_is_still_copied_and_journaled_as_copied(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The COPIED control for the case above, with the registry left empty.
+
+    Without it, "the declaration was journaled minted" is equally consistent with
+    a build that journals every declaration minted — and the clause's whole
+    journal requirement is that a reader can tell the two routes apart. The only
+    difference between this dispatch and the minted one is the registry: the
+    identical declaration, the identical item, the identical CLI.
+
+    It is also the regression control for every repository that already declares
+    a proof credential. The clause makes minting a SHOULD conditioned on the
+    provider offering a management interface, so a declaration without one must
+    come out exactly as it did before: copied from the wrapper-supplied
+    environment, journaled `copied`, and with no revoke record at all.
+    """
+    monkeypatch.setenv(_DECLARED_NAME, _DECLARED_VALUE)
+    _ = _seed_item()
+    repo = _repo(tmp_path=tmp_path, declared=[_READ_ONLY_DECLARATION])
+
+    exit_code, calls = _dispatch(repo=repo, monkeypatch=monkeypatch)
+
+    assert (exit_code, calls) == (0, [_ITEM_ID])
+    assert [
+        (record["name"], record["provisioning"]) for record in _credential_records(repo=repo)
+    ] == [(_DECLARED_NAME, COPIED_PROVISIONING)]
+    assert [
+        record
+        for record in _journal_records(repo=repo)
+        if record.get("stage") == PROOF_CREDENTIAL_REVOKE_STAGE
+    ] == []
+
+
+def test_a_refused_mint_fails_the_dispatch_at_its_own_stage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A provider that mints nothing stops the dispatch instead of falling back.
+
+    The fallback is the shape worth excluding explicitly: copying the host's own
+    long-lived credential when the mint fails would silently undo the clause for
+    exactly the declarations it governs, and the dispatch would exit 0 looking
+    perfectly healthy. The launch seam is read directly, because "no run exists"
+    is a claim about what did NOT happen.
+
+    This stage refuses with the ordinary dispatch-failure code rather than the
+    pre-dispatch precondition one, and the difference is not cosmetic: the mint
+    needs this dispatch's own id, so it necessarily runs per item alongside the
+    GitHub App token mint and the overlay write, after target selection has
+    already succeeded.
+
+    THE PROJECTION RECORD STILL SAYS `minted`, AND THAT IS CORRECT — asserted
+    here rather than left to surprise a reader. That record states the ROUTE the
+    declaration resolved to, and the selection gate writes it before any overlay
+    exists; the same is true of a `copied` record, whose overlay write can fail
+    afterwards too. So it was never a claim that bytes reached a sandbox. The
+    record that WOULD be such a claim is the revoke record, which exists only
+    once a credential was actually issued — and its absence here is the
+    discriminator this case turns on.
+    """
+    timeline: list[str] = []
+    _register_provider(
+        monkeypatch=monkeypatch,
+        provider=_ProviderDouble(timeline=timeline, mint_refusal="the management API returned 503"),
+    )
+    _ = _seed_item()
+    repo = _repo(tmp_path=tmp_path, declared=[_READ_ONLY_DECLARATION])
+
+    exit_code, calls = _dispatch(repo=repo, monkeypatch=monkeypatch, timeline=timeline)
+
+    assert (exit_code, calls) == (1, [])
+    assert timeline == [f"mint:{_DECLARED_NAME}"]
+    out = capsys.readouterr().out
+    assert "proof-credential-mint" in out
+    assert _DECLARED_NAME in out
+    assert "the management API returned 503" in out
+    assert [
+        (record["name"], record["provisioning"]) for record in _credential_records(repo=repo)
+    ] == [(_DECLARED_NAME, MINTED_PROVISIONING)]
+    # No credential was ever issued, so none is recorded as revoked. This is the
+    # assertion that separates a refused mint from the successful case above,
+    # where the identical projection record sits beside a revoke record.
+    assert [
+        record
+        for record in _journal_records(repo=repo)
+        if record.get("stage") == PROOF_CREDENTIAL_REVOKE_STAGE
+    ] == []
+
+
+def test_the_minted_value_reaches_the_sandbox_through_the_real_overlay(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The minted projection, read out of the overlay file the materializer writes.
+
+    The environment deliberately carries a DIFFERENT value under the same name,
+    so the projected line is evidence the LEASE won rather than evidence that
+    some value happened to be available: a build that ignored the lease would
+    render the host's long-lived copy here and produce an overlay of identical
+    shape. The assertion is on the rendered bytes in the same
+    `[environments.<id>.env]` table as the dispatch credential set, which is the
+    clause's same-channel requirement.
+    """
+    monkeypatch.setenv(_DECLARED_NAME, "the-hosts-own-long-lived-copy")
+    _register_provider(monkeypatch=monkeypatch, provider=_ProviderDouble(timeline=[]))
+    _stand_in_host_codex_credential(monkeypatch=monkeypatch)
+    repo = _repo(tmp_path=tmp_path, declared=[_READ_ONLY_DECLARATION])
+    overlay = tmp_path / "overlay.toml"
+
+    error = materialize_overlay(
+        committed=repo / _RESERVED_DIR / "workflow.toml",
+        overlay=overlay,
+        repo=repo,
+        work_item_id=_ITEM_ID,
+        dispatch_id="disp-134",
+        token=lambda: "test-github-token",
+        git_author=GitAuthor(name="Operator", email="operator@example.com"),
+        proof_credential_lease=ProofCredentialLease(
+            minted=(
+                MintedProofCredential(
+                    name=_DECLARED_NAME,
+                    capability="read_only",
+                    value=_MINTED_VALUE,
+                    revocation_handle="handle-134",
+                ),
+            )
+        ),
+    )
+
+    assert error is None
+    env_table = overlay.read_text(encoding="utf-8").split("[environments.fabro-sandbox.env]\n", 1)
+    assert len(env_table) == 2
+    assert f'{_DECLARED_NAME} = "{_MINTED_VALUE}"\n' in env_table[1]
+    assert "the-hosts-own-long-lived-copy" not in env_table[1]
 
 
 def test_the_drain_reaches_the_same_gate(

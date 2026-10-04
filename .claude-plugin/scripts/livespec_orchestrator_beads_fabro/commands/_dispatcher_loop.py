@@ -18,7 +18,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_conformance_premises
     emit_conformance_premise_notices,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
-    materialize_overlay,
     read_dispatch_comments,
     read_dispatch_labels,
 )
@@ -35,9 +34,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     DispatchOutcome,
     run_dispatch,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
-    contract_prompt_variables,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     GithubTokenEnvRunner,
@@ -59,6 +55,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_plan import (
     dispatch_plan_for_item,
     goal_file_path,
     overlay_file_path,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_projection import (
+    RunCredentialRefusal,
+    project_run_credentials,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_run import (
     DispatchRunContext,
@@ -128,7 +128,7 @@ def dispatch_one(
         return outcome
 
 
-def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL STAGE (ledger labels, dispatch materialization, ledger comments, GitHub App auth, run-config overlay, goal preflight) plus the dispatched outcome; each names its own stage in the journal and collapsing any two would report the wrong one.
+def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL STAGE (ledger labels, dispatch materialization, ledger comments, GitHub App auth, proof-credential mint, run-config overlay, goal preflight) plus the dispatched outcome; each names its own stage in the journal and collapsing any two would report the wrong one.
     *,
     args: argparse.Namespace,
     repo: Path,
@@ -196,27 +196,28 @@ def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL ST
             stage="github-app-auth",
             detail=token_supplier,
         )
-    overlay_error = materialize_overlay(
-        committed=committed_workflow,
-        overlay=overlay_file,
+    # This dispatch's run-scoped credential projection: one scoped, expiring
+    # credential per declaration whose provider exposes a management interface,
+    # then the overlay that carries it — and the dispatch credential set — into
+    # the sandbox. Minted HERE, per item, for the same reason the App token above
+    # is: it is keyed to this dispatch's own id. The lease it returns rides into
+    # the run so the teardown can revoke it when the run returns; a repository
+    # declaring none, or declaring only names no provider manages, leases nothing.
+    projected = project_run_credentials(
         repo=repo,
         work_item_id=item.id,
-        dispatch_id=identity.dispatch_id,
+        identity=identity,
+        materialized=materialized,
+        plan=plan,
+        overlay_file=overlay_file,
         token=token_supplier,
-        graph_override=payload.graph,
-        # The ONE contract the plan already resolved, projected once more: the
-        # committed run config's prepare commands template these values as
-        # `{{ inputs.* }}`, and the pinned engine renders that site for the
-        # graph but not for `run.prepare`.
-        prepare_inputs=contract_prompt_variables(resolved=plan.integration),
-        git_author=materialized.git_author,
     )
-    if overlay_error is not None:
+    if isinstance(projected, RunCredentialRefusal):
         return failed_dispatch_outcome(
             journal=journal,
             work_item_id=item.id,
-            stage="run-config-overlay",
-            detail=overlay_error,
+            stage=projected.stage,
+            detail=projected.detail,
         )
     # Lessons are read host-side from `repo` (the dispatcher's operative
     # checkout, where the reflector maintains loop-reflection-gate/lessons.md),
@@ -245,6 +246,7 @@ def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL ST
             payload_dir=payload.payload_dir,
             token_supplier=token_supplier,
             dispatch_id=identity.dispatch_id,
+            proof_credential_lease=projected,
         ),
         run_dispatch_func=run_dispatch,
         fabro_launcher_type=WatchedFabroLauncher,
