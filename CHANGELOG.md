@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.165.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.164.4...v0.165.0) (2026-10-04)
+
+
+### Features
+
+* **dispatcher:** accept the committed sandbox-capability mirror ([6ce911d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6ce911d10b48cb16cc9d2c8fb87086607fe6f26e))
+
 ## [0.164.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.164.3...v0.164.4) (2026-10-04)
 
 
