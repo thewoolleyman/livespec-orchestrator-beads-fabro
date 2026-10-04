@@ -110,7 +110,31 @@ the one the step names.
 
 ## Step 4 — capture the proof
 
-Capture per assertion according to what it is about:
+### Exercise the behaviour, not the test suite
+
+A behavioural assertion names an observable behaviour or state of the
+DELIVERED ARTIFACT on a surface a user or operator of that artifact reaches
+— a command and what it prints or changes, an API call and its response, an
+interface and what it shows, a configuration file and the key it carries.
+For such an assertion you MUST **exercise the behaviour through the surface
+the assertion names**, driving the delivered artifact **as a user or operator
+would**.
+
+The output of this repository's own test suite **MUST NOT be the proof of a
+behavioural assertion** — not alone, and not as the assertion's only step. It
+MAY appear only as **supporting evidence beside a real exercise**. A suite
+run proves that a test passed; it is silent on whether the artifact does the
+thing, which is exactly what the assertion claims. (Suite output IS the right
+proof for the one case where the assertion's own subject is a test, a check
+or a gate — the gate has already refused that assertion on any other item.)
+
+So: where the assertion names a command, RUN THAT COMMAND. Where it names an
+entry point, invoke that entry point the way an operator invokes it. Where it
+names a file and the text it carries, read that file out of the delivered
+tree. Reaching for `pytest` because it is nearer to hand is the failure this
+paragraph exists to stop.
+
+### What to capture, per assertion
 
 - **Anything reachable through a web interface** — a screenshot. The
   sandbox carries a headless browser layer; drive it to the surface the
@@ -301,6 +325,39 @@ route is CAPPED: the third `fix` verdict from this node in one run routes to
 the `non_converged` terminal instead, which the Dispatcher reads as
 `needs-regroom`. A Definition of Done that will not capture three times
 running is a sizing problem, not a fix-loop problem.
+
+## A surface this sandbox cannot reach
+
+An assertion whose surface **cannot be reached with the sandbox's
+capabilities** — a terminal multiplexer, a browser, a tool the image does
+not carry — ends the run. You **MUST NOT** stand anything in its place: no
+**a test run, a fixture or a test double**, no equivalent command against a
+different surface, and no record claiming the assertion from any of them. A
+record that claims an assertion from a stand-in is worse than no record,
+because the replay leg will reproduce the stand-in faithfully and publish
+`verified` for a behaviour nobody exercised.
+
+The capability set is what the `dod_gate` node resolved at the head of this
+run: the file `/etc/livespec/sandbox-capabilities` where the image publishes
+one, else the repository's committed `dispatcher.sandbox_capabilities` array.
+Read it the same way; do not infer a capability from the item's prose or from
+what this image usually ships.
+
+End your final reply with the failed outcome, **naming the assertion and the
+missing capability**, as a JSON object on the last line:
+
+    {"outcome": "failed", "failure_reason": "<the assertion; the capability its proof needs; that no capability in the resolved set provides it>"}
+
+**A missing capability is not an implementation defect, so do NOT route it
+to `fix`.** The
+discriminator is whether a code change could fix it: a missing behaviour, a
+command the assertion names that does not exist, a broken surface — those are
+defects and belong in the section above. Here the implementation may be
+perfectly correct and **no code change could add the capability** to the
+image, so routing to `fix` would send an implementer to repair code that is
+not wrong. The remedy is the gate's own first remedy — add the capability to
+the sandbox image — or a re-declaration of the assertion's proof mode, and
+both are human decisions taken off the run.
 
 ## When capture is blocked (needs-human protocol)
 
