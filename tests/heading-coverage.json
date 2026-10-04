@@ -1466,8 +1466,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "Ratified 2026-10-04 by the definition-and-proof-of-done-repair revision; nothing is implemented yet. An integration-tier test is owed for this heading, exercising the proof-finding work order for the fix stage, the parking-verdict ledger comment and dispatch result, the pointer repair and the run-identifier attribution. Epic bd-ib-7sjdzv (plan definition-and-proof-of-done) owns this row until the implementing child of that plan is filed, at which point the row is re-pointed to that child.",
-    "work_item": "bd-ib-7sjdzv"
+    "reason": "Ratified 2026-10-04 by the definition-and-proof-of-done-repair revision. An integration-tier test is still owed for this heading's ACCEPTANCE half: the parking-verdict ledger comment, the honest non-green dispatch result, the pointer repair and the run-identifier attribution. The heading's PROOF half now has one — tests/integration/test_proof_finding_work_order_scenario138.py binds the not_captured record, the capture-to-fix visit cap, the pull-request fallback, the unchanged-tree prohibition and the red-janitor route — so this row is re-pointed to work-item bd-ib-2s3kkq, which landed that half, and stays TODO until one integration-tier test binds the heading whole. Requirement carrier R7's acceptance slice owns the remainder.",
+    "work_item": "bd-ib-2s3kkq"
   },
   {
     "heading": "## Scenario 139 — The gate checks each proof mode against the capabilities the sandbox image publishes",
