@@ -48,6 +48,41 @@ The verdict and routing precedence:
   when its effective admission policy is `auto`; the dependency lane is
   derived from those linked edges.
 
+## The filing-time Definition-of-Done wall (v115)
+
+The Definition-of-Done-and-Proof-of-Done clause of contracts.md gives this
+primitive a second duty, and it is the only one of the six-gate duties above
+whose input is the item's own DESCRIPTION rather than the capture dialogue:
+
+    A MECHANICAL finding — the section absent, a reference unresolved, a
+    proof-mode declaration or `Reason:` line malformed — withholds `ready`: an
+    item filed with one outstanding MUST NOT be routed to `ready` by intake. A
+    test-existence or scenario-reference finding the wall recognises is
+    ADVISORY: it MUST be displayed and MUST NOT withhold `ready`, because only
+    the gate can judge it. Either kind MUST be recorded on the filed item as a
+    ledger comment, so it is repaired where it was made.
+
+So the auto-admission step below gains ONE extra condition — no outstanding
+mechanical finding — and every finding of either kind is appended as a comment.
+The wording of each comment comes from `_dispatcher_filing_display`, so the
+ledger comment and the pre-confirmation display name the finding identically; a
+filer who read the display finds the same sentence on the item.
+
+WHY THE GRADE IS SKIPPED WHEN THE CONNECTION DESCRIPTOR CARRIES NO `repo_root`.
+Both halves of the wall are graded against the governed spec tree, which lives
+in the repository: with no repository there is no tree, and an empty heading set
+is the absence of evidence rather than evidence that a reference is wrong (the
+reasoning `_dispatcher_definition_of_done_findings` records for the same read).
+The one verdict where that absence could matter is the `ready` approval, and
+that branch already raises `TypeError` on it, so nothing can reach `ready`
+ungraded.
+
+WHY THE COMMENTS ARE APPENDED AFTER THE STATUS WRITE. The routed status is the
+durable outcome a dispatch reads; the comments are the explanation. Beads
+comments are append-only, so this primitive is deliberately called ONCE per
+filing — a second call on the same item would duplicate them rather than
+reconcile them.
+
 Alongside the routed status, `apply_intake_dor` stamps the
 `intake:triaged` marker label for EVERY verdict — `pending-approval`,
 `ready`, `backlog`, and `blocked` alike. The marker is what makes "the gate
@@ -71,6 +106,16 @@ from returns.io import IOFailure, IOResult, IOSuccess
 from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_advisories import (
+    advisory_definition_of_done_findings,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_findings import (
+    definition_of_done_findings,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display import (
+    ADVISORY_FINDING_PREFIX,
+    MECHANICAL_FINDING_PREFIX,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_ADMISSION_POLICY,
     effective_admission_policy,
@@ -83,13 +128,17 @@ from livespec_orchestrator_beads_fabro.store import (
 )
 
 if TYPE_CHECKING:
-    from livespec_orchestrator_beads_fabro.types import StoreConfig
+    from pathlib import Path
+
+    from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 __all__: list[str] = [
     "DefinitionOfReadyChecklist",
+    "FilingFindings",
     "Verdict",
     "apply_intake_dor",
     "evaluate",
+    "filing_findings",
 ]
 
 Verdict = Literal["pending-approval", "ready", "backlog", "blocked"]
@@ -120,6 +169,54 @@ class DefinitionOfReadyChecklist:
     dependency_linked: bool
     repo_targeted: bool
     above_floor: bool
+
+
+@dataclass(frozen=True, kw_only=True)
+class FilingFindings:
+    """One filed item's Definition-of-Done findings, split by what they DO.
+
+    The two tuples are kept apart rather than merged behind a flag because their
+    consequences are opposite: `mechanical` withholds `ready` and `advisory` is
+    forbidden to. A single list carrying a kind marker is one dropped marker away
+    from either holding every item out of the queue or admitting a malformed one.
+    """
+
+    mechanical: tuple[str, ...]
+    advisory: tuple[str, ...]
+
+    @property
+    def withholds_ready(self) -> bool:
+        """Whether an outstanding finding keeps this item out of `ready`."""
+        return bool(self.mechanical)
+
+    def comment_bodies(self) -> tuple[str, ...]:
+        """One ledger-comment body per finding, mechanical ones first.
+
+        The wording is the display's, imported rather than re-spelled, so the
+        comment an operator finds on the item is the sentence the filing display
+        showed them. Mechanical ones lead because they are the ones holding the
+        item back.
+        """
+        return tuple(
+            f"{MECHANICAL_FINDING_PREFIX} {finding}" for finding in self.mechanical
+        ) + tuple(f"{ADVISORY_FINDING_PREFIX} {finding}" for finding in self.advisory)
+
+
+def filing_findings(*, item: WorkItem, repo_root: Path | None) -> FilingFindings:
+    """Both halves of the host-side wall for one filed item.
+
+    A `None` repository root yields EMPTY findings rather than a refusal: both
+    halves are graded against the governed spec tree, and with no repository
+    there is no tree to grade against. That is not a fail-open on the `ready`
+    approval — the approval branch raises `TypeError` on a `None` root before it
+    can admit anything.
+    """
+    if repo_root is None:
+        return FilingFindings(mechanical=(), advisory=())
+    return FilingFindings(
+        mechanical=definition_of_done_findings(item=item, cwd=repo_root),
+        advisory=advisory_definition_of_done_findings(item=item, cwd=repo_root),
+    )
 
 
 def evaluate(*, checklist: DefinitionOfReadyChecklist) -> Verdict:
@@ -155,6 +252,10 @@ def apply_intake_dor(
     caller bug, and it still raises `TypeError` for the outermost
     supervisor. `IOResult` because the whole body is store and
     filesystem IO.
+
+    The Definition-of-Done findings are graded BEFORE the auto-admission step,
+    because a mechanical one is what that step has to stop on, and they are
+    recorded on the item afterwards whatever the verdict was.
     """
     client = make_beads_client(config=path)
     if not client.exists(issue_id=item_id):
@@ -163,6 +264,7 @@ def apply_intake_dor(
     item = materialize_work_items(records=read_work_items(path=path))[item_id]
     verdict = evaluate(checklist=checklist)
     status = _routed_status(verdict=verdict, has_dependencies=bool(item.depends_on))
+    findings = filing_findings(item=item, repo_root=path.repo_root)
     if status == _PENDING_APPROVAL_STATUS and not item.depends_on:
         repo_root = path.repo_root
         if repo_root is None:
@@ -176,7 +278,11 @@ def apply_intake_dor(
         policy = unsafe_perform_io(
             effective_admission_policy(item=item, cwd=repo_root).value_or(DEFAULT_ADMISSION_POLICY)
         )
-        if policy == _AUTO_ADMISSION:
+        # An outstanding MECHANICAL finding stops the approval here. An ADVISORY
+        # one deliberately does not: only the gate can judge a test-existence or
+        # scenario-reference form, and withholding `ready` on a judgement this
+        # surface cannot make would hand the operator a refusal nothing clears.
+        if policy == _AUTO_ADMISSION and not findings.withholds_ready:
             status = _READY_STATUS
 
     # The triage marker is stamped for EVERY verdict, not just the routed-on
@@ -195,6 +301,8 @@ def apply_intake_dor(
         add_labels=add_labels,
         remove_labels=remove_labels,
     )
+    for body in findings.comment_bodies():
+        client.add_comment(issue_id=item_id, body=body)
     return IOSuccess(status)
 
 

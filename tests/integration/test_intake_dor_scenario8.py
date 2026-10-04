@@ -80,8 +80,28 @@ def _config(*, repo_root: Path | None = None) -> StoreConfig:
     )
 
 
+# The description every case seeds unless it says otherwise. It is a CONFORMING
+# Definition of Done section because v115 made an outstanding MECHANICAL finding
+# withhold `ready` at intake, and an absent section is one: a seeded empty
+# description would hold every auto-admission case at `pending-approval` and the
+# six-gate verdicts this module binds would be unreachable. The findings
+# themselves are bound by `tests/livespec_orchestrator_beads_fabro/
+# test_intake_dor.py`, which seeds the non-conforming shapes deliberately.
+_CONFORMING_DEFINITION_OF_DONE = (
+    "## Definition of Done\n"
+    "\n"
+    "- The accept valve refuses an item with no verified record.\n"
+    "\n"
+    "References: ## Intake Definition-of-Ready triage\n"
+)
+
+
 def _seed_issue(
-    *, issue_id: str, labels: list[str] | None = None, spec_id: str | None = None
+    *,
+    issue_id: str,
+    labels: list[str] | None = None,
+    spec_id: str | None = None,
+    description: str = _CONFORMING_DEFINITION_OF_DONE,
 ) -> None:
     """Create an issue directly through the client seam (the capture front-end's filing).
 
@@ -94,7 +114,7 @@ def _seed_issue(
             issue_id=issue_id,
             issue_type="task",
             title=issue_id,
-            description="",
+            description=description,
             priority=2,
             assignee=None,
             created_at="2026-06-19T00:00:00Z",

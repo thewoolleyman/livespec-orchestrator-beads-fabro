@@ -114,10 +114,31 @@ def _seed_backlog_item(*, issue_id: str, title: str = "", description: str = "")
     client.update_issue(issue_id=issue_id, status="backlog")
 
 
+def _slice_description(*, title: str) -> str:
+    """A slice body carrying a CONFORMING Definition of Done section.
+
+    v115 made an outstanding MECHANICAL Definition-of-Done finding withhold
+    `ready` at intake, and an absent section is one — so a slice body without the
+    section lands at `pending-approval` and the ready-routing claims this module
+    binds become unreachable. Authoring the section is the groom front-end's own
+    duty under the clause's filing-time rules; the findings themselves are bound
+    by `tests/livespec_orchestrator_beads_fabro/test_intake_dor.py`.
+    """
+    return (
+        f"{title} body\n"
+        "\n"
+        "## Definition of Done\n"
+        "\n"
+        "- The slice delivers the behaviour its title names.\n"
+        "\n"
+        "References: ## Consensus-gated automated groom cut\n"
+    )
+
+
 def _factory_slice(*, title: str, depends_on: tuple[str, ...] = ()) -> CandidateSlice:
     return CandidateSlice(
         title=title,
-        description=f"{title} body",
+        description=_slice_description(title=title),
         acceptance="just check + the named scenario pass",
         autonomy_tier="factory",
         repo_target=_LOCAL_REPO,
@@ -128,7 +149,7 @@ def _factory_slice(*, title: str, depends_on: tuple[str, ...] = ()) -> Candidate
 def _cross_repo_slice(*, title: str, depends_on: tuple[str, ...] = ()) -> CandidateSlice:
     return CandidateSlice(
         title=title,
-        description=f"{title} body",
+        description=_slice_description(title=title),
         acceptance="done when filed in the target repo",
         autonomy_tier="factory",
         repo_target=_CROSS_REPO,
