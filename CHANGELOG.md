@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.164.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.164.3...v0.164.4) (2026-10-04)
+
+
+### Bug Fixes
+
+* **acceptance:** record a parked acceptance verdict on the item ([3e9c894](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3e9c8945df7f19374f8473cb2f6a6d3b2df5b8dc))
+* **acceptance:** report a parked verdict honestly in the dispatch result ([74af8a7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/74af8a708e15a586425721f6f91412fc847cbb8a))
+* **acceptance:** surface a verified item in acceptance carrying no pointer ([a1cbefd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a1cbefd9b78a0069f0a6611c05976571b51b8732))
+
 ## [0.164.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.164.2...v0.164.3) (2026-10-04)
 
 
