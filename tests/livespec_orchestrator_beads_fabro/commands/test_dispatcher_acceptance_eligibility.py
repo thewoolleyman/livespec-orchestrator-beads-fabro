@@ -47,6 +47,20 @@ _SECTION = (
     "\n"
     f"References: {_SPEC_HEADING}\n"
 )
+_HOST_CAPTURED_ASSERTION = "The released build resolves the mode on an operator host."
+_HOST_SECTION = (
+    "## Definition of Done\n"
+    "\n"
+    "- The wall refuses an item whose section is absent.\n"
+    "\n"
+    "### Host-captured\n"
+    "\n"
+    "Reason: the proof needs the released build installed on an operator host.\n"
+    "\n"
+    f"- {_HOST_CAPTURED_ASSERTION}\n"
+    "\n"
+    f"References: {_SPEC_HEADING}\n"
+)
 _HUMAN_ATTESTED_ASSERTION = "A human confirms the console renders the new row."
 _MIXED_SECTION = (
     "## Definition of Done\n"
@@ -427,6 +441,72 @@ def test_one_human_attested_assertion_routes_the_whole_item_to_parking(
     # because the human leg has to land before it can close.
     repo = _valve_repo(tmp_path=tmp_path)
     item = _item(description=_MIXED_SECTION, acceptance_policy="ai-then-human")
+
+    decision = acceptance_eligibility(item=item, cwd=repo)
+
+    assert decision.proof_routing == "parks-for-human-attestation"
+
+
+def test_one_host_captured_assertion_routes_the_item_to_resting_for_the_host_leg(
+    tmp_path: Path,
+) -> None:
+    """The v115 third routing, and the reason it cannot be the factory-only one.
+
+    An item whose host leg has not landed rests in `acceptance` under EVERY policy,
+    so reporting it as `factory-captured-only` describes an item that closes on a
+    passing pass — the opposite of what this item does. The routing is reported, not
+    branched on, which is exactly why a wrong value here is the kind of defect
+    nothing downstream contradicts: an operator reading the decision would conclude
+    the item needs no host record at all.
+    """
+    repo = _valve_repo(tmp_path=tmp_path)
+
+    decision = acceptance_eligibility(item=_item(description=_HOST_SECTION), cwd=repo)
+
+    assert decision.proof_routing == "rests-for-host-leg"
+
+
+def test_ai_only_is_not_refused_for_a_host_captured_assertion(tmp_path: Path) -> None:
+    """The asymmetry between the two opt-out modes, which is ratified rather than lax.
+
+    `ai-only` IS refused for a human-attested assertion and is NOT refused for a
+    host-captured one, because the host leg is agent-performable: under `ai-only`
+    such an item is admitted, merges, and then closes on the pass that first
+    observes its `host_verified` record. Refusing it would make the mode
+    undeclarable for every `ai-only` repository.
+    """
+    repo = _valve_repo(tmp_path=tmp_path)
+    item = _item(description=_HOST_SECTION, acceptance_policy="ai-only")
+
+    decision = acceptance_eligibility(item=item, cwd=repo)
+
+    assert decision.eligible is True
+    assert decision.refusal is None
+    assert decision.proof_routing == "rests-for-host-leg"
+
+
+def test_a_human_attested_assertion_outranks_a_host_captured_one_in_the_routing(
+    tmp_path: Path,
+) -> None:
+    """One routing per item, and the human leg decides when both are present.
+
+    The two legs are not alternatives: an item carrying both must clear both. The
+    routing names the HUMAN one because that is the leg that makes `ai-only`
+    illegal for the item, and a routing reporting the host leg would read as an
+    item `ai-only` could still take.
+    """
+    repo = _valve_repo(tmp_path=tmp_path)
+    both = _HOST_SECTION.replace(
+        f"References: {_SPEC_HEADING}\n",
+        "### Human-attested\n"
+        "\n"
+        "Reason: the proof needs a session on an external administrative console.\n"
+        "\n"
+        f"- {_HUMAN_ATTESTED_ASSERTION}\n"
+        "\n"
+        f"References: {_SPEC_HEADING}\n",
+    )
+    item = _item(description=both, acceptance_policy="ai-then-human")
 
     decision = acceptance_eligibility(item=item, cwd=repo)
 
