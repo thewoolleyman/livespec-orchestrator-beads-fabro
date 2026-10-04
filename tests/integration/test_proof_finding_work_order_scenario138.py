@@ -339,6 +339,64 @@ def test_the_fix_prompt_forbids_succeeding_on_an_unchanged_tree() -> None:
     assert "git status --porcelain" in prompt
 
 
+def test_a_step_that_runs_a_program_must_publish_that_programs_source() -> None:
+    """A published step is replayable only if its PROGRAM travels with it.
+
+    This is the defect that graded this slice's own first capture
+    `not_reproduced`, which is why it belongs beside the routing cases rather
+    than in a prompt-prose module: the capture authored a step reading "with the
+    program shown in the capture", fed a heredoc to `python -`, and published the
+    invocation line and the program's STDOUT with no heredoc body. Steps 1 and 2
+    of that assertion reproduced and showed the committed source was correct, so
+    nothing about the implementation was wrong — the RECORD was unreplayable, and
+    an unreplayable step grades the assertion as if the code had failed.
+
+    BOTH prompts are asserted in one case because the duty is a pair and either
+    half alone is satisfiable by a round trip that still loses the program. A
+    capture rule with no verify rule leaves a verifier free to reconstruct the
+    program from its output and bank a green no later replay can earn; a verify
+    rule with no capture rule turns every such record into a non-reproduction
+    with nothing upstream obliged to prevent it.
+
+    The needles name the OUTPUT-IS-NOT-SOURCE clause specifically, not merely the
+    words "program" or "source". A prompt already says both of those things
+    several times over, so a probe reaching for them would pass against the very
+    prompt that permitted this defect — it could not return the other answer.
+    """
+    capture = _prompt(name="proof-capture.md")
+    verify = _prompt(name="proof-verify.md")
+
+    # The capture side: the program's own text is part of the record.
+    assert "Self-contained in its PROGRAM TEXT" in capture
+    assert "COMPLETE SOURCE" in capture
+    assert "heredoc into an interpreter" in capture
+    assert (
+        "Publishing only the invocation line and the program's OUTPUT does not satisfy" in capture
+    )
+    assert "UNREPLAYABLE" in capture
+    # And the duty is restated where the comment body is enumerated, because the
+    # body list is the surface the publishing step actually works from.
+    assert "COMPLETE SOURCE of any program it runs" in capture
+
+    # The verify side: a missing program is graded, never rebuilt.
+    assert "Never reconstruct a missing program" in verify
+    assert "you may not infer that source from the output" in verify
+    assert "a test of a program YOU wrote" in verify
+
+    # Instrument control: these are substring probes over a collapsed prompt, so
+    # one needle that is deliberately absent proves they can still return False.
+    # Without it, a helper silently returning something truthy for every query
+    # would make every assertion above pass against any prompt at all.
+    #
+    # The needle is the PERMISSION this rule withdraws, and it is chosen that way
+    # on purpose. The obvious control — the offending phrase "with the program
+    # shown in the capture" — is WRONG here and wrong in the direction that reads
+    # as a real finding: the new rule QUOTES that phrase as the promise it makes
+    # binding, so the probe hits the rule itself. Presence is not assertion, and a
+    # control has to key on something no correct prompt can contain.
+    assert "output alone is sufficient" not in capture
+
+
 def test_a_red_janitor_still_reaches_fix_with_its_failure_output() -> None:
     """The unchanged half, asserted as a regression guard rather than as news.
 

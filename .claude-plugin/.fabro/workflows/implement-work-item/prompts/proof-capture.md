@@ -82,6 +82,19 @@ concrete, copy-pasteable action or command. The steps must be:
   asset ordinal it produces, e.g. "produces proof 01". The replay leg
   compares its `verify` asset to the `capture` asset of the SAME ordinal,
   so a step that names no ordinal makes its own proof uncomparable.
+- **Self-contained in its PROGRAM TEXT.** When a step runs a program rather
+  than a bare command — a heredoc into an interpreter (`python -`, `sh -s`),
+  a script you authored in the scratch directory, a `-c` one-liner, a patch
+  or a mutation applied to a file — the record MUST publish that program's
+  COMPLETE SOURCE in a fenced block, as part of the step or beside its
+  proof. Publishing only the invocation line and the program's OUTPUT does
+  not satisfy this: the replayer is a stranger who may not reconstruct a
+  program from its stdout, and may not infer one from the surrounding prose,
+  so a step whose program is absent is UNREPLAYABLE and the assertion it
+  carries is graded `not_reproduced` however correct the implementation is.
+  A phrase such as "with the program shown in the capture" is a PROMISE this
+  bullet makes binding — before you publish, re-read each such step and
+  confirm the source it points at is really there.
 
 ## Step 3 — execute the steps verbatim
 
@@ -170,9 +183,14 @@ The body then carries, **per assertion in Definition of Done order**:
 
 1. The assertion text, verbatim.
 2. Its proof mode.
-3. The numbered reproduction steps you authored and ran.
+3. The numbered reproduction steps you authored and ran, each carrying the
+   COMPLETE SOURCE of any program it runs, per the self-contained bullet of
+   Step 2.
 4. The proof — an inline image reference (or authenticated link, per Step
    4) for each screenshot, and a fenced code block for each text capture.
+   A text capture shows the command AND its output; when the command fed a
+   program to an interpreter, the program's source is part of what is
+   published, never replaced by the output it produced.
 
 When this item has any `human_attested` assertions, the record MUST also
 carry a heading stating that those assertions are **pending human
