@@ -22,6 +22,10 @@ from livespec_orchestrator_beads_fabro.commands._plan_archive_review import (
     is_blocks_dependency_edge,
     record_completeness_review_evidence,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import (
+    PlanDefinitionOfDone,
+    plan_research_note,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_disposition import (
     PlanDispositionRefusedError,
     close_plan_child,
@@ -66,6 +70,7 @@ __all__: list[str] = [
     "UNATTENDED_ENV_VAR",
     "NextAction",
     "PlanArchiveRefusedError",
+    "PlanDefinitionOfDone",
     "PlanDispositionRefusedError",
     "PlanRecordRateWarning",
     "PlanTimelineEntry",
@@ -103,8 +108,16 @@ def create_thread(  # noqa: PLR0913 — package primitive mirrors the plan-creat
     research_filename: str,
     research_text: str,
     now: str,
+    definition_of_done: PlanDefinitionOfDone,
 ) -> dict[str, str]:
-    """Create a plan with one research note, one ledger epic, and its anchor."""
+    """Create a plan with one research note, one ledger epic, and its anchor.
+
+    `definition_of_done` is REQUIRED, not defaulted. The plan clause states
+    outright that there is no exemption list — a plan must not archive without
+    the section, whenever its epic was created — so a parameter a caller could
+    omit would hand back a plan that can never be archived, and would do it
+    silently at the one moment the maintainer's statement is actually available.
+    """
     topic_dir = project_root / _PLAN_DIR / slug
     research_path = topic_dir / _RESEARCH_DIR / research_filename
     # Write-once is enforced on the NOTE, not on its directory: an epic may
@@ -114,8 +127,16 @@ def create_thread(  # noqa: PLR0913 — package primitive mirrors the plan-creat
     # `exist_ok=False` used to, without refusing the adoption.
     research_path.parent.mkdir(parents=True, exist_ok=True)
     with research_path.open("x", encoding="utf-8") as handle:
-        _ = handle.write(research_text)
-    epic = plan_anchor_epic(prefix=config.prefix, slug=slug, title=title, now=now)
+        _ = handle.write(
+            plan_research_note(definition=definition_of_done, research_text=research_text)
+        )
+    epic = plan_anchor_epic(
+        prefix=config.prefix,
+        slug=slug,
+        title=title,
+        now=now,
+        definition_of_done=definition_of_done,
+    )
     append_work_item(path=config, item=epic)
     _ = tag_epic_plan_slug(config=config, epic_id=epic.id, title=title, slug=slug)
     anchor_path = write_plan_anchor(project_root=project_root, slug=slug, epic_id=epic.id)

@@ -14,6 +14,10 @@ import importlib
 from pathlib import Path
 from types import ModuleType
 
+from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import (
+    PlanDefinitionOfDone,
+)
+
 _MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._plan_anchor"
 _MODULE_PATH = (
     Path(__file__).resolve().parents[3]
@@ -67,6 +71,10 @@ def test_the_minted_plan_anchor_epic_carries_the_shared_prefix() -> None:
         slug=_PLAN_SLUG,
         title="Codex YOLO sandbox",
         now="2026-08-27T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the operator has driven it and seen it work.",
+            assertions=("The operator drives the delivered command and sees it work.",),
+        ),
     )
 
     assert epic.spec_commitment_hint == _PLAN_ANCHOR_MARKER

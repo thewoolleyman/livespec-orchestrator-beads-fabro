@@ -52,7 +52,9 @@ The operation's testable package substrate is
 `livespec_orchestrator_beads_fabro.commands.plan`:
 
 - `create_thread(...)` creates `plan/<slug>/research/<file>` and one
-  ledger epic anchor.
+  ledger epic anchor. Its `definition_of_done` is a REQUIRED
+  `PlanDefinitionOfDone(statement=..., assertions=...)`. See "The plan
+  Definition of Done" below.
 - `append_handoff(...)` appends one plan-epic comment, with a
   caller-supplied `author`, and writes the required `next_action` onto the
   epic in the same call. See "The typed next action" below.
@@ -120,6 +122,11 @@ description. Propose a canonical dash-cased slug using the same
 canonicalization as `propose-change`: lowercase, replace each run of
 non-`[a-z0-9]` characters with one hyphen, strip leading and trailing
 hyphens, and truncate to 64 characters. Confirm the proposed slug.
+
+Before creating anything, ask the maintainer what DONE means for this
+plan, in their own words, and derive the plan's Definition of Done from
+their answer. See "The plan Definition of Done" below; `create_thread`
+requires it.
 
 On confirmation, create exactly these records:
 
@@ -203,6 +210,37 @@ thread quietly accumulating a day's worth of records nobody sees, so the
 warning MUST be surfaced rather than swallowed. When one fires, the
 useful question is whether the thread is blocked on something that a
 handoff entry cannot fix.
+
+#### The plan Definition of Done
+
+A plan is done when the outcome the maintainer asked for was OBSERVED —
+not when its children closed. So the plan epic carries its own Definition
+of Done, and it is authored at creation, never bolted on later.
+
+Ask the maintainer what done means and record their answer in two places,
+both written by `create_thread` from the one `PlanDefinitionOfDone` value:
+
+- `statement` — the maintainer's own words, VERBATIM. Never reworded,
+  summarized, or tidied. It lands in the initial research note, beside
+  the assertions derived from it, so a later reader can audit the
+  derivation against its source.
+- `assertions` — one behavioural assertion per entry, each naming an
+  observable behaviour or state of the delivered artifact on a surface a
+  user or operator reaches. They become the `## Definition of Done`
+  section at the head of the epic description.
+
+An attended creation CONFIRMS the derived assertions with the maintainer
+before creating the plan. An unattended creation MUST NOT invent them:
+record them as session-derived in the first handoff entry.
+
+Each plan assertion's proof mode is `host_captured` by default, with no
+`Reason:` line required — a plan has one leg, and every plan assertion
+that is not `human_attested` is exercised on a host. There is no
+`factory_captured` mode for a plan assertion, because no factory run
+executes against an epic. A `### Human-attested` sub-heading declares the
+assertions beneath it `human_attested` and DOES owe a `Reason:` line,
+exactly as on a work item. A reference line is optional: a plan may
+precede the specification it will ratify.
 
 #### The typed next action
 
