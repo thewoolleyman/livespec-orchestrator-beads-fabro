@@ -46,11 +46,16 @@ from livespec_orchestrator_beads_fabro.commands._acp_agent_catalog import (
     ANTHROPIC_PROVIDER,
     OPENAI_PROVIDER,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_candidate_pricing import (
+    PRICE_FIELDS,
+    AcpCandidatePricing,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_catalog_overrides import catalog_overrides
 from livespec_orchestrator_beads_fabro.commands._acp_model_entry import (
     AcpModelEntry,
     parse_model_entry,
 )
+from livespec_orchestrator_beads_fabro.commands._acp_model_prices import builtin_model_pricing
 
 __all__: list[str] = [
     "MODEL_CATALOG_KEY",
@@ -101,13 +106,22 @@ _PROVIDER_MODELS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
 
 
 def builtin_model_catalog() -> Mapping[str, AcpModelEntry]:
-    """The shipped snapshot, keyed by `provider/model`."""
+    """The shipped snapshot, keyed by `provider/model`.
+
+    `pricing` comes from the shared base-rate table in `_acp_model_prices`,
+    which is the same fact the per-token price table the legacy host-OTLP span
+    path reads is built from. A model with no published rate there carries NO
+    pricing, and that absence is the honest value: the cost paragraph's
+    no-default rule turns it into an explicit unobservable cost rather than a
+    guess summed into an observation.
+    """
     entries = [
         AcpModelEntry(
             provider=provider,
             model=model,
             display_name=display_name,
             canonical_id=model,
+            pricing=builtin_model_pricing(model=model),
         )
         for provider, models in _PROVIDER_MODELS
         for model, display_name in models
@@ -136,22 +150,46 @@ def resolve_model_catalog(*, block: Mapping[str, Any]) -> Mapping[str, AcpModelE
 def model_catalog_digest(*, catalog: Mapping[str, AcpModelEntry]) -> str:
     """A deterministic digest of the shipped model catalog's identity fields.
 
-    The projection covers exactly what a RENDER depends on -- the key, the
-    canonical id the adapter is given, the display name the derived identity
-    uses, and the aliases an operator may write -- and deliberately not pricing
-    or availability signatures. Those two are what the separate ratified item
-    `acp-catalog-pricing-and-signatures` populates and consumes; no shipped
-    entry carries either yet, so including them would put a field into the
-    digest that no committed byte can vary. That item extends this projection
-    when it lands, which is a digest change and therefore a snapshot change --
-    which is the correct signal rather than a cost of the omission.
+    The projection covers what a RENDER depends on -- the key, the canonical id
+    the adapter is given, the display name the derived identity uses, and the
+    aliases an operator may write -- plus, since
+    `acp-catalog-pricing-and-signatures` landed, the entry's PRICING. The
+    pricing extension is the one this function's own prior wording promised:
+    "that item extends this projection when it lands, which is a digest change
+    and therefore a snapshot change -- which is the correct signal rather than
+    a cost of the omission". A digest blind to pricing would let a re-priced
+    catalog ship under an unchanged snapshot id, and a re-priced catalog is
+    exactly what changes every derived run cost downstream of it.
+
+    Availability signatures stay OUT, and the reason is the same one that kept
+    pricing out until now: no shipped entry carries one, so including them
+    would put a field into the digest that no committed byte can vary.
     """
     return _digest(
         payload=[
-            [key, entry.canonical_id, entry.display_name, list(entry.aliases)]
+            [
+                key,
+                entry.canonical_id,
+                entry.display_name,
+                list(entry.aliases),
+                _pricing_projection(pricing=entry.pricing),
+            ]
             for key, entry in sorted(catalog.items())
         ]
     )
+
+
+def _pricing_projection(*, pricing: AcpCandidatePricing | None) -> list[object] | None:
+    """One entry's price table as a positional list, or None when unpriced.
+
+    Positional rather than a mapping so the projection cannot vary with
+    `PRICE_FIELDS`' spelling, and keyed off that tuple rather than off four
+    literals so a fifth priced component added to the grammar enters the digest
+    without a second edit here.
+    """
+    if pricing is None:
+        return None
+    return [pricing.model, *(getattr(pricing, name) for name in PRICE_FIELDS)]
 
 
 def _digest(*, payload: object) -> str:
