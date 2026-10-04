@@ -157,6 +157,29 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   construction and its value is one the Dispatcher itself supplies. The
   projection is fail-closed in both arms: a declaration the parse refuses, or a
   name whose value is absent, renders NO overlay line.
+- `_dispatcher_proof_credential_providers.py` — the MINTED half of that same
+  clause: the provider management interface a declared proof credential can be
+  minted through, the name-keyed registry a shipped adapter registers into, the
+  run-scoped lease that carries a minted value to the overlay, and the revoke
+  that discharges the lease once the run returns. The dependency direction is
+  one-way — `_dispatcher_proof_credentials` imports THIS module, never the
+  reverse — which is what lets the declaration-aware parse ask whether a name
+  has a provider without this module needing to know how the committed key is
+  spelled; the operator-facing prose therefore lives in the declaration module
+  and this one returns bare reasons. Three properties an editor must not
+  invert. Resolution is BY NAME because the declaration shape is closed at
+  `{name, purpose, capability}`, so a repository cannot nominate an adapter and
+  this registry is the only place one can be named. The mint is GRADED, not
+  trusted: a credential returned under another name or holding a wider
+  capability than the declaration is refused, because the mint is the one
+  moment the Dispatcher sees the grant before the sandbox does. And the revoke
+  NEVER RAISES and journals NAMES ONLY — it runs as the run's teardown after
+  the outcome is decided, so an exception would replace a completed dispatch's
+  result with a traceback, and a provider's own failure prose is third-party
+  text that must not reach a durable record. The registry is EMPTY in this
+  build (no provider adapter ships; the mechanism is proved against a hermetic
+  double) — that is recorded in the module docstring, and it is not a reason to
+  drop the path.
 - `_dispatcher_integration_schema.py` / `_dispatcher_integration_field.py` /
   `_dispatcher_integration_defaults.py` /
   `_dispatcher_integration_declaration.py` /
