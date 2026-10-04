@@ -23,14 +23,15 @@ sandbox at all. Re-checking them here is cheap insurance against a stale or
 hand-edited brief, and you should report what you find — but do not expect
 them to fire, and do not treat a clean mechanical pass as your verdict.
 
-The last two are the ones that brought this node into existence, because no
-host-side parse can perform them: whether the assertions are COHERENT, and
-whether each proof mode matches what this sandbox can actually exercise.
+The last three are the ones that brought this node into existence, because
+no host-side parse can perform them: whether the assertions are COHERENT,
+whether each proof mode matches what this sandbox can actually exercise, and
+whether each assertion names behaviour against the scenario governing it.
 Spend your effort there.
 
 ## The sandbox capability set — read it, never infer it
 
-One of the checks below asks whether a capability can exercise an assertion,
+Two of the checks below ask whether a capability can exercise an assertion,
 so establish the capability set BEFORE you grade anything.
 
 A *sandbox capability* is a named surface the sandbox can exercise for proof.
@@ -65,7 +66,7 @@ Then report, in your own output, what you resolved:
 
 ## What to check
 
-Work through all five. Read files in the repository freely to settle a
+Work through all six. Read files in the repository freely to settle a
 question of fact — the spec tree above all.
 
 1. **The section exists and parses.** The item's description must carry, as
@@ -147,6 +148,39 @@ question of fact — the spec tree above all.
    one** — every other check in this list still applies in full, including
    check 3's refusal of a weaker mode, which rests on your reading of the
    deliverable rather than on the capability set.
+6. **Each assertion names BEHAVIOUR, and its reference names the scenario
+   that governs it.** Two findings live here, and both are the gate's
+   judgement: the host-side wall may recognise their mechanical forms, but
+   only you can tell what this item's deliverable actually is.
+
+   A **test-existence assertion** is one whose subject is the existence,
+   coverage or passing of tests or checks — "tests prove …", "regression
+   tests cover …", "the aggregate passes". It is legitimate ONLY when the
+   item's deliverable is **itself a test, a check or a gate**. On any OTHER
+   item it is a finding: name the assertion, and give the remedy —
+   **restate it as the behaviour the tests were meant to establish**, on the
+   surface a user or operator of the delivered artifact reaches. The janitor
+   gate already guarantees the aggregate, so an assertion restating it
+   carries no information about this item at all.
+
+   Two shapes are NOT test-existence findings, and they are the ones most
+   often mistaken for them — expensively, because mistaking one rests an item
+   whose assertion was exactly what was asked for. For a documentation or
+   configuration deliverable the assertion names the **DELIVERED STATE** —
+   the file and the text or key it carries. For an item declared
+   **behaviour-preserving**, it names the EXISTING behaviour that is
+   unchanged.
+
+   A **reference line naming only a non-scenario H2** is a finding when a
+   `## Scenario NN — <title>` heading of `scenarios.md` states the behaviour
+   an assertion names: the referenced scenario governs the proof, and the
+   capture stage is told to follow that scenario's own steps. **Search
+   `scenarios.md`** for a scenario stating the behaviour **before concluding
+   none does** — "no scenario governs this" forecloses the finding and
+   nothing downstream re-tests it, so recollection cannot establish it.
+   **Name the scenario heading that governs the assertion**, and give the
+   remedy: add that heading to the reference line. A non-scenario H2 remains
+   a perfectly **valid reference for an assertion no scenario states**.
 
 ## What you must not do
 
