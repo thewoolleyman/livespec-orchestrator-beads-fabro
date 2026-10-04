@@ -27,6 +27,9 @@ from pathlib import Path
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import fake_singleton, reset_fake_singleton
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_completion, _dispatcher_loop
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria import (
+    CriterionCheck,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import resolve_wip_cap
@@ -85,6 +88,13 @@ class _FakeAcceptancePass:
     proof: None = None
     verdict: str
     absent_evidence: tuple[str, ...] = ()
+    # The three leg fields the PARKING RECORD reads off the pass. They carry
+    # stand-in reasons rather than being omitted, because the record names every
+    # leg it read and a stub missing them would make the park raise rather than
+    # report — which is the one thing a fail-soft disposition must never do.
+    diff_reason: str = "merged diff read"
+    telemetry_reason: str = "green merged dispatch with PR and merge sha"
+    criteria: tuple[CriterionCheck, ...] = ()
 
     def journal_record(self, *, work_item_id: str, policy: str) -> dict[str, object]:
         return {
