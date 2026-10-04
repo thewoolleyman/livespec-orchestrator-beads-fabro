@@ -201,9 +201,12 @@ digraph ImplementWorkItem {
     // them, now at the same value `disposition` and `review_fix` carry for
     // exactly this role.
     fix [
-        label="Fix janitor failures"
+        label="Fix gate or proof findings"
         backend="acp"
         acp.command="{{ inputs.fix_adapter }}"
+        // Compact omits agent responses, including succeeded proof stages
+        // requesting a fix. Preserve their exact source-labelled findings.
+        fidelity="summary:high"
         timeout="1800s"
         max_visits=10
         prompt="@prompts/fix.md"
