@@ -11,6 +11,16 @@ evidence an assertion.
 The tri-state `reproduced` answer is asserted in all three directions, because
 `None` is the one the evidence rule depends on and it is the one a reader
 collapsing it into `False` would still pass two assertions out of three on.
+
+THE FENCED CASES AT THE END ARE WHERE REAL RECORDS LIVE. Every body above is
+hand-written prose, and a hand-written body carries no proof; a real record's
+sections are mostly fenced code whose lines begin with a hash, so the bodies below
+are shaped like the records the factory actually publishes. They are asserted in
+both directions deliberately: a fence-aware splitter that merely stopped splitting
+would be fail-OPEN, letting an assertion with no `Reproduced:` line of its own
+report whatever a LATER assertion said. The measured half of all of this, over two
+real payloads, is
+`tests/integration/test_proof_record_fenced_section_segmentation.py`.
 """
 
 from __future__ import annotations
@@ -275,3 +285,110 @@ def test_no_record_of_the_asked_verdict_is_none() -> None:
     )
 
     assert latest_proof_record(records=records, verdict=VERDICT_HUMAN_ATTESTED) is None
+
+
+def _fenced_record(*, body: str) -> ProofRecord:
+    return ProofRecord(
+        verdict=VERDICT_VERIFIED,
+        run_id=_RUN_ID,
+        timestamp="t",
+        url="u",
+        body=f"Proof of Done — verified — run {_RUN_ID} — t\n\n{textwrap.dedent(body)}",
+    )
+
+
+def test_a_fenced_proof_whose_lines_begin_with_a_hash_does_not_end_the_section() -> None:
+    """The shape of every real record: hash lines inside the proof, verdict after it.
+
+    A proof prints things, and the things it prints begin with a hash — shell
+    comments, Python comments, the headings of a Markdown file it `cat`s. The
+    `Reproduced:` line follows the fenced block, so a splitter treating those lines
+    as headings ends the section before reaching it and reports an assertion the
+    record states was reproduced as unobserved.
+    """
+    record = _fenced_record(
+        body="""\
+        ## Assertion 1 — The checker refuses an unsorted list.
+
+        Proof mode: `factory_captured`
+
+        Proof 01:
+
+        ```text
+        $ ./check.sh
+        # the guard's own comment, printed by `cat check.sh`
+        ### 1. the committed enumeration
+        #!/usr/bin/env bash
+        refused: [z, a] is not sorted
+        ```
+
+        Reproduced: yes. Proof 01 matches the captured record byte-for-byte.
+        """
+    )
+
+    assert record.reproduced(assertion="The checker refuses an unsorted list.") is True
+
+
+def test_an_assertion_with_no_reproduced_line_cannot_borrow_a_later_ones() -> None:
+    """The fail-OPEN direction, through the fence shape that reaches it.
+
+    A proof that prints part of a Markdown file prints that file's OWN fences, so a
+    record legitimately carries a shorter fence nested inside a longer one — and an
+    EXCERPT can carry one half of a pair. A splitter that flips a boolean on every
+    delimiter reads that inner line as closing the outer block and the outer closer
+    as opening a new one, so from there on it believes it is inside a fence forever:
+    the NEXT assertion's heading stops being a boundary, the two sections merge, and
+    the first assertion — which published no verdict of its own — reports the second
+    one's `yes`. That is evidence nobody wrote, which is strictly worse than the
+    unevidenced answer it replaces.
+
+    The second assertion is the control. Without it the expectation is equally
+    consistent with a reader that had stopped reading the `Reproduced:` line
+    altogether, which would answer `None` here for the right reason and `None`
+    everywhere else for the wrong one.
+    """
+    record = _fenced_record(
+        body="""\
+        ## Assertion 1 — Alpha is published without a verdict.
+
+        Proof 01:
+
+        ````text
+        $ sed -n '1,3p' prompts/fix.md
+        # a heading inside the file the proof printed
+        ```
+        ````
+
+        ## Assertion 2 — Beta carries the only verdict in the body.
+
+        Reproduced: yes.
+        """
+    )
+
+    assert record.reproduced(assertion="Alpha is published without a verdict.") is None
+    assert record.reproduced(assertion="Beta carries the only verdict in the body.") is True
+
+
+def test_a_reproduced_no_survives_a_fenced_proof_that_prints_headings() -> None:
+    """The `no` direction, in the same shape: a refusal is still a refusal.
+
+    `False` and `None` route the item differently — one is failing evidence and the
+    other is no evidence — so a fence-aware splitter that recovered the `yes` arm
+    while losing this one would trade a park for a wrong pass.
+    """
+    record = _fenced_record(
+        body="""\
+        ## Assertion 1 — The banner renders on the runs page.
+
+        Proof 01:
+
+        ```text
+        $ curl -s localhost:8099/runs | head -3
+        # no capacity banner in the rendered page
+        ```
+
+        Reproduced: NO. Step 2 renders the runs page with no capacity banner.
+        """
+    )
+
+    assert record.reproduced(assertion="The banner renders on the runs page.") is False

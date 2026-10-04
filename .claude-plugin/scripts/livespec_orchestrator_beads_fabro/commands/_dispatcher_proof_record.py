@@ -107,10 +107,10 @@ _HEADER_MINIMUM_FIELDS = 3
 _TIMESTAMP_FIELD = 3
 _HEADING = re.compile(r"^#{1,6}\s")
 # A CommonMark fenced-code delimiter: three or more backticks or tildes, indented
-# no more than three spaces. The info string an OPENING delimiter may carry is not
-# captured, because the only question asked of this pattern is whether the line
-# delimits a fence.
-_FENCE = re.compile(r"^ {0,3}(?:`{3,}|~{3,})")
+# no more than three spaces. The run itself is captured because closing a fence
+# depends on it; the info string an OPENING delimiter may carry is not, because
+# nothing here reads it.
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 _WHITESPACE = re.compile(r"\s+")
 _REPRODUCED_PREFIX = "reproduced:"
 _REPRODUCED_YES = "yes"
@@ -243,14 +243,34 @@ def _sections(*, body: str) -> list[list[str]]:
     the heading arm are exclusive.
     """
     sections: list[list[str]] = [[]]
-    fenced = False
+    fence: str | None = None
     for line in body.splitlines():
-        if _FENCE.match(line) is not None:
-            fenced = not fenced
-        elif not fenced and _HEADING.match(line) is not None and sections[-1]:
+        delimiter = _FENCE.match(line)
+        if delimiter is not None:
+            fence = _fence_after(fence=fence, delimiter=delimiter.group(1))
+        elif fence is None and _HEADING.match(line) is not None and sections[-1]:
             sections.append([])
         sections[-1].append(line)
     return sections
+
+
+def _fence_after(*, fence: str | None, delimiter: str) -> str | None:
+    """The open fence after one delimiter line, or `None` outside a fence.
+
+    The OPEN delimiter is carried rather than a boolean because CommonMark closes a
+    fence only on its own character with at least as long a run, and a record
+    legitimately nests one fence inside another: a proof that prints part of a
+    Markdown file prints that file's own fences, and an excerpt can carry one half
+    of a pair. A boolean inverts on that line and stays inverted, after which the
+    splitter believes it is inside a fence for the rest of the body — two assertion
+    sections merge and the first reports the second's verdict, which is the
+    fail-OPEN answer the evidence rule forbids.
+    """
+    if fence is None:
+        return delimiter
+    if delimiter[0] == fence[0] and len(delimiter) >= len(fence):
+        return None
+    return fence
 
 
 def _reproduced_in(*, section: list[str]) -> bool | None:
