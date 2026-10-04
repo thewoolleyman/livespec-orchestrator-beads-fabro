@@ -21,6 +21,17 @@ Refusing to ask stays the narrow case. It requires the unattended marker AND a
 `kind` of `impl` or `spec-op` AND a non-empty `ref`; `human`, `none`, an empty
 ref, an unknown kind, an absent pointer, or an attended session all fall back
 to the picker, reporting the kind as the reason.
+
+ONE MORE WAY TO ASK, AND IT PRE-EMPTS THE POINTER. A plan epic carrying no
+Definition of Done section is reported by EVERY resume, and an unattended one
+sets `next_action` to `kind: human` naming the gap rather than authoring the
+maintainer's assertions for them — UNLESS the pointer is already `kind: impl`,
+which it still takes. That carve-out is the whole reason the gap check runs
+BEFORE the dispatch decision rather than instead of it: an `impl` pointer names
+work already filed and admitted, and overwriting it would strand a live dispatch
+behind a question no unattended session can answer. A `spec-op` pointer is
+replaced, because a plan that has not said what done means has nothing for a
+spec operation to ratify toward.
 """
 
 from __future__ import annotations
@@ -29,6 +40,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
+from livespec_orchestrator_beads_fabro._store_ready_dwell import utc_now_iso
+from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import (
+    missing_section_finding,
+    missing_section_gap_text,
+    plan_definition_of_done,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsRecord
@@ -41,6 +58,7 @@ __all__: list[str] = [
     "NEXT_ACTION_KINDS",
     "NEXT_ACTION_METADATA_KEY",
     "NONE_KIND",
+    "PLAN_RESUME_ACTOR",
     "SPEC_OP_KIND",
     "NextAction",
     "ResumeDirective",
@@ -67,6 +85,13 @@ _KIND_FIELD = "kind"
 _REF_FIELD = "ref"
 _TEXT_FIELD = "text"
 _METADATA_FIELD = "metadata"
+_DESCRIPTION_FIELD = "description"
+# The reserved author literal the resume signs its own gap pointer with,
+# computed here rather than accepted from a caller — the same reservation
+# `archive_thread` makes for `plan-archive` and `append_supervisor_handoff`
+# for `<slug>-supervisor`. The resume writes this pointer on its OWN behalf,
+# so no session identity is the honest author of it.
+PLAN_RESUME_ACTOR = "plan-resume"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -88,11 +113,19 @@ class NextAction:
 
 @dataclass(frozen=True, kw_only=True)
 class ResumeDirective:
-    """Whether a resume asks which action to take, and what it takes instead."""
+    """Whether a resume asks which action to take, and what it takes instead.
+
+    `findings` carries what this resume must REPORT regardless of which action
+    it takes — today, a missing plan Definition of Done section. It is separate
+    from `reason` because the two answer different questions: `reason` explains
+    the picker decision, and a finding is owed even when no picker is raised.
+    Defaulted to empty so every existing construction stays valid.
+    """
 
     ask: bool
     next_action: str | None
     reason: str
+    findings: tuple[str, ...] = ()
 
 
 def next_action_metadata(
@@ -177,23 +210,81 @@ def set_next_action(
 
 
 def resume_directive(*, config: StoreConfig, epic_id: str, unattended: bool) -> ResumeDirective:
-    """Decide whether this resume asks which action to take, or just takes it."""
+    """Decide whether this resume asks which action to take, or just takes it.
+
+    The epic is read ONCE and both questions are answered from that record — the
+    typed pointer and whether the plan carries its Definition of Done. A second
+    read could not be proven to agree with the first, and the disagreement would
+    be invisible because both reads produce a well-formed epic.
+    """
+    record = make_beads_client(config=config).show_issue(issue_id=epic_id)
+    action = parse_next_action(value=_record_metadata(record=record).get(NEXT_ACTION_METADATA_KEY))
+    findings = _definition_of_done_findings(record=record, epic_id=epic_id)
     if not unattended:
-        return ResumeDirective(ask=True, next_action=None, reason="interactive resume")
-    action = read_next_action(config=config, epic_id=epic_id)
+        return ResumeDirective(
+            ask=True, next_action=None, reason="interactive resume", findings=findings
+        )
+    if findings and not _is_impl(action=action):
+        return _gap_directive(config=config, epic_id=epic_id, findings=findings)
     if action is None:
         return ResumeDirective(
             ask=True,
             next_action=None,
             reason=f"epic {epic_id} carries no typed next_action",
+            findings=findings,
         )
     identifier = dispatchable_action_id(action=action)
     if identifier is None:
-        return ResumeDirective(ask=True, next_action=None, reason=_picker_reason(action=action))
+        return ResumeDirective(
+            ask=True,
+            next_action=None,
+            reason=_picker_reason(action=action),
+            findings=findings,
+        )
     return ResumeDirective(
         ask=False,
         next_action=identifier,
         reason="unattended resume takes the typed next_action",
+        findings=findings,
+    )
+
+
+def _is_impl(*, action: NextAction | None) -> bool:
+    """Whether the existing pointer is the one the gap must NOT overwrite.
+
+    `impl` ALONE, as the clause words it. A `spec-op` pointer is dispatchable and
+    is still replaced, because a plan that has not said what done means has
+    nothing for a spec operation to ratify toward — whereas an `impl` pointer
+    names work already filed, groomed and admitted, and overwriting it would
+    strand a live dispatch behind a question nobody is present to answer.
+    """
+    return action is not None and action.kind == IMPL_KIND
+
+
+def _definition_of_done_findings(*, record: BeadsRecord, epic_id: str) -> tuple[str, ...]:
+    description = record.get(_DESCRIPTION_FIELD)
+    text = description if isinstance(description, str) else ""
+    if plan_definition_of_done(description=text).present:
+        return ()
+    return (missing_section_finding(epic_id=epic_id),)
+
+
+def _gap_directive(
+    *, config: StoreConfig, epic_id: str, findings: tuple[str, ...]
+) -> ResumeDirective:
+    """Point the plan at a human and report why, without authoring assertions."""
+    set_next_action(
+        config=config,
+        epic_id=epic_id,
+        action=NextAction(kind=HUMAN_KIND, ref="", text=missing_section_gap_text()),
+        session=PLAN_RESUME_ACTOR,
+        now=utc_now_iso(),
+    )
+    return ResumeDirective(
+        ask=True,
+        next_action=None,
+        reason=f"epic {epic_id} carries no plan Definition of Done section",
+        findings=findings,
     )
 
 

@@ -44,11 +44,19 @@ if TYPE_CHECKING:
     )
 
 __all__: list[str] = [
+    "MISSING_SECTION_FINDING",
     "PlanDefinitionOfDone",
+    "missing_section_finding",
+    "missing_section_gap_text",
     "plan_definition_of_done",
     "plan_definition_of_done_section",
     "plan_research_note",
 ]
+
+# The finding literal the clause names verbatim. Every finding this module
+# renders STARTS with it, so a consumer matching the ratified string keeps
+# working while the remainder carries the epic id and the remedy.
+MISSING_SECTION_FINDING = "plan-definition-of-done: missing"
 
 # The reserved heading in its AUTHORED form. The parse matches on the
 # case-folded title, so this is the form a reader sees rather than a second
@@ -89,6 +97,28 @@ def plan_definition_of_done(*, description: str) -> DefinitionOfDone:
     reference line the plan never needed, both of which look like real findings.
     """
     return definition_of_done(description=description, subject=SUBJECT_PLAN)
+
+
+def missing_section_finding(*, epic_id: str) -> str:
+    """The finding every plan resume reports for an epic carrying no section."""
+    remedy = "author it with the maintainer's own statement of what done means"
+    return f"{MISSING_SECTION_FINDING} on epic {epic_id}; {remedy}"
+
+
+def missing_section_gap_text() -> str:
+    """The imperative sentence the gap pointer carries, readable with no context.
+
+    One sentence, naming the gap and who must close it, per the `next_action`
+    `text` contract. An unattended resume writes this rather than inventing
+    assertions: the maintainer's statement of done is theirs to give, and a
+    session that guessed at it would produce a plan epic whose Definition of Done
+    nobody ever asked for while looking exactly like one somebody did.
+    """
+    return (
+        "Author this plan's Definition of Done with the maintainer:"
+        " the epic carries no section, and an unattended session must not"
+        " write the assertions on their behalf."
+    )
 
 
 def plan_definition_of_done_section(*, definition: PlanDefinitionOfDone) -> str:

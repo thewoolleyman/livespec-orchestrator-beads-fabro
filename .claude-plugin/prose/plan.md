@@ -306,7 +306,7 @@ operator-launched session leaves it unset and keeps the picker.
 
 Call `resume_directive(config=..., epic_id=..., unattended=...)`. It
 reads the epic's `next_action` — it parses no comment body — and returns
-`ask`, `next_action`, and a `reason`:
+`ask`, `next_action`, a `reason`, and `findings`:
 
 - `ask` is false only when the session is unattended AND the `kind` is
   `impl` or `spec-op` AND the `ref` is non-empty. Take the returned
@@ -322,6 +322,17 @@ choice of that picker.
 Report the `reason` when the picker is raised in an unattended session:
 that string is how a hands-off restart explains why it stopped rather
 than parking silently on a question nobody will see.
+
+ALWAYS surface every entry in `findings`, in both modes. Today it carries
+one: `plan-definition-of-done: missing`, for a plan epic created before
+that section was required. An ATTENDED resume of such an epic MUST author
+the section with the maintainer before recording any further carrier-map
+event. An UNATTENDED resume MUST NOT author the assertions on the
+maintainer's behalf — `resume_directive` has already set `next_action` to
+`kind: human` naming the gap, and `ask` is true — unless `next_action` was
+already `kind: impl`, which it still takes, because that names work
+already filed and admitted. The finding is reported either way: reported
+and acted on are different things.
 
 ### Step 4 - Handoff Timeline Requirements
 
