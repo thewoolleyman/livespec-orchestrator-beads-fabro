@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.164.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.164.0...v0.164.1) (2026-10-04)
+
+
+### Bug Fixes
+
+* **dispatcher:** attribute a proof record under either run identifier ([b79053f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b79053f673d21a193f51743d4b23e7417e350774))
+* **dispatcher:** reconcile an acceptance-resting item to its missing pointer ([1efb2cf](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1efb2cfaa25b95576669e5fd091aa2f180184975))
+
 ## [0.164.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.163.1...v0.164.0) (2026-10-04)
 
 
