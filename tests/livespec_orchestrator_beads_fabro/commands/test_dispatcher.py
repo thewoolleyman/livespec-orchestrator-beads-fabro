@@ -4236,7 +4236,14 @@ def test_dispatch_id_journal_records_resolved_factory_without_rewriting_existing
     journal.append(record=existing)
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
-    monkeypatch.setattr(_dispatcher_loop, "post_run_dispositions", lambda **_: None)
+    monkeypatch.setattr(
+        _dispatcher_loop,
+        "post_run_dispositions",
+        # The real one RETURNS the outcome as the acceptance valve left it, and
+        # `dispatch_one` rebinds its own on that return; a stand-in returning None
+        # would make the dispatch report no outcome at all.
+        lambda **kwargs: kwargs["outcome"],
+    )
     review_gate_emissions: list[ReviewGateEmission] = []
     monkeypatch.setattr(
         _dispatcher_loop,
@@ -4295,7 +4302,14 @@ def test_dispatch_threads_its_dispatch_id_into_the_watchdog_launcher(
     journal = JournalFile(path=repo / "tmp" / "fabro-dispatch-journal.jsonl")
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
-    monkeypatch.setattr(_dispatcher_loop, "post_run_dispositions", lambda **_: None)
+    monkeypatch.setattr(
+        _dispatcher_loop,
+        "post_run_dispositions",
+        # The real one RETURNS the outcome as the acceptance valve left it, and
+        # `dispatch_one` rebinds its own on that return; a stand-in returning None
+        # would make the dispatch report no outcome at all.
+        lambda **kwargs: kwargs["outcome"],
+    )
     monkeypatch.setattr(_dispatcher_loop, "emit_review_gate_from_fabro_events", lambda **_: None)
 
     outcome = _dispatcher_loop.dispatch_one(
@@ -4397,7 +4411,14 @@ def test_dispatch_id_journal_omits_factory_when_target_was_not_resolved(
     journal = JournalFile(path=repo / "tmp" / "fabro-dispatch-journal.jsonl")
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
-    monkeypatch.setattr(_dispatcher_loop, "post_run_dispositions", lambda **_: None)
+    monkeypatch.setattr(
+        _dispatcher_loop,
+        "post_run_dispositions",
+        # The real one RETURNS the outcome as the acceptance valve left it, and
+        # `dispatch_one` rebinds its own on that return; a stand-in returning None
+        # would make the dispatch report no outcome at all.
+        lambda **kwargs: kwargs["outcome"],
+    )
     review_gate_emissions: list[ReviewGateEmission] = []
     monkeypatch.setattr(
         _dispatcher_loop,
@@ -4505,7 +4526,14 @@ def test_dispatch_fabro_run_failure_without_run_id_releases_admitted_claim(
         }
     )
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
-    monkeypatch.setattr(_dispatcher_loop, "post_run_dispositions", lambda **_: None)
+    monkeypatch.setattr(
+        _dispatcher_loop,
+        "post_run_dispositions",
+        # The real one RETURNS the outcome as the acceptance valve left it, and
+        # `dispatch_one` rebinds its own on that return; a stand-in returning None
+        # would make the dispatch report no outcome at all.
+        lambda **kwargs: kwargs["outcome"],
+    )
     monkeypatch.setattr(_dispatcher_loop, "emit_review_gate_from_fabro_events", lambda **_: None)
 
     outcome = _dispatcher_loop.dispatch_one(
@@ -4623,7 +4651,14 @@ def test_dispatch_does_not_release_claim_after_fabro_run_exists(
         }
     )
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
-    monkeypatch.setattr(_dispatcher_loop, "post_run_dispositions", lambda **_: None)
+    monkeypatch.setattr(
+        _dispatcher_loop,
+        "post_run_dispositions",
+        # The real one RETURNS the outcome as the acceptance valve left it, and
+        # `dispatch_one` rebinds its own on that return; a stand-in returning None
+        # would make the dispatch report no outcome at all.
+        lambda **kwargs: kwargs["outcome"],
+    )
     monkeypatch.setattr(_dispatcher_loop, "emit_review_gate_from_fabro_events", lambda **_: None)
 
     outcome = _dispatcher_loop.dispatch_one(
@@ -5162,9 +5197,12 @@ def test_dispatch_green_without_sha_parks_needs_attention_instead_of_reworking(
     append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id, sha=None)})
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
+    # EXIT 1 is the parking-verdict clause's own mapping for a NEEDS_ATTENTION
+    # park: the dispatch merged and then could not be judged, so reporting it
+    # green would make the park invisible to every surface reading an exit code.
     assert (
         main(argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)])
-        == 0
+        == 1
     )
     stored = _stored()[item.id]
     # No merge sha means the merged diff was never read. Under the ratified

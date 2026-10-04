@@ -388,7 +388,10 @@ def test_an_unevidenced_assertion_parks_without_consuming_the_rework_cap(
     )
 
     exit_code, records = dispatched.exit_code, dispatched.records
-    assert exit_code == 0
+    # EXIT 1: the parking-verdict clause maps a NEEDS_ATTENTION park to
+    # `status: needs-attention` and exit 1, because a dispatch that merged and
+    # then could not be judged must not read as a completed close.
+    assert exit_code == 1
     ai_pass = _record(records=records, stage="acceptance-ai-pass")
     assert ai_pass["verdict"] == "NEEDS_ATTENTION"
     assert ai_pass["absent_evidence"] == [f"proof of done record for {_FACTORY_ASSERTION!r}"]

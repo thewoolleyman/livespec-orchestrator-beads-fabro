@@ -284,7 +284,10 @@ def test_unobservable_telemetry_with_readable_diff_parks_needs_attention(
         argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
 
-    assert exit_code == 0
+    # EXIT 1: the parking-verdict clause maps a NEEDS_ATTENTION park to
+    # `status: needs-attention` and exit 1, because a dispatch that merged and
+    # then could not be judged must not read as a completed close.
+    assert exit_code == 1
     parked = _stored()[item.id]
     # `ai-only` is AI-DISPOSITIVE for a judged verdict, and still parks here:
     # the delegation it grants is authority to act ON evidence, not without it.
@@ -359,7 +362,10 @@ def test_zero_gradeable_assertions_is_neither_auto_accepted_nor_reworked(
         argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
 
-    assert exit_code == 0
+    # EXIT 1: the parking-verdict clause maps a NEEDS_ATTENTION park to
+    # `status: needs-attention` and exit 1, because a dispatch that merged and
+    # then could not be judged must not read as a completed close.
+    assert exit_code == 1
     stored = _stored()[item.id]
     # Not auto-accepted (`done`) under `ai-only`, and not reworked (`active`):
     # a vacuous check set is absent evidence, not passing or failing evidence.

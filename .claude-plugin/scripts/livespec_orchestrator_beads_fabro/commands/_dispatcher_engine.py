@@ -264,11 +264,20 @@ class DispatchOutcome:
     run's own failure. It is what an exhaustion record is labelled with, and it
     is carried rather than assumed because the detection behind
     `provider_usage_limit` fires for either vendor.
+
+    `verdict` is the POST-MERGE ACCEPTANCE verdict, and it is None on every
+    outcome that never reached the acceptance valve. The parking-verdict clause of
+    `SPECIFICATION/contracts.md` requires the dispatch result to report it beside
+    `stage` and `status`, which is why it rides here rather than being left for a
+    consumer to recover from the journal: the journal lives in the `tmp/` tree of
+    whichever host ran the dispatch, and the result is what an operator and an
+    exit code see.
     """
 
     work_item_id: str
     status: str
     stage: str
+    verdict: str | None = None
     pr_number: int | None
     merge_sha: str | None
     detail: str

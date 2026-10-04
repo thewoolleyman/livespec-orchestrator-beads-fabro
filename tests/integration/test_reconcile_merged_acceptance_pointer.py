@@ -372,7 +372,10 @@ def test_a_record_from_another_dispatch_of_the_same_item_writes_no_pointer(
         monkeypatch=monkeypatch, tmp_path=tmp_path, record_run_id=_OTHER_DISPATCH_ID
     )
 
-    assert exit_code == 0
+    # EXIT 1: the parking-verdict clause maps a NEEDS_ATTENTION park to
+    # `status: needs-attention` and exit 1, because a dispatch that merged and
+    # then could not be judged must not read as a completed close.
+    assert exit_code == 1
     description = _stored().description
     assert "## Proof of Done" not in description
     assert description == _definition_of_done()

@@ -28,6 +28,10 @@ import argparse
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_fabro_bin
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_result import (
+    ACCEPTANCE_STAGE,
+    outcome_after_acceptance,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
     EXIT_FAILURE,
     EXIT_PRECONDITION_ERROR,
@@ -135,7 +139,7 @@ def run_reconcile_merged_command(
         return outcome
     journal.append(record={"stage": "outcome", "outcome": _outcome_payload(outcome=outcome)})
     emit_outcomes(outcomes=[outcome], as_json=args.as_json)
-    return 0 if outcome.status == "green" and outcome.stage == "done" else EXIT_FAILURE
+    return 0 if _reconciled_green(outcome=outcome) else EXIT_FAILURE
 
 
 def _resolved_merge(
@@ -181,9 +185,12 @@ def _janitor_and_accept(
         journal=journal,
         merged=merged,
     )
-    if outcome.status == "green" and outcome.stage == "done":
-        complete_and_accept(repo=repo, item=item, outcome=outcome, journal=journal)
-    return outcome
+    if outcome.status != "green" or outcome.stage != "done":
+        return outcome
+    return outcome_after_acceptance(
+        outcome=outcome,
+        disposition=complete_and_accept(repo=repo, item=item, outcome=outcome, journal=journal),
+    )
 
 
 def _reaccept_in_acceptance(
@@ -225,8 +232,10 @@ def _reaccept_in_acceptance(
         merge_sha=merged.merge_sha,
         detail=f"re-ran acceptance against merged PR #{merged.number}; janitor not re-run",
     )
-    complete_and_accept(repo=repo, item=item, outcome=outcome, journal=journal)
-    return outcome
+    return outcome_after_acceptance(
+        outcome=outcome,
+        disposition=complete_and_accept(repo=repo, item=item, outcome=outcome, journal=journal),
+    )
 
 
 def reconcile_plan(
@@ -252,11 +261,25 @@ def reconcile_plan(
     )
 
 
+def _reconciled_green(*, outcome: DispatchOutcome) -> bool:
+    """Whether this reconcile reconciled the item, across all three arms.
+
+    `acceptance` joins `done` because the acceptance valve now reports where it
+    LEFT the item: a re-accept whose pass parked on a PASS is a successful
+    reconcile that deliberately did not close, and grading it on `done` alone
+    would report every such run as a failure. A NEEDS_ATTENTION park keeps its own
+    `needs-attention` status and is still exit 1, which is the parking clause's
+    own mapping.
+    """
+    return outcome.status == "green" and outcome.stage in {"done", ACCEPTANCE_STAGE}
+
+
 def _outcome_payload(*, outcome: DispatchOutcome) -> dict[str, object]:
     return {
         "work_item_id": outcome.work_item_id,
         "status": outcome.status,
         "stage": outcome.stage,
+        "verdict": outcome.verdict,
         "pr_number": outcome.pr_number,
         "merge_sha": outcome.merge_sha,
         "detail": outcome.detail,

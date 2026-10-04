@@ -168,7 +168,11 @@ def test_real_dispatch_parks_in_acceptance_without_a_proof_record(
     finally:
         reset_fake_singleton()
 
-    assert result.exit_code == 0
+    # EXIT 1: the parking-verdict clause maps a NEEDS_ATTENTION park to
+    # `status: needs-attention` and exit 1. The PROVISIONING this case is about
+    # succeeded either way — the stage ordering below is its evidence — so the
+    # exit code here reports the acceptance verdict, not the janitor.
+    assert result.exit_code == 1
     assert result.stored.status == "acceptance"
     assert result.stored.resolution is None
     stages = [record["stage"] for record in result.records]
@@ -181,7 +185,14 @@ def test_real_dispatch_parks_in_acceptance_without_a_proof_record(
         "proof of done record for 'The dispatched slice lands its change.'"
     ]
     outcome = next(record["outcome"] for record in result.records if record["stage"] == "outcome")
-    assert (outcome["status"], outcome["stage"]) == ("green", "done")
+    # The journaled terminal is the one the dispatch RESULT reports, so it carries
+    # the acceptance verdict rather than the janitor's own `green at done`: a
+    # journal that disagreed with the result would just relocate finding F7(b).
+    assert (outcome["status"], outcome["stage"], outcome["verdict"]) == (
+        "needs-attention",
+        "acceptance",
+        "NEEDS_ATTENTION",
+    )
     # The merge the janitor ran against is still the merge the dispatch observed,
     # which is what the ordering above is ordering: the park changes the item's
     # disposition, not what was merged.
