@@ -1479,9 +1479,7 @@
     "heading": "## Scenario 140 — Filing displays Definition-of-Done findings and withholds ready only on a mechanical one",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified 2026-10-04 by the definition-and-proof-of-done-repair revision; nothing is implemented yet. An integration-tier test is owed for this heading, exercising the filing-time Definition-of-Done display, the mechanical and advisory finding split and the advisory hygiene fact. Epic bd-ib-7sjdzv (plan definition-and-proof-of-done) owns this row until the implementing child of that plan is filed, at which point the row is re-pointed to that child.",
-    "work_item": "bd-ib-7sjdzv"
+    "test": "tests.integration.test_filing_definition_of_done_scenario140.test_filing_displays_the_parse_the_modes_the_capabilities_and_the_finding"
   },
   {
     "heading": "## Scenario 141 — The referenced scenario governs the proof, and the record names it",

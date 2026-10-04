@@ -324,13 +324,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 140 — Filing displays Definition-of-Done findings and withholds ready only on a mechanical one",
-    "work_item": "bd-ib-7sjdzv",
-    "first_seen": "2026-10-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 141 — The referenced scenario governs the proof, and the record names it",
     "work_item": "bd-ib-zljjrb",
     "first_seen": "2026-10-04"
