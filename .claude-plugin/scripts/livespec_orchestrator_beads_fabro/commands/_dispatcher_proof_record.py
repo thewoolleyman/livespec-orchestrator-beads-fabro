@@ -1,8 +1,9 @@
 """The Proof of Done record comments of one pull request, parsed ONCE.
 
-The Proof-of-Done-record clause of `SPECIFICATION/contracts.md` (v114) fixes the
-record's first line — `Proof of Done — <captured|verified|not_reproduced|
-human_attested> — run <run-id or human identity> — <UTC timestamp>` — and
+The Proof-of-Done-record clause of `SPECIFICATION/contracts.md` (v114, widened by
+v115) fixes the record's first line — `Proof of Done — <captured|not_captured|
+verified|not_reproduced|human_attested> — run <run-id or human identity> — <UTC
+timestamp>` — and
 requires the body to carry, per assertion in Definition of Done order, the
 assertion text, its proof mode, the reproduction steps and the proof. The
 `proof_verify` prompt that PRODUCES the record writes the per-assertion
@@ -39,6 +40,7 @@ __all__: list[str] = [
     "PROOF_RECORD_VERDICTS",
     "VERDICT_CAPTURED",
     "VERDICT_HUMAN_ATTESTED",
+    "VERDICT_NOT_CAPTURED",
     "VERDICT_NOT_REPRODUCED",
     "VERDICT_VERIFIED",
     "ProofRecord",
@@ -48,6 +50,14 @@ __all__: list[str] = [
 
 PROOF_RECORD_TITLE = "Proof of Done"
 VERDICT_CAPTURED = "captured"
+# The verdict of a `proof_capture` execution that ended with
+# `preferred_label=fix`: the capture could not be produced without a code change,
+# so the record names the assertions it could not capture and the finding. It is
+# in the enumeration because the finding has to SURVIVE the run — the `fix` node
+# this routes to reads the latest record on the pull request when its preamble
+# carries no finding, and a verdict outside the set is not a record at all, so
+# the reader would drop the comment and report nothing.
+VERDICT_NOT_CAPTURED = "not_captured"
 VERDICT_VERIFIED = "verified"
 VERDICT_NOT_REPRODUCED = "not_reproduced"
 VERDICT_HUMAN_ATTESTED = "human_attested"
@@ -58,6 +68,7 @@ VERDICT_HUMAN_ATTESTED = "human_attested"
 # masquerade as proof.
 PROOF_RECORD_VERDICTS = (
     VERDICT_CAPTURED,
+    VERDICT_NOT_CAPTURED,
     VERDICT_VERIFIED,
     VERDICT_NOT_REPRODUCED,
     VERDICT_HUMAN_ATTESTED,
