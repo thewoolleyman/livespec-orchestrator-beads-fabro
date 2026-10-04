@@ -39,6 +39,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
+from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import (
+    PlanDefinitionOfDone,
+)
 from livespec_orchestrator_beads_fabro.commands.plan import (
     UNATTENDED_ENV_VAR,
     NextAction,
@@ -106,6 +109,10 @@ def _resumable_plan(*, project_root: Path, ref: str) -> str:
         research_filename="001-charter.md",
         research_text="Charter for the console control-plane primitives.\n",
         now=_NOW,
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the operator has driven it and seen it work.",
+            assertions=("The operator drives the delivered command and sees it work.",),
+        ),
     )
     epic_id = created["epic_id"]
     append_handoff(

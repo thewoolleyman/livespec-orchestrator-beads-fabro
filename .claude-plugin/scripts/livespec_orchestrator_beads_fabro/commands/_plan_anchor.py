@@ -80,6 +80,10 @@ from __future__ import annotations
 from livespec_runtime.work_items.rank import key_between
 
 from livespec_orchestrator_beads_fabro._ids import new_work_item_id
+from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import (
+    PlanDefinitionOfDone,
+    plan_definition_of_done_section,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -108,18 +112,32 @@ def is_spec_commitment(*, spec_id: str | None) -> bool:
     return bool(spec_id) and not is_plan_anchor(spec_id=spec_id)
 
 
-def plan_anchor_epic(*, prefix: str, slug: str, title: str, now: str) -> WorkItem:
+def plan_anchor_epic(
+    *,
+    prefix: str,
+    slug: str,
+    title: str,
+    now: str,
+    definition_of_done: PlanDefinitionOfDone,
+) -> WorkItem:
     """Mint the ledger epic that anchors one plan topic.
 
     The ONE place a plan anchor marker is created. The returned epic is not
     yet persisted; the caller owns the store write.
+
+    The description carries the plan's Definition of Done as its FIRST heading,
+    with the anchor prose ahead of it — the position the plan clause fixes, and
+    the one that keeps the anchor line out of the graded section body.
     """
     return WorkItem(
         id=new_work_item_id(prefix=prefix),
         type="epic",
         status="backlog",
         title=title,
-        description=f"Plan anchor for plan/{slug}.",
+        description=(
+            f"Plan anchor for plan/{slug}.\n\n"
+            f"{plan_definition_of_done_section(definition=definition_of_done)}"
+        ),
         origin="freeform",
         gap_id=None,
         rank=key_between(a=None, b=None),

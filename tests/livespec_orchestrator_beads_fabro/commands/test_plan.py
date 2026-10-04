@@ -14,6 +14,9 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     make_beads_client,
     reset_fake_singleton,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import (
+    PlanDefinitionOfDone,
+)
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 
@@ -78,12 +81,21 @@ def test_create_writes_research_and_one_epic_anchor_only(tmp_path: Path) -> None
         research_filename="initial.md",
         research_text="# Findings\n\nResearch only.\n",
         now="2026-08-11T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the operator has driven it and seen it work.",
+            assertions=("The operator drives the delivered command and sees it work.",),
+        ),
     )
 
     assert result["research_path"] == "plan/harness-smoke/research/initial.md"
-    assert (tmp_path / "plan" / "harness-smoke" / "research" / "initial.md").read_text(
+    # The note leads with the maintainer's statement and the assertions derived
+    # from it — the plan clause's record of what done means — and the session's
+    # own research follows it intact rather than being displaced.
+    note = (tmp_path / "plan" / "harness-smoke" / "research" / "initial.md").read_text(
         encoding="utf-8"
-    ) == "# Findings\n\nResearch only.\n"
+    )
+    assert "Done when the operator has driven it and seen it work." in note
+    assert note.endswith("# Findings\n\nResearch only.\n")
     # The anchor is the ONE sanctioned metadata file; no `epic.md`,
     # `handoff.md`, or status file joins it.
     assert sorted(
@@ -110,6 +122,10 @@ def test_handoff_append_is_ledger_comment_and_timeline_readable(tmp_path: Path) 
         research_filename="initial.md",
         research_text="research\n",
         now="2026-08-11T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the operator has driven it and seen it work.",
+            assertions=("The operator drives the delivered command and sees it work.",),
+        ),
     )
 
     plan.append_handoff(
@@ -150,6 +166,10 @@ def test_supervisor_handoff_computes_reserved_author_literal(tmp_path: Path) -> 
         research_filename="initial.md",
         research_text="research\n",
         now="2026-08-11T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the operator has driven it and seen it work.",
+            assertions=("The operator drives the delivered command and sees it work.",),
+        ),
     )
 
     plan.append_supervisor_handoff(
@@ -185,6 +205,10 @@ def test_scope_event_records_requirements_and_explicit_deferrals(tmp_path: Path)
         research_filename="initial.md",
         research_text="research\n",
         now="2026-08-11T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the operator has driven it and seen it work.",
+            assertions=("The operator drives the delivered command and sees it work.",),
+        ),
     )
 
     plan.record_scope_event(
@@ -214,6 +238,10 @@ def test_archive_refuses_undisposed_children(tmp_path: Path) -> None:
         research_filename="initial.md",
         research_text="research\n",
         now="2026-08-11T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the operator has driven it and seen it work.",
+            assertions=("The operator drives the delivered command and sees it work.",),
+        ),
     )
     _ = _fake().create_issue(draft=_draft(issue_id="bd-ib-child", parent_id=None))
     _fake().add_dependency(from_id=created["epic_id"], to_id="bd-ib-child", edge_type=EDGE_BLOCKS)
@@ -242,6 +270,10 @@ def test_archive_refuses_undisposed_parent_child_children(tmp_path: Path) -> Non
         research_filename="initial.md",
         research_text="research\n",
         now="2026-08-11T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the operator has driven it and seen it work.",
+            assertions=("The operator drives the delivered command and sees it work.",),
+        ),
     )
     _ = _fake().create_issue(draft=_draft(issue_id="bd-ib-child", parent_id=created["epic_id"]))
     _fake().update_issue(issue_id="bd-ib-child", status="ready")
@@ -292,6 +324,10 @@ def test_archive_requires_completeness_review_evidence(tmp_path: Path) -> None:
         research_filename="initial.md",
         research_text="research\n",
         now="2026-08-11T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the operator has driven it and seen it work.",
+            assertions=("The operator drives the delivered command and sees it work.",),
+        ),
     )
 
     with pytest.raises(plan.PlanArchiveRefusedError) as exc:
@@ -319,6 +355,10 @@ def test_archive_launches_independent_review_and_waits_for_durable_evidence(
         research_filename="initial.md",
         research_text="research\n",
         now="2026-08-11T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the operator has driven it and seen it work.",
+            assertions=("The operator drives the delivered command and sees it work.",),
+        ),
     )
     _ = _fake().create_issue(draft=_draft(issue_id="bd-ib-child", parent_id=None))
     _fake().add_dependency(
@@ -364,6 +404,10 @@ def test_archive_after_reviewer_records_valid_durable_evidence(tmp_path: Path) -
         research_filename="initial.md",
         research_text="research\n",
         now="2026-08-11T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the operator has driven it and seen it work.",
+            assertions=("The operator drives the delivered command and sees it work.",),
+        ),
     )
     _ = _fake().create_issue(draft=_draft(issue_id="bd-ib-child", parent_id=None))
     _fake().add_dependency(
@@ -416,6 +460,10 @@ def test_archive_rejects_self_review_and_incomplete_coverage_evidence(tmp_path: 
         research_filename="initial.md",
         research_text="research\n",
         now="2026-08-11T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the operator has driven it and seen it work.",
+            assertions=("The operator drives the delivered command and sees it work.",),
+        ),
     )
     _fake().create_issue(draft=_draft(issue_id="bd-ib-child", parent_id=created["epic_id"]))
     _fake().close_issue(issue_id="bd-ib-child", reason="completed")
@@ -467,6 +515,10 @@ def test_archive_refuses_while_a_file_outside_plan_reads_the_thread_by_path(
         research_filename="initial.md",
         research_text="research\n",
         now="2026-08-11T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the operator has driven it and seen it work.",
+            assertions=("The operator drives the delivered command and sees it work.",),
+        ),
     )
     _fake().create_issue(draft=_draft(issue_id="bd-ib-child", parent_id=created["epic_id"]))
     _fake().close_issue(issue_id="bd-ib-child", reason="completed")
@@ -519,6 +571,10 @@ def test_archive_with_no_outside_references_closes_and_stamps_the_epic_once(
         research_filename="initial.md",
         research_text="research\n",
         now="2026-08-11T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the operator has driven it and seen it work.",
+            assertions=("The operator drives the delivered command and sees it work.",),
+        ),
     )
     _fake().create_issue(draft=_draft(issue_id="bd-ib-child", parent_id=created["epic_id"]))
     _fake().close_issue(issue_id="bd-ib-child", reason="completed")
@@ -562,6 +618,10 @@ def test_archive_moves_thread_and_closes_epic_after_two_gates(tmp_path: Path) ->
         research_filename="initial.md",
         research_text="research\n",
         now="2026-08-11T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the operator has driven it and seen it work.",
+            assertions=("The operator drives the delivered command and sees it work.",),
+        ),
     )
     _ = _fake().create_issue(draft=_draft(issue_id="bd-ib-child", parent_id=None))
     _fake().add_dependency(

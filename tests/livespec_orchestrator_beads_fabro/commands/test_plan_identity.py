@@ -12,6 +12,9 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     make_beads_client,
     reset_fake_singleton,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import (
+    PlanDefinitionOfDone,
+)
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 if TYPE_CHECKING:
@@ -206,6 +209,10 @@ def test_create_thread_anchors_the_directory_and_tags_the_epic(tmp_path: Path) -
         research_filename="initial.md",
         research_text="research\n",
         now="2026-09-04T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the operator has driven it and seen it work.",
+            assertions=("The operator drives the delivered command and sees it work.",),
+        ),
     )
 
     anchor = tmp_path / "plan" / "gamma" / "associated_work_item_id"
@@ -232,6 +239,10 @@ def test_create_thread_adopts_a_standalone_research_directory(tmp_path: Path) ->
         research_filename="initial.md",
         research_text="research\n",
         now="2026-09-04T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the operator has driven it and seen it work.",
+            assertions=("The operator drives the delivered command and sees it work.",),
+        ),
     )
 
     assert (directory / "associated_work_item_id").read_text(
