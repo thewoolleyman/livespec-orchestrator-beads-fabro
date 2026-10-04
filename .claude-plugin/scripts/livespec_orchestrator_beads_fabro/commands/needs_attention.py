@@ -44,6 +44,9 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_idle_factory im
 from livespec_orchestrator_beads_fabro.commands._needs_attention_merge_hold import (
     merge_hold_items,
 )
+from livespec_orchestrator_beads_fabro.commands._needs_attention_missing_pointer import (
+    missing_proof_pointer_items,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_model_fallback import (
     model_fallback_items,
 )
@@ -232,6 +235,11 @@ def build_attention(
             project_root=project_root, repo=repo_name, items=materialized
         )
         + stale_proof_pointer_items(project_root=project_root, repo=repo_name, items=materialized)
+        # The THIRD pointer row, and the one neither of the two above can produce:
+        # both read a pointer the item already carries, so an item with none is
+        # invisible to them — which is exactly the state the first merged
+        # proof-chain item has rested in since 2026-10-01.
+        + missing_proof_pointer_items(project_root=project_root, repo=repo_name, items=materialized)
         # A run the ledger disowns holds a factory scheduler slot, and no
         # surface keyed on THIS repo's records can see it: the projection is
         # the reconciler's own dry run, so the lane and the remedy it prints

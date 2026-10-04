@@ -27,21 +27,33 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   disposition, and the ledger writes are production code.
 - `test_acceptance_parking_record_scenario138.py` — binds the ACCEPTANCE half of
   `SPECIFICATION/scenarios.md` "Scenario 138": the parking-verdict ledger comment
-  and its one-per-distinct-(verdict, pending-leg set) idempotence. Drives the real
-  `dispatcher.main(argv=["dispatch", ...])` and
-  `dispatcher.main(argv=["reconcile-merged", ...])` entry points against the
-  in-memory tenant; only `run_dispatch` and each surface's `CommandRunner` are
-  stood in. The comment is asserted LINE BY LINE rather than by containment,
-  because a body that merely mentioned the verdict would satisfy an `in` check
-  while naming neither the leg that failed to observe what nor the action that
-  would move the item — and those are the two things the clause requires of it.
-  The comments are read back through the store's `bd comments --json` seam and
-  indexed on `text`: `bd show --json` carries no bodies at all, so verifying the
-  write through it reports every successful append as lost. The dispatch id is
-  pinned at its ONE source (`_dispatcher_self_update.run_id`, which the pre-run
-  claim mints) rather than at `dispatch_one`'s re-export, because the proof leg's
-  own reason names every identifier it would accept and an unpinned one makes the
-  comment unassertable.
+  and its one-per-distinct-(verdict, pending-leg set) idempotence, the honest
+  non-green dispatch result (`stage: acceptance`, the verdict, and
+  `status: needs-attention` with exit 1 for a cannot-judge park), `stage: done`
+  reserved for an item the pass closed, the reconcile-merged re-accept arm with
+  its pointer repair, and the missing-pointer `needs-attention` fact. Drives three
+  REAL entry points — `dispatcher.main(argv=["dispatch", ...])`,
+  `dispatcher.main(argv=["reconcile-merged", ...])` and
+  `needs_attention.main(argv=[...])` — against the in-memory tenant; only
+  `run_dispatch`, each surface's `CommandRunner`, and the spec-side `spec_next`
+  read are stood in. The comment is asserted LINE BY LINE rather than by
+  containment, because a body that merely mentioned the verdict would satisfy an
+  `in` check while naming neither the leg that failed to observe what nor the
+  action that would move the item — and those are the two things the clause
+  requires of it. The comments are read back through the store's
+  `bd comments --json` seam and indexed on `text`: `bd show --json` carries no
+  bodies at all, so verifying the write through it reports every successful append
+  as lost. The dispatch id is pinned at its ONE source
+  (`_dispatcher_self_update.run_id`, which the pre-run claim mints) rather than at
+  `dispatch_one`'s re-export, because the proof leg's own reason names every
+  identifier it would accept and an unpinned one makes the comment unassertable.
+  Two sequences are deliberately ONE case each rather than split: the
+  reconcile-merged journey, because "no second comment" proves idempotence only
+  beside a run that DOES append and "the pointer was written" proves repair only
+  beside the park that had none; and the missing-pointer journey, whose three
+  controls (a `captured`-only pull request, a sibling already carrying a pointer,
+  and the fact clearing after the repair) each disqualify a cheaper lane that
+  would satisfy the positive case alone.
 - `test_proof_record_dispatch_id_attribution.py` — the proof-evidence leg's
   run-identifier attribution (`SPECIFICATION/contracts.md` §"Post-merge
   acceptance (`acceptance -> done`)" → "The proof evidence leg", v115) read

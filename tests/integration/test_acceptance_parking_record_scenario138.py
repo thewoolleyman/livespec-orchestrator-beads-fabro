@@ -41,6 +41,7 @@ from livespec_orchestrator_beads_fabro._store_comments import read_work_item_com
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_completion,
     _dispatcher_loop,
+    needs_attention,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_ai import (
     AcceptancePassResult,
@@ -659,3 +660,171 @@ def test_reconcile_merged_re_runs_only_acceptance_repairs_the_pointer_and_record
         "- Timestamp: 2026-10-01T09:00:00Z",
         "- Verdict: verified",
     ]
+
+
+def _attention_ids(
+    *,
+    repo: Path,
+    comments: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> list[str]:
+    """Every attention fact id the REAL `needs-attention` CLI emits for the repo.
+
+    Two seams are stood in. `spec_next` is the spec-side read, which this fixture
+    has no spec tree for and which no claim here depends on. The missing-pointer
+    lane's own shell runner is the forge read — the lane's whole question is what
+    records the pull request carries, and that is the only external call it makes.
+    """
+    monkeypatch.setattr(needs_attention, "spec_next", lambda **_: None)
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands._needs_attention_missing_pointer"
+        ".ShellCommandRunner",
+        lambda: _ForgeRunner(comments=comments),
+    )
+    assert (
+        needs_attention.main(
+            argv=["--project-root", str(repo), "--repo-name", "repo", "--skip-hygiene", "--json"]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert isinstance(payload, dict)
+    return [str(one["id"]) for one in payload["attention"]]
+
+
+def test_needs_attention_reports_a_verified_item_in_acceptance_carrying_no_pointer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Scenario 138 — "A missing pointer on a verified item is surfaced".
+
+    The subject is built by a REAL dispatch that parks with no pointer, which is
+    the shape finding F7(b) measured: the pass could not see a `verified` record
+    at the time, one landed afterwards, and nothing then reported that the item
+    was carrying no pointer. Three controls bound the lane, each disqualifying a
+    cheaper implementation that would satisfy the positive case:
+
+    - a `captured`-only pull request yields NO fact, so the lane keys on the
+      VERIFIED record rather than on "parked without a pointer";
+    - a second item resting in `acceptance` whose description already CARRIES a
+      pointer yields no fact in the same snapshot, so the lane keys on the
+      pointer's absence rather than on the status; and
+    - the fact CLEARS once `reconcile-merged` writes the pointer, so "the fact
+      appeared" is not simply "the fact always appears".
+    """
+    item = _item(id="bd-ib-parkpointer", acceptance_policy="ai-then-human")
+    dispatched = _dispatch(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        comments=_comments_payload(bodies=[_record_body(verdict="captured")]),
+        item=item,
+    )
+    _ = capsys.readouterr()
+    # A sibling resting in `acceptance` whose pointer already stands: the lane
+    # must not report it, and it is in every snapshot below.
+    append_work_item(
+        path=_config(),
+        item=replace(
+            _item(id="bd-ib-parkpointed"),
+            status="acceptance",
+            description=_definition_of_done() + _pointer_section(),
+        ),
+    )
+    fact_id = f"hygiene:missing-proof-pointer:{item.id}"
+
+    captured_only = _attention_ids(
+        repo=dispatched.repo,
+        comments=_comments_payload(bodies=[_record_body(verdict="captured")]),
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    verified = _attention_ids(
+        repo=dispatched.repo,
+        comments=_comments_payload(bodies=[_record_body(verdict="verified")]),
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert fact_id not in captured_only
+    assert [one for one in verified if one.startswith("hygiene:missing-proof-pointer:")] == [
+        fact_id
+    ]
+
+    exit_code, _ = _reconcile(
+        repo=dispatched.repo,
+        item_id=item.id,
+        comments=_comments_payload(bodies=[_record_body(verdict="verified")]),
+        monkeypatch=monkeypatch,
+    )
+    _ = capsys.readouterr()
+    repaired = _attention_ids(
+        repo=dispatched.repo,
+        comments=_comments_payload(bodies=[_record_body(verdict="verified")]),
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert exit_code == 0
+    assert "## Proof of Done" in _stored()[item.id].description
+    assert [one for one in repaired if one.startswith("hygiene:missing-proof-pointer:")] == []
+
+
+def test_the_missing_pointer_fact_names_the_item_the_pull_request_and_the_remedy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The clause requires the fact to NAME the item and the pull request.
+
+    Read off the composed fact rather than off the lane, because the envelope's
+    own conformance rules bind what a row may carry, and a summary naming neither
+    would still be a well-formed row. The handoff is asserted to be the remedy the
+    same clause names — `reconcile-merged` for this item — since that is the one
+    command the fact says will repair it.
+    """
+    item = _item(id="bd-ib-parkpointerfact", acceptance_policy="ai-then-human")
+    dispatched = _dispatch(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        comments=_comments_payload(bodies=[_record_body(verdict="captured")]),
+        item=item,
+    )
+    _ = capsys.readouterr()
+
+    monkeypatch.setattr(needs_attention, "spec_next", lambda **_: None)
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands._needs_attention_missing_pointer"
+        ".ShellCommandRunner",
+        lambda: _ForgeRunner(comments=_comments_payload(bodies=[_record_body(verdict="verified")])),
+    )
+    facts = [
+        fact
+        for fact in needs_attention.build_attention(
+            project_root=dispatched.repo, repo_name="repo", include_hygiene=False
+        )
+        if fact.id == f"hygiene:missing-proof-pointer:{item.id}"
+    ]
+
+    assert len(facts) == 1
+    fact = facts[0]
+    assert fact.kind == "hygiene"
+    assert item.id in fact.summary
+    assert f"#{_PR_NUMBER}" in fact.summary
+    assert fact.source_ref is not None
+    assert fact.source_ref.work_item == item.id
+    assert fact.handoff is not None
+    assert f"reconcile-merged --repo {dispatched.repo} --item {item.id}" in fact.handoff.command
+
+
+def _pointer_section() -> str:
+    return (
+        "\n## Proof of Done\n"
+        "\n"
+        f"- Pull request: #{_PR_NUMBER}\n"
+        f"- Verified record: {_RECORD_URL}\n"
+        f"- Run: {_RUN_ID}\n"
+        "- Timestamp: 2026-10-01T09:00:00Z\n"
+        "- Verdict: verified\n"
+    )
