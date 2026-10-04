@@ -227,6 +227,7 @@ def _acceptance_pass_over(
         item: WorkItem,
         outcome: DispatchOutcome,
         raw_labels: Sequence[str] = (),
+        journal_path: Path | None = None,
     ) -> AcceptancePassResult:
         judged = (
             replace(item, acceptance_criteria=None, description="Do the thing.")
@@ -234,7 +235,12 @@ def _acceptance_pass_over(
             else item
         )
         return run_acceptance_pass(
-            repo=repo, item=judged, outcome=outcome, runner=runner, raw_labels=raw_labels
+            repo=repo,
+            item=judged,
+            outcome=outcome,
+            runner=runner,
+            raw_labels=raw_labels,
+            journal_path=journal_path,
         )
 
     return _call

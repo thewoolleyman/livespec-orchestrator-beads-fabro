@@ -201,8 +201,16 @@ def test_the_latest_record_of_a_verdict_wins_and_the_run_filter_binds() -> None:
     )
 
     unfiltered = latest_proof_record(records=records, verdict=VERDICT_VERIFIED)
-    attributed = latest_proof_record(records=records, verdict=VERDICT_VERIFIED, run_id=_RUN_ID)
-    other = latest_proof_record(records=records, verdict=VERDICT_VERIFIED, run_id="other")
+    attributed = latest_proof_record(records=records, verdict=VERDICT_VERIFIED, run_ids=(_RUN_ID,))
+    other = latest_proof_record(records=records, verdict=VERDICT_VERIFIED, run_ids=("other",))
+    # A set carrying BOTH identifiers of one dispatch takes the newest record of
+    # either, which is the widening the acceptance pass depends on.
+    either = latest_proof_record(
+        records=records, verdict=VERDICT_VERIFIED, run_ids=(_RUN_ID, "other")
+    )
+    # And an EMPTY set is not the unfiltered set: an unidentifiable dispatch
+    # matches nothing rather than inheriting the newest record.
+    unidentifiable = latest_proof_record(records=records, verdict=VERDICT_VERIFIED, run_ids=())
 
     assert unfiltered is not None
     assert unfiltered.url == "second"
@@ -210,6 +218,9 @@ def test_the_latest_record_of_a_verdict_wins_and_the_run_filter_binds() -> None:
     assert attributed.url == "second"
     assert other is not None
     assert other.url == "other-run"
+    assert either is not None
+    assert either.url == "second"
+    assert unidentifiable is None
 
 
 def test_no_record_of_the_asked_verdict_is_none() -> None:

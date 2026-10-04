@@ -29,6 +29,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attribution import (
+    MergingDispatch,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import (
     HUMAN_ATTESTED_EVIDENCE_LEG,
     PENDING_HUMAN_ATTESTATION_REASON,
@@ -88,6 +91,17 @@ def _verified_comments(*, run_id: str = _RUN_ID) -> str:
         Reproduced: yes.
         """)
     return json.dumps({"comments": [{"url": "https://example.test/c/9", "body": body}]})
+
+
+def _dispatch(*, run_id: str | None = _RUN_ID) -> MergingDispatch:
+    """The no-journal attribution: the outcome's own Fabro run id and nothing else.
+
+    Every case in this module is about the READ rather than about the widening, so
+    it hands the leg the narrowest identifier set a real dispatch can produce —
+    which is also what the pass resolves when no dispatch journal is available.
+    The widening itself is bound in `test_dispatcher_proof_attribution.py`.
+    """
+    return MergingDispatch(fabro_run_id=run_id, dispatch_id=None)
 
 
 def _outcome(*, pr_number: int | None = 7, run_id: str | None = _RUN_ID) -> DispatchOutcome:
@@ -154,15 +168,21 @@ def test_the_three_unobservable_reads_each_name_their_own_reason(tmp_path: Path)
         criteria=_factory_criteria(),
         outcome=_outcome(pr_number=None),
         runner=unreadable,
+        dispatch=_dispatch(),
     )
     unreadable_leg = read_proof_leg(
-        repo=tmp_path, criteria=_factory_criteria(), outcome=_outcome(), runner=unreadable
+        repo=tmp_path,
+        criteria=_factory_criteria(),
+        outcome=_outcome(),
+        runner=unreadable,
+        dispatch=_dispatch(),
     )
     no_run_id = read_proof_leg(
         repo=tmp_path,
         criteria=_factory_criteria(),
         outcome=_outcome(run_id=None),
         runner=readable,
+        dispatch=_dispatch(run_id=None),
     )
 
     assert no_pull_request.reason == "pull request number unavailable"
@@ -187,7 +207,11 @@ def test_a_verified_record_for_another_run_does_not_evidence_this_merge(
     )
 
     leg = read_proof_leg(
-        repo=tmp_path, criteria=_factory_criteria(), outcome=_outcome(), runner=runner
+        repo=tmp_path,
+        criteria=_factory_criteria(),
+        outcome=_outcome(),
+        runner=runner,
+        dispatch=_dispatch(),
     )
 
     assert leg.record is None
@@ -204,7 +228,13 @@ def test_a_record_that_omits_the_assertion_leaves_it_unevidenced_naming_the_reco
     )
     runner = _Runner(result=CommandResult(exit_code=0, stdout=_verified_comments(), stderr=""))
 
-    leg = read_proof_leg(repo=tmp_path, criteria=criteria, outcome=_outcome(), runner=runner)
+    leg = read_proof_leg(
+        repo=tmp_path,
+        criteria=criteria,
+        outcome=_outcome(),
+        runner=runner,
+        dispatch=_dispatch(),
+    )
 
     assert leg.record is not None
     assert leg.unevidenced == ("An assertion nobody captured.",)
@@ -228,7 +258,7 @@ def test_a_human_attested_assertion_rides_as_pending_rather_than_graded() -> Non
         ]
     )
 
-    leg = proof_leg(criteria=criteria, records=records, run_id=_RUN_ID, reason="read")
+    leg = proof_leg(criteria=criteria, records=records, run_ids=(_RUN_ID,), reason="read")
 
     assert leg.pending_human_attested == (_HUMAN_ASSERTION,)
     assert leg.unevidenced == ()
@@ -258,7 +288,7 @@ def test_the_journal_projection_names_the_leg_and_record_per_assertion() -> None
     )
 
     projection = proof_leg(
-        criteria=criteria, records=records, run_id=_RUN_ID, reason="read"
+        criteria=criteria, records=records, run_ids=(_RUN_ID,), reason="read"
     ).as_record()
 
     assert projection == {
@@ -288,7 +318,7 @@ def test_the_journal_projection_names_the_leg_and_record_per_assertion() -> None
 
 def test_the_projection_reports_no_record_when_none_was_attributed() -> None:
     projection = proof_leg(
-        criteria=_factory_criteria(), records=(), run_id=None, reason="nothing read"
+        criteria=_factory_criteria(), records=(), run_ids=(), reason="nothing read"
     ).as_record()
 
     assert projection["record_comment"] is None

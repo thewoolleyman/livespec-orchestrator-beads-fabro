@@ -25,6 +25,25 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   `ai-only` policy instead of disposing of it. Only `run_dispatch` and the
   acceptance pass's `CommandRunner` are stood in; the verdict function, the
   disposition, and the ledger writes are production code.
+- `test_proof_record_dispatch_id_attribution.py` — the proof-evidence leg's
+  run-identifier attribution (`SPECIFICATION/contracts.md` §"Post-merge
+  acceptance (`acceptance -> done`)" → "The proof evidence leg", v115) read
+  against the VERBATIM comment payload of PR #2538, committed at
+  `fixtures/proof_records/pull-request-2538-comments.json` in the
+  `gh pr view --json comments` shape the pass itself issues. The real payload is
+  what makes the case worth anything: every synthetic fixture stamped its record
+  with whatever identifier it also fed the pass, which is exactly why a reader
+  asking only for the Fabro run id looked correct while no real record has ever
+  carried one. The control is the measured FAILURE — the same bytes with the
+  dispatch id withheld, which is all the pre-repair build could see — so "the
+  record graded" is evidence of the repair rather than of a reader that would
+  always have graded it. A third case asserts the fixture is the forge shape,
+  reading the argv off the seam, since every other claim rides on the payload
+  being what the production read returns. The module also records, as an
+  assertion rather than as prose, that PR #2538's fourth assertion stays
+  unevidenced once correctly attributed, because the body splitter opens a new
+  section at the `# just.log:` lines inside its fenced code block — a section
+  SEGMENTATION defect, not an attribution one, left to its own work-item.
 - `test_reconcile_runs_ledger_gate_scenarios.py` — binds
   `SPECIFICATION/scenarios.md` Scenarios 104, 105 and 106: the run-inventory
   reconciler driven end to end through `reconcile_runs`, over work-items
