@@ -54,6 +54,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_pass 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import (
     rework_redispatch_eligible_ids,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_capabilities import (
+    sandbox_capabilities_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_spec_checks import run_spec_checks
 from livespec_orchestrator_beads_fabro.commands._dispatcher_step_gate import (
     step_discipline_refusal,
@@ -290,6 +293,13 @@ def dispatch_preamble(
     ALREADY-ADMITTED item forward, keeps its own narrow check-suite refusal, so
     an expectation a later build adds cannot strand a mid-pipeline item.
 
+    The sandbox-capability refusal stands beside it for the node-timeout
+    reason: `dispatcher.sandbox_capabilities` is the set the `dod_gate` node
+    computes its missing-capability finding FROM, so a hyphenated or
+    capitalised name there never errors — it fails to match, and the gate
+    reports a finding against an item that was correct. An absent mirror is an
+    answer and never refuses.
+
     The invoker refusal runs FIRST of all, ahead of even the janitor parse:
     with `dispatcher.require_invoker` true, a fallback-only invocation must be
     refused before ANY store mutation, journal write, or run creation, so that
@@ -316,9 +326,17 @@ def dispatch_preamble(
     janitor, janitor_ok = parse_janitor(raw=args.janitor)
     if not janitor_ok:
         return None, _EXIT_USAGE_ERROR
-    schema_refusal = schema_validation_refusal(args=args, repo=repo)
-    if schema_refusal is not None:
-        _ = write_stderr(text=schema_refusal)
+    # ONE arm, two refusals, because both answer one question -- does this
+    # repository's committed `.livespec.jsonc` admit a dispatch at all -- and
+    # both are read from that one file in this one pass. The ORDER is
+    # deliberate: the integration-schema pass enumerates EVERY defective point
+    # in one message, so reporting a capability-mirror typo ahead of it would
+    # hand an adopter one fault out of a file carrying several.
+    config_refusal = schema_validation_refusal(
+        args=args, repo=repo
+    ) or sandbox_capabilities_refusal(repo=repo)
+    if config_refusal is not None:
+        _ = write_stderr(text=config_refusal)
         return None, _EXIT_PRECONDITION_ERROR
     args.fabro_bin = _resolve_fabro_bin_for(args=args, repo=repo)
     args.fabro_factory_target = _resolve_fabro_factory_for(args=args, repo=repo)

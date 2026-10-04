@@ -256,6 +256,40 @@
       // change, when a release fixes something a dispatch must not run without.
       "minimum_release": "0.161.0",
       "fabro_sandbox_image": "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.92.0",
+      // THE COMMITTED MIRROR of the capability set the sandbox image above
+      // publishes at /etc/livespec/sandbox-capabilities — one lowercase
+      // snake_case name per entry. A *sandbox capability* is a named surface
+      // the sandbox can exercise for proof, and the dod_gate node checks each
+      // factory_captured assertion's surface against this set in BOTH
+      // directions: an assertion needing a capability the set lacks is a
+      // finding naming the capability, and a host_captured or human_attested
+      // declaration a capability COULD exercise is refused naming it.
+      //
+      // THE PUBLISHED FILE IS THE AUTHORITY, not this array. The gate reads
+      // the file where the image publishes one and uses this mirror only as
+      // the fallback; the mirror exists so a HOST-side surface — the capture
+      // and groom filing displays above all — can show the set without
+      // spending a sandbox. A name here the image does not publish is
+      // reported by the gate as a configuration mismatch against this file,
+      // which is journaled and never fails the gate. Delete the key and the
+      // set is UNKNOWN rather than empty: the gate then reports
+      // `sandbox-capabilities: unpublished`, withholds the
+      // missing-capability finding, and applies every other check unchanged.
+      //
+      // `terminal` is the baseline every image carries (a shell plus this
+      // repository's own toolchain). `tmux` is deliberate — the
+      // factory-tier acceptance tests drive private tmux sockets — and
+      // `headless_browser` is what makes a web-interface assertion
+      // screenshot-provable in-sandbox. `herdr` is NOT here: the image does
+      // not carry it yet, and it is added to this array by the image slice
+      // that adds it to the image, never ahead of it.
+      //
+      // NOT API-configurable, deliberately, for the same reason
+      // `minimum_release` is not: an automated surface that could add a name
+      // the image does not carry would make the gate pass an assertion no
+      // sandbox can prove. Edit it by hand, in the same change that moves
+      // `fabro_sandbox_image`.
+      "sandbox_capabilities": ["terminal", "headless_browser", "tmux"],
       // NAMED WORKFLOW VARIANTS — variant name -> directory, relative to this
       // repository's root. The reserved `implement-work-item` name is NEVER
       // read from here and registering it is refused before any run exists;
