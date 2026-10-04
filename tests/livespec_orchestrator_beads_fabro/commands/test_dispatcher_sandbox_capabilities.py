@@ -140,7 +140,7 @@ def test_a_digit_bearing_name_is_accepted_but_a_leading_digit_is_not() -> None:
     assert "lowercase snake_case" in refusal
 
 
-def test_this_repository_declares_terminal_headless_browser_and_tmux() -> None:
+def test_this_repository_declares_the_four_capabilities_its_pinned_image_publishes() -> None:
     """The committed mirror of THIS repository, read through the real reader.
 
     Read from the repository's own `.livespec.jsonc` rather than a fixture:
@@ -152,7 +152,7 @@ def test_this_repository_declares_terminal_headless_browser_and_tmux() -> None:
 
     resolved = module.mirrored_sandbox_capabilities(block=dispatcher_block(cwd=_REPO_ROOT))
 
-    assert resolved == ("terminal", "headless_browser", "tmux")
+    assert resolved == ("terminal", "headless_browser", "tmux", "herdr")
 
 
 def test_the_repository_mirror_refuses_nothing_and_a_broken_one_refuses(
