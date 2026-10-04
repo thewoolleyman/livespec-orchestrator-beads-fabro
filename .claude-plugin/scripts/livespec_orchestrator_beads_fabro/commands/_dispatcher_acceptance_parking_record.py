@@ -40,11 +40,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_ai import
     TELEMETRY_LEG,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import (
+    HOST_CAPTURED_EVIDENCE_LEG,
     HUMAN_ATTESTED_EVIDENCE_LEG,
     PROOF_RECORD_EVIDENCE_LEG,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
     PROOF_RECORD_TITLE,
+    VERDICT_HOST_RECORDED,
+    VERDICT_HOST_VERIFIED,
     VERDICT_HUMAN_ATTESTED,
     VERDICT_VERIFIED,
 )
@@ -208,16 +211,25 @@ def _pending_legs(
 ) -> tuple[PendingLeg, ...]:
     """Every pending leg, in judging order, each with the action that would move it.
 
-    The human-attested assertions ride BESIDE the absent set rather than inside
-    it, because the pass grades them PASSING by design — the `accept` valve owns
-    that leg — so they never appear as absent evidence and would otherwise be the
-    one pending leg this record could not name.
+    The host-captured and human-attested assertions ride BESIDE the absent set
+    rather than inside it, because the pass grades them PASSING by design — an
+    independent host replay owns the first and the `accept` valve the second — so
+    they never appear as absent evidence and would otherwise be the pending legs
+    this record could not name. They are listed in the order the deliverable policy
+    ranks the modes, host before human.
     """
     legs = [
         PendingLeg(name=leg, action=_action(leg=leg, item_id=item_id, pull_request=pull_request))
         for leg in result.absent_evidence
     ]
     if result.proof is not None:
+        legs.extend(
+            PendingLeg(
+                name=f"{HOST_CAPTURED_EVIDENCE_LEG} for {text!r}",
+                action=_host_captured_action(item_id=item_id, pull_request=pull_request),
+            )
+            for text in result.proof.pending_host_captured
+        )
         legs.extend(
             PendingLeg(
                 name=f"{HUMAN_ATTESTED_EVIDENCE_LEG} for {text!r}",
@@ -262,6 +274,25 @@ def _action(*, leg: str, item_id: str, pull_request: int | None) -> str:
         f"Publish a {PROOF_RECORD_TITLE} record whose first line names {VERDICT_VERIFIED}"
         f" on {_pull_request_phrase(pull_request=pull_request)}, listing this assertion as"
         f" reproduced, then {_reaccept(item_id=item_id)}"
+    )
+
+
+def _host_captured_action(*, item_id: str, pull_request: int | None) -> str:
+    """What moves a host-captured assertion: two records from two identities.
+
+    BOTH halves are named because either alone leaves the item exactly where it is.
+    A `host_recorded` record with no replay is not evidence, and a replay published
+    by the recording session is refused for its identity — so an action naming only
+    the capture would read as sufficient and send an operator to do half the work
+    twice.
+    """
+    return (
+        f"Capture the proof on an operator host against the RELEASED build and publish a"
+        f" `{PROOF_RECORD_TITLE} — {VERDICT_HOST_RECORDED} — session <session identity> —"
+        f" <UTC timestamp>` record on {_pull_request_phrase(pull_request=pull_request)} naming"
+        f" the build identity exercised; a DIFFERENT session identity then replays those steps"
+        f" and publishes `{VERDICT_HOST_VERIFIED}`, then"
+        f" {_reaccept(item_id=item_id)}"
     )
 
 

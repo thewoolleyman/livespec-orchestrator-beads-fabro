@@ -208,17 +208,21 @@ def complete_and_accept(
             journal=journal,
         )
         return AcceptanceDisposition(verdict=acceptance_pass.verdict, closed=False)
-    # The human-attested leg rests the item in `acceptance` "regardless of
-    # policy", so it is read here from the ONE criteria primitive rather than
-    # from the pass's verdict: the pass genuinely did PASS — its factory leg is
-    # green and the human assertions are listed as pending — and turning that
-    # into a non-PASS verdict would report a healthy run as unjudgeable. The
-    # host-side wall already refuses `ai-only` for such an item before dispatch;
-    # this is the second gate, for the item whose policy was edited after it.
+    # A PASS carrying a PENDING LEG — host or human — rests the item in
+    # `acceptance` "under any policy, `ai-only` included", so the legs are read
+    # here from the ONE criteria primitive rather than from the pass's verdict:
+    # the pass genuinely did PASS — its factory leg is green and the pending
+    # assertions are listed as pending — and turning that into a non-PASS verdict
+    # would report a healthy run as unjudgeable. For the human leg the host-side
+    # wall already refuses `ai-only` before dispatch and this is the second gate,
+    # for the item whose policy was edited after it; for the HOST leg this is the
+    # ONLY gate, because `ai-only` is deliberately NOT refused for a host-captured
+    # item — the host leg is agent-performable, so the item is admitted and rests
+    # here instead.
     if (
         decision.to_done
         and acceptance_pass.verdict == "PASS"
-        and not effective_criteria(item=item).human_attested_assertions
+        and not effective_criteria(item=item).pending_leg_assertions
     ):
         close_dispatch_item(
             repo=repo,
