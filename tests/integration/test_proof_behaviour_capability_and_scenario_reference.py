@@ -243,6 +243,93 @@ def test_the_capture_prompt_distinguishes_a_missing_capability_from_a_code_defec
     assert "no code change could add the capability" in prompt
 
 
+def test_the_review_prompt_blocks_suite_only_proof_of_a_behavioural_assertion() -> None:
+    """Suite-only proof is `[BLOCKING]`, and the route back is named.
+
+    The severity is the assertion. This prompt's whole middle section tells
+    the reviewer to DEFAULT TO ADVISORY, so a finding described without its
+    severity token would be sorted advisory by exactly the instruction that
+    follows it — recorded, and never gating. The route matters for the same
+    reason: an advisory suite-only finding would reach `pr` with the proof
+    unexercised.
+    """
+    prompt = _prompt(name="review.md")
+
+    assert "test-suite output alone" in prompt
+    suite_only = prompt.index("test-suite output alone")
+    assert "[BLOCKING]" in prompt[suite_only : suite_only + 600]
+    assert "re-enters `proof_capture`" in prompt
+
+
+def test_the_review_prompt_keeps_a_suite_run_legitimate_beside_a_real_exercise() -> None:
+    """The reviewer must not block a capture that ALSO ran the suite.
+
+    Without this, the rule over-applies in the expensive direction: a record
+    whose assertion was properly exercised and which attached an aggregate
+    run as corroboration would be blocked for the corroboration.
+    """
+    prompt = _prompt(name="review.md")
+
+    assert "beside a real exercise is not a finding" in prompt
+
+
+def test_the_verify_prompt_ends_needs_human_on_suite_only_proof() -> None:
+    """The replay backstop refuses BOTH verdicts, and says why.
+
+    Both prohibitions are asserted because each failure is separately
+    plausible and each is wrong in a different direction: `not_reproduced`
+    sends an implementer to repair correct code, and `verified` publishes a
+    proof that exercised nothing. The reason — the defect is in the RECORD,
+    not in the tree — is what makes the ending derivable rather than a rule
+    to memorise.
+    """
+    prompt = _prompt(name="proof-verify.md")
+
+    assert "test-suite output alone" in prompt
+    assert "defect is in the record and not in the tree" in prompt
+    assert "MUST NOT publish `not_reproduced`" in prompt
+    assert "MUST NOT publish `verified`" in prompt
+
+
+def test_the_verify_prompt_does_not_let_the_backstop_swallow_a_real_non_reproduction() -> None:
+    """The backstop is narrow: it fires on the record's SHAPE, not on a failure.
+
+    A replayer that read the new ending as "anything I cannot reproduce rests
+    the item" would retire the `not_reproduced` verdict altogether, and the
+    fix loop with it.
+    """
+    prompt = _prompt(name="proof-verify.md")
+
+    assert "is still `not_reproduced`" in prompt
+
+
+def test_the_capture_record_names_the_governing_scenario_per_assertion() -> None:
+    """Per assertion: the referenced heading and the scenario title its steps exercise.
+
+    The no-scenario case is asserted beside it because the record must be
+    readable as a complete statement — an assertion with the entry simply
+    absent is indistinguishable from one the capture forgot to fill in.
+    """
+    prompt = _prompt(name="proof-capture.md")
+
+    assert "Governing scenario" in prompt
+    assert "the title of the scenario your steps exercise" in prompt
+    assert "no scenario governs" in prompt
+
+
+def test_the_capture_prompt_follows_the_governing_scenarios_own_steps() -> None:
+    """Where a scenario governs, the reproduction steps follow its Given/When/Then.
+
+    Scenario 141's point is that the reference is not decoration: the
+    scenario's own steps are what the proof is supposed to walk, which is
+    what makes a published step set comparable to the behaviour the spec
+    states rather than to whatever the capture found convenient.
+    """
+    prompt = _prompt(name="proof-capture.md")
+
+    assert "follow one of that heading's scenarios step for step" in prompt
+
+
 def test_the_gate_prompt_directs_a_search_before_concluding_no_scenario_governs() -> None:
     """The negative verdict is the one that needs an instrument pointed at the tree.
 

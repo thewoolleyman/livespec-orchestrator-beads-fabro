@@ -156,6 +156,32 @@ There are exactly two:
 `human_attested` assertions never affect the verdict; they are listed as
 pending, not graded.
 
+### The one record shape that earns NEITHER verdict
+
+A record whose proof of a behavioural assertion is **test-suite output
+alone** gets no verdict from you at all. The reviewer is supposed to have
+blocked it; you are the backstop for the case where it got through.
+
+End through the structured needs-human ending naming that assertion, as a
+JSON object on the last line of your reply:
+
+    {"outcome": "failed", "failure_reason": "<the assertion; that its published proof is test-suite output alone and exercises no behaviour>"}
+
+You **MUST NOT publish `not_reproduced`** for it and you **MUST NOT publish
+`verified`** for it. Both are wrong, in opposite directions, because the
+**defect is in the record and not in the tree**: `not_reproduced` routes to
+`fix` and sends an implementer to repair code that may be perfectly correct,
+while `verified` certifies a behaviour nobody exercised and lets it reach
+`pr`. Replaying the suite run faithfully — which you could — would produce
+the same passing output and prove the same nothing.
+
+Keep this NARROW. It fires on the published record's SHAPE, never on a replay
+that went badly: a step you could not follow, an observation that differed
+from the stated expectation, a missing program source **is still
+`not_reproduced`**, exactly as before. Reading this section as "anything I
+cannot reproduce rests the item" would retire that verdict and the fix loop
+with it.
+
 ## Step 5 — publish the record
 
 Post exactly **one NEW comment** on this item's pull request, with

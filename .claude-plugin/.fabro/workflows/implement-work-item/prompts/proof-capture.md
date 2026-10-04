@@ -207,10 +207,20 @@ The body then carries, **per assertion in Definition of Done order**:
 
 1. The assertion text, verbatim.
 2. Its proof mode.
-3. The numbered reproduction steps you authored and ran, each carrying the
+3. The **governing scenario**: the referenced heading and **the title of the
+   scenario your steps exercise**. Where the item's reference line names a
+   `## Scenario NN — <title>` heading of `scenarios.md` that states this
+   assertion's behaviour, that heading GOVERNS the proof, and your
+   reproduction steps SHOULD **follow one of that heading's scenarios step
+   for step** — the scenario's own Given/When/Then is what the proof is
+   meant to walk. Where no referenced scenario heading governs this
+   assertion, say so: write that **no scenario governs** it. Do not leave
+   the entry out — an absent entry is indistinguishable from one you forgot
+   to fill in, and a reader cannot tell the two apart.
+4. The numbered reproduction steps you authored and ran, each carrying the
    COMPLETE SOURCE of any program it runs, per the self-contained bullet of
    Step 2.
-4. The proof — an inline image reference (or authenticated link, per Step
+5. The proof — an inline image reference (or authenticated link, per Step
    4) for each screenshot, and a fenced code block for each text capture.
    A text capture shows the command AND its output; when the command fed a
    program to an interpreter, the program's source is part of what is
@@ -230,6 +240,9 @@ human-attested one:
 
     Proof mode: `factory_captured`
 
+    Governing scenario: `## Scenario 42 — <title>` — "A listing projects an
+    item's parent", whose steps these follow.
+
     Reproduction steps:
 
     1. From the clone root, run
@@ -247,6 +260,9 @@ human-attested one:
     ## Assertion 2 — The console renders the capacity banner.
 
     Proof mode: `factory_captured`
+
+    Governing scenario: none — the reference line names only
+    `## Runtime requirements`, and no scenario states this behaviour.
 
     Reproduction steps:
 
@@ -304,8 +320,11 @@ The body then carries, per assertion in Definition of Done order:
    Definition of Done is unproved rather than only the first thing that
    broke.
 2. Its proof mode.
-3. The numbered reproduction steps you authored and ran.
-4. The FINDING: the step that failed, the result that step expected, what
+3. The governing scenario, exactly as Step 5 describes it — the referenced
+   heading and the scenario title your steps exercise, or that no scenario
+   governs the assertion.
+4. The numbered reproduction steps you authored and ran.
+5. The FINDING: the step that failed, the result that step expected, what
    you observed instead, and what the implementation would have to do for
    the step to pass. Write it as a work order for a different agent on a
    different adapter — it is the `fix` stage's input, and a finding only you
