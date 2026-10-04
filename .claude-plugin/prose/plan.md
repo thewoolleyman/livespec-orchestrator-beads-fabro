@@ -73,7 +73,9 @@ The operation's testable package substrate is
   `next_action` and decides whether this resume asks which action to take
   or takes it. See Step 3's "Unattended resume".
 - `record_scope_event(...)` records requirement carriers and explicit
-  deferrals before implementation children are admitted.
+  deferrals before implementation children are admitted. Pass `carriers`
+  to make it a carrier-map event; omit it for a ruling. See "The carrier
+  map" below.
 - `close_plan_child(...)` and `reparent_plan_child(...)` dispose one plan
   child with a recorded rationale. See Step 3's "Child disposition".
 - `plan_record_rate_warnings(...)` reports the days on which this thread's
@@ -305,6 +307,32 @@ executes against an epic. A `### Human-attested` sub-heading declares the
 assertions beneath it `human_attested` and DOES owe a `Reason:` line,
 exactly as on a work item. A reference line is optional: a plan may
 precede the specification it will ratify.
+
+#### The carrier map
+
+Each plan assertion is carried by something: one or more child work-items,
+or the plan's own Proof of Done record. That relation is recorded in ONE
+place — a scope event's `carriers:` block — and nowhere else.
+
+A scope event becomes a CARRIER-MAP event when you pass `carriers` to
+`record_scope_event(...)`: one entry per plan assertion, in Definition of
+Done order, of the form
+
+- `<ordinal>: <work-item-id>[, <work-item-id>...]` — those children carry it
+- `<ordinal>: plan-level proof` — the plan's own proof record discharges it
+
+The scoping event, and every later scope event that adds, removes or
+re-words a plan assertion or changes a carrier, MUST carry the block.
+`record_scope_event` REFUSES a carrier-map event that leaves any plan
+assertion unmapped, naming each one, and refuses one on an epic with no
+gradeable Definition of Done section.
+
+Omit `carriers` for a maintainer ruling or a deferral. Those do not
+restate the map, are recorded exactly as before, and void nothing.
+
+A closed carrier child does NOT by itself discharge the plan assertion it
+carries. The map says who carries an assertion; the plan-level proof is
+what discharges one.
 
 #### The typed next action
 

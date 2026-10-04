@@ -22,6 +22,11 @@ from livespec_orchestrator_beads_fabro.commands._plan_archive_review import (
     is_blocks_dependency_edge,
     record_completeness_review_evidence,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_carrier_map import (
+    PlanCarrierMapRefusedError,
+    carrier_map_block,
+    guard_carrier_map,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import (
     PlanDefinitionOfDone,
     plan_research_note,
@@ -61,7 +66,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
 from livespec_orchestrator_beads_fabro.store import append_work_item
 
 if TYPE_CHECKING:
-    from livespec_orchestrator_beads_fabro._beads_client import BeadsRecord
+    from livespec_orchestrator_beads_fabro._beads_client import BeadsClient, BeadsRecord
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
@@ -70,6 +75,7 @@ __all__: list[str] = [
     "UNATTENDED_ENV_VAR",
     "NextAction",
     "PlanArchiveRefusedError",
+    "PlanCarrierMapRefusedError",
     "PlanDefinitionOfDone",
     "PlanDispositionRefusedError",
     "PlanRecordRateWarning",
@@ -205,7 +211,7 @@ def append_supervisor_handoff(
     )
 
 
-def record_scope_event(
+def record_scope_event(  # noqa: PLR0913 — package primitive mirrors the scope-event inputs.
     *,
     config: StoreConfig,
     epic_id: str,
@@ -213,16 +219,30 @@ def record_scope_event(
     deferrals: tuple[str, ...],
     author: str,
     now: str,
+    carriers: tuple[str, ...] = (),
 ) -> None:
-    """Record scoped requirements and explicit deferrals before child admission."""
+    """Record scoped requirements and explicit deferrals before child admission.
+
+    `carriers` makes this a CARRIER-MAP event: one entry per plan assertion, in
+    Definition of Done order, of the form `<ordinal>: <work-item-id>[, ...]` or
+    `<ordinal>: plan-level proof`. Supplying it arms the gate that refuses an
+    incomplete map. Omitting it records a ruling or deferral exactly as before —
+    the default is empty rather than required precisely so the ruling path this
+    primitive also serves is unaffected.
+    """
     client = make_beads_client(config=config)
+    guard_carrier_map(
+        epic_id=epic_id,
+        description=_epic_description(client=client, epic_id=epic_id),
+        carriers=carriers,
+    )
     client.add_comment(
         issue_id=epic_id,
         body=plan_comment_body(
             prefix=PLAN_SCOPE_PREFIX,
             author=author,
             now=now,
-            body=_scope_body(requirements=requirements, deferrals=deferrals),
+            body=_scope_body(requirements=requirements, deferrals=deferrals, carriers=carriers),
         ),
     )
 
@@ -235,7 +255,21 @@ def _is_blocks_dependency_edge(*, edge: object) -> str | None:
     return is_blocks_dependency_edge(edge=edge)
 
 
-def _scope_body(*, requirements: tuple[str, ...], deferrals: tuple[str, ...]) -> str:
+def _epic_description(*, client: BeadsClient, epic_id: str) -> str:
+    """One epic's description, tolerating the key's absence.
+
+    Beads records are `omitempty`-sparse: an epic holding no description omits
+    the key entirely rather than carrying an empty string.
+    """
+    description = client.show_issue(issue_id=epic_id).get("description")
+    return description if isinstance(description, str) else ""
+
+
+def _scope_body(
+    *, requirements: tuple[str, ...], deferrals: tuple[str, ...], carriers: tuple[str, ...]
+) -> str:
     requirement_lines = "\n".join(f"- {requirement}" for requirement in requirements)
     deferral_lines = "\n".join(f"- {deferral}" for deferral in deferrals)
-    return f"Requirement carriers:\n{requirement_lines}\n\nExplicit deferrals:\n{deferral_lines}"
+    body = f"Requirement carriers:\n{requirement_lines}\n\nExplicit deferrals:\n{deferral_lines}"
+    block = carrier_map_block(carriers=carriers)
+    return f"{body}\n\n{block}" if block else body
