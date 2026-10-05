@@ -1,4 +1,7 @@
-"""Tests for the host leg's evidence rule — what counts as a host replay, and why not.
+"""Tests for the host leg's evidence RULE — what counts as a host replay, and why not.
+
+The gathering half — which records are replays, and whether the build each names
+carries the merge — lives in `_dispatcher_host_containment` and is tested beside it.
 
 The host-captured leg of the post-merge acceptance section of
 `SPECIFICATION/contracts.md` (v115) states the rule this module implements: the pass
@@ -27,10 +30,6 @@ one needs a replay and the other needs the published record fixed.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from pathlib import Path
-
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_build_identity import (
     BuildIdentity,
 )
@@ -41,9 +40,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_leg import (
     NOT_EVIDENCE_UNOBSERVABLE_CONTAINMENT,
     PENDING_HOST_LEG_REASON,
     HostReplay,
-    compare_argv,
     host_leg,
-    merge_contained_in,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_render import (
     RecordAssertion,
@@ -58,8 +55,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import 
     proof_records,
 )
 
-_REPO = Path("/repo")
-_MERGE_SHA = "ac7ebb0f36026f9789997f93aaaabbbbccccdddd"
 _RELEASE_TAG = "v0.166.0"
 _CAPTURING = "01M44CAPTURINGSESSION"
 _REPLAYING = "01M44REPLAYINGSESSION"
@@ -69,29 +64,6 @@ _BUILD = BuildIdentity(
     release_tag=_RELEASE_TAG, installed_build="orchestrator 0.166.0", commit=None
 )
 _URL = "https://example.test/owner/repo/pull/36#issuecomment-900"
-
-
-@dataclass(kw_only=True)
-class _Runner:
-    results: list[CommandResult]
-    argvs: list[list[str]] = field(default_factory=list)
-
-    def run(
-        self,
-        *,
-        argv: list[str],
-        cwd: Path,
-        timeout_seconds: float,
-        env: dict[str, str] | None = None,
-        stdin: int | None = None,
-    ) -> CommandResult:
-        del cwd, timeout_seconds, env, stdin
-        self.argvs.append(list(argv))
-        return self.results.pop(0)
-
-
-def _result(*, exit_code: int = 0, stdout: str = "") -> CommandResult:
-    return CommandResult(exit_code=exit_code, stdout=stdout, stderr="")
 
 
 def _record(
@@ -323,43 +295,3 @@ def test_a_host_recorded_record_never_decides_an_assertion() -> None:
     )
     assert [one.passed for one in leg.grades] == [None]
     assert leg.refused == ()
-
-
-def test_containment_is_read_through_the_forges_comparison_of_merge_against_build() -> None:
-    """`identical` and `ahead` mean the named build carries the merge."""
-    for status in ("ahead", "identical"):
-        runner = _Runner(results=[_result(stdout=f"{status}\n")])
-        assert (
-            merge_contained_in(repo=_REPO, merge_sha=_MERGE_SHA, ref=_RELEASE_TAG, runner=runner)
-            is True
-        )
-        assert runner.argvs == [compare_argv(base=_MERGE_SHA, head=_RELEASE_TAG)]
-
-
-def test_a_build_behind_or_diverged_from_the_merge_does_not_contain_it() -> None:
-    """The two statuses that say the merge is not in the named build's history."""
-    for status in ("behind", "diverged"):
-        runner = _Runner(results=[_result(stdout=f"{status}\n")])
-        assert (
-            merge_contained_in(repo=_REPO, merge_sha=_MERGE_SHA, ref=_RELEASE_TAG, runner=runner)
-            is False
-        )
-
-
-def test_an_unreadable_or_unrecognised_comparison_is_unobservable_rather_than_either() -> None:
-    """A failed read and an unknown status both answer `None`, which refuses.
-
-    `None` is the third state the evidence rule needs: the comparison was not made,
-    which is a different fact from "the build does not contain the merge" and must
-    not be reported as one.
-    """
-    for result in (_result(exit_code=1), _result(stdout="something-new\n")):
-        assert (
-            merge_contained_in(
-                repo=_REPO,
-                merge_sha=_MERGE_SHA,
-                ref=_RELEASE_TAG,
-                runner=_Runner(results=[result]),
-            )
-            is None
-        )

@@ -8,12 +8,22 @@ assertion that rides as pending, and the UNOBSERVED-versus-EMPTY distinction in
 the comments read — a pull request with no records is evidence that none were
 published, a failed read is evidence of nothing, and the two must not produce the
 same verdict.
+
+IT ALSO COVERS THE HOST LEG'S ARRIVAL INTO THIS MODULE. `_dispatcher_host_leg` owns
+the evidence rule and is tested there; what is tested HERE is the join — that the
+pure grading receives a containment reader, that `read_proof_leg` resolves that
+reader through the forge, and that each disposition the host leg can reach lands in
+the right shape on `ProofLeg`: a PASS drops the assertion from
+`pending_host_captured` (which is what lets the item close), a FAIL becomes a
+failing check (which is what routes it to rework), and every refusal stays pending
+with the reason reported on the check.
 """
 
 from __future__ import annotations
 
 import json
 import textwrap
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -30,6 +40,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_build_identity import (
+    RELEASE_TAG_LABEL,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_containment import (
+    compare_argv,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_leg import (
+    NOT_EVIDENCE_CONTAINMENT,
+    NOT_EVIDENCE_SELF_REPLAY,
+    NOT_EVIDENCE_UNOBSERVABLE_CONTAINMENT,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attribution import (
     MergingDispatch,
 )
@@ -38,17 +59,21 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence impor
     HUMAN_ATTESTED_EVIDENCE_LEG,
     PENDING_HOST_LEG_REASON,
     PENDING_HUMAN_ATTESTATION_REASON,
-    PROOF_RECORD_EVIDENCE_LEG,
     proof_leg,
     read_proof_leg,
     read_pull_request_records,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_leg import (
+    PROOF_RECORD_EVIDENCE_LEG,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
     VERDICT_VERIFIED,
+    ProofRecord,
     proof_records,
 )
 
 _RUN_ID = "01M3EVIDENCERUN"
+_RELEASE_TAG = "v0.166.0"
 _FACTORY_ASSERTION = "The projection carries the parent field."
 _HOST_ASSERTION = "The released build resolves the mode on an operator host."
 _HUMAN_ASSERTION = "The production console renders the banner."
@@ -71,6 +96,33 @@ class _Runner:
         _ = cwd, timeout_seconds, env, stdin
         self.argvs.append(list(argv))
         return self.result
+
+
+@dataclass(kw_only=True)
+class _SequencedRunner:
+    """A runner answering a SEQUENCE of reads, so a second call cannot reuse the first.
+
+    The host leg's read makes two different forge calls — the comment read and the
+    containment comparison — and a single-result double would answer the comparison
+    with the comment payload, which parses as an unknown status and refuses. The
+    refusal would look exactly like the one a genuinely unreadable comparison earns.
+    """
+
+    results: list[CommandResult]
+    argvs: list[list[str]] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        _ = cwd, timeout_seconds, env, stdin
+        self.argvs.append(list(argv))
+        return self.results.pop(0)
 
 
 def _criteria(*, modes: tuple[str, ...], assertions: tuple[str, ...]) -> EffectiveCriteria:
@@ -108,13 +160,18 @@ def _dispatch(*, run_id: str | None = _RUN_ID) -> MergingDispatch:
     return MergingDispatch(fabro_run_id=run_id, dispatch_id=None)
 
 
-def _outcome(*, pr_number: int | None = 7, run_id: str | None = _RUN_ID) -> DispatchOutcome:
+def _outcome(
+    *,
+    pr_number: int | None = 7,
+    run_id: str | None = _RUN_ID,
+    merge_sha: str | None = "abc123",
+) -> DispatchOutcome:
     return DispatchOutcome(
         work_item_id="bd-ib-evidence",
         status="green",
         stage="done",
         pr_number=pr_number,
-        merge_sha="abc123",
+        merge_sha=merge_sha,
         detail="merged",
         fabro_run_id=run_id,
     )
@@ -314,34 +371,237 @@ def test_a_host_captured_assertion_rides_as_pending_the_host_leg() -> None:
     ]
 
 
-def test_a_host_verified_record_does_not_yet_grade_the_assertion_passing() -> None:
-    """The deliberate fail-CLOSED gap this slice ships, asserted rather than assumed.
+def _host_comments(
+    *,
+    verdict: str = "host_verified",
+    identity: str = "replaying-session",
+    recorded_by: str | None = None,
+    release_tag: str = _RELEASE_TAG,
+    reproduced: str = "yes",
+) -> tuple[ProofRecord, ...]:
+    """A host replay on the pull request, optionally preceded by its own capture.
 
-    Judging a host-captured assertion passing needs the containment check the
-    clause requires — the named release tag must contain the merge commit — and the
-    identity-independence rule, both of which arrive with the posting primitive. So
-    a `host_verified` record on the pull request leaves the assertion PENDING here,
-    and the item rests rather than closing on a record whose build identity nothing
-    has checked. A build that started passing it without those checks would make
-    this case fail, which is the point of writing it down.
+    `recorded_by` publishes a `host_recorded` record FIRST, which is what gives the
+    leg a capturing identity to compare the replay against. Without one no replay can
+    be a self-replay, because there is no capture for it to be a replay of.
     """
-    criteria = _criteria(modes=(PROOF_MODE_HOST_CAPTURED,), assertions=(_HOST_ASSERTION,))
-    records = proof_records(
-        comments=[
+    capture = (
+        []
+        if recorded_by is None
+        else [
             {
-                "url": "https://example.test/c/9",
+                "url": "https://example.test/c/8",
                 "body": (
-                    "Proof of Done — host_verified — session other-session — t\n\n"
-                    f"## Assertion 1 — {_HOST_ASSERTION}\n\nReproduced: yes.\n"
+                    f"Proof of Done — host_recorded — session {recorded_by} — t\n\n"
+                    f"- {RELEASE_TAG_LABEL}: {release_tag}\n\n"
+                    f"## Assertion 1 — {_HOST_ASSERTION}\n"
                 ),
             }
         ]
     )
+    replay = {
+        "url": "https://example.test/c/9",
+        "body": (
+            f"Proof of Done — {verdict} — session {identity} — t\n\n"
+            f"- {RELEASE_TAG_LABEL}: {release_tag}\n\n"
+            f"## Assertion 1 — {_HOST_ASSERTION}\n\nReproduced: {reproduced}.\n"
+        ),
+    }
+    return proof_records(comments=[*capture, replay])
 
-    leg = proof_leg(criteria=criteria, records=records, run_ids=(_RUN_ID,), reason="read")
+
+def _contains(*, answer: bool | None) -> Callable[[str], bool | None]:
+    return lambda ref: answer if ref == _RELEASE_TAG else None
+
+
+def test_an_independent_host_verified_record_grades_the_assertion_passing() -> None:
+    """The host leg now DECIDES, which is what lets a host-captured item close.
+
+    Before this slice a `host_verified` record left the assertion pending whatever it
+    said, because the containment check and the identity-independence rule had not
+    been built. Both arrive here, so a replay that clears them passes the assertion
+    and `pending_host_captured` drops it — and that projection is exactly what the
+    completion disposition reads to decide whether the item may close.
+    """
+    criteria = _criteria(modes=(PROOF_MODE_HOST_CAPTURED,), assertions=(_HOST_ASSERTION,))
+
+    leg = proof_leg(
+        criteria=criteria,
+        records=_host_comments(recorded_by="capturing-session"),
+        run_ids=(_RUN_ID,),
+        reason="read",
+        contains_merge=_contains(answer=True),
+    )
+
+    assert leg.pending_host_captured == ()
+    assert [check.passed for check in leg.checks] == [True]
+    assert leg.host_verified_record is not None
+    assert leg.host_verified_record.url == "https://example.test/c/9"
+    assert _RELEASE_TAG in leg.checks[0].reason
+
+
+def test_a_self_replayed_host_record_leaves_the_assertion_pending_and_reports_why() -> None:
+    """The identity-independence rule, enforced by the PASS however the record arrived."""
+    criteria = _criteria(modes=(PROOF_MODE_HOST_CAPTURED,), assertions=(_HOST_ASSERTION,))
+
+    leg = proof_leg(
+        criteria=criteria,
+        records=_host_comments(identity="one-session", recorded_by="one-session"),
+        run_ids=(_RUN_ID,),
+        reason="read",
+        contains_merge=_contains(answer=True),
+    )
 
     assert leg.pending_host_captured == (_HOST_ASSERTION,)
-    assert [check.reason for check in leg.checks] == [PENDING_HOST_LEG_REASON]
+    assert leg.host_verified_record is None
+    assert NOT_EVIDENCE_SELF_REPLAY in leg.checks[0].reason
+
+
+def test_a_host_record_against_a_build_without_the_merge_stays_pending_and_reports_why() -> None:
+    """The containment check the clause requires the pass to verify itself."""
+    criteria = _criteria(modes=(PROOF_MODE_HOST_CAPTURED,), assertions=(_HOST_ASSERTION,))
+
+    leg = proof_leg(
+        criteria=criteria,
+        records=_host_comments(recorded_by="capturing-session"),
+        run_ids=(_RUN_ID,),
+        reason="read",
+        contains_merge=_contains(answer=False),
+    )
+
+    assert leg.pending_host_captured == (_HOST_ASSERTION,)
+    assert NOT_EVIDENCE_CONTAINMENT in leg.checks[0].reason
+    assert _RELEASE_TAG in leg.checks[0].reason
+
+
+def test_an_independent_host_not_reproduced_record_fails_the_assertion() -> None:
+    """A replay that did not reproduce is a FAILING check, which is rework input."""
+    criteria = _criteria(modes=(PROOF_MODE_HOST_CAPTURED,), assertions=(_HOST_ASSERTION,))
+
+    leg = proof_leg(
+        criteria=criteria,
+        records=_host_comments(
+            verdict="host_not_reproduced", recorded_by="capturing-session", reproduced="no"
+        ),
+        run_ids=(_RUN_ID,),
+        reason="read",
+        contains_merge=_contains(answer=True),
+    )
+
+    assert leg.pending_host_captured == ()
+    assert [check.passed for check in leg.checks] == [False]
+    assert leg.host_verified_record is None
+
+
+def test_an_unchecked_containment_refuses_every_host_record(tmp_path: Path) -> None:
+    """With no containment reader the leg refuses, which is the fail-closed default.
+
+    `contains_merge` defaults to "not checked" rather than to "contained" so that a
+    caller which forgot to supply one parks the item instead of closing it on a build
+    nothing compared. The one production caller — `read_proof_leg` — always supplies
+    one, which the read test below asserts by its forge calls.
+    """
+    del tmp_path
+    criteria = _criteria(modes=(PROOF_MODE_HOST_CAPTURED,), assertions=(_HOST_ASSERTION,))
+
+    leg = proof_leg(
+        criteria=criteria,
+        records=_host_comments(recorded_by="capturing-session"),
+        run_ids=(_RUN_ID,),
+        reason="read",
+    )
+
+    assert leg.pending_host_captured == (_HOST_ASSERTION,)
+    assert NOT_EVIDENCE_UNOBSERVABLE_CONTAINMENT in leg.checks[0].reason
+
+
+def test_the_read_checks_containment_through_the_forge_for_each_named_build(
+    tmp_path: Path,
+) -> None:
+    """`read_proof_leg` resolves the containment the pure grading consumes.
+
+    The comparison argv is asserted so the read cannot come to ask a question the
+    host leg's own tests never exercised, and it is asserted ONCE per distinct build
+    rather than once per record: two replays naming the same release are one
+    comparison, and a reader that re-asked per record would spend a forge round trip
+    per published record on every pass.
+    """
+    comments = json.dumps(
+        {
+            "comments": [
+                {
+                    "url": "https://example.test/c/9",
+                    "body": (
+                        "Proof of Done — host_verified — session replaying — t\n\n"
+                        f"- {RELEASE_TAG_LABEL}: {_RELEASE_TAG}\n\n"
+                        f"## Assertion 1 — {_HOST_ASSERTION}\n\nReproduced: yes.\n"
+                    ),
+                },
+                {
+                    "url": "https://example.test/c/10",
+                    "body": (
+                        "Proof of Done — host_verified — session second — t\n\n"
+                        f"- {RELEASE_TAG_LABEL}: {_RELEASE_TAG}\n\n"
+                        f"## Assertion 1 — {_HOST_ASSERTION}\n\nReproduced: yes.\n"
+                    ),
+                },
+            ]
+        }
+    )
+    runner = _SequencedRunner(
+        results=[
+            CommandResult(exit_code=0, stdout=comments, stderr=""),
+            CommandResult(exit_code=0, stdout="ahead\n", stderr=""),
+        ]
+    )
+
+    leg = read_proof_leg(
+        repo=tmp_path,
+        criteria=_criteria(modes=(PROOF_MODE_HOST_CAPTURED,), assertions=(_HOST_ASSERTION,)),
+        outcome=_outcome(),
+        runner=runner,
+        dispatch=_dispatch(),
+    )
+
+    assert runner.argvs[1] == compare_argv(base="abc123", head=_RELEASE_TAG)
+    assert len(runner.argvs) == 2
+    assert leg.pending_host_captured == ()
+
+
+def test_the_read_skips_the_comparison_when_the_merge_sha_is_unknown(tmp_path: Path) -> None:
+    """With no merge commit there is nothing to check containment OF, so none is run.
+
+    The assertion stays pending rather than passing, because a replay whose
+    containment was never established is not evidence — the same answer the
+    unobservable arm gives, reached without spending a forge call that could not
+    have a meaningful base.
+    """
+    comments = json.dumps(
+        {
+            "comments": [
+                {
+                    "url": "https://example.test/c/9",
+                    "body": (
+                        "Proof of Done — host_verified — session replaying — t\n\n"
+                        f"- {RELEASE_TAG_LABEL}: {_RELEASE_TAG}\n\n"
+                        f"## Assertion 1 — {_HOST_ASSERTION}\n\nReproduced: yes.\n"
+                    ),
+                }
+            ]
+        }
+    )
+    runner = _SequencedRunner(results=[CommandResult(exit_code=0, stdout=comments, stderr="")])
+
+    leg = read_proof_leg(
+        repo=tmp_path,
+        criteria=_criteria(modes=(PROOF_MODE_HOST_CAPTURED,), assertions=(_HOST_ASSERTION,)),
+        outcome=_outcome(merge_sha=None),
+        runner=runner,
+        dispatch=_dispatch(),
+    )
+
+    assert len(runner.argvs) == 1
+    assert leg.pending_host_captured == (_HOST_ASSERTION,)
 
 
 def test_the_journal_projection_names_the_leg_and_record_per_assertion() -> None:
