@@ -51,6 +51,36 @@ __all__: list[str] = [
     "run_post_host_record_cli",
 ]
 
+# The `--record` file's own shape, written out as the epilog rather than compressed into
+# the flag's `help`. The flag used to describe the file only by what its fields CONTAIN —
+# "the build identity exercised and, per assertion, the numbered steps, the proof and
+# whether they reproduced" — which names no KEY, so the first session to publish a host
+# record here read `_dispatcher_host_record_payload` to learn them. A reader asking a
+# command what to feed it should not have to open the parser that feeds it.
+#
+# It is an EPILOG because argparse re-wraps a `help` string to the terminal width, which
+# would reflow the object literal into prose and destroy the one thing it is here to show.
+# `RawDescriptionHelpFormatter` is set alongside it for that reason.
+_RECORD_FILE_SHAPE = """the --record file is a JSON object of this shape:
+
+  {
+    "build": {
+      "release_tag": "v0.167.1",
+      "installed_build": "the plugin build identifier installed on the host",
+      "commit": "the default-branch commit exercised, where no release applies"
+    },
+    "assertions": [
+      {
+        "text": "the assertion, verbatim from the item's Definition of Done",
+        "governing_scenario": "the scenario that governs it, where one does",
+        "steps": ["the first step that was run", "the second step that was run"],
+        "proof": "the output those steps produced",
+        "reproduced": true
+      }
+    ]
+  }
+"""
+
 
 def add_post_host_record_arguments(*, parser: argparse.ArgumentParser) -> None:
     """Attach the posting primitive's governed surface to its subparser.
@@ -59,7 +89,14 @@ def add_post_host_record_arguments(*, parser: argparse.ArgumentParser) -> None:
     `--pull-request` flag. Each of those is a thing the clause requires the primitive to
     COMPUTE, and a flag for one would be the route by which a session hand-formats the
     record the primitive exists to render.
+
+    The record file's shape rides the EPILOG, which is why the formatter is swapped here
+    rather than at the `add_parser` call: the shape and the formatter that preserves it
+    are one decision, and separating them would let a later subparser edit reflow the
+    object literal into prose with nothing failing.
     """
+    parser.epilog = _RECORD_FILE_SHAPE
+    parser.formatter_class = argparse.RawDescriptionHelpFormatter
     _ = parser.add_argument("--repo", dest="repo", required=True)
     _ = parser.add_argument("--item", dest="item", required=True)
     _ = parser.add_argument(

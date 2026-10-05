@@ -834,6 +834,41 @@ def test_the_cli_refuses_a_verdict_outside_the_three_host_leg_words(tmp_path: Pa
         )
 
 
+def test_the_help_prints_the_record_files_json_shape(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--help` has to answer "what goes in the --record file" with the file's own shape.
+
+    Measured 2026-10-05: the first session to publish a host record in this repository
+    read `_dispatcher_host_record_payload` to learn the keys, because the help described
+    the file only as "a JSON object carrying the build identity exercised and, per
+    assertion, the numbered steps, the proof and whether they reproduced" — a sentence
+    that names the CONTENT of every field and not one of their names.
+
+    The keys are asserted QUOTED, as `"steps"` rather than `steps`, because every one of
+    these words also appears in the surrounding prose: `commit`, `text`, `steps` and
+    `proof` would each match the old help, so an unquoted probe could not have failed
+    before this change and would therefore be no evidence of it.
+    """
+    with pytest.raises(SystemExit):
+        _ = dispatcher_main(argv=["post-host-record", "--help"])
+
+    help_text = capsys.readouterr().out
+    assert '"build"' in help_text
+    assert '"assertions"' in help_text
+    for key in (
+        "release_tag",
+        "installed_build",
+        "commit",
+        "text",
+        "governing_scenario",
+        "steps",
+        "proof",
+        "reproduced",
+    ):
+        assert f'"{key}"' in help_text
+
+
 def test_the_reconcile_wiring_reaches_the_ordinary_reconcile_merged_valve(
     tmp_path: Path,
 ) -> None:
