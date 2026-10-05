@@ -420,3 +420,65 @@ def test_a_reproduced_no_survives_a_fenced_proof_that_prints_headings() -> None:
     )
 
     assert record.reproduced(assertion="The banner renders on the runs page.") is False
+
+
+def test_fenced_proof_output_under_a_nested_heading_keeps_every_assertion_boundary() -> None:
+    """The real record shape: a nested `### Replay proof` holding the fenced proof.
+
+    This is the body the normal record format produces once a verifier gives each
+    assertion a replay subsection — the `## Assertion N` heading states the
+    assertion, a nested heading introduces the replay, the fenced proof prints
+    whatever it printed, and the `Reproduced:` line closes the subtree. The nested
+    heading is PROSE, so the fence arm cannot reach it; a splitter that opens a new
+    section at it detaches the verdict from the assertion that earned it and the
+    reader answers `None` for an assertion the record states was reproduced.
+
+    All three arms ride in one body because the recovery has to be paid for. An
+    assertion whose nested subsection publishes no verdict must stay unevidenced
+    rather than borrow the next one's, and an assertion publishing a refusal must
+    still report `False` — the fenced heading-like output is present in each
+    subsection, so the fence-aware behaviour is exercised in the arms that must NOT
+    widen as well as in the one that must.
+    """
+    record = _fenced_record(
+        body="""\
+        ## Assertion 1 — The reader grades a verdict beneath a nested heading.
+
+        Proof mode: `factory_captured`
+
+        ### Replay proof
+
+        ```text
+        $ ./dev-tooling/just-check.sh
+        # the runner's own comment, printed by `cat`
+        ### 3. the executed target list
+        ## Assertion 2 — printed from the captured record
+        ```
+
+        Reproduced: yes. The replay matches the capture byte-for-byte.
+
+        ## Assertion 2 — The boundary survives the printed heading.
+
+        ### Replay proof
+
+        ```text
+        $ ./check.sh
+        # this subsection publishes no verdict of its own
+        ```
+
+        ## Assertion 3 — The last assertion publishes its own refusal.
+
+        ### Replay proof
+
+        ```text
+        $ ./check.sh
+        # no capacity banner in the rendered page
+        ```
+
+        Reproduced: NO. Step 2 printed nothing.
+        """
+    )
+
+    assert record.reproduced(assertion="The reader grades a verdict beneath a nested heading.")
+    assert record.reproduced(assertion="The boundary survives the printed heading.") is None
+    assert record.reproduced(assertion="The last assertion publishes its own refusal.") is False

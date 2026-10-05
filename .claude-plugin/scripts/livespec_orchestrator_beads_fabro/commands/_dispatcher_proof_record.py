@@ -129,7 +129,13 @@ _HEADER_SEPARATOR = "—"
 _IDENTITY_PREFIXES = ("run ", "session ", "human ")
 _HEADER_MINIMUM_FIELDS = 3
 _TIMESTAMP_FIELD = 3
-_HEADING = re.compile(r"^#{1,6}\s")
+_HEADING = re.compile(r"^(#{1,6})\s")
+# The depth at which the record's own assertion headings sit, and therefore the
+# deepest heading that OPENS a section. A verifier that gives an assertion a
+# nested `### Replay proof` subsection is writing prose INSIDE that assertion, so
+# a deeper heading continues the section it is nested in rather than starting a
+# new one — the module docstring records what splitting at one cost.
+_SECTION_HEADING_DEPTH = 2
 # A CommonMark fenced-code delimiter: three or more backticks or tildes, indented
 # no more than three spaces. The run itself is captured because closing a fence
 # depends on it; the info string an OPENING delimiter may carry is not, because
@@ -307,6 +313,10 @@ def _sections(*, body: str) -> list[list[str]]:
     and never opens a section — the module docstring records what splitting at one
     cost. The delimiter line itself is never a heading either, so the fence arm and
     the heading arm are exclusive.
+
+    A heading NESTED below the record's assertion depth does not open a section
+    either: it is prose written inside the assertion it sits under, so the
+    assertion's own `Reproduced:` line stays in the assertion's section.
     """
     sections: list[list[str]] = [[]]
     fence: str | None = None
@@ -314,10 +324,18 @@ def _sections(*, body: str) -> list[list[str]]:
         delimiter = _FENCE.match(line)
         if delimiter is not None:
             fence = _fence_after(fence=fence, delimiter=delimiter.group(1))
-        elif fence is None and _HEADING.match(line) is not None and sections[-1]:
+        elif fence is None and _opens_section(line=line) and sections[-1]:
             sections.append([])
         sections[-1].append(line)
     return sections
+
+
+def _opens_section(*, line: str) -> bool:
+    """Whether one PROSE line is a heading that starts a new section."""
+    heading = _HEADING.match(line)
+    if heading is None:
+        return False
+    return len(heading.group(1)) <= _SECTION_HEADING_DEPTH
 
 
 def _fence_after(*, fence: str | None, delimiter: str) -> str | None:
