@@ -57,6 +57,7 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_current_merge_hold import (
+    CurrentMergeHold,
     read_current_merge_hold,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import (
@@ -75,6 +76,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
+    PrView,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
 
@@ -377,29 +379,9 @@ def run_dispatch(
             detail="no PR found for branch",
             fabro_run_id=run_id,
         )
-    if plan.merge_hold:
-        # THE HOLD'S TERMINAL. Nothing may merge this pull request, so polling
-        # for its merge could only spend the whole budget and then report a
-        # FAILURE for work that succeeded. The run ends here instead, green,
-        # exactly as `contracts.md` -> "The per-item merge hold" requires: green
-        # is also what reclaims the claim under the ordinary green-terminal
-        # rule, so a held item holds no capacity slot while it waits for a
-        # person. `merge_sha` is None because nothing merged — this is the one
-        # green outcome that carries no merge, and the post-merge dispositions
-        # read that from the stage rather than re-deriving the hold.
-        return DispatchOutcome(
-            work_item_id=plan.work_item_id,
-            status="green",
-            stage=MERGE_HELD_STAGE,
-            pr_number=view.number,
-            merge_sha=None,
-            detail=(
-                f"merge hold stands: PR #{view.number} is open with no auto-merge armed, "
-                "and the run terminated rather than waiting for a merge no automated path "
-                f"may perform. Release with `set-merge-hold:{plan.work_item_id}:off`."
-            ),
-            fabro_run_id=run_id,
-        )
+    current_hold = _current_hold_terminal(plan=plan, view=view, hold=hold, run_id=run_id)
+    if current_hold is not None:
+        return current_hold
     outcome = outcome_after_await(
         outcome_type=DispatchOutcome,
         plan=plan,
@@ -419,6 +401,53 @@ def run_dispatch(
     if run_id is not None and outcome.fabro_run_id is None:
         outcome = replace(outcome, fabro_run_id=run_id)
     return outcome
+
+
+def _current_hold_terminal(
+    *,
+    plan: DispatchPlan,
+    view: PrView,
+    hold: CurrentMergeHold,
+    run_id: str | None,
+) -> DispatchOutcome | None:
+    """The terminal the CURRENT merge hold puts on this run, or None to keep going.
+
+    Keyed on the reading `confirm_pr` already acted on rather than on
+    `plan.merge_hold`, so the arming decision and the terminal classification cannot
+    disagree about one run. The launch snapshot cannot answer this: a hold applied
+    after dispatch is absent from it, and the measured defect was both halves
+    reading it (`_dispatcher_current_merge_hold`).
+
+    A MERGED pull request is past the hold entirely and returns None, so the run
+    proceeds to its ordinary post-merge path. Terminating green-with-no-merge there
+    would skip the post-merge janitor and the acceptance valve on work that HAS
+    merged, which is a worse outcome than the one the hold is protecting against.
+    """
+    if view.state == "MERGED":
+        return None
+    if hold != "held":
+        return None
+    # THE HOLD'S TERMINAL. Nothing may merge this pull request, so polling for its
+    # merge could only spend the whole budget and then report a FAILURE for work that
+    # succeeded. The run ends here instead, green, exactly as `contracts.md` -> "The
+    # per-item merge hold" requires: green is also what reclaims the claim under the
+    # ordinary green-terminal rule, so a held item holds no capacity slot while it
+    # waits for a person. `merge_sha` is None because nothing merged — this is the one
+    # green outcome that carries no merge, and the post-merge dispositions read that
+    # from the stage rather than re-deriving the hold.
+    return DispatchOutcome(
+        work_item_id=plan.work_item_id,
+        status="green",
+        stage=MERGE_HELD_STAGE,
+        pr_number=view.number,
+        merge_sha=None,
+        detail=(
+            f"merge hold stands: PR #{view.number} is open with no auto-merge armed, "
+            "and the run terminated rather than waiting for a merge no automated path "
+            f"may perform. Release with `set-merge-hold:{plan.work_item_id}:off`."
+        ),
+        fabro_run_id=run_id,
+    )
 
 
 def dispatch_fabro_run_inputs(*, plan: DispatchPlan) -> tuple[str, ...]:

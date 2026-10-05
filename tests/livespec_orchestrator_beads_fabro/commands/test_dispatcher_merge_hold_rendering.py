@@ -18,6 +18,13 @@ work-item do once the hold has been honored. A held run terminates green at the
 pr stage and never waits, and that green terminal must not be mistaken for a
 merge by the post-merge acceptance valve, because a held item stays `active`
 until a person releases the hold.
+
+What the host reads is narrower than "off the plan" since `bd-ib-m5vgxh`: the
+plan's `merge_hold` still suppresses the auto-merge argv, but the host's merge
+confirmation ALSO reads the hold the ledger carries at that boundary, because a
+hold applied after dispatch is absent from the launch snapshot. The cases here
+hold the two in agreement, which is the chain when nobody changes the hold
+mid-flight; `test_dispatcher_current_merge_hold` is where they disagree.
 """
 
 from __future__ import annotations
@@ -28,7 +35,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro._store_merge_hold import MERGE_HOLD_LABEL_PREFIX
+from livespec_orchestrator_beads_fabro._store_merge_hold import (
+    MERGE_HOLD_LABEL_PREFIX,
+    update_work_item_merge_hold,
+)
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_loop_selection as loop_selection,
 )
@@ -95,6 +105,30 @@ def _item() -> WorkItem:
         audit=None,
         superseded_by=None,
     )
+
+
+def _tenant_store() -> StoreConfig:
+    return StoreConfig(
+        tenant="livespec-impl-beads",
+        prefix="bd",
+        server_user="livespec-impl-beads",
+        database="livespec-impl-beads",
+        bd_path="bd",
+        fake=True,
+    )
+
+
+def _held_tenant(*, repo: Path) -> StoreConfig:
+    """Provision the connection block plus one item the LEDGER currently holds.
+
+    The returned config is what releases the hold for the control leg: the two legs
+    must differ in exactly one value, and that value is the ledger's hold.
+    """
+    _ = (repo / ".livespec.jsonc").write_text(_TENANT_CONFIG, encoding="utf-8")
+    config = _tenant_store()
+    append_work_item(path=config, item=_item())
+    update_work_item_merge_hold(path=config, item_id=_item().id, value=True)
+    return config
 
 
 def _plan(*, repo: Path, merge_hold: bool = False) -> DispatchPlan:
@@ -316,7 +350,15 @@ def test_a_held_run_terminates_green_at_the_pr_stage_and_never_waits(tmp_path: P
     The unheld control drives the SAME open, unarmed pull request through the
     same runner and does poll it, which is what shows the short-circuit is keyed
     on the hold rather than on the shape of an open pull request.
+
+    The hold is written to the LEDGER here, not merely to the plan: the terminal
+    reads the hold the ledger carries at the merge-confirmation boundary, because
+    the launch snapshot cannot see a hold applied during the run
+    (`_dispatcher_current_merge_hold`). The plan is still dispatched held, so the
+    two halves of the hold agree in this case -- which is what the whole chain
+    this module asserts looks like when nobody changes the hold mid-flight.
     """
+    config = _held_tenant(repo=tmp_path)
     # Stocked with the same five results the unheld control needs, so the held
     # run is short of nothing: a one-result queue would make the poll die on an
     # exhausted fixture, which is a fixture's verdict rather than the engine's.
@@ -342,6 +384,10 @@ def test_a_held_run_terminates_green_at_the_pr_stage_and_never_waits(tmp_path: P
     assert held_sleeps == []
     assert len(held_runner.calls) == 1
 
+    # The control differs from the held leg in ONE value -- the ledger's hold -- so
+    # the short-circuit is shown to key on that rather than on the plan, the pull
+    # request's shape, or the runner.
+    update_work_item_merge_hold(path=config, item_id=_item().id, value=False)
     free_runner = _Runner(
         queue=[CommandResult(exit_code=0, stdout=_pr_json(armed=False), stderr="")] * 5
     )
