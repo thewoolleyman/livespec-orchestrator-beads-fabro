@@ -89,12 +89,28 @@ def read_prior_identity_state(*, path: Path) -> PriorIdentityState:
     cannot be parsed means a preceding reading exists and this one cannot see
     it. Collapsing the second into the first would quietly restart the series
     over a record still sitting on disk.
+
+    NEVER raises. Every way this read can fail -- the open, the decode, the
+    parse, the schema -- resolves to an `unreadable` verdict naming the step,
+    because a status command that died on a file it was only READING would lose
+    the credential-lifetime reading it exists to print.
     """
     if not path.exists():
         return PriorIdentityState(status="absent", detail=_ABSENT_DETAIL, record=None)
-    stored = attempt(action=lambda: path.read_text(encoding="utf-8"), exceptions=(OSError,))
+    # The open and the DECODE are separate attempts because they fail with
+    # unrelated exception types: a decoding failure raises `UnicodeDecodeError`,
+    # which is a ValueError and therefore invisible to an OSError-only guard.
+    # Reading bytes first makes each failure catchable where it happens and
+    # lets each one say which step it was.
+    raw_bytes = attempt(action=path.read_bytes, exceptions=(OSError,))
+    if isinstance(raw_bytes, AttemptFailure):
+        return _unreadable(detail=f"could not be opened ({raw_bytes.error})")
+    stored = attempt(
+        action=lambda: raw_bytes.decode("utf-8"),
+        exceptions=(UnicodeDecodeError,),
+    )
     if isinstance(stored, AttemptFailure):
-        return _unreadable(detail=f"could not be opened ({stored.error})")
+        return _unreadable(detail="is not UTF-8 text")
     raw = parse_json(text=stored)
     if isinstance(raw, JsonParseFailure):
         return _unreadable(detail="is not valid JSON")
