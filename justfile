@@ -429,6 +429,7 @@ check:
         check-work-item-state-invariants
         check-status-conformance
         check-closed-item-integrity
+        check-plan-close-proof
         check-needs-attention-surface-ownership
         check-spec-id-presence-discipline
         check-no-fleet-toolchain-literals
@@ -632,6 +633,19 @@ check-ledger-conformance-live:
 # connection env configured.
 check-closed-item-integrity:
     LIVESPEC_BEADS_FAKE=1 uv run python dev-tooling/checks/closed_item_integrity.py
+
+# `check-plan-close-proof` — the TWELFTH plan-record conformance verdict
+# (SPECIFICATION/contracts.md, the plan-record conformance clause): an epic whose
+# `plan_slug` names a live or archived plan directory, closed later than the
+# archive proof leg's ratification date, carrying no `verified` plan Proof of Done
+# record on its timeline. The eleven siblings ship from the fleet's shared checks
+# package, which is a different REPOSITORY; the contract's realization clause is
+# permissive about the home and this repository owns the contract, so the twelfth
+# is wired here. ARMED-ONLY under the SAME lever and credential the shared family
+# self-skips on (LIVESPEC_RUN_PLAN_RECORD_CONFORMANCE + BEADS_DOLT_PASSWORD), so
+# arming the family arms all twelve and the aggregate's hermetic tier self-skips.
+check-plan-close-proof:
+    uv run python dev-tooling/checks/plan_close_proof.py
 
 # `check-needs-attention-surface-ownership` — v079 ownership-boundary guard.
 # Scans only `commands/needs_attention.py` and `commands/_needs_attention*.py`

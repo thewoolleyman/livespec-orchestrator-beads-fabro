@@ -161,6 +161,32 @@ Current checks:
   those keys, and each stripped key is logged, so CI's normalization is
   reported rather than invisible; a new fork-only key makes the upstream engine
   refuse, failing the gate loudly rather than passing it.
+- `plan_close_proof.py` — the TWELFTH plan-record conformance verdict
+  (SPECIFICATION/contracts.md, the plan-record conformance clause, v115): an
+  epic whose `plan_slug` names a live or archived plan directory, closed later
+  than the archive proof leg's ratification date, carrying no `verified` plan
+  Proof of Done record on its timeline. The eleven siblings ship from the
+  fleet's shared checks package, which is a different REPOSITORY; the contract's
+  realization clause is permissive about the home ("MAY live in the fleet's
+  shared checks package") and this repository owns the contract, so the twelfth
+  is wired here, under the SAME arming lever and credential the shared family
+  self-skips on (`LIVESPEC_RUN_PLAN_RECORD_CONFORMANCE` + `BEADS_DOLT_PASSWORD`)
+  — arming the family arms all twelve, and the aggregate's hermetic tier
+  self-skips. The DECISION is a primitive in the orchestrator package
+  (`commands/_plan_close_proof.py`), which makes a later move into the shared
+  package a re-wiring of this surface rather than a re-derivation of the rule.
+  It asks LESS than the archive gate does, deliberately: the gate decides
+  whether every plan assertion is PROVED (carrier-map recency, capture ordering,
+  release identity, independence), while this retrospective verdict asks only
+  whether a `verified` record EXISTS — a check that re-ran the whole leg would
+  add a tail of rejections nobody can act on after the close, which is how a
+  visibility check comes to be ignored. An unreadable `closed_at` on a closed
+  record is IN scope and reported: a close instant has no zero value, so its
+  absence is an anomaly rather than `omitempty` sparseness, and excusing it
+  would make an unreadable instant the cheapest way past the check. The ledger
+  read is a seam (comments have no on-disk export shape) defaulting to the
+  ordinary store client, and the scope filter runs AHEAD of the timeline read so
+  a tenant's many non-plan epics cost no round trip.
 - `work_item_state_invariants.py` — the beads-private work-item-state
   doctor check (SPECIFICATION/contracts.md §"Work-item beads-issue
   mapping" invariants block; L1a slice S6). Walks every materialized
