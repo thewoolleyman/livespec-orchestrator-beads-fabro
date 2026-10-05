@@ -13,6 +13,11 @@ import pytest
 from hypothesis import example, given
 from hypothesis import strategies as st
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
+    CODEX_FRESHNESS_RUN_BUDGET_SECONDS,
+    assess_codex_credential_freshness,
+    codex_freshness_required_seconds,
+)
 
 _NOW = 1_000_000
 _MODULE_PATH = Path(
@@ -42,7 +47,83 @@ def test_codex_refresh_module_exists_with_expected_public_surface() -> None:
         "should_invoke_codex_refresh",
     }
     assert module.CODEX_ALARM_THRESHOLD_SECONDS == 172_800
-    assert module.CODEX_REFRESH_GUARD_SECONDS == 360
+    # The guard is DERIVED from the dispatch freshness requirement rather than
+    # written as its own number. The two diverging IS the dead zone: a guard
+    # smaller than the requirement leaves an interval in which the freshness
+    # gate refuses while the refresher declines to act.
+    assert (
+        codex_freshness_required_seconds(run_budget_seconds=CODEX_FRESHNESS_RUN_BUDGET_SECONDS)
+        == module.CODEX_REFRESH_GUARD_SECONDS
+    )
+    assert module.CODEX_REFRESH_GUARD_SECONDS == 18_000
+
+
+# Pinned at the boundary and at the measured incident, so these execute on
+# every run rather than only when Hypothesis happens to generate them: the
+# dead zone was an INTERVAL, and an interval is only proven closed at its edges.
+@example(remaining=13_517)
+@example(remaining=17_999)
+@example(remaining=18_000)
+@example(remaining=18_001)
+@example(remaining=360)
+@example(remaining=359)
+@given(remaining=st.integers(min_value=-86_400, max_value=1_000_000))
+def test_no_lifetime_refuses_dispatch_while_the_refresher_declines(*, remaining: int) -> None:
+    """The eligibility contract is reconciled: the dead zone cannot exist.
+
+    This is the item's defining property. Before the fix, every remaining
+    lifetime between the 360-second guard and the 18000-second requirement
+    refused dispatch while `should_invoke_codex_refresh` returned False —
+    measured 2026-10-04 at 13517 seconds, where `refresh_due` was false and
+    the refusal told a human to run `codex login`. Deriving the guard FROM the
+    requirement makes that interval empty by construction, which is what this
+    asserts over the whole range rather than at one point.
+    """
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_refresh"
+    )
+    source_auth_json = _auth_json_with_exp(exp=_NOW + remaining)
+
+    verdict = assess_codex_credential_freshness(
+        source_auth_json=source_auth_json,
+        now_epoch=_NOW,
+        run_budget_seconds=CODEX_FRESHNESS_RUN_BUDGET_SECONDS,
+    )
+    status = module.assess_host_codex_credential(
+        source_auth_json=source_auth_json,
+        now_epoch=_NOW,
+        alarm_threshold_seconds=module.CODEX_ALARM_THRESHOLD_SECONDS,
+        refresh_guard_seconds=module.CODEX_REFRESH_GUARD_SECONDS,
+    )
+
+    if not verdict.fresh_enough:
+        # Whenever dispatch would be refused, the sanctioned refresher is
+        # eligible. A present, well-formed credential is never in a state
+        # where the gate says no and the refresher says "not due".
+        assert status.refresh_due is True
+        assert module.should_invoke_codex_refresh(status=status) is True
+    # And the converse, so the guard is not simply always-true: a credential
+    # that clears the gate is not needlessly renewed on every timer tick.
+    if verdict.fresh_enough:
+        assert status.refresh_due is False
+        assert module.should_invoke_codex_refresh(status=status) is False
+
+
+def test_status_message_reports_remaining_against_the_required_lifetime() -> None:
+    """An operator reads the shortfall off the message, not from arithmetic."""
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_refresh"
+    )
+
+    status = module.assess_host_codex_credential(
+        source_auth_json=_auth_json_with_exp(exp=_NOW + 13_517),
+        now_epoch=_NOW,
+        alarm_threshold_seconds=module.CODEX_ALARM_THRESHOLD_SECONDS,
+        refresh_guard_seconds=module.CODEX_REFRESH_GUARD_SECONDS,
+    )
+
+    assert "13517" in status.message
+    assert "18000" in status.message
 
 
 def test_missing_host_auth_alarms_and_names_codex_login() -> None:
@@ -274,9 +355,16 @@ def test_run_codex_cred_status_json_payload(
         "expires_at_epoch": _NOW + 900,
         "expires_at_iso": "1970-01-12T14:01:40+00:00",
         "malformed": False,
-        "message": "Host Codex credential expires in 900 seconds.",
+        # The message reports remaining versus REQUIRED lifetime, so an
+        # operator can see the shortfall without computing it.
+        "message": (
+            "Host Codex credential expires in 900 seconds; renewal is due "
+            "below 18000 seconds, which is the dispatch freshness requirement."
+        ),
         "present": True,
-        "refresh_due": False,
+        # 900 seconds is deep inside the dead zone the old 360-second guard
+        # left open: the freshness gate refuses here, so renewal must be due.
+        "refresh_due": True,
         "remaining_days": pytest.approx(900 / 86_400),
         "remaining_seconds": 900,
     }
@@ -357,7 +445,9 @@ def test_run_codex_cred_refresh_not_due_skips_codex(
     monkeypatch.setattr(
         codex_auth,
         "read_host_codex_auth",
-        lambda: _auth_json_with_exp(exp=_NOW + 3_600),
+        # Above the reconciled 18000-second guard, so renewal is genuinely
+        # not due; 3600 would now be inside it.
+        lambda: _auth_json_with_exp(exp=_NOW + 100_000),
     )
     monkeypatch.setattr(codex_auth.time, "time", lambda: float(_NOW))
     monkeypatch.setattr(codex_auth, "ShellCommandRunner", lambda: runner)

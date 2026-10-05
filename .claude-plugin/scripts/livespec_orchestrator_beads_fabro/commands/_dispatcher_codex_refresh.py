@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
+    CODEX_FRESHNESS_RUN_BUDGET_SECONDS,
+    codex_freshness_required_seconds,
     decode_codex_access_token_exp,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
@@ -21,7 +23,24 @@ __all__: list[str] = [
 ]
 
 CODEX_ALARM_THRESHOLD_SECONDS = 172_800
-CODEX_REFRESH_GUARD_SECONDS = 360
+
+# DERIVED from the dispatch freshness requirement, never written as its own
+# number. The two diverging IS the dead zone: the guard was 360 seconds — sized
+# to Codex's own five-minute proactive-refresh window, because the refresher
+# then spent a `codex exec` that could not refresh outside it — while the
+# freshness gate demanded 18000. Every lifetime between them refused dispatch
+# while this guard reported "not due", so the sanctioned refresh declined to
+# act and the refusal told a human to run `codex login`. Measured 2026-10-04 at
+# remaining_seconds 13517.
+#
+# Deriving it makes that interval empty by construction. The companion half of
+# the fix is that the renewal now drives the UNGATED app-server `account/read`
+# request (`_dispatcher_codex_early_renewal`) instead of the window-gated
+# `codex exec`: widening eligibility over a refresher that still cannot act
+# would only convert a refusal into an attempt that declines.
+CODEX_REFRESH_GUARD_SECONDS = codex_freshness_required_seconds(
+    run_budget_seconds=CODEX_FRESHNESS_RUN_BUDGET_SECONDS
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -85,7 +104,13 @@ def assess_host_codex_credential(
         remaining_seconds=remaining,
         alarm=remaining < alarm_threshold_seconds,
         refresh_due=remaining < refresh_guard_seconds,
-        message=f"Host Codex credential expires in {remaining} seconds.",
+        # Remaining AND required, so the shortfall is readable off the message
+        # instead of computed by whoever is reading it at 3am.
+        message=(
+            f"Host Codex credential expires in {remaining} seconds; renewal is "
+            f"due below {refresh_guard_seconds} seconds, which is the dispatch "
+            "freshness requirement."
+        ),
     )
 
 
