@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.171.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.170.1...v0.171.0) (2026-10-05)
+
+
+### Features
+
+* **post-host-record:** print the record file's JSON shape in --help ([a8593b4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a8593b4069dc705ad47e81b3ce98d9c6695b25f7))
+* **post-host-record:** state the record file's two unwritten rules in --help ([db12818](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/db12818312d450cd656263ba9bec3dc17e7f97ca))
+
 ## [0.170.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.170.0...v0.170.1) (2026-10-05)
 
 
