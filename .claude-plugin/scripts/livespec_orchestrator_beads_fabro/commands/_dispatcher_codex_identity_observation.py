@@ -166,8 +166,21 @@ def _change(
     prior_value: str | None,
     prior_exists: bool,
 ) -> IdentityChange:
+    """Grade one identifier, CURRENT absence first.
+
+    The order of these three tests is the whole correctness argument, and
+    getting it wrong is not a cosmetic slip. `first-observation` is a claim to
+    have SEEN an identifier and written it down, so returning it for an
+    identifier that was never read reports a successful start to a series that
+    does not exist -- and it reports it on exactly the reading an operator would
+    use to confirm the observation is working. An absent current identifier is
+    therefore `unknown` whether or not a preceding reading exists: with nothing
+    on this side, the prior-state question never arises.
+    """
+    if current is None:
+        return "unknown"
     if not prior_exists:
         return "first-observation"
-    if current is None or prior_value is None:
+    if prior_value is None:
         return "unknown"
     return "unchanged" if current == prior_value else "changed"
