@@ -23,6 +23,20 @@ WHY THE RECONCILE GOES THROUGH THE ORDINARY VALVE. The clause says the primitive
 `reconcile-merged --item <id>`, and that "`reconcile-merged` driven by hand is the same
 route". That is only true if there is one route, so this binds the valve's own command
 function rather than re-implementing its arm selection.
+
+WHY THE RECORD FILE'S SHAPE IS ON THE PAGE. The `--record` flag names a file the caller
+has to AUTHOR, and nothing else on this surface describes it. Its own `help=` says what
+the file carries, which is a true summary and not a shape: the first session to publish
+a host record here read `_dispatcher_host_record_payload` to learn the keys, because the
+reader is where the key names actually live. A publisher who guesses a key instead gets
+no error for it — the reader takes `steps`, `proof` and `reproduced` with defaults, so a
+misspelling publishes a record with no steps and an empty proof rather than a refusal.
+The skeleton therefore belongs on the surface the publisher is already reading.
+
+It rides the EPILOG rather than `--record`'s own `help=`, because argparse re-flows an
+option's help to the terminal width, and a re-flowed JSON object is a paragraph. The
+epilog is raw only under `RawDescriptionHelpFormatter`, which is why this function sets
+both: the subparser is this surface's, and its formatter is part of the surface.
 """
 
 from __future__ import annotations
@@ -45,11 +59,40 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import 
 from livespec_orchestrator_beads_fabro.io import write_stdout
 
 __all__: list[str] = [
+    "RECORD_FILE_SHAPE",
     "add_post_host_record_arguments",
     "reconcile_for",
     "reconcile_merged_for_item",
     "run_post_host_record_cli",
 ]
+
+# The `--record` file's own shape, written as the file itself so it can be copied. Every
+# value is a placeholder describing what belongs there, which is what makes the skeleton
+# readable as an instruction rather than as one publisher's record; `reproduced` is the
+# exception, because a boolean has no placeholder form.
+RECORD_FILE_SHAPE = """\
+{
+  "build": {
+    "release_tag": "<the release tag whose build the steps exercised>",
+    "installed_build": "<the installed plugin build identifier>",
+    "commit": "<the default-branch commit exercised, where no release applies>"
+  },
+  "assertions": [
+    {
+      "text": "<one assertion, verbatim, from the item's Definition of Done>",
+      "governing_scenario": "<the scenario that governs it; omit the key when none does>",
+      "steps": ["<the first step run>", "<the second step run>"],
+      "proof": "<the text those steps printed>",
+      "reproduced": true
+    }
+  ]
+}"""
+
+_RECORD_FILE_EPILOG = f"""\
+The --record file is a JSON object of this shape:
+
+{RECORD_FILE_SHAPE}
+"""
 
 
 def add_post_host_record_arguments(*, parser: argparse.ArgumentParser) -> None:
@@ -59,7 +102,13 @@ def add_post_host_record_arguments(*, parser: argparse.ArgumentParser) -> None:
     `--pull-request` flag. Each of those is a thing the clause requires the primitive to
     COMPUTE, and a flag for one would be the route by which a session hand-formats the
     record the primitive exists to render.
+
+    The epilog and the formatter are set here, on the parser this surface was handed,
+    for the reason the module docstring records: the record file's shape is part of this
+    subcommand's surface, and it only survives onto the page unwrapped.
     """
+    parser.formatter_class = argparse.RawDescriptionHelpFormatter
+    parser.epilog = _RECORD_FILE_EPILOG
     _ = parser.add_argument("--repo", dest="repo", required=True)
     _ = parser.add_argument("--item", dest="item", required=True)
     _ = parser.add_argument(

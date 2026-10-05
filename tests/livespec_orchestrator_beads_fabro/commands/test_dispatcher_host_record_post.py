@@ -36,6 +36,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_build_identity 
     RELEASE_TAG_LABEL,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_cli import (
+    add_post_host_record_arguments,
     reconcile_for,
     reconcile_merged_for_item,
 )
@@ -879,3 +880,75 @@ def test_the_bound_reconcile_carries_the_invocations_repository_to_the_valve(
     )
 
     assert drive(work_item_id="bd-ib-unfiled") != 0
+
+
+_RECORD_FILE_KEYS = (
+    "build",
+    "release_tag",
+    "installed_build",
+    "commit",
+    "assertions",
+    "text",
+    "governing_scenario",
+    "steps",
+    "proof",
+    "reproduced",
+)
+
+
+def _help_text() -> str:
+    """The help `dispatcher.py post-host-record --help` renders, for this surface alone.
+
+    Built from a bare parser rather than driven through `dispatcher.main`, because
+    `--help` exits the process and the thing under test is what THIS subcommand's
+    argument builder puts on the page.
+    """
+    parser = argparse.ArgumentParser(prog="dispatcher.py post-host-record")
+    add_post_host_record_arguments(parser=parser)
+    return parser.format_help()
+
+
+def _json_block(*, text: str) -> str:
+    """The outermost brace-delimited block of `text`, found by its own line framing.
+
+    Keyed on a line that is exactly `{` or `}` after stripping, which the usage line's
+    `{host_recorded,host_verified,host_not_reproduced}` choice list cannot be: that brace
+    is followed by a word on its own line. The LAST bare `}` closes the outermost object,
+    the inner one closing an assertion entry being indented but equally bare.
+    """
+    lines = text.splitlines()
+    opening = min(index for index, line in enumerate(lines) if line.strip() == "{")
+    closing = max(index for index, line in enumerate(lines) if line.strip() == "}")
+    return "\n".join(lines[opening : closing + 1])
+
+
+def test_the_help_prints_the_record_files_json_shape() -> None:
+    """`--help` renders the shape of the `--record` file, as a parseable skeleton.
+
+    The first session to publish a host record in this repository had to read
+    `_dispatcher_host_record_payload` to learn the file's keys, because `--help`
+    described it only as "a JSON object carrying the build identity exercised and, per
+    assertion, the numbered steps, the proof and whether they reproduced" — true, and
+    not something anyone can write a file from.
+
+    Asserted as a PARSE and not as a word hunt, because a skeleton that names every key
+    and is not valid JSON is exactly the failure a substring check passes and the one a
+    publisher copying the block hits first. The parse is also what makes this test
+    load-bearing for the FORMATTER: argparse's default help formatter re-wraps the
+    epilog, collapsing a skeleton into a paragraph that no longer parses.
+    """
+    help_text = _help_text()
+
+    missing = [name for name in _RECORD_FILE_KEYS if f'"{name}"' not in help_text]
+    assert missing == [], f"--help names no record-file key {missing}"
+
+    document = json.loads(_json_block(text=help_text))
+    assert set(document) == {"build", "assertions"}
+    assert set(document["build"]) == {"release_tag", "installed_build", "commit"}
+    assert set(document["assertions"][0]) == {
+        "text",
+        "governing_scenario",
+        "steps",
+        "proof",
+        "reproduced",
+    }
