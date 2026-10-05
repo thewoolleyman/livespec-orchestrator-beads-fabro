@@ -258,6 +258,22 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `project_host_codex_auth` — the post-claim projection, which GRADES but never
   renews, since a second renewal would spend provider work on a question whose
   answer can no longer refuse before a claim.
+- `_dispatcher_codex_freshness.py` — the PURE diagnostics leaf behind both of
+  those: the guarded freshness grade plus every refusal either position can
+  render. Two properties an editor must not invert. `graded_freshness` returns
+  `None` for an UNDECODABLE credential rather than letting
+  `decode_codex_access_token_exp` raise, because `project_host_codex_auth` runs
+  AFTER the claim and a bug-class escape from inside `dispatch_one` skips
+  `release_pre_run_claim_if_needed` — which left the row `active` with no
+  factory run, the exact stranded shape the pre-claim gate was adopted to
+  retire. `tests/integration/test_codex_credential_claim_boundary.py` is the
+  end-to-end control for that boundary and for the clock-ageing window beside
+  it. And each refusal reports only what its own position MEASURED: the
+  unparseable one names no lifetime (none was measurable) and no provider
+  verdict, and the post-claim shortfall one reports no non-advancing expiry
+  because it never asked for a renewal. `CODEX_HOME_ENV` lives here, not beside
+  `host_codex_auth_path`, because this module is the leaf and a constant
+  imported upward would close a cycle.
 - `_dispatcher_integration_schema.py` / `_dispatcher_integration_field.py` /
   `_dispatcher_integration_defaults.py` /
   `_dispatcher_integration_declaration.py` /
