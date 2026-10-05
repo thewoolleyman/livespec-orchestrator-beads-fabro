@@ -239,6 +239,47 @@ def test_the_temporary_the_writer_uses_is_guarded_too(*, tmp_path: Path) -> None
     )
 
 
+def test_a_first_reading_reports_unknown_for_an_identifier_it_cannot_see(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # A FRESH state path and a credential carrying only one of the two
+    # identifiers. The present one is genuinely a first observation; the absent
+    # one must not borrow that verdict, because `first-observation` reads as "I
+    # saw this identifier and recorded it" and nothing was seen.
+    observation = _observe(
+        capsys=capsys,
+        monkeypatch=monkeypatch,
+        state_path=tmp_path / "fresh.json",
+        auth_json=_jwt_auth_json(claims={"exp": _FRESH_EXP, "jti": "token-one"}),
+    )
+
+    assert observation["prior_state"] == "absent"
+    assert observation["token_change"] == "first-observation"
+    assert observation["session_change"] == "unknown"
+
+
+def test_a_first_reading_of_an_unreadable_credential_reports_unknown_for_both(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    observation = _observe(
+        capsys=capsys,
+        monkeypatch=monkeypatch,
+        state_path=tmp_path / "fresh.json",
+        auth_json="{not json at all",
+    )
+
+    assert observation["claims_readable"] is False
+    assert observation["prior_state"] == "absent"
+    assert observation["session_change"] == "unknown"
+    assert observation["token_change"] == "unknown"
+
+
 def test_observation_reports_the_session_and_token_identifiers_independently(
     *,
     capsys: pytest.CaptureFixture[str],
@@ -379,11 +420,18 @@ def test_observation_of_an_absent_credential_reads_no_identifiers(
     assert first["claims_readable"] is False
     assert first["token_fingerprint"] is None
     assert first["expires_at_epoch"] is None
-    # Nothing was recorded, so the second blind reading is STILL a first
-    # observation rather than a comparison against a fabricated empty record.
+    # `first-observation` would be a claim to have OBSERVED an identifier, and
+    # there was none to observe. An absent current identifier is `unknown`
+    # whether or not a prior reading exists — the prior-state question never
+    # arises, because there is nothing on this side to compare.
+    assert first["prior_state"] == "absent"
+    assert first["session_change"] == "unknown"
+    assert first["token_change"] == "unknown"
+    # Nothing was recorded, so the second blind reading still finds no prior
+    # state rather than a fabricated empty record.
     assert first["state_write"] == "withheld"
     assert second["prior_state"] == "absent"
-    assert second["token_change"] == "first-observation"
+    assert second["token_change"] == "unknown"
 
 
 def test_observation_of_an_undecodable_credential_reads_no_identifiers(
