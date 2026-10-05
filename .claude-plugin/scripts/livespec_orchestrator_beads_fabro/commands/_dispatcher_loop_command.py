@@ -59,6 +59,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credentials im
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (
     proof_assets_refusal_for_items,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_reclaim import (
+    reclaim_stale_publish_branches,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection import reflect
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import ReworkPass
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_checks import (
@@ -118,6 +121,14 @@ def _pre_dispatch_wall_exit(
     candidates is about to materialize would otherwise project it. That declaration
     is repository-level, so one refusal covers the whole wave, while the journal
     records are written per candidate.
+
+    The publish-branch reclaim closes the wall and refuses NOTHING (bd-ib-yebrb7):
+    a dead run's surviving publish branch is what makes a re-dispatch's
+    `publish_draft` push non-fast-forward, and clearing it here -- once its head is
+    preserved by reference -- is what lets the recovery publish and reach proof
+    capture. It is per CANDIDATE, because a publish branch is per item, and it runs
+    last because it MUTATES a remote ref: a wave this wall is about to refuse must
+    leave the remote exactly as it found it.
     """
     ungradeable = pre_dispatch_criteria_refusal(
         items=selected_candidates, cwd=repo, workflow_name=args.workflow_name
@@ -141,6 +152,7 @@ def _pre_dispatch_wall_exit(
     if credentials_refusal is not None:
         _ = write_stderr(text=credentials_refusal)
         return EXIT_PRECONDITION_ERROR
+    reclaim_stale_publish_branches(args=args, repo=repo, items=selected_candidates, journal=journal)
     return None
 
 
