@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.170.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.170.0...v0.170.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* **proof:** grade a verdict beneath a nested heading in the assertion section ([c9cb237](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c9cb237b852999da1998f37f204feb5fa9f8ab88))
+* **proof:** keep a verdictless assertion unevidenced beside its siblings ([dda445d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/dda445d8b959b106f34b24c27d7b667de0640e5d))
+* **proof:** read an authored verdict past the proof output that printed one ([f86ea92](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f86ea9244b655a3edb597cdf4393cdf833c8700d))
+* **proof:** resolve the record heading hierarchy generically ([87e6ef8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/87e6ef84ab83e2f05f08ff2f07daa804c6120f8b))
+
 ## [0.170.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.169.1...v0.170.0) (2026-10-05)
 
 
