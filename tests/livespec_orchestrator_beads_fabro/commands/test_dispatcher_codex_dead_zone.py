@@ -294,7 +294,7 @@ def test_a_renewal_answered_but_unadvanced_refuses_without_claiming_auth_failure
     # one here and must survive: the advanced-but-insufficient case below is
     # what it must not be applied to.
     assert "did not advance it" in message
-    assert "advanced its expiry" not in message
+    assert "expiry ADVANCED between the readings" not in message
     assert "was not observed" not in message
     # It must not claim an authentication failure it has not measured.
     assert "does NOT by itself establish an authentication failure" in message
@@ -325,9 +325,19 @@ def test_a_renewal_that_advanced_the_expiry_without_clearing_the_floor_says_so(
     advance it" would be stating the exact opposite of.
 
     It matters because the renewal is the ONLY remedy the pre-claim gate can
-    spend: a diagnostic that reports a working renewal as a dead one sends the
-    operator looking for a broken refresh path when what actually happened is a
-    credential whose mint is shorter than this dispatch's own budget.
+    spend: a diagnostic that reports a held expiry as the observed failure sends
+    the operator looking for a broken refresh path when what was measured is a
+    remaining lifetime shorter than this dispatch's own budget.
+
+    AND the truthful report of the advance must not overshoot into a second
+    false observation, which is what the first fix of this arm did. The two
+    readings compare one expiry instant: they cannot say that THIS request
+    caused the change — a concurrent host refresh moves the expiry identically,
+    which is why `expiry` and `outcome.answered` are independent fields — and
+    they cannot say a token was issued, because no issuance is observed
+    anywhere on this route. So the arm is asserted twice over here: positively,
+    that the change is reported; and negatively, that neither the request is
+    named as its cause nor the lifetime called a mint.
     """
     reads = iter(
         (
@@ -345,18 +355,27 @@ def test_a_renewal_that_advanced_the_expiry_without_clearing_the_floor_says_so(
     # One bounded renewal, and no second one spent chasing the shortfall.
     assert spent == ["requested"]
     # The shortfall is reported against the POST-request instant, so the
-    # lifetime named is the renewed one minus the time the request took.
+    # lifetime named is the later reading minus the time the request took.
     assert str(_ADVANCED_REMAINING - _RENEWAL_ELAPSED) in message
     assert str(_REQUIRED_REMAINING) in message
     # The ADVANCE is reported, and the non-advancing wording is absent: the
     # observed failure is a lifetime still short of the floor, not a held expiry.
-    assert "advanced its expiry" in message
+    assert "expiry ADVANCED between the readings" in message
+    assert "POST-request reading" in message
     assert "did not advance" not in message
+    # And the report stops at the observation. The change is NOT attributed to
+    # the request that preceded it, and the lifetime is NOT called a mint: the
+    # evidence is two readings of one instant, which identify neither a cause
+    # nor an issuance.
+    assert "attributed neither to that request nor to any token issuance" in message
+    assert "renewal request advanced" not in message
+    assert "advanced its expiry" not in message
+    assert "mint" not in message
     # Nor is it reported as the third observation, the one where no post-renewal
     # reading was taken at all. The three clauses must share no discriminating
     # vocabulary, because they are read by substring here and by the published
-    # proof record's grader: an `unmeasured` clause phrased around "advanced its
-    # expiry" graded as an advance in the first draft of this fix.
+    # proof record's grader: an `unmeasured` clause phrased around the advance
+    # token graded as an advance in the first draft of this fix.
     assert "was not observed" not in message
     # The three guarantees the unchanged-expiry arm carries hold here too: no
     # authentication verdict from a lifetime reading, no login remedy off one,
@@ -444,7 +463,7 @@ def test_credential_unreadable_on_the_reread_refuses_on_the_measured_lifetime(
     assert "was not observed" in message
     assert "PRE-renewal reading" in message
     assert "did not advance" not in message
-    assert "advanced its expiry" not in message
+    assert "expiry ADVANCED between the readings" not in message
 
 
 def test_early_renewal_is_bounded_and_runs_on_the_credential_source_host(

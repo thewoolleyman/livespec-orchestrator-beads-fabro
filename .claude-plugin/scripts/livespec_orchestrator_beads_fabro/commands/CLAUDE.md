@@ -292,9 +292,12 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   not be taken. The clause was hardcoded to the `unchanged` wording until
   2026-10-05, when the proof capture measured a renewal advancing the expiry
   from 900 to 17970 seconds of remaining lifetime while the refusal still
-  reported no advance: a working renewal reported as a dead one, which points
-  the operator at a broken refresh path rather than at a mint shorter than the
-  run budget. `expiry` and `outcome.answered` are INDEPENDENT and neither
+  reported no advance: an expiry that demonstrably advanced reported as one that
+  stood still, which points the operator at a broken refresh path rather than at
+  the lifetime shortfall actually measured. The `advanced` clause reports that
+  before/after CHANGE and nothing further — not the request as its cause, and
+  not a token issuance — because two readings of one expiry instant are its
+  whole evidence. `expiry` and `outcome.answered` are INDEPENDENT and neither
   implies the other — an expiry can advance while no renewal response came
   back, from a concurrent host refresh — so do not collapse them into one
   field. `CODEX_HOME_ENV` lives here, not beside
