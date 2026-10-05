@@ -281,10 +281,20 @@ def test_a_renewal_answered_but_unadvanced_refuses_without_claiming_auth_failure
     assert "factory host" in message
     # Bounded recovery and a fresh status read precede any human step.
     assert "codex-cred-status" in message
-    assert message.index("codex-cred-refresh") < message.index("codex login")
+    assert "codex-cred-refresh" in message
     # It must not claim an authentication failure it has not measured.
     assert "does NOT by itself establish an authentication failure" in message
-    assert "unrecoverable" not in message
+    # A human login is conditioned on EXPLICIT auth evidence, never on a
+    # non-advancing expiry. The renewal RPC cannot supply that evidence: on the
+    # `account/read` path upstream DISCARDS the refresh outcome
+    # (`workspace_routing.rs` binds nothing from `refresh_token_if_requested`),
+    # so no response on this route can establish an auth failure, and a
+    # diagnostic that sent an operator to `codex login` off a no-advance
+    # reading would be pointing at evidence that cannot exist.
+    assert "cannot report an authentication failure" in message
+    assert "only if Codex explicitly reports an unrecoverable authentication" in message
+    # The retired tail treated "no advance" as the trigger for login.
+    assert "still reports no advance" not in message
 
 
 def test_a_renewal_that_was_never_spent_says_so_and_claims_nothing(
@@ -310,7 +320,11 @@ def test_a_renewal_that_was_never_spent_says_so_and_claims_nothing(
     assert isinstance(result, CodexProjectionRefusal)
     message = result.message
     assert "could not be started" in message
-    assert "never spent" in message
+    # "never spent" overclaims: a timeout, an EOF after the request was written,
+    # or a JSON-RPC error may all have reached the server. What is actually
+    # known is only that no successful renewal response came back.
+    assert "no successful renewal response" in message
+    assert "never spent" not in message
     assert "no evidence about this credential" in message
 
 
