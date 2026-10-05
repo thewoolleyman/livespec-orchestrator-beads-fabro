@@ -14,6 +14,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_projection_posture import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
     pre_dispatch_criteria_refusal,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_credential_gate import (
+    codex_credential_refusal_for_items,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
     EXIT_FAILURE,
     EXIT_PRECONDITION_ERROR,
@@ -98,10 +101,10 @@ def _pre_dispatch_wall_exit(
     selected_candidates: Sequence[WorkItem],
     journal: JournalFile,
 ) -> int | None:
-    """The drain's three pre-dispatch walls, as ONE decision: an exit code, or None.
+    """The drain's four pre-dispatch walls, as ONE decision: an exit code, or None.
 
     The same composition `_dispatcher_run_commands` uses for the single-dispatch
-    path, and for the same two reasons. The three walls share one POSITION and one
+    path, and for the same two reasons. The four walls share one POSITION and one
     guarantee -- each runs after selection and BEFORE admission, so a refused
     candidate is never claimed and no factory run exists to reap -- and reading
     them as one gate keeps the drain's own return count honest, rather than
@@ -121,6 +124,17 @@ def _pre_dispatch_wall_exit(
     candidates is about to materialize would otherwise project it. That declaration
     is repository-level, so one refusal covers the whole wave, while the journal
     records are written per candidate.
+
+    The Codex credential gate follows it (bd-ib-tyqklx) and is the newest of the
+    four for a reason worth recording: its decision was already being made, inside
+    `materialize_overlay`, which `dispatch_one` reaches only AFTER
+    `admit_and_select` has claimed the item -- so a credential that could not be
+    renewed above the floor left an `active` row nobody was working. It is also the
+    only wall that spends a PROVIDER REQUEST, the one bounded in-place renewal, so
+    its position is what decides whether that request's answer can still change
+    what happens: before the claim it can refuse the wave, after it cannot. Like
+    the proof-credential declaration it is a HOST-level fact, so one refusal
+    covers the whole wave rather than reading as one fault per candidate.
 
     The publish-branch reclaim closes the wall and refuses NOTHING (bd-ib-yebrb7):
     a dead run's surviving publish branch is what makes a re-dispatch's
@@ -151,6 +165,12 @@ def _pre_dispatch_wall_exit(
     )
     if credentials_refusal is not None:
         _ = write_stderr(text=credentials_refusal)
+        return EXIT_PRECONDITION_ERROR
+    codex_refusal = codex_credential_refusal_for_items(
+        work_item_ids=[item.id for item in selected_candidates], journal=journal
+    )
+    if codex_refusal is not None:
+        _ = write_stderr(text=f"{codex_refusal}\n")
         return EXIT_PRECONDITION_ERROR
     reclaim_stale_publish_branches(args=args, repo=repo, items=selected_candidates, journal=journal)
     return None
