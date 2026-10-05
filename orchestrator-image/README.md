@@ -901,6 +901,54 @@ host** — the one running the Dispatcher, which reads `$CODEX_HOME/auth.json`
 and projects a non-rotatable snapshot — NOT on the remote factory host that
 executes the run. A snapshot-lifetime refusal says nothing about the factory.
 
+### Host Codex credential identity observation
+
+`codex-cred-status` can additionally record **what the access token's identity
+claims were**, so the next *natural* refresh near the 10-day cliff is
+observable. It is strictly **opt-in**: pass `--observe-identity-state <path>`
+and nothing else changes — the exit code still follows `alarm` alone, and
+without the option the command reads the credential and writes nothing at all.
+
+```bash
+/usr/local/bin/with-livespec-env.sh -- \
+  python3 /data/projects/livespec-orchestrator-beads-fabro/.claude-plugin/scripts/bin/dispatcher.py \
+    codex-cred-status --json \
+    --observe-identity-state ~/.local/state/livespec/codex-identity.json
+```
+
+The `identity_observation` block compares this reading with the preceding one
+and reports the two identifiers **independently**:
+
+- `session_change` — the sign-in-session identifier (`session_id`, or `sid`).
+- `token_change` — the per-token identifier (`jti`).
+
+Each is one of `first-observation`, `unchanged`, `changed`, or `unknown`.
+`unknown` means the comparison **could not be made** — the claim is absent, the
+credential could not be decoded, or the prior record could not be parsed — and
+it is deliberately NOT reported as `unchanged`, because a failure to observe
+and an identifier that genuinely held look identical at the surface and support
+opposite conclusions. `prior_state` says which of `absent`, `readable`, or
+`unreadable` the preceding record was, with `prior_state_detail` naming why.
+
+What the state file holds is only `schema`, `observed_at_epoch`,
+`expires_at_epoch`, and a truncated SHA-256 **fingerprint** per identifier. No
+token, no raw claim value, and nothing copied out of `auth.json`, which this
+command only ever reads. The file is written through a mode-600 temporary and
+an atomic replace, so an update cannot widen the mode and a reader never sees a
+half-written record; its directory is created mode-700. Point the option at a
+host-private path.
+
+**What the observation does NOT establish, and the payload says so in its own
+`limitation` field: identifier continuity is not a validity claim.** An
+unchanged `session_change` is no evidence that an access token issued earlier is
+still accepted, and a changed one is no evidence that it was revoked — only the
+provider can answer that. The observation also invokes no provider and never
+initiates a refresh: it reads the credential the host already has. The
+measurement it IS good for is telling an ordinary refresh-token exchange (the
+session identifier holds while the token identifier moves) from a new sign-in
+(both move). Record several readings across one ~10-day cycle before drawing
+any conclusion from a single pair.
+
 ## Real-work substrate (production)
 
 For routine cross-repo work the Dispatcher runs on the **real-work substrate**:

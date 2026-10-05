@@ -143,6 +143,30 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   onto "not declared" rather than raising, because every consumer is building a
   DIAGNOSTIC naming the wrapper to fix and an exception there would replace an
   actionable refusal with a traceback about the file it was about to name.
+- The OPT-IN host Codex credential identity observation — the passive
+  measurement behind `codex-cred-status --observe-identity-state <path>` —
+  lives in FOUR cohesive modules, and the dependency direction reads bottom-up:
+  `_dispatcher_codex_identity_claims` (PURE: the access token's session and
+  token identifier claims, each as a truncated domain-separated SHA-256
+  fingerprint, via `_dispatcher_projection.decode_codex_access_token_claims`)
+  → `_dispatcher_codex_identity_state` (the mode-600 private state file, read
+  and atomically written) → `_dispatcher_codex_identity_observation` (PURE: the
+  per-identifier comparison, the rendered payload and human lines, and the
+  `IDENTITY_CONTINUITY_LIMITATION` statement) →
+  `_dispatcher_codex_identity_command` (the `codex-cred-status` argparse
+  surface plus the leg that wires the three together).
+  Four properties an editor must not invert. NO raw claim value or token ever
+  leaves the claims module or reaches the state file — the comparison only ever
+  asks whether two readings are EQUAL, which a one-way digest answers exactly
+  as well. `unknown` is a first-class verdict and never collapses into
+  `unchanged`, because a failure to observe and an identifier that genuinely
+  held are indistinguishable at the surface and support opposite conclusions;
+  the same reason an EXISTING-but-unparseable prior record reports `unreadable`
+  rather than `absent`. The observation NEVER invokes a provider, never
+  initiates a refresh, and never mutates `auth.json`; and it never moves the
+  command's exit code, which still follows the lifetime alarm alone, because
+  external monitoring is wired to that code and an observation moving it would
+  change what a page means.
 - The repository-declared proof credentials of
   `SPECIFICATION/contracts.md`'s proof-credential-projection clause live in
   FOUR cohesive modules, and the dependency direction reads bottom-up:
