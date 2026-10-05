@@ -515,6 +515,59 @@ def test_observation_accepts_the_standard_session_claim_spelling(
     )
 
 
+def test_observation_explains_that_identifier_continuity_is_not_a_validity_claim(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    observation_module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_identity_observation"
+    )
+
+    observation = _observe(
+        capsys=capsys,
+        monkeypatch=monkeypatch,
+        state_path=tmp_path / "codex-identity.json",
+        auth_json=_auth_json(jti="token-one"),
+    )
+
+    assert "limitation" in observation
+    limitation = observation["limitation"]
+    assert limitation == observation_module.IDENTITY_CONTINUITY_LIMITATION
+    # The observation measures identifier continuity and nothing else. Whether a
+    # previously issued access token is still accepted is a question only the
+    # provider can answer, so the reading must not be read as answering it.
+    assert "does not establish" in limitation
+    assert "previously issued access token" in limitation
+    assert "remains valid" in limitation
+
+
+def test_human_status_output_explains_the_same_limitation(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    observation_module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_identity_observation"
+    )
+    _pin_host_auth(monkeypatch=monkeypatch, auth_json=_auth_json(jti="token-one"))
+
+    exit_code = _dispatcher().main(
+        argv=[
+            "codex-cred-status",
+            "--observe-identity-state",
+            str(tmp_path / "codex-identity.json"),
+        ]
+    )
+
+    out = capsys.readouterr().out
+    assert exit_code == 0
+    assert "identity_limitation: " in out
+    assert f"identity_limitation: {observation_module.IDENTITY_CONTINUITY_LIMITATION}" in out
+
+
 def test_human_status_output_carries_the_observation_lines(
     *,
     capsys: pytest.CaptureFixture[str],

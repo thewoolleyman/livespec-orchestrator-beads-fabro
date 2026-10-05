@@ -43,3 +43,14 @@ def test_host_fabro_runbook_documents_run_turn_absence_guard() -> None:
     # the window is tuning, it has already changed twice, and pinning the number
     # here makes an operational retune fail CI for no safety benefit.
     assert "DRY_RUN=1" in _IMAGE_RUNBOOK
+
+
+def test_host_runbook_documents_the_codex_identity_observation_and_its_limits() -> None:
+    assert "### Host Codex credential identity observation" in _IMAGE_RUNBOOK
+    assert "--observe-identity-state" in _IMAGE_RUNBOOK
+    # The invocation alone is not enough: an operator reading only the command
+    # would take an unchanged session identifier as proof the tokens issued
+    # under it are still accepted, which is the one inference it cannot carry.
+    assert "identifier continuity is not a validity claim" in _IMAGE_RUNBOOK
+    assert "invokes no provider and never" in _IMAGE_RUNBOOK
+    assert "deliberately NOT reported as `unchanged`" in _IMAGE_RUNBOOK
