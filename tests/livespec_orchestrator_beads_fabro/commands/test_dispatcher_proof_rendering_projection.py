@@ -27,14 +27,27 @@ a repository nobody established was public.
 
 from __future__ import annotations
 
+import base64
 import json
 import subprocess
+from dataclasses import dataclass
 from inspect import signature
 from pathlib import Path
 from typing import Any
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands import _dispatcher_proof_precondition
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_codex_auth,
+    _dispatcher_credentials,
+    _dispatcher_proof_precondition,
+    _dispatcher_sibling_clones,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
+    materialize_overlay,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import GitAuthor
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_assets import (
     RENDERING_AUTHENTICATED_LINK,
     RENDERING_INLINE,
@@ -44,10 +57,77 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition i
     PROOF_ASSETS_RELEASE_TAG_ENV_VAR,
     PROOF_STORE_JOURNAL_STAGE,
     PUBLISH_BRANCH_ENV_VAR,
+    proof_assets_refusal_for_items,
     proof_store_env_lines,
 )
+from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _REPOSITORY = "livespec-orchestrator-beads-fabro"
+
+# The committed run-config shape the overlay rewrites and appends to: the
+# `[workflow] graph` it absolutizes, and the `[run.environment] id` whose env
+# table every projected key lands in.
+_COMMITTED_WORKFLOW_TOML = (
+    "_version = 1\n"
+    "\n"
+    "[workflow]\n"
+    'graph = "workflow.fabro"\n'
+    "\n"
+    "[run.environment]\n"
+    'id = "livespec-ci"\n'
+)
+_MINIMAL_GRAPH = (
+    "digraph ImplementWorkItem {\n"
+    "    graph [\n"
+    '        stall_timeout="7200s"\n'
+    "    ]\n"
+    "\n"
+    "    implement [\n"
+    '        timeout="1800s"\n'
+    "    ]\n"
+    "}\n"
+)
+_FLEET_MANIFEST_TEXT = (
+    "{\n"
+    '  "owner": "thewoolleyman",\n'
+    '  "members": [{ "repo": "livespec", "class": "core" }]\n'
+    "}\n"
+)
+# Bound to a local before being passed as `token=` so ruff's S106 does not read
+# the literal as a hardcoded password.
+_FAKE_GITHUB_TOKEN = "test-github-token"
+
+
+def _seal_overlay_environment(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Close every seam `materialize_overlay` would otherwise reach the host through.
+
+    The fleet manifest, the host Codex credential and the Claude OAuth token are
+    all read from the real host by the materializer, and none of them is what
+    these cases are measuring. Sealing them keeps the test hermetic WITHOUT
+    stubbing anything on the path under test: the proof-store projection runs
+    for real, against the journal the gate wrote for real.
+    """
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
+    monkeypatch.setattr(
+        _dispatcher_sibling_clones, "fetch_fleet_manifest_text", lambda: _FLEET_MANIFEST_TEXT
+    )
+    now = 1_700_000_000
+    monkeypatch.setattr(_dispatcher_credentials.time, "time", lambda: now)
+    expiry = {"exp": now + 100 * 365 * 24 * 3600}
+    payload = base64.urlsafe_b64encode(json.dumps(expiry).encode()).decode().rstrip("=")
+    monkeypatch.setattr(
+        _dispatcher_codex_auth,
+        "read_host_codex_auth",
+        lambda: json.dumps(
+            {
+                "auth_mode": "chatgpt",
+                "tokens": {
+                    "access_token": f"header.{payload}.sig",
+                    "refresh_token": "host-refresh-token",
+                },
+            }
+        ),
+    )
 
 
 def _repo(*, tmp_path: Path) -> Path:
@@ -249,3 +329,171 @@ def test_the_subprocess_guard_fires_when_something_does_shell_out(
 
     with pytest.raises(AssertionError, match="must not shell out"):
         _ = subprocess.run(["true"], check=False)
+
+
+@dataclass(kw_only=True)
+class _VisibilityRunner:
+    """A `CommandRunner` scripted per forge verb, for the gate's two probes.
+
+    `visibility_exit` is the discriminator the gate itself uses between a
+    MEASURED repository and an UNOBSERVABLE forge, so scripting it is what makes
+    the two end-to-end cases below genuinely different measurements rather than
+    two spellings of the same fixture.
+    """
+
+    visibility: str
+    visibility_exit: int = 0
+
+    def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
+        _ = (cwd, timeout_seconds)
+        if argv[:2] == ["gh", "repo"]:
+            return CommandResult(
+                exit_code=self.visibility_exit,
+                stdout=json.dumps({"visibility": self.visibility}),
+                stderr="",
+            )
+        # The standing prerelease already exists, so the gate never creates one.
+        return CommandResult(exit_code=0, stdout=json.dumps({"tagName": "proof-assets"}), stderr="")
+
+
+def _proof_bearing_item() -> WorkItem:
+    """An item whose Definition of Done carries a `factory_captured` assertion.
+
+    The gate probes the forge for THIS item class alone, so a human-attested
+    item would journal nothing and the end-to-end cases would measure a fixture
+    rather than the gate.
+    """
+    return WorkItem(
+        id="bd-ib-pa73qh",
+        type="task",
+        status="ready",
+        title="Project the measured proof-asset rendering",
+        description=(
+            "## Definition of Done\n\n- The overlay carries the measured rendering.\n\n"
+            "References: ## Scenario 132 — A factory-captured proof\n"
+        ),
+        origin="freeform",
+        gap_id=None,
+        rank="a0",
+        assignee=None,
+        depends_on=(),
+        captured_at="2026-10-05T00:00:00Z",
+        resolution=None,
+        reason=None,
+        audit=None,
+        superseded_by=None,
+    )
+
+
+def _governed_repo(*, tmp_path: Path) -> Path:
+    """A governed repository whose DIRECTORY NAME is the journal's repository key.
+
+    Named explicitly rather than left as `tmp_path`'s generated basename: the
+    gate writes `repository=repo.name` and the dispatch reads it back by the
+    same key, so a test whose repository name varied per run would pass on a
+    reader that ignored the key entirely.
+    """
+    repo = tmp_path / _REPOSITORY
+    repo.mkdir()
+    (repo / ".livespec.jsonc").write_text(
+        json.dumps({"livespec-orchestrator-beads-fabro": {"dispatcher": {}}}),
+        encoding="utf-8",
+    )
+    return repo
+
+
+def _overlay_for(*, tmp_path: Path, repo: Path, rendering: str) -> str:
+    """Write the real run-config overlay for `repo` and return its text.
+
+    Goes through `materialize_overlay` rather than the env-line builder alone,
+    because the assertion the capture stage depends on is that the key lands
+    inside the `[environments.<id>.env]` table of the file the sandbox is handed
+    — a line rendered into the right string but appended to the wrong place
+    would satisfy a builder-level assertion and reach no node.
+    """
+    committed = tmp_path / "workflow.toml"
+    committed.write_text(_COMMITTED_WORKFLOW_TOML, encoding="utf-8")
+    (tmp_path / "workflow.fabro").write_text(_MINIMAL_GRAPH, encoding="utf-8")
+    overlay = tmp_path / "overlay.toml"
+    error = materialize_overlay(
+        committed=committed,
+        overlay=overlay,
+        repo=repo,
+        work_item_id="bd-ib-pa73qh",
+        dispatch_id="01M45B6K7CYV6PEGHRV2G842YT",
+        token=lambda: _FAKE_GITHUB_TOKEN,
+        git_author=GitAuthor(name="Operator", email="operator@example.com"),
+        proof_rendering=rendering,
+    )
+    assert error is None
+    return overlay.read_text(encoding="utf-8")
+
+
+def test_a_public_repository_receives_the_inline_rendering_in_its_overlay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End to end: the gate measures PUBLIC, and `proof_capture` is handed `inline`.
+
+    This is the assertion the residual was about. `contracts.md`'s Proof-of-Done
+    record clause waives the inline half only where no API-drivable store
+    satisfies it FOR A REPOSITORY, and the measured release-assets store does
+    satisfy it on a public one — so an image proof rendered as an authenticated
+    link here is outside the ratified text.
+
+    Nothing between the probe and the overlay is stubbed: the gate performs the
+    real visibility read against a scripted forge, journals its own record, and
+    the overlay is read back out of the file the sandbox would be handed.
+    """
+    _seal_overlay_environment(monkeypatch=monkeypatch)
+    repo = _governed_repo(tmp_path=tmp_path)
+    journal = JournalFile(path=tmp_path / "journal.jsonl")
+
+    refusal = proof_assets_refusal_for_items(
+        runner=_VisibilityRunner(visibility="PUBLIC"),
+        repo=repo,
+        items=[_proof_bearing_item()],
+        journal=journal,
+    )
+
+    assert refusal is None
+    rendering = _dispatcher_proof_precondition.journaled_proof_rendering(
+        journal_path=journal.path, repository=repo.name
+    )
+    assert rendering == RENDERING_INLINE
+    overlay_text = _overlay_for(tmp_path=tmp_path, repo=repo, rendering=rendering)
+    assert f'{PROOF_ASSET_RENDERING_ENV_VAR} = "{RENDERING_INLINE}"' in overlay_text
+    assert "[environments.livespec-ci.env]" in overlay_text
+
+
+def test_an_unmeasured_repository_still_falls_back_to_the_authenticated_link(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The control, and the fail-safe arm: no measurement, no key, prompt fallback.
+
+    A forge that will not answer `gh repo view` is UNOBSERVABLE, which the gate
+    journals as such and never reports as a visibility. The overlay then carries
+    no rendering key, and the capture prompt reads an absent variable as
+    `authenticated_link` — the arm that can never publish a reference that leaks.
+
+    Paired with the case above on purpose: alone, either one is consistent with a
+    projection that always renders the same answer.
+    """
+    _seal_overlay_environment(monkeypatch=monkeypatch)
+    repo = _governed_repo(tmp_path=tmp_path)
+    journal = JournalFile(path=tmp_path / "journal.jsonl")
+
+    refusal = proof_assets_refusal_for_items(
+        runner=_VisibilityRunner(visibility="PUBLIC", visibility_exit=1),
+        repo=repo,
+        items=[_proof_bearing_item()],
+        journal=journal,
+    )
+
+    assert refusal is None
+    rendering = _dispatcher_proof_precondition.journaled_proof_rendering(
+        journal_path=journal.path, repository=repo.name
+    )
+    assert rendering == ""
+    overlay_text = _overlay_for(tmp_path=tmp_path, repo=repo, rendering=rendering)
+    assert PROOF_ASSET_RENDERING_ENV_VAR not in overlay_text
+    assert PUBLISH_BRANCH_ENV_VAR in overlay_text
