@@ -346,14 +346,26 @@ def test_observation_reports_a_state_file_it_could_not_write(
     assert "not recorded" in observation["state_write_detail"]
 
 
-def test_observation_treats_prior_state_that_is_not_an_object_as_no_prior_state(
+@pytest.mark.parametrize(
+    "prior_text",
+    [
+        pytest.param("not json at all", id="unparseable"),
+        pytest.param("[]\n", id="not-an-object"),
+        pytest.param(json.dumps({"schema": "something-else", "observed_at_epoch": 1}), id="schema"),
+        pytest.param(
+            json.dumps({"schema": "livespec-codex-identity-observation/v1"}), id="no-when"
+        ),
+    ],
+)
+def test_observation_reports_damaged_prior_state_rather_than_declaring_stability(
     *,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    prior_text: str,
 ) -> None:
     state_path = tmp_path / "codex-identity.json"
-    _ = state_path.write_text("[]\n", encoding="utf-8")
+    _ = state_path.write_text(prior_text, encoding="utf-8")
 
     observation = _observe(
         capsys=capsys,
@@ -362,8 +374,145 @@ def test_observation_treats_prior_state_that_is_not_an_object_as_no_prior_state(
         auth_json=_auth_json(jti="token-one"),
     )
 
-    assert observation["prior_state"] == "absent"
-    assert observation["token_change"] == "first-observation"
+    # Not "absent" — a file IS there — and emphatically not "unchanged": a
+    # record this reading cannot parse is no evidence that anything held.
+    assert observation["prior_state"] == "unreadable"
+    assert observation["session_change"] == "unknown"
+    assert observation["token_change"] == "unknown"
+    assert observation["prior_state_detail"] != ""
+
+
+def test_observation_reports_prior_state_it_cannot_open_as_unreadable(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # A directory at the state path: it exists, so it is not absent, and it
+    # cannot be read, so it is not a prior observation either.
+    state_path = tmp_path / "codex-identity.json"
+    state_path.mkdir()
+
+    observation = _observe(
+        capsys=capsys,
+        monkeypatch=monkeypatch,
+        state_path=state_path,
+        auth_json=_auth_json(jti="token-one"),
+    )
+
+    assert observation["prior_state"] == "unreadable"
+    assert observation["token_change"] == "unknown"
+
+
+def test_observation_state_file_is_private_and_leaves_no_temporary_behind(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_path = tmp_path / "private" / "codex-identity.json"
+
+    for jti in ("token-one", "token-two"):
+        _ = _observe(
+            capsys=capsys,
+            monkeypatch=monkeypatch,
+            state_path=state_path,
+            auth_json=_auth_json(jti=jti),
+        )
+        # Asserted after EVERY write, because an update that replaces the file
+        # is exactly where a restrictive mode gets silently widened.
+        assert state_path.stat().st_mode & 0o777 == 0o600
+        assert state_path.parent.stat().st_mode & 0o777 == 0o700
+        assert sorted(p.name for p in state_path.parent.iterdir()) == [state_path.name]
+
+
+def test_observation_persists_no_raw_token_or_claim_value(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_path = tmp_path / "codex-identity.json"
+    auth_json = _auth_json(session_id="session-secret", jti="token-secret")
+    access_token = json.loads(auth_json)["tokens"]["access_token"]
+
+    observation = _observe(
+        capsys=capsys, monkeypatch=monkeypatch, state_path=state_path, auth_json=auth_json
+    )
+
+    stored_text = state_path.read_text(encoding="utf-8")
+    stored = json.loads(stored_text)
+    assert "session-secret" not in stored_text
+    assert "token-secret" not in stored_text
+    assert access_token not in stored_text
+    assert set(stored) == {
+        "expires_at_epoch",
+        "observed_at_epoch",
+        "schema",
+        "session_fingerprint",
+        "token_fingerprint",
+    }
+    # Only the digests the comparison needs, and the sanitized expiry instant.
+    assert stored["session_fingerprint"] == observation["session_fingerprint"]
+    assert stored["token_fingerprint"] == observation["token_fingerprint"]
+    assert stored["expires_at_epoch"] == _FRESH_EXP
+    assert stored["observed_at_epoch"] == _NOW
+
+
+def test_observation_leaves_the_provider_authentication_file_byte_identical(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    auth_file = codex_home / "auth.json"
+    auth_text = _auth_json(jti="token-one")
+    _ = auth_file.write_text(auth_text, encoding="utf-8")
+    before = auth_file.read_bytes()
+    # The REAL host read, not a stub: the guarantee is about the file this
+    # command opens, so a stubbed reader could not establish it.
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.setattr(_codex_auth().time, "time", lambda: float(_NOW))
+
+    exit_code = _dispatcher().main(
+        argv=[
+            "codex-cred-status",
+            "--json",
+            "--observe-identity-state",
+            str(tmp_path / "codex-identity.json"),
+        ]
+    )
+
+    observation = json.loads(capsys.readouterr().out)["identity_observation"]
+    assert exit_code == 0
+    assert observation["claims_readable"] is True
+    assert auth_file.read_bytes() == before
+
+
+def test_observation_accepts_the_standard_session_claim_spelling(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_path = tmp_path / "codex-identity.json"
+    claims = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_identity_claims"
+    )
+
+    observation = _observe(
+        capsys=capsys,
+        monkeypatch=monkeypatch,
+        state_path=state_path,
+        auth_json=_jwt_auth_json(claims={"exp": _FRESH_EXP, "sid": "session-one", "jti": "t"}),
+    )
+
+    assert claims.SESSION_CLAIM_NAMES == ("session_id", "sid")
+    assert observation["session_fingerprint"] == claims.fingerprint_identity_claim(
+        value="session-one"
+    )
 
 
 def test_human_status_output_carries_the_observation_lines(
