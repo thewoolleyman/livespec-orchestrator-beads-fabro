@@ -1,8 +1,16 @@
 """Comparing one Codex identity reading with the preceding one.
 
 The pure comparison layer: it takes the current fingerprinted reading and the
-remembered one and says, per identifier, whether this is the first observation
-or the identifier held or moved.
+remembered one and says, PER IDENTIFIER, whether this is the first observation,
+whether the identifier held or moved, or whether it could not be compared at
+all.
+
+`unknown` is a first-class verdict rather than a fallback into `unchanged`, and
+that choice is the whole point of this layer. A reading with nothing to compare
+-- a claim the credential does not carry, a credential that could not be decoded
+-- is INDISTINGUISHABLE at the surface from an identifier that genuinely held,
+and the two support opposite conclusions. Reporting the absence as stability
+would manufacture evidence of continuity out of a failure to observe.
 """
 
 from __future__ import annotations
@@ -25,7 +33,7 @@ __all__: list[str] = [
     "identity_observation_payload",
 ]
 
-IdentityChange = Literal["first-observation", "unchanged", "changed"]
+IdentityChange = Literal["first-observation", "unchanged", "changed", "unknown"]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -34,6 +42,7 @@ class CodexIdentityComparison:
 
     prior_state: str
     prior_state_detail: str
+    session_change: IdentityChange
     token_change: IdentityChange
 
 
@@ -47,6 +56,11 @@ def compare_codex_identity(
     return CodexIdentityComparison(
         prior_state=prior.status,
         prior_state_detail=prior.detail,
+        session_change=_change(
+            current=claims.session_fingerprint,
+            prior_value=None if record is None else record.session_fingerprint,
+            prior_present=record is not None,
+        ),
         token_change=_change(
             current=claims.token_fingerprint,
             prior_value=None if record is None else record.token_fingerprint,
@@ -68,6 +82,8 @@ def identity_observation_payload(
         "expires_at_epoch": claims.expires_at_epoch,
         "prior_state": comparison.prior_state,
         "prior_state_detail": comparison.prior_state_detail,
+        "session_change": comparison.session_change,
+        "session_fingerprint": claims.session_fingerprint,
         "state_path": state_path,
         "state_write_detail": state_write_detail,
         "state_written": state_write_detail is None,
@@ -82,6 +98,7 @@ def identity_observation_human_lines(*, observation: dict[str, Any] | None) -> t
         return ()
     return (
         f"identity_prior_state: {observation['prior_state']}",
+        f"identity_session_change: {observation['session_change']}",
         f"identity_token_change: {observation['token_change']}",
         f"identity_state_path: {observation['state_path']}",
     )
@@ -95,4 +112,6 @@ def _change(
 ) -> IdentityChange:
     if not prior_present:
         return "first-observation"
+    if current is None or prior_value is None:
+        return "unknown"
     return "unchanged" if current == prior_value else "changed"

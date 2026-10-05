@@ -1,9 +1,15 @@
 """One-way fingerprints of the host Codex access token's identity claims.
 
 The PURE half of the opt-in credential observation. The host access token is a
-session-bound JWT whose payload carries a per-token identifier, so observing
-that identifier across a natural refresh is what makes a rotation visible
-without ever asking the provider for anything.
+session-bound JWT whose payload carries BOTH a sign-in-session identifier and a
+per-token identifier, so observing the two across a natural refresh is what
+makes a rotation visible without ever asking the provider for anything.
+
+The two are read and compared SEPARATELY on purpose. An ordinary refresh-token
+exchange extends the existing sign-in session and mints a new access token under
+it, so the session identifier holding while the token identifier moves is the
+expected shape; the session identifier moving too would be a different event. A
+single verdict over both would erase exactly that distinction.
 
 Nothing here returns a raw claim value. Every identifier leaves this module as
 a truncated SHA-256 over a domain-separated string, because the observation is
@@ -26,6 +32,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [
+    "SESSION_CLAIM_NAMES",
     "TOKEN_CLAIM_NAMES",
     "CodexIdentityClaims",
     "fingerprint_identity_claim",
@@ -39,6 +46,11 @@ _FINGERPRINT_DOMAIN = "livespec-codex-identity/v1"
 # genuinely different identifiers read as one unchanged observation.
 _FINGERPRINT_HEX_LENGTH = 32
 
+# The sign-in-session identifier. `session_id` is what a live host `auth.json`
+# was measured carrying; `sid` is the standard spelling for the same fact, and
+# accepting it costs one tuple element while a rename upstream would otherwise
+# make every session reading read as absent forever.
+SESSION_CLAIM_NAMES = ("session_id", "sid")
 # The per-token identifier, spelled as the observed decode of a live host
 # `auth.json` spells it.
 TOKEN_CLAIM_NAMES = ("jti",)
@@ -56,6 +68,7 @@ class CodexIdentityClaims:
     """
 
     readable: bool
+    session_fingerprint: str | None
     token_fingerprint: str | None
     expires_at_epoch: int | None
 
@@ -83,6 +96,7 @@ def read_codex_identity_claims(*, source_auth_json: str | None) -> CodexIdentity
         return _unreadable()
     return CodexIdentityClaims(
         readable=True,
+        session_fingerprint=_claim_fingerprint(claims=claims, names=SESSION_CLAIM_NAMES),
         token_fingerprint=_claim_fingerprint(claims=claims, names=TOKEN_CLAIM_NAMES),
         expires_at_epoch=_int_claim(claims=claims, name="exp"),
     )
@@ -106,4 +120,9 @@ def _int_claim(*, claims: dict[str, Any], name: str) -> int | None:
 
 
 def _unreadable() -> CodexIdentityClaims:
-    return CodexIdentityClaims(readable=False, token_fingerprint=None, expires_at_epoch=None)
+    return CodexIdentityClaims(
+        readable=False,
+        session_fingerprint=None,
+        token_fingerprint=None,
+        expires_at_epoch=None,
+    )
