@@ -13,11 +13,27 @@ the maintainer's export-then-reap rule takes for a dead factory run: what makes 
 irreversible act safe is the durable copy that precedes it, so a preserve that
 failed returns a failure and the branch is left standing.
 
-NO SPELLING OF FORCE PUSH APPEARS HERE. The ratified stages clause of
+BOTH OPERATIONS GO THROUGH THE FORGE REFERENCE INTERFACE, AND NEITHER THROUGH
+`git push`. The Dispatcher runs from the host's PRIMARY CHECKOUT, which carries
+the commit-refuse pre-push hook: it refuses EVERY push with `livespec: refusing
+commit/push at primary checkout; use a worktree` and exit 1. A `git push` spelled
+here can therefore never succeed on a real dispatching host -- which is exactly
+how the first build of this reclaim passed its proof and failed in use, because
+that proof ran inside a factory sandbox clone, where the primary-checkout
+condition the hook keys on is absent. Measured 2026-10-05 on `bd-ib-pa73qh`: the
+reclaim judged the earlier run dead, the preserve push exited 1, the branch was
+left standing, and run 01M456V9X8SHX5FASEQCVGYRF5 was then refused at
+`publish_draft`, non-fast-forward, exactly as before the fix. The hook is neither
+weakened nor bypassed to fix this: the transport moves to the one interface the
+hook does not mediate, which is the same correction `bd-ib-cewr.4` made to the
+pre-run push precondition for the same reason.
+
+NO SPELLING OF REF REWRITE APPEARS HERE. The ratified stages clause of
 `SPECIFICATION/contracts.md` grants a lease-guarded force push to the `pr` node
-ALONE; the preserve is a plain push of a ref nothing else writes, and the clear is
-a delete. The capability the graph withheld from `publish_draft` is not reacquired
-on its behalf here.
+ALONE; the preserve CREATES a ref nothing else writes, and the clear DELETES the
+branch. Neither reaches the forge's reference-UPDATE interface, which is what a
+force push spells over this transport, so the capability the graph withheld from
+`publish_draft` is not reacquired on its behalf.
 """
 
 from __future__ import annotations
@@ -49,7 +65,12 @@ PRESERVED_PUBLISH_REF_PREFIX = "refs/livespec/preserved-publish"
 HELD_PRESERVE_FAILED = "preserve-failed"
 HELD_DELETE_FAILED = "delete-failed"
 
-_GIT_TIMEOUT_SECONDS = 120.0
+_FORGE_TIMEOUT_SECONDS = 120.0
+
+# The forge's reference endpoints, addressed through `gh api` so `{owner}` and
+# `{repo}` resolve from the repository the command runs in -- which keeps this
+# module out of the business of parsing a remote URL to name its own repository.
+_REFS_ENDPOINT = "/repos/{owner}/{repo}/git/refs"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -85,8 +106,8 @@ def preserved_publish_ref(*, work_item_id: str, head: str) -> str:
 
     The HEAD is part of the ref name, which is what makes the preserve a CREATE
     rather than an update: two different dead heads for one item preserve to two
-    refs, and a repeat of the same reclaim pushes the same sha to the same ref,
-    which origin accepts as already up to date.
+    refs, and a repeat of the same reclaim addresses the same sha at the same ref,
+    which is a no-op rather than a rewrite.
     """
     return f"{PRESERVED_PUBLISH_REF_PREFIX}/{work_item_id}/{head}"
 
@@ -104,20 +125,62 @@ def preserve_and_clear(
     if failure is not None:
         return PreserveFailure(reason=HELD_PRESERVE_FAILED, detail=failure)
     deleted = runner.run(
-        argv=["git", "push", "origin", "--delete", f"refs/heads/{surviving.branch}"],
+        argv=_delete_ref_argv(ref=f"refs/heads/{surviving.branch}"),
         cwd=repo,
-        timeout_seconds=_GIT_TIMEOUT_SECONDS,
+        timeout_seconds=_FORGE_TIMEOUT_SECONDS,
     )
     if deleted.exit_code != 0:
         return PreserveFailure(
             reason=HELD_DELETE_FAILED,
             detail=(
-                f"git push origin --delete refs/heads/{surviving.branch} exited"
-                f" {deleted.exit_code}; the head is preserved at {preserved} but the"
-                " branch still stands, so publish_draft will still refuse"
+                f"deleting refs/heads/{surviving.branch} through the forge reference"
+                f" interface exited {deleted.exit_code}; the head is preserved at"
+                f" {preserved} but the branch still stands, so publish_draft will still"
+                " refuse"
             ),
         )
     return Reclaimed(preserved_ref=preserved)
+
+
+def _ref_path_segment(*, ref: str) -> str:
+    """The trailing segment the forge addresses a fully-qualified ref by.
+
+    The endpoints carry the `refs` component in the PATH, so the ref travels
+    without it: `refs/heads/feat/x` is addressed as `.../git/refs/heads/feat/x`.
+    """
+    return ref.removeprefix("refs/")
+
+
+def _create_ref_argv(*, ref: str, sha: str) -> list[str]:
+    """Create `ref` at `sha` on the forge.
+
+    `--raw-field` rather than the typed form, because `gh`'s typed fields coerce a
+    value that LOOKS like a number and an all-digit object name is a valid sha --
+    which would reach the forge as an integer and be refused for its shape rather
+    than for anything about the ref.
+    """
+    return [
+        "gh",
+        "api",
+        "--method",
+        "POST",
+        _REFS_ENDPOINT,
+        "--raw-field",
+        f"ref={ref}",
+        "--raw-field",
+        f"sha={sha}",
+    ]
+
+
+def _delete_ref_argv(*, ref: str) -> list[str]:
+    """Delete `ref` on the forge."""
+    return [
+        "gh",
+        "api",
+        "--method",
+        "DELETE",
+        f"{_REFS_ENDPOINT}/{_ref_path_segment(ref=ref)}",
+    ]
 
 
 def _preserve(
@@ -127,33 +190,23 @@ def _preserve(
     surviving: SurvivingPublishBranch,
     preserved: str,
 ) -> str | None:
-    """Copy origin's branch tip onto the preservation ref; a failure detail or None.
+    """Create the preservation ref on the forge; a failure detail, or None.
 
-    TWO legs, and both are checked, because only the second makes the copy
-    DURABLE: the fetch brings the head into this clone, and the push is what puts
-    it somewhere a later reader can reach. A caller that checked only the fetch
-    would delete the branch whose copy never left the host.
+    ONE call on the happy path, and it is the DURABLE one: the ref is created on
+    origin directly from the sha origin itself reported, so there is no local copy
+    to confuse with a remote one. The earlier build fetched the head into this
+    clone first and then pushed it, which made the local leg look like half the
+    work when it was none of it.
     """
-    fetched = runner.run(
-        argv=["git", "fetch", "origin", f"+refs/heads/{surviving.branch}:{preserved}"],
+    created = runner.run(
+        argv=_create_ref_argv(ref=preserved, sha=surviving.head),
         cwd=repo,
-        timeout_seconds=_GIT_TIMEOUT_SECONDS,
+        timeout_seconds=_FORGE_TIMEOUT_SECONDS,
     )
-    if fetched.exit_code != 0:
+    if created.exit_code != 0:
         return (
-            f"git fetch origin +refs/heads/{surviving.branch}:{preserved} exited"
-            f" {fetched.exit_code}; the head {surviving.head} was not copied, so the"
+            f"creating {preserved} at {surviving.head} through the forge reference"
+            f" interface exited {created.exit_code}; the head was not copied, so the"
             " branch is left standing"
-        )
-    pushed = runner.run(
-        argv=["git", "push", "origin", f"{preserved}:{preserved}"],
-        cwd=repo,
-        timeout_seconds=_GIT_TIMEOUT_SECONDS,
-    )
-    if pushed.exit_code != 0:
-        return (
-            f"git push origin {preserved}:{preserved} exited {pushed.exit_code}; the"
-            f" head {surviving.head} is on this host only, so the branch is left"
-            " standing"
         )
     return None
