@@ -19,9 +19,11 @@ facts: which branch its draft pull request rides, which release tag to upload to
 and whether this repository's record references images inline or by authenticated
 link. All three are resolved HOST-side and projected as environment variables,
 because the third is a per-repository MEASUREMENT and a sandbox that re-derived it
-would waive the inline half on repositories that support it. The capture prompt
-refuses rather than guessing when a value is absent, which is why no default is
-projected.
+would waive the inline half on repositories that support it. No DEFAULT is ever
+projected, because the capture prompt owns what an absent value means: it refuses
+outright for the release tag, and for the rendering it takes the authenticated-link
+form and SAYS it took the fallback -- so a projected placeholder would be read as a
+measurement nobody made.
 
 WHY THE PUBLISH BRANCH RIDES THE ENVIRONMENT RATHER THAN A WORKFLOW INPUT. The
 `publish_draft` node is a COMMAND node, so it cannot read the rendered goal the
@@ -98,10 +100,10 @@ def publish_branch_for(*, work_item_id: str) -> str:
     """The publish branch one work-item's run publishes under.
 
     The ONE derivation of this name. `build_plan` hangs it on the plan for the
-    seams that read the plan, and the run-config overlay calls this directly
-    because it is reached from a path that is already at its file-size ceiling and
-    cannot take another threaded argument. Two CALL SITES of one function is the
-    resolve-once discipline; two spellings of `feat/<id>` would not be.
+    seams that read the plan, and the run-config overlay calls this directly rather
+    than taking the plan's copy as a threaded argument. Two CALL SITES of one
+    function is the resolve-once discipline; two spellings of `feat/<id>` would not
+    be.
     """
     return f"feat/{work_item_id}"
 
@@ -235,6 +237,14 @@ def proof_store_env_lines(
     projection reads that journaled answer out of `journal_path`. Re-probing here
     would be a second measurement that could disagree with the recorded one, and
     nothing downstream could tell which answer the capture stage had received.
+
+    AN UNMEASURED REPOSITORY GETS NO THIRD KEY AT ALL, which is a deliberate absence
+    rather than an omission. `prompts/proof-capture.md` reads the key, falls back to
+    `authenticated_link` when it is ABSENT, and REPORTS having taken that fallback --
+    which is what lets a reader of the record tell a fallback from a MEASURED waiver.
+    Projecting an empty value would satisfy every shell emptiness test while
+    destroying that distinction: every unprobed repository's record would then read
+    as a measured waiver, and nobody could tell which ones had been probed.
     """
     tag = proof_assets_release_tag(block=dispatcher_block(cwd=repo))
     lines = (
@@ -245,6 +255,8 @@ def proof_store_env_lines(
         return lines
     lines += f"{PROOF_ASSETS_RELEASE_TAG_ENV_VAR} = {json.dumps(tag)}\n"
     rendering = journaled_proof_rendering(journal_path=journal_path, repository=repo.name)
+    if not rendering:
+        return lines
     return lines + f"{PROOF_ASSET_RENDERING_ENV_VAR} = {json.dumps(rendering)}\n"
 
 

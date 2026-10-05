@@ -34,7 +34,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     materialize_overlay,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import GitAuthor
-from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_assets import RENDERING_INLINE
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_assets import (
+    RENDERING_AUTHENTICATED_LINK,
+    RENDERING_INLINE,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (
     PROOF_ASSET_RENDERING_ENV_VAR,
     PROOF_ASSETS_RELEASE_TAG_ENV_VAR,
@@ -285,3 +288,76 @@ def test_resolving_the_rendering_takes_no_forge_round_trip(
     # spawn.
     with pytest.raises(AssertionError, match="no subprocess"):
         _refuse_to_spawn()
+
+
+def test_a_public_repository_gets_inline_and_an_unmeasured_one_gets_the_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Three overlays, one journal: measured-public, measured-private, unmeasured.
+
+    THE UNMEASURED ARM IS THE SHARP ONE, and it is an ABSENCE rather than a value.
+    `prompts/proof-capture.md` reads the key and says outright that when the variable
+    is ABSENT the capture stage takes `authenticated_link` and REPORTS having taken
+    the fallback -- which is what lets a reader tell a fallback from a measured
+    waiver. Projecting an empty value would satisfy the shell test while destroying
+    that distinction: the stage could no longer say whether a measurement had
+    happened, so every private repository's record would read as a measured waiver.
+
+    The measured-private arm is the control that makes the absence meaningful. All
+    three read one journal, so the only thing differing between them is which
+    repository the overlay is projected for.
+    """
+    _hermetic_overlay_inputs(monkeypatch=monkeypatch)
+    committed = _committed_workflow(root=tmp_path / "workflow")
+    journal = tmp_path / "journal.jsonl"
+    _ = journal.write_text(
+        "".join(
+            json.dumps(
+                {
+                    "stage": "proof-asset-store",
+                    "work_item_id": _ITEM_ID,
+                    **proof_store_journal_record(
+                        repository=repository,
+                        tag="proof-assets",
+                        visibility=visibility,
+                        rendering=rendering,
+                        created=False,
+                    ),
+                }
+            )
+            + "\n"
+            for repository, visibility, rendering in (
+                ("public-repo", "PUBLIC", RENDERING_INLINE),
+                ("private-repo", "private", RENDERING_AUTHENTICATED_LINK),
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    def _overlay_for(*, repository: str) -> str:
+        overlay = tmp_path / f"{repository}-overlay.toml"
+        error = materialize_overlay(
+            committed=committed,
+            overlay=overlay,
+            repo=tmp_path / repository,
+            work_item_id=_ITEM_ID,
+            dispatch_id=f"disp-{repository}",
+            token=lambda: _FAKE_GITHUB_TOKEN,
+            git_author=_GIT_AUTHOR,
+            journal_path=journal,
+        )
+        assert error is None
+        return overlay.read_text(encoding="utf-8")
+
+    public_overlay = _overlay_for(repository="public-repo")
+    private_overlay = _overlay_for(repository="private-repo")
+    unmeasured_overlay = _overlay_for(repository="unmeasured-repo")
+
+    assert f'{PROOF_ASSET_RENDERING_ENV_VAR} = "{RENDERING_INLINE}"' in public_overlay
+    assert f'{PROOF_ASSET_RENDERING_ENV_VAR} = "{RENDERING_AUTHENTICATED_LINK}"' in private_overlay
+    assert PROOF_ASSET_RENDERING_ENV_VAR not in unmeasured_overlay
+    # The other two keys are unconditional, so their presence here is what shows the
+    # absence above is the rendering key alone rather than a projection that failed.
+    assert f'{PUBLISH_BRANCH_ENV_VAR} = "feat/{_ITEM_ID}"' in unmeasured_overlay
+    assert f'{PROOF_ASSETS_RELEASE_TAG_ENV_VAR} = "proof-assets"' in unmeasured_overlay
