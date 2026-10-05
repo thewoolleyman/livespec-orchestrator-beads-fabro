@@ -155,7 +155,7 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `IDENTITY_CONTINUITY_LIMITATION` statement) →
   `_dispatcher_codex_identity_command` (the `codex-cred-status` argparse
   surface plus the leg that wires the three together).
-  Five properties an editor must not invert. NO raw claim value or token ever
+  Seven properties an editor must not invert. NO raw claim value or token ever
   leaves the claims module or reaches the state file — the comparison only ever
   asks whether two readings are EQUAL, which a one-way digest answers exactly
   as well. `unknown` is a first-class verdict and never collapses into
@@ -169,9 +169,19 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   change what a page means. And an UNREADABLE reading is WITHHELD rather than
   written: recording it would overwrite the last comparable fingerprints, so one
   momentarily unreadable credential would leave every later reading comparing
-  against the blip — which is why `state_write` names three outcomes
-  (`recorded` / `withheld` / `failed`) instead of carrying a boolean that cannot
-  tell a deliberate withholding from a broken state path.
+  against the blip — which is why `state_write` names four outcomes
+  (`recorded` / `withheld` / `refused` / `failed`) instead of carrying a boolean
+  that cannot tell a deliberate withholding from a broken state path.
+  A DESTINATION resolving to the host credential is REFUSED before anything is
+  read or written — by exact path, `.`/`..` alias, symlinked parent, or hard
+  link, and on the `<destination>.tmp` staging path too, which the writer
+  unlinks before opening. The comparison uses the resolved source path threaded
+  down from `host_codex_auth_path`, never one derived here: a guard comparing
+  against a separately-derived path guards a guess, and the defect this fixes
+  overwrote a credential with observation state. And an identifier the CURRENT
+  reading could not see is `unknown` even on a first reading — the
+  current-absence test runs BEFORE the prior-state test in `_change`, because
+  `first-observation` asserts that an identifier was seen and recorded.
 - The repository-declared proof credentials of
   `SPECIFICATION/contracts.md`'s proof-credential-projection clause live in
   FOUR cohesive modules, and the dependency direction reads bottom-up:

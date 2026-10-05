@@ -61,3 +61,18 @@ def test_host_runbook_distinguishes_a_withheld_write_from_a_failed_one() -> None
     # mechanism protecting the comparison series, `failed` is a broken path.
     assert "`withheld` is the mechanism protecting the series, not a fault" in _IMAGE_RUNBOOK
     assert "`failed` IS a fault" in _IMAGE_RUNBOOK
+
+
+def test_host_runbook_documents_the_credential_destination_refusal() -> None:
+    # The destructive case: an observation destination that IS the credential.
+    assert "**The destination may not be the credential file.**" in _IMAGE_RUNBOOK
+    assert "symlinked parent" in _IMAGE_RUNBOOK
+    assert "hard link" in _IMAGE_RUNBOOK
+    # Tokens chosen so no line wrap can straddle them — a literal
+    # reconstructed from the prose rather than copied out of it is a
+    # check that can only fail silently.
+    assert "`<destination>.tmp`" in _IMAGE_RUNBOOK
+    assert "unlinked before anything is opened" in _IMAGE_RUNBOOK
+    # And the `unknown`-not-`first-observation` rule for an unseen identifier.
+    assert "`unknown` even on a first reading" in _IMAGE_RUNBOOK
+    assert "not UTF-8" in _IMAGE_RUNBOOK
