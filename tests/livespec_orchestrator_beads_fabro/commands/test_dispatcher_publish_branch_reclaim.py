@@ -53,6 +53,16 @@ from typing import Any
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_liveness import (
+    HELD_FACTORY_UNOBSERVABLE,
+    HELD_LIVE_RUN,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_preserve import (
+    HELD_DELETE_FAILED,
+    HELD_PRESERVE_FAILED,
+    PRESERVED_PUBLISH_REF_PREFIX,
+    preserved_publish_ref,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_reclaim"
@@ -63,6 +73,16 @@ _MODULE_PATH = (
     / "livespec_orchestrator_beads_fabro"
     / "commands"
     / "_dispatcher_publish_branch_reclaim.py"
+)
+# The graph whose `publish_draft` node still owns the refusal this valve's hold
+# arm leaves in place.
+_WORKFLOW_PATH = (
+    Path(__file__).resolve().parents[3]
+    / ".claude-plugin"
+    / ".fabro"
+    / "workflows"
+    / "implement-work-item"
+    / "workflow.fabro"
 )
 
 _ITEM_ID = "bd-ib-qm4luz"
@@ -126,6 +146,30 @@ def _ls_remote(*, head: str = _DEAD_HEAD) -> CommandResult:
     return CommandResult(
         exit_code=0,
         stdout=f"{_OTHER_BRANCH_LINE}\n{head}\trefs/heads/{_BRANCH}\n",
+        stderr="",
+    )
+
+
+def _ps(*, runs: Sequence[tuple[str, str, str | None]]) -> CommandResult:
+    """A `fabro ps -a --json` answer: one `(run id, status, item named in the goal)`.
+
+    The payload SHAPE is the pinned build's — a bare list of run records whose
+    status is a nested `{"kind": ...}` — so the rows reach the liveness read
+    through the same parser production uses. A row whose item is None carries a
+    goal naming nobody, which is how an unattributable run looks.
+    """
+    return CommandResult(
+        exit_code=0,
+        stdout=json.dumps(
+            [
+                {
+                    "run_id": run_id,
+                    "status": {"kind": status},
+                    "goal": "" if item_id is None else f"Work-item: {item_id}\n",
+                }
+                for run_id, status, item_id in runs
+            ]
+        ),
         stderr="",
     )
 
@@ -231,7 +275,7 @@ def test_a_dead_runs_publish_branch_is_preserved_by_reference_then_cleared(
         runner=runner,
     )
 
-    preserved = module.preserved_publish_ref(work_item_id=_ITEM_ID, head=_DEAD_HEAD)
+    preserved = preserved_publish_ref(work_item_id=_ITEM_ID, head=_DEAD_HEAD)
     assert preserved == f"refs/livespec/preserved-publish/{_ITEM_ID}/{_DEAD_HEAD}"
     assert _issued(runner=runner, needle="ls-remote") == [
         ["git", "ls-remote", "origin", f"refs/heads/{_BRANCH}"]
@@ -364,7 +408,7 @@ def test_a_preserve_that_failed_leaves_the_branch_standing(tmp_path: Path) -> No
     failed = CommandResult(exit_code=1, stdout="", stderr="")
     # The local fetch failing, then the push of the preserved ref to origin
     # failing: two different ways the copy can fail to become durable.
-    failures = ({"fetch": failed}, {f"push origin {module.PRESERVED_PUBLISH_REF_PREFIX}": failed})
+    failures = ({"fetch": failed}, {f"push origin {PRESERVED_PUBLISH_REF_PREFIX}": failed})
 
     for index, answers in enumerate(failures):
         runner = _Runner(answers={"ls-remote": _ls_remote(), **answers})
@@ -384,7 +428,7 @@ def test_a_preserve_that_failed_leaves_the_branch_standing(tmp_path: Path) -> No
         assert _issued(runner=runner, needle="--delete") == []
         records = _records(journal=journal)
         assert [record["stage"] for record in records] == [module.PUBLISH_BRANCH_RECLAIM_HELD_STAGE]
-        assert records[0]["reason"] == module.HELD_PRESERVE_FAILED
+        assert records[0]["reason"] == HELD_PRESERVE_FAILED
         assert records[0]["head"] == _DEAD_HEAD
 
 
@@ -416,8 +460,129 @@ def test_a_delete_that_failed_is_reported_rather_than_read_as_a_reclaim(
 
     records = _records(journal=journal)
     assert [record["stage"] for record in records] == [module.PUBLISH_BRANCH_RECLAIM_HELD_STAGE]
-    assert records[0]["reason"] == module.HELD_DELETE_FAILED
+    assert records[0]["reason"] == HELD_DELETE_FAILED
     assert records[0]["branch"] == _BRANCH
+
+
+def test_a_publish_branch_whose_run_is_still_live_is_not_reclaimed(tmp_path: Path) -> None:
+    """The control for the reclaim: a LIVE run keeps its branch, and keeps the refusal.
+
+    A valve that cleared every surviving publish branch would pass every reclaim
+    assertion in this file and would delete the branch a running publish is about
+    to push to. So the factory is ASKED, and a non-terminal run attributable to
+    this item holds the reclaim — which leaves `publish_draft` to refuse exactly
+    as it does today, under its own sentinel and routed to `needs_human`, and that
+    refusal is asserted against the graph rather than assumed.
+
+    Both attribution legs are exercised, because they fail in opposite
+    directions: the journaled run id is the strong one, and the goal-text leg
+    catches a run created in the window before the Dispatcher stamped its id —
+    missing it would reclaim a live run's branch.
+    """
+    module = _reclaim()
+    journaled_live = _ps(runs=((f"01M44{_ITEM_ID}", "running", None),))
+    goal_text_live = _ps(runs=(("01M44UNSTAMPEDRUNAAAAAAAAAA", "blocked", _ITEM_ID),))
+
+    for index, ps in enumerate((journaled_live, goal_text_live)):
+        runner = _Runner(answers={"ls-remote": _ls_remote(), " ps ": ps})
+        journal = _journal_after_a_previous_dispatch(
+            tmp_path=tmp_path, name=f"live-{index}.jsonl", item_ids=(_ITEM_ID,)
+        )
+
+        module.reclaim_stale_publish_branch(
+            args=_args(),
+            repo=tmp_path,
+            work_item_id=_ITEM_ID,
+            journal=journal,
+            journal_path=journal.path,
+            runner=runner,
+        )
+
+        assert _issued(runner=runner, needle="fetch") == []
+        assert _issued(runner=runner, needle="push") == []
+        records = _records(journal=journal)
+        assert [record["stage"] for record in records] == [module.PUBLISH_BRANCH_RECLAIM_HELD_STAGE]
+        assert records[0]["reason"] == HELD_LIVE_RUN
+        assert records[0]["live_run_ids"] != []
+        assert records[0]["head"] == _DEAD_HEAD
+
+    # The hold leaves the refusal in place, so the refusal must still exist: the
+    # push sentinel, and the arm that routes it to a human rather than onward.
+    graph = _WORKFLOW_PATH.read_text(encoding="utf-8")
+    assert "LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED" in graph
+    assert 'publish_draft -> needs_human [label="Blocked", condition="outcome=failed"]' in graph
+
+
+def test_an_unaskable_factory_holds_the_reclaim_rather_than_assuming_death(
+    tmp_path: Path,
+) -> None:
+    """A liveness gauge that cannot see must not authorize a deletion.
+
+    This is the arm where fail-open is cheapest to write and most expensive to
+    run: `fabro ps` not answering is indistinguishable, from here, from a factory
+    with no runs at all, and treating it as the latter would delete a live run's
+    branch and leave a record that reads exactly like a healthy reclaim.
+    """
+    module = _reclaim()
+    runner = _Runner(
+        answers={
+            "ls-remote": _ls_remote(),
+            " ps ": CommandResult(exit_code=1, stdout="", stderr="connection refused"),
+        }
+    )
+    journal = _journal_after_a_previous_dispatch(tmp_path=tmp_path, item_ids=(_ITEM_ID,))
+
+    module.reclaim_stale_publish_branch(
+        args=_args(),
+        repo=tmp_path,
+        work_item_id=_ITEM_ID,
+        journal=journal,
+        journal_path=journal.path,
+        runner=runner,
+    )
+
+    assert _issued(runner=runner, needle="push") == []
+    records = _records(journal=journal)
+    assert [record["reason"] for record in records] == [HELD_FACTORY_UNOBSERVABLE]
+    assert records[0]["live_run_ids"] == []
+
+
+def test_a_terminal_run_of_another_item_does_not_hold_this_items_reclaim(
+    tmp_path: Path,
+) -> None:
+    """The liveness read, directly: only this item's NON-TERMINAL runs count.
+
+    Two ways a `ps` row is irrelevant, and each would hold every reclaim on the
+    factory if it were read as live: a terminal run of this very item — which is
+    precisely the dead run whose branch is being reclaimed — and a running run
+    belonging to somebody else.
+    """
+    module = _reclaim()
+    runner = _Runner(
+        answers={
+            "ls-remote": _ls_remote(),
+            " ps ": _ps(
+                runs=(
+                    (f"01M44{_ITEM_ID}", "failed", None),
+                    ("01M44OTHERITEMRUNAAAAAAAAAA", "running", "bd-ib-somebody-else"),
+                )
+            ),
+        }
+    )
+    journal = _journal_after_a_previous_dispatch(tmp_path=tmp_path, item_ids=(_ITEM_ID,))
+
+    module.reclaim_stale_publish_branch(
+        args=_args(),
+        repo=tmp_path,
+        work_item_id=_ITEM_ID,
+        journal=journal,
+        journal_path=journal.path,
+        runner=runner,
+    )
+
+    assert [record["stage"] for record in _records(journal=journal)] == [
+        module.PUBLISH_BRANCH_RECLAIM_STAGE
+    ]
 
 
 def test_the_wall_entry_point_reclaims_once_per_candidate(
