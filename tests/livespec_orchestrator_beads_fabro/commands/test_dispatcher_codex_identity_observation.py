@@ -109,6 +109,92 @@ def test_opt_in_observation_compares_a_changed_access_token_with_the_prior_one(
     assert second["token_fingerprint"] != first["token_fingerprint"]
 
 
+def test_observation_reports_the_session_and_token_identifiers_independently(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_path = tmp_path / "codex-identity.json"
+
+    _ = _observe(
+        capsys=capsys,
+        monkeypatch=monkeypatch,
+        state_path=state_path,
+        auth_json=_auth_json(session_id="session-one", jti="token-one"),
+    )
+    # The signature of an ordinary refresh-token exchange: the sign-in session
+    # is extended while a brand-new access token is minted under it.
+    rotated = _observe(
+        capsys=capsys,
+        monkeypatch=monkeypatch,
+        state_path=state_path,
+        auth_json=_auth_json(session_id="session-one", jti="token-two"),
+    )
+    reauthenticated = _observe(
+        capsys=capsys,
+        monkeypatch=monkeypatch,
+        state_path=state_path,
+        auth_json=_auth_json(session_id="session-two", jti="token-three"),
+    )
+
+    assert "session_change" in rotated
+    assert rotated["session_change"] == "unchanged"
+    assert rotated["token_change"] == "changed"
+    assert reauthenticated["session_change"] == "changed"
+    assert reauthenticated["token_change"] == "changed"
+
+
+def test_observation_reports_an_absent_claim_as_unknown_rather_than_unchanged(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_path = tmp_path / "codex-identity.json"
+
+    _ = _observe(
+        capsys=capsys,
+        monkeypatch=monkeypatch,
+        state_path=state_path,
+        auth_json=_auth_json(session_id="session-one", jti="token-one"),
+    )
+    # A credential that decodes but carries no session claim: the identifier
+    # cannot be compared, which is not the same fact as it having held.
+    observation = _observe(
+        capsys=capsys,
+        monkeypatch=monkeypatch,
+        state_path=state_path,
+        auth_json=_jwt_auth_json(claims={"exp": _FRESH_EXP, "jti": "token-one"}),
+    )
+
+    assert observation["session_change"] == "unknown"
+    assert observation["token_change"] == "unchanged"
+
+
+def test_observation_reports_unreadable_claims_as_unknown_on_both_identifiers(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_path = tmp_path / "codex-identity.json"
+
+    _ = _observe(
+        capsys=capsys,
+        monkeypatch=monkeypatch,
+        state_path=state_path,
+        auth_json=_auth_json(session_id="session-one", jti="token-one"),
+    )
+    observation = _observe(
+        capsys=capsys, monkeypatch=monkeypatch, state_path=state_path, auth_json=None
+    )
+
+    assert observation["claims_readable"] is False
+    assert observation["session_change"] == "unknown"
+    assert observation["token_change"] == "unknown"
+
+
 def test_observation_reports_a_held_access_token_identifier_as_unchanged(
     *,
     capsys: pytest.CaptureFixture[str],
@@ -296,6 +382,7 @@ def test_human_status_output_carries_the_observation_lines(
     out = capsys.readouterr().out
     assert exit_code == 0
     assert "identity_prior_state: absent" in out
+    assert "identity_session_change: first-observation" in out
     assert "identity_token_change: first-observation" in out
     assert f"identity_state_path: {state_path}" in out
 
