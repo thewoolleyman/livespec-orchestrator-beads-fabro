@@ -59,9 +59,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attribution im
     MergingDispatch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import (
-    PROOF_RECORD_EVIDENCE_LEG,
     ProofLeg,
     read_proof_leg,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_leg import (
+    PROOF_RECORD_EVIDENCE_LEG,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import VERDICT_VERIFIED
 

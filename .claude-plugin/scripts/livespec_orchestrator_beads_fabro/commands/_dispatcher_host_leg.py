@@ -52,9 +52,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_build_identity import (
     BuildIdentity,
 )
@@ -75,9 +73,7 @@ __all__: list[str] = [
     "HostAssertionGrade",
     "HostLeg",
     "HostReplay",
-    "compare_argv",
     "host_leg",
-    "merge_contained_in",
 ]
 
 # The standing reason an assertion is pending when NOTHING has been published for it.
@@ -113,14 +109,6 @@ _DECISIVE: dict[tuple[str, bool | None], tuple[bool, str]] = {
     (VERDICT_HOST_VERIFIED, True): (True, "reproduced"),
     (VERDICT_HOST_NOT_REPRODUCED, False): (False, "not reproduced"),
 }
-
-_COMPARE_TIMEOUT_SECONDS = 30.0
-# The comparison statuses that mean `head` carries `base`: `base` is `head` itself,
-# or `head` has commits beyond it. `behind` and `diverged` mean it does not. Any
-# other value is a status this code does not know and is therefore unobservable
-# rather than assumed either way.
-_CONTAINING_STATUSES = frozenset({"ahead", "identical"})
-_NOT_CONTAINING_STATUSES = frozenset({"behind", "diverged"})
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -203,38 +191,6 @@ class HostLeg:
     def pending(self) -> tuple[str, ...]:
         """The assertions still awaiting an independent host replay."""
         return tuple(one.text for one in self.grades if one.passed is None)
-
-
-def compare_argv(*, base: str, head: str) -> list[str]:
-    """The forge comparison that answers whether `head` carries `base`.
-
-    The forge is asked rather than the local clone, and that is deliberate. A release
-    tag is created on the remote and a primary checkout need never have fetched it, so
-    a local `merge-base` would report "unresolvable ref" for a tag that exists — an
-    unobservable answer produced by the instrument rather than by the question. The
-    `{owner}`/`{repo}` placeholders are `gh`'s own, resolved from the repository the
-    command runs in.
-    """
-    return ["gh", "api", f"repos/{{owner}}/{{repo}}/compare/{base}...{head}", "--jq", ".status"]
-
-
-def merge_contained_in(
-    *, repo: Path, merge_sha: str, ref: str, runner: CommandRunner
-) -> bool | None:
-    """Whether the named build carries the merge commit, or `None` when unreadable."""
-    result = runner.run(
-        argv=compare_argv(base=merge_sha, head=ref),
-        cwd=repo,
-        timeout_seconds=_COMPARE_TIMEOUT_SECONDS,
-    )
-    if result.exit_code != 0:
-        return None
-    status = result.stdout.strip()
-    if status in _CONTAINING_STATUSES:
-        return True
-    if status in _NOT_CONTAINING_STATUSES:
-        return False
-    return None
 
 
 def host_leg(

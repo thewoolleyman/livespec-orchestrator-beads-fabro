@@ -42,6 +42,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_ai import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import (
     HOST_CAPTURED_EVIDENCE_LEG,
     HUMAN_ATTESTED_EVIDENCE_LEG,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_leg import (
     PROOF_RECORD_EVIDENCE_LEG,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
