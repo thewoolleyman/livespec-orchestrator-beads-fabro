@@ -33,6 +33,7 @@ __all__: list[str] = [
     "compare_codex_identity",
     "identity_observation_human_lines",
     "identity_observation_payload",
+    "refused_destination_comparison",
 ]
 
 IdentityChange = Literal["first-observation", "unchanged", "changed", "unknown"]
@@ -52,11 +53,12 @@ IDENTITY_CONTINUITY_LIMITATION = (
 )
 
 
-# Three NAMED outcomes rather than a boolean. "Was it written?" cannot express
-# the difference between a write this reading deliberately declined and a write
-# that failed, and those two want opposite responses from an operator: the first
-# is the mechanism protecting the series, the second is a broken state path.
-IdentityStateWriteOutcome = Literal["recorded", "withheld", "failed"]
+# NAMED outcomes rather than a boolean. "Was it written?" cannot express the
+# difference between a write this reading deliberately declined and a write that
+# failed, and those want opposite responses from an operator: `withheld` is the
+# mechanism protecting the series, `failed` is a broken state path, and `refused`
+# is a destination that would have destroyed the credential.
+IdentityStateWriteOutcome = Literal["recorded", "withheld", "failed", "refused"]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -75,6 +77,21 @@ class CodexIdentityComparison:
     prior_state_detail: str
     session_change: IdentityChange
     token_change: IdentityChange
+
+
+def refused_destination_comparison(*, detail: str) -> CodexIdentityComparison:
+    """The comparison for a destination that was never read or written.
+
+    Both identifiers are `unknown` rather than `first-observation`: the state
+    path was refused, so nothing was compared, and claiming a first observation
+    would read as a successful start to a series that does not exist.
+    """
+    return CodexIdentityComparison(
+        prior_state="refused",
+        prior_state_detail=detail,
+        session_change="unknown",
+        token_change="unknown",  # noqa: S106 - a comparison verdict, not a credential
+    )
 
 
 def compare_codex_identity(
