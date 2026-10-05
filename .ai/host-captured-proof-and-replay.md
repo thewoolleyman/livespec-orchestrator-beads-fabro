@@ -31,7 +31,8 @@ next refuses without.
 
 2. **Dispatch and merge as usual; the merged item then rests in acceptance
    with the host leg pending.** The host-side wall does not refuse an
-   `ai-only` item for carrying a host leg. Its acceptance pass lists it as
+   `ai-only` item for carrying a host leg. The post-merge acceptance pass
+   lists the host-captured assertion as
    `pending the host leg; passes only from an independent host_verified record
    naming a build identity that contains the merge` (`PENDING_HOST_LEG_REASON`
    in `commands/_dispatcher_host_leg.py`), reports PASS, and leaves the rework
@@ -124,3 +125,44 @@ EARLIER journaled dispatch of the same item, and no live run — and AGENTS.md
 §"Proof-of-Done, publish-branch reclaim, and drive action-id traps" records
 both, along with the five hold reasons and why a held row's `reason` must be
 read before clearing any publish branch by hand.
+
+### A herdr agent pane finishes at `done`, so a wait on `idle` never returns
+
+Step 5 needs a separately started agent session, and the usual way to launch
+and watch one is a herdr pane. Such a pane finishes with agent status
+`done` rather than `idle`, so a wait on such a pane has to accept either word.
+A wait written on `idle` alone hangs on a pane that has already finished, and
+nothing about it looks wrong — the pane is quiet, the wait is running, and the
+status it is waiting for will never arrive.
+
+The asymmetry is in herdr's own schema, which is what makes the mistake easy
+to reach honestly. Measured first-hand against herdr 0.9.3's bundled API
+schema (`herdr api schema --json`), two enumerations share one vocabulary and
+differ by exactly this word:
+
+- `PaneAgentState` — what an integration may REPORT, through
+  `pane.report_agent` / `herdr pane report-agent --state` — is
+  `["idle", "working", "blocked", "unknown"]`. There is no `done` in it.
+- `AgentStatus` — what `agent.wait` matches on and `herdr agent get` renders
+  — is `["idle", "working", "blocked", "done", "unknown"]`.
+
+So `done` is observable but not reportable: it is herdr's own terminal status
+for a pane whose agent has exited, and an operator reasoning from the
+reportable vocabulary concludes — correctly for that surface, and wrongly for
+this one — that a finished pane must be showing `idle`.
+
+Write the wait to accept both words:
+
+```bash
+herdr agent wait <target> --until idle --until done --timeout <ms>
+```
+
+`--until` is repeatable, and omitting it entirely is equally correct: herdr's
+own help states that without `--until` the wait "matches idle, done, or
+blocked". Only the single-word form is broken. Pass `--timeout` as well —
+without it the wait blocks indefinitely, which is what turns this from a
+wrong answer into a stall.
+
+Measured 2026-10-05 on `bd-ib-ht4c2m`: the recording session waited three
+hours on the replay pane because it watched for agent status `idle` while the
+pane had finished as `done`.

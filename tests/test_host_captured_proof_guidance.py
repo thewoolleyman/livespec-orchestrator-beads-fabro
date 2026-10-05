@@ -73,3 +73,19 @@ def test_guidance_states_an_ancestor_seed_cannot_demonstrate_a_refusal() -> None
     assert "reclaim" in text
     # And the remedy, which is the half an operator acts on.
     assert "a commit master does not contain" in text
+
+
+def test_guidance_states_a_herdr_pane_finishes_done_rather_than_idle() -> None:
+    text = _guidance()
+
+    # The fact: the terminal status of a finished agent pane is `done`, and
+    # `idle` is a DIFFERENT status, not a synonym reached on the way out.
+    assert "herdr" in text
+    assert "`done` rather than `idle`" in text
+    # The consequence for a wait, which is where the three hours went.
+    assert "accept either word" in text
+    # A token the remedy cannot be stated without: the invocation that waits
+    # on both. `--until idle` alone is exactly the defect, so asserting the
+    # two-flag form is what discriminates a stated remedy from a restated
+    # problem.
+    assert "--until idle --until done" in text
