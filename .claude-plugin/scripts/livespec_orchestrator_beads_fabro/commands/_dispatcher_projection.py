@@ -16,6 +16,7 @@ __all__: list[str] = [
     "CodexFreshnessVerdict",
     "assess_codex_credential_freshness",
     "cc_otel_overlay_env",
+    "codex_freshness_required_seconds",
     "decode_codex_access_token_exp",
     "project_codex_auth_snapshot",
     "resolve_sandbox_otel_endpoint",
@@ -115,7 +116,21 @@ class CodexFreshnessVerdict:
 
     fresh_enough: bool
     access_token_expires_at_epoch: int
+    remaining_seconds: int
+    required_remaining_seconds: int
     renewal_message: str | None
+
+
+def codex_freshness_required_seconds(*, run_budget_seconds: int) -> int:
+    """Return the usable lifetime the freshness gate demands of a credential.
+
+    The ONE place the requirement is composed. The refresh guard
+    (`_dispatcher_codex_refresh.CODEX_REFRESH_GUARD_SECONDS`) is derived from
+    this same function rather than written as its own number, because the two
+    diverging is precisely the dead zone: a guard smaller than the requirement
+    leaves an interval in which this gate refuses while the refresher declines.
+    """
+    return run_budget_seconds + CODEX_FRESHNESS_MARGIN_SECONDS
 
 
 def assess_codex_credential_freshness(
@@ -126,19 +141,28 @@ def assess_codex_credential_freshness(
 ) -> CodexFreshnessVerdict:
     """Require the projected Codex access token to outlive the run budget."""
     expires_at = decode_codex_access_token_exp(source_auth_json=source_auth_json)
-    required_remaining = run_budget_seconds + CODEX_FRESHNESS_MARGIN_SECONDS
-    fresh_enough = (expires_at - now_epoch) >= required_remaining
+    required_remaining = codex_freshness_required_seconds(run_budget_seconds=run_budget_seconds)
+    remaining = expires_at - now_epoch
+    fresh_enough = remaining >= required_remaining
+    # The bounded, host-local renewal comes FIRST: this lifetime is inside the
+    # refresh guard by construction, so the sanctioned refresher is eligible and
+    # a human `codex login` is not yet established as necessary.
     renewal_message = (
         None
         if fresh_enough
         else (
-            "Host Codex credential is too short-lived for the run budget; "
-            "run `codex login` on the orchestrator host to renew it."
+            f"Host Codex credential has {remaining} seconds of usable lifetime, "
+            f"below the {required_remaining} seconds the dispatch freshness gate "
+            "requires (run budget plus margin). It is inside the refresh guard, "
+            "so `dispatcher.py codex-cred-refresh` on the credential-source host "
+            "can renew it in place."
         )
     )
     return CodexFreshnessVerdict(
         fresh_enough=fresh_enough,
         access_token_expires_at_epoch=expires_at,
+        remaining_seconds=remaining,
+        required_remaining_seconds=required_remaining,
         renewal_message=renewal_message,
     )
 

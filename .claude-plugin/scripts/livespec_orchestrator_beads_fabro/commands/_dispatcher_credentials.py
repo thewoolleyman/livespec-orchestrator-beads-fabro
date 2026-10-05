@@ -218,7 +218,7 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     siblings = resolve_sibling_clones(repo=repo)
     if isinstance(siblings, str):
         return siblings
-    codex_snapshot = project_codex_auth(now_epoch=int(time.time()))
+    codex_snapshot = project_codex_auth(clock=lambda: int(time.time()))
     if isinstance(codex_snapshot, CodexProjectionRefusal):
         return codex_snapshot.message
     sandbox_otel_endpoint = resolve_sandbox_otel_endpoint(environ=dict(os.environ))

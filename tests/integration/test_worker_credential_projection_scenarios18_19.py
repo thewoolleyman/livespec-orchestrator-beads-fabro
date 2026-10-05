@@ -26,6 +26,9 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_credentials,
     _dispatcher_sibling_clones,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_early_renewal import (
+    CodexRenewalOutcome,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     materialize_overlay,
 )
@@ -67,6 +70,11 @@ _FAKE_CLAUDE_TOKEN = "test-oauth-token"
 _FAKE_GITHUB_TOKEN = "test-github-token"
 _HOST_REFRESH_TOKEN = "host-refresh-token"
 _GIT_AUTHOR = GitAuthor(name="Chad Woolley", email="thewoolleyman@gmail.com")
+
+
+def _stood_in_renewal() -> CodexRenewalOutcome:
+    """Stand in the bounded host renewal; this tier spends no real request."""
+    return CodexRenewalOutcome(answered=True, detail="the renewal request was answered")
 
 
 def _auth_json_with_exp(*, exp: int) -> str:
@@ -145,6 +153,10 @@ def test_scenario19_stale_codex_credential_refuses_before_overlay(
         "read_host_codex_auth",
         lambda: _auth_json_with_exp(exp=1_700_000_000),
     )
+    # The projection spends one bounded host-local renewal before refusing. It
+    # is stood in so this tier stays hermetic: the renewal is a request to the
+    # credential-source host's own Codex, which no test may actually spend.
+    monkeypatch.setattr(_dispatcher_codex_auth, "renew_host_codex_credential", _stood_in_renewal)
 
     error = materialize_overlay(
         committed=_workflow_toml(tmp_path=tmp_path),

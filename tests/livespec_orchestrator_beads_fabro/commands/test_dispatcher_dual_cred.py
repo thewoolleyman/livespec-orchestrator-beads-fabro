@@ -36,6 +36,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
     project_codex_auth,
     read_host_codex_auth,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_early_renewal import (
+    CodexRenewalOutcome,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     materialize_overlay,
 )
@@ -110,6 +113,11 @@ _FAKE_SNAPSHOT = json.dumps(
     {"auth_mode": "chatgpt", "tokens": {"access_token": "a", "refresh_token": "sentinel"}},
     indent=2,
 )
+
+
+def _stood_in_renewal() -> CodexRenewalOutcome:
+    """Stand in the bounded host renewal; this tier spends no real request."""
+    return CodexRenewalOutcome(answered=True, detail="the renewal request was answered")
 
 
 def _auth_json_with_exp(*, exp: int) -> str:
@@ -470,12 +478,49 @@ def test_read_host_codex_auth_returns_none_when_absent(
 # ---------------------------------------------------------------------------
 
 
+def test_renew_host_codex_credential_is_wired_to_the_app_server_transport(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The dispatch-side renewal drives the app-server runner and classifies it.
+
+    Every other case here stands the renewal in, so without this one the
+    production wiring — which transport it spawns, and that its result becomes
+    an outcome — is never exercised at all.
+    """
+    monkeypatch.chdir(tmp_path)
+    calls: list[tuple[list[str], Path, list[str], float]] = []
+
+    class _Runner:
+        def run(
+            self,
+            *,
+            argv: list[str],
+            cwd: Path,
+            request_lines: list[str],
+            timeout_seconds: float,
+        ) -> CommandResult:
+            calls.append((argv, cwd, request_lines, timeout_seconds))
+            return CommandResult(exit_code=0, stdout="{}\n", stderr="")
+
+    monkeypatch.setattr(_dispatcher_codex_auth, "ShellCodexAppServerRunner", _Runner)
+
+    outcome = _dispatcher_codex_auth.renew_host_codex_credential()
+
+    assert outcome.answered is True
+    assert len(calls) == 1
+    argv, cwd, request_lines, _timeout = calls[0]
+    # The ungated app-server route, on the credential-source host's own cwd.
+    assert argv == ["codex", "app-server"]
+    assert cwd == Path.cwd()
+    assert json.loads(request_lines[-1])["params"] == {"refreshToken": True}
+
+
 def test_project_codex_auth_refuses_when_host_credential_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A missing host credential refuses with an actionable `codex login` message."""
     monkeypatch.setattr(_dispatcher_codex_auth, "read_host_codex_auth", lambda: None)
-    result = project_codex_auth(now_epoch=1_000_000)
+    result = project_codex_auth(clock=lambda: 1_000_000)
     assert isinstance(result, CodexProjectionRefusal)
     assert "codex login" in result.message
 
@@ -490,7 +535,10 @@ def test_project_codex_auth_refuses_when_credential_is_stale(
     monkeypatch.setattr(
         _dispatcher_codex_auth, "read_host_codex_auth", lambda: _auth_json_with_exp(exp=now - 10)
     )
-    result = project_codex_auth(now_epoch=now)
+    # The projection spends one bounded renewal before refusing; stand it in so
+    # the hermetic tier never spawns a real `codex app-server`.
+    monkeypatch.setattr(_dispatcher_codex_auth, "renew_host_codex_credential", _stood_in_renewal)
+    result = project_codex_auth(clock=lambda: now)
     assert isinstance(result, CodexProjectionRefusal)
     assert "codex login" in result.message
 
@@ -504,7 +552,7 @@ def test_project_codex_auth_projects_snapshot_when_fresh(
     monkeypatch.setattr(
         _dispatcher_codex_auth, "read_host_codex_auth", lambda: _auth_json_with_exp(exp=far_future)
     )
-    result = project_codex_auth(now_epoch=now)
+    result = project_codex_auth(clock=lambda: now)
     assert isinstance(result, str)
     projected = json.loads(result)
     # The refresh token was replaced with the inert sentinel; the real
@@ -533,7 +581,7 @@ def test_project_codex_auth_accepts_token_outliving_a_realistic_run(
         "read_host_codex_auth",
         lambda: _auth_json_with_exp(exp=now + six_hours),
     )
-    result = project_codex_auth(now_epoch=now)
+    result = project_codex_auth(clock=lambda: now)
     assert isinstance(result, str)
 
 
@@ -562,6 +610,9 @@ def test_materialize_overlay_refuses_on_stale_host_credential(
         "read_host_codex_auth",
         lambda: _auth_json_with_exp(exp=1_700_000_000),
     )
+    # The projection spends one bounded renewal before refusing; stand it in so
+    # the hermetic tier never spawns a real `codex app-server`.
+    monkeypatch.setattr(_dispatcher_codex_auth, "renew_host_codex_credential", _stood_in_renewal)
     error = materialize_overlay(
         committed=committed,
         overlay=overlay,
