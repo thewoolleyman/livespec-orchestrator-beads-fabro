@@ -21,9 +21,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_identity_obser
     IdentityStateWrite,
     compare_codex_identity,
     identity_observation_payload,
+    refused_destination_comparison,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_identity_state import (
     CodexIdentityStateRecord,
+    identity_state_collision,
     read_prior_identity_state,
     write_identity_state,
 )
@@ -58,6 +60,7 @@ def add_codex_cred_status_arguments(*, parser: argparse.ArgumentParser) -> None:
 def identity_observation_for(
     *,
     source_auth_json: str | None,
+    source_auth_path: Path,
     state_path_argument: str | None,
     now_epoch: int,
 ) -> dict[str, Any] | None:
@@ -66,11 +69,19 @@ def identity_observation_for(
     The option's own module decides what its ABSENCE means, so no caller has to
     remember that an unset option is a read-only status rather than a default
     path somewhere.
+
+    `source_auth_path` is the credential's ACTUAL resolved location, threaded in
+    from the read boundary rather than reconstructed here. It is what the
+    destination is checked against, and nothing in `source_auth_json` could
+    substitute: the credential's own contents do not say where it lives, so a
+    path inferred from them would be a guess standing between an operator's typo
+    and an unrecoverable credential.
     """
     if state_path_argument is None:
         return None
     return _observe_codex_identity(
         source_auth_json=source_auth_json,
+        source_auth_path=source_auth_path,
         state_path=Path(state_path_argument),
         now_epoch=now_epoch,
     )
@@ -79,17 +90,42 @@ def identity_observation_for(
 def _observe_codex_identity(
     *,
     source_auth_json: str | None,
+    source_auth_path: Path,
     state_path: Path,
     now_epoch: int,
 ) -> dict[str, Any]:
-    prior = read_prior_identity_state(path=state_path)
     claims = read_codex_identity_claims(source_auth_json=source_auth_json)
+    collision = identity_state_collision(
+        state_path=state_path,
+        protected_path=source_auth_path,
+    )
+    if collision is not None:
+        # BEFORE the prior-state read, not merely before the write. Reading the
+        # credential as though it were a prior observation is meaningless, and
+        # the refusal must not depend on the write being reached -- that is the
+        # path the destroyed-credential defect took.
+        return identity_observation_payload(
+            claims=claims,
+            comparison=refused_destination_comparison(detail=_refusal(collision=collision)),
+            state_path=str(state_path),
+            write=IdentityStateWrite(outcome="refused", detail=_refusal(collision=collision)),
+        )
+    prior = read_prior_identity_state(path=state_path)
     comparison = compare_codex_identity(claims=claims, prior=prior)
     return identity_observation_payload(
         claims=claims,
         comparison=comparison,
         state_path=str(state_path),
         write=_record_reading(claims=claims, state_path=state_path, now_epoch=now_epoch),
+    )
+
+
+def _refusal(*, collision: str) -> str:
+    return (
+        f"No observation was recorded and nothing was read: {collision}. "
+        "Recording observation state there would overwrite the credential the "
+        "host is the sole owner of. Name a host-private path that is not the "
+        "credential file."
     )
 
 
