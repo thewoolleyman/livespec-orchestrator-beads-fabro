@@ -290,7 +290,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 135 — A plan cannot archive until its own Definition of Done is proved against the released build",
-    "work_item": "bd-ib-7sjdzv",
+    "work_item": "bd-ib-wihm2w",
     "first_seen": "2026-10-04"
   },
   {
