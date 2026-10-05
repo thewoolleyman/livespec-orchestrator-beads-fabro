@@ -38,6 +38,11 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
                                                 [--journal <path>]
   dispatcher.py reconcile-merged --repo <path> --item <id> [--invoker <id>]
                                  [--regrade] [--json]
+  dispatcher.py post-host-record --repo <path> --item <id>
+                                 --verdict <host_recorded|host_verified|
+                                            host_not_reproduced>
+                                 --record <path> [--journal <path>]
+                                 [--invoker <id>]
   dispatcher.py probe --repo <path> --item <id> [common flags]
   dispatcher.py dispatch --repo <path> --item <id> [common flags]
   dispatcher.py loop --repo <path> --budget <n> [--parallel <k>]
@@ -305,6 +310,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_args import
     add_dispatch_common,
     add_probe_arguments,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_cli import (
+    add_post_host_record_arguments,
+    run_post_host_record_cli,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
     add_invoker_argument,
 )
@@ -413,6 +422,7 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "janitor-check": run_janitor_check,
     "ledger-check": run_ledger_check,
     "ledger-normalize": run_ledger_normalize,
+    "post-host-record": run_post_host_record_cli,
     "probe": run_probe_command,
     "reconcile-merged": run_reconcile_merged_command,
     "reconcile-runs": run_reconcile_runs_command,
@@ -448,6 +458,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_janitor_check(parser=subparsers.add_parser("janitor-check"))
     _add_reconcile_runs(parser=subparsers.add_parser("reconcile-runs"))
     _add_reconcile_merged(parser=subparsers.add_parser("reconcile-merged"))
+    add_post_host_record_arguments(parser=subparsers.add_parser("post-host-record"))
     add_probe_arguments(parser=subparsers.add_parser("probe"))
     dispatch = subparsers.add_parser("dispatch")
     add_dispatch_common(parser=dispatch)
