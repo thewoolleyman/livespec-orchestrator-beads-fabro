@@ -33,6 +33,7 @@ _COMMAND_MODULE_PATH = Path(
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/"
     "_dispatcher_codex_identity_command.py"
 )
+_OBSERVATION_KEY = "identity_observation"
 
 
 def _jwt_auth_json(*, claims: object) -> str:
@@ -76,6 +77,35 @@ def _observe(
     return observation
 
 
+def _observe_with_real_host_read(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    codex_home: Path,
+    state_path: Path,
+    auth_json: str,
+) -> tuple[int, dict[str, Any], bytes]:
+    """Drive the public CLI through its REAL host credential read.
+
+    The stubbed reader used elsewhere cannot establish anything about the file
+    on disk, and the destination guard is precisely a claim about that file.
+    """
+    codex_home.mkdir(parents=True, exist_ok=True)
+    auth_file = codex_home / "auth.json"
+    _ = auth_file.write_text(auth_json, encoding="utf-8")
+    before = auth_file.read_bytes()
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.setattr(_codex_auth().time, "time", lambda: float(_NOW))
+
+    exit_code = _dispatcher().main(
+        argv=["codex-cred-status", "--json", "--observe-identity-state", str(state_path)]
+    )
+
+    payload: dict[str, Any] = json.loads(capsys.readouterr().out)
+    observation: dict[str, Any] = payload[_OBSERVATION_KEY]
+    return exit_code, observation, before
+
+
 def test_opt_in_observation_compares_a_changed_access_token_with_the_prior_one(
     *,
     capsys: pytest.CaptureFixture[str],
@@ -108,6 +138,105 @@ def test_opt_in_observation_compares_a_changed_access_token_with_the_prior_one(
     assert second["prior_state"] == "readable"
     assert second["token_change"] == "changed"
     assert second["token_fingerprint"] != first["token_fingerprint"]
+
+
+@pytest.mark.parametrize(
+    "destination",
+    [
+        pytest.param(lambda home: home / "auth.json", id="exact"),
+        pytest.param(lambda home: home / "." / "sub" / ".." / "auth.json", id="lexical-alias"),
+        pytest.param(lambda home: home.parent / "home-link" / "auth.json", id="symlinked-parent"),
+        pytest.param(lambda home: home / "hardlink.json", id="hardlink"),
+    ],
+)
+def test_observation_refuses_a_destination_that_is_the_source_credential(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    destination: Any,
+) -> None:
+    # SYNTHETIC credential in a disposable directory throughout. Writing
+    # observation state over `auth.json` destroys the host's refresh token, so
+    # the guarantee under test is that the bytes do not move.
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir(parents=True)
+    (codex_home / "sub").mkdir()
+    (tmp_path / "home-link").symlink_to(codex_home, target_is_directory=True)
+    auth_json = _auth_json(jti="token-one")
+    _ = (codex_home / "auth.json").write_text(auth_json, encoding="utf-8")
+    if destination(codex_home).name == "hardlink.json":
+        (codex_home / "hardlink.json").hardlink_to(codex_home / "auth.json")
+
+    exit_code, observation, before = _observe_with_real_host_read(
+        capsys=capsys,
+        monkeypatch=monkeypatch,
+        codex_home=codex_home,
+        state_path=destination(codex_home),
+        auth_json=auth_json,
+    )
+
+    assert (codex_home / "auth.json").read_bytes() == before
+    assert observation["state_write"] == "refused"
+    assert "credential" in observation["state_write_detail"]
+    assert observation["prior_state"] == "refused"
+    assert observation["session_change"] == "unknown"
+    assert observation["token_change"] == "unknown"
+    # The refusal is about the destination, not the credential, so the exit code
+    # still follows the lifetime alarm exactly as it did before the option.
+    assert exit_code == 0
+
+
+def test_a_distinct_destination_beside_the_credential_is_still_recorded(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # The control the guard needs: a destination in the SAME directory as the
+    # credential is perfectly fine, so the refusal keys on the path rather than
+    # on proximity.
+    codex_home = tmp_path / "codex-home"
+    auth_json = _auth_json(jti="token-one")
+
+    exit_code, observation, before = _observe_with_real_host_read(
+        capsys=capsys,
+        monkeypatch=monkeypatch,
+        codex_home=codex_home,
+        state_path=codex_home / "identity.json",
+        auth_json=auth_json,
+    )
+
+    assert (codex_home / "auth.json").read_bytes() == before
+    assert observation["state_write"] == "recorded"
+    assert observation["prior_state"] == "absent"
+    assert exit_code == 0
+
+
+def test_the_temporary_the_writer_uses_is_guarded_too(*, tmp_path: Path) -> None:
+    state_module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_identity_state"
+    )
+
+    assert "identity_state_collision" in state_module.__all__
+    protected = tmp_path / "guarded.tmp"
+    # The write lands on `<destination>.tmp` first and UNLINKS it before
+    # opening, so a destination whose temporary is the protected path destroys
+    # that file before any replace happens. Not reachable through the CLI today
+    # — the credential is always named `auth.json`, which no `.tmp` sibling can
+    # equal — so the guarantee is asserted where it lives.
+    assert (
+        state_module.identity_state_collision(
+            state_path=tmp_path / "guarded", protected_path=protected
+        )
+        is not None
+    )
+    assert (
+        state_module.identity_state_collision(
+            state_path=tmp_path / "elsewhere", protected_path=protected
+        )
+        is None
+    )
 
 
 def test_observation_reports_the_session_and_token_identifiers_independently(

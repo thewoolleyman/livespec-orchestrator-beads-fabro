@@ -39,6 +39,7 @@ __all__: list[str] = [
     "IDENTITY_STATE_SCHEMA",
     "CodexIdentityStateRecord",
     "PriorIdentityState",
+    "identity_state_collision",
     "read_prior_identity_state",
     "write_identity_state",
 ]
@@ -111,6 +112,46 @@ def write_identity_state(*, path: Path, record: CodexIdentityStateRecord) -> str
     return None
 
 
+def identity_state_collision(*, state_path: Path, protected_path: Path) -> str | None:
+    """Return why writing `state_path` would touch `protected_path`, else None.
+
+    BOTH paths a write touches are checked, because they are destructive in
+    different ways and at different moments: the destination is replaced at the
+    end, while the temporary is UNLINKED before anything is opened. A guard
+    covering only the destination would let the unlink delete the protected file
+    and then report a perfectly successful write.
+
+    Equality is by RESOLVED path, so `.`/`..` segments and a symlinked parent
+    cannot alias past it, plus a same-file check for the case resolution cannot
+    see -- a hard link, where two genuinely different paths name one inode.
+    `resolve()` is non-strict because the destination normally does not exist
+    yet; it still normalizes the ancestors that do.
+    """
+    protected = protected_path.resolve()
+    for candidate, role in (
+        (state_path, "destination"),
+        (_temporary_for(path=state_path), "temporary"),
+    ):
+        if candidate.resolve() == protected or _same_file(left=candidate, right=protected_path):
+            return (
+                f"the observation {role} resolves to the host Codex credential " f"at {protected}"
+            )
+    return None
+
+
+def _same_file(*, left: Path, right: Path) -> bool:
+    """Whether two existing paths name one file; False when either is absent."""
+    same = attempt(action=lambda: left.samefile(right), exceptions=(OSError,))
+    if isinstance(same, AttemptFailure):
+        return False
+    return same
+
+
+def _temporary_for(*, path: Path) -> Path:
+    """The staging path a write passes through, derived in ONE place."""
+    return path.with_name(f"{path.name}.tmp")
+
+
 def _write(*, path: Path, text: str) -> None:
     """Install the record through a private temporary and an atomic replace.
 
@@ -118,7 +159,7 @@ def _write(*, path: Path, text: str) -> None:
     on disk under a wider mode, not even momentarily.
     """
     path.parent.mkdir(parents=True, exist_ok=True, mode=_STATE_DIR_MODE)
-    temporary = path.with_name(f"{path.name}.tmp")
+    temporary = _temporary_for(path=path)
     temporary.unlink(missing_ok=True)
     descriptor = os.open(str(temporary), os.O_WRONLY | os.O_CREAT | os.O_EXCL, _STATE_FILE_MODE)
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
