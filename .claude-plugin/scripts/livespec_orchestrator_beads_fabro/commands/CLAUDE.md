@@ -228,6 +228,36 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   construction and its value is one the Dispatcher itself supplies. The
   projection is fail-closed in both arms: a declaration the parse refuses, or a
   name whose value is absent, renders NO overlay line.
+- `_dispatcher_pre_dispatch_wall.py` — the ONE wall both dispatch paths run,
+  holding every refusal that must land after selection and BEFORE admission:
+  the variant-aware acceptance-criteria wall, the proof-assets gate, the
+  proof-credential gate, the Codex credential gate, and last the
+  publish-branch reclaim, which refuses nothing and MUTATES a remote ref, so
+  it must sit after everything that can still refuse. `_dispatcher_run_commands`
+  hands it a one-item selection and `_dispatcher_loop_command` hands it the
+  whole wave; nothing in it branches on which caller it is. It was two
+  byte-identical private functions, one per command module, which is what made
+  "both paths refuse" a claim about two sequences that could drift and required
+  every new refusal to be wired twice. Do NOT re-inline it into either command
+  module: that is the duplicate returning, and it is also what put the
+  single-dispatch module over its file LLOC ceiling.
+- `_dispatcher_codex_credential_gate.py` — the fourth refusal in that wall,
+  and the pre-CLAIM half of the host Codex credential decision
+  (`SPECIFICATION/scenarios.md` Scenario 19). Three properties an editor must
+  not invert. It is the only wall that spends a PROVIDER REQUEST — the one
+  bounded in-place renewal `project_codex_auth` makes — so its POSITION is
+  load-bearing rather than tidy: a bounded renewal is the one thing that can
+  turn an insufficient credential into a sufficient one, so that question has
+  to be settled while the item is still unclaimed, because the answer decides
+  whether there is anything to claim. It renders NO refusal of its own; the
+  decision and its diagnostics stay in `_dispatcher_codex_auth`, which is where
+  the two unchanged-expiry observations are kept apart, and a gate that
+  re-worded them would be a second account of one measurement. And the snapshot
+  `project_codex_auth` returns on success is DISCARDED here, because the
+  overlay re-reads the credential as it then stands through
+  `project_host_codex_auth` — the post-claim projection, which GRADES but never
+  renews, since a second renewal would spend provider work on a question whose
+  answer can no longer refuse before a claim.
 - `_dispatcher_integration_schema.py` / `_dispatcher_integration_field.py` /
   `_dispatcher_integration_defaults.py` /
   `_dispatcher_integration_declaration.py` /
