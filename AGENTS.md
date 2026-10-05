@@ -1462,6 +1462,18 @@ references passes with its guidance orphaned.
   own CI uses, and the fact that a fork pull request against the carrier
   branch shows NO checks — the merge gate is local and must be recorded before
   merging. It also records that merging into the carrier deploys nothing.
+- Read `.ai/host-captured-proof-replay.md` BEFORE taking or replaying a
+  host-captured proof. It states the procedure in order — declare the assertion
+  under `Host-captured` with a `Reason:` line, let the merged item rest in
+  `acceptance`, capture on the host against the released build, publish with
+  `post-host-record`, then have a SEPARATELY STARTED agent session replay and
+  publish its own verdict — and it records the two ways a replay has already
+  gone wrong here: a publish branch seeded at an ancestor of master, which the
+  next run fast-forwards so nothing is demonstrated, and a `herdr` agent pane
+  that finishes at agent status `done` rather than `idle`, which is what a wait
+  watching only for `idle` sits through. The self-replay refusal is in
+  §"Proof-of-Done, publish-branch reclaim, and drive action-id traps" above;
+  that file is the procedure the refusal sits inside.
 
 ## Decision authority — when to ask, proceed, or self-resolve
 
