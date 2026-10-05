@@ -61,6 +61,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_payload 
     read_evidence,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_render import (
+    NO_GOVERNING_SCENARIO,
     render_proof_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_target import (
@@ -82,6 +83,7 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "HOST_RECORD_STAGE",
+    "HOST_RECORD_SURFACE",
     "NO_CAPTURE_REFUSAL",
     "NO_IDENTITY_REFUSAL",
     "SELF_REPLAY_REFUSAL",
@@ -91,6 +93,10 @@ __all__: list[str] = [
 ]
 
 HOST_RECORD_STAGE = "host-record-post"
+# The command name every refusal below names, and the one the shared payload read
+# renders into its own. PUBLIC so the plan surface's sibling constant sits beside a
+# named peer rather than beside a literal nobody can find from the other module.
+HOST_RECORD_SURFACE = "post-host-record"
 NO_IDENTITY_REFUSAL = "no publishing identity could be computed for this invocation"
 SELF_REPLAY_REFUSAL = "the computed identity equals the identity that recorded the capture"
 NO_CAPTURE_REFUSAL = "no host_recorded record on the pull request for this replay to replay"
@@ -194,9 +200,14 @@ def run_post_host_record_command(
         return _EXIT_REFUSED
     evidence = read_evidence(
         record_path=post.record_path,
-        work_item_id=post.work_item_id,
+        work_item_id=f"work-item {post.work_item_id}",
         declared=declared,
         verdict_is_replay=post.verdict in REPLAY_VERDICTS,
+        surface=HOST_RECORD_SURFACE,
+        # The ITEM clause requires "the governing scenario ... or the statement that
+        # no scenario governs it", so an absent field is a publisher who did not say
+        # and renders the statement. The plan surface passes `None`.
+        scenario_fallback=NO_GOVERNING_SCENARIO,
         emit=emit,
     )
     if evidence is None:
