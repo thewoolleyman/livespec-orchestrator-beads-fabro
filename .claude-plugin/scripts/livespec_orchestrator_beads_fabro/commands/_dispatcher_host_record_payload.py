@@ -33,7 +33,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_build_identity 
     BuildIdentity,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_render import (
-    NO_GOVERNING_SCENARIO,
     RecordAssertion,
 )
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
@@ -44,15 +43,15 @@ __all__: list[str] = [
 ]
 
 _BAD_PAYLOAD_REFUSAL = (
-    "ERROR: post-host-record refused: {path} is not a JSON object carrying a"
+    "ERROR: {surface} refused: {path} is not a JSON object carrying a"
     ' "build" object and an "assertions" array.\n'
 )
 _UNDECLARED_ASSERTION_REFUSAL = (
-    "ERROR: post-host-record refused: {text} is not a host_captured assertion of"
-    " work-item {item_id}, so no proof mode can be computed for it. The payload's"
-    " assertions must be the item's own.\n"
+    "ERROR: {surface} refused: {text} is not a proof assertion {item_id}'s Definition"
+    " of Done declares, so no proof mode can be computed for it. The payload's"
+    " assertions must be the subject's own.\n"
 )
-_NO_ASSERTION_REFUSAL = "ERROR: post-host-record refused: the payload names no assertion.\n"
+_NO_ASSERTION_REFUSAL = "ERROR: {surface} refused: the payload names no assertion.\n"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -63,12 +62,14 @@ class Evidence:
     assertions: tuple[RecordAssertion, ...]
 
 
-def read_evidence(
+def read_evidence(  # noqa: PLR0913 — one read shared by the item and plan surfaces.
     *,
     record_path: Path,
     work_item_id: str,
     declared: Mapping[str, str],
     verdict_is_replay: bool,
+    surface: str,
+    scenario_fallback: str | None,
     emit: Callable[[str], None],
 ) -> Evidence | None:
     """Read the caller's payload and pair each assertion with its DECLARED mode.
@@ -76,17 +77,29 @@ def read_evidence(
     `verdict_is_replay` rather than the verdict itself, because the only thing the read
     needs to know about it is whether a reproduction verdict may be claimed at all — and
     passing the word would invite a second reading of which verdicts are replays.
+
+    `surface` is the command name the refusals carry, and `scenario_fallback` is what an
+    assertion with no `governing_scenario` field renders. Both are REQUIRED rather than
+    defaulted, because they are the two places the ITEM and PLAN record clauses differ
+    and a default would silently give one surface the other's rule: the item clause
+    requires "the governing scenario ... or the statement that no scenario governs it",
+    while the plan clause requires no scenario field at all, so the plan caller passes
+    `None` and renders no claim about scenarios.
     """
     payload = _payload(path=record_path)
     if payload is None:
-        emit(_BAD_PAYLOAD_REFUSAL.format(path=record_path))
+        emit(_BAD_PAYLOAD_REFUSAL.format(surface=surface, path=record_path))
         return None
     build, raw = payload
     assertions: list[RecordAssertion] = []
     for one in raw:
         text = one.get("text")
         if not isinstance(text, str) or text not in declared:
-            emit(_UNDECLARED_ASSERTION_REFUSAL.format(text=repr(text), item_id=work_item_id))
+            emit(
+                _UNDECLARED_ASSERTION_REFUSAL.format(
+                    surface=surface, text=repr(text), item_id=work_item_id
+                )
+            )
             return None
         assertions.append(
             _assertion(
@@ -94,20 +107,30 @@ def read_evidence(
                 text=text,
                 mode=declared[text],
                 replay=verdict_is_replay,
+                scenario_fallback=scenario_fallback,
             )
         )
     if not assertions:
-        emit(_NO_ASSERTION_REFUSAL)
+        emit(_NO_ASSERTION_REFUSAL.format(surface=surface))
         return None
     return Evidence(build=build, assertions=tuple(assertions))
 
 
-def _assertion(*, raw: Mapping[str, object], text: str, mode: str, replay: bool) -> RecordAssertion:
-    """One rendered assertion, with the mode supplied by the ITEM and not the payload.
+def _assertion(
+    *,
+    raw: Mapping[str, object],
+    text: str,
+    mode: str,
+    replay: bool,
+    scenario_fallback: str | None,
+) -> RecordAssertion:
+    """One rendered assertion, with the mode supplied by the SUBJECT and not the payload.
 
-    `governing_scenario` falls back to the clause's own "no scenario governs it"
-    statement rather than to nothing, because for an ITEM record the clause requires
-    one or the other and an absent field is a publisher who did not say.
+    `governing_scenario` falls back to whatever the CALLER declared: for an ITEM record
+    that is the clause's own "no scenario governs it" statement, because the clause
+    requires one or the other and an absent field is a publisher who did not say; for a
+    PLAN record it is `None`, because that clause requires no scenario field and
+    rendering the statement would make the record assert something nobody asked of it.
 
     THE REPRODUCTION VERDICT IS DROPPED FOR A CAPTURE, whatever the payload claims, and
     that is a computation rather than a courtesy. A `host_recorded` record is the FIRST
@@ -122,7 +145,7 @@ def _assertion(*, raw: Mapping[str, object], text: str, mode: str, replay: bool)
     return RecordAssertion(
         text=text,
         proof_mode=mode,
-        governing_scenario=scenario if isinstance(scenario, str) else NO_GOVERNING_SCENARIO,
+        governing_scenario=scenario if isinstance(scenario, str) else scenario_fallback,
         steps=tuple(str(step) for step in _sequence(value=raw.get("steps"))),
         proof=str(raw.get("proof", "")),
         reproduced=reproduced if replay and isinstance(reproduced, bool) else None,

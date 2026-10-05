@@ -43,6 +43,10 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
                                             host_not_reproduced>
                                  --record <path> [--journal <path>]
                                  [--invoker <id>]
+  dispatcher.py post-plan-record --repo <path> --epic <id>
+                                 --verdict <captured|verified|not_reproduced|
+                                            human_attested>
+                                 --record <path> [--invoker <id>]
   dispatcher.py probe --repo <path> --item <id> [common flags]
   dispatcher.py dispatch --repo <path> --item <id> [common flags]
   dispatcher.py loop --repo <path> --budget <n> [--parallel <k>]
@@ -365,6 +369,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_checks import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands import (
     run_dispatch_command,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_record_cli import (
+    add_post_plan_record_arguments,
+    run_post_plan_record_cli,
+)
 
 # Keep pre-existing dispatcher mini-hub attributes available without changing __all__.
 _COMPATIBILITY_REEXPORTS: tuple[object, ...] = (
@@ -423,6 +431,7 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "ledger-check": run_ledger_check,
     "ledger-normalize": run_ledger_normalize,
     "post-host-record": run_post_host_record_cli,
+    "post-plan-record": run_post_plan_record_cli,
     "probe": run_probe_command,
     "reconcile-merged": run_reconcile_merged_command,
     "reconcile-runs": run_reconcile_runs_command,
@@ -459,6 +468,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_reconcile_runs(parser=subparsers.add_parser("reconcile-runs"))
     _add_reconcile_merged(parser=subparsers.add_parser("reconcile-merged"))
     add_post_host_record_arguments(parser=subparsers.add_parser("post-host-record"))
+    add_post_plan_record_arguments(parser=subparsers.add_parser("post-plan-record"))
     add_probe_arguments(parser=subparsers.add_parser("probe"))
     dispatch = subparsers.add_parser("dispatch")
     add_dispatch_common(parser=dispatch)
