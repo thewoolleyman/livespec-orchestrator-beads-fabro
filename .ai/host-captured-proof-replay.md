@@ -139,3 +139,53 @@ session can never pass, because the inherited variable is the input.
 A `host_verified` record carrying the recording identity, posted by any other
 route, does not rescue it either: the assertion stays pending and is reported as
 not independent.
+
+## The two ways a replay goes wrong
+
+Both of these were measured on 2026-10-05 while taking the first host record
+this repository has ever had, for `bd-ib-ht4c2m`. Neither announced itself:
+each produced a plausible observation at the surface the operator was watching,
+and each cost a whole attempt at the proof.
+
+### A publish branch seeded at an ancestor of master demonstrates nothing
+
+When the assertion under proof is about the publish-branch reclaim — that a
+dispatch finding a surviving publish branch preserves it to a run-scoped ref and
+clears it from origin — the capture has to SEED that surviving branch by hand,
+because an ordinary dispatch leaves none behind. The seed is where the proof is
+lost.
+
+**A publish branch seeded at a commit that is an ancestor of master is
+fast-forwarded by the next run, and therefore cannot demonstrate a
+non-fast-forward refusal or the need for a reclaim.** The run's HEAD is built on
+master, so the remote branch head being an ancestor of it is exactly the
+fast-forward case: the push is ACCEPTED, with no refusal and no warning. The
+capture then records a "publish accepted" observation that is perfectly true and
+carries no information — it is equally consistent with "the reclaim worked" and
+with "there was never anything to reclaim", and nothing in the output
+distinguishes them. This is the instrument-aim failure the trap catalogue in
+AGENTS.md §"Beads runtime prerequisites" describes, arriving through a seed
+rather than through a typo.
+
+**A seeded branch has to point at a commit master does not contain.** That is
+the only seed a push cannot fast-forward, so it is the only seed under which the
+refusal can fire and the reclaim has anything to do. Commit something off
+master — or seed at a dropped or reverted head — and verify the divergence
+before capturing, with `git merge-base --is-ancestor <seed> origin/master`
+expecting a NON-zero exit.
+
+Two further facts from that instance, because each is a separate way the attempt
+was lost:
+
+- The reclaim acts only for an item that has an EARLIER JOURNALED DISPATCH and
+  no live run, so on a FIRST dispatch it journals neither
+  `publish-branch-reclaim` nor `publish-branch-reclaim-held` and leaves a
+  surviving branch standing. The absence of both rows is a third, silent
+  outcome; on a first dispatch it is the designed behaviour, not a fault. Read
+  the held row's `reason` before clearing a publish branch by hand — see
+  AGENTS.md §"Proof-of-Done, publish-branch reclaim, and drive action-id traps".
+- Do not re-seed the SAME branch for a second attempt against a DIFFERENT item.
+  The independent replay for `bd-ib-ht4c2m` hit the seed left at
+  `refs/heads/feat/bd-ib-andmpe` with `bd-ib-dk3u2p`, whose first run
+  fast-forwarded the branch, published its pull request and closed the item —
+  leaving nothing to re-dispatch and consuming the item as proof material.

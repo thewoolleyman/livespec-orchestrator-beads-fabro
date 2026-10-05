@@ -56,3 +56,20 @@ def test_guidance_states_the_host_captured_procedure_in_order() -> None:
     # Step 5's two replay verdicts, and the independence the primitive computes.
     assert "--verdict host_verified" in guidance
     assert "--verdict host_not_reproduced" in guidance
+
+
+def test_guidance_states_that_a_seed_at_an_ancestor_of_master_proves_nothing() -> None:
+    guidance = _guidance()
+
+    # The mechanism: an ancestor seed is a fast-forward for the next run's push.
+    assert "ancestor of master" in guidance
+    assert "fast-forwarded by the next run" in guidance
+
+    # What that costs the proof — BOTH things the seed was supposed to demonstrate.
+    # Asserted as two separate terms rather than one sentence fragment, so a file
+    # that keeps only half of the consequence cannot pass.
+    assert "non-fast-forward refusal" in guidance
+    assert "the need for a reclaim" in guidance
+
+    # The remedy, which is the only part an operator acts on.
+    assert "a commit master does not contain" in guidance
