@@ -58,3 +58,18 @@ def test_guidance_states_the_host_captured_procedure_in_order() -> None:
         f"{_GUIDANCE_REL} states the procedure out of order: "
         f"{list(zip(_ORDERED_STEPS, positions, strict=False))}"
     )
+
+
+def test_guidance_states_an_ancestor_seed_cannot_demonstrate_a_refusal() -> None:
+    text = _guidance()
+
+    # The seed's defect and its consequence, separately: a branch at an
+    # ancestor of master is silently fast-forwarded, so the observation it
+    # was staged to produce — the refusal, and the reclaim the refusal
+    # motivates — is unreachable from it.
+    assert "ancestor of master" in text
+    assert "fast-forwarded by the next run" in text
+    assert "non-fast-forward" in text
+    assert "reclaim" in text
+    # And the remedy, which is the half an operator acts on.
+    assert "a commit master does not contain" in text

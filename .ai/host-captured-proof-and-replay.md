@@ -83,3 +83,44 @@ next refuses without.
    `reconcile-merged` itself, which re-runs the acceptance pass; a
    `host_verified` record listing the assertion as reproduced passes it, and
    under `ai-only` the item closes to done.
+
+## Two ways a replay goes wrong
+
+Both are "instrument that cannot return a hit" failures in the sense
+AGENTS.md §"Verification discipline (repo-additive)" Rule 2 means: each
+produced a clean, plausible observation at exit 0, while the question being
+asked could not have come back the other way.
+
+### A publish branch seeded at an ancestor of master proves nothing
+
+A proof about the publish-branch reclaim has to arrange for the publish ref
+`feat/<item-id>` to stand somewhere the next run's push cannot reach. Seeding
+it at a commit that is an ancestor of master — the release commit, say — does
+the opposite. The next run branches from master, so its HEAD descends from the
+seed, and the `publish_draft` node's push is the plain, non-forced
+`git push -u origin "HEAD:refs/heads/$branch"`. The seeded ref is therefore
+fast-forwarded by the next run and the push is simply accepted: no
+`LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED` sentinel fires, the non-fast-forward
+refusal the reclaim exists to clear never happens, and neither
+`publish-branch-reclaim` nor `publish-branch-reclaim-held` reaches the
+journal. "Publish accepted" is then guaranteed, so it discriminates nothing —
+it is the identical observation a working reclaim and a never-reached reclaim
+both produce.
+
+Measured 2026-10-05 on `bd-ib-ht4c2m`: the first host record seeded
+`refs/heads/feat/bd-ib-andmpe` at the v0.166.0 commit, an ancestor of master,
+so its "publish accepted" observation carried no information. The independent
+replay — pull request 2598, `host_not_reproduced`, session `01a10b66` — hit
+the same seed with `bd-ib-dk3u2p`, whose first run fast-forwarded the branch,
+published pull request 2604 and closed the item, leaving nothing to
+re-dispatch.
+
+So a seeded branch has to point at a commit master does not contain, on no
+merged lineage, pushed to the publish ref deliberately. Only then does the
+next run's plain push meet `! [rejected] … (non-fast-forward)`, which is what
+`publish_draft` fails closed on and what the reclaim exists to clear. The
+reclaim's own two preconditions then still apply on top of the seed — an
+EARLIER journaled dispatch of the same item, and no live run — and AGENTS.md
+§"Proof-of-Done, publish-branch reclaim, and drive action-id traps" records
+both, along with the five hold reasons and why a held row's `reason` must be
+read before clearing any publish branch by hand.
