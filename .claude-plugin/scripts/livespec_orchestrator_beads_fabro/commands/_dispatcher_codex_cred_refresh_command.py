@@ -1,18 +1,41 @@
-"""Guarded host Codex credential refresh command."""
+"""Guarded host Codex credential refresh command.
+
+The body behind `dispatcher.py codex-cred-refresh`, which the five-minute host
+timer runs. It decodes the access-token expiry locally and spends a renewal
+request ONLY inside the refresh guard, so the timer normally costs nothing and
+then spends one request near the cliff.
+
+The request is the app-server `account/read` with `refreshToken`, NOT
+`codex exec`. Upstream gates the ordinary refresh on a five-minute window
+(`should_refresh_proactively` in `codex-rs/login/src/auth/manager.rs`), and the
+guard is now derived from the dispatch freshness requirement (five hours), so a
+`codex exec` spent anywhere in that span could not advance the expiry: the
+timer would attempt and decline while reporting that it had tried.
+
+Dropping `codex exec` dropped a privilege with it. That invocation carried
+Codex's approvals-and-sandbox bypass flag, and a hook gate existed only to
+decide whether to pass it, because `exec` runs a model turn that wants a
+workspace. `account/read` executes nothing — it is a credential RPC — so there
+is no sandbox to bypass, no gate to consult, and no full-access code path here.
+The flag name is deliberately not spelled here: a structural check asserts
+this module carries no bypass token, and prose would defeat it.
+"""
 
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
-import subprocess
-import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal, Protocol, cast
+from typing import Any
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_early_renewal import (
+    CodexAppServerRunner,
+    classify_renewal_result,
+    request_early_codex_renewal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_refresh import (
     CODEX_ALARM_THRESHOLD_SECONDS,
     CODEX_REFRESH_GUARD_SECONDS,
@@ -21,55 +44,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_refresh import
     classify_refresh_outcome,
     should_invoke_codex_refresh,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
-from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.io import write_stdout
-
-GateState = Literal["on", "off"]
-
-
-class _CodexYoloGate(Protocol):
-    def gate_state(self, *, repo: Path) -> GateState:
-        """Return whether Codex full access is enabled for repo."""
-        ...
-
-
-class _OffCodexYoloGate:
-    def gate_state(self, *, repo: Path) -> GateState:
-        _ = repo
-        return "off"
-
-
-_HOOK_GATE_PATH = Path(__file__).resolve().parents[3] / "hooks" / "codex_yolo_gate.py"
-_HOOK_GATE_MODULE = "livespec_orchestrator_codex_yolo_gate"
-
-
-def _load_codex_yolo_gate() -> _CodexYoloGate:
-    spec = importlib.util.spec_from_file_location(_HOOK_GATE_MODULE, _HOOK_GATE_PATH)
-    if spec is None or spec.loader is None:
-        return _OffCodexYoloGate()
-    loader = spec.loader
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[_HOOK_GATE_MODULE] = module
-    loaded = attempt(
-        action=lambda: loader.exec_module(module),
-        exceptions=(AttributeError, ImportError, OSError, RuntimeError, SyntaxError),
-    )
-    if isinstance(loaded, AttemptFailure):
-        _ = sys.modules.pop(_HOOK_GATE_MODULE, None)
-        return _OffCodexYoloGate()
-    return cast("_CodexYoloGate", module)
-
-
-codex_yolo_gate = _load_codex_yolo_gate()
 
 __all__: list[str] = [
     "run_codex_cred_refresh_with",
 ]
-
-_CODEX_REFRESH_ARGV = ["codex", "exec", "reply OK"]
-_CODEX_FULL_ACCESS_FLAG = "--dangerously-bypass-approvals-and-sandbox"
-_CODEX_REFRESH_TIMEOUT_SECONDS = 120.0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -81,6 +60,7 @@ class _RefreshPayloadInput:
     dry_run: bool
     invoked_codex: bool
     outcome: str
+    renewal_answered: bool
     would_invoke_codex: bool
 
 
@@ -90,7 +70,7 @@ def run_codex_cred_refresh_with(
     cwd: Callable[[], Path],
     now_epoch: Callable[[], int],
     read_host_codex_auth: Callable[[], str | None],
-    runner_factory: Callable[[], CommandRunner],
+    runner_factory: Callable[[], CodexAppServerRunner],
 ) -> int:
     """Guardedly invoke Codex so the host-owned credential refreshes itself."""
     before = _assess_host_codex_credential(
@@ -102,17 +82,16 @@ def run_codex_cred_refresh_with(
     codex_stderr = ""
     after = before
     would_invoke_codex = should_invoke_codex_refresh(status=before)
+    renewal_answered = False
     if would_invoke_codex and not args.dry_run:
         invoked_codex = True
         refresh_cwd = cwd()
-        result = runner_factory().run(
-            argv=_codex_refresh_argv(repo=refresh_cwd),
-            cwd=refresh_cwd,
-            timeout_seconds=_CODEX_REFRESH_TIMEOUT_SECONDS,
-            stdin=subprocess.DEVNULL,
-        )
+        result = request_early_codex_renewal(cwd=refresh_cwd, runner=runner_factory())
+        renewal = classify_renewal_result(result=result)
+        renewal_answered = renewal.answered
         codex_exit_code = result.exit_code
-        codex_stderr = result.stderr
+        # The classifier's secret-free summary, never the server transcript.
+        codex_stderr = renewal.detail
         after = _assess_host_codex_credential(
             now_epoch=now_epoch,
             read_host_codex_auth=read_host_codex_auth,
@@ -131,6 +110,7 @@ def run_codex_cred_refresh_with(
             dry_run=args.dry_run,
             invoked_codex=invoked_codex,
             outcome=outcome,
+            renewal_answered=renewal_answered,
             would_invoke_codex=would_invoke_codex,
         )
     )
@@ -142,18 +122,6 @@ def run_codex_cred_refresh_with(
     if args.dry_run or outcome in ("noop-not-due", "refreshed"):
         return 0
     return 1
-
-
-def _codex_refresh_argv(*, repo: Path) -> list[str]:
-    gate_state = attempt(
-        action=lambda: codex_yolo_gate.gate_state(repo=repo),
-        exceptions=(AttributeError, ImportError, OSError, RuntimeError),
-    )
-    if gate_state == "on":
-        return [*_CODEX_REFRESH_ARGV[:2], _CODEX_FULL_ACCESS_FLAG, *_CODEX_REFRESH_ARGV[2:]]
-    if isinstance(gate_state, AttemptFailure):
-        return list(_CODEX_REFRESH_ARGV)
-    return list(_CODEX_REFRESH_ARGV)
 
 
 def _assess_host_codex_credential(
@@ -202,6 +170,7 @@ def _codex_cred_refresh_payload(*, refresh: _RefreshPayloadInput) -> dict[str, A
             outcome=refresh.outcome,
         ),
         "outcome": refresh.outcome,
+        "renewal_answered": refresh.renewal_answered,
         "would_invoke_codex": refresh.would_invoke_codex,
     }
 
@@ -212,8 +181,11 @@ def _codex_cred_refresh_message(*, codex_stderr: str, dry_run: bool, outcome: st
     if outcome == "refreshed":
         return "Host Codex credential refresh confirmed; access-token expiry advanced."
     if outcome == "codex-error":
-        detail = codex_stderr.strip() or "no stderr"
-        return f"codex exec failed while refreshing the host Codex credential: {detail}"
+        detail = codex_stderr.strip() or "no detail"
+        return (
+            "The host Codex renewal request did not complete, so it is no "
+            f"evidence about this credential: {detail}"
+        )
     if dry_run:
         return "Dry run: host Codex credential is refresh-due; codex was not invoked."
     return (
@@ -231,6 +203,7 @@ def _codex_cred_refresh_human(*, payload: dict[str, Any]) -> str:
             f"dry_run: {_human_bool(value=payload['dry_run'])}",
             f"would_invoke_codex: {_human_bool(value=payload['would_invoke_codex'])}",
             f"invoked_codex: {_human_bool(value=payload['invoked_codex'])}",
+            f"renewal_answered: {_human_bool(value=payload['renewal_answered'])}",
             f"codex_exit_code: {_human_optional(value=payload['codex_exit_code'])}",
             f"before_remaining_seconds: {_human_optional(value=before_remaining)}",
             f"after_remaining_seconds: {_human_optional(value=after_remaining)}",

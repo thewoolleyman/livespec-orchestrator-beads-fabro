@@ -1,4 +1,25 @@
-"""Tests for the extracted guarded Codex refresh command body."""
+"""Tests for the guarded Codex refresh command body.
+
+The command is what the five-minute host timer runs
+(`livespec-codex-cred-refresh.service`), so it is the half of this item that
+decides whether the reconciled refresh guard actually BUYS anything. Widening
+eligibility over a refresher that cannot act would only convert a refusal into
+an attempt that declines.
+
+It therefore spends the UNGATED app-server `account/read` request rather than
+`codex exec`. Upstream gates the ordinary refresh on a five-minute window
+(`should_refresh_proactively` in `codex-rs/login/src/auth/manager.rs`), so a
+`codex exec` run anywhere in the guard's new five-hour span cannot advance the
+expiry; `account/read` with `refreshToken` reaches `AuthManager::refresh_token`
+with no expiry predicate at all.
+
+Dropping `codex exec` also drops a PRIVILEGE. The old invocation carried
+`--dangerously-bypass-approvals-and-sandbox`, and a hook gate existed solely to
+decide whether to pass it, because `exec` runs a model turn that wants a
+workspace. `account/read` executes nothing — it is a credential RPC — so no
+sandbox bypass is needed, no gate is consulted, and the refresher no longer has
+a full-access code path at all.
+"""
 
 from __future__ import annotations
 
@@ -6,43 +27,36 @@ import argparse
 import base64
 import importlib
 import json
-import shutil
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
-from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 _NOW = 1_000_000
 
+_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_cred_refresh_command"
 
-class _Runner:
-    def __init__(self, *, result: CommandResult, expected_argv: list[str] | None = None) -> None:
+# Any lifetime below the reconciled guard (run budget plus margin) is renewal-due.
+_DUE_REMAINING = 20
+_NOT_DUE_REMAINING = 100_000
+
+
+class _AppServerRunner:
+    """Records the app-server conversation the refresher hands it."""
+
+    def __init__(self, *, result: CommandResult) -> None:
         self.result = result
-        self.expected_argv = expected_argv or [
-            "codex",
-            "exec",
-            "--dangerously-bypass-approvals-and-sandbox",
-            "reply OK",
-        ]
-        self.stdin: int | None = None
+        self.calls: list[tuple[list[str], Path, list[str], float]] = []
 
     def run(
         self,
         *,
         argv: list[str],
         cwd: Path,
+        request_lines: list[str],
         timeout_seconds: float,
-        env: dict[str, str] | None = None,
-        stdin: int | None = None,
     ) -> CommandResult:
-        assert argv == self.expected_argv
-        assert cwd == Path.cwd()
-        assert timeout_seconds == 120.0
-        assert env is None
-        self.stdin = stdin
+        self.calls.append((argv, cwd, request_lines, timeout_seconds))
         return self.result
 
 
@@ -51,309 +65,203 @@ def _auth_json_with_exp(*, exp: int) -> str:
     return json.dumps({"tokens": {"access_token": f"header.{payload}.sig"}})
 
 
-def test_refresh_command_module_public_surface() -> None:
-    module = importlib.import_module(
-        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_cred_refresh_command"
+def _run(
+    *,
+    runner: _AppServerRunner,
+    reads: object,
+    as_json: bool = True,
+    dry_run: bool = False,
+) -> int:
+    module = importlib.import_module(_MODULE)
+    read = reads if callable(reads) else (lambda: reads)
+    return module.run_codex_cred_refresh_with(
+        args=argparse.Namespace(as_json=as_json, dry_run=dry_run),
+        cwd=Path.cwd,
+        now_epoch=lambda: _NOW,
+        read_host_codex_auth=read,
+        runner_factory=lambda: runner,
     )
+
+
+def test_refresh_command_module_public_surface() -> None:
+    module = importlib.import_module(_MODULE)
 
     assert module.__all__ == ["run_codex_cred_refresh_with"]
 
 
-def test_refresh_command_loads_gate_from_installed_plugin_root(
+def test_the_timer_spends_the_ungated_account_read_rpc_not_a_gated_exec(
     *,
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """The refresher drives the route that can renew mid-interval.
+
+    This is the load-bearing assertion of the cycle: `codex exec` provably
+    cannot refresh a credential with hours of lifetime left, so a timer that
+    kept spending it would attempt and decline across the whole reconciled
+    guard while reporting that it had tried.
+    """
+    runner = _AppServerRunner(result=CommandResult(exit_code=0, stdout="{}\n", stderr=""))
+    reads = iter(
+        (
+            _auth_json_with_exp(exp=_NOW + _DUE_REMAINING),
+            _auth_json_with_exp(exp=_NOW + 864_000),
+        )
+    )
+
+    exit_code = _run(runner=runner, reads=lambda: next(reads))
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["outcome"] == "refreshed"
+    assert len(runner.calls) == 1
+    argv, cwd, request_lines, timeout_seconds = runner.calls[0]
+    assert argv == ["codex", "app-server"]
+    assert cwd == Path.cwd()
+    assert timeout_seconds == 120.0
+    messages = [json.loads(line) for line in request_lines]
+    assert [message["method"] for message in messages] == [
+        "initialize",
+        "initialized",
+        "account/read",
+    ]
+    assert messages[-1]["params"] == {"refreshToken": True}
+
+
+def test_the_refresher_carries_no_sandbox_bypass_and_consults_no_gate() -> None:
+    """`account/read` executes nothing, so the full-access path is gone.
+
+    Asserted on the SOURCE rather than on one invocation's argv, because a
+    bypass flag reachable on any other branch would still be a full-access
+    code path in the refresher.
+    """
     source = Path(
         ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/"
         "_dispatcher_codex_cred_refresh_command.py"
-    )
-    installed_module = (
-        tmp_path
-        / "plugin-cache"
-        / "scripts"
-        / "livespec_orchestrator_beads_fabro"
-        / "commands"
-        / "_dispatcher_codex_cred_refresh_command.py"
-    )
-    installed_module.parent.mkdir(parents=True)
-    shutil.copyfile(source, installed_module)
-    expected = tmp_path / "plugin-cache" / "hooks" / "codex_yolo_gate.py"
-    loaded_paths: list[Path] = []
-    real_spec_from_file_location = importlib.util.spec_from_file_location
+    ).read_text(encoding="utf-8")
 
-    def spy_spec_from_file_location(
-        name: str,
-        location: str | bytes | Path,
-        *args: object,
-        **kwargs: object,
-    ) -> object:
-        loaded_paths.append(Path(str(location)))
-        return real_spec_from_file_location(name, location, *args, **kwargs)
-
-    monkeypatch.setattr(importlib.util, "spec_from_file_location", spy_spec_from_file_location)
-    module_name = "installed_plugin_codex_cred_refresh_under_test"
-    spec = real_spec_from_file_location(module_name, installed_module)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    try:
-        spec.loader.exec_module(module)
-    finally:
-        sys.modules.pop(module_name, None)
-
-    assert loaded_paths == [expected]
+    assert "dangerously-bypass" not in source
+    assert "codex_yolo_gate" not in source
+    assert "gate_state" not in source
+    # And no `codex exec` invocation survives anywhere in it.
+    assert '"exec"' not in source
 
 
-def test_refresh_command_fails_closed_when_gate_hook_cannot_load(
-    *,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    module_name = (
-        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_cred_refresh_command"
-    )
-    monkeypatch.setattr(importlib.util, "spec_from_file_location", lambda *_args, **_kwargs: None)
-    sys.modules.pop(module_name, None)
-    module = importlib.import_module(module_name)
-    reads = iter(
-        (
-            _auth_json_with_exp(exp=_NOW + 20),
-            _auth_json_with_exp(exp=_NOW + 200_000),
-        )
-    )
-    runner = _Runner(
-        result=CommandResult(exit_code=0, stdout="OK", stderr=""),
-        expected_argv=["codex", "exec", "reply OK"],
-    )
-
-    exit_code = module.run_codex_cred_refresh_with(
-        args=argparse.Namespace(as_json=True, dry_run=False),
-        cwd=Path.cwd,
-        now_epoch=lambda: _NOW,
-        read_host_codex_auth=lambda: next(reads),
-        runner_factory=lambda: runner,
-    )
-
-    assert exit_code == 0
-    assert runner.stdin == subprocess.DEVNULL
-    monkeypatch.undo()
-    sys.modules.pop(module_name, None)
-    importlib.import_module(module_name)
-
-
-def test_refresh_command_fails_closed_when_gate_hook_execution_fails(
-    *,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    module_name = (
-        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_cred_refresh_command"
-    )
-
-    class _FailingLoader:
-        def create_module(self, spec: object) -> None:
-            _ = spec
-
-        def exec_module(self, module: object) -> None:
-            _ = module
-            raise RuntimeError("gate execution failed")
-
-    spec = importlib.machinery.ModuleSpec("failing_codex_yolo_gate", _FailingLoader())
-    monkeypatch.setattr(importlib.util, "spec_from_file_location", lambda *_args, **_kwargs: spec)
-    sys.modules.pop(module_name, None)
-
-    loaded = attempt(
-        action=lambda: importlib.import_module(module_name),
-        exceptions=(RuntimeError,),
-    )
-    assert not isinstance(loaded, AttemptFailure), loaded
-    module = loaded
-    reads = iter(
-        (
-            _auth_json_with_exp(exp=_NOW + 20),
-            _auth_json_with_exp(exp=_NOW + 200_000),
-        )
-    )
-    runner = _Runner(
-        result=CommandResult(exit_code=0, stdout="OK", stderr=""),
-        expected_argv=["codex", "exec", "reply OK"],
-    )
-
-    exit_code = module.run_codex_cred_refresh_with(
-        args=argparse.Namespace(as_json=True, dry_run=False),
-        cwd=Path.cwd,
-        now_epoch=lambda: _NOW,
-        read_host_codex_auth=lambda: next(reads),
-        runner_factory=lambda: runner,
-    )
-
-    assert exit_code == 0
-    assert runner.stdin == subprocess.DEVNULL
-    monkeypatch.undo()
-    sys.modules.pop(module_name, None)
-    importlib.import_module(module_name)
-
-
-def test_refresh_command_uses_full_access_argv_and_devnull_when_gate_is_on(
-    *,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    module = importlib.import_module(
-        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_cred_refresh_command"
-    )
-    reads = iter(
-        (
-            _auth_json_with_exp(exp=_NOW + 20),
-            _auth_json_with_exp(exp=_NOW + 200_000),
-        )
-    )
-    runner = _Runner(
-        result=CommandResult(exit_code=0, stdout="OK", stderr=""),
-        expected_argv=[
-            "codex",
-            "exec",
-            "--dangerously-bypass-approvals-and-sandbox",
-            "reply OK",
-        ],
-    )
-    assert hasattr(module, "codex_yolo_gate")
-
-    def gate_state(*, repo: Path) -> str:
-        assert repo == Path.cwd()
-        return "on"
-
-    monkeypatch.setattr(module.codex_yolo_gate, "gate_state", gate_state)
-
-    exit_code = module.run_codex_cred_refresh_with(
-        args=argparse.Namespace(as_json=True, dry_run=False),
-        cwd=Path.cwd,
-        now_epoch=lambda: _NOW,
-        read_host_codex_auth=lambda: next(reads),
-        runner_factory=lambda: runner,
-    )
-
-    assert exit_code == 0
-    assert runner.stdin == subprocess.DEVNULL
-
-
-def test_refresh_command_leaves_argv_as_is_when_gate_is_off(
-    *,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    module = importlib.import_module(
-        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_cred_refresh_command"
-    )
-    reads = iter(
-        (
-            _auth_json_with_exp(exp=_NOW + 20),
-            _auth_json_with_exp(exp=_NOW + 200_000),
-        )
-    )
-    runner = _Runner(
-        result=CommandResult(exit_code=0, stdout="OK", stderr=""),
-        expected_argv=["codex", "exec", "reply OK"],
-    )
-    assert hasattr(module, "codex_yolo_gate")
-
-    def gate_state(*, repo: Path) -> str:
-        assert repo == Path.cwd()
-        return "off"
-
-    monkeypatch.setattr(module.codex_yolo_gate, "gate_state", gate_state)
-
-    exit_code = module.run_codex_cred_refresh_with(
-        args=argparse.Namespace(as_json=True, dry_run=False),
-        cwd=Path.cwd,
-        now_epoch=lambda: _NOW,
-        read_host_codex_auth=lambda: next(reads),
-        runner_factory=lambda: runner,
-    )
-
-    assert exit_code == 0
-    assert runner.stdin == subprocess.DEVNULL
-
-
-def test_refresh_command_fails_closed_when_gate_state_raises(
-    *,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    module = importlib.import_module(
-        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_cred_refresh_command"
-    )
-    reads = iter(
-        (
-            _auth_json_with_exp(exp=_NOW + 20),
-            _auth_json_with_exp(exp=_NOW + 200_000),
-        )
-    )
-    runner = _Runner(
-        result=CommandResult(exit_code=0, stdout="OK", stderr=""),
-        expected_argv=["codex", "exec", "reply OK"],
-    )
-
-    def gate_state(*, repo: Path) -> str:
-        assert repo == Path.cwd()
-        raise RuntimeError("gate import drift")
-
-    monkeypatch.setattr(module.codex_yolo_gate, "gate_state", gate_state)
-
-    exit_code = module.run_codex_cred_refresh_with(
-        args=argparse.Namespace(as_json=True, dry_run=False),
-        cwd=Path.cwd,
-        now_epoch=lambda: _NOW,
-        read_host_codex_auth=lambda: next(reads),
-        runner_factory=lambda: runner,
-    )
-
-    assert exit_code == 0
-    assert runner.stdin == subprocess.DEVNULL
-
-
-def test_codex_error_without_stderr_stays_actionable(
+def test_a_credential_above_the_guard_spends_no_request(
     *,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    module = importlib.import_module(
-        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_cred_refresh_command"
+    """Not-due means not spent: the timer normally costs nothing."""
+    runner = _AppServerRunner(result=CommandResult(exit_code=0, stdout="{}\n", stderr=""))
+
+    exit_code = _run(runner=runner, reads=_auth_json_with_exp(exp=_NOW + _NOT_DUE_REMAINING))
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert runner.calls == []
+    assert payload["outcome"] == "noop-not-due"
+    assert payload["would_invoke_codex"] is False
+    assert payload["invoked_codex"] is False
+
+
+def test_a_due_dry_run_spends_no_request_but_says_it_would(
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--dry-run` is the operator's safe probe; it must never spend one."""
+    runner = _AppServerRunner(result=CommandResult(exit_code=0, stdout="{}\n", stderr=""))
+
+    exit_code = _run(
+        runner=runner,
+        reads=_auth_json_with_exp(exp=_NOW + _DUE_REMAINING),
+        dry_run=True,
     )
 
-    exit_code = module.run_codex_cred_refresh_with(
-        args=argparse.Namespace(as_json=False, dry_run=False),
-        cwd=Path.cwd,
-        now_epoch=lambda: _NOW,
-        read_host_codex_auth=lambda: _auth_json_with_exp(exp=_NOW + 20),
-        runner_factory=lambda: _Runner(result=CommandResult(exit_code=1, stdout="", stderr="")),
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert runner.calls == []
+    assert payload["would_invoke_codex"] is True
+    assert payload["invoked_codex"] is False
+
+
+def test_an_unspendable_request_is_reported_as_such_not_as_a_login_demand(
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A request that never reached Codex says nothing about the credential.
+
+    The timer's journal is where an operator later reconstructs an incident, so
+    conflating "could not run the app-server" with "the credential is stale"
+    is what produces a false `codex login` demand hours later.
+    """
+    runner = _AppServerRunner(
+        result=CommandResult(
+            exit_code=127,
+            stdout="",
+            stderr="codex app-server could not be started: codex",
+        )
     )
 
+    exit_code = _run(runner=runner, reads=_auth_json_with_exp(exp=_NOW + _DUE_REMAINING))
+
+    payload = json.loads(capsys.readouterr().out)
     assert exit_code == 1
-    out = capsys.readouterr().out
-    assert "outcome: codex-error" in out
-    assert "no stderr" in out
+    assert payload["renewal_answered"] is False
+    assert "could not be started" in payload["message"]
 
 
-def test_successful_codex_call_without_exp_advance_exits_one(
+def test_an_answered_request_that_did_not_advance_the_expiry_is_distinguished(
     *,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    module = importlib.import_module(
-        "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_cred_refresh_command"
-    )
+    """Codex answered and the expiry held: a different fact, recorded as one."""
+    runner = _AppServerRunner(result=CommandResult(exit_code=0, stdout="{}\n", stderr=""))
     reads = iter(
         (
-            _auth_json_with_exp(exp=_NOW + 20),
-            _auth_json_with_exp(exp=_NOW + 20),
+            _auth_json_with_exp(exp=_NOW + _DUE_REMAINING),
+            _auth_json_with_exp(exp=_NOW + _DUE_REMAINING),
         )
     )
 
-    exit_code = module.run_codex_cred_refresh_with(
-        args=argparse.Namespace(as_json=False, dry_run=False),
-        cwd=Path.cwd,
-        now_epoch=lambda: _NOW,
-        read_host_codex_auth=lambda: next(reads),
-        runner_factory=lambda: _Runner(result=CommandResult(exit_code=0, stdout="OK", stderr="")),
+    exit_code = _run(runner=runner, reads=lambda: next(reads))
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert payload["outcome"] == "still-stale"
+    assert payload["renewal_answered"] is True
+
+
+def test_a_malformed_credential_spends_no_request(
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An unparseable auth.json is a human problem; no request is spent on it."""
+    runner = _AppServerRunner(result=CommandResult(exit_code=0, stdout="{}\n", stderr=""))
+
+    exit_code = _run(runner=runner, reads="{")
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert runner.calls == []
+    assert payload["outcome"] == "still-stale"
+    assert payload["before"]["malformed"] is True
+
+
+def test_human_output_stays_actionable_without_json(
+    *,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The human rendering carries the outcome and the remedy ordering."""
+    runner = _AppServerRunner(result=CommandResult(exit_code=0, stdout="{}\n", stderr=""))
+    reads = iter(
+        (
+            _auth_json_with_exp(exp=_NOW + _DUE_REMAINING),
+            _auth_json_with_exp(exp=_NOW + _DUE_REMAINING),
+        )
     )
+
+    exit_code = _run(runner=runner, reads=lambda: next(reads), as_json=False)
 
     assert exit_code == 1
     out = capsys.readouterr().out
     assert "outcome: still-stale" in out
-    assert "run `codex login`" in out
+    assert "renewal_answered: true" in out
