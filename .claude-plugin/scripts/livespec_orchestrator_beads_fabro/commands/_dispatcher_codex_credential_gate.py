@@ -85,6 +85,25 @@ def codex_credential_refusal_for_items(
     by the overlay's own projection record, and a line asserting that a
     credential was admitted would duplicate it.
     """
+    # NOTHING TO CLAIM MEANS NOTHING TO GRADE, and the early return is the whole
+    # point rather than an optimization. This gate answers one question -- can
+    # the credential that this SELECTION will project be brought above the floor?
+    # -- and with no selection nothing will project a credential, so the question
+    # has no subject. Asking it anyway reads the host credential and spends a
+    # bounded PROVIDER REQUEST on a pass that was never going to dispatch, then
+    # reports the shortfall as a dispatch refusal: an idle drain exited 3 instead
+    # of 0 and was charged a renewal for it (measured 2026-10-05). An idle pass
+    # must not be observable at the provider at all.
+    #
+    # The drain reaches the wall with an empty selection on every pass that finds
+    # no ready work, which is the COMMON case, so this is ordinary behaviour
+    # rather than an edge. The guard lives here rather than in the drain because
+    # the emptiness is this gate's own precondition: every caller handing an
+    # empty selection is protected, and the wall's other refusals keep their own
+    # empty-selection behaviour, including the proof-credential gate's grading of
+    # a repository declaration that is broken whether or not work is queued.
+    if not work_item_ids:
+        return None
     projected = project_codex_auth(clock=clock if clock is not None else wall_clock_epoch)
     if not isinstance(projected, CodexProjectionRefusal):
         return None

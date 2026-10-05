@@ -334,6 +334,7 @@ def _stub_loop(
     journal_path: Path,
     item: WorkItem,
     log: list[str],
+    selected: list[WorkItem] | None = None,
 ) -> None:
     """Stub every drain seam AROUND the credential gate, leaving the gate live.
 
@@ -348,7 +349,11 @@ def _stub_loop(
     monkeypatch.setattr(module, "arm_otel_egress", lambda **_kwargs: None)
     monkeypatch.setattr(module, "prepare", lambda **_kwargs: ([item], journal))
     monkeypatch.setattr(module, "journal_path", lambda **_kwargs: journal_path)
-    monkeypatch.setattr(module, "candidates", lambda **_kwargs: [item])
+    # `selected` is the SELECTION the drain would claim this pass. `None`
+    # means the ordinary one-candidate wave; an empty list is the idle pass,
+    # which is a distinct and much more common shape.
+    picked = [item] if selected is None else selected
+    monkeypatch.setattr(module, "candidates", lambda **_kwargs: picked)
     monkeypatch.setattr(
         module, "dispatch_loop_wave", lambda **_kwargs: log.append("claim-and-launch") or []
     )
@@ -377,6 +382,61 @@ def _dispatch_args(*, repo: Path, journal_path: Path, item_id: str) -> argparse.
         skip_ledger_check=True,
         workflow_name=None,
     )
+
+
+def test_an_idle_drain_touches_no_credential_and_reports_no_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A pass with NOTHING to dispatch is a clean exit 0, and grades nothing.
+
+    The drain reaches the pre-dispatch wall even when its selection is empty,
+    and the gate answers a question about the credential a SELECTION will
+    project -- so with no selection there is no question. Asking it anyway spent
+    a bounded provider request on an idle pass and then refused it with a
+    freshness failure, turning ordinary "no work" into exit 3.
+
+    THE CREDENTIAL HERE IS DELIBERATELY ONE THE GATE WOULD REFUSE. That is what
+    makes this a control rather than a restatement of the fixture: the autouse
+    `_hermetic_codex_home` credential is far-future, so every pre-existing
+    idle-loop test in this repository passed through the gate and could not have
+    caught this. An instrument that cannot return a hit reports no hits.
+
+    Its PAIR is `test_both_dispatch_paths_refuse_an_unrenewable_credential_
+    before_claiming` below, over the same stale-credential shape with ONE
+    candidate. Together they fix the gate's reach from both sides: a fix that
+    short-circuited on an empty selection passes this case, and a fix that
+    simply disabled the gate fails that one.
+
+    `log` is the whole measurement. It stays empty of every credential
+    interaction -- no read, no renewal, no clock reading -- because an idle pass
+    must not be observable at the provider at all.
+    """
+    log: list[str] = []
+    journal = _RecordingJournal()
+    journal_path = tmp_path / "tmp" / "fabro-dispatch-journal.jsonl"
+    journal_path.parent.mkdir(parents=True, exist_ok=True)
+    stale = _auth_json_with_exp(exp=_NOW - 10)
+    _stub_credential_source(monkeypatch=monkeypatch, log=log, readings=(stale, stale))
+    _stub_loop(
+        monkeypatch=monkeypatch,
+        journal=journal,
+        journal_path=journal_path,
+        item=_work_item(item_id="bd-ib-tyqklx"),
+        log=log,
+        selected=[],
+    )
+
+    code = _dispatcher_loop_command.run_loop_command(
+        args=_loop_args(repo=tmp_path, journal_path=journal_path)
+    )
+
+    # An idle pass is healthy: nothing is broken and no item is at fault.
+    assert code == 0
+    # Not read, not renewed, not even clocked. The wave still runs, because it
+    # owns the rework leg, which has nothing to do with the credential.
+    assert log == ["claim-and-launch"]
+    assert journal.records == []
+    assert "C-mode dispatch refused" not in capsys.readouterr().err
 
 
 def test_the_drain_rereads_and_regrades_a_renewal_before_anything_is_claimed(

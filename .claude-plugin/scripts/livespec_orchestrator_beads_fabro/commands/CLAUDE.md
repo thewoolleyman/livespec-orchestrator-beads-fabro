@@ -258,6 +258,16 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `project_host_codex_auth` — the post-claim projection, which GRADES but never
   renews, since a second renewal would spend provider work on a question whose
   answer can no longer refuse before a claim.
+  A FOURTH property, and the one a reader is most likely to delete as dead
+  weight: an EMPTY selection returns `None` before the credential is read at
+  all. The drain reaches the wall on every pass that finds no ready work, so
+  this is the common case, and grading there spent a bounded provider request
+  on a pass that was never going to dispatch and then reported the shortfall as
+  a refusal — an idle drain exited 3 instead of 0 (measured 2026-10-05). The
+  guard is the gate's own precondition rather than the drain's, so every caller
+  is covered; the wall's other refusals deliberately keep their empty-selection
+  behaviour, including the proof-credential gate's grading of a repository
+  declaration that is broken whether or not work is queued.
 - `_dispatcher_codex_freshness.py` — the PURE diagnostics leaf behind both of
   those: the guarded freshness grade plus every refusal either position can
   render. Two properties an editor must not invert. `graded_freshness` returns
