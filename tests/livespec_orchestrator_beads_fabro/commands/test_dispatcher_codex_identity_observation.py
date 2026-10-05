@@ -525,6 +525,68 @@ def test_observation_reports_a_state_file_it_could_not_write(
     assert "could not be written" in observation["state_write_detail"]
 
 
+def test_a_prior_state_file_that_is_not_utf8_is_unreadable_rather_than_fatal(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_path = tmp_path / "codex-identity.json"
+    # A real decoding failure, not a JSON one: these bytes are a UTF-16 byte
+    # order mark, so `read_text(encoding="utf-8")` raises before any parser is
+    # reached. `UnicodeDecodeError` is a ValueError, so an OSError-only guard
+    # cannot see it and the status command died on a file it was only reading.
+    _ = state_path.write_bytes(b"\xff\xfe")
+
+    observation = _observe(
+        capsys=capsys,
+        monkeypatch=monkeypatch,
+        state_path=state_path,
+        auth_json=_auth_json(jti="token-one"),
+    )
+
+    assert observation["prior_state"] == "unreadable"
+    assert observation["session_change"] == "unknown"
+    assert observation["token_change"] == "unknown"
+    assert "UTF-8" in observation["prior_state_detail"]
+    # The promised write outcome still arrives: the undecodable record is
+    # replaced by a good one rather than leaving the path poisoned forever.
+    assert observation["state_write"] == "recorded"
+    assert json.loads(state_path.read_text(encoding="utf-8"))["token_fingerprint"] is not None
+
+
+def test_a_credential_file_that_is_not_utf8_reads_as_absent_rather_than_fatal(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # The same decoding hazard on the credential itself. `read_host_codex_auth`
+    # has always documented "None when the file is missing/unreadable"; an
+    # undecodable file is unreadable, and letting the error escape turned the
+    # whole command — and the dispatch projection that shares this read — into a
+    # traceback instead of the actionable refusal.
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    _ = (codex_home / "auth.json").write_bytes(b"\xff\xfe")
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.setattr(_codex_auth().time, "time", lambda: float(_NOW))
+
+    exit_code = _dispatcher().main(
+        argv=[
+            "codex-cred-status",
+            "--json",
+            "--observe-identity-state",
+            str(tmp_path / "codex-identity.json"),
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["present"] is False
+    assert exit_code == 1
+    assert payload[_OBSERVATION_KEY]["claims_readable"] is False
+
+
 @pytest.mark.parametrize(
     "prior_text",
     [

@@ -82,12 +82,18 @@ def read_host_codex_auth() -> str | None:
     DIRECT host-file read — the host is the sole `codex login`+refresh
     owner; the sandbox never touches the live credential. Honors a
     host-side `CODEX_HOME` override (default `~/.codex`). Returns the raw
-    text, or None when the file is missing/unreadable (any `OSError`), so
-    the caller renders an actionable refusal naming `codex login`.
+    text, or None when the file is missing/unreadable, so the caller
+    renders an actionable refusal naming `codex login`.
+
+    `UnicodeDecodeError` counts as unreadable alongside `OSError`, which is
+    exactly what the sentence above has always promised. A credential holding
+    non-UTF-8 bytes is undecodable, not a crash, and letting that error escape
+    turned BOTH callers of this read — the status command and the dispatch
+    credential projection — into a traceback instead of the actionable refusal.
     """
     auth_text = attempt(
         action=lambda: host_codex_auth_path().read_text(encoding="utf-8"),
-        exceptions=(OSError,),
+        exceptions=(OSError, UnicodeDecodeError),
     )
     if isinstance(auth_text, AttemptFailure):
         return None
