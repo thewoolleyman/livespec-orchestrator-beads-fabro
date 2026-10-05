@@ -60,6 +60,14 @@ _REQUIRED_REMAINING = 18_000
 # A ~10-day Codex access token, the lifetime the host mints at renewal.
 _RENEWED_REMAINING = 864_000
 
+# The ADVANCED-BUT-STILL-INSUFFICIENT pair, as captured on 2026-10-05: a
+# renewal that answered, genuinely moved the expiry forward from 900 seconds of
+# remaining lifetime to 17970, and still left the credential under the 18000 the
+# gate requires. It is the only shape in which the retired "did not advance it"
+# wording was factually false rather than merely terse.
+_PRE_RENEWAL_REMAINING = 900
+_ADVANCED_REMAINING = 17_970
+
 # The renewal request is bounded at two minutes, so the clock can move by that
 # much between the pre-request reading and the post-request grading.
 _RENEWAL_ELAPSED = 120
@@ -282,6 +290,12 @@ def test_a_renewal_answered_but_unadvanced_refuses_without_claiming_auth_failure
     # Bounded recovery and a fresh status read precede any human step.
     assert "codex-cred-status" in message
     assert "codex-cred-refresh" in message
+    # The expiry genuinely held, so the non-advancing wording is the TRUTHFUL
+    # one here and must survive: the advanced-but-insufficient case below is
+    # what it must not be applied to.
+    assert "did not advance it" in message
+    assert "advanced its expiry" not in message
+    assert "was not observed" not in message
     # It must not claim an authentication failure it has not measured.
     assert "does NOT by itself establish an authentication failure" in message
     # A human login is conditioned on EXPLICIT auth evidence, never on a
@@ -295,6 +309,69 @@ def test_a_renewal_answered_but_unadvanced_refuses_without_claiming_auth_failure
     assert "only if Codex explicitly reports an unrecoverable authentication" in message
     # The retired tail treated "no advance" as the trigger for login.
     assert "still reports no advance" not in message
+
+
+def test_a_renewal_that_advanced_the_expiry_without_clearing_the_floor_says_so(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An advance that missed the floor is reported as an advance, not as a hold.
+
+    The DISCRIMINATING PAIR for this assertion is this test against the one
+    above it: both refuse, both refuse after exactly one ANSWERED renewal, and
+    both report a remaining lifetime under the same floor — so the exit, the
+    refusal type and the shortfall numbers cannot tell them apart. Only the
+    expiry INSTANT can, and here it moves from `_NOW + 900` to `_NOW + 17970`,
+    which a refusal reporting that "one bounded in-place renewal request did not
+    advance it" would be stating the exact opposite of.
+
+    It matters because the renewal is the ONLY remedy the pre-claim gate can
+    spend: a diagnostic that reports a working renewal as a dead one sends the
+    operator looking for a broken refresh path when what actually happened is a
+    credential whose mint is shorter than this dispatch's own budget.
+    """
+    reads = iter(
+        (
+            _auth_json_with_exp(exp=_NOW + _PRE_RENEWAL_REMAINING),
+            _auth_json_with_exp(exp=_NOW + _ADVANCED_REMAINING),
+        )
+    )
+    monkeypatch.setattr(_dispatcher_codex_auth, "read_host_codex_auth", lambda: next(reads))
+    spent = _stub_renewal(monkeypatch=monkeypatch, answered=True)
+
+    result = project_codex_auth(clock=_AdvancingClock(start=_NOW, step=_RENEWAL_ELAPSED))
+
+    assert isinstance(result, CodexProjectionRefusal)
+    message = result.message
+    # One bounded renewal, and no second one spent chasing the shortfall.
+    assert spent == ["requested"]
+    # The shortfall is reported against the POST-request instant, so the
+    # lifetime named is the renewed one minus the time the request took.
+    assert str(_ADVANCED_REMAINING - _RENEWAL_ELAPSED) in message
+    assert str(_REQUIRED_REMAINING) in message
+    # The ADVANCE is reported, and the non-advancing wording is absent: the
+    # observed failure is a lifetime still short of the floor, not a held expiry.
+    assert "advanced its expiry" in message
+    assert "did not advance" not in message
+    # Nor is it reported as the third observation, the one where no post-renewal
+    # reading was taken at all. The three clauses must share no discriminating
+    # vocabulary, because they are read by substring here and by the published
+    # proof record's grader: an `unmeasured` clause phrased around "advanced its
+    # expiry" graded as an advance in the first draft of this fix.
+    assert "was not observed" not in message
+    # The three guarantees the unchanged-expiry arm carries hold here too: no
+    # authentication verdict from a lifetime reading, no login remedy off one,
+    # and no credential material in the text.
+    assert "does NOT by itself establish an authentication failure" in message
+    assert "cannot report an authentication failure" in message
+    assert "only if Codex explicitly reports an unrecoverable authentication" in message
+    assert _HOST_REFRESH_TOKEN not in message
+    # The tail naming what does NOT count as explicit provider evidence is
+    # OBSERVATION-NEUTRAL, because this arm is the one where the old wording --
+    # "a non-advancing expiry ... cannot establish one" -- named a thing that
+    # was not observed. It is a true general statement and still the wrong one
+    # to put in front of an operator whose expiry demonstrably did advance.
+    assert "a lifetime shortfall and a status reading" in message
+    assert "a non-advancing expiry and a status reading" not in message
 
 
 def test_a_renewal_that_was_never_spent_says_so_and_claims_nothing(
@@ -345,7 +422,14 @@ def test_missing_host_credential_refuses_without_spending_a_renewal(
 def test_credential_unreadable_on_the_reread_refuses_on_the_measured_lifetime(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A credential unreadable after renewal refuses on the pre-renewal reading."""
+    """A credential unreadable after renewal refuses on the pre-renewal reading.
+
+    And it says that is what it is doing. This arm is the ABSENCE of a
+    post-renewal measurement, so it may claim neither of the two measurements
+    the other arms make: the renewal may well have advanced the expiry in a file
+    this dispatch then failed to read, and reporting a hold would be reporting a
+    reading nobody took.
+    """
     reads = iter((_auth_json_with_exp(exp=_NOW + _MEASURED_DEAD_ZONE_REMAINING), None))
     monkeypatch.setattr(_dispatcher_codex_auth, "read_host_codex_auth", lambda: next(reads))
     _ = _stub_renewal(monkeypatch=monkeypatch)
@@ -353,7 +437,14 @@ def test_credential_unreadable_on_the_reread_refuses_on_the_measured_lifetime(
     result = project_codex_auth(clock=_AdvancingClock(start=_NOW, step=_RENEWAL_ELAPSED))
 
     assert isinstance(result, CodexProjectionRefusal)
-    assert str(_MEASURED_DEAD_ZONE_REMAINING) in result.message
+    message = result.message
+    assert str(_MEASURED_DEAD_ZONE_REMAINING) in message
+    # Neither measurement is claimed, and the lifetime is labelled as the
+    # pre-renewal one so the number cannot be read as a post-renewal grade.
+    assert "was not observed" in message
+    assert "PRE-renewal reading" in message
+    assert "did not advance" not in message
+    assert "advanced its expiry" not in message
 
 
 def test_early_renewal_is_bounded_and_runs_on_the_credential_source_host(
