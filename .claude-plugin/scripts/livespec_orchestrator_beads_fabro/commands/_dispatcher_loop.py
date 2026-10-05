@@ -1,4 +1,12 @@
-"""Dispatch-loop candidate selection and per-item launch primitives."""
+"""Per-item dispatch launch: the run-scoped credential projection and the run itself.
+
+The other half of one dispatch -- resolving WHAT it is from the ledger and the
+committed workflow, and journaling that record -- lives in
+`_dispatcher_loop_record`, which runs entirely before the proof-credential mint.
+This module owns everything from the mint onward: the overlay that carries the
+run-scoped credentials, the rendered goal, the watched run, and the dispositions
+its outcome routes to.
+"""
 
 from __future__ import annotations
 
@@ -11,20 +19,11 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_self_update as selfup,
 )
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
-from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
-    warn_item_sizing,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_conformance_premises import (
-    emit_conformance_premise_notices,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     materialize_overlay,
-    read_dispatch_comments,
-    read_dispatch_labels,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_id_journal import (
     DispatchJournalIdentity,
-    append_dispatch_id_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import (
     dispatch_lock_path,
@@ -48,18 +47,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_lessons import (
     read_ratified_lessons,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_materialize import (
-    MaterializationRefusal,
-    materialize_dispatch,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
     failed_dispatch_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_plan import (
-    dispatch_plan_for_item,
     goal_file_path,
     overlay_file_path,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_record import record_dispatch
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_run import (
     DispatchRunContext,
     run_dispatch_with_watchdog,
@@ -128,7 +123,14 @@ def dispatch_one(
         return outcome
 
 
-def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL STAGE (ledger labels, dispatch materialization, ledger comments, GitHub App auth, goal preflight, run-config overlay) plus the dispatched outcome; each names its own stage in the journal and collapsing any two would report the wrong one.
+# One return per PRE-RUN REFUSAL STAGE still standing here — the recorded-dispatch
+# refusal rail, GitHub App auth, the goal preflight and the run-config overlay —
+# plus the dispatched outcome. Each names its own stage in the journal and
+# collapsing any two would report the wrong one. The count no longer needs a
+# `PLR0911` waiver because the ledger-labels, materialization and ledger-comments
+# refusals moved behind `record_dispatch`'s single rail; that is a consequence of
+# the split, not a licence to collapse what is left.
+def _dispatch_one_locked(
     *,
     args: argparse.Namespace,
     repo: Path,
@@ -137,58 +139,14 @@ def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL ST
     janitor: tuple[str, ...] | None,
     identity: DispatchJournalIdentity,
 ) -> DispatchOutcome:
+    recorded = record_dispatch(
+        args=args, repo=repo, item=item, journal=journal, janitor=janitor, identity=identity
+    )
+    if isinstance(recorded, DispatchOutcome):
+        return recorded
+    plan = recorded.plan
     goal_file = goal_file_path(work_item_id=item.id)
     overlay_file = overlay_file_path(work_item_id=item.id)
-    raw_labels = read_dispatch_labels(repo=repo, item=item)
-    if isinstance(raw_labels, str):
-        return failed_dispatch_outcome(
-            journal=journal, work_item_id=item.id, stage="ledger-labels", detail=raw_labels
-        )
-    materialized = materialize_dispatch(args=args, repo=repo, work_item_id=item.id, journal=journal)
-    if isinstance(materialized, MaterializationRefusal):
-        return failed_dispatch_outcome(
-            journal=journal,
-            work_item_id=item.id,
-            stage=materialized.stage,
-            detail=materialized.detail,
-        )
-    committed_workflow = materialized.committed_workflow
-    payload = materialized.payload
-    plan = dispatch_plan_for_item(
-        args=args,
-        repo=repo,
-        item=item,
-        janitor=janitor,
-        raw_labels=raw_labels,
-        timeouts=payload.timeouts,
-        # The default-branch probe rides a plain shell runner: it reads the
-        # target's own git/forge state and predates the per-dispatch GitHub App
-        # token, whose remint decorator exists for the engine's long merge poll.
-        runner=ShellCommandRunner(),
-        committed_workflow=committed_workflow,
-        acp_nodes=materialized.acp_nodes,
-    )
-    warn_item_sizing(item=item, journal=journal)
-    # Surfaced from the ONE contract the plan just resolved, on the same stderr
-    # channel as the other dispatch-time warnings, and never blocking: an
-    # undeclared conformance premise is a legitimate no-op that would otherwise
-    # be indistinguishable from a chosen one.
-    emit_conformance_premise_notices(resolved=plan.integration, journal=journal)
-    comments = read_dispatch_comments(repo=repo, item=item)
-    if isinstance(comments, str):
-        return failed_dispatch_outcome(
-            journal=journal, work_item_id=item.id, stage="ledger-comments", detail=comments
-        )
-    append_dispatch_id_record(
-        journal=journal,
-        work_item_id=item.id,
-        identity=identity,
-        started_at_epoch=time.time(),
-        workflow_toml=committed_workflow,
-        workflow_name=materialized.workflow_name,
-        integration=plan.integration,
-        merge_hold=plan.merge_hold,
-    )
     if isinstance(token_supplier := selfup.github_token_supplier(), str):
         return failed_dispatch_outcome(
             journal=journal,
@@ -198,10 +156,13 @@ def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL ST
         )
     # Lessons are read host-side from `repo` (the dispatcher's operative
     # checkout, where the reflector maintains loop-reflection-gate/lessons.md),
-    # exactly like `comments` above; only committed content is read, so an
-    # unmerged reflector proposal never influences a brief.
+    # exactly like the ledger comments the dispatch record carries; only
+    # committed content is read, so an unmerged reflector proposal never
+    # influences a brief.
     lessons = read_ratified_lessons(lessons_root=repo)
-    findings = minijinja_openers_in_goal_sources(item=item, comments=comments, lessons=lessons)
+    findings = minijinja_openers_in_goal_sources(
+        item=item, comments=recorded.comments, lessons=lessons
+    )
     if findings:
         return failed_dispatch_outcome(
             journal=journal,
@@ -217,19 +178,19 @@ def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL ST
     # the item, its comments and the lessons, none of which the overlay
     # supplies, so it has no reason to run on the leaking side.
     overlay_error = materialize_overlay(
-        committed=committed_workflow,
+        committed=recorded.committed_workflow,
         overlay=overlay_file,
         repo=repo,
         work_item_id=item.id,
         dispatch_id=identity.dispatch_id,
         token=token_supplier,
-        graph_override=payload.graph,
+        graph_override=recorded.payload.graph,
         # The ONE contract the plan already resolved, projected once more: the
         # committed run config's prepare commands template these values as
         # `{{ inputs.* }}`, and the pinned engine renders that site for the
         # graph but not for `run.prepare`.
         prepare_inputs=contract_prompt_variables(resolved=plan.integration),
-        git_author=materialized.git_author,
+        git_author=recorded.git_author,
     )
     if overlay_error is not None:
         return failed_dispatch_outcome(
@@ -239,7 +200,7 @@ def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL ST
             detail=overlay_error,
         )
     goal_text = render_goal(
-        item=item, repo=repo, branch=plan.branch, comments=comments, lessons=lessons
+        item=item, repo=repo, branch=plan.branch, comments=recorded.comments, lessons=lessons
     )
     _ = goal_file.write_text(goal_text, encoding="utf-8")
     started_at, outcome = run_dispatch_with_watchdog(
@@ -249,7 +210,7 @@ def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL ST
             plan=plan,
             journal=journal,
             overlay_file=overlay_file,
-            payload_dir=payload.payload_dir,
+            payload_dir=recorded.payload.payload_dir,
             token_supplier=token_supplier,
             dispatch_id=identity.dispatch_id,
         ),

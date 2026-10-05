@@ -54,6 +54,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_ledger_close,
     _dispatcher_loop,
     _dispatcher_loop_command,
+    _dispatcher_loop_record,
     _dispatcher_loop_selection,
     _dispatcher_provider_exhaustion,
     _dispatcher_reflection,
@@ -4458,7 +4459,9 @@ def test_dispatch_pre_run_failure_releases_admitted_claim(
     append_work_item(path=_config(), item=item)
     journal = JournalFile(path=repo / "tmp" / "fabro-dispatch-journal.jsonl")
     journal.append(record={"stage": "ledger-admit", "work_item_id": item.id, "assignee": "fabro"})
-    monkeypatch.setattr(_dispatcher_loop, "read_dispatch_comments", lambda **_: "factory refused")
+    monkeypatch.setattr(
+        _dispatcher_loop_record, "read_dispatch_comments", lambda **_: "factory refused"
+    )
 
     outcome = _dispatcher_loop.dispatch_one(
         args=argparse.Namespace(
@@ -6422,7 +6425,7 @@ def test_dispatch_refuses_minijinja_goal_before_fabro_and_releases_claim(
     )
     append_work_item(path=_config(), item=item)
     monkeypatch.setattr(
-        _dispatcher_loop,
+        _dispatcher_loop_record,
         "read_dispatch_comments",
         lambda **_: (
             WorkItemComment(

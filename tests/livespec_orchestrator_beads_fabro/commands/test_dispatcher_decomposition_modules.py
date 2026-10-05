@@ -448,3 +448,40 @@ def test_loop_wave_cluster_importable_from_new_module_and_private_names_removed(
     for name in ("_dispatch_loop_wave", "_admit_and_dispatch_loop_wave"):
         assert not hasattr(loop_command, name)
         assert not hasattr(dispatcher, name)
+
+
+def test_loop_record_cluster_importable_from_new_module_and_old_names_removed() -> None:
+    """Resolving and RECORDING what one dispatch is, is its own module.
+
+    Split out of `_dispatcher_loop`, which stood exactly at the 250-LLOC hard
+    ceiling and therefore could not thread one more projection into its overlay
+    call. The seam is the dispatch record: reading the item's ledger labels and
+    comments, resolving the committed workflow and the plan, surfacing the
+    dispatch-time warnings and journaling the `dispatch-id` record are ONE
+    concern; minting credentials, launching the run and disposing of its outcome
+    are the other.
+
+    The moved readers travelled WITH the entry point rather than being imported
+    back across the seam, which is what the absent-and-present pairs assert.
+    """
+    module_path = Path(dispatcher.__file__).parent / "_dispatcher_loop_record.py"
+    loop_record_public_names = {
+        "RecordedDispatch",
+        "record_dispatch",
+    }
+
+    assert module_path.is_file()
+    loop_record = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_record"
+    )
+    dispatch_loop = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop"
+    )
+    assert set(loop_record.__all__) == loop_record_public_names
+    for name in loop_record_public_names:
+        assert hasattr(loop_record, name)
+    assert dispatch_loop.record_dispatch is loop_record.record_dispatch
+    for name in ("materialize_dispatch", "read_dispatch_comments", "read_dispatch_labels"):
+        assert not hasattr(dispatch_loop, name)
+        assert hasattr(loop_record, name)
+    assert dispatch_loop.__all__ == ["dispatch_one"]
