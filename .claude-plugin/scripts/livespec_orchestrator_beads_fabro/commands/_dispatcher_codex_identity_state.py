@@ -107,7 +107,7 @@ def write_identity_state(*, path: Path, record: CodexIdentityStateRecord) -> str
     text = json.dumps(_encode(record=record), indent=2, sort_keys=True) + "\n"
     written = attempt(action=lambda: _write(path=path, text=text), exceptions=(OSError,))
     if isinstance(written, AttemptFailure):
-        return f"This observation was not recorded: {written.error}"
+        return f"This observation could not be written: {written.error}"
     return None
 
 
