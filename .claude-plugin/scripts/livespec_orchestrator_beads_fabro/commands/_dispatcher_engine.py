@@ -56,6 +56,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol, cast
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_current_merge_hold import (
+    read_current_merge_hold,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import (
     failed_outcome,
     journal_stage,
@@ -362,7 +365,13 @@ def run_dispatch(
     )
     if terminal is not None:
         return terminal
-    view = confirm_pr(plan=plan, runner=runner, journal=journal)
+    # THE CURRENT HOLD, read ONCE for the whole merge-confirmation boundary. The
+    # plan's `merge_hold` is the launch snapshot the sandbox and the dispatch record
+    # share and must keep; this is what the ledger says now, hours later, and a hold
+    # set during the run is visible in exactly one of the two
+    # (`_dispatcher_current_merge_hold`).
+    hold = read_current_merge_hold(repo=plan.repo, work_item_id=plan.work_item_id)
+    view = confirm_pr(plan=plan, runner=runner, journal=journal, hold=hold)
     if view is None:
         return failed_outcome(
             outcome_type=DispatchOutcome,

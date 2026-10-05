@@ -14,11 +14,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     PrView,
     parse_pr_view,
     pr_arm_argv,
+    pr_disarm_argv,
     pr_update_branch_argv,
     pr_view_argv,
 )
 
 if TYPE_CHECKING:
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_current_merge_hold import (
+        CurrentMergeHold,
+    )
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
         CommandRunner,
         DispatchOutcome,
@@ -37,17 +41,53 @@ def confirm_pr(
     plan: DispatchPlan,
     runner: CommandRunner,
     journal: JournalWriter,
+    hold: CurrentMergeHold,
 ) -> PrView | None:
+    """Confirm the publish branch's pull request, arming auto-merge only if it may.
+
+    `hold` is the CURRENT merge hold, read once at this boundary from the ledger
+    authority rather than taken off `plan.merge_hold`
+    (`_dispatcher_current_merge_hold` records why). It is a parameter rather than a
+    read of its own because the terminal classification downstream must route on the
+    SAME reading: two reads of one question cannot be proven to agree, and their
+    disagreement would be invisible -- both return a well-formed answer.
+
+    A MERGED pull request is past the hold entirely and is returned before `hold` is
+    consulted at all: the ratified valve refuses a hold on a merged item as a no-op
+    naming the merge, so there is nothing here to hold and nothing to arm.
+    """
     view = _view_pr(plan=plan, runner=runner, journal=journal)
     if view is None:
         return None
-    if view.auto_merge_armed or view.state == "MERGED":
+    if view.state == "MERGED":
+        return view
+    if hold == "unheld":
+        return _arm_fallback(plan=plan, runner=runner, journal=journal, view=view)
+    if hold == "held" and view.auto_merge_armed:
+        return _disarm_held(plan=plan, runner=runner, journal=journal, view=view)
+    # The two write-nothing readings. A held pull request with nothing armed is
+    # already in the state the hold wants. An `unreadable` authority is NOT that same
+    # state -- it is this host declining to answer for a ledger it could not ask, so
+    # it makes no forge write in EITHER direction: arming would reverse a hold it
+    # cannot see, and disarming would reverse an arming it cannot justify.
+    return view
+
+
+def _arm_fallback(
+    *,
+    plan: DispatchPlan,
+    runner: CommandRunner,
+    journal: JournalWriter,
+    view: PrView,
+) -> PrView | None:
+    """Arm auto-merge for an unheld pull request that is not armed already."""
+    if view.auto_merge_armed:
         return view
     argv = pr_arm_argv(plan=plan, number=view.number)
-    # An EMPTY argv is the merge hold saying there is no forge write to make.
-    # This is the fallback-arming path, which exists precisely for a pr stage
-    # that could not arm -- so running it for a held item would take the one
-    # branch that silently undoes a pr stage which correctly armed nothing.
+    # An EMPTY argv is the LAUNCH snapshot's own hold saying there is no forge write
+    # to make. It still stands with the ledger reading unheld: a hold released
+    # mid-run is armed by the release valve itself, from the merge method the
+    # dispatch journaled, and this seam has no business re-arming behind it.
     if not argv:
         return view
     arm = runner.run(
@@ -56,6 +96,30 @@ def confirm_pr(
         timeout_seconds=_GH_TIMEOUT_SECONDS,
     )
     journal_stage(journal=journal, plan=plan, stage="pr-arm-fallback", result=arm)
+    return _view_pr(plan=plan, runner=runner, journal=journal)
+
+
+def _disarm_held(
+    *,
+    plan: DispatchPlan,
+    runner: CommandRunner,
+    journal: JournalWriter,
+    view: PrView,
+) -> PrView | None:
+    """Remove an auto-merge request from a pull request the ledger now holds.
+
+    Leaving it armed would honour the hold's letter -- this confirmation armed
+    nothing -- while the merge the hold forbids lands anyway on the next green check
+    run. The arming is almost always this host's own, from a dispatch that read the
+    stale snapshot, so refusing to undo it would leave the measured defect's effect
+    standing while fixing only its cause.
+    """
+    disarm = runner.run(
+        argv=pr_disarm_argv(plan=plan, number=view.number),
+        cwd=plan.repo,
+        timeout_seconds=_GH_TIMEOUT_SECONDS,
+    )
+    journal_stage(journal=journal, plan=plan, stage="pr-disarm-held", result=disarm)
     return _view_pr(plan=plan, runner=runner, journal=journal)
 
 
