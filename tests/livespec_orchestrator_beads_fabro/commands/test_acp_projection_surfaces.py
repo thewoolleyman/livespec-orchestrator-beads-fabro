@@ -37,6 +37,7 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands import (
     _acp_projection_clear,
     _dispatcher_loop_command,
+    _dispatcher_pre_dispatch_wall,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_failure_classifier import (
     AcpAvailabilityFailure,
@@ -293,7 +294,12 @@ def _stub_loop(*, monkeypatch: pytest.MonkeyPatch, journal_path: Path, waves: li
     monkeypatch.setattr(module, "journal_path", lambda **_kwargs: journal_path)
     monkeypatch.setattr(module, "requested_items_preflight_error", lambda **_kwargs: None)
     monkeypatch.setattr(module, "candidates", lambda **_kwargs: [])
-    monkeypatch.setattr(module, "pre_dispatch_criteria_refusal", lambda **_kwargs: None)
+    # The criteria wall lives in the SHARED pre-dispatch wall both dispatch
+    # paths run, not in the drain's own module; the drain imports the wall as
+    # one name. Stub it where it is defined.
+    monkeypatch.setattr(
+        _dispatcher_pre_dispatch_wall, "pre_dispatch_criteria_refusal", lambda **_kwargs: None
+    )
     monkeypatch.setattr(module, "dispatch_loop_wave", lambda **_kwargs: waves.append(1) or [])
 
 
