@@ -428,7 +428,7 @@ of this corrected archive rule is tracked outside this repo in
 `livespec-dev-tooling-5asgvm` and the related converse-gap item
 `livespec-dev-tooling-q3emww`.
 
-Archiving has two required legs:
+Archiving has three required legs:
 
 1. Mechanical child disposition. Refuse archive if any child of the plan
    epic is not disposed. Undisposed means any child work-item whose
@@ -443,6 +443,48 @@ Archiving has two required legs:
    Keep the plan live until that durable evidence exists. A self-review,
    an unrecorded result, or a review that does not attest complete
    requirement-carrier coverage is not evidence.
+3. The plan's own Proof of Done. The epic must carry a Definition of Done
+   section, and the latest plan Proof of Done record on it whose verdict
+   is `verified` or `not_reproduced` must be `verified`, must cover every
+   plan assertion that is not `human_attested`, and must postdate both the
+   latest `captured` record and the last carrier-map event. Each
+   `human_attested` plan assertion is covered separately, by a
+   `human_attested` record postdating that same event. A later
+   `human_attested` record does not unseat an earlier `verified` one, and a
+   ruling or deferral that is not a carrier-map event voids neither.
+   `archive_thread(...)` refuses while this leg is unmet, naming each
+   unproved plan assertion, and leaves the plan directory and the epic
+   unchanged. The independent completeness reviewer of leg 2 may be the
+   verifying party of the plan record.
+
+Publish every plan record through the one posting primitive, never by
+hand:
+
+```text
+dispatcher.py post-plan-record --repo <path> --epic <id> \
+    --verdict <captured|verified|not_reproduced|human_attested> \
+    --record <payload.json>
+```
+
+The payload carries only what the publishing session holds: the build
+identity it exercised, and per plan assertion the numbered steps, the
+proof they produced, and whether they reproduced. The primitive computes
+the rest — the header, the UTC timestamp, the publishing identity, and
+each assertion's proof mode read off the plan's own Definition of Done —
+and refuses a `verified` post whose computed identity equals the identity
+that captured the steps it replays. A DIFFERENT session must replay them.
+
+Where a release applies to the plan's work — the governed repository
+carries at least one release tag — the steps must run against the released
+artifact installed through its normal installation path. The archive gate
+rejects a record that states `release: none`, or names a release tag the
+repository does not carry, and names the missing release identity in its
+refusal.
+
+After the fact, the `plan_close_proof` conformance verdict reports a plan
+epic closed later than the proof leg's ratification date whose timeline
+carries no `verified` plan record; an epic closed on or before that date is
+out of its scope.
 
 Before the move, sweep the working tree for code that reads the plan
 directory by path. Both ledger gates are blind to it: they enumerate
@@ -490,10 +532,14 @@ or work-item before archiving.
 - Status is derived from the ledger and never shadowed in files.
 - Scope events cut requirements and explicit deferrals before
   implementation children are admitted.
-- Archive has two gates: no undisposed children, and independent
-  completeness-review evidence; the operation commissions the missing
-  reviewer only after all children are disposed and still refuses to
-  archive before valid durable evidence exists.
+- Archive has three gates: no undisposed children, independent
+  completeness-review evidence, and a verified plan Proof of Done record
+  taken against the released build; the operation commissions the missing
+  reviewer only after all children are disposed, and still refuses to
+  archive before valid durable evidence and a verified plan record exist.
+- A plan assertion is not transferable. Remaining WORK may be handed to
+  named follow-ups at archive time; an unproved plan assertion leaves only
+  the keep-the-plan-live disposition.
 - The operation never authors `handoff.md`.
 
 ## What This Operation Does Not Do

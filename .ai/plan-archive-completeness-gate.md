@@ -5,21 +5,36 @@ directory has already been moved under `plan/archive/`.
 
 ## The trap
 
-`archive_thread(...)` has TWO gates:
+`archive_thread(...)` has THREE gates:
 
 1. **Mechanical child disposition** — refuse while any linked plan member is
    not `closed`.
 2. **Independent completeness-review evidence** — recorded durably through
    `record_completeness_review_evidence(...)`.
+3. **A verified plan Proof of Done record** — the proof leg, ratified
+   2026-10-04. The epic must carry a Definition of Done section, and the
+   latest plan record on it whose verdict is `verified` or `not_reproduced`
+   must be `verified`, must cover every non-`human_attested` plan assertion,
+   and must postdate both the latest `captured` record and the last
+   carrier-map event. Publish records ONLY through
+   `dispatcher.py post-plan-record` (see "Proving the plan" below).
 
 Performing the `git mv` into `plan/archive/<slug>/` **by hand in a pull
-request runs NEITHER**. The move merges, master looks archived, the plan
+request runs NONE OF THEM**. The move merges, master looks archived, the plan
 directory is where it belongs — and the second gate was never executed.
 Nothing anywhere reports that it was skipped. The next session sees a merged
 archive move and reasonably concludes the archive is complete.
 
 It is not. **A hand-moved plan directory means the epic is NOT archived.**
-Keep the epic open and commission the review.
+Keep the epic open, commission the review, and prove the plan.
+
+The `plan_close_proof` conformance verdict exists for exactly that residue:
+it reports an epic closed later than 2026-10-04 whose timeline carries no
+`verified` plan record. It is armed-only, under the same lever and credential
+as the eleven shared plan-record checks
+(`LIVESPEC_RUN_PLAN_RECORD_CONFORMANCE` + `BEADS_DOLT_PASSWORD`), so a
+hermetic `just check` self-skips it and a hand-moved archive stays invisible
+until the family is armed against the live tenant.
 
 ## Why the gate is not ceremony — a measured instance
 
@@ -52,6 +67,43 @@ not by itself a finding.** What distinguished these two is narrower — the
 since been met, and the same plan had already filed `bd-ib-vc3j4p` for the
 word-for-word identical Scenario 117 debt, so it had demonstrably understood
 the obligation and simply not applied it twice.
+
+## Proving the plan
+
+A plan record is an append-only comment on the EPIC — not on a pull request,
+which a plan does not have. Publish both legs through the one primitive, so
+nothing is hand-formatted:
+
+```bash
+dispatcher.py post-plan-record --repo <path> --epic <id> \
+    --verdict captured --record capture.json
+# then, from a DIFFERENT session identity:
+dispatcher.py post-plan-record --repo <path> --epic <id> \
+    --verdict verified --record replay.json
+```
+
+The payload is a JSON object carrying `build` (`release_tag`,
+`installed_build`, `commit`) and `assertions[]` (`text`, `steps[]`, `proof`,
+`reproduced`). Four things are NOT yours to supply and have no flag: the
+publishing identity, the UTC timestamp, the header shape, and each
+assertion's proof mode — the primitive computes all four, and the identity
+one is what makes the independence refusal more than a naming convention.
+
+Three traps, each of which produces a permanent record that looks published
+and is not evidence:
+
+- **A `verified` post from the capturing session is refused.** That is the
+  primitive being kind; the archive gate rejects such a record "however it
+  was posted", so a hand-written one is refused at the gate instead, after
+  it is already permanent. Use two session identities.
+- **A record stating `release: none` is not evidence where a release
+  applies** — and "applies" means the governed repository carries at least
+  one git tag, which every fleet repo does. Name the released tag you
+  actually installed from; a tag the repository does not carry is refused
+  the same way.
+- **A `captured` record published AFTER the `verified` one voids it.** The
+  replay must postdate the newest capture, so re-capturing to "tidy up" the
+  record set un-proves the plan. Capture first, replay second, stop.
 
 ## Commissioning the review
 
@@ -121,7 +173,16 @@ wrote. Run it against both ids before closing the epic, and confirm
 and `attests-complete-requirement-coverage` is `true`. **Nothing in it can tell
 a genuine independent review from an archiving session writing those four
 fields about its own work.** The gate records the claim; it cannot verify the
-independence the claim asserts. The load-bearing act is therefore commissioning
+independence the claim asserts.
+
+The PROOF leg is harder to fake and still not self-enforcing. Its independence
+check compares COMPUTED session identities, so it cannot be satisfied by
+writing a field — but it cannot tell a genuine independent replay from the same
+operator driving a second session either. What it does guarantee is that two
+distinct sessions published, that the record names a release the repository
+carries, and that the steps and their output are on the record where a later
+reader can re-run them. The load-bearing act is still a party with no role in
+the implementation actually replaying the steps. The load-bearing act is therefore commissioning
 a reviewer that actually had no role in the implementation — the mechanism only
 certifies that you say you did.
 
