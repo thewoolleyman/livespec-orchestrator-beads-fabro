@@ -202,11 +202,16 @@ def test_a_credential_shaped_name_is_refused_at_the_name_position() -> None:
     assert "api_key" in refusal
 
 
-def test_the_module_declares_the_gate_and_the_projection() -> None:
-    """The public surface the dispatch path reaches, declared in `__all__`."""
+def test_the_module_declares_the_gate_and_the_parse() -> None:
+    """The public surface the dispatch path reaches, declared in `__all__`.
+
+    The PROJECTION is deliberately absent from this set: it moved to
+    `_dispatcher_proof_credential_projection`, and its own module asserts that
+    neither name survives here as a re-export.
+    """
     module = _module()
 
-    assert {"proof_credentials_env_lines", "proof_credentials_refusal"} <= set(module.__all__)
+    assert {"parse_proof_credentials", "proof_credentials_refusal"} <= set(module.__all__)
 
 
 def test_a_withheld_store_credential_is_refused_as_withheld_not_as_credential_shaped() -> None:
@@ -267,72 +272,31 @@ def test_an_absent_value_is_refused_naming_the_name_and_the_credential_wrapper()
     assert "with-acme-env.sh" in refusal
 
 
-def test_a_present_read_only_value_passes_the_gate_and_projects_one_overlay_line() -> None:
-    """The positive control: the declared name reaches the sandbox env table.
+def test_a_present_read_only_value_passes_the_gate() -> None:
+    """The positive control for the gate: a declaration it admits.
 
-    Asserted on BOTH halves of one declaration, because a gate that admitted
-    everything and a projection that rendered nothing each look like success on
-    their own.
+    Without it, every refusal below is equally consistent with a gate that
+    refuses each declaration it is handed. The PROJECTION half of this control
+    lives in the projection module's own tests.
     """
     module = _module()
     block = _block(declared=[_read_only()])
     environ = {"ACME_STATUS_READER": "acme-observer-value"}
 
     assert module.proof_credentials_refusal(block=block, environ=environ, wrapper_text="[]") is None
-    assert (
-        module.proof_credentials_env_lines(block=block, environ=environ)
-        == 'ACME_STATUS_READER = "acme-observer-value"\n'
-    )
 
 
-def test_a_minted_name_is_neither_refused_for_absence_nor_projected_twice() -> None:
-    """A credential the Dispatcher mints per run needs no host value and no second line.
+def test_a_minted_name_is_not_refused_for_an_absent_host_value() -> None:
+    """A credential the Dispatcher mints per run needs no host value.
 
     The overlay already projects `GITHUB_TOKEN` from the installation token it
-    mints for this dispatch. A second TOML line under the same key would make the
-    WHOLE overlay unparseable — one repository's declaration turning into a
-    dispatch-wide failure — and refusing it for an absent host value would refuse
+    mints for this dispatch, so refusing it for an absent host value would refuse
     a credential the Dispatcher itself supplies.
     """
     module = _module()
     block = _block(declared=[_read_only(name="GITHUB_TOKEN", purpose="observe the forge")])
 
     assert module.proof_credentials_refusal(block=block, environ={}, wrapper_text="[]") is None
-    assert module.proof_credentials_env_lines(block=block, environ={}) == ""
-
-
-def test_a_refused_declaration_projects_nothing() -> None:
-    """The projection is fail-closed: a declaration the gate refuses renders no line.
-
-    The gate runs before the overlay on every dispatch path, so this arm should be
-    unreachable in production. It is asserted anyway because the alternative shape
-    — a builder that renders whatever it can parse — is the fail-open one, and the
-    cost of being wrong here is a projected credential nobody admitted.
-    """
-    module = _module()
-
-    assert (
-        module.proof_credentials_env_lines(
-            block=_block(declared=[_read_only(name="BEADS_DOLT_PASSWORD")]),
-            environ={"BEADS_DOLT_PASSWORD": "store-password"},
-        )
-        == ""
-    )
-
-
-def test_a_copied_name_whose_value_is_absent_projects_no_line() -> None:
-    """The projection skips an absent value rather than rendering it empty.
-
-    The gate refuses this case before the overlay is reached, so this is the
-    projection's own fail-closed arm: an empty TOML value would put a name into
-    the sandbox environment that resolves to nothing, which reads to a proof
-    stage exactly like a revoked credential.
-    """
-    module = _module()
-
-    assert (
-        module.proof_credentials_env_lines(block=_block(declared=[_read_only()]), environ={}) == ""
-    )
 
 
 def test_the_gate_hands_back_the_declaration_refusal_verbatim() -> None:
@@ -355,12 +319,11 @@ def test_the_gate_hands_back_the_declaration_refusal_verbatim() -> None:
     ) == module.parse_proof_credentials(block=block)
 
 
-def test_an_absent_declaration_projects_nothing_and_refuses_nothing() -> None:
+def test_an_absent_declaration_refuses_nothing() -> None:
     """The normal posture: a repository declaring no proof credential is untouched."""
     module = _module()
 
     assert module.proof_credentials_refusal(block={}, environ={}, wrapper_text="[]") is None
-    assert module.proof_credentials_env_lines(block={}, environ={}) == ""
 
 
 def test_each_declaration_is_journaled_by_name_with_how_it_was_provisioned(

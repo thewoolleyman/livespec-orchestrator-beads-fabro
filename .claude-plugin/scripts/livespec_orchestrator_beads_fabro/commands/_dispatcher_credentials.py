@@ -45,7 +45,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     render_run_config_overlay,
     resolve_sandbox_otel_endpoint,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credentials import (
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_projection import (
     proof_credentials_overlay_env,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (
