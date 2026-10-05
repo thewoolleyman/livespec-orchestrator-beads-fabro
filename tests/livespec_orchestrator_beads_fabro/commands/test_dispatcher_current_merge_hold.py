@@ -84,6 +84,7 @@ _ARM_ARGV = [
     "--delete-branch",
 ]
 _DISARM_ARGV = ["gh", "pr", "merge", str(_PR_NUMBER), "--disable-auto"]
+_MERGE_SHA = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 
 
 def _store() -> StoreConfig:
@@ -159,17 +160,37 @@ def _view(*, armed: bool) -> CommandResult:
     )
 
 
+def _merged_view() -> CommandResult:
+    return CommandResult(
+        exit_code=0,
+        stdout=json.dumps(
+            {
+                "number": _PR_NUMBER,
+                "state": "MERGED",
+                "autoMergeRequest": None,
+                "mergeStateStatus": "CLEAN",
+                "mergeCommit": {"oid": _MERGE_SHA},
+                "statusCheckRollup": [],
+            }
+        ),
+        stderr="",
+    )
+
+
 @dataclass(kw_only=True)
 class _Runner:
     """Records every argv; answers an exhausted queue with an open, unarmed view.
 
     The default answer is load-bearing. These cases assert what the host did and did
     NOT send to the forge, and a queue that ran dry would raise `IndexError` -- making
-    the fixture the verdict instead of the engine.
+    the fixture the verdict instead of the engine. `default` overrides it for the one
+    case whose forge has MERGED the pull request: there every later read must report
+    the merge, and a fixed open answer would make the queue length decide the outcome.
     """
 
     queue: list[CommandResult] = field(default_factory=list)
     calls: list[list[str]] = field(default_factory=list)
+    default: CommandResult | None = None
 
     def run(
         self,
@@ -184,7 +205,7 @@ class _Runner:
         self.calls.append(argv)
         if self.queue:
             return self.queue.pop(0)
-        return _view(armed=False)
+        return _view(armed=False) if self.default is None else self.default
 
 
 @dataclass(kw_only=True)
@@ -259,11 +280,106 @@ def test_the_host_disarms_a_pull_request_it_finds_armed_while_the_item_is_now_he
     runner = _Runner(queue=[_view(armed=True), CommandResult(exit_code=0, stdout="", stderr="")])
     journal = _Journal()
 
-    _ = _dispatch(repo=tmp_path, runner=runner, journal=journal)
+    dispatched = _dispatch(repo=tmp_path, runner=runner, journal=journal)
 
     assert _DISARM_ARGV in runner.calls
     assert _ARM_ARGV not in runner.calls
     assert "pr-disarm-held" in [record["stage"] for record in journal.records]
+    # The exhausted queue answers the authoritative re-read UNARMED, so the disarm
+    # took effect and the held terminal is earned. This is the control for the two
+    # refusals below, and it is the SAME outcome a pull request that was never armed
+    # produces -- which is correct here and is exactly what made the refusals
+    # invisible before them.
+    assert (dispatched.outcome.status, dispatched.outcome.stage) == ("green", "pr")
+
+
+def test_a_held_pull_request_still_armed_after_a_failed_disarm_refuses_instead_of_green(
+    tmp_path: Path,
+) -> None:
+    """The forge REFUSED the disarm, so the hold is not enforced and must not be claimed.
+
+    Caught in review of this item's own pull request 2614. The host reported
+    `green` at the held boundary with a detail reading "PR #7 is open with no
+    auto-merge armed" while the pull request was armed, so the merge the hold
+    forbids would land on the next green check run and the dispatch result said the
+    opposite. A refusal that is only as strong as a forge write it never checked is
+    not a refusal.
+    """
+    _tenant(repo=tmp_path, held=True)
+    runner = _Runner(
+        queue=[
+            _view(armed=True),
+            CommandResult(exit_code=1, stdout="", stderr="GraphQL: Could not resolve to a node"),
+            _view(armed=True),
+        ]
+    )
+
+    dispatched = _dispatch(repo=tmp_path, runner=runner, journal=_Journal())
+
+    assert (dispatched.outcome.status, dispatched.outcome.stage) == (
+        "failed",
+        "merge-hold-unenforced",
+    )
+    assert dispatched.outcome.pr_number == _PR_NUMBER
+    assert dispatched.outcome.merge_sha is None
+    # It must not WAIT either: the pull request is armed and may merge at any moment,
+    # so polling for that merge would be waiting for the very thing being refused.
+    assert dispatched.sleeps == ()
+    assert "no auto-merge armed" not in dispatched.outcome.detail
+    assert _ITEM_ID in dispatched.outcome.detail
+    assert f"gh pr merge {_PR_NUMBER} --disable-auto" in dispatched.outcome.detail
+
+
+def test_a_disarm_reporting_success_without_taking_effect_refuses_the_same_way(
+    tmp_path: Path,
+) -> None:
+    """A forge write can report success and not take effect, and that is the worse arm.
+
+    Keyed on the AUTHORITATIVE post-disarm view rather than on the disarm command's
+    exit code, because the exit code can lie in both directions -- a non-zero exit
+    whose pull request is nonetheless unarmed is the control above -- and the re-read
+    cannot. The disarm command's own result stays in the `pr-disarm-held` journal
+    row, which is where an operator tells a refused write from an ineffective one.
+    """
+    _tenant(repo=tmp_path, held=True)
+    runner = _Runner(
+        queue=[
+            _view(armed=True),
+            CommandResult(exit_code=0, stdout="", stderr=""),
+            _view(armed=True),
+        ]
+    )
+
+    dispatched = _dispatch(repo=tmp_path, runner=runner, journal=_Journal())
+
+    assert (dispatched.outcome.status, dispatched.outcome.stage) == (
+        "failed",
+        "merge-hold-unenforced",
+    )
+    assert dispatched.sleeps == ()
+
+
+def test_a_pull_request_that_merges_during_the_disarm_takes_the_ordinary_post_merge_path(
+    tmp_path: Path,
+) -> None:
+    """The MERGED race, which the held terminal must keep letting through.
+
+    A pull request that merged between the disarm write and the re-read is past the
+    hold entirely: terminating green-with-no-merge there would skip the post-merge
+    janitor and the acceptance valve on work that HAS merged. The refusal above must
+    not be reached by widening into this arm, so it is asserted beside them rather
+    than left to be noticed by its absence.
+    """
+    _tenant(repo=tmp_path, held=True)
+    runner = _Runner(
+        queue=[_view(armed=True), CommandResult(exit_code=0, stdout="", stderr="")],
+        default=_merged_view(),
+    )
+
+    dispatched = _dispatch(repo=tmp_path, runner=runner, journal=_Journal())
+
+    assert dispatched.outcome.stage != "merge-hold-unenforced"
+    assert dispatched.outcome.merge_sha == _MERGE_SHA
 
 
 def test_the_host_writes_nothing_to_the_forge_when_the_hold_authority_is_unreadable(

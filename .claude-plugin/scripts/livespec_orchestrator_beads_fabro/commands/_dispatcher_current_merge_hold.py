@@ -93,6 +93,11 @@ MERGE_HELD_STAGE = "pr"
 # outcome needs no second reader to behave correctly.
 _MERGE_HOLD_AUTHORITY_STAGE = "merge-hold-authority"
 
+# The stage a run FAILS at when the item IS held and the pull request still carries
+# an auto-merge request after this host tried to remove it. Private for the same
+# reason as the stage above: it exists to be read by a person in the dispatch result.
+_MERGE_HOLD_UNENFORCED_STAGE = "merge-hold-unenforced"
+
 # The EXPECTED-error surface one hold read (`resolve_store_config` +
 # `read_merge_held_work_item_ids`) can raise. The set mirrors `_ready_aging_order`'s
 # dwell read, and it is enumerated rather than blanket-caught for the same reason: a
@@ -151,6 +156,12 @@ def merge_hold_terminal(
     proceeds to its ordinary post-merge path. Terminating green-with-no-merge there
     would skip the post-merge janitor and the acceptance valve on work that HAS
     merged, which is a worse outcome than the one the hold is protecting against.
+
+    The green terminal is EARNED, not assumed: it is reached only when the
+    authoritative view `confirm_pr` took after its own disarm carries no auto-merge
+    request. A view that still carries one refuses instead, because the alternative
+    is a dispatch result stating the hold holds about a pull request that is about
+    to merge.
     """
     if view.state == "MERGED":
         return None
@@ -181,6 +192,39 @@ def merge_hold_terminal(
         )
     if hold != "held":
         return None
+    if view.auto_merge_armed:
+        # THE HOLD WAS NOT ACHIEVED. `confirm_pr` disarms a held pull request it finds
+        # armed, and this is the AUTHORITATIVE re-read it took afterwards, still
+        # carrying an auto-merge request: the forge refused the write, or accepted it
+        # without effect. Returning the green terminal below would state "no
+        # auto-merge armed" about a pull request that is armed, so the merge this
+        # hold forbids lands on the next green check run while the dispatch result
+        # reads as a success -- caught in review of this item's own pull request 2614.
+        #
+        # Keyed on the POST-CONDITION rather than on the disarm command's exit code,
+        # because the exit code can mislead in BOTH directions: a non-zero exit whose
+        # pull request is nonetheless unarmed is a hold that holds, and a zero exit
+        # whose pull request is still armed is one that does not. The command's own
+        # result stays in the `pr-disarm-held` journal row, which is where an operator
+        # tells a refused write from an ineffective one.
+        return outcome_type(
+            work_item_id=plan.work_item_id,
+            status="failed",
+            stage=_MERGE_HOLD_UNENFORCED_STAGE,
+            pr_number=view.number,
+            merge_sha=None,
+            detail=(
+                f"merge hold NOT enforced for {plan.work_item_id}: PR #{view.number} "
+                "still carries an auto-merge request after the host tried to remove "
+                "it, so the merge this hold forbids would land on the next green "
+                "check run. The run refused rather than waiting for that merge. Read "
+                "the `pr-disarm-held` journal row for the disarm command's own "
+                "result, then remove the request by hand with "
+                f"`gh pr merge {view.number} --disable-auto`, or re-apply the valve "
+                f"with `set-merge-hold:{plan.work_item_id}:on`."
+            ),
+            fabro_run_id=run_id,
+        )
     # THE HOLD'S TERMINAL. Nothing may merge this pull request, so polling for its
     # merge could only spend the whole budget and then report a FAILURE for work that
     # succeeded. The run ends here instead, green, exactly as `contracts.md` -> "The
