@@ -1,4 +1,4 @@
-"""The CURRENT merge hold, read at the host's merge-confirmation boundary.
+"""The CURRENT merge hold at the host's merge-confirmation boundary, and its terminal.
 
 `DispatchPlan.merge_hold` is a LAUNCH SNAPSHOT and must stay one. The sandbox's pr
 stage reads the `merge_hold` workflow input rendered from it, the dispatch record
@@ -30,12 +30,19 @@ explicit refusal rather than a wait.
 NOTHING here claims an atomic guarantee. The ledger read and the forge write are
 independent, so a hold set in the gap between them is still possible; what this
 removes is the host REVERSING a hold it could have seen.
+
+The reading and the TERMINAL it implies live together here because they are one
+question asked twice -- "what does the hold say, and what does that do to this run" --
+and the three-way terminal is only legible beside the three-valued reading it
+switches on. `_dispatcher_engine_merge` owns the other half: what the reading does to
+the FORGE. The terminal takes its `outcome_type` as a parameter for the reason that
+module's helpers do: `_dispatcher_engine` imports this module, so a concrete
+`DispatchOutcome` import here would be circular.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from livespec_orchestrator_beads_fabro._store_merge_hold import read_merge_held_work_item_ids
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
@@ -50,9 +57,19 @@ from livespec_orchestrator_beads_fabro.errors import (
     LivespecConfigUnreadableError,
 )
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+        DispatchOutcome,
+    )
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan, PrView
+
 __all__: list[str] = [
+    "MERGE_HELD_STAGE",
     "CurrentMergeHold",
     "merge_held_work_item_ids",
+    "merge_hold_terminal",
     "read_current_merge_hold",
 ]
 
@@ -61,6 +78,20 @@ __all__: list[str] = [
 # that consume it have a defined fail-closed behaviour for it and neither may treat
 # it as a release.
 CurrentMergeHold = Literal["held", "unheld", "unreadable"]
+
+# The stage a merge-held run terminates GREEN at. It is a named constant rather
+# than a literal at its two sites because the second site — the post-merge
+# dispositions — reads it as the ONE green outcome that has not merged, and a
+# spelling that drifted between the two would silently re-arm the acceptance
+# valve on unmerged work.
+MERGE_HELD_STAGE = "pr"
+
+# The stage a run FAILS at when the merge-hold authority could not be read. Private
+# because nothing consumes it programmatically: unlike `MERGE_HELD_STAGE`, which the
+# post-merge dispositions read to recognise the one green outcome that has not
+# merged, this stage exists to be READ BY A PERSON in the dispatch result. A failed
+# outcome needs no second reader to behave correctly.
+_MERGE_HOLD_AUTHORITY_STAGE = "merge-hold-authority"
 
 # The EXPECTED-error surface one hold read (`resolve_store_config` +
 # `read_merge_held_work_item_ids`) can raise. The set mirrors `_ready_aging_order`'s
@@ -98,3 +129,76 @@ def read_current_merge_hold(*, repo: Path, work_item_id: str) -> CurrentMergeHol
     if isinstance(read, AttemptFailure):
         return "unreadable"
     return "held" if work_item_id in read else "unheld"
+
+
+def merge_hold_terminal(
+    *,
+    outcome_type: type[DispatchOutcome],
+    plan: DispatchPlan,
+    view: PrView,
+    hold: CurrentMergeHold,
+    run_id: str | None,
+) -> DispatchOutcome | None:
+    """The terminal the CURRENT merge hold puts on this run, or None to keep going.
+
+    Keyed on the reading `confirm_pr` already acted on rather than on
+    `plan.merge_hold`, so the arming decision and the terminal classification cannot
+    disagree about one run. The launch snapshot cannot answer this: a hold applied
+    after dispatch is absent from it, and the measured defect was both halves
+    reading it (`_dispatcher_current_merge_hold`).
+
+    A MERGED pull request is past the hold entirely and returns None, so the run
+    proceeds to its ordinary post-merge path. Terminating green-with-no-merge there
+    would skip the post-merge janitor and the acceptance valve on work that HAS
+    merged, which is a worse outcome than the one the hold is protecting against.
+    """
+    if view.state == "MERGED":
+        return None
+    if hold == "unreadable":
+        # FAILING CLOSED IS TWO THINGS, and `confirm_pr` only does the first. It
+        # made no forge write; falling through from here would then spend the whole
+        # poll budget waiting for a merge this host had just declined to arm, and
+        # report "PR did not reach MERGED within the poll budget" -- a true sentence
+        # that names the pull request as the problem and never mentions the ledger.
+        # The refusal is its own stage so the result an operator reads points at
+        # what actually failed.
+        return outcome_type(
+            work_item_id=plan.work_item_id,
+            status="failed",
+            stage=_MERGE_HOLD_AUTHORITY_STAGE,
+            pr_number=view.number,
+            merge_sha=None,
+            detail=(
+                f"merge hold unreadable for {plan.work_item_id}: the ledger could not be "
+                f"asked whether this item is held, so PR #{view.number} was left exactly "
+                "as the run published it -- no auto-merge armed and none removed -- and "
+                "the run did not wait for a merge it must not cause. The work is "
+                "published and unharmed; re-run the dispatch once the tenant is "
+                "reachable, or settle the hold with "
+                f"`set-merge-hold:{plan.work_item_id}:on|off`."
+            ),
+            fabro_run_id=run_id,
+        )
+    if hold != "held":
+        return None
+    # THE HOLD'S TERMINAL. Nothing may merge this pull request, so polling for its
+    # merge could only spend the whole budget and then report a FAILURE for work that
+    # succeeded. The run ends here instead, green, exactly as `contracts.md` -> "The
+    # per-item merge hold" requires: green is also what reclaims the claim under the
+    # ordinary green-terminal rule, so a held item holds no capacity slot while it
+    # waits for a person. `merge_sha` is None because nothing merged — this is the one
+    # green outcome that carries no merge, and the post-merge dispositions read that
+    # from the stage rather than re-deriving the hold.
+    return outcome_type(
+        work_item_id=plan.work_item_id,
+        status="green",
+        stage=MERGE_HELD_STAGE,
+        pr_number=view.number,
+        merge_sha=None,
+        detail=(
+            f"merge hold stands: PR #{view.number} is open with no auto-merge armed, "
+            "and the run terminated rather than waiting for a merge no automated path "
+            f"may perform. Release with `set-merge-hold:{plan.work_item_id}:off`."
+        ),
+        fabro_run_id=run_id,
+    )
