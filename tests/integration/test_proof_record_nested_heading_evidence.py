@@ -34,6 +34,15 @@ verdict for only two of its three assertions: the unverdicted one must still be
 reported through `unevidenced` rather than borrow its sibling's `yes` or the
 trailing `## Summary`'s run-wide statement, and the refused one must still grade
 as a FAILING check rather than as no evidence.
+
+THE UNVERDICTED ASSERTION'S OWN PROOF PRINTS A VERDICT LINE, which is the third
+way in and the one the widening itself opened. Widening the matched section into
+its subtree pulled each assertion's fenced proof into the section the verdict is
+read from, and a replay legitimately prints a `Reproduced:` line — it quotes the
+record it compared against. That is proof OUTPUT, not a verdict the verifier
+authored, so the assertion must still reach `unevidenced`. Without the printed
+line this control would pass against a reader with no fence-awareness at all,
+since an absent verdict and an unread one are the same answer.
 """
 
 from __future__ import annotations
@@ -111,6 +120,8 @@ Proof mode: `factory_captured`
 ```text
 $ uv run pytest -q -k borrows
 # this subsection publishes no verdict of its own
+$ sed -n '18,18p' ../earlier-record.md
+Reproduced: yes. Quoted from the record this replay compared against.
 ```
 
 ## Assertion 3 — {_REFUSED_ASSERTION}
