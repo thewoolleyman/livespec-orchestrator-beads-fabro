@@ -534,6 +534,28 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   equally consistent with a gate that refuses every declaration. The drain leg is
   here too: the two dispatch paths reach the gate through separate call sites.
 
+- `test_proof_rendering_projection_scenario132.py` — binds the CAPTURE half of
+  `SPECIFICATION/scenarios.md` Scenario 132 and the Proof-of-Done-record clause's
+  inline-rendering requirement: the clause waives the inline half only where no
+  API-drivable store satisfies it, so a repository whose measured release-assets
+  store DOES satisfy it must receive the inline form. Each case drives the real
+  `dispatcher.main(argv=["dispatch", ...])` and reads the rendering off the overlay
+  bytes `plan.workflow_toml` holds INSIDE the launch stand-in — the only moment
+  they exist, since `run_dispatch_with_watchdog` unlinks the overlay when the run
+  returns, and the one observation point that cannot pass while nothing threads the
+  journal path into the projection. Only two seams are stood in: the proof gate's
+  `CommandRunner` (so both visibility answers are reachable without scripting the
+  PATH `gh` the master-CI preflight also reads) and `run_dispatch`. The unmeasured
+  leg's answer is an ABSENCE and is asserted on three instruments, because an
+  absent key alone is ambiguous: the branch key is still present (the rendering was
+  withheld, not the whole projection), the journal says `unobservable` (traceable to
+  a forge that did not answer), and the dispatch LAUNCHED (an unobservable store is
+  never reported as an absent one). Asserting a projected `authenticated_link`
+  there would assert the wrong behaviour — the capture prompt treats an absent
+  value as its fallback and asks the agent to say so, which is the only form that
+  still distinguishes that fallback from a MEASURED waiver, so a third case binds
+  the prompt's own three duties as the consumer side.
+
 - `test_ai_only_entry_path_refusal_scenario133.py` — binds the two ENTRY-PATH
   gherkin scenarios of `SPECIFICATION/scenarios.md` "Scenario 133 — A mixed item
   is refused ai-only from every entry path …", which the unit module
