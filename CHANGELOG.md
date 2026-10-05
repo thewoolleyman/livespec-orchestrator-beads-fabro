@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.167.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.166.0...v0.167.0) (2026-10-05)
+
+
+### Features
+
+* **acceptance:** close a host-captured item once its independent replay lands ([04bb741](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/04bb7414772ea476511ea978f68868db980d70c8))
+* **acceptance:** decide the host leg inside the post-merge proof evidence ([3c38f66](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3c38f66272624372ac1cc3bde7bce8ab7bfeaab4))
+* **definition-of-done:** recognise the advisory filing-time findings ([a2e8ccb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a2e8ccb1427c5647a9bec4e19a90a8e6aa130a12))
+* **filing-display:** show the parse, modes, capabilities and findings before filing ([013a64b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/013a64b7595c2f6bca2578b9e79880d3e543db9a))
+* **host-leg:** judge a host-captured assertion from an independent replay ([f15fd3a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f15fd3a3fd4189f70637396c0948a5f060f3b486))
+* **host-record:** compute the publishing identity rather than accept one ([c08f313](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c08f313cf8bd2541c303ea71e31bd91adb7f4d17))
+* **host-record:** name the build identity a host record exercised ([5f63485](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5f6348571fb8273fd7448cae0f1490d4e39bf6da))
+* **host-record:** publish every host record through one posting primitive ([088d949](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/088d94981e03e4cee21d9f93cac4d0f29c5d135f))
+* **host-record:** render every proof record through one primitive ([5e6e530](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5e6e53061fb3073ebf56905d00874c11db0e509b))
+* **intake:** withhold ready on a mechanical finding and record every finding ([6100801](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/610080149e081fd2b329d3053f1aa6e72a14aed7))
+* **needs-attention:** surface each ready item carrying an advisory finding ([e86515a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e86515add6f1c86bc0f80ae78d6e97f5b9be8b39))
+* **plan:** author a plan epic's Definition of Done at creation ([a93dfa3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a93dfa34962a8bb49920c8488b7df36e6db190df))
+* **plan:** parse a plan epic's Definition of Done with subject=plan ([f14b246](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f14b24602fb4a1aaf2c211c83a21d380680d06be))
+* **plan:** refuse a carrier map that leaves a plan assertion unmapped ([22d722e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/22d722eeb22b15f5c426bd7ab3cca463c917c927))
+* **plan:** report a missing plan Definition of Done on every resume ([b7acbc6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b7acbc640ecf5aef089810278b8d7e0a852a0b90))
+* **pointer:** carry the host_verified record link in the Proof of Done pointer ([77fd6dc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/77fd6dc8bd1f1e9199f58c41c089ed8b747d5a49))
+
+
+### Refactoring
+
+* **plan:** split the archive leg into its own cohesive module ([dd55e09](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/dd55e09b85d25ebb3afd9516c5068f202f6ca6b9))
+
 ## [0.166.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.165.1...v0.166.0) (2026-10-04)
 
 
