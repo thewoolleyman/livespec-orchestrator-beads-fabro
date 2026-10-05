@@ -245,6 +245,7 @@ def test_dispatcher_plan_decomposition_contract() -> None:
         "janitor_worktree_remove_argv",
         "parse_fleet_members",
         "pr_arm_argv",
+        "pr_disarm_argv",
         "pr_update_branch_argv",
         "pr_view_argv",
         "pull_primary_argv",

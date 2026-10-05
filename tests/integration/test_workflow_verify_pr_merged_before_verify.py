@@ -439,7 +439,7 @@ def test_a_dispatch_whose_pull_request_already_merged_arms_nothing_and_goes_gree
     confirm_runner = _Runner(queue=[_ok(stdout=_merged_pr_json())])
     journal = _Journal()
 
-    view = confirm_pr(plan=plan, runner=confirm_runner, journal=journal)
+    view = confirm_pr(plan=plan, runner=confirm_runner, journal=journal, hold="unheld")
 
     assert view is not None
     assert view.state == "MERGED"

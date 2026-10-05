@@ -54,6 +54,7 @@ __all__: list[str] = [
     "janitor_worktree_remove_argv",
     "parse_fleet_members",
     "pr_arm_argv",
+    "pr_disarm_argv",
     "pr_update_branch_argv",
     "pr_view_argv",
     "pull_primary_argv",
@@ -382,6 +383,24 @@ def pr_arm_argv(*, plan: DispatchPlan, number: int) -> list[str]:
         "--auto",
         "--delete-branch",
     ]
+
+
+def pr_disarm_argv(*, plan: DispatchPlan, number: int) -> list[str]:
+    """Remove a pull request's auto-merge request; the hold's one host-side forge write.
+
+    Carries NO method flag, because removing an auto-merge request names no merge
+    strategy -- which is also why it is unconditional on the plan where `pr_arm_argv`
+    is not: there is no strategy to resolve here, so there is nothing to refuse.
+
+    The same argv the `set-merge-hold:on` valve sends, deliberately spelled here
+    rather than imported from it. The valve disarms because a PERSON asked; this
+    disarms because the host found a pull request armed while the ledger it just read
+    says held -- usually by this host's own earlier fallback, before that fallback
+    read the current hold. Two reasons, one effect, and no shared source that would
+    couple the host's merge confirmation to a human valve's refusal ladder.
+    """
+    _ = plan
+    return ["gh", "pr", "merge", str(number), "--disable-auto"]
 
 
 def pr_update_branch_argv(*, plan: DispatchPlan, number: int) -> list[str]:

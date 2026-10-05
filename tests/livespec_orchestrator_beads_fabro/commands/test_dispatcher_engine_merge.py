@@ -105,7 +105,7 @@ def test_confirm_pr_arms_auto_merge_when_needed(tmp_path: Path) -> None:
     runner = Runner(queue=[_ok(stdout=_pr_json(armed=False)), _ok(), _ok(stdout=_pr_json())])
     journal = Journal()
 
-    view = confirm_pr(plan=_plan(repo=tmp_path), runner=runner, journal=journal)
+    view = confirm_pr(plan=_plan(repo=tmp_path), runner=runner, journal=journal, hold="unheld")
 
     assert view is not None
     assert view.auto_merge_armed is True
@@ -180,6 +180,7 @@ def test_post_merge_runs_janitor_in_fresh_checkout(tmp_path: Path) -> None:
         plan=_plan(repo=tmp_path),
         runner=Runner(queue=[_ok(stdout=_pr_json(state="MERGED", sha="cafe06"))]),
         journal=Journal(),
+        hold="unheld",
     )
     assert merged is not None
 
@@ -240,6 +241,7 @@ def test_post_merge_degrades_when_checkout_provisioning_fails(tmp_path: Path) ->
         plan=_plan(repo=tmp_path),
         runner=Runner(queue=[_ok(stdout=_pr_json(state="MERGED", sha="cafe08"))]),
         journal=Journal(),
+        hold="unheld",
     )
     assert merged is not None
 
