@@ -50,6 +50,7 @@ _RECORD_LABEL = "Verified record"
 _RUN_LABEL = "Run"
 _TIMESTAMP_LABEL = "Timestamp"
 _VERDICT_LABEL = "Verdict"
+_HOST_RECORD_LABEL = "Host-verified record"
 _HUMAN_RECORD_LABEL = "Human-attested record"
 
 
@@ -61,7 +62,8 @@ class ProofPointer:
     assertion and for one whose human record has not been posted yet. The two are
     the same fact for the section — there is no link to render — and they are
     told apart by the item's own Definition of Done, which is where the question
-    belongs.
+    belongs. `host_verified_url` is the v115 sibling and carries `None` on exactly
+    the same terms, for the item's host leg.
     """
 
     pull_request: int
@@ -69,10 +71,18 @@ class ProofPointer:
     run_id: str
     timestamp: str
     verdict: str
+    host_verified_url: str | None = None
     human_attested_url: str | None = None
 
     def render(self, *, heading_level: int = 2) -> str:
-        """The section's own text, with no trailing newline."""
+        """The section's own text, with no trailing newline.
+
+        The two opt-out links are rendered in the order the clause lists them —
+        host, then human — and each only when there is one. The clause says the
+        section contains "only" the fields it names, so a bullet for a link that
+        does not exist would be content the clause does not admit, and a reader
+        would take an empty value for a record that had been published.
+        """
         lines = [
             f"{'#' * heading_level} {PROOF_OF_DONE_POINTER_TITLE}",
             "",
@@ -82,8 +92,11 @@ class ProofPointer:
             f"- {_TIMESTAMP_LABEL}: {self.timestamp}",
             f"- {_VERDICT_LABEL}: {self.verdict}",
         ]
-        if self.human_attested_url is not None:
-            lines.append(f"- {_HUMAN_RECORD_LABEL}: {self.human_attested_url}")
+        optional = (
+            (_HOST_RECORD_LABEL, self.host_verified_url),
+            (_HUMAN_RECORD_LABEL, self.human_attested_url),
+        )
+        lines.extend(f"- {label}: {url}" for label, url in optional if url is not None)
         return "\n".join(lines)
 
     def as_record(self) -> dict[str, object]:
@@ -94,6 +107,7 @@ class ProofPointer:
             "run_id": self.run_id,
             "timestamp": self.timestamp,
             "verdict": self.verdict,
+            "host_verified_record": self.host_verified_url,
             "human_attested_record": self.human_attested_url,
         }
 
@@ -165,6 +179,7 @@ def pointer_in(*, description: str) -> ProofPointer | None:
         run_id=fields.get(_RUN_LABEL, ""),
         timestamp=fields.get(_TIMESTAMP_LABEL, ""),
         verdict=fields.get(_VERDICT_LABEL, ""),
+        host_verified_url=fields.get(_HOST_RECORD_LABEL),
         human_attested_url=fields.get(_HUMAN_RECORD_LABEL),
     )
 
