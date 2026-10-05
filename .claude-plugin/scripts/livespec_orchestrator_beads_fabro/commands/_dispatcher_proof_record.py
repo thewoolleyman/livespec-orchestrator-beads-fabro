@@ -73,6 +73,17 @@ keeps the widening fail-closed; `_assertion_section` and `_sections` carry the
 argument. Widening cannot reach a sibling assertion's verdict or a trailing
 summary's, and an enclosing record-wide title cannot become a section holding
 every assertion in the body.
+
+AND THE WIDENING MOVED THE FENCE PROBLEM INTO THE VERDICT SCAN, which is the
+third half and the one the first two bought. A verdict line the verifier WROTE is
+an authored verdict; the identical line a proof PRINTED is output that happens to
+read like one. Those two were rarely in the same section before, because the
+fenced proof lived under its own nested heading; widening put them in one, so
+`_reproduced_in` is fence-aware too and reads only PROSE. Skipping that is
+fail-open in both directions at once — a printed `yes` becomes evidence for an
+assertion nobody verdicted, and because the scan returns on its first match it
+also beats a prose `Reproduced: no.` that follows the fence, turning the
+verifier's refusal into a pass.
 """
 
 from __future__ import annotations
@@ -416,7 +427,35 @@ def _fence_after(*, fence: str | None, delimiter: str) -> str | None:
 
 
 def _reproduced_in(*, section: list[str]) -> bool | None:
+    """The verdict one section's PROSE authors, or `None` when it authors none.
+
+    The scan is fence-aware for the same reason the split is, and it became so for
+    a reason the split did not have: widening into the subtree is what put the
+    assertion text and its fenced proof in ONE section. Before the widening the
+    fenced proof usually sat under its own nested heading and the scan never saw
+    it; after it, a `Reproduced:` line the proof PRINTED — a replay that `cat`s an
+    earlier record, greps a log, or echoes the line it is checking for — is in
+    range of a line-by-line scan, and the scan returns on the first match.
+
+    A printed line is proof OUTPUT, not an authored verdict, and reading it as one
+    fails open in both directions. It can report `True` for an assertion whose
+    verifier published no verdict at all, which the unevidenceable-assertion clause
+    requires to stay unevidenced; and because it returns on the first match it can
+    beat a prose `Reproduced: no.` that follows the fence, converting the
+    verifier's refusal into a pass and routing a failing item to `done`.
+
+    The subtree a caller hands this is a CONTIGUOUS run of body lines, so the fence
+    state is well defined from its first line: `_sections` never opens a section on
+    a line inside a fence, so no subtree can begin mid-fence.
+    """
+    fence: str | None = None
     for line in section:
+        delimiter = _FENCE.match(line)
+        if delimiter is not None:
+            fence = _fence_after(fence=fence, delimiter=delimiter.group(1))
+            continue
+        if fence is not None:
+            continue
         stripped = line.strip().casefold()
         if not stripped.startswith(_REPRODUCED_PREFIX):
             continue

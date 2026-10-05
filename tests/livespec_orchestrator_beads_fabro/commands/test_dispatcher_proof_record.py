@@ -606,3 +606,124 @@ def test_an_unverdicted_assertion_borrows_from_neither_a_sibling_nor_a_summary()
         summarized.reproduced(assertion="The flat assertion publishes no verdict of its own.")
         is None
     )
+
+
+def test_a_verdict_printed_inside_a_fence_is_proof_output_and_not_an_authored_one() -> None:
+    """The cost of widening into the subtree: the fenced proof came with it.
+
+    A `Reproduced:` line the verifier WROTE is an authored verdict; the identical
+    line a proof PRINTED is a string that happened to be in the output — a replay
+    that `cat`s an earlier record, greps a log, or echoes the line it is checking
+    for. Before the subtree widening the two were rarely in the same section,
+    because the fenced proof lived under its own nested heading; widening put them
+    in one, so a reader scanning the subtree line by line now reaches the printed
+    one and reports it as the record's answer.
+
+    That is the fail-OPEN direction twice over, and both arms are asserted here.
+    An assertion whose subsection publishes no verdict of its own must stay
+    unevidenced rather than claim the `yes` its own proof happened to print; and
+    where the verifier's prose says `no` AFTER the fence, the printed `yes` must
+    not reach the scan first and convert a refusal into a pass, which would route a
+    failing item to `done`.
+
+    The prose arm is the control. Without it the expectation is equally consistent
+    with a reader that stopped reading the `Reproduced:` line at all, which answers
+    `None` here for the right reason and `None` everywhere else for the wrong one.
+    """
+    printed_only = _fenced_record(
+        body="""\
+        ## Assertion 1 — The replay prints a verdict line it did not author.
+
+        ### Replay proof
+
+        ```text
+        $ sed -n '12,14p' earlier-record.md
+        Reproduced: yes. The replay matches the capture byte-for-byte.
+        ```
+        """
+    )
+    printed_then_refused = _fenced_record(
+        body="""\
+        ## Assertion 1 — The verifier refuses what the proof printed.
+
+        ### Replay proof
+
+        ```text
+        $ sed -n '12,14p' earlier-record.md
+        Reproduced: yes. The replay matches the capture byte-for-byte.
+        ```
+
+        Reproduced: no. That line is the earlier record's, not this replay's.
+        """
+    )
+    authored = _fenced_record(
+        body="""\
+        ## Assertion 1 — The verifier authors the verdict below its own proof.
+
+        ### Replay proof
+
+        ```text
+        $ ./check.sh
+        refused: [z, a] is not sorted
+        ```
+
+        Reproduced: yes. The replay matches the capture byte-for-byte.
+        """
+    )
+
+    assert (
+        printed_only.reproduced(assertion="The replay prints a verdict line it did not author.")
+        is None
+    )
+    assert (
+        printed_then_refused.reproduced(assertion="The verifier refuses what the proof printed.")
+        is False
+    )
+    assert authored.reproduced(assertion="The verifier authors the verdict below its own proof.")
+
+
+def test_a_tilde_fence_hides_a_printed_verdict_exactly_as_a_backtick_fence_does() -> None:
+    """The second CommonMark delimiter, which the splitter already honours.
+
+    `_sections` carries both delimiters because a proof that prints part of a
+    Markdown file prints whichever that file used, and a record whose proof is
+    tilde-fenced is as ordinary as one whose proof is backtick-fenced. A verdict
+    scan that learned only the backtick form would recover the common shape and
+    leave the other one fail-open — the harder failure to find, because the body
+    renders identically and nothing in the answer says which delimiter it turned
+    on.
+
+    The closing-delimiter arm rides in the same body: the verdict the verifier
+    authored sits AFTER the tilde fence closes, so a scan that opened the fence and
+    never closed it would answer `None` for an assertion the record states was
+    reproduced, which is the opposite error and equally silent.
+    """
+    record = _fenced_record(
+        body="""\
+        ## Assertion 1 — The tilde-fenced proof prints a verdict line.
+
+        ### Replay proof
+
+        ~~~text
+        $ sed -n '12,14p' earlier-record.md
+        Reproduced: yes. The replay matches the capture byte-for-byte.
+        ~~~
+        """
+    )
+    closed = _fenced_record(
+        body="""\
+        ## Assertion 1 — The verdict follows the tilde fence that closed.
+
+        ### Replay proof
+
+        ~~~text
+        $ ./check.sh
+        refused: [z, a] is not sorted
+        ~~~
+
+        Reproduced: yes. The replay matches the capture byte-for-byte.
+        """
+    )
+
+    assert record.reproduced(assertion="The tilde-fenced proof prints a verdict line.") is None
+    assert closed.reproduced(assertion="The verdict follows the tilde fence that closed.")
