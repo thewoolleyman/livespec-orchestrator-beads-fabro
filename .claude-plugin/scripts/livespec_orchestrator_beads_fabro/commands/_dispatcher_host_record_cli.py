@@ -1,0 +1,142 @@
+"""The posting primitive's command-line surface, and the production seams it binds.
+
+Split out of `_dispatcher_host_record_post` along the usual boundary: that module is the
+primitive, expressed over four injected seams, and this one is the ONE place those seams
+are bound to real ones — the shell runner, the process environment, stdout, and the
+`reconcile-merged` valve.
+
+WHAT IS NOT ON THIS SURFACE, and why its absence is the design. There is no
+`--identity`, no `--session`, no `--timestamp` and no `--pull-request` flag. Each names
+something the host-leg clause of `SPECIFICATION/contracts.md` requires the primitive to
+COMPUTE, and a flag for any of them would be the route by which a session hand-formats
+the record this primitive exists to render. The identity flag would be the worst: it
+would reduce the independence refusal — the whole of the "independent party" guarantee —
+to a naming convention.
+
+WHY THE VERDICT IS A CLOSED CHOICE. `argparse` refuses anything outside the three
+host-leg words before the primitive runs. The control that matters is `verified`: it is a
+real Proof-of-Done verdict word, just not a host-leg one, so a primitive accepting any
+string would cheerfully publish a record the acceptance pass reads as the merging run's
+FACTORY evidence.
+
+WHY THE RECONCILE GOES THROUGH THE ORDINARY VALVE. The clause says the primitive drives
+`reconcile-merged --item <id>`, and that "`reconcile-merged` driven by hand is the same
+route". That is only true if there is one route, so this binds the valve's own command
+function rather than re-implementing its arm selection.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+from collections.abc import Callable
+from pathlib import Path
+
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_leg import REPLAY_VERDICTS
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_post import (
+    HostRecordPost,
+    run_post_host_record_command,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import add_invoker_argument
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
+    VERDICT_HOST_RECORDED,
+)
+from livespec_orchestrator_beads_fabro.io import write_stdout
+
+__all__: list[str] = [
+    "add_post_host_record_arguments",
+    "reconcile_for",
+    "reconcile_merged_for_item",
+    "run_post_host_record_cli",
+]
+
+
+def add_post_host_record_arguments(*, parser: argparse.ArgumentParser) -> None:
+    """Attach the posting primitive's governed surface to its subparser.
+
+    There is deliberately NO `--identity`, `--session`, `--timestamp` or
+    `--pull-request` flag. Each of those is a thing the clause requires the primitive to
+    COMPUTE, and a flag for one would be the route by which a session hand-formats the
+    record the primitive exists to render.
+    """
+    _ = parser.add_argument("--repo", dest="repo", required=True)
+    _ = parser.add_argument("--item", dest="item", required=True)
+    _ = parser.add_argument(
+        "--verdict",
+        dest="verdict",
+        required=True,
+        choices=[VERDICT_HOST_RECORDED, *REPLAY_VERDICTS],
+        help="the host-leg verdict to publish; a replay drives reconcile-merged",
+    )
+    _ = parser.add_argument(
+        "--record",
+        dest="record",
+        required=True,
+        help=(
+            "path to a JSON object carrying the build identity exercised and, per "
+            "assertion, the numbered steps, the proof and whether they reproduced"
+        ),
+    )
+    _ = parser.add_argument("--journal", dest="journal", default=None)
+    add_invoker_argument(parser=parser)
+
+
+def run_post_host_record_cli(*, args: argparse.Namespace) -> int:
+    """The CLI adapter: build the real seams and run the primitive.
+
+    The reconcile it drives is the ORDINARY `reconcile-merged` entry point, invoked
+    through its own command function rather than re-implemented — the clause says the
+    primitive drives that valve, and "driven by hand is the same route", so there is one
+    acceptance re-run path and not two that could diverge.
+    """
+    repo = Path(args.repo)
+    return run_post_host_record_command(
+        post=HostRecordPost(
+            repo=repo,
+            work_item_id=args.item,
+            verdict=args.verdict,
+            record_path=Path(args.record),
+        ),
+        runner=ShellCommandRunner(),
+        env=os.environ,
+        # A lambda rather than a named helper: the seam is POSITIONAL by construction —
+        # the primitive calls it as `emit(body)`, and the test doubles are
+        # `list.append` — so a `def` here could not carry the keyword-only separator
+        # this tree requires of one.
+        emit=lambda text: write_stdout(text=text),
+        reconcile=reconcile_for(repo=repo, args=args),
+    )
+
+
+def reconcile_for(*, repo: Path, args: argparse.Namespace) -> Callable[..., int]:
+    """The reconcile the post drives, bound to this invocation's repository.
+
+    A named closure rather than a lambda because the annotation matters: a lambda's
+    parameter type is unknowable to the type checker, and this tree runs strict.
+    """
+
+    def drive(*, work_item_id: str) -> int:
+        return reconcile_merged_for_item(
+            args=argparse.Namespace(
+                repo=str(repo),
+                item=work_item_id,
+                janitor=None,
+                journal=args.journal,
+                invoker=getattr(args, "invoker", None),
+                force=False,
+                regrade=False,
+                as_json=False,
+            )
+        )
+
+    return drive
+
+
+def reconcile_merged_for_item(*, args: argparse.Namespace) -> int:
+    """Drive the reconcile valve, imported here for the cycle reason recorded above."""
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_merged import (
+        run_reconcile_merged_command,
+    )
+
+    return run_reconcile_merged_command(args=args)
