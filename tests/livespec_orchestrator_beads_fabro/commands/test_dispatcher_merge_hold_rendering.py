@@ -272,11 +272,22 @@ def test_the_fallback_arming_never_fires_for_a_held_pull_request(tmp_path: Path)
     `confirm_pr` exists to arm when the graph could not, so an unarmed PR is
     exactly the shape it reaches for. The held run must therefore make no `gh pr
     merge` call and journal no arming stage; only the view it already took.
+
+    The LAUNCH snapshot's own layer, isolated: the current-hold reading is passed as
+    `unheld`, so the only thing suppressing the arm is the plan's `merge_hold`. The
+    reading-driven layer beside it is covered in
+    `test_dispatcher_current_merge_hold`, and keeping the two apart is what shows
+    neither has absorbed the other.
     """
     runner = _Runner(queue=[CommandResult(exit_code=0, stdout=_pr_json(armed=False), stderr="")])
     journal = _Journal()
 
-    view = confirm_pr(plan=_plan(repo=tmp_path, merge_hold=True), runner=runner, journal=journal)
+    view = confirm_pr(
+        plan=_plan(repo=tmp_path, merge_hold=True),
+        runner=runner,
+        journal=journal,
+        hold="unheld",
+    )
 
     assert view is not None
     assert view.auto_merge_armed is False
