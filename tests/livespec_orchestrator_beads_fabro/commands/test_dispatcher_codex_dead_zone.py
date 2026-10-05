@@ -381,6 +381,65 @@ def test_early_renewal_is_bounded_and_runs_on_the_credential_source_host(
     assert not [line for line in request_lines if _HOST_REFRESH_TOKEN in line]
 
 
+def test_an_undecodable_credential_refuses_without_spending_a_renewal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A credential present but unparseable is refused, never renewed, never raised.
+
+    `decode_codex_access_token_exp` RAISES on a credential it cannot decode, and
+    an unreadable credential is an EXPECTED condition rather than a bug in this
+    package — so the freshness grade returns a third answer and the projection
+    renders it. No renewal is spent: a rotation request cannot repair bytes that
+    will not parse, so one would buy nothing and report a remedy the operator
+    cannot act on.
+
+    All three shapes are driven because they fail at three different depths of
+    the decode, and a guard catching only the outermost would let the other two
+    keep escaping.
+    """
+    for source in (
+        "{not json",
+        '{"auth_mode": "chatgpt", "tokens": {"refresh_token": "r"}}',
+        '{"auth_mode": "chatgpt", "tokens": {"access_token": "not-a-jwt"}}',
+    ):
+        monkeypatch.setattr(_dispatcher_codex_auth, "read_host_codex_auth", lambda s=source: s)
+        spent = _stub_renewal(monkeypatch=monkeypatch)
+
+        result = project_codex_auth(clock=_AdvancingClock(start=_NOW, step=0))
+
+        assert isinstance(result, CodexProjectionRefusal), source
+        assert spent == [], source
+        assert "could not be parsed" in result.message, source
+        # It reports NEITHER a lifetime it could not measure nor a provider
+        # verdict it never asked for.
+        assert "seconds of usable lifetime" not in result.message, source
+        assert "authentication has failed" not in result.message, source
+
+
+def test_a_credential_undecodable_only_after_the_renewal_reports_that_and_not_a_shortfall(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A credential rewritten mid-renewal reports unreadable, not the old shortfall.
+
+    The pre-renewal reading HAD a measurable shortfall, and reporting it here
+    would describe a lifetime the file on disk no longer has — an observation
+    about bytes that are gone. The honest answer is the one thing still known:
+    the credential cannot be read.
+    """
+    reads = iter((_auth_json_with_exp(exp=_NOW + _MEASURED_DEAD_ZONE_REMAINING), "{not json"))
+    monkeypatch.setattr(_dispatcher_codex_auth, "read_host_codex_auth", lambda: next(reads))
+    spent = _stub_renewal(monkeypatch=monkeypatch)
+
+    result = project_codex_auth(clock=_AdvancingClock(start=_NOW, step=_RENEWAL_ELAPSED))
+
+    assert isinstance(result, CodexProjectionRefusal)
+    # The renewal WAS spent — the pre-renewal reading warranted it.
+    assert spent == ["requested"]
+    assert "could not be parsed" in result.message
+    # The superseded shortfall must not be reported as if it still stood.
+    assert str(_MEASURED_DEAD_ZONE_REMAINING) not in result.message
+
+
 def test_renewal_outcomes_separate_an_answer_from_an_unspent_request() -> None:
     """The outcome classifier keeps the two unchanged-expiry reasons apart."""
     assert _RENEWAL_MODULE_PATH.is_file()
