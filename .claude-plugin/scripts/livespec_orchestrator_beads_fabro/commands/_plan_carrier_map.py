@@ -37,6 +37,8 @@ nothing here should start to.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+
 from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import (
     plan_definition_of_done,
 )
@@ -47,6 +49,7 @@ __all__: list[str] = [
     "PlanCarrierMapRefusedError",
     "carrier_map_block",
     "guard_carrier_map",
+    "last_carrier_map_position",
 ]
 
 CARRIERS_BLOCK_PREFIX = "carriers:"
@@ -115,6 +118,30 @@ def guard_carrier_map(*, epic_id: str, description: str, carriers: tuple[str, ..
         raise PlanCarrierMapRefusedError.unmapped_assertions(unmapped=unmapped)
 
 
+def last_carrier_map_position(*, comments: Sequence[Mapping[str, object]]) -> int | None:
+    """The index of the last carrier-map event on a timeline, or `None` for none.
+
+    THE READ-BACK THE DOCSTRING ABOVE WARNED THE FIRST CONSUMER ABOUT, and it
+    matches BY LINE for exactly the reason recorded there: every scope-event body
+    opens with `Requirement carriers:`, which ENDS in `carriers:`, so a substring
+    test is True for an ordinary maintainer ruling that carries no map at all. The
+    clause defines the block as "the line `carriers:`", and the LINE is the
+    discriminator — a substring test here would set a recency floor from every
+    ruling and void a perfectly good verified record.
+
+    An index rather than a timestamp, because the archive proof leg orders records
+    by their append position: a comment list is append-only, so its index is the
+    ledger's own ordering, where a comment's rendered timestamp is whatever its
+    author wrote.
+    """
+    positions = [
+        position
+        for position, comment in enumerate(comments)
+        if _is_carrier_map_body(text=comment.get("text"))
+    ]
+    return positions[-1] if positions else None
+
+
 def carrier_map_block(*, carriers: tuple[str, ...]) -> str:
     """Render the `carriers:` block, or the empty string for a non-map event.
 
@@ -126,6 +153,11 @@ def carrier_map_block(*, carriers: tuple[str, ...]) -> str:
         return ""
     lines = (CARRIERS_BLOCK_PREFIX, *(f"{_LIST_MARKER}{one}" for one in carriers))
     return "\n".join(lines)
+
+
+def _is_carrier_map_body(*, text: object) -> bool:
+    """Whether one comment body carries the `carriers:` block, matched by line."""
+    return isinstance(text, str) and CARRIERS_BLOCK_PREFIX in text.splitlines()
 
 
 def _mapped_ordinals(*, carriers: tuple[str, ...]) -> frozenset[int]:

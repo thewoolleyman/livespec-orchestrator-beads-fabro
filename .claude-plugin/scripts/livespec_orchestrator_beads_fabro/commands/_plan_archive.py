@@ -30,6 +30,20 @@ from livespec_orchestrator_beads_fabro.commands._plan_archive_review import (
     undisposed_plan_child_ids,
     valid_completeness_review_evidence_id,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_carrier_map import (
+    last_carrier_map_position,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import (
+    plan_definition_of_done,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_proof_leg import (
+    PlanProofLeg,
+    plan_proof_leg,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_proof_record import plan_proof_entries
+from livespec_orchestrator_beads_fabro.commands._plan_release_tags import (
+    repository_release_tags,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
     PLAN_HANDOFF_PREFIX,
     plan_comment_body,
@@ -44,6 +58,7 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "PLAN_ARCHIVE_ACTOR",
     "archive_thread",
+    "resolve_plan_proof_leg",
 ]
 
 _PLAN_DIR = "plan"
@@ -65,12 +80,20 @@ def archive_thread(
     completeness_review_comment_id: str | None,
     review_launcher: CompletenessReviewLauncher | None = None,
 ) -> dict[str, str]:
-    """Archive a thread once the child, working-tree reference, and review gates pass.
+    """Archive a thread once the child, working-tree, review and proof gates pass.
 
-    The working-tree gate sits between the two ledger gates deliberately.
-    It is mechanical and cheap, like the child-disposition leg, so a plan
-    the move would break refuses BEFORE a fresh independent reviewer is
-    commissioned — and, decisively, before the epic is closed and stamped.
+    The working-tree gate sits between the two original ledger gates
+    deliberately. It is mechanical and cheap, like the child-disposition leg,
+    so a plan the move would break refuses BEFORE a fresh independent reviewer
+    is commissioned — and, decisively, before the epic is closed and stamped.
+
+    THE PROOF LEG RUNS LAST, in the ratified enumeration's own order. It is a
+    cheap ledger read and could have gone earlier on the economy argument the
+    working-tree sweep is placed on — but the clause names it third, and the
+    same clause says the independent completeness reviewer MAY be the verifying
+    party of the plan Proof of Done record, which only reads sensibly if the
+    review resolves first. What matters for correctness is that it runs before
+    the move and the close, not where it sits among the refusals.
     """
     client = make_beads_client(config=config)
     undisposed = list(undisposed_plan_child_ids(client=client, epic_id=epic_id))
@@ -95,6 +118,12 @@ def archive_thread(
     )
     if evidence_id is None:
         raise PlanArchiveRefusedError.missing_completeness_review()
+    proof = resolve_plan_proof_leg(client=client, project_root=project_root, epic_id=epic_id)
+    if not proof.met:
+        raise PlanArchiveRefusedError.unproved_plan_assertions(
+            unproved=proof.unproved,
+            rejected=proof.rejected,
+        )
     archive = project_root / _PLAN_DIR / _ARCHIVE_DIR / slug
     archive.parent.mkdir(parents=True, exist_ok=True)
     _ = source.rename(archive)
@@ -109,6 +138,41 @@ def archive_thread(
     )
     client.close_issue(issue_id=epic_id, reason="plan archived")
     return {"archive_path": archive.relative_to(project_root).as_posix(), "epic_id": epic_id}
+
+
+def resolve_plan_proof_leg(
+    *, client: BeadsClient, project_root: Path, epic_id: str
+) -> PlanProofLeg:
+    """Gather the proof leg's four inputs from this epic and grade it.
+
+    PUBLIC because the `plan` front-end reports the leg before it attempts an
+    archive, and because the plan-record conformance check grades the same
+    records: a second gather would read the timeline twice and could answer
+    differently while both answers looked well-formed.
+
+    ONE comment read feeds three of the four inputs — the records, their append
+    positions, and where the last carrier-map event sits — so the positions the
+    leg compares all come from the same list. Reading the timeline twice is the
+    way those indices come to be measured against different lists.
+
+    A missing Definition of Done section refuses HERE rather than grading an
+    empty assertion set, because zero assertions means zero unproved ones: the
+    leg would report met, and a plan with no stated definition of done would
+    archive on the strength of having nothing to prove.
+    """
+    description = client.show_issue(issue_id=epic_id).get("description")
+    section = plan_definition_of_done(
+        description=description if isinstance(description, str) else ""
+    )
+    if section.criteria_text is None:
+        raise PlanArchiveRefusedError.missing_plan_definition_of_done(epic_id=epic_id)
+    comments = client.list_comments(issue_id=epic_id)
+    return plan_proof_leg(
+        assertions=section.assertions,
+        entries=plan_proof_entries(comments=comments),
+        carrier_map_position=last_carrier_map_position(comments=comments),
+        release_tags=repository_release_tags(project_root=project_root),
+    )
 
 
 def _resolve_completeness_review_evidence(

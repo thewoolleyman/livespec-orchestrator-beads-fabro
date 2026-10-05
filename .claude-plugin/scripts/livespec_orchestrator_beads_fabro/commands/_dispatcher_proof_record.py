@@ -176,13 +176,32 @@ class ProofRecord:
         return _reproduced_in(section=section)
 
 
-def proof_records(*, comments: Sequence[Mapping[str, object]]) -> tuple[ProofRecord, ...]:
+def proof_records(
+    *,
+    comments: Sequence[Mapping[str, object]],
+    title: str = PROOF_RECORD_TITLE,
+    verdicts: Sequence[str] = PROOF_RECORD_VERDICTS,
+) -> tuple[ProofRecord, ...]:
     """Every Proof of Done record among one pull request's comments, in order.
 
     Order is the forge's own comment order, which is chronological, and it is
     what `latest_proof_record` reads "latest" off.
+
+    `title` and `verdicts` are the TWO things a plan record differs from an item
+    record in, and they are parameters here rather than a second reader because
+    the body structure is identical: the per-assertion sections, the fence-aware
+    split and the `Reproduced:` line are the same bytes either way, and a second
+    parser of them would drift from this one in the direction that is invisible —
+    every record would still parse, and every assertion would read as
+    unevidenced. Both default to the ITEM answer, so every existing caller is
+    unaffected; `_plan_proof_record` is the one caller that passes the plan's.
+
+    The title match is EXACT, which is what keeps the two record kinds from
+    reading as each other: `Plan Proof of Done` is not equal to `Proof of Done`,
+    so an item-side read of a plan record returns no record rather than a record
+    whose assertions belong to a different Definition of Done.
     """
-    parsed = (_record(comment=comment) for comment in comments)
+    parsed = (_record(comment=comment, title=title, verdicts=verdicts) for comment in comments)
     return tuple(one for one in parsed if one is not None)
 
 
@@ -218,11 +237,13 @@ def latest_proof_record(
     return matching[-1]
 
 
-def _record(*, comment: Mapping[str, object]) -> ProofRecord | None:
+def _record(
+    *, comment: Mapping[str, object], title: str, verdicts: Sequence[str]
+) -> ProofRecord | None:
     body = comment.get("body")
     if not isinstance(body, str):
         return None
-    fields = _header_fields(body=body)
+    fields = _header_fields(body=body, title=title, verdicts=verdicts)
     if fields is None:
         return None
     identity = _identity(field=fields[2])
@@ -238,7 +259,7 @@ def _record(*, comment: Mapping[str, object]) -> ProofRecord | None:
     )
 
 
-def _header_fields(*, body: str) -> list[str] | None:
+def _header_fields(*, body: str, title: str, verdicts: Sequence[str]) -> list[str] | None:
     """The record header's em-dash-separated fields, or `None` for a non-record."""
     lines = body.splitlines()
     if not lines:
@@ -246,7 +267,7 @@ def _header_fields(*, body: str) -> list[str] | None:
     fields = [part.strip() for part in lines[0].split(_HEADER_SEPARATOR)]
     if len(fields) < _HEADER_MINIMUM_FIELDS:
         return None
-    if fields[0] != PROOF_RECORD_TITLE or fields[1] not in PROOF_RECORD_VERDICTS:
+    if fields[0] != title or fields[1] not in verdicts:
         return None
     return fields
 
