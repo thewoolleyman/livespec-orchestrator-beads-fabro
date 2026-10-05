@@ -34,7 +34,6 @@ from __future__ import annotations
 import base64
 import json
 import os
-import shutil
 import subprocess
 import time
 from dataclasses import dataclass
@@ -178,15 +177,6 @@ def _hermetic_fabro_auth_file(
 
     absent = tmp_path_factory.mktemp("fabro-home") / "auth.json"
     monkeypatch.setattr(_fabro_port_auth, "fabro_auth_file", lambda: absent)
-
-
-@pytest.fixture(autouse=True)
-def _clear_dispatch_surface_bytecode(request: pytest.FixtureRequest) -> None:
-    if request.node.path.name != "test_fleet_pat_dispatch_surface.py":
-        return
-    scripts_root = Path(__file__).resolve().parents[1] / ".claude-plugin" / "scripts"
-    for cache_dir in scripts_root.rglob("__pycache__"):
-        shutil.rmtree(cache_dir)
 
 
 @pytest.fixture(scope="session")
