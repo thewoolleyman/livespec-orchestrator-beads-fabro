@@ -73,3 +73,17 @@ def test_guidance_states_that_a_seed_at_an_ancestor_of_master_proves_nothing() -
 
     # The remedy, which is the only part an operator acts on.
     assert "a commit master does not contain" in guidance
+
+
+def test_guidance_states_that_a_herdr_pane_finishes_done_not_idle() -> None:
+    guidance = _guidance()
+
+    # The fact: the pane's terminal agent status is `done`, not `idle`.
+    assert "herdr" in guidance
+    assert "agent status `done` rather than `idle`" in guidance
+
+    # The consequence for a waiter, which is the whole reason the fact matters: a
+    # loop may not watch for one word. Asserted on the obligation ("has to accept
+    # either word") and not merely on the vocabulary, because a file listing both
+    # words without saying a wait must accept both leaves the trap intact.
+    assert "has to accept either word" in guidance

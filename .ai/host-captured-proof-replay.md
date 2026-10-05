@@ -189,3 +189,43 @@ was lost:
   `refs/heads/feat/bd-ib-andmpe` with `bd-ib-dk3u2p`, whose first run
   fast-forwarded the branch, published its pull request and closed the item —
   leaving nothing to re-dispatch and consuming the item as proof material.
+
+### A `herdr` agent pane finishes at agent status `done`, not `idle`
+
+Step 5 needs a separately started session, and the natural way to get one is a
+fresh agent session in its own `herdr` pane. The trap is in WAITING for it.
+
+**A `herdr` agent pane finishes with agent status `done` rather than `idle`, so
+a wait on such a pane has to accept either word.** herdr's documented
+agent-status vocabulary is `idle`, `working`, `blocked`, `done` and `unknown`;
+a session that has completed its delegated work settles at `done` and stays
+there. A hand-written loop polling for `idle` therefore never matches, and it
+fails SILENTLY — there is no error, no timeout and no notification, just a wait
+that outlives the result it was waiting for.
+
+Measured on 2026-10-05: a waiter armed at 09:31:26 as
+
+```text
+sleep 120; until herdr pane get w1:pB 2>/dev/null | grep -q '"agent_status":"idle"'; do sleep 60; done
+```
+
+was still looping at 13:53. The replay session it watched had published its
+`host_not_reproduced` record on the pull request at 10:31:37 and settled at
+`done`. That is three hours and twenty-one minutes of waiting for a state that
+had already been passed, ended by the maintainer asking whether the session was
+stalled.
+
+Two more defects in that one line, both of which the remedy below also fixes:
+
+- `2>/dev/null | grep -q` turns a FAILURE of `herdr pane get` — the pane closed,
+  the server restarted — into a non-match, so the loop had no arm for "the thing
+  I am watching no longer exists".
+- It carried no deadline. A tool-level timeout on the backgrounded call did not
+  act as one.
+
+**Use the purpose-built primitive instead of hand-writing the loop.**
+`herdr agent wait <target>` matches `idle`, `done` OR `blocked` by default and
+accepts `--timeout <ms>`, so it covers the terminal state this trap is about,
+the blocked state a replay can genuinely reach, and the deadline a hand-written
+`until` loop has no way to express. If you do write a condition by hand, accept
+either word and give it an arm for the target disappearing.
