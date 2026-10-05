@@ -17,9 +17,9 @@ WHAT IS ASSERTED, AND WHY EACH HALF NEEDS THE OTHER. A valve that cleared every
 surviving publish branch would satisfy the dead-run case perfectly well, so the
 LIVE-run hold is its control; and a valve that cleared nothing would satisfy that
 hold just as well, so the dead-run reclaim is the hold's control. Between them
-sits the ordering that makes the act safe: the preserve push is asserted to
-precede the delete, because a delete that ran first would discard exactly what
-this valve exists to keep.
+sits the ordering that makes the act safe: the preserve is asserted to precede
+the delete, because a delete that ran first would discard exactly what this valve
+exists to keep.
 
 A FIRST DISPATCH IS ASSERTED TO ASK ORIGIN NOTHING AT ALL. Only an item the
 journal has already dispatched can have a previous run's publish branch, so the
@@ -36,8 +36,20 @@ stages clause of `SPECIFICATION/contracts.md` grants a lease-guarded force push
 to the `pr` node ALONE and says `publish_draft` "MUST NOT rewrite any other
 ref"; the node's own comment in the graph records why a force push must not be
 added there to smooth this case over. So every argv this valve issues is
-inspected for a force-push spelling, which is what keeps the recovery from being
-bought with the capability the graph deliberately withheld.
+inspected for a force-push spelling AND for the forge's own rewrite interface,
+which is what keeps the recovery from being bought with the capability the graph
+deliberately withheld.
+
+EVERY ASSERTION HERE IS SCRIPTED AGAINST A HOST THAT REFUSES EVERY PUSH, because
+that is the host the Dispatcher actually runs on. A primary checkout carries the
+commit-refuse pre-push hook, which refuses every push with `livespec: refusing
+commit/push at primary checkout; use a worktree` and exit 1, and the first build
+of this valve spelled both of its remote operations as a `git push` — so it could
+never complete in use, while passing its proof in a factory sandbox clone that
+lacks the primary-checkout condition the hook keys on. The reclaim-completes test
+below therefore makes that hook the fixture rather than an afterthought, and the
+remaining arms name the forge reference interface in their own scriptings so a
+silent return to `git push` fails them too.
 """
 
 from __future__ import annotations
@@ -60,7 +72,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_liven
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_preserve import (
     HELD_DELETE_FAILED,
     HELD_PRESERVE_FAILED,
-    PRESERVED_PUBLISH_REF_PREFIX,
     preserved_publish_ref,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -95,9 +106,24 @@ _DEAD_HEAD = "9f1c2d3e4f506172839a0b1c2d3e4f5061728394"
 _OTHER_BRANCH_LINE = "aaaa000011112222333344445555666677778888\trefs/heads/feat/bd-ib-qm4"
 
 _FORCE_SPELLINGS = ("--force", "--force-with-lease", "-f")
+# The forge's own way of rewriting a ref: a PATCH of the reference, optionally
+# forced. Asserted alongside the git spellings because moving the transport off
+# `git push` would otherwise move the withheld capability out of reach of the
+# check that exists to keep it withheld.
+_REWRITE_SPELLINGS = ("PATCH", "force=true", "force=True")
 # Every stage this valve writes starts here, which is what lets a pre-seeded
 # dispatch history share one journal file with the records under assertion.
 _RECLAIM_STAGE_PREFIX = "publish-branch-reclaim"
+# The forge reference endpoints, spelled out here rather than imported from the
+# module under test, so a change to the production argv fails these assertions
+# instead of silently agreeing with them.
+_REFS_ENDPOINT = "/repos/{owner}/{repo}/git/refs"
+# The pre-push hook every primary checkout carries. Reproduced verbatim from the
+# hand run of 2026-10-05T06:12Z, because the exit code alone is what the valve
+# reads and the message is what an operator recognises in a journal detail.
+_PRIMARY_CHECKOUT_PUSH_REFUSAL = (
+    "livespec: refusing commit/push at primary checkout; use a worktree\n"
+)
 
 
 def _reclaim() -> Any:
@@ -251,6 +277,20 @@ def _issued(*, runner: _Runner, needle: str) -> list[list[str]]:
     return [argv for argv in runner.argvs if needle in " ".join(argv)]
 
 
+def _rewrites(*, runner: _Runner) -> list[list[str]]:
+    """Every argv reaching for the forge's reference-UPDATE interface.
+
+    Matched on the joined argv rather than on set membership, because the method
+    and the forced-update field are both values of a preceding flag rather than
+    flags themselves — a token test would report nothing on an argv that rewrote.
+    """
+    return [
+        argv
+        for argv in runner.argvs
+        if any(spelling in " ".join(argv) for spelling in _REWRITE_SPELLINGS)
+    ]
+
+
 def test_a_dead_runs_publish_branch_is_preserved_by_reference_then_cleared(
     tmp_path: Path,
 ) -> None:
@@ -258,9 +298,14 @@ def test_a_dead_runs_publish_branch_is_preserved_by_reference_then_cleared(
 
     Clearing the branch is what lets the re-dispatch's PLAIN push succeed and
     reach proof capture, so the two assertions that matter are that the delete
-    was issued and that the preserve push reached origin BEFORE it. The preserved
-    ref carries the dead head in its own name, so a second reclaim of the same
-    head is idempotent rather than a rewrite.
+    was issued and that the preserve reached origin BEFORE it. The preserved ref
+    carries the dead head in its own name, so a second reclaim of the same head
+    is idempotent rather than a rewrite.
+
+    Both operations are read off the FORGE REFERENCE INTERFACE — a create of the
+    preservation ref, then a delete of the branch — and the full argv sequence is
+    asserted rather than a count, because the ordering is what makes the delete
+    safe and a reversed pair would still issue both calls.
     """
     module = _reclaim()
     runner = _Runner(answers={"ls-remote": _ls_remote()})
@@ -280,21 +325,28 @@ def test_a_dead_runs_publish_branch_is_preserved_by_reference_then_cleared(
     assert _issued(runner=runner, needle="ls-remote") == [
         ["git", "ls-remote", "origin", f"refs/heads/{_BRANCH}"]
     ]
-    # The preserve push and the delete, in that order and no other.
-    pushes = _issued(runner=runner, needle="push")
-    assert pushes == [
-        ["git", "push", "origin", f"{preserved}:{preserved}"],
-        ["git", "push", "origin", "--delete", f"refs/heads/{_BRANCH}"],
+    # The create of the preservation ref, then the delete of the branch, in that
+    # order and no other — and nothing spelled as a `git push` or a `git fetch`.
+    assert _issued(runner=runner, needle="gh api") == [
+        [
+            "gh",
+            "api",
+            "--method",
+            "POST",
+            _REFS_ENDPOINT,
+            "--raw-field",
+            f"ref={preserved}",
+            "--raw-field",
+            f"sha={_DEAD_HEAD}",
+        ],
+        ["gh", "api", "--method", "DELETE", f"{_REFS_ENDPOINT}/heads/{_BRANCH}"],
     ]
-    # The head reached the local ref before it was pushed anywhere.
-    assert _issued(runner=runner, needle="fetch") == [
-        ["git", "fetch", "origin", f"+refs/heads/{_BRANCH}:{preserved}"]
-    ]
-    assert runner.argvs.index(pushes[0]) > runner.argvs.index(
-        ["git", "fetch", "origin", f"+refs/heads/{_BRANCH}:{preserved}"]
-    )
-    # No ref is REWRITTEN to buy this: the force-push capability stays with `pr`.
+    assert _issued(runner=runner, needle="push") == []
+    assert _issued(runner=runner, needle="fetch") == []
+    # No ref is REWRITTEN to buy this: the force-push capability stays with `pr`,
+    # and the forge's own update interface is not reached for either operation.
     assert [argv for argv in runner.argvs if set(argv) & set(_FORCE_SPELLINGS)] == []
+    assert _rewrites(runner=runner) == []
     assert [
         {key: record[key] for key in ("stage", "work_item_id", "branch", "head", "preserved_ref")}
         for record in _records(journal=journal)
@@ -302,6 +354,62 @@ def test_a_dead_runs_publish_branch_is_preserved_by_reference_then_cleared(
         {
             "stage": module.PUBLISH_BRANCH_RECLAIM_STAGE,
             "work_item_id": _ITEM_ID,
+            "branch": _BRANCH,
+            "head": _DEAD_HEAD,
+            "preserved_ref": preserved,
+        }
+    ]
+
+
+def test_the_reclaim_completes_from_a_primary_checkout_that_refuses_every_push(
+    tmp_path: Path,
+) -> None:
+    """The condition the first build of this valve could never satisfy.
+
+    The Dispatcher runs from the host's PRIMARY CHECKOUT, which carries the
+    commit-refuse pre-push hook: it refuses EVERY push with `livespec: refusing
+    commit/push at primary checkout; use a worktree` and exit 1. So a reclaim
+    whose preserve or clear is spelled as a `git push` can never complete on a
+    real dispatching host. Measured 2026-10-05 on `bd-ib-pa73qh`: the reclaim
+    judged the earlier run dead, held on `preserve-failed` with that push's exit
+    1, and run 01M456V9X8SHX5FASEQCVGYRF5 was then refused at `publish_draft`,
+    non-fast-forward, exactly as before the fix.
+
+    The runner here IS that host — every push fails and nothing else does — so
+    the assertion is that the reclaim COMPLETES while issuing no push at all.
+    That is what routes both operations through the forge reference interface,
+    which the local hook does not mediate. The hook is not weakened or bypassed
+    to reach this: the earlier proof passed only because a factory sandbox clone
+    lacks the primary-checkout condition the hook keys on, which is the whole
+    reason this assertion is captured against the real host as well.
+    """
+    module = _reclaim()
+    runner = _Runner(
+        answers={
+            "ls-remote": _ls_remote(),
+            "push": CommandResult(exit_code=1, stdout="", stderr=_PRIMARY_CHECKOUT_PUSH_REFUSAL),
+        }
+    )
+    journal = _journal_after_a_previous_dispatch(tmp_path=tmp_path, item_ids=(_ITEM_ID,))
+
+    module.reclaim_stale_publish_branch(
+        args=_args(),
+        repo=tmp_path,
+        work_item_id=_ITEM_ID,
+        journal=journal,
+        journal_path=journal.path,
+        runner=runner,
+    )
+
+    assert _issued(runner=runner, needle="push") == []
+    assert _rewrites(runner=runner) == []
+    preserved = preserved_publish_ref(work_item_id=_ITEM_ID, head=_DEAD_HEAD)
+    assert [
+        {key: record.get(key) for key in ("stage", "branch", "head", "preserved_ref")}
+        for record in _records(journal=journal)
+    ] == [
+        {
+            "stage": module.PUBLISH_BRANCH_RECLAIM_STAGE,
             "branch": _BRANCH,
             "head": _DEAD_HEAD,
             "preserved_ref": preserved,
@@ -362,7 +470,7 @@ def test_an_item_whose_publish_branch_origin_does_not_carry_is_left_alone(
     )
 
     assert _issued(runner=runner, needle="ls-remote") != []
-    assert _issued(runner=runner, needle="push") == []
+    assert _issued(runner=runner, needle="gh api") == []
     assert _records(journal=journal) == ()
 
 
@@ -389,7 +497,7 @@ def test_an_unaskable_origin_holds_the_reclaim_and_journals_why(tmp_path: Path) 
         runner=runner,
     )
 
-    assert _issued(runner=runner, needle="push") == []
+    assert _issued(runner=runner, needle="gh api") == []
     records = _records(journal=journal)
     assert [record["stage"] for record in records] == [module.PUBLISH_BRANCH_RECLAIM_HELD_STAGE]
     assert records[0]["reason"] == module.HELD_ORIGIN_UNOBSERVABLE
@@ -399,37 +507,35 @@ def test_an_unaskable_origin_holds_the_reclaim_and_journals_why(tmp_path: Path) 
 def test_a_preserve_that_failed_leaves_the_branch_standing(tmp_path: Path) -> None:
     """Preserve THEN reclaim: a failed preserve must not be followed by a delete.
 
-    Both legs of the preserve are tried, because a valve that checked only the
-    local fetch would delete the branch whose copy never reached origin — and
-    that is the one arm where a hold costs a stalled recovery while proceeding
-    costs the published head itself.
+    The whole reference endpoint is scripted to fail, which is what makes the
+    preserve genuinely unachieved rather than merely unconfirmed: the create does
+    not land AND origin cannot be asked what the preservation ref carries. This is
+    the one arm where a hold costs a stalled recovery while proceeding costs the
+    published head itself, so the delete must not be reached.
     """
     module = _reclaim()
-    failed = CommandResult(exit_code=1, stdout="", stderr="")
-    # The local fetch failing, then the push of the preserved ref to origin
-    # failing: two different ways the copy can fail to become durable.
-    failures = ({"fetch": failed}, {f"push origin {PRESERVED_PUBLISH_REF_PREFIX}": failed})
+    runner = _Runner(
+        answers={
+            "ls-remote": _ls_remote(),
+            "/git/ref": CommandResult(exit_code=1, stdout="", stderr="not found"),
+        }
+    )
+    journal = _journal_after_a_previous_dispatch(tmp_path=tmp_path, item_ids=(_ITEM_ID,))
 
-    for index, answers in enumerate(failures):
-        runner = _Runner(answers={"ls-remote": _ls_remote(), **answers})
-        journal = _journal_after_a_previous_dispatch(
-            tmp_path=tmp_path, name=f"journal-{index}.jsonl", item_ids=(_ITEM_ID,)
-        )
+    module.reclaim_stale_publish_branch(
+        args=_args(),
+        repo=tmp_path,
+        work_item_id=_ITEM_ID,
+        journal=journal,
+        journal_path=journal.path,
+        runner=runner,
+    )
 
-        module.reclaim_stale_publish_branch(
-            args=_args(),
-            repo=tmp_path,
-            work_item_id=_ITEM_ID,
-            journal=journal,
-            journal_path=journal.path,
-            runner=runner,
-        )
-
-        assert _issued(runner=runner, needle="--delete") == []
-        records = _records(journal=journal)
-        assert [record["stage"] for record in records] == [module.PUBLISH_BRANCH_RECLAIM_HELD_STAGE]
-        assert records[0]["reason"] == HELD_PRESERVE_FAILED
-        assert records[0]["head"] == _DEAD_HEAD
+    assert _issued(runner=runner, needle="DELETE") == []
+    records = _records(journal=journal)
+    assert [record["stage"] for record in records] == [module.PUBLISH_BRANCH_RECLAIM_HELD_STAGE]
+    assert records[0]["reason"] == HELD_PRESERVE_FAILED
+    assert records[0]["head"] == _DEAD_HEAD
 
 
 def test_a_delete_that_failed_is_reported_rather_than_read_as_a_reclaim(
@@ -444,7 +550,7 @@ def test_a_delete_that_failed_is_reported_rather_than_read_as_a_reclaim(
     runner = _Runner(
         answers={
             "ls-remote": _ls_remote(),
-            "--delete": CommandResult(exit_code=1, stdout="", stderr="protected"),
+            "--method DELETE": CommandResult(exit_code=1, stdout="", stderr="protected"),
         }
     )
     journal = _journal_after_a_previous_dispatch(tmp_path=tmp_path, item_ids=(_ITEM_ID,))
@@ -478,6 +584,11 @@ def test_a_publish_branch_whose_run_is_still_live_is_not_reclaimed(tmp_path: Pat
     directions: the journaled run id is the strong one, and the goal-text leg
     catches a run created in the window before the Dispatcher stamped its id —
     missing it would reclaim a live run's branch.
+
+    The hold is asserted as "NO forge reference call at all" rather than as "no
+    push", because the reclaim's transport is the forge reference interface: a
+    valve that deleted the live run's branch through that interface would satisfy
+    a push-shaped assertion while destroying exactly the ref this arm protects.
     """
     module = _reclaim()
     journaled_live = _ps(runs=((f"01M44{_ITEM_ID}", "running", None),))
@@ -498,7 +609,7 @@ def test_a_publish_branch_whose_run_is_still_live_is_not_reclaimed(tmp_path: Pat
             runner=runner,
         )
 
-        assert _issued(runner=runner, needle="fetch") == []
+        assert _issued(runner=runner, needle="gh api") == []
         assert _issued(runner=runner, needle="push") == []
         records = _records(journal=journal)
         assert [record["stage"] for record in records] == [module.PUBLISH_BRANCH_RECLAIM_HELD_STAGE]
@@ -541,7 +652,7 @@ def test_an_unaskable_factory_holds_the_reclaim_rather_than_assuming_death(
         runner=runner,
     )
 
-    assert _issued(runner=runner, needle="push") == []
+    assert _issued(runner=runner, needle="gh api") == []
     records = _records(journal=journal)
     assert [record["reason"] for record in records] == [HELD_FACTORY_UNOBSERVABLE]
     assert records[0]["live_run_ids"] == []
