@@ -6,7 +6,6 @@ import argparse
 import base64
 import importlib
 import json
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -415,21 +414,21 @@ def test_run_codex_cred_status_human_output(
 
 
 class _RecordingRunner:
+    """Records the app-server renewal conversation the refresher hands it."""
+
     def __init__(self, *, result: CommandResult) -> None:
         self.result = result
-        self.calls: list[tuple[list[str], Path, float, int | None]] = []
+        self.calls: list[tuple[list[str], Path, list[str], float]] = []
 
     def run(
         self,
         *,
         argv: list[str],
         cwd: Path,
+        request_lines: list[str],
         timeout_seconds: float,
-        env: dict[str, str] | None = None,
-        stdin: int | None = None,
     ) -> CommandResult:
-        assert env is None
-        self.calls.append((argv, cwd, timeout_seconds, stdin))
+        self.calls.append((argv, cwd, request_lines, timeout_seconds))
         return self.result
 
 
@@ -450,7 +449,7 @@ def test_run_codex_cred_refresh_not_due_skips_codex(
         lambda: _auth_json_with_exp(exp=_NOW + 100_000),
     )
     monkeypatch.setattr(codex_auth.time, "time", lambda: float(_NOW))
-    monkeypatch.setattr(codex_auth, "ShellCommandRunner", lambda: runner)
+    monkeypatch.setattr(codex_auth, "ShellCodexAppServerRunner", lambda: runner)
 
     exit_code = codex_auth.run_codex_cred_refresh(
         args=argparse.Namespace(as_json=True, dry_run=False)
@@ -481,7 +480,7 @@ def test_run_codex_cred_refresh_due_invokes_codex_and_confirms_advanced_exp(
     runner = _RecordingRunner(result=CommandResult(exit_code=0, stdout="OK\n", stderr=""))
     monkeypatch.setattr(codex_auth, "read_host_codex_auth", lambda: next(reads))
     monkeypatch.setattr(codex_auth.time, "time", lambda: float(_NOW))
-    monkeypatch.setattr(codex_auth, "ShellCommandRunner", lambda: runner)
+    monkeypatch.setattr(codex_auth, "ShellCodexAppServerRunner", lambda: runner)
 
     exit_code = codex_auth.run_codex_cred_refresh(
         args=argparse.Namespace(as_json=True, dry_run=False)
@@ -494,19 +493,13 @@ def test_run_codex_cred_refresh_due_invokes_codex_and_confirms_advanced_exp(
     assert payload["invoked_codex"] is True
     assert payload["before"]["remaining_seconds"] == 20
     assert payload["after"]["remaining_seconds"] == 86_400
-    assert runner.calls == [
-        (
-            [
-                "codex",
-                "exec",
-                "--dangerously-bypass-approvals-and-sandbox",
-                "reply OK",
-            ],
-            Path.cwd(),
-            120.0,
-            subprocess.DEVNULL,
-        )
-    ]
+    assert len(runner.calls) == 1
+    argv, cwd, request_lines, timeout_seconds = runner.calls[0]
+    # The ungated app-server route, with no sandbox-bypass flag of any kind.
+    assert argv == ["codex", "app-server"]
+    assert cwd == Path.cwd()
+    assert timeout_seconds == 120.0
+    assert json.loads(request_lines[-1])["params"] == {"refreshToken": True}
 
 
 def test_run_codex_cred_refresh_due_dry_run_never_invokes_codex(
@@ -524,7 +517,7 @@ def test_run_codex_cred_refresh_due_dry_run_never_invokes_codex(
         lambda: _auth_json_with_exp(exp=_NOW + 20),
     )
     monkeypatch.setattr(codex_auth.time, "time", lambda: float(_NOW))
-    monkeypatch.setattr(codex_auth, "ShellCommandRunner", lambda: runner)
+    monkeypatch.setattr(codex_auth, "ShellCodexAppServerRunner", lambda: runner)
 
     exit_code = codex_auth.run_codex_cred_refresh(
         args=argparse.Namespace(as_json=True, dry_run=True)
@@ -554,7 +547,7 @@ def test_run_codex_cred_refresh_codex_error_exits_one(
         lambda: _auth_json_with_exp(exp=_NOW + 20),
     )
     monkeypatch.setattr(codex_auth.time, "time", lambda: float(_NOW))
-    monkeypatch.setattr(codex_auth, "ShellCommandRunner", lambda: runner)
+    monkeypatch.setattr(codex_auth, "ShellCodexAppServerRunner", lambda: runner)
 
     exit_code = codex_auth.run_codex_cred_refresh(
         args=argparse.Namespace(as_json=False, dry_run=False)
@@ -563,7 +556,7 @@ def test_run_codex_cred_refresh_codex_error_exits_one(
     assert exit_code == 1
     out = capsys.readouterr().out
     assert "outcome: codex-error" in out
-    assert "codex exec failed" in out
+    assert "did not complete" in out
 
 
 def test_run_codex_cred_refresh_malformed_auth_exits_one_without_codex(
@@ -577,7 +570,7 @@ def test_run_codex_cred_refresh_malformed_auth_exits_one_without_codex(
     runner = _RecordingRunner(result=CommandResult(exit_code=0, stdout="OK\n", stderr=""))
     monkeypatch.setattr(codex_auth, "read_host_codex_auth", lambda: "{")
     monkeypatch.setattr(codex_auth.time, "time", lambda: float(_NOW))
-    monkeypatch.setattr(codex_auth, "ShellCommandRunner", lambda: runner)
+    monkeypatch.setattr(codex_auth, "ShellCodexAppServerRunner", lambda: runner)
 
     exit_code = codex_auth.run_codex_cred_refresh(
         args=argparse.Namespace(as_json=True, dry_run=False)
@@ -606,7 +599,7 @@ def test_dispatcher_routes_codex_cred_refresh_dry_run(
         lambda: _auth_json_with_exp(exp=_NOW + 20),
     )
     monkeypatch.setattr(codex_auth.time, "time", lambda: float(_NOW))
-    monkeypatch.setattr(codex_auth, "ShellCommandRunner", lambda: runner)
+    monkeypatch.setattr(codex_auth, "ShellCodexAppServerRunner", lambda: runner)
 
     exit_code = dispatcher.main(argv=["codex-cred-refresh", "--json", "--dry-run"])
 

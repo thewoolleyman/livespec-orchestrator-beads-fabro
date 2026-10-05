@@ -29,7 +29,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_refresh import
     HostCodexCredentialStatus,
     assess_host_codex_credential,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     CODEX_FRESHNESS_RUN_BUDGET_SECONDS,
     CodexFreshnessVerdict,
@@ -216,7 +215,7 @@ def run_codex_cred_refresh(*, args: argparse.Namespace) -> int:
         cwd=Path.cwd,
         now_epoch=lambda: int(time.time()),
         read_host_codex_auth=read_host_codex_auth,
-        runner_factory=ShellCommandRunner,
+        runner_factory=ShellCodexAppServerRunner,
     )
 
 
