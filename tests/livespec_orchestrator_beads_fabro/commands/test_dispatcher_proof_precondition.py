@@ -337,41 +337,52 @@ def test_the_newest_journaled_measurement_is_the_one_read_back(tmp_path: Path) -
     journal = tmp_path / "journal.jsonl"
     _ = journal.write_text(
         "\n".join(
-            json.dumps({"stage": PROOF_STORE_JOURNAL_STAGE, "rendering": rendering})
+            json.dumps(
+                {
+                    "stage": PROOF_STORE_JOURNAL_STAGE,
+                    "repository": "governed",
+                    "rendering": rendering,
+                }
+            )
             for rendering in (RENDERING_AUTHENTICATED_LINK, RENDERING_INLINE)
         )
         + "\n",
         encoding="utf-8",
     )
 
-    assert journaled_proof_rendering(journal_path=journal) == RENDERING_INLINE
+    assert journaled_proof_rendering(journal_path=journal, repository="governed") == (
+        RENDERING_INLINE
+    )
 
 
 def test_every_shape_the_journal_can_hold_without_a_measurement_reads_as_unmeasured(
     tmp_path: Path,
 ) -> None:
-    """Five absences, each failing differently, all yielding the unmeasured answer.
+    """Six absences, each failing differently, all yielding the unmeasured answer.
 
     This path runs INSIDE a dispatch that is already past its refusal wall, so there
     is no decision left for an exception to inform. Enumerated rather than covered by
     the happy path because each shape reaches a different branch: no path at all, a
     path that is not a file, a line that is not JSON, a line that is JSON but not an
-    object, another stage's record, and a record whose `rendering` is not a string.
+    object, another stage's record, and a store record whose `rendering` is not a
+    string.
     """
     journal = tmp_path / "journal.jsonl"
     _ = journal.write_text(
         "not json at all\n"
         "[1, 2]\n"
-        + json.dumps({"stage": "dispatch-id", "rendering": RENDERING_INLINE})
+        + json.dumps(
+            {"stage": "dispatch-id", "repository": "governed", "rendering": RENDERING_INLINE}
+        )
         + "\n"
-        + json.dumps({"stage": PROOF_STORE_JOURNAL_STAGE, "rendering": 7})
+        + json.dumps({"stage": PROOF_STORE_JOURNAL_STAGE, "repository": "governed", "rendering": 7})
         + "\n",
         encoding="utf-8",
     )
 
-    assert journaled_proof_rendering(journal_path=None) == ""
-    assert journaled_proof_rendering(journal_path=tmp_path / "absent.jsonl") == ""
-    assert journaled_proof_rendering(journal_path=journal) == ""
+    assert journaled_proof_rendering(journal_path=None, repository="governed") == ""
+    assert journaled_proof_rendering(journal_path=tmp_path / "absent.jsonl", repository="g") == ""
+    assert journaled_proof_rendering(journal_path=journal, repository="governed") == ""
 
 
 def test_the_env_projection_omits_the_tag_when_the_committed_key_is_unusable(

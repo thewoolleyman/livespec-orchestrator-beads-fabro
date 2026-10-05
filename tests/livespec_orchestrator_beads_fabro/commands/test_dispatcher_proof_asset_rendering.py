@@ -18,8 +18,10 @@ from __future__ import annotations
 import base64
 import importlib
 import json
+import subprocess
 from inspect import signature
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands import (
@@ -37,6 +39,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition i
     PROOF_ASSET_RENDERING_ENV_VAR,
     PROOF_ASSETS_RELEASE_TAG_ENV_VAR,
     PUBLISH_BRANCH_ENV_VAR,
+    journaled_proof_rendering,
+    proof_store_env_lines,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_release import (
     proof_store_journal_record,
@@ -207,3 +211,77 @@ def test_the_overlay_projects_the_measured_rendering_beside_the_branch_and_the_t
     assert f'{PUBLISH_BRANCH_ENV_VAR} = "feat/{_ITEM_ID}"' in rendered
     assert f'{PROOF_ASSETS_RELEASE_TAG_ENV_VAR} = "proof-assets"' in rendered
     assert f'{PROOF_ASSET_RENDERING_ENV_VAR} = "{RENDERING_INLINE}"' in rendered
+
+
+def test_the_rendering_read_back_is_the_one_measured_for_the_dispatched_repository(
+    tmp_path: Path,
+) -> None:
+    """A measurement recorded against another repository is not this one's.
+
+    The clause requires the waiver to be journaled PER REPOSITORY, and a dispatcher
+    checkout's journal is shared across every item it dispatches -- so a reader that
+    took the newest store record whatever it named would project a sibling's
+    visibility here. The failure would be SILENT and in the unsafe direction: a
+    public sibling's `inline` reaching a private repository's capture stage is
+    exactly the leaking reference the measurement exists to prevent.
+    """
+    assert "repository" in signature(journaled_proof_rendering).parameters
+
+    journal = _measured_journal(
+        path=tmp_path / "journal.jsonl", repository="measured-repo", rendering=RENDERING_INLINE
+    )
+
+    assert journaled_proof_rendering(journal_path=journal, repository="measured-repo") == (
+        RENDERING_INLINE
+    )
+    assert journaled_proof_rendering(journal_path=journal, repository="other-repo") == ""
+    # And the projection asks on behalf of the repository it is projecting for,
+    # which is what makes the discrimination above reach the sandbox at all.
+    measured = proof_store_env_lines(
+        repo=tmp_path / "measured-repo", work_item_id=_ITEM_ID, journal_path=journal
+    )
+    other = proof_store_env_lines(
+        repo=tmp_path / "other-repo", work_item_id=_ITEM_ID, journal_path=journal
+    )
+    assert f'{PROOF_ASSET_RENDERING_ENV_VAR} = "{RENDERING_INLINE}"' in measured
+    assert f'{PROOF_ASSET_RENDERING_ENV_VAR} = "{RENDERING_INLINE}"' not in other
+
+
+def test_resolving_the_rendering_takes_no_forge_round_trip(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The projection resolves the measurement with the process spawner DISABLED.
+
+    Asserted by execution rather than by reading the code, because the constraint is
+    load-bearing twice over: this path is reached from the run-config overlay that
+    every dispatch materializes and that the sealed test tier renders with no
+    network, and an earlier draft that probed the forge here spawned a real `gh` in
+    104 otherwise sealed tests. There is no runner to inject BY DESIGN, and a
+    spawner that raises proves nothing reached for one anyway.
+    """
+
+    def _refuse_to_spawn(*args: object, **kwargs: object) -> NoReturn:
+        _ = (args, kwargs)
+        message = "the proof-store projection must resolve with no subprocess"
+        raise AssertionError(message)
+
+    journal = _measured_journal(
+        path=tmp_path / "journal.jsonl", repository="measured-repo", rendering=RENDERING_INLINE
+    )
+    monkeypatch.setattr(subprocess, "run", _refuse_to_spawn)
+    monkeypatch.setattr(subprocess, "Popen", _refuse_to_spawn)
+
+    lines = proof_store_env_lines(
+        repo=tmp_path / "measured-repo", work_item_id=_ITEM_ID, journal_path=journal
+    )
+
+    assert "runner" not in signature(proof_store_env_lines).parameters
+    assert f'{PROOF_ASSET_RENDERING_ENV_VAR} = "{RENDERING_INLINE}"' in lines
+    # The guard was ARMED, not merely installed. Without this control the case above
+    # would pass identically had the stand-in been a no-op, which is the
+    # instrument-aim failure this repository's verification discipline names: a
+    # spawner that cannot refuse proves nothing about a projection that did not
+    # spawn.
+    with pytest.raises(AssertionError, match="no subprocess"):
+        _refuse_to_spawn()

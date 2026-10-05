@@ -244,12 +244,20 @@ def proof_store_env_lines(
     if proof_assets_release_tag_refusal(block=dispatcher_block(cwd=repo)) is not None:
         return lines
     lines += f"{PROOF_ASSETS_RELEASE_TAG_ENV_VAR} = {json.dumps(tag)}\n"
-    rendering = journaled_proof_rendering(journal_path=journal_path)
+    rendering = journaled_proof_rendering(journal_path=journal_path, repository=repo.name)
     return lines + f"{PROOF_ASSET_RENDERING_ENV_VAR} = {json.dumps(rendering)}\n"
 
 
-def journaled_proof_rendering(*, journal_path: Path | None) -> str:
-    """The rendering the pre-dispatch gate measured, read back off the journal.
+def journaled_proof_rendering(*, journal_path: Path | None, repository: str) -> str:
+    """The rendering the pre-dispatch gate measured for ONE repository, read back.
+
+    `repository` is the governed repository's directory name, which is the key the
+    gate writes and the same one `proof_assets_refusal_for_items` derives. Matching
+    on it is not tidiness: a dispatcher checkout's journal is shared across every
+    item it dispatches, so a reader that took the newest store record whatever it
+    named would project a SIBLING's visibility -- silently, and in the unsafe
+    direction, because a public sibling's `inline` reaching a private repository's
+    capture stage is exactly the leaking reference the measurement prevents.
 
     The LAST matching record wins, because the journal is append-only and a
     re-dispatch re-measures: an earlier record describes a visibility that may since
@@ -257,10 +265,10 @@ def journaled_proof_rendering(*, journal_path: Path | None) -> str:
     under.
 
     Every absence yields the empty string rather than raising -- no journal path, no
-    file, no record, a malformed line, a record whose `rendering` is not a string.
-    This path runs inside a dispatch that is already past its refusal wall, so there
-    is no decision left for an exception to inform, and the empty answer is the one
-    `proof_rendering_for_visibility` already defines as the fail-safe.
+    file, no matching record, a malformed line, a record whose `rendering` is not a
+    string. This path runs inside a dispatch that is already past its refusal wall,
+    so there is no decision left for an exception to inform, and the empty answer is
+    the one `proof_rendering_for_visibility` already defines as the fail-safe.
     """
     if journal_path is None or not journal_path.is_file():
         return ""
@@ -271,6 +279,8 @@ def journaled_proof_rendering(*, journal_path: Path | None) -> str:
             continue
         record = cast("dict[str, object]", parsed)
         if record.get("stage") != PROOF_STORE_JOURNAL_STAGE:
+            continue
+        if record.get("repository") != repository:
             continue
         measured = record.get("rendering")
         if isinstance(measured, str):
