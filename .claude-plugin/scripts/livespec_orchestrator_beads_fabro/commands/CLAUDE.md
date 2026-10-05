@@ -146,9 +146,14 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
 - `_dispatcher_proof_credentials.py` — the repository-declared proof
   credentials of `SPECIFICATION/contracts.md`'s proof-credential-projection
   clause: the `dispatcher.proof_credentials` parse, the pre-dispatch gate the
-  two dispatch paths call, the overlay env lines the sandbox reads, and the
-  per-declaration journal record naming whether the credential was minted or
-  copied. Two orderings inside it are load-bearing and are asserted by its
+  two dispatch paths call, and the per-declaration journal record naming
+  whether the credential was minted or copied. The overlay env lines an
+  admitted declaration renders live in
+  `_dispatcher_proof_credential_projection`, split out by cohesion: the
+  declaration module answers what a repository WROTE and what refuses it, the
+  projection module answers what reaches the sandbox, and the projection reads
+  the declaration module's parse rather than re-deriving one.
+  Two orderings inside it are load-bearing and are asserted by its
   tests. The WITHHELD grade runs before the credential-shaped marker scan,
   because every withheld name is itself credential-shaped and a
   value-shape-first ladder would make the withheld refusal unreachable; and a
