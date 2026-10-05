@@ -28,6 +28,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_codex_auth,
     _dispatcher_credentials,
     _dispatcher_loop,
+    _dispatcher_loop_launch,
     _dispatcher_sibling_clones,
 )
 from livespec_orchestrator_beads_fabro.commands._codex_model_tiers import CodexModelTier
@@ -802,7 +803,7 @@ def test_dispatch_one_refuses_when_policy_labels_cannot_be_read(
         _ = (repo, item)
         return "label backend unavailable"
 
-    monkeypatch.setattr(_dispatcher_loop, "read_dispatch_labels", label_failure)
+    monkeypatch.setattr(_dispatcher_loop_launch, "read_dispatch_labels", label_failure)
     outcome = _dispatcher_loop.dispatch_one(
         args=argparse.Namespace(fabro_bin="fabro"),
         repo=tmp_path,
@@ -830,7 +831,7 @@ def test_dispatch_one_releases_dispatch_lock_when_locked_body_raises(
         raise RuntimeError("label backend crashed")
 
     monkeypatch.setattr(_dispatcher_loop, "run_id", lambda: "dispatch-lock-test")
-    monkeypatch.setattr(_dispatcher_loop, "read_dispatch_labels", label_failure)
+    monkeypatch.setattr(_dispatcher_loop_launch, "read_dispatch_labels", label_failure)
 
     with pytest.raises(RuntimeError, match="label backend crashed"):
         _dispatcher_loop.dispatch_one(

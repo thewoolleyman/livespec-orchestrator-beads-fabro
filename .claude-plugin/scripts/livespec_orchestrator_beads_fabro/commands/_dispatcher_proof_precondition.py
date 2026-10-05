@@ -40,6 +40,7 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_assets import PROOF_RENDERINGS
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_release import (
     ProofAssetsStoreResolution,
     ensure_proof_assets_release,
@@ -48,6 +49,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_release import
     proof_assets_release_tag_refusal,
     proof_store_journal_record,
     repository_visibility_from_view,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
+    read_journal_records,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -210,42 +214,85 @@ def proof_assets_refusal(
     return None
 
 
-def proof_store_env_lines(*, repo: Path, work_item_id: str) -> str:
+def proof_store_env_lines(
+    *, repo: Path, work_item_id: str, journal_path: Path | None = None
+) -> str:
     """The overlay env lines the publish and capture stages read.
 
-    PURE BY CONSTRUCTION -- it reads the committed configuration and derives a
-    branch name, and it performs NO forge call. That constraint is not stylistic.
-    This function is reached from the run-config overlay, which every dispatch
-    materializes and which the hermetic test tier exercises without a network; an
-    earlier draft probed the forge here and spawned a real `gh` in 104 otherwise
-    sealed tests. A projection that cannot be rendered offline does not belong on
-    this path.
+    PURE BY CONSTRUCTION -- it reads the committed configuration, derives a branch
+    name, and reads back a measurement somebody else already took. It performs NO
+    forge call. That constraint is not stylistic. This function is reached from the
+    run-config overlay, which every dispatch materializes and which the hermetic
+    test tier exercises without a network; an earlier draft probed the forge here
+    and spawned a real `gh` in 104 otherwise sealed tests. A projection that cannot
+    be rendered offline does not belong on this path.
 
-    So two of the three keys are projected here -- the publish branch, derived from
-    the item id through the one shared derivation, and the release tag, read from
-    the repository's own committed configuration. Both are facts about the
-    repository that need nobody's permission to state.
+    Two of the three keys are facts about the repository that need nobody's
+    permission to state -- the publish branch, derived from the item id through the
+    one shared derivation, and the release tag, read from the repository's own
+    committed configuration.
 
-    THE THIRD KEY IS DELIBERATELY NOT PROJECTED HERE, and the capture prompt's
-    fallback is what covers it: the image RENDERING depends on a live visibility
-    measurement, which `proof_assets_refusal` performs and journals at the
-    pre-dispatch gate. Threading that resolution into this projection is a pure
-    plumbing change blocked only by `_dispatcher_loop`'s file-size ceiling, which
-    sits at exactly the hard limit and cannot take another argument until that
-    module is decomposed. Until then the capture stage falls back to the
-    AUTHENTICATED-LINK form, which is the same fail-safe direction
-    `proof_rendering_for_visibility` takes for an unmeasured repository: it costs an
-    inline rendering the repository might have supported, and it can never publish a
-    reference that leaks.
+    THE THIRD KEY IS THE MEASURED RENDERING, AND IT ARRIVES BY READBACK rather than
+    by measurement. `proof_assets_refusal` has already probed this repository's
+    visibility at the pre-dispatch gate and journaled the resolution under
+    `PROOF_STORE_JOURNAL_STAGE`, so the value exists before this projection runs
+    and the only honest thing left to do is read it. That is what reconciles the
+    purity constraint above with the clause's requirement: the clause waives the
+    inline half only where no API-drivable store satisfies it, so a projection that
+    could not carry a measured `inline` would waive it on the public repositories
+    the measured release-assets store does satisfy.
+
+    `journal_path` is threaded in rather than derived, because the journal location
+    is an INVOCATION fact (`--journal` overrides it) and a second derivation could
+    not be proven to agree with the first. A caller that holds none -- and a
+    dispatch whose freshest record for this repository could not measure -- projects
+    NO rendering key at all, which is what the capture prompt documents as its
+    fail-safe: an absent value means no measurement reached this run, the prompt
+    takes the AUTHENTICATED-LINK form and says that it did so, and a reader can
+    still tell that fallback from a measured waiver. Projecting
+    `authenticated_link` for an unmeasured repository would destroy exactly that
+    distinction while buying nothing.
     """
     tag = proof_assets_release_tag(block=dispatcher_block(cwd=repo))
     lines = (
         f"{PUBLISH_BRANCH_ENV_VAR} = "
         f"{json.dumps(publish_branch_for(work_item_id=work_item_id))}\n"
     )
+    rendering = _journaled_rendering(journal_path=journal_path)
+    if rendering:
+        lines += f"{PROOF_ASSET_RENDERING_ENV_VAR} = {json.dumps(rendering)}\n"
     if proof_assets_release_tag_refusal(block=dispatcher_block(cwd=repo)) is not None:
         return lines
     return lines + f"{PROOF_ASSETS_RELEASE_TAG_ENV_VAR} = {json.dumps(tag)}\n"
+
+
+def _journaled_rendering(*, journal_path: Path | None) -> str:
+    """The rendering the gate already measured, or the empty string.
+
+    NEWEST-WINS, and the scan stops at the first store record it finds rather than
+    searching past it for one carrying a usable rendering. The difference matters in
+    exactly the case that is easy to get wrong: a dispatch whose gate found the
+    forge UNOBSERVABLE journals a record with no `rendering` field, and skipping
+    past it to an older measurement would project a visibility nobody established
+    THIS time while looking indistinguishable from a fresh reading.
+
+    Every tolerance here fails SAFE onto the empty string -- no journal, no store
+    record, a record whose `rendering` is absent, not a string, or outside the
+    closed pair -- because the empty string projects no key, and no key is the
+    capture prompt's authenticated-link fallback. The closed-pair check is
+    deliberate rather than defensive: a value the prompt does not understand would
+    otherwise reach the sandbox as an instruction nothing acts on.
+    """
+    if journal_path is None:
+        return ""
+    for record in reversed(read_journal_records(journal_path=journal_path)):
+        if record.get("stage") != PROOF_STORE_JOURNAL_STAGE:
+            continue
+        rendering = record.get("rendering")
+        if isinstance(rendering, str) and rendering in PROOF_RENDERINGS:
+            return rendering
+        return ""
+    return ""
 
 
 def _append_store_record(*, journal: object, work_item_id: str, record: dict[str, object]) -> None:

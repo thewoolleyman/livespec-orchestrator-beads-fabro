@@ -270,6 +270,46 @@ def test_dispatch_loop_cluster_importable_from_new_module_and_private_names_remo
         assert not hasattr(dispatcher, name)
 
 
+def test_dispatch_launch_cluster_importable_from_new_module_and_private_names_removed() -> None:
+    """The pre-run assembly — plan, token, overlay, goal — is its own module.
+
+    Split out of `_dispatcher_loop`, which stood exactly at the 250-LLOC hard
+    ceiling and so could not thread the journal path its overlay call site needed
+    to carry the MEASURED proof-asset rendering into the sandbox. The seam
+    continues the one `_dispatcher_loop_materialize` opened: that module answers
+    which workflow a dispatch runs, this one assembles what the launch needs around
+    it, and `_dispatcher_loop` keeps the lock plus the run-and-dispose arc.
+
+    `_dispatch_one_locked` moved WITH its concern rather than being imported back
+    across the seam, which is what the absent old name asserts. `__all__` on the
+    source module is asserted UNCHANGED, because the extraction is a pure refactor
+    and `dispatcher.py`'s one import of it must not have moved.
+    """
+    module_path = Path(dispatcher.__file__).parent / "_dispatcher_loop_launch.py"
+    loop_launch_public_names = {
+        "PreparedLaunch",
+        "prepare_launch",
+    }
+
+    assert module_path.is_file()
+    loop_launch = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_launch"
+    )
+    dispatch_loop = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop"
+    )
+    assert set(loop_launch.__all__) == loop_launch_public_names
+    for name in loop_launch_public_names:
+        assert hasattr(loop_launch, name)
+    assert dispatch_loop.prepare_launch is loop_launch.prepare_launch
+    assert dispatch_loop.__all__ == ["dispatch_one"]
+    # The moved private body is GONE from the module it left, so the split cannot
+    # regress into a re-export shim; the orchestrating private that CALLS it stays.
+    assert not hasattr(dispatch_loop, "_prepare_launch")
+    assert not hasattr(loop_launch, "_dispatch_one_locked")
+    assert hasattr(dispatch_loop, "_dispatch_one_locked")
+
+
 def test_otel_wiring_cluster_importable_from_new_module_and_private_names_removed() -> None:
     otel_wiring_public_names = {
         "arm_otel_egress",

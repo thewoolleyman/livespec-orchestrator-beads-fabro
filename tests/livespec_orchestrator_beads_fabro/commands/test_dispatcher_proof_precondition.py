@@ -19,14 +19,17 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from inspect import signature
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_assets import (
     RENDERING_AUTHENTICATED_LINK,
     RENDERING_INLINE,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (
+    PROOF_ASSET_RENDERING_ENV_VAR,
     PROOF_ASSETS_RELEASE_TAG_ENV_VAR,
     PROOF_STORE_JOURNAL_STAGE,
     PUBLISH_BRANCH_ENV_VAR,
@@ -343,6 +346,112 @@ def test_the_env_projection_omits_the_tag_when_the_committed_key_is_unusable(
 
     assert PUBLISH_BRANCH_ENV_VAR in lines
     assert PROOF_ASSETS_RELEASE_TAG_ENV_VAR not in lines
+
+
+def test_the_env_projection_carries_the_measured_rendering_beside_the_branch_and_the_tag(
+    tmp_path: Path,
+) -> None:
+    """All THREE keys, the rendering taken from the gate's OWN journal record.
+
+    The record is written by the real plural gate through a real `JournalFile`
+    rather than hand-authored JSONL, so "the rendering comes from the
+    already-journaled per-repository measurement" is an OBSERVATION rather than a
+    fixture claim: a projection that re-derived the measurement, or read some other
+    field, would not find `inline` here.
+
+    The signature assertion leads deliberately. The journal path is the whole seam
+    — it is what lets a pure projection carry a measured value — and a behaviour
+    assertion alone would report its absence as a `TypeError` rather than as the
+    missing parameter it is.
+    """
+    repo = _repo(tmp_path=tmp_path)
+    journal = JournalFile(path=tmp_path / "journal.jsonl")
+    assert "journal_path" in signature(proof_store_env_lines).parameters
+
+    refusal = proof_assets_refusal_for_items(
+        runner=_Runner(visibility="PUBLIC", view_exit=0),
+        repo=repo,
+        items=[_item(description=_PROOF_BEARING)],
+        journal=journal,
+    )
+    lines = proof_store_env_lines(repo=repo, work_item_id="bd-ib-b4u6b7", journal_path=journal.path)
+
+    assert refusal is None
+    assert f'{PUBLISH_BRANCH_ENV_VAR} = "feat/bd-ib-b4u6b7"' in lines
+    assert f'{PROOF_ASSETS_RELEASE_TAG_ENV_VAR} = "proof-assets"' in lines
+    assert f'{PROOF_ASSET_RENDERING_ENV_VAR} = "{RENDERING_INLINE}"' in lines
+
+
+def test_a_private_repositorys_measured_waiver_is_projected_as_the_link_form(
+    tmp_path: Path,
+) -> None:
+    """The control on the case above: the projected value TRACKS the measurement.
+
+    Same gate, same projection, one visibility different. Without this the happy
+    case is equally consistent with a projection that writes `inline` constantly,
+    which is the one failure mode that could publish a reference nobody established
+    was fetchable.
+    """
+    repo = _repo(tmp_path=tmp_path)
+    journal = JournalFile(path=tmp_path / "journal.jsonl")
+
+    refusal = proof_assets_refusal_for_items(
+        runner=_Runner(visibility="PRIVATE", view_exit=0),
+        repo=repo,
+        items=[_item(description=_PROOF_BEARING)],
+        journal=journal,
+    )
+    lines = proof_store_env_lines(repo=repo, work_item_id="bd-ib-b4u6b7", journal_path=journal.path)
+
+    assert refusal is None
+    assert f'{PROOF_ASSET_RENDERING_ENV_VAR} = "{RENDERING_AUTHENTICATED_LINK}"' in lines
+
+
+def test_an_unobservable_forge_projects_no_rendering_key_at_all(tmp_path: Path) -> None:
+    """The fail-safe: no measurement reached this run, so no value is invented.
+
+    The gate journals an `unobservable` record carrying NO `rendering` field, and
+    the projection must withhold the key rather than fill it in. Withholding it is
+    what the capture prompt documents as its authenticated-link fallback, and it is
+    the ONLY form that still lets a reader tell that fallback from a MEASURED
+    waiver — the prompt asks the capture agent to say which one it took.
+
+    Asserted beside the branch key, so this is "the rendering was withheld" rather
+    than "the whole projection collapsed".
+    """
+    repo = _repo(tmp_path=tmp_path)
+    journal = JournalFile(path=tmp_path / "journal.jsonl")
+
+    refusal = proof_assets_refusal_for_items(
+        runner=_Runner(visibility_exit=1),
+        repo=repo,
+        items=[_item(description=_PROOF_BEARING)],
+        journal=journal,
+    )
+    lines = proof_store_env_lines(repo=repo, work_item_id="bd-ib-b4u6b7", journal_path=journal.path)
+
+    assert refusal is None
+    assert PUBLISH_BRANCH_ENV_VAR in lines
+    assert PROOF_ASSET_RENDERING_ENV_VAR not in lines
+
+
+def test_a_journal_with_no_store_record_projects_no_rendering_key(tmp_path: Path) -> None:
+    """A journal the gate never wrote a store record to is the same fail-safe.
+
+    Two shapes reach this, and both are ordinary rather than exceptional: a
+    dispatch whose item carries no `factory_captured` assertion never probes the
+    forge at all, and a journal holding only OTHER stages is what the readback sees
+    before the gate has run. The unrelated record is present deliberately — a
+    reader keying on position rather than on the store stage would pick it up.
+    """
+    repo = _repo(tmp_path=tmp_path)
+    journal = JournalFile(path=tmp_path / "journal.jsonl")
+    journal.append(record={"stage": "ledger-admit", "work_item_id": "bd-ib-b4u6b7"})
+
+    lines = proof_store_env_lines(repo=repo, work_item_id="bd-ib-b4u6b7", journal_path=journal.path)
+
+    assert PUBLISH_BRANCH_ENV_VAR in lines
+    assert PROOF_ASSET_RENDERING_ENV_VAR not in lines
 
 
 def test_a_declared_tag_is_projected_in_place_of_the_default(tmp_path: Path) -> None:

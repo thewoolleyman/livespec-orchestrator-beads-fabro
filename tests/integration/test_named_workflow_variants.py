@@ -99,7 +99,7 @@ def _hermetic_dispatch_env(
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop.selfup.github_token_supplier",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_launch.selfup.github_token_supplier",
         lambda: (lambda: "test-github-token"),
     )
     monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")

@@ -54,6 +54,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_ledger_close,
     _dispatcher_loop,
     _dispatcher_loop_command,
+    _dispatcher_loop_launch,
     _dispatcher_loop_selection,
     _dispatcher_provider_exhaustion,
     _dispatcher_reflection,
@@ -364,7 +365,7 @@ def fabro_dispatch_env(
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
     monkeypatch.setattr(
-        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop.selfup.github_token_supplier",
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_launch.selfup.github_token_supplier",
         lambda: (lambda: "test-github-token"),
     )
     monkeypatch.setattr(
@@ -4458,7 +4459,9 @@ def test_dispatch_pre_run_failure_releases_admitted_claim(
     append_work_item(path=_config(), item=item)
     journal = JournalFile(path=repo / "tmp" / "fabro-dispatch-journal.jsonl")
     journal.append(record={"stage": "ledger-admit", "work_item_id": item.id, "assignee": "fabro"})
-    monkeypatch.setattr(_dispatcher_loop, "read_dispatch_comments", lambda **_: "factory refused")
+    monkeypatch.setattr(
+        _dispatcher_loop_launch, "read_dispatch_comments", lambda **_: "factory refused"
+    )
 
     outcome = _dispatcher_loop.dispatch_one(
         args=argparse.Namespace(
@@ -5539,7 +5542,7 @@ def test_dispatch_fails_closed_when_github_app_env_is_absent(
     )
     # Un-stub the supplier: exercise the REAL fail-closed resolution.
     monkeypatch.setattr(
-        _dispatcher_loop.selfup, "github_token_supplier", _real_github_token_supplier
+        _dispatcher_loop_launch.selfup, "github_token_supplier", _real_github_token_supplier
     )
     monkeypatch.delenv("GITHUB_APP_ID", raising=False)
     monkeypatch.delenv("GITHUB_PRIVATE_KEY", raising=False)
@@ -5575,7 +5578,9 @@ def test_dispatch_routes_a_mint_failure_as_overlay_refusal(
     def _raising_token() -> str:
         raise GithubAppAuthError(detail="the App API rejected the JWT")
 
-    monkeypatch.setattr(_dispatcher_loop.selfup, "github_token_supplier", lambda: _raising_token)
+    monkeypatch.setattr(
+        _dispatcher_loop_launch.selfup, "github_token_supplier", lambda: _raising_token
+    )
     base = ["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     assert main(argv=base) == 1
     out = capsys.readouterr().out
@@ -6422,7 +6427,7 @@ def test_dispatch_refuses_minijinja_goal_before_fabro_and_releases_claim(
     )
     append_work_item(path=_config(), item=item)
     monkeypatch.setattr(
-        _dispatcher_loop,
+        _dispatcher_loop_launch,
         "read_dispatch_comments",
         lambda **_: (
             WorkItemComment(

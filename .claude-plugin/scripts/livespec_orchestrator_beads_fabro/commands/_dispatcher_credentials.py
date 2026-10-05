@@ -154,6 +154,7 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
     git_author: GitAuthor,
     graph_override: Path | None = None,
     prepare_inputs: Mapping[str, str] | None = None,
+    journal_path: Path | None = None,
 ) -> str | None:
     """Write the uncommitted mode-600 run-config overlay.
 
@@ -199,6 +200,15 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
     sandbox `$CODEX_HOME/auth.json` alongside the Claude OAuth env. A
     missing or too-short-lived host credential refuses the dispatch here
     with an actionable renewal message (naming `codex login`).
+
+    `journal_path` is this dispatch's journal, threaded in so the proof-store
+    projection can READ BACK the image rendering the pre-dispatch gate already
+    measured for this repository instead of re-probing the forge from a path every
+    dispatch materializes offline. It is the invocation's own journal location
+    (`--journal` overrides it), so it is passed rather than derived: a second
+    derivation could not be proven to agree with the first. Absent, the rendering
+    key is simply not projected and the capture stage takes its documented
+    authenticated-link fallback.
     """
     env_error = check_credential_env(repo=repo)
     if env_error is not None:
@@ -260,12 +270,16 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
         # re-derived: the caller passes the SAME resolved contract the
         # `--input` pairs come from.
         prepare_inputs=prepare_inputs,
-        # The publish branch the `publish_draft` command node pushes, plus this
-        # repository's resolved proof asset store. Resolved HERE rather than
-        # threaded from the caller, which is already at its file-size ceiling;
-        # the branch comes from the single shared derivation rather than a second
-        # spelling of `feat/<id>` (S5 / bd-ib-b4u6b7).
-        proof_store_env=proof_store_env_lines(repo=repo, work_item_id=work_item_id),
+        # The publish branch the `publish_draft` command node pushes, this
+        # repository's resolved proof asset store, and the image rendering its
+        # pre-dispatch gate MEASURED -- read back out of `journal_path`, which is
+        # why this projection carries a live measurement while performing no forge
+        # call of its own (S5 / bd-ib-b4u6b7, bd-ib-pa73qh). The branch comes from
+        # the single shared derivation rather than a second spelling of
+        # `feat/<id>`.
+        proof_store_env=proof_store_env_lines(
+            repo=repo, work_item_id=work_item_id, journal_path=journal_path
+        ),
         # This repository's DECLARED proof credentials, by name, valued from this
         # process's environment. The pre-dispatch gate has already refused every
         # unusable declaration, so what reaches here is admitted; the builder is
