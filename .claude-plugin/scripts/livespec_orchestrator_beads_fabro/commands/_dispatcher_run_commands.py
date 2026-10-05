@@ -52,7 +52,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_post_verdict import (
     reflector_oob_after_verdict,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credentials import (
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_gate import (
     proof_credentials_refusal_for_items,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (

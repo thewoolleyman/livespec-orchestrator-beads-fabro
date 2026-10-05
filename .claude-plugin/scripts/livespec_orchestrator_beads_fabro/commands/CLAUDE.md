@@ -143,18 +143,27 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   onto "not declared" rather than raising, because every consumer is building a
   DIAGNOSTIC naming the wrapper to fix and an exception there would replace an
   actionable refusal with a traceback about the file it was about to name.
-- `_dispatcher_proof_credentials.py` — the repository-declared proof
-  credentials of `SPECIFICATION/contracts.md`'s proof-credential-projection
-  clause: the `dispatcher.proof_credentials` parse, the pre-dispatch gate the
-  two dispatch paths call, and the per-declaration journal record naming
-  whether the credential was minted or copied. The overlay env lines an
-  admitted declaration renders live in
-  `_dispatcher_proof_credential_projection`, split out by cohesion: the
-  declaration module answers what a repository WROTE and what refuses it, the
-  projection module answers what reaches the sandbox, and the projection reads
-  the declaration module's parse rather than re-deriving one.
-  Two orderings inside it are load-bearing and are asserted by its
-  tests. The WITHHELD grade runs before the credential-shaped marker scan,
+- The repository-declared proof credentials of
+  `SPECIFICATION/contracts.md`'s proof-credential-projection clause live in
+  FOUR cohesive modules, and the dependency direction reads bottom-up:
+  `_dispatcher_proof_credential_management` (the `dispatcher.proof_credential_
+  management` argv pair a repository declares per credential, when its provider
+  exposes a management interface, plus the environment the mint and revoke
+  commands are addressed through) → `_dispatcher_proof_credentials` (the
+  `dispatcher.proof_credentials` parse and its refusal ladder, the resolution
+  across both keys, the minted-or-copied provisioning verdict, and the
+  per-declaration journal record) → `_dispatcher_proof_credential_projection`
+  (the overlay env lines an admitted declaration renders) and
+  `_dispatcher_proof_credential_gate` (the selection-level gate the two
+  dispatch paths call).
+  The DECLARATION-versus-GATE split is deliberate, and the gate's own docstring
+  names it: the declaration module grades COMMITTED CONFIGURATION and is pure
+  over a block handed to it, while the gate reads the target repository off
+  disk, grades the Dispatcher's LIVE ENVIRONMENT — which no committed
+  declaration can decide — and WRITES the dispatch journal.
+  Two orderings inside the declaration module are load-bearing and are
+  asserted by its tests. The WITHHELD grade runs before the credential-shaped
+  marker scan,
   because every withheld name is itself credential-shaped and a
   value-shape-first ladder would make the withheld refusal unreachable; and a
   name the Dispatcher MINTS per run is exempt from the `name` arm of that scan

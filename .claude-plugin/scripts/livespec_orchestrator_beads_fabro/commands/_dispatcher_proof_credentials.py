@@ -30,13 +30,11 @@ this module reuses that scan rather than growing a second vocabulary.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_secrets import secret_marker
-from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_management import (
     ProviderManagementInterface,
     parse_provider_management_interfaces,
@@ -54,11 +52,11 @@ __all__: list[str] = [
     "WITHHELD_DISPATCH_CREDENTIALS",
     "ProofCredential",
     "ResolvedProofCredentials",
+    "environment_refusal",
     "parse_proof_credentials",
     "proof_credential_journal_record",
     "proof_credential_provisioning",
     "proof_credentials_refusal",
-    "proof_credentials_refusal_for_items",
     "resolved_proof_credentials",
 ]
 
@@ -338,16 +336,24 @@ def proof_credentials_refusal(
     resolved = resolved_proof_credentials(block=block)
     if isinstance(resolved, str):
         return resolved
-    return _environment_refusal(resolved=resolved, environ=environ, wrapper_text=wrapper_text)
+    return environment_refusal(resolved=resolved, environ=environ, wrapper_text=wrapper_text)
 
 
-def _environment_refusal(
+def environment_refusal(
     *,
     resolved: ResolvedProofCredentials,
     environ: Mapping[str, str],
     wrapper_text: str,
 ) -> str | None:
-    """The first declared name whose value the Dispatcher's environment lacks."""
+    """The first declared name whose value the Dispatcher's environment lacks.
+
+    PUBLIC because the selection-level gate in
+    `_dispatcher_proof_credential_gate` applies the same grade over a whole
+    dispatch wave, and importing a `_`-prefixed name across a module boundary
+    is what pyright strict and the `private_calls` check refuse. The grade is a
+    real interface rather than plumbing: it is the one arm of the gate a
+    committed declaration cannot decide.
+    """
     for credential in resolved.declared:
         provisioning = proof_credential_provisioning(
             credential=credential, management=resolved.management
@@ -380,53 +386,3 @@ def proof_credential_journal_record(
         "capability": credential.capability,
         "provisioning": proof_credential_provisioning(credential=credential, management=management),
     }
-
-
-def proof_credentials_refusal_for_items(
-    *,
-    repo: Path,
-    environ: Mapping[str, str],
-    wrapper_text: str,
-    work_item_ids: Sequence[str],
-    journal: object = None,
-) -> str | None:
-    """The pre-dispatch gate over a whole selection, journaling what it admits.
-
-    The declaration is a REPOSITORY-level fact, so the refusal is computed once
-    and returned once: enumerating it per candidate would read as N distinct
-    faults when there is one. The journal records, by contrast, ARE per item,
-    because each dispatched item gets its own run-configuration overlay and
-    therefore its own projection — a reader asking what one item's dispatch
-    projected must not be answered with a sibling's.
-
-    A refusal writes NO projection record. Nothing was projected, and a journal
-    asserting otherwise would describe a credential reaching a sandbox that was
-    never launched; the refusal itself is journaled by the caller that reports it.
-
-    `journal` is optional and is reached through its own `append`, so the gate is
-    callable from a hermetic test and from a caller holding none, without a second
-    serializer.
-    """
-    resolved = resolved_proof_credentials(block=dispatcher_block(cwd=repo))
-    if isinstance(resolved, str):
-        return resolved
-    environment_refusal = _environment_refusal(
-        resolved=resolved, environ=environ, wrapper_text=wrapper_text
-    )
-    if environment_refusal is not None:
-        return environment_refusal
-    append = getattr(journal, "append", None)
-    if append is None:
-        return None
-    for work_item_id in work_item_ids:
-        for credential in resolved.declared:
-            append(
-                record={
-                    "stage": PROOF_CREDENTIAL_JOURNAL_STAGE,
-                    "work_item_id": work_item_id,
-                    **proof_credential_journal_record(
-                        credential=credential, management=resolved.management
-                    ),
-                }
-            )
-    return None
