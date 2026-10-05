@@ -12,11 +12,11 @@ from each".
 WHY THIS TIER EXISTS BESIDE THE UNIT ONE. The unit module
 `tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_acceptance_eligibility.py`
 asserts the refusal against the DECISION primitive and, where it reaches the CLI,
-grades the admitting control on `rc != 5` alone. That control cannot separate "the
-wall let the item through" from "the dispatch died one gate later for an unrelated
-reason", and nothing in it observes whether a run was created. Here the launch seam
-RECORDS, so "before any claim or run exists" is read off the seam and off the ledger
-row rather than inferred from an exit code — a dispatch can exit non-zero having
+grades the admitting control on the refusal code's ABSENCE alone. That control cannot
+separate "the wall let the item through" from "the dispatch died one gate later for an
+unrelated reason", and nothing in it observes whether a run was created. Here the launch
+seam RECORDS, so "before any claim or run exists" is read off the seam and off the
+ledger row rather than inferred from an exit code — a dispatch can exit non-zero having
 already created a run — and the parked control is graded on the seam actually being
 ENTERED.
 
@@ -35,6 +35,13 @@ this refusal. Asserting that here is what stops the module from reading as thoug
 unnarrowed drain would refuse, and it is the same no-claim guarantee measured on the
 one path that reaches the item without naming it.
 
+THE EXPECTED REFUSAL CODE IS THE PRODUCTION SYMBOL, imported from
+`_dispatcher_command_common` rather than restated as a local literal. It is the very
+constant both dispatch entry paths return, so no second value exists beside it that
+could drift: were the production code to move, this module follows it instead of
+asserting the retired number and failing for a reason that has nothing to do with the
+clause under test.
+
 THE REFERENCE RESOLVES AGAINST A REAL SPEC TREE in the fixture, so the routing
 refusal is reached with the mechanical findings arm ARMED and quiet. That arm runs
 FIRST and its refusal shadows this one; an unreadable tree makes it skip the
@@ -52,6 +59,9 @@ from pathlib import Path
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop
+from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
+    EXIT_UNGRADEABLE_CRITERIA,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
@@ -59,7 +69,6 @@ from livespec_orchestrator_beads_fabro.store import append_work_item, read_work_
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 _ITEM_ID = "bd-ib-mixed133"
-_EXIT_UNGRADEABLE_CRITERIA = 5
 
 # The heading the item's reference line names, carried by the fixture's own spec
 # tree so the reference RESOLVES and the mechanical findings arm stays quiet.
@@ -293,8 +302,8 @@ def test_both_dispatch_entry_paths_refuse_the_mixed_ai_only_item_identically(
     drain_refusal = _refusal_block(stderr=capsys.readouterr().err)
 
     # The verdict, the launch seam and the ledger row, for each entry path.
-    assert (hand_picked_code, hand_picked_calls) == (_EXIT_UNGRADEABLE_CRITERIA, [])
-    assert (drain_code, drain_calls) == (_EXIT_UNGRADEABLE_CRITERIA, [])
+    assert (hand_picked_code, hand_picked_calls) == (EXIT_UNGRADEABLE_CRITERIA, [])
+    assert (drain_code, drain_calls) == (EXIT_UNGRADEABLE_CRITERIA, [])
     # The SAME refusal, byte for byte, rather than two messages that each happen to
     # mention the assertion.
     assert drain_refusal == hand_picked_refusal
