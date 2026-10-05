@@ -930,6 +930,13 @@ and an identifier that genuinely held look identical at the surface and support
 opposite conclusions. `prior_state` says which of `absent`, `readable`, or
 `unreadable` the preceding record was, with `prior_state_detail` naming why.
 
+`state_write` says what became of this reading: `recorded`, `withheld`, or
+`failed`. **`withheld` is the mechanism protecting the series, not a fault** — a
+reading whose claims could not be read is deliberately NOT written, because
+recording it would overwrite the last comparable fingerprints and leave every
+later reading comparing against the blip. `failed` IS a fault: the state path is
+not writable, and `state_write_detail` says why.
+
 What the state file holds is only `schema`, `observed_at_epoch`,
 `expires_at_epoch`, and a truncated SHA-256 **fingerprint** per identifier. No
 token, no raw claim value, and nothing copied out of `auth.json`, which this

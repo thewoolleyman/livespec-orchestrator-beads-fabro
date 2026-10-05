@@ -29,6 +29,7 @@ __all__: list[str] = [
     "IDENTITY_CONTINUITY_LIMITATION",
     "CodexIdentityComparison",
     "IdentityChange",
+    "IdentityStateWrite",
     "compare_codex_identity",
     "identity_observation_human_lines",
     "identity_observation_payload",
@@ -49,6 +50,21 @@ IDENTITY_CONTINUITY_LIMITATION = (
     "accepted, and a changed one is no evidence that it was revoked. Only the "
     "provider can answer that."
 )
+
+
+# Three NAMED outcomes rather than a boolean. "Was it written?" cannot express
+# the difference between a write this reading deliberately declined and a write
+# that failed, and those two want opposite responses from an operator: the first
+# is the mechanism protecting the series, the second is a broken state path.
+IdentityStateWriteOutcome = Literal["recorded", "withheld", "failed"]
+
+
+@dataclass(frozen=True, kw_only=True)
+class IdentityStateWrite:
+    """What became of this reading's attempt to record itself."""
+
+    outcome: IdentityStateWriteOutcome
+    detail: str | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -94,7 +110,7 @@ def identity_observation_payload(
     claims: CodexIdentityClaims,
     comparison: CodexIdentityComparison,
     state_path: str,
-    state_write_detail: str | None,
+    write: IdentityStateWrite,
 ) -> dict[str, Any]:
     """Render the machine-readable observation an operator opted in to."""
     return {
@@ -106,8 +122,8 @@ def identity_observation_payload(
         "session_change": comparison.session_change,
         "session_fingerprint": claims.session_fingerprint,
         "state_path": state_path,
-        "state_write_detail": state_write_detail,
-        "state_written": state_write_detail is None,
+        "state_write": write.outcome,
+        "state_write_detail": write.detail,
         "token_change": comparison.token_change,
         "token_fingerprint": claims.token_fingerprint,
     }
@@ -122,6 +138,7 @@ def identity_observation_human_lines(*, observation: dict[str, Any] | None) -> t
         f"identity_session_change: {observation['session_change']}",
         f"identity_token_change: {observation['token_change']}",
         f"identity_state_path: {observation['state_path']}",
+        f"identity_state_write: {observation['state_write']}",
         f"identity_limitation: {observation['limitation']}",
     )
 
