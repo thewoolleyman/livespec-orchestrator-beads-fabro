@@ -130,12 +130,11 @@ _IDENTITY_PREFIXES = ("run ", "session ", "human ")
 _HEADER_MINIMUM_FIELDS = 3
 _TIMESTAMP_FIELD = 3
 _HEADING = re.compile(r"^(#{1,6})\s")
-# The depth at which the record's own assertion headings sit, and therefore the
-# deepest heading that OPENS a section. A verifier that gives an assertion a
-# nested `### Replay proof` subsection is writing prose INSIDE that assertion, so
-# a deeper heading continues the section it is nested in rather than starting a
-# new one — the module docstring records what splitting at one cost.
-_SECTION_HEADING_DEPTH = 2
+# One deeper than the deepest heading CommonMark admits, which is the depth the
+# body is at BEFORE its first heading. Any heading is shallower than this, so the
+# lines before the first heading — the record header itself — close on the first
+# one rather than absorbing it.
+_UNNESTED_DEPTH = 7
 # A CommonMark fenced-code delimiter: three or more backticks or tildes, indented
 # no more than three spaces. The run itself is captured because closing a fence
 # depends on it; the info string an OPENING delimiter may carry is not, because
@@ -314,28 +313,35 @@ def _sections(*, body: str) -> list[list[str]]:
     cost. The delimiter line itself is never a heading either, so the fence arm and
     the heading arm are exclusive.
 
-    A heading NESTED below the record's assertion depth does not open a section
-    either: it is prose written inside the assertion it sits under, so the
-    assertion's own `Reproduced:` line stays in the assertion's section.
+    A heading NESTED below the heading that opened the current section does not
+    open a section either: it is prose written inside that section — a verifier's
+    `### Replay proof` under its `## Assertion N` — so the assertion's own
+    `Reproduced:` line stays in the assertion's section. The depth is read from the
+    HEADINGS, never from a fixed assertion level: nothing fixes the level a record
+    states its assertions at, and a reader recognising one level would merge the
+    siblings of every record that chose another.
     """
     sections: list[list[str]] = [[]]
     fence: str | None = None
+    depth = _UNNESTED_DEPTH
     for line in body.splitlines():
         delimiter = _FENCE.match(line)
+        level = None if delimiter is not None or fence is not None else _heading_level(line=line)
         if delimiter is not None:
             fence = _fence_after(fence=fence, delimiter=delimiter.group(1))
-        elif fence is None and _opens_section(line=line) and sections[-1]:
+        elif level is not None and level <= depth and sections[-1]:
             sections.append([])
+            depth = level
         sections[-1].append(line)
     return sections
 
 
-def _opens_section(*, line: str) -> bool:
-    """Whether one PROSE line is a heading that starts a new section."""
+def _heading_level(*, line: str) -> int | None:
+    """One line's heading level, or `None` when it is not a heading at all."""
     heading = _HEADING.match(line)
     if heading is None:
-        return False
-    return len(heading.group(1)) <= _SECTION_HEADING_DEPTH
+        return None
+    return len(heading.group(1))
 
 
 def _fence_after(*, fence: str | None, delimiter: str) -> str | None:

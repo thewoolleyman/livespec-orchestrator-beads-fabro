@@ -482,3 +482,55 @@ def test_fenced_proof_output_under_a_nested_heading_keeps_every_assertion_bounda
     assert record.reproduced(assertion="The reader grades a verdict beneath a nested heading.")
     assert record.reproduced(assertion="The boundary survives the printed heading.") is None
     assert record.reproduced(assertion="The last assertion publishes its own refusal.") is False
+
+
+def test_an_assertion_section_at_any_supported_heading_level_keeps_its_own_verdict() -> None:
+    """The hierarchy is resolved GENERICALLY, not against one hard-coded depth.
+
+    Nothing fixes the depth a record states its assertions at. A verifier writing
+    `### Assertion N` under a record-wide `##` heading, or `# Assertion N` with a
+    `##` replay subsection, is publishing the same structure one level up or down,
+    and a reader that recognised only one depth would answer the nested arm
+    correctly while merging the other arm's siblings into one section.
+
+    Each arm therefore carries a sibling with the OPPOSITE verdict, which is what
+    makes a merge visible: a splitter that stopped treating this arm's assertion
+    headings as boundaries would report the first sibling's `yes` for the second,
+    and a splitter that treated this arm's replay headings as boundaries would
+    report `None` for both.
+    """
+    deeper = _fenced_record(
+        body="""\
+        ### Assertion 1 — The deeper section carries its own verdict.
+
+        #### Replay proof
+
+        Reproduced: yes.
+
+        ### Assertion 2 — The deeper sibling keeps its own refusal.
+
+        #### Replay proof
+
+        Reproduced: NO.
+        """
+    )
+    shallower = _fenced_record(
+        body="""\
+        # Assertion 1 — The top-level section carries its own verdict.
+
+        ## Replay proof
+
+        Reproduced: yes.
+
+        # Assertion 2 — The top-level sibling keeps its own refusal.
+
+        ## Replay proof
+
+        Reproduced: NO.
+        """
+    )
+
+    assert deeper.reproduced(assertion="The deeper section carries its own verdict.") is True
+    assert deeper.reproduced(assertion="The deeper sibling keeps its own refusal.") is False
+    assert shallower.reproduced(assertion="The top-level section carries its own verdict.") is True
+    assert shallower.reproduced(assertion="The top-level sibling keeps its own refusal.") is False
