@@ -74,6 +74,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_run_claim import (
     release_pre_run_claim_if_needed,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (
+    journaled_proof_rendering,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_review_gate import (
     ReviewGateEmission,
     emit_review_gate_from_fabro_events,
@@ -191,6 +194,12 @@ def _dispatch_one_locked(
         # graph but not for `run.prepare`.
         prepare_inputs=contract_prompt_variables(resolved=plan.integration),
         git_author=recorded.git_author,
+        # This repository's proof-asset rendering, as the pre-dispatch gate
+        # MEASURED and journaled it. Read back from that record rather than
+        # re-probed: the overlay is materialized on every dispatch, offline
+        # included, so the measurement travels through the journal and the
+        # projection stays pure (bd-ib-pa73qh).
+        proof_rendering=journaled_proof_rendering(journal_path=journal.path, repository=repo.name),
     )
     if overlay_error is not None:
         return failed_dispatch_outcome(

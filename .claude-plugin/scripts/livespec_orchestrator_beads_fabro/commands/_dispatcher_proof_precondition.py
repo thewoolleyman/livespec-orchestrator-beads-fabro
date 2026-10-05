@@ -49,6 +49,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_release import
     proof_store_journal_record,
     repository_visibility_from_view,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
+    read_journal_records,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -57,6 +60,7 @@ __all__: list[str] = [
     "PROOF_STORE_JOURNAL_STAGE",
     "PUBLISH_BRANCH_ENV_VAR",
     "ProofStoreUnobservable",
+    "journaled_proof_rendering",
     "proof_assets_refusal",
     "proof_assets_refusal_for_items",
     "proof_store_env_lines",
@@ -210,39 +214,83 @@ def proof_assets_refusal(
     return None
 
 
-def proof_store_env_lines(*, repo: Path, work_item_id: str) -> str:
+def journaled_proof_rendering(*, journal_path: Path, repository: str) -> str:
+    """The rendering the pre-dispatch gate MEASURED for this repository, or ''.
+
+    The READER half of the record `proof_store_journal_record` writes, kept beside
+    that writer so the two cannot drift: a hand-rolled scan elsewhere would key on
+    a field name nothing holds it to, and a rename would silently return the
+    unmeasured answer for every repository rather than failing.
+
+    WHY THE JOURNAL IS THE CHANNEL rather than a value threaded through memory.
+    The measurement is a FORGE probe, and the projection below is reached from the
+    run-config overlay, which every dispatch materializes and which the hermetic
+    test tier exercises with no network. The gate already performs that probe once
+    per dispatch, before admission, and already journals the result per repository
+    because the ratified clause requires the waiver to be auditable. So the
+    projection reads a measurement that has already been taken and stays pure.
+
+    THE EMPTY STRING IS THE UNMEASURED ANSWER, and four distinct shapes produce
+    it: no journal, no record for this repository, an unparseable line, and the
+    UNOBSERVABLE arm -- whose record carries `unobservable` and no `rendering` at
+    all. They are one fact to the consumer: nobody established this repository's
+    visibility on this dispatch. The capture prompt reads an ABSENT variable as
+    `authenticated_link`, which is the same fail-safe direction
+    `proof_rendering_for_visibility` takes, so an unmeasured repository waives the
+    inline half and never publishes a reference that leaks.
+
+    NEWEST WINS, because a repository's visibility can change between dispatches
+    and the record THIS dispatch's own gate just wrote is the last one in the
+    file.
+    """
+    measured = ""
+    for record in read_journal_records(journal_path=journal_path):
+        if record.get("stage") != PROOF_STORE_JOURNAL_STAGE:
+            continue
+        if record.get("repository") != repository:
+            continue
+        rendering = record.get("rendering")
+        if isinstance(rendering, str):
+            measured = rendering
+    return measured
+
+
+def proof_store_env_lines(*, repo: Path, work_item_id: str, rendering: str = "") -> str:
     """The overlay env lines the publish and capture stages read.
 
-    PURE BY CONSTRUCTION -- it reads the committed configuration and derives a
-    branch name, and it performs NO forge call. That constraint is not stylistic.
-    This function is reached from the run-config overlay, which every dispatch
-    materializes and which the hermetic test tier exercises without a network; an
-    earlier draft probed the forge here and spawned a real `gh` in 104 otherwise
-    sealed tests. A projection that cannot be rendered offline does not belong on
-    this path.
+    PURE BY CONSTRUCTION -- it reads the committed configuration, derives a branch
+    name, and projects a rendering its CALLER already resolved; it performs NO
+    forge call. That constraint is not stylistic. This function is reached from
+    the run-config overlay, which every dispatch materializes and which the
+    hermetic test tier exercises without a network; an earlier draft probed the
+    forge here and spawned a real `gh` in 104 otherwise sealed tests. A projection
+    that cannot be rendered offline does not belong on this path.
 
-    So two of the three keys are projected here -- the publish branch, derived from
-    the item id through the one shared derivation, and the release tag, read from
-    the repository's own committed configuration. Both are facts about the
-    repository that need nobody's permission to state.
+    Two of the three keys are facts about the repository that need nobody's
+    permission to state: the publish branch, derived from the item id through the
+    one shared derivation, and the release tag, read from the repository's own
+    committed configuration.
 
-    THE THIRD KEY IS DELIBERATELY NOT PROJECTED HERE, and the capture prompt's
-    fallback is what covers it: the image RENDERING depends on a live visibility
-    measurement, which `proof_assets_refusal` performs and journals at the
-    pre-dispatch gate. Threading that resolution into this projection is a pure
-    plumbing change blocked only by `_dispatcher_loop`'s file-size ceiling, which
-    sits at exactly the hard limit and cannot take another argument until that
-    module is decomposed. Until then the capture stage falls back to the
-    AUTHENTICATED-LINK form, which is the same fail-safe direction
-    `proof_rendering_for_visibility` takes for an unmeasured repository: it costs an
-    inline rendering the repository might have supported, and it can never publish a
-    reference that leaks.
+    THE THIRD IS A MEASUREMENT, which is why it arrives as an argument rather than
+    being resolved here. `proof_assets_refusal` probes the repository's visibility
+    at the pre-dispatch gate and journals the result; the dispatch reads that
+    record back through `journaled_proof_rendering` and hands it down. An EMPTY
+    `rendering` projects no key at all rather than a default -- the capture prompt
+    treats an absent variable as `authenticated_link`, and projecting that value
+    outright would report a measurement that never happened.
+
+    The rendering is projected independently of the tag declaration: a repository
+    whose committed tag is malformed still has a measured visibility, and
+    withholding the rendering as well would waive the inline half for a fault that
+    has nothing to do with it.
     """
     tag = proof_assets_release_tag(block=dispatcher_block(cwd=repo))
     lines = (
         f"{PUBLISH_BRANCH_ENV_VAR} = "
         f"{json.dumps(publish_branch_for(work_item_id=work_item_id))}\n"
     )
+    if rendering:
+        lines += f"{PROOF_ASSET_RENDERING_ENV_VAR} = {json.dumps(rendering)}\n"
     if proof_assets_release_tag_refusal(block=dispatcher_block(cwd=repo)) is not None:
         return lines
     return lines + f"{PROOF_ASSETS_RELEASE_TAG_ENV_VAR} = {json.dumps(tag)}\n"
