@@ -27,9 +27,10 @@ reported before a claim.
 
 WHAT THIS MODULE DOES NOT DO. It never renders a refusal of its own. The
 freshness decision and its diagnostics belong to `_dispatcher_codex_auth`, which
-is where the two unchanged-expiry observations are kept apart; a gate that
-re-worded them would be a second account of the same measurement, and the two
-would drift. It projects nothing either: the snapshot `project_codex_auth`
+is where the post-renewal observations are kept apart -- whether the expiry
+advanced, held, or went unobserved, and whether a renewal response came back at
+all; a gate that re-worded them would be a second account of the same
+measurement, and the two would drift. It projects nothing either: the snapshot `project_codex_auth`
 returns on success is DISCARDED here, because the overlay re-reads the credential
 as it then stands and a snapshot carried across the claim would be the stale one.
 """

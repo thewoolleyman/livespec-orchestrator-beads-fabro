@@ -189,6 +189,58 @@ def test_the_gate_separates_an_unanswered_renewal_from_an_answered_unchanged_one
         assert "cannot report an authentication failure" in message
         assert "only if Codex explicitly reports an unrecoverable authentication" in message
         assert _HOST_REFRESH_TOKEN not in message
+    # The expiry genuinely held in BOTH arms here (one credential, read twice),
+    # so the non-advancing wording is the truthful one for both. The arm it
+    # must NOT be applied to is the advancing one below.
+    for message in (answered, unanswered):
+        assert "did not advance it" in message
+        assert "advanced its expiry" not in message
+
+
+def test_the_gate_reports_a_renewal_that_advanced_short_of_the_floor_as_an_advance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Through the GATE, an advance that missed the floor is not called a hold.
+
+    The gate is the surface an operator actually meets, so the truthful wording
+    has to survive the whole path from the credential read to the returned
+    refusal -- not merely the renderer the test above it reaches directly.
+
+    The DISCRIMINATOR against the test above: both refuse after one ANSWERED
+    renewal with a lifetime under the same floor, so neither the return type nor
+    the shortfall numbers separate them. Only the expiry INSTANT does, and here
+    it moves from `_NOW + 900` to `_NOW + 17970` -- the capture measured on
+    2026-10-05, in which the refusal still reported no advance.
+    """
+    assert _GATE_MODULE_PATH.is_file()
+    gate = importlib.import_module(_GATE_MODULE)
+    reads = iter(
+        (
+            _auth_json_with_exp(exp=_NOW + 900),
+            _auth_json_with_exp(exp=_NOW + 17_970),
+        )
+    )
+    monkeypatch.setattr(_dispatcher_codex_auth, "read_host_codex_auth", lambda: next(reads))
+    spend = _stub_renewal(monkeypatch=monkeypatch, answered=True, detail=_ANSWERED_DETAIL)
+
+    clock = iter((_NOW, _NOW + _RENEWAL_ELAPSED))
+    refusal = gate.codex_credential_refusal_for_items(
+        work_item_ids=("bd-ib-tyqklx",), clock=lambda: next(clock)
+    )
+
+    assert refusal is not None
+    # One bounded renewal; the advance did not buy a second attempt.
+    assert spend == ["requested"]
+    # The ADVANCE is reported and the non-advancing wording is gone.
+    assert "advanced its expiry" in refusal
+    assert "did not advance" not in refusal
+    # The shortfall is still reported, against the post-request instant.
+    assert str(17_970 - _RENEWAL_ELAPSED) in refusal
+    assert str(_REQUIRED_REMAINING) in refusal
+    # And the three guarantees the held-expiry arms carry hold here too.
+    assert "does NOT by itself establish an authentication failure" in refusal
+    assert "cannot report an authentication failure" in refusal
+    assert _HOST_REFRESH_TOKEN not in refusal
 
 
 def test_the_gate_journals_its_refusal_naming_the_unclaimed_items_only(

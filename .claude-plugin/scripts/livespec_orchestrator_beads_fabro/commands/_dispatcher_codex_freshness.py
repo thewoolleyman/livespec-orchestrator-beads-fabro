@@ -35,6 +35,7 @@ The status command already drew this line (`assess_host_codex_credential`'s
 from __future__ import annotations
 
 import json
+from typing import Literal
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_early_renewal import (
     CodexRenewalOutcome,
@@ -48,10 +49,12 @@ from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [
     "CODEX_HOME_ENV",
+    "RenewalExpiryObservation",
     "absent_credential_refusal",
     "graded_freshness",
     "post_claim_shortfall_refusal",
-    "unadvanced_renewal_refusal",
+    "renewal_expiry_observation",
+    "renewal_shortfall_refusal",
     "unparseable_credential_refusal",
 ]
 
@@ -60,6 +63,11 @@ __all__: list[str] = [
 # (default `~/.codex/auth.json`) and projects a non-rotatable snapshot into the
 # sandbox. An env-var NAME, not a secret.
 CODEX_HOME_ENV = "CODEX_HOME"
+
+# What the post-renewal re-read observed about the credential's EXPIRY INSTANT.
+# Three answers, not two, because "the re-read could not be taken" is an absent
+# observation and must not be rendered as either of the two that were taken.
+RenewalExpiryObservation = Literal["advanced", "unchanged", "unmeasured"]
 
 
 def graded_freshness(*, source_auth_json: str, now_epoch: int) -> CodexFreshnessVerdict | None:
@@ -122,19 +130,85 @@ def unparseable_credential_refusal() -> str:
     )
 
 
-def unadvanced_renewal_refusal(
+def renewal_expiry_observation(
+    *,
+    before: CodexFreshnessVerdict,
+    after: CodexFreshnessVerdict | None,
+) -> RenewalExpiryObservation:
+    """Compare the pre- and post-renewal EXPIRY INSTANTS, never the remainders.
+
+    `remaining_seconds` cannot answer this question, and reaching for it is the
+    available mistake: the two readings are taken against two different clock
+    readings, so an expiry that genuinely HELD reads as a smaller remainder
+    afterwards, and one that advanced by less than the request took reads as
+    smaller too. `access_token_expires_at_epoch` is absolute, so it says what
+    the renewal did and nothing about how long the renewal took.
+
+    `None` for `after` is the re-read that could not be taken at all, and it
+    returns `unmeasured` rather than `unchanged`: the renewal may well have
+    advanced the expiry in a file this dispatch then failed to read, so
+    reporting a hold there would be reporting an observation nobody made.
+    """
+    if after is None:
+        return "unmeasured"
+    if after.access_token_expires_at_epoch > before.access_token_expires_at_epoch:
+        return "advanced"
+    return "unchanged"
+
+
+def _renewal_expiry_clause(*, expiry: RenewalExpiryObservation) -> str:
+    """Render the ONE clause reporting what the bounded renewal did to the expiry.
+
+    Three wordings for the three observations, because one wording for all of
+    them is the defect this split exists to retire: the hardcoded "did not
+    advance it" was false on a renewal that answered, moved the expiry from 900
+    to 17970 seconds of remaining lifetime, and still landed under the floor —
+    a working renewal reported as a dead one, which points the operator at a
+    broken refresh path instead of at a mint shorter than the run budget.
+
+    The three share NO discriminating vocabulary, and that is deliberate rather
+    than stylistic. These clauses are read by substring, both by this package's
+    tests and by the published proof record's grader, so an `unmeasured` clause
+    phrased as "whether it advanced its expiry was not observed" would contain
+    the `advanced` arm's own token and grade as an advance — the first draft of
+    this function did exactly that. `unmeasured` therefore says "moved".
+    """
+    if expiry == "advanced":
+        return (
+            ", and one bounded in-place renewal request advanced its expiry "
+            "without lifting it to that floor — the lifetime above is the "
+            "renewed one, so the observed failure is a mint shorter than this "
+            "dispatch needs rather than a renewal that refused to act"
+        )
+    if expiry == "unchanged":
+        return ", and one bounded in-place renewal request did not advance it"
+    return (
+        ", and the credential could not be re-read after one bounded in-place "
+        "renewal request, so whether that request moved its expiry was not "
+        "observed and the lifetime above is the PRE-renewal reading"
+    )
+
+
+def renewal_shortfall_refusal(
     *,
     verdict: CodexFreshnessVerdict,
     outcome: CodexRenewalOutcome,
+    expiry: RenewalExpiryObservation,
 ) -> str:
-    """Render the refusal for a credential the bounded renewal did not advance.
+    """Render the refusal for a credential still short after the bounded renewal.
+
+    THREE observations are kept apart here, and the separation is the whole
+    point of the function. `expiry` says what the renewal did to the expiry
+    instant — advanced it, left it standing, or left it unobserved — and
+    `outcome.answered` says whether a successful renewal response came back at
+    all. They are independent: a credential can advance while no response
+    returned (a concurrent host refresh), and a response can return while the
+    expiry holds. Collapsing either pair is how an absent observation becomes a
+    false statement about the credential.
 
     Deliberately NOT a claim that authentication has failed, and it says so in
-    as many words, because the two reasons an expiry can hold are not
-    equivalent evidence: Codex may have answered and declined to advance it, or
-    no successful renewal response may have come back at all. The second says
-    nothing whatsoever about the credential, so collapsing the two is what
-    turns an absent observation into a false demand for a human login.
+    as many words, for the same reason: none of the three expiry observations,
+    and neither answered state, is evidence about an account.
 
     And the login remedy is conditioned on EXPLICIT auth evidence rather than
     on a non-advancing expiry, because this route cannot produce such evidence:
@@ -145,6 +219,13 @@ def unadvanced_renewal_refusal(
     status until it "still reports no advance" would send them after evidence
     that is structurally unavailable, and a stale-blocker loop is exactly how
     this item's 2026-10-05 incident played out.
+
+    The tail naming what does NOT count as that explicit evidence is phrased
+    against the LIFETIME SHORTFALL rather than against a non-advancing expiry,
+    because only the shortfall is common to all three arms. Naming the expiry
+    there was a true general statement sitting in front of an operator whose
+    expiry had demonstrably advanced — the same mis-aimed reading as the clause
+    above it, one sentence further down.
     """
     unanswered_note = (
         ""
@@ -158,9 +239,9 @@ def unadvanced_renewal_refusal(
         "C-mode dispatch refused: the host Codex credential has "
         f"{verdict.remaining_seconds} seconds of usable lifetime, below the "
         f"{verdict.required_remaining_seconds} seconds the dispatch freshness "
-        "gate requires (run budget plus margin), and one bounded in-place "
-        f"renewal request did not advance it ({outcome.detail}). That does NOT "
-        f"by itself establish an authentication failure{unanswered_note}. Note "
+        "gate requires (run budget plus margin)"
+        f"{_renewal_expiry_clause(expiry=expiry)} ({outcome.detail}). That does "
+        f"NOT by itself establish an authentication failure{unanswered_note}. Note "
         "that this renewal route cannot report an authentication failure "
         "either: Codex discards the refresh outcome on the account/read path, "
         "so no response here can confirm or deny one. This credential lives on "
@@ -172,7 +253,7 @@ def unadvanced_renewal_refusal(
         "credential renewed since this reading retires it; then run "
         "`dispatcher.py codex-cred-refresh` there. Run `codex login` on that "
         "same host only if Codex explicitly reports an unrecoverable "
-        "authentication failure — a non-advancing expiry and a status reading "
+        "authentication failure — a lifetime shortfall and a status reading "
         "cannot establish one, however many times they are re-read."
     )
 
@@ -180,11 +261,12 @@ def unadvanced_renewal_refusal(
 def post_claim_shortfall_refusal(*, verdict: CodexFreshnessVerdict) -> str:
     """Render the refusal for a credential below the floor AFTER the claim.
 
-    Deliberately NOT the unadvanced-renewal message above. No renewal was
-    requested on this path, so this text must not report an expiry that declined
-    to advance — it never asked. Reporting one would be the inverse of the defect
-    that message exists to prevent: an observation nobody made, written up as
-    evidence.
+    Deliberately NOT the renewal-shortfall message above, and it carries NONE of
+    that message's three expiry clauses. No renewal was requested on this path,
+    so this text must not report an expiry that advanced, one that declined to
+    advance, or one it failed to re-read — it never asked. Reporting any of them
+    would be the same defect those three clauses exist to prevent: an observation
+    nobody made, written up as evidence.
 
     It asserts nothing about authentication for the same reason. A short lifetime
     is a lifetime measurement; the one route that could have produced provider

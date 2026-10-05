@@ -28,7 +28,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_freshness impo
     absent_credential_refusal,
     graded_freshness,
     post_claim_shortfall_refusal,
-    unadvanced_renewal_refusal,
+    renewal_expiry_observation,
+    renewal_shortfall_refusal,
     unparseable_credential_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_identity_command import (
@@ -180,8 +181,12 @@ def _renew_then_regrade(
 
     Split from `project_codex_auth` along its own seam: everything above the
     split decides whether a renewal is WARRANTED, and everything here is what
-    happens once it is. `verdict` is the pre-request grade, carried in only so a
-    refusal can report the shortfall that justified spending the request.
+    happens once it is. `verdict` is the pre-request grade, carried in for two
+    jobs: a refusal reports the shortfall that justified spending the request,
+    and its expiry instant is the BASELINE the re-read is compared against, so
+    the refusal can say whether the renewal actually advanced anything. Without
+    that baseline the only honest wording would be no wording at all, which is
+    how a working renewal came to be reported as a dead one.
     """
     outcome = renew_host_codex_credential()
     renewed_auth_json = read_host_codex_auth()
@@ -189,7 +194,14 @@ def _renew_then_regrade(
     now_after_renewal = clock()
     if renewed_auth_json is None:
         return CodexProjectionRefusal(
-            message=unadvanced_renewal_refusal(verdict=verdict, outcome=outcome)
+            message=renewal_shortfall_refusal(
+                verdict=verdict,
+                outcome=outcome,
+                # The re-read failed, so the expiry after the request was never
+                # observed. Reporting a hold here would report a measurement
+                # this arm is precisely the absence of.
+                expiry=renewal_expiry_observation(before=verdict, after=None),
+            )
         )
     renewed = graded_freshness(
         source_auth_json=renewed_auth_json,
@@ -203,7 +215,11 @@ def _renew_then_regrade(
     if renewed.fresh_enough:
         return project_codex_auth_snapshot(source_auth_json=renewed_auth_json)
     return CodexProjectionRefusal(
-        message=unadvanced_renewal_refusal(verdict=renewed, outcome=outcome)
+        message=renewal_shortfall_refusal(
+            verdict=renewed,
+            outcome=outcome,
+            expiry=renewal_expiry_observation(before=verdict, after=renewed),
+        )
     )
 
 

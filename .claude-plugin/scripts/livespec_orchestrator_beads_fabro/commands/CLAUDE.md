@@ -251,8 +251,9 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   to be settled while the item is still unclaimed, because the answer decides
   whether there is anything to claim. It renders NO refusal of its own; the
   decision and its diagnostics stay in `_dispatcher_codex_auth`, which is where
-  the two unchanged-expiry observations are kept apart, and a gate that
-  re-worded them would be a second account of one measurement. And the snapshot
+  the post-renewal observations are kept apart — whether the expiry advanced,
+  held, or went unobserved, and whether a renewal response came back at all —
+  and a gate that re-worded them would be a second account of one measurement. And the snapshot
   `project_codex_auth` returns on success is DISCARDED here, because the
   overlay re-reads the credential as it then stands through
   `project_host_codex_auth` — the post-claim projection, which GRADES but never
@@ -281,7 +282,22 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   it. And each refusal reports only what its own position MEASURED: the
   unparseable one names no lifetime (none was measurable) and no provider
   verdict, and the post-claim shortfall one reports no non-advancing expiry
-  because it never asked for a renewal. `CODEX_HOME_ENV` lives here, not beside
+  because it never asked for a renewal. `renewal_shortfall_refusal` is where
+  that discipline is hardest to hold, because ONE refusal serves three
+  post-renewal observations and the clause is the only thing that differs:
+  `renewal_expiry_observation` compares the two EXPIRY INSTANTS — never the two
+  `remaining_seconds`, which are measured against different clock readings, so
+  an expiry that genuinely held reads as a smaller remainder afterwards — and
+  returns `advanced`, `unchanged`, or `unmeasured` for the re-read that could
+  not be taken. The clause was hardcoded to the `unchanged` wording until
+  2026-10-05, when the proof capture measured a renewal advancing the expiry
+  from 900 to 17970 seconds of remaining lifetime while the refusal still
+  reported no advance: a working renewal reported as a dead one, which points
+  the operator at a broken refresh path rather than at a mint shorter than the
+  run budget. `expiry` and `outcome.answered` are INDEPENDENT and neither
+  implies the other — an expiry can advance while no renewal response came
+  back, from a concurrent host refresh — so do not collapse them into one
+  field. `CODEX_HOME_ENV` lives here, not beside
   `host_codex_auth_path`, because this module is the leaf and a constant
   imported upward would close a cycle.
 - `_dispatcher_integration_schema.py` / `_dispatcher_integration_field.py` /
