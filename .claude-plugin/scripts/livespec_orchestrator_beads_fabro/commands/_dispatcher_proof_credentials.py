@@ -37,6 +37,11 @@ from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_secrets import secret_marker
 from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_management import (
+    ProviderManagementInterface,
+    parse_provider_management_interfaces,
+    undeclared_management_refusal,
+)
 
 __all__: list[str] = [
     "COPIED_PROVISIONING",
@@ -48,11 +53,13 @@ __all__: list[str] = [
     "READ_ONLY_CAPABILITY",
     "WITHHELD_DISPATCH_CREDENTIALS",
     "ProofCredential",
+    "ResolvedProofCredentials",
     "parse_proof_credentials",
     "proof_credential_journal_record",
     "proof_credential_provisioning",
     "proof_credentials_refusal",
     "proof_credentials_refusal_for_items",
+    "resolved_proof_credentials",
 ]
 
 PROOF_CREDENTIALS_KEY = "proof_credentials"
@@ -252,11 +259,64 @@ def _credential_shaped_refusal(*, credential: ProofCredential) -> str | None:
     return None
 
 
-def proof_credential_provisioning(*, credential: ProofCredential) -> str:
-    """Whether this declaration's credential is MINTED per run or COPIED from the host."""
-    if credential.name in MINTED_PER_RUN_CREDENTIALS:
+def proof_credential_provisioning(
+    *,
+    credential: ProofCredential,
+    management: Mapping[str, ProviderManagementInterface],
+) -> str:
+    """Whether this declaration's credential is MINTED per run or COPIED from the host.
+
+    TWO ROUTES REACH `minted`, and they are deliberately not merged. A name in
+    `MINTED_PER_RUN_CREDENTIALS` is one the Dispatcher provisions FOR ITSELF on
+    every dispatch, so the overlay already carries it and the projection must not
+    render a second line. A name carrying a declared PROVIDER MANAGEMENT
+    INTERFACE is minted from that provider for this run and revoked when the run
+    ends, so the projection renders the minted value — the value the host holds,
+    if it holds one at all, is never what reaches the sandbox.
+
+    The ANSWER is one word either way, because the clause requires the journal to
+    record minted-or-copied and makes no finer distinction; the discrimination
+    that matters to the projection is keyed off the sets themselves.
+    """
+    if credential.name in MINTED_PER_RUN_CREDENTIALS or credential.name in management:
         return MINTED_PROVISIONING
     return COPIED_PROVISIONING
+
+
+@dataclass(frozen=True, kw_only=True)
+class ResolvedProofCredentials:
+    """One repository's ADMITTED declaration: its credentials, and their providers.
+
+    The two halves travel together because every downstream answer needs both: a
+    declaration alone cannot say how its credential is provisioned, and a
+    management mapping alone cannot say which capability to mint under.
+    """
+
+    declared: tuple[ProofCredential, ...]
+    management: Mapping[str, ProviderManagementInterface]
+
+
+def resolved_proof_credentials(*, block: Mapping[str, object]) -> ResolvedProofCredentials | str:
+    """The declaration AND its declared provider interfaces, or the FIRST refusal.
+
+    THE ORDER IS LOAD-BEARING. The credential declaration is graded first, so a
+    withheld or over-scoped name is reported as what it is whatever its provider
+    offers — sending an operator to a management key that is merely downstream of
+    the real fault would be the wrong remedy. The management parse follows, and
+    the DANGLING grade comes last because it is the only grade that needs both.
+    """
+    parsed = parse_proof_credentials(block=block)
+    if isinstance(parsed, str):
+        return parsed
+    management = parse_provider_management_interfaces(block=block)
+    if isinstance(management, str):
+        return management
+    dangling = undeclared_management_refusal(
+        management=management, declared=tuple(credential.name for credential in parsed)
+    )
+    if dangling is not None:
+        return dangling
+    return ResolvedProofCredentials(declared=parsed, management=management)
 
 
 def proof_credentials_refusal(
@@ -275,21 +335,24 @@ def proof_credentials_refusal(
     by the Dispatcher itself, later on the same dispatch, so refusing it for an
     absent host value would refuse a credential that is about to exist.
     """
-    parsed = parse_proof_credentials(block=block)
-    if isinstance(parsed, str):
-        return parsed
-    return _environment_refusal(parsed=parsed, environ=environ, wrapper_text=wrapper_text)
+    resolved = resolved_proof_credentials(block=block)
+    if isinstance(resolved, str):
+        return resolved
+    return _environment_refusal(resolved=resolved, environ=environ, wrapper_text=wrapper_text)
 
 
 def _environment_refusal(
     *,
-    parsed: tuple[ProofCredential, ...],
+    resolved: ResolvedProofCredentials,
     environ: Mapping[str, str],
     wrapper_text: str,
 ) -> str | None:
     """The first declared name whose value the Dispatcher's environment lacks."""
-    for credential in parsed:
-        if proof_credential_provisioning(credential=credential) == MINTED_PROVISIONING:
+    for credential in resolved.declared:
+        provisioning = proof_credential_provisioning(
+            credential=credential, management=resolved.management
+        )
+        if provisioning == MINTED_PROVISIONING:
             continue
         if not environ.get(credential.name, ""):
             return (
@@ -301,7 +364,11 @@ def _environment_refusal(
     return None
 
 
-def proof_credential_journal_record(*, credential: ProofCredential) -> dict[str, object]:
+def proof_credential_journal_record(
+    *,
+    credential: ProofCredential,
+    management: Mapping[str, ProviderManagementInterface],
+) -> dict[str, object]:
     """The journal body for one declaration: names and facts about it, never its value.
 
     `provisioning` is DERIVED rather than written, so the record reports what the
@@ -311,7 +378,7 @@ def proof_credential_journal_record(*, credential: ProofCredential) -> dict[str,
     return {
         "name": credential.name,
         "capability": credential.capability,
-        "provisioning": proof_credential_provisioning(credential=credential),
+        "provisioning": proof_credential_provisioning(credential=credential, management=management),
     }
 
 
@@ -340,11 +407,11 @@ def proof_credentials_refusal_for_items(
     callable from a hermetic test and from a caller holding none, without a second
     serializer.
     """
-    parsed = parse_proof_credentials(block=dispatcher_block(cwd=repo))
-    if isinstance(parsed, str):
-        return parsed
+    resolved = resolved_proof_credentials(block=dispatcher_block(cwd=repo))
+    if isinstance(resolved, str):
+        return resolved
     environment_refusal = _environment_refusal(
-        parsed=parsed, environ=environ, wrapper_text=wrapper_text
+        resolved=resolved, environ=environ, wrapper_text=wrapper_text
     )
     if environment_refusal is not None:
         return environment_refusal
@@ -352,12 +419,14 @@ def proof_credentials_refusal_for_items(
     if append is None:
         return None
     for work_item_id in work_item_ids:
-        for credential in parsed:
+        for credential in resolved.declared:
             append(
                 record={
                     "stage": PROOF_CREDENTIAL_JOURNAL_STAGE,
                     "work_item_id": work_item_id,
-                    **proof_credential_journal_record(credential=credential),
+                    **proof_credential_journal_record(
+                        credential=credential, management=resolved.management
+                    ),
                 }
             )
     return None

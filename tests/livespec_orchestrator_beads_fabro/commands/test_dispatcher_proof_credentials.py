@@ -38,9 +38,31 @@ def _module() -> ModuleType:
     return importlib.import_module(_MODULE_NAME)
 
 
-def _block(*, declared: object) -> dict[str, Any]:
-    """A `dispatcher` config block declaring `proof_credentials`."""
-    return {"proof_credentials": declared}
+def _block(*, declared: object, managed: object | None = None) -> dict[str, Any]:
+    """A `dispatcher` config block declaring `proof_credentials`.
+
+    `managed` adds the sibling `proof_credential_management` key, which is how a
+    repository says its provider exposes a management interface for one of those
+    declarations. It is a SEPARATE key because the declaration shape carries
+    names only, and whether a provider offers an interface is a fact about the
+    provider rather than about the credential.
+    """
+    block: dict[str, Any] = {"proof_credentials": declared}
+    if managed is not None:
+        block["proof_credential_management"] = managed
+    return block
+
+
+# One provider management interface, for a credential name distinct from the
+# unmanaged `ACME_STATUS_READER` above so the two provisioning answers can be
+# asserted side by side in one declaration.
+_MANAGED_NAME = "ACME_MINTED_READER"
+_MANAGED = {
+    _MANAGED_NAME: {
+        "mint": ["/usr/local/bin/acme-admin", "proof-key", "mint"],
+        "revoke": ["/usr/local/bin/acme-admin", "proof-key", "revoke"],
+    }
+}
 
 
 def _read_only(
@@ -59,9 +81,13 @@ class _Journal:
         self.records.append(record)
 
 
-def _governed_repo(*, tmp_path: Path, declared: object | None) -> Path:
+def _governed_repo(
+    *, tmp_path: Path, declared: object | None, managed: object | None = None
+) -> Path:
     """A repository whose committed configuration declares `proof_credentials`."""
     dispatcher: dict[str, object] = {} if declared is None else {"proof_credentials": declared}
+    if managed is not None:
+        dispatcher["proof_credential_management"] = managed
     _ = (tmp_path / ".livespec.jsonc").write_text(
         json.dumps({PLUGIN_BLOCK: {"dispatcher": dispatcher}}), encoding="utf-8"
     )
@@ -297,6 +323,137 @@ def test_a_minted_name_is_not_refused_for_an_absent_host_value() -> None:
     block = _block(declared=[_read_only(name="GITHUB_TOKEN", purpose="observe the forge")])
 
     assert module.proof_credentials_refusal(block=block, environ={}, wrapper_text="[]") is None
+
+
+def test_a_managed_declaration_is_minted_and_needs_no_host_value() -> None:
+    """Where the provider offers a management interface, the credential is MINTED.
+
+    Both halves of that answer in one case, because each alone passes against a
+    build the other rejects: a record saying `minted` while the gate still
+    demanded a host value would refuse every dispatch of the repository it
+    describes, and a gate that exempted the name while the record still said
+    `copied` would publish a journal asserting the host's own credential reached
+    the sandbox.
+    """
+    module = _module()
+    assert "resolved_proof_credentials" in module.__all__
+    block = _block(declared=[_read_only(name=_MANAGED_NAME)], managed=_MANAGED)
+
+    resolved = module.resolved_proof_credentials(block=block)
+
+    assert not isinstance(resolved, str)
+    assert module.proof_credential_journal_record(
+        credential=resolved.declared[0], management=resolved.management
+    ) == {
+        "name": _MANAGED_NAME,
+        "capability": "read_only",
+        "provisioning": module.MINTED_PROVISIONING,
+    }
+    assert module.proof_credentials_refusal(block=block, environ={}, wrapper_text="[]") is None
+
+
+def test_an_unmanaged_sibling_declaration_stays_copied() -> None:
+    """The control: provisioning is per DECLARATION, not per repository.
+
+    Without it, "the managed name is minted" is equally consistent with a build
+    that reports every declaration of a repository carrying any management
+    interface as minted — which would project nothing for the unmanaged sibling
+    and leave its proof stage with no credential at all.
+    """
+    module = _module()
+    assert "resolved_proof_credentials" in module.__all__
+
+    resolved = module.resolved_proof_credentials(
+        block=_block(declared=[_read_only(name=_MANAGED_NAME), _read_only()], managed=_MANAGED)
+    )
+
+    assert not isinstance(resolved, str)
+    assert [
+        module.proof_credential_provisioning(credential=credential, management=resolved.management)
+        for credential in resolved.declared
+    ] == [module.MINTED_PROVISIONING, module.COPIED_PROVISIONING]
+
+
+def test_a_dangling_management_entry_refuses_the_whole_declaration() -> None:
+    """A management interface naming no declared credential refuses before any run.
+
+    This is the silent-wrong-answer case: nothing would be minted under that
+    name, nothing projected, and the dispatch otherwise entirely healthy, so an
+    operator who believes minting is happening is never contradicted.
+    """
+    module = _module()
+
+    refusal = module.proof_credentials_refusal(
+        block=_block(declared=[_read_only()], managed=_MANAGED),
+        environ={"ACME_STATUS_READER": "acme-observer-value"},
+        wrapper_text="[]",
+    )
+
+    assert isinstance(refusal, str)
+    assert _MANAGED_NAME in refusal
+
+
+def test_a_malformed_management_declaration_reaches_the_operator_through_the_gate() -> None:
+    """The management parse's own refusals are dispatch refusals, not silent skips.
+
+    The gate is the one surface both dispatch paths call, so a management fault
+    that did not reach it would be a committed configuration error nothing ever
+    reports.
+    """
+    module = _module()
+
+    refusal = module.proof_credentials_refusal(
+        block=_block(declared=[_read_only()], managed=["not-an-object"]),
+        environ={"ACME_STATUS_READER": "acme-observer-value"},
+        wrapper_text="[]",
+    )
+
+    assert isinstance(refusal, str)
+    assert "dispatcher.proof_credential_management" in refusal
+
+
+def test_a_credentials_parse_refusal_outranks_every_management_grade() -> None:
+    """Order is load-bearing: the declaration is graded before its providers.
+
+    A withheld name is refused for being withheld whatever its provider offers,
+    so an operator is told the thing they have to change rather than being sent
+    to a management key that is merely downstream of it.
+    """
+    module = _module()
+    block = _block(declared=[_read_only(name="BEADS_DOLT_PASSWORD")], managed=_MANAGED)
+
+    assert module.resolved_proof_credentials(block=block) == module.parse_proof_credentials(
+        block=block
+    )
+
+
+def test_a_managed_declaration_is_journaled_as_minted_through_the_dispatch_gate(
+    tmp_path: Path,
+) -> None:
+    """Read off the JOURNAL, over a repository whose committed provider is declared.
+
+    The clause's own requirement is about what the dispatch journal records per
+    declaration, and the record builder asserted alone would pass while nothing
+    threaded the resolved providers into the gate that writes it.
+    """
+    module = _module()
+    repo = _governed_repo(
+        tmp_path=tmp_path, declared=[_read_only(name=_MANAGED_NAME)], managed=_MANAGED
+    )
+    journal = _Journal()
+
+    refusal = module.proof_credentials_refusal_for_items(
+        repo=repo,
+        environ={},
+        wrapper_text="[]",
+        work_item_ids=["bd-ib-first"],
+        journal=journal,
+    )
+
+    assert refusal is None
+    assert [(record["name"], record["provisioning"]) for record in journal.records] == [
+        (_MANAGED_NAME, module.MINTED_PROVISIONING)
+    ]
 
 
 def test_the_gate_hands_back_the_declaration_refusal_verbatim() -> None:
