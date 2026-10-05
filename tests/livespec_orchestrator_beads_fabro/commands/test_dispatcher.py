@@ -4498,6 +4498,68 @@ def test_dispatch_pre_run_failure_releases_admitted_claim(
     )
 
 
+def test_dispatch_hands_the_journaled_proof_rendering_to_the_overlay(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The dispatch reads the gate's own record and projects it — no second probe.
+
+    The behaviour this binds is the WIRING, which the projection's own tests
+    cannot see: `proof_store_env_lines` renders whatever rendering it is handed,
+    so a dispatch that handed it the empty string would pass every one of those
+    and still waive the inline half on every public repository. Here the
+    measurement is seeded on the journal under the dispatch's own repository
+    key, and the overlay materializer is intercepted to report what the dispatch
+    actually passed it.
+
+    The interception returns a refusal so the dispatch stops at its own
+    `run-config-overlay` stage: this case is about the argument, and letting the
+    run proceed would drag in the whole launch path to assert one value.
+    """
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    journal = JournalFile(path=repo / "tmp" / "fabro-dispatch-journal.jsonl")
+    journal.append(
+        record={
+            "stage": "proof-asset-store",
+            "work_item_id": item.id,
+            # `repo.name`, which is the key the gate writes and the dispatch
+            # reads back; a record under any other name must not be picked up.
+            "repository": repo.name,
+            "store": "release_assets",
+            "visibility": "PUBLIC",
+            "rendering": "inline",
+            "inline_waived": False,
+        }
+    )
+    captured: dict[str, object] = {}
+
+    def capturing_materialize_overlay(**kwargs: object) -> str:
+        captured.update(kwargs)
+        return "overlay intercepted"
+
+    monkeypatch.setattr(_dispatcher_loop, "materialize_overlay", capturing_materialize_overlay)
+
+    outcome = _dispatcher_loop.dispatch_one(
+        args=argparse.Namespace(
+            fabro_bin="fabro",
+            workflow=workflow,
+            repo=repo,
+            journal=None,
+            poll_attempts=1,
+            poll_interval_seconds=0.1,
+        ),
+        repo=repo,
+        item=item,
+        journal=journal,
+        janitor=None,
+    )
+
+    assert (outcome.status, outcome.stage) == ("failed", "run-config-overlay")
+    assert captured["proof_rendering"] == "inline"
+
+
 def test_dispatch_fabro_run_failure_without_run_id_releases_admitted_claim(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
