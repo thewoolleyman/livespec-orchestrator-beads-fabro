@@ -258,7 +258,7 @@ def proof_store_env_lines(
         f"{PUBLISH_BRANCH_ENV_VAR} = "
         f"{json.dumps(publish_branch_for(work_item_id=work_item_id))}\n"
     )
-    rendering = _journaled_rendering(journal_path=journal_path)
+    rendering = _journaled_rendering(repo=repo, journal_path=journal_path)
     if rendering:
         lines += f"{PROOF_ASSET_RENDERING_ENV_VAR} = {json.dumps(rendering)}\n"
     if proof_assets_release_tag_refusal(block=dispatcher_block(cwd=repo)) is not None:
@@ -266,27 +266,37 @@ def proof_store_env_lines(
     return lines + f"{PROOF_ASSETS_RELEASE_TAG_ENV_VAR} = {json.dumps(tag)}\n"
 
 
-def _journaled_rendering(*, journal_path: Path | None) -> str:
-    """The rendering the gate already measured, or the empty string.
+def _journaled_rendering(*, repo: Path, journal_path: Path | None) -> str:
+    """The rendering the gate measured for THIS repository, or the empty string.
 
-    NEWEST-WINS, and the scan stops at the first store record it finds rather than
-    searching past it for one carrying a usable rendering. The difference matters in
-    exactly the case that is easy to get wrong: a dispatch whose gate found the
-    forge UNOBSERVABLE journals a record with no `rendering` field, and skipping
-    past it to an older measurement would project a visibility nobody established
-    THIS time while looking indistinguishable from a fresh reading.
+    SCOPED BY REPOSITORY, because one journal can hold records for more than one
+    target: `--journal` points wherever an operator points it, and a host-side
+    drain writes one file for the whole pass. An unscoped read would project
+    whatever visibility the LAST target measured -- silently, since the value it
+    produces is a perfectly well-formed rendering. The record's own `repository`
+    field is the gate's `repo.name`, so the match is on the same name the writer
+    used.
+
+    NEWEST-WINS, and the scan stops at the first record this repository owns rather
+    than searching past it for one carrying a usable rendering. The difference
+    matters in exactly the case that is easy to get wrong: a dispatch whose gate
+    found the forge UNOBSERVABLE journals a record with no `rendering` field, and
+    skipping past it to an older measurement would project a visibility nobody
+    established THIS time while looking indistinguishable from a fresh reading.
 
     Every tolerance here fails SAFE onto the empty string -- no journal, no store
-    record, a record whose `rendering` is absent, not a string, or outside the
-    closed pair -- because the empty string projects no key, and no key is the
-    capture prompt's authenticated-link fallback. The closed-pair check is
-    deliberate rather than defensive: a value the prompt does not understand would
-    otherwise reach the sandbox as an instruction nothing acts on.
+    record for this repository, a record whose `rendering` is absent, not a string,
+    or outside the closed pair -- because the empty string projects no key, and no
+    key is the capture prompt's authenticated-link fallback. The closed-pair check
+    is deliberate rather than defensive: a value the prompt does not understand
+    would otherwise reach the sandbox as an instruction nothing acts on.
     """
     if journal_path is None:
         return ""
     for record in reversed(read_journal_records(journal_path=journal_path)):
         if record.get("stage") != PROOF_STORE_JOURNAL_STAGE:
+            continue
+        if record.get("repository") != repo.name:
             continue
         rendering = record.get("rendering")
         if isinstance(rendering, str) and rendering in PROOF_RENDERINGS:

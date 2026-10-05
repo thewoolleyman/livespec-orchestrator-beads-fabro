@@ -3,8 +3,17 @@
 Companion to `test_dispatcher_proof_release`, which covers the prerelease and the
 rendering measurement. This module covers the GATE built on them: which items it
 probes at all, the three-way split between a ready store, a refusal and an
-UNOBSERVABLE forge, what it writes to the journal in each case, and the two
+UNOBSERVABLE forge, what it writes to the journal in each case, and the three
 environment keys it projects into the sandbox.
+
+WHY THE THIRD KEY'S PROVENANCE IS ASSERTED SEPARATELY FROM ITS PRESENCE. The
+rendering is a MEASUREMENT, read back out of the journal the gate wrote, and the
+projection that carries it must still perform no forge call -- an earlier draft
+probed from inside it and spawned a real `gh` in 104 otherwise sealed tests. So
+"the key is projected" and "the key came from THIS repository's own measurement
+without anybody shelling out" are two claims, and the second has its own cases:
+a sibling repository's newer record must not supply this one's answer, and the
+whole render must survive with every subprocess entry point poisoned.
 
 WHY THE UNOBSERVABLE ARM GETS ITS OWN CASES. The clause requires a refusal when a
 target lacks the prerelease, and this repository's own `verify_pr` breaker already
@@ -18,12 +27,17 @@ asserted directly, in both directions, rather than left to the happy path.
 from __future__ import annotations
 
 import json
+import subprocess
 from dataclasses import dataclass, field
 from inspect import signature
 from pathlib import Path
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
+    render_run_config_overlay,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_assets import (
     RENDERING_AUTHENTICATED_LINK,
     RENDERING_INLINE,
@@ -56,6 +70,16 @@ References: ## Scenario 132 — A thing
 # A sentinel for "this fixture declares no tag at all", distinct from declaring
 # `null` — the resolver treats those two differently and so must the fixture.
 _UNSET = object()
+
+# The smallest committed run config the overlay renderer accepts: it needs the
+# graph key it absolutizes and the environment id whose env table the projection
+# lands in. Anything more would be fixture the purity case does not read.
+_WORKFLOW_TOML = '[workflow]\ngraph = "workflow.fabro"\n\n[run.environment]\nid = "fabro-sandbox"\n'
+
+# The two credential values the overlay renderer requires, as named fixture
+# constants in the same shape `test_dispatcher_git_author` already uses.
+_WORKER_TOKEN = "operator-worker-token"
+_TRANSPORT_TOKEN = "transport-app-token"
 
 _HUMAN_ONLY = """## Definition of Done
 
@@ -145,6 +169,18 @@ def _repo(*, tmp_path: Path, tag: object = _UNSET) -> Path:
         encoding="utf-8",
     )
     return tmp_path
+
+
+def _subdir(*, tmp_path: Path, name: str) -> Path:
+    """One governed repository's own directory under a shared scratch root.
+
+    The readback matches on the repository's DIRECTORY NAME, which is what the gate
+    writes, so a case about two targets needs two real directories rather than two
+    calls on the same one.
+    """
+    repo = tmp_path / name
+    repo.mkdir()
+    return repo
 
 
 def test_the_publish_branch_is_derived_once_and_matches_the_plan_convention() -> None:
@@ -452,6 +488,106 @@ def test_a_journal_with_no_store_record_projects_no_rendering_key(tmp_path: Path
 
     assert PUBLISH_BRANCH_ENV_VAR in lines
     assert PROOF_ASSET_RENDERING_ENV_VAR not in lines
+
+
+def test_the_rendering_comes_from_this_repositorys_own_measurement(tmp_path: Path) -> None:
+    """A SIBLING repository's newer measurement must not supply this one's rendering.
+
+    One journal can hold records for more than one target: `--journal` points
+    wherever an operator points it, and a host-side drain writes one file for the
+    whole pass. A readback that took the newest store record whatever repository it
+    named would therefore project a visibility measured somewhere else -- silently,
+    because the value it produces is a perfectly well-formed rendering.
+
+    The PRIVATE sibling is measured LAST on purpose. Newest-wins is the rule, so an
+    unscoped reader answers `authenticated_link` for the public repository here
+    while a scoped one answers `inline`; had the order been reversed, both
+    implementations would agree and the case would prove nothing. The sibling's own
+    projection is asserted too, so this is scoping rather than a reader that simply
+    ignores every record but the first.
+    """
+    public_repo = _repo(tmp_path=_subdir(tmp_path=tmp_path, name="public-target"))
+    private_repo = _repo(tmp_path=_subdir(tmp_path=tmp_path, name="private-target"))
+    journal = JournalFile(path=tmp_path / "shared-journal.jsonl")
+
+    for target, visibility in ((public_repo, "PUBLIC"), (private_repo, "PRIVATE")):
+        assert (
+            proof_assets_refusal_for_items(
+                runner=_Runner(visibility=visibility, view_exit=0),
+                repo=target,
+                items=[_item(description=_PROOF_BEARING)],
+                journal=journal,
+            )
+            is None
+        )
+
+    public_lines = proof_store_env_lines(
+        repo=public_repo, work_item_id="bd-ib-b4u6b7", journal_path=journal.path
+    )
+    private_lines = proof_store_env_lines(
+        repo=private_repo, work_item_id="bd-ib-b4u6b7", journal_path=journal.path
+    )
+
+    assert f'{PROOF_ASSET_RENDERING_ENV_VAR} = "{RENDERING_INLINE}"' in public_lines
+    assert f'{PROOF_ASSET_RENDERING_ENV_VAR} = "{RENDERING_AUTHENTICATED_LINK}"' in private_lines
+
+
+def test_the_overlay_carries_the_measured_rendering_with_every_subprocess_poisoned(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The conjunction: a MEASURED value reaches the overlay, and nothing shells out.
+
+    Both halves have to be asserted in one breath, because each alone admits the
+    failure the other excludes. A purity check on an overlay carrying no rendering
+    passes trivially; a rendering check with the forge reachable cannot tell a
+    readback from a fresh probe. So the measurement is journaled FIRST, through the
+    real gate on a scripted runner, and only then is every `subprocess` entry point
+    poisoned for the projection and the render that consume it.
+
+    Poisoning the module attributes rather than inspecting imports is what makes
+    this able to return the other answer: the draft this guards against called `gh`
+    through exactly these functions, and it would raise here instead of passing.
+    """
+    repo = _repo(tmp_path=_subdir(tmp_path=tmp_path, name="target"))
+    journal = JournalFile(path=tmp_path / "journal.jsonl")
+    assert (
+        proof_assets_refusal_for_items(
+            runner=_Runner(visibility="PUBLIC", view_exit=0),
+            repo=repo,
+            items=[_item(description=_PROOF_BEARING)],
+            journal=journal,
+        )
+        is None
+    )
+
+    def _poisoned(*args: object, **kwargs: object) -> object:
+        _ = (args, kwargs)
+        raise AssertionError("the proof-store projection must perform no subprocess call")
+
+    for entry_point in ("run", "Popen", "check_output", "call", "check_call"):
+        monkeypatch.setattr(subprocess, entry_point, _poisoned)
+
+    rendered = render_run_config_overlay(
+        committed_text=_WORKFLOW_TOML,
+        workflow_dir=repo,
+        token=_WORKER_TOKEN,
+        github_token=_TRANSPORT_TOKEN,
+        siblings=None,
+        proof_store_env=proof_store_env_lines(
+            repo=repo, work_item_id="bd-ib-b4u6b7", journal_path=journal.path
+        ),
+    )
+
+    assert rendered is not None
+    env_table = rendered.split("[environments.fabro-sandbox.env]\n", 1)
+    assert len(env_table) == 2
+    assert f'{PROOF_ASSET_RENDERING_ENV_VAR} = "{RENDERING_INLINE}"\n' in env_table[1]
+    # The POSITIVE CONTROL on the poison, and the reason it is not ceremony: a
+    # render that passes under an instrument that cannot fire is no evidence at
+    # all. This is the call the draft this guards against made, and it raises.
+    with pytest.raises(AssertionError, match="no subprocess call"):
+        _ = subprocess.run(["gh", "repo", "view"], check=False)
 
 
 def test_a_declared_tag_is_projected_in_place_of_the_default(tmp_path: Path) -> None:
