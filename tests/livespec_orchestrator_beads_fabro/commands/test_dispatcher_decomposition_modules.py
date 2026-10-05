@@ -129,7 +129,15 @@ def test_credentials_cluster_importable_from_new_module_and_private_names_remove
         # itself would be guarding a guess, and a guess that drifts stops
         # protecting the file it exists to protect.
         "host_codex_auth_path",
+        # The pre-claim GATE's decision function, and the post-claim
+        # PROJECTION, as two names rather than one. Only the first spends the
+        # bounded in-place renewal: a renewal is the one thing that can make an
+        # insufficient credential sufficient, so it belongs where the answer
+        # can still decide whether there is anything to claim. Collapsing them
+        # back into one function is how the overlay came to renew a credential
+        # for an item it had already moved to `active`.
         "project_codex_auth",
+        "project_host_codex_auth",
         "read_host_codex_auth",
         "renew_host_codex_credential",
         "run_codex_cred_refresh",

@@ -49,6 +49,7 @@ __all__: list[str] = [
     "CodexProjectionRefusal",
     "host_codex_auth_path",
     "project_codex_auth",
+    "project_host_codex_auth",
     "read_host_codex_auth",
     "renew_host_codex_credential",
     "run_codex_cred_refresh",
@@ -123,7 +124,15 @@ def renew_host_codex_credential() -> CodexRenewalOutcome:
 
 
 def project_codex_auth(*, clock: Callable[[], int]) -> str | CodexProjectionRefusal:
-    """Project the host Codex credential into the dispatch sandbox snapshot.
+    """Grade the host Codex credential BEFORE the item is claimed, renewing once.
+
+    The pre-claim gate's decision function, reached through
+    `_dispatcher_codex_credential_gate` from both dispatch paths. It is the ONE
+    surface that spends the bounded in-place renewal, because a renewal is the
+    only thing that can turn an insufficient credential into a sufficient one —
+    so that question has to be settled while the item is still unclaimed and no
+    run exists to reap. `project_host_codex_auth` below is the post-claim
+    projection, and it renews nothing for exactly that reason.
 
     Returns the non-rotatable `auth.json` snapshot string on success
     (scenarios.md Scenario 18), or a `CodexProjectionRefusal` carrying an
@@ -148,15 +157,7 @@ def project_codex_auth(*, clock: Callable[[], int]) -> str | CodexProjectionRefu
     """
     source_auth_json = read_host_codex_auth()
     if source_auth_json is None:
-        return CodexProjectionRefusal(
-            message=(
-                "C-mode dispatch refused: no host Codex credential found at "
-                f"${_CODEX_HOME_ENV}/auth.json (default ~/.codex/auth.json). "
-                "The Dispatcher projects a non-rotatable snapshot of the "
-                "host credential into the sandbox; run `codex login` on the "
-                "orchestrator host before dispatch."
-            )
-        )
+        return CodexProjectionRefusal(message=_absent_credential_refusal())
     verdict = _assess_freshness(source_auth_json=source_auth_json, now_epoch=clock())
     if verdict.fresh_enough:
         return project_codex_auth_snapshot(source_auth_json=source_auth_json)
@@ -173,6 +174,78 @@ def project_codex_auth(*, clock: Callable[[], int]) -> str | CodexProjectionRefu
     if renewed.fresh_enough:
         return project_codex_auth_snapshot(source_auth_json=renewed_auth_json)
     return CodexProjectionRefusal(message=_unadvanced_refusal(verdict=renewed, outcome=outcome))
+
+
+def project_host_codex_auth(*, clock: Callable[[], int]) -> str | CodexProjectionRefusal:
+    """Project the host Codex credential as it now stands, renewing NOTHING.
+
+    The overlay's projection step, and the second half of a decision whose first
+    half ran before the item was claimed. `project_codex_auth` above owns the
+    bounded in-place renewal; by the time this runs the item IS claimed, so a
+    renewal here could only extend a credential whose shortfall can no longer be
+    reported before a claim — and it would spend a second provider request to do
+    it.
+
+    It still GRADES. The gate's verdict was taken earlier, and the loop's
+    bounded credential re-probe can hold a wave for an unbounded stretch
+    between the two, so a projection that skipped the grade would do the one
+    thing the freshness gate exists to prevent: project a credential that may
+    expire mid-run.
+    """
+    source_auth_json = read_host_codex_auth()
+    if source_auth_json is None:
+        return CodexProjectionRefusal(message=_absent_credential_refusal())
+    verdict = _assess_freshness(source_auth_json=source_auth_json, now_epoch=clock())
+    if verdict.fresh_enough:
+        return project_codex_auth_snapshot(source_auth_json=source_auth_json)
+    return CodexProjectionRefusal(message=_post_claim_shortfall_refusal(verdict=verdict))
+
+
+def _absent_credential_refusal() -> str:
+    """Render the refusal for a host credential that is not there at all.
+
+    Shared by the pre-claim gate and the post-claim projection because an absent
+    credential is the ONE case neither a renewal nor a re-read can change: there
+    is nothing to renew, so both surfaces owe the operator the same answer.
+    """
+    return (
+        "C-mode dispatch refused: no host Codex credential found at "
+        f"${_CODEX_HOME_ENV}/auth.json (default ~/.codex/auth.json). "
+        "The Dispatcher projects a non-rotatable snapshot of the "
+        "host credential into the sandbox; run `codex login` on the "
+        "orchestrator host before dispatch."
+    )
+
+
+def _post_claim_shortfall_refusal(*, verdict: CodexFreshnessVerdict) -> str:
+    """Render the refusal for a credential below the floor AFTER the claim.
+
+    Deliberately NOT the unadvanced-renewal message beside it. No renewal was
+    requested on this path, so this text must not report an expiry that declined
+    to advance — it never asked. Reporting one would be the inverse of the defect
+    that message exists to prevent: an observation nobody made, written up as
+    evidence.
+
+    It asserts nothing about authentication for the same reason the gate's
+    refusal does not. A short lifetime is a lifetime measurement; the one route
+    that could have produced provider evidence was not taken here, and a
+    remaining-seconds reading could not establish an authentication failure even
+    if it had been.
+    """
+    return (
+        "C-mode dispatch refused: the host Codex credential has "
+        f"{verdict.remaining_seconds} seconds of usable lifetime, below the "
+        f"{verdict.required_remaining_seconds} seconds the dispatch freshness "
+        "gate requires (run budget plus margin). The pre-claim credential gate "
+        "already spent this dispatch's one bounded in-place renewal, so no "
+        "second renewal is spent here, and this lifetime reading is NOT a claim "
+        "that authentication has failed. Re-read `dispatcher.py "
+        "codex-cred-status` on the credential-source host — the host running "
+        f"the Dispatcher, which reads ${_CODEX_HOME_ENV}/auth.json, NOT the "
+        "remote factory host that executes the run — then run `dispatcher.py "
+        "codex-cred-refresh` there. Run `codex login` on that same host only if "
+        "Codex explicitly reports an unrecoverable authentication failure."
+    )
 
 
 def _assess_freshness(*, source_auth_json: str, now_epoch: int) -> CodexFreshnessVerdict:

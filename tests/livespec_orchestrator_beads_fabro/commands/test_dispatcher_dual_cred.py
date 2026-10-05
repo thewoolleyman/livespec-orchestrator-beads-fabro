@@ -591,10 +591,30 @@ def test_project_codex_auth_accepts_token_outliving_a_realistic_run(
 # ---------------------------------------------------------------------------
 
 
-def test_materialize_overlay_refuses_on_stale_host_credential(
+def test_the_one_bounded_renewal_is_the_gate_and_never_the_overlay(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A stale host credential refuses the overlay at the codex-projection step."""
+    """One renewal per dispatch, spent before the claim and never again after it.
+
+    The two halves run over the SAME below-floor credential and the SAME
+    recorder, which is what makes this a measurement rather than two unrelated
+    assertions: the gate's decision function advances the count and the overlay
+    must leave it where the gate left it. Asserting the overlay alone would pass
+    just as well against a build that had stopped renewing anywhere at all.
+
+    The overlay is written AFTER `admit_and_select` has moved the item
+    `ready -> active`, so a renewal there could only extend a credential whose
+    shortfall can no longer be reported before a claim -- and it would spend a
+    second provider request to do it. It still GRADES, though, and refuses rather
+    than projecting a credential below the floor: the loop's bounded credential
+    re-probe can hold a wave for an unbounded stretch between the gate's verdict
+    and this write, and projecting a credential that may expire mid-run is the
+    one outcome the freshness gate exists to prevent.
+
+    The recorder also keeps the hermetic tier from ever spawning a real
+    `codex app-server`, which is a request against the credential-source host's
+    own live Codex.
+    """
     committed = tmp_path / "workflow.toml"
     _ = committed.write_text(_COMMITTED_WORKFLOW_TOML, encoding="utf-8")
     _ = (committed.parent / "workflow.fabro").write_text(_MINIMAL_GRAPH, encoding="utf-8")
@@ -603,17 +623,28 @@ def test_materialize_overlay_refuses_on_stale_host_credential(
     monkeypatch.setattr(
         _dispatcher_sibling_clones, "fetch_fleet_manifest_text", lambda: _FLEET_MANIFEST_TEXT
     )
-    # Far-future clock makes any real-world `exp` look stale.
-    far_future = 32_000_000_000
-    monkeypatch.setattr(_dispatcher_credentials.time, "time", lambda: far_future)
+    now = 1_700_000_000
+    one_hour = 3600
+    monkeypatch.setattr(_dispatcher_credentials.time, "time", lambda: now)
     monkeypatch.setattr(
         _dispatcher_codex_auth,
         "read_host_codex_auth",
-        lambda: _auth_json_with_exp(exp=1_700_000_000),
+        lambda: _auth_json_with_exp(exp=now + one_hour),
     )
-    # The projection spends one bounded renewal before refusing; stand it in so
-    # the hermetic tier never spawns a real `codex app-server`.
-    monkeypatch.setattr(_dispatcher_codex_auth, "renew_host_codex_credential", _stood_in_renewal)
+    spent: list[str] = []
+
+    def _record_renewal() -> CodexRenewalOutcome:
+        spent.append("requested")
+        return _stood_in_renewal()
+
+    monkeypatch.setattr(_dispatcher_codex_auth, "renew_host_codex_credential", _record_renewal)
+
+    # The PRE-CLAIM gate's decision function owns the renewal: it spends one.
+    gated = project_codex_auth(clock=lambda: now)
+    assert isinstance(gated, CodexProjectionRefusal)
+    assert spent == ["requested"]
+
+    # The POST-CLAIM projection, over the same credential: no second request.
     error = materialize_overlay(
         committed=committed,
         overlay=overlay,
@@ -624,8 +655,20 @@ def test_materialize_overlay_refuses_on_stale_host_credential(
         git_author=_GIT_AUTHOR,
     )
     assert error is not None
-    assert "codex login" in error
     assert not overlay.exists()
+    assert spent == ["requested"]
+    assert "no second renewal is spent here" in error
+    # The shortfall is reported against the floor, as a lifetime measurement and
+    # NOT as an authentication verdict -- this surface asked nothing about
+    # authentication, so it must claim nothing about it.
+    assert str(one_hour) in error
+    assert "18000 seconds" in error
+    assert "NOT a claim that authentication has failed" in error
+    # The remedy still names the credential-source host and keeps a human login
+    # conditioned on explicit provider evidence.
+    assert "credential-source host" in error
+    assert "codex login" in error
+    assert "only if Codex explicitly reports an unrecoverable authentication" in error
 
 
 def test_materialize_overlay_refuses_on_missing_host_credential(
