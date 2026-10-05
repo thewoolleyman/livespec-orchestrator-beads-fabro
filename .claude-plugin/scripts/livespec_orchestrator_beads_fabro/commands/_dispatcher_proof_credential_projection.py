@@ -28,9 +28,8 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credentials import (
-    MINTED_PROVISIONING,
-    parse_proof_credentials,
-    proof_credential_provisioning,
+    MINTED_PER_RUN_CREDENTIALS,
+    resolved_proof_credentials,
 )
 
 __all__: list[str] = [
@@ -39,26 +38,49 @@ __all__: list[str] = [
 ]
 
 
-def proof_credentials_env_lines(*, block: Mapping[str, object], environ: Mapping[str, str]) -> str:
-    """The overlay env lines projecting this repository's declared proof credentials."""
-    parsed = parse_proof_credentials(block=block)
-    if isinstance(parsed, str):
+def proof_credentials_env_lines(
+    *,
+    block: Mapping[str, object],
+    environ: Mapping[str, str],
+    minted: Mapping[str, str] | None = None,
+) -> str:
+    """The overlay env lines projecting this repository's declared proof credentials.
+
+    WHERE EACH VALUE COMES FROM, which is the whole decision this function makes.
+    A declaration whose provider exposes a management interface takes the value
+    MINTED for this run, out of `minted`; every other declaration takes the
+    wrapper-supplied value out of `environ`. A managed name therefore never
+    projects the host's own credential even when the host happens to hold one
+    under the same spelling, which is the point of minting per run.
+
+    `minted` defaults to None rather than being required so a caller that cannot
+    mint — a hermetic test, a repository declaring no provider — renders the
+    copied projection unchanged.
+    """
+    resolved = resolved_proof_credentials(block=block)
+    if isinstance(resolved, str):
         return ""
+    minted_values: Mapping[str, str] = {} if minted is None else minted
     rendered: list[str] = []
-    for credential in parsed:
-        # A minted name is already projected by the overlay's own credential
-        # table; a second TOML line under the same key would make the whole
-        # overlay unparseable.
-        if proof_credential_provisioning(credential=credential) == MINTED_PROVISIONING:
+    for credential in resolved.declared:
+        # A name the DISPATCHER mints for itself is already projected by the
+        # overlay's own credential table; a second TOML line under the same key
+        # would make the whole overlay unparseable. Keyed on that set rather than
+        # on the derived `minted` verdict, because a PROVIDER-minted name is
+        # minted too and that one MUST render.
+        if credential.name in MINTED_PER_RUN_CREDENTIALS:
             continue
-        value = environ.get(credential.name, "")
+        source = minted_values if credential.name in resolved.management else environ
+        value = source.get(credential.name, "")
         if not value:
             continue
         rendered.append(f"{credential.name} = {json.dumps(value)}\n")
     return "".join(rendered)
 
 
-def proof_credentials_overlay_env(*, repo: Path, environ: Mapping[str, str]) -> str:
+def proof_credentials_overlay_env(
+    *, repo: Path, environ: Mapping[str, str], minted: Mapping[str, str] | None = None
+) -> str:
     """One repository's declared proof credentials as overlay env lines.
 
     The entry point the overlay materializer calls. It exists so the
@@ -66,4 +88,6 @@ def proof_credentials_overlay_env(*, repo: Path, environ: Mapping[str, str]) -> 
     rather than being a second thing the materializer has to know how to do -- the
     same shape `proof_store_env_lines` takes for the sibling projection.
     """
-    return proof_credentials_env_lines(block=dispatcher_block(cwd=repo), environ=environ)
+    return proof_credentials_env_lines(
+        block=dispatcher_block(cwd=repo), environ=environ, minted=minted
+    )

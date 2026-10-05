@@ -35,6 +35,19 @@ _MODULE_PATH = _COMMANDS_DIR / "_dispatcher_proof_credential_projection.py"
 _NAME = "ACME_STATUS_READER"
 _VALUE = "acme-observer-value"
 
+# One declaration whose provider exposes a management interface, plus the value
+# this run minted from it. The host value below is deliberately DIFFERENT, so a
+# projection reading the wrong source is visible rather than merely equal.
+_MANAGED_NAME = "ACME_MINTED_READER"
+_MINTED_VALUE = "acme-minted-for-this-run"
+_HOST_VALUE = "acme-host-held-value"
+_MANAGED = {
+    _MANAGED_NAME: {
+        "mint": ["/usr/local/bin/acme-admin", "proof-key", "mint"],
+        "revoke": ["/usr/local/bin/acme-admin", "proof-key", "revoke"],
+    }
+}
+
 
 def _module() -> ModuleType:
     """The module under test, asserting it exists before importing it."""
@@ -50,14 +63,24 @@ def _read_only(*, name: str = _NAME) -> dict[str, str]:
     }
 
 
-def _block(*, declared: object) -> dict[str, Any]:
+def _block(*, declared: object, managed: object | None = None) -> dict[str, Any]:
     """A `dispatcher` config block declaring `proof_credentials`."""
-    return {"proof_credentials": declared}
+    block: dict[str, Any] = {"proof_credentials": declared}
+    if managed is not None:
+        block["proof_credential_management"] = managed
+    return block
 
 
-def _repo(*, tmp_path: Path, declared: list[dict[str, str]] | None) -> Path:
+def _repo(
+    *,
+    tmp_path: Path,
+    declared: list[dict[str, str]] | None,
+    managed: object | None = None,
+) -> Path:
     """A repository whose committed configuration declares `proof_credentials`."""
     dispatcher: dict[str, object] = {} if declared is None else {"proof_credentials": declared}
+    if managed is not None:
+        dispatcher["proof_credential_management"] = managed
     _ = (tmp_path / ".livespec.jsonc").write_text(
         json.dumps({PLUGIN_BLOCK: {"dispatcher": dispatcher}}),
         encoding="utf-8",
@@ -148,6 +171,98 @@ def test_the_overlay_entry_point_resolves_the_repositorys_own_declaration(
             repo=_repo(tmp_path=tmp_path, declared=[_read_only()]), environ={_NAME: _VALUE}
         )
         == f'{_NAME} = "{_VALUE}"\n'
+    )
+
+
+def test_a_managed_declaration_projects_the_minted_value_not_the_host_value() -> None:
+    """A provider-minted credential renders what THIS RUN minted.
+
+    The host value is present under the same spelling and must NOT be what
+    reaches the sandbox: a projection that preferred the environment would be
+    byte-identical to the pre-minting build on every repository whose host
+    happens to hold a copy, which is the case an operator is most likely to have.
+    """
+    module = _module()
+
+    assert (
+        module.proof_credentials_env_lines(
+            block=_block(declared=[_read_only(name=_MANAGED_NAME)], managed=_MANAGED),
+            environ={_MANAGED_NAME: _HOST_VALUE},
+            minted={_MANAGED_NAME: _MINTED_VALUE},
+        )
+        == f'{_MANAGED_NAME} = "{_MINTED_VALUE}"\n'
+    )
+
+
+def test_an_unmanaged_sibling_still_projects_the_wrapper_supplied_value() -> None:
+    """The copied control, in the SAME declaration as the minted one.
+
+    Asserted as one rendering of two declarations rather than two renderings of
+    one, because the sources are chosen PER declaration and a build that picked
+    one source for the whole repository would satisfy either case alone.
+    """
+    module = _module()
+
+    assert (
+        module.proof_credentials_env_lines(
+            block=_block(declared=[_read_only(name=_MANAGED_NAME), _read_only()], managed=_MANAGED),
+            environ={_MANAGED_NAME: _HOST_VALUE, _NAME: _VALUE},
+            minted={_MANAGED_NAME: _MINTED_VALUE},
+        )
+        == f'{_MANAGED_NAME} = "{_MINTED_VALUE}"\n{_NAME} = "{_VALUE}"\n'
+    )
+
+
+def test_a_managed_declaration_with_nothing_minted_projects_nothing() -> None:
+    """Fail-closed on the minted source too, and NOT onto the host value.
+
+    A mint that did not happen must leave the name absent rather than silently
+    falling back to the host's credential — a fallback would turn a provider
+    outage into an undetectable downgrade from a per-run credential to a
+    long-lived one.
+    """
+    module = _module()
+
+    assert (
+        module.proof_credentials_env_lines(
+            block=_block(declared=[_read_only(name=_MANAGED_NAME)], managed=_MANAGED),
+            environ={_MANAGED_NAME: _HOST_VALUE},
+        )
+        == ""
+    )
+
+
+def test_a_dangling_management_declaration_projects_nothing() -> None:
+    """The projection is fail-closed on a management fault, like any other refusal."""
+    module = _module()
+
+    assert (
+        module.proof_credentials_env_lines(
+            block=_block(declared=[_read_only()], managed=_MANAGED),
+            environ={_NAME: _VALUE},
+        )
+        == ""
+    )
+
+
+def test_the_overlay_entry_point_carries_the_minted_values_through(tmp_path: Path) -> None:
+    """The materializer's entry point forwards what the lease minted.
+
+    Threaded rather than re-derived: the mint happened once, earlier on this
+    dispatch, and a second mint here would hand the sandbox a credential the
+    revoke leg has no scope for.
+    """
+    module = _module()
+
+    assert (
+        module.proof_credentials_overlay_env(
+            repo=_repo(
+                tmp_path=tmp_path, declared=[_read_only(name=_MANAGED_NAME)], managed=_MANAGED
+            ),
+            environ={},
+            minted={_MANAGED_NAME: _MINTED_VALUE},
+        )
+        == f'{_MANAGED_NAME} = "{_MINTED_VALUE}"\n'
     )
 
 
