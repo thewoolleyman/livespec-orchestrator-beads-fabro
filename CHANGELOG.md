@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.172.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.171.0...v0.172.0) (2026-10-05)
+
+
+### Features
+
+* **dispatch:** keep the identity state private and report damaged prior state ([f947c54](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f947c5425ab46da34c37944b91b737cb234e7885))
+* **dispatch:** opt into persistent Codex credential identity observations ([3865438](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/38654384c025d1db1c90893ad40111a0973f862d))
+* **dispatch:** report the session and token identifiers independently ([40dcb0c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/40dcb0c0a1a2c8cf76f3330af398889e4983ee0e))
+* **dispatch:** say that identifier continuity is not a validity claim ([b276f65](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b276f659a7774e733983c6318fb8673f4157b870))
+* **dispatch:** withhold an unreadable reading so the preceding one survives ([536ea3b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/536ea3b72ea7fbeb6c61e0162c2c904386ddabe6))
+
+
+### Bug Fixes
+
+* **dispatch:** refuse an observation destination that is the credential itself ([2f8ad75](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2f8ad7595bab26d3545ef98be56db38acb338828))
+* **dispatch:** report a non-UTF-8 file as unreadable instead of raising ([4266aaa](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4266aaafc21cbb481f5c1f692836ac488bce2178))
+* **dispatch:** report an unseen identifier as unknown on a first reading too ([1b6d1a2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1b6d1a2fd5e27dd86e37a4e710a93200a593469c))
+
 ## [0.171.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.170.1...v0.171.0) (2026-10-05)
 
 
