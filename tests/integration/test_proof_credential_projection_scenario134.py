@@ -52,6 +52,7 @@ from livespec_orchestrator_beads_fabro.commands import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import materialize_overlay
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import GitAuthor
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_plan import overlay_file_path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credentials import (
     COPIED_PROVISIONING,
@@ -87,6 +88,13 @@ _MANAGED_DECLARATION = {
     "purpose": "observe the published deployment state of the deliverable",
     "capability": "read_only",
 }
+
+# A description prefix carrying a minijinja opener, which is what the goal
+# preflight refuses on. Written as a prefix rather than as a whole description so
+# the poisoned item keeps the Definition of Done and the gradeable assertion the
+# seeded item already carries: an item refused at the criteria wall instead would
+# never reach the preflight, and the case below would pass against any build.
+_MINIJINJA_POISONED_PREFIX = "poisoned {{ goal }}\n\n"
 
 # The journal stage the revoke leg records under, spelled as a literal rather
 # than imported: the lease module does not exist at the Red of this slice, and a
@@ -223,12 +231,15 @@ def _config() -> StoreConfig:
     )
 
 
-def _seed_item() -> WorkItem:
+def _seed_item(*, description_prefix: str = "") -> WorkItem:
     """One dispatchable item whose criteria parse, so the criteria wall clears.
 
     The proof-credential gate sits beside that wall and after it, so an item with
     nothing gradeable would be refused for the wrong reason and every case here
     would pass against a gate that was never wired at all.
+
+    `description_prefix` is prepended to that description, which is how the goal
+    preflight case reaches its refusal without giving up any of the above.
     """
     item = WorkItem(
         id=_ITEM_ID,
@@ -236,6 +247,7 @@ def _seed_item() -> WorkItem:
         status="ready",
         title="Exercise a declared proof credential",
         description=(
+            f"{description_prefix}"
             "## Definition of Done\n"
             "\n"
             "- The declared proof credential reaches the sandbox by name.\n"
@@ -679,6 +691,43 @@ def test_a_minted_credential_is_revoked_after_the_run_and_a_copied_sibling_is_no
     serialized = json.dumps(records)
     assert f"acme-minted-{scope}" not in serialized
     assert _MANAGED_HOST_VALUE not in serialized
+
+
+def test_a_goal_preflight_refusal_mints_nothing_and_leaves_no_overlay(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A pre-launch refusal AFTER a mint would strand a live provider credential.
+
+    The revoke leg is the RUN's teardown, so it is reached only once a run
+    starts. Any refusal that returns between the mint and that launch therefore
+    leaks: the credential stays live at the provider with nothing left that will
+    ever ask for it back, and the mode-600 overlay carrying its value stays on
+    disk. The goal preflight is the one such refusal — it reads the item, its
+    comments and the ratified lessons, none of which the overlay supplies — which
+    is why it is bound here rather than left to a reviewer to notice.
+
+    Both claims are ABSENCES, and the double's ledger is what makes the first one
+    observable: a build that minted and then returned shows a lone `mint` line
+    and no `revoke`, where this one shows nothing at all.
+
+    The refusal STAGE is asserted beside them, because an empty ledger and an
+    absent overlay are equally consistent with a dispatch that refused for some
+    earlier reason and never reached a provider — which would make the two
+    absences a fact about the fixture rather than about the leak.
+    """
+    monkeypatch.setenv(_MANAGED_NAME, _MANAGED_HOST_VALUE)
+    _ = _seed_item(description_prefix=_MINIJINJA_POISONED_PREFIX)
+    ledger, managed = _provider_double(tmp_path=tmp_path)
+    repo = _repo(tmp_path=tmp_path, declared=[_MANAGED_DECLARATION], managed=managed)
+
+    exit_code, calls = _dispatch(repo=repo, monkeypatch=monkeypatch)
+
+    assert (exit_code, calls) == (1, [])
+    assert "goal-minijinja-preflight" in capsys.readouterr().out
+    assert _provider_ledger(ledger=ledger) == []
+    assert not overlay_file_path(work_item_id=_ITEM_ID).exists()
 
 
 def test_a_provider_that_cannot_mint_refuses_the_dispatch_before_any_run_exists(
