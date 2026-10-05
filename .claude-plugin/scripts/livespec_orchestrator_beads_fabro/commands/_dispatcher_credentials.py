@@ -159,6 +159,7 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     git_author: GitAuthor,
     graph_override: Path | None = None,
     prepare_inputs: Mapping[str, str] | None = None,
+    proof_rendering: str = "",
 ) -> str | None:
     """Write the uncommitted mode-600 run-config overlay.
 
@@ -273,11 +274,16 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # `--input` pairs come from.
         prepare_inputs=prepare_inputs,
         # The publish branch the `publish_draft` command node pushes, plus this
-        # repository's resolved proof asset store. Resolved HERE rather than
-        # threaded from the caller, which is already at its file-size ceiling;
-        # the branch comes from the single shared derivation rather than a second
-        # spelling of `feat/<id>` (S5 / bd-ib-b4u6b7).
-        proof_store_env=proof_store_env_lines(repo=repo, work_item_id=work_item_id),
+        # repository's resolved proof asset store. The branch and the tag are
+        # resolved HERE, from the single shared derivation and the committed
+        # configuration, rather than being spelled a second time (S5 /
+        # bd-ib-b4u6b7). The RENDERING cannot be: it is a per-repository forge
+        # MEASUREMENT, so it arrives already measured, read back from the record
+        # the pre-dispatch gate journaled. Resolving it here would put a forge
+        # call on a path every dispatch materializes offline.
+        proof_store_env=proof_store_env_lines(
+            repo=repo, work_item_id=work_item_id, rendering=proof_rendering
+        ),
         # This repository's DECLARED proof credentials, by name, valued from this
         # process's environment. The pre-dispatch gate has already refused every
         # unusable declaration, so what reaches here is admitted; the builder is
