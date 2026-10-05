@@ -20,6 +20,17 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 
+import pytest
+from livespec_orchestrator_beads_fabro._beads_client import (
+    FakeBeadsClient,
+    make_beads_client,
+    reset_fake_singleton,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import (
+    PlanDefinitionOfDone,
+)
+from livespec_orchestrator_beads_fabro.types import StoreConfig
+
 _COMMANDS = (
     Path(__file__).resolve().parents[3]
     / ".claude-plugin"
@@ -68,3 +79,75 @@ def test_the_plan_comment_header_render_lives_beside_its_parse() -> None:
         "Requirement carriers:\n- one"
     )
     assert not hasattr(plan, "_comment_body")
+
+
+def _config() -> StoreConfig:
+    return StoreConfig(
+        tenant="livespec-impl-beads",
+        prefix="bd-ib",
+        server_user="livespec-impl-beads",
+        database="livespec-impl-beads",
+        bd_path="bd",
+        fake=True,
+    )
+
+
+def _fake() -> FakeBeadsClient:
+    client = make_beads_client(config=_config())
+    assert isinstance(client, FakeBeadsClient)
+    return client
+
+
+def test_the_proof_leg_refuses_an_epic_whose_definition_of_done_section_is_gone(
+    tmp_path: Path,
+) -> None:
+    """A legacy epic with no section refuses rather than grading zero assertions.
+
+    Zero assertions means zero UNPROVED ones, so a leg that graded the empty set
+    would report met and archive a plan that never stated what done means. The
+    refusal is distinct from the unproved-assertions one because the remedy is to
+    author the section with the maintainer.
+    """
+    reset_fake_singleton()
+    plan = importlib.import_module("livespec_orchestrator_beads_fabro.commands.plan")
+    created = plan.create_thread(
+        project_root=tmp_path,
+        config=_config(),
+        slug="sectionless-thread",
+        title="Sectionless thread",
+        research_filename="initial.md",
+        research_text="research\n",
+        now="2026-10-04T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the operator has driven it and seen it work.",
+            assertions=("The operator drives the delivered command and sees it work.",),
+        ),
+    )
+    plan.record_completeness_review_evidence(
+        config=_config(),
+        epic_id=created["epic_id"],
+        evidence_id="review-evidence-1",
+        reviewer_identity="fresh-independent-reviewer",
+        separate_reviewer=True,
+        attests_complete_requirement_coverage=True,
+        body="Every requirement carrier under the plan is covered.",
+        now="2026-10-05T00:00:00Z",
+    )
+    # The legacy shape: a description with prose and no section at all.
+    _fake().update_issue(
+        issue_id=created["epic_id"],
+        description="Plan anchor for plan/sectionless-thread.",
+    )
+
+    with pytest.raises(plan.PlanArchiveRefusedError) as refused:
+        plan.archive_thread(
+            project_root=tmp_path,
+            config=_config(),
+            slug="sectionless-thread",
+            epic_id=created["epic_id"],
+            completeness_review_comment_id="review-evidence-1",
+        )
+
+    assert "carries no gradeable Definition of Done section" in str(refused.value)
+    assert (tmp_path / "plan" / "sectionless-thread").is_dir()
+    assert _fake().show_issue(issue_id=created["epic_id"])["status"] != "closed"

@@ -14,10 +14,29 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     make_beads_client,
     reset_fake_singleton,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    PROOF_MODE_HOST_CAPTURED,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_build_identity import (
+    BuildIdentity,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_render import (
+    RecordAssertion,
+    render_proof_record,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
+    VERDICT_CAPTURED,
+    VERDICT_VERIFIED,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import (
     PlanDefinitionOfDone,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_proof_record import (
+    PLAN_PROOF_RECORD_TITLE,
+)
 from livespec_orchestrator_beads_fabro.types import StoreConfig
+
+_PLAN_ASSERTION = "The operator drives the delivered command and sees it work."
 
 
 def _config() -> StoreConfig:
@@ -53,6 +72,41 @@ def _draft(*, issue_id: str, parent_id: str | None) -> IssueDraft:
         metadata={"rank": "a1"},
         labels=["origin:freeform"],
     )
+
+
+def _seed_plan_proof(*, epic_id: str) -> None:
+    """Publish the captured/verified plan record pair the archive proof leg needs.
+
+    Rendered through the PRODUCTION renderer rather than hand-written, because the
+    gate reads the same bytes the posting primitive publishes: a hand-formatted
+    body that happened to parse would make these archives pass against a reader
+    no real record can satisfy. The two identities differ, which is what makes the
+    `verified` record an independent replay rather than a self-verified one.
+    """
+    for verdict, identity, reproduced in (
+        (VERDICT_CAPTURED, "session capturing-session", None),
+        (VERDICT_VERIFIED, "session replaying-session", True),
+    ):
+        _fake().add_comment(
+            issue_id=epic_id,
+            body=render_proof_record(
+                title=PLAN_PROOF_RECORD_TITLE,
+                verdict=verdict,
+                identity=identity,
+                timestamp="2026-10-05T01:00:00Z",
+                build=BuildIdentity(release_tag=None, installed_build=None, commit="c0ffee1"),
+                assertions=(
+                    RecordAssertion(
+                        text=_PLAN_ASSERTION,
+                        proof_mode=PROOF_MODE_HOST_CAPTURED,
+                        governing_scenario=None,
+                        steps=("Run the delivered command on the operator host.",),
+                        proof="$ delivered --version\n0.1.0",
+                        reproduced=reproduced,
+                    ),
+                ),
+            ),
+        )
 
 
 def test_plan_command_module_exists() -> None:
@@ -435,6 +489,8 @@ def test_archive_after_reviewer_records_valid_durable_evidence(tmp_path: Path) -
         )
         return "review-evidence-1"
 
+    _seed_plan_proof(epic_id=created["epic_id"])
+
     result = plan.archive_thread(
         project_root=tmp_path,
         config=_config(),
@@ -588,6 +644,7 @@ def test_archive_with_no_outside_references_closes_and_stamps_the_epic_once(
         body="All research requirements and deferrals have ledger carriers.",
         now="2026-08-11T02:00:00Z",
     )
+    _seed_plan_proof(epic_id=created["epic_id"])
     unrelated = tmp_path / "tests" / "test_unrelated.py"
     unrelated.parent.mkdir(parents=True)
     _ = unrelated.write_text('LABEL = "origin:archive-thread"\n', encoding="utf-8")
@@ -640,6 +697,7 @@ def test_archive_moves_thread_and_closes_epic_after_two_gates(tmp_path: Path) ->
         body="All research requirements and deferrals have ledger carriers.",
         now="2026-08-11T02:00:00Z",
     )
+    _seed_plan_proof(epic_id=created["epic_id"])
 
     result = plan.archive_thread(
         project_root=tmp_path,

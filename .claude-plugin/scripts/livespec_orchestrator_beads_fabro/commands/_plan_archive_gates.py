@@ -1,7 +1,12 @@
 """Plan-archive refusal type and the working-tree reference gate.
 
-`_plan_archive_review` owns the two LEDGER-side archive gates: child
-disposition and completeness-review evidence. Neither reads the working
+The LEDGER-side archive gates live elsewhere: `_plan_archive_review` owns
+child disposition and completeness-review evidence, and `_plan_proof_leg`
+owns the third one, the verified plan Proof of Done record. This module
+owns the refusal TYPE all three raise, plus the one gate that is not a
+ledger read at all.
+
+None of the three reads the working
 tree, so an archive could rename `plan/<slug>/` out from under code that
 addresses that directory by path. Archiving `beads-v1-1-2-upgrade` on
 2026-09-04 moved a rehearsal package two live test modules held as
@@ -9,10 +14,10 @@ hardcoded path constants: the archive pull request came back with 33
 `FileNotFoundError`s and a red per-file-coverage leg, on a move whose
 epic the same call had already closed and stamped.
 
-This module owns the third, WORKING-TREE gate. It sweeps everything
-outside `plan/` for files that address `plan/<slug>/` and refuses the
-move while any exist, naming every one, so the driving session repoints
-or retires each hit in the same pull request as the move.
+That WORKING-TREE gate sweeps everything outside `plan/` for files that
+address `plan/<slug>/` and refuses the move while any exist, naming every
+one, so the driving session repoints or retires each hit in the same pull
+request as the move.
 
 Two path spellings reach the same directory and both must be caught: the
 posix literal `plan/<slug>/…` and the segment-join form
@@ -75,6 +80,40 @@ class PlanArchiveRefusedError(Exception):
     ) -> PlanArchiveRefusedError:
         joined = ", ".join(paths)
         return cls(f"files outside plan/ reference plan/{slug}/: {joined}")
+
+    @classmethod
+    def missing_plan_definition_of_done(cls, *, epic_id: str) -> PlanArchiveRefusedError:
+        """Name the missing section the proof leg has nothing to grade without.
+
+        The proof leg opens by requiring the section, and this refusal is
+        distinct from the unproved-assertions one because the remedy differs:
+        author the section with the maintainer, rather than publish a record.
+        """
+        section = "no gradeable Definition of Done section"
+        consequence = "the archive proof leg has no plan assertions to prove"
+        remedy = "author the section with the maintainer's own statement of what done means first"
+        return cls(f"epic {epic_id} carries {section}, so {consequence}; {remedy}")
+
+    @classmethod
+    def unproved_plan_assertions(
+        cls,
+        *,
+        unproved: tuple[str, ...],
+        rejected: tuple[str, ...],
+    ) -> PlanArchiveRefusedError:
+        """Name every unproved plan assertion, and every record the gate rejected.
+
+        Both halves are carried because they prescribe different next actions: an
+        assertion nobody has published for needs a capture and an independent
+        replay, while a published record the gate rejected needs republishing
+        against the released build. Naming only the assertions leaves an operator
+        who DID publish unable to see that their record was read and refused.
+        """
+        named = "; ".join(unproved)
+        detail = f" Records rejected: {'; '.join(rejected)}." if rejected else ""
+        return cls(
+            f"no verified plan Proof of Done record proves these plan assertions: {named}.{detail}"
+        )
 
 
 def outside_plan_path_references(*, project_root: Path, slug: str) -> tuple[str, ...]:
