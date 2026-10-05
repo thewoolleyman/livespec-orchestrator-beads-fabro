@@ -166,6 +166,14 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   cannot (the run has ended, so no decision is left) and is JOURNALED under its
   own stage instead, because a credential outliving its run is otherwise
   nothing anyone is looking for.
+  That scope-keyed revoke still has to be REACHED, which makes the ORDER of the
+  pre-launch refusals in `_dispatch_one_locked` load-bearing: the revoke is the
+  run's own teardown, so a refusal returning between the mint and the launch
+  leaks a live credential plus the mode-600 overlay carrying it. Every refusal
+  whose inputs the overlay does not supply therefore belongs ABOVE
+  `materialize_overlay` — which is why the goal preflight sits there rather than
+  beside the goal render it guards — and the only in-between return left,
+  an unmaterializable run config, revokes inside the materializer itself.
   The DECLARATION-versus-GATE split is deliberate, and the gate's own docstring
   names it: the declaration module grades COMMITTED CONFIGURATION and is pure
   over a block handed to it, while the gate reads the target repository off

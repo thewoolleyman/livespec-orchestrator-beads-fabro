@@ -128,7 +128,7 @@ def dispatch_one(
         return outcome
 
 
-def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL STAGE (ledger labels, dispatch materialization, ledger comments, GitHub App auth, run-config overlay, goal preflight) plus the dispatched outcome; each names its own stage in the journal and collapsing any two would report the wrong one.
+def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL STAGE (ledger labels, dispatch materialization, ledger comments, GitHub App auth, goal preflight, run-config overlay) plus the dispatched outcome; each names its own stage in the journal and collapsing any two would report the wrong one.
     *,
     args: argparse.Namespace,
     repo: Path,
@@ -196,6 +196,26 @@ def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL ST
             stage="github-app-auth",
             detail=token_supplier,
         )
+    # Lessons are read host-side from `repo` (the dispatcher's operative
+    # checkout, where the reflector maintains loop-reflection-gate/lessons.md),
+    # exactly like `comments` above; only committed content is read, so an
+    # unmerged reflector proposal never influences a brief.
+    lessons = read_ratified_lessons(lessons_root=repo)
+    findings = minijinja_openers_in_goal_sources(item=item, comments=comments, lessons=lessons)
+    if findings:
+        return failed_dispatch_outcome(
+            journal=journal,
+            work_item_id=item.id,
+            stage="goal-minijinja-preflight",
+            detail=minijinja_findings_detail(findings=findings),
+        )
+    # EVERYTHING BELOW THIS LINE RUNS AFTER THE PROOF-CREDENTIAL MINT, whose
+    # revoke is the RUN's own teardown — so a return added between here and the
+    # launch leaks a live provider credential nothing will ask back, plus the
+    # mode-600 overlay carrying its value. That is why the goal preflight is
+    # ABOVE the overlay rather than beside the render it guards: its inputs are
+    # the item, its comments and the lessons, none of which the overlay
+    # supplies, so it has no reason to run on the leaking side.
     overlay_error = materialize_overlay(
         committed=committed_workflow,
         overlay=overlay_file,
@@ -217,19 +237,6 @@ def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL ST
             work_item_id=item.id,
             stage="run-config-overlay",
             detail=overlay_error,
-        )
-    # Lessons are read host-side from `repo` (the dispatcher's operative
-    # checkout, where the reflector maintains loop-reflection-gate/lessons.md),
-    # exactly like `comments` above; only committed content is read, so an
-    # unmerged reflector proposal never influences a brief.
-    lessons = read_ratified_lessons(lessons_root=repo)
-    findings = minijinja_openers_in_goal_sources(item=item, comments=comments, lessons=lessons)
-    if findings:
-        return failed_dispatch_outcome(
-            journal=journal,
-            work_item_id=item.id,
-            stage="goal-minijinja-preflight",
-            detail=minijinja_findings_detail(findings=findings),
         )
     goal_text = render_goal(
         item=item, repo=repo, branch=plan.branch, comments=comments, lessons=lessons
