@@ -927,11 +927,26 @@ Each is one of `first-observation`, `unchanged`, `changed`, or `unknown`.
 credential could not be decoded, or the prior record could not be parsed — and
 it is deliberately NOT reported as `unchanged`, because a failure to observe
 and an identifier that genuinely held look identical at the surface and support
-opposite conclusions. `prior_state` says which of `absent`, `readable`, or
-`unreadable` the preceding record was, with `prior_state_detail` naming why.
+opposite conclusions. **An identifier the current reading could not see is
+`unknown` even on a first reading**, never `first-observation`: that value is a
+claim to have seen the identifier and recorded it. `prior_state` says which of
+`absent`, `readable`, `unreadable`, or `refused` applies to the preceding
+record, with `prior_state_detail` naming why.
 
-`state_write` says what became of this reading: `recorded`, `withheld`, or
-`failed`. **`withheld` is the mechanism protecting the series, not a fault** — a
+Every way the state path can fail to be read — missing, unopenable, not UTF-8,
+not JSON, not an object, an unrecognised schema — reports as `unreadable` and
+never raises, so one damaged file cannot cost you the credential-lifetime
+reading the command exists to print.
+
+**The destination may not be the credential file.** A path resolving to
+`$CODEX_HOME/auth.json` — exactly, through `.`/`..` segments, through a
+symlinked parent, or as a hard link — is `refused`: nothing is read and nothing
+is written, because observation state landing there would overwrite the refresh
+token the host is the sole owner of. The staging `<destination>.tmp` is guarded
+on the same comparison, since that path is unlinked before anything is opened.
+
+`state_write` says what became of this reading: `recorded`, `withheld`,
+`refused`, or `failed`. **`withheld` is the mechanism protecting the series, not a fault** — a
 reading whose claims could not be read is deliberately NOT written, because
 recording it would overwrite the last comparable fingerprints and leave every
 later reading comparing against the blip. `failed` IS a fault: the state path is
