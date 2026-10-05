@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.170.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.169.1...v0.170.0) (2026-10-05)
+
+
+### Features
+
+* **dispatch:** project the measured proof-asset rendering ([e619798](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e619798077619da776665494736076d3415b2889))
+
+
+### Refactoring
+
+* **dispatch:** split the dispatch record off the loop module ([d91400d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d91400d6c9b6fece29c1b1c907507612df8c11a1))
+
 ## [0.169.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.169.0...v0.169.1) (2026-10-05)
 
 
