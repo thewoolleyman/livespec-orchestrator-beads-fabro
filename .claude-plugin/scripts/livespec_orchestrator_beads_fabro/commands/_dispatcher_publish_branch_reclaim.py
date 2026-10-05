@@ -1,4 +1,4 @@
-"""Clearing a dead run's surviving publish branch, preserving its head first.
+"""The pre-dispatch valve that clears a dead run's surviving publish branch.
 
 A run that dies AFTER publishing its branch leaves that branch on origin, and the
 re-dispatch meant to recover it cannot publish: `publish_draft` pushes a plain
@@ -23,21 +23,17 @@ that branch is still alive. `publish_draft` is unchanged and still pushes a plai
 fast-forward, which is now the ordinary case for a re-dispatch as well as a first
 dispatch.
 
-PRESERVE, THEN CLEAR -- IN THAT ORDER, AND NEVER THE CLEAR ALONE. The dead run's
-tip is copied onto a ref of its own under `refs/livespec/preserved-publish/` and
-the branch is deleted only once origin has CONFIRMED that ref. This is the shape
-the maintainer's export-then-reap rule takes for a dead factory run: what makes an
-irreversible act safe is the durable copy that precedes it, so a preserve that
-failed leaves the branch standing rather than proceeding. The copy is a plain
-push of a ref nothing else writes, so no spelling of force push appears anywhere
-in this module -- the capability the graph withheld from `publish_draft` is not
-re-acquired here on its behalf.
+THIS MODULE IS THE DECISION AND THE RECORD. The measurement it decides on lives in
+`_dispatcher_publish_branch_liveness` and the two remote operations live in
+`_dispatcher_publish_branch_preserve`; each is a separate concern with its own
+external system, and keeping them out of here is what lets the decision be read in
+one screen.
 
-EVERY ARM THAT CANNOT MEASURE HOLDS, AND SAYS SO. Origin unreachable, a failed
-preserve, a failed delete: each leaves the branch alone and journals which
-measurement stopped the reclaim. A gauge that proceeded when blinded would turn
-`publish_draft`'s honest refusal into a silent ref deletion, and the record it
-left would read exactly like a healthy reclaim.
+EVERY ARM THAT CANNOT MEASURE HOLDS, AND SAYS SO. Origin unreachable, the factory
+unaskable, a live run, a failed preserve, a failed delete: each leaves the branch
+alone and journals which measurement stopped the reclaim. A gauge that proceeded
+when blinded would turn `publish_draft`'s honest refusal into a silent ref
+deletion, and the record it left would read exactly like a healthy reclaim.
 """
 
 from __future__ import annotations
@@ -58,6 +54,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (
     publish_branch_for,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_liveness import (
+    item_run_liveness,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_preserve import (
+    PreserveFailure,
+    SurvivingPublishBranch,
+    preserve_and_clear,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
     read_journal_records,
 )
@@ -66,50 +70,30 @@ from livespec_orchestrator_beads_fabro.commands._run_attribution import journale
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
-    "HELD_DELETE_FAILED",
     "HELD_ORIGIN_UNOBSERVABLE",
-    "HELD_PRESERVE_FAILED",
-    "PRESERVED_PUBLISH_REF_PREFIX",
     "PUBLISH_BRANCH_RECLAIM_HELD_STAGE",
     "PUBLISH_BRANCH_RECLAIM_STAGE",
     "PublishBranchUnobservable",
-    "SurvivingPublishBranch",
     "journaled_dispatch_ids",
-    "preserved_publish_ref",
     "reclaim_stale_publish_branch",
     "reclaim_stale_publish_branches",
     "surviving_head_from_ls_remote",
     "surviving_publish_branch",
 ]
 
-# The namespace the preserved head lives in. Under `refs/livespec/` rather than
-# `refs/heads/`, so a preserved head is never a branch: it is not checked out, not
-# pushed to by anything, and not a candidate for any branch-hygiene sweep.
-PRESERVED_PUBLISH_REF_PREFIX = "refs/livespec/preserved-publish"
-
 PUBLISH_BRANCH_RECLAIM_STAGE = "publish-branch-reclaim"
 PUBLISH_BRANCH_RECLAIM_HELD_STAGE = "publish-branch-reclaim-held"
 
-# The reasons a reclaim was NOT performed. Each names a MEASUREMENT rather than a
-# judgment, because the record's whole job is to tell an operator which question
-# went unanswered before `publish_draft` refused.
+# The reason an unaskable ORIGIN holds a reclaim. Its two siblings live with the
+# measurements that produce them -- the liveness reading and the ref mechanics --
+# so each reason is defined where the thing it reports on is decided.
 HELD_ORIGIN_UNOBSERVABLE = "origin-unobservable"
-HELD_PRESERVE_FAILED = "preserve-failed"
-HELD_DELETE_FAILED = "delete-failed"
 
 _GIT_TIMEOUT_SECONDS = 120.0
 
 # `git ls-remote` prints exactly two tab-separated fields per ref, the sha and
 # the ref name. Any other count is a line this parse must not read as a ref.
 _LS_REMOTE_FIELDS = 2
-
-
-@dataclass(frozen=True, kw_only=True)
-class SurvivingPublishBranch:
-    """A publish branch origin still carries, and the head it points at."""
-
-    branch: str
-    head: str
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -123,6 +107,24 @@ class PublishBranchUnobservable:
     """
 
     detail: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Hold:
+    """One reason no reclaim was performed, and everything its record names.
+
+    Grouped rather than passed one parameter at a time because they are ONE fact,
+    and because every arm must write the SAME key set: an operator reading the
+    journal should not have to know which arm fired to know which keys to expect.
+    `live_run_ids` is empty on every arm but the live-run hold, and `branch` and
+    `head` are absent on the arm that could not establish them.
+    """
+
+    reason: str
+    detail: str
+    branch: str | None = None
+    head: str | None = None
+    live_run_ids: tuple[str, ...] = ()
 
 
 def journaled_dispatch_ids(*, journal_path: Path, work_item_id: str) -> tuple[str, ...]:
@@ -142,17 +144,6 @@ def journaled_dispatch_ids(*, journal_path: Path, work_item_id: str) -> tuple[st
         *journaled_run_ids(records=records, work_item_id=work_item_id),
         *dispatch_ids_for(records=records, work_item_id=work_item_id),
     )
-
-
-def preserved_publish_ref(*, work_item_id: str, head: str) -> str:
-    """The ref a dead run's published head is preserved under.
-
-    The HEAD is part of the ref name, which is what makes the preserve a CREATE
-    rather than an update: two different dead heads for one item preserve to two
-    refs, and a repeat of the same reclaim pushes the same sha to the same ref,
-    which origin accepts as already up to date.
-    """
-    return f"{PRESERVED_PUBLISH_REF_PREFIX}/{work_item_id}/{head}"
 
 
 def surviving_head_from_ls_remote(*, stdout: str, branch: str) -> str | None:
@@ -251,7 +242,6 @@ def reclaim_stale_publish_branch(
     proof-assets gate beside it takes for an item carrying no `factory_captured`
     assertion, and it is the reason this valve reads the journal at all.
     """
-    _ = args
     if not journaled_dispatch_ids(journal_path=journal_path, work_item_id=work_item_id):
         return
     surviving = surviving_publish_branch(runner=runner, repo=repo, work_item_id=work_item_id)
@@ -261,13 +251,30 @@ def reclaim_stale_publish_branch(
         _held(
             journal=journal,
             work_item_id=work_item_id,
-            reason=HELD_ORIGIN_UNOBSERVABLE,
-            detail=surviving.detail,
-            branch=None,
-            head=None,
+            hold=_Hold(reason=HELD_ORIGIN_UNOBSERVABLE, detail=surviving.detail),
         )
         return
-    _preserve_and_clear(
+    liveness = item_run_liveness(
+        args=args,
+        repo=repo,
+        work_item_id=work_item_id,
+        journal_path=journal_path,
+        runner=runner,
+    )
+    if not liveness.reclaimable:
+        _held(
+            journal=journal,
+            work_item_id=work_item_id,
+            hold=_Hold(
+                reason=liveness.held_reason,
+                detail=liveness.detail(branch=surviving.branch),
+                branch=surviving.branch,
+                head=surviving.head,
+                live_run_ids=liveness.live_run_ids,
+            ),
+        )
+        return
+    _record_reclaim(
         runner=runner,
         repo=repo,
         work_item_id=work_item_id,
@@ -276,7 +283,7 @@ def reclaim_stale_publish_branch(
     )
 
 
-def _preserve_and_clear(
+def _record_reclaim(
     *,
     runner: CommandRunner,
     repo: Path,
@@ -284,36 +291,20 @@ def _preserve_and_clear(
     surviving: SurvivingPublishBranch,
     journal: JournalWriter,
 ) -> None:
-    """Copy the head onto its own ref, then delete the branch it came from."""
-    preserved = preserved_publish_ref(work_item_id=work_item_id, head=surviving.head)
-    failure = _preserve(runner=runner, repo=repo, surviving=surviving, preserved=preserved)
-    if failure is not None:
-        _held(
-            journal=journal,
-            work_item_id=work_item_id,
-            reason=HELD_PRESERVE_FAILED,
-            detail=failure,
-            branch=surviving.branch,
-            head=surviving.head,
-        )
-        return
-    deleted = runner.run(
-        argv=["git", "push", "origin", "--delete", f"refs/heads/{surviving.branch}"],
-        cwd=repo,
-        timeout_seconds=_GIT_TIMEOUT_SECONDS,
+    """Perform the reclaim and journal its outcome, whichever one it reached."""
+    outcome = preserve_and_clear(
+        runner=runner, repo=repo, work_item_id=work_item_id, surviving=surviving
     )
-    if deleted.exit_code != 0:
+    if isinstance(outcome, PreserveFailure):
         _held(
             journal=journal,
             work_item_id=work_item_id,
-            reason=HELD_DELETE_FAILED,
-            detail=(
-                f"git push origin --delete refs/heads/{surviving.branch} exited"
-                f" {deleted.exit_code}; the head is preserved at {preserved} but the"
-                " branch still stands, so publish_draft will still refuse"
+            hold=_Hold(
+                reason=outcome.reason,
+                detail=outcome.detail,
+                branch=surviving.branch,
+                head=surviving.head,
             ),
-            branch=surviving.branch,
-            head=surviving.head,
         )
         return
     journal.append(
@@ -322,67 +313,21 @@ def _preserve_and_clear(
             "work_item_id": work_item_id,
             "branch": surviving.branch,
             "head": surviving.head,
-            "preserved_ref": preserved,
+            "preserved_ref": outcome.preserved_ref,
         }
     )
 
 
-def _preserve(
-    *,
-    runner: CommandRunner,
-    repo: Path,
-    surviving: SurvivingPublishBranch,
-    preserved: str,
-) -> str | None:
-    """Copy origin's branch tip onto the preservation ref; a failure detail or None.
-
-    TWO legs, and both are checked, because only the second makes the copy
-    DURABLE: the fetch brings the head into this clone, and the push is what puts
-    it somewhere a later reader can reach. A valve that checked only the fetch
-    would delete the branch whose copy never left the host.
-    """
-    fetched = runner.run(
-        argv=["git", "fetch", "origin", f"+refs/heads/{surviving.branch}:{preserved}"],
-        cwd=repo,
-        timeout_seconds=_GIT_TIMEOUT_SECONDS,
-    )
-    if fetched.exit_code != 0:
-        return (
-            f"git fetch origin +refs/heads/{surviving.branch}:{preserved} exited"
-            f" {fetched.exit_code}; the head {surviving.head} was not copied, so the"
-            " branch is left standing"
-        )
-    pushed = runner.run(
-        argv=["git", "push", "origin", f"{preserved}:{preserved}"],
-        cwd=repo,
-        timeout_seconds=_GIT_TIMEOUT_SECONDS,
-    )
-    if pushed.exit_code != 0:
-        return (
-            f"git push origin {preserved}:{preserved} exited {pushed.exit_code}; the"
-            f" head {surviving.head} is on this host only, so the branch is left"
-            " standing"
-        )
-    return None
-
-
-def _held(
-    *,
-    journal: JournalWriter,
-    work_item_id: str,
-    reason: str,
-    detail: str,
-    branch: str | None,
-    head: str | None,
-) -> None:
+def _held(*, journal: JournalWriter, work_item_id: str, hold: _Hold) -> None:
     """Record that no reclaim was performed, and which measurement stopped it."""
     journal.append(
         record={
             "stage": PUBLISH_BRANCH_RECLAIM_HELD_STAGE,
             "work_item_id": work_item_id,
-            "reason": reason,
-            "detail": detail,
-            "branch": branch,
-            "head": head,
+            "reason": hold.reason,
+            "detail": hold.detail,
+            "branch": hold.branch,
+            "head": hold.head,
+            "live_run_ids": list(hold.live_run_ids),
         }
     )
