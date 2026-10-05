@@ -480,8 +480,8 @@ wheels = [
 
 [[package]]
 name = "livespec-dev-tooling"
-version = "1.92.0"
-source = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git?tag=v1.92.0#dab899a80b70425aad8d4fbc3c96b48746f3519a" }
+version = "1.92.1"
+source = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git?tag=v1.92.1#4f331a07f3b4e13a0164c9be831acd2224a5adec" }
 
 [[package]]
 name = "livespec-orchestrator-beads-fabro"
@@ -513,7 +513,7 @@ dev = [
     { name = "hypothesis", specifier = "==6.122.3" },
     { name = "hypothesis-jsonschema", specifier = "==0.23.1" },
     { name = "import-linter", specifier = "==2.1" },
-    { name = "livespec-dev-tooling", git = "https://github.com/thewoolleyman/livespec-dev-tooling.git?tag=v1.92.0" },
+    { name = "livespec-dev-tooling", git = "https://github.com/thewoolleyman/livespec-dev-tooling.git?tag=v1.92.1" },
     { name = "livespec-runtime", git = "https://github.com/thewoolleyman/livespec-runtime.git?tag=v0.27.0" },
     { name = "mutmut", specifier = "==3.2.3" },
     { name = "pyright", specifier = "==1.1.391" },
