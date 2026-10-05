@@ -53,7 +53,17 @@ def test_not_fresh_when_token_expires_within_budget() -> None:
     )
     assert verdict.fresh_enough is False
     assert verdict.renewal_message is not None
-    assert "codex login" in verdict.renewal_message
+    # A lifetime below the requirement is inside the refresh guard by
+    # construction, so the message directs the BOUNDED host-local renewal. It
+    # must not name `codex login`: nothing here has established that a human
+    # step is necessary, and the refresh guard is derived from this very
+    # requirement precisely so the refresher is eligible across the interval.
+    assert "codex-cred-refresh" in verdict.renewal_message
+    assert "codex login" not in verdict.renewal_message
+    assert str(verdict.remaining_seconds) in verdict.renewal_message
+    assert str(verdict.required_remaining_seconds) in verdict.renewal_message
+    assert verdict.remaining_seconds == _BUDGET
+    assert verdict.required_remaining_seconds == _BUDGET + CODEX_FRESHNESS_MARGIN_SECONDS
 
 
 def test_raises_when_access_token_missing() -> None:
