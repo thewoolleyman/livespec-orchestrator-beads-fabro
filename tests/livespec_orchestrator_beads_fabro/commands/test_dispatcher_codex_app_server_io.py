@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -89,6 +91,9 @@ class _FakeAppServer:
         self._answer_ids = answer_ids
         self._pending: list[str] = []
         self.received_methods: list[str] = []
+        # Deliberately INVALID: `os.getpgid(-1)` raises, so a test can never
+        # reach `os.killpg` with a group id that belongs to a real process.
+        self.pid = -1
         self.killed = False
         self.waited = False
         self.returncode: int | None = None
@@ -320,3 +325,130 @@ def test_a_lingering_session_is_killed_during_the_reap(
     assert result.exit_code == 0
     assert process.killed is True
     assert len(waits) == 2
+
+
+# The real host shape: `codex` on the orchestrator host is a LAUNCHER
+# (`exec bun codex.js` -> `spawn(nativeCodex, stdio: "inherit")`), so a SIGKILL
+# delivered to the launcher alone never reaches the process actually holding the
+# stdout pipe.
+#
+# Every lifetime here is FINITE and short on purpose. The pre-fix runner only
+# returns when the grandchild exits, so an unbounded sleep would make each
+# failing Red/replay run hang for that whole sleep and could leave children
+# behind on interruption. Three seconds is the measured reproduction's own
+# figure: it is far above the deadline below and far below the assertion
+# ceiling, so pre-fix fails promptly and nothing can outlive the case.
+_GRANDCHILD_LIFETIME_SECONDS = 3
+_LAUNCHER_WITH_INHERITING_GRANDCHILD = (
+    "import subprocess, sys, time\n"
+    f"subprocess.Popen([sys.executable, '-c', 'import time; time.sleep({_GRANDCHILD_LIFETIME_SECONDS})'])\n"
+    f"time.sleep({_GRANDCHILD_LIFETIME_SECONDS})\n"
+)
+
+_DEADLINE_SECONDS = 0.5
+# Comfortably below the 3s grandchild and well above the 0.5s deadline, so the
+# two outcomes cannot be confused by ordinary scheduling noise.
+_BOUNDED_CEILING_SECONDS = 2.0
+
+
+def test_the_deadline_bounds_a_launcher_whose_grandchild_holds_stdout(
+    tmp_path: Path,
+) -> None:
+    """A real process tree is killed whole, so `readline` cannot outlive it.
+
+    REGRESSION, measured: killing only the launcher left a grandchild holding
+    the stdout pipe, so the blocking `readline` returned only once that
+    grandchild exited — 3.11s against a 0.1s deadline in the reported probe,
+    and UNBOUNDED for a grandchild that never exits. That defeats the point of
+    a bounded renewal running inside a dispatch.
+
+    This spawns real processes deliberately: the defect lives in signal
+    delivery across a process tree, which no in-process fake can exhibit. No
+    credential, no network and no `codex` binary is involved, and both spawned
+    processes self-terminate within `_GRANDCHILD_LIFETIME_SECONDS` whatever
+    this assertion does.
+    """
+    started = time.monotonic()
+
+    result = ShellCodexAppServerRunner().run(
+        argv=[sys.executable, "-c", _LAUNCHER_WITH_INHERITING_GRANDCHILD],
+        cwd=tmp_path,
+        request_lines=codex_early_renewal_request_lines(),
+        timeout_seconds=_DEADLINE_SECONDS,
+    )
+
+    elapsed = time.monotonic() - started
+    # Pre-fix this is the grandchild's own lifetime (~3s); post-fix it is the
+    # deadline (~0.5s), because killing the group closes the inherited pipe.
+    assert (
+        elapsed < _BOUNDED_CEILING_SECONDS
+    ), f"renewal outlived its {_DEADLINE_SECONDS}s deadline: {elapsed:.2f}s"
+    assert result.exit_code == UNSPENDABLE_EXIT_CODE
+
+
+def test_the_runner_starts_its_own_session_so_the_tree_is_owned(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The process is spawned in a new session; without one, no group to kill.
+
+    Asserted on the spawn arguments because it is the PRECONDITION for killing
+    a tree: `os.killpg` can only target a group this runner owns, and reusing
+    the caller's group would aim the kill at the Dispatcher itself.
+    """
+    process = _FakeAppServer()
+    spawn_kwargs: list[dict[str, object]] = []
+
+    def popen(argv: list[str], **kwargs: object) -> _FakeAppServer:
+        _ = argv
+        spawn_kwargs.append(kwargs)
+        return process
+
+    monkeypatch.setattr(_dispatcher_codex_app_server_io.subprocess, "Popen", popen)
+
+    _ = request_early_codex_renewal(cwd=tmp_path, runner=ShellCodexAppServerRunner())
+
+    assert len(spawn_kwargs) == 1
+    assert spawn_kwargs[0]["start_new_session"] is True
+    # stderr is never read, and an unread PIPE can fill and wedge the child.
+    assert spawn_kwargs[0]["stderr"] == subprocess.DEVNULL
+
+
+def test_a_dead_process_group_during_cleanup_is_not_an_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A tree that already exited leaves no group; cleanup must tolerate it.
+
+    The session must LINGER for this to mean anything: a conversation that
+    reaps cleanly never calls the group kill at all, so without the stalled
+    `wait` below the stub this patches in would never execute and the case
+    would pass while measuring nothing.
+    """
+    process = _FakeAppServer()
+    _ = _install(monkeypatch=monkeypatch, process=process)
+    killpg_calls: list[int] = []
+    waits: list[float | None] = []
+
+    def killpg(pgid: int, signal_number: int) -> None:
+        _ = signal_number
+        killpg_calls.append(pgid)
+        raise ProcessLookupError
+
+    def wait(timeout: float | None = None) -> int:
+        waits.append(timeout)
+        if len(waits) == 1:
+            raise subprocess.TimeoutExpired(cmd="codex", timeout=timeout or 0.0)
+        return 0
+
+    monkeypatch.setattr(_dispatcher_codex_app_server_io.os, "killpg", killpg)
+    monkeypatch.setattr(_dispatcher_codex_app_server_io.os, "getpgid", lambda pid: pid)
+    monkeypatch.setattr(process, "wait", wait)
+
+    result = request_early_codex_renewal(cwd=tmp_path, runner=ShellCodexAppServerRunner())
+
+    assert result.exit_code == 0
+    # The group kill WAS attempted, and its absence was tolerated.
+    assert killpg_calls == [process.pid]
+    # Falls back to the direct handle so nothing is left running.
+    assert process.killed is True
