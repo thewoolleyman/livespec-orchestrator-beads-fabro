@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.168.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.167.1...v0.168.0) (2026-10-05)
+
+
+### Features
+
+* **proof-credentials:** declare a provider management interface per credential (bd-ib-gp2nt5) ([98f92c2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/98f92c25b843503961f66b488dc392087c9961f1))
+* **proof-credentials:** mint per run where the provider exposes a management interface (bd-ib-gp2nt5) ([53ad653](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/53ad6535b5be15cacc87088b5b87a531e5aeafe7))
+* **proof-credentials:** own the dispatch-path selection gate in its own module (bd-ib-gp2nt5) ([2bf4c1a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2bf4c1a99a9f2395f8d6f9a9d9f0413b4db7e14d))
+* **proof-credentials:** own the overlay projection in its own module (bd-ib-gp2nt5) ([1bafb07](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1bafb07cb89135949f27cf5c6d4236c4212ac75d))
+* **proof-credentials:** revoke the per-run minted credential after the run ends (bd-ib-gp2nt5) ([ee72046](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ee7204651105530790f2c8793b6d4d9b0e7f6462))
+
+
+### Bug Fixes
+
+* **proof-credentials:** refuse a poisoned goal before the credential is minted (bd-ib-gp2nt5) ([e160b93](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e160b93017634f19847943100fe417198e79be55))
+
 ## [0.167.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.167.0...v0.167.1) (2026-10-05)
 
 
