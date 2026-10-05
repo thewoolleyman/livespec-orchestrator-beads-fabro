@@ -19,6 +19,7 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
   dispatcher.py ledger-normalize [--project-root <path>] [--dry-run] [--gate] [--json]
   dispatcher.py codex-cred-refresh [--dry-run] [--json]
   dispatcher.py codex-cred-status [--json]
+                                  [--observe-identity-state <path>]
   dispatcher.py claude-cred-status [--json]
   dispatcher.py spec-check [--project-root <path>] [--spec-root <path>] [--json]
   dispatcher.py janitor-check [--repo <path>] [--json]
@@ -304,6 +305,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
     run_codex_cred_refresh,
     run_codex_cred_status,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_identity_command import (
+    add_codex_cred_status_arguments,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
     bounce_non_convergence_to_backlog,
     complete_and_accept,
@@ -452,7 +456,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_ledger_check(parser=subparsers.add_parser("ledger-check"))
     _add_ledger_normalize(parser=subparsers.add_parser("ledger-normalize"))
     _add_codex_cred_refresh(parser=subparsers.add_parser("codex-cred-refresh"))
-    _add_cred_status(parser=subparsers.add_parser("codex-cred-status"))
+    add_codex_cred_status_arguments(parser=subparsers.add_parser("codex-cred-status"))
     _add_cred_status(parser=subparsers.add_parser("claude-cred-status"))
     add_clear_provider_exhaustion_arguments(
         parser=subparsers.add_parser("clear-provider-exhaustion")
