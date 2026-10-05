@@ -62,6 +62,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     DispatchOutcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
+from livespec_orchestrator_beads_fabro.commands._needs_attention_proof import (
+    stale_proof_pointer_items,
+)
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main as dispatcher_main
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
@@ -88,6 +91,9 @@ _HOST_REASON = "the proof needs the released build installed on an operator host
 _READABLE_DIFF = "diff --git a/impl.py b/impl.py\n+rearranged an unrelated helper\n"
 _RECORD_URL = f"https://example.test/owner/repo/pull/{_PR_NUMBER}#issuecomment-900"
 _PARKING_TITLE = "Acceptance parking record"
+_RELEASE_TAG = "v0.166.0"
+_CAPTURING_SESSION = "01M44CAPTURINGSESSION"
+_REPLAYING_SESSION = "01M44REPLAYINGSESSION"
 _FLEET_MANIFEST_TEXT = (
     '{"owner": "thewoolleyman", "members": [{"repo": "repo", "class": "impl-plugin"}]}'
 )
@@ -186,6 +192,75 @@ class _ForgeRunner:
         if "comments" in argv:
             return CommandResult(exit_code=0, stdout=self.comments, stderr="")
         return CommandResult(exit_code=0, stdout=_READABLE_DIFF, stderr="")
+
+
+@dataclass(kw_only=True)
+class _HostForgeRunner:
+    """A forge seam that is PULL-REQUEST AWARE and answers the containment comparison.
+
+    Pull-request aware because one sub-scenario turns entirely on WHICH pull request a
+    record sits on: the clause says a host record on an earlier pull request is not
+    evidence, and a runner answering the same comments for every number could not pose
+    that case at all — it would report the record present wherever the pass looked.
+
+    It also answers the containment comparison, which the pass makes for itself. A seam
+    that left it unstubbed would answer it from the diff payload, which parses as an
+    unknown status and refuses — so every case would pass its pending assertion for the
+    wrong reason.
+    """
+
+    per_pull_request: dict[int, str]
+    status: str = "ahead"
+    argvs: list[list[str]] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        _ = cwd, timeout_seconds, env, stdin
+        self.argvs.append(list(argv))
+        joined = " ".join(argv)
+        if "compare" in joined:
+            return CommandResult(exit_code=0, stdout=f"{self.status}\n", stderr="")
+        if "comments" in argv:
+            number = next((int(one) for one in argv if one.isdigit()), 0)
+            return CommandResult(
+                exit_code=0,
+                stdout=self.per_pull_request.get(number, json.dumps({"comments": []})),
+                stderr="",
+            )
+        return CommandResult(exit_code=0, stdout=_READABLE_DIFF, stderr="")
+
+
+def _replayed_comments(
+    *,
+    replay_verdict: str = "host_verified",
+    replaying: str = _REPLAYING_SESSION,
+    reproduced: str = "yes",
+    release_tag: str = _RELEASE_TAG,
+) -> str:
+    """The merging run's verified record, then the capture, then the replay."""
+    return _comments_payload(
+        bodies=[
+            _verified_record_body(),
+            _host_record_body(
+                verdict="host_recorded",
+                identity=_CAPTURING_SESSION,
+                release_tag=release_tag,
+            ),
+            _host_record_body(
+                verdict=replay_verdict,
+                identity=replaying,
+                release_tag=release_tag,
+                reproduced=reproduced,
+            ),
+        ]
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -312,6 +387,61 @@ def _patch_acceptance_pass(*, monkeypatch: pytest.MonkeyPatch, comments: str) ->
     monkeypatch.setattr(_dispatcher_completion, "run_acceptance_pass", _call)
 
 
+def _dispatch_with_host_records(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    per_pull_request: dict[int, str],
+    status: str = "ahead",
+    item: WorkItem | None = None,
+) -> int:
+    """Dispatch an item whose pull request ALREADY carries the host records.
+
+    The first acceptance pass then reaches exactly the verdict a `reconcile-merged`
+    re-run would reach, because it is the same pass reading the same records — which is
+    why this drives the ordinary `dispatch` entry point rather than staging a park and
+    then re-running. The re-run route itself is the reconcile valve's own, bound where
+    that valve is tested.
+    """
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=item if item is not None else _item())
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _green_recording())
+    runner = _HostForgeRunner(per_pull_request=per_pull_request, status=status)
+
+    def _call(
+        *,
+        repo: Path,
+        item: WorkItem,
+        outcome: DispatchOutcome,
+        raw_labels: Sequence[str] = (),
+        journal_path: Path | None = None,
+    ) -> AcceptancePassResult:
+        return run_acceptance_pass(
+            repo=repo,
+            item=item,
+            outcome=outcome,
+            runner=runner,
+            raw_labels=raw_labels,
+            journal_path=journal_path,
+        )
+
+    monkeypatch.setattr(_dispatcher_completion, "run_acceptance_pass", _call)
+    return dispatcher_main(
+        argv=[
+            "dispatch",
+            "--repo",
+            str(repo),
+            "--item",
+            _ITEM_ID,
+            "--workflow",
+            str(workflow),
+            "--invoker",
+            _INVOKER,
+            "--json",
+        ]
+    )
+
+
 def _dispatch_merged_item(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, item: WorkItem
 ) -> tuple[int, Path]:
@@ -352,23 +482,49 @@ def _patch_accept_valve_forge(*, monkeypatch: pytest.MonkeyPatch, comments: str)
     )
 
 
-def _host_record_body(*, verdict: str, identity: str, reproduced: str) -> str:
+def _host_record_body(
+    *,
+    verdict: str,
+    identity: str,
+    reproduced: str | None = None,
+    release_tag: str | None = None,
+) -> str:
     """One host-leg record, in the header shape the record clause fixes for it.
 
     The third header field is `session <identity>`, not `run <id>`: a host record
     is published by an agent SESSION on an operator host and no Fabro run exists
     for it.
+
+    `release_tag` renders the BUILD IDENTITY in the bullet form the posting primitive
+    publishes and the acceptance pass parses. `None` keeps the prose form the accept
+    valve's cases were written against — that valve grades on the reproduction line and
+    never on the build, so the two forms exercise different graders deliberately rather
+    than by oversight.
+
+    `reproduced` is optional because a `host_recorded` capture claims no reproduction
+    verdict: it is the first leg, with nothing yet to have reproduced.
     """
+    build = (
+        "Build identity: release v0.165.0, installed build d709f27ac3c1\n"
+        if release_tag is None
+        else (
+            "## Build identity\n"
+            "\n"
+            f"- Release tag: {release_tag}\n"
+            f"- Installed build: livespec-orchestrator-beads-fabro {release_tag}\n"
+        )
+    )
+    verdict_line = "" if reproduced is None else f"Reproduced: {reproduced}\n"
     return (
         f"Proof of Done — {verdict} — session {identity} — 2026-10-04T12:00:00Z\n"
+        "\n"
+        f"{build}"
         "\n"
         f"## Assertion 1 — {_HOST_ASSERTION}\n"
         "\n"
         "Proof mode: `host_captured`\n"
         "\n"
-        "Build identity: release v0.165.0, installed build d709f27ac3c1\n"
-        "\n"
-        f"Reproduced: {reproduced}\n"
+        f"{verdict_line}"
     )
 
 
@@ -790,3 +946,190 @@ def test_a_factory_only_parked_item_yields_no_pending_host_leg_fact(
     # CLOSED would yield no fact for a reason that has nothing to do with the mode.
     assert _status_of(item_id=_ITEM_ID) == "acceptance"
     assert [one for one in facts if str(one["id"]).startswith("hygiene:pending-host-leg")] == []
+
+
+def _description_of(*, item_id: str) -> str:
+    return materialize_work_items(records=read_work_items(path=_config()))[item_id].description
+
+
+def test_an_independent_host_verified_record_closes_the_item_and_writes_its_pointer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Scenario 136's closing sub-scenario, end to end through the real dispatch CLI.
+
+    One pull request carrying the merging run's `verified` record, a `host_recorded`
+    capture, and a `host_verified` replay from a DIFFERENT session naming a release that
+    contains the merge. The clause's consequence is the whole of what is asserted: the
+    host-captured assertion is judged passing, the item closes to `done` under `ai-only`,
+    and its pointer carries the host record's comment link.
+
+    The CLOSE is the assertion that could not have passed before this slice. The close
+    gate used to read the item's DECLARED pending legs, which are a property of its
+    Definition of Done and never retire — so a host-captured item rested in `acceptance`
+    for ever, on a verdict of PASS, with a verified host record sitting on its pull
+    request. Nothing about that state announced itself as a defect.
+    """
+    exit_code = _dispatch_with_host_records(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        per_pull_request={_PR_NUMBER: _replayed_comments()},
+    )
+
+    assert exit_code == 0
+    result = _emitted(capsys=capsys)
+    assert result["stage"] == "done"
+    assert result["verdict"] == "PASS"
+    assert _status_of(item_id=_ITEM_ID) == "done"
+    description = _description_of(item_id=_ITEM_ID)
+    assert "## Proof of Done" in description
+    assert f"- Host-verified record: {_RECORD_URL}" in description
+
+
+def test_a_self_replayed_host_verified_record_leaves_the_item_resting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The AFTER-THE-FACT arm of the independence rule, which the PASS enforces.
+
+    The posting primitive refuses a self-replay, and its own tests bind that. This binds
+    the other half of the clause — "however it was posted" — because a record reaches a
+    pull request by routes the primitive does not own: a hand-written comment, an older
+    build, a human with `gh`. If only the primitive checked, publishing by hand would be
+    the whole bypass.
+    """
+    exit_code = _dispatch_with_host_records(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        per_pull_request={
+            _PR_NUMBER: _replayed_comments(replaying=_CAPTURING_SESSION),
+        },
+    )
+
+    assert exit_code == 0
+    result = _emitted(capsys=capsys)
+    assert result["stage"] == "acceptance"
+    assert result["verdict"] == "PASS"
+    assert _status_of(item_id=_ITEM_ID) == "acceptance"
+    parking = [body for body in _comment_bodies(item_id=_ITEM_ID) if _PARKING_TITLE in body]
+    assert len(parking) == 1
+    assert "published by the identity that recorded the capture" in parking[0]
+    # The pointer must NOT cite a record the pass refused.
+    assert "Host-verified record" not in _description_of(item_id=_ITEM_ID)
+
+
+def test_a_host_record_naming_a_build_without_the_merge_is_reported_as_not_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The containment check the clause requires the pass to verify ITSELF.
+
+    `behind` is the forge's answer when the named release predates the merge — the real
+    shape of this failure, which is a replay taken against the release that was installed
+    before the change shipped. The assertion stays pending and the refusal is reported,
+    because an operator told only "pending" would re-run the replay against the same
+    build and get the same answer.
+    """
+    exit_code = _dispatch_with_host_records(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        per_pull_request={_PR_NUMBER: _replayed_comments()},
+        status="behind",
+    )
+
+    assert exit_code == 0
+    assert _emitted(capsys=capsys)["stage"] == "acceptance"
+    assert _status_of(item_id=_ITEM_ID) == "acceptance"
+    parking = [body for body in _comment_bodies(item_id=_ITEM_ID) if _PARKING_TITLE in body]
+    assert len(parking) == 1
+    assert "names a build that does not contain the merge" in parking[0]
+    assert _RELEASE_TAG in parking[0]
+
+
+def test_a_host_verified_record_on_an_earlier_pull_request_is_not_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The clause's third not-evidence arm, posed by putting the record elsewhere.
+
+    The replay is perfectly well formed, independent, and names a containing build — and
+    it sits on pull request 35 while the item's latest merged run is 36. The pass reads
+    the latest merged run's pull request and no other, so the record is absent from its
+    evidence rather than rejected within it; the item rests.
+
+    The pull-request-aware runner is what makes this case POSSIBLE to pose: with one
+    comment payload for every number, the record would be found wherever the pass looked
+    and the case would silently become the closing one.
+    """
+    exit_code = _dispatch_with_host_records(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        per_pull_request={
+            _PR_NUMBER - 1: _replayed_comments(),
+            _PR_NUMBER: _comments_payload(bodies=[_verified_record_body()]),
+        },
+    )
+
+    assert exit_code == 0
+    assert _emitted(capsys=capsys)["stage"] == "acceptance"
+    assert _status_of(item_id=_ITEM_ID) == "acceptance"
+    assert "Host-verified record" not in _description_of(item_id=_ITEM_ID)
+
+
+def test_an_independent_host_not_reproduced_record_routes_the_item_to_rework(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A replay that did not reproduce is OBSERVED failing evidence, so it is rework input.
+
+    The discriminator against every pending case above is the item's STATUS: a pending
+    host leg rests the item in `acceptance`, while a `host_not_reproduced` record that is
+    evidence sends it back to `active` by the ordinary FAIL route. Reporting both as
+    "pending" would leave a refuted proof looking like an un-run one.
+    """
+    exit_code = _dispatch_with_host_records(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        per_pull_request={
+            _PR_NUMBER: _replayed_comments(replay_verdict="host_not_reproduced", reproduced="no")
+        },
+    )
+
+    assert exit_code == 0
+    result = _emitted(capsys=capsys)
+    assert result["verdict"] == "FAIL"
+    assert _status_of(item_id=_ITEM_ID) == "active"
+
+
+def test_a_later_host_record_does_not_make_the_verified_pointer_stale(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A record of ANOTHER kind never makes the pointer stale, which the clause states.
+
+    The staleness fact compares the pointer against the latest record OF THE SAME KIND,
+    so a `host_recorded` capture landing after the pointer was written must not raise one.
+    Without that scoping every host-captured item would acquire a stale-pointer fact the
+    moment its capture was published — a hygiene row for a pointer that is exactly right.
+    """
+    _exit_code, repo = _dispatch_merged_item(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, item=_item()
+    )
+    _ = capsys.readouterr()
+    runner = _HostForgeRunner(
+        per_pull_request={
+            _PR_NUMBER: _comments_payload(
+                bodies=[
+                    _verified_record_body(),
+                    _host_record_body(
+                        verdict="host_recorded",
+                        identity=_CAPTURING_SESSION,
+                        release_tag=_RELEASE_TAG,
+                    ),
+                ]
+            )
+        }
+    )
+
+    facts = stale_proof_pointer_items(
+        project_root=repo,
+        repo="repo",
+        items=list(materialize_work_items(records=read_work_items(path=_config())).values()),
+        runner=runner,
+    )
+
+    assert facts == []

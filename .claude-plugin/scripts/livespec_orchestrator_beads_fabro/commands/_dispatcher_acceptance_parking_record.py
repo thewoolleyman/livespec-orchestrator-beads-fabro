@@ -228,7 +228,11 @@ def _pending_legs(
         legs.extend(
             PendingLeg(
                 name=f"{HOST_CAPTURED_EVIDENCE_LEG} for {text!r}",
-                action=_host_captured_action(item_id=item_id, pull_request=pull_request),
+                action=_host_captured_action(
+                    item_id=item_id,
+                    pull_request=pull_request,
+                    refused=result.proof.host.refused,
+                ),
             )
             for text in result.proof.pending_host_captured
         )
@@ -279,7 +283,9 @@ def _action(*, leg: str, item_id: str, pull_request: int | None) -> str:
     )
 
 
-def _host_captured_action(*, item_id: str, pull_request: int | None) -> str:
+def _host_captured_action(
+    *, item_id: str, pull_request: int | None, refused: tuple[str, ...] = ()
+) -> str:
     """What moves a host-captured assertion: two records from two identities.
 
     BOTH halves are named because either alone leaves the item exactly where it is.
@@ -287,8 +293,15 @@ def _host_captured_action(*, item_id: str, pull_request: int | None) -> str:
     by the recording session is refused for its identity — so an action naming only
     the capture would read as sufficient and send an operator to do half the work
     twice.
+
+    `refused` LEADS the action whenever the pass actually rejected a published record,
+    which the host-captured leg requires of it: "the pass MUST report why". Without it a
+    record refused for its build or its identity is reported identically to one nobody
+    has published — and those need opposite remedies. The operator in the first case has
+    already done the work and must republish; the one in the second has not started.
     """
-    return (
+    reported = "" if not refused else " ".join(refused) + " "
+    return reported + (
         f"Capture the proof on an operator host against the RELEASED build and publish a"
         f" `{PROOF_RECORD_TITLE} — {VERDICT_HOST_RECORDED} — session <session identity> —"
         f" <UTC timestamp>` record on {_pull_request_phrase(pull_request=pull_request)} naming"

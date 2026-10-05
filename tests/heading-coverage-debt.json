@@ -297,7 +297,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 136 — A host-captured assertion holds the item in acceptance until an independent host replay verifies it against the released build",
-    "work_item": "bd-ib-jxfg7c",
+    "work_item": "bd-ib-fkrrgp",
     "first_seen": "2026-10-04"
   },
   {

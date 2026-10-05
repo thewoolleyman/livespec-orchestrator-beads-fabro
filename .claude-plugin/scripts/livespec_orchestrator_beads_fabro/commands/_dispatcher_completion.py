@@ -14,6 +14,7 @@ from returns.unsafe import unsafe_perform_io
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_ai import (
     NEEDS_ATTENTION_VERDICT,
     NO_CHANGE_NEEDED_VERDICT,
+    AcceptancePassResult,
     run_acceptance_pass,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_park import (
@@ -222,7 +223,7 @@ def complete_and_accept(
     if (
         decision.to_done
         and acceptance_pass.verdict == "PASS"
-        and not effective_criteria(item=item).pending_leg_assertions
+        and not _pending_legs(item=item, acceptance_pass=acceptance_pass)
     ):
         close_dispatch_item(
             repo=repo,
@@ -249,6 +250,29 @@ def complete_and_accept(
         journal=journal,
     )
     return AcceptanceDisposition(verdict=acceptance_pass.verdict, closed=False)
+
+
+def _pending_legs(*, item: WorkItem, acceptance_pass: AcceptancePassResult) -> tuple[str, ...]:
+    """The assertions whose pending leg still holds this item in `acceptance`.
+
+    Read off the PASS when it graded a proof leg, and off the item's declared criteria
+    only when it did not. That distinction is what makes a host-captured item closeable
+    at all: the declared set is a property of the Definition of Done and never retires, so
+    reading it would hold such an item in `acceptance` for ever — on a verdict of PASS,
+    with a verified host record sitting on its pull request, and with nothing in the
+    record saying why. The pass's own set narrows as each leg is discharged: the host leg
+    when an independent replay is judged evidence, and never the human leg, which the
+    `accept` valve owns.
+
+    The declared fallback is NOT dead: a legacy-source item declares no proof mode, so the
+    pass builds no proof leg for it, and its pending set is correctly empty either way.
+    Keeping the fallback means a future mode that the pass does not grade still parks.
+    """
+    if acceptance_pass.proof is None:
+        return effective_criteria(item=item).pending_leg_assertions
+    return (
+        acceptance_pass.proof.pending_host_captured + acceptance_pass.proof.pending_human_attested
+    )
 
 
 def bounce_non_convergence_to_backlog(
