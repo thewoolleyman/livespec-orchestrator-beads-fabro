@@ -53,6 +53,7 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "PROOF_POINTER_STAGE",
+    "host_verified_record_url",
     "human_attested_record_url",
     "write_proof_pointer",
 ]
@@ -109,6 +110,11 @@ def write_proof_pointer(
             run_id=record.run_id,
             timestamp=record.timestamp,
             verdict=record.verdict,
+            # The host link comes off the leg's OWN verdict rather than from a scan
+            # of the records: the leg populates it only for a `host_verified` record
+            # that actually passed an assertion, so the pointer can never cite a
+            # record the pass refused for failing containment or independence.
+            host_verified_url=host_verified_record_url(proof=proof),
             human_attested_url=human_attested_record_url(proof=proof),
         ),
         journal=journal,
@@ -117,6 +123,19 @@ def write_proof_pointer(
 
 def _skip(*, journal: JournalFile, item: WorkItem, reason: str) -> None:
     journal.append(record={"stage": _SKIPPED_STAGE, "work_item_id": item.id, "reason": reason})
+
+
+def host_verified_record_url(*, proof: ProofLeg) -> str | None:
+    """The `host_verified` record's comment link, when the pass rested on one.
+
+    Taken from the host leg's own verdict rather than by scanning the records for the
+    newest `host_verified` comment, and the difference is load-bearing: the leg
+    populates that field only for a record that PASSED an assertion, having cleared
+    both the containment check and the identity-independence rule. A scan would cite
+    a record the same pass refused — advertising, in the item's own description, proof
+    the verdict explicitly declined to rest on.
+    """
+    return None if proof.host_verified_record is None else proof.host_verified_record.url
 
 
 def human_attested_record_url(*, proof: ProofLeg) -> str | None:

@@ -30,15 +30,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_pointer import
 
 _RECORD_URL = "https://example.test/owner/repo/pull/7#issuecomment-900"
 _HUMAN_URL = "https://example.test/owner/repo/pull/7#issuecomment-901"
+_HOST_URL = "https://example.test/owner/repo/pull/7#issuecomment-902"
 
 
-def _pointer(*, human: str | None = None) -> ProofPointer:
+def _pointer(*, human: str | None = None, host: str | None = None) -> ProofPointer:
     return ProofPointer(
         pull_request=7,
         record_url=_RECORD_URL,
         run_id="01M3RUN",
         timestamp="2026-10-01T09:00:00Z",
         verdict="verified",
+        host_verified_url=host,
         human_attested_url=human,
     )
 
@@ -81,6 +83,62 @@ def test_the_human_attested_link_rides_only_when_the_pointer_carries_one() -> No
 
     assert with_link is not None
     assert f"- Human-attested record: {_HUMAN_URL}" in with_link
+
+
+def test_the_host_verified_link_rides_only_when_the_pointer_carries_one() -> None:
+    """The v115 pointer clause adds a THIRD optional link, on the same terms.
+
+    The pointer clause requires "the comment link of the latest `host_verified`
+    record once it exists" for an item with `host_captured` assertions. It is
+    optional for exactly the reason the human link is: an item with no host leg owes
+    no such record, and rendering the bullet for one would advertise a leg nobody
+    owes.
+    """
+    without = description_with_pointer(description=_description(), pointer=_pointer())
+    with_link = description_with_pointer(
+        description=_description(), pointer=_pointer(host=_HOST_URL)
+    )
+
+    assert without is not None
+    assert with_link is not None
+    assert "Host-verified record" not in without
+    assert f"- Host-verified record: {_HOST_URL}" in with_link
+
+
+def test_all_three_links_coexist_in_the_order_the_clause_lists_them() -> None:
+    """A mixed item owes both opt-out records, and both ride beside the verified one.
+
+    Asserted as one exact bullet list rather than three substring checks, because
+    the failure this guards against is a render that drops one link while keeping
+    the other — which a per-link check cannot see.
+    """
+    spliced = description_with_pointer(
+        description=_description(), pointer=_pointer(host=_HOST_URL, human=_HUMAN_URL)
+    )
+
+    assert spliced is not None
+    _, _, pointer = spliced.partition("## Proof of Done")
+    assert pointer.splitlines()[1:] == [
+        "",
+        "- Pull request: #7",
+        f"- Verified record: {_RECORD_URL}",
+        "- Run: 01M3RUN",
+        "- Timestamp: 2026-10-01T09:00:00Z",
+        "- Verdict: verified",
+        f"- Host-verified record: {_HOST_URL}",
+        f"- Human-attested record: {_HUMAN_URL}",
+    ]
+
+
+def test_the_host_verified_link_reads_back_off_the_written_description() -> None:
+    """The read-back recovers it, which is what the staleness and valve reads need."""
+    spliced = description_with_pointer(description=_description(), pointer=_pointer(host=_HOST_URL))
+
+    assert spliced is not None
+    read = pointer_in(description=spliced)
+    assert read is not None
+    assert read.host_verified_url == _HOST_URL
+    assert read.human_attested_url is None
 
 
 def test_the_pointer_bullets_never_become_definition_of_done_assertions() -> None:
