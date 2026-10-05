@@ -52,6 +52,14 @@ from pathlib import Path
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop
+
+# The wall's dedicated exit code, taken from the PRODUCTION constant rather than
+# restated as a local literal: a copy would keep passing against the value it was
+# written beside if the product ever moved the code, which is the one thing this
+# expectation exists to track.
+from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
+    EXIT_UNGRADEABLE_CRITERIA,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
@@ -59,7 +67,6 @@ from livespec_orchestrator_beads_fabro.store import append_work_item, read_work_
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 _ITEM_ID = "bd-ib-mixed133"
-_EXIT_UNGRADEABLE_CRITERIA = 5
 
 # The heading the item's reference line names, carried by the fixture's own spec
 # tree so the reference RESOLVES and the mechanical findings arm stays quiet.
@@ -293,8 +300,8 @@ def test_both_dispatch_entry_paths_refuse_the_mixed_ai_only_item_identically(
     drain_refusal = _refusal_block(stderr=capsys.readouterr().err)
 
     # The verdict, the launch seam and the ledger row, for each entry path.
-    assert (hand_picked_code, hand_picked_calls) == (_EXIT_UNGRADEABLE_CRITERIA, [])
-    assert (drain_code, drain_calls) == (_EXIT_UNGRADEABLE_CRITERIA, [])
+    assert (hand_picked_code, hand_picked_calls) == (EXIT_UNGRADEABLE_CRITERIA, [])
+    assert (drain_code, drain_calls) == (EXIT_UNGRADEABLE_CRITERIA, [])
     # The SAME refusal, byte for byte, rather than two messages that each happen to
     # mention the assertion.
     assert drain_refusal == hand_picked_refusal
