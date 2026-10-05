@@ -534,3 +534,75 @@ def test_an_assertion_section_at_any_supported_heading_level_keeps_its_own_verdi
     assert deeper.reproduced(assertion="The deeper sibling keeps its own refusal.") is False
     assert shallower.reproduced(assertion="The top-level section carries its own verdict.") is True
     assert shallower.reproduced(assertion="The top-level sibling keeps its own refusal.") is False
+
+
+def test_an_unverdicted_assertion_borrows_from_neither_a_sibling_nor_a_summary() -> None:
+    """The fail-OPEN direction of nesting, which is what the recovery has to not buy.
+
+    Reading a nested heading as prose inside the current section is correct going
+    DOWN and catastrophic going UP: a record wrapped in one `#` heading has every
+    `##` assertion nested below it, so a rule that merely carried the current depth
+    forward would collapse the whole body into one section. The first assertion
+    then reports whatever the first `Reproduced:` line in the body says, which on a
+    record whose assertions disagree is evidence nobody published for the assertion
+    it is attached to — strictly worse than the unevidenced answer it replaces.
+
+    The sibling summary is the second way in, and it is the one a record format
+    invites: a trailing `## Summary` that states the run reproduced everything is
+    not a per-assertion verdict, and the clause on unevidenceable assertions makes
+    an assertion with no verdict of its own unevidenced rather than passed.
+
+    Both arms carry a control, because a reader that had stopped reading the
+    `Reproduced:` line at all would answer `None` here for the wrong reason: the
+    sibling that DOES publish a verdict must still read `True` off its own section.
+    """
+    wrapped = _fenced_record(
+        body="""\
+        # Proof of Done record
+
+        ## Assertion 1 — The wrapped assertion publishes no verdict of its own.
+
+        ### Replay proof
+
+        ```text
+        $ ./check.sh
+        # this subsection publishes nothing
+        ```
+
+        ## Assertion 2 — The wrapped sibling carries the only assertion verdict.
+
+        ### Replay proof
+
+        Reproduced: yes.
+
+        ## Summary
+
+        Reproduced: yes. Every assertion replayed.
+        """
+    )
+    summarized = _fenced_record(
+        body="""\
+        ## Assertion 1 — The flat assertion publishes no verdict of its own.
+
+        ### Replay proof
+
+        ```text
+        $ ./check.sh
+        # this subsection publishes nothing
+        ```
+
+        ## Summary
+
+        Reproduced: yes. Every assertion replayed.
+        """
+    )
+
+    assert (
+        wrapped.reproduced(assertion="The wrapped assertion publishes no verdict of its own.")
+        is None
+    )
+    assert wrapped.reproduced(assertion="The wrapped sibling carries the only assertion verdict.")
+    assert (
+        summarized.reproduced(assertion="The flat assertion publishes no verdict of its own.")
+        is None
+    )
