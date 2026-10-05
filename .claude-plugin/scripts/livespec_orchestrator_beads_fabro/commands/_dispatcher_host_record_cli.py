@@ -58,6 +58,13 @@ __all__: list[str] = [
 # record here read `_dispatcher_host_record_payload` to learn them. A reader asking a
 # command what to feed it should not have to open the parser that feeds it.
 #
+# The two fields that are not read the way they look carry a sentence each. `text` is a
+# LOOKUP KEY into the item's Definition of Done — `read_evidence` takes the proof mode
+# from the item and refuses an assertion the item does not declare — and `reproduced` is
+# read only for a replay, because a capture is the first leg and has nothing yet to have
+# reproduced. A publisher knowing only the key names writes both in good faith and is
+# refused by the first, silently ignored by the second.
+#
 # It is an EPILOG because argparse re-wraps a `help` string to the terminal width, which
 # would reflow the object literal into prose and destroy the one thing it is here to show.
 # `RawDescriptionHelpFormatter` is set alongside it for that reason.
@@ -79,6 +86,14 @@ _RECORD_FILE_SHAPE = """the --record file is a JSON object of this shape:
       }
     ]
   }
+
+An assertion's "text" has to match one the item's Definition of Done declares, and
+is a LOOKUP KEY rather than free prose: the proof mode is read from the item, never
+from this file, so an assertion the item does not declare is refused rather than
+published under a guessed mode. "reproduced" is read only for a replay verdict
+(host_verified or host_not_reproduced) — a host_recorded capture is the first leg,
+with nothing yet to have reproduced, so a reproduction verdict in a capture's
+payload is dropped instead of published.
 """
 
 

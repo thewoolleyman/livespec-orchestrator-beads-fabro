@@ -869,6 +869,29 @@ def test_the_help_prints_the_record_files_json_shape(
         assert f'"{key}"' in help_text
 
 
+def test_the_help_states_the_two_rules_the_record_file_is_read_under(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The shape alone is not enough: two of its fields are not read the way they look.
+
+    `"text"` looks like free prose and is in fact a LOOKUP KEY — the proof mode comes
+    from the item's own Definition of Done, so an assertion the item does not declare is
+    refused rather than published under a guessed mode. And `"reproduced"` looks like a
+    field every record carries, while `read_evidence` drops it for a capture: a
+    `host_recorded` record is the first leg, with nothing yet to have reproduced.
+
+    A publisher who knew only the key names would write both fields in good faith and be
+    refused by the first and silently ignored by the second, which is why the help has to
+    say what they MEAN and not only that they exist.
+    """
+    with pytest.raises(SystemExit):
+        _ = dispatcher_main(argv=["post-host-record", "--help"])
+
+    help_text = capsys.readouterr().out
+    assert "has to match one the item's Definition of Done declares" in help_text
+    assert "read only for a replay verdict" in help_text
+
+
 def test_the_reconcile_wiring_reaches_the_ordinary_reconcile_merged_valve(
     tmp_path: Path,
 ) -> None:
