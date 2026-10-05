@@ -454,6 +454,64 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   is deliberately not the bare failed-outcome shape, which the generic
   needs-human protocol already carries.
 
+- `test_proof_chain_end_to_end_scenario132.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 132 — A factory-captured proof is
+  captured on a draft pull request, reviewed, replayed and published" as ONE
+  journey, and carries the heading's registry row. The COMMITTED graph is
+  DRIVEN rather than read: the drive takes the graph off the dispatch plan's own
+  materialized run config — the file this dispatch would have handed Fabro — and
+  follows that file's edges and edge CONDITIONS from `start` to its `Msquare`
+  terminal, so no node order is written down in the module. Every other layer is
+  production code over the real store/client seam: `dispatcher.main(argv=
+  ["dispatch", ...])`, the plan build, `run_acceptance_pass`, the proof-evidence
+  leg, the disposition, the pointer write and every ledger write. Two seams are
+  stood in — `run_dispatch`, replaced by the drive itself, and the acceptance
+  pass's `CommandRunner`, which IS the hermetic forge double, so the pull request
+  the driven nodes published onto is the pull request the pass reads. That single
+  seam is the whole point of the module: every host-side case before it fed the
+  pass a record the TEST wrote, so "the pass graded the record the run published"
+  was true by construction and could not have failed. Both record bodies are read
+  VERBATIM from `fixtures/proof_records/pull-request-2538-comments.json`, the
+  committed payload of the first `factory_captured` dispatch that ever ran this
+  chain live, and the item's Definition of Done is BUILT from that record's own
+  assertion headings with the run id read off its own header — nothing is
+  transcribed, because a synthetic record stamped with whatever identifier the
+  test also fed the pass is exactly how a reader that could never match a real
+  record looked correct for weeks. The journey walks ONE reviewer-requested fix
+  round, which is not decoration: `publish_draft`'s idempotence and the
+  append-only rule are both claims about a SECOND entry, and the round drives the
+  reviewer's own disposition loop out of the committed graph rather than around
+  it. The pointer reaches the captured record through the pull request and run it
+  NAMES rather than by a second link, because the pointer clause fixes the
+  section's contents as a closed set and forbids copying proof content; the reach
+  is asserted by resolving that pair against the forge, with a pull request the
+  forge does not hold as the control that the resolution can return the other
+  answer. The merged diff's vocabulary overlap with every assertion is COMPUTED
+  and asserted empty over a deliberate SUPERSET of the production matcher's terms
+  (no stop-word subtraction), since a superset finding nothing is the
+  conservative direction and a diff carrying an assertion's words would make a
+  PASS ambiguous about which evidence leg produced it. Four siblings carry what
+  one journey cannot. Every condition the committed graph declares is driven
+  through the evaluator under every state the workflow's nodes can report, with
+  the condition set cross-checked against an independent scan of the committed
+  text, because the journey short-circuits past most of those clauses and both
+  answers must occur. The append-only instrument is shown to REPORT a rewritten
+  record through the forge's one forbidden verb, because an instrument that has
+  never failed is not known to be able to. One extra assertion the records never
+  name must stay unevidenced and park while the four real ones still grade off
+  the verified record, which is the control against a proof leg that answers
+  `True` for everything. And the drive is asserted to REFUSE a context term
+  outside its closed vocabulary, an unresolved workflow input, an operator it
+  does not evaluate, an all-conditional node with nothing matching (the
+  `all_conditional_edges` shape the pinned engine rejects outright) and a graph
+  with no terminal — a walker that guessed would report a green journey through a
+  route the graph does not describe. The heading's other gherkin scenarios stay
+  bound in the four modules this journey composes rather than replaces:
+  `test_workflow_proof_capture_scenario132`,
+  `test_workflow_proof_verify_scenario132`,
+  `test_proof_of_done_acceptance_scenarios132_133` and
+  `test_needs_attention_proof_facts`.
+
 - `test_proof_credential_projection_scenario134.py` — binds
   `SPECIFICATION/scenarios.md` "Scenario 134 — A declared proof credential is
   projected by name and a withheld, absent, credential-shaped or over-scoped
