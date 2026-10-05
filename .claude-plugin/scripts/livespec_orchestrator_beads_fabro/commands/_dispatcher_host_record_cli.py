@@ -88,10 +88,28 @@ RECORD_FILE_SHAPE = """\
   ]
 }"""
 
+# The two rules the skeleton cannot carry, stated beside it. Each is a rule a publisher
+# can only break SILENTLY: a `text` the item does not declare earns a refusal that reads
+# like a defect in this command, and a `reproduced` claim on a capture is dropped with no
+# diagnostic at all.
+_RECORD_FILE_RULES = """\
+Every assertion's "text" MUST match, verbatim, an assertion the item's own
+Definition of Done declares. The proof mode is looked up from the item rather
+than read from this file, so an assertion the item does not declare is refused
+rather than published under a guess.
+
+"reproduced" is read ONLY for a replay verdict -- host_verified or
+host_not_reproduced. A host_recorded capture is the first leg and has nothing
+yet to have reproduced, so its reproduction verdict is dropped whatever this
+file claims.\
+"""
+
 _RECORD_FILE_EPILOG = f"""\
 The --record file is a JSON object of this shape:
 
 {RECORD_FILE_SHAPE}
+
+{_RECORD_FILE_RULES}
 """
 
 

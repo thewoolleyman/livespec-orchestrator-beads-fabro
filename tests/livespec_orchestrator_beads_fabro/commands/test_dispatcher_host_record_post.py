@@ -952,3 +952,23 @@ def test_the_help_prints_the_record_files_json_shape() -> None:
         "proof",
         "reproduced",
     }
+
+
+def test_the_help_states_the_two_rules_the_skeleton_alone_cannot_carry() -> None:
+    """`--help` states which `text` is admissible, and when `reproduced` is read at all.
+
+    Both rules are invisible in a skeleton, and both fail SILENTLY when broken. An
+    assertion whose `text` is not one the item declares has no computable proof mode, so
+    it is refused rather than published under a guess — and the refusal names a payload
+    the publisher believed was right. A `reproduced` claim on a `host_recorded` capture
+    is DROPPED, whatever the file says, because a first leg has nothing yet to have
+    reproduced; a publisher who copied a replay payload would never see that it went.
+
+    Whitespace is normalized because the epilog reaches the page raw, so the authored
+    line breaks survive and any phrase worth asserting straddles one.
+    """
+    normalized = " ".join(_help_text().split())
+
+    assert '"text" MUST match, verbatim, an assertion' in normalized
+    assert "the item's own Definition of Done declares" in normalized
+    assert '"reproduced" is read ONLY for a replay verdict' in normalized
