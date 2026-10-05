@@ -345,7 +345,9 @@ def test_run_codex_cred_status_json_payload(
     )
     monkeypatch.setattr(codex_auth.time, "time", lambda: float(_NOW))
 
-    exit_code = codex_auth.run_codex_cred_status(args=argparse.Namespace(as_json=True))
+    exit_code = codex_auth.run_codex_cred_status(
+        args=argparse.Namespace(as_json=True, observe_identity_state=None)
+    )
 
     payload = json.loads(capsys.readouterr().out)
     assert exit_code == 1
@@ -404,7 +406,9 @@ def test_run_codex_cred_status_human_output(
     )
     monkeypatch.setattr(codex_auth.time, "time", lambda: float(_NOW))
 
-    exit_code = codex_auth.run_codex_cred_status(args=argparse.Namespace(as_json=False))
+    exit_code = codex_auth.run_codex_cred_status(
+        args=argparse.Namespace(as_json=False, observe_identity_state=None)
+    )
 
     assert exit_code == 0
     out = capsys.readouterr().out
