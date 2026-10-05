@@ -18,9 +18,22 @@ reported every assertion unevidenced.
 
 BOTH DIRECTIONS ARE ASSERTED AND NEITHER MEANS ANYTHING ALONE. A widening that
 accepted whatever verified record was newest would satisfy the dispatch-id case
-just as well, so the refusal of an EARLIER dispatch's record for the SAME item is
-its control; and a reader that attributed nothing would satisfy that refusal just
-as well, so the two accepted identifiers are the refusal's control.
+just as well, so the refusal of a record belonging to NO dispatch this item ever
+had is its control; and a reader that attributed nothing would satisfy that
+refusal just as well, so the accepted identifiers are the refusal's control.
+
+THE ACCEPTED SET IS EVERY JOURNALED DISPATCH OF THE ITEM, NOT THE NEWEST ONE.
+This file asserted the opposite until 2026-10-05, and the correction is the point:
+"the dispatch that merged" is the dispatch that PUBLISHED THE MERGED HEAD, and a
+run that dies after publishing is recovered by a LATER dispatch, which the journal
+then records after it. Measured 2026-10-05 on `bd-ib-qm4luz`: run
+01M44F9E56XCEWZNMVJX4M14Z6 published pull request 2581 and captured and verified
+its Proof of Done there; `reconcile-merged` then parked the item NEEDS_ATTENTION
+reporting "records read for run e6a5f80fef944709a8b8062c7660c67f or
+1b09f96002d24d25ab372219cb9751ae" — the identifiers of the LATEST journaled
+dispatch, neither of which the merged head's record carries. Choosing the most
+recent journal row is therefore the nonconformance, and the fail-closed boundary
+moves from "the newest dispatch" to "any dispatch this item was journaled under".
 
 THE IDENTIFIERS ARE RESOLVED FROM A REAL ON-DISK JOURNAL, not handed in.
 `reconcile-merged` re-runs the pass from another process against an outcome it
@@ -41,6 +54,9 @@ from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_ai import (
     run_acceptance_pass,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_parking_record import (
+    parking_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
     effective_criteria,
@@ -75,6 +91,10 @@ _FABRO_RUN_ID = "01M3WH8Z10278S5V4SV9WRYW20"
 _DISPATCH_ID = "f195238b76b942698485a780611fe1ef"
 _EARLIER_FABRO_RUN_ID = "01M2EARLIERRUNIDAAAAAAAAAA"
 _EARLIER_DISPATCH_ID = "aaaa1111bbbb2222cccc3333dddd4444"
+# An identifier belonging to NO dispatch of this item: the fail-closed boundary of
+# the widening, and the only shape a record on this pull request can take that the
+# pass must still refuse.
+_UNJOURNALED_RUN_ID = "01M9STRANGERRUNIDZZZZZZZZZ"
 
 _ASSERTION = "The projection carries the parent field."
 _RECORD_URL = "https://example.test/owner/repo/pull/7#issuecomment-900"
@@ -204,12 +224,16 @@ def _journal(*, tmp_path: Path, dispatches: tuple[tuple[str, str], ...]) -> Path
     return path
 
 
-def test_the_merging_dispatch_resolves_both_identifiers_newest_first(tmp_path: Path) -> None:
-    """Both identifiers come off the journal, and the NEWEST dispatch supplies them.
+def test_the_merging_dispatch_accepts_every_journaled_dispatch_of_the_item(
+    tmp_path: Path,
+) -> None:
+    """Both identifiers of EVERY journaled dispatch are accepted, newest first.
 
-    The two-dispatch fixture is what makes the newest-wins claim observable: a
-    reader that unioned every dispatch the item ever had would return four ids
-    here and would still satisfy a single-dispatch fixture.
+    The two-dispatch fixture is what makes the claim observable: a reader that
+    took only the newest dispatch would return two ids here and would still
+    satisfy a single-dispatch fixture. The newest dispatch's own identifiers stay
+    first and stay separately readable, because the pointer and the journal record
+    name the dispatch now terminating.
     """
     attribution = _attribution()
     journal_path = _journal(
@@ -226,13 +250,25 @@ def test_the_merging_dispatch_resolves_both_identifiers_newest_first(tmp_path: P
 
     assert resolved.dispatch_id == _DISPATCH_ID
     assert resolved.fabro_run_id == _FABRO_RUN_ID
-    assert resolved.run_ids == (_FABRO_RUN_ID, _DISPATCH_ID)
-    # The outcome's OWN Fabro run id outranks the journal's when it carries one —
-    # that is the dispatch path, where the run the outcome describes is the run
-    # that merged and the journal is only the fallback the reconcile path needs.
+    assert resolved.run_ids == (
+        _FABRO_RUN_ID,
+        _DISPATCH_ID,
+        _EARLIER_FABRO_RUN_ID,
+        _EARLIER_DISPATCH_ID,
+    )
+    # The outcome's OWN Fabro run id LEADS when the outcome carries one — that is
+    # the dispatch path, where the run the outcome describes is the run now
+    # terminating, and the journal's newest is only the reconcile path's fallback.
+    # It no longer NARROWS the set: an earlier dispatch of this item may still be
+    # the one that published the merged head.
     assert attribution.merging_dispatch(
         work_item_id=_ITEM_ID, fabro_run_id=_FABRO_RUN_ID, journal_path=journal_path
-    ).run_ids == (_FABRO_RUN_ID, _DISPATCH_ID)
+    ).run_ids == (
+        _FABRO_RUN_ID,
+        _DISPATCH_ID,
+        _EARLIER_FABRO_RUN_ID,
+        _EARLIER_DISPATCH_ID,
+    )
     # An unidentifiable dispatch accepts NO record rather than the newest one.
     assert attribution.MergingDispatch(fabro_run_id=None, dispatch_id=None).run_ids == ()
     # One dispatch whose two identifiers happen to coincide is one accepted id,
@@ -278,14 +314,16 @@ def test_a_record_stamped_with_either_identifier_grades_the_assertion(tmp_path: 
     )
 
 
-def test_a_record_from_an_earlier_dispatch_of_the_same_item_is_unobserved(
+def test_a_record_outside_the_accepted_identifier_set_is_unobserved(
     tmp_path: Path,
 ) -> None:
-    """The control for the widening: another dispatch's record is not this merge's.
+    """The control for the widening: a record outside the accepted set is refused.
 
-    Both identifiers of the EARLIER dispatch are tried, because a build that
-    narrowed on only one of them would report a refusal for the other and look
-    correct from one fixture.
+    The accepted set here is handed in rather than resolved, so what it excludes
+    is exactly what the test states — this is the record reader's own refusal, at
+    the one seam where the set is a given. Both identifier KINDS are tried,
+    because a build that narrowed on only one of them would report a refusal for
+    the other and look correct from one fixture.
     """
     attribution = _attribution()
     dispatch = attribution.MergingDispatch(fabro_run_id=_FABRO_RUN_ID, dispatch_id=_DISPATCH_ID)
@@ -339,6 +377,78 @@ def test_the_pass_resolves_the_merging_dispatch_from_the_journal_it_is_given(
     assert with_journal.absent_evidence == ()
     assert without_journal.verdict == "NEEDS_ATTENTION"
     assert without_journal.absent_evidence == (f"{PROOF_RECORD_EVIDENCE_LEG} for {_ASSERTION!r}",)
+
+
+def test_the_record_of_the_dispatch_that_published_the_merged_head_is_attributed(
+    tmp_path: Path,
+) -> None:
+    """A later dispatch of the same item does not unattribute the publishing one.
+
+    The incident shape end to end (`bd-ib-qm4luz`, 2026-10-05): the dispatch that
+    published the merged head captured and verified its record there and then
+    died, a LATER dispatch of the same item was journaled, and `reconcile-merged`
+    re-ran the pass from an outcome carrying no Fabro run id of its own. Both
+    identifier KINDS of the publishing dispatch are tried, because a build that
+    widened on only one would look correct from one fixture.
+    """
+    _ = _attribution()
+    journal_path = _journal(
+        tmp_path=tmp_path,
+        dispatches=(
+            (_EARLIER_DISPATCH_ID, _EARLIER_FABRO_RUN_ID),
+            (_DISPATCH_ID, _FABRO_RUN_ID),
+        ),
+    )
+
+    for stamped in (_EARLIER_DISPATCH_ID, _EARLIER_FABRO_RUN_ID):
+        result = run_acceptance_pass(
+            repo=tmp_path,
+            item=_item(),
+            outcome=_outcome(fabro_run_id=None),
+            runner=_ForgeRunner(comments=_comments_json(run_id=stamped)),
+            journal_path=journal_path,
+        )
+
+        assert result.verdict == "PASS"
+        assert result.absent_evidence == ()
+        assert result.proof is not None
+        assert result.proof.record is not None
+        assert result.proof.record.run_id == stamped
+        assert [check.passed for check in result.proof.checks] == [True]
+
+
+def test_a_record_from_no_journaled_dispatch_of_the_item_is_still_unobserved(
+    tmp_path: Path,
+) -> None:
+    """The widening's boundary is the journal, not "whatever verified record exists".
+
+    The control for the test above, and the one it needs: that record is verified,
+    is the only one on the pull request, and is therefore also the newest, so a
+    build that had widened to "any verified record" would attribute it and pass.
+    Its run identifier belongs to no dispatch this item was ever journaled under,
+    so the pass must leave the proof leg unobserved — and the parking record must
+    SAY so, since that rendered line is what an operator reads.
+    """
+    _ = _attribution()
+    journal_path = _journal(tmp_path=tmp_path, dispatches=((_DISPATCH_ID, _FABRO_RUN_ID),))
+
+    result = run_acceptance_pass(
+        repo=tmp_path,
+        item=_item(),
+        outcome=_outcome(fabro_run_id=None),
+        runner=_ForgeRunner(comments=_comments_json(run_id=_UNJOURNALED_RUN_ID)),
+        journal_path=journal_path,
+    )
+    record = parking_record(item_id=_ITEM_ID, policy="ai-only", result=result, pull_request=7)
+
+    assert result.verdict == "NEEDS_ATTENTION"
+    assert result.proof is not None
+    assert result.proof.records != ()
+    assert result.proof.record is None
+    assert result.absent_evidence == (f"{PROOF_RECORD_EVIDENCE_LEG} for {_ASSERTION!r}",)
+    assert [leg.render() for leg in record.legs if leg.name == PROOF_RECORD_EVIDENCE_LEG] == [
+        f"- {PROOF_RECORD_EVIDENCE_LEG}: NOT OBSERVED — {result.proof.reason}"
+    ]
 
 
 def test_the_pass_recovers_the_identifiers_when_the_outcome_carries_none(

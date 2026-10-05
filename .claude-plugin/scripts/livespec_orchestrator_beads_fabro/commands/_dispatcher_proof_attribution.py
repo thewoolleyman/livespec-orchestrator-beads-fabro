@@ -27,17 +27,36 @@ re-runs the pass later and from another process, against a `DispatchOutcome` it
 built itself out of a resolved merged pull request — so that outcome carries no
 Fabro run id at all, and no outcome has ever carried the dispatch id. The
 dispatch journal carries both: the `dispatch-id` stage record names the dispatch
-id before the run starts, and every run record names the Fabro run id. Both are
-read NEWEST-WINS for the item, which is what keeps the widening FAIL-CLOSED: a
-record from an EARLIER dispatch of the same item is still not this merge's
-evidence, because an earlier dispatch's identifiers are not in the accepted set.
+id before the run starts, and every run record names the Fabro run id.
 
-THE TWO READERS ARE REUSED, NOT RE-DERIVED. `dispatch_id_for` already resolves an
-item's dispatch id off these records for the TDD calibration span, and
-`newest_journaled_run_id` already resolves its newest Fabro run id for the run
-reconciler — each with the last-wins rule stated above. A third hand-rolled scan
-of the same file could only disagree with them, and the disagreement would be
-invisible because every reading would still be a plausible id.
+WHY EVERY JOURNALED DISPATCH IS ACCEPTED AND NOT ONLY THE NEWEST. This module
+read both identifiers NEWEST-WINS until 2026-10-05, in the belief that the newest
+journal row names the dispatch that merged. It does not. The dispatch that merged
+is the one that PUBLISHED THE MERGED HEAD, and a run that dies AFTER publishing is
+recovered by a LATER dispatch, which the journal then records after it — so the
+publishing dispatch's identifiers are the ones the newest-wins reading throws
+away. Measured 2026-10-05 on `bd-ib-qm4luz`: run 01M44F9E56XCEWZNMVJX4M14Z6
+published pull request 2581, captured and verified its Proof of Done there and was
+approved, then died at the `pr` stage; pull request 2581 merged with its required
+checks green, and `reconcile-merged` parked the item NEEDS_ATTENTION reporting
+"records read for run e6a5f80fef944709a8b8062c7660c67f or
+1b09f96002d24d25ab372219cb9751ae" — the identifiers of the LATEST journaled
+dispatch, neither of which the merged head's own verified record carries.
+
+THE WIDENING IS STILL FAIL-CLOSED, and the journal is where it closes. A record
+whose run identifier belongs to NO dispatch this item was journaled under is
+another item's record, or no dispatch's at all, and is not attributed; the
+accepted set is never "whatever verified record is newest on the pull request".
+Nothing weaker than the journal could draw that line, which is why the set is
+resolved from the file rather than from the record under judgment.
+
+THE READERS ARE REUSED, NOT RE-DERIVED. `dispatch_ids_for` and
+`journaled_run_ids` are the PLURAL readers owned by the two modules that already
+own these record shapes — the TDD calibration probe and the run reconciler — and
+each singular reader is derived from its own plural, so the newest identifier is
+always a member of the accepted set. A fourth hand-rolled scan of the same file
+could only disagree with them, and the disagreement would be invisible because
+every reading would still be a plausible id.
 """
 
 from __future__ import annotations
@@ -48,8 +67,8 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
     read_journal_records,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_probe import dispatch_id_for
-from livespec_orchestrator_beads_fabro.commands._run_attribution import newest_journaled_run_id
+from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_probe import dispatch_ids_for
+from livespec_orchestrator_beads_fabro.commands._run_attribution import journaled_run_ids
 
 __all__: list[str] = [
     "MergingDispatch",
@@ -63,38 +82,50 @@ class MergingDispatch:
 
     fabro_run_id: str | None
     dispatch_id: str | None
+    # Every OTHER identifier the journal names for this item: the earlier
+    # dispatches, any one of which may be the dispatch that published the merged
+    # head. Defaulted to empty so the two fields above remain the whole of a
+    # hand-built value, which is what every caller holding only an outcome
+    # constructs; an empty tuple reduces the accepted set to the newest dispatch,
+    # which is the pre-widening behaviour and still the right answer for an item
+    # dispatched once.
+    journaled_ids: tuple[str, ...] = ()
 
     @property
     def run_ids(self) -> tuple[str, ...]:
-        """Every accepted identifier, Fabro run id first, with duplicates dropped.
+        """Every accepted identifier, the newest dispatch first, duplicates dropped.
 
         An EMPTY tuple is the UNATTRIBUTABLE answer, and it is deliberately not
         the same as "accept any record": `latest_proof_record` matches nothing
         against an empty set, because a dispatch nobody can identify must not
         inherit whichever verified record happens to be newest.
+
+        The newest dispatch's own identifiers lead, because the reason line the
+        pass renders from this tuple is read most often on a refusal and the
+        dispatch now terminating is what an operator is looking for first.
         """
-        named = (self.fabro_run_id, self.dispatch_id)
+        named = (self.fabro_run_id, self.dispatch_id, *self.journaled_ids)
         return tuple(dict.fromkeys(one for one in named if one is not None))
 
 
 def merging_dispatch(
     *, work_item_id: str, fabro_run_id: str | None, journal_path: Path
 ) -> MergingDispatch:
-    """Resolve both identifiers of the dispatch whose pull request merged.
+    """Resolve every identifier a record may carry and still belong to this merge.
 
-    `fabro_run_id` is the outcome's own, and it WINS when the outcome carries one:
-    on the dispatch path the run the outcome describes IS the run that merged,
-    while the journal's newest is only what the reconcile path has to fall back
-    on. An absent journal reads as a journal naming nothing, so a caller holding a
-    path that was never written degrades to the outcome's own identifier rather
-    than raising.
+    `fabro_run_id` is the outcome's own, and it leads when the outcome carries
+    one: on the dispatch path the run the outcome describes IS the run now
+    terminating, while the journal's newest is only what the reconcile path has to
+    fall back on. It no longer NARROWS the accepted set, because the run that
+    published a merged head need not be the run now terminating. An absent journal
+    reads as a journal naming nothing, so a caller holding a path that was never
+    written degrades to the outcome's own identifier rather than raising.
     """
     records = read_journal_records(journal_path=journal_path)
+    runs = journaled_run_ids(records=records, work_item_id=work_item_id)
+    dispatches = dispatch_ids_for(records=records, work_item_id=work_item_id)
     return MergingDispatch(
-        fabro_run_id=(
-            fabro_run_id
-            if fabro_run_id is not None
-            else newest_journaled_run_id(records=records, work_item_id=work_item_id)
-        ),
-        dispatch_id=dispatch_id_for(records=records, work_item_id=work_item_id),
+        fabro_run_id=fabro_run_id if fabro_run_id is not None else (runs[-1] if runs else None),
+        dispatch_id=dispatches[-1] if dispatches else None,
+        journaled_ids=(*runs, *dispatches),
     )

@@ -62,6 +62,7 @@ __all__: list[str] = [
     "FACTORY_RUN_ID_TRAILER_KEY",
     "commit_signals_for_dispatch",
     "dispatch_id_for",
+    "dispatch_ids_for",
     "gather_tdd_signals",
 ]
 
@@ -109,22 +110,39 @@ def gather_tdd_signals(
     )
 
 
-def dispatch_id_for(*, records: tuple[dict[str, object], ...], work_item_id: str) -> str | None:
-    """This item's dispatch id from its `dispatch-id` journal record, or None.
+def dispatch_ids_for(
+    *, records: tuple[dict[str, object], ...], work_item_id: str
+) -> tuple[str, ...]:
+    """Every dispatch id this item's `dispatch-id` journal records name, in order.
 
-    The LAST matching record wins, mirroring how the adapter lookup resolves:
-    if a journal carries more than one, the most recent is the dispatch now
-    terminating. A non-string value reads as absent rather than being coerced,
-    since a coerced id would select a commit series belonging to nobody.
+    The plural of the reader below, and the shape the proof-attribution pass
+    needs: an item dispatched more than once has one id per dispatch, and the
+    dispatch that published a MERGED head may be any of them rather than the
+    newest. One entry per record, so the LAST element is the dispatch now
+    terminating. A non-string or empty value reads as absent rather than being
+    coerced, since a coerced id would select a commit series belonging to nobody.
     """
-    found: str | None = None
+    found: list[str] = []
     for record in records:
         if record.get("stage") != _DISPATCH_ID_STAGE or record.get("work_item_id") != work_item_id:
             continue
         candidate = record.get(_DISPATCH_ID_FIELD)
         if isinstance(candidate, str) and candidate != "":
-            found = candidate
-    return found
+            found.append(candidate)
+    return tuple(found)
+
+
+def dispatch_id_for(*, records: tuple[dict[str, object], ...], work_item_id: str) -> str | None:
+    """This item's dispatch id from its `dispatch-id` journal record, or None.
+
+    The LAST matching record wins, mirroring how the adapter lookup resolves:
+    if a journal carries more than one, the most recent is the dispatch now
+    terminating. Derived from the plural reader above rather than scanning the
+    records again, which makes the two mechanically incapable of disagreeing: the
+    singular is always a member of the plural.
+    """
+    found = dispatch_ids_for(records=records, work_item_id=work_item_id)
+    return found[-1] if found else None
 
 
 def commit_signals_for_dispatch(

@@ -47,6 +47,7 @@ __all__: list[str] = [
     "GOAL_TEXT_ONLY",
     "RunAttribution",
     "journal_run_ids",
+    "journaled_run_ids",
     "newest_journaled_run_id",
     "run_attribution",
 ]
@@ -111,6 +112,29 @@ def journal_run_ids(*, records: JournalRecords) -> dict[str, str]:
     return mapped
 
 
+def journaled_run_ids(*, records: JournalRecords, work_item_id: str) -> tuple[str, ...]:
+    """Every Fabro run id the dispatch journal names for one item, in journal order.
+
+    A DIFFERENT question from `newest_journaled_run_id` below, and the difference
+    matters where an item has been dispatched more than once: the newest run is
+    the one now terminating, while this is every run the item has ever had. The
+    proof-attribution pass needs the plural, because a run that dies after
+    publishing its branch is recovered by a LATER dispatch and the dispatch that
+    published the merged head is then no longer the newest row.
+
+    One entry per journaled record rather than a deduplicated set, so the LAST
+    element is the newest run exactly as the singular reader resolves it. A
+    repeated id is therefore possible and harmless: every consumer either takes
+    the last element or tests membership.
+    """
+    return tuple(
+        run_id
+        for record in records
+        if _text(value=record.get("work_item_id")) == work_item_id
+        and (run_id := _text(value=record.get("run_id"))) is not None
+    )
+
+
 def newest_journaled_run_id(*, records: JournalRecords, work_item_id: str) -> str | None:
     """Return the newest Fabro run id the dispatch journal names for one item.
 
@@ -119,15 +143,14 @@ def newest_journaled_run_id(*, records: JournalRecords, work_item_id: str) -> st
     earlier run. This is the seam the reconciler needs to call a run SUPERSEDED
     — an item whose newest journaled run is not the run under judgment has
     moved on, whatever that run's own status still claims.
+
+    Derived from the plural reader above rather than scanning again, which is what
+    makes the two mechanically incapable of disagreeing: the singular is always a
+    member of the plural, so a widening that accepts the plural set can never
+    exclude what the reconciler calls the newest run.
     """
-    newest: str | None = None
-    for record in records:
-        if _text(value=record.get("work_item_id")) != work_item_id:
-            continue
-        run_id = _text(value=record.get("run_id"))
-        if run_id is not None:
-            newest = run_id
-    return newest
+    found = journaled_run_ids(records=records, work_item_id=work_item_id)
+    return found[-1] if found else None
 
 
 def _text(*, value: object) -> str | None:
