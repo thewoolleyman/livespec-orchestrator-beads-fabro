@@ -23,6 +23,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_early_renewal 
     classify_renewal_result,
     request_early_codex_renewal,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_identity_command import (
+    IDENTITY_OBSERVATION_PAYLOAD_KEY,
+    identity_observation_for,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_identity_observation import (
+    identity_observation_human_lines,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_refresh import (
     CODEX_ALARM_THRESHOLD_SECONDS,
     CODEX_REFRESH_GUARD_SECONDS,
@@ -212,13 +219,30 @@ def _unadvanced_refusal(
 
 
 def run_codex_cred_status(*, args: argparse.Namespace) -> int:
-    """Emit host Codex credential lifetime status for operators."""
-    status = _assess_current_host_codex_credential()
+    """Emit host Codex credential lifetime status for operators.
+
+    The identity observation is an OPT-IN rider on this reading, and it never
+    touches the exit code: external monitoring is already wired to the alarm,
+    so letting an observation move that signal would change what a page means.
+    """
+    source_auth_json = read_host_codex_auth()
+    now_epoch = int(time.time())
+    status = _assess_host_codex_credential_now(
+        source_auth_json=source_auth_json,
+        now_epoch=now_epoch,
+    )
     payload = _codex_cred_status_payload(status=status)
+    observation = identity_observation_for(
+        source_auth_json=source_auth_json,
+        state_path_argument=args.observe_identity_state,
+        now_epoch=now_epoch,
+    )
+    if observation is not None:
+        payload[IDENTITY_OBSERVATION_PAYLOAD_KEY] = observation
     if args.as_json:
         _ = write_stdout(text=json.dumps(payload, indent=2, sort_keys=True) + "\n")
     else:
-        _ = write_stdout(text=_codex_cred_status_human(payload=payload))
+        _ = write_stdout(text=_codex_cred_status_human(payload=payload, observation=observation))
     return 1 if status.alarm else 0
 
 
@@ -232,10 +256,14 @@ def run_codex_cred_refresh(*, args: argparse.Namespace) -> int:
     )
 
 
-def _assess_current_host_codex_credential() -> HostCodexCredentialStatus:
+def _assess_host_codex_credential_now(
+    *,
+    source_auth_json: str | None,
+    now_epoch: int,
+) -> HostCodexCredentialStatus:
     return assess_host_codex_credential(
-        source_auth_json=read_host_codex_auth(),
-        now_epoch=int(time.time()),
+        source_auth_json=source_auth_json,
+        now_epoch=now_epoch,
         alarm_threshold_seconds=CODEX_ALARM_THRESHOLD_SECONDS,
         refresh_guard_seconds=CODEX_REFRESH_GUARD_SECONDS,
     )
@@ -261,7 +289,11 @@ def _codex_cred_status_payload(*, status: HostCodexCredentialStatus) -> dict[str
     }
 
 
-def _codex_cred_status_human(*, payload: dict[str, Any]) -> str:
+def _codex_cred_status_human(
+    *,
+    payload: dict[str, Any],
+    observation: dict[str, Any] | None,
+) -> str:
     return "\n".join(
         (
             f"present: {_human_bool(value=payload['present'])}",
@@ -273,6 +305,7 @@ def _codex_cred_status_human(*, payload: dict[str, Any]) -> str:
             f"alarm: {_human_bool(value=payload['alarm'])}",
             f"refresh_due: {_human_bool(value=payload['refresh_due'])}",
             f"message: {payload['message']}",
+            *identity_observation_human_lines(observation=observation),
             "",
         )
     )

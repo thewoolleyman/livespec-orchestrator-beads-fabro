@@ -17,6 +17,7 @@ __all__: list[str] = [
     "assess_codex_credential_freshness",
     "cc_otel_overlay_env",
     "codex_freshness_required_seconds",
+    "decode_codex_access_token_claims",
     "decode_codex_access_token_exp",
     "project_codex_auth_snapshot",
     "resolve_sandbox_otel_endpoint",
@@ -167,8 +168,16 @@ def assess_codex_credential_freshness(
     )
 
 
-def decode_codex_access_token_exp(*, source_auth_json: str) -> int:
-    """Decode the integer ``exp`` claim from a Codex auth.json access token."""
+def decode_codex_access_token_claims(*, source_auth_json: str) -> dict[str, Any]:
+    """Decode the claim set carried by a Codex auth.json access token.
+
+    The ONE place the access token's JWT payload is unpacked, so the expiry
+    gate and the identity observation cannot disagree about what a malformed
+    credential is. STRUCTURAL ONLY: the signature is never verified and no
+    claim value is returned to any caller that would persist or print it
+    verbatim — the token itself is a secret, and its claims identify a live
+    session.
+    """
     source: dict[str, Any] = json.loads(source_auth_json)
     raw_tokens = source.get("tokens")
     tokens: dict[str, Any] = (
@@ -181,7 +190,15 @@ def decode_codex_access_token_exp(*, source_auth_json: str) -> int:
     if len(segments) < 2:  # noqa: PLR2004
         raise ValueError("access token is not a JWT")  # noqa: TRY003
     padded = segments[1] + "=" * (-len(segments[1]) % 4)
-    claims: dict[str, Any] = json.loads(base64.urlsafe_b64decode(padded))
+    claims: object = json.loads(base64.urlsafe_b64decode(padded))
+    if not isinstance(claims, dict):
+        raise ValueError("access token payload is not a JSON object")  # noqa: TRY003, TRY004
+    return cast("dict[str, Any]", claims)
+
+
+def decode_codex_access_token_exp(*, source_auth_json: str) -> int:
+    """Decode the integer ``exp`` claim from a Codex auth.json access token."""
+    claims = decode_codex_access_token_claims(source_auth_json=source_auth_json)
     exp = claims.get("exp")
     if not isinstance(exp, int):
         raise ValueError("access token has no integer exp claim")  # noqa: TRY003, TRY004
