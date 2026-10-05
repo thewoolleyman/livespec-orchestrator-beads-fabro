@@ -155,7 +155,7 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `IDENTITY_CONTINUITY_LIMITATION` statement) →
   `_dispatcher_codex_identity_command` (the `codex-cred-status` argparse
   surface plus the leg that wires the three together).
-  Four properties an editor must not invert. NO raw claim value or token ever
+  Five properties an editor must not invert. NO raw claim value or token ever
   leaves the claims module or reaches the state file — the comparison only ever
   asks whether two readings are EQUAL, which a one-way digest answers exactly
   as well. `unknown` is a first-class verdict and never collapses into
@@ -166,7 +166,12 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   initiates a refresh, and never mutates `auth.json`; and it never moves the
   command's exit code, which still follows the lifetime alarm alone, because
   external monitoring is wired to that code and an observation moving it would
-  change what a page means.
+  change what a page means. And an UNREADABLE reading is WITHHELD rather than
+  written: recording it would overwrite the last comparable fingerprints, so one
+  momentarily unreadable credential would leave every later reading comparing
+  against the blip — which is why `state_write` names three outcomes
+  (`recorded` / `withheld` / `failed`) instead of carrying a boolean that cannot
+  tell a deliberate withholding from a broken state path.
 - The repository-declared proof credentials of
   `SPECIFICATION/contracts.md`'s proof-credential-projection clause live in
   FOUR cohesive modules, and the dependency direction reads bottom-up:

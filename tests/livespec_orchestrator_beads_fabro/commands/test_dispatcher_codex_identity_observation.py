@@ -103,7 +103,8 @@ def test_opt_in_observation_compares_a_changed_access_token_with_the_prior_one(
 
     assert first["prior_state"] == "absent"
     assert first["token_change"] == "first-observation"
-    assert first["state_written"] is True
+    assert "state_write" in first
+    assert first["state_write"] == "recorded"
     assert second["prior_state"] == "readable"
     assert second["token_change"] == "changed"
     assert second["token_fingerprint"] != first["token_fingerprint"]
@@ -244,15 +245,16 @@ def test_observation_of_an_absent_credential_reads_no_identifiers(
     state_path = tmp_path / "codex-identity.json"
 
     first = _observe(capsys=capsys, monkeypatch=monkeypatch, state_path=state_path, auth_json=None)
-    # The second reading proves the recorded absence reads back as an absent
-    # identifier rather than as a fingerprint of the empty string.
     second = _observe(capsys=capsys, monkeypatch=monkeypatch, state_path=state_path, auth_json=None)
 
     assert first["claims_readable"] is False
     assert first["token_fingerprint"] is None
     assert first["expires_at_epoch"] is None
-    assert second["prior_state"] == "readable"
-    assert second["token_fingerprint"] is None
+    # Nothing was recorded, so the second blind reading is STILL a first
+    # observation rather than a comparison against a fabricated empty record.
+    assert first["state_write"] == "withheld"
+    assert second["prior_state"] == "absent"
+    assert second["token_change"] == "first-observation"
 
 
 def test_observation_of_an_undecodable_credential_reads_no_identifiers(
@@ -315,15 +317,62 @@ def test_observation_of_a_token_carrying_no_integer_expiry_reports_no_expiry(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    state_path = tmp_path / "codex-identity.json"
+    auth_json = _jwt_auth_json(claims={"exp": "soon", "jti": "token-one"})
+
     observation = _observe(
-        capsys=capsys,
-        monkeypatch=monkeypatch,
-        state_path=tmp_path / "codex-identity.json",
-        auth_json=_jwt_auth_json(claims={"exp": "soon", "jti": "token-one"}),
+        capsys=capsys, monkeypatch=monkeypatch, state_path=state_path, auth_json=auth_json
+    )
+    # Read back, so an absent expiry survives the round trip as absent rather
+    # than as some stand-in instant.
+    reread = _observe(
+        capsys=capsys, monkeypatch=monkeypatch, state_path=state_path, auth_json=auth_json
     )
 
     assert observation["expires_at_epoch"] is None
     assert observation["token_fingerprint"] is not None
+    assert reread["prior_state"] == "readable"
+    assert reread["token_change"] == "unchanged"
+
+
+def test_an_unreadable_reading_is_withheld_so_the_preceding_one_survives(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_path = tmp_path / "codex-identity.json"
+
+    first = _observe(
+        capsys=capsys,
+        monkeypatch=monkeypatch,
+        state_path=state_path,
+        auth_json=_auth_json(jti="token-one"),
+    )
+    # A transient blind moment — codex mid-login, the file briefly gone. The
+    # reading itself is honestly unreadable, but RECORDING it would overwrite
+    # the last good fingerprints and leave every later reading comparing
+    # against nothing.
+    blind = _observe(capsys=capsys, monkeypatch=monkeypatch, state_path=state_path, auth_json=None)
+    recovered = _observe(
+        capsys=capsys,
+        monkeypatch=monkeypatch,
+        state_path=state_path,
+        auth_json=_auth_json(jti="token-two"),
+    )
+
+    assert "state_write" in blind
+    assert blind["state_write"] == "withheld"
+    assert "unreadable" in blind["state_write_detail"]
+    # The blind reading left the file alone, so this one still compares against
+    # the real preceding observation rather than against the blip.
+    assert recovered["token_change"] == "changed"
+    assert recovered["prior_state"] == "readable"
+    assert (
+        json.loads(state_path.read_text(encoding="utf-8"))["token_fingerprint"]
+        != (first["token_fingerprint"])
+    )
+    assert recovered["state_write"] == "recorded"
 
 
 def test_observation_reports_a_state_file_it_could_not_write(
@@ -342,8 +391,9 @@ def test_observation_reports_a_state_file_it_could_not_write(
         auth_json=_auth_json(jti="token-one"),
     )
 
-    assert observation["state_written"] is False
-    assert "not recorded" in observation["state_write_detail"]
+    assert "state_write" in observation
+    assert observation["state_write"] == "failed"
+    assert "could not be written" in observation["state_write_detail"]
 
 
 @pytest.mark.parametrize(

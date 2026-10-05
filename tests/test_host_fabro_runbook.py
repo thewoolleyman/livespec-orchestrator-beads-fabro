@@ -54,3 +54,10 @@ def test_host_runbook_documents_the_codex_identity_observation_and_its_limits() 
     assert "identifier continuity is not a validity claim" in _IMAGE_RUNBOOK
     assert "invokes no provider and never" in _IMAGE_RUNBOOK
     assert "deliberately NOT reported as `unchanged`" in _IMAGE_RUNBOOK
+
+
+def test_host_runbook_distinguishes_a_withheld_write_from_a_failed_one() -> None:
+    # The two look alike in a log and want opposite responses: `withheld` is the
+    # mechanism protecting the comparison series, `failed` is a broken path.
+    assert "`withheld` is the mechanism protecting the series, not a fault" in _IMAGE_RUNBOOK
+    assert "`failed` IS a fault" in _IMAGE_RUNBOOK
