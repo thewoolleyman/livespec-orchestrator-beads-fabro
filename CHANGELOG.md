@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.169.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.168.1...v0.169.0) (2026-10-05)
+
+
+### Features
+
+* **plan-records:** report a plan epic closed without a verified proof record ([90c990b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/90c990b9314e20950843721a80a35de19ac34f33))
+* **plan:** publish every plan Proof of Done record through one primitive ([d5d6a7c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d5d6a7cca66c4da3497fab0d0e4a960cb0b964a6))
+* **plan:** refuse an archive whose plan Proof of Done is unverified ([6bcd19a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6bcd19a8f26c8d2c5d9d5023040374dbd2cfcd92))
+
 ## [0.168.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.168.0...v0.168.1) (2026-10-05)
 
 
