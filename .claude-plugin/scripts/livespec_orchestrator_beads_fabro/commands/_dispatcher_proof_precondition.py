@@ -37,6 +37,7 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
@@ -49,6 +50,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_release import
     proof_store_journal_record,
     repository_visibility_from_view,
 )
+from livespec_orchestrator_beads_fabro.effects import parse_json
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -57,6 +59,7 @@ __all__: list[str] = [
     "PROOF_STORE_JOURNAL_STAGE",
     "PUBLISH_BRANCH_ENV_VAR",
     "ProofStoreUnobservable",
+    "journaled_proof_rendering",
     "proof_assets_refusal",
     "proof_assets_refusal_for_items",
     "proof_store_env_lines",
@@ -210,33 +213,28 @@ def proof_assets_refusal(
     return None
 
 
-def proof_store_env_lines(*, repo: Path, work_item_id: str) -> str:
+def proof_store_env_lines(
+    *, repo: Path, work_item_id: str, journal_path: Path | None = None
+) -> str:
     """The overlay env lines the publish and capture stages read.
 
-    PURE BY CONSTRUCTION -- it reads the committed configuration and derives a
-    branch name, and it performs NO forge call. That constraint is not stylistic.
-    This function is reached from the run-config overlay, which every dispatch
-    materializes and which the hermetic test tier exercises without a network; an
-    earlier draft probed the forge here and spawned a real `gh` in 104 otherwise
-    sealed tests. A projection that cannot be rendered offline does not belong on
-    this path.
+    NO FORGE CALL RUNS HERE, and that constraint is not stylistic. This function is
+    reached from the run-config overlay, which every dispatch materializes and which
+    the hermetic test tier exercises without a network; an earlier draft probed the
+    forge here and spawned a real `gh` in 104 otherwise sealed tests. A projection
+    that cannot be rendered offline does not belong on this path.
 
-    So two of the three keys are projected here -- the publish branch, derived from
-    the item id through the one shared derivation, and the release tag, read from
-    the repository's own committed configuration. Both are facts about the
-    repository that need nobody's permission to state.
+    Two of the three keys are facts about the repository that need nobody's
+    permission to state -- the publish branch, derived from the item id through the
+    one shared derivation, and the release tag, read from the repository's own
+    committed configuration.
 
-    THE THIRD KEY IS DELIBERATELY NOT PROJECTED HERE, and the capture prompt's
-    fallback is what covers it: the image RENDERING depends on a live visibility
-    measurement, which `proof_assets_refusal` performs and journals at the
-    pre-dispatch gate. Threading that resolution into this projection is a pure
-    plumbing change blocked only by `_dispatcher_loop`'s file-size ceiling, which
-    sits at exactly the hard limit and cannot take another argument until that
-    module is decomposed. Until then the capture stage falls back to the
-    AUTHENTICATED-LINK form, which is the same fail-safe direction
-    `proof_rendering_for_visibility` takes for an unmeasured repository: it costs an
-    inline rendering the repository might have supported, and it can never publish a
-    reference that leaks.
+    THE THIRD IS A MEASUREMENT, and it is READ BACK rather than re-taken: the image
+    RENDERING depends on a live visibility probe, which `proof_assets_refusal`
+    performs and journals per repository at the pre-dispatch gate, so this
+    projection reads that journaled answer out of `journal_path`. Re-probing here
+    would be a second measurement that could disagree with the recorded one, and
+    nothing downstream could tell which answer the capture stage had received.
     """
     tag = proof_assets_release_tag(block=dispatcher_block(cwd=repo))
     lines = (
@@ -245,7 +243,39 @@ def proof_store_env_lines(*, repo: Path, work_item_id: str) -> str:
     )
     if proof_assets_release_tag_refusal(block=dispatcher_block(cwd=repo)) is not None:
         return lines
-    return lines + f"{PROOF_ASSETS_RELEASE_TAG_ENV_VAR} = {json.dumps(tag)}\n"
+    lines += f"{PROOF_ASSETS_RELEASE_TAG_ENV_VAR} = {json.dumps(tag)}\n"
+    rendering = journaled_proof_rendering(journal_path=journal_path)
+    return lines + f"{PROOF_ASSET_RENDERING_ENV_VAR} = {json.dumps(rendering)}\n"
+
+
+def journaled_proof_rendering(*, journal_path: Path | None) -> str:
+    """The rendering the pre-dispatch gate measured, read back off the journal.
+
+    The LAST matching record wins, because the journal is append-only and a
+    re-dispatch re-measures: an earlier record describes a visibility that may since
+    have changed, and the newest one is the measurement this dispatch was admitted
+    under.
+
+    Every absence yields the empty string rather than raising -- no journal path, no
+    file, no record, a malformed line, a record whose `rendering` is not a string.
+    This path runs inside a dispatch that is already past its refusal wall, so there
+    is no decision left for an exception to inform, and the empty answer is the one
+    `proof_rendering_for_visibility` already defines as the fail-safe.
+    """
+    if journal_path is None or not journal_path.is_file():
+        return ""
+    rendering = ""
+    for line in journal_path.read_text(encoding="utf-8").splitlines():
+        parsed = parse_json(text=line)
+        if not isinstance(parsed, dict):
+            continue
+        record = cast("dict[str, object]", parsed)
+        if record.get("stage") != PROOF_STORE_JOURNAL_STAGE:
+            continue
+        measured = record.get("rendering")
+        if isinstance(measured, str):
+            rendering = measured
+    return rendering
 
 
 def _append_store_record(*, journal: object, work_item_id: str, record: dict[str, object]) -> None:

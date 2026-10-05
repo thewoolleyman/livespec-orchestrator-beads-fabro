@@ -30,6 +30,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_reprobe import (
     await_usable_credential,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_scope import dispatch_one
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
     args_with_dispatch_factory_target,
@@ -38,7 +39,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     utc_now_iso,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import dispatch_one
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import ReworkPass
 from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_ledger import (
     args_with_dispatch_workflow_name,

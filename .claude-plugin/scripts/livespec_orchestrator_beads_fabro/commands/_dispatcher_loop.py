@@ -1,16 +1,21 @@
-"""Dispatch-loop candidate selection and per-item launch primitives."""
+"""The per-item dispatch SEQUENCE, run inside the dispatch lock.
+
+Split from `_dispatcher_dispatch_scope`, which owns the SCOPE this sequence runs
+in -- the factory target, the per-item dispatch lock and the dispatch id that
+names it. This module owns everything that happens inside that scope: every
+pre-run refusal stage, the mode-600 run-config overlay, the rendered goal, the
+watched Fabro run, and the post-run dispositions and review gate.
+"""
 
 from __future__ import annotations
 
 import argparse
 import time
-from contextlib import ExitStack
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_self_update as selfup,
 )
-from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
     warn_item_sizing,
 )
@@ -25,12 +30,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_id_journal import (
     DispatchJournalIdentity,
     append_dispatch_id_record,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import (
-    dispatch_lock_path,
-    live_dispatch_lock,
-    release_dispatch_lock,
-    write_dispatch_lock,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     DispatchOutcome,
@@ -66,7 +65,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_run import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
     post_run_dispositions,
-    run_id,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     spans_path,
@@ -76,9 +74,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     minijinja_openers_in_goal_sources,
     render_goal,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_run_claim import (
-    release_pre_run_claim_if_needed,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_review_gate import (
     ReviewGateEmission,
     emit_review_gate_from_fabro_events,
@@ -86,49 +81,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_review_gate import (
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
-    "dispatch_one",
+    "dispatch_one_locked",
 ]
 
 
-def dispatch_one(
-    *,
-    args: argparse.Namespace,
-    repo: Path,
-    item: WorkItem,
-    journal: JournalFile,
-    janitor: tuple[str, ...] | None,
-) -> DispatchOutcome:
-    raw_factory_target = getattr(args, "fabro_factory_target", None)
-    dispatch_factory = (
-        raw_factory_target.name if isinstance(raw_factory_target, FactoryTarget) else None
-    )
-    if not isinstance(raw_factory_target, FactoryTarget):
-        args.fabro_factory_target = FactoryTarget(name="default", server=None, dev_token=None)
-    lock = live_dispatch_lock(repo=repo, work_item_id=item.id)
-    if lock is None or lock.dispatch_id is None:
-        dispatch_id = run_id()
-        lock_path = write_dispatch_lock(repo=repo, work_item_id=item.id, dispatch_id=dispatch_id)
-    else:
-        dispatch_id = lock.dispatch_id
-        lock_path = dispatch_lock_path(repo=repo, work_item_id=item.id)
-    with ExitStack() as stack:
-        _ = stack.callback(lambda: release_dispatch_lock(path=lock_path))
-        outcome = _dispatch_one_locked(
-            args=args,
-            repo=repo,
-            item=item,
-            journal=journal,
-            janitor=janitor,
-            identity=DispatchJournalIdentity(
-                dispatch_id=dispatch_id,
-                dispatch_factory=dispatch_factory,
-            ),
-        )
-        release_pre_run_claim_if_needed(repo=repo, item=item, outcome=outcome, journal=journal)
-        return outcome
-
-
-def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL STAGE (ledger labels, dispatch materialization, ledger comments, GitHub App auth, goal preflight, run-config overlay) plus the dispatched outcome; each names its own stage in the journal and collapsing any two would report the wrong one.
+def dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL STAGE (ledger labels, dispatch materialization, ledger comments, GitHub App auth, goal preflight, run-config overlay) plus the dispatched outcome; each names its own stage in the journal and collapsing any two would report the wrong one.
     *,
     args: argparse.Namespace,
     repo: Path,
@@ -137,6 +94,12 @@ def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL ST
     janitor: tuple[str, ...] | None,
     identity: DispatchJournalIdentity,
 ) -> DispatchOutcome:
+    """Dispatch ONE item, with its dispatch lock already held by the caller.
+
+    PUBLIC because `_dispatcher_dispatch_scope` holds that lock and only public
+    names may cross a module boundary; the lock is this function's precondition
+    rather than its job, which is what the name records.
+    """
     goal_file = goal_file_path(work_item_id=item.id)
     overlay_file = overlay_file_path(work_item_id=item.id)
     raw_labels = read_dispatch_labels(repo=repo, item=item)
@@ -229,6 +192,12 @@ def _dispatch_one_locked(  # noqa: PLR0911 — one return per PRE-RUN REFUSAL ST
         # `{{ inputs.* }}`, and the pinned engine renders that site for the
         # graph but not for `run.prepare`.
         prepare_inputs=contract_prompt_variables(resolved=plan.integration),
+        # The journal the pre-dispatch proof-assets gate has ALREADY written this
+        # repository's rendering measurement to. Passed as a path rather than
+        # re-measured, because a second visibility probe inside the overlay could
+        # disagree with the one that was journaled and nothing downstream could
+        # tell which answer the capture stage received.
+        journal_path=journal.path,
         git_author=materialized.git_author,
     )
     if overlay_error is not None:

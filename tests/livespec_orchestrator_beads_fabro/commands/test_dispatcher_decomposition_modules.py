@@ -252,13 +252,23 @@ def test_dispatch_loop_cluster_importable_from_new_module_and_private_names_remo
         "_run_id",
     }
 
-    assert dispatch_loop.__all__ == ["dispatch_one"]
+    # The dispatch SCOPE — the factory target, the per-item lock and the dispatch
+    # id that names it — split out of the SEQUENCE that runs inside it once
+    # `_dispatcher_loop` stood at the 250-LLOC hard ceiling and the overlay call
+    # site had to take one more argument (bd-ib-pa73qh). The sequence's entry point
+    # is public on its side because only public names may cross a module boundary.
+    dispatch_scope = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_scope"
+    )
+    assert dispatch_scope.__all__ == ["dispatch_one"]
+    assert dispatch_loop.__all__ == ["dispatch_one_locked"]
     assert selection_public_names <= set(dispatch_loop_selection.__all__)
     assert set(dispatch_loop.__all__).isdisjoint(selection_public_names)
-    assert hasattr(dispatch_loop, "dispatch_one")
+    assert hasattr(dispatch_loop, "dispatch_one_locked")
+    assert not hasattr(dispatch_loop, "_dispatch_one_locked")
     assert hasattr(dispatch_loop_selection, "MERGE_HELD_STAGE")
     assert hasattr(dispatch_loop_selection, "record_groom_draft")
-    assert dispatcher.dispatch_one is dispatch_loop.dispatch_one
+    assert dispatcher.dispatch_one is dispatch_scope.dispatch_one
     assert dispatcher.candidates is dispatch_loop_selection.candidates
     assert dispatcher.is_dispatch_candidate is dispatch_loop_selection.is_dispatch_candidate
     assert dispatcher.janitor_core_ref is dispatch_loop_selection.janitor_core_ref

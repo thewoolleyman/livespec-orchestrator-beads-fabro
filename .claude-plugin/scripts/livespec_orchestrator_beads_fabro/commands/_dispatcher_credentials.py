@@ -159,6 +159,7 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     git_author: GitAuthor,
     graph_override: Path | None = None,
     prepare_inputs: Mapping[str, str] | None = None,
+    journal_path: Path | None = None,
 ) -> str | None:
     """Write the uncommitted mode-600 run-config overlay.
 
@@ -272,12 +273,16 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # re-derived: the caller passes the SAME resolved contract the
         # `--input` pairs come from.
         prepare_inputs=prepare_inputs,
-        # The publish branch the `publish_draft` command node pushes, plus this
-        # repository's resolved proof asset store. Resolved HERE rather than
-        # threaded from the caller, which is already at its file-size ceiling;
-        # the branch comes from the single shared derivation rather than a second
-        # spelling of `feat/<id>` (S5 / bd-ib-b4u6b7).
-        proof_store_env=proof_store_env_lines(repo=repo, work_item_id=work_item_id),
+        # The publish branch the `publish_draft` command node pushes, this
+        # repository's resolved proof asset store, and the image rendering the
+        # pre-dispatch gate measured for it (bd-ib-pa73qh). The branch comes from
+        # the single shared derivation rather than a second spelling of
+        # `feat/<id>` (S5 / bd-ib-b4u6b7), and the rendering is READ BACK off the
+        # journal the gate wrote it to rather than re-probed here, so the sandbox
+        # receives the same answer the dispatch was admitted under.
+        proof_store_env=proof_store_env_lines(
+            repo=repo, work_item_id=work_item_id, journal_path=journal_path
+        ),
         # This repository's DECLARED proof credentials, by name, valued from this
         # process's environment. The pre-dispatch gate has already refused every
         # unusable declaration, so what reaches here is admitted; the builder is

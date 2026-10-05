@@ -50,6 +50,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_admission_eligibility,
     _dispatcher_completion,
     _dispatcher_dispatch_lock,
+    _dispatcher_dispatch_scope,
     _dispatcher_goal,
     _dispatcher_ledger_close,
     _dispatcher_loop,
@@ -4251,7 +4252,7 @@ def test_dispatch_id_journal_records_resolved_factory_without_rewriting_existing
         lambda *, emission: review_gate_emissions.append(emission),
     )
 
-    outcome = _dispatcher_loop.dispatch_one(
+    outcome = _dispatcher_dispatch_scope.dispatch_one(
         args=argparse.Namespace(
             fabro_bin="fabro",
             workflow=workflow,
@@ -4312,7 +4313,7 @@ def test_dispatch_threads_its_dispatch_id_into_the_watchdog_launcher(
     )
     monkeypatch.setattr(_dispatcher_loop, "emit_review_gate_from_fabro_events", lambda **_: None)
 
-    outcome = _dispatcher_loop.dispatch_one(
+    outcome = _dispatcher_dispatch_scope.dispatch_one(
         args=argparse.Namespace(
             fabro_bin="fabro",
             workflow=workflow,
@@ -4426,7 +4427,7 @@ def test_dispatch_id_journal_omits_factory_when_target_was_not_resolved(
         lambda *, emission: review_gate_emissions.append(emission),
     )
 
-    outcome = _dispatcher_loop.dispatch_one(
+    outcome = _dispatcher_dispatch_scope.dispatch_one(
         args=argparse.Namespace(
             fabro_bin="fabro",
             workflow=workflow,
@@ -4460,7 +4461,7 @@ def test_dispatch_pre_run_failure_releases_admitted_claim(
     journal.append(record={"stage": "ledger-admit", "work_item_id": item.id, "assignee": "fabro"})
     monkeypatch.setattr(_dispatcher_loop, "read_dispatch_comments", lambda **_: "factory refused")
 
-    outcome = _dispatcher_loop.dispatch_one(
+    outcome = _dispatcher_dispatch_scope.dispatch_one(
         args=argparse.Namespace(
             fabro_bin="fabro",
             workflow=workflow,
@@ -4536,7 +4537,7 @@ def test_dispatch_fabro_run_failure_without_run_id_releases_admitted_claim(
     )
     monkeypatch.setattr(_dispatcher_loop, "emit_review_gate_from_fabro_events", lambda **_: None)
 
-    outcome = _dispatcher_loop.dispatch_one(
+    outcome = _dispatcher_dispatch_scope.dispatch_one(
         args=argparse.Namespace(
             fabro_bin="fabro",
             workflow=workflow,
@@ -4661,7 +4662,7 @@ def test_dispatch_does_not_release_claim_after_fabro_run_exists(
     )
     monkeypatch.setattr(_dispatcher_loop, "emit_review_gate_from_fabro_events", lambda **_: None)
 
-    outcome = _dispatcher_loop.dispatch_one(
+    outcome = _dispatcher_dispatch_scope.dispatch_one(
         args=argparse.Namespace(
             fabro_bin="fabro",
             workflow=workflow,

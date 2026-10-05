@@ -310,6 +310,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_args import
     add_dispatch_common,
     add_probe_arguments,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_scope import dispatch_one
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_cli import (
     add_post_host_record_arguments,
     run_post_host_record_cli,
@@ -322,7 +323,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import 
     ledger_blocked_after_normalization,
     load_items,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import dispatch_one
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_command import (
     run_loop_command,
 )

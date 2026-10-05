@@ -25,6 +25,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_wrapper import (
     credential_wrapper_text,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_scope import dispatch_one
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
     args_with_dispatch_factory_target,
@@ -37,7 +38,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import 
     emit_outcomes,
     ledger_blocked_after_normalization,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import dispatch_one
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
     prepare,
     ready_items,
