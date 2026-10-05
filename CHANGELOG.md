@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.169.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.169.0...v0.169.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* **dispatch:** reclaim a publish branch through the forge reference interface ([e92ea7f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e92ea7ff9320a4b98397fb09cd85710165a185f6))
+* **dispatch:** settle a refused preserve by asking origin what the ref carries ([e4a4a80](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e4a4a8030bcd02a84a62193367503decb78a3db8))
+
 ## [0.169.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.168.1...v0.169.0) (2026-10-05)
 
 
