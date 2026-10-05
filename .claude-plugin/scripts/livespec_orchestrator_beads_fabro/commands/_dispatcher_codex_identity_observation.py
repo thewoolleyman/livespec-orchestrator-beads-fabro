@@ -26,6 +26,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_identity_state
 )
 
 __all__: list[str] = [
+    "IDENTITY_CONTINUITY_LIMITATION",
     "CodexIdentityComparison",
     "IdentityChange",
     "compare_codex_identity",
@@ -34,6 +35,20 @@ __all__: list[str] = [
 ]
 
 IdentityChange = Literal["first-observation", "unchanged", "changed", "unknown"]
+
+# Carried on EVERY observation, machine-readable and human alike, rather than
+# left to a runbook. The reading measures identifier continuity; the inference
+# an operator reaches for -- "the session held, so the token I already handed a
+# worker is still good" -- is a claim about what the provider will accept, and
+# nothing observable in the credential file can settle it. Stating the limit
+# beside the verdict is the only place it is guaranteed to be read.
+IDENTITY_CONTINUITY_LIMITATION = (
+    "This observation compares identifiers across readings and nothing more. It "
+    "does not establish whether a previously issued access token remains valid: "
+    "an unchanged session identifier is no evidence that an older token is still "
+    "accepted, and a changed one is no evidence that it was revoked. Only the "
+    "provider can answer that."
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -85,6 +100,7 @@ def identity_observation_payload(
     return {
         "claims_readable": claims.readable,
         "expires_at_epoch": claims.expires_at_epoch,
+        "limitation": IDENTITY_CONTINUITY_LIMITATION,
         "prior_state": comparison.prior_state,
         "prior_state_detail": comparison.prior_state_detail,
         "session_change": comparison.session_change,
@@ -106,6 +122,7 @@ def identity_observation_human_lines(*, observation: dict[str, Any] | None) -> t
         f"identity_session_change: {observation['session_change']}",
         f"identity_token_change: {observation['token_change']}",
         f"identity_state_path: {observation['state_path']}",
+        f"identity_limitation: {observation['limitation']}",
     )
 
 
