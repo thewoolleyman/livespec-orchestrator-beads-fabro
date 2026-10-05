@@ -24,7 +24,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential_io
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
     CodexProjectionRefusal,
-    project_codex_auth,
+    project_host_codex_auth,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_otel_config import (
     codex_otel_config_toml,
@@ -204,7 +204,11 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     gated against the run budget, and projected non-rotatably into the
     sandbox `$CODEX_HOME/auth.json` alongside the Claude OAuth env. A
     missing or too-short-lived host credential refuses the dispatch here
-    with an actionable renewal message (naming `codex login`).
+    with an actionable message (naming `codex login`). It renews NOTHING:
+    the bounded in-place renewal runs in the pre-dispatch wall's
+    credential gate, before the item is claimed, because that is the only
+    position from which an unrenewable credential can be reported without
+    leaving an `active` row nobody is working.
     """
     env_error = check_credential_env(repo=repo)
     if env_error is not None:
@@ -219,7 +223,11 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     siblings = resolve_sibling_clones(repo=repo)
     if isinstance(siblings, str):
         return siblings
-    codex_snapshot = project_codex_auth(clock=lambda: int(time.time()))
+    # Graded, never renewed. The bounded in-place renewal belongs to the
+    # pre-claim gate, which has already run for this item; this surface is
+    # downstream of the claim, so a renewal here could only extend a credential
+    # whose shortfall can no longer be reported before one.
+    codex_snapshot = project_host_codex_auth(clock=lambda: int(time.time()))
     if isinstance(codex_snapshot, CodexProjectionRefusal):
         return codex_snapshot.message
     sandbox_otel_endpoint = resolve_sandbox_otel_endpoint(environ=dict(os.environ))
