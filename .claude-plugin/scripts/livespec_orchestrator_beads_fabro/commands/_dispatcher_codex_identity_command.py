@@ -14,9 +14,11 @@ from pathlib import Path
 from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_identity_claims import (
+    CodexIdentityClaims,
     read_codex_identity_claims,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_identity_observation import (
+    IdentityStateWrite,
     compare_codex_identity,
     identity_observation_payload,
 )
@@ -83,7 +85,39 @@ def _observe_codex_identity(
     prior = read_prior_identity_state(path=state_path)
     claims = read_codex_identity_claims(source_auth_json=source_auth_json)
     comparison = compare_codex_identity(claims=claims, prior=prior)
-    write_detail = write_identity_state(
+    return identity_observation_payload(
+        claims=claims,
+        comparison=comparison,
+        state_path=str(state_path),
+        write=_record_reading(claims=claims, state_path=state_path, now_epoch=now_epoch),
+    )
+
+
+def _record_reading(
+    *,
+    claims: CodexIdentityClaims,
+    state_path: Path,
+    now_epoch: int,
+) -> IdentityStateWrite:
+    """Remember this reading, unless remembering it would destroy the series.
+
+    A reading with no identifiers to remember is WITHHELD rather than written.
+    Recording it would overwrite the last fingerprints that could be compared,
+    so one momentarily unreadable credential -- codex mid-login, the file
+    briefly gone -- would leave every later reading comparing against the blip
+    and reporting `unknown` from then on. The payload still reports the reading
+    itself as unreadable; what is preserved is the question it can be put to.
+    """
+    if not claims.readable:
+        return IdentityStateWrite(
+            outcome="withheld",
+            detail=(
+                "This reading was not recorded: the credential's identity claims "
+                "were unreadable, and recording that would discard the preceding "
+                "observation this reading is compared against."
+            ),
+        )
+    detail = write_identity_state(
         path=state_path,
         record=CodexIdentityStateRecord(
             session_fingerprint=claims.session_fingerprint,
@@ -92,9 +126,6 @@ def _observe_codex_identity(
             observed_at_epoch=now_epoch,
         ),
     )
-    return identity_observation_payload(
-        claims=claims,
-        comparison=comparison,
-        state_path=str(state_path),
-        state_write_detail=write_detail,
-    )
+    if detail is None:
+        return IdentityStateWrite(outcome="recorded", detail=None)
+    return IdentityStateWrite(outcome="failed", detail=detail)
