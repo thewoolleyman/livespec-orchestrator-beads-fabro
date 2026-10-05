@@ -123,6 +123,12 @@ def test_credentials_cluster_importable_from_new_module_and_private_names_remove
     }
     codex_auth_public_names = {
         "CodexProjectionRefusal",
+        # WHERE the credential lives, beside the read of WHAT it holds. Public
+        # because the identity observation's destination guard compares against
+        # the path this module actually opens; a guard deriving that path for
+        # itself would be guarding a guess, and a guess that drifts stops
+        # protecting the file it exists to protect.
+        "host_codex_auth_path",
         "project_codex_auth",
         "read_host_codex_auth",
         "renew_host_codex_credential",

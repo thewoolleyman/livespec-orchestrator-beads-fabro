@@ -47,6 +47,7 @@ from livespec_orchestrator_beads_fabro.io import write_stdout
 
 __all__: list[str] = [
     "CodexProjectionRefusal",
+    "host_codex_auth_path",
     "project_codex_auth",
     "read_host_codex_auth",
     "renew_host_codex_credential",
@@ -61,6 +62,20 @@ __all__: list[str] = [
 _CODEX_HOME_ENV = "CODEX_HOME"
 
 
+def host_codex_auth_path() -> Path:
+    """Resolve WHERE the host's Codex `auth.json` lives.
+
+    The ONE resolver, so the path a caller is told about is the path
+    `read_host_codex_auth` actually opens. That identity is load-bearing for
+    the observation's destination guard: a guard comparing against a
+    separately-derived path would be comparing against a guess, and a guess
+    that drifts from the real location silently stops protecting the file it
+    was written to protect.
+    """
+    home = os.environ.get(_CODEX_HOME_ENV) or str(Path.home() / ".codex")
+    return Path(home) / "auth.json"
+
+
 def read_host_codex_auth() -> str | None:
     """Read the host's Codex `auth.json` text (the projection SOURCE).
 
@@ -70,9 +85,8 @@ def read_host_codex_auth() -> str | None:
     text, or None when the file is missing/unreadable (any `OSError`), so
     the caller renders an actionable refusal naming `codex login`.
     """
-    home = os.environ.get(_CODEX_HOME_ENV) or str(Path.home() / ".codex")
     auth_text = attempt(
-        action=lambda: (Path(home) / "auth.json").read_text(encoding="utf-8"),
+        action=lambda: host_codex_auth_path().read_text(encoding="utf-8"),
         exceptions=(OSError,),
     )
     if isinstance(auth_text, AttemptFailure):
@@ -234,6 +248,7 @@ def run_codex_cred_status(*, args: argparse.Namespace) -> int:
     payload = _codex_cred_status_payload(status=status)
     observation = identity_observation_for(
         source_auth_json=source_auth_json,
+        source_auth_path=host_codex_auth_path(),
         state_path_argument=args.observe_identity_state,
         now_epoch=now_epoch,
     )
