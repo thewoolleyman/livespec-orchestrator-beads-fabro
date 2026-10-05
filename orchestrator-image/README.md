@@ -788,12 +788,28 @@ runs until an operator runs `codex login` on the orchestrator host.
 
 The fix is a host-side user timer that runs the guarded refresher about every
 five minutes. The refresher first decodes the access-token `exp` locally and
-invokes `codex exec` only when the credential is inside the refresh guard. This
-guard matters: Codex has no force-refresh command, and read-only commands such
-as `codex login status` and `codex doctor --json` do not refresh `auth.json`.
-A naive hourly `codex exec` cron would spend roughly 240 real Codex requests per
-10-day cycle. The guarded timer normally spends none, then roughly one to three
-tiny requests near the cliff.
+spends a renewal request only when the credential is inside the refresh guard.
+A naive hourly cron would spend roughly 240 real Codex requests per 10-day
+cycle. The guarded timer normally spends none, then roughly one to three tiny
+requests near the cliff.
+
+The renewal request is the host **app-server `account/read` with
+`refreshToken`**, not `codex exec`. Codex exposes no force-refresh command, and
+read-only commands such as `codex login status` and `codex doctor --json` do
+not refresh `auth.json` — but `codex exec` does not reliably refresh either:
+upstream refreshes on the ordinary path only when `should_refresh_proactively`
+holds, which is true only within five minutes of expiry
+(`codex-rs/login/src/auth/manager.rs`). `account/read` with `refreshToken`
+reaches `AuthManager::refresh_token` with no expiry predicate at all
+(`codex-rs/app-server/src/request_processors/account_processor.rs`), so it is
+the only route that renews EARLY. The refresher drives it over one bounded
+`codex app-server` session, keeping stdin open and awaiting each request's own
+response id; batching the requests and closing stdin makes Codex cancel the
+`account/read` while still exiting 0.
+
+Because `account/read` executes nothing, the refresher needs no sandbox bypass
+and consults no full-access gate — a privilege the old `codex exec` invocation
+required and this one does not.
 
 The actual host install is a manual maintainer step. Install these as the
 `ubuntu` user on the orchestrator host, replacing the checkout path only if the
@@ -855,12 +871,35 @@ The status command is the alerting surface:
 `codex-cred-status --json` exits `0` when `"alarm": false` and exits `1` when
 `"alarm": true`; wire external monitoring to that exit code. The JSON includes
 `remaining_seconds`, `remaining_days`, `expires_at_iso`, `refresh_due`, and a
-human-readable `message`. The alarm threshold is two days before expiry. The
-refresh guard is six minutes before expiry, matching Codex's five-minute
-proactive refresh window with a small scheduler margin. A status alarm means the
-10-day cliff is close and deserves attention; a timer run returning non-zero or
-a repeated `"refresh_due": true` after a non-dry-run refresh means the maintainer
-should run `codex login` on the host and then re-check status.
+human-readable `message` carrying remaining versus required lifetime. The alarm
+threshold is two days before expiry.
+
+The **refresh guard is the dispatch freshness requirement** — the run budget
+plus its margin, 18000 seconds (5h) — and it is DERIVED from that requirement
+in code rather than written as its own number. It used to be six minutes,
+matching Codex's five-minute proactive-refresh window, which left a dead zone:
+for the last five hours of every 10-day cycle the freshness gate refused every
+Codex-projecting dispatch while the refresher reported `"refresh_due": false`
+and the refusal told a human to run `codex login`. Measured 2026-10-04 at
+`remaining_seconds` 13517. Widening the guard is only half the fix, which is
+why the renewal moved to the ungated `account/read` route above: a wider guard
+over a window-gated `codex exec` would merely attempt and decline.
+
+A status alarm means the 10-day cliff is close and deserves attention. A timer
+run returning non-zero, or a repeated `"refresh_due": true` after a non-dry-run
+refresh, means the renewal is not advancing the expiry — **which is not by
+itself evidence that authentication has failed, and is not grounds for
+`codex login`.** The renewal route cannot report an auth failure either: Codex
+discards the refresh outcome on the `account/read` path. Check
+`"renewal_answered"` in the refresh payload to tell "Codex answered and the
+expiry held" from "no successful renewal response came back" (a missing
+executable, a transport failure, an error response). Run `codex login` only
+when Codex EXPLICITLY reports an unrecoverable authentication failure.
+
+Diagnose on the right host. The credential lives on the **credential-source
+host** — the one running the Dispatcher, which reads `$CODEX_HOME/auth.json`
+and projects a non-rotatable snapshot — NOT on the remote factory host that
+executes the run. A snapshot-lifetime refusal says nothing about the factory.
 
 ## Real-work substrate (production)
 

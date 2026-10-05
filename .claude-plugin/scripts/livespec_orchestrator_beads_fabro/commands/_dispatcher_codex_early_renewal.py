@@ -163,10 +163,16 @@ class CodexRenewalOutcome:
     """What one bounded early-renewal request achieved, for diagnostics.
 
     `answered` is the ONLY distinction that matters downstream, and it is NOT
-    a verdict about the credential: it separates "Codex processed the renewal
-    and the expiry still did not advance" from "the request never reached
-    Codex at all". Collapsing the two is what turns a missing executable into
-    a false claim that authentication failed.
+    a verdict about the credential: it separates "Codex answered the renewal
+    and the expiry still did not advance" from "no successful renewal response
+    came back". Collapsing the two is what turns a missing executable into a
+    false claim that authentication failed.
+
+    The second case is deliberately NOT called "never spent". A timeout, an EOF
+    after the request was written, and a JSON-RPC error may each have reached
+    the server and done work there; what is known is only that no successful
+    response returned. Claiming the request never happened would overstate the
+    observation in the opposite direction.
     """
 
     answered: bool
@@ -183,7 +189,7 @@ def classify_renewal_result(*, result: CommandResult) -> CodexRenewalOutcome:
     if result.exit_code == UNSPENDABLE_EXIT_CODE:
         return CodexRenewalOutcome(
             answered=False,
-            detail=result.stderr.strip() or "the renewal request could not be spent",
+            detail=(result.stderr.strip() or "no successful renewal response was received"),
         )
     return CodexRenewalOutcome(
         answered=False,

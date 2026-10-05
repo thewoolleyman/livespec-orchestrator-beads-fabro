@@ -166,19 +166,27 @@ def _unadvanced_refusal(
     Deliberately NOT a claim that authentication has failed, and it says so in
     as many words, because the two reasons an expiry can hold are not
     equivalent evidence: Codex may have answered and declined to advance it, or
-    the request may never have been spendable at all (no executable, a session
-    that closed). The second says nothing whatsoever about the credential, so
-    collapsing the two is what turns an absent observation into a false demand
-    for a human login. The message therefore carries WHICH of the two
-    happened, reports the lifetimes it measured, names the host the credential
-    lives on as distinct from the host the run executes on, and directs a fresh
-    status read before anyone carries this forward as a blocker. `codex login`
-    is the LAST step and it is conditional.
+    no successful renewal response may have come back at all. The second says
+    nothing whatsoever about the credential, so collapsing the two is what
+    turns an absent observation into a false demand for a human login.
+
+    And the login remedy is conditioned on EXPLICIT auth evidence rather than
+    on a non-advancing expiry, because this route cannot produce such evidence:
+    upstream DISCARDS the refresh outcome on the `account/read` path
+    (`workspace_routing.rs` binds nothing from `refresh_token_if_requested`,
+    and the v1 `getAuthStatus` path discards it too), so no response here can
+    confirm or deny an authentication failure. Telling an operator to re-read
+    status until it "still reports no advance" would send them after evidence
+    that is structurally unavailable, and a stale-blocker loop is exactly how
+    this item's 2026-10-05 incident played out.
     """
-    unspent_note = (
+    unanswered_note = (
         ""
         if outcome.answered
-        else ("; the request was never spent, so it is no evidence about this " "credential at all")
+        else (
+            "; no successful renewal response was received, so it is no "
+            "evidence about this credential at all"
+        )
     )
     return (
         "C-mode dispatch refused: the host Codex credential has "
@@ -186,15 +194,20 @@ def _unadvanced_refusal(
         f"{verdict.required_remaining_seconds} seconds the dispatch freshness "
         "gate requires (run budget plus margin), and one bounded in-place "
         f"renewal request did not advance it ({outcome.detail}). That does NOT "
-        f"by itself establish an authentication failure{unspent_note}. This "
-        "credential lives on the credential-source host — the host running the "
-        f"Dispatcher, which reads ${_CODEX_HOME_ENV}/auth.json and projects a "
-        "non-rotatable snapshot — NOT on the remote factory host that executes "
-        "the run, so check that host and no other. Re-read `dispatcher.py "
+        f"by itself establish an authentication failure{unanswered_note}. Note "
+        "that this renewal route cannot report an authentication failure "
+        "either: Codex discards the refresh outcome on the account/read path, "
+        "so no response here can confirm or deny one. This credential lives on "
+        "the credential-source host — the host running the Dispatcher, which "
+        f"reads ${_CODEX_HOME_ENV}/auth.json and projects a non-rotatable "
+        "snapshot — NOT on the remote factory host that executes the run, so "
+        "check that host and no other. Re-read `dispatcher.py "
         "codex-cred-status` before carrying this forward as a blocker, since a "
         "credential renewed since this reading retires it; then run "
         "`dispatcher.py codex-cred-refresh` there. Run `codex login` on that "
-        "same host only if a fresh status still reports no advance."
+        "same host only if Codex explicitly reports an unrecoverable "
+        "authentication failure — a non-advancing expiry and a status reading "
+        "cannot establish one, however many times they are re-read."
     )
 
 
