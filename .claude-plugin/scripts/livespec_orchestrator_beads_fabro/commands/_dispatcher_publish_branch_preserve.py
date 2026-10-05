@@ -11,7 +11,10 @@ tip is copied onto a ref of its own under `refs/livespec/preserved-publish/` and
 the branch is deleted only once ORIGIN has confirmed that ref. This is the shape
 the maintainer's export-then-reap rule takes for a dead factory run: what makes an
 irreversible act safe is the durable copy that precedes it, so a preserve that
-failed returns a failure and the branch is left standing.
+failed returns a failure and the branch is left standing. "FAILED" means the head
+is not on the ref, which is a weaker claim than "the create call returned
+non-zero" -- see `_preserve`, where the difference decides whether a retry of the
+failed-delete arm can ever complete.
 
 BOTH OPERATIONS GO THROUGH THE FORGE REFERENCE INTERFACE, AND NEITHER THROUGH
 `git push`. The Dispatcher runs from the host's PRIMARY CHECKOUT, which carries
@@ -70,7 +73,14 @@ _FORGE_TIMEOUT_SECONDS = 120.0
 # The forge's reference endpoints, addressed through `gh api` so `{owner}` and
 # `{repo}` resolve from the repository the command runs in -- which keeps this
 # module out of the business of parsing a remote URL to name its own repository.
+#
+# The READ endpoint is the SINGULAR `git/ref/...`, which resolves one EXACT ref.
+# The plural `git/matching-refs/...` form is a PREFIX match, and the preservation
+# ref ends in the very sha under question, so a prefix answer could attribute one
+# head's preservation to another -- the same reason `surviving_head_from_ls_remote`
+# matches on the full ref and nothing looser.
 _REFS_ENDPOINT = "/repos/{owner}/{repo}/git/refs"
+_REF_ENDPOINT = "/repos/{owner}/{repo}/git/ref"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -172,6 +182,17 @@ def _create_ref_argv(*, ref: str, sha: str) -> list[str]:
     ]
 
 
+def _read_ref_argv(*, ref: str) -> list[str]:
+    """Ask the forge what object, if any, it carries at `ref`."""
+    return [
+        "gh",
+        "api",
+        f"{_REF_ENDPOINT}/{_ref_path_segment(ref=ref)}",
+        "--jq",
+        ".object.sha",
+    ]
+
+
 def _delete_ref_argv(*, ref: str) -> list[str]:
     """Delete `ref` on the forge."""
     return [
@@ -183,6 +204,23 @@ def _delete_ref_argv(*, ref: str) -> list[str]:
     ]
 
 
+def _forge_ref_head(*, runner: CommandRunner, repo: Path, ref: str) -> str:
+    """The sha origin reports at `ref`, or the empty string when it reports none.
+
+    The empty string covers BOTH "origin says there is no such ref" and "origin
+    could not be asked", and collapsing them is safe HERE and only here: this
+    answer is used to CONFIRM a preserve, so every non-answer must fail to confirm.
+    A caller using it to authorize a deletion would need the distinction the
+    reclaim's `PublishBranchUnobservable` draws; this one holds either way.
+    """
+    result = runner.run(
+        argv=_read_ref_argv(ref=ref), cwd=repo, timeout_seconds=_FORGE_TIMEOUT_SECONDS
+    )
+    if result.exit_code != 0:
+        return ""
+    return result.stdout.strip()
+
+
 def _preserve(
     *,
     runner: CommandRunner,
@@ -190,23 +228,38 @@ def _preserve(
     surviving: SurvivingPublishBranch,
     preserved: str,
 ) -> str | None:
-    """Create the preservation ref on the forge; a failure detail, or None.
+    """Put the head on the preservation ref; a failure detail, or None.
 
     ONE call on the happy path, and it is the DURABLE one: the ref is created on
     origin directly from the sha origin itself reported, so there is no local copy
     to confuse with a remote one. The earlier build fetched the head into this
     clone first and then pushed it, which made the local leg look like half the
     work when it was none of it.
+
+    A REFUSED CREATE IS NOT YET A FAILED PRESERVE, and settling that is what the
+    second call is for. The forge refuses a create for a ref that already stands,
+    and this ref is NAMED after the head it carries, so the second reclaim of a
+    head already preserved meets that refusal on a ref holding exactly the right
+    object. That state is reached by the failed-delete arm -- the branch stands and
+    the ref is in place -- so a build reading the exit code alone would strand the
+    recovery on every retry of precisely the arm that must retry. Only an
+    UNCONFIRMED ref holds the reclaim, and the detail names both shas, because an
+    operator deciding what to do with the surviving branch has to know which object
+    actually survived.
     """
     created = runner.run(
         argv=_create_ref_argv(ref=preserved, sha=surviving.head),
         cwd=repo,
         timeout_seconds=_FORGE_TIMEOUT_SECONDS,
     )
-    if created.exit_code != 0:
-        return (
-            f"creating {preserved} at {surviving.head} through the forge reference"
-            f" interface exited {created.exit_code}; the head was not copied, so the"
-            " branch is left standing"
-        )
-    return None
+    if created.exit_code == 0:
+        return None
+    confirmed = _forge_ref_head(runner=runner, repo=repo, ref=preserved)
+    if confirmed == surviving.head:
+        return None
+    return (
+        f"creating {preserved} at {surviving.head} through the forge reference"
+        f" interface exited {created.exit_code}, and origin reports {confirmed!r} at"
+        f" that ref rather than {surviving.head}; the head was not preserved, so the"
+        " branch is left standing"
+    )
