@@ -86,6 +86,7 @@ def _observe_codex_identity(
     write_detail = write_identity_state(
         path=state_path,
         record=CodexIdentityStateRecord(
+            session_fingerprint=claims.session_fingerprint,
             token_fingerprint=claims.token_fingerprint,
             expires_at_epoch=claims.expires_at_epoch,
             observed_at_epoch=now_epoch,

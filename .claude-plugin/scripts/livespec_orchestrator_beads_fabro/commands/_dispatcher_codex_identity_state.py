@@ -40,6 +40,7 @@ IDENTITY_STATE_SCHEMA = "livespec-codex-identity-observation/v1"
 _SCHEMA_FIELD = "schema"
 _OBSERVED_AT_FIELD = "observed_at_epoch"
 _EXPIRES_AT_FIELD = "expires_at_epoch"
+_SESSION_FIELD = "session_fingerprint"
 _TOKEN_FIELD = "token_fingerprint"  # noqa: S105 - a JSON field NAME; its value is a digest
 
 PriorStateStatus = Literal["absent", "readable"]
@@ -49,6 +50,7 @@ PriorStateStatus = Literal["absent", "readable"]
 class CodexIdentityStateRecord:
     """One remembered observation, exactly as the state file carries it."""
 
+    session_fingerprint: str | None
     token_fingerprint: str | None
     expires_at_epoch: int | None
     observed_at_epoch: int
@@ -101,6 +103,7 @@ def _encode(*, record: CodexIdentityStateRecord) -> dict[str, object]:
         _SCHEMA_FIELD: IDENTITY_STATE_SCHEMA,
         _OBSERVED_AT_FIELD: record.observed_at_epoch,
         _EXPIRES_AT_FIELD: record.expires_at_epoch,
+        _SESSION_FIELD: record.session_fingerprint,
         _TOKEN_FIELD: record.token_fingerprint,
     }
 
@@ -110,6 +113,7 @@ def _readable(*, block: dict[str, object]) -> PriorIdentityState:
         status="readable",
         detail="The preceding observation was read.",
         record=CodexIdentityStateRecord(
+            session_fingerprint=_str_field(block=block, name=_SESSION_FIELD),
             token_fingerprint=_str_field(block=block, name=_TOKEN_FIELD),
             expires_at_epoch=_int_field(block=block, name=_EXPIRES_AT_FIELD),
             observed_at_epoch=_int_field(block=block, name=_OBSERVED_AT_FIELD) or 0,
