@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.167.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.167.0...v0.167.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* **acceptance:** attribute a proof record to any journaled dispatch of the item ([a4ea069](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a4ea0699742a708fa59d6bc0e12239c8218552c0))
+* **dispatcher:** hold the publish-branch reclaim while a run of the item is live ([21bf6fb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/21bf6fbeb62f1a672a9654e3d1b022b1c677eb78))
+* **dispatcher:** reclaim a dead run's publish branch, preserving its head first ([c6f9a90](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c6f9a90427c08cfbd984c035330ad9e6a0c8e35c))
+
 ## [0.167.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.166.0...v0.167.0) (2026-10-05)
 
 
