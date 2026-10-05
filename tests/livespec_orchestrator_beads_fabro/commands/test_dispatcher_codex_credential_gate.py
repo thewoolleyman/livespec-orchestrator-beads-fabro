@@ -194,7 +194,7 @@ def test_the_gate_separates_an_unanswered_renewal_from_an_answered_unchanged_one
     # must NOT be applied to is the advancing one below.
     for message in (answered, unanswered):
         assert "did not advance it" in message
-        assert "advanced its expiry" not in message
+        assert "expiry ADVANCED between the readings" not in message
 
 
 def test_the_gate_reports_a_renewal_that_advanced_short_of_the_floor_as_an_advance(
@@ -211,6 +211,12 @@ def test_the_gate_reports_a_renewal_that_advanced_short_of_the_floor_as_an_advan
     the shortfall numbers separate them. Only the expiry INSTANT does, and here
     it moves from `_NOW + 900` to `_NOW + 17970` -- the capture measured on
     2026-10-05, in which the refusal still reported no advance.
+
+    And the wording must stop at that observation. The gate sees two readings of
+    one expiry instant, so a refusal reaching through it is asserted here to
+    name neither the request as the cause of the change nor a token issuance as
+    its product -- both unobservable on this route, and both claimed by the
+    first fix of this arm.
     """
     assert _GATE_MODULE_PATH.is_file()
     gate = importlib.import_module(_GATE_MODULE)
@@ -232,8 +238,13 @@ def test_the_gate_reports_a_renewal_that_advanced_short_of_the_floor_as_an_advan
     # One bounded renewal; the advance did not buy a second attempt.
     assert spend == ["requested"]
     # The ADVANCE is reported and the non-advancing wording is gone.
-    assert "advanced its expiry" in refusal
+    assert "expiry ADVANCED between the readings" in refusal
     assert "did not advance" not in refusal
+    # Reported as an observation only: no cause, no issuance, no mint.
+    assert "attributed neither to that request nor to any token issuance" in refusal
+    assert "renewal request advanced" not in refusal
+    assert "advanced its expiry" not in refusal
+    assert "mint" not in refusal
     # The shortfall is still reported, against the post-request instant.
     assert str(17_970 - _RENEWAL_ELAPSED) in refusal
     assert str(_REQUIRED_REMAINING) in refusal

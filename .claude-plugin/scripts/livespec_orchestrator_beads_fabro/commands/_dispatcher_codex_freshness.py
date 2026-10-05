@@ -142,7 +142,13 @@ def renewal_expiry_observation(
     readings, so an expiry that genuinely HELD reads as a smaller remainder
     afterwards, and one that advanced by less than the request took reads as
     smaller too. `access_token_expires_at_epoch` is absolute, so it says what
-    the renewal did and nothing about how long the renewal took.
+    happened to the expiry across the request and nothing about how long the
+    request took.
+
+    What it CANNOT say is WHY the expiry changed. Two readings of one instant
+    are evidence of a change and never of its cause: a concurrent host refresh
+    moves the expiry with no renewal response at all, so a caller rendering
+    this observation must report the change and stop there.
 
     `None` for `after` is the re-read that could not be taken at all, and it
     returns `unmeasured` rather than `unchanged`: the renewal may well have
@@ -157,28 +163,41 @@ def renewal_expiry_observation(
 
 
 def _renewal_expiry_clause(*, expiry: RenewalExpiryObservation) -> str:
-    """Render the ONE clause reporting what the bounded renewal did to the expiry.
+    """Render the ONE clause reporting what was OBSERVED of the expiry.
 
     Three wordings for the three observations, because one wording for all of
     them is the defect this split exists to retire: the hardcoded "did not
-    advance it" was false on a renewal that answered, moved the expiry from 900
-    to 17970 seconds of remaining lifetime, and still landed under the floor —
-    a working renewal reported as a dead one, which points the operator at a
-    broken refresh path instead of at a mint shorter than the run budget.
+    advance it" was false on a dispatch whose expiry moved from 900 to 17970
+    seconds of remaining lifetime across an answered renewal and still landed
+    under the floor — an expiry that demonstrably advanced reported as one that
+    stood still, which points the operator at a broken refresh path instead of
+    at the lifetime shortfall actually measured.
+
+    The `advanced` arm reports the before/after CHANGE and stops there. It does
+    not name the renewal request as the cause of that change, and it does not
+    call the resulting lifetime a mint: the whole evidence here is two readings
+    of `access_token_expires_at_epoch`, which identify neither a cause — a
+    concurrent host refresh produces the same pair, which is why `expiry` and
+    `outcome.answered` are independent — nor a token issuance, since nothing on
+    this route observes one. The first fix of this arm asserted both, and an
+    invented cause is the same defect as an invented hold, one level subtler.
 
     The three share NO discriminating vocabulary, and that is deliberate rather
     than stylistic. These clauses are read by substring, both by this package's
     tests and by the published proof record's grader, so an `unmeasured` clause
-    phrased as "whether it advanced its expiry was not observed" would contain
-    the `advanced` arm's own token and grade as an advance — the first draft of
-    this function did exactly that. `unmeasured` therefore says "moved".
+    phrased as "whether its expiry advanced was not observed" would contain the
+    `advanced` arm's own token and grade as an advance — the first draft of this
+    function did exactly that. `unmeasured` therefore says "moved".
     """
     if expiry == "advanced":
         return (
-            ", and one bounded in-place renewal request advanced its expiry "
-            "without lifting it to that floor — the lifetime above is the "
-            "renewed one, so the observed failure is a mint shorter than this "
-            "dispatch needs rather than a renewal that refused to act"
+            ", and the credential expiry ADVANCED between the readings taken "
+            "before and after one bounded in-place renewal request, without "
+            "reaching that floor — the lifetime above is the POST-request "
+            "reading, and that pair of readings compares the expiry instant "
+            "alone, so the change is attributed neither to that request nor to "
+            "any token issuance: a concurrent host refresh advances the expiry "
+            "the same way, and no issuance was observed here"
         )
     if expiry == "unchanged":
         return ", and one bounded in-place renewal request did not advance it"
