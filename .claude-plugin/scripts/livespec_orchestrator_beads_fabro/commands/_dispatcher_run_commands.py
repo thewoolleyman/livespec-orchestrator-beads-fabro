@@ -3,36 +3,25 @@
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
-    pre_dispatch_criteria_refusal,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
     admit_and_select,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
     EXIT_FAILURE,
     EXIT_PRECONDITION_ERROR,
-    EXIT_UNGRADEABLE_CRITERIA,
     alarm_on_terminal_failure,
     dispatch_exit_code,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
     cost_gate_after_verdict,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_wrapper import (
-    credential_wrapper_text,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
     args_with_dispatch_factory_target,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
-    JournalFile,
-    ShellCommandRunner,
-)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import (
     emit_outcomes,
     ledger_blocked_after_normalization,
@@ -52,14 +41,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_post_verdict import (
     reflector_oob_after_verdict,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_gate import (
-    proof_credentials_refusal_for_items,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (
-    proof_assets_refusal_for_items,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_reclaim import (
-    reclaim_stale_publish_branches,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall import (
+    pre_dispatch_wall_exit,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_readiness_diagnostics import (
     not_ready_requested_items_error,
@@ -111,7 +94,9 @@ def run_dispatch_command(*, args: argparse.Namespace) -> int:
     if selected is None:
         return EXIT_PRECONDITION_ERROR
     target, marked = selected
-    wall_exit = _pre_dispatch_wall_exit(args=args, repo=repo, target=target, journal=journal)
+    # Every refusal that must land after selection and before the claim, as one
+    # decision. The SAME wall the drain runs, handed a one-item selection.
+    wall_exit = pre_dispatch_wall_exit(args=args, repo=repo, items=[target], journal=journal)
     if wall_exit is not None:
         return wall_exit
     outcome = _admit_and_dispatch_target(
@@ -161,74 +146,6 @@ def run_dispatch_command(*, args: argparse.Namespace) -> int:
     )
     reflector_oob_after_verdict(args=args, repo=repo, journal=journal)
     return exit_code
-
-
-def _pre_dispatch_wall_exit(
-    *,
-    args: argparse.Namespace,
-    repo: Path,
-    target: WorkItem,
-    journal: JournalFile,
-) -> int | None:
-    """Both pre-dispatch walls, as ONE decision: the exit code, or None to proceed.
-
-    They are combined rather than inlined side by side because they share one
-    POSITION and one guarantee: each runs after selection and BEFORE admission, so
-    a refused item is never claimed and no factory run exists to reap. Reading them
-    as one gate is also what keeps the caller's return count honest -- the
-    alternative was suppressing the too-many-returns rule, which would have hidden
-    the fact that the dispatch entry point had grown another exit.
-
-    The criteria wall is handed this dispatch's explicit `--workflow-name` because
-    it is variant-aware: it resolves which graph the target would run and exempts a
-    groom-kind dispatch, whose acceptance is the human approval of the draft.
-
-    The proof-assets gate follows it (S5 / bd-ib-b4u6b7): an item carrying a
-    `factory_captured` assertion needs this repository's standing proof-assets
-    prerelease to exist before its capture stage can store an image, so the
-    Dispatcher creates it here and refuses naming the tag when it still does not.
-    Its exit code is the generic precondition one rather than a dedicated code: the
-    fault is a missing repository-level resource, which is the same class every
-    other pre-dispatch precondition reports.
-
-    The proof-CREDENTIAL gate closes the sequence (S8 / bd-ib-77vny7), in the same
-    position and for the same reason: an unusable `dispatcher.proof_credentials`
-    declaration must refuse before a run exists, because the overlay this dispatch
-    is about to materialize would otherwise project it. It reads the environment
-    here rather than resolving one of its own, so the values it grades are the ones
-    the overlay will actually read.
-
-    The publish-branch reclaim closes the wall and refuses NOTHING (bd-ib-yebrb7):
-    a dead run's surviving publish branch is what makes a re-dispatch's
-    `publish_draft` push non-fast-forward, and clearing it here -- once its head is
-    preserved by reference -- is what lets the recovery publish and reach proof
-    capture. It runs last because it MUTATES a remote ref, and an item this wall is
-    about to refuse must leave the remote exactly as it found it.
-    """
-    ungradeable = pre_dispatch_criteria_refusal(
-        items=[target], cwd=repo, workflow_name=args.workflow_name
-    )
-    if ungradeable is not None:
-        _ = write_stderr(text=ungradeable)
-        return EXIT_UNGRADEABLE_CRITERIA
-    proof_refusal = proof_assets_refusal_for_items(
-        runner=ShellCommandRunner(), repo=repo, items=[target], journal=journal
-    )
-    if proof_refusal is not None:
-        _ = write_stderr(text=proof_refusal)
-        return EXIT_PRECONDITION_ERROR
-    credentials_refusal = proof_credentials_refusal_for_items(
-        repo=repo,
-        environ=os.environ,
-        wrapper_text=credential_wrapper_text(repo=repo),
-        work_item_ids=[target.id],
-        journal=journal,
-    )
-    if credentials_refusal is not None:
-        _ = write_stderr(text=credentials_refusal)
-        return EXIT_PRECONDITION_ERROR
-    reclaim_stale_publish_branches(args=args, repo=repo, items=[target], journal=journal)
-    return None
 
 
 def _target_item(

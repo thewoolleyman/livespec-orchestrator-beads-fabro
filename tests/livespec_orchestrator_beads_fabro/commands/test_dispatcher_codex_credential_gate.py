@@ -37,10 +37,13 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_codex_auth,
     _dispatcher_codex_credential_gate,
     _dispatcher_loop_command,
+    _dispatcher_run_commands,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import Admission
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
     EXIT_PRECONDITION_ERROR,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _NOW = 1_000_000
@@ -65,6 +68,17 @@ _GATE_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_cre
 _GATE_MODULE_PATH = Path(
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/"
     "_dispatcher_codex_credential_gate.py"
+)
+
+# The ONE pre-dispatch wall both dispatch paths run. It was two byte-identical
+# private functions, one per command module, until the credential gate became
+# the fourth refusal in each and pushed the single-dispatch module past its file
+# LLOC ceiling; the duplicate is what made "both paths refuse" a claim about two
+# independently drifting sequences rather than about one.
+_WALL_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall"
+_WALL_MODULE_PATH = Path(
+    ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/"
+    "_dispatcher_pre_dispatch_wall.py"
 )
 
 _ANSWERED_DETAIL = "the renewal request was answered by the host Codex app-server"
@@ -293,6 +307,26 @@ def _stub_credential_source(
     monkeypatch.setattr(_dispatcher_codex_credential_gate, "wall_clock_epoch", _clock)
 
 
+def _stub_wall_siblings(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Neutralize every wall refusal EXCEPT the credential gate under test.
+
+    Reached through `importlib` rather than a module-top import so the first
+    assertion of each case that needs it is a genuine check that the shared wall
+    module exists, instead of a collection error that proves only
+    unimportability.
+
+    The siblings are stood in rather than exercised because each reaches the
+    forge, the ledger or committed configuration for its own reasons, and any
+    one of them answering first would shadow the gate this module is about.
+    """
+    wall = importlib.import_module(_WALL_MODULE)
+    monkeypatch.setattr(wall, "pre_dispatch_criteria_refusal", lambda **_kwargs: None)
+    monkeypatch.setattr(wall, "proof_assets_refusal_for_items", lambda **_kwargs: None)
+    monkeypatch.setattr(wall, "proof_credentials_refusal_for_items", lambda **_kwargs: None)
+    monkeypatch.setattr(wall, "credential_wrapper_text", lambda **_kwargs: "")
+    monkeypatch.setattr(wall, "reclaim_stale_publish_branches", lambda **_kwargs: None)
+
+
 def _stub_loop(
     *,
     monkeypatch: pytest.MonkeyPatch,
@@ -315,14 +349,10 @@ def _stub_loop(
     monkeypatch.setattr(module, "prepare", lambda **_kwargs: ([item], journal))
     monkeypatch.setattr(module, "journal_path", lambda **_kwargs: journal_path)
     monkeypatch.setattr(module, "candidates", lambda **_kwargs: [item])
-    monkeypatch.setattr(module, "pre_dispatch_criteria_refusal", lambda **_kwargs: None)
-    monkeypatch.setattr(module, "proof_assets_refusal_for_items", lambda **_kwargs: None)
-    monkeypatch.setattr(module, "proof_credentials_refusal_for_items", lambda **_kwargs: None)
-    monkeypatch.setattr(module, "credential_wrapper_text", lambda **_kwargs: "")
-    monkeypatch.setattr(module, "reclaim_stale_publish_branches", lambda **_kwargs: None)
     monkeypatch.setattr(
         module, "dispatch_loop_wave", lambda **_kwargs: log.append("claim-and-launch") or []
     )
+    _stub_wall_siblings(monkeypatch=monkeypatch)
 
 
 def _loop_args(*, repo: Path, journal_path: Path) -> argparse.Namespace:
@@ -333,6 +363,17 @@ def _loop_args(*, repo: Path, journal_path: Path) -> argparse.Namespace:
         budget=1,
         as_json=False,
         dry_run=False,
+        skip_ledger_check=True,
+        workflow_name=None,
+    )
+
+
+def _dispatch_args(*, repo: Path, journal_path: Path, item_id: str) -> argparse.Namespace:
+    return argparse.Namespace(
+        repo=str(repo),
+        journal=str(journal_path),
+        item=item_id,
+        as_json=False,
         skip_ledger_check=True,
         workflow_name=None,
     )
@@ -356,6 +397,7 @@ def test_the_drain_rereads_and_regrades_a_renewal_before_anything_is_claimed(
     `materialize_overlay` exits with the same code and leaves the stranded
     `active` row this position exists to prevent.
     """
+    assert _WALL_MODULE_PATH.is_file()
     log: list[str] = []
     journal = _RecordingJournal()
     journal_path = tmp_path / "tmp" / "fabro-dispatch-journal.jsonl"
@@ -398,3 +440,130 @@ def test_the_drain_rereads_and_regrades_a_renewal_before_anything_is_claimed(
     assert journal.records[0]["unclaimed_work_item_ids"] == ["bd-ib-tyqklx"]
     # The drain reports it to the operator rather than refusing silently.
     assert "C-mode dispatch refused" in capsys.readouterr().err
+
+
+def _stub_dispatch(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    journal: _RecordingJournal,
+    journal_path: Path,
+    item: WorkItem,
+    log: list[str],
+) -> None:
+    """Stub every single-dispatch seam AROUND the credential gate.
+
+    The two seams whose entry IS the claim and the run are logged rather than
+    merely neutralized: `admit_and_select` is what moves the row `ready ->
+    active` and sets its assignee, and `dispatch_one` is what creates the factory
+    run. The post-verdict stages are stood in so that a build which does NOT
+    refuse fails on the assertion below rather than erroring somewhere in the
+    reporting tail, which would prove the wrong thing.
+    """
+    module = _dispatcher_run_commands
+    monkeypatch.setattr(module, "dispatch_preamble", lambda **_kwargs: (None, None))
+    monkeypatch.setattr(module, "arm_otel_egress", lambda **_kwargs: None)
+    monkeypatch.setattr(module, "prepare", lambda **_kwargs: ([item], journal))
+    monkeypatch.setattr(module, "ready_items", lambda **_kwargs: [item])
+    _stub_wall_siblings(monkeypatch=monkeypatch)
+    monkeypatch.setattr(
+        module,
+        "admit_and_select",
+        lambda **_kwargs: log.append("claim")
+        or Admission(admitted=[item], deferred=[], refused=[]),
+    )
+    monkeypatch.setattr(
+        module,
+        "args_with_dispatch_factory_target",
+        lambda **kwargs: kwargs["args"],
+    )
+    monkeypatch.setattr(
+        module,
+        "args_with_dispatch_workflow_name",
+        lambda **kwargs: kwargs["args"],
+    )
+    monkeypatch.setattr(
+        module,
+        "dispatch_one",
+        lambda **_kwargs: log.append("launch")
+        or DispatchOutcome(
+            work_item_id=item.id,
+            status="green",
+            stage="done",
+            pr_number=None,
+            merge_sha=None,
+            detail="stood in",
+        ),
+    )
+    monkeypatch.setattr(module, "journal_path", lambda **_kwargs: journal_path)
+    monkeypatch.setattr(module, "run_turn_sink_path", lambda **_kwargs: journal_path)
+    monkeypatch.setattr(module, "spans_path", lambda **_kwargs: journal_path)
+    monkeypatch.setattr(module, "emit_outcomes", lambda **_kwargs: None)
+    monkeypatch.setattr(module, "dispatch_exit_code", lambda **_kwargs: 0)
+    monkeypatch.setattr(module, "alarm_on_terminal_failure", lambda **_kwargs: None)
+    monkeypatch.setattr(module, "cost_gate_after_verdict", lambda **_kwargs: None)
+    monkeypatch.setattr(module, "self_update_after_verdict", lambda **_kwargs: None)
+    monkeypatch.setattr(module, "append_run_turn_checks", lambda **_kwargs: None)
+    monkeypatch.setattr(module, "reflect", lambda **_kwargs: None)
+    monkeypatch.setattr(module, "reflector_oob_after_verdict", lambda **_kwargs: None)
+
+
+def test_both_dispatch_paths_refuse_an_unrenewable_credential_before_claiming(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The single dispatch and the drain, over one credential, both refuse early.
+
+    The credential is below the floor and the bounded renewal leaves it there,
+    which is the only outcome at which a refusal is the right answer. Both paths
+    are driven in ONE case because the Definition of Done's claim is about the
+    PAIR: they reach the wall through separate call sites, and a gate wired into
+    one of them leaves the other claiming items it cannot run.
+
+    Neither half is graded on its exit code alone. Every pre-dispatch
+    precondition shares that code, and a dispatch that claimed the item and then
+    refused inside `materialize_overlay` returns it too -- which is exactly the
+    stranded-`active` shape this position retires. The instruments are the claim
+    seam, the launch seam, and the absence of a claim record in the journal.
+
+    Both paths now reach the gate through ONE shared wall, so "wired into both"
+    is a structural fact rather than two call sites that must be kept in step.
+    That is why the wall module's existence is the first assertion here: without
+    it there were two byte-identical private walls, and a gate added to one of
+    them left the other claiming items it could not run.
+    """
+    assert _WALL_MODULE_PATH.is_file()
+    log: list[str] = []
+    journal = _RecordingJournal()
+    journal_path = tmp_path / "tmp" / "fabro-dispatch-journal.jsonl"
+    journal_path.parent.mkdir(parents=True, exist_ok=True)
+    item = _work_item(item_id="bd-ib-tyqklx")
+    unadvanced = _auth_json_with_exp(exp=_NOW + _BELOW_FLOOR_REMAINING)
+    _stub_credential_source(
+        monkeypatch=monkeypatch, log=log, readings=(unadvanced, unadvanced, unadvanced, unadvanced)
+    )
+    _stub_dispatch(
+        monkeypatch=monkeypatch, journal=journal, journal_path=journal_path, item=item, log=log
+    )
+    _stub_loop(
+        monkeypatch=monkeypatch, journal=journal, journal_path=journal_path, item=item, log=log
+    )
+
+    dispatch_code = _dispatcher_run_commands.run_dispatch_command(
+        args=_dispatch_args(repo=tmp_path, journal_path=journal_path, item_id=item.id)
+    )
+    loop_code = _dispatcher_loop_command.run_loop_command(
+        args=_loop_args(repo=tmp_path, journal_path=journal_path)
+    )
+
+    assert (dispatch_code, loop_code) == (EXIT_PRECONDITION_ERROR, EXIT_PRECONDITION_ERROR)
+    # Neither path claimed the item and neither created a run.
+    assert "claim" not in log
+    assert "launch" not in log
+    assert "claim-and-launch" not in log
+    # One refusal record per path, each naming the item it declined to claim.
+    assert [record["stage"] for record in journal.records] == [
+        _dispatcher_codex_credential_gate.CODEX_CREDENTIAL_GATE_STAGE,
+        _dispatcher_codex_credential_gate.CODEX_CREDENTIAL_GATE_STAGE,
+    ]
+    assert all(record["unclaimed_work_item_ids"] == ["bd-ib-tyqklx"] for record in journal.records)
+    errors = capsys.readouterr().err
+    assert errors.count("C-mode dispatch refused") == 2

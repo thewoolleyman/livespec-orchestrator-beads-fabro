@@ -599,8 +599,12 @@ def test_every_criteria_gate_resolves_through_the_one_primitive() -> None:
     )
     repository_aware_gates = (
         "_drive_valves.py",
-        "_dispatcher_run_commands.py",
-        "_dispatcher_loop_command.py",
+        # BOTH dispatch paths, as ONE entry. The criteria wall used to be
+        # duplicated per command module; it now lives in the shared
+        # pre-dispatch wall `_dispatcher_run_commands` and
+        # `_dispatcher_loop_command` each call. Naming the two command modules
+        # here would assert the duplicate is still there.
+        "_dispatcher_pre_dispatch_wall.py",
     )
 
     for name in item_only_gates:
