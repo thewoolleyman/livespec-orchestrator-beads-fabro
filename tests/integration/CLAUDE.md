@@ -533,6 +533,23 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   admitted case is the control for all four, because four refusals alone are
   equally consistent with a gate that refuses every declaration. The drain leg is
   here too: the two dispatch paths reach the gate through separate call sites.
+  The same module binds the clause's MINTING half against a HERMETIC PROVIDER
+  DOUBLE — a script standing in for one provider's credential-management
+  interface, which appends a line per call to a ledger and prints what it minted
+  on stdout. Three cases carry it. The projection case reads the minted value out
+  of the overlay the real materializer writes while the HOST holds a value under
+  the same spelling, because a projection preferring the environment would be
+  byte-identical to the pre-minting build on exactly the repositories an operator
+  is most likely to have. The lifecycle case drives the real dispatch CLI and
+  asserts the double's ledger as a SEQUENCE — mint, the run, revoke — since
+  "revoked after the run ends" is a claim about order that a set cannot carry,
+  with both legs' scope read back off the journal's own dispatch id rather than
+  supplied by the test, and the copied sibling declared beside the minted one so
+  "journaled minted" cannot be a build reporting every declaration as minted. The
+  refusal case gives the double a twin that writes nothing and exits non-zero, and
+  asserts the dispatch refuses rather than sliding onto the host's credential —
+  the quiet failure where everything stays green and the only thing lost is the
+  per-run bound the clause exists to establish.
 
 - `test_ai_only_entry_path_refusal_scenario133.py` — binds the two ENTRY-PATH
   gherkin scenarios of `SPECIFICATION/scenarios.md` "Scenario 133 — A mixed item
