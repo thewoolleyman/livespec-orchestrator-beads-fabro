@@ -43,16 +43,36 @@ NEEDS_ATTENTION although every one of those sections carries `Reproduced: yes.`
 The blast radius was any proof that prints a comment or a heading, which is most of
 them.
 
-WHY ONLY THE FENCE, AND NOT "SPLIT AT THE ASSERTION HEADINGS ONLY". The narrower
-rule is the one that looks right and is measurably wrong. Recognising the record's
-own `## Assertion N — ` form and treating nothing else as a boundary would still
+WHY NOT "SPLIT AT THE ASSERTION HEADINGS ONLY". The narrower rule is the one that
+looks right and is measurably wrong. Recognising the record's own
+`## Assertion N — ` form and treating nothing else as a boundary would still
 split inside a fence, because a proof's SHELL COMMENTS take that form too: PR
 #2561's captured record carries four fenced lines reading `# Assertion 2, Step 2:
 …`, `# Assertion 3, Step 2: …` and the like. It would also stop splitting at a
 trailing `## Verdict` or `## Summary`, which is the fail-OPEN direction — an
 assertion whose own `Reproduced:` line is missing would absorb a later section's
-and report evidence nobody published. Fence state answers the question the defect
-actually asks, so it is the whole of the rule.
+and report evidence nobody published.
+
+WHY THE FENCE WAS NOT THE WHOLE OF THE RULE EITHER, which this docstring asserted
+until 2026-10-05. A heading-like line is only a heading when it is prose, and a
+PROSE heading is only a BOUNDARY when it is not nested inside the section it
+follows. A verifier that gives each assertion a `### Replay proof` subsection
+writes the `Reproduced:` line at the end of that subsection, so splitting at the
+nested heading detaches the verdict from the section stating the assertion and the
+reader answers `None` for an assertion the record states was reproduced — the same
+loss the fence repair fixed, arriving through prose instead of through code.
+Measured on released 0.170.0 against the published body of
+`thewoolleyman/livespec-overseer` PR #2341 comment 5976999030, a correctly
+attributed and correctly published verified record: `reproduced` returned `None`
+for its first assertion, and returned `True` once the nested heading marker was
+removed from the body and nothing else changed.
+
+SO THE RULE IS: split at EVERY prose heading, then widen the matched section into
+its own SUBTREE. Both halves are load-bearing and the order between them is what
+keeps the widening fail-closed; `_assertion_section` and `_sections` carry the
+argument. Widening cannot reach a sibling assertion's verdict or a trailing
+summary's, and an enclosing record-wide title cannot become a section holding
+every assertion in the body.
 """
 
 from __future__ import annotations
@@ -131,9 +151,10 @@ _HEADER_MINIMUM_FIELDS = 3
 _TIMESTAMP_FIELD = 3
 _HEADING = re.compile(r"^(#{1,6})\s")
 # One deeper than the deepest heading CommonMark admits, which is the depth the
-# body is at BEFORE its first heading. Any heading is shallower than this, so the
-# lines before the first heading — the record header itself — close on the first
-# one rather than absorbing it.
+# body carries BEFORE its first heading. Nothing is nested below it, so the lines
+# before the first heading — the record header itself — widen into nothing. Zero
+# would be the opposite and would be fail-OPEN: every heading would be nested
+# below it, so an assertion matched in the header section would absorb the body.
 _UNNESTED_DEPTH = 7
 # A CommonMark fenced-code delimiter: three or more backticks or tildes, indented
 # no more than three spaces. The run itself is captured because closing a fence
@@ -144,6 +165,20 @@ _WHITESPACE = re.compile(r"\s+")
 _REPRODUCED_PREFIX = "reproduced:"
 _REPRODUCED_YES = "yes"
 _REPRODUCED_NO = "no"
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Section:
+    """One heading-rooted run of body lines, carrying the depth it opened at.
+
+    The depth rides WITH the lines because the widening decision needs it after
+    the split has happened, and re-deriving it from `lines[0]` would re-derive it
+    for a line the splitter had already judged: the opening section's first line
+    is the record header, which is not a heading at all.
+    """
+
+    depth: int
+    lines: list[str]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -291,48 +326,65 @@ def _identity(*, field: str) -> str | None:
 
 
 def _assertion_section(*, body: str, assertion: str) -> list[str] | None:
+    """The SUBTREE of the narrowest section stating one assertion, or `None`.
+
+    Matching is against the narrowest section and widening happens afterwards, and
+    the order is the whole of the fail-closed guarantee. Matching a whole subtree
+    instead would make an enclosing heading — a record-wide `#` title — a section
+    containing every assertion in the body, so the first needle searched would
+    match it and read some other assertion's verdict. Widening a matched section
+    forward into its own nested prose can only ever add lines the matched heading
+    OWNS: a sibling or a shallower heading stops it, so no assertion can reach a
+    sibling assertion's `Reproduced:` line or a trailing `## Summary`'s run-wide
+    one.
+    """
     needle = _normalized(text=assertion)
     if not needle:
         return None
-    for section in _sections(body=body):
-        if needle in _normalized(text=" ".join(section)):
-            return section
+    sections = _sections(body=body)
+    for index, section in enumerate(sections):
+        if needle in _normalized(text=" ".join(section.lines)):
+            return _subtree(sections=sections, index=index)
     return None
 
 
-def _sections(*, body: str) -> list[list[str]]:
+def _subtree(*, sections: list[_Section], index: int) -> list[str]:
+    """One section plus every following section NESTED below it."""
+    lines = list(sections[index].lines)
+    for following in sections[index + 1 :]:
+        if following.depth <= sections[index].depth:
+            break
+        lines.extend(following.lines)
+    return lines
+
+
+def _sections(*, body: str) -> list[_Section]:
     """The record body split at its PROSE headings, each heading opening a section.
 
     The accumulator starts as one OPEN section rather than as an empty list, so
     there is no end-of-body flush to get wrong: the lines before the first
     heading — the header line itself — are that open section, and a body with no
-    lines at all is one empty section, which matches no assertion.
+    lines at all is one empty section, which matches no assertion. That opening
+    section's depth is `_UNNESTED_DEPTH`, which is what keeps the record HEADER
+    from being widened into the body: no heading is nested below it.
 
     A heading-like line INSIDE a fenced code block is proof output, not a heading,
     and never opens a section — the module docstring records what splitting at one
     cost. The delimiter line itself is never a heading either, so the fence arm and
-    the heading arm are exclusive.
-
-    A heading NESTED below the heading that opened the current section does not
-    open a section either: it is prose written inside that section — a verifier's
-    `### Replay proof` under its `## Assertion N` — so the assertion's own
-    `Reproduced:` line stays in the assertion's section. The depth is read from the
-    HEADINGS, never from a fixed assertion level: nothing fixes the level a record
-    states its assertions at, and a reader recognising one level would merge the
-    siblings of every record that chose another.
+    the heading arm are exclusive. Reading the depth here rather than from the
+    section's first line later is what makes the hierarchy fence-aware for free: a
+    heading-like line a proof printed never becomes a depth.
     """
-    sections: list[list[str]] = [[]]
+    sections = [_Section(depth=_UNNESTED_DEPTH, lines=[])]
     fence: str | None = None
-    depth = _UNNESTED_DEPTH
     for line in body.splitlines():
         delimiter = _FENCE.match(line)
         level = None if delimiter is not None or fence is not None else _heading_level(line=line)
         if delimiter is not None:
             fence = _fence_after(fence=fence, delimiter=delimiter.group(1))
-        elif level is not None and level <= depth and sections[-1]:
-            sections.append([])
-            depth = level
-        sections[-1].append(line)
+        elif level is not None and sections[-1].lines:
+            sections.append(_Section(depth=level, lines=[]))
+        sections[-1].lines.append(line)
     return sections
 
 
