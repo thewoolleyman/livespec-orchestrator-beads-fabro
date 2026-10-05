@@ -25,6 +25,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_payload import (
     remove_workflow_payload,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_lease import (
+    revoke_proof_credentials,
+)
 
 __all__: list[str] = [
     "DispatchRunContext",
@@ -59,6 +62,18 @@ def run_dispatch_with_watchdog(
     started_at = time.monotonic()
     runner = GithubTokenEnvRunner(inner=ShellCommandRunner(), token=context.token_supplier)
     with ExitStack() as stack:
+        # Registered FIRST so it runs LAST: a provider-minted proof credential is
+        # revoked once the run has ended AND the overlay that carried it is gone.
+        # Addressed by this dispatch's own id, which is the scope the mint used,
+        # so no state has to survive the overlay materializer to reach here.
+        _ = stack.callback(
+            lambda: revoke_proof_credentials(
+                repo=context.repo,
+                scope=context.dispatch_id,
+                runner=ShellCommandRunner(),
+                journal=context.journal,
+            )
+        )
         _ = stack.callback(lambda: context.overlay_file.unlink(missing_ok=True))
         _ = stack.callback(lambda: remove_workflow_payload(payload_dir=context.payload_dir))
         outcome = run_dispatch_func(

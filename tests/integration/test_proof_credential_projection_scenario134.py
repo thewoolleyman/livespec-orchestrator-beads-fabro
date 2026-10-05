@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import base64
 import json
+import sys
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -54,6 +55,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import Gi
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credentials import (
     COPIED_PROVISIONING,
+    MINTED_PROVISIONING,
     PROOF_CREDENTIAL_JOURNAL_STAGE,
 )
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
@@ -73,6 +75,61 @@ _READ_ONLY_DECLARATION = {
     "purpose": "observe the published build status of the deliverable",
     "capability": "read_only",
 }
+
+# The second declaration of the same repository: one whose provider DOES expose a
+# management interface, so the Dispatcher mints it per run and revokes it when the
+# run ends. The host holds a value under the same spelling, which must NOT be what
+# reaches the sandbox — that is the whole difference minting makes.
+_MANAGED_NAME = "ACME_MINTED_READER"
+_MANAGED_HOST_VALUE = "acme-host-held-value"
+_MANAGED_DECLARATION = {
+    "name": _MANAGED_NAME,
+    "purpose": "observe the published deployment state of the deliverable",
+    "capability": "read_only",
+}
+
+# The journal stage the revoke leg records under, spelled as a literal rather
+# than imported: the lease module does not exist at the Red of this slice, and a
+# top-level import of it would make that Red a collection error instead of a
+# genuine assertion failure.
+_REVOKE_JOURNAL_STAGE = "proof-credential-revoke"
+
+# A HERMETIC PROVIDER DOUBLE. It stands in for a provider's credential-management
+# interface and nothing else: it appends one line per call to a ledger whose path
+# it is handed on argv, and on `mint` it prints the value it minted on stdout —
+# which is the whole contract the Dispatcher relies on. It reads the name, the
+# declared capability and the per-run SCOPE out of the environment, exactly as a
+# real management command would, so a build that addressed the two legs any other
+# way would fail here rather than silently work on this double alone.
+_PROVIDER_DOUBLE = '''\
+"""A hermetic stand-in for one provider's credential-management interface."""
+
+import os
+import pathlib
+import sys
+
+_, ledger, operation = sys.argv
+name = os.environ["LIVESPEC_PROOF_CREDENTIAL_NAME"]
+capability = os.environ["LIVESPEC_PROOF_CREDENTIAL_CAPABILITY"]
+scope = os.environ["LIVESPEC_PROOF_CREDENTIAL_SCOPE"]
+with pathlib.Path(ledger).open("a", encoding="utf-8") as handle:
+    _ = handle.write(f"{operation} {name} {capability} {scope}\\n")
+if operation == "mint":
+    _ = sys.stdout.write(f"acme-minted-{scope}\\n")
+'''
+
+# The same double's REFUSING twin: it writes nothing to any ledger and exits
+# non-zero, which is how a provider whose management API is unreachable or out of
+# quota presents. Writing nothing is the point — an empty ledger is what shows the
+# refusal landed before anything was minted, so nothing is left needing a revoke.
+_PROVIDER_DOUBLE_REFUSING = '''\
+"""A hermetic stand-in for a provider management interface that cannot mint."""
+
+import sys
+
+_ = sys.stderr.write("acme-admin: quota exhausted\\n")
+raise SystemExit(9)
+'''
 
 _WRAPPER = ["/usr/local/bin/with-acme-env.sh", "--"]
 _FLEET_MANIFEST_TEXT = (
@@ -203,13 +260,62 @@ def _seed_item() -> WorkItem:
     return item
 
 
-def _repo(*, tmp_path: Path, declared: list[dict[str, str]] | None) -> Path:
+def _provider_double(*, tmp_path: Path) -> tuple[Path, dict[str, object]]:
+    """The hermetic double on disk, plus the management declaration driving it.
+
+    Returns its LEDGER path beside the declaration, because every claim this
+    module makes about minting and revoking is read off that ledger: it is the
+    only place the provider's own view of the run is recorded.
+    """
+    script = tmp_path / "acme_admin_double.py"
+    _ = script.write_text(_PROVIDER_DOUBLE, encoding="utf-8")
+    ledger = tmp_path / "acme-admin-ledger.txt"
+    return ledger, {
+        _MANAGED_NAME: {
+            "mint": [sys.executable, str(script), str(ledger), "mint"],
+            "revoke": [sys.executable, str(script), str(ledger), "revoke"],
+        }
+    }
+
+
+def _refusing_provider_double(*, tmp_path: Path) -> tuple[Path, dict[str, object]]:
+    """The double's refusing twin on disk, plus the declaration driving it."""
+    script = tmp_path / "acme_admin_refusing_double.py"
+    _ = script.write_text(_PROVIDER_DOUBLE_REFUSING, encoding="utf-8")
+    return tmp_path / "acme-admin-refusing-ledger.txt", {
+        _MANAGED_NAME: {
+            "mint": [sys.executable, str(script)],
+            "revoke": [sys.executable, str(script)],
+        }
+    }
+
+
+def _provider_ledger(*, ledger: Path) -> list[str]:
+    """Every line the double wrote, or the empty list when it never ran.
+
+    Tolerant of absence ON PURPOSE: "the double never ran" is the observation the
+    minted cases are discriminating against, and it must read as an empty ledger
+    rather than as an error about a missing file.
+    """
+    if not ledger.is_file():
+        return []
+    return ledger.read_text(encoding="utf-8").splitlines()
+
+
+def _repo(
+    *,
+    tmp_path: Path,
+    declared: list[dict[str, str]] | None,
+    managed: dict[str, object] | None = None,
+) -> Path:
     """A governed target whose committed configuration declares `proof_credentials`."""
     repo = tmp_path / "repo"
     repo.mkdir()
     dispatcher: dict[str, object] = {"wip_cap": 3, "acceptance_mode": "ai-only"}
     if declared is not None:
         dispatcher["proof_credentials"] = declared
+    if managed is not None:
+        dispatcher["proof_credential_management"] = managed
     _ = (repo / ".livespec.jsonc").write_text(
         json.dumps(
             {
@@ -451,6 +557,164 @@ def test_a_declared_name_the_wrapper_does_not_inject_refuses_naming_the_wrapper(
     assert _DECLARED_NAME in stderr
     assert "with-acme-env.sh" in stderr
     assert _credential_records(repo=repo) == []
+
+
+def test_a_managed_declaration_reaches_the_sandbox_as_the_value_minted_for_this_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The minted projection, read out of the overlay the production materializer writes.
+
+    Three independent facts in one case, because each alone is satisfied by a
+    build the others reject. The DOUBLE's ledger says a mint happened once, under
+    this run's scope and the declared capability — a projection that invented a
+    value would show an empty ledger. The overlay carries the MINTED value — a
+    mint whose result was dropped would show a mint in the ledger and no line
+    here. And the HOST value, present under the same spelling, is absent from the
+    overlay — which is the only thing that distinguishes minting from copying on
+    a host that happens to hold a credential of its own.
+    """
+    monkeypatch.setenv(_MANAGED_NAME, _MANAGED_HOST_VALUE)
+    _stand_in_host_codex_credential(monkeypatch=monkeypatch)
+    ledger, managed = _provider_double(tmp_path=tmp_path)
+    repo = _repo(tmp_path=tmp_path, declared=[_MANAGED_DECLARATION], managed=managed)
+    overlay = tmp_path / "overlay.toml"
+
+    error = materialize_overlay(
+        committed=repo / _RESERVED_DIR / "workflow.toml",
+        overlay=overlay,
+        repo=repo,
+        work_item_id=_ITEM_ID,
+        dispatch_id="disp-134",
+        token=lambda: "test-github-token",
+        git_author=GitAuthor(name="Operator", email="operator@example.com"),
+    )
+
+    assert error is None
+    assert _provider_ledger(ledger=ledger) == [f"mint {_MANAGED_NAME} read_only disp-134"]
+    rendered = overlay.read_text(encoding="utf-8")
+    env_table = rendered.split("[environments.fabro-sandbox.env]\n", 1)
+    assert len(env_table) == 2
+    assert f'{_MANAGED_NAME} = "acme-minted-disp-134"\n' in env_table[1]
+    assert _MANAGED_HOST_VALUE not in rendered
+
+
+def test_a_minted_credential_is_revoked_after_the_run_and_a_copied_sibling_is_not(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The whole lifecycle through the real dispatch CLI, with the copied control beside it.
+
+    ORDER IS THE CLAIM, so it is read as a sequence rather than as a set: the
+    run-marker line between the mint and the revoke is what makes "revoked AFTER
+    the run ends" an observation. A build that revoked before launching, or that
+    never revoked at all, produces a ledger this assertion rejects while every
+    other signal in the dispatch stays green.
+
+    The SCOPE is the discriminator for "per run": mint and revoke must carry the
+    same value, and that value must be this dispatch's own id, read back off the
+    journal rather than supplied here — the two legs address the provider by that
+    one value and nothing else, so a scope that drifted between them would revoke
+    a credential belonging to some other run.
+
+    The COPIED sibling rides in the same declaration. Without it, "the managed
+    name is journaled minted" is equally consistent with a build that reports
+    every declaration as minted, which would strand the unmanaged one with no
+    projected credential at all.
+    """
+    monkeypatch.setenv(_DECLARED_NAME, _DECLARED_VALUE)
+    monkeypatch.setenv(_MANAGED_NAME, _MANAGED_HOST_VALUE)
+    _ = _seed_item()
+    ledger, managed = _provider_double(tmp_path=tmp_path)
+    repo = _repo(
+        tmp_path=tmp_path,
+        declared=[_MANAGED_DECLARATION, _READ_ONLY_DECLARATION],
+        managed=managed,
+    )
+    calls: list[str] = []
+
+    def _run_dispatch(**kwargs: object) -> DispatchOutcome:
+        plan = kwargs["plan"]
+        assert isinstance(plan, DispatchPlan)
+        calls.append(plan.work_item_id)
+        with ledger.open("a", encoding="utf-8") as handle:
+            _ = handle.write("run\n")
+        return DispatchOutcome(
+            work_item_id=plan.work_item_id,
+            status="green",
+            stage="done",
+            pr_number=None,
+            merge_sha=None,
+            detail="dispatched",
+        )
+
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _run_dispatch)
+
+    exit_code = main(
+        argv=["dispatch", "--repo", str(repo), "--item", _ITEM_ID, "--no-close-on-merge"]
+    )
+
+    assert (exit_code, calls) == (0, [_ITEM_ID])
+    records = _journal_records(repo=repo)
+    dispatch_ids = [
+        record["dispatch_id"] for record in records if record.get("stage") == "dispatch-id"
+    ]
+    assert len(dispatch_ids) == 1
+    scope = dispatch_ids[0]
+    assert _provider_ledger(ledger=ledger) == [
+        f"mint {_MANAGED_NAME} read_only {scope}",
+        "run",
+        f"revoke {_MANAGED_NAME} read_only {scope}",
+    ]
+    assert [
+        (record["name"], record["provisioning"]) for record in _credential_records(repo=repo)
+    ] == [(_MANAGED_NAME, MINTED_PROVISIONING), (_DECLARED_NAME, COPIED_PROVISIONING)]
+    assert [
+        (record["name"], record["scope"], record["revoked"])
+        for record in records
+        if record.get("stage") == _REVOKE_JOURNAL_STAGE
+    ] == [(_MANAGED_NAME, scope, True)]
+    # Neither the minted value nor the host value it displaced may reach a
+    # durable artifact, which the clause requires of every journal and record.
+    serialized = json.dumps(records)
+    assert f"acme-minted-{scope}" not in serialized
+    assert _MANAGED_HOST_VALUE not in serialized
+
+
+def test_a_provider_that_cannot_mint_refuses_the_dispatch_before_any_run_exists(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A mint that fails refuses, and does NOT slide onto the host's own credential.
+
+    The host holds a value under the same spelling, so the quiet failure mode
+    here is a dispatch that proceeds with the COPIED credential: everything stays
+    green, the proof stage works, and the only thing lost is the per-run bound
+    this clause exists to establish. Asserted on the exit code and on the launch
+    seam, because "before any run exists" is a claim about what did NOT happen.
+
+    The ledger is asserted EMPTY, which is the other half: nothing was minted, so
+    nothing is left for a revoke to chase. The refusal is read off the dispatch
+    RESULT LINE and off the journal, and asserted to name the committed key an
+    operator has to edit while carrying neither the host value nor the provider's
+    own output — the mint command's stdout IS a credential.
+    """
+    monkeypatch.setenv(_MANAGED_NAME, _MANAGED_HOST_VALUE)
+    _stand_in_host_codex_credential(monkeypatch=monkeypatch)
+    _ = _seed_item()
+    ledger, managed = _refusing_provider_double(tmp_path=tmp_path)
+    repo = _repo(tmp_path=tmp_path, declared=[_MANAGED_DECLARATION], managed=managed)
+
+    exit_code, calls = _dispatch(repo=repo, monkeypatch=monkeypatch)
+
+    assert (exit_code, calls) == (1, [])
+    assert _provider_ledger(ledger=ledger) == []
+    reported = capsys.readouterr()
+    assert "run-config-overlay" in reported.out
+    assert _MANAGED_NAME in reported.out
+    assert "quota exhausted" not in reported.out + reported.err
+    assert _MANAGED_HOST_VALUE not in reported.out + reported.err
 
 
 def test_the_drain_reaches_the_same_gate(

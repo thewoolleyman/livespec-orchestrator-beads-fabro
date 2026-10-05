@@ -155,7 +155,17 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   per-declaration journal record) → `_dispatcher_proof_credential_projection`
   (the overlay env lines an admitted declaration renders) and
   `_dispatcher_proof_credential_gate` (the selection-level gate the two
-  dispatch paths call).
+  dispatch paths call) → `_dispatcher_proof_credential_lease` (the ONLY place
+  either provider command is executed: the mint before the overlay is written,
+  and the revoke once the run has ended).
+  The lease carries NO state between its two legs on purpose — both are
+  addressed by the per-run SCOPE, which is the dispatch id — because a handle
+  threaded from the mint could only reach a revoke on the path the mint's
+  return value took, and that is the shape that loses a revoke on every early
+  return between them. A mint failure refuses the dispatch; a revoke failure
+  cannot (the run has ended, so no decision is left) and is JOURNALED under its
+  own stage instead, because a credential outliving its run is otherwise
+  nothing anyone is looking for.
   The DECLARATION-versus-GATE split is deliberate, and the gate's own docstring
   names it: the declaration module grades COMMITTED CONFIGURATION and is pure
   over a block handed to it, while the gate reads the target repository off

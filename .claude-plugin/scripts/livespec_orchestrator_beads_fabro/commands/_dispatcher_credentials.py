@@ -38,12 +38,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_sele
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import GitAuthor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     GITHUB_TOKEN_ENV_VAR,
+    ShellCommandRunner,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     cc_otel_overlay_env,
     render_run_config_overlay,
     resolve_sandbox_otel_endpoint,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_lease import (
+    mint_proof_credentials,
+    revoke_proof_credentials,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_projection import (
     proof_credentials_overlay_env,
@@ -143,7 +148,7 @@ def read_dispatch_labels(
     return tuple(label for label in raw_labels if isinstance(label, str))
 
 
-def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each argument is an independent projection input, matching `render_run_config_overlay` it feeds.
+def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materializer; each argument is an independent projection input, matching `render_run_config_overlay` it feeds, and each return is one PRE-LAUNCH REFUSAL (credential env, App token mint, sibling clones, Codex projection, proof-credential mint, unmaterializable config) that names its own cause to the operator; collapsing any two would report the wrong one.
     *,
     committed: Path,
     overlay: Path,
@@ -238,6 +243,13 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
         home=Path.home(),
         warn=lambda message: sys.stderr.write(f"livespec-dispatch: {message}\n"),
     )
+    # Minted LAST among the steps that can still refuse, so a refusal above this
+    # line never leaves a live provider credential behind. The scope is the
+    # dispatch id, which is also what the run-teardown revoke is handed.
+    lease_runner = ShellCommandRunner()
+    minted = mint_proof_credentials(repo=repo, scope=dispatch_id, runner=lease_runner)
+    if isinstance(minted, str):
+        return minted
     rendered = render_run_config_overlay(
         committed_text=committed.read_text(encoding="utf-8"),
         workflow_dir=committed.parent.resolve(),
@@ -270,7 +282,12 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
         # process's environment. The pre-dispatch gate has already refused every
         # unusable declaration, so what reaches here is admitted; the builder is
         # nonetheless fail-closed and renders nothing it cannot account for (S8).
-        proof_credentials_env=proof_credentials_overlay_env(repo=repo, environ=os.environ),
+        # A declaration whose provider exposes a management interface takes the
+        # value minted a few lines above; every other one takes the
+        # wrapper-supplied value out of this process's environment.
+        proof_credentials_env=proof_credentials_overlay_env(
+            repo=repo, environ=os.environ, minted=minted
+        ),
         # The pre-launch dispatch id the sandbox declares as its
         # factory-provenance marker. This function runs BEFORE `fabro run`,
         # which is why the marker cannot carry the Fabro run id.
@@ -278,6 +295,11 @@ def materialize_overlay(  # noqa: PLR0913 — kw-only overlay materializer; each
         git_author=git_author,
     )
     if rendered is None:
+        # The credentials minted just above belong to a run that will now never
+        # exist, and the run-teardown revoke is only reached once a run starts.
+        # Revoking here is what keeps "revoked when the run ends" true of a
+        # dispatch that ended before it began.
+        revoke_proof_credentials(repo=repo, scope=dispatch_id, runner=lease_runner)
         return (
             f"workflow config {committed} is not materializable: it must carry "
             '[workflow] graph = "..." and [run.environment] id = "..."'
