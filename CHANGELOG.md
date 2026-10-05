@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.168.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.168.0...v0.168.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* **dispatch:** bound the renewal by killing the whole process tree ([5d63760](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5d63760538a485c5ea09c1b69ba68686c8236b65))
+* **dispatch:** condition a login remedy on explicit auth evidence ([f0b1e18](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f0b1e1877362ab8480164c5cf9dc91642737859e))
+* **dispatch:** derive the Codex refresh guard from the freshness requirement ([9a3bdf1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9a3bdf1593b8789b57eb5068e3d8663a5ef7fd3a))
+* **dispatch:** renew a dead-zone Codex credential over the ungated RPC ([4325a13](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4325a1379fc7c5158a88612350acc39dcf7a770a))
+* **dispatch:** spend the ungated renewal RPC from the refresh timer ([35a606a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/35a606a3548e189812b0330d06a6bbb3228a281d))
+
 ## [0.168.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.167.1...v0.168.0) (2026-10-05)
 
 
