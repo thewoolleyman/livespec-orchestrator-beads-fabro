@@ -22,6 +22,8 @@ loop instead of two.
 from __future__ import annotations
 
 import json
+import os
+import signal
 import subprocess
 import threading
 from pathlib import Path
@@ -63,9 +65,15 @@ class ShellCodexAppServerRunner:
                 cwd=str(cwd),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                # Never an unread PIPE: nothing here reads stderr, and a child
+                # that fills that buffer blocks forever on its own write.
+                stderr=subprocess.DEVNULL,
                 text=True,
                 bufsize=1,
+                # Its OWN session, so the deadline can reap the whole tree.
+                # Without this the group is the Dispatcher's, and killing it
+                # would aim the signal at ourselves.
+                start_new_session=True,
             ),
             exceptions=(OSError,),
         )
@@ -76,7 +84,13 @@ class ShellCodexAppServerRunner:
                 stderr=f"codex app-server could not be started: {spawned.error}",
             )
         process = spawned
-        watchdog = threading.Timer(timeout_seconds, process.kill)
+        # Kill the GROUP, not the launcher. `codex` on the orchestrator host is
+        # a launcher that spawns the real binary with inherited stdio, so a
+        # signal to the launcher alone leaves a grandchild holding the stdout
+        # pipe and `readline` blocks until THAT process exits — measured at
+        # 3.05s against a 0.5s deadline, and unbounded for a child that hangs.
+        # Killing the group closes the pipe, which is what unblocks the read.
+        watchdog = threading.Timer(timeout_seconds, lambda: _kill_tree(process=process))
         watchdog.start()
         try:
             return _converse(process=process, request_lines=request_lines)
@@ -184,8 +198,25 @@ def _unspendable(*, transcript: list[str], detail: str) -> CommandResult:
     )
 
 
+def _kill_tree(*, process: subprocess.Popen[str]) -> None:
+    """SIGKILL the whole process group this runner started.
+
+    Tolerates a group that has already gone: a tree that exited on its own
+    leaves no group, and `ProcessLookupError` there is the NORMAL outcome of a
+    healthy session rather than a fault worth surfacing.
+    """
+    killed = attempt(
+        action=lambda: os.killpg(os.getpgid(process.pid), signal.SIGKILL),
+        exceptions=(OSError,),
+    )
+    if isinstance(killed, AttemptFailure):
+        # The group is gone; fall back to the direct handle so a process that
+        # somehow escaped its own group is still not left running.
+        _ = attempt(action=process.kill, exceptions=(OSError,))
+
+
 def _reap(*, process: subprocess.Popen[str]) -> None:
-    """Close stdin so the server exits, then wait, killing it if it lingers."""
+    """Close stdin so the server exits, then wait, killing the tree if it lingers."""
     stdin = cast("IO[str]", process.stdin)
     _ = attempt(action=stdin.close, exceptions=(OSError,))
     waited = attempt(
@@ -193,5 +224,5 @@ def _reap(*, process: subprocess.Popen[str]) -> None:
         exceptions=(subprocess.TimeoutExpired,),
     )
     if isinstance(waited, AttemptFailure):
-        process.kill()
+        _kill_tree(process=process)
         _ = process.wait()
