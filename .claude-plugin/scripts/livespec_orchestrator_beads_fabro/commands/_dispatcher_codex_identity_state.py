@@ -9,11 +9,21 @@ What is stored is deliberately narrow: the one-way fingerprints
 instant and the moment of the reading. No token, no claim value, and nothing
 copied out of `auth.json` -- the provider's authentication file is only ever
 read, and never by this module at all.
+
+Two properties of the write are load-bearing rather than incidental. It goes
+through a mode-600 temporary and an atomic replace, so an UPDATE installs the
+restrictive mode afresh instead of inheriting whatever the previous file had
+drifted to, and a concurrent reader sees either the old record or the new one and
+never a half-written file. And a file that EXISTS but cannot be parsed is its own
+outcome: calling it absent would invite a fresh first observation over a record
+still on disk, and calling it a prior observation would let the comparison report
+continuity it never measured.
 """
 
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
@@ -43,7 +53,12 @@ _EXPIRES_AT_FIELD = "expires_at_epoch"
 _SESSION_FIELD = "session_fingerprint"
 _TOKEN_FIELD = "token_fingerprint"  # noqa: S105 - a JSON field NAME; its value is a digest
 
-PriorStateStatus = Literal["absent", "readable"]
+_STATE_FILE_MODE = 0o600
+_STATE_DIR_MODE = 0o700
+
+PriorStateStatus = Literal["absent", "readable", "unreadable"]
+
+_ABSENT_DETAIL = "No preceding observation has been recorded at this path."
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -66,22 +81,25 @@ class PriorIdentityState:
 
 
 def read_prior_identity_state(*, path: Path) -> PriorIdentityState:
-    """Read the preceding observation out of the private state file."""
+    """Read the preceding observation, distinguishing absent from unreadable.
+
+    The two are reported apart because they license different conclusions: an
+    absent file means this reading is genuinely the first, while a file that
+    cannot be parsed means a preceding reading exists and this one cannot see
+    it. Collapsing the second into the first would quietly restart the series
+    over a record still sitting on disk.
+    """
+    if not path.exists():
+        return PriorIdentityState(status="absent", detail=_ABSENT_DETAIL, record=None)
     stored = attempt(action=lambda: path.read_text(encoding="utf-8"), exceptions=(OSError,))
     if isinstance(stored, AttemptFailure):
-        return PriorIdentityState(
-            status="absent",
-            detail="No preceding observation has been recorded at this path.",
-            record=None,
-        )
+        return _unreadable(detail=f"could not be opened ({stored.error})")
     raw = parse_json(text=stored)
-    if isinstance(raw, JsonParseFailure) or not isinstance(raw, dict):
-        return PriorIdentityState(
-            status="absent",
-            detail="No preceding observation has been recorded at this path.",
-            record=None,
-        )
-    return _readable(block=cast("dict[str, object]", raw))
+    if isinstance(raw, JsonParseFailure):
+        return _unreadable(detail="is not valid JSON")
+    if not isinstance(raw, dict):
+        return _unreadable(detail="is not a JSON object")
+    return _parsed(block=cast("dict[str, object]", raw))
 
 
 def write_identity_state(*, path: Path, record: CodexIdentityStateRecord) -> str | None:
@@ -94,8 +112,18 @@ def write_identity_state(*, path: Path, record: CodexIdentityStateRecord) -> str
 
 
 def _write(*, path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    _ = path.write_text(text, encoding="utf-8")
+    """Install the record through a private temporary and an atomic replace.
+
+    The mode is set at CREATION rather than afterwards, so the bytes are never
+    on disk under a wider mode, not even momentarily.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True, mode=_STATE_DIR_MODE)
+    temporary = path.with_name(f"{path.name}.tmp")
+    temporary.unlink(missing_ok=True)
+    descriptor = os.open(str(temporary), os.O_WRONLY | os.O_CREAT | os.O_EXCL, _STATE_FILE_MODE)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        _ = handle.write(text)
+    _ = temporary.replace(path)
 
 
 def _encode(*, record: CodexIdentityStateRecord) -> dict[str, object]:
@@ -108,7 +136,19 @@ def _encode(*, record: CodexIdentityStateRecord) -> dict[str, object]:
     }
 
 
-def _readable(*, block: dict[str, object]) -> PriorIdentityState:
+def _parsed(*, block: dict[str, object]) -> PriorIdentityState:
+    """Grade a parsed state file against the schema this build writes.
+
+    An unrecognised schema and a record carrying no reading instant are both
+    unreadable rather than partially trusted: a record whose shape this build
+    does not know cannot be compared field by field, and an invented instant
+    would read exactly like a real one.
+    """
+    if block.get(_SCHEMA_FIELD) != IDENTITY_STATE_SCHEMA:
+        return _unreadable(detail=f"does not carry the {IDENTITY_STATE_SCHEMA} schema")
+    observed_at = _int_field(block=block, name=_OBSERVED_AT_FIELD)
+    if observed_at is None:
+        return _unreadable(detail=f"carries no integer {_OBSERVED_AT_FIELD}")
     return PriorIdentityState(
         status="readable",
         detail="The preceding observation was read.",
@@ -116,8 +156,19 @@ def _readable(*, block: dict[str, object]) -> PriorIdentityState:
             session_fingerprint=_str_field(block=block, name=_SESSION_FIELD),
             token_fingerprint=_str_field(block=block, name=_TOKEN_FIELD),
             expires_at_epoch=_int_field(block=block, name=_EXPIRES_AT_FIELD),
-            observed_at_epoch=_int_field(block=block, name=_OBSERVED_AT_FIELD) or 0,
+            observed_at_epoch=observed_at,
         ),
+    )
+
+
+def _unreadable(*, detail: str) -> PriorIdentityState:
+    return PriorIdentityState(
+        status="unreadable",
+        detail=(
+            f"A preceding observation exists at this path but {detail}, so this "
+            "reading establishes nothing about whether either identifier changed."
+        ),
+        record=None,
     )
 
 

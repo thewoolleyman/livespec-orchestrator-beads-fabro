@@ -53,18 +53,23 @@ def compare_codex_identity(
 ) -> CodexIdentityComparison:
     """Compare the current identity reading with the remembered one."""
     record = prior.record
+    # Keyed on the PRIOR FILE's existence, not on whether a record parsed out of
+    # it. A damaged file means a preceding reading happened and this one cannot
+    # see it, which is `unknown` -- reporting `first-observation` there would
+    # restart the series over a record still on disk.
+    prior_exists = prior.status != "absent"
     return CodexIdentityComparison(
         prior_state=prior.status,
         prior_state_detail=prior.detail,
         session_change=_change(
             current=claims.session_fingerprint,
             prior_value=None if record is None else record.session_fingerprint,
-            prior_present=record is not None,
+            prior_exists=prior_exists,
         ),
         token_change=_change(
             current=claims.token_fingerprint,
             prior_value=None if record is None else record.token_fingerprint,
-            prior_present=record is not None,
+            prior_exists=prior_exists,
         ),
     )
 
@@ -108,9 +113,9 @@ def _change(
     *,
     current: str | None,
     prior_value: str | None,
-    prior_present: bool,
+    prior_exists: bool,
 ) -> IdentityChange:
-    if not prior_present:
+    if not prior_exists:
         return "first-observation"
     if current is None or prior_value is None:
         return "unknown"
