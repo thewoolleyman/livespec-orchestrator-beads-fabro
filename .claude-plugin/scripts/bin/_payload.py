@@ -48,8 +48,10 @@ from pathlib import Path
 from typing import cast
 
 __all__: list[str] = [
+    "PayloadRefusal",
     "RetainedPayload",
     "harness_managed",
+    "missing_payload_paths",
     "retain_payload",
 ]
 
@@ -76,6 +78,24 @@ _SOURCE_REPOSITORY_MARKERS = ("pyproject.toml", "justfile")
 # Byte-compiled caches are reproducible from the sources beside them, so they
 # are the one thing the copy leaves behind.
 _IGNORED_NAMES = ("__pycache__",)
+# What this launcher needs present for a payload to be usable at all — one
+# entry per failure mode a dispatch would otherwise hit HOURS later: the
+# release manifest, both pre-import launcher modules, the package root, the
+# vendored dependency tree, and the Fabro workflow assets.
+#
+# Deliberately NOT read from `cache-manifest.json`. That manifest serves the
+# fleet's `ensure-plugins` verification and omits `scripts/_vendor` and
+# `.fabro/` entirely — the two trees whose absence produced the measured
+# `ModuleNotFoundError`. A completeness contract that cannot see the thing that
+# broke is not the contract to validate against.
+_REQUIRED_PAYLOAD_PATHS: tuple[tuple[str, ...], ...] = (
+    ("plugin.json",),
+    ("scripts", "bin", "_bootstrap.py"),
+    ("scripts", "bin", "_payload.py"),
+    ("scripts", "livespec_orchestrator_beads_fabro", "__init__.py"),
+    ("scripts", "_vendor"),
+    (".fabro", "workflows"),
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -93,11 +113,47 @@ class RetainedPayload:
     retained: bool
 
 
-def retain_payload(*, source_root: Path) -> RetainedPayload:
-    """Resolve the payload this invocation should run from, copying it if needed."""
+@dataclass(frozen=True, kw_only=True)
+class PayloadRefusal:
+    """Why this invocation has no usable payload, phrased for an operator.
+
+    Returned rather than raised: the caller is the pre-import launcher, and it
+    owes the operator one actionable line and a precondition exit code — not a
+    traceback through machinery that was never the problem.
+    """
+
+    message: str
+
+
+def retain_payload(*, source_root: Path) -> RetainedPayload | PayloadRefusal:
+    """Resolve the payload this invocation runs from, or refuse with a reason.
+
+    A refusal here lands BEFORE any application import, so it lands before the
+    Dispatcher can claim a work item or start a factory run. That ordering is
+    the point: a dispatch that discovers its payload is unusable only after
+    claiming has stranded the item, which is the same cost the retention
+    exists to prevent, moved to a later moment.
+    """
     if not harness_managed(source_root=source_root):
         return _payload_at(root=source_root, retained=False)
-    return _payload_at(root=_retained_root(source_root=source_root), retained=True)
+    missing = missing_payload_paths(root=source_root)
+    if missing:
+        return PayloadRefusal(
+            message=_incomplete_message(root=source_root, missing=missing, subject="installation")
+        )
+    retained = _retained_root(source_root=source_root)
+    if isinstance(retained, PayloadRefusal):
+        return retained
+    return _payload_at(root=retained, retained=True)
+
+
+def missing_payload_paths(*, root: Path) -> tuple[str, ...]:
+    """The required payload members absent from `root`, as POSIX relative paths."""
+    return tuple(
+        "/".join(relative)
+        for relative in _REQUIRED_PAYLOAD_PATHS
+        if not root.joinpath(*relative).exists()
+    )
 
 
 def harness_managed(*, source_root: Path) -> bool:
@@ -122,7 +178,7 @@ def _payload_at(*, root: Path, retained: bool) -> RetainedPayload:
     )
 
 
-def _retained_root(*, source_root: Path) -> Path:
+def _retained_root(*, source_root: Path) -> Path | PayloadRefusal:
     """Copy the release into a directory THIS invocation alone owns.
 
     The holder comes from `mkdtemp`, so it is created fresh, mode 0700, by
@@ -143,8 +199,40 @@ def _retained_root(*, source_root: Path) -> Path:
     release = _release_identity(source_root=source_root)
     holder = Path(tempfile.mkdtemp(prefix=f"{_PAYLOAD_PREFIX}{release}-"))
     root = holder / _STAGED_NAME
-    _ = shutil.copytree(source_root, root, ignore=shutil.ignore_patterns(*_IGNORED_NAMES))
+    try:
+        _ = shutil.copytree(source_root, root, ignore=shutil.ignore_patterns(*_IGNORED_NAMES))
+    except (OSError, shutil.Error) as failure:
+        shutil.rmtree(holder, ignore_errors=True)
+        return PayloadRefusal(
+            message=(
+                f"ERROR: livespec payload provisioning refused: copying the installed "
+                f"release at {source_root} failed, so this invocation has no payload it "
+                f"could keep running from. Nothing was claimed and no factory run was "
+                f"started. Reinstall the plugin, then retry. Cause: {failure}"
+            )
+        )
+    missing = missing_payload_paths(root=root)
+    if missing:
+        # The source passed its own check moments ago, so an incomplete COPY
+        # means the source changed underneath the copy — an eviction landing
+        # mid-provision, which is exactly the race this module exists for. The
+        # partial tree goes, because a later invocation finding it would
+        # execute an incomplete release.
+        shutil.rmtree(holder, ignore_errors=True)
+        return PayloadRefusal(
+            message=_incomplete_message(root=source_root, missing=missing, subject="copy")
+        )
     return root
+
+
+def _incomplete_message(*, root: Path, missing: tuple[str, ...], subject: str) -> str:
+    """One actionable line naming WHAT is missing and WHICH tree it is missing from."""
+    return (
+        f"ERROR: livespec payload provisioning refused: the plugin {subject} at {root} "
+        f"is missing {', '.join(missing)}, so this invocation has no complete payload "
+        f"to keep running from. Nothing was claimed and no factory run was started. "
+        f"Reinstall the plugin, then retry."
+    )
 
 
 def _release_identity(*, source_root: Path) -> str:

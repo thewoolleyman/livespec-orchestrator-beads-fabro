@@ -27,7 +27,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import cast
 
-from _payload import retain_payload
+from _payload import PayloadRefusal, retain_payload
 
 __all__: list[str] = ["bootstrap"]
 
@@ -44,6 +44,11 @@ _BEADS_CONFIG_RELPATH = (".beads", "config.yaml")
 _SERVER_MODE_MARKER = "dolt.mode:server"
 _LIVESPEC_CONFIG_FILENAME = ".livespec.jsonc"
 _CREDENTIAL_FAIL_EXIT = 3
+# A payload this invocation cannot keep running from is a PRECONDITION failure,
+# and it shares the credential refusal's exit code because both say the same
+# thing to a caller: the environment is not fit to dispatch from, nothing was
+# claimed, and no factory run was started.
+_PAYLOAD_FAIL_EXIT = 3
 # The unattended-plan-resume marker. NOT a secret and never a member of
 # `required`: the credential self-heal neither needs it nor injects it — it
 # only has to stop DESTROYING it (see `_marker_forwarded_argv`). The name is
@@ -82,6 +87,9 @@ def bootstrap(*, required: tuple[str, ...] = _REQUIRED_CREDENTIALS) -> None:
         )
         raise SystemExit(127)
     payload = retain_payload(source_root=Path(__file__).resolve().parent.parent.parent)
+    if isinstance(payload, PayloadRefusal):
+        _ = sys.stderr.write(payload.message + "\n")
+        raise SystemExit(_PAYLOAD_FAIL_EXIT)
     for path in (payload.scripts_root, payload.vendor_root):
         path_str = str(path)
         if path_str not in sys.path:
