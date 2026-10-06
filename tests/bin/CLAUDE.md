@@ -138,6 +138,26 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   control keeps this repository's own checkout exempt, so the
   source-checkout, currency and canary policies are preserved. Listed in
   `subprocess_spawn_allowlist`.
+- `test_payload_parent_reads_asset_after_helper_exit.py` — the real
+  LIFETIME ORDERING, supplied natively. NOT a Red: it supplements an
+  evidence gap a read-only review raised against cycle 11's accepted
+  Red, whose fourth case calls `release_payload(helper)` synchronously
+  in ONE process — sufficient for the OWNERSHIP rule it claims, but no
+  proof that a parent still reads its assets after a genuine child has
+  terminated, because no child ever started. Here a real parent retains
+  a payload, its installation is EVICTED, it spawns a real helper
+  through the packaged launcher and waits for that helper to EXIT, and
+  only then reads an actual packaged asset's content — the bundled
+  33KB `workflow.toml` plus the release manifest — before releasing its
+  own payload. The ordering is RECORDED as an `events` list the parent
+  emits, so the assertion reads the sequence performed rather than
+  trusting statement order. The helper's `source_root` is the retained
+  PAYLOAD path, the real shape cycle 4 has spawned since the start and
+  the case `_payload_serves`'s second clause exists for. Measured
+  2026-10-06: 33,521 characters read (33,658 bytes in the source; the
+  gap is UTF-8 multibyte decoding, not truncation), and a mutation
+  control with an impossible token FAILS, so the asset assertion is
+  live. Listed in `subprocess_spawn_allowlist`.
 - `test_payload_candidate_root_without_claude_env.py` — the
   candidate-boundary case `test_payload_candidate_and_credential_boundary.py`
   cannot reach, because that file sets `CLAUDE_PLUGIN_ROOT` on every
