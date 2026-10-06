@@ -169,7 +169,16 @@ def assess_codex_credential_freshness(
     expires_at = decode_codex_access_token_exp(source_auth_json=source_auth_json)
     required_remaining = codex_freshness_required_seconds(run_budget_seconds=run_budget_seconds)
     remaining = expires_at - now_epoch
-    fresh_enough = remaining >= required_remaining
+    # STRICTLY GREATER, because the ratified assertion is that the remaining
+    # lifetime EXCEEDS the maximum enforced credential-use duration plus the
+    # documented margin -- and a credential whose remaining lifetime EQUALS that
+    # figure does not exceed it. The equality case is not academic: it is the
+    # credential that would finish its last enforced second with exactly zero
+    # margin left, which is the one state the margin exists to prevent. The
+    # comparator is the whole difference between admitting and refusing it, so
+    # the boundary is asserted below/equal/above through the public surfaces
+    # rather than left to the shape of this line.
+    fresh_enough = remaining > required_remaining
     # The bounded, host-local renewal comes FIRST: this lifetime is inside the
     # refresh guard by construction, so the sanctioned refresher is eligible and
     # a human `codex login` is not yet established as necessary.
