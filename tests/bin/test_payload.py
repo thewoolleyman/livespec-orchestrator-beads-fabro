@@ -433,6 +433,51 @@ def test_an_inherited_payload_that_is_gone_falls_through_to_a_fresh_one(
     assert retained.vendor_root.is_dir()
 
 
+@pytest.mark.parametrize("case", ["absent", "unreadable"])
+def test_an_inherited_payload_whose_source_cannot_be_read_is_not_adopted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, case: str
+) -> None:
+    """A COMPLETE inherited tree whose origin is unestablished falls through.
+
+    Completeness is not provenance, and this is the arm that keeps the two
+    apart. A payload published by a build that wrote no source record, or one
+    whose record cannot be read, could have been copied from ANY installation
+    — so it is not executed, and the selected source is provisioned fresh
+    instead. Declining costs one copy; adopting on trust is how an invocation
+    silently runs a release nobody selected.
+
+    The two cases are the two real shapes of "cannot read": the record is
+    missing entirely (`FileNotFoundError`), or something that is not a file
+    sits where it belongs (`IsADirectoryError`). Both are `OSError`, and both
+    must decline rather than raise out of the pre-import launcher.
+
+    Lives here rather than in `test_payload_inherited_source_identity.py`
+    because that file's bytes are frozen across its Red->Green pair.
+    """
+    payload = _import_payload()
+    _ = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
+    holder = tmp_path / "holder-from-an-unknown-source"
+    holder.mkdir()
+    inherited = _install(root=holder / "payload")
+    if case == "unreadable":
+        (holder / "source").mkdir()
+    assert not payload.missing_payload_paths(root=inherited), (
+        "fixture: the inherited tree is incomplete, so it would be declined for "
+        "that reason instead of for its unestablished source"
+    )
+
+    source_root = _install(root=tmp_path / "cache" / "abc123")
+    retained = payload.retain_payload(
+        source_root=source_root, environ={payload.PAYLOAD_ROOT_ENV: str(inherited)}
+    )
+
+    assert retained.root != inherited, (
+        "a complete inherited payload whose source could not be established was "
+        f"adopted anyway ({case})"
+    )
+    assert retained.holder is not None, "the fall-through provisioned no payload of its own"
+
+
 def test_releasing_an_owned_payload_removes_its_holder(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -458,10 +503,16 @@ def test_releasing_a_payload_this_process_does_not_own_removes_nothing(
         source_root = _install(root=_checkout(root=tmp_path))
         unowned = payload.retain_payload(source_root=source_root, environ={})
     else:
+        # The SAME source, which is what a hand-down actually is: one dispatch's
+        # several processes reading one tree. This case used a second, different
+        # install here, and only reached an inherited payload because adoption
+        # was unconditional — i.e. it depended on the defect fixed by
+        # `test_payload_inherited_source_identity.py`. A different install now
+        # correctly provisions its own payload, which would be an OWNED one and
+        # so could not exercise the unowned release this case is about.
         source_root = _install(root=tmp_path / "cache" / "abc123")
         owner_environ: dict[str, str] = {}
         owned = payload.retain_payload(source_root=source_root, environ=owner_environ)
-        source_root = _install(root=tmp_path / "cache" / "def456")
         unowned = payload.retain_payload(source_root=source_root, environ=dict(owner_environ))
         assert unowned.root == owned.root
 
@@ -563,7 +614,7 @@ def test_a_fidelity_report_is_capped_and_says_so(tmp_path: Path) -> None:
 
     gaps = payload.payload_fidelity_gaps(source_root=source_root, payload_root=copy_root)
     assert len(gaps) == 5, f"the report was not capped: {gaps}"
-    assert "possibly more" in payload._fidelity_message(root=source_root, gaps=gaps)  # noqa: SLF001
+    assert "possibly more" in payload.fidelity_message(root=source_root, gaps=gaps)
 
 
 def test_a_copy_that_lands_short_refuses_and_leaves_no_holder(
