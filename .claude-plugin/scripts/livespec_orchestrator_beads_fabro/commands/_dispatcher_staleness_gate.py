@@ -32,12 +32,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
-from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_defaults import (
-    RELEASE_REPOSITORY_MASTER_REF,
-    RELEASE_REPOSITORY_RELEASE_REF,
-    RELEASE_REPOSITORY_URL,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_currency_probe import (
+    build_matches_ref,
+    executing_cache_build_id,
+    git_checkout_head,
+    latest_release_ref_argv,
+    master_ref_argv,
+    remote_ref_sha,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_minimum_release_floor import (
     MinimumReleaseVerdict,
@@ -77,11 +80,7 @@ CURRENCY_UNDETERMINED_STAGE = "dispatcher-currency-undetermined"
 # staleness refusal — which no longer exists — into a deliberate operator floor.
 MINIMUM_RELEASE_REFUSED_STAGE = "dispatcher-minimum-release-refused"
 
-_PROBE_TIMEOUT_SECONDS = 60.0
 _EXIT_PRECONDITION_ERROR = 3
-_BUILD_ID_MINIMUM_LENGTH = 7
-_BUILD_ID_MAXIMUM_LENGTH = 40
-_HEX_DIGITS = frozenset("0123456789abcdef")
 _PLUGIN_UPDATE_REMEDY = (
     "claude plugin update livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro"
 )
@@ -111,29 +110,13 @@ class DispatcherStalenessDecision:
     warnings: tuple[DispatcherStalenessMessage, ...]
 
 
-def latest_release_ref_argv() -> tuple[str, ...]:
-    """Probe the newest installable release artifact.
-
-    The repository and its ref come from the fleet-defaults module. They name
-    THIS PLUGIN's own publishing identity rather than anything about the governed
-    repository being dispatched -- but one of them is a bare default-branch name
-    used as a ref, and the ratified fleet-toolchain-literal ban admits such a
-    literal in exactly one module.
-    """
-    return ("git", "ls-remote", RELEASE_REPOSITORY_URL, RELEASE_REPOSITORY_RELEASE_REF)
-
-
-def master_ref_argv() -> tuple[str, ...]:
-    """Probe this plugin's own raw master, for the non-blocking unreleased-code warning."""
-    return ("git", "ls-remote", RELEASE_REPOSITORY_URL, RELEASE_REPOSITORY_MASTER_REF)
-
-
 def dispatcher_staleness_decision(
     *,
     plugin_root: Path,
     runner: CommandRunner,
     cwd: Path | None = None,
     install_record: Path | None = None,
+    executing_payload: Path | None = None,
 ) -> DispatcherStalenessDecision:
     """Refuse ONLY below a committed floor; surface every other currency finding.
 
@@ -148,11 +131,20 @@ def dispatcher_staleness_decision(
     repository whose registered install `install_record` is consulted for.
     With no `install_record` the registered-install comparison is skipped: a
     caller that does not name the registry is not asking that question.
+
+    `executing_payload` is the tree the minimum-release floor JUDGES, and it is
+    not `plugin_root`: the floor asks "which release am I running", which only
+    the retained payload answers stably, while `plugin_root` answers "which
+    installation is present" for the checkout exemption, the ambient build id
+    and the registered-install comparison. Forwarded unresolved; the floor owns
+    the default.
     """
-    if _git_checkout_head(plugin_root=plugin_root, runner=runner) is not None:
+    if git_checkout_head(plugin_root=plugin_root, runner=runner) is not None:
         return DispatcherStalenessDecision(refusal=None, warnings=())
     target = cwd if cwd is not None else Path.cwd()
-    decision = _release_currency_decision(plugin_root=plugin_root, runner=runner, cwd=target)
+    decision = _release_currency_decision(
+        plugin_root=plugin_root, runner=runner, cwd=target, executing_payload=executing_payload
+    )
     if install_record is None or decision.refusal is not None:
         return decision
     return DispatcherStalenessDecision(
@@ -169,9 +161,12 @@ def _release_currency_decision(
     plugin_root: Path,
     runner: CommandRunner,
     cwd: Path,
+    executing_payload: Path | None,
 ) -> DispatcherStalenessDecision:
     """The floor verdict when one is committed, else the ambient release comparison."""
-    floor = minimum_release_verdict(plugin_root=plugin_root, cwd=cwd)
+    floor = minimum_release_verdict(
+        plugin_root=plugin_root, cwd=cwd, executing_payload=executing_payload
+    )
     if floor is not None:
         decided = _floor_decision(floor=floor)
         if decided is not None:
@@ -207,6 +202,7 @@ def apply_dispatcher_staleness_gate(
     runner: CommandRunner | None = None,
     cwd: Path | None = None,
     install_record: Path | None = None,
+    executing_payload: Path | None = None,
 ) -> int | None:
     """Emit the currency decision; return an exit code only when dispatch must stop.
 
@@ -220,6 +216,7 @@ def apply_dispatcher_staleness_gate(
         runner=runner if runner is not None else ShellCommandRunner(),
         cwd=cwd,
         install_record=install_record,
+        executing_payload=executing_payload,
     )
     for warning in decision.warnings:
         _ = write_stderr(text=f"{warning.detail}\n")
@@ -264,7 +261,7 @@ def _ambient_currency_decision(
     runner: CommandRunner,
 ) -> DispatcherStalenessDecision:
     """Surface how the executing build compares to release — never refuse on it."""
-    build_id = _executing_cache_build_id(plugin_root=plugin_root)
+    build_id = executing_cache_build_id(plugin_root=plugin_root)
     if build_id is None:
         return _undetermined(
             reason=(
@@ -272,10 +269,10 @@ def _ambient_currency_decision(
                 f"{plugin_root.name!r} is neither a git checkout nor a release-cache build id)"
             )
         )
-    release_sha = _remote_ref_sha(runner=runner, argv=latest_release_ref_argv())
+    release_sha = remote_ref_sha(runner=runner, argv=latest_release_ref_argv())
     if release_sha is None:
         return _undetermined(reason="the gate could not inspect latest release")
-    master_sha = _remote_ref_sha(runner=runner, argv=master_ref_argv())
+    master_sha = remote_ref_sha(runner=runner, argv=master_ref_argv())
     unreleased = unreleased_master_detail(
         runner=runner,
         release_sha=release_sha,
@@ -312,8 +309,8 @@ def _lag_warnings(
     master_sha: str | None,
 ) -> tuple[DispatcherStalenessMessage, ...]:
     """The ambient-staleness surfacing that replaced the retired blocking refusal."""
-    if _build_matches_ref(build_id=build_id, ref_sha=release_sha) or (
-        master_sha is not None and _build_matches_ref(build_id=build_id, ref_sha=master_sha)
+    if build_matches_ref(build_id=build_id, ref_sha=release_sha) or (
+        master_sha is not None and build_matches_ref(build_id=build_id, ref_sha=master_sha)
     ):
         return ()
     return (
@@ -325,39 +322,3 @@ def _lag_warnings(
             )
         ),
     )
-
-
-def _build_matches_ref(*, build_id: str, ref_sha: str) -> bool:
-    return ref_sha.startswith(build_id) or build_id.startswith(ref_sha)
-
-
-def _remote_ref_sha(*, runner: CommandRunner, argv: tuple[str, ...]) -> str | None:
-    result = runner.run(
-        argv=list(argv),
-        cwd=Path.cwd(),
-        timeout_seconds=_PROBE_TIMEOUT_SECONDS,
-    )
-    if result.exit_code != 0:
-        return None
-    first = result.stdout.strip().split(maxsplit=1)
-    return first[0] if first else None
-
-
-def _executing_cache_build_id(*, plugin_root: Path) -> str | None:
-    """The flattened-cache build id, or None when the name is not a sha prefix."""
-    name = plugin_root.name.strip()
-    if not (_BUILD_ID_MINIMUM_LENGTH <= len(name) <= _BUILD_ID_MAXIMUM_LENGTH):
-        return None
-    return name if all(char in _HEX_DIGITS for char in name) else None
-
-
-def _git_checkout_head(*, plugin_root: Path, runner: CommandRunner) -> str | None:
-    result = runner.run(
-        argv=["git", "-C", str(plugin_root), "rev-parse", "HEAD"],
-        cwd=Path.cwd(),
-        timeout_seconds=_PROBE_TIMEOUT_SECONDS,
-    )
-    if result.exit_code != 0:
-        return None
-    sha = result.stdout.strip()
-    return sha if sha else None

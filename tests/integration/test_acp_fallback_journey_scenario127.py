@@ -466,7 +466,7 @@ def test_the_committed_minimum_release_floor_refuses_a_build_below_it(tmp_path: 
     below.mkdir()
     _ = (below / "plugin.json").write_text(json.dumps({"version": "0.160.0"}), encoding="utf-8")
 
-    verdict = minimum_release_verdict(plugin_root=below, cwd=_REPO_ROOT)
+    verdict = minimum_release_verdict(plugin_root=below, executing_payload=below, cwd=_REPO_ROOT)
 
     assert verdict is not None
     assert verdict.refusal_detail is not None
@@ -487,7 +487,9 @@ def test_the_committed_floor_clears_the_release_that_first_supported_the_grammar
     at_floor.mkdir()
     _ = (at_floor / "plugin.json").write_text(json.dumps({"version": "0.161.0"}), encoding="utf-8")
 
-    verdict = minimum_release_verdict(plugin_root=at_floor, cwd=_REPO_ROOT)
+    verdict = minimum_release_verdict(
+        plugin_root=at_floor, executing_payload=at_floor, cwd=_REPO_ROOT
+    )
 
     assert verdict is not None
     assert verdict.refusal_detail is None

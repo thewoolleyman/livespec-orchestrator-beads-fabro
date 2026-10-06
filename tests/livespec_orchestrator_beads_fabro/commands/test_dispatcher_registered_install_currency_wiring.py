@@ -93,6 +93,7 @@ def test_gate_journals_registered_install_lag_without_refusing(
 
     exit_code = apply_dispatcher_staleness_gate(
         plugin_root=executing,
+        executing_payload=executing,
         journal=journal,
         runner=_current_release_runner(),
         cwd=tmp_path,
@@ -113,6 +114,7 @@ def test_registered_install_warning_follows_the_ambient_release_warnings(tmp_pat
 
     decision = dispatcher_staleness_decision(
         plugin_root=executing,
+        executing_payload=executing,
         runner=_current_release_runner(),
         cwd=tmp_path,
         install_record=record,
@@ -130,6 +132,7 @@ def test_unreadable_registry_is_journaled_undetermined(tmp_path: Path) -> None:
 
     decision = dispatcher_staleness_decision(
         plugin_root=executing,
+        executing_payload=executing,
         runner=_current_release_runner(),
         cwd=tmp_path,
         install_record=tmp_path / "absent.json",
@@ -146,6 +149,7 @@ def test_current_registered_install_adds_nothing(tmp_path: Path) -> None:
 
     decision = dispatcher_staleness_decision(
         plugin_root=executing,
+        executing_payload=executing,
         runner=_current_release_runner(),
         cwd=tmp_path,
         install_record=record,
@@ -177,6 +181,7 @@ def test_a_floor_refusal_is_returned_before_the_registry_is_read(tmp_path: Path)
 
     decision = dispatcher_staleness_decision(
         plugin_root=executing,
+        executing_payload=executing,
         runner=_current_release_runner(),
         cwd=tmp_path,
         install_record=record,
