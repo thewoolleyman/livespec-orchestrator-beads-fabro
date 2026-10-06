@@ -36,12 +36,26 @@ nothing in the catalog to explain why.
   of them resolved, rendered, journaled and then died at exec with nothing in the
   catalog to explain why.
 
-THE DIGEST IS COMPUTED FROM THE SHIPPED ENTRIES, NEVER TRANSCRIBED. A literal
-digest cannot tell a deliberate re-seed from a silent drift, and nothing in a
-dispatch can re-read the upstream registry document to check one against it. A
-digest over the catalog's own canonical projection identifies the snapshot THIS
-BUILD carries -- which is the property a reproducible render needs -- and it
-cannot fall out of step with the entries it names.
+TWO DIGESTS, ANSWERING TWO DIFFERENT QUESTIONS, AND CONFLATING THEM IS HOW A
+SNAPSHOT IDENTITY STOPS NAMING A SNAPSHOT. `agent_catalog_digest` is COMPUTED
+from the shipped entries and identifies the catalog THIS BUILD carries, which is
+the property a reproducible render needs: it cannot fall out of step with the
+entries it names, so two dispatches can prove they rendered against the same
+committed bytes. `REGISTRY_SNAPSHOT_DIGEST` is TRANSCRIBED and identifies the
+UPSTREAM document the entries were seeded from -- a question no self-digest can
+answer, because the catalog holds no copy of the registry to hash. Until
+2026-10-06 only the computed one existed, under a record key that promised the
+other, so a dispatch could say exactly which bytes it rendered and nothing at all
+about where they came from.
+
+A transcribed literal has to be checkable or it is indistinguishable from a typo,
+and a dispatch may not fetch the registry to check it. So the evidence is
+COMMITTED instead: `tests/fixtures/acp_registry_snapshot/` holds the verbatim
+`agent.json` documents of the ratified five ids at `REGISTRY_SNAPSHOT_COMMIT`, and
+`test_acp_agent_catalog_registry_seed` re-runs the recipe over them. The recipe
+is, in sorted agent-id order, the id, a newline, then that id's verbatim document
+bytes, all fed to one sha256. The commit is recorded beside the digest so a reader
+can re-fetch those exact documents rather than taking the fixture's word for them.
 """
 
 from __future__ import annotations
@@ -69,7 +83,9 @@ __all__: list[str] = [
     "CLAUDE_AGENT_ID",
     "CODEX_AGENT_ID",
     "OPENAI_PROVIDER",
+    "REGISTRY_SNAPSHOT_COMMIT",
     "REGISTRY_SNAPSHOT_DATE",
+    "REGISTRY_SNAPSHOT_DIGEST",
     "agent_catalog_digest",
     "builtin_agent_catalog",
     "resolve_agent_catalog",
@@ -83,6 +99,13 @@ AGENT_CATALOG_KEY = "agent_catalog"
 # a reader checks an entry's currency against, and it is the second half of the
 # snapshot identity the registry digest completes.
 REGISTRY_SNAPSHOT_DATE = "2026-10-06"
+
+# The `agentclientprotocol/registry` revision the documents behind that date were
+# read at, and the digest of those documents. The commit is half the identity: it
+# is what lets a reader re-fetch the exact bytes instead of checking the digest
+# against the only copy that could ever agree with it.
+REGISTRY_SNAPSHOT_COMMIT = "34036ca75eeba8a776837850b96be10b66763e86"
+REGISTRY_SNAPSHOT_DIGEST = "06f2cba54a409ef43e84cd218def02ce2126feb647ee6befc2fde89fb167405f"
 
 CLAUDE_AGENT_ID = "claude-acp"
 CODEX_AGENT_ID = "codex-acp"
