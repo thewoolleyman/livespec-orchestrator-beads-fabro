@@ -73,6 +73,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pr_open_diff import (
+    pr_open_diff_record,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
 
 __all__: list[str] = [
@@ -368,6 +371,20 @@ def run_dispatch(
             detail="no PR found for branch",
             fabro_run_id=run_id,
         )
+    # The branch-versus-base size, recorded HERE and not at the terminal (plan
+    # slice S4, `bd-ib-tbgxm4`): this is the moment the pull request is confirmed
+    # and nothing about merging has been decided yet, so the measurement rides
+    # the journal whatever terminal follows — the merge hold's green, a merge-poll
+    # timeout, a terminal required-check failure, or a post-merge janitor failure.
+    # The merged-PR size beside it is read only for a green outcome, which is why
+    # it was absent on every non-converged run the calibration pass had.
+    journal.append(
+        record=pr_open_diff_record(
+            work_item_id=plan.work_item_id,
+            pr_number=view.number,
+            diff_size=view.diff_size,
+        )
+    )
     if plan.merge_hold:
         # THE HOLD'S TERMINAL. Nothing may merge this pull request, so polling
         # for its merge could only spend the whole budget and then report a

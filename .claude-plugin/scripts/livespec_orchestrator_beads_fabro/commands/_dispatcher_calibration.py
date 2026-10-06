@@ -49,6 +49,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_assertion_count impo
     assertion_count_for,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pr_open_diff import (
+    PR_OPEN_DIFF_SIZE_KEY,
+    PR_OPEN_DIFF_STAGE,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_signals import (
     UNOBSERVED_TDD_SIGNALS,
     TddSignals,
@@ -63,6 +67,7 @@ __all__: list[str] = [
     "build_calibration_record",
     "calibration_journal_record",
     "fix_loop_count",
+    "pr_open_diff_size",
     "spec_surface_touched",
 ]
 
@@ -116,6 +121,12 @@ class CalibrationRecord:
     # disagree about provenance.
     acceptance_count_source: str
     merged_pr_diff_size: int | None
+    # The branch-versus-base churn as the pull request OPENED, which a run keeps
+    # whatever terminal follows. `merged_pr_diff_size` above is read only for a
+    # green outcome, so it was absent on every non-converged run — present on
+    # 292 of 292 converged and 0 of 153 non-converged across this repository's
+    # own records, which is a proxy the outcome decides rather than predicts.
+    pr_open_diff_size: int | None
     dependency_fan_out: int
     spec_surface_touched: bool
     dispatch_context_size: int
@@ -170,6 +181,10 @@ def build_calibration_record(  # noqa: PLR0913 — kw-only pure builder; each fi
         acceptance_count=assertions.count,
         acceptance_count_source=assertions.source,
         merged_pr_diff_size=merged_pr_diff_size,
+        pr_open_diff_size=pr_open_diff_size(
+            records=journal_records,
+            work_item_id=item.id,
+        ),
         dependency_fan_out=len(item.depends_on),
         spec_surface_touched=spec_surface_touched(item=item),
         dispatch_context_size=dispatch_context_size,
@@ -229,6 +244,54 @@ def fix_loop_count(*, records: tuple[dict[str, object], ...], work_item_id: str)
     return extra_views + update_branches
 
 
+def pr_open_diff_size(*, records: tuple[dict[str, object], ...], work_item_id: str) -> int | None:
+    """The branch-versus-base churn this dispatch recorded when its PR opened.
+
+    Read back off the journal rather than probed again, for the reason
+    `fix_loop_count` is: the stage that OBSERVED the value wrote it down, and a
+    second observation here could not be shown to agree with what was recorded —
+    the pull request may have gained commits since, or been merged, or closed.
+
+    The MOST RECENT matching record wins. The journal accumulates across every
+    dispatch in the repository, so a re-dispatched item carries one record per
+    attempt and the newest is this dispatch's; taking the first would report a
+    previous attempt's size as this one's.
+
+    `None` when no record was written (the run opened no pull request) or when
+    the recorded value is unusable — absent, never a false zero.
+    """
+    return _journaled_int(
+        records=records,
+        work_item_id=work_item_id,
+        stage=PR_OPEN_DIFF_STAGE,
+        key=PR_OPEN_DIFF_SIZE_KEY,
+    )
+
+
+def _journaled_int(
+    *, records: tuple[dict[str, object], ...], work_item_id: str, stage: str, key: str
+) -> int | None:
+    """One integer field off this item's most recent record of a stage.
+
+    `bool` is rejected explicitly because it is an `int` subclass: a stray
+    boolean on the journal would otherwise read as the size 1 or 0.
+    """
+    value = _journaled_field(records=records, work_item_id=work_item_id, stage=stage, key=key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def _journaled_field(
+    *, records: tuple[dict[str, object], ...], work_item_id: str, stage: str, key: str
+) -> object | None:
+    """The raw value of one key on this item's most recent record of a stage."""
+    for record in reversed(records):
+        if record.get("work_item_id") == work_item_id and record.get("stage") == stage:
+            return record.get(key)
+    return None
+
+
 def acceptance_count(*, item: WorkItem) -> int:
     """The item's gradeable assertion count, through the sanctioned parser.
 
@@ -286,6 +349,7 @@ def calibration_journal_record(*, record: CalibrationRecord) -> dict[str, object
         "acceptance_count": record.acceptance_count,
         "acceptance_count_source": record.acceptance_count_source,
         "merged_pr_diff_size": record.merged_pr_diff_size,
+        PR_OPEN_DIFF_SIZE_KEY: record.pr_open_diff_size,
         "dependency_fan_out": record.dependency_fan_out,
         "spec_surface_touched": record.spec_surface_touched,
         "dispatch_context_size": record.dispatch_context_size,

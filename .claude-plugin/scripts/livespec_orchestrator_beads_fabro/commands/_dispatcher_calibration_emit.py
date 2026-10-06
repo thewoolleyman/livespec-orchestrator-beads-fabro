@@ -26,6 +26,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     journal_path,
     tdd_order_sink_path,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pr_open_diff import parse_pr_diff_size
 from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import post_verdict_runner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_order_sink import TddOrderSink
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_probe import gather_tdd_signals
@@ -41,6 +42,10 @@ __all__: list[str] = [
     "calibration_token_cost",
     "emit_calibration",
     "merged_pr_diff_size",
+    # The churn parse now LIVES in `_dispatcher_pr_open_diff`, which owns the
+    # repaired PR-open measurement and is reachable from the engine without
+    # closing an import cycle through this module. It stays in this surface
+    # because `merged_pr_diff_size` beside it is still its caller.
     "parse_pr_diff_size",
     "read_journal_records_for",
 ]
@@ -230,23 +235,3 @@ def merged_pr_diff_size(
     if result.exit_code != 0:
         return None
     return parse_pr_diff_size(stdout=result.stdout)
-
-
-def parse_pr_diff_size(*, stdout: str) -> int | None:
-    """Sum additions + deletions from a `gh pr view --json` payload; None if absent.
-
-    Pure parse: returns the churn total when both integer fields are
-    present, else `None` (an unparseable or partial payload is unobservable,
-    never a false zero).
-    """
-    parsed = parse_json(text=stdout)
-    if isinstance(parsed, JsonParseFailure):
-        return None
-    if not isinstance(parsed, dict):
-        return None
-    payload = cast("dict[str, object]", parsed)
-    additions = payload.get("additions")
-    deletions = payload.get("deletions")
-    if not isinstance(additions, int) or not isinstance(deletions, int):
-        return None
-    return additions + deletions

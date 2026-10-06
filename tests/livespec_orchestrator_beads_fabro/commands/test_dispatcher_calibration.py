@@ -333,6 +333,7 @@ def test_calibration_journal_record_flattens_every_field() -> None:
         acceptance_count=2,
         acceptance_count_source="criteria-field",
         merged_pr_diff_size=50,
+        pr_open_diff_size=48,
         dependency_fan_out=1,
         spec_surface_touched=True,
         dispatch_context_size=40,
@@ -351,6 +352,7 @@ def test_calibration_journal_record_flattens_every_field() -> None:
     assert journal["acceptance_count"] == 2
     assert journal["acceptance_count_source"] == "criteria-field"
     assert journal["merged_pr_diff_size"] == 50
+    assert journal["pr_open_diff_size"] == 48
     assert journal["dependency_fan_out"] == 1
     assert journal["spec_surface_touched"] is True
     assert journal["dispatch_context_size"] == 40

@@ -47,6 +47,7 @@ def _record(
     dispatch_context_size: int,
     acceptance_count: int = 1,
     merged_pr_diff_size: int | None = 50,
+    pr_open_diff_size: int | None = 48,
     dependency_fan_out: int = 0,
     bounced_to_regroom: bool = False,
 ) -> CalibrationRecord:
@@ -67,6 +68,7 @@ def _record(
         acceptance_count=acceptance_count,
         acceptance_count_source="description-definition-of-done",
         merged_pr_diff_size=merged_pr_diff_size,
+        pr_open_diff_size=pr_open_diff_size,
         dependency_fan_out=dependency_fan_out,
         spec_surface_touched=False,
         dispatch_context_size=dispatch_context_size,
