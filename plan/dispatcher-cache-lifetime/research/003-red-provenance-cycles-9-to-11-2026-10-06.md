@@ -151,20 +151,35 @@ retention walks up from a module loaded out of the PAYLOAD.
 | 2026-10-06T09:05:08Z | Green `5c54e83c`. Full aggregate: all 89 targets passed, 2 of 91 declared skipped. |
 
 The collapse is what `plugin_root()`'s own docstring warns of — "every one of
-those comparisons the running build against itself" — and the costs are
-concrete: the self-update canary can never validate the update it exists for,
-the registered-install finding compares the registry against the payload, a
-floor refusal names a disposable temporary directory as the installation to
-update, and `executing_cache_build_id` reads the fixed string `payload` instead
-of a build id, so ambient currency is permanently undetermined on that path.
+those comparisons the running build against itself". The downstream costs are
+REASONED CONSEQUENCES of the two roots being equal, not outcomes this cycle
+observed: the self-update canary cannot validate the update it exists for, the
+registered-install finding compares the registry against the payload, a floor
+refusal names a disposable temporary directory as the installation to update,
+and `executing_cache_build_id` reads the fixed string `payload` instead of a
+build id. What the cycle MEASURED is the root equality itself.
+
+EVIDENCE DISTINCTION, kept deliberately narrow. The asset control in the frozen
+cycle-12 test CONSTRUCTS a path from `executing_payload_root()` and asserts
+where that path sits. It does NOT call the packaged-asset accessor
+(`workflow_toml`), does not READ an asset, and does not observe an actual canary
+outcome. Those are separate observations: an asset CONTENT read after eviction
+is covered by `tests/bin/test_payload_public_route_exact_outcomes.py` and by
+`tests/bin/test_payload_parent_reads_asset_after_helper_exit.py`, and no test in
+this work-item observes a real canary verdict. Do not read the path assertion as
+either.
 
 The launcher now records the installation it copied aside
 (`LIVESPEC_INSTALLED_PLUGIN_ROOT`), and `plugin_root()` consults it between the
 harness export and the `__file__` fall-through. Two deliberate properties: the
 record is a SEPARATE variable from the payload hand-down, because the two
 answer opposite questions and conflating them is this whole defect class; and
-it is written with `setdefault`, so the outermost invocation of a dispatch —
-the one that actually knows the installation — is the one that decides.
+it was written with `setdefault`, so a parent's record survived into its
+children.
+
+That second property was WRONG for a re-selection and cycle 13 corrects it —
+see below. The right separation is not "first writer wins" but ADOPTION versus
+SELECTION, and control flow already expresses it.
 
 Honest limit, stated because it is a degradation rather than a fix: a
 credential re-exec that scrubs the environment drops the record too, and

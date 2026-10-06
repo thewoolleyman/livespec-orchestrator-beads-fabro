@@ -171,9 +171,38 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   records the installation it copied aside and `plugin_root()` consults
   that record between the harness export and the `__file__` fall-through.
   Carries three controls the fix must not disturb: an exported
-  `CLAUDE_PLUGIN_ROOT` still wins, packaged assets still resolve inside
-  the payload, and this project's own checkout still resolves to itself.
+  `CLAUDE_PLUGIN_ROOT` still wins, the constructed packaged-asset PATH
+  still sits inside the payload (a path assertion — it does not call the
+  asset accessor, read an asset, or observe a canary outcome), and this
+  project's own checkout still resolves to itself.
   Listed in `subprocess_spawn_allowlist`.
+- `test_payload_candidate_provenance_on_reselection.py` — where the two
+  cycles above MEET, which neither of their accepted Reds covers.
+  Cycle 11 lets an explicitly selected source win over an inherited
+  payload, so the right CODE runs; cycle 12 gives `plugin_root()` a
+  launcher record, so the CANDIDATE is the installation. But the record
+  was published with `setdefault`, a no-op on an inherited key, and the
+  checkout arm returns BEFORE the publication line. Measured with
+  install A at 7.1.0 inherited: selecting explicit newer B executed
+  9.9.9 while the candidate still named A, and selecting this project's
+  own checkout executed 5.5.5 with the candidate still naming A — one
+  build running while another is named as the installation present, so a
+  floor refusal would send the operator to the wrong install. The fix
+  separates ADOPTION from SELECTION: an inherited payload returns before
+  publication and keeps its parent's record, while a fresh provision and
+  a checkout each publish themselves. Two controls guard the half a
+  careless fix breaks — an adopted payload keeps the original install's
+  candidacy, and a helper whose own `source_root` IS the payload still
+  resolves the candidate to the installation, never the payload.
+- `test_payload_candidate_provenance_harness.py` — coverage for the frozen
+  file above, whose bytes are frozen across its Red-Green pair while this
+  repository measures `tests/` like any other tree. Its `_candidate`
+  helper has a no-launcher-record arm its four cases cannot reach, every
+  one of them resolving from an environment that carries a record. Loads
+  the frozen module BY PATH and drives that arm, exactly as
+  `test_payload_retention_harness.py` does for the frozen retention
+  regression's `_wait_for`. Asserts nothing about `_payload.py` — harness
+  robustness, not product Red, and not evidence for any assertion.
 - `test_payload_public_route_exact_outcomes.py` — the EXACT-outcome
   counterpart of the file above, which accepts any `int` helper exit code
   and any `failed` envelope and reaches no `.fabro/` asset. Both public
