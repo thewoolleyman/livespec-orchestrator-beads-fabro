@@ -184,10 +184,19 @@ cost of each was a wrong conclusion, not an error message.
   preflight, both in `dispatch_preamble`, AHEAD of the floor — again at exit 3.
   Discriminated by the refusal text; cleared with the repository's own
   committed `dispatcher.step_waivers` escape.
-- **A diagnostic glob that matched pytest's `current` symlink.** A `cat` over
-  `basetemp/*/...` concatenated two copies of the same file, which read as a
-  config written twice (invalid JSON) and a child that ran twice. Both were
-  artifacts of the glob. Discriminated by byte-counting the individual files.
+- **A diagnostic glob that matched pytest's `current` symlink.** pytest keeps
+  BOTH a numbered run directory and a `…current` symlink to it under the
+  basetemp, so `basetemp/*/<file>` matches the SAME file twice. A `cat` over
+  that glob concatenated two copies, which read as a config written twice
+  (`json.tool` reporting "Extra data" — i.e. invalid JSON) and as a child that
+  ran twice. Both were artifacts of the glob; the file was a valid 649 bytes
+  and the child ran once. Discriminated by byte-counting the individual paths.
+  **The rule: inspect the exact concrete directory, never a glob over the
+  basetemp** — and note the shape of the damage, which is the dangerous part.
+  This did not produce an empty or obviously broken reading; it manufactured
+  two plausible, mutually-reinforcing SYMPTOMS of a defect that did not exist,
+  and both pointed at the fixture being re-entered. Chasing them would have
+  produced a fix for nothing.
 - **A `.git` at the pytest basetemp root.** `git -C <tmp_path>/install rev-parse
   --absolute-git-dir` answered `<basetemp>/.git`, so EVERY `tmp_path` install
   resolved as a git checkout and took the currency gate's checkout exemption —
@@ -259,6 +268,30 @@ message, with the real refusal appearing **nowhere** in stdout or stderr. The
 sibling supplement's `exec`-form double works only because `ledger-check`
 succeeds and prints to stdout, which is the condition that keeps it out of that
 arm.
+
+THE FIXTURE'S OWN HONESTY, corrected a second time by the same review. The
+double this file's guard uses runs `"$@" > "$LOG" 2>&1` and then `cat`s the
+log, so it MERGES stderr into stdout. That merge is the whole reason the
+branch above is avoided: non-empty stdout keeps the child out of the
+wrapper-launch arm. My first wording called the difference "fixture
+mechanics"; my second called the double "what a real `with-<project>-env.sh`
+does". **Both are retracted.** A real wrapper does not merge streams, so the
+double is an OBSERVATION ADAPTER and must be declared as one.
+
+What that adapter is and is not evidence for matters, because it is easy to
+overclaim in either direction. It changes OBSERVABILITY, not the outcome — the
+child genuinely refused, genuinely exited 3, and genuinely produced the text
+from a packaged asset read out of the retained payload. It supports NO claim
+of stream equivalence with production, and specifically no claim that an
+operator would see that refusal in production: under a real wrapper they would
+NOT, which is this finding, not something the fixture shows.
+
+The two routes also do not depend on it equally. The DRIVE case asserts on
+`payload["dispatcher"]["stderr"]`, captured by `drive` from the helper it
+spawned itself, which never passes through the credential branch — that
+evidence is adapter-independent. Only the direct-route case and the intact
+control read the top-level process's output, and both use the SAME adapter,
+so the control compares like with like against a real un-evicted installation.
 
 Why this is worth its own entry rather than a line in the trap list: a wrong
 measurement gets contradicted by the next reader, but a confident "this is not
