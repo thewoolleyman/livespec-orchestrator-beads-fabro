@@ -14,6 +14,7 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
     "INSTALLED_ROOT_ENV",
+    "PAYLOAD_ROOT_ENV",
     "calibration_spans_path",
     "cost_report_spans_path",
     "cost_sink_path",
@@ -39,6 +40,18 @@ __all__: list[str] = [
 # pinned together by a test instead, exactly as the unattended-resume marker's
 # writer and reader already are.
 INSTALLED_ROOT_ENV = "LIVESPEC_INSTALLED_PLUGIN_ROOT"
+
+# How the launcher hands a retained payload down to the children one invocation
+# spawns, so `drive`, the `dispatcher.py` it starts and the helpers that starts
+# in turn all read ONE tree.
+#
+# Restated here for exactly the reason above, and pinned to the launcher's own
+# literal by the same test.
+#
+# Named in this package because one child must deliberately NOT inherit it: the
+# self-update canary addresses a DIFFERENT BUILD by construction, so handing it
+# this process's payload makes it validate the running build against itself.
+PAYLOAD_ROOT_ENV = "LIVESPEC_RETAINED_PAYLOAD_ROOT"
 
 # The manifest file every workflow directory carries, whether it is the
 # reserved workflow or a registered variant. A variant's directory comes from

@@ -503,6 +503,7 @@ subprocess_spawn_allowlist = [
     "tests/bin/test_payload_public_route_exact_outcomes.py",
     "tests/bin/test_payload_candidate_root_without_claude_env.py",
     "tests/bin/test_payload_parent_reads_asset_after_helper_exit.py",
+    "tests/bin/test_payload_canary_subject_is_the_candidate.py",
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]

@@ -281,6 +281,43 @@ def self_update_after_release(  # noqa: PLR0913 - kw-only fail-open stage; field
         )
 
 
+def _candidate_environment() -> dict[str, str]:
+    """The environment overlay that makes the canary's subject the CANDIDATE.
+
+    The candidate is launched by PATHNAME and inherits this process's
+    environment, which carries the launcher's retained-payload hand-down. That
+    hand-down exists so the several processes of ONE dispatch read one tree, and
+    a canary is the opposite case: it addresses a DIFFERENT BUILD on purpose. So
+    the candidate must resolve its own payload from its own installation, and
+    this is the only child for which that is true.
+
+    Inherited, the hand-down is ADOPTED whenever the selected source equals the
+    holder's recorded source, and that is a PATH comparison — so once a newer
+    build has landed at the installation path, the path still matches and the
+    candidate executes the RUNNING build's code. The canary then validates the
+    running build against itself. Measured 2026-10-06 at this boundary: a
+    candidate with one module `ledger-check` imports removed exited 0 and
+    journalled `self-update-restart-due`, recommending a restart onto a build
+    that cannot start; the same argv without the hand-down exits 1 with that
+    module's `ModuleNotFoundError`, raised from the candidate's own release.
+
+    EMPTY rather than removed, because `CommandRunner.run` merges its overlay
+    over `os.environ` and so cannot express a deletion — and because empty is
+    already the launcher's own spelling of "nothing was handed down": it reads
+    the variable with a `""` default and falls through to a fresh provision on
+    any falsy value. Scrubbing the variable in the surrounding environment
+    instead would be an operator workaround for a call site that asks for the
+    wrong thing; this is the call site asking correctly.
+
+    Only the hand-down is neutralised. The installed-root record is left alone:
+    the candidate IS the installation, so it re-publishes the same path, and
+    nothing else about the parent's environment is any of this stage's business.
+    """
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import PAYLOAD_ROOT_ENV
+
+    return {PAYLOAD_ROOT_ENV: ""}
+
+
 def _self_update(  # noqa: PLR0913 - kw-only fail-open stage body; fields are caller inputs.
     *,
     work_item_id: str,
@@ -304,6 +341,7 @@ def _self_update(  # noqa: PLR0913 - kw-only fail-open stage body; fields are ca
         argv=canary_self_check_argv(candidate_bin=candidate_bin, scratch_root=scratch_root),
         cwd=repo,
         timeout_seconds=_CANARY_TIMEOUT_SECONDS,
+        env=_candidate_environment(),
     )
     verdict = canary_verdict(exit_code=canary.exit_code)
     decision = promotion_decision(verdict=verdict)

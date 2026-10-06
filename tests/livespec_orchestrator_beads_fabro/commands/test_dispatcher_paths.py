@@ -34,6 +34,10 @@ def test_dispatcher_paths_exports_promoted_public_helpers() -> None:
         # `test_installed_root_env_name_matches_the_launchers_writer_constant`
         # pins it against the writer's own constant across a module boundary.
         "INSTALLED_ROOT_ENV",
+        # The launcher's retained-payload hand-down, public for the same reason
+        # and pinned by the same test. Named in this package because the
+        # self-update canary must NOT hand it to the candidate it launches.
+        "PAYLOAD_ROOT_ENV",
         "calibration_spans_path",
         "cost_report_spans_path",
         "cost_sink_path",
@@ -116,15 +120,24 @@ def test_plugin_root_falls_back_to_its_own_tree_when_nothing_is_recorded(
 
 
 def test_installed_root_env_name_matches_the_launchers_writer_constant() -> None:
-    """The reader's name and the launcher's WRITER name must be one string.
+    """The reader's names and the launcher's WRITER names must be one string each.
 
-    `_dispatcher_paths` restates `INSTALLED_ROOT_ENV` rather than importing it:
+    `_dispatcher_paths` restates `INSTALLED_ROOT_ENV` and `PAYLOAD_ROOT_ENV`
+    rather than importing them:
     the writer is `bin/_payload.py`, a pre-import launcher module that runs
     before this package is on `sys.path`, so a dependency in either direction
     is wrong. That leaves two literals, and two literals drift — silently, in
     the direction that matters, because a reader looking for a name nobody
     writes just falls through to the `__file__` fall-through and resolves the
     PAYLOAD as the installed root, which is the whole defect.
+
+    The hand-down name drifts in its own bad direction, and it is the quieter
+    of the two: the self-update canary neutralises that variable so the
+    candidate resolves its OWN payload, and an overlay written under a name the
+    launcher does not read neutralises nothing. The candidate then silently
+    adopts the running build's payload again and the canary validates the
+    running build against itself — passing a broken candidate, which is the
+    defect the overlay exists to close.
 
     Pinned the same way the unattended-resume marker's writer and reader
     already are, by loading the launcher BY PATH so no import edge is created.
@@ -140,6 +153,11 @@ def test_installed_root_env_name_matches_the_launchers_writer_constant() -> None
     assert _dispatcher_paths.INSTALLED_ROOT_ENV == launcher.INSTALLED_ROOT_ENV, (
         "the reader and the launcher disagree on the installed-root variable "
         "name, so the record is written under one name and read under another"
+    )
+    assert _dispatcher_paths.PAYLOAD_ROOT_ENV == launcher.PAYLOAD_ROOT_ENV, (
+        "the canary's overlay and the launcher disagree on the retained-payload "
+        "variable name, so the overlay neutralises nothing and the candidate "
+        "adopts the running build's payload again"
     )
 
 
