@@ -25,6 +25,7 @@ from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands._acp_agent_catalog import (
     REGISTRY_SNAPSHOT_DATE,
+    REGISTRY_SNAPSHOT_DIGEST,
     agent_catalog_digest,
     builtin_agent_catalog,
     resolve_agent_catalog,
@@ -54,11 +55,20 @@ class AcpCatalogs:
 
     @property
     def snapshot(self) -> Mapping[str, str]:
-        """The digests and seed date identifying these exact committed bytes."""
+        """The digests and seed date identifying these exact committed bytes.
+
+        THE TWO AGENT-SIDE DIGESTS ARE NOT INTERCHANGEABLE. The catalog digests
+        are COMPUTED over the entries in hand, so they move with a per-repository
+        addition and identify what THIS dispatch resolved; the registry digest is
+        the TRANSCRIBED identity of the upstream document the shipped entries were
+        seeded from, so it stays put under a repository override -- which is
+        correct, because a repository adding an entry has not re-seeded anything.
+        """
         return {
             "agent_catalog_digest": agent_catalog_digest(catalog=self.agents),
             "model_catalog_digest": model_catalog_digest(catalog=self.models),
             "registry_snapshot_date": REGISTRY_SNAPSHOT_DATE,
+            "registry_snapshot_digest": REGISTRY_SNAPSHOT_DIGEST,
         }
 
 
