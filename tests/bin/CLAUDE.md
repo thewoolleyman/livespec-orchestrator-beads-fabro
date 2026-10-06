@@ -108,6 +108,15 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   control on the product's own seam inside the child, because a
   wall-clock race would pass or fail on load. Listed in
   `subprocess_spawn_allowlist`.
+- `test_payload_release_provenance.py` — a `plugin.json` that is
+  PRESENT but unusable (unreadable, malformed, not an object, no usable
+  `version`) must be REFUSED, not degraded to an `unknown-release`
+  label and provisioned anyway: the release is the payload's
+  provenance, which the minimum-release floor and the build-currency
+  findings compare against other builds. Carries its own control — a
+  usable release must still provision — so the suite cannot pass
+  against a launcher that refuses unconditionally. Listed in
+  `subprocess_spawn_allowlist`.
 - `test_host_side_self_contained_import.py` — the end-to-end
   counterpart of `test_bootstrap.py`: it spawns a `-S` (no-site)
   subprocess that runs the real bootstrap and imports the host-side
