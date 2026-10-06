@@ -42,6 +42,7 @@ from pathlib import Path
 __all__: list[str] = [
     "FIDELITY_REPORT_LIMIT",
     "IGNORED_NAMES",
+    "UNREADABLE",
     "fidelity_message",
     "incomplete_message",
     "inventory_gaps",
@@ -54,6 +55,11 @@ __all__: list[str] = [
 # few megabytes, so this is about not holding a large asset in memory rather
 # than about throughput.
 _DIGEST_CHUNK_BYTES = 65536
+# What `_digest` reports for a file it could not read. Deliberately NOT a
+# digest: it is compared by IDENTITY in `inventory_gaps` and never for
+# equality, because the same sentinel on both sides means two byte sets that
+# were never established, which is not a match.
+UNREADABLE = "unreadable"
 
 # Byte-compiled caches are reproducible from the sources beside them, so they
 # are the one thing the copy leaves behind.
@@ -190,7 +196,7 @@ def _digest(*, path: Path) -> str:
             for chunk in iter(lambda: handle.read(_DIGEST_CHUNK_BYTES), b""):
                 digest.update(chunk)
     except OSError:
-        return "unreadable"
+        return UNREADABLE
     return digest.hexdigest()
 
 
@@ -205,11 +211,26 @@ def inventory_gaps(*, inventory: dict[str, str], payload_root: Path) -> tuple[st
     gaps: list[str] = []
     for relative, expected in sorted(inventory.items()):
         copied = payload_root / relative
-        if not copied.is_file() or _digest(path=copied) != expected:
+        if not copied.is_file() or _unestablished(expected=expected, actual=_digest(path=copied)):
             gaps.append(relative)
             if len(gaps) == FIDELITY_REPORT_LIMIT:
                 break
     return tuple(gaps)
+
+
+def _unestablished(*, expected: str, actual: str) -> bool:
+    """Whether this member's bytes failed to be established as the same.
+
+    An UNREADABLE reading on EITHER side is a gap, and that is the whole
+    reason the sentinel is not a digest. It compared equal to itself, so a
+    member unreadable when the inventory was taken whose copy is also
+    unreadable passed as faithful while neither set of bytes had ever been
+    read — measured with their actual contents differing. A gauge that passes
+    when it cannot observe its input turns a refusal into a silent pass.
+    """
+    if UNREADABLE in {expected, actual}:
+        return True
+    return expected != actual
 
 
 def fidelity_message(*, root: Path, gaps: tuple[str, ...]) -> str:
