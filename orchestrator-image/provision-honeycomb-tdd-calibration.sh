@@ -83,19 +83,76 @@ done
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "${tmpdir}"' EXIT
 
-curl_json() {
-  local method="$1"
-  local url="$2"
+# Print a captured file with the configured API key replaced. The secret is
+# read from the ENVIRONMENT inside python, never passed as an argument, exactly
+# as curl receives it only through a header. The redaction exists because the
+# failure report below QUOTES a response body: a server that echoed the
+# credential back would otherwise route it straight into the operator's log.
+sanitize() {
+  python3 - "$1" <<'PY'
+import os
+import sys
+
+path = sys.argv[1]
+secret = (
+    os.environ.get("HONEYCOMB_CONFIG_KEY_LIVESPEC")
+    or os.environ.get("HONEYCOMB_TEAM_KEY_LIVESPEC")
+    or ""
+)
+try:
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        text = handle.read()
+except FileNotFoundError:
+    text = ""
+if secret:
+    text = text.replace(secret, "***REDACTED***")
+print(text.strip() or "<empty>")
+PY
+}
+
+# One HTTP call, named by the RESOURCE it is acting on. On success the response
+# body goes to stdout, exactly as a caller expects.
+#
+# On failure the resource, the request, the status and the SANITIZED response
+# body reach stderr BEFORE the script unwinds. That ordering is the whole
+# repair: the previous version sent every response into a temp file under the
+# cleanup trap or into /dev/null, so a real rejection — measured against the
+# live API as `unknown column name: tdd.first_product_write_before_red` — left
+# the operator with nothing but `curl: (22) The requested URL returned error:
+# 400` and deleted the one artifact that said what was wrong.
+api_call() {
+  local label="$1"
+  local method="$2"
+  local url="$3"
   local data_arg=()
-  if [[ "$#" -eq 3 ]]; then
-    data_arg=(--data @"$3")
+  if [[ "$#" -eq 4 ]]; then
+    data_arg=(--data @"$4")
   fi
-  curl --fail-with-body --silent --show-error \
-    --request "${method}" \
-    --url "${url}" \
-    --header "X-Honeycomb-Team: ${api_key}" \
-    --header "Content-Type: application/json" \
-    "${data_arg[@]}"
+  local body="${tmpdir}/api-response-body"
+  local curl_stderr="${tmpdir}/api-curl-stderr"
+  local status
+  if status="$(
+    curl --fail-with-body --silent --show-error \
+      --request "${method}" \
+      --url "${url}" \
+      --header "X-Honeycomb-Team: ${api_key}" \
+      --header "Content-Type: application/json" \
+      "${data_arg[@]}" \
+      --output "${body}" \
+      --write-out '%{http_code}' 2>"${curl_stderr}"
+  )"; then
+    cat "${body}"
+    return 0
+  fi
+  {
+    printf 'Honeycomb API request FAILED\n'
+    printf '  resource: %s\n' "${label}"
+    printf '  request: %s %s\n' "${method}" "${url}"
+    printf '  http status: %s\n' "${status:-<none>}"
+    printf '  response: %s\n' "$(sanitize "${body}")"
+    printf '  curl: %s\n' "$(sanitize "${curl_stderr}")"
+  } >&2
+  exit 1
 }
 
 wants() {
@@ -378,7 +435,8 @@ apply_board() {
   local annotations="-"
   if [[ "${dry_run}" != "1" ]]; then
     annotations="${prefix}.annotations.json"
-    curl_json GET "${api_base}/1/query_annotations/${dataset}" >"${annotations}"
+    api_call query_annotation GET "${api_base}/1/query_annotations/${dataset}" \
+      >"${annotations}"
   fi
   board_panel_plan "${rendered}" "${prefix}" "${annotations}" >"${plan}"
   : >"${resolved}"
@@ -404,18 +462,18 @@ apply_board() {
         printf 'reused query %s (panel=%s)\n' "${query_id}" "${panel}"
       else
         local created_query="${prefix}.${board}.${panel}.query-created.json"
-        curl_json POST "${api_base}/1/queries/${dataset}" "${spec}" >"${created_query}"
+        api_call query POST "${api_base}/1/queries/${dataset}" "${spec}" >"${created_query}"
         query_id="$(payload_field "${created_query}" id)"
         printf 'created query %s (panel=%s)\n' "${query_id}" "${panel}"
       fi
       annotation_payload "${caption}" "${fingerprint}" "${query_id}" "${annotation}"
       if [[ -n "${annotation_id}" ]]; then
-        curl_json PUT "${api_base}/1/query_annotations/${dataset}/${annotation_id}" \
+        api_call query_annotation PUT "${api_base}/1/query_annotations/${dataset}/${annotation_id}" \
           "${annotation}" >/dev/null
         printf 'updated query_annotation %s (panel=%s)\n' "${annotation_id}" "${panel}"
       else
         local created_annotation="${prefix}.${board}.${panel}.annotation-created.json"
-        curl_json POST "${api_base}/1/query_annotations/${dataset}" "${annotation}" \
+        api_call query_annotation POST "${api_base}/1/query_annotations/${dataset}" "${annotation}" \
           >"${created_annotation}"
         annotation_id="$(payload_field "${created_annotation}" id)"
         printf 'created query_annotation %s (panel=%s)\n' "${annotation_id}" "${panel}"
@@ -449,15 +507,15 @@ apply_resource() {
   fi
 
   local listing="${tmpdir}/${kind}-listing.json"
-  curl_json GET "${list_url}" >"${listing}"
+  api_call "${kind}" GET "${list_url}" >"${listing}"
   local id
   id="$(existing_id "${listing}" "${field}" "${identity}")"
   if [[ -n "${id}" ]]; then
-    curl_json PUT "${collection_url}/${id}" "${payload}" >/dev/null
+    api_call "${kind}" PUT "${collection_url}/${id}" "${payload}" >/dev/null
     printf 'updated %s %s (%s=%s)\n' "${kind}" "${id}" "${field}" "${identity}"
   else
     local created="${tmpdir}/${kind}-created.json"
-    curl_json POST "${collection_url}" "${payload}" >"${created}"
+    api_call "${kind}" POST "${collection_url}" "${payload}" >"${created}"
     printf 'created %s %s (%s=%s)\n' \
       "${kind}" "$(payload_field "${created}" id)" "${field}" "${identity}"
   fi
@@ -481,7 +539,7 @@ if wants trigger; then
   render tdd-calibration-trigger.json "${tmpdir}/trigger.json"
   recipient_id=""
   if [[ "${dry_run}" != "1" ]]; then
-    curl_json GET "${api_base}/1/recipients" >"${tmpdir}/recipients.json"
+    api_call recipient GET "${api_base}/1/recipients" >"${tmpdir}/recipients.json"
     recipient_id="$(
       python3 - "${tmpdir}/recipients.json" "${recipient_selector}" <<'PY'
 import json
