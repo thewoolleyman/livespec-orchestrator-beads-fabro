@@ -18,16 +18,23 @@ nothing in the catalog to explain why.
   are already exercised end to end by this repository's own dispatches; the
   Codex baked path and its `CODEX_CONFIG` posture object carry the measurement
   receipts recorded in `_dispatcher_fabro_argv`.
-- `opencode`, `grok-build` and `glm-acp-agent` are SEEDED FROM THE RATIFIED
-  REGISTRY POPULATION, not measured from a sandbox. Their ids and their
-  multi-provider/account-domain shape come from the contract; their launch
-  distribution follows the `@agentclientprotocol/<adapter>` npx convention the
-  two measured entries both follow, and their `version` records the registry
-  snapshot rather than a verified package version. A first dispatch through one
-  of them is therefore a VERIFICATION RUN under section "Built-in ACP node
-  defaults": the run transcript's resolved model must be checked and recorded on
-  the work-item that made the change. Do not read an unmeasured entry as proof
-  that its adapter starts.
+- `opencode`, `grok-build` and `glm-acp-agent` are SEEDED FROM THE ACP REGISTRY
+  SNAPSHOT recorded below. Their ids and their multi-provider/account-domain
+  shape come from the contract; their launch distribution and their `version` are
+  rendered from the registry's own `distribution` block at the pinned registry
+  commit, and `tests/fixtures/acp_registry_snapshot/` holds the verbatim
+  `agent.json` documents the render was taken from, so a drifted entry disagrees
+  with the registry's bytes rather than merely with a literal.
+
+  THEY CARRIED A FICTION UNTIL 2026-10-06, and it is recorded here because the
+  shape recurs. Their commands followed an `@agentclientprotocol/<adapter>` npx
+  convention extrapolated from the two measured entries -- no registry has ever
+  published `@agentclientprotocol/opencode-acp`, `.../grok-build-acp` or
+  `.../glm-acp-agent` -- and their `version` held the snapshot DATE. Both faults
+  are invisible to every refusal in the resolution path, because a command is
+  only ever a string until a sandbox execs it: a structured candidate naming one
+  of them resolved, rendered, journaled and then died at exec with nothing in the
+  catalog to explain why.
 
 THE DIGEST IS COMPUTED FROM THE SHIPPED ENTRIES, NEVER TRANSCRIBED. A literal
 digest cannot tell a deliberate re-seed from a silent drift, and nothing in a
@@ -72,10 +79,10 @@ __all__: list[str] = [
 # section "ACP node adapter configuration" assigns it.
 AGENT_CATALOG_KEY = "agent_catalog"
 
-# The date the population below was seeded from the ratified registry. It is the
-# date a reader checks an entry's currency against, and it is the second half of
-# the snapshot identity the digest completes.
-REGISTRY_SNAPSHOT_DATE = "2026-09-30"
+# The date the population below was seeded from the ACP registry. It is the date
+# a reader checks an entry's currency against, and it is the second half of the
+# snapshot identity the registry digest completes.
+REGISTRY_SNAPSHOT_DATE = "2026-10-06"
 
 CLAUDE_AGENT_ID = "claude-acp"
 CODEX_AGENT_ID = "codex-acp"
@@ -144,12 +151,20 @@ _BUILTIN_AGENTS: tuple[AcpAgentEntry, ...] = (
         ),
         effort_levels=_CODEX_EFFORT_LEVELS,
     ),
+    # The registry declares a per-platform `binary` distribution for `opencode`
+    # and NO `npx` package, so its launch triple is the archive's own `cmd` and
+    # `args` -- `./opencode acp` -- and the archive itself is a PROVISIONING step
+    # that deliberately has no place in a fetch-free entry. Nothing in this
+    # repository's sandbox image bakes it today, which is a real gap and is left
+    # VISIBLE here rather than papered over with an npx package that would merely
+    # move the failure back to exec.
     AcpAgentEntry(
         agent_id="opencode",
         display_name="OpenCode",
         account_domain="opencode",
-        version=REGISTRY_SNAPSHOT_DATE,
-        command="npx -y @agentclientprotocol/opencode-acp",
+        version="1.18.34",
+        command="./opencode",
+        args=("acp",),
         mechanism=AcpModelMechanism(kind=PROTOCOL_MECHANISM, model="model", effort="effort"),
         multi_provider=True,
     ),
@@ -158,8 +173,9 @@ _BUILTIN_AGENTS: tuple[AcpAgentEntry, ...] = (
         display_name="Grok Build",
         account_domain="xai",
         provider="xai",
-        version=REGISTRY_SNAPSHOT_DATE,
-        command="npx -y @agentclientprotocol/grok-build-acp",
+        version="1.0.49",
+        command="npx -y @xai-official/grok@1.0.49",
+        args=("agent", "stdio"),
         mechanism=AcpModelMechanism(kind=PROTOCOL_MECHANISM, model="model", effort="effort"),
     ),
     AcpAgentEntry(
@@ -167,8 +183,8 @@ _BUILTIN_AGENTS: tuple[AcpAgentEntry, ...] = (
         display_name="GLM ACP Agent",
         account_domain="zai",
         provider="zai",
-        version=REGISTRY_SNAPSHOT_DATE,
-        command="npx -y @agentclientprotocol/glm-acp-agent",
+        version="1.14.0",
+        command="npx -y glm-acp-agent@1.14.0",
         mechanism=AcpModelMechanism(kind=PROTOCOL_MECHANISM, model="model", effort="effort"),
     ),
 )
