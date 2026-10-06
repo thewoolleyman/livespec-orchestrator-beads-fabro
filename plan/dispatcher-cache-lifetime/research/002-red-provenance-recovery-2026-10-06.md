@@ -9,7 +9,7 @@ before reading the commit.
 
 | Time (UTC) | Event |
 | --- | --- |
-| 2026-10-06T03:51:28Z | `tests/bin/test_payload_retention_after_eviction.py` authored. NO product file existed or had been modified. |
+| 2026-10-06T03:51:28Z | `tests/bin/test_payload_retention_after_eviction.py` authored. No NEW payload implementation or product modification preceded it — `bin/_bootstrap.py` already existed on `master`, unmodified, and `bin/_payload.py` did not exist at all. |
 | 2026-10-06T03:51:45Z | First run: FAILED on a genuine parent-side assertion. The child completed the real `bootstrap()`, the copied fixture installation was deleted, and the deferred `livespec_orchestrator_beads_fabro.commands.drive` import raised `ModuleNotFoundError` — the incident's own failure, reproduced. |
 | 2026-10-06T03:53:10Z | Red committed as `4ffae66e98ca429d3643fc046a5399f8e9eb375d`, test bytes `sha256:fa555625773305951cfcb12308c0f3faeb3e6234b2fab451dabf71217f140644`. This is the ONLY genuine Red-first chronology for this pair. |
 | 2026-10-06T04:06Z | First Green amend ran the gates and surfaced two faults: (1) this repository measures coverage over `tests/` too, so the accepted Red's own defensive scaffolding arms (`_wait_for`'s early-child-exit and bounded-timeout arms, and the body's `finally`) left it below 100%; (2) a NEW unit test used `monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)` on a name that was absent — pytest's `delitem` records nothing to undo in that case, so the value `bootstrap()` then set LEAKED and gave three Dispatcher tests an extra `dispatcher-currency-undetermined` journal record. |
