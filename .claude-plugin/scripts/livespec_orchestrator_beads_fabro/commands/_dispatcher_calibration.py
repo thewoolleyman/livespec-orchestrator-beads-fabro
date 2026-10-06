@@ -49,6 +49,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_assertion_count impo
     assertion_count_for,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_non_convergence_cap import (
+    UNTRIGGERED_NON_CONVERGENCE_CAP,
+    NonConvergenceCap,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
+    is_non_convergence_outcome,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pr_open_diff import (
     PR_OPEN_DIFF_SIZE_KEY,
     PR_OPEN_DIFF_STAGE,
@@ -135,6 +142,13 @@ class CalibrationRecord:
     fabro_failure_cause: str | None = None
     fabro_failure_category: str | None = None
     fabro_failure_signature: str | None = None
+    # --- the non-convergence cap (plan slice S4) ---
+    # Held as a value rather than two more scalars, for the reason `tdd` is: the
+    # key names and their source semantics live in one place. It FLATTENS to its
+    # own sibling keys in `calibration_journal_record`. The default is the
+    # untriggered value, so a path that does not resolve the cap journals
+    # explicit nulls rather than a plausible one.
+    bounce_cap: NonConvergenceCap = UNTRIGGERED_NON_CONVERGENCE_CAP
     # --- TDD order signals (plan slice S3) ---
     tdd: TddSignals = UNOBSERVED_TDD_SIGNALS
 
@@ -149,6 +163,7 @@ def build_calibration_record(  # noqa: PLR0913 — kw-only pure builder; each fi
     token_cost_micros: int | None,
     dispatch_context_size: int,
     merged_pr_diff_size: int | None,
+    bounce_cap: NonConvergenceCap = UNTRIGGERED_NON_CONVERGENCE_CAP,
     tdd: TddSignals = UNOBSERVED_TDD_SIGNALS,
 ) -> CalibrationRecord:
     """Assemble the calibration record from already-observed dispatch inputs.
@@ -160,7 +175,9 @@ def build_calibration_record(  # noqa: PLR0913 — kw-only pure builder; each fi
     CC-token cost (or `None` when unobservable); `dispatch_context_size`
     is the goal/comment context the Dispatcher fed the run; and
     `merged_pr_diff_size` is the merged-PR diff size (or `None` when the
-    run did not merge or the size was not observed).
+    run did not merge or the size was not observed); and `bounce_cap` is the
+    non-convergence cap this terminal tripped, which the caller resolves because
+    the stall window is an environment read this pure layer must not make.
     """
     converged = outcome.status == "green"
     # Resolved ONCE and read for both fields: a second resolution could not be
@@ -193,6 +210,7 @@ def build_calibration_record(  # noqa: PLR0913 — kw-only pure builder; each fi
         fabro_failure_cause=outcome.fabro_failure_cause,
         fabro_failure_category=outcome.fabro_failure_category,
         fabro_failure_signature=outcome.fabro_failure_signature,
+        bounce_cap=bounce_cap,
         tdd=tdd,
     )
 
@@ -213,12 +231,20 @@ def outcome_class(*, outcome: DispatchOutcome) -> str:
 def bounced_to_regroom(*, outcome: DispatchOutcome) -> bool:
     """Whether this dispatch is a non-convergence bounce back to `backlog`.
 
-    Per SPECIFICATION/contracts.md, factory non-convergence routes
-    the item to `backlog`. The mechanical signal for that is a
-    `stalled-no-progress` terminal — the watchdog-confirmed non-convergence
-    the Dispatcher escalates rather than infinite-retries.
+    Per SPECIFICATION/contracts.md, factory non-convergence routes the item to
+    `backlog`. This asks the SAME predicate the bounce itself asks
+    (`is_non_convergence_outcome`), which is the repair plan slice S4
+    (`bd-ib-tbgxm4`) landed: it tested only the watchdog's `stalled-no-progress`
+    status, so a DOT fix-loop-cap exhaustion moved the item to `backlog` while
+    this flag reported it as not bounced. The flag was true on ZERO of 445 of
+    this repository's own calibration records, which is why the reactive
+    ceiling's training signal has never been readable.
+
+    Sharing one predicate is the point rather than a tidiness: a flag that is
+    derived separately from the transition it describes can disagree with it,
+    and the disagreement is invisible — both surfaces look correct on their own.
     """
-    return outcome.status == "stalled-no-progress"
+    return is_non_convergence_outcome(outcome=outcome)
 
 
 def fix_loop_count(*, records: tuple[dict[str, object], ...], work_item_id: str) -> int:
@@ -358,5 +384,6 @@ def calibration_journal_record(*, record: CalibrationRecord) -> dict[str, object
         "fabro.failure.cause": record.fabro_failure_cause,
         "fabro.failure.category": record.fabro_failure_category,
         "fabro.failure.signature": record.fabro_failure_signature,
+        **record.bounce_cap.as_record(),
         **tdd_signal_fields(signals=record.tdd),
     }

@@ -109,7 +109,12 @@ _SIZE_PROXY_FIELDS = (
 # Plan slice S4's proxy repairs (`bd-ib-tbgxm4`). They ride the same flat
 # shape, and they are enumerated apart from the spec's two lists above so the
 # journey still pins the ratified field set exactly as it is written.
-_S4_REPAIR_FIELDS = ("acceptance_count_source", "pr_open_diff_size")
+_S4_REPAIR_FIELDS = (
+    "acceptance_count_source",
+    "pr_open_diff_size",
+    "bounce_cap",
+    "bounce_cap_observed",
+)
 # Plan slice S3's TDD order signals (`bd-ib-3h5vfq`). They ride the journal as
 # flat dotted sibling keys exactly as the `fabro.failure.*` detail does, which
 # is what keeps the shape this journey pins — one scalar per key, no nesting —
