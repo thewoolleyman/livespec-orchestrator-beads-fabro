@@ -11,10 +11,26 @@
 # not. Re-running changes nothing but the resources' contents, so this is safe
 # to run after editing a definition file.
 #
+# THE BOARD IS BUILT IN THREE STEPS, not one POST. The current Create a Board
+# API takes a `type: flexible` board whose query panels reference PERSISTED
+# query identifiers; it has no inline-query form, so the committed definition's
+# per-panel query SPECIFICATIONS are first materialized through the Queries API
+# and named by QUERY ANNOTATIONS, and only then does the board itself reference
+# the identifiers that came back. Panel idempotence cannot use the same
+# lookup-by-identity trick the three resources above do, because a Query has no
+# list, get or update verb at all: the annotation carries the caption AND a
+# digest of the specification it names, so an unchanged digest reuses the
+# persisted query while a changed one persists a fresh query and re-points the
+# SAME annotation. See `board_panel_plan` and the board definition's
+# `panel_identity_key`.
+#
 # SECRETS NEVER REACH ARGV OR THE LOG. The API key is read from the
 # environment and passed to curl only through a header; no `set -x`, no echo
 # of any header, and the recipient lister redacts email local-parts (the same
-# discipline provision-honeycomb-run-turn-trigger.sh established).
+# discipline provision-honeycomb-run-turn-trigger.sh established). A FAILURE
+# diagnostic quotes the response body, so `sanitize` replaces the key in
+# anything quoted — a server that echoed the credential back must not be able
+# to route it into the log.
 #
 # HOST-WRAPPER EXECUTION. The Honeycomb configuration key lives in 1Password,
 # so run this THROUGH the project's configured env wrapper rather than
