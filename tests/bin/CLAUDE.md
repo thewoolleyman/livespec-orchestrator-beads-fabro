@@ -30,9 +30,11 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   spawned child.
 - `test_payload.py` — unit coverage for `_payload.py`, the
   payload-retention step `bootstrap()` runs before any packaged
-  import: which plugin roots are harness-managed, how a release
-  identity degrades, that a published payload is reused, and that a
-  copy losing the publish race discards its own staging.
+  import: which plugin roots are harness-managed, that each
+  invocation gets a payload no other invocation shares, that no
+  pre-existing tree (including a symlink under the launcher's own
+  holder prefix) is ever adopted as an executable payload, and how a
+  release label degrades when the manifest cannot be read.
 - `test_payload_retention_after_eviction.py` — the end-to-end
   counterpart of `test_payload.py`, and the regression guard for the
   `bd-ib-mtuqxb` host incident. It copies the real plugin root into a
@@ -53,6 +55,14 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   disposable children, so the frozen file never has to change. It
   asserts nothing about `_payload.py` — harness robustness, not product
   Red. Listed in `subprocess_spawn_allowlist`.
+- `test_payload_concurrent_release_isolation.py` — two concurrent
+  invocations launched from two distinguishable installs that carry
+  the SAME manifest version, with the older install deleted between
+  launch and use. Each must report its own marker from a packaged
+  module (deferred code) and from the bundled workflow manifest (a
+  packaged asset), which is what forces an invocation-private payload
+  rather than one keyed by version text. Listed in
+  `subprocess_spawn_allowlist`.
 - `test_host_side_self_contained_import.py` — the end-to-end
   counterpart of `test_bootstrap.py`: it spawns a `-S` (no-site)
   subprocess that runs the real bootstrap and imports the host-side

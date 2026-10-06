@@ -1,15 +1,15 @@
 """Tests for .claude-plugin/scripts/bin/_payload.py.
 
 Unit coverage for the launcher's payload-retention decisions: which plugin
-roots are harness-managed, how a release identity is read (and every way that
-read can degrade), that a published payload is reused rather than re-copied,
-and that a copy which loses the publish race discards its own staging instead
-of leaving two trees behind.
+roots are harness-managed, that each invocation gets a payload no other
+invocation shares, that no pre-existing tree is ever adopted as one, and how a
+release label degrades when the manifest cannot be read.
 
-The end-to-end counterpart — what a LIVE process sees after its installation
-is deleted underneath it — is
-`test_payload_retention_after_eviction.py`, which can only be asked of a real
-child process.
+The end-to-end counterparts — what a LIVE process sees after its installation
+is deleted underneath it, and whether two concurrent invocations keep their own
+releases — are `test_payload_retention_after_eviction.py` and
+`test_payload_concurrent_release_isolation.py`, which can only be asked of
+real child processes.
 """
 
 import importlib
@@ -23,6 +23,7 @@ import pytest
 _BIN_DIR = Path(__file__).resolve().parents[2] / ".claude-plugin" / "scripts" / "bin"
 _RELEASE = "9.9.9"
 _UNKNOWN_RELEASE = "unknown-release"
+_HOLDER_PREFIX = "livespec-orchestrator-beads-fabro-payload-"
 
 
 def _import_payload() -> Any:
@@ -41,6 +42,14 @@ def _install(*, root: Path, manifest: str | None = None) -> Path:
     if manifest is not None:
         _ = (root / "plugin.json").write_text(manifest, encoding="utf-8")
     return root
+
+
+def _private_tempdir(*, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Point `tempfile` at a per-test directory so holders are observable."""
+    temp_root = tmp_path / "tmp"
+    temp_root.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(temp_root))
+    return temp_root
 
 
 def test_a_plugin_root_beside_its_source_repository_is_not_harness_managed(
@@ -78,67 +87,71 @@ def test_a_checkout_plugin_root_is_its_own_payload(tmp_path: Path) -> None:
     assert retained.vendor_root == source_root / "scripts" / "_vendor"
 
 
-def test_an_installed_plugin_root_is_copied_aside_and_keyed_by_release(
+def test_an_installed_plugin_root_is_copied_into_a_private_holder(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     payload = _import_payload()
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "tmp"))
-    (tmp_path / "tmp").mkdir()
+    temp_root = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
     source_root = _install(
         root=tmp_path / "cache" / "abc123", manifest=f'{{"version": "{_RELEASE}"}}'
     )
     retained = payload.retain_payload(source_root=source_root)
     assert retained.retained is True
-    assert retained.root.name.endswith(_RELEASE)
-    assert retained.root.parent == tmp_path / "tmp"
+    assert retained.root.parent.parent == temp_root
+    # The release LABELS the holder for a human reading /tmp; it is not identity.
+    assert retained.root.parent.name.startswith(f"{_HOLDER_PREFIX}{_RELEASE}-")
     assert (retained.scripts_root / "livespec_orchestrator_beads_fabro").is_dir()
     assert retained.vendor_root.is_dir()
     assert not (
         retained.scripts_root / "__pycache__"
     ).exists(), "byte-compiled caches are reproducible and must not be carried into the payload"
-    # No staging holder is left behind once the payload is published.
-    assert sorted(entry.name for entry in (tmp_path / "tmp").iterdir()) == [retained.root.name]
 
 
-def test_an_already_published_payload_is_reused_rather_than_recopied(
+def test_each_invocation_gets_a_payload_no_other_invocation_shares(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Two retentions of the SAME release must not resolve the same tree."""
     payload = _import_payload()
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "tmp"))
-    (tmp_path / "tmp").mkdir()
+    _ = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
     source_root = _install(
         root=tmp_path / "cache" / "abc123", manifest=f'{{"version": "{_RELEASE}"}}'
     )
     first = payload.retain_payload(source_root=source_root)
-    _ = (first.root / "witness").write_text("first", encoding="utf-8")
     second = payload.retain_payload(source_root=source_root)
-    assert second.root == first.root
-    assert (second.root / "witness").read_text(encoding="utf-8") == "first"
+    assert first.root != second.root
+    # A write into one payload must be invisible to the other — the property a
+    # shared release-keyed directory could not provide.
+    _ = (first.root / "witness").write_text("first", encoding="utf-8")
+    assert not (second.root / "witness").exists()
 
 
-def test_losing_the_publish_race_discards_the_staging_and_takes_the_winner(
+def test_a_pre_existing_tree_at_a_guessable_path_is_never_adopted(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A rename that cannot land must leave exactly one payload, not two trees."""
+    """Adoption is structurally impossible: no existing path is consulted.
+
+    The decoys are the ones a guessable, release-keyed payload path invited —
+    a complete-looking foreign tree, reached through a symlink, planted under
+    the exact prefix the launcher labels its holders with. Neither the foreign
+    code nor the symlink may end up in the executable payload.
+    """
     payload = _import_payload()
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "tmp"))
-    (tmp_path / "tmp").mkdir()
+    temp_root = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
+    foreign = _install(root=tmp_path / "foreign", manifest=f'{{"version": "{_RELEASE}"}}')
+    _ = (foreign / "scripts" / "SMOKING-GUN").write_text("adopted", encoding="utf-8")
+    decoy = temp_root / f"{_HOLDER_PREFIX}{_RELEASE}"
+    decoy.mkdir()
+    (decoy / "payload").symlink_to(foreign, target_is_directory=True)
+
     source_root = _install(
         root=tmp_path / "cache" / "abc123", manifest=f'{{"version": "{_RELEASE}"}}'
     )
-    # A rename onto a NON-EMPTY directory is refused by the kernel, which is
-    # exactly the race's own failure: the winner has already published a full
-    # tree under this name. No monkeypatching — the real `rename` says no.
-    published = tmp_path / "published"
-    published.mkdir()
-    _ = (published / "winner").write_text("already here", encoding="utf-8")
-
-    root = payload._published(source_root=source_root, root=published)  # noqa: SLF001
-    assert root == published
-    assert (published / "winner").read_text(encoding="utf-8") == "already here"
-    assert (
-        list((tmp_path / "tmp").iterdir()) == []
-    ), "the losing copy left its staging holder behind"
+    retained = payload.retain_payload(source_root=source_root)
+    assert retained.root.parent != decoy
+    assert not retained.root.is_symlink()
+    assert not (
+        retained.scripts_root / "SMOKING-GUN"
+    ).exists(), "the launcher adopted a pre-existing tree as its executable payload"
 
 
 @pytest.mark.parametrize(
@@ -151,15 +164,14 @@ def test_losing_the_publish_race_discards_the_staging_and_takes_the_winner(
         pytest.param('{"version": "   "}', id="version-blank"),
     ],
 )
-def test_an_unreadable_release_identity_still_yields_a_retained_payload(
+def test_an_unreadable_release_label_still_yields_a_retained_payload(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, manifest: str | None
 ) -> None:
     """A cosmetic manifest fault must not turn into a dead launcher."""
     payload = _import_payload()
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "tmp"))
-    (tmp_path / "tmp").mkdir()
+    _ = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
     source_root = _install(root=tmp_path / "cache" / "abc123", manifest=manifest)
     retained = payload.retain_payload(source_root=source_root)
     assert retained.retained is True
-    assert retained.root.name.endswith(_UNKNOWN_RELEASE)
+    assert retained.root.parent.name.startswith(f"{_HOLDER_PREFIX}{_UNKNOWN_RELEASE}-")
     assert retained.vendor_root.is_dir()

@@ -53,17 +53,18 @@ __all__: list[str] = [
     "retain_payload",
 ]
 
-# The published payload's directory name, and the name of the staging holder a
-# copy lands in before it is published. Both are prefixed so an operator
-# reading `/tmp` can tell what owns them.
+# The invocation-private holder's directory-name prefix, and the fixed name the
+# payload takes inside it. The prefix is there so an operator reading `/tmp`
+# can tell what owns the directory; the holder's UNIQUE suffix comes from
+# `mkdtemp`, never from anything about the release.
 _PAYLOAD_PREFIX = "livespec-orchestrator-beads-fabro-payload-"
-_STAGING_PREFIX = "livespec-orchestrator-beads-fabro-staging-"
 _STAGED_NAME = "payload"
-# The release identity a payload is keyed by, read from the released plugin
-# manifest. `_UNKNOWN_RELEASE` keeps an unreadable or malformed manifest on the
-# retention path rather than refusing: a payload under a vaguer key is still a
-# payload that survives eviction, and refusing here would turn a cosmetic
-# manifest fault into a dead launcher.
+# The release this payload carries, read from the released plugin manifest and
+# used ONLY to label the holder directory for a human reader.
+# `_UNKNOWN_RELEASE` keeps an unreadable or malformed manifest on the retention
+# path rather than refusing: a payload under a vaguer LABEL is still a payload
+# that survives eviction, and refusing here would turn a cosmetic manifest
+# fault into a dead launcher.
 _RELEASE_MANIFEST = "plugin.json"
 _RELEASE_KEY = "version"
 _UNKNOWN_RELEASE = "unknown-release"
@@ -122,32 +123,27 @@ def _payload_at(*, root: Path, retained: bool) -> RetainedPayload:
 
 
 def _retained_root(*, source_root: Path) -> Path:
-    """The retained payload for this release, copying it aside on first demand."""
-    release = _release_identity(source_root=source_root)
-    root = Path(tempfile.gettempdir()) / f"{_PAYLOAD_PREFIX}{release}"
-    if root.is_dir():
-        return root
-    return _published(source_root=source_root, root=root)
+    """Copy the release into a directory THIS invocation alone owns.
 
+    The holder comes from `mkdtemp`, so it is created fresh, mode 0700, by
+    this process — which is what makes adoption structurally impossible. An
+    earlier invocation's tree, a symlink planted at a guessable path, a
+    foreign-owned directory, a half-copied tree left by an interrupted
+    provision: none of them is ever CONSULTED, because no existing path is.
 
-def _published(*, source_root: Path, root: Path) -> Path:
-    """Copy the release into a staging holder, then publish it with one rename.
-
-    The copy is never built UNDER its published name: a half-written tree
-    there would be adopted as a payload by the next invocation, which is the
-    one outcome worse than no payload at all. A rename that loses the race to
-    a concurrent invocation discards its own staging and takes the published
-    tree, so two invocations never both publish.
+    A shared payload keyed by release identity was tried and is wrong. Two
+    installs can carry the same `plugin.json` version and be different trees —
+    a cache rebuilt at the same release, a locally-installed marketplace copy,
+    a release re-cut from another commit — so version TEXT is not content
+    provenance, and adopting on a version match made one invocation execute
+    another source's code with nothing to report the substitution. The release
+    goes into the directory NAME for an operator reading `/tmp`, and carries
+    no identity weight at all.
     """
-    holder = Path(tempfile.mkdtemp(prefix=_STAGING_PREFIX))
-    staged = holder / _STAGED_NAME
-    _ = shutil.copytree(source_root, staged, ignore=shutil.ignore_patterns(*_IGNORED_NAMES))
-    try:
-        _ = staged.rename(root)
-    except OSError:
-        shutil.rmtree(holder, ignore_errors=True)
-        return root
-    holder.rmdir()
+    release = _release_identity(source_root=source_root)
+    holder = Path(tempfile.mkdtemp(prefix=f"{_PAYLOAD_PREFIX}{release}-"))
+    root = holder / _STAGED_NAME
+    _ = shutil.copytree(source_root, root, ignore=shutil.ignore_patterns(*_IGNORED_NAMES))
     return root
 
 
