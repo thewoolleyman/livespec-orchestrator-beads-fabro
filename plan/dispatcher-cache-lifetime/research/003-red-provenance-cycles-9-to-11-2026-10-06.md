@@ -319,11 +319,110 @@ the "path equality is not a decision" gap; it observes no update applied, no
 install promoted and no restart, the running Dispatcher being read-only about
 its own artifact by contract.
 
-The WRAPPER leg above remains the one genuinely unmeasurable obligation here.
+### CORRECTION, 2026-10-06 — the paragraph above OVERCLAIMS, and the canary leg is still owed
+
+The two sentences "NOW EVIDENCED" and "This closes the 'path equality is not a
+decision' gap" are **withdrawn.** The measurement itself is accurate and the
+control is kept; what is wrong is the claim about what it covers. Read the
+callable:
+
+```python
+def canary_verdict(*, exit_code: int) -> CanaryVerdictValue:
+    """Map a candidate self-check exit code to the canary verdict."""
+    return CanaryVerdict.PASS if exit_code == 0 else CanaryVerdict.FAIL
+```
+
+That is a **pure total function of one integer** — a one-line mapping with no
+I/O. The control calls it with the literal constants `0` and `1`. So it
+launches no candidate process, observes no actual candidate result, and drives
+no self-update journal decision; the exit codes it maps were written by the
+test, not produced by a candidate. Asserting that this mapping is
+order-preserving and that the caller's own `__file__` did not move is a real
+fact about the DECISION-TO-EXECUTION relationship, and that is all it is.
+
+The distinction matters because the fifth assertion is about candidate canary
+OUTCOMES surviving, and an outcome requires a candidate to have produced one.
+Substituting `canary_verdict(exit_code=0)` for a real candidate result is the
+wrong-population shape this very report catalogues below: a clean pass whose
+instrument could not have observed the thing being claimed. It is a mapping
+control, not canary proof, and must not be cited as the latter.
+
+No product defect is inferred from this gap. The code under the claim is not
+suspected; only the evidence for it was mislabelled.
+
+**What actually discharges the factory leg**, at the exported boundary and
+source-checked at `0997466a`:
+`_dispatcher_self_update.self_update_after_release(...)` — whose live signature
+is `work_item_id`, `candidate_bin`, `scratch_root`, `repo`, `journal`,
+`runner`, `poster` — driven from the RETAINED payload after its real
+`_bootstrap.bootstrap()`, with the candidate resolved normally through
+`candidate_dispatcher_bin()` (never monkeypatched, never the retained helper
+passed as the candidate), a real bounded subprocess runner that preserves the
+actual rc/stdout/stderr of
+`python3 <B>/scripts/bin/dispatcher.py ledger-check --project-root <scratch> --json`,
+a recording journal, and an injected recording `NotifyPoster` that makes no
+network request. Two cases, each needing an ACTUAL subprocess result:
+
+| Case | Scratch fixture | Expected candidate result | Expected journal stage |
+| --- | --- | --- | --- |
+| Conditioned positive | private `.livespec.jsonc` selecting the in-memory ledger stand-in (`fake: true`), no factories declared | exit 0, genuine `ledger-check` JSON, no findings | `self-update-restart-due` |
+| Setup-refusal negative | a distinct genuinely empty scratch, no `.livespec.jsonc` | real nonzero exit, `ConnectionPrefixMissingError` | `self-update-kept-last-known-good` |
+
+Both stage names are present in `_dispatcher_self_update.py` (`_RESTART_DUE_CLASS`
+at line 85; the kept-last-known-good literal at line 311), so the expected
+outcomes are source-grounded rather than guessed. In both cases payload A's
+code, assets and version must be re-read and shown unchanged — path equality
+alone is explicitly insufficient — and the negative is a SETUP refusal, not
+evidence the candidate is unhealthy. A `self-update-error` record means the
+stage never reached a canary result and is not passing evidence.
+
+That capture is **owed to the downstream `proof_capture` node and its
+independent `proof_verify` replay**, which is where this workflow measures
+delivered runtime behaviour; it is deliberately not re-attempted here, and no
+further already-passing test-plus-prose cycle was authored to stand in for it.
+
+**The wrapper leg is NOT a second outstanding leg, and nothing above moves any
+part of the fifth assertion to the host.** An earlier draft of this correction
+said the fifth assertion now had "two outstanding legs"; that is withdrawn — it
+would have host-deferred a factory assertion, which is not this correction's to
+do. Only assertion 6 is host-deferred.
+
+What is actually known about the wrapper, separating the two measurements that
+the section above left tangled:
+
+- **Normal host wrapper PRESERVATION was measured**, by the coordinator,
+  through the ordinary configured wrapper, using inert process-local
+  installed-root / retained-root markers: exit 0, BOTH markers `preserved=true`,
+  and credential PRESENCE booleans true. Provenance anchor: wrapper file
+  SHA-256 `04e81bd552613df42281fc346a1c71aeb8dd46423c420dd99665fbd033195506`
+  (a checksum of the script, not credential material). That diagnostic emitted
+  no secret value, performed no identity manipulation, mutated no cache, and
+  ran no product CLI. So the record SURVIVES the normal wrapper; the premise
+  that it would be dropped is not supported.
+- **The generic sudo-scrub account was a HYPOTHESIS and must never be restated
+  as observed fact.** It came from a docstring describing sudo rebuilding the
+  environment, not from any measurement of this wrapper. No scrub defect is
+  inferred, and none should be invented.
+
+The consequence for the factory capture is that it must **honestly exercise the
+available wrapper invocation boundary** rather than treat the leg as absent.
+The frozen credential double already in the suite is the vehicle, and its
+standing is disclosed rather than glossed: it is a deliberately STRONGER
+hermetic fixture, **not** an exact replica of the normal host wrapper. Two
+candid limits ride with it and must appear in the capture: the configured
+wrapper's own executable does not resolve in this sandbox, so **no claim may be
+made that the absent host executable ran in factory**; and a hermetic double
+passing is evidence about the boundary's contract, not about that host binary.
+
+So exactly one factory leg is owed here — the candidate-canary capture restated
+above, taken at the available wrapper invocation boundary. That is a capture
+task for `proof_capture` and `proof_verify`, not a maintainer question: no
+decision is pending, no spec amendment is implied, and no product defect is
+inferred.
 
 ## What is NOT a Red, stated plainly
 
-Four artifacts in this work-item are supplemental and must never be cited as
+Five artifacts in this work-item are supplemental and must never be cited as
 Red-Green evidence:
 
 | Artifact | Status |
@@ -332,6 +431,7 @@ Red-Green evidence:
 | `_payload_grading.py` extraction (in cycle 11's Green) | Same: recording the payload's source took `_payload.py` past its 250 LLOC hard ceiling, so the grading layer was cut out by cohesion. `test_payload_grading.py` is a structural guard, not a Red. |
 | `test_payload_public_cli_routes_after_eviction.py` | Authored after the pairs it covers; passed on first write. Its own docstring says so. |
 | `test_payload_public_route_exact_outcomes.py` | Same. Its value is the pre-fix control, not a Red. |
+| `test_payload_canary_decision_leaves_execution.py` | Passed on first write; no product edit. A PURE MAPPING control over `canary_verdict`, **not** candidate canary proof — see the correction above. |
 
 A structural file-presence assertion is not public behaviour proof, and none of
 the above should be read as one.
