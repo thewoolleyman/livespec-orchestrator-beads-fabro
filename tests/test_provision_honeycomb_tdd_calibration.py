@@ -7,17 +7,30 @@ the Honeycomb management API the command uses — so the create path, the
 idempotent update path, the configured thresholds and both refusals are
 exercised by execution rather than asserted from the script's text.
 
-What this CANNOT establish, stated plainly so nobody reads it as more than it
-is: the fixture accepts the payload shapes the command sends, so these tests
-prove the command is internally consistent and idempotent, NOT that the live
-Honeycomb API accepts those shapes or parses the derived-column expressions.
-Plan child `bd-ib-i56nut` owns the live leg and the production resource ids.
+The fixture is STRICT about the board wire schema, and that strictness is the
+repair `bd-ib-4yvurp` carries. The previous fixture accepted whatever board
+payload it was handed, so the legacy shape — one `/1/boards` POST carrying
+INLINE query specifications under a top-level `queries` array — passed the
+hermetic tier and read as proof, while the current Create a Board API accepts
+only `type: "flexible"` boards whose query panels reference PERSISTED query
+identifiers. `_FakeHoneycomb.rejection` now refuses an inline board query, an
+unsupported top-level field, a missing or unknown `query_id`, and a
+`query_annotation_id` that does not apply to its panel's query, so the old
+false-positive cannot recur.
+
+What this still CANNOT establish, stated plainly so nobody reads it as more
+than it is: the fixture accepts the payload shapes the command sends, so these
+tests prove the command is internally consistent, idempotent and conformant to
+the DOCUMENTED wire contract, NOT that the live Honeycomb API accepts those
+shapes or parses the derived-column expressions. Plan child `bd-ib-i56nut`
+owns the live leg and the production resource ids.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import threading
 from collections.abc import Iterator
@@ -26,7 +39,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, cast
 from urllib.error import HTTPError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 import pytest
 from typing_extensions import override
@@ -34,28 +47,82 @@ from typing_extensions import override
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SCRIPT = _REPO_ROOT / "orchestrator-image" / "provision-honeycomb-tdd-calibration.sh"
 _DEFINITIONS = _REPO_ROOT / "orchestrator-image" / "honeycomb"
+_BOARD_DEFINITION = _DEFINITIONS / "tdd-calibration-board.json"
 
 _RECIPIENT_ID = "recipient-1"
 _RECIPIENT_EMAIL = "operator@example.test"
+_API_KEY = "not-a-real-key"
+_DATASET = "livespec-dispatcher"
+_PANEL_COUNT = 7
+
+# The documented Create a Board request body. Anything else is a legacy shape
+# or a typo, and the fixture refuses both rather than storing them.
+_BOARD_FIELDS = frozenset(
+    {
+        "name",
+        "description",
+        "type",
+        "panels",
+        "layout_generation",
+        "tags",
+        "preset_filters",
+    }
+)
+# The documented query-panel body. `query` is deliberately ABSENT: a panel
+# carrying an inline specification is exactly the defect under repair.
+_QUERY_PANEL_FIELDS = frozenset(
+    {
+        "query_id",
+        "query_annotation_id",
+        "query_style",
+        "visualization_settings",
+    }
+)
+_IDENTITY_FIELDS = {
+    "derived_columns": "alias",
+    "boards": "name",
+    "triggers": "name",
+    "query_annotations": "name",
+}
+_DATASET_KINDS = frozenset({"derived_columns", "triggers", "queries", "query_annotations"})
+_GLOBAL_KINDS = frozenset({"boards"})
+# `$name` and `$"name"` are the two documented derived-column reference forms.
+_COLUMN_REFERENCE = re.compile(r'\$(?:"([^"]+)"|([A-Za-z0-9_.]+))')
 
 
 class _FakeHoneycomb:
     """The subset of the Honeycomb management API the provisioner drives.
 
-    Holds three collections keyed by their stable identity — derived columns by
-    `alias`, boards and triggers by `name` — and records every write so a test
-    can tell a CREATE from an UPDATE. That distinction is the whole point: an
-    idempotent provisioner must create on the first run and update on the
-    second, and a command that created twice would look identical from the
-    outside without this ledger.
+    Holds the three identity-keyed resources the provisioner looks up — derived
+    columns by `alias`, boards and triggers by `name` — plus the two
+    collections that make up a flexible board's panel substrate: persisted
+    queries and the query annotations that name them.
+
+    The write ledgers are SPLIT rather than pooled. `creates`/`updates` cover
+    the three identity-keyed resources, and queries and annotations get their
+    own lists, so a test can assert that re-applying created no second board
+    AND that it created no eighth query annotation — two independent
+    populations, which one pooled counter could not distinguish.
     """
 
     def __init__(self) -> None:
         self.derived_columns: dict[str, dict[str, Any]] = {}
         self.boards: dict[str, dict[str, Any]] = {}
         self.triggers: dict[str, dict[str, Any]] = {}
+        self.queries: dict[str, dict[str, Any]] = {}
+        self.query_annotations: dict[str, dict[str, Any]] = {}
         self.creates: list[str] = []
         self.updates: list[str] = []
+        self.query_creates: list[str] = []
+        self.annotation_creates: list[str] = []
+        self.annotation_updates: list[str] = []
+        # Every write's dataset segment, so a test can prove the configured
+        # dataset reached the URL rather than trusting the payload.
+        self.write_datasets: list[str] = []
+        # Columns this account does NOT have. A derived-column expression
+        # referencing one 400s with the detail the live API was measured to
+        # return, which is the arm the diagnostic control drives.
+        self.unknown_columns: frozenset[str] = frozenset()
         self._next_id = 0
         self._lock = threading.Lock()
 
@@ -64,45 +131,149 @@ class _FakeHoneycomb:
             "derived_columns": self.derived_columns,
             "boards": self.boards,
             "triggers": self.triggers,
+            "queries": self.queries,
+            "query_annotations": self.query_annotations,
         }[kind]
 
-    def identity_field(self, *, kind: str) -> str:
-        return "alias" if kind == "derived_columns" else "name"
-
-    def create(self, *, kind: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def create(self, *, kind: str, dataset: str, payload: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
             self._next_id += 1
             record = {**payload, "id": f"{kind}-{self._next_id}"}
             self.collection(kind=kind)[record["id"]] = record
-            self.creates.append(f"{kind}:{payload[self.identity_field(kind=kind)]}")
+            self.write_datasets.append(f"{kind}:{dataset}")
+            self._create_ledger(kind=kind).append(self._label(kind=kind, record=record))
             return record
 
     def update(self, *, kind: str, resource_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
             record = {**payload, "id": resource_id}
             self.collection(kind=kind)[resource_id] = record
-            self.updates.append(f"{kind}:{payload[self.identity_field(kind=kind)]}")
+            self._update_ledger(kind=kind).append(self._label(kind=kind, record=record))
             return record
 
+    def rejection(self, *, kind: str, payload: dict[str, Any]) -> str | None:
+        """Return the 400 detail for an unusable payload, or None to accept it."""
+        return {
+            "boards": self._board_detail,
+            "derived_columns": self._derived_column_detail,
+            "query_annotations": self._annotation_detail,
+        }.get(kind, _accepts)(payload=payload)
 
-_COLLECTION_KINDS = frozenset({"derived_columns", "boards", "triggers"})
+    def _label(self, *, kind: str, record: dict[str, Any]) -> str:
+        field = _IDENTITY_FIELDS.get(kind)
+        return f"{kind}:{record[field]}" if field else f"{kind}:{record['id']}"
+
+    def _create_ledger(self, *, kind: str) -> list[str]:
+        return {
+            "queries": self.query_creates,
+            "query_annotations": self.annotation_creates,
+        }.get(kind, self.creates)
+
+    def _update_ledger(self, *, kind: str) -> list[str]:
+        return {"query_annotations": self.annotation_updates}.get(kind, self.updates)
+
+    def _board_detail(self, *, payload: dict[str, Any]) -> str | None:
+        unsupported = sorted(set(payload) - _BOARD_FIELDS)
+        panels = payload.get("panels") or []
+        checks = (
+            (bool(unsupported), f"unsupported board fields: {', '.join(unsupported)}"),
+            (
+                payload.get("type") != "flexible",
+                f"type must be flexible, got {payload.get('type')!r}",
+            ),
+            (not panels, "a board must carry at least one panel"),
+        )
+        detail = next((text for failed, text in checks if failed), None)
+        if detail is not None:
+            return detail
+        panel_details = (
+            self._panel_detail(index=index, panel=panel) for index, panel in enumerate(panels)
+        )
+        return next((text for text in panel_details if text is not None), None)
+
+    def _panel_detail(self, *, index: int, panel: dict[str, Any]) -> str | None:
+        query_panel = panel.get("query_panel") or {}
+        unsupported = sorted(set(query_panel) - _QUERY_PANEL_FIELDS)
+        query_id = query_panel.get("query_id") or ""
+        annotation_id = query_panel.get("query_annotation_id") or ""
+        annotation = self.query_annotations.get(annotation_id)
+        checks = (
+            (panel.get("type") != "query", f"panels[{index}].type must be query"),
+            (
+                bool(unsupported),
+                f"panels[{index}].query_panel carries unsupported fields: "
+                f"{', '.join(unsupported)}",
+            ),
+            (not query_id, f"panels[{index}].query_panel.query_id is required"),
+            (
+                bool(query_id) and query_id not in self.queries,
+                f"panels[{index}].query_panel.query_id {query_id!r} does not exist",
+            ),
+            (
+                bool(annotation_id) and annotation is None,
+                f"panels[{index}].query_panel.query_annotation_id {annotation_id!r} "
+                "does not exist",
+            ),
+            (
+                annotation is not None and annotation.get("query_id") != query_id,
+                f"panels[{index}] annotation {annotation_id!r} does not apply to "
+                f"query {query_id!r}",
+            ),
+        )
+        return next((text for failed, text in checks if failed), None)
+
+    def _derived_column_detail(self, *, payload: dict[str, Any]) -> str | None:
+        referenced = {
+            match.group(1) or match.group(2)
+            for match in _COLUMN_REFERENCE.finditer(str(payload.get("expression", "")))
+        }
+        missing = sorted(referenced & self.unknown_columns)
+        return f"unknown column name: {missing[0]}" if missing else None
+
+    def _annotation_detail(self, *, payload: dict[str, Any]) -> str | None:
+        query_id = payload.get("query_id") or ""
+        checks = (
+            (not payload.get("name"), "query annotation name is required"),
+            (not query_id, "query annotation query_id is required"),
+            (
+                bool(query_id) and query_id not in self.queries,
+                f"query annotation query_id {query_id!r} does not exist",
+            ),
+        )
+        return next((text for failed, text in checks if failed), None)
+
+
+def _accepts(*, payload: dict[str, Any]) -> str | None:
+    """Accept any payload — the fixture models no constraint for this kind."""
+    _ = payload
+    return None
+
+
 _RECIPIENTS_BODY = [
     {"id": _RECIPIENT_ID, "type": "email", "details": {"email_address": _RECIPIENT_EMAIL}}
 ]
 
 
-def _route(*, path: str) -> tuple[str, str] | None:
-    """Resolve a request path to `(collection kind, resource id)`, or None.
+def _route(*, path: str) -> tuple[str, str, str] | None:
+    """Resolve a request path to `(collection kind, dataset, resource id)`.
 
-    `/1/boards` carries no dataset segment while the other two collections do,
-    so the depth that means "this names one resource" differs per kind. An
-    empty resource id means the path names the whole collection.
+    `/1/boards` carries no dataset segment while every other collection does,
+    so the two shapes are resolved separately rather than by counting depth and
+    hoping. An empty resource id means the path names the whole collection.
     """
     parts = [part for part in path.split("/") if part]
-    if len(parts) < 2 or parts[0] != "1" or parts[1] not in _COLLECTION_KINDS:
+    if len(parts) < 2 or parts[0] != "1":
         return None
     kind = parts[1]
-    return kind, parts[-1] if len(parts) == (3 if kind == "boards" else 4) else ""
+    if kind in _GLOBAL_KINDS:
+        if len(parts) == 2:
+            return kind, "", ""
+        return (kind, "", parts[2]) if len(parts) == 3 else None
+    if kind not in _DATASET_KINDS or len(parts) < 3:
+        return None
+    if len(parts) == 3:
+        return kind, parts[2], ""
+    return (kind, parts[2], parts[3]) if len(parts) == 4 else None
 
 
 class _FixtureServer(ThreadingHTTPServer):
@@ -151,24 +322,34 @@ class _Handler(BaseHTTPRequestHandler):
             self._reply(status=HTTPStatus.OK, body=_RECIPIENTS_BODY)
             return
         resolved = _route(path=self.path)
-        if resolved is None or (self.command == "PUT" and resolved[1] == ""):
+        if resolved is None or (self.command == "PUT" and resolved[2] == ""):
             self._reply(status=HTTPStatus.NOT_FOUND, body={"error": self.path})
             return
-        kind, resource_id = resolved
+        kind, dataset, resource_id = resolved
         if self.command == "GET":
             self._reply(status=HTTPStatus.OK, body=list(self._api().collection(kind=kind).values()))
-        elif self.command == "POST":
+            return
+        payload = self._payload()
+        detail = self._api().rejection(kind=kind, payload=payload)
+        if detail is not None:
+            self._reply(
+                status=HTTPStatus.BAD_REQUEST,
+                body={"error": "unable to process request", "detail": detail},
+            )
+            return
+        self._write(kind=kind, dataset=dataset, resource_id=resource_id, payload=payload)
+
+    def _write(self, *, kind: str, dataset: str, resource_id: str, payload: dict[str, Any]) -> None:
+        if self.command == "POST":
             self._reply(
                 status=HTTPStatus.CREATED,
-                body=self._api().create(kind=kind, payload=self._payload()),
+                body=self._api().create(kind=kind, dataset=dataset, payload=payload),
             )
-        else:
-            self._reply(
-                status=HTTPStatus.OK,
-                body=self._api().update(
-                    kind=kind, resource_id=resource_id, payload=self._payload()
-                ),
-            )
+            return
+        self._reply(
+            status=HTTPStatus.OK,
+            body=self._api().update(kind=kind, resource_id=resource_id, payload=payload),
+        )
 
     def do_GET(self) -> None:  # noqa: N802 — stdlib dispatch name.
         self._handle()
@@ -202,7 +383,7 @@ def _run(
     env = {
         **os.environ,
         "HONEYCOMB_API_BASE": api_base,
-        "HONEYCOMB_CONFIG_KEY_LIVESPEC": "not-a-real-key",
+        "HONEYCOMB_CONFIG_KEY_LIVESPEC": _API_KEY,
         "HONEYCOMB_OPERATOR_ALERT_RECIPIENT": _RECIPIENT_EMAIL,
     }
     _ = env.pop("DRY_RUN", None)
@@ -222,6 +403,23 @@ def _run(
     )
 
 
+def _post(*, api_base: str, path: str, payload: dict[str, Any]) -> int:
+    """POST a payload straight at the fixture, returning its status code."""
+    request = Request(  # noqa: S310 — the local test fixture.
+        f"{api_base}{path}",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=5.0) as response:  # noqa: S310 — the local test fixture.
+        return int(response.status)
+
+
+def _committed_panels() -> list[dict[str, Any]]:
+    document = json.loads(_BOARD_DEFINITION.read_text(encoding="utf-8"))
+    return list(document["payload"]["panels"])
+
+
 # --- the committed definitions ---------------------------------------------
 
 
@@ -235,20 +433,19 @@ def test_every_definition_is_versioned_committed_json() -> None:
         meta = document["livespec"]
         assert meta["definition_version"] >= 1
         assert meta["work_item"] == "bd-ib-3h5vfq"
-        assert meta["dataset"] == "livespec-dispatcher"
+        assert meta["dataset"] == _DATASET
         # The live leg is carried by a named dependent child, and each
         # definition says so rather than implying it was already applied.
         assert "bd-ib-i56nut" in meta["live_validation_owed"]
 
 
 def test_the_board_groups_the_share_by_repository_and_adapter() -> None:
-    document = json.loads((_DEFINITIONS / "tdd-calibration-board.json").read_text(encoding="utf-8"))
-    queries = document["payload"]["queries"]
-    breakdowns = {tuple(query["query"].get("breakdowns", ())) for query in queries}
+    panels = _committed_panels()
+    queries = [panel["query_panel"]["query"] for panel in panels]
+    breakdowns = {tuple(query.get("breakdowns", ())) for query in queries}
 
     assert ("repo",) in breakdowns
     assert ("livespec.implement.adapter",) in breakdowns
-    assert all(query["dataset"] == "livespec-dispatcher" for query in queries)
     # Every share query excludes the unclassifiable population: counting it
     # would let a dropped signal read as a healthy run.
     share_queries = [
@@ -256,7 +453,7 @@ def test_the_board_groups_the_share_by_repository_and_adapter() -> None:
         for query in queries
         if any(
             calculation.get("column") == "tdd_post_hoc_red_flag"
-            for calculation in query["query"]["calculations"]
+            for calculation in query["calculations"]
         )
     ]
     assert share_queries
@@ -265,7 +462,24 @@ def test_the_board_groups_the_share_by_repository_and_adapter() -> None:
             "column": "tdd_post_hoc_red",
             "op": "!=",
             "value": "unknown",
-        } in query["query"]["filters"]
+        } in query["filters"]
+
+
+def test_every_committed_panel_is_a_query_panel_with_a_caption_and_a_position() -> None:
+    panels = _committed_panels()
+
+    assert len(panels) == _PANEL_COUNT
+    assert all(panel["type"] == "query" for panel in panels)
+    captions = [panel["query_panel"]["caption"] for panel in panels]
+    assert len(set(captions)) == _PANEL_COUNT, "a caption is the panel's stable identity"
+    # A deterministic, readable layout: every panel names its own slot, and no
+    # two panels occupy the same one.
+    slots = [
+        (panel["position"]["x_coordinate"], panel["position"]["y_coordinate"]) for panel in panels
+    ]
+    assert len(set(slots)) == _PANEL_COUNT
+    assert all(panel["position"]["height"] > 0 for panel in panels)
+    assert all(panel["position"]["width"] > 0 for panel in panels)
 
 
 # --- provisioning, against the local fixture -------------------------------
@@ -310,13 +524,70 @@ def test_a_second_run_updates_in_place_and_creates_nothing(
     assert len(api.creates) == 4, "the second run must not create a duplicate resource"
     assert len(api.updates) == 4
     assert "updated derived_column" in second.stdout
-    assert "created" not in second.stdout
     still_present = {
         record["id"]
         for collection in (api.derived_columns, api.boards, api.triggers)
         for record in collection.values()
     }
     assert still_present == created_ids
+
+
+def test_the_board_is_flexible_and_its_panels_reference_persisted_queries(
+    honeycomb: tuple[_FakeHoneycomb, str],
+) -> None:
+    """Acceptance assertion 1 — the shipped provisioner builds a usable board.
+
+    The old command POSTed `board.payload` straight at `/1/boards` with its
+    query specifications inline. The current API takes a flexible board whose
+    panels name PERSISTED queries, so the command must materialize each
+    committed specification through the Queries API first and then reference
+    the ids it got back.
+    """
+    api, api_base = honeycomb
+
+    result = _run(api_base=api_base, overrides={"HONEYCOMB_TDD_RESOURCES": "board"})
+
+    assert result.returncode == 0, result.stderr
+    board = next(iter(api.boards.values()))
+    assert board["type"] == "flexible"
+    panels = board["panels"]
+    assert len(panels) == _PANEL_COUNT
+    # Each panel names a query the Queries API persisted — and ONLY that, since
+    # the fixture refuses a panel carrying an inline specification at all.
+    referenced = [panel["query_panel"]["query_id"] for panel in panels]
+    assert set(referenced) == set(api.queries)
+    assert len(set(referenced)) == _PANEL_COUNT
+    # The captions survive as the query annotations the panels point at, in the
+    # committed order.
+    annotated = [
+        api.query_annotations[panel["query_panel"]["query_annotation_id"]]["name"]
+        for panel in panels
+    ]
+    assert annotated == [panel["query_panel"]["caption"] for panel in _committed_panels()]
+    # Every persisted query went to the configured dataset.
+    assert {entry for entry in api.write_datasets if entry.startswith("queries:")} == {
+        f"queries:{_DATASET}"
+    }
+
+
+def test_the_persisted_queries_retain_the_committed_calculations_and_filters(
+    honeycomb: tuple[_FakeHoneycomb, str],
+) -> None:
+    api, api_base = honeycomb
+
+    result = _run(api_base=api_base, overrides={"HONEYCOMB_TDD_RESOURCES": "board"})
+
+    assert result.returncode == 0, result.stderr
+    persisted = [
+        {key: value for key, value in record.items() if key != "id"}
+        for record in api.queries.values()
+    ]
+    committed = [panel["query_panel"]["query"] for panel in _committed_panels()]
+    assert persisted == committed
+    breakdowns = {tuple(record.get("breakdowns", ())) for record in persisted}
+    assert ("repo",) in breakdowns
+    assert ("livespec.implement.adapter",) in breakdowns
+    assert ("repo", "livespec.implement.adapter") in breakdowns
 
 
 def test_the_trigger_carries_the_resolved_recipient_and_configured_threshold(
@@ -456,6 +727,9 @@ def test_a_missing_api_key_is_refused_before_any_call(
     assert api.creates == []
 
 
+# --- the fixture's own controls --------------------------------------------
+
+
 def test_the_fixture_refuses_a_path_the_provisioner_never_sends(
     honeycomb: tuple[_FakeHoneycomb, str],
 ) -> None:
@@ -474,6 +748,68 @@ def test_the_fixture_refuses_a_path_the_provisioner_never_sends(
     assert refused.value.code == HTTPStatus.NOT_FOUND
 
 
+def test_the_fixture_refuses_the_legacy_board_with_inline_queries(
+    honeycomb: tuple[_FakeHoneycomb, str],
+) -> None:
+    """The negative control that makes the whole tier meaningful.
+
+    This is the payload the command used to send: a `visual` board carrying a
+    top-level `queries` array of inline specifications. The previous fixture
+    stored it and reported success, so the hermetic tier passed on a board the
+    live API cannot create. It must now 400.
+    """
+    _api, api_base = honeycomb
+    legacy = {
+        "name": "legacy inline board",
+        "style": "visual",
+        "column_layout": "multi",
+        "queries": [
+            {
+                "caption": "inline",
+                "dataset": _DATASET,
+                "query_style": "graph",
+                "query": {"calculations": [{"op": "COUNT"}], "time_range": 604800},
+            }
+        ],
+    }
+
+    with pytest.raises(HTTPError) as refused:
+        _ = _post(api_base=api_base, path="/1/boards", payload=legacy)
+
+    assert refused.value.code == HTTPStatus.BAD_REQUEST
+    detail = json.loads(refused.value.read().decode("utf-8"))["detail"]
+    assert "queries" in detail
+    assert "unsupported board fields" in detail
+
+
+def test_the_fixture_refuses_a_panel_whose_query_id_is_absent_or_unknown(
+    honeycomb: tuple[_FakeHoneycomb, str],
+) -> None:
+    _api, api_base = honeycomb
+    position = {"x_coordinate": 0, "y_coordinate": 0, "width": 6, "height": 4}
+
+    def board(*, query_panel: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "name": "probe",
+            "type": "flexible",
+            "panels": [{"type": "query", "position": position, "query_panel": query_panel}],
+        }
+
+    with pytest.raises(HTTPError) as missing:
+        _ = _post(api_base=api_base, path="/1/boards", payload=board(query_panel={}))
+    assert missing.value.code == HTTPStatus.BAD_REQUEST
+    assert "query_id is required" in json.loads(missing.value.read().decode("utf-8"))["detail"]
+
+    with pytest.raises(HTTPError) as unknown:
+        _ = _post(
+            api_base=api_base,
+            path="/1/boards",
+            payload=board(query_panel={"query_id": "queries-404"}),
+        )
+    assert unknown.value.code == HTTPStatus.BAD_REQUEST
+    assert "does not exist" in json.loads(unknown.value.read().decode("utf-8"))["detail"]
+
+
 def test_the_dry_run_mode_prints_every_payload_and_calls_nothing(
     honeycomb: tuple[_FakeHoneycomb, str],
 ) -> None:
@@ -481,8 +817,12 @@ def test_the_dry_run_mode_prints_every_payload_and_calls_nothing(
 
     result = _run(api_base=api_base, overrides={"DRY_RUN": "1"})
 
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == 0
     assert api.creates == []
     assert api.updates == []
-    assert result.stdout.count("DRY_RUN") == 4
+    assert api.query_creates == []
+    assert api.annotation_creates == []
+    # Two derived columns, one board, one trigger, plus the seven queries and
+    # seven query annotations the board's panels are built from.
+    assert result.stdout.count("DRY_RUN") == 4 + (2 * _PANEL_COUNT)
     assert "tdd_post_hoc_red_flag" in result.stdout

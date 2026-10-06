@@ -205,6 +205,154 @@ payload_field() {
   python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$1" "$2"
 }
 
+# --- board panels ----------------------------------------------------------
+#
+# The current Create a Board API takes a FLEXIBLE board whose query panels
+# reference PERSISTED query identifiers; it has no inline-query form at all.
+# The committed definition therefore carries each panel's query SPECIFICATION,
+# and the three helpers below turn those specifications into the real panels:
+# `board_panel_plan` writes one spec file per panel, `annotation_payload`
+# builds the query annotation that carries the panel's caption, and
+# `assemble_board` substitutes the resolved identifiers back into the board.
+
+# Write each committed panel's query specification to its own file and print
+# one planning row per panel:
+#
+#   board<TAB>panel<TAB>caption<TAB>spec_path
+board_panel_plan() {
+  local rendered="$1"
+  local prefix="$2"
+  python3 - "${rendered}" "${prefix}" <<'PY'
+import json
+import sys
+
+rendered, prefix = sys.argv[1:]
+
+with open(rendered, encoding="utf-8") as handle:
+    payloads = json.load(handle)
+
+for board_index, payload in enumerate(payloads):
+    for index, panel in enumerate(payload["panels"]):
+        specification = panel["query_panel"]["query"]
+        caption = panel["query_panel"]["caption"]
+        path = f"{prefix}.{board_index}.{index}.query.json"
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(specification, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        print("\t".join((str(board_index), str(index), caption, path)))
+PY
+}
+
+# Build the query annotation that names one panel's persisted query. The
+# annotation `name` IS the committed caption: a flexible board renders the
+# annotation as the panel's title, so carrying the caption here is what keeps
+# the operator-facing labels the legacy board had.
+annotation_payload() {
+  local caption="$1"
+  local query_id="$2"
+  local out="$3"
+  python3 - "${caption}" "${query_id}" "${out}" <<'PY'
+import json
+import sys
+
+caption, query_id, out = sys.argv[1:]
+payload = {
+    "name": caption,
+    "description": (
+        "Provisioned from orchestrator-image/honeycomb/tdd-calibration-board.json "
+        "(livespec work-item bd-ib-3h5vfq)."
+    ),
+    "query_id": query_id,
+}
+with open(out, "w", encoding="utf-8") as handle:
+    json.dump(payload, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+PY
+}
+
+# Replace every panel's committed query SPECIFICATION with the identifiers the
+# API handed back, which is the shape /1/boards accepts. `resolved` carries
+# `board<TAB>panel<TAB>query_id<TAB>annotation_id` rows.
+assemble_board() {
+  local rendered="$1"
+  local resolved="$2"
+  local out="$3"
+  python3 - "${rendered}" "${resolved}" "${out}" <<'PY'
+import json
+import sys
+
+rendered, resolved, out = sys.argv[1:]
+
+identifiers = {}
+with open(resolved, encoding="utf-8") as handle:
+    for line in handle:
+        if not line.strip():
+            continue
+        board_index, index, query_id, annotation_id = line.rstrip("\n").split("\t")
+        identifiers[(int(board_index), int(index))] = (query_id, annotation_id)
+
+with open(rendered, encoding="utf-8") as handle:
+    payloads = json.load(handle)
+
+for board_index, payload in enumerate(payloads):
+    for index, panel in enumerate(payload["panels"]):
+        query_id, annotation_id = identifiers[(board_index, index)]
+        panel_query = panel["query_panel"]
+        # `query` and `caption` are inputs to the provisioner, not fields the
+        # board resource has: the specification becomes a Query and the caption
+        # becomes that query's annotation.
+        del panel_query["query"]
+        del panel_query["caption"]
+        panel_query["query_id"] = query_id
+        panel_query["query_annotation_id"] = annotation_id
+
+with open(out, "w", encoding="utf-8") as handle:
+    json.dump(payloads, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+PY
+}
+
+# Persist every panel's query and annotation, then apply the assembled board.
+apply_board() {
+  local rendered="$1"
+  local prefix="$2"
+  local plan="${prefix}.plan.tsv"
+  local resolved="${prefix}.resolved.tsv"
+  board_panel_plan "${rendered}" "${prefix}" >"${plan}"
+  : >"${resolved}"
+  local board panel caption spec
+  while IFS=$'\t' read -r board panel caption spec; do
+    local annotation="${prefix}.${board}.${panel}.annotation.json"
+    local query_id=""
+    local annotation_id=""
+    if [[ "${dry_run}" == "1" ]]; then
+      query_id="<query-id-assigned-at-apply>"
+      annotation_id="<query-annotation-id-assigned-at-apply>"
+      printf 'DRY_RUN query panel=%s caption=%s payload:\n' "${panel}" "${caption}"
+      cat "${spec}"
+      annotation_payload "${caption}" "${query_id}" "${annotation}"
+      printf 'DRY_RUN query_annotation panel=%s name=%s payload:\n' "${panel}" "${caption}"
+      cat "${annotation}"
+    else
+      local created_query="${prefix}.${board}.${panel}.query-created.json"
+      curl_json POST "${api_base}/1/queries/${dataset}" "${spec}" >"${created_query}"
+      query_id="$(payload_field "${created_query}" id)"
+      printf 'created query %s (panel=%s)\n' "${query_id}" "${panel}"
+      annotation_payload "${caption}" "${query_id}" "${annotation}"
+      local created_annotation="${prefix}.${board}.${panel}.annotation-created.json"
+      curl_json POST "${api_base}/1/query_annotations/${dataset}" "${annotation}" \
+        >"${created_annotation}"
+      annotation_id="$(payload_field "${created_annotation}" id)"
+      printf 'created query_annotation %s (panel=%s)\n' "${annotation_id}" "${panel}"
+    fi
+    printf '%s\t%s\t%s\t%s\n' "${board}" "${panel}" "${query_id}" "${annotation_id}" >>"${resolved}"
+  done <"${plan}"
+  assemble_board "${rendered}" "${resolved}" "${prefix}.assembled.json"
+  while read -r payload; do
+    apply_resource board "${payload}" name "${api_base}/1/boards" "${api_base}/1/boards"
+  done < <(split_payloads "${prefix}.assembled.json" "${prefix}-payload")
+}
+
 # Create-or-update one resource, keyed on `field`. `list_url` is where the
 # existing population is read from, `collection_url` is where a create POSTs,
 # and an update PUTs to `<collection_url>/<id>`.
@@ -250,9 +398,7 @@ fi
 
 if wants board; then
   render tdd-calibration-board.json "${tmpdir}/board.json"
-  while read -r payload; do
-    apply_resource board "${payload}" name "${api_base}/1/boards" "${api_base}/1/boards"
-  done < <(split_payloads "${tmpdir}/board.json" "${tmpdir}/board-payload")
+  apply_board "${tmpdir}/board.json" "${tmpdir}/board-panel"
 fi
 
 if wants trigger; then
