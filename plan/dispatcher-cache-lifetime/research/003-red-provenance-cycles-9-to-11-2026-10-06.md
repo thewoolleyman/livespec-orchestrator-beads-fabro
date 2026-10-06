@@ -195,6 +195,90 @@ name nobody writes just falls through — so they are pinned together by
 `test_installed_root_env_name_matches_the_launchers_writer_constant`, the same
 device the unattended-resume marker already uses.
 
+## Cycle 14 — coherence at the provisioning boundary, and an invalid probe retracted
+
+MY FIRST PROBE FOR THIS WAS INVALID, and the retraction is the useful part. It
+mutated the SOURCE after a clean copy and reported the surviving original as an
+undetected gap. A complete coherent payload whose source later changes is a
+SUCCESS — it is the entire reason the release is copied aside — so that probe
+demonstrated nothing, and acting on it would have imposed an invented rule that
+retained bytes must equal a source which legitimately moved on. Caught by
+read-only review before any product edit.
+
+Re-measured at the PROVISIONING BOUNDARY, making the COPY defective through a
+depth-counted seam on the product's own `copytree`:
+
+| case | refused? | retained payload |
+| --- | --- | --- |
+| pre-copy member OMITTED from the copy, then gone from source before the walk | no | member ABSENT |
+| same-length WRONG BYTES actually copied | no | `WRONGXXX` vs source `ORIGINAL` |
+| control: coherent copy, source mutated AFTER | no | `ORIGINAL` — correct |
+
+The first two are genuine: a live-source walk cannot see a member the source
+has also lost, and size equality cannot see equal-length wrong bytes. Fixed by
+taking a pre-copy digest inventory and grading the copy against THAT, which is
+also exactly what keeps the control passing — the copy is compared against the
+release as it WAS, never as it now is.
+
+Red `2408fd09`, frozen bytes `f219ca14…`, Green `dcfd5e4a`, full aggregate green.
+Scope is copy-vs-its-own-source coherence. NOT integrity, tamper-resistance or
+supply chain: a digest here detects a copy that did not land faithfully and says
+nothing about whether the source was trustworthy.
+
+A fixture note worth keeping, because it is a could-not-have-failed shape: the
+unreadable-member arm was first forced with `chmod 0o000`, which PASSES while
+measuring nothing because this suite runs as ROOT and root reads a mode-000
+file. It is now forced through a seam on `Path.open`.
+
+## Assertion 4 — what covers it, jointly
+
+Stated because the supplement alone does not carry it. 
+`tests/bin/test_payload_parent_reads_asset_after_helper_exit.py` constructs a
+`RetainedPayload(holder=...)` and calls `release_payload` DIRECTLY, so it
+evidences the ownership rule and the read-after-helper-exit ORDERING, but it is
+NOT normal-exit proof: no interpreter shutdown and no `atexit` handler run in
+it. The normal-exit and peer-survival legs come from the frozen
+`tests/bin/test_payload_lifetime_release.py`, which drives real children to
+completion. Assertion 4 is covered by the two TOGETHER, and neither should be
+cited alone.
+
+## Assertion 5 — the wrapper leg is UNMEASURABLE here, so it is not fixed
+
+I previously wrote that a credential re-exec scrubbing the environment would
+drop the installed-root record, called the resulting candidate collapse
+pre-existing, and declared it out of scope. Review correctly rejected the scope
+reasoning — assertion 5 explicitly preserves credential-wrapper invocation AND
+candidate canary outcomes, so a collapse through that boundary would be
+declared, not undeclared.
+
+But the premise was never evidenced either. My support for it was
+`_marker_forwarded_argv`'s docstring, which describes sudo rebuilding the
+environment. **That is a hypothesis about env handling, not a measurement of
+what this wrapper does to the NEW record.** Measured 2026-10-06, presence
+boolean only: the configured wrapper's first token is NOT resolvable in this
+sandbox — the same "host-provisioned credential wrapper is legitimately absent"
+condition the repository's own doctor check reports.
+
+So the supported wrapper's handling of the record CANNOT be measured here. The
+disciplined consequences, both of which are deliberate inaction:
+
+- no fix was made, because fixing an unevidenced behaviour would be designing
+  against a guess;
+- no env-scrub fixture was fabricated, because a test built on an invented
+  wrapper would report confidently on a wrapper nobody runs — the
+  wrong-population shape this catalogue already documents.
+
+What remains open, stated as an obligation rather than a finding: measure the
+supported wrapper or API against the record on a host where it resolves, and if
+it does drop it, retain provenance through the EXISTING boundary — the
+`env NAME=value` splice after the wrapper separator that already carries the
+unattended marker. That is a known mechanism, not new scope.
+
+Equally open and equally unmet: proving that actual PASSING and FAILING
+candidate canary DECISIONS leave execution unchanged. Nothing in this
+work-item observes a real canary verdict; cycle 12's control asserts a
+constructed PATH, which is not that. Path equality is not a decision.
+
 ## What is NOT a Red, stated plainly
 
 Four artifacts in this work-item are supplemental and must never be cited as

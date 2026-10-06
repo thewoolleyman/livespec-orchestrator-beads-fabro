@@ -176,6 +176,25 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   asset accessor, read an asset, or observe a canary outcome), and this
   project's own checkout still resolves to itself.
   Listed in `subprocess_spawn_allowlist`.
+- `test_payload_source_copy_coherence.py` — same-release coherence at the
+  PROVISIONING BOUNDARY. The provisioning path graded the copy with a
+  post-copy walk of the source comparing SIZES, and two cases get
+  through: a member present when the copy STARTED but omitted from the
+  copy and then gone from the source before the walk (invisible to a
+  live-source walk — the `bd-ib-3ftj` deferred-module shape), and a file
+  copied with WRONG BYTES at the SAME LENGTH (invisible to size
+  equality). Both measured as provisioning SUCCEEDING with a defective
+  payload, through a depth-counted seam on the product's own `copytree`
+  (the depth counter is load-bearing: `copytree` recurses through the
+  patched name and inner calls return FIRST, so a "first call wins"
+  guard mutates a subdirectory and measures nothing). Fixed by taking a
+  pre-copy digest inventory and grading the copy against it. Its THIRD
+  case is the control that forbids the stronger invented rule: a
+  coherent copy whose source is mutated AFTERWARDS must still provision
+  carrying its ORIGINAL bytes — a payload surviving later source change
+  is the success case, which is why the release is copied aside at all.
+  Scope is copy-vs-its-own-source coherence, NOT integrity or
+  tamper-resistance.
 - `test_payload_candidate_provenance_on_reselection.py` — where the two
   cycles above MEET, which neither of their accepted Reds covers.
   Cycle 11 lets an explicitly selected source win over an inherited
