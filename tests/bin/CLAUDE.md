@@ -8,7 +8,38 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   stubbed `livespec_orchestrator_beads_fabro.<module>.main` (so the wrapper's
   plumbing is exercised without invoking the real command), then
   asserts the wrapper raises `SystemExit` with the expected exit
-  code.
+  code. It also carries `apply_hermetic_github_app_env` plus an autouse
+  fixture that sets NON-SECRET `GITHUB_APP_ID` /
+  `GITHUB_PRIVATE_KEY` placeholders for the two credential-coupled
+  regressions named in `CREDENTIAL_COUPLED_MODULES`, and ONLY those:
+  `bin/dispatcher.py` requires the App env beside the tenant secret, so
+  a child driving that real entry point refuses before importing
+  anything under test wherever the names are absent. The factory
+  projects them; CI does not, which is why those two files passed in
+  the factory and failed in CI on their own guard assertions. The
+  placeholders ALWAYS win and no ambient value is consulted — the
+  applier takes no `environ` parameter, so the rule is enforced by its
+  signature. Deferring to an ambient value would leave the two files
+  running against a real credential in the factory and a stand-in in
+  CI, so the legs would stop measuring the same thing and whichever
+  failed would be the one nobody could reproduce. Scope is the measured
+  population: with both names unset, exactly these two of all 174
+  `tests/bin` tests' files fail, and every other credential-refusal
+  test keeps observing a genuinely absent credential.
+- `test_hermetic_github_app_env.py` — contract coverage for that
+  applier, driven as the total function of a module name and an
+  injected `setenv` that it is. Pins the two properties no green run
+  reports: that the placeholders always win (the case plants a
+  DIFFERENT ambient value first, so an environment-consulting
+  regression fails in CI as well as in the factory, not only where the
+  names happen to be absent), and that the scope stays exactly the two
+  measured modules — a silently widened allowlist would hand another
+  refusal test a credential, and it would still pass while no longer
+  testing the refusal it exists for. Both mutation controls bite:
+  reading `os.environ` fails the first case, adding a third module
+  fails the other two. Asserts nothing about `_payload.py` and spawns
+  no child — test-support robustness, like the two harness files below.
+  NOT a Red, and not evidence for any assertion.
 - `test_<cmd>.py` — one per wrapper (`detect_impl_gaps`,
   `list_work_items`, `next`, `orchestrator`). Each
   uses `wrapper_runner` to assert the wrapper threads `main()`'s
