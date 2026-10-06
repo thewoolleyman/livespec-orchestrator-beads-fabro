@@ -20,6 +20,7 @@ silently DESTROYED — see `_marker_forwarded_argv`, which carries the
 unattended-plan-resume marker across it.
 """
 
+import atexit
 import os
 import subprocess
 import sys
@@ -27,7 +28,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import cast
 
-from _payload import PayloadRefusal, retain_payload
+from _payload import PayloadRefusal, release_payload, retain_payload
 
 __all__: list[str] = ["bootstrap"]
 
@@ -86,7 +87,9 @@ def bootstrap(*, required: tuple[str, ...] = _REQUIRED_CREDENTIALS) -> None:
             "livespec-orchestrator-beads-fabro requires Python 3.10+; install via uv.\n"
         )
         raise SystemExit(127)
-    payload = retain_payload(source_root=Path(__file__).resolve().parent.parent.parent)
+    payload = retain_payload(
+        source_root=Path(__file__).resolve().parent.parent.parent, environ=os.environ
+    )
     if isinstance(payload, PayloadRefusal):
         _ = sys.stderr.write(payload.message + "\n")
         raise SystemExit(_PAYLOAD_FAIL_EXIT)
@@ -96,6 +99,10 @@ def bootstrap(*, required: tuple[str, ...] = _REQUIRED_CREDENTIALS) -> None:
             sys.path.insert(0, path_str)
     if payload.retained:
         os.environ[_PLUGIN_ROOT_ENV_NAME] = str(payload.root)
+    # Registered BEFORE the credential self-heal can re-exec, and keyed on the
+    # payload this process OWNS, so the tree outlives every child the
+    # invocation waits on and is removed exactly once, by its creator.
+    _ = atexit.register(release_payload, payload=payload)
     _self_heal_credentials(required=_effective_required(required=required, cwd=Path.cwd()))
 
 
