@@ -80,6 +80,50 @@ def test_bootstrap_skips_paths_already_present(
     assert sys.path.count(str(_BUNDLE_VENDOR)) == 1
 
 
+def test_bootstrap_repoints_the_plugin_root_at_a_retained_payload(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A RETAINED payload is where packaged assets must resolve from.
+
+    `_dispatcher_paths.plugin_root` reads `CLAUDE_PLUGIN_ROOT`, so leaving it
+    on the harness cache would send every asset read into the tree that may
+    already be gone. This repo IS a checkout, so the retention arm never
+    fires in-process; `retain_payload` is stubbed to supply the decision a
+    native install produces. The end-to-end proof is
+    test_payload_retention_after_eviction.py.
+    """
+    bootstrap_module = _import_bootstrap()
+    monkeypatch.setattr(
+        bootstrap_module, "_self_heal_credentials", lambda **_kwargs: None, raising=False
+    )
+    retained_root = tmp_path / "retained"
+    payload_module = importlib.import_module("_payload")
+    monkeypatch.setattr(
+        bootstrap_module,
+        "retain_payload",
+        lambda **_kwargs: payload_module.RetainedPayload(
+            root=retained_root,
+            scripts_root=retained_root / "scripts",
+            vendor_root=retained_root / "scripts" / "_vendor",
+            retained=True,
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(sys, "path", ["/usr/lib/python3.10"])
+    monkeypatch.setattr(sys, "version_info", (3, 12, 0, "final", 0))
+    # `setenv`, never `delenv`: pytest's `delitem` records NOTHING when the
+    # name is already absent, so a var `bootstrap()` then SETS survives
+    # teardown and moves `plugin_root()` for every later test in this worker —
+    # measured as three dispatcher tests gaining a
+    # `dispatcher-currency-undetermined` journal stage. Seeding a harness-cache
+    # value also sharpens the assertion: the retained payload must WIN over
+    # what the harness exported.
+    monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(tmp_path / "harness-cache"))
+    bootstrap_module.bootstrap()  # type: ignore[attr-defined]
+    assert os.environ["CLAUDE_PLUGIN_ROOT"] == str(retained_root)
+    assert str(retained_root / "scripts") in sys.path
+
+
 # --------------------------------------------------------------------------
 # _read_credential_wrapper — fail-open config read of the top-level
 # `credential_wrapper` argv-prefix from <cwd>/.livespec.jsonc.
