@@ -7,6 +7,9 @@ sources are refused as incomplete, that a failed or truncated copy cleans up
 after itself, and how a release LABEL degrades when a present manifest cannot
 be parsed.
 
+Each call supplies its own isolated `environ` mapping, so a unit case can
+never adopt a payload another case published.
+
 The end-to-end counterparts can only be asked of real child processes:
 `test_payload_retention_after_eviction.py` (what a live process sees after its
 installation is deleted underneath it),
@@ -108,7 +111,7 @@ def test_a_checkout_plugin_root_is_its_own_payload(tmp_path: Path) -> None:
     _ = (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
     source_root = tmp_path / ".claude-plugin"
     source_root.mkdir()
-    retained = payload.retain_payload(source_root=source_root)
+    retained = payload.retain_payload(source_root=source_root, environ={})
     assert retained.retained is False
     assert retained.root == source_root
     assert retained.scripts_root == source_root / "scripts"
@@ -121,7 +124,7 @@ def test_an_installed_plugin_root_is_copied_into_a_private_holder(
     payload = _import_payload()
     temp_root = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
     source_root = _install(root=tmp_path / "cache" / "abc123")
-    retained = payload.retain_payload(source_root=source_root)
+    retained = payload.retain_payload(source_root=source_root, environ={})
     assert retained.retained is True
     assert retained.root.parent.parent == temp_root
     # The release LABELS the holder for a human reading /tmp; it is not identity.
@@ -140,8 +143,8 @@ def test_each_invocation_gets_a_payload_no_other_invocation_shares(
     payload = _import_payload()
     _ = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
     source_root = _install(root=tmp_path / "cache" / "abc123")
-    first = payload.retain_payload(source_root=source_root)
-    second = payload.retain_payload(source_root=source_root)
+    first = payload.retain_payload(source_root=source_root, environ={})
+    second = payload.retain_payload(source_root=source_root, environ={})
     assert first.root != second.root
     # A write into one payload must be invisible to the other — the property a
     # shared release-keyed directory could not provide.
@@ -168,7 +171,7 @@ def test_a_pre_existing_tree_at_a_guessable_path_is_never_adopted(
     (decoy / "payload").symlink_to(foreign, target_is_directory=True)
 
     source_root = _install(root=tmp_path / "cache" / "abc123")
-    retained = payload.retain_payload(source_root=source_root)
+    retained = payload.retain_payload(source_root=source_root, environ={})
     assert retained.root.parent != decoy
     assert not retained.root.is_symlink()
     assert not (
@@ -187,7 +190,7 @@ def test_a_source_missing_any_required_member_is_refused_by_name(
     target = source_root.joinpath(*absent.split("/"))
     shutil.rmtree(target) if target.is_dir() else target.unlink()
 
-    refusal = payload.retain_payload(source_root=source_root)
+    refusal = payload.retain_payload(source_root=source_root, environ={})
     assert isinstance(refusal, payload.PayloadRefusal)
     assert absent in refusal.message
     assert str(source_root) in refusal.message
@@ -204,7 +207,7 @@ def test_a_copy_that_fails_is_refused_and_leaves_no_holder(
     source_root = _install(root=tmp_path / "cache" / "abc123")
     (source_root / "scripts" / "dangling-link").symlink_to(tmp_path / "nothing-here")
 
-    refusal = payload.retain_payload(source_root=source_root)
+    refusal = payload.retain_payload(source_root=source_root, environ={})
     assert isinstance(refusal, payload.PayloadRefusal)
     assert "copying the installed release" in refusal.message
     assert str(source_root) in refusal.message
@@ -231,7 +234,7 @@ def test_a_copy_that_silently_truncates_is_refused_and_leaves_no_holder(
         return destination
 
     monkeypatch.setattr(payload.shutil, "copytree", _truncating_copytree)
-    refusal = payload.retain_payload(source_root=source_root)
+    refusal = payload.retain_payload(source_root=source_root, environ={})
     assert isinstance(refusal, payload.PayloadRefusal)
     assert "copy at" in refusal.message
     assert "scripts/_vendor" in refusal.message
@@ -254,7 +257,7 @@ def test_an_unparseable_release_label_still_yields_a_retained_payload(
     payload = _import_payload()
     _ = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
     source_root = _install(root=tmp_path / "cache" / "abc123", manifest=manifest)
-    retained = payload.retain_payload(source_root=source_root)
+    retained = payload.retain_payload(source_root=source_root, environ={})
     assert retained.retained is True
     assert retained.root.parent.name.startswith(f"{_HOLDER_PREFIX}{_UNKNOWN_RELEASE}-")
     assert retained.vendor_root.is_dir()
@@ -271,6 +274,84 @@ def test_an_unreadable_release_manifest_still_yields_a_retained_payload(
     # while the text read raises OSError.
     (source_root / "plugin.json").unlink()
     (source_root / "plugin.json").mkdir()
-    retained = payload.retain_payload(source_root=source_root)
+    retained = payload.retain_payload(source_root=source_root, environ={})
     assert retained.retained is True
     assert retained.root.parent.name.startswith(f"{_HOLDER_PREFIX}{_UNKNOWN_RELEASE}-")
+
+
+def test_a_child_inherits_its_parents_payload_and_does_not_own_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """One dispatch is several processes; they must all read the same tree."""
+    payload = _import_payload()
+    temp_root = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
+    source_root = _install(root=tmp_path / "cache" / "abc123")
+    environ: dict[str, str] = {}
+    parent = payload.retain_payload(source_root=source_root, environ=environ)
+    assert environ[payload.PAYLOAD_ROOT_ENV] == str(parent.root)
+
+    child = payload.retain_payload(source_root=source_root, environ=dict(environ))
+    assert child.root == parent.root
+    assert child.retained is True
+    assert child.holder is None, "an inherited payload must not be owned by the child"
+    assert len(list(temp_root.iterdir())) == 1, "the child provisioned a copy of the copy"
+
+
+def test_an_inherited_payload_that_is_gone_falls_through_to_a_fresh_one(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A parent that already exited and cleaned up must not strand its child.
+
+    Nothing is adopted on trust: the inherited tree passes the same
+    completeness contract a fresh copy must pass, or it is not executed.
+    """
+    payload = _import_payload()
+    _ = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
+    source_root = _install(root=tmp_path / "cache" / "abc123")
+    stale = tmp_path / "already-released"
+    stale.mkdir()
+
+    retained = payload.retain_payload(
+        source_root=source_root, environ={payload.PAYLOAD_ROOT_ENV: str(stale)}
+    )
+    assert retained.root != stale
+    assert retained.holder is not None
+    assert retained.vendor_root.is_dir()
+
+
+def test_releasing_an_owned_payload_removes_its_holder(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    payload = _import_payload()
+    temp_root = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
+    source_root = _install(root=tmp_path / "cache" / "abc123")
+    retained = payload.retain_payload(source_root=source_root, environ={})
+    assert retained.root.is_dir()
+
+    payload.release_payload(payload=retained)
+    assert not retained.root.exists()
+    assert list(temp_root.iterdir()) == [], "the holder outlived the payload it held"
+
+
+@pytest.mark.parametrize("case", ["checkout", "inherited"])
+def test_releasing_a_payload_this_process_does_not_own_removes_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, case: str
+) -> None:
+    """The two unowned shapes: an operator's checkout, and a parent's payload."""
+    payload = _import_payload()
+    _ = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
+    if case == "checkout":
+        _ = (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+        source_root = _install(root=tmp_path / ".claude-plugin")
+        unowned = payload.retain_payload(source_root=source_root, environ={})
+    else:
+        source_root = _install(root=tmp_path / "cache" / "abc123")
+        owner_environ: dict[str, str] = {}
+        owned = payload.retain_payload(source_root=source_root, environ=owner_environ)
+        source_root = _install(root=tmp_path / "cache" / "def456")
+        unowned = payload.retain_payload(source_root=source_root, environ=dict(owner_environ))
+        assert unowned.root == owned.root
+
+    assert unowned.holder is None
+    payload.release_payload(payload=unowned)
+    assert unowned.root.is_dir(), "a release removed a tree this process never created"

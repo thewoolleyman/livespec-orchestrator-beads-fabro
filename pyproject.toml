@@ -489,6 +489,7 @@ subprocess_spawn_allowlist = [
     "tests/bin/test_payload_retention_harness.py",
     "tests/bin/test_payload_concurrent_release_isolation.py",
     "tests/bin/test_payload_provisioning_refusal.py",
+    "tests/bin/test_payload_lifetime_release.py",
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]

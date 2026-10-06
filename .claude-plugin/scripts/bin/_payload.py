@@ -43,17 +43,27 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
+from collections.abc import MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
 __all__: list[str] = [
+    "PAYLOAD_ROOT_ENV",
     "PayloadRefusal",
     "RetainedPayload",
     "harness_managed",
     "missing_payload_paths",
+    "release_payload",
     "retain_payload",
 ]
+
+# How an invocation hands its payload down to the children it spawns. One
+# dispatch is several processes — `drive`, the `dispatcher.py` it starts, the
+# helpers that starts in turn — and they must all read the SAME tree, so a
+# child that finds this set and pointing at a complete payload REUSES it
+# instead of copying the copy.
+PAYLOAD_ROOT_ENV = "LIVESPEC_RETAINED_PAYLOAD_ROOT"
 
 # The invocation-private holder's directory-name prefix, and the fixed name the
 # payload takes inside it. The prefix is there so an operator reading `/tmp`
@@ -105,12 +115,20 @@ class RetainedPayload:
     `retained` is False when the source tree IS the payload — the
     source-repository case, where nothing was copied and nothing about the
     invocation changes.
+
+    `holder` is the private directory THIS process created and is therefore
+    responsible for removing, and it is `None` for every payload this process
+    did not create: a source-repository tree, and an INHERITED payload a
+    parent invocation still owns. That is the whole ownership rule, and it is
+    expressed as the absence of a path rather than as a flag, so a release
+    has nothing to remove unless this process made it.
     """
 
     root: Path
     scripts_root: Path
     vendor_root: Path
     retained: bool
+    holder: Path | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -125,7 +143,9 @@ class PayloadRefusal:
     message: str
 
 
-def retain_payload(*, source_root: Path) -> RetainedPayload | PayloadRefusal:
+def retain_payload(
+    *, source_root: Path, environ: MutableMapping[str, str]
+) -> RetainedPayload | PayloadRefusal:
     """Resolve the payload this invocation runs from, or refuse with a reason.
 
     A refusal here lands BEFORE any application import, so it lands before the
@@ -133,7 +153,16 @@ def retain_payload(*, source_root: Path) -> RetainedPayload | PayloadRefusal:
     the point: a dispatch that discovers its payload is unusable only after
     claiming has stranded the item, which is the same cost the retention
     exists to prevent, moved to a later moment.
+
+    `environ` is both read and WRITTEN: an inherited payload is adopted from
+    it, and a freshly provisioned one is published into it so this process's
+    own children find it. It is a parameter rather than `os.environ` so the
+    publication is visible to a caller instead of being a hidden global
+    effect.
     """
+    inherited = _inherited_payload(environ=environ)
+    if inherited is not None:
+        return inherited
     if not harness_managed(source_root=source_root):
         return _payload_at(root=source_root, retained=False)
     missing = missing_payload_paths(root=source_root)
@@ -144,7 +173,44 @@ def retain_payload(*, source_root: Path) -> RetainedPayload | PayloadRefusal:
     retained = _retained_root(source_root=source_root)
     if isinstance(retained, PayloadRefusal):
         return retained
-    return _payload_at(root=retained, retained=True)
+    environ[PAYLOAD_ROOT_ENV] = str(retained)
+    return _payload_at(root=retained, retained=True, holder=retained.parent)
+
+
+def release_payload(*, payload: RetainedPayload) -> None:
+    """Remove the private payload this process created, if it created one.
+
+    Called at normal interpreter exit, which is AFTER the invocation's own
+    children have been waited on — `drive` runs its Dispatcher to completion
+    and `dispatcher.py` runs its helpers to completion, both synchronously —
+    so an owned consumer is never reading a tree this removes. A payload with
+    no `holder` is one this process does not own, and nothing happens.
+
+    `ignore_errors` because this runs during shutdown: a payload that cannot
+    be fully removed is a disk-space problem for a later sweep, never a reason
+    to turn a completed invocation into a failed one.
+    """
+    if payload.holder is None:
+        return
+    shutil.rmtree(payload.holder, ignore_errors=True)
+
+
+def _inherited_payload(*, environ: MutableMapping[str, str]) -> RetainedPayload | None:
+    """Adopt the payload a parent invocation published, when it is still complete.
+
+    An incomplete or vanished inherited payload falls through to a fresh
+    provision rather than refusing: the parent may have exited and cleaned up,
+    and a child that can still provision for itself should. Nothing here is
+    ADOPTED on trust — the same completeness contract a fresh copy must pass
+    is applied before this tree is executed.
+    """
+    recorded = environ.get(PAYLOAD_ROOT_ENV, "")
+    if not recorded:
+        return None
+    root = Path(recorded)
+    if missing_payload_paths(root=root):
+        return None
+    return _payload_at(root=root, retained=True)
 
 
 def missing_payload_paths(*, root: Path) -> tuple[str, ...]:
@@ -168,13 +234,14 @@ def harness_managed(*, source_root: Path) -> bool:
     return not any((source_root.parent / marker).exists() for marker in _SOURCE_REPOSITORY_MARKERS)
 
 
-def _payload_at(*, root: Path, retained: bool) -> RetainedPayload:
+def _payload_at(*, root: Path, retained: bool, holder: Path | None = None) -> RetainedPayload:
     scripts_root = root / "scripts"
     return RetainedPayload(
         root=root,
         scripts_root=scripts_root,
         vendor_root=scripts_root / "_vendor",
         retained=retained,
+        holder=holder,
     )
 
 

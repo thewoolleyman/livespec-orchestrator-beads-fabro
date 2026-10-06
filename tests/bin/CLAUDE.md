@@ -71,6 +71,13 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   dispatch journal must not exist, and `TMPDIR` must be left empty so
   no partial payload survives for a later invocation to adopt. Listed
   in `subprocess_spawn_allowlist`.
+- `test_payload_lifetime_release.py` — both ends of the retention's
+  lifetime, with two concurrent children and a grandchild: a helper
+  launched from the payload must REUSE it rather than copy the copy, a
+  completed invocation must release its private tree, and that cleanup
+  must leave a still-parked invocation's payload and the
+  harness-managed installation usable (proven by a fresh invocation
+  from it afterwards). Listed in `subprocess_spawn_allowlist`.
 - `test_host_side_self_contained_import.py` — the end-to-end
   counterpart of `test_bootstrap.py`: it spawns a `-S` (no-site)
   subprocess that runs the real bootstrap and imports the host-side
