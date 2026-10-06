@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.173.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.173.0...v0.173.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* **acp:** refuse a text signature naming only a full HTTP status phrase ([6be48cd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6be48cd473b795ab9d169d81043c6fefbf52cff6))
+
 ## [0.173.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.172.0...v0.173.0) (2026-10-06)
 
 
