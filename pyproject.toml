@@ -501,6 +501,7 @@ subprocess_spawn_allowlist = [
     "tests/bin/test_payload_provisioning_boundary.py",
     "tests/bin/test_payload_executing_release_identity.py",
     "tests/bin/test_payload_public_route_exact_outcomes.py",
+    "tests/bin/test_payload_candidate_root_without_claude_env.py",
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]
