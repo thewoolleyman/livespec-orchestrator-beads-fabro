@@ -47,6 +47,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requireme
     REVIEW_FIX_VISIT_CAP_INPUT,
     credential_lifetime_requirement_for,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
+    GUARD_SCRIPT_PATH,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_projection import (
     CredentialUseProjection,
 )
@@ -179,6 +182,16 @@ def _required_floor_for(*, committed: Path) -> int:
 def _stood_in_renewal() -> CodexRenewalOutcome:
     """Stand in the bounded host renewal; this tier spends no real request."""
     return CodexRenewalOutcome(answered=True, detail="the renewal request was answered")
+
+
+_CLAUDE_AGENT_ACP = "npx -y @agentclientprotocol/claude-agent-acp"
+
+
+def _guarded_launch(*, env_prefix: str = "", command: str) -> str:
+    """One adapter launch as it reaches the engine: env, then guard, then command."""
+    return " ".join(
+        part for part in (env_prefix, f"/bin/sh {GUARD_SCRIPT_PATH} --", command) if part
+    )
 
 
 def _auth_json_with_exp(*, exp: int) -> str:
@@ -475,21 +488,28 @@ def test_fabro_port_run_routes_implementer_to_codex_adapter(
     # `tmp_path` carries no .livespec.jsonc, so implementation work uses the
     # fleet's Claude Opus 5 default while the PR node takes the Claude Haiku
     # publish default (v107) — neither class is a Codex adapter absent a pin.
-    claude_opus_5 = (
-        "ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high "
-        "npx -y @agentclientprotocol/claude-agent-acp"
+    # Every adapter launch is spliced behind the credential-use guard, which sits
+    # AFTER the env assignments and BEFORE the executable: the engine turns leading
+    # `KEY=value` tokens into environment, so a guard placed first would swallow them
+    # and the adapter would start without its model pin. Spelled out here rather than
+    # stripped, because this case enumerates the exact pairs `fabro run` receives and
+    # the guard is now part of every one of them.
+    unpinned = _guarded_launch(command=_CLAUDE_AGENT_ACP)
+    claude_opus_5 = _guarded_launch(
+        env_prefix="ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high",
+        command=_CLAUDE_AGENT_ACP,
     )
-    claude_haiku_pr = (
-        "ANTHROPIC_MODEL=claude-haiku-4-5 CLAUDE_CODE_EFFORT_LEVEL=high "
-        "npx -y @agentclientprotocol/claude-agent-acp"
+    claude_haiku_pr = _guarded_launch(
+        env_prefix="ANTHROPIC_MODEL=claude-haiku-4-5 CLAUDE_CODE_EFFORT_LEVEL=high",
+        command=_CLAUDE_AGENT_ACP,
     )
     assert input_values == [
-        "disposition_adapter=npx -y @agentclientprotocol/claude-agent-acp",
-        "dod_gate_adapter=npx -y @agentclientprotocol/claude-agent-acp",
+        f"disposition_adapter={unpinned}",
+        f"dod_gate_adapter={unpinned}",
         f"fix_adapter={claude_opus_5}",
         f"implement_adapter={claude_opus_5}",
         f"pr_adapter={claude_haiku_pr}",
-        "review_adapter=npx -y @agentclientprotocol/claude-agent-acp",
+        f"review_adapter={unpinned}",
         f"review_fix_adapter={claude_opus_5}",
         "review_fix_visit_cap=4",
         "merge_on_review_cap_outcome=__merge_on_review_cap_disabled__",
