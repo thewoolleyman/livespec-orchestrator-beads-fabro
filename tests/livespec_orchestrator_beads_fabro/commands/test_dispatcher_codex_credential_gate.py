@@ -43,7 +43,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import Adm
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
     EXIT_PRECONDITION_ERROR,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_deadline import (
+    CredentialLifetimeRequirement,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
+    CODEX_FRESHNESS_MARGIN_SECONDS,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _NOW = 1_000_000
@@ -55,6 +61,19 @@ _BELOW_FLOOR_REMAINING = 13_517
 
 # The lifetime the dispatch freshness gate requires: run budget plus margin.
 _REQUIRED_REMAINING = 18_000
+
+# The resolved requirement these cases hand the gate. The gate no longer derives
+# the figure itself -- its caller resolves it from the selected workflow and
+# passes it in -- so a case exercising the gate has to supply one, and supplying
+# it HERE keeps `_REQUIRED_REMAINING` above as the single place the floor these
+# cases are positioned against is written down. `detail` is deliberately a plain
+# marker rather than a copy of the production sentence: no assertion in this
+# module reads it, and a transcribed copy would quietly rot against the real one.
+_REQUIREMENT = CredentialLifetimeRequirement(
+    allowance_seconds=_REQUIRED_REMAINING - CODEX_FRESHNESS_MARGIN_SECONDS,
+    margin_seconds=CODEX_FRESHNESS_MARGIN_SECONDS,
+    detail="test-resolved requirement",
+)
 
 # The renewal request is bounded at two minutes, so the clock can move by that
 # much between the pre-request reading and the post-request grading.
@@ -159,13 +178,17 @@ def test_the_gate_separates_an_unanswered_renewal_from_an_answered_unchanged_one
 
     answered_spend = _stub_renewal(monkeypatch=monkeypatch, answered=True, detail=_ANSWERED_DETAIL)
     answered = gate.codex_credential_refusal_for_items(
-        work_item_ids=("bd-ib-tyqklx",), clock=lambda: _NOW
+        work_item_ids=("bd-ib-tyqklx",),
+        clock=lambda: _NOW,
+        requirement=_REQUIREMENT,
     )
     unanswered_spend = _stub_renewal(
         monkeypatch=monkeypatch, answered=False, detail=_UNANSWERED_DETAIL
     )
     unanswered = gate.codex_credential_refusal_for_items(
-        work_item_ids=("bd-ib-tyqklx",), clock=lambda: _NOW
+        work_item_ids=("bd-ib-tyqklx",),
+        clock=lambda: _NOW,
+        requirement=_REQUIREMENT,
     )
 
     # Each arm refused, and each spent exactly ONE bounded renewal request.
@@ -231,7 +254,9 @@ def test_the_gate_reports_a_renewal_that_advanced_short_of_the_floor_as_an_advan
 
     clock = iter((_NOW, _NOW + _RENEWAL_ELAPSED))
     refusal = gate.codex_credential_refusal_for_items(
-        work_item_ids=("bd-ib-tyqklx",), clock=lambda: next(clock)
+        work_item_ids=("bd-ib-tyqklx",),
+        clock=lambda: next(clock),
+        requirement=_REQUIREMENT,
     )
 
     assert refusal is not None
@@ -275,6 +300,7 @@ def test_the_gate_journals_its_refusal_naming_the_unclaimed_items_only(
         work_item_ids=("bd-ib-tyqklx", "bd-ib-zz6gii"),
         clock=lambda: _NOW,
         journal=journal,
+        requirement=_REQUIREMENT,
     )
 
     assert refusal is not None
@@ -301,7 +327,9 @@ def test_a_credential_above_the_floor_admits_on_the_dispatcher_own_clock() -> No
     journal = _RecordingJournal()
 
     admitted = gate.codex_credential_refusal_for_items(
-        work_item_ids=("bd-ib-tyqklx",), journal=journal
+        work_item_ids=("bd-ib-tyqklx",),
+        journal=journal,
+        requirement=_REQUIREMENT,
     )
 
     assert admitted is None

@@ -44,9 +44,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
     CodexProjectionRefusal,
     project_codex_auth,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_deadline import (
+    CredentialLifetimeRequirement,
+)
 
 __all__: list[str] = [
     "CODEX_CREDENTIAL_GATE_STAGE",
+    "CODEX_CREDENTIAL_REQUIREMENT_STAGE",
     "codex_credential_refusal_for_items",
     "wall_clock_epoch",
 ]
@@ -55,6 +59,13 @@ __all__: list[str] = [
 # no `active` row and no run, so the journal is the only place the pass survives
 # in at all -- which is why the record names the items it declined to claim.
 CODEX_CREDENTIAL_GATE_STAGE = "codex-credential-gate-refused"
+
+# The journal stage for a selection whose credential REQUIREMENT could not be
+# resolved at all. Kept apart from the refusal above because the two are
+# different findings: one says a credential is too short for a known allowance,
+# the other says no allowance could be established, and an operator's remedy for
+# the second is a configuration change rather than a renewal.
+CODEX_CREDENTIAL_REQUIREMENT_STAGE = "codex-credential-requirement-unresolved"
 
 
 def wall_clock_epoch() -> int:
@@ -65,6 +76,7 @@ def wall_clock_epoch() -> int:
 def codex_credential_refusal_for_items(
     *,
     work_item_ids: Sequence[str],
+    requirement: CredentialLifetimeRequirement | str,
     clock: Callable[[], int] | None = None,
     journal: object = None,
 ) -> str | None:
@@ -73,6 +85,14 @@ def codex_credential_refusal_for_items(
     The host credential is a HOST-level fact, so the refusal is computed once and
     returned once: enumerating it per candidate would read as N distinct faults
     when there is one, and a wave refused here is refused whole.
+
+    `requirement` is the caller's RESOLVED credential-lifetime requirement for the
+    workflow this selection would run, or the string explaining why none could be
+    established. An unresolved requirement refuses the selection rather than
+    falling back to a fixed figure: a credential graded against an allowance
+    nobody could derive is graded against nothing. It is resolved by the caller
+    because the caller holds the dispatch's workflow selection and the items whose
+    effective policy the figure depends on.
 
     `clock` is resolved at CALL time rather than bound as a default, because the
     bounded renewal underneath can take up to two minutes and the re-grade after
@@ -105,16 +125,49 @@ def codex_credential_refusal_for_items(
     # a repository declaration that is broken whether or not work is queued.
     if not work_item_ids:
         return None
-    projected = project_codex_auth(clock=clock if clock is not None else wall_clock_epoch)
+    if isinstance(requirement, str):
+        _journal(
+            journal=journal,
+            stage=CODEX_CREDENTIAL_REQUIREMENT_STAGE,
+            work_item_ids=work_item_ids,
+            refusal=requirement,
+        )
+        return requirement
+    projected = project_codex_auth(
+        clock=clock if clock is not None else wall_clock_epoch,
+        run_budget_seconds=requirement.allowance_seconds,
+    )
     if not isinstance(projected, CodexProjectionRefusal):
         return None
+    _journal(
+        journal=journal,
+        stage=CODEX_CREDENTIAL_GATE_STAGE,
+        work_item_ids=work_item_ids,
+        refusal=f"{projected.message} Requirement: {requirement.detail}.",
+    )
+    return f"{projected.message} Requirement: {requirement.detail}."
+
+
+def _journal(
+    *,
+    journal: object,
+    stage: str,
+    work_item_ids: Sequence[str],
+    refusal: str,
+) -> None:
+    """Record one refusal, reached through `append` so a caller may hold none.
+
+    Only refusals are recorded. An admitted pass is followed by the overlay's own
+    projection record, and a line asserting that a credential was admitted would
+    duplicate it.
+    """
     append = getattr(journal, "append", None)
-    if append is not None:
-        append(
-            record={
-                "stage": CODEX_CREDENTIAL_GATE_STAGE,
-                "unclaimed_work_item_ids": list(work_item_ids),
-                "refusal": projected.message,
-            }
-        )
-    return projected.message
+    if append is None:
+        return
+    append(
+        record={
+            "stage": stage,
+            "unclaimed_work_item_ids": list(work_item_ids),
+            "refusal": refusal,
+        }
+    )
