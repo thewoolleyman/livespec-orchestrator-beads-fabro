@@ -266,13 +266,21 @@ term_epoch=$((deadline - {GUARD_TERM_GRACE_SECONDS}))
 kill_epoch="$deadline"
 
 # Field 22 of /proc/<pid>/stat -- the start time of one process INCARNATION,
-# which is what turns a recyclable numeric id into an identity. Parsed after the
-# FINAL ')' because the comm field can itself contain spaces and parentheses,
-# which would otherwise shift every column behind it. `read` is a builtin, so
-# this costs no fork.
+# which is what turns a recyclable numeric id into an identity.
+#
+# `##` -- LONGEST prefix removal -- is load-bearing, and `#` here was an
+# enforcement bypass. `comm` is operator-supplied text that may itself contain
+# `') '`, so for a leader named `agent) worker` the line reads
+# `<pid> (agent) worker) S 1 <pgid> ...` and a shortest-prefix strip stops at the
+# FIRST delimiter, shifting every column behind it: the group id read 1 and the
+# start time 0 instead of the real values. `group_is_ours` then saw a mismatch,
+# concluded the group was not ours, disarmed the reaper, and let the agent run
+# past the deadline -- measured at 4.693s beyond it. No field behind `comm` can
+# contain `') '` (they are all numeric or a single character), so the LAST
+# occurrence is always the comm terminator. `read` is a builtin: no fork.
 incarnation() {{
     read -r _inc_line < "/proc/$1/stat" 2>/dev/null || return 1
-    _inc_rest="${{_inc_line#*') '}}"
+    _inc_rest="${{_inc_line##*') '}}"
     [ "$_inc_rest" != "$_inc_line" ] || return 1
     # Deliberate word splitting: positionals are the only POSIX way to index.
     # shellcheck disable=SC2086
@@ -285,10 +293,15 @@ incarnation() {{
 # Does ANY process still carry our process-group id? Consulted only once our
 # leader has exited -- the orphaned-group case, i.e. a credential-using
 # grandchild that outlived the adapter.
+# Field 5 is the group id, and it sits behind `comm` too, so it takes the same
+# LONGEST-prefix strip for the same reason -- see `incarnation` above. A
+# shortest-prefix strip here would read an unrelated column and report our group
+# as empty, which disarms the reaper on exactly the orphaned-descendant case it
+# exists to cover.
 group_has_member() {{
     for _ghm_proc in /proc/[0-9]*; do
         read -r _ghm_line < "$_ghm_proc/stat" 2>/dev/null || continue
-        _ghm_rest="${{_ghm_line#*') '}}"
+        _ghm_rest="${{_ghm_line##*') '}}"
         [ "$_ghm_rest" != "$_ghm_line" ] || continue
         # shellcheck disable=SC2086
         set -- $_ghm_rest
