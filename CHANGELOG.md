@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.173.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.173.1...v0.173.2) (2026-10-06)
+
+
+### Bug Fixes
+
+* **telemetry:** project the order-guard endpoint into dispatched sandboxes ([f373648](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f373648577e7e52e0974c733759d5e7023e17643))
+
 ## [0.173.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.173.0...v0.173.1) (2026-10-06)
 
 
