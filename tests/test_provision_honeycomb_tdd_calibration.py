@@ -129,6 +129,13 @@ class _FakeHoneycomb:
         # referencing one 400s with the detail the live API was measured to
         # return, which is the arm the diagnostic control drives.
         self.unknown_columns: frozenset[str] = frozenset()
+        # A deliberately HOSTILE server: it echoes the credential it was handed
+        # back inside its own error body. No real Honeycomb response does this,
+        # and that is the point — it is the only way to establish that the
+        # provisioner's failure diagnostic cannot carry the key into a log even
+        # when the body it is quoting contains it. Asserting the key is absent
+        # from a body that never held it would prove nothing.
+        self.echo_key_in_errors = False
         self._next_id = 0
         self._lock = threading.Lock()
 
@@ -338,12 +345,15 @@ class _Handler(BaseHTTPRequestHandler):
         payload = self._payload()
         detail = self._api().rejection(kind=kind, payload=payload)
         if detail is not None:
-            self._reply(
-                status=HTTPStatus.BAD_REQUEST,
-                body={"error": "unable to process request", "detail": detail},
-            )
+            self._reply_rejection(detail=detail)
             return
         self._write(kind=kind, dataset=dataset, resource_id=resource_id, payload=payload)
+
+    def _reply_rejection(self, *, detail: str) -> None:
+        body: dict[str, Any] = {"error": "unable to process request", "detail": detail}
+        if self._api().echo_key_in_errors:
+            body["received_team_key"] = self.headers.get("X-Honeycomb-Team", "")
+        self._reply(status=HTTPStatus.BAD_REQUEST, body=body)
 
     def _write(self, *, kind: str, dataset: str, resource_id: str, payload: dict[str, Any]) -> None:
         if self.command == "POST":
@@ -805,6 +815,60 @@ def test_an_unmatched_recipient_selector_is_refused_by_name(
 
     assert result.returncode != 0
     assert "no Honeycomb recipient matched 'nobody@example.test'" in result.stderr
+
+
+def test_an_http_validation_failure_names_the_resource_and_shows_the_response(
+    honeycomb: tuple[_FakeHoneycomb, str],
+) -> None:
+    """Acceptance assertion 3 — a rejected request must be diagnosable.
+
+    The command used to send every response into a temp file or `/dev/null` and
+    then unwind through its cleanup trap, so the operator saw nothing but
+    `curl: (22) The requested URL returned error: 400` and the response body —
+    the only thing that says WHAT was wrong — was deleted unread.
+
+    The failure modelled here is the one measured against the live API on
+    2026-10-06: the calibration order telemetry is not live yet, so the
+    classification expression references a column the dataset does not have.
+    Repairing THAT is `bd-ib-swm6te`'s job; what is owed here is that the
+    failure arrives legible instead of silent.
+    """
+    api, api_base = honeycomb
+    api.unknown_columns = frozenset({"tdd.first_product_write_before_red"})
+
+    result = _run(api_base=api_base, overrides={"HONEYCOMB_TDD_RESOURCES": "derived_columns"})
+
+    assert result.returncode != 0
+    assert "unknown column name: tdd.first_product_write_before_red" in result.stderr
+    # The failing resource, named — not just the URL it happened to be at.
+    assert "derived_column" in result.stderr
+    assert f"POST {api_base}/1/derived_columns/{_DATASET}" in result.stderr
+    assert "400" in result.stderr
+    assert _API_KEY not in result.stderr
+    assert api.derived_columns == {}
+
+
+def test_a_failure_body_echoing_the_credential_is_redacted_out_of_the_diagnostic(
+    honeycomb: tuple[_FakeHoneycomb, str],
+) -> None:
+    """Showing the response body must not become a way to log the key.
+
+    The fixture is told to echo the credential it was handed back inside its
+    own 400 body. The diagnostic must still carry the useful detail while the
+    key itself is replaced.
+    """
+    api, api_base = honeycomb
+    api.unknown_columns = frozenset({"tdd.first_product_write_before_red"})
+    api.echo_key_in_errors = True
+
+    result = _run(api_base=api_base, overrides={"HONEYCOMB_TDD_RESOURCES": "derived_columns"})
+
+    assert result.returncode != 0
+    assert "unknown column name: tdd.first_product_write_before_red" in result.stderr
+    assert "received_team_key" in result.stderr, "the body was quoted, not swallowed"
+    assert "***REDACTED***" in result.stderr
+    assert _API_KEY not in result.stderr
+    assert _API_KEY not in result.stdout
 
 
 def test_a_missing_api_key_is_refused_before_any_call(
