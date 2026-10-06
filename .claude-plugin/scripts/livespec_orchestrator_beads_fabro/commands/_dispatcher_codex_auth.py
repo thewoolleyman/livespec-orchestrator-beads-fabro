@@ -292,6 +292,7 @@ def run_codex_cred_status(*, args: argparse.Namespace) -> int:
     """
     requirement = operator_credential_requirement(
         repo=Path.cwd(),
+        workflow_override=getattr(args, "workflow", None),
         workflow_name=getattr(args, "workflow_name", None),
         review_fix_cap=getattr(args, "review_fix_cap", None),
     )
