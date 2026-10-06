@@ -19,6 +19,7 @@ refusal reaches the real CLI before any claim).
 """
 
 import importlib
+import json
 import shutil
 import sys
 import tempfile
@@ -31,6 +32,17 @@ _BIN_DIR = Path(__file__).resolve().parents[2] / ".claude-plugin" / "scripts" / 
 _RELEASE = "9.9.9"
 _UNKNOWN_RELEASE = "unknown-release"
 _HOLDER_PREFIX = "livespec-orchestrator-beads-fabro-payload-"
+# What a SOURCE CHECKOUT of this plugin looks like: the plugin root keeps the
+# name a checkout gives it, and the tree above it names THIS project.
+_CHECKOUT_PLUGIN_ROOT = ".claude-plugin"
+_THIS_PROJECT = '[project]\nname = "livespec-orchestrator-beads-fabro"\n'
+
+
+def _checkout(*, root: Path) -> Path:
+    """A tree that is identifiably THIS plugin's own source checkout."""
+    _ = (root / "pyproject.toml").write_text(_THIS_PROJECT, encoding="utf-8")
+    return root / _CHECKOUT_PLUGIN_ROOT
+
 
 # Every member `_payload` requires of a usable payload, as the relative path
 # its refusal names.
@@ -88,27 +100,64 @@ def _private_tempdir(*, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path
     return temp_root
 
 
-def test_a_plugin_root_beside_its_source_repository_is_not_harness_managed(
-    tmp_path: Path,
-) -> None:
+def test_this_projects_own_checkout_is_not_harness_managed(tmp_path: Path) -> None:
+    """Both conditions hold: the plugin-root name, and a pyproject naming us."""
     payload = _import_payload()
-    _ = (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
-    assert payload.harness_managed(source_root=tmp_path / ".claude-plugin") is False
+    assert payload.harness_managed(source_root=_checkout(root=tmp_path)) is False
 
 
-def test_a_plugin_root_beside_a_justfile_alone_is_not_harness_managed(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    ("description", "project_file"),
+    [
+        pytest.param("a stranger's project", '[project]\nname = "unrelated"\n', id="other-project"),
+        pytest.param("no project file at all", None, id="absent"),
+    ],
+)
+def test_a_plugin_root_beside_something_that_is_not_this_project_is_harness_managed(
+    tmp_path: Path, description: str, project_file: str | None
 ) -> None:
+    """Presence of SOME project file is not proof of this checkout.
+
+    An installed tree can sit beside anything. Treating any neighbour as
+    proof switched retention off for a real install and put the invocation
+    back on an evictable source — silently, which is the direction that
+    re-opens the defect.
+    """
+    payload = _import_payload()
+    if project_file is not None:
+        _ = (tmp_path / "pyproject.toml").write_text(project_file, encoding="utf-8")
+    assert (
+        payload.harness_managed(source_root=tmp_path / _CHECKOUT_PLUGIN_ROOT) is True
+    ), f"retention was disabled by {description}"
+
+
+def test_a_justfile_alone_no_longer_exempts_a_tree(tmp_path: Path) -> None:
+    """The old weak marker: a `justfile` used to be enough on its own."""
     payload = _import_payload()
     _ = (tmp_path / "justfile").write_text("default:\n", encoding="utf-8")
-    assert payload.harness_managed(source_root=tmp_path / ".claude-plugin") is False
+    assert payload.harness_managed(source_root=tmp_path / _CHECKOUT_PLUGIN_ROOT) is True
 
 
-def test_a_plugin_root_with_no_repository_above_it_is_harness_managed(
+def test_a_differently_named_root_beside_our_pyproject_is_harness_managed(
     tmp_path: Path,
 ) -> None:
+    """An install flattens the plugin root to a build-named cache directory.
+
+    So our own `pyproject.toml` above it is not enough either — a cache can be
+    unpacked anywhere, including inside a checkout.
+    """
     payload = _import_payload()
-    assert payload.harness_managed(source_root=tmp_path / "cache-root") is True
+    _ = (tmp_path / "pyproject.toml").write_text(_THIS_PROJECT, encoding="utf-8")
+    assert payload.harness_managed(source_root=tmp_path / "abc123def456") is True
+
+
+def test_an_unreadable_project_file_is_not_taken_as_proof_of_a_checkout(
+    tmp_path: Path,
+) -> None:
+    """Unreadable means unproven, and unproven means retain."""
+    payload = _import_payload()
+    (tmp_path / "pyproject.toml").mkdir()
+    assert payload.harness_managed(source_root=tmp_path / _CHECKOUT_PLUGIN_ROOT) is True
 
 
 def test_a_checkout_plugin_root_is_its_own_payload(tmp_path: Path) -> None:
@@ -119,8 +168,7 @@ def test_a_checkout_plugin_root_is_its_own_payload(tmp_path: Path) -> None:
     payload's completeness contract would refuse mid-edit.
     """
     payload = _import_payload()
-    _ = (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
-    source_root = tmp_path / ".claude-plugin"
+    source_root = _checkout(root=tmp_path)
     source_root.mkdir()
     retained = payload.retain_payload(source_root=source_root, environ={})
     assert retained.retained is False
@@ -407,8 +455,7 @@ def test_releasing_a_payload_this_process_does_not_own_removes_nothing(
     payload = _import_payload()
     _ = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
     if case == "checkout":
-        _ = (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
-        source_root = _install(root=tmp_path / ".claude-plugin")
+        source_root = _install(root=_checkout(root=tmp_path))
         unowned = payload.retain_payload(source_root=source_root, environ={})
     else:
         source_root = _install(root=tmp_path / "cache" / "abc123")
@@ -545,3 +592,68 @@ def test_a_copy_that_lands_short_refuses_and_leaves_no_holder(
     assert "deferred.py" in refusal.message
     assert "DIFFERENT release" in refusal.message
     assert list(temp_root.iterdir()) == [], "the short copy left its holder behind"
+
+
+def test_an_unusable_temporary_destination_is_refused_not_raised(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`mkdtemp` sits inside the handler, like every other provisioning step.
+
+    `TMPDIR` cannot drive this — `tempfile` falls back past an unusable one —
+    so the destination is PINNED, which is the seam an embedder sets and the
+    one the end-to-end case in test_payload_provisioning_boundary.py uses.
+    """
+    payload = _import_payload()
+    not_a_directory = tmp_path / "not-a-directory"
+    _ = not_a_directory.write_text("", encoding="utf-8")
+    monkeypatch.setattr(tempfile, "tempdir", str(not_a_directory))
+    source_root = _install(root=tmp_path / "cache" / "abc123")
+
+    refusal = payload.retain_payload(source_root=source_root, environ={})
+    assert isinstance(refusal, payload.PayloadRefusal)
+    assert "no private directory could be created" in refusal.message
+    assert str(not_a_directory) in refusal.message
+    assert "Nothing was claimed" in refusal.message
+
+
+@pytest.mark.parametrize(
+    "version",
+    [
+        pytest.param("../../escaped", id="parent-traversal"),
+        pytest.param("a/b", id="embedded-separator"),
+        pytest.param("..", id="parent-reference"),
+        pytest.param(".", id="bare-dot"),
+        pytest.param(".hidden", id="leading-dot"),
+        pytest.param("a\\b", id="backslash"),
+        pytest.param("a\x00b", id="nul-byte"),
+    ],
+)
+def test_a_release_label_that_is_not_one_path_segment_is_refused(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, version: str
+) -> None:
+    """Raw manifest text must never reach the holder's path as path SYNTAX."""
+    payload = _import_payload()
+    temp_root = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
+    source_root = _install(
+        root=tmp_path / "cache" / "abc123", manifest=json.dumps({"version": version})
+    )
+
+    refusal = payload.retain_payload(source_root=source_root, environ={})
+    assert isinstance(refusal, payload.PayloadRefusal)
+    assert "not usable as a single path segment" in refusal.message
+    assert list(temp_root.iterdir()) == [], "a refused label still created a holder"
+
+
+def test_an_ordinary_release_label_is_accepted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The control: the segment grade must not reject real release strings."""
+    payload = _import_payload()
+    _ = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
+    source_root = _install(
+        root=tmp_path / "cache" / "abc123", manifest=json.dumps({"version": "1.2.3-rc.4+build5"})
+    )
+
+    retained = payload.retain_payload(source_root=source_root, environ={})
+    assert retained.retained is True
+    assert "1.2.3-rc.4+build5" in retained.root.parent.name

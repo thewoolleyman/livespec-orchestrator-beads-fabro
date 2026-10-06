@@ -127,6 +127,17 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   `required_paths` being top-level and omitting `scripts/_vendor` and
   `.fabro/` entirely. Carries its own control. Listed in
   `subprocess_spawn_allowlist`.
+- `test_payload_provisioning_boundary.py` — the normal boundary: an
+  unusable temporary DESTINATION must refuse rather than raise
+  (`tempfile` falls back past an unusable `TMPDIR`, so the destination is
+  pinned through `tempfile.tempdir`, the seam an embedder sets); a
+  path-like release version must never reach the holder's path as path
+  SYNTAX; and an installed tree beside a STRANGER's project file must
+  still retain — proven by evicting the installation and requiring the
+  deferred import to succeed, not by asking the predicate. Its closing
+  control keeps this repository's own checkout exempt, so the
+  source-checkout, currency and canary policies are preserved. Listed in
+  `subprocess_spawn_allowlist`.
 - `test_host_side_self_contained_import.py` — the end-to-end
   counterpart of `test_bootstrap.py`: it spawns a `-S` (no-site)
   subprocess that runs the real bootstrap and imports the host-side
