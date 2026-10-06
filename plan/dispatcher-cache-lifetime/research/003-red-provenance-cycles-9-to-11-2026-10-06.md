@@ -312,17 +312,45 @@ environmental fault" shape AGENTS.md treats as worse than an honest failure.
 
 ## Operational disclosure
 
-While diagnosing the checkout exemption, `env | grep -i '^GIT'` was run in this
-sandbox. The repository's own verification discipline forbids exactly that —
-a line-oriented filter over environment variables cannot distinguish a value's
-internal newlines from record boundaries, and the prescribed form is
-`printenv NAME | wc -c`. The command printed a live `GITHUB_TOKEN` and a
-single-line `GITHUB_PRIVATE_KEY` into the session transcript. No secret was
-written to any file in the repository, and none appears in any commit; the
-exposure is the transcript. **Those two credentials should be treated as
-disclosed and rotated.** Recorded here rather than left in the transcript
-alone, because a disclosure that only exists where it leaked is not a
-disclosure.
+REDACTED DESCRIPTION. No value, fragment, length or prefix of any credential
+appears in this file, and none may be added to it.
+
+While diagnosing the checkout exemption at 2026-10-06T08:27:19Z, a
+prefix-filtered environment listing was run in this sandbox. The repository's
+own verification discipline forbids exactly that: a line-oriented filter over
+environment variables cannot distinguish a value's internal newlines from
+record boundaries, and the prescribed form is a per-name presence or length
+probe. Two named credentials — the forge token and the forge app private key —
+were rendered into the session transcript as a result.
+
+Scope of the exposure, as presence facts only:
+
+- transcript: AFFECTED;
+- repository (tracked files, every commit on this branch): NOT affected. Every
+  file in this repository matching a credential-shaped pattern predates this
+  branch and is a detector literal or a test fixture; the branch-touched set
+  matching any such pattern is EMPTY, confirmed by count-only scan;
+- session gate logs: no environment output was ever redirected to a file. Logs
+  matching a credential-shaped pattern do so because the suite's own token
+  fixtures are echoed by pytest. They were NOT inspected to classify further,
+  because classifying would mean handling the values.
+
+Containment performed: the coordinator restricted the native transcript and
+log directories, and this session set its own artifact directory to `0700`
+with every file `0600`. Those raw logs are EXCLUDED from the proof and from
+any pull request, are not uploaded, and are not copied into any durable
+artifact. They were secured rather than deleted, because restriction was the
+instruction and destroying an incident record is not a session's call.
+
+**Remediation is coordinator-owned.** This session performed no credential
+rotation and must not: rotating a SHARED credential unilaterally is an
+irreversible action on infrastructure other runs depend on. The decision, and
+any rotation, belong to the coordinator.
+
+Recorded here rather than left in the transcript alone, because a disclosure
+that exists only where it leaked is not a disclosure — and recorded in
+redacted form, because a disclosure that repeats the value is a second
+exposure.
 
 ## What a successor should take from this
 
