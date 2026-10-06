@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.173.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.173.3...v0.173.4) (2026-10-06)
+
+
+### Bug Fixes
+
+* **honeycomb:** build the TDD board through the flexible query-panel API ([d0ce7c7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d0ce7c732b426940e2c8578c8cf4efdd4a2013b6))
+* **honeycomb:** reuse persisted board queries instead of re-creating them ([3b3ea3b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3b3ea3b4b33d45df9362b6d8781290c6d633e687))
+* **honeycomb:** surface the response diagnostic when a Honeycomb call fails ([1108f4e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1108f4e915665d9875e12eb96c57ed2341bf79f2))
+
 ## [0.173.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.173.2...v0.173.3) (2026-10-06)
 
 
