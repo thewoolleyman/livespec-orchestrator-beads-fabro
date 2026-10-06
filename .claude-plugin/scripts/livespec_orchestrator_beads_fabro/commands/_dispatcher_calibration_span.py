@@ -74,6 +74,14 @@ def _attrs(*, record: CalibrationRecord) -> dict[str, object]:
     only the OBSERVED ones: an unobservable signal must not egress, because
     the encoder below would ship it as the literal string `"None"` into a
     column the post-hoc derived column compares numerically.
+
+    Plan slice S4's repaired fields (`bd-ib-tbgxm4`) ride here as well as on the
+    journal, because this map and `calibration_journal_record` are two separate
+    projections of one record: a field added to one and forgotten on the other
+    fails nothing, and the half that is missing is the half an operator queries.
+    Every key here must ALSO be named in `_otel_scrub.ATTRIBUTE_ALLOWLIST` — the
+    receive stage rebuilds attributes from that allowlist, so an unnamed key is
+    dropped with no error and the signal arrives silently empty.
     """
     return {
         "work.item.id": record.work_item_id,
@@ -84,7 +92,9 @@ def _attrs(*, record: CalibrationRecord) -> dict[str, object]:
         "token_cost_micros": record.token_cost_micros,
         "bounced_to_regroom": record.bounced_to_regroom,
         "acceptance_count": record.acceptance_count,
+        "acceptance_count_source": record.acceptance_count_source,
         "merged_pr_diff_size": record.merged_pr_diff_size,
+        "pr_open_diff_size": record.pr_open_diff_size,
         "dependency_fan_out": record.dependency_fan_out,
         "spec_surface_touched": record.spec_surface_touched,
         "dispatch_context_size": record.dispatch_context_size,
@@ -93,6 +103,7 @@ def _attrs(*, record: CalibrationRecord) -> dict[str, object]:
         "fabro.failure.cause": record.fabro_failure_cause,
         "fabro.failure.category": record.fabro_failure_category,
         "fabro.failure.signature": record.fabro_failure_signature,
+        **record.bounce_cap.as_record(),
         **tdd_span_fields(signals=record.tdd),
     }
 

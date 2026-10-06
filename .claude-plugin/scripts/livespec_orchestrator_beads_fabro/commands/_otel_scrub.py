@@ -171,6 +171,16 @@ ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
         "bounced_to_regroom",
         "acceptance_count",
         "merged_pr_diff_size",
+        # Plan slice S4's repaired sizing fields (`bd-ib-tbgxm4`). All bounded
+        # scalars: the resolved criteria SOURCE is one of three ratified enum
+        # values, the PR-open churn is a count, and the bounce cap is a setting
+        # NAME plus the value that cap observed. Without these entries the span
+        # lands in Honeycomb with each repaired field silently dropped, which is
+        # the failure the `run_turn` scalars above were measured hitting.
+        "acceptance_count_source",
+        "pr_open_diff_size",
+        "bounce_cap",
+        "bounce_cap_observed",
         "dependency_fan_out",
         "spec_surface_touched",
         "dispatch_context_size",
