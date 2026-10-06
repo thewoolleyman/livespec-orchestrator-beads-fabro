@@ -266,31 +266,42 @@ def _retained_root(*, source_root: Path) -> Path | PayloadRefusal:
     """
     release = _release_identity(source_root=source_root)
     holder = Path(tempfile.mkdtemp(prefix=f"{_PAYLOAD_PREFIX}{release}-"))
+    # The holder is removed by `finally` unless this function RETURNS a usable
+    # payload. Enumerating the failures instead — which is what this did — left
+    # the directory standing for every exit the list did not name, and an
+    # INTERRUPT is the one that matters: a SIGINT or SIGTERM mid-copy arrives as
+    # `KeyboardInterrupt` or `SystemExit`, neither of which is an `OSError`. The
+    # survivor is a half-copied tree, and once this process is gone nothing can
+    # tell it from a finished payload, so the next invocation to find it would
+    # execute an incomplete release. A bug-class exception gets the same
+    # treatment for the same reason, while still propagating.
     root = holder / _STAGED_NAME
+    published = False
     try:
-        _ = shutil.copytree(source_root, root, ignore=shutil.ignore_patterns(*_IGNORED_NAMES))
-    except (OSError, shutil.Error) as failure:
-        shutil.rmtree(holder, ignore_errors=True)
-        return PayloadRefusal(
-            message=(
-                f"ERROR: livespec payload provisioning refused: copying the installed "
-                f"release at {source_root} failed, so this invocation has no payload it "
-                f"could keep running from. Nothing was claimed and no factory run was "
-                f"started. Reinstall the plugin, then retry. Cause: {failure}"
+        try:
+            _ = shutil.copytree(source_root, root, ignore=shutil.ignore_patterns(*_IGNORED_NAMES))
+        except (OSError, shutil.Error) as failure:
+            return PayloadRefusal(
+                message=(
+                    f"ERROR: livespec payload provisioning refused: copying the installed "
+                    f"release at {source_root} failed, so this invocation has no payload it "
+                    f"could keep running from. Nothing was claimed and no factory run was "
+                    f"started. Reinstall the plugin, then retry. Cause: {failure}"
+                )
             )
-        )
-    missing = missing_payload_paths(root=root)
-    if missing:
-        # The source passed its own check moments ago, so an incomplete COPY
-        # means the source changed underneath the copy — an eviction landing
-        # mid-provision, which is exactly the race this module exists for. The
-        # partial tree goes, because a later invocation finding it would
-        # execute an incomplete release.
-        shutil.rmtree(holder, ignore_errors=True)
-        return PayloadRefusal(
-            message=_incomplete_message(root=source_root, missing=missing, subject="copy")
-        )
-    return root
+        missing = missing_payload_paths(root=root)
+        if missing:
+            # The source passed its own check moments ago, so an incomplete COPY
+            # means the source changed underneath the copy — an eviction landing
+            # mid-provision, which is exactly the race this module exists for.
+            return PayloadRefusal(
+                message=_incomplete_message(root=source_root, missing=missing, subject="copy")
+            )
+        published = True
+        return root
+    finally:
+        if not published:
+            shutil.rmtree(holder, ignore_errors=True)
 
 
 def _incomplete_message(*, root: Path, missing: tuple[str, ...], subject: str) -> str:
