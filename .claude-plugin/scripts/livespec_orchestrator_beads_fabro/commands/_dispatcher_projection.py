@@ -53,7 +53,36 @@ def cc_otel_overlay_env(
     dispatch_id: str,
     endpoint: str,
 ) -> dict[str, str]:
-    """Assemble the in-sandbox Claude-Code OTel env dict."""
+    """Assemble the in-sandbox OTel env dict.
+
+    Mostly Claude-Code's own `OTEL_*` surface, plus ONE key that is not
+    Claude-Code's: `SANDBOX_OTEL_ENDPOINT_ENV_VAR`, which is what the sandbox
+    TDD order guard (`.claude/hooks/livespec_tdd_order_span.resolve_endpoint`)
+    reads to find its receiver. That guard is not a Claude-Code exporter — it
+    POSTs its own OTLP span per product-write verdict — and it honors NO other
+    variable and carries NO default, deliberately, so that a human session
+    outside any dispatch attempts no post at all. Projecting
+    `OTEL_EXPORTER_OTLP_ENDPOINT` alone therefore left every dispatched
+    verdict resolving no endpoint and posting nothing, which read downstream
+    as a dispatch whose guard spans never arrived (measured on live run
+    01M47AGX4BB5FJJR0K6AW1736W).
+
+    ONE NAME SERVES BOTH ROLES, and that is the point rather than a
+    coincidence: the host READS this variable as the override lever
+    `resolve_sandbox_otel_endpoint` resolves, and the sandbox READS it as the
+    resolved answer — so the same resolution run inside the sandbox returns
+    what the host computed, and there is no second spelling for the two ends
+    of one contract to disagree about. The PROJECTED value is always the
+    resolved `endpoint` argument, never this process's own environment, so a
+    dispatch cannot ship the host's unresolved lever (or its absence) into a
+    sandbox.
+
+    `tests/integration/test_sandbox_order_guard_endpoint_projection.py` is the
+    mechanical guard on the producer-consumer pair: it hands the SHIPPED hook
+    emitter exactly this dict and asserts the verdict reaches a live receiver
+    and both calibration fields, so a rename on either end fails there rather
+    than silently zeroing the signal.
+    """
     resource_attributes = ",".join(
         (
             "service.namespace=livespec-family",
@@ -62,6 +91,7 @@ def cc_otel_overlay_env(
         )
     )
     return {
+        SANDBOX_OTEL_ENDPOINT_ENV_VAR: endpoint,
         "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
         "OTEL_METRICS_EXPORTER": "otlp",
         "OTEL_LOGS_EXPORTER": "otlp",
