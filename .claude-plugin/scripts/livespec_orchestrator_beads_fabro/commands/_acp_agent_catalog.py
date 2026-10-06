@@ -36,6 +36,13 @@ nothing in the catalog to explain why.
   of them resolved, rendered, journaled and then died at exec with nothing in the
   catalog to explain why.
 
+  SO A SEEDED ENTRY NOW NAMES THE RUN THAT LAUNCHED IT, OR IT DOES NOT SHIP. That
+  is the whole point of `verification_run` and of
+  `registry_entries_naming_a_verification_run`: being faithful to the registry is
+  not the same as being true of a sandbox, and a transcription nobody has ever run
+  is indistinguishable from a working entry at every surface except the exec. The
+  withholding arm is what makes the distinction cost something.
+
 TWO DIGESTS, ANSWERING TWO DIFFERENT QUESTIONS, AND CONFLATING THEM IS HOW A
 SNAPSHOT IDENTITY STOPS NAMING A SNAPSHOT. `agent_catalog_digest` is COMPUTED
 from the shipped entries and identifies the catalog THIS BUILD carries, which is
@@ -80,6 +87,7 @@ from livespec_orchestrator_beads_fabro.commands._acp_catalog_overrides import ca
 __all__: list[str] = [
     "AGENT_CATALOG_KEY",
     "ANTHROPIC_PROVIDER",
+    "BUILTIN_AGENT_IDS",
     "CLAUDE_AGENT_ID",
     "CODEX_AGENT_ID",
     "OPENAI_PROVIDER",
@@ -88,6 +96,7 @@ __all__: list[str] = [
     "REGISTRY_SNAPSHOT_DIGEST",
     "agent_catalog_digest",
     "builtin_agent_catalog",
+    "registry_entries_naming_a_verification_run",
     "resolve_agent_catalog",
 ]
 
@@ -109,6 +118,26 @@ REGISTRY_SNAPSHOT_DIGEST = "06f2cba54a409ef43e84cd218def02ce2126feb647ee6befc2fd
 
 CLAUDE_AGENT_ID = "claude-acp"
 CODEX_AGENT_ID = "codex-acp"
+
+# The two entries that are BUILT IN rather than registry-seeded, and so owe no
+# recorded verification run of their own: section "Built-in ACP node defaults"
+# ratifies their adapter strings literally and every dispatch this factory has run
+# exercised one of them.
+BUILTIN_AGENT_IDS: frozenset[str] = frozenset({CLAUDE_AGENT_ID, CODEX_AGENT_ID})
+
+# The recorded run that launched each registry-seeded distribution below. It is the
+# Fabro run of work-item `bd-ib-5tk7bx`, which re-seeded those three entries; the
+# measurement each one produced is recorded beside the entry it verified.
+#
+# WHAT THIS RUN VERIFIED, AND WHAT IT DID NOT. It launched each distribution and
+# completed an ACP `initialize` handshake against it, reading the agent's own
+# self-reported version out of the response -- which is exactly the property an
+# unverified entry lacked, since a transcribed command is only a string until a
+# sandbox execs it. It did NOT verify a resolved MODEL: each of the three requires
+# an account credential this factory does not hold, so the model-resolution half of
+# the duty in section "Built-in ACP node defaults" is still owed and still belongs
+# to the first dispatch routed through one of them.
+_LAUNCH_VERIFICATION_RUN = "01M47AF21ST90D9XJFFPXPBZTW"
 
 ANTHROPIC_PROVIDER = "anthropic"
 OPENAI_PROVIDER = "openai"
@@ -142,7 +171,7 @@ _CLAUDE_EFFORT_LEVELS: tuple[str, ...] = ("low", "medium", "high")
 # the reachable set is a property of the baked adapter, not of this file.
 _CODEX_EFFORT_LEVELS: tuple[str, ...] = ("low", "medium", "high", "xhigh", "max", "ultra")
 
-_BUILTIN_AGENTS: tuple[AcpAgentEntry, ...] = (
+_MEASURED_AGENTS: tuple[AcpAgentEntry, ...] = (
     AcpAgentEntry(
         agent_id=CLAUDE_AGENT_ID,
         display_name="Claude ACP",
@@ -174,13 +203,25 @@ _BUILTIN_AGENTS: tuple[AcpAgentEntry, ...] = (
         ),
         effort_levels=_CODEX_EFFORT_LEVELS,
     ),
-    # The registry declares a per-platform `binary` distribution for `opencode`
-    # and NO `npx` package, so its launch triple is the archive's own `cmd` and
-    # `args` -- `./opencode acp` -- and the archive itself is a PROVISIONING step
-    # that deliberately has no place in a fetch-free entry. Nothing in this
-    # repository's sandbox image bakes it today, which is a real gap and is left
-    # VISIBLE here rather than papered over with an npx package that would merely
-    # move the failure back to exec.
+)
+
+# The entries seeded from the registry snapshot, each naming the run that launched
+# it. A member of this tuple reaches the catalog only through
+# `registry_entries_naming_a_verification_run`, so dropping a verification record
+# withdraws the entry rather than quietly shipping an unrun adapter.
+_REGISTRY_SEEDED_AGENTS: tuple[AcpAgentEntry, ...] = (
+    # The registry declares a per-platform `binary` distribution for `opencode` and
+    # NO `npx` package, so its launch triple is the archive's own `cmd` and `args`
+    # -- `./opencode acp` -- and the archive itself is a PROVISIONING step that
+    # deliberately has no place in a fetch-free entry. Nothing in this repository's
+    # sandbox image bakes it today, which is a real gap and is left VISIBLE here
+    # rather than papered over with an npx package that would merely move the
+    # failure back to exec.
+    #
+    # Verified: the registry's `linux-x86_64` archive fetched to the declared
+    # sha256 `0f22479647226d1d2dd99595d20082ee7bda3870b62dc6a90b41efc1a71d7e9a`,
+    # and `./opencode acp` answered `initialize` with
+    # `agentInfo {"name":"OpenCode","version":"1.18.34"}`.
     AcpAgentEntry(
         agent_id="opencode",
         display_name="OpenCode",
@@ -190,7 +231,15 @@ _BUILTIN_AGENTS: tuple[AcpAgentEntry, ...] = (
         args=("acp",),
         mechanism=AcpModelMechanism(kind=PROTOCOL_MECHANISM, model="model", effort="effort"),
         multi_provider=True,
+        verification_run=_LAUNCH_VERIFICATION_RUN,
     ),
+    # Verified: `npx -y @xai-official/grok@1.0.49 agent stdio` answered `initialize`
+    # with `_meta.agentVersion "1.0.49"`. The response also advertised reasoning
+    # efforts `low`, `medium`, `high` and `xhigh` on its `grok-4.6` default; the
+    # entry still declares NO `effort_levels`, which refuses any effort pin rather
+    # than admitting one on a single handshake's word -- the levels an adapter
+    # reaches are a property of the account catalog behind it, and that is what the
+    # model-resolution half of the verification duty is for.
     AcpAgentEntry(
         agent_id="grok-build",
         display_name="Grok Build",
@@ -200,7 +249,10 @@ _BUILTIN_AGENTS: tuple[AcpAgentEntry, ...] = (
         command="npx -y @xai-official/grok@1.0.49",
         args=("agent", "stdio"),
         mechanism=AcpModelMechanism(kind=PROTOCOL_MECHANISM, model="model", effort="effort"),
+        verification_run=_LAUNCH_VERIFICATION_RUN,
     ),
+    # Verified: `npx -y glm-acp-agent@1.14.0` answered `initialize` with
+    # `agentInfo {"name":"glm-acp-agent","version":"1.14.0"}`.
     AcpAgentEntry(
         agent_id="glm-acp-agent",
         display_name="GLM ACP Agent",
@@ -209,13 +261,39 @@ _BUILTIN_AGENTS: tuple[AcpAgentEntry, ...] = (
         version="1.14.0",
         command="npx -y glm-acp-agent@1.14.0",
         mechanism=AcpModelMechanism(kind=PROTOCOL_MECHANISM, model="model", effort="effort"),
+        verification_run=_LAUNCH_VERIFICATION_RUN,
     ),
 )
 
 
+def registry_entries_naming_a_verification_run(
+    *, entries: tuple[AcpAgentEntry, ...]
+) -> tuple[AcpAgentEntry, ...]:
+    """The subset of a registry-seeded population that may SHIP, in order.
+
+    This is the exclusive or the section's verification duty comes to: an entry
+    either names the recorded run that verified its launch distribution, or it is
+    withheld from the catalog. Withholding and shipping are the only two outcomes
+    on purpose -- an unverified entry PRESENT in the catalog is the one shape that
+    resolves, renders, journals, prices and then dies at exec, with nothing in the
+    catalog to explain why, and a refusal-at-resolution arm would buy nothing a
+    plain absence does not: the resolver already names every agent it knows.
+
+    It takes the population as an argument rather than reading the module's own
+    constant so BOTH arms are reachable from a test. A rule whose withholding arm
+    only ever ran against a shipped population that happened to be fully verified
+    would be a rule nobody had ever seen withhold anything.
+    """
+    return tuple(entry for entry in entries if entry.verification_run != "")
+
+
 def builtin_agent_catalog() -> Mapping[str, AcpAgentEntry]:
     """The shipped snapshot, keyed by registry agent id."""
-    return {entry.agent_id: entry for entry in _BUILTIN_AGENTS}
+    shipped = (
+        *_MEASURED_AGENTS,
+        *registry_entries_naming_a_verification_run(entries=_REGISTRY_SEEDED_AGENTS),
+    )
+    return {entry.agent_id: entry for entry in shipped}
 
 
 def resolve_agent_catalog(*, block: Mapping[str, Any]) -> Mapping[str, AcpAgentEntry] | str:
@@ -250,6 +328,12 @@ def agent_catalog_digest(*, catalog: Mapping[str, AcpAgentEntry]) -> str:
     catalog's MEANING rather than of the order its entries happened to be
     assembled in. That is what lets two dispatches prove they rendered against
     the same snapshot.
+
+    `verification_run` is in the projection even though it changes no rendered
+    byte, and that exception is the point: it is the one field that says whether
+    the entry has ever been run, so a digest blind to it would let a re-seed drop
+    every verification record while two dispatches went on agreeing they had
+    rendered the same catalog.
     """
     return _digest(
         payload=[
@@ -267,6 +351,7 @@ def agent_catalog_digest(*, catalog: Mapping[str, AcpAgentEntry]) -> str:
                 list(entry.effort_levels),
                 entry.provider,
                 entry.multi_provider,
+                entry.verification_run,
             ]
             for agent_id, entry in sorted(catalog.items())
         ]

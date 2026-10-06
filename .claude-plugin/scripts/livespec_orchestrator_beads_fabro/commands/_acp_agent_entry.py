@@ -68,6 +68,7 @@ AGENT_ENTRY_KEYS: frozenset[str] = frozenset(
         "multi_provider",
         "provider",
         "read_only_env",
+        "verification_run",
         "version",
     }
 )
@@ -101,6 +102,20 @@ class AcpAgentEntry:
     multi-provider agent takes a `provider/model` reference, so there is no
     single provider to record, and recording one would make a bare model id
     resolve against a provider the operator never named.
+
+    `verification_run` NAMES THE RECORDED RUN THAT LAUNCHED THIS DISTRIBUTION,
+    and it is the one field about the entry rather than about the adapter. Every
+    other field is a transcription that resolves, renders, journals and prices
+    correctly whether or not the program it names exists, because a launch
+    distribution is only a string until a sandbox execs it -- so an entry nobody
+    has ever run is indistinguishable from a working one at every surface except
+    the exec. This field is where that distinction is recorded, and
+    `_acp_agent_catalog` withholds a registry-seeded entry that leaves it empty
+    rather than shipping one. Empty is deliberately admissible on a
+    REPOSITORY-declared entry: declaring one is the operator asserting their own
+    responsibility for an adapter this plugin has never seen, and refusing it for
+    want of a run id this plugin could not have recorded would close the only
+    documented route to an agent the catalog does not carry.
     """
 
     agent_id: str
@@ -115,6 +130,24 @@ class AcpAgentEntry:
     effort_levels: tuple[str, ...] = ()
     provider: str = ""
     multi_provider: bool = False
+    verification_run: str = ""
+
+
+@dataclass(frozen=True, kw_only=True)
+class _OptionalFields:
+    """The entry fields that may be omitted, each resolved to its empty value.
+
+    A record rather than a tuple because there are now five of them, and a
+    positional read of five values is where a silent field swap lives: `env` and
+    `read_only_env` are the same type and adjacent, so exchanging them would
+    render a reviewer node the write-capable posture and nothing would complain.
+    """
+
+    args: tuple[str, ...]
+    env: Mapping[str, str]
+    read_only_env: Mapping[str, str]
+    effort_levels: tuple[str, ...]
+    verification_run: str
 
 
 def parse_agent_entry(*, agent_id: str, entry: Mapping[str, Any], key: str) -> AcpAgentEntry | str:
@@ -135,11 +168,11 @@ def parse_agent_entry(*, agent_id: str, entry: Mapping[str, Any], key: str) -> A
     mechanism = parse_model_mechanism(value=entry["mechanism"], key=f"{key}.mechanism")
     if isinstance(mechanism, str):
         return mechanism
-    launch = _launch_fields(entry=entry, key=key)
-    if isinstance(launch, str):
-        return launch
+    optional = _optional_fields(entry=entry, key=key)
+    if isinstance(optional, str):
+        return optional
     provider = _cross_field_checks(
-        entry=entry, key=key, mechanism=mechanism, envs=(launch[1], launch[2])
+        entry=entry, key=key, mechanism=mechanism, envs=(optional.env, optional.read_only_env)
     )
     if isinstance(provider, str):
         return provider
@@ -150,12 +183,13 @@ def parse_agent_entry(*, agent_id: str, entry: Mapping[str, Any], key: str) -> A
         version=labels[2],
         command=labels[3],
         mechanism=mechanism,
-        args=launch[0],
-        env=launch[1],
-        read_only_env=launch[2],
-        effort_levels=launch[3],
+        args=optional.args,
+        env=optional.env,
+        read_only_env=optional.read_only_env,
+        effort_levels=optional.effort_levels,
         provider=provider[0],
         multi_provider=provider[1],
+        verification_run=optional.verification_run,
     )
 
 
@@ -192,15 +226,24 @@ def _label_fields(*, entry: Mapping[str, Any], key: str) -> tuple[str, str, str,
     return (resolved[0], resolved[1], resolved[2], command)
 
 
-def _launch_fields(
-    *, entry: Mapping[str, Any], key: str
-) -> tuple[tuple[str, ...], Mapping[str, str], Mapping[str, str], tuple[str, ...]] | str:
-    """The optional launch-distribution fields, each empty when absent.
+def _optional_fields(*, entry: Mapping[str, Any], key: str) -> _OptionalFields | str:
+    """Every optional field of an entry, each EMPTY when absent, or a refusal.
 
     An omitted `args` resolves to the empty tuple and an omitted `env` to the
     empty table, matching the manual form's own wording in
     `_acp_candidate_schema` -- the structured form is a spelling over that form,
     so the two must agree about what an omission means.
+
+    `verification_run` rides here rather than in its own step because it answers
+    exactly the same question the four launch fields do -- is this optional field
+    well-typed, and what does its absence mean -- and because its own step would
+    be a seventh `return` in the parser, which is the sort of accretion that turns
+    a readable railway into a ladder. An ABSENT key and an EMPTY one both resolve
+    to the empty string: the question the catalog's admission rule asks is whether
+    a run is NAMED, and a key present holding nothing names no more than an absent
+    one does. The refusal is reserved for a value that is not text at all -- a run
+    id written as a number would otherwise be silently stringified into a reference
+    nothing resolves, recorded as though the entry had been run.
     """
     tuples: list[tuple[str, ...]] = []
     for name in ("args", "effort_levels"):
@@ -215,7 +258,19 @@ def _launch_fields(
         if table is None:
             return f"{key}.{name} must be a table of string to string; got {entry[name]!r}"
         maps.append(table)
-    return (tuples[0], maps[0], maps[1], tuples[1])
+    verification = entry.get("verification_run", "")
+    if not isinstance(verification, str):
+        return (
+            f"{key}.verification_run must be text naming the recorded run that verified this "
+            f"entry's launch distribution, or absent; got {verification!r}"
+        )
+    return _OptionalFields(
+        args=tuples[0],
+        env=maps[0],
+        read_only_env=maps[1],
+        effort_levels=tuples[1],
+        verification_run=verification,
+    )
 
 
 def _cross_field_checks(

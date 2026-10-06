@@ -194,6 +194,10 @@ def test_each_wrong_typed_agent_field_refuses_naming_its_own_path() -> None:
         "read_only_env": {"read_only_env": [1]},
         "effort_levels": {"effort_levels": [3]},
         "multi_provider": {"multi_provider": "yes"},
+        # A run id written as a number is the one `verification_run` value an
+        # operator cannot have meant: stringified silently it would become a
+        # reference nothing resolves, recorded as though the entry had been run.
+        "verification_run": {"verification_run": 7},
     }
     for field, patch in cases.items():
         refusal = _agents(table={"local-acp": {**_COMPLETE_AGENT, **patch}})

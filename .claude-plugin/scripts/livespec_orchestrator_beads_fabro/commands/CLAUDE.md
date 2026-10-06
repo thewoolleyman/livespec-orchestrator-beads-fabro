@@ -368,6 +368,29 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   forms lives in `_acp_node_chains`, downstream of both, because the structured
   path needs the identity type `_acp_candidate_schema` owns: making the manual
   parser dispatch closes an import cycle.
+  THREE PROPERTIES OF THE AGENT CATALOG'S OWN POPULATION, each the repair of a
+  measured defect rather than a preference. It records TWO digests and they are
+  not interchangeable: `agent_catalog_digest` is COMPUTED over the entries in hand
+  and says which bytes this dispatch rendered, while `REGISTRY_SNAPSHOT_DIGEST` is
+  TRANSCRIBED and says which upstream document they were seeded from — a question
+  no self-digest can answer, and the one the record used to promise while carrying
+  only the first. The transcribed literal is CHECKABLE: `REGISTRY_SNAPSHOT_COMMIT`
+  plus the verbatim `agent.json` documents at
+  `tests/fixtures/acp_registry_snapshot/` are what
+  `test_acp_agent_catalog_registry_seed` re-derives it from, so the expected launch
+  bytes come from the registry's own `distribution` block rather than from a
+  literal that would pass for whatever the catalog happens to say. And a
+  REGISTRY-SEEDED entry ships only while it names the run that LAUNCHED it
+  (`verification_run`, filtered by `registry_entries_naming_a_verification_run`):
+  a transcribed command resolves, renders, journals and prices correctly whether
+  or not the program exists, so an unverified entry is indistinguishable from a
+  working one at every surface except the exec — which is how three entries
+  carried `@agentclientprotocol/<adapter>` package names no registry has ever
+  published, plus a snapshot DATE where the version belongs, until 2026-10-06.
+  `verification_run` is in the digest projection for that reason even though it
+  changes no rendered byte. The two BUILT-IN ids
+  (`BUILTIN_AGENT_IDS`) are exempt because ratification plus the live
+  golden-master gate is their verification.
 - `_config_acp` is the config-reading seam for the above — the dispatch target's
   catalogs and its per-node overlay layer, resolved from ONE read of the
   dispatcher block. `_dispatcher_acp_nodes.prepare_acp_nodes` resolves both ONCE
