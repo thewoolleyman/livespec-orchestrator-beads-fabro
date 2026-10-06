@@ -53,8 +53,10 @@ from _payload_grading import (
     IGNORED_NAMES,
     fidelity_message,
     incomplete_message,
+    inventory_gaps,
     missing_payload_paths,
     payload_fidelity_gaps,
+    source_inventory,
 )
 
 __all__: list[str] = [
@@ -411,6 +413,13 @@ def _retained_root(*, source_root: Path) -> Path | PayloadRefusal:
     # tell it from a finished payload, so the next invocation to find it would
     # execute an incomplete release. A bug-class exception gets the same
     # treatment for the same reason, while still propagating.
+    # BEFORE the copy, and that ordering is the fix. A post-copy walk of the
+    # source cannot see a member the copy omitted once the source has lost it
+    # too, and it misreads a source that legitimately moved on after a
+    # complete copy as a divergence. The inventory pins the release AS IT WAS
+    # at this instant, so the copy is graded against that and a later source
+    # change cannot affect the verdict either way.
+    inventory = source_inventory(root=source_root)
     root = holder / _STAGED_NAME
     published = False
     try:
@@ -433,7 +442,11 @@ def _retained_root(*, source_root: Path) -> Path | PayloadRefusal:
             return PayloadRefusal(
                 message=incomplete_message(root=source_root, missing=missing, subject="copy")
             )
-        gaps = payload_fidelity_gaps(source_root=source_root, payload_root=root)
+        # The pre-copy inventory decides. `payload_fidelity_gaps` stays the
+        # module's published size-based primitive with its own tests, but it is
+        # NOT what grades a provision any more: it answers the live-source
+        # question, which is the one with two wrong answers available.
+        gaps = inventory_gaps(inventory=inventory, payload_root=root)
         if gaps:
             return PayloadRefusal(message=fidelity_message(root=source_root, gaps=gaps))
         # LAST, so the record exists only for a payload that passed every grade

@@ -8,7 +8,13 @@ payload's source so an inherited tree is reused only when it came from the
 same place took `_payload.py` past its 250 LLOC hard ceiling, and the remedy
 for a file over the ceiling is cohesion decomposition, not line shaving.
 
-What this file adds is the guard that the cut STAYS cut, and the two grading
+It has since also become the home for the PRE-COPY INVENTORY's own boundary
+cases, which `_payload_grading` grew when cycle 14 moved provisioning off the
+post-copy size walk. Those are genuine behaviour tests rather than structural
+guards; they live here because the cycle-14 Red's bytes are frozen and this is
+its non-frozen sibling.
+
+What this file adds is the guard that the cut STAYS cut, and the grading
 cases whose only caller is now across a module boundary:
 
 - the module exists and publishes the four names `_payload` imports back,
@@ -27,9 +33,12 @@ missing module as a failed assertion rather than as a collection error.
 """
 
 import importlib
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 _BIN_DIR = Path(__file__).resolve().parents[2] / ".claude-plugin" / "scripts" / "bin"
 _GRADING_MODULE = _BIN_DIR / "_payload_grading.py"
@@ -116,6 +125,112 @@ def test_a_truncated_fidelity_report_says_so_and_a_short_one_does_not(tmp_path: 
 
     short = ("only-one.py",)
     assert "possibly more" not in grading.fidelity_message(root=tmp_path, gaps=short)
+
+
+def test_the_pre_copy_inventory_digests_content_rather_than_size(tmp_path: Path) -> None:
+    """Two files of EQUAL length and different content must digest differently."""
+    grading = _import(name="_payload_grading")
+
+    source = tmp_path / "source"
+    source.mkdir()
+    _ = (source / "a.py").write_text("AAAA", encoding="utf-8")
+    _ = (source / "b.py").write_text("BBBB", encoding="utf-8")
+
+    inventory = grading.source_inventory(root=source)
+
+    assert set(inventory) == {"a.py", "b.py"}
+    assert (source / "a.py").stat().st_size == (source / "b.py").stat().st_size
+    assert inventory["a.py"] != inventory["b.py"], (
+        "equal-length different-content files share a digest, so the inventory "
+        "cannot see the case it exists for"
+    )
+
+
+def test_a_member_that_cannot_be_read_reports_rather_than_raising(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The OSError arm: a refusal, never a traceback out of the launcher.
+
+    Forced through a seam on `Path.open` rather than with `chmod 0o000`,
+    because this suite runs as ROOT and root reads a mode-000 file — a
+    permission fixture here passes while measuring nothing, which is the
+    could-not-have-failed shape this repository's discipline rejects.
+
+    The sentinel must also not collide with any real digest, or an unreadable
+    member would match its own inventory entry and pass.
+    """
+    grading = _import(name="_payload_grading")
+
+    source = tmp_path / "source"
+    source.mkdir()
+    target = source / "denied.py"
+    _ = target.write_text("BBBB", encoding="utf-8")
+    # A second, readable member so the seam's pass-through arm runs too, and
+    # so the unreadable verdict is shown to be per-member rather than global.
+    _ = (source / "fine.py").write_text("CCCC", encoding="utf-8")
+    readable = grading.source_inventory(root=source)["denied.py"]
+
+    real_open = Path.open
+
+    def denying_open(self: Path, *args: Any, **kwargs: Any):
+        if self == target:
+            raise OSError(5, "simulated I/O error")
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", denying_open)
+    denied = grading.source_inventory(root=source)
+
+    assert (
+        denied["denied.py"] == "unreadable"
+    ), f"an unreadable member did not report as such: {denied}"
+    assert denied["denied.py"] != readable, (
+        "the unreadable sentinel collides with a real digest, so an unreadable "
+        "member would match its own inventory entry"
+    )
+    assert (
+        denied["fine.py"] != "unreadable"
+    ), "one unreadable member made every member report unreadable"
+
+
+def test_a_copy_that_differs_at_equal_length_is_reported_and_the_report_is_capped(
+    tmp_path: Path,
+) -> None:
+    """Size equality cannot see this; the cap keeps a refusal readable."""
+    grading = _import(name="_payload_grading")
+
+    source = tmp_path / "source"
+    source.mkdir()
+    copy = tmp_path / "copy"
+    copy.mkdir()
+    # One more divergence than the cap, every one at the SAME LENGTH.
+    total = grading.FIDELITY_REPORT_LIMIT + 1
+    for index in range(total):
+        _ = (source / f"file-{index}.py").write_text("AAAA", encoding="utf-8")
+        _ = (copy / f"file-{index}.py").write_text("BBBB", encoding="utf-8")
+
+    inventory = grading.source_inventory(root=source)
+    gaps = grading.inventory_gaps(inventory=inventory, payload_root=copy)
+
+    assert (
+        len(gaps) == grading.FIDELITY_REPORT_LIMIT
+    ), f"the report was not capped at {grading.FIDELITY_REPORT_LIMIT}: {gaps}"
+    sizes = {(source / name).stat().st_size == (copy / name).stat().st_size for name in inventory}
+    assert sizes == {True}, "fixture: the divergences are not all at equal length"
+
+
+def test_an_inventory_the_payload_reproduces_exactly_reports_no_gaps(tmp_path: Path) -> None:
+    """The control: a faithful copy must not be refused."""
+    grading = _import(name="_payload_grading")
+
+    source = tmp_path / "source"
+    (source / "nested").mkdir(parents=True)
+    _ = (source / "a.py").write_text("AAAA", encoding="utf-8")
+    _ = (source / "nested" / "b.py").write_text("BBBBBB", encoding="utf-8")
+    copy = tmp_path / "copy"
+    _ = shutil.copytree(source, copy)
+
+    inventory = grading.source_inventory(root=source)
+    assert grading.inventory_gaps(inventory=inventory, payload_root=copy) == ()
 
 
 def test_an_incomplete_message_names_both_the_subject_and_what_is_missing(
