@@ -72,7 +72,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import workflow_graph_path
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import plugin_root
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
+    executing_payload_root,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion import (
     DISPATCH_PROVIDERS,
     active_provider_exhaustion,
@@ -321,7 +323,10 @@ def _manifest_path(*, repo: Path, directory: str | None) -> Path:
     repo_local = repo.joinpath(*_RESERVED_SUBPATH)
     if repo_local.is_file():
         return repo_local
-    return plugin_root().joinpath(*_RESERVED_SUBPATH)
+    # The bundled fallback is an ASSET read, so it resolves under the payload
+    # this process is executing rather than under the installation, which the
+    # harness may already have evicted.
+    return executing_payload_root().joinpath(*_RESERVED_SUBPATH)
 
 
 def _read(*, path: Path) -> str | None:

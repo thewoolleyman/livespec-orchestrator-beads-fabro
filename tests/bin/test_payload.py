@@ -355,3 +355,58 @@ def test_releasing_a_payload_this_process_does_not_own_removes_nothing(
     assert unowned.holder is None
     payload.release_payload(payload=unowned)
     assert unowned.root.is_dir(), "a release removed a tree this process never created"
+
+
+def test_the_re_exec_argv_is_re_pointed_at_the_payloads_own_copy(tmp_path: Path) -> None:
+    """The program moves to its counterpart; the operands are left alone."""
+    payload = _import_payload()
+    source_root = tmp_path / "install"
+    payload_root = tmp_path / "payload"
+    program = source_root / "scripts" / "bin" / "dispatcher.py"
+    program.parent.mkdir(parents=True)
+    _ = program.write_text("", encoding="utf-8")
+
+    rewritten = payload.payload_relative_argv(
+        argv=[str(program), "loop", "--repo", str(source_root)],
+        source_root=source_root,
+        payload_root=payload_root,
+    )
+    assert rewritten[0] == str(payload_root / "scripts" / "bin" / "dispatcher.py")
+    # Operands belong to the caller and may legitimately name the evicted tree.
+    assert rewritten[1:] == ["loop", "--repo", str(source_root)]
+
+
+@pytest.mark.parametrize("argv", [[], ["-c", "print(1)"], ["/elsewhere/other.py"]])
+def test_an_argv_with_no_counterpart_in_the_payload_is_unchanged(
+    tmp_path: Path, argv: list[str]
+) -> None:
+    """Empty argv, a `-c` invocation, and a program in some other tree."""
+    payload = _import_payload()
+    assert (
+        payload.payload_relative_argv(
+            argv=argv, source_root=tmp_path / "install", payload_root=tmp_path / "payload"
+        )
+        == argv
+    )
+
+
+def test_an_unresolvable_program_path_leaves_the_argv_unchanged(tmp_path: Path) -> None:
+    """A cosmetic path fault must not become a dead launcher.
+
+    A symlink loop is the one unresolvable shape that is deterministic on
+    every supported interpreter; which exception `resolve()` raises for it
+    differs by version, which is why the handler names all three.
+    """
+    payload = _import_payload()
+    source_root = tmp_path / "install"
+    source_root.mkdir()
+    (tmp_path / "loop-a").symlink_to(tmp_path / "loop-b")
+    (tmp_path / "loop-b").symlink_to(tmp_path / "loop-a")
+
+    argv = [str(tmp_path / "loop-a"), "loop"]
+    assert (
+        payload.payload_relative_argv(
+            argv=argv, source_root=source_root, payload_root=tmp_path / "payload"
+        )
+        == argv
+    )

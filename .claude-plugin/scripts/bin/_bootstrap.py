@@ -28,7 +28,12 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import cast
 
-from _payload import PayloadRefusal, release_payload, retain_payload
+from _payload import (
+    PayloadRefusal,
+    payload_relative_argv,
+    release_payload,
+    retain_payload,
+)
 
 __all__: list[str] = ["bootstrap"]
 
@@ -61,11 +66,6 @@ _PAYLOAD_FAIL_EXIT = 3
 _PLAN_UNATTENDED_ENV_NAME = "LIVESPEC_PLAN_UNATTENDED"
 # `env` is the POSIX command that runs its own operand with NAME=value applied.
 _ENV_COMMAND = "env"
-# What a native plugin install exports as the plugin root, and therefore what
-# every packaged asset read resolves through (`_dispatcher_paths.plugin_root`).
-# A RETAINED payload repoints it, so an asset read lands in the copy that
-# survives eviction rather than in the harness cache that may already be gone.
-_PLUGIN_ROOT_ENV_NAME = "CLAUDE_PLUGIN_ROOT"
 
 
 def bootstrap(*, required: tuple[str, ...] = _REQUIRED_CREDENTIALS) -> None:
@@ -87,9 +87,8 @@ def bootstrap(*, required: tuple[str, ...] = _REQUIRED_CREDENTIALS) -> None:
             "livespec-orchestrator-beads-fabro requires Python 3.10+; install via uv.\n"
         )
         raise SystemExit(127)
-    payload = retain_payload(
-        source_root=Path(__file__).resolve().parent.parent.parent, environ=os.environ
-    )
+    source_root = Path(__file__).resolve().parent.parent.parent
+    payload = retain_payload(source_root=source_root, environ=os.environ)
     if isinstance(payload, PayloadRefusal):
         _ = sys.stderr.write(payload.message + "\n")
         raise SystemExit(_PAYLOAD_FAIL_EXIT)
@@ -97,13 +96,16 @@ def bootstrap(*, required: tuple[str, ...] = _REQUIRED_CREDENTIALS) -> None:
         path_str = str(path)
         if path_str not in sys.path:
             sys.path.insert(0, path_str)
-    if payload.retained:
-        os.environ[_PLUGIN_ROOT_ENV_NAME] = str(payload.root)
     # Registered BEFORE the credential self-heal can re-exec, and keyed on the
     # payload this process OWNS, so the tree outlives every child the
     # invocation waits on and is removed exactly once, by its creator.
     _ = atexit.register(release_payload, payload=payload)
-    _self_heal_credentials(required=_effective_required(required=required, cwd=Path.cwd()))
+    _self_heal_credentials(
+        required=_effective_required(required=required, cwd=Path.cwd()),
+        argv=payload_relative_argv(
+            argv=sys.argv, source_root=source_root, payload_root=payload.root
+        ),
+    )
 
 
 def _tenant_secret_required(*, cwd: Path) -> bool:
@@ -212,13 +214,19 @@ def _marker_forwarded_argv(
     ]
 
 
-def _self_heal_credentials(*, required: tuple[str, ...] = _REQUIRED_CREDENTIALS) -> None:
+def _self_heal_credentials(
+    *, required: tuple[str, ...] = _REQUIRED_CREDENTIALS, argv: list[str] | None = None
+) -> None:
     """Decide-and-perform the credential self-heal at the bin chokepoint.
 
     The pure decision lives in the vendored `livespec_runtime.credentials`;
     this thin performer supplies the live inputs (parsed wrapper, environ,
     interpreter, argv) and carries out the prescribed impure act.
     `required` is the calling wrapper's own secret set (see `bootstrap`).
+
+    `argv` is the command the re-exec should rebuild, defaulting to this
+    process's own. `bootstrap()` passes the PAYLOAD-relative form, so a
+    wrapper launched around an eviction still has a program file to open.
     """
     # Deferred imports: the vendored tree is on sys.path only AFTER
     # `bootstrap()`'s inserts run.
@@ -238,7 +246,7 @@ def _self_heal_credentials(*, required: tuple[str, ...] = _REQUIRED_CREDENTIALS)
         credential_wrapper=credential_wrapper,
         environ=os.environ,
         executable=sys.executable,
-        argv=sys.argv,
+        argv=sys.argv if argv is None else argv,
     )
     match decision:
         case Proceed():

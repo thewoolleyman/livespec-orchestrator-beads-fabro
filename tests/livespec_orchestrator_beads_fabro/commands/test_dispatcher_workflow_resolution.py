@@ -54,7 +54,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_wrapper i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     check_credential_env,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import workflow_toml
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
+    executing_payload_root,
+    workflow_toml,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
     candidate_dispatcher_bin,
 )
@@ -119,13 +122,31 @@ def test_workflow_toml_resolves_from_plugin_root(monkeypatch: pytest.MonkeyPatch
     assert (resolved.parent / "workflow.fabro").is_file()
 
 
-def test_workflow_toml_honors_plugin_root_env_override(
+def test_workflow_toml_resolves_the_bundle_under_the_executing_payload(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A non-empty CLAUDE_PLUGIN_ROOT wins (the flattened install-cache anchor)."""
+    """The bundled fallback follows the EXECUTING code, not `CLAUDE_PLUGIN_ROOT`.
+
+    This used to assert the opposite — that a non-empty `CLAUDE_PLUGIN_ROOT`
+    won — and the change is deliberate, driven by work-item `bd-ib-mtuqxb`
+    (`tests/bin/test_payload_candidate_and_credential_boundary.py`). Reading an
+    ASSET through the installed-root anchor is what made a dispatch lose its
+    workflow payload when the harness evicted the cache mid-run, so asset
+    resolution moved to `executing_payload_root`.
+
+    `CLAUDE_PLUGIN_ROOT` itself is NOT retired and is not merely ignored: it
+    still answers "which installation is present", which is the question the
+    self-update canary, the minimum-release floor and the registered-install
+    currency finding ask, and `plugin_root` still reads it — asserted in
+    `test_dispatcher_paths.py`. Setting it here and watching the bundled
+    manifest ignore it is the assertion that the two questions are now
+    separate.
+    """
     monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(tmp_path))
     resolved = workflow_toml(args=argparse.Namespace(workflow=None))
-    assert resolved == tmp_path.joinpath(*_WORKFLOW_SUBPATH)
+    assert resolved == executing_payload_root().joinpath(*_WORKFLOW_SUBPATH)
+    assert resolved != tmp_path.joinpath(*_WORKFLOW_SUBPATH)
+    assert resolved.is_file(), "the bundled workflow must exist under the executing payload"
 
 
 def test_workflow_override_arg_wins() -> None:
