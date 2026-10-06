@@ -34,6 +34,7 @@ __all__: list[str] = [
     "IDENTITY_OBSERVATION_OPTION",
     "IDENTITY_OBSERVATION_PAYLOAD_KEY",
     "add_codex_cred_status_arguments",
+    "add_credential_selection_arguments",
     "identity_observation_for",
 ]
 
@@ -41,9 +42,44 @@ IDENTITY_OBSERVATION_OPTION = "--observe-identity-state"
 IDENTITY_OBSERVATION_PAYLOAD_KEY = "identity_observation"
 
 
+def add_credential_selection_arguments(*, parser: argparse.ArgumentParser) -> None:
+    """Declare the selection context the credential requirement is resolved FOR.
+
+    Shared by `codex-cred-status` and `codex-cred-refresh` so the two cannot
+    offer different ways to name the same selection. Both default to the
+    selection an ordinary dispatch makes, so an operator who passes neither flag
+    gets the reading they got before these existed.
+    """
+    _ = parser.add_argument(
+        "--workflow-name",
+        dest="workflow_name",
+        default=None,
+        metavar="<variant>",
+        help=(
+            "Resolve the credential requirement for this registered workflow "
+            "variant instead of the reserved one, so the figure matches the "
+            "dispatch being predicted. An unregistered name is refused rather "
+            "than sized off the reserved graph."
+        ),
+    )
+    _ = parser.add_argument(
+        "--review-fix-cap",
+        dest="review_fix_cap",
+        default=None,
+        type=int,
+        metavar="<n>",
+        help=(
+            "Resolve against this EFFECTIVE review-fix cap — what a per-item "
+            "`review-fix-cap:<n>` label renders — instead of the repository "
+            "default, which under-reports the floor for a labelled item."
+        ),
+    )
+
+
 def add_codex_cred_status_arguments(*, parser: argparse.ArgumentParser) -> None:
     """Declare `codex-cred-status`'s flags, including the observation opt-in."""
     _ = parser.add_argument("--json", dest="as_json", action="store_true")
+    add_credential_selection_arguments(parser=parser)
     _ = parser.add_argument(
         IDENTITY_OBSERVATION_OPTION,
         dest="observe_identity_state",
