@@ -62,6 +62,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition i
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
+# The review-fix VISIT cap the shipped default renders -- `DEFAULT_REVIEW_FIX_CAP`
+# of three repair rounds plus the initial review visit. Immaterial to what these
+# cases measure (none of their graphs guards an edge on it), but it is a real
+# rendered value rather than an invented one, so a reader is not left wondering
+# whether the number carries meaning here.
+_REVIEW_FIX_VISIT_CAP = 4
+
+
 _REPOSITORY = "livespec-orchestrator-beads-fabro"
 
 # The committed run-config shape the overlay rewrites and appends to: the
@@ -424,6 +432,7 @@ def _overlay_for(*, tmp_path: Path, repo: Path, rendering: str) -> str:
         token=lambda: _FAKE_GITHUB_TOKEN,
         git_author=GitAuthor(name="Operator", email="operator@example.com"),
         proof_rendering=rendering,
+        review_fix_visit_cap=_REVIEW_FIX_VISIT_CAP,
     )
     assert error is None
     return overlay.read_text(encoding="utf-8")

@@ -42,6 +42,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projecti
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_schema import (
     DEFAULT_BRANCH_KEY,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_overrides import (
+    review_fix_visit_cap_for,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
     DEFAULT_MERGE_ON_REVIEW_CAP,
     DEFAULT_REVIEW_FIX_CAP,
@@ -218,7 +221,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
         # degrades naming the key rather than cloning a moving branch tip.
         janitor_core_repo_url=core.repo_url,
         janitor_core_ref=core.ref,
-        review_fix_visit_cap=review_fix_cap + 1,
+        review_fix_visit_cap=review_fix_visit_cap_for(review_fix_cap=review_fix_cap),
         merge_on_review_cap_outcome=(
             "succeeded" if merge_on_review_cap else _MERGE_ON_REVIEW_CAP_DISABLED_OUTCOME
         ),

@@ -40,6 +40,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_early_renewal import (
     CodexRenewalOutcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_deadline import (
+    CredentialLifetimeRequirement,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement import (
+    REVIEW_FIX_VISIT_CAP_INPUT,
+    credential_lifetime_requirement_for,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     materialize_overlay,
 )
@@ -62,6 +69,23 @@ from livespec_orchestrator_beads_fabro.errors import BeadsCommandError
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 from tests.conftest import ResolveAcpNodes
+
+# The run budget these cases are POSITIONED AGAINST, and the figure the retired
+# `CODEX_FRESHNESS_RUN_BUDGET_SECONDS` module constant carried. Kept as a fixed
+# local so each case below keeps asserting what it was written to assert: the
+# budget is now RESOLVED PER DISPATCH from the selected workflow, and that
+# resolution has its own coverage in `test_dispatcher_credential_requirement.py`,
+# so what these cases need from it is one representative figure rather than the
+# production derivation they are not about.
+_RUN_BUDGET_SECONDS = 14400
+
+# The review-fix VISIT cap the shipped default renders -- `DEFAULT_REVIEW_FIX_CAP`
+# of three repair rounds plus the initial review visit. Immaterial to what these
+# cases measure (none of their graphs guards an edge on it), but it is a real
+# rendered value rather than an invented one, so a reader is not left wondering
+# whether the number carries meaning here.
+_REVIEW_FIX_VISIT_CAP = 4
+
 
 # A canned fleet manifest so `resolve_sibling_clones` (which runs before
 # the codex projection inside `materialize_overlay`) never shells out to a
@@ -114,6 +138,26 @@ _FAKE_SNAPSHOT = json.dumps(
     {"auth_mode": "chatgpt", "tokens": {"access_token": "a", "refresh_token": "sentinel"}},
     indent=2,
 )
+
+
+def _required_floor_for(*, committed: Path) -> int:
+    """The floor the PRODUCTION derivation resolves for one committed workflow.
+
+    Read off the derivation rather than written as a literal. The refusal under
+    test used to quote `18000` -- the retired fixed budget plus the margin -- and
+    a literal here would now assert a figure no configuration produces, while
+    still passing for any build that happened to agree with it. These fixtures
+    declare no `[run.checkpoint]`, so the derivation takes the engine's stock
+    commit budget: exactly the kind of detail a hand-maintained number gets
+    wrong.
+    """
+    requirement = credential_lifetime_requirement_for(
+        committed=committed,
+        block={},
+        policy_inputs={REVIEW_FIX_VISIT_CAP_INPUT: _REVIEW_FIX_VISIT_CAP},
+    )
+    assert isinstance(requirement, CredentialLifetimeRequirement), requirement
+    return requirement.required_seconds
 
 
 def _stood_in_renewal() -> CodexRenewalOutcome:
@@ -521,7 +565,7 @@ def test_project_codex_auth_refuses_when_host_credential_missing(
 ) -> None:
     """A missing host credential refuses with an actionable `codex login` message."""
     monkeypatch.setattr(_dispatcher_codex_auth, "read_host_codex_auth", lambda: None)
-    result = project_codex_auth(clock=lambda: 1_000_000)
+    result = project_codex_auth(clock=lambda: 1_000_000, run_budget_seconds=_RUN_BUDGET_SECONDS)
     assert isinstance(result, CodexProjectionRefusal)
     assert "codex login" in result.message
 
@@ -539,7 +583,7 @@ def test_project_codex_auth_refuses_when_credential_is_stale(
     # The projection spends one bounded renewal before refusing; stand it in so
     # the hermetic tier never spawns a real `codex app-server`.
     monkeypatch.setattr(_dispatcher_codex_auth, "renew_host_codex_credential", _stood_in_renewal)
-    result = project_codex_auth(clock=lambda: now)
+    result = project_codex_auth(clock=lambda: now, run_budget_seconds=_RUN_BUDGET_SECONDS)
     assert isinstance(result, CodexProjectionRefusal)
     assert "codex login" in result.message
 
@@ -553,7 +597,7 @@ def test_project_codex_auth_projects_snapshot_when_fresh(
     monkeypatch.setattr(
         _dispatcher_codex_auth, "read_host_codex_auth", lambda: _auth_json_with_exp(exp=far_future)
     )
-    result = project_codex_auth(clock=lambda: now)
+    result = project_codex_auth(clock=lambda: now, run_budget_seconds=_RUN_BUDGET_SECONDS)
     assert isinstance(result, str)
     projected = json.loads(result)
     # The refresh token was replaced with the inert sentinel; the real
@@ -582,7 +626,7 @@ def test_project_codex_auth_accepts_token_outliving_a_realistic_run(
         "read_host_codex_auth",
         lambda: _auth_json_with_exp(exp=now + six_hours),
     )
-    result = project_codex_auth(clock=lambda: now)
+    result = project_codex_auth(clock=lambda: now, run_budget_seconds=_RUN_BUDGET_SECONDS)
     assert isinstance(result, str)
 
 
@@ -640,7 +684,7 @@ def test_the_one_bounded_renewal_is_the_gate_and_never_the_overlay(
     monkeypatch.setattr(_dispatcher_codex_auth, "renew_host_codex_credential", _record_renewal)
 
     # The PRE-CLAIM gate's decision function owns the renewal: it spends one.
-    gated = project_codex_auth(clock=lambda: now)
+    gated = project_codex_auth(clock=lambda: now, run_budget_seconds=_RUN_BUDGET_SECONDS)
     assert isinstance(gated, CodexProjectionRefusal)
     assert spent == ["requested"]
 
@@ -653,6 +697,7 @@ def test_the_one_bounded_renewal_is_the_gate_and_never_the_overlay(
         dispatch_id="disp-1",
         token=lambda: _FAKE_GITHUB_TOKEN,
         git_author=_GIT_AUTHOR,
+        review_fix_visit_cap=_REVIEW_FIX_VISIT_CAP,
     )
     assert error is not None
     assert not overlay.exists()
@@ -662,7 +707,7 @@ def test_the_one_bounded_renewal_is_the_gate_and_never_the_overlay(
     # NOT as an authentication verdict -- this surface asked nothing about
     # authentication, so it must claim nothing about it.
     assert str(one_hour) in error
-    assert "18000 seconds" in error
+    assert f"{_required_floor_for(committed=committed)} seconds" in error
     assert "NOT a claim that authentication has failed" in error
     # The remedy still names the credential-source host and keeps a human login
     # conditioned on explicit provider evidence.
@@ -692,6 +737,7 @@ def test_materialize_overlay_refuses_on_missing_host_credential(
         dispatch_id="disp-1",
         token=lambda: _FAKE_GITHUB_TOKEN,
         git_author=_GIT_AUTHOR,
+        review_fix_visit_cap=_REVIEW_FIX_VISIT_CAP,
     )
     assert error is not None
     assert "codex login" in error
@@ -724,6 +770,7 @@ def test_materialize_overlay_writes_codex_projection_when_fresh(
         dispatch_id="disp-1",
         token=lambda: _FAKE_GITHUB_TOKEN,
         git_author=_GIT_AUTHOR,
+        review_fix_visit_cap=_REVIEW_FIX_VISIT_CAP,
     )
     assert error is None
     rendered = overlay.read_text(encoding="utf-8")
@@ -758,6 +805,7 @@ def test_materialize_overlay_refuses_a_config_without_a_run_environment_id(
         dispatch_id="disp-1",
         token=lambda: _FAKE_GITHUB_TOKEN,
         git_author=_GIT_AUTHOR,
+        review_fix_visit_cap=_REVIEW_FIX_VISIT_CAP,
     )
     assert error is not None
     assert "is not materializable" in error
@@ -992,3 +1040,50 @@ def test_codex_adapter_appends_model_overrides_for_a_pinned_tier() -> None:
         '"model_reasoning_effort":"high","sandbox_mode":"danger-full-access"}\' '
         "INITIAL_AGENT_MODE=agent-full-access /opt/livespec/codex-acp/bin/codex-acp"
     )
+
+
+def test_the_overlay_refuses_when_the_requirement_cannot_be_resolved(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A requirement the derivation cannot establish refuses the overlay.
+
+    The POST-CLAIM half of the fail-closed rule. This surface has no stage
+    behind it that could report a workflow fault more specifically -- it is
+    about to write the mode-600 overlay a sandbox will read -- so both
+    no-requirement members route the same way here, through
+    `requirement_refusal_text`, and neither becomes a default.
+
+    The fixture declares no `[workflow]` graph, so there is no graph whose
+    allowance could be derived. The control is every other case in this module:
+    the same materializer over the same fixture WITH a graph writes the overlay,
+    so the refusal is the missing derivation rather than a materializer that
+    refuses everything.
+    """
+    committed = tmp_path / "workflow.toml"
+    _ = committed.write_text('_version = 1\n\n[run.environment]\nid = "livespec-ci"\n')
+    overlay = tmp_path / "overlay.toml"
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", _FAKE_TOKEN)
+    monkeypatch.setattr(
+        _dispatcher_sibling_clones, "fetch_fleet_manifest_text", lambda: _FLEET_MANIFEST_TEXT
+    )
+    far_future = 2_000_000_000
+    monkeypatch.setattr(
+        _dispatcher_codex_auth, "read_host_codex_auth", lambda: _auth_json_with_exp(exp=far_future)
+    )
+
+    error = materialize_overlay(
+        committed=committed,
+        overlay=overlay,
+        repo=tmp_path / "repo",
+        work_item_id="wi-1",
+        dispatch_id="disp-1",
+        token=lambda: _FAKE_GITHUB_TOKEN,
+        git_author=_GIT_AUTHOR,
+        review_fix_visit_cap=_REVIEW_FIX_VISIT_CAP,
+    )
+
+    assert error is not None
+    assert "declares no [workflow] graph" in error
+    # Fail CLOSED: no overlay file, so nothing a sandbox could read was written.
+    assert not overlay.exists()
