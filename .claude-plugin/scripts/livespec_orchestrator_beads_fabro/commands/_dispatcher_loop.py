@@ -187,6 +187,10 @@ def _dispatch_one_locked(
         work_item_id=item.id,
         dispatch_id=identity.dispatch_id,
         token=token_supplier,
+        # The review-fix guard THIS plan renders, so the overlay's credential
+        # requirement is derived from the loop bound this dispatch actually runs
+        # rather than from the committed default a bare `fabro run` would see.
+        review_fix_visit_cap=plan.review_fix_visit_cap,
         graph_override=recorded.payload.graph,
         # The ONE contract the plan already resolved, projected once more: the
         # committed run config's prepare commands template these values as

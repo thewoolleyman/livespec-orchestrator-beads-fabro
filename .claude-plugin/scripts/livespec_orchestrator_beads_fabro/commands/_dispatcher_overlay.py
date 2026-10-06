@@ -36,6 +36,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
     plugin_cache_gate_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_toml_read import (
+    toml_section_string,
+)
 
 __all__: list[str] = [
     "CORE_PLUGIN_ROOT_ENV_VAR",
@@ -141,29 +144,6 @@ def escape_minijinja_literal(*, text: str) -> str:
     )
 
 
-def _toml_section_string(*, text: str, section: str, key: str) -> str | None:
-    """Read one basic-string value from one TOML table, regex-scoped.
-
-    A full TOML parser is unavailable on the pinned Python (tomllib is
-    3.11+; the family vendors no TOML library), and the committed run
-    config is repo-owned with a stable shape, so a section-scoped regex
-    is sufficient and dependency-free.
-    """
-    section_pattern = re.compile(
-        r"(?ms)^\[" + re.escape(section) + r"\][ \t]*\r?$(?P<body>.*?)(?=^\[|\Z)"
-    )
-    section_match = section_pattern.search(text)
-    if section_match is None:
-        return None
-    key_pattern = re.compile(
-        r"(?m)^" + re.escape(key) + r'[ \t]*=[ \t]*"(?P<value>[^"]*)"[ \t]*\r?$'
-    )
-    key_match = key_pattern.search(section_match.group("body"))
-    if key_match is None:
-        return None
-    return key_match.group("value")
-
-
 def workflow_graph_path(*, committed_text: str, workflow_dir: Path) -> Path | None:
     """The absolute graph path a committed run config declares; None when absent.
 
@@ -171,7 +151,7 @@ def workflow_graph_path(*, committed_text: str, workflow_dir: Path) -> Path | No
     timeouts into the per-dispatch payload — so both readers resolve the
     same declared file rather than each assuming the conventional name.
     """
-    graph_value = _toml_section_string(text=committed_text, section="workflow", key="graph")
+    graph_value = toml_section_string(text=committed_text, section="workflow", key="graph")
     if graph_value is None:
         return None
     return _absolute_graph(graph_value=graph_value, workflow_dir=workflow_dir)
@@ -219,8 +199,8 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     `_dispatcher_factory_provenance` for that rationale and for why the Fabro
     run id cannot serve.
     """
-    graph_value = _toml_section_string(text=committed_text, section="workflow", key="graph")
-    environment_id = _toml_section_string(text=committed_text, section="run.environment", key="id")
+    graph_value = toml_section_string(text=committed_text, section="workflow", key="graph")
+    environment_id = toml_section_string(text=committed_text, section="run.environment", key="id")
     if graph_value is None or environment_id is None:
         return None
     resolved_graph = (
@@ -368,7 +348,7 @@ def _rewrite_fabro_sandbox_image(
     if fabro_sandbox_image is None:
         return text
     section = f"environments.{environment_id}.image"
-    committed_image = _toml_section_string(text=text, section=section, key="docker")
+    committed_image = toml_section_string(text=text, section=section, key="docker")
     if committed_image is None:
         return None
     needle = f'docker = "{committed_image}"'

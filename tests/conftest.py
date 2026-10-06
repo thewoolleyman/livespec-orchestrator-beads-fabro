@@ -67,7 +67,7 @@ def _hermetic_claude_credential_probe(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(
         "livespec_orchestrator_beads_fabro.commands."
-        "_dispatcher_credentials.probe_claude_credential",
+        "_dispatcher_credential_env.probe_claude_credential",
         successful_probe,
     )
     monkeypatch.setattr(
