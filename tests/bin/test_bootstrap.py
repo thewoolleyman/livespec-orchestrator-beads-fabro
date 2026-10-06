@@ -32,6 +32,7 @@ _BUNDLE_SCRIPTS = _BIN_DIR.parent
 _BUNDLE_VENDOR = _BUNDLE_SCRIPTS / "_vendor"
 _EXIT_CODE_VERSION_MISMATCH = 127
 _EXIT_CODE_CREDENTIAL_FAIL = 3
+_EXIT_CODE_PAYLOAD_FAIL = 3
 
 
 def _import_bootstrap() -> object:
@@ -122,6 +123,39 @@ def test_bootstrap_repoints_the_plugin_root_at_a_retained_payload(
     bootstrap_module.bootstrap()  # type: ignore[attr-defined]
     assert os.environ["CLAUDE_PLUGIN_ROOT"] == str(retained_root)
     assert str(retained_root / "scripts") in sys.path
+
+
+def test_bootstrap_refuses_an_unusable_payload_before_the_credential_self_heal(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A payload refusal must stop the launcher, and stop it FIRST.
+
+    Ordering is the substance of the assertion, not decoration: the self-heal
+    is replaced with one that records being reached, and it must not be. A
+    launcher that ran the credential step first would re-exec the whole process
+    through the credential wrapper before discovering it has no code to run.
+    """
+    bootstrap_module = _import_bootstrap()
+    payload_module = importlib.import_module("_payload")
+    reached: list[str] = []
+    monkeypatch.setattr(
+        bootstrap_module,
+        "_self_heal_credentials",
+        lambda **_kwargs: reached.append("self-heal"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        bootstrap_module,
+        "retain_payload",
+        lambda **_kwargs: payload_module.PayloadRefusal(message="the payload is unusable"),
+        raising=False,
+    )
+    monkeypatch.setattr(sys, "version_info", (3, 12, 0, "final", 0))
+    with pytest.raises(SystemExit) as excinfo:
+        bootstrap_module.bootstrap()  # type: ignore[attr-defined]
+    assert excinfo.value.code == _EXIT_CODE_PAYLOAD_FAIL
+    assert "the payload is unusable" in capsys.readouterr().err
+    assert reached == [], "the credential self-heal ran despite an unusable payload"
 
 
 # --------------------------------------------------------------------------
