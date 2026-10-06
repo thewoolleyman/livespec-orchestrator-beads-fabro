@@ -41,6 +41,7 @@ defeat the whole point.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
 from collections.abc import MutableMapping, Sequence
@@ -88,11 +89,24 @@ _STAGED_NAME = "payload"
 # one place an operator reads these directories by eye.
 _RELEASE_MANIFEST = "plugin.json"
 _RELEASE_KEY = "version"
-# What marks the tree one level above the plugin root as this plugin's own
-# source repository rather than a cache directory that merely contains an
-# install. Both are files the repository builds with and a released payload
-# never ships.
-_SOURCE_REPOSITORY_MARKERS = ("pyproject.toml", "justfile")
+# What marks the tree one level above the plugin root as THIS plugin's own
+# source repository. Presence of a project file is not enough: an INSTALLED
+# tree that merely sits beside an unrelated `pyproject.toml` had retention
+# switched off and went back to executing an evictable source — silently, which
+# is the direction that re-opens the bug this module exists for.
+#
+# So the marker must NAME this project. `pyproject.toml` is read as text
+# because the 3.10 floor ships no TOML parser, and the expected name is derived
+# from the package directory already required above rather than restated as a
+# second literal that could drift from it.
+_SOURCE_PROJECT_FILE = "pyproject.toml"
+_PACKAGE_DIRECTORY = "livespec_orchestrator_beads_fabro"
+_SOURCE_PROJECT_NAME = _PACKAGE_DIRECTORY.replace("_", "-")
+# A source checkout keeps the plugin root at this name; an install flattens it
+# to the cache directory, which is named for the build. Both conditions must
+# hold, so an ambiguous tree is RETAINED — the safe direction here, since an
+# unnecessary retention costs one copy while a missed one restores the defect.
+_SOURCE_PLUGIN_ROOT_NAME = ".claude-plugin"
 # Byte-compiled caches are reproducible from the sources beside them, so they
 # are the one thing the copy leaves behind.
 _IGNORED_NAMES = ("__pycache__",)
@@ -295,11 +309,35 @@ def harness_managed(*, source_root: Path) -> bool:
 
     PUBLIC because the answer is the whole precondition for retention, and a
     caller deciding whether to expect a retained payload needs to ask the same
-    question the same way. ANY repository marker above the root is enough to
-    answer "checkout": an unnecessary retention would relocate a developer's
-    own tree, so the ambiguous case declines rather than acts.
+    question the same way.
+
+    "Checkout" requires BOTH that the plugin root carries the name a checkout
+    gives it and that the tree above it is THIS project's repository, named as
+    such in its own `pyproject.toml`. Either alone is too weak: a cache
+    directory can sit beside any project's files, and a directory can be
+    called anything. Anything short of both is treated as harness-managed,
+    because an unnecessary retention costs one copy while a missed one puts a
+    live dispatch back on an evictable tree.
     """
-    return not any((source_root.parent / marker).exists() for marker in _SOURCE_REPOSITORY_MARKERS)
+    if source_root.name != _SOURCE_PLUGIN_ROOT_NAME:
+        return True
+    return not _declares_this_project(project_file=source_root.parent / _SOURCE_PROJECT_FILE)
+
+
+def _declares_this_project(*, project_file: Path) -> bool:
+    """Whether `project_file` is THIS project's `pyproject.toml`.
+
+    Read as TEXT: the 3.10 floor ships no `tomllib`, and vendoring a parser
+    into the pre-import launcher to answer one question would be its own
+    hazard. The match is on the `name = "<project>"` assignment, which a
+    dependency entry of the same name does not produce.
+    """
+    try:
+        text = project_file.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    needle = f'name = "{_SOURCE_PROJECT_NAME}"'
+    return any(line.strip() == needle for line in text.splitlines())
 
 
 def _payload_at(*, root: Path, retained: bool, holder: Path | None = None) -> RetainedPayload:
@@ -336,7 +374,22 @@ def _retained_root(*, source_root: Path) -> Path | PayloadRefusal:
         # BEFORE `mkdtemp`, so a refused provision creates no private directory
         # at all rather than one it then has to clean up.
         return release
-    holder = Path(tempfile.mkdtemp(prefix=f"{_PAYLOAD_PREFIX}{release}-"))
+    destination = tempfile.gettempdir()
+    try:
+        holder = Path(tempfile.mkdtemp(prefix=f"{_PAYLOAD_PREFIX}{release}-"))
+    except OSError as failure:
+        # INSIDE the boundary: an unusable temporary destination is an
+        # environment fault like any other, and it used to raise straight out
+        # of the launcher as `NotADirectoryError`.
+        return PayloadRefusal(
+            message=(
+                f"ERROR: livespec payload provisioning refused: no private directory "
+                f"could be created under {destination}, so the installed release at "
+                f"{source_root} cannot be copied anywhere this invocation could keep "
+                f"running from. Nothing was claimed and no factory run was started. "
+                f"Point TMPDIR at a writable directory, then retry. Cause: {failure}"
+            )
+        )
     # The holder is removed by `finally` unless this function RETURNS a usable
     # payload. Enumerating the failures instead — which is what this did — left
     # the directory standing for every exit the list did not name, and an
@@ -423,7 +476,32 @@ def _release_identity(*, source_root: Path) -> str | PayloadRefusal:
         return _provenance_refusal(
             root=source_root, cause=f"it declares no usable {_RELEASE_KEY!r} string"
         )
-    return version.strip()
+    label = version.strip()
+    if not _usable_path_segment(label=label):
+        # The label becomes part of a directory name, so PATH SYNTAX in it is
+        # path syntax in the holder's path: `"../../escaped"` reached `mkdtemp`
+        # as traversal and either raised or created the holder outside the
+        # temporary root entirely.
+        return _provenance_refusal(
+            root=source_root,
+            cause=(
+                f"its {_RELEASE_KEY!r} is {label!r}, which is not usable as a single "
+                f"path segment"
+            ),
+        )
+    return label
+
+
+def _usable_path_segment(*, label: str) -> bool:
+    """Whether `label` can be embedded in a directory name as plain text.
+
+    Rejects anything the filesystem would read as structure rather than as a
+    name: a separator, a parent reference, a leading dot that would hide the
+    holder, and a NUL which no path may contain.
+    """
+    if label in {".", ".."} or label.startswith("."):
+        return False
+    return not any(character in label for character in ("/", os.sep, "\\", "\0"))
 
 
 def _provenance_refusal(*, root: Path, cause: str) -> PayloadRefusal:
