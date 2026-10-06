@@ -81,17 +81,25 @@ def test_bootstrap_skips_paths_already_present(
     assert sys.path.count(str(_BUNDLE_VENDOR)) == 1
 
 
-def test_bootstrap_repoints_the_plugin_root_at_a_retained_payload(
+def test_bootstrap_runs_from_the_payload_without_moving_the_plugin_root(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A RETAINED payload is where packaged assets must resolve from.
+    """The retained payload takes over `sys.path` and NOTHING else.
 
-    `_dispatcher_paths.plugin_root` reads `CLAUDE_PLUGIN_ROOT`, so leaving it
-    on the harness cache would send every asset read into the tree that may
-    already be gone. This repo IS a checkout, so the retention arm never
-    fires in-process; `retain_payload` is stubbed to supply the decision a
-    native install produces. The end-to-end proof is
-    test_payload_retention_after_eviction.py.
+    An earlier draft of this test asserted the opposite — that `bootstrap()`
+    repoints `CLAUDE_PLUGIN_ROOT` at the retained copy — and work-item
+    `bd-ib-mtuqxb` established that is wrong: `plugin_root()` answers "which
+    installation is present", so moving it makes the self-update canary
+    compare the running build against itself and never discover a newer
+    installed one. Packaged ASSET reads resolve through
+    `_dispatcher_paths.executing_payload_root` instead, which follows the
+    importing module's own location and needs no environment variable.
+
+    This repo IS a checkout, so the retention arm never fires in-process;
+    `retain_payload` is stubbed to supply the decision a native install
+    produces. The end-to-end proofs are
+    test_payload_retention_after_eviction.py and
+    test_payload_candidate_and_credential_boundary.py.
     """
     bootstrap_module = _import_bootstrap()
     monkeypatch.setattr(
@@ -113,16 +121,20 @@ def test_bootstrap_repoints_the_plugin_root_at_a_retained_payload(
     monkeypatch.setattr(sys, "path", ["/usr/lib/python3.10"])
     monkeypatch.setattr(sys, "version_info", (3, 12, 0, "final", 0))
     # `setenv`, never `delenv`: pytest's `delitem` records NOTHING when the
-    # name is already absent, so a var `bootstrap()` then SETS survives
-    # teardown and moves `plugin_root()` for every later test in this worker —
+    # name is already absent, so any write `bootstrap()` makes would survive
+    # teardown and move `plugin_root()` for every later test in this worker —
     # measured as three dispatcher tests gaining a
-    # `dispatcher-currency-undetermined` journal stage. Seeding a harness-cache
-    # value also sharpens the assertion: the retained payload must WIN over
-    # what the harness exported.
-    monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(tmp_path / "harness-cache"))
+    # `dispatcher-currency-undetermined` journal stage. Seeding a value also
+    # makes the assertion below meaningful rather than vacuous.
+    harness_cache = tmp_path / "harness-cache"
+    monkeypatch.setenv("CLAUDE_PLUGIN_ROOT", str(harness_cache))
     bootstrap_module.bootstrap()  # type: ignore[attr-defined]
-    assert os.environ["CLAUDE_PLUGIN_ROOT"] == str(retained_root)
     assert str(retained_root / "scripts") in sys.path
+    assert str(retained_root / "scripts" / "_vendor") in sys.path
+    assert os.environ["CLAUDE_PLUGIN_ROOT"] == str(harness_cache), (
+        "the launcher moved the INSTALLED-root anchor onto its retained copy, "
+        "which blinds the self-update canary and the currency findings"
+    )
 
 
 def test_bootstrap_refuses_an_unusable_payload_before_the_credential_self_heal(

@@ -43,7 +43,7 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
-from collections.abc import MutableMapping
+from collections.abc import MutableMapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -54,6 +54,7 @@ __all__: list[str] = [
     "RetainedPayload",
     "harness_managed",
     "missing_payload_paths",
+    "payload_relative_argv",
     "release_payload",
     "retain_payload",
 ]
@@ -318,3 +319,43 @@ def _release_identity(*, source_root: Path) -> str:
     if not isinstance(version, str) or not version.strip():
         return _UNKNOWN_RELEASE
     return version.strip()
+
+
+def payload_relative_argv(
+    *, argv: Sequence[str], source_root: Path, payload_root: Path
+) -> list[str]:
+    """Re-point an argv whose program lives in the SOURCE tree at the payload copy.
+
+    The credential self-heal re-execs this process through the project's
+    `credential_wrapper`, and it builds that command from `sys.argv` — whose
+    first element is the installed path the shell invoked. If the harness
+    evicts the installation around that re-exec, the interpreter cannot open
+    the script it was handed: the invocation dies before any application code,
+    for precisely the reason retention exists. Measured as exit 2 reported
+    through the wrapper-launch diagnostic, which blames the wrapper for a
+    missing file.
+
+    The payload is a whole-tree copy of the source, so every path under the
+    source has an exact counterpart under the payload, and re-pointing the
+    program at its own copy is a rename of the same bytes rather than a change
+    of build. ONLY the program is re-pointed: the remaining operands belong to
+    the caller and may legitimately name paths in any tree, including the one
+    being evicted.
+
+    An argv whose program is NOT under the source root is returned unchanged —
+    a `-c` invocation, an absolute path into some other tree, a path that
+    cannot be resolved at all — because there is no counterpart to re-point it
+    to. `resolve()` reports an unresolvable path three different ways across
+    the supported interpreters (`RuntimeError` for a symlink loop on 3.10 and
+    3.12, `OSError` for other filesystem faults, `ValueError` for an embedded
+    NUL), and all three mean the same thing here, so all three fall through to
+    the unchanged argv rather than turning a cosmetic path fault into a dead
+    launcher.
+    """
+    if not argv:
+        return list(argv)
+    try:
+        relative = Path(argv[0]).resolve().relative_to(source_root.resolve())
+    except (OSError, RuntimeError, ValueError):
+        return list(argv)
+    return [str(payload_root.joinpath(relative)), *argv[1:]]

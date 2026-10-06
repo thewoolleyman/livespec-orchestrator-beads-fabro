@@ -33,6 +33,7 @@ def test_dispatcher_paths_exports_promoted_public_helpers() -> None:
         "calibration_spans_path",
         "cost_report_spans_path",
         "cost_sink_path",
+        "executing_payload_root",
         "heartbeat_path",
         "journal_path",
         "plugin_root",
