@@ -6,10 +6,24 @@ Dispatcher to another payload". Cycle 12's control asserted where a
 CONSTRUCTED asset path sits, and a path is not a decision — so that half of
 the assertion had no evidence behind it.
 
-This supplies it at the decision surface. `canary_verdict` turns a candidate
-self-check exit code into the verdict the Dispatcher acts on, so a PASSING and
-a FAILING canary are both drivable directly, and the question that matters is
-what each one does to the tree this process is executing from.
+This supplies the DECISION-TO-EXECUTION relationship. `canary_verdict` turns a
+candidate self-check exit code into the verdict the Dispatcher acts on, so a
+PASSING and a FAILING canary are both drivable directly, and the question that
+matters is what each one does to the tree this process is executing from.
+
+SCOPE, corrected 2026-10-06: this is a PURE MAPPING control and NOT candidate
+canary proof. `canary_verdict` is a one-line total function of one integer, and
+the cases below call it with the literal constants `0` and `1` -- so nothing
+here launches a candidate process, observes an actual candidate result, or
+drives a self-update journal decision; the exit codes it maps were written by
+this test. An earlier revision described this file as supplying the half of the
+fifth assertion that had no evidence, which overclaims and is withdrawn. That
+leg is discharged only by driving the exported `self_update_after_release`
+boundary with a real bounded subprocess and a recording journal, which belongs
+to the downstream `proof_capture` node and its independent `proof_verify`
+replay. See
+`plan/dispatcher-cache-lifetime/research/003-red-provenance-cycles-9-to-11-2026-10-06.md`
+section "CORRECTION, 2026-10-06". No product defect is inferred from the gap.
 
 NOT a Red, and it must not be cited as one. The behaviour was already correct
 when this was written and it passed on the first run; the reason it is here is
