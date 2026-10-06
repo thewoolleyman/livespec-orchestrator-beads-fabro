@@ -290,7 +290,11 @@ def run_codex_cred_status(*, args: argparse.Namespace) -> int:
     touches the exit code: external monitoring is already wired to the alarm,
     so letting an observation move that signal would change what a page means.
     """
-    requirement = operator_credential_requirement(repo=Path.cwd())
+    requirement = operator_credential_requirement(
+        repo=Path.cwd(),
+        workflow_name=getattr(args, "workflow_name", None),
+        review_fix_cap=getattr(args, "review_fix_cap", None),
+    )
     if isinstance(requirement, str | WorkflowFaultDeferral):
         # A status that cannot state the requirement it grades against is not a
         # status, so it refuses rather than printing a `refresh_due` computed

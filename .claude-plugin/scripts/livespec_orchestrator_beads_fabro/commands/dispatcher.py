@@ -307,6 +307,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_identity_command import (
     add_codex_cred_status_arguments,
+    add_credential_selection_arguments,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
     bounce_non_convergence_to_backlog,
@@ -511,6 +512,7 @@ def _add_spec_check(*, parser: argparse.ArgumentParser) -> None:
 def _add_codex_cred_refresh(*, parser: argparse.ArgumentParser) -> None:
     _ = parser.add_argument("--json", dest="as_json", action="store_true")
     _ = parser.add_argument("--dry-run", dest="dry_run", action="store_true")
+    add_credential_selection_arguments(parser=parser)
 
 
 def _add_cred_status(*, parser: argparse.ArgumentParser) -> None:
