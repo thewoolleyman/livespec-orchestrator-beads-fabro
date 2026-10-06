@@ -138,6 +138,23 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   control keeps this repository's own checkout exempt, so the
   source-checkout, currency and canary policies are preserved. Listed in
   `subprocess_spawn_allowlist`.
+- `test_payload_public_route_exact_outcomes.py` — the EXACT-outcome
+  counterpart of the file above, which accepts any `int` helper exit code
+  and any `failed` envelope and reaches no `.fabro/` asset. Both public
+  routes are driven into a committed `dispatcher.minimum_release` floor
+  refusal, so one line is at once deferred-import, packaged-asset-CONTENT
+  (the release STRING read from the retained `plugin.json`, against a
+  DISTINGUISHABLE `7.1.0`) and helper-subprocess evidence. Zero side
+  effects are MEASURED: `dispatcher.fabro_bin` is a recorder whose log
+  must not exist. Carries an intact-installation read-only control. NOT a
+  Red; its docstring records the pre-fix control, where the floor could
+  not be evaluated and dispatch PROCEEDED — and notes that the exit code
+  was 3 either way, so only the exact text discriminates. Its install
+  root is deliberately outside `tmp_path`, because a `.git` at the pytest
+  basetemp root makes every `tmp_path` resolve as a checkout and silently
+  take the gate's checkout exemption; the fixture asserts the install is
+  not a checkout so that cannot recur unnoticed. Listed in
+  `subprocess_spawn_allowlist`.
 - `test_payload_inherited_source_identity.py` — `PAYLOAD_ROOT_ENV` is
   ordinary inherited environment, so it also reaches a process pointed at
   a DIFFERENT installation on purpose. Adoption was unconditional, so the
