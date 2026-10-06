@@ -49,6 +49,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from _payload_grading import (
+    IGNORED_NAMES,
+    fidelity_message,
+    incomplete_message,
+    missing_payload_paths,
+    payload_fidelity_gaps,
+)
+
 __all__: list[str] = [
     "PAYLOAD_ROOT_ENV",
     "PayloadRefusal",
@@ -107,36 +115,17 @@ _SOURCE_PROJECT_NAME = _PACKAGE_DIRECTORY.replace("_", "-")
 # hold, so an ambiguous tree is RETAINED — the safe direction here, since an
 # unnecessary retention costs one copy while a missed one restores the defect.
 _SOURCE_PLUGIN_ROOT_NAME = ".claude-plugin"
-# Byte-compiled caches are reproducible from the sources beside them, so they
-# are the one thing the copy leaves behind.
-_IGNORED_NAMES = ("__pycache__",)
-# How many differing paths a fidelity refusal names. An operator needs enough
-# to recognise WHAT is missing, not the whole set.
-_FIDELITY_REPORT_LIMIT = 5
-# What this launcher needs for a payload to be usable at all, split by TYPE
-# because `exists()` is blind to it: a directory satisfies `exists()` where a
-# module is needed, and a plain file satisfies it where a tree is needed.
+# The holder-level record of WHICH source tree a payload was copied from.
 #
-# Deliberately NOT read from `cache-manifest.json`. That manifest serves the
-# fleet's `ensure-plugins` verification and omits `scripts/_vendor` and
-# `.fabro/` entirely — the two trees whose absence produced the measured
-# `ModuleNotFoundError`. A completeness contract that cannot see the thing that
-# broke is not the contract to validate against.
-_REQUIRED_FILES: tuple[tuple[str, ...], ...] = (
-    ("plugin.json",),
-    ("scripts", "bin", "_bootstrap.py"),
-    ("scripts", "bin", "_payload.py"),
-    ("scripts", "livespec_orchestrator_beads_fabro", "__init__.py"),
-)
-# Required trees, which must also be NON-EMPTY. An empty `_vendor` fails every
-# deferred `livespec_runtime` import and an empty `workflows` fails every
-# packaged asset read — both at the far end of a dispatch, which is the
-# failure retention exists to prevent, so neither may be published.
-_REQUIRED_TREES: tuple[tuple[str, ...], ...] = (
-    ("scripts", "_vendor"),
-    ("scripts", "livespec_orchestrator_beads_fabro", "commands"),
-    (".fabro", "workflows"),
-)
+# It lives in the HOLDER, beside `payload/` rather than inside it, for two
+# reasons. The payload stays a faithful whole-tree copy of its source, so
+# `payload_fidelity_gaps` keeps comparing like with like; and the record shares
+# the holder's lifetime exactly, so it cannot outlive the tree it describes.
+#
+# Written only once a provision has passed every completeness and fidelity
+# grade, immediately before the payload is published, so an interrupted or
+# refused provision leaves neither an adoptable tree NOR a record claiming one.
+_SOURCE_RECORD = "source"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -191,7 +180,7 @@ def retain_payload(
     publication is visible to a caller instead of being a hidden global
     effect.
     """
-    inherited = _inherited_payload(environ=environ)
+    inherited = _inherited_payload(environ=environ, source_root=source_root)
     if inherited is not None:
         return inherited
     if not harness_managed(source_root=source_root):
@@ -199,7 +188,7 @@ def retain_payload(
     missing = missing_payload_paths(root=source_root)
     if missing:
         return PayloadRefusal(
-            message=_incomplete_message(root=source_root, missing=missing, subject="installation")
+            message=incomplete_message(root=source_root, missing=missing, subject="installation")
         )
     retained = _retained_root(source_root=source_root)
     if isinstance(retained, PayloadRefusal):
@@ -226,14 +215,31 @@ def release_payload(*, payload: RetainedPayload) -> None:
     shutil.rmtree(payload.holder, ignore_errors=True)
 
 
-def _inherited_payload(*, environ: MutableMapping[str, str]) -> RetainedPayload | None:
-    """Adopt the payload a parent invocation published, when it is still complete.
+def _inherited_payload(
+    *, environ: MutableMapping[str, str], source_root: Path
+) -> RetainedPayload | None:
+    """Adopt the payload a parent published, when it is complete AND from here.
 
     An incomplete or vanished inherited payload falls through to a fresh
     provision rather than refusing: the parent may have exited and cleaned up,
     and a child that can still provision for itself should. Nothing here is
     ADOPTED on trust — the same completeness contract a fresh copy must pass
     is applied before this tree is executed.
+
+    `source_root` is what separates the two questions this variable used to
+    conflate. The hand-down exists so the several processes of ONE dispatch
+    read one tree, and that case is `source_root` matching the payload's
+    recorded origin. But the variable is ordinary inherited environment, so it
+    also reaches a process pointed at a DIFFERENT installation on purpose — a
+    dispatch launched from inside another, a helper invoked from an explicitly
+    named newer install, a developer running their own checkout from a shell
+    that still carries a parent's payload. Adoption was unconditional, so the
+    inherited tree won and the selected release was silently ignored; measured
+    at 7.1.0 executing where 9.9.9 was named, and at an inherited payload
+    displacing this project's own source checkout.
+
+    A mismatch falls through to a fresh provision for the tree that WAS
+    selected, so the explicit choice decides and nothing is refused.
     """
     recorded = environ.get(PAYLOAD_ROOT_ENV, "")
     if not recorded:
@@ -241,67 +247,28 @@ def _inherited_payload(*, environ: MutableMapping[str, str]) -> RetainedPayload 
     root = Path(recorded)
     if missing_payload_paths(root=root):
         return None
+    if not _payload_serves(payload_root=root, source_root=source_root):
+        return None
     return _payload_at(root=root, retained=True)
 
 
-def missing_payload_paths(*, root: Path) -> tuple[str, ...]:
-    """The required payload members `root` cannot supply, as POSIX relative paths.
+def _payload_serves(*, payload_root: Path, source_root: Path) -> bool:
+    """Whether an inherited payload is the right tree for `source_root`.
 
-    "Cannot supply" rather than "does not have": a required FILE that is a
-    directory, and a required TREE that is a plain file or is empty, are all
-    reported. Each was `exists()`-complete and unusable.
+    TWO shapes qualify, and they are the two the hand-down exists for. The
+    selected source may be the installation this payload was COPIED FROM — the
+    ordinary case, where `drive` publishes and the `dispatcher.py` it starts
+    inherits. Or the selected source may BE the payload: a `scripts/bin/`
+    helper spawned from inside the payload resolves its own plugin root to the
+    payload tree, so that is the source it names, and the payload is
+    self-evidently the right answer for it. Omitting this second shape made
+    every owned helper copy the copy instead of reusing its parent's tree.
+
+    Anything else names a DIFFERENT installation, and the explicit selection
+    wins.
     """
-    gaps = [
-        "/".join(relative) for relative in _REQUIRED_FILES if not root.joinpath(*relative).is_file()
-    ]
-    gaps.extend(
-        "/".join(relative)
-        for relative in _REQUIRED_TREES
-        if not _usable_tree(path=root.joinpath(*relative))
-    )
-    return tuple(gaps)
-
-
-def _usable_tree(*, path: Path) -> bool:
-    """Whether `path` is a directory that actually holds something."""
-    if not path.is_dir():
-        return False
-    return any(path.iterdir())
-
-
-def payload_fidelity_gaps(*, source_root: Path, payload_root: Path) -> tuple[str, ...]:
-    """Files the SOURCE has that the payload does not, or holds at a different size.
-
-    This is what makes the payload provably the SAME RELEASE rather than
-    merely the right shape. No list of required paths can answer that: the
-    incident module `_dispatcher_cost_wave.py` is one of hundreds no contract
-    enumerates, and a copy missing exactly it satisfied every structural
-    grade. Comparing the copy against the tree it was made from needs no
-    manifest and no registry, and it catches a copy truncated by an eviction
-    landing mid-provision.
-
-    Size, not content hash: the realistic failure here is a file ABSENT or
-    SHORT, which size settles, and byte-integrity of an extracted release is
-    the fleet packaging concern tracked separately — not this launcher's.
-
-    Returns at most `_FIDELITY_REPORT_LIMIT` paths. The whole set is not
-    useful in a refusal an operator reads, and a truncated report is marked as
-    such by the caller.
-    """
-    gaps: list[str] = []
-    ignored = frozenset(_IGNORED_NAMES)
-    for source_file in sorted(source_root.rglob("*")):
-        if any(part in ignored for part in source_file.parts):
-            continue
-        if not source_file.is_file():
-            continue
-        relative = source_file.relative_to(source_root)
-        copied = payload_root / relative
-        if not copied.is_file() or copied.stat().st_size != source_file.stat().st_size:
-            gaps.append(relative.as_posix())
-            if len(gaps) == _FIDELITY_REPORT_LIMIT:
-                break
-    return tuple(gaps)
+    selected = str(source_root.resolve())
+    return selected in {_recorded_source(payload_root=payload_root), str(payload_root.resolve())}
 
 
 def harness_managed(*, source_root: Path) -> bool:
@@ -403,7 +370,7 @@ def _retained_root(*, source_root: Path) -> Path | PayloadRefusal:
     published = False
     try:
         try:
-            _ = shutil.copytree(source_root, root, ignore=shutil.ignore_patterns(*_IGNORED_NAMES))
+            _ = shutil.copytree(source_root, root, ignore=shutil.ignore_patterns(*IGNORED_NAMES))
         except (OSError, shutil.Error) as failure:
             return PayloadRefusal(
                 message=(
@@ -419,11 +386,15 @@ def _retained_root(*, source_root: Path) -> Path | PayloadRefusal:
             # means the source changed underneath the copy — an eviction landing
             # mid-provision, which is exactly the race this module exists for.
             return PayloadRefusal(
-                message=_incomplete_message(root=source_root, missing=missing, subject="copy")
+                message=incomplete_message(root=source_root, missing=missing, subject="copy")
             )
         gaps = payload_fidelity_gaps(source_root=source_root, payload_root=root)
         if gaps:
-            return PayloadRefusal(message=_fidelity_message(root=source_root, gaps=gaps))
+            return PayloadRefusal(message=fidelity_message(root=source_root, gaps=gaps))
+        # LAST, so the record exists only for a payload that passed every grade
+        # above it. A record written earlier would survive a refused provision's
+        # cleanup window and name a tree that was never publishable.
+        _ = (holder / _SOURCE_RECORD).write_text(str(source_root.resolve()), encoding="utf-8")
         published = True
         return root
     finally:
@@ -431,26 +402,19 @@ def _retained_root(*, source_root: Path) -> Path | PayloadRefusal:
             shutil.rmtree(holder, ignore_errors=True)
 
 
-def _fidelity_message(*, root: Path, gaps: tuple[str, ...]) -> str:
-    """One actionable line: the copy is not the same release as its source."""
-    truncated = " (and possibly more)" if len(gaps) == _FIDELITY_REPORT_LIMIT else ""
-    return (
-        f"ERROR: livespec payload provisioning refused: the copy of the plugin "
-        f"installation at {root} did not land complete — {', '.join(gaps)}{truncated} "
-        f"is missing or short, so this invocation would be running a DIFFERENT "
-        f"release from the one installed. Nothing was claimed and no factory run "
-        f"was started. Reinstall the plugin, then retry."
-    )
+def _recorded_source(*, payload_root: Path) -> str:
+    """Which source tree this payload was copied from, or "" when unestablished.
 
-
-def _incomplete_message(*, root: Path, missing: tuple[str, ...], subject: str) -> str:
-    """One actionable line naming WHAT is missing and WHICH tree it is missing from."""
-    return (
-        f"ERROR: livespec payload provisioning refused: the plugin {subject} at {root} "
-        f"is missing {', '.join(missing)}, so this invocation has no complete payload "
-        f"to keep running from. Nothing was claimed and no factory run was started. "
-        f"Reinstall the plugin, then retry."
-    )
+    An absent or unreadable record yields "", which no resolved source path can
+    equal, so the payload is NOT adopted. That is the safe direction and it is
+    the one this module takes everywhere else: declining to adopt costs one
+    copy, while adopting a tree whose origin cannot be established is how an
+    invocation silently executes a release nobody selected.
+    """
+    try:
+        return (payload_root.parent / _SOURCE_RECORD).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
 
 
 def _release_identity(*, source_root: Path) -> str | PayloadRefusal:

@@ -364,7 +364,10 @@ scenario_tiers = ["tests.e2e-cli", "tests.e2e", "tests.integration", "tests.cons
 # payload-retention step `bootstrap()` runs before any packaged import, split
 # out of `_bootstrap.py` along its own cohesion seam (it answers "which tree
 # does this invocation execute from", not "which secrets does it need").
-bin_non_wrapper_files = ["_payload.py"]
+# `_payload_grading.py` is that module's own grading layer, cut out of it along
+# a second cohesion seam (it answers "is this tree a usable payload, and is it
+# the same release as its source", and names none of `_payload`'s types).
+bin_non_wrapper_files = ["_payload.py", "_payload_grading.py"]
 source_trees = [".claude-plugin/scripts/livespec_orchestrator_beads_fabro"]
 io_trees = [
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/effects",
