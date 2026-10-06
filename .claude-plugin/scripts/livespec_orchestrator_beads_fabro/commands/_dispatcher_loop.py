@@ -204,6 +204,11 @@ def _dispatch_one_locked(
         # included, so the measurement travels through the journal and the
         # projection stays pure (bd-ib-pa73qh).
         proof_rendering=journaled_proof_rendering(journal_path=journal.path, repository=repo.name),
+        # The adapter inputs this dispatch WRAPS, so the route check grades the
+        # graph against what is actually guarded rather than against a convention.
+        adapter_inputs=(
+            frozenset() if plan.acp_nodes is None else frozenset(plan.acp_nodes.inputs.values())
+        ),
     )
     if overlay_error is not None:
         return failed_dispatch_outcome(

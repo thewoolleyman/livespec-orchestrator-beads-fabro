@@ -33,11 +33,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requireme
     credential_lifetime_requirement_for,
     requirement_refusal_text,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
-    credential_use_deadline_epoch_capped,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_projection import (
-    CredentialUseProjection,
+    credential_use_projection_for,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_routes import (
+    selected_graph_launch_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
     select_factory_credential,
@@ -52,10 +52,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     cc_otel_overlay_env,
     render_run_config_overlay,
     resolve_sandbox_otel_endpoint,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
-    codex_freshness_required_seconds,
-    decode_codex_access_token_exp,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_lease import (
     mint_proof_credentials,
@@ -163,6 +159,7 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     graph_override: Path | None = None,
     prepare_inputs: Mapping[str, str] | None = None,
     proof_rendering: str = "",
+    adapter_inputs: frozenset[str] = frozenset(),
 ) -> str | None:
     """Write the uncommitted mode-600 run-config overlay.
 
@@ -253,44 +250,31 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     )
     if isinstance(codex_snapshot, CodexProjectionRefusal):
         return codex_snapshot.message
-    # The ABSOLUTE instant after which the worker may not use this credential,
-    # stamped ONCE here and carried into the sandbox as an epoch rather than a
-    # duration. That is what makes queueing, preparation, inter-stage delay and a
-    # node entered late all count against the SAME budget: a retried or resumed
-    # launch re-reads this instant and inherits what is left of it, where a
-    # duration would hand each start a fresh allowance.
-    #
-    # It is the EARLIER of the workflow's own allowance and the credential's
-    # usable life, which `credential_use_deadline_epoch_capped` takes. Capping
-    # against the expiry is what keeps the delay between the grade above and the
-    # launch harmless — anchoring on the allowance alone would stamp a deadline
-    # the token cannot cover whenever that delay is non-zero, which is every real
-    # dispatch.
-    #
-    # Decoding the projected snapshot cannot fail here: `project_host_codex_auth`
-    # returned it only after `graded_freshness` decoded the SAME access token, and
-    # `project_codex_auth_snapshot` rewrites the refresh token alone. A failure
-    # would therefore be a broken invariant — a bug, which raises — not an
-    # expected condition to be reported as a refusal.
-    credential_expiry_epoch = decode_codex_access_token_exp(source_auth_json=codex_snapshot)
-    credential_use = CredentialUseProjection(
-        deadline_epoch=credential_use_deadline_epoch_capped(
-            projected_epoch=int(time.time()),
-            allowance_seconds=requirement.allowance_seconds,
-            credential_expiry_epoch=credential_expiry_epoch,
-            margin_seconds=requirement.margin_seconds,
-        ),
-        # The expiry and the requirement travel WITH the deadline so the sandbox
-        # can re-grade the credential on its own clock. The grade taken a few lines
-        # above was taken HERE, before the run was queued and prepared, and it
-        # cannot speak for the instant an agent would actually use the credential.
-        # The requirement is composed by the same function admission used, so the
-        # sandbox cannot grade more leniently than the host did.
-        credential_expiry_epoch=credential_expiry_epoch,
-        required_remaining_seconds=codex_freshness_required_seconds(
-            run_budget_seconds=requirement.allowance_seconds
-        ),
+    # The three enforcement inputs the sandbox needs, stamped ONCE from this
+    # dispatch's own measurements: the absolute credential-use deadline (capped at the
+    # observed expiry minus the documented margin), that observed expiry, and the
+    # lifetime this dispatch requires. Composed in the projection module, which owns
+    # what they mean; this surface owns only WHEN they are taken, which is here —
+    # after the claim and before anything is written.
+    credential_use = credential_use_projection_for(
+        codex_snapshot=codex_snapshot,
+        allowance_seconds=requirement.allowance_seconds,
+        margin_seconds=requirement.margin_seconds,
+        now_epoch=int(time.time()),
     )
+    # PROTECTION IS OWED FROM HERE, so the launches this workflow declares must be
+    # ones the guard actually reaches. Wrapping the adapter inputs covers every launch
+    # in the graphs this repository ships, but NOT every graph a dispatch could
+    # select: a node declaring a literal `acp.command`, an `acp.config`, or a late
+    # duplicate declaration overriding the command never consumes the wrapped input,
+    # and a control measured exactly that running 1.003s past the deadline. Refused
+    # BEFORE the proof-credential mint below, so it leaves no live credential behind.
+    if (
+        route_refusal := selected_graph_launch_refusal(
+            committed=committed, graph_override=graph_override, adapter_inputs=adapter_inputs
+        )
+    ) is not None:
+        return route_refusal
     sandbox_otel_endpoint = resolve_sandbox_otel_endpoint(environ=dict(os.environ))
     otel_env = cc_otel_overlay_env(
         work_item_id=work_item_id,
