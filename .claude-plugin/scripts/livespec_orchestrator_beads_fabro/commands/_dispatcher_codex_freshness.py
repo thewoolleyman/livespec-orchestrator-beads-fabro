@@ -41,7 +41,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_early_renewal 
     CodexRenewalOutcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
-    CODEX_FRESHNESS_RUN_BUDGET_SECONDS,
     CodexFreshnessVerdict,
     assess_codex_credential_freshness,
 )
@@ -70,7 +69,9 @@ CODEX_HOME_ENV = "CODEX_HOME"
 RenewalExpiryObservation = Literal["advanced", "unchanged", "unmeasured"]
 
 
-def graded_freshness(*, source_auth_json: str, now_epoch: int) -> CodexFreshnessVerdict | None:
+def graded_freshness(
+    *, source_auth_json: str, now_epoch: int, run_budget_seconds: int
+) -> CodexFreshnessVerdict | None:
     """Grade the credential, or return None when it cannot be decoded at all.
 
     `None` is a THIRD answer beside fresh and stale, and it must stay distinct
@@ -78,12 +79,20 @@ def graded_freshness(*, source_auth_json: str, now_epoch: int) -> CodexFreshness
     it as stale would state a shortfall nobody observed, and reporting it as
     fresh would project a credential no one could read. Callers render
     `unparseable_credential_refusal` for it.
+
+    `run_budget_seconds` is RESOLVED BY THE CALLER and is deliberately not a
+    module constant. It was one -- the `implement` node's own four-hour ceiling
+    standing in for the whole run -- and a constant is precisely what cannot
+    follow a repository that raises a node timeout or dispatches a longer graph.
+    `_dispatcher_credential_requirement` resolves it from the workflow this
+    dispatch selected, and every caller on both sides of the claim passes the
+    same resolution, so the grade cannot drift between them.
     """
     verdict = attempt(
         action=lambda: assess_codex_credential_freshness(
             source_auth_json=source_auth_json,
             now_epoch=now_epoch,
-            run_budget_seconds=CODEX_FRESHNESS_RUN_BUDGET_SECONDS,
+            run_budget_seconds=run_budget_seconds,
         ),
         exceptions=(ValueError, json.JSONDecodeError),
     )

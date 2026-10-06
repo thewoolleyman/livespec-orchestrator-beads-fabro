@@ -23,6 +23,27 @@
 //   imports with no `uv sync` and no apt python3-typing-extensions
 //   (the adopter / fleet-member path). PSF-2.0; see NOTICES. The
 //   tests/bin/test_host_side_self_contained_import.py -S probe pins it.
+// - tomli, the pure-Python TOML parser PyPI distribution copied into
+//   .claude-plugin/scripts/_vendor/tomli/. Vendored for EXACTLY the
+//   reason typing_extensions above is: `tomllib` is stdlib only from
+//   Python 3.11, and this bundle's supported runtime starts at 3.10
+//   (requires-python >= 3.10.16, and scripts/bin/_bootstrap.py states
+//   3.10+), so an unconditional `import tomllib` would work on the
+//   factory's own interpreter while breaking every supported 3.10
+//   adopter at import time. tomli IS the upstream of stdlib tomllib,
+//   so the vendored parser and a 3.11+ stdlib parse agree by
+//   construction rather than by our testing both.
+//   `_dispatcher_toml_read` reads the committed run config's
+//   checkpoint budget through it. It replaced a hand-rolled regex
+//   reader that returned the same "absent" answer for a key that was
+//   genuinely absent and for one declared in any spelling the regex
+//   did not anticipate — indented, single-quoted, trailing comment,
+//   `[run . checkpoint]`, `["run"."checkpoint"]`, a quoted key, an
+//   inline table, a root-level dotted key — which made a CONFIGURED
+//   credential allowance silently smaller than the configuration asks
+//   for. TOML has too many valid spellings of one declaration to
+//   recognize by pattern; the fix is a parser, not a better regex.
+//   Pure Python, zero dependencies, MIT; see NOTICES.
 //
 // Validated by `just check-vendor-manifest`: every entry must have
 // a non-empty upstream_url, a non-empty upstream_ref, and a
@@ -54,6 +75,12 @@
       "upstream_url": "https://github.com/thewoolleyman/livespec",
       "upstream_ref": "e2cdeea:.claude-plugin/scripts/_vendor/returns",
       "vendored_at": "2026-07-16T09:36:00Z"
+    },
+    {
+      "name": "tomli",
+      "upstream_url": "https://github.com/hukkin/tomli",
+      "upstream_ref": "2.4.1",
+      "vendored_at": "2026-10-06T03:50:00Z"
     }
   ]
 }

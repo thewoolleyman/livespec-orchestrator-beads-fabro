@@ -13,14 +13,9 @@ from livespec_runtime.github_auth.errors import GithubAppAuthError
 from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
-from livespec_orchestrator_beads_fabro.commands._config import resolve_fabro_sandbox_image
-from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
-    CLAUDE_OAUTH_TOKEN_ENV,
-    ClaudeCredentialStatus,
-    absent_claude_credential_status,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential_io import (
-    probe_claude_credential,
+from livespec_orchestrator_beads_fabro.commands._config import (
+    dispatcher_block,
+    resolve_fabro_sandbox_image,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
     CodexProjectionRefusal,
@@ -29,8 +24,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_otel_config import (
     codex_otel_config_toml,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_wrapper import (
-    credential_wrapper_text,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_env import (
+    check_credential_env,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement import (
+    REVIEW_FIX_VISIT_CAP_INPUT,
+    WorkflowFaultDeferral,
+    credential_lifetime_requirement_for,
+    requirement_refusal_text,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
     select_factory_credential,
@@ -74,9 +75,6 @@ from livespec_orchestrator_beads_fabro.store import (
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
-    "assess_credential_status",
-    "check_credential_env",
-    "dispatch_required_credentials_text",
     "fetch_fleet_manifest_text",
     "materialize_overlay",
     "read_dispatch_comments",
@@ -84,12 +82,6 @@ __all__: list[str] = [
     "resolve_sibling_clones",
 ]
 
-_DISPATCH_REQUIRED_CREDENTIALS = (
-    "GITHUB_APP_ID",
-    "GITHUB_PRIVATE_KEY",
-    "BEADS_DOLT_PASSWORD",
-    CLAUDE_OAUTH_TOKEN_ENV,
-)
 _GITHUB_TOKEN_ENV = GITHUB_TOKEN_ENV_VAR  # single-sourced from _dispatcher_io
 _LEDGER_READ_ERRORS = (
     BeadsCommandError,
@@ -157,6 +149,7 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     dispatch_id: str,
     token: Callable[[], str],
     git_author: GitAuthor,
+    review_fix_visit_cap: int,
     graph_override: Path | None = None,
     prepare_inputs: Mapping[str, str] | None = None,
     proof_rendering: str = "",
@@ -223,11 +216,31 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     siblings = resolve_sibling_clones(repo=repo)
     if isinstance(siblings, str):
         return siblings
+    # The requirement for the workflow THIS dispatch resolved, derived from the
+    # very file about to be overlaid and from the review-fix guard the plan
+    # renders — not re-resolved from configuration, which would let the
+    # projection size itself against a second read nothing can prove agrees with
+    # the gate's.
+    # The workflow is named by the DIRECTORY `workflow_toml` resolved rather than
+    # by the registry name, which `RecordedDispatch` deliberately does not carry
+    # down to the launch half. The name is a label on a diagnostic here — the
+    # committed path below is what the figure is actually derived from — and the
+    # directory is the more truthful label for "which workflow ran" anyway.
+    requirement = credential_lifetime_requirement_for(
+        committed=committed,
+        block=dispatcher_block(cwd=repo),
+        workflow_name=committed.parent.name,
+        policy_inputs={REVIEW_FIX_VISIT_CAP_INPUT: review_fix_visit_cap},
+    )
+    if isinstance(requirement, str | WorkflowFaultDeferral):
+        return requirement_refusal_text(outcome=requirement)
     # Graded, never renewed. The bounded in-place renewal belongs to the
     # pre-claim gate, which has already run for this item; this surface is
     # downstream of the claim, so a renewal here could only extend a credential
     # whose shortfall can no longer be reported before one.
-    codex_snapshot = project_host_codex_auth(clock=lambda: int(time.time()))
+    codex_snapshot = project_host_codex_auth(
+        clock=lambda: int(time.time()), run_budget_seconds=requirement.allowance_seconds
+    )
     if isinstance(codex_snapshot, CodexProjectionRefusal):
         return codex_snapshot.message
     sandbox_otel_endpoint = resolve_sandbox_otel_endpoint(environ=dict(os.environ))
@@ -323,60 +336,3 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
         _ = handle.write(rendered)
     return None
-
-
-def dispatch_required_credentials_text() -> str:
-    return ", ".join(_DISPATCH_REQUIRED_CREDENTIALS)
-
-
-def assess_credential_status(
-    *,
-    repo: Path,
-    probe: Callable[..., ClaudeCredentialStatus] | None = None,
-) -> ClaudeCredentialStatus:
-    """Assess the projected worker credential: absence locally, else ONE bounded probe.
-
-    Public because the refusal STRING is not the whole answer. The loop's
-    bounded credential re-probe -- the admission-time probe-refusal clause of
-    the provider spend-containment rules in `SPECIFICATION/contracts.md` --
-    waits on ONE condition — a provider-limit or rate-limit refusal —
-    and must exit its wait on every other, so it needs the typed
-    `condition` rather than prose it would have to pattern-match. Keeping the
-    assessment here rather than duplicating it in the re-probe module also
-    keeps ONE probe seam: `probe_claude_credential` is resolved through this
-    module's namespace, so a caller that stands the probe in stands in the one
-    the whole dispatch path uses.
-    """
-    credential_choice = select_factory_credential(
-        environ=os.environ,
-        home=Path.home(),
-        warn=lambda message: sys.stderr.write(f"livespec-dispatch: {message}\n"),
-    )
-    token = os.environ.get(credential_choice.env_name, "")
-    if token == "":
-        return absent_claude_credential_status(wrapper_text=credential_wrapper_text(repo=repo))
-    selected_probe = probe if probe is not None else probe_claude_credential
-    return selected_probe(token=token)
-
-
-def check_credential_env(
-    *,
-    repo: Path,
-    probe: Callable[..., ClaudeCredentialStatus] | None = None,
-) -> str | None:
-    """Fail fast unless the exact sandbox model credential is usable.
-
-    Presence is not sufficient: this bounded live probe uses the same
-    ``CLAUDE_CODE_OAUTH_TOKEN`` projected into the sandbox and refuses
-    before launch when it is revoked, exhausted/rate-limited, denied, or
-    cannot be assessed. Values and response bodies are never logged.
-    """
-    status = assess_credential_status(repo=repo, probe=probe)
-    if status.usable:
-        return None
-    return (
-        f"C-mode dispatch refused before sandbox launch: {status.message} "
-        f"Observed condition: {status.condition}. Remedy: {status.remedy} "
-        "The dispatch target's credential_wrapper must inject the full "
-        f"per-wrapper credential set: {dispatch_required_credentials_text()}."
-    )

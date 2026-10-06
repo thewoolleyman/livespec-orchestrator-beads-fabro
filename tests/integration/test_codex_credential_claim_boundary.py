@@ -71,12 +71,11 @@ from livespec_orchestrator_beads_fabro.commands import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_early_renewal import (
     CodexRenewalOutcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement import (
+    operator_credential_requirement,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
-from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
-    CODEX_FRESHNESS_RUN_BUDGET_SECONDS,
-    codex_freshness_required_seconds,
-)
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
 from livespec_orchestrator_beads_fabro.store import append_work_item, read_work_items
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
@@ -90,11 +89,22 @@ _ITEM_ID = "bd-ib-claimbound"
 # "non-zero" would pass for a run that never reached the position under test.
 _EXIT_DISPATCH_FAILED = 1
 
-# The floor the dispatch freshness gate enforces, read off the PRODUCTION
-# derivation rather than written here: a literal would keep agreeing with itself
-# after the budget child moves the requirement, and both cases below are
-# positioned relative to this number by one second.
-_REQUIRED = codex_freshness_required_seconds(run_budget_seconds=CODEX_FRESHNESS_RUN_BUDGET_SECONDS)
+
+def _required(*, repo: Path) -> int:
+    """The floor this fixture's own configuration resolves, read off production.
+
+    Resolved PER FIXTURE rather than held as a module constant, because the floor
+    is a property of the SELECTED WORKFLOW and the repository's own policy now,
+    not a fixed figure. A literal here would keep agreeing with itself while the
+    production requirement moved underneath it, which is the exact failure the
+    requirement resolver exists to retire; and every case below positions its
+    credential relative to this number by one second, so it has to be the real
+    one.
+    """
+    requirement = operator_credential_requirement(repo=repo)
+    assert not isinstance(requirement, str), requirement
+    return requirement.required_seconds
+
 
 _NOW = 1_700_000_000
 
@@ -359,7 +369,7 @@ def test_a_credential_fresh_at_both_positions_launches(
     _ = _seed_item()
     repo = _repo(tmp_path=tmp_path)
     renewals: list[str] = []
-    comfortably_fresh = _auth_json_with_exp(exp=_NOW + _REQUIRED + 10_000)
+    comfortably_fresh = _auth_json_with_exp(exp=_NOW + _required(repo=repo) + 10_000)
     _arm_credential_window(
         monkeypatch=monkeypatch,
         post_renewal_source=comfortably_fresh,
@@ -417,7 +427,7 @@ def test_a_credential_that_ages_past_the_floor_during_the_claim_leaves_no_active
     _ = _seed_item()
     repo = _repo(tmp_path=tmp_path)
     renewals: list[str] = []
-    at_floor_plus_one = _auth_json_with_exp(exp=_NOW + _REQUIRED + 1)
+    at_floor_plus_one = _auth_json_with_exp(exp=_NOW + _required(repo=repo) + 1)
     _arm_credential_window(
         monkeypatch=monkeypatch,
         post_renewal_source=at_floor_plus_one,
@@ -482,7 +492,7 @@ def test_a_source_that_changes_between_the_two_reads_refuses_without_stranding_t
         # Comfortably fresh at BOTH clocks, so the gate admits and the overlay
         # would admit too had the file not changed. That is what makes the
         # rewritten bytes the only reason this dispatch refuses.
-        post_renewal_source=_auth_json_with_exp(exp=_NOW + _REQUIRED + 10_000),
+        post_renewal_source=_auth_json_with_exp(exp=_NOW + _required(repo=repo) + 10_000),
         post_claim_source=post_claim_source,
         renewals=renewals,
     )

@@ -139,6 +139,13 @@ _ = sys.stderr.write("acme-admin: quota exhausted\\n")
 raise SystemExit(9)
 '''
 
+# The review-fix VISIT cap the shipped default renders -- `DEFAULT_REVIEW_FIX_CAP`
+# of three repair rounds plus the initial review visit. Immaterial to what these
+# cases measure (none of their graphs guards an edge on it), but it is a real
+# rendered value rather than an invented one, so a reader is not left wondering
+# whether the number carries meaning here.
+_REVIEW_FIX_VISIT_CAP = 4
+
 _WRAPPER = ["/usr/local/bin/with-acme-env.sh", "--"]
 _FLEET_MANIFEST_TEXT = (
     '{"owner": "thewoolleyman", "members": [{"repo": "repo", "class": "impl-plugin"}]}'
@@ -486,6 +493,7 @@ def test_the_declared_name_reaches_the_sandbox_through_the_real_overlay(
         dispatch_id="disp-134",
         token=lambda: "test-github-token",
         git_author=GitAuthor(name="Operator", email="operator@example.com"),
+        review_fix_visit_cap=_REVIEW_FIX_VISIT_CAP,
     )
 
     assert error is None
@@ -518,6 +526,7 @@ def test_an_overlay_for_a_repository_declaring_nothing_carries_no_such_name(
         dispatch_id="disp-134",
         token=lambda: "test-github-token",
         git_author=GitAuthor(name="Operator", email="operator@example.com"),
+        review_fix_visit_cap=_REVIEW_FIX_VISIT_CAP,
     )
 
     assert error is None
@@ -600,6 +609,7 @@ def test_a_managed_declaration_reaches_the_sandbox_as_the_value_minted_for_this_
         dispatch_id="disp-134",
         token=lambda: "test-github-token",
         git_author=GitAuthor(name="Operator", email="operator@example.com"),
+        review_fix_visit_cap=_REVIEW_FIX_VISIT_CAP,
     )
 
     assert error is None

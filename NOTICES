@@ -47,3 +47,29 @@ plugin cache satisfy those imports with no `uv sync` and no apt
 
 PSF-2.0 is an OSI-approved permissive licence; its full text accompanies
 the upstream repository (its `LICENSE` file).
+
+
+tomli
+-----
+File:     .claude-plugin/scripts/_vendor/tomli/
+Upstream: https://github.com/hukkin/tomli
+Version:  2.4.1 (PyPI tomli-2.4.1; git tag 2.4.1)
+Licence:  MIT
+
+The `tomli` pure-Python TOML parser, vendored as a byte-faithful copy of
+the upstream 2.4.1 distribution (`__init__.py`, `_parser.py`, `_re.py`,
+`_types.py`, `py.typed`) together with its `LICENSE`. Pure Python with
+zero dependencies.
+
+Vendored for the same reason as `typing_extensions` above: `tomllib` is
+stdlib only from Python 3.11, while this bundle's supported runtime
+starts at 3.10 (requires-python >= 3.10.16, and
+`scripts/bin/_bootstrap.py` states 3.10+). `tomli` IS the upstream of
+stdlib `tomllib`, so the vendored parser and a 3.11+ stdlib parse agree
+by construction. `commands/_dispatcher_toml_read` reads the committed
+Fabro run config's checkpoint budget through it, where recognizing one
+declaration across TOML's many equivalent spellings decides how much
+credential lifetime a dispatch is graded against.
+
+MIT is an OSI-approved permissive licence; its full text accompanies the
+vendored copy (its `LICENSE` file).
