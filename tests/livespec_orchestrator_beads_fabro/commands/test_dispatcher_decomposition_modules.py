@@ -17,6 +17,7 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_calibration_emit,
     _dispatcher_codex_auth,
+    _dispatcher_credential_env,
     _dispatcher_credential_wrapper,
     _dispatcher_credentials,
     _dispatcher_ledger_close,
@@ -109,18 +110,25 @@ def test_completion_cluster_importable_from_new_module_and_dispatcher() -> None:
 
 def test_credentials_cluster_importable_from_new_module_and_private_names_removed() -> None:
     credential_public_names = {
-        # The typed assessment the loop's bounded credential re-probe waits on:
-        # the refusal STRING cannot tell a rate limit from a revoked token, and
-        # the wait governs only the first.
-        "assess_credential_status",
-        "check_credential_env",
-        "dispatch_required_credentials_text",
         "fetch_fleet_manifest_text",
         "materialize_overlay",
         "read_dispatch_comments",
         "read_dispatch_labels",
         "resolve_sibling_clones",
     }
+    # The HOST-ENVIRONMENT half, split out by cohesion: these three ask whether
+    # the machine running the Dispatcher holds a usable credential, while the
+    # cluster above PROJECTS one into a sandbox overlay. The typed assessment is
+    # public because the loop's bounded re-probe waits on its `condition` — a
+    # refusal string cannot tell a rate limit from a revoked token, and the wait
+    # governs only the first.
+    credential_env_public_names = {
+        "assess_credential_status",
+        "check_credential_env",
+        "dispatch_required_credentials_text",
+    }
+    assert set(_dispatcher_credential_env.__all__) == credential_env_public_names
+
     codex_auth_public_names = {
         "CodexProjectionRefusal",
         # WHERE the credential lives, beside the read of WHAT it holds. Public

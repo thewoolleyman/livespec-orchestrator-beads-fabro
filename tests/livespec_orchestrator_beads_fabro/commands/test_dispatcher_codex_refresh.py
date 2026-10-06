@@ -11,14 +11,40 @@ from pathlib import Path
 import pytest
 from hypothesis import example, given
 from hypothesis import strategies as st
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement import (
+    operator_credential_requirement,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
-    CODEX_FRESHNESS_RUN_BUDGET_SECONDS,
     assess_codex_credential_freshness,
     codex_freshness_required_seconds,
 )
 
 _NOW = 1_000_000
+
+# THIS FILE'S OWN run budget, not production's. The dispatch requirement is
+# resolved per workflow now, so there is no module constant to read; 14400 is
+# kept because it is the figure the measured dead-zone incident was recorded
+# against, which is what makes the pinned `@example` values below meaningful.
+# A SECOND, larger budget appears in the derivation case so the guard is shown
+# to FOLLOW the budget rather than to coincide with one value of it.
+_RUN_BUDGET = 14_400
+_LARGER_RUN_BUDGET = 500_000
+
+
+def _operator_required_seconds() -> int:
+    """What the operator commands resolve for THIS repository, from production.
+
+    The command surfaces resolve their requirement from the selected workflow, so
+    a literal here would assert against a figure the repository's own
+    configuration can move. Read through the production resolver so these cases
+    follow it.
+    """
+    requirement = operator_credential_requirement(repo=Path.cwd())
+    assert not isinstance(requirement, str), requirement
+    return requirement.required_seconds
+
+
 _MODULE_PATH = Path(
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/"
     "_dispatcher_codex_refresh.py"
@@ -39,10 +65,10 @@ def test_codex_refresh_module_exists_with_expected_public_surface() -> None:
 
     assert set(module.__all__) == {
         "CODEX_ALARM_THRESHOLD_SECONDS",
-        "CODEX_REFRESH_GUARD_SECONDS",
         "HostCodexCredentialStatus",
         "assess_host_codex_credential",
         "classify_refresh_outcome",
+        "codex_refresh_guard_seconds",
         "should_invoke_codex_refresh",
     }
     assert module.CODEX_ALARM_THRESHOLD_SECONDS == 172_800
@@ -50,11 +76,19 @@ def test_codex_refresh_module_exists_with_expected_public_surface() -> None:
     # written as its own number. The two diverging IS the dead zone: a guard
     # smaller than the requirement leaves an interval in which the freshness
     # gate refuses while the refresher declines to act.
-    assert (
-        codex_freshness_required_seconds(run_budget_seconds=CODEX_FRESHNESS_RUN_BUDGET_SECONDS)
-        == module.CODEX_REFRESH_GUARD_SECONDS
-    )
-    assert module.CODEX_REFRESH_GUARD_SECONDS == 18_000
+    assert module.codex_refresh_guard_seconds(
+        run_budget_seconds=_RUN_BUDGET
+    ) == codex_freshness_required_seconds(run_budget_seconds=_RUN_BUDGET)
+    assert module.codex_refresh_guard_seconds(run_budget_seconds=_RUN_BUDGET) == 18_000
+    # And it MOVES with the budget. A guard frozen at one workflow's figure would
+    # satisfy the identity above and still re-open the dead zone for every other
+    # workflow, which is why the derivation is a function rather than a constant.
+    assert module.codex_refresh_guard_seconds(
+        run_budget_seconds=_LARGER_RUN_BUDGET
+    ) == codex_freshness_required_seconds(run_budget_seconds=_LARGER_RUN_BUDGET)
+    assert module.codex_refresh_guard_seconds(
+        run_budget_seconds=_LARGER_RUN_BUDGET
+    ) > module.codex_refresh_guard_seconds(run_budget_seconds=_RUN_BUDGET)
 
 
 # Pinned at the boundary and at the measured incident, so these execute on
@@ -86,13 +120,13 @@ def test_no_lifetime_refuses_dispatch_while_the_refresher_declines(*, remaining:
     verdict = assess_codex_credential_freshness(
         source_auth_json=source_auth_json,
         now_epoch=_NOW,
-        run_budget_seconds=CODEX_FRESHNESS_RUN_BUDGET_SECONDS,
+        run_budget_seconds=_RUN_BUDGET,
     )
     status = module.assess_host_codex_credential(
         source_auth_json=source_auth_json,
         now_epoch=_NOW,
         alarm_threshold_seconds=module.CODEX_ALARM_THRESHOLD_SECONDS,
-        refresh_guard_seconds=module.CODEX_REFRESH_GUARD_SECONDS,
+        refresh_guard_seconds=module.codex_refresh_guard_seconds(run_budget_seconds=_RUN_BUDGET),
     )
 
     if not verdict.fresh_enough:
@@ -118,7 +152,7 @@ def test_status_message_reports_remaining_against_the_required_lifetime() -> Non
         source_auth_json=_auth_json_with_exp(exp=_NOW + 13_517),
         now_epoch=_NOW,
         alarm_threshold_seconds=module.CODEX_ALARM_THRESHOLD_SECONDS,
-        refresh_guard_seconds=module.CODEX_REFRESH_GUARD_SECONDS,
+        refresh_guard_seconds=module.codex_refresh_guard_seconds(run_budget_seconds=_RUN_BUDGET),
     )
 
     assert "13517" in status.message
@@ -359,8 +393,9 @@ def test_run_codex_cred_status_json_payload(
         # The message reports remaining versus REQUIRED lifetime, so an
         # operator can see the shortfall without computing it.
         "message": (
-            "Host Codex credential expires in 900 seconds; renewal is due "
-            "below 18000 seconds, which is the dispatch freshness requirement."
+            f"Host Codex credential expires in 900 seconds; renewal is due "
+            f"below {_operator_required_seconds()} seconds, which is the dispatch "
+            f"freshness requirement."
         ),
         "present": True,
         # 900 seconds is deep inside the dead zone the old 360-second guard
@@ -402,7 +437,11 @@ def test_run_codex_cred_status_human_output(
     monkeypatch.setattr(
         codex_auth,
         "read_host_codex_auth",
-        lambda: _auth_json_with_exp(exp=_NOW + 200_000),
+        # Clear of BOTH thresholds this reading reports: above the alarm and
+        # above the resolved freshness requirement, so `refresh_due` is false.
+        # Read off the requirement rather than written as a number, which is what
+        # keeps this case asserting "comfortably fresh" rather than one lifetime.
+        lambda: _auth_json_with_exp(exp=_NOW + _operator_required_seconds() + 1),
     )
     monkeypatch.setattr(codex_auth.time, "time", lambda: float(_NOW))
 
@@ -448,9 +487,12 @@ def test_run_codex_cred_refresh_not_due_skips_codex(
     monkeypatch.setattr(
         codex_auth,
         "read_host_codex_auth",
-        # Above the reconciled 18000-second guard, so renewal is genuinely
-        # not due; 3600 would now be inside it.
-        lambda: _auth_json_with_exp(exp=_NOW + 100_000),
+        # Above the reconciled guard, so renewal is genuinely not due. The
+        # lifetime is read off the resolved requirement rather than written as a
+        # number, because the guard is DERIVED from that requirement and a
+        # literal would stop clearing it the moment the workflow's allowance
+        # moved.
+        lambda: _auth_json_with_exp(exp=_NOW + _operator_required_seconds() + 1),
     )
     monkeypatch.setattr(codex_auth.time, "time", lambda: float(_NOW))
     monkeypatch.setattr(codex_auth, "ShellCodexAppServerRunner", lambda: runner)
@@ -475,10 +517,14 @@ def test_run_codex_cred_refresh_due_invokes_codex_and_confirms_advanced_exp(
     codex_auth = importlib.import_module(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth"
     )
+    advanced = _operator_required_seconds() + 86_400
     reads = iter(
         (
             _auth_json_with_exp(exp=_NOW + 20),
-            _auth_json_with_exp(exp=_NOW + 86_400),
+            # The post-renewal read must clear the RESOLVED requirement for the
+            # outcome to be `refreshed`; a fixed 86400 is now deep inside the
+            # guard for this repository's own workflow.
+            _auth_json_with_exp(exp=_NOW + advanced),
         )
     )
     runner = _RecordingRunner(result=CommandResult(exit_code=0, stdout="OK\n", stderr=""))
@@ -496,7 +542,7 @@ def test_run_codex_cred_refresh_due_invokes_codex_and_confirms_advanced_exp(
     assert payload["would_invoke_codex"] is True
     assert payload["invoked_codex"] is True
     assert payload["before"]["remaining_seconds"] == 20
-    assert payload["after"]["remaining_seconds"] == 86_400
+    assert payload["after"]["remaining_seconds"] == advanced
     assert len(runner.calls) == 1
     argv, cwd, request_lines, timeout_seconds = runner.calls[0]
     # The ungated app-server route, with no sandbox-bypass flag of any kind.

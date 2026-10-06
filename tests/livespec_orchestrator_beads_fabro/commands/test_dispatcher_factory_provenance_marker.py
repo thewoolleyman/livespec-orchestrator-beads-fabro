@@ -40,6 +40,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
     render_run_config_overlay,
 )
 
+# The review-fix VISIT cap the shipped default renders -- `DEFAULT_REVIEW_FIX_CAP`
+# of three repair rounds plus the initial review visit. Immaterial to what these
+# cases measure (none of their graphs guards an edge on it), but it is a real
+# rendered value rather than an invented one, so a reader is not left wondering
+# whether the number carries meaning here.
+_REVIEW_FIX_VISIT_CAP = 4
+
 # The git-config key the sandbox declares its factory provenance under. Spelled
 # literally here rather than imported from the module under test: a test that
 # reads the name from the implementation cannot detect the name changing, and
@@ -174,6 +181,7 @@ def test_materialize_overlay_declares_the_pre_launch_dispatch_id(
         dispatch_id="01M23CD51JNGY3R1AKN2WNP4WB",
         token=lambda: _FAKE_GITHUB_TOKEN,
         git_author=_GIT_AUTHOR,
+        review_fix_visit_cap=_REVIEW_FIX_VISIT_CAP,
     )
     assert error is None
     rendered = overlay.read_text(encoding="utf-8")

@@ -47,12 +47,12 @@ from livespec_orchestrator_beads_fabro.commands import _config, dispatcher
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
     ClaudeCredentialStatus,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_env import (
+    check_credential_env,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_wrapper import (
     credential_wrapper_text,
     read_dispatch_target_credential_wrapper,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
-    check_credential_env,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     executing_payload_root,

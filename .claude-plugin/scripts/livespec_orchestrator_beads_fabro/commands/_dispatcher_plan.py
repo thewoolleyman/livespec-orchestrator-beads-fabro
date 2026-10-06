@@ -102,7 +102,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
     CODEX_FRESHNESS_MARGIN_SECONDS,
-    CODEX_FRESHNESS_RUN_BUDGET_SECONDS,
     CODEX_NON_ROTATABLE_REFRESH_SENTINEL,
     DEFAULT_SANDBOX_OTEL_ENDPOINT,
     SANDBOX_OTEL_ENDPOINT_ENV_VAR,
@@ -124,7 +123,6 @@ __all__: list[str] = [
     "CODEX_AGENT_MODE_READ_ONLY",
     "CODEX_AGENT_MODE_WRITE",
     "CODEX_FRESHNESS_MARGIN_SECONDS",
-    "CODEX_FRESHNESS_RUN_BUDGET_SECONDS",
     "CODEX_IMPLEMENTER_ADAPTER",
     "CODEX_NON_ROTATABLE_REFRESH_SENTINEL",
     "CORE_PLUGIN_ROOT_ENV_VAR",

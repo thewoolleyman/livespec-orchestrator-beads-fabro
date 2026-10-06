@@ -78,6 +78,7 @@ __all__: list[str] = [
     "effective_groom_cut_approval",
     "effective_merge_on_review_cap",
     "effective_review_fix_cap",
+    "review_fix_visit_cap_for",
 ]
 
 _AUTO_ADMISSION = "auto"
@@ -86,6 +87,21 @@ REVIEW_FIX_CAP_LABEL = "review-fix-cap:"
 ACCEPTANCE_REWORK_CAP_LABEL = "acceptance-rework-cap:"
 AUTOMATED_REGROOM_CAP_LABEL = "automated-regroom-cap:"
 GROOM_CUT_APPROVAL_LABEL = "groom-cut-approval:"
+
+
+def review_fix_visit_cap_for(*, review_fix_cap: int) -> int:
+    """The graph's `review_fix_visit_cap` input for an effective review-fix cap.
+
+    The cap counts implementer REPAIR rounds while the graph's guard reads the
+    REVIEW node's own visit count, so a cap of three fix rounds is a guard of
+    four: the initial review visit plus three rounds under it. The `+ 1` is
+    spelled HERE, once, because two surfaces need it -- the plan builder that
+    renders the input, and the credential requirement that derives an allowance
+    from the loop that input bounds. Two spellings of the same off-by-one would
+    let the derived allowance describe a smaller loop than the dispatch renders,
+    and both figures would look perfectly reasonable.
+    """
+    return review_fix_cap + 1
 
 
 def effective_admission_policy(

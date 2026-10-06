@@ -45,7 +45,10 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
-from livespec_orchestrator_beads_fabro.commands import _dispatcher_credentials, _dispatcher_loop
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_credential_env,
+    _dispatcher_loop,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
     ClaudeProbeObservation,
     classify_claude_probe,
@@ -243,7 +246,7 @@ def _loop(
     calls: list[str] = []
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", _recording_run_dispatch(calls=calls))
     monkeypatch.setattr(
-        _dispatcher_credentials,
+        _dispatcher_credential_env,
         "probe_claude_credential",
         _scripted_probe(observations=observations),
     )

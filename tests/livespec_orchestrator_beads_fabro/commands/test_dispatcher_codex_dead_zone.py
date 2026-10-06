@@ -48,6 +48,16 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 
+# The run budget these cases are POSITIONED AGAINST, and the figure the retired
+# `CODEX_FRESHNESS_RUN_BUDGET_SECONDS` module constant carried. Kept as a fixed
+# local so each case below keeps asserting what it was written to assert: the
+# budget is now RESOLVED PER DISPATCH from the selected workflow, and that
+# resolution has its own coverage in `test_dispatcher_credential_requirement.py`,
+# so what these cases need from it is one representative figure rather than the
+# production derivation they are not about.
+_RUN_BUDGET_SECONDS = 14400
+
+
 _NOW = 1_000_000
 
 # The remaining lifetime measured on the host when dispatch of
@@ -210,7 +220,10 @@ def test_dead_zone_credential_is_admitted_once_the_credential_reads_fresh(
     monkeypatch.setattr(_dispatcher_codex_auth, "read_host_codex_auth", lambda: next(reads))
     spent = _stub_renewal(monkeypatch=monkeypatch)
 
-    result = project_codex_auth(clock=_AdvancingClock(start=_NOW, step=_RENEWAL_ELAPSED))
+    result = project_codex_auth(
+        clock=_AdvancingClock(start=_NOW, step=_RENEWAL_ELAPSED),
+        run_budget_seconds=_RUN_BUDGET_SECONDS,
+    )
 
     # Exactly one bounded renewal request, and the dispatch admitted after it.
     assert spent == ["requested"]
@@ -231,7 +244,7 @@ def test_a_fresh_credential_is_admitted_without_spending_a_renewal(
     spent = _stub_renewal(monkeypatch=monkeypatch)
     clock = _AdvancingClock(start=_NOW, step=_RENEWAL_ELAPSED)
 
-    result = project_codex_auth(clock=clock)
+    result = project_codex_auth(clock=clock, run_budget_seconds=_RUN_BUDGET_SECONDS)
 
     assert isinstance(result, str)
     assert spent == []
@@ -259,7 +272,7 @@ def test_the_renewed_credential_is_graded_against_the_post_request_instant(
     _ = _stub_renewal(monkeypatch=monkeypatch)
     clock = _AdvancingClock(start=_NOW, step=_RENEWAL_ELAPSED)
 
-    result = project_codex_auth(clock=clock)
+    result = project_codex_auth(clock=clock, run_budget_seconds=_RUN_BUDGET_SECONDS)
 
     # Two readings: one before the request, one after it. Never reused.
     assert clock.readings == [_NOW, _NOW + _RENEWAL_ELAPSED]
@@ -276,7 +289,9 @@ def test_a_renewal_answered_but_unadvanced_refuses_without_claiming_auth_failure
     monkeypatch.setattr(_dispatcher_codex_auth, "read_host_codex_auth", lambda: stale)
     _ = _stub_renewal(monkeypatch=monkeypatch, answered=True)
 
-    result = project_codex_auth(clock=_AdvancingClock(start=_NOW, step=0))
+    result = project_codex_auth(
+        clock=_AdvancingClock(start=_NOW, step=0), run_budget_seconds=_RUN_BUDGET_SECONDS
+    )
 
     assert isinstance(result, CodexProjectionRefusal)
     message = result.message
@@ -348,7 +363,10 @@ def test_a_renewal_that_advanced_the_expiry_without_clearing_the_floor_says_so(
     monkeypatch.setattr(_dispatcher_codex_auth, "read_host_codex_auth", lambda: next(reads))
     spent = _stub_renewal(monkeypatch=monkeypatch, answered=True)
 
-    result = project_codex_auth(clock=_AdvancingClock(start=_NOW, step=_RENEWAL_ELAPSED))
+    result = project_codex_auth(
+        clock=_AdvancingClock(start=_NOW, step=_RENEWAL_ELAPSED),
+        run_budget_seconds=_RUN_BUDGET_SECONDS,
+    )
 
     assert isinstance(result, CodexProjectionRefusal)
     message = result.message
@@ -411,7 +429,9 @@ def test_a_renewal_that_was_never_spent_says_so_and_claims_nothing(
         detail="codex app-server could not be started: codex",
     )
 
-    result = project_codex_auth(clock=_AdvancingClock(start=_NOW, step=0))
+    result = project_codex_auth(
+        clock=_AdvancingClock(start=_NOW, step=0), run_budget_seconds=_RUN_BUDGET_SECONDS
+    )
 
     assert isinstance(result, CodexProjectionRefusal)
     message = result.message
@@ -431,7 +451,9 @@ def test_missing_host_credential_refuses_without_spending_a_renewal(
     monkeypatch.setattr(_dispatcher_codex_auth, "read_host_codex_auth", lambda: None)
     spent = _stub_renewal(monkeypatch=monkeypatch)
 
-    result = project_codex_auth(clock=_AdvancingClock(start=_NOW, step=0))
+    result = project_codex_auth(
+        clock=_AdvancingClock(start=_NOW, step=0), run_budget_seconds=_RUN_BUDGET_SECONDS
+    )
 
     assert isinstance(result, CodexProjectionRefusal)
     assert spent == []
@@ -453,7 +475,10 @@ def test_credential_unreadable_on_the_reread_refuses_on_the_measured_lifetime(
     monkeypatch.setattr(_dispatcher_codex_auth, "read_host_codex_auth", lambda: next(reads))
     _ = _stub_renewal(monkeypatch=monkeypatch)
 
-    result = project_codex_auth(clock=_AdvancingClock(start=_NOW, step=_RENEWAL_ELAPSED))
+    result = project_codex_auth(
+        clock=_AdvancingClock(start=_NOW, step=_RENEWAL_ELAPSED),
+        run_budget_seconds=_RUN_BUDGET_SECONDS,
+    )
 
     assert isinstance(result, CodexProjectionRefusal)
     message = result.message
@@ -515,7 +540,9 @@ def test_an_undecodable_credential_refuses_without_spending_a_renewal(
         monkeypatch.setattr(_dispatcher_codex_auth, "read_host_codex_auth", lambda s=source: s)
         spent = _stub_renewal(monkeypatch=monkeypatch)
 
-        result = project_codex_auth(clock=_AdvancingClock(start=_NOW, step=0))
+        result = project_codex_auth(
+            clock=_AdvancingClock(start=_NOW, step=0), run_budget_seconds=_RUN_BUDGET_SECONDS
+        )
 
         assert isinstance(result, CodexProjectionRefusal), source
         assert spent == [], source
@@ -540,7 +567,10 @@ def test_a_credential_undecodable_only_after_the_renewal_reports_that_and_not_a_
     monkeypatch.setattr(_dispatcher_codex_auth, "read_host_codex_auth", lambda: next(reads))
     spent = _stub_renewal(monkeypatch=monkeypatch)
 
-    result = project_codex_auth(clock=_AdvancingClock(start=_NOW, step=_RENEWAL_ELAPSED))
+    result = project_codex_auth(
+        clock=_AdvancingClock(start=_NOW, step=_RENEWAL_ELAPSED),
+        run_budget_seconds=_RUN_BUDGET_SECONDS,
+    )
 
     assert isinstance(result, CodexProjectionRefusal)
     # The renewal WAS spent — the pre-renewal reading warranted it.

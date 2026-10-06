@@ -30,15 +30,42 @@ import json
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_refresh import (
+    codex_refresh_guard_seconds,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_deadline import (
+    CredentialLifetimeRequirement,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement import (
+    operator_credential_requirement,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 
 _NOW = 1_000_000
 
 _MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_codex_cred_refresh_command"
 
+
 # Any lifetime below the reconciled guard (run budget plus margin) is renewal-due.
+# The guard is DERIVED from the requirement this repository's own committed
+# workflow resolves, so both figures are positioned relative to the production
+# derivation rather than written as literals. `_NOT_DUE_REMAINING` was `100_000`,
+# which sat above the retired fixed guard and sits far BELOW the resolved one --
+# so the not-due case silently became a due case, and a literal here would keep
+# agreeing with itself every time the repository's configuration moved the floor.
+#
+# `_run` below hands the command `cwd=Path.cwd`, so the requirement it resolves at
+# run time is the one resolved here; reading it from the same function is what
+# keeps the two in step.
+def _guard_seconds() -> int:
+    """The eligibility guard this repository's committed workflow resolves."""
+    requirement = operator_credential_requirement(repo=Path.cwd())
+    assert isinstance(requirement, CredentialLifetimeRequirement), requirement
+    return codex_refresh_guard_seconds(run_budget_seconds=requirement.allowance_seconds)
+
+
 _DUE_REMAINING = 20
-_NOT_DUE_REMAINING = 100_000
+_NOT_DUE_REMAINING = _guard_seconds() + 10_000
 
 
 class _AppServerRunner:
