@@ -65,12 +65,38 @@ moment it was written; its value is the control above plus the exactness the
 sibling lacks.
 
 The wrapper double RUNS the child and propagates its exit status, which is what
-a real `with-<project>-env.sh` does. It deliberately does not `exec`: an
-`exec`-form double drove `ledger-check` fine (the sibling file uses one) but
-did not drive `dispatch` to completion in this environment. That difference is
-fixture mechanics, not product behaviour, and discriminating it is out of
-scope for this work-item — recorded here so the shape is not mistaken for a
-finding.
+a real `with-<project>-env.sh` does, and it writes the child's output to a file
+it then `cat`s to STDOUT. Both of those are load-bearing, for a reason this
+docstring ORIGINALLY GOT WRONG.
+
+CORRECTION, measured 2026-10-06. This file first claimed the `exec`-form
+double's failure to drive `dispatch` was "fixture mechanics, not product
+behaviour … so the shape is not mistaken for a finding". That was false, and
+backwards: it IS product behaviour, and it IS a finding. `_bootstrap`'s
+credential self-heal runs the wrapper with `capture_output=True` and then, at
+lines 276-284, branches:
+
+    if completed.returncode != 0 and not stdout:
+        ... write wrapper_launch_failure ...
+    elif stderr:
+        ... write the child's stderr ...
+
+So a child that REFUSES — non-zero exit, diagnostic on STDERR, empty STDOUT —
+takes the first arm, and the `elif` is skipped: its real stderr is DISCARDED,
+not supplemented, and the operator is handed "credential_wrapper could not run
+in this environment" instead. Measured directly: a dispatch whose floor
+refusal read `release 7.1.0 is below the committed … floor 9.9.9` emitted that
+wrapper-launch message and the genuine refusal appeared NOWHERE in the output.
+The sibling's `exec`-form double works only because `ledger-check` succeeds
+and prints to stdout.
+
+That is why this double routes the child's output through stdout: it is a
+fixture working AROUND a real product behaviour, which is the opposite of the
+fixture artifact the original wording claimed. The behaviour is NOT repaired
+here — that is outside this work-item's declared assertions — and it is
+recorded as an additive incident in
+`plan/dispatcher-cache-lifetime/research/003-red-provenance-cycles-9-to-11-2026-10-06.md`
+so the next reader examines it instead of trusting a "not a finding" label.
 
 Real child processes are the only way to ask any of this, so this file is
 listed in `pyproject.toml`'s `subprocess_spawn_allowlist` and scrubs the
