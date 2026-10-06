@@ -358,6 +358,13 @@ repo_local_ci_skips = [
     { slug = "check-fresh-clone-setup", reason = "PROVISIONAL, declared, not adjudicated. It is the dev-tooling ADOPTION gate (orchestrator-image/fresh-clone-setup-gate.sh): it clones this repository into a throwaway tree and replays the dispatch workflow's conformance prepare steps there, resolving this repository's integration contract through the plugin's own resolver against the PRIMARY's synced venv. It is enforced at pre-push on the bootstrapped primary, the tree state it was written for; whether the CI container reproduces that vantage has not been measured, and an entry that could only pass or only skip would read as coverage. Adjudicate by running it once in the metadata batch on a branch under a workflow-edit authorization of its own, and wire it if green." },
 ]
 scenario_tiers = ["tests.e2e-cli", "tests.e2e", "tests.integration", "tests.consumer", "tests.prompts", "tests.bin"]
+# `bin/*.py` files that are PRE-IMPORT machinery rather than shebang wrappers,
+# and so are not held to `wrapper_shape`'s 5-statement shape. `_bootstrap.py`
+# is the baseline the shared check always exempts; `_payload.py` is the
+# payload-retention step `bootstrap()` runs before any packaged import, split
+# out of `_bootstrap.py` along its own cohesion seam (it answers "which tree
+# does this invocation execute from", not "which secrets does it need").
+bin_non_wrapper_files = ["_payload.py"]
 source_trees = [".claude-plugin/scripts/livespec_orchestrator_beads_fabro"]
 io_trees = [
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/effects",
@@ -466,12 +473,20 @@ destructive_cli_allowlist = [
 #   it is listed anyway so the exception is declared rather than merely
 #   undetected, and the file scrubs the child env exactly as an
 #   allowlisted spawn must.
+# - test_payload_retention_after_eviction.py asks what a LIVE process sees
+#   after its own plugin installation is deleted underneath it. The
+#   deletion has to happen between the launcher finishing and the deferred
+#   work starting, in a process whose source tree is the one being removed,
+#   so no in-process `main()` can stand in. It scrubs the child env exactly
+#   as an allowlisted spawn must.
 #
 # This key MUST stay above the `[[...mirror_pairings]]` array-of-tables
 # below (same TOML attachment reason as `destructive_cli_allowlist`).
 subprocess_spawn_allowlist = [
     "tests/bin/test_host_side_self_contained_import.py",
     "tests/bin/test_bootstrap_unattended_marker_forwarding.py",
+    "tests/bin/test_payload_retention_after_eviction.py",
+    "tests/bin/test_payload_retention_harness.py",
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]

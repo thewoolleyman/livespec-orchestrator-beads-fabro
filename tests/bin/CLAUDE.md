@@ -28,6 +28,31 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   forwarding that only worked by environment inheritance fails them.
   Like the file below, the real modules are imported only inside that
   spawned child.
+- `test_payload.py` — unit coverage for `_payload.py`, the
+  payload-retention step `bootstrap()` runs before any packaged
+  import: which plugin roots are harness-managed, how a release
+  identity degrades, that a published payload is reused, and that a
+  copy losing the publish race discards its own staging.
+- `test_payload_retention_after_eviction.py` — the end-to-end
+  counterpart of `test_payload.py`, and the regression guard for the
+  `bd-ib-mtuqxb` host incident. It copies the real plugin root into a
+  disposable fixture installation, launches a real child through the
+  real `bootstrap()`, DELETES that installation once the launcher has
+  finished, and only then releases the child to import the packaged
+  drive and Dispatcher routes, read a packaged asset and spawn a
+  `scripts/bin/` helper. No in-process `main()` can stand in: the
+  question is what a second process sees after its own source tree is
+  gone. Listed in `subprocess_spawn_allowlist`. Its bytes are FROZEN
+  across its Red->Green pair — cover anything it leaves unexercised in
+  the harness file below rather than editing it.
+- `test_payload_retention_harness.py` — coverage for the frozen
+  regression's own scaffolding, which this repo measures like any other
+  `tests/` file: `_wait_for`'s early-child-exit and bounded-timeout
+  arms, and the test body's `finally` reaping a wedged probe. It loads
+  the frozen module BY PATH and drives those arms against real
+  disposable children, so the frozen file never has to change. It
+  asserts nothing about `_payload.py` — harness robustness, not product
+  Red. Listed in `subprocess_spawn_allowlist`.
 - `test_host_side_self_contained_import.py` — the end-to-end
   counterpart of `test_bootstrap.py`: it spawns a `-S` (no-site)
   subprocess that runs the real bootstrap and imports the host-side

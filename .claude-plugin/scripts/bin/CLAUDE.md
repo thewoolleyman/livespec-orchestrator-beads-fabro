@@ -35,6 +35,19 @@ the pre-package `sys.path` setup + Python version check, and is the
 only file in this tree where `sys.stderr.write` is permitted before
 structlog is configured.
 
+`_payload.py` is the second non-wrapper (declared through
+`bin_non_wrapper_files` in `pyproject.toml`). It answers a different
+pre-import question than `_bootstrap.py` does — "which tree does this
+invocation execute its code and read its packaged assets from",
+versus "which secrets does it need" — and `bootstrap()` calls it
+BEFORE any `livespec_orchestrator_beads_fabro` or `livespec_runtime`
+import. A natively installed plugin runs out of a harness-managed
+cache the harness may delete mid-invocation, so the launcher copies
+the release aside and runs from the copy; a plugin root inside its
+own source repository is left exactly as it is. Stdlib only: it
+decides where the packaged code lives, so it cannot import the
+packaged code.
+
 `raise SystemExit(main())` is the permitted exit mechanism here. Do
 NOT add argument parsing, business logic, or I/O to a wrapper — that
 belongs in the `commands/` module so it stays under test coverage.

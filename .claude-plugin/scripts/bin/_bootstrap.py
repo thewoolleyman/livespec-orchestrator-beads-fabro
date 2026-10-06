@@ -27,6 +27,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import cast
 
+from _payload import retain_payload
+
 __all__: list[str] = ["bootstrap"]
 
 # The tenant secret every beads-backed orchestrator CLI needs at call time —
@@ -53,6 +55,11 @@ _CREDENTIAL_FAIL_EXIT = 3
 _PLAN_UNATTENDED_ENV_NAME = "LIVESPEC_PLAN_UNATTENDED"
 # `env` is the POSIX command that runs its own operand with NAME=value applied.
 _ENV_COMMAND = "env"
+# What a native plugin install exports as the plugin root, and therefore what
+# every packaged asset read resolves through (`_dispatcher_paths.plugin_root`).
+# A RETAINED payload repoints it, so an asset read lands in the copy that
+# survives eviction rather than in the harness cache that may already be gone.
+_PLUGIN_ROOT_ENV_NAME = "CLAUDE_PLUGIN_ROOT"
 
 
 def bootstrap(*, required: tuple[str, ...] = _REQUIRED_CREDENTIALS) -> None:
@@ -74,12 +81,13 @@ def bootstrap(*, required: tuple[str, ...] = _REQUIRED_CREDENTIALS) -> None:
             "livespec-orchestrator-beads-fabro requires Python 3.10+; install via uv.\n"
         )
         raise SystemExit(127)
-    bundle_scripts = Path(__file__).resolve().parent.parent
-    bundle_vendor = bundle_scripts / "_vendor"
-    for path in (bundle_scripts, bundle_vendor):
+    payload = retain_payload(source_root=Path(__file__).resolve().parent.parent.parent)
+    for path in (payload.scripts_root, payload.vendor_root):
         path_str = str(path)
         if path_str not in sys.path:
             sys.path.insert(0, path_str)
+    if payload.retained:
+        os.environ[_PLUGIN_ROOT_ENV_NAME] = str(payload.root)
     _self_heal_credentials(required=_effective_required(required=required, cwd=Path.cwd()))
 
 
