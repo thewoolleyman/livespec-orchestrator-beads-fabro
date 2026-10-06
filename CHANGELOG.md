@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.173.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.173.5...v0.173.6) (2026-10-06)
+
+
+### Bug Fixes
+
+* **dispatcher:** make the candidate canary's subject the candidate's own payload ([ac66a47](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ac66a471fe79348ea3149be6b27d0f041524842d))
+* **launcher:** clean up a provision that is interrupted, not just one that errors ([3db9c63](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3db9c63d6e7554d0cabeb79172dc3c155959bfa1))
+* **launcher:** give each invocation its own complete release payload ([5ac4cd2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5ac4cd2ada4ff30595d0c121c13d853e069bf91c))
+* **launcher:** grade payload completeness as usable and same-release ([29236b8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/29236b83d3673783e1cce8f9266403e848680695))
+* **launcher:** keep the installed build the candidate, and survive the re-exec ([1bd629d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1bd629da6f16c77d7b01fdd89eb41430342ee9f0))
+* **launcher:** keep the installed root the candidate with no harness export ([a3882a6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a3882a6ccc0a31965fcaf6593ed3116ea6de32b3))
+* **launcher:** keep the inventory step inside refusal and cleanup semantics ([55ec62e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/55ec62ee11636557a0584a9e38a9fe9adbb48bf3))
+* **launcher:** pull mkdtemp and checkout identity inside the refusal boundary ([7984f67](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7984f670292a9e017b606b98dba6665cfdf9e72c))
+* **launcher:** re-point the candidate when a different source is selected ([66a52bd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/66a52bd1e50386079d53890ed015e9212a727762))
+* **launcher:** read the executing release from the retained bytes ([61575cd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/61575cd72cbae9ad2f4d6138442a2b3164ca0343))
+* **launcher:** refuse an unusable source payload before claiming work ([a7367f6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a7367f6ddc3ea95d2f7776920397058235db8aa6))
+* **launcher:** reject unusable release provenance instead of labelling it ([3fa3b13](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3fa3b1314308f7b1efb7939a30d982a692e19360))
+* **launcher:** release a payload at completion, after its own consumers ([7a71b6d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7a71b6d645bd0c083ae1bf246567b8b442774503))
+* **launcher:** retain a complete payload through plugin-cache eviction ([ea5b4f3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ea5b4f3712ffb45f8179227c952f5428629680da))
+* **launcher:** reuse an inherited payload only from the same source ([8a08563](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8a08563ab5fcc81cfd9807e6cdbf29893710be63))
+* **launcher:** verify the copy against a pre-copy inventory, not the live source ([edbb15e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/edbb15e3e488bcff91891796e302f0f65a7730a3))
+
 ## [0.173.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.173.4...v0.173.5) (2026-10-06)
 
 
