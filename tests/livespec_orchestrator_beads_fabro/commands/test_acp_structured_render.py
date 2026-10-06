@@ -222,7 +222,9 @@ def test_a_multi_provider_agent_takes_a_provider_qualified_model() -> None:
     }
     rendered = _rendered(block=block)
 
-    assert rendered["implement"] == "npx -y @agentclientprotocol/opencode-acp"
+    # The registry declares a per-platform `binary` distribution for `opencode`,
+    # so its launch triple is the archive's own `cmd` plus `args`.
+    assert rendered["implement"] == "./opencode acp"
 
 
 def test_a_single_provider_agent_accepts_its_own_provider_qualified_reference() -> None:
