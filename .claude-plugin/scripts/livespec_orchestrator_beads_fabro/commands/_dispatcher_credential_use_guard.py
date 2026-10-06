@@ -74,6 +74,8 @@ never be signalled.
 from __future__ import annotations
 
 __all__: list[str] = [
+    "CREDENTIAL_EXPIRY_ENV_VAR",
+    "CREDENTIAL_REQUIRED_REMAINING_ENV_VAR",
     "CREDENTIAL_USE_DEADLINE_ENV_VAR",
     "GUARD_REFUSAL_EXIT_CODE",
     "GUARD_SCRIPT_PATH",
@@ -87,6 +89,18 @@ __all__: list[str] = [
 # producer and a consumer that disagree about it leave the guard permanently
 # unable to read a deadline -- which, fail-closed, refuses every dispatch.
 CREDENTIAL_USE_DEADLINE_ENV_VAR = "LIVESPEC_CREDENTIAL_USE_DEADLINE_EPOCH"
+
+# The two inputs the STARTUP grade needs, and the reason it is a different
+# measurement from the deadline check beside it. The deadline bounds how long
+# execution may CONTINUE; these decide whether it may BEGIN, by letting the
+# sandbox re-measure the credential's remaining lifetime against its OWN clock.
+# Admission already graded that lifetime, but it did so on the host at an earlier
+# instant, and queueing or preparation can age the credential below the
+# requirement in between -- which is exactly the window a deadline check cannot
+# see, because a deadline stamped from a long allowance stays comfortably future
+# while the credential underneath it expires.
+CREDENTIAL_EXPIRY_ENV_VAR = "LIVESPEC_CREDENTIAL_EXPIRY_EPOCH"
+CREDENTIAL_REQUIRED_REMAINING_ENV_VAR = "LIVESPEC_CREDENTIAL_REQUIRED_REMAINING_SECONDS"
 
 # Where the prepare step writes the guard inside the sandbox.
 GUARD_SCRIPT_PATH = "/workspace/.livespec/credential-use-guard.sh"
@@ -248,6 +262,56 @@ if [ "$remaining" -le 0 ]; then
 fi
 
 if [ "$mode" = "check" ]; then
+    # THE CREDENTIAL GRADE, which is a different measurement from the deadline
+    # check above and is why reaching this line is not yet an admission. The
+    # deadline can be comfortably future while the credential underneath it has
+    # aged below what this dispatch needs -- queueing and preparation consume
+    # wall clock against BOTH, but a deadline derived from a long allowance
+    # absorbs that silently. Re-measured here on the SANDBOX's clock, against the
+    # requirement the host resolved, because the host's own grade was taken at an
+    # earlier instant and cannot speak for this one.
+    cred_expiry="${{{CREDENTIAL_EXPIRY_ENV_VAR}:-}}"
+    cred_required="${{{CREDENTIAL_REQUIRED_REMAINING_ENV_VAR}:-}}"
+    if [ -n "$cred_expiry" ] || [ -n "$cred_required" ]; then
+        # EXACTLY ONE present is a half-wired projection, not a deadline-only
+        # launch, so it fails closed rather than silently grading nothing. A
+        # projection supplying NEITHER is the deadline-only shape this guard also
+        # serves, and it is left to the deadline check alone.
+        if [ -z "$cred_expiry" ] || [ -z "$cred_required" ]; then
+            echo "credential-use guard refused: only one of" \\
+                 "{CREDENTIAL_EXPIRY_ENV_VAR} and" \\
+                 "{CREDENTIAL_REQUIRED_REMAINING_ENV_VAR} was projected, so the" \\
+                 "credential's remaining lifetime could not be graded. The guard" \\
+                 "fails closed." >&2
+            exit {GUARD_REFUSAL_EXIT_CODE}
+        fi
+        case "$cred_expiry$cred_required" in
+            ''|*[!0-9]*)
+                echo "credential-use guard refused: the projected credential expiry" \\
+                     "('$cred_expiry') or required remaining lifetime" \\
+                     "('$cred_required') is not an epoch second, so the" \\
+                     "credential's remaining lifetime could not be graded. The" \\
+                     "guard fails closed." >&2
+                exit {GUARD_REFUSAL_EXIT_CODE}
+                ;;
+        esac
+        cred_remaining=$((cred_expiry - now))
+        # STRICTLY GREATER, matching the admission criterion exactly. A credential
+        # whose remaining lifetime EQUALS the requirement would finish its last
+        # enforced second with zero margin left, which is the one state the margin
+        # exists to prevent -- and a sandbox grading it more leniently than
+        # admission did would admit work admission would have refused.
+        if [ "$cred_remaining" -le "$cred_required" ]; then
+            echo "credential-use guard refused: the projected credential has" \\
+                 "$cred_remaining seconds of remaining lifetime, which does not" \\
+                 "exceed the $cred_required seconds this dispatch requires. It" \\
+                 "aged below that requirement while the run was queued or" \\
+                 "prepared, so no coding-agent node is started against it." >&2
+            exit {GUARD_REFUSAL_EXIT_CODE}
+        fi
+        echo "credential-use guard: the credential has $cred_remaining seconds of" \\
+             "remaining lifetime, above the $cred_required required."
+    fi
     echo "credential-use guard: $remaining seconds of credential-use budget remain."
     exit 0
 fi
