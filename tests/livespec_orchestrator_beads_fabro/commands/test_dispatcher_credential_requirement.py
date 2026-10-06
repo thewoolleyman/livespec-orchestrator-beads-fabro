@@ -299,8 +299,13 @@ def test_a_sufficiently_fresh_credential_is_still_admitted_under_the_shipped_req
     resolved = _resolve(repo=shipped)
     assert not isinstance(resolved, str), resolved
     now = 1_000_000
+    # One second ABOVE the requirement, because admission requires the remaining
+    # lifetime to EXCEED it: a credential sitting exactly AT the figure does not
+    # exceed it and is refused. The equality point is asserted in its own
+    # below/equal/above case in
+    # `test_dispatcher_credential_requirement_surfaces.py`.
     admitted = graded_freshness(
-        source_auth_json=_auth_json(exp=now + resolved.required_seconds),
+        source_auth_json=_auth_json(exp=now + resolved.required_seconds + 1),
         now_epoch=now,
         run_budget_seconds=resolved.allowance_seconds,
     )

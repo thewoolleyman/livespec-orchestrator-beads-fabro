@@ -109,12 +109,18 @@ def assess_host_codex_credential(
         expires_at_epoch=expires_at,
         remaining_seconds=remaining,
         alarm=remaining < alarm_threshold_seconds,
-        refresh_due=remaining < refresh_guard_seconds,
+        # `<=`, mirroring the STRICT admission comparator. Admission requires the
+        # remaining lifetime to EXCEED the requirement, so a credential sitting
+        # exactly AT it is refused -- and renewal must therefore be due there too.
+        # `<` left the dead zone non-empty at exactly that point: dispatch refused
+        # while the sanctioned refresher reported "not due" and told a human to run
+        # `codex login`, which is the whole failure deriving this guard retired.
+        refresh_due=remaining <= refresh_guard_seconds,
         # Remaining AND required, so the shortfall is readable off the message
         # instead of computed by whoever is reading it at 3am.
         message=(
             f"Host Codex credential expires in {remaining} seconds; renewal is "
-            f"due below {refresh_guard_seconds} seconds, which is the dispatch "
+            f"due at or below {refresh_guard_seconds} seconds, which is the dispatch "
             "freshness requirement."
         ),
     )
