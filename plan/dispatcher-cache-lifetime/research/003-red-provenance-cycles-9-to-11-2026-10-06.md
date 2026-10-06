@@ -38,21 +38,34 @@ product — but it cannot establish that the behaviour was unimplemented when
 the test was conceived. Preserved objects: `cycle-9-red-mispremised`,
 `cycle-9-corrected-red`, `cycle-9-corrected-green`.
 
-## Cycle 10 — a Red that configured no floor, and a false chronology claim
+## Cycle 10 — a Red whose floor case failed on a wrong premise
 
-The original Red here had two genuine executing-identity failures, so it was
-not worthless. But its third case was inert, and the reason is worth recording
-because it is a fixture trap that returns a clean pass:
+The original Red ran **3 failed, 1 passed**. Two of those three were genuine
+executing-identity failures, so the Red was not worthless. The third was the
+floor case, and the distinction between it and the other two is the whole
+point of this entry.
 
-**the floor key was written at the TOP LEVEL of `.livespec.jsonc`, where it is
-not read.** The floor resolves at `<plugin-block>.dispatcher.minimum_release`.
-A top-level `dispatcher` block configures NO floor at all, so
-`minimum_release_verdict` returned `None`, and the case asserted nothing while
-looking exactly like a case that asserted something.
+**The floor key was written at the TOP LEVEL of `.livespec.jsonc`, where it is
+not read.** The floor resolves at `<plugin-block>.dispatcher.minimum_release`;
+a top-level `dispatcher` block configures NO floor at all, so
+`minimum_release_verdict` returned `None`.
+
+That case therefore **FAILED on a WRONG PREMISE** — it did not silently pass,
+and it did not assert nothing. An earlier revision of this report said both of
+those things; **both are retracted.** The case failed because the fixture had
+armed no floor, not because the behaviour under test was unimplemented, which
+is a failing test measuring the wrong thing. That is a different fault from a
+vacuous pass and it has a different remedy: a vacuous case needs an assertion,
+whereas this one needed its FIXTURE corrected — which is what the replacement
+did by asserting `floor_configured` rather than assuming it.
+
+Keep that separate from the two genuine identity failures in the same run. A
+reader tallying "the original Red failed" would otherwise credit all three as
+evidence the behaviour was unimplemented, when only two of them were.
 
 | Time (UTC) | Event |
 | --- | --- |
-| — | Original Red `3cd7c2af`, frozen bytes `2e179f7e`. Two genuine executing-identity failures; the floor case configured no floor. |
+| — | Original Red `3cd7c2af`, frozen bytes `2e179f7e`. Result 3 failed / 1 passed: two genuine executing-identity failures, plus the floor case failing on a wrong premise because no floor was configured. |
 | 2026-10-06T07:11:18Z | Product for the cycle WRITTEN. |
 | 2026-10-06T07:12:33Z | Product saved aside and reverted. |
 | 2026-10-06T07:13:26Z | Corrected test authored — i.e. AFTER the product had been written. |
@@ -72,22 +85,38 @@ state that had already been passed through.
 So cycle 10's corrected Red is, like cycle 9's, a **late baseline replay**. Its
 positive value is real and worth stating precisely: the corrected fixture now
 PROVES the floor is armed (it asserts `floor_configured`) rather than assuming
-it, which is exactly the check whose absence made the original case inert. That
-is a genuine improvement in the evidence. It is not Red-first chronology.
+it, which is exactly the check whose absence let the original case fail on a
+wrong premise. That is a genuine improvement in the evidence. It is not
+Red-first chronology.
+
+ONE SUPERSEDED FRAMING SURVIVES IN A PLACE THIS REPORT CANNOT EDIT. The frozen
+cycle-10 Red (`tests/bin/test_payload_executing_release_identity.py`, bytes
+`ab15b57c…`) carries an inline comment describing the first draft of its floor
+case as having "asserted nothing at all". That wording is superseded by the
+correction above — the draft case FAILED, on a wrong premise — but the file's
+bytes are frozen across its Red-Green pair and MUST NOT be edited to say so.
+A reader who meets the two accounts should take THIS report as authoritative
+and leave the frozen bytes alone.
 
 Preserved objects: `cycle-10-red-mispremised`, `cycle-10-corrected-red`,
 `cycle-10-green-c795a789`, and `cycle-10-green10b-stash`.
 
 ## Cycle 11 — a clean Red-first pair
 
-Recorded here as the contrast, and because its method is the one the two
-incidents above lacked: **the defect was measured against the unmodified
-product before any test was written.**
+Recorded here as the contrast. What makes it Red-first is the thing the rule
+actually requires: **a VALID behavioural failing test was authored and run
+before the first corresponding product edit.** Cycles 9 and 10 did not have
+that; this cycle did.
+
+The disposable measurements it happens to have run beforehand are NOT what
+qualifies it, and an earlier revision of this report said they were. See the
+rule correction below.
 
 | Time (UTC) | Event |
 | --- | --- |
-| 2026-10-06T07:58Z | With the product unmodified, `retain_payload` was measured directly: install A at release 7.1.0 published its payload, and a call explicitly naming install B at 9.9.9 returned A's payload — 7.1.0 executing where 9.9.9 was named. A second measurement showed an inherited payload displacing this project's own source checkout. Both measurements also confirmed the legitimate hand-down still worked, so the fixture was known sound before it was a test. |
-| 2026-10-06T07:58:05Z | Test authored; run with the product unmodified (only the untracked test file present). Two cases failed on genuine assertions; the two hand-down controls passed. |
+| before 07:57:59.649Z | Disposable measurements against the unmodified product: install A at release 7.1.0 published its payload, and a call explicitly naming install B at 9.9.9 returned A's payload — 7.1.0 executing where 9.9.9 was named; a second showed an inherited payload displacing this project's own source checkout; both confirmed the legitimate hand-down still worked. Useful for aiming the fixture. NOT a precondition of Red-first. |
+| 2026-10-06T07:57:59.649Z | Test file WRITTEN. |
+| 2026-10-06T07:58:07.016Z | First pytest result, product unmodified (only the untracked test file present). Two cases failed on genuine assertions; the two hand-down controls passed. |
 | 2026-10-06T07:59:59Z | Red `d7ad3740`, `pytest_returncode: 1`, "test failed at Red moment as required". |
 | 2026-10-06T08:20:29Z | Green `921654da`. Full aggregate: all 89 targets passed, 2 of 91 declared skipped. |
 
@@ -102,8 +131,11 @@ unit-only cycle would have shipped the flaw.
 
 ## Cycle 12 — a second clean Red-first pair, on the Codex candidate root
 
-Same method as cycle 11, and it found a defect the whole existing
-candidate-boundary regression structurally could not see.
+Red-first in the same sense cycle 11 was — a valid behavioural failing test
+authored and run before the first corresponding product edit — and it found a
+defect the whole existing candidate-boundary regression structurally could not
+see. (It also probed first, as cycle 11 did. That remains a fixture-aiming
+technique, not what makes either cycle conforming.)
 
 `test_payload_candidate_and_credential_boundary.py` asserts that `plugin_root()`
 keeps naming the INSTALLED tree while assets resolve inside the payload — but it
@@ -354,12 +386,26 @@ exposure.
 
 ## What a successor should take from this
 
-1. **Measure the defect against the unmodified product before writing the
-   test.** That is the only thing that makes a Red genuine, and it is what
-   cycles 9 and 10 skipped and cycle 11 did.
-2. **Prove the fixture is ARMED.** Cycle 10's inert floor case is the pattern:
-   assert the precondition you depend on (`floor_configured`, "this install is
-   not a checkout") or your case can assert nothing while passing.
+1. **Red FIRST means: author and run a VALID behavioural failing test before
+   the first corresponding product edit.** That is the whole rule. A test that
+   fails for the wrong reason is not a valid Red (cycle 10's floor case), and
+   a test authored after the product has already been written once is a late
+   baseline replay however genuinely it then fails (cycles 9 and 10).
+
+   **RETRACTED, and do not reinstate it:** an earlier revision of this report
+   stated the rule as "measure the defect against the unmodified product
+   before writing the test … that is the only thing that makes a Red genuine".
+   That is an INVENTED stronger rule. A separate defect probe before the test
+   is written is NOT required and never was. Probing first is a useful way to
+   aim a fixture — it is how cycle 11 and cycle 12 avoided wrong-premise
+   cases — but it is a technique, not the standard, and writing it into a
+   successor-facing list would have had the next session believe a conforming
+   cycle was non-conforming.
+2. **Prove the fixture is ARMED.** Cycle 10's floor case is the pattern, and
+   note what it actually did: it FAILED, on a wrong premise, because the
+   fixture configured no floor. Assert the precondition you depend on
+   (`floor_configured`, "this install is not a checkout") so a case cannot
+   report on something it never set up.
 3. **An exit code is not an outcome.** Exit 3 was produced in this work-item by
    a credential failure, a factory-binary gate, a worktree preflight, a floor
    refusal, and a floor that could not be evaluated. Only the text separates
