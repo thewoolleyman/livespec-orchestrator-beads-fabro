@@ -73,6 +73,9 @@ never be signalled.
 
 from __future__ import annotations
 
+import re
+import shlex
+
 __all__: list[str] = [
     "CREDENTIAL_EXPIRY_ENV_VAR",
     "CREDENTIAL_REQUIRED_REMAINING_ENV_VAR",
@@ -83,7 +86,14 @@ __all__: list[str] = [
     "credential_use_deadline_epoch_capped",
     "guard_script_text",
     "guarded_acp_command",
+    "guarded_adapter_string",
 ]
+
+# An env assignment as POSIX tokenization recognizes one. Spelled here rather than
+# imported from the adapter module because this module is a LEAF -- it is imported
+# by the projection and by the launch renderer, and reaching back up to the adapter
+# layer for a pattern would close a cycle.
+_ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
 # The ONE name the host writes and the sandbox reads. Spelled once, because a
 # producer and a consumer that disagree about it leave the guard permanently
@@ -154,6 +164,40 @@ def guarded_acp_command(*, argv: list[str]) -> list[str]:
     a repository is most likely to add without telling anyone.
     """
     return ["/bin/sh", GUARD_SCRIPT_PATH, "--", *argv]
+
+
+def guarded_adapter_string(*, rendered: str) -> str:
+    """Splice the guard between a rendered adapter's env prefix and its executable.
+
+    The string form of `guarded_acp_command`, and the one the launch renderer uses,
+    because what reaches the engine is a STRING that the engine then POSIX-tokenizes
+    -- turning leading `KEY=value` tokens into environment and taking the first
+    remaining token as the executable.
+
+    THE POSITION IS THE WHOLE POINT. The guard goes AFTER the assignments and
+    BEFORE the executable. Placed first it would swallow those assignments as its
+    own arguments, and the adapter would start without the configuration they carry
+    -- a provider base URL, a model, an auth variable. Placed anywhere later it
+    would not be wrapping the exec at all.
+
+    EACH TOKEN IS RE-QUOTED, and the env pairs keep the `key=<quoted value>` shape
+    the adapter renderer produced. Quoting a whole assignment would stop the engine
+    recognizing it as one, which is why the key is left bare. Re-quoting is safe
+    rather than lossy: the engine tokenizes this string, so what matters is that
+    tokenization recovers the same argv, and quoting each token is what guarantees
+    that for a value carrying a space or an apostrophe.
+    """
+    tokens = shlex.split(rendered)
+    env_pairs: list[str] = []
+    index = 0
+    for token in tokens:
+        if _ENV_ASSIGNMENT_RE.match(token) is None:
+            break
+        key, _, value = token.partition("=")
+        env_pairs.append(f"{key}={shlex.quote(value)}")
+        index += 1
+    guarded = guarded_acp_command(argv=tokens[index:])
+    return " ".join([*env_pairs, *(shlex.quote(token) for token in guarded)])
 
 
 def guard_script_text() -> str:
