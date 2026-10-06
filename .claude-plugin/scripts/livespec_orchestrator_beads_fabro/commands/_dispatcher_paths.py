@@ -13,6 +13,7 @@ from livespec_orchestrator_beads_fabro.commands._workflow_variants import (
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
+    "INSTALLED_ROOT_ENV",
     "calibration_spans_path",
     "cost_report_spans_path",
     "cost_sink_path",
@@ -28,6 +29,16 @@ __all__: list[str] = [
     "tdd_order_sink_path",
     "workflow_toml",
 ]
+
+# The launcher's record of the installation a retained payload was copied from,
+# read by `plugin_root()` when no harness exported the installed root.
+#
+# Restated here rather than imported: the writer is `bin/_payload.py`, a
+# PRE-IMPORT launcher module that runs before this package is on `sys.path` at
+# all, so a dependency in either direction is wrong. The two literals are
+# pinned together by a test instead, exactly as the unattended-resume marker's
+# writer and reader already are.
+INSTALLED_ROOT_ENV = "LIVESPEC_INSTALLED_PLUGIN_ROOT"
 
 # The manifest file every workflow directory carries, whether it is the
 # reserved workflow or a registered variant. A variant's directory comes from
@@ -251,4 +262,24 @@ def plugin_root() -> Path:
     env_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
     if env_root:
         return Path(env_root)
+    # The launcher's own record of the installation it copied aside, consulted
+    # BEFORE the `__file__` fall-through and only because that fall-through
+    # cannot answer this question after a copy: it walks up from wherever this
+    # module was loaded, which for a retained payload is the payload.
+    #
+    # On the Claude path the harness exports `CLAUDE_PLUGIN_ROOT` and this is
+    # never reached. Normal Codex exports nothing, so the fall-through WAS the
+    # whole answer there, and it returned the payload — collapsing the
+    # candidate root onto the execution path and making every comparison above
+    # the running build against itself. Measured with a real child and no
+    # `CLAUDE_PLUGIN_ROOT`: both roots reported the same payload directory
+    # while the installation was named by neither.
+    #
+    # Absent for a source checkout, which is never retained and whose
+    # fall-through already lands on the installation; absent too if a
+    # credential re-exec scrubs the environment, which degrades to exactly the
+    # previous behaviour rather than to anything new.
+    recorded_install = os.environ.get(INSTALLED_ROOT_ENV)
+    if recorded_install:
+        return Path(recorded_install)
     return Path(__file__).resolve().parents[3]

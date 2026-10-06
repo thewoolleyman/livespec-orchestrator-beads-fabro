@@ -58,6 +58,7 @@ from _payload_grading import (
 )
 
 __all__: list[str] = [
+    "INSTALLED_ROOT_ENV",
     "PAYLOAD_ROOT_ENV",
     "PayloadRefusal",
     "RetainedPayload",
@@ -75,6 +76,26 @@ __all__: list[str] = [
 # child that finds this set and pointing at a complete payload REUSES it
 # instead of copying the copy.
 PAYLOAD_ROOT_ENV = "LIVESPEC_RETAINED_PAYLOAD_ROOT"
+# Where the INSTALLATION this payload was copied from lives, for the processes
+# that have to keep asking about the installation rather than about the code.
+#
+# Published because the launcher is the ONLY thing that knows the answer once
+# retention has happened. `plugin_root()` resolves the installed root from
+# `CLAUDE_PLUGIN_ROOT`, and when that is absent it falls back to walking up
+# from its own `__file__` — which, after a copy, lands inside the PAYLOAD. On
+# the Claude path the harness exports that variable so the fallback never
+# matters. Normal Codex exports NOTHING, so the fallback is the whole answer
+# there, and it made the candidate root and the execution path the same tree:
+# the self-update canary compared the running build against itself, and a
+# minimum-release refusal named a disposable directory under the system
+# temporary root as the installation to update.
+#
+# Deliberately a SEPARATE variable from `PAYLOAD_ROOT_ENV` rather than a second
+# meaning layered onto it. The two answer opposite questions — "which tree is
+# this code running from" versus "which installation is present to be updated"
+# — and the whole defect class this module exists for comes from conflating
+# them.
+INSTALLED_ROOT_ENV = "LIVESPEC_INSTALLED_PLUGIN_ROOT"
 
 # The invocation-private holder's directory-name prefix, and the fixed name the
 # payload takes inside it. The prefix is there so an operator reading `/tmp`
@@ -194,6 +215,13 @@ def retain_payload(
     if isinstance(retained, PayloadRefusal):
         return retained
     environ[PAYLOAD_ROOT_ENV] = str(retained)
+    # Only on the RETAINED path. A source checkout is its own payload, so its
+    # `__file__` fallback already lands on the installation and a record would
+    # be redundant; an INHERITED payload returns above, leaving the parent's
+    # record standing, which is correct because the installation has not
+    # changed. Recorded without overwriting an existing value for the same
+    # reason: the outermost invocation of a dispatch is the one that knows.
+    _ = environ.setdefault(INSTALLED_ROOT_ENV, str(source_root.resolve()))
     return _payload_at(root=retained, retained=True, holder=retained.parent)
 
 
