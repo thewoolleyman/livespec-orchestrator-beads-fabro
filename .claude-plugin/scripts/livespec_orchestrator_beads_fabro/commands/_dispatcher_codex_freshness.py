@@ -265,7 +265,7 @@ def renewal_shortfall_refusal(
     )
     return (
         "C-mode dispatch refused: the host Codex credential has "
-        f"{verdict.remaining_seconds} seconds of usable lifetime, below the "
+        f"{verdict.remaining_seconds} seconds of usable lifetime, which does not exceed the "
         f"{verdict.required_remaining_seconds} seconds the dispatch freshness "
         "gate requires (run budget plus margin)"
         f"{_renewal_expiry_clause(expiry=expiry)} ({outcome.detail}). That does "
@@ -303,7 +303,7 @@ def post_claim_shortfall_refusal(*, verdict: CodexFreshnessVerdict) -> str:
     """
     return (
         "C-mode dispatch refused: the host Codex credential has "
-        f"{verdict.remaining_seconds} seconds of usable lifetime, below the "
+        f"{verdict.remaining_seconds} seconds of usable lifetime, which does not exceed the "
         f"{verdict.required_remaining_seconds} seconds the dispatch freshness "
         "gate requires (run budget plus margin). The pre-claim credential gate "
         "already spent this dispatch's one bounded in-place renewal, so no "

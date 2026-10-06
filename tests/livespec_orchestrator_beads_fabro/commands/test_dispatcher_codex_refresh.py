@@ -230,7 +230,11 @@ def test_valid_host_auth_status_flags_match_thresholds(
     assert status.expires_at_epoch == exp
     assert status.remaining_seconds == remaining
     assert status.alarm is (remaining < alarm_threshold)
-    assert status.refresh_due is (remaining < refresh_guard)
+    # `<=`, mirroring the STRICT admission comparator: admission requires the
+    # lifetime to EXCEED the requirement, so a credential sitting exactly AT the
+    # guard is refused and renewal must be due there too. `<` left the dead zone
+    # one second wide at exactly that point.
+    assert status.refresh_due is (remaining <= refresh_guard)
     assert str(remaining) in status.message
 
 
@@ -394,7 +398,7 @@ def test_run_codex_cred_status_json_payload(
         # operator can see the shortfall without computing it.
         "message": (
             f"Host Codex credential expires in 900 seconds; renewal is due "
-            f"below {_operator_required_seconds()} seconds, which is the dispatch "
+            f"at or below {_operator_required_seconds()} seconds, which is the dispatch "
             f"freshness requirement."
         ),
         "present": True,
