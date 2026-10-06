@@ -97,6 +97,7 @@ def test_ambient_release_lag_never_refuses_and_surfaces_the_remedy(
 
     decision = gate.dispatcher_staleness_decision(
         plugin_root=cache_root,
+        executing_payload=cache_root,
         runner=_release_head_runner(),
     )
 
@@ -120,6 +121,7 @@ def test_release_below_a_committed_floor_refuses_fail_closed_naming_the_floor(
 
     decision = gate.dispatcher_staleness_decision(
         plugin_root=cache_root,
+        executing_payload=cache_root,
         runner=_release_head_runner(),
         cwd=tmp_path,
     )
@@ -137,6 +139,7 @@ def test_release_at_the_committed_floor_proceeds_to_ambient_surfacing(tmp_path: 
 
     decision = gate.dispatcher_staleness_decision(
         plugin_root=cache_root,
+        executing_payload=cache_root,
         runner=_release_head_runner(),
         cwd=tmp_path,
     )
@@ -155,6 +158,7 @@ def test_unobservable_executing_release_under_a_floor_records_undetermined_curre
 
     decision = gate.dispatcher_staleness_decision(
         plugin_root=cache_root,
+        executing_payload=cache_root,
         runner=_release_head_runner(),
         cwd=tmp_path,
     )
@@ -172,6 +176,7 @@ def test_unorderable_floor_records_undetermined_currency(tmp_path: Path) -> None
 
     decision = gate.dispatcher_staleness_decision(
         plugin_root=cache_root,
+        executing_payload=cache_root,
         runner=_release_head_runner(),
         cwd=tmp_path,
     )
@@ -187,6 +192,7 @@ def test_unorderable_executing_release_records_undetermined_currency(tmp_path: P
 
     decision = gate.dispatcher_staleness_decision(
         plugin_root=cache_root,
+        executing_payload=cache_root,
         runner=_release_head_runner(),
         cwd=tmp_path,
     )
@@ -204,6 +210,7 @@ def test_a_floor_value_the_setting_cannot_accept_records_undetermined_currency(
 
     decision = gate.dispatcher_staleness_decision(
         plugin_root=cache_root,
+        executing_payload=cache_root,
         runner=_release_head_runner(),
         cwd=tmp_path,
     )
@@ -221,6 +228,7 @@ def test_an_unparseable_config_records_undetermined_currency(tmp_path: Path) -> 
 
     decision = gate.dispatcher_staleness_decision(
         plugin_root=cache_root,
+        executing_payload=cache_root,
         runner=_release_head_runner(),
         cwd=tmp_path,
     )
@@ -241,6 +249,7 @@ def test_apply_gate_returns_the_precondition_exit_only_under_a_committed_floor(
 
     exit_code = gate.apply_dispatcher_staleness_gate(
         plugin_root=cache_root,
+        executing_payload=cache_root,
         journal=journal,
         runner=_release_head_runner(),
         cwd=tmp_path,
@@ -267,6 +276,7 @@ def test_apply_gate_no_longer_returns_the_precondition_exit_for_ambient_stalenes
 
     exit_code = gate.apply_dispatcher_staleness_gate(
         plugin_root=cache_root,
+        executing_payload=cache_root,
         journal=journal,
         runner=_release_head_runner(),
         cwd=tmp_path,

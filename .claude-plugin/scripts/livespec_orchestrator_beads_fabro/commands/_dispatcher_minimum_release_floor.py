@@ -21,6 +21,9 @@ from returns.pipeline import is_successful
 from returns.result import Failure, Result, Success
 from returns.unsafe import unsafe_perform_io
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
+    executing_payload_root,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
     PolicySettingUnreadable,
     read_dispatcher_config_value,
@@ -77,13 +80,28 @@ def resolve_minimum_release(*, cwd: Path) -> Result[str | None, PolicySettingUnr
     return _minimum_release_value(value=unsafe_perform_io(configured.unwrap()))
 
 
-def minimum_release_verdict(*, plugin_root: Path, cwd: Path) -> MinimumReleaseVerdict | None:
+def minimum_release_verdict(
+    *, plugin_root: Path, cwd: Path, executing_payload: Path | None = None
+) -> MinimumReleaseVerdict | None:
     """The floor's verdict, or `None` when the operator committed no floor.
 
     Every path that cannot COMPLETE the comparison yields an undetermined
     detail rather than a refusal or a silent pass, because the contract forbids
     both of the tempting shortcuts: an unobservable release must never fail open
     into a false refusal, nor be silenced into a satisfied floor.
+
+    TWO ROOTS, two jobs, and they are not interchangeable. `executing_payload`
+    is the tree whose release is JUDGED — the bytes actually running, which
+    defaults to the retained payload because that is the only tree immutable
+    for this invocation's lifetime. `plugin_root` is the INSTALLATION the
+    operator must act on, and it is named in the refusal for exactly that.
+
+    Judging through `plugin_root` is what this had to stop doing: the harness
+    owns that path and may delete or overwrite it mid-run, so a newer build
+    landing there satisfied the floor on the OLD build's behalf — a silent
+    pass for exactly the build the operator committed the floor to stop. This
+    is the one BLOCKING currency form in the contract, so it judges the bytes
+    actually running and tells the operator which installation to update.
     """
     configured = resolve_minimum_release(cwd=cwd)
     if not is_successful(configured):
@@ -96,7 +114,9 @@ def minimum_release_verdict(*, plugin_root: Path, cwd: Path) -> MinimumReleaseVe
     floor = configured.unwrap()
     if floor is None:
         return None
-    executing = released_payload_version(root=plugin_root)
+    executing = released_payload_version(
+        root=executing_payload if executing_payload is not None else executing_payload_root()
+    )
     below = None if executing is None else release_below_floor(release=executing, floor=floor)
     if below is None:
         return MinimumReleaseVerdict(
@@ -111,7 +131,7 @@ def minimum_release_verdict(*, plugin_root: Path, cwd: Path) -> MinimumReleaseVe
         refusal_detail=(
             f"ERROR: dispatcher plugin release {executing} is below the committed "
             f"dispatcher.minimum_release floor {floor}. Run `{_UPDATE_REMEDY}` and "
-            "restart before dispatching."
+            f"restart before dispatching. The installation to update is {plugin_root}."
         )
     )
 

@@ -111,13 +111,36 @@ def _released_payload_version_from_root(*, root: Path) -> str | None:
     return raw_version.strip() if isinstance(raw_version, str) and raw_version.strip() else None
 
 
-def _import_time_plugin_root() -> Path:
-    from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import plugin_root
+def _import_time_executing_payload_root() -> Path:
+    """Where the bytes THIS process is running came from.
 
-    return plugin_root()
+    Deliberately NOT `plugin_root()`. This capture happens at the module's
+    FIRST import, which for a dispatch is deferred well past the launcher, and
+    `plugin_root()` names the INSTALL path the harness owns. Read from there
+    the running release has two wrong answers available, both measured:
+    `None`, once the original cache has been deleted by then; and the
+    REPLACEMENT's release, once a newer build has landed at the same path.
+
+    The second is the one that matters here, because this constant is the
+    canary's `running_release`: a running release reporting as the replacement
+    makes running and available EQUAL, `release_update_decision` records "no
+    update required", and the canary can never validate the very update it
+    exists for. The committed `minimum_release` floor fails the same way, in
+    the pass direction, for the same reason.
+
+    The retained payload is immutable for this invocation's lifetime, so it is
+    the only stable answer to "which build am I".
+    """
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
+        executing_payload_root,
+    )
+
+    return executing_payload_root()
 
 
-_RUNNING_RELEASE_VERSION = _released_payload_version_from_root(root=_import_time_plugin_root())
+_RUNNING_RELEASE_VERSION = _released_payload_version_from_root(
+    root=_import_time_executing_payload_root()
+)
 
 
 def github_token_supplier() -> Callable[[], str] | str:
