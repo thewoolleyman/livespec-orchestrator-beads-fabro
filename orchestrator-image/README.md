@@ -693,6 +693,60 @@ no `set -x`), and the recipient is DISCOVERED from the account — an unset or
 unmatched `HONEYCOMB_OPERATOR_ALERT_RECIPIENT` lists the available recipients
 with email local-parts redacted rather than defaulting to an invented address.
 
+**The board takes three API steps, not one POST** (`bd-ib-4yvurp`). The
+current Create a Board API accepts only a `type: "flexible"` board whose query
+panels reference PERSISTED query identifiers; it has no inline-query form, so
+the definition's version-1 shape — a `style: "visual"` board with its seven
+query specifications inline under a top-level `queries` array — could not
+create a usable board. Definition version 2 expresses the same seven chart
+intents and captions as flexible query panels, and the provisioner:
+
+1. POSTs each panel's committed query specification to
+   `/1/queries/<dataset>`, which persists it and returns an id;
+2. creates or updates that query's QUERY ANNOTATION at
+   `/1/query_annotations/<dataset>`, whose `name` is the panel's committed
+   caption — a flexible board renders the annotation as the panel title, so
+   this is where the operator-facing captions now live;
+3. POSTs or PUTs the board itself with panels carrying `query_id` +
+   `query_annotation_id` and explicit `position` coordinates
+   (`layout_generation: "manual"`), so the layout is reviewable in the diff.
+
+Panel idempotence cannot use the lookup-by-identity trick the other three
+resources use, because **a Query has no list, get, update or delete verb** —
+once persisted, it cannot be read back or compared. The annotation therefore
+carries a `query-spec-fingerprint=` digest of the specification it names, and
+that digest is the only observable record of which specification a given query
+id holds. An unchanged digest reuses the persisted query (the run logs
+`reused query …`); a changed one persists a fresh query and re-points the SAME
+annotation at it, so the identifier survives while the content moves. Reusing
+unconditionally would leave an edited definition rendering the stale query
+forever, which is the failure an idempotence rule is most apt to hide.
+
+**A rejected request now says what was wrong.** Every response used to land in
+a temp file under the cleanup trap or in `/dev/null`, so an HTTP rejection
+unwound with nothing but `curl: (22) The requested URL returned error: 400` —
+the response body, which is the only thing carrying the reason, was deleted
+unread. `api_call` captures each response and, on failure, prints the failing
+resource, the request, the status and the body to stderr before exiting
+nonzero:
+
+```text
+Honeycomb API request FAILED
+  resource: derived_column
+  request: POST https://api.honeycomb.io/1/derived_columns/livespec-dispatcher
+  http status: 400
+  response: {"error":"unable to process request","detail":"unknown column name: tdd.first_product_write_before_red"}
+  curl: curl: (22) The requested URL returned error: 400
+```
+
+That is the real rejection measured on 2026-10-06, and it is owed to the
+calibration order telemetry not being live yet — repaired separately by
+**`bd-ib-swm6te`**, never by inventing a dummy column or weakening the
+expression. Because the diagnostic QUOTES a response body, `sanitize` replaces
+the configured key in anything quoted, so a server that echoed the credential
+back cannot route it into the log; the hermetic tier drives exactly that
+hostile-server case.
+
 Levers, all optional:
 
 | Variable | Default | What it sets |
@@ -717,7 +771,16 @@ live API refuses `86400 / 7200`.
 tier (`tests/test_provision_honeycomb_tdd_calibration.py`) runs the command for
 real against a local stdlib HTTP fixture, covering create, idempotent update,
 the configured thresholds and every refusal — so the command is proven
-internally consistent, NOT proven to satisfy the live Honeycomb API. In
+internally consistent, NOT proven to satisfy the live Honeycomb API. That
+fixture is now STRICT about the board wire schema, which is what makes the tier
+worth anything: it refuses an unsupported top-level board field (the shape the
+legacy `queries`/`style`/`column_layout` payload presents as), a non-flexible
+board, a panel carrying an inline `query`, a missing or unknown `query_id`, and
+a `query_annotation_id` that does not apply to its panel's query. The previous
+fixture stored whatever board it was handed and reported success, so the tier
+passed on a board the live API cannot create — a false positive that is now a
+negative control rather than a possibility. Strictness about the DOCUMENTED
+contract is still not acceptance BY the API. In
 particular the derived-column EXPRESSIONS have never been parsed by Honeycomb
 from this sandbox; the first syntax risk to check is the bare dotted column
 reference (`$tdd.red_commit_count`), and each definition file records the
