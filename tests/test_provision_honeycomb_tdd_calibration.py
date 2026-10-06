@@ -901,14 +901,58 @@ def test_the_fixture_refuses_a_path_the_provisioner_never_sends(
     Worth asserting because a silent 500 here would read, from the
     provisioner's side, exactly like a Honeycomb outage — and the first thing
     a future editor does when a request misroutes is ask what the fixture did
-    with it.
+    with it. Both shapes of unroutable path are probed: a known version prefix
+    naming an unknown collection, and a path that is not under `/1/` at all.
     """
     _api, api_base = honeycomb
 
-    with pytest.raises(HTTPError) as refused:
-        _ = urlopen(f"{api_base}/1/not_a_collection", timeout=5.0)  # noqa: S310 — the local test fixture.
+    for path in ("/1/not_a_collection", "/healthz"):
+        with pytest.raises(HTTPError) as refused:
+            _ = urlopen(f"{api_base}{path}", timeout=5.0)  # noqa: S310 — the local test fixture.
 
-    assert refused.value.code == HTTPStatus.NOT_FOUND
+        assert refused.value.code == HTTPStatus.NOT_FOUND
+
+
+def test_the_fixture_accepts_a_conformant_flexible_board(
+    honeycomb: tuple[_FakeHoneycomb, str],
+) -> None:
+    """The positive control the refusals depend on.
+
+    The three tests around this one assert what the fixture REFUSES, and none
+    of them establishes that it can accept anything at all. A fixture that
+    rejected every board would satisfy all three while failing the
+    provisioning tests for a reason nobody would come looking for here, so the
+    refusals only discriminate once a conformant board is shown to pass.
+    """
+    api, api_base = honeycomb
+
+    created = _post(
+        api_base=api_base,
+        path=f"/1/queries/{_DATASET}",
+        payload={"calculations": [{"op": "COUNT"}], "time_range": 604800},
+    )
+    assert created == HTTPStatus.CREATED
+    query_id = next(iter(api.queries))
+
+    accepted = _post(
+        api_base=api_base,
+        path="/1/boards",
+        payload={
+            "name": "conformant probe",
+            "type": "flexible",
+            "layout_generation": "manual",
+            "panels": [
+                {
+                    "type": "query",
+                    "position": {"x_coordinate": 0, "y_coordinate": 0, "width": 6, "height": 4},
+                    "query_panel": {"query_id": query_id, "query_style": "graph"},
+                }
+            ],
+        },
+    )
+
+    assert accepted == HTTPStatus.CREATED
+    assert [record["name"] for record in api.boards.values()] == ["conformant probe"]
 
 
 def test_the_fixture_refuses_the_legacy_board_with_inline_queries(
