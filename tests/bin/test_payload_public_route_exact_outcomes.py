@@ -64,37 +64,63 @@ implemented by this work-item's earlier Red-Green pairs, so it passed the
 moment it was written; its value is the control above plus the exactness the
 sibling lacks.
 
-The wrapper double RUNS the child and propagates its exit status, which is what
-a real `with-<project>-env.sh` does, and it writes the child's output to a file
-it then `cat`s to STDOUT. Both of those are load-bearing, for a reason this
-docstring ORIGINALLY GOT WRONG.
+THE WRAPPER DOUBLE IS A STREAM-MERGING OBSERVATION ADAPTER. Declare it as
+that and nothing more. It runs the child as
 
-CORRECTION, measured 2026-10-06. This file first claimed the `exec`-form
-double's failure to drive `dispatch` was "fixture mechanics, not product
-behaviour … so the shape is not mistaken for a finding". That was false, and
-backwards: it IS product behaviour, and it IS a finding. `_bootstrap`'s
-credential self-heal runs the wrapper with `capture_output=True` and then, at
-lines 276-284, branches:
+    "$@" > "$LIVESPEC_TEST_CHILD_LOG" 2>&1
+    status=$?
+    cat "$LIVESPEC_TEST_CHILD_LOG"
+    exit $status
+
+so the child's stderr is MERGED into stdout and re-emitted on stdout. A real
+`with-<project>-env.sh` does NOT do that, and two earlier versions of this
+docstring claimed otherwise — first that the `exec`-form difference was
+"fixture mechanics, not product behaviour", then that this double is "what a
+real wrapper does". **Both claims are retracted.** The merge is a deliberate
+adapter, and the reason is a real product behaviour.
+
+`_bootstrap`'s credential self-heal runs the wrapper with
+`capture_output=True` and then, at lines 276-284, branches:
 
     if completed.returncode != 0 and not stdout:
         ... write wrapper_launch_failure ...
     elif stderr:
         ... write the child's stderr ...
 
-So a child that REFUSES — non-zero exit, diagnostic on STDERR, empty STDOUT —
-takes the first arm, and the `elif` is skipped: its real stderr is DISCARDED,
-not supplemented, and the operator is handed "credential_wrapper could not run
-in this environment" instead. Measured directly: a dispatch whose floor
-refusal read `release 7.1.0 is below the committed … floor 9.9.9` emitted that
-wrapper-launch message and the genuine refusal appeared NOWHERE in the output.
-The sibling's `exec`-form double works only because `ledger-check` succeeds
-and prints to stdout.
+A child that REFUSES — non-zero exit, diagnostic on STDERR, empty STDOUT —
+takes the first arm, so the `elif` never runs and its real stderr is
+DISCARDED. The operator is handed "credential_wrapper could not run in this
+environment" instead. A dispatch floor refusal writes only stderr and so hits
+that arm exactly; `ledger-check` SUCCEEDS and writes stdout, which is the only
+reason the sibling file's `exec`-form double works at all. Merging the streams
+makes stdout non-empty, so this adapter keeps the branch out of the
+wrapper-launch arm and the genuine diagnostic survives to be asserted.
 
-That is why this double routes the child's output through stdout: it is a
-fixture working AROUND a real product behaviour, which is the opposite of the
-fixture artifact the original wording claimed. The behaviour is NOT repaired
-here — that is outside this work-item's declared assertions — and it is
-recorded as an additive incident in
+WHAT THE ADAPTER DOES AND DOES NOT AFFECT. It changes OBSERVABILITY, not the
+outcome: the child really did refuse, really exited 3, and really produced
+that text from a packaged asset read out of the retained payload. It does not
+synthesize, reword or relocate the refusal. What it CANNOT support is any
+claim of stream equivalence with a production wrapper, or any claim about how
+that refusal would reach an operator in production — under a real wrapper it
+would NOT, which is the filed finding below rather than anything this fixture
+demonstrates.
+
+The two routes do not lean on it equally, and the stronger one does not lean
+on it at all:
+
+- the DRIVE case asserts on `payload["dispatcher"]["stderr"]`, which `drive`
+  captures from the helper it spawned itself. That path never passes through
+  the credential-self-heal branch, so its exact-outcome evidence is
+  ADAPTER-INDEPENDENT;
+- the DIRECT-route case and the intact control assert on the top-level
+  process's own output, and those two DO depend on the merge. Both use the
+  SAME adapter, so the control compares like with like; its installation is
+  real and un-evicted, and the only difference between it and the evicted case
+  is the `rm -rf`.
+
+The underlying behaviour is NOT repaired here — that is outside this
+work-item's declared assertions and no product change was requested — and it
+is recorded as an additive incident in
 `plan/dispatcher-cache-lifetime/research/003-red-provenance-cycles-9-to-11-2026-10-06.md`
 so the next reader examines it instead of trusting a "not a finding" label.
 
