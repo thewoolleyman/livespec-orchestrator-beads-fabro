@@ -375,6 +375,44 @@ def test_generic_status_detection_and_the_discriminator_rule() -> None:
     )
 
 
+def test_full_status_phrases_are_generic_vocabulary_and_do_not_discriminate() -> None:
+    """The whole `404 not found` / `400 bad request` phrases are generic too.
+
+    `_STATUS_MARKERS` recognises a generic 404 by the exact phrase `404
+    not found`, so a text signature naming ONLY that phrase was naming
+    the marker itself and still counted as a discriminator -- which made
+    a generic 404 fallback-eligible, the permissive direction the
+    contract's non-eligible list exists to close. The same held for `400
+    bad request`. What must keep discriminating is the measured sentence
+    AROUND the status phrase, not the phrase itself.
+    """
+    modules = _modules()
+    matching = modules["_acp_failure_matching"]
+    assert "404 not found" in matching.GENERIC_STATUS_LITERALS
+    assert "400 bad request" in matching.GENERIC_STATUS_LITERALS
+    # Declared in the provider's own casing, because a literal is compared
+    # through `normalized` and a signature is written as the diagnostic reads.
+    for phrase in ("404 Not Found", "400 Bad Request"):
+        assert not matching.signature_discriminates(
+            signature=_signature(
+                modules=modules,
+                source="protocol.message",
+                cause="model_unavailable",
+                scope="candidate",
+                all_literals=(phrase,),
+            )
+        )
+    assert matching.signature_discriminates(
+        signature=_signature(
+            modules=modules,
+            source="protocol.message",
+            cause="model_unavailable",
+            scope="candidate",
+            all_literals=("404 not found", "does not exist or you do not have access"),
+        )
+    )
+
+
 def test_builtin_signature_table_is_domain_scoped_and_never_lent_out() -> None:
     """The measured tables belong to their own domains and to built-ins only."""
     modules = _modules()
