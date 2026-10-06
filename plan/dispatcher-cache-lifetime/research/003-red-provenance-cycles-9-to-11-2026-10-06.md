@@ -100,6 +100,54 @@ copied the copy. The frozen end-to-end lifetime regression failed on exactly
 that, and the fix was to accept the payload itself as a qualifying source. A
 unit-only cycle would have shipped the flaw.
 
+## Cycle 12 — a second clean Red-first pair, on the Codex candidate root
+
+Same method as cycle 11, and it found a defect the whole existing
+candidate-boundary regression structurally could not see.
+
+`test_payload_candidate_and_credential_boundary.py` asserts that `plugin_root()`
+keeps naming the INSTALLED tree while assets resolve inside the payload — but it
+sets `CLAUDE_PLUGIN_ROOT` on every child, so it only ever exercises the Claude
+path, where the harness hands us the installation. **Normal Codex exports
+nothing.** There `plugin_root()` fell through to `parents[3]`, which after
+retention walks up from a module loaded out of the PAYLOAD.
+
+| Time (UTC) | Event |
+| --- | --- |
+| 2026-10-06T08:49Z | Measured against the unmodified launcher with a real child and no `CLAUDE_PLUGIN_ROOT`: `plugin_root` and `executing_payload_root` BOTH reported `/tmp/…-payload-7.1.0-46ij91l5/payload`, while the installation at `/tmp/probe-codex-root-…/0123abc` was named by neither. |
+| 2026-10-06T08:52:03Z | Red `dfdcde8d`, `pytest_returncode: 1`. One genuine assertion failure; three controls passing. |
+| 2026-10-06T09:05:08Z | Green `5c54e83c`. Full aggregate: all 89 targets passed, 2 of 91 declared skipped. |
+
+The collapse is what `plugin_root()`'s own docstring warns of — "every one of
+those comparisons the running build against itself" — and the costs are
+concrete: the self-update canary can never validate the update it exists for,
+the registered-install finding compares the registry against the payload, a
+floor refusal names a disposable temporary directory as the installation to
+update, and `executing_cache_build_id` reads the fixed string `payload` instead
+of a build id, so ambient currency is permanently undetermined on that path.
+
+The launcher now records the installation it copied aside
+(`LIVESPEC_INSTALLED_PLUGIN_ROOT`), and `plugin_root()` consults it between the
+harness export and the `__file__` fall-through. Two deliberate properties: the
+record is a SEPARATE variable from the payload hand-down, because the two
+answer opposite questions and conflating them is this whole defect class; and
+it is written with `setdefault`, so the outermost invocation of a dispatch —
+the one that actually knows the installation — is the one that decides.
+
+Honest limit, stated because it is a degradation rather than a fix: a
+credential re-exec that scrubs the environment drops the record too, and
+`plugin_root()` then falls back to the payload exactly as before. That is the
+previous behaviour, not a new failure, and forwarding the record through the
+re-exec the way the unattended marker is forwarded would be scope this
+work-item did not declare.
+
+The name is restated in both modules rather than imported, because the writer
+is a pre-import launcher module that runs before the package is importable. Two
+literals drift silently in the dangerous direction — a reader looking for a
+name nobody writes just falls through — so they are pinned together by
+`test_installed_root_env_name_matches_the_launchers_writer_constant`, the same
+device the unattended-resume marker already uses.
+
 ## What is NOT a Red, stated plainly
 
 Four artifacts in this work-item are supplemental and must never be cited as
