@@ -388,6 +388,21 @@ def _retained_root(*, source_root: Path) -> Path | PayloadRefusal:
         # BEFORE `mkdtemp`, so a refused provision creates no private directory
         # at all rather than one it then has to clean up.
         return release
+    # ALSO before `mkdtemp`, and for BOTH of this function's reasons at once.
+    #
+    # It must precede the COPY, because the whole point is to pin the release
+    # as it stood when the copy started: a post-copy walk of the source cannot
+    # see a member the copy omitted once the source has lost it too, and it
+    # misreads a source that legitimately moved on after a complete copy as a
+    # divergence.
+    #
+    # And it must precede the HOLDER, because it is the one step here that
+    # reads the entire source tree, so it is the likeliest place for an
+    # interrupt to land. Taken after `mkdtemp` it sat outside the `finally`
+    # below and leaked the directory on any non-`OSError` fault — measured
+    # with a `KeyboardInterrupt`, which left a half-built holder nothing could
+    # later tell from a finished payload.
+    inventory = source_inventory(root=source_root)
     destination = tempfile.gettempdir()
     try:
         holder = Path(tempfile.mkdtemp(prefix=f"{_PAYLOAD_PREFIX}{release}-"))
@@ -413,13 +428,6 @@ def _retained_root(*, source_root: Path) -> Path | PayloadRefusal:
     # tell it from a finished payload, so the next invocation to find it would
     # execute an incomplete release. A bug-class exception gets the same
     # treatment for the same reason, while still propagating.
-    # BEFORE the copy, and that ordering is the fix. A post-copy walk of the
-    # source cannot see a member the copy omitted once the source has lost it
-    # too, and it misreads a source that legitimately moved on after a
-    # complete copy as a divergence. The inventory pins the release AS IT WAS
-    # at this instant, so the copy is graded against that and a later source
-    # change cannot affect the verdict either way.
-    inventory = source_inventory(root=source_root)
     root = holder / _STAGED_NAME
     published = False
     try:

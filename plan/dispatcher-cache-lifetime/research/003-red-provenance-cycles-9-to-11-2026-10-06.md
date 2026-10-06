@@ -230,6 +230,38 @@ unreadable-member arm was first forced with `chmod 0o000`, which PASSES while
 measuring nothing because this suite runs as ROOT and root reads a mode-000
 file. It is now forced through a seam on `Path.open`.
 
+## Cycle 15 — the inventory's own boundaries, found by review of cycle 14
+
+Cycle 14's fix was correct for the cases it was written for and introduced two
+faults in its own new code. Both are regressions against contracts this module
+had already established, and both were caught by read-only review rather than
+by me.
+
+The inventory call sat between the `mkdtemp` that allocates the holder and the
+`try/finally` that removes an unpublished one — OUTSIDE the cleanup boundary.
+The established contract is that an INTERRUPTED provision leaves no adoptable
+tree, not merely one that errors. Measured: a `KeyboardInterrupt` during the
+inventory left a holder standing. It now runs BEFORE `mkdtemp`, beside the
+release identity, which already sits there for exactly this reason — so the
+likeliest step for an interrupt to land in is also the one that owns no
+directory yet.
+
+And `_digest` returned one literal sentinel for any unreadable file on BOTH
+sides, which the comparison accepted as a match. Measured with reads denied on
+one member in both trees: inventory recorded the sentinel, the copy existed and
+was unreadable, their ACTUAL bytes differed, and the comparison reported no gap.
+Two unknowns are not a match; an `UNREADABLE` reading on either side is now a
+gap, which is the same fail-closed reason an unusable release manifest refuses.
+
+AIMING TRAP, recorded because my first probe for the second fault could not
+have found it: pointing the comparison at a copy path that does not EXIST trips
+`not copied.is_file()` and reports a gap before `_digest` is ever called. It
+returns the right answer for the wrong reason and hides the branch entirely.
+The copy has to exist and be unreadable.
+
+Red `e1ea67a8`, frozen bytes `e6c7210f…`, Green consolidated with this report. The
+accepted cycle-14 regression at `f219ca14…` is untouched.
+
 ## Assertion 4 — what covers it, jointly
 
 Stated because the supplement alone does not carry it. 

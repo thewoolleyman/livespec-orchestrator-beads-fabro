@@ -195,6 +195,22 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   is the success case, which is why the release is copied aside at all.
   Scope is copy-vs-its-own-source coherence, NOT integrity or
   tamper-resistance.
+- `test_payload_inventory_boundaries.py` — the refusal/cleanup/fail-closed
+  semantics of the pre-copy inventory's own NEW code, both faults being
+  regressions against contracts this module had already established. The
+  inventory call landed between the `mkdtemp` that allocates the holder
+  and the `try/finally` that removes an unpublished one, so a
+  `KeyboardInterrupt` during it leaked a half-built holder nothing could
+  later tell from a finished payload; the inventory now runs BEFORE
+  `mkdtemp`, beside the release identity, for the same reason that one
+  does. And `_digest`'s unreadable sentinel compared EQUAL to itself, so
+  a member unreadable on both sides passed as faithful while its actual
+  bytes differed — an `UNREADABLE` reading on either side is now a gap.
+  Carries a control requiring an ordinary complete source to still
+  provision and still release its holder, so neither fix can be
+  satisfied by refusing everything or cleaning up unconditionally.
+  Records the aiming trap: a nonexistent copy path trips the `is_file`
+  arm and reports a gap before `_digest` runs, hiding the branch.
 - `test_payload_candidate_provenance_on_reselection.py` — where the two
   cycles above MEET, which neither of their accepted Reds covers.
   Cycle 11 lets an explicitly selected source win over an inherited
