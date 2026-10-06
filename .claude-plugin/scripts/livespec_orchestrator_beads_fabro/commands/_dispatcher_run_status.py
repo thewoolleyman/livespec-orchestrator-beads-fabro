@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, cast
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pr_open_diff import pr_diff_size_of
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 __all__: list[str] = [
@@ -15,7 +16,18 @@ __all__: list[str] = [
 
 @dataclass(frozen=True, kw_only=True)
 class PrView:
-    """The slice of `gh pr view --json` the engine routes on."""
+    """The slice of `gh pr view --json` the engine routes on.
+
+    `diff_size` is the branch-versus-base churn (plan slice S4, `bd-ib-tbgxm4`).
+    It is NOT routed on; it rides here because the engine already takes this
+    view at the moment it confirms the pull request, which is the moment the
+    repaired size proxy has to be recorded. A separate probe would be a second
+    forge round trip whose answer could differ from the view beside it, for the
+    same pull request, with nothing in the record saying which was read.
+
+    `None` means the forge reported neither field or only one of them — absent,
+    deliberately distinct from a pull request whose churn is genuinely zero.
+    """
 
     number: int
     state: str
@@ -23,6 +35,7 @@ class PrView:
     merge_state_status: str
     merge_sha: str | None
     terminal_required_check_failures: tuple[str, ...]
+    diff_size: int | None = None
 
 
 _TERMINAL_CHECK_CONCLUSIONS = frozenset(
@@ -63,6 +76,7 @@ def parse_pr_view(*, stdout: str) -> PrView | None:
         merge_state_status=merge_state_raw if isinstance(merge_state_raw, str) else "UNKNOWN",
         merge_sha=_merge_sha_of(parsed=parsed),
         terminal_required_check_failures=terminal_failures,
+        diff_size=pr_diff_size_of(payload=parsed),
     )
 
 

@@ -60,6 +60,25 @@ __all__: list[str] = [
 ]
 
 
+# The `--json` fields ONE pull-request view answers. The first six are what the
+# engine routes on; `additions` and `deletions` are the branch-versus-base churn
+# plan slice S4 (`bd-ib-tbgxm4`) records when the pull request opens, and they
+# ride this view rather than a probe of their own because the engine already
+# takes it at exactly that moment.
+_PR_VIEW_JSON_FIELDS = ",".join(
+    (
+        "number",
+        "state",
+        "autoMergeRequest",
+        "mergeStateStatus",
+        "mergeCommit",
+        "statusCheckRollup",
+        "additions",
+        "deletions",
+    )
+)
+
+
 # The Codex ACP adapter command: the successor `@agentclientprotocol/codex-acp`
 # package invoked AT ITS BAKED PATH (the Codex-ACP-node-model-pins contract in
 # `SPECIFICATION/contracts.md`, whose "identified by its baked path, never by
@@ -315,14 +334,16 @@ def janitor_core_repo_url_from_config(*, config_text: str) -> str:
 
 
 def pr_view_argv(*, plan: DispatchPlan) -> list[str]:
-    return [
-        "gh",
-        "pr",
-        "view",
-        plan.branch,
-        "--json",
-        "number,state,autoMergeRequest,mergeStateStatus,mergeCommit,statusCheckRollup",
-    ]
+    """The pull-request view the engine routes on, AND sizes from.
+
+    `additions,deletions` is the branch-versus-base churn plan slice S4
+    (`bd-ib-tbgxm4`) records when the pull request opens. It rides THIS view
+    rather than a probe of its own because the engine already takes this view at
+    that exact moment: a second round trip would spend another forge call per
+    dispatch and could answer differently from the view beside it, for the same
+    pull request, with nothing in the record saying which was read.
+    """
+    return ["gh", "pr", "view", plan.branch, "--json", _PR_VIEW_JSON_FIELDS]
 
 
 def pr_arm_argv(*, plan: DispatchPlan, number: int) -> list[str]:

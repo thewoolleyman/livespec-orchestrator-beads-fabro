@@ -2498,6 +2498,9 @@ def test_engine_green_runs_janitor_in_fresh_checkout(tmp_path: Path) -> None:
     assert stages == [
         "fabro-run",
         "pr-view",
+        # The branch-versus-base size, recorded as the pull request is confirmed
+        # and BEFORE the merge poll below it (plan slice S4, `bd-ib-tbgxm4`).
+        "pr-open-diff-size",
         "pr-view",
         "pr-merge-sha-recording",
         "pull-primary",
@@ -2801,7 +2804,12 @@ def test_engine_fails_fast_when_required_check_terminally_fails(tmp_path: Path) 
     assert "check-coverage" in outcome.detail
     assert "docs" not in outcome.detail
     assert naps == []
-    assert [record["stage"] for record in journal.records] == ["fabro-run", "pr-view", "pr-view"]
+    assert [record["stage"] for record in journal.records] == [
+        "fabro-run",
+        "pr-view",
+        "pr-open-diff-size",
+        "pr-view",
+    ]
 
 
 def test_engine_keeps_polling_when_required_checks_are_pending(tmp_path: Path) -> None:

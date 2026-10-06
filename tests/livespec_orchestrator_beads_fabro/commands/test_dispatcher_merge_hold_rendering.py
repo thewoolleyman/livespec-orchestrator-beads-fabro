@@ -287,7 +287,11 @@ def test_the_fallback_arming_never_fires_for_a_held_pull_request(tmp_path: Path)
             "view",
             "feat/bd-ib-held",
             "--json",
-            "number,state,autoMergeRequest,mergeStateStatus,mergeCommit,statusCheckRollup",
+            # `additions,deletions` ride this one view: plan slice S4
+            # (`bd-ib-tbgxm4`) sizes the branch against its base from the view
+            # the engine already takes, never from a second forge round trip.
+            "number,state,autoMergeRequest,mergeStateStatus,mergeCommit,"
+            "statusCheckRollup,additions,deletions",
         ]
     ]
     assert [record["stage"] for record in journal.records] == ["pr-view"]
