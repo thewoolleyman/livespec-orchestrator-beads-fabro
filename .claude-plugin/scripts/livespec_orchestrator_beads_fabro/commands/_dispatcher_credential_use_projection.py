@@ -69,13 +69,19 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
     CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
     CREDENTIAL_USE_DEADLINE_ENV_VAR,
     GUARD_SCRIPT_PATH,
+    credential_use_deadline_epoch_capped,
     guard_script_text,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
+    codex_freshness_required_seconds,
+    decode_codex_access_token_exp,
 )
 
 __all__: list[str] = [
     "CredentialUseProjection",
     "credential_use_env_lines",
     "credential_use_guard_prepare_steps_block",
+    "credential_use_projection_for",
 ]
 
 # The transport for the guard's own text. Private because it is an implementation
@@ -171,3 +177,38 @@ def credential_use_guard_prepare_steps_block(*, projection: CredentialUseProject
         f"script = {json.dumps(check)}",
     ]
     return "\n".join(lines) + "\n"
+
+
+def credential_use_projection_for(
+    *,
+    codex_snapshot: str,
+    allowance_seconds: int,
+    margin_seconds: int,
+    now_epoch: int,
+) -> CredentialUseProjection:
+    """Compose the three enforcement inputs from one dispatch's own measurements.
+
+    Stamped ONCE per dispatch, which is what makes queueing, preparation,
+    inter-stage delay and a node entered late all count against the SAME budget: the
+    deadline is an epoch, so a retried or resumed launch re-reads it and inherits
+    what is left rather than being handed a fresh allowance.
+
+    DECODING THE SNAPSHOT CANNOT FAIL HERE, and the caller's ordering is what
+    guarantees it: `project_host_codex_auth` returns a snapshot only after grading
+    the SAME access token, and the projection it applies rewrites the refresh token
+    alone. A failure would therefore be a broken invariant — a bug, which raises —
+    rather than an expected condition to report as a refusal.
+    """
+    expiry_epoch = decode_codex_access_token_exp(source_auth_json=codex_snapshot)
+    return CredentialUseProjection(
+        deadline_epoch=credential_use_deadline_epoch_capped(
+            projected_epoch=now_epoch,
+            allowance_seconds=allowance_seconds,
+            credential_expiry_epoch=expiry_epoch,
+            margin_seconds=margin_seconds,
+        ),
+        credential_expiry_epoch=expiry_epoch,
+        required_remaining_seconds=codex_freshness_required_seconds(
+            run_budget_seconds=allowance_seconds
+        ),
+    )

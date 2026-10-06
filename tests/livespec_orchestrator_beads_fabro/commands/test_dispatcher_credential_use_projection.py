@@ -297,6 +297,11 @@ def test_the_credential_use_projection_is_its_own_cohesive_module() -> None:
 
     Asserted on the PATH before the import, so this fails on a genuine assertion
     while the module does not exist rather than dying at collection.
+
+    `credential_use_projection_for` joins the two halves once the launch slice has
+    a producer: the dispatch that STAMPS a deadline needs the composer, and it is
+    enumerated here rather than left implicit so a name arriving on this surface by
+    accident still fails the cohesion assertion.
     """
     assert _module_path().is_file(), f"{_MODULE_NAME} is not a module yet"
     module = importlib.import_module(_MODULE_IMPORT)
@@ -304,6 +309,7 @@ def test_the_credential_use_projection_is_its_own_cohesive_module() -> None:
         "CredentialUseProjection",
         "credential_use_env_lines",
         "credential_use_guard_prepare_steps_block",
+        "credential_use_projection_for",
     }
 
 
