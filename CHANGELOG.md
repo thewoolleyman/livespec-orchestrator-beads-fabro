@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.173.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.172.0...v0.173.0) (2026-10-06)
+
+
+### Features
+
+* **dispatch:** grade the drain's renewal before anything is claimed ([e3501f1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e3501f1710cf03cbcbac60a9310c5af704661124))
+* **dispatch:** refuse an unrenewable Codex credential before claim ([1c71c4f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1c71c4fc12ad1fe86e9872ae0b95fc4dc1e90c09))
+* **dispatch:** refuse before claim through one shared pre-dispatch wall ([2871aad](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2871aad58feb21f0af26394f289350f736f2465e))
+
+
+### Bug Fixes
+
+* **dispatch:** leave an idle drain's credential unread and ungraded ([8689244](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/86892441275c9f7b59b9da444d0e86d2d95259a6))
+* **dispatch:** project the host Codex credential without a second renewal ([a36dff3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a36dff32ef9ed25a823ff50179544a775fd3bf8a))
+* **dispatch:** refuse an unreadable Codex credential instead of raising ([c4a11ab](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c4a11abd220a53bd92c4acce1addb3f03d73c446))
+* **dispatch:** report an advance without claiming its cause ([fd2eecf](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fd2eecf1eba8f3a63d3bbad72d2ee0d761045fb8))
+* **dispatch:** report an advanced-but-insufficient renewal truthfully ([6ec9dab](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6ec9dabae1af69dfa8cf7c95a514c41fab694176))
+
 ## [0.172.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.171.0...v0.172.0) (2026-10-05)
 
 
