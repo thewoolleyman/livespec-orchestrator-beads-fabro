@@ -47,6 +47,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requireme
     REVIEW_FIX_VISIT_CAP_INPUT,
     credential_lifetime_requirement_for,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_projection import (
+    CredentialUseProjection,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     materialize_overlay,
 )
@@ -139,14 +142,18 @@ _FAKE_SNAPSHOT = json.dumps(
     indent=2,
 )
 
-# A stamped credential-use deadline, which every case projecting the snapshot above
-# must now supply. A credential projected WITHOUT one is broken protection -- a
-# sandbox holding a live credential under no bound -- so the renderer declines to
-# produce an overlay at all, and these cases would receive None rather than the
-# text they assert about. The VALUE is immaterial to what they measure; that it is
+# The credential-use enforcement every case projecting the snapshot above must now
+# supply. A credential projected WITHOUT it is broken protection -- a sandbox
+# holding a live credential under no bound -- so the renderer declines to produce
+# an overlay at all, and these cases would receive None rather than the text they
+# assert about. The VALUES are immaterial to what they measure; that enforcement is
 # present is not. `test_dispatcher_credential_use_projection` owns the behaviour
-# itself, including the fail-closed arm.
-_DEADLINE_EPOCH = 4102444800
+# itself, including the fail-closed arm and the startup grade.
+_CREDENTIAL_USE = CredentialUseProjection(
+    deadline_epoch=4102444800,
+    credential_expiry_epoch=4102444800,
+    required_remaining_seconds=1,
+)
 
 
 def _required_floor_for(*, committed: Path) -> int:
@@ -205,7 +212,7 @@ def test_render_overlay_projects_codex_auth_snapshot(tmp_path: Path) -> None:
         github_token=_FAKE_GITHUB_TOKEN,
         siblings=None,
         codex_auth_snapshot=_FAKE_SNAPSHOT,
-        credential_use_deadline_epoch=_DEADLINE_EPOCH,
+        credential_use=_CREDENTIAL_USE,
     )
     assert rendered is not None
     # The prepare step writes the file the codex-acp adapter reads, before
@@ -245,7 +252,7 @@ def test_render_overlay_projects_the_codex_otel_config(tmp_path: Path) -> None:
         github_token=_FAKE_GITHUB_TOKEN,
         siblings=None,
         codex_auth_snapshot=_FAKE_SNAPSHOT,
-        credential_use_deadline_epoch=_DEADLINE_EPOCH,
+        credential_use=_CREDENTIAL_USE,
         codex_otel_config='[otel]\nenvironment = "livespec"\n',
     )
     assert rendered is not None
@@ -307,7 +314,7 @@ def test_render_overlay_contains_the_refresh_sentinel_to_a_closed_loopback_port(
         github_token=_FAKE_GITHUB_TOKEN,
         siblings=None,
         codex_auth_snapshot=_FAKE_SNAPSHOT,
-        credential_use_deadline_epoch=_DEADLINE_EPOCH,
+        credential_use=_CREDENTIAL_USE,
     )
     assert rendered is not None
     _, env_table = rendered.split("[environments.livespec-ci.env]", 1)
