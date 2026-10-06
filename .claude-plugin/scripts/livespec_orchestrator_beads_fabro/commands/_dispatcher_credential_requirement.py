@@ -202,6 +202,7 @@ def effective_policy_inputs(*, review_fix_cap: int) -> dict[str, int]:
 def operator_credential_requirement(
     *,
     repo: Path,
+    workflow_override: str | None = None,
     workflow_name: str | None = None,
     review_fix_cap: int | None = None,
 ) -> CredentialLifetimeRequirement | str | WorkflowFaultDeferral:
@@ -224,6 +225,14 @@ def operator_credential_requirement(
     the dispatch figure the same figure, rather than two readings that agree only
     while nothing was overridden.
 
+    `workflow_override` is the same raw-path escape hatch `dispatch --workflow
+    <path>` offers, and it carries the SAME precedence `workflow_toml`
+    documents: an explicit path outranks a named variant, and supplying both
+    refuses nothing. Without it a selection the dispatch surface accepts could
+    not be asked of these commands at all -- and, worse, argparse's prefix
+    abbreviation read `--workflow <path>` as `--workflow-name <path>` and
+    refused the path as an unregistered variant.
+
     Explicit context does NOT make this surface permissive: an unregistered
     `workflow_name` still refuses to be sized off the reserved graph, exactly as
     the dispatch path refuses. And `detail` names the inputs the figure used, so
@@ -243,6 +252,7 @@ def operator_credential_requirement(
     )
     return resolve_credential_lifetime_requirement(
         repo=repo,
+        workflow_override=workflow_override,
         workflow_name=workflow_name,
         policy_inputs=effective_policy_inputs(review_fix_cap=effective_cap),
     )
