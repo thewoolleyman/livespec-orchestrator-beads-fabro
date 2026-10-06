@@ -42,6 +42,11 @@ from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import (
     render_adapter,
     resolve_node_inputs,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
+    CREDENTIAL_EXPIRY_ENV_VAR,
+    CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
+    CREDENTIAL_USE_DEADLINE_ENV_VAR,
+)
 
 __all__: list[str] = [
     "DISPATCH_LAYER",
@@ -52,6 +57,19 @@ __all__: list[str] = [
     "acp_nodes_journal_record",
     "resolve_acp_nodes",
 ]
+
+# The three names the credential-use projection owns. An adapter declaring ANY of
+# them is refused: the deadline is the bound itself, and the other two are what the
+# startup grade measures the credential against, so an adapter able to set them
+# could relax its own enforcement.
+_CREDENTIAL_USE_ENV_VARS = frozenset(
+    {
+        CREDENTIAL_EXPIRY_ENV_VAR,
+        CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
+        CREDENTIAL_USE_DEADLINE_ENV_VAR,
+    }
+)
+
 
 WORKFLOW_LAYER = "workflow"
 REPOSITORY_LAYER = "repository"
@@ -185,6 +203,23 @@ def _run_inputs(
     message names the input and the disagreeing nodes, because the remedy
     is to give each of them its own adapter input in the workflow.
     """
+    # AN ADAPTER MAY NOT DECLARE THE CREDENTIAL-USE ENFORCEMENT VARIABLES. The
+    # engine places an adapter's env assignments ahead of the executable, so they
+    # are applied to the credential-use guard's OWN process — an adapter able to set
+    # the deadline could hand itself any instant it liked, and the bound would be
+    # advisory rather than enforced. Refused HERE, where adapters are validated,
+    # because the launch renderer that splices the guard in has no channel to
+    # report a refusal, and the operator needs to be told which node and which
+    # variable to remove.
+    for node in sorted(nodes):
+        declared = sorted(set(nodes[node].adapter.env) & _CREDENTIAL_USE_ENV_VARS)
+        if declared:
+            return (
+                f"node {node!r} declares {', '.join(declared)} in its adapter "
+                "environment, which would let the adapter choose its own "
+                "credential-use deadline instead of the one this dispatch projected; "
+                "remove it from the adapter configuration"
+            )
     by_input: dict[str, dict[str, str]] = {}
     for node, name in inputs.items():
         by_input.setdefault(name, {})[node] = nodes[node].rendered

@@ -28,6 +28,9 @@ from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_n
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import (
     workflow_layer,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
+    GUARD_SCRIPT_PATH,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     dispatch_fabro_run_inputs,
 )
@@ -90,6 +93,21 @@ def _write_dispatcher_config(*, repo: Path, dispatcher: dict[str, Any]) -> None:
     _ = (repo / _CONFIG_NAME).write_text(json.dumps(config), encoding="utf-8")
 
 
+# Every adapter launch is now spliced behind the credential-use guard, between its
+# env assignments and its executable (`test_dispatcher_credential_use_launch` owns
+# that behaviour and asserts it for all nine nodes). These cases grade WHICH adapter
+# a node resolves to, so they assert the guard is present and then compare the
+# command behind it -- stripping it silently would let the wrap regress unnoticed
+# here while these cases kept passing.
+_GUARD_LAUNCH_PREFIX = f"/bin/sh {GUARD_SCRIPT_PATH} -- "
+
+
+def _unguarded(*, rendered: str) -> str:
+    """The adapter command behind the credential-use guard."""
+    assert _GUARD_LAUNCH_PREFIX in rendered, f"launch is not guarded: {rendered}"
+    return rendered.replace(_GUARD_LAUNCH_PREFIX, "", 1)
+
+
 def _rendered_adapters(*, repo: Path) -> dict[str, str]:
     """Every node's rendered adapter for a dispatch whose target is `repo`.
 
@@ -128,7 +146,7 @@ def _rendered_adapters(*, repo: Path) -> dict[str, str]:
     for node, name in resolution.inputs.items():
         prefix = f"{name}="
         [value] = [pair.removeprefix(prefix) for pair in inputs if pair.startswith(prefix)]
-        rendered[node] = value
+        rendered[node] = _unguarded(rendered=value)
     return rendered
 
 
