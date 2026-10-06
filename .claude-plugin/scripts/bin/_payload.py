@@ -205,6 +205,13 @@ def retain_payload(
     if inherited is not None:
         return inherited
     if not harness_managed(source_root=source_root):
+        # A checkout IS its own installation, so it publishes itself. Omitting
+        # this left a FOREIGN install standing as the candidate whenever the
+        # record was inherited: measured at a checkout executing release 5.5.5
+        # while every currency surface reported on install A at 7.1.0. The
+        # `__file__` fallback would have answered correctly, but only when no
+        # record exists at all, and a record that does exist outranks it.
+        environ[INSTALLED_ROOT_ENV] = str(source_root.resolve())
         return _payload_at(root=source_root, retained=False)
     missing = missing_payload_paths(root=source_root)
     if missing:
@@ -215,13 +222,23 @@ def retain_payload(
     if isinstance(retained, PayloadRefusal):
         return retained
     environ[PAYLOAD_ROOT_ENV] = str(retained)
-    # Only on the RETAINED path. A source checkout is its own payload, so its
-    # `__file__` fallback already lands on the installation and a record would
-    # be redundant; an INHERITED payload returns above, leaving the parent's
-    # record standing, which is correct because the installation has not
-    # changed. Recorded without overwriting an existing value for the same
-    # reason: the outermost invocation of a dispatch is the one that knows.
-    _ = environ.setdefault(INSTALLED_ROOT_ENV, str(source_root.resolve()))
+    # ASSIGNED, not `setdefault`. Reaching here means this invocation SELECTED
+    # an installation and copied it, so that source IS the installation and it
+    # is the candidate — whatever a parent recorded.
+    #
+    # `setdefault` was the defect: it is a no-op on an inherited key, so
+    # selecting a different install kept the OLD candidate. Measured at install
+    # B's release 9.9.9 executing while the candidate still named install A, so
+    # a minimum-release refusal would have told the operator to update A.
+    #
+    # ADOPTION is the case this must not touch, and it is already separated by
+    # control flow rather than by a condition here: an inherited payload
+    # returns at the top of this function, so a same-source helper keeps its
+    # parent's record untouched. That distinction is load-bearing — a helper's
+    # own `source_root` is the PAYLOAD, so assigning on that path would record
+    # the payload as the installation and collapse the candidate onto the
+    # execution path again.
+    environ[INSTALLED_ROOT_ENV] = str(source_root.resolve())
     return _payload_at(root=retained, retained=True, holder=retained.parent)
 
 
