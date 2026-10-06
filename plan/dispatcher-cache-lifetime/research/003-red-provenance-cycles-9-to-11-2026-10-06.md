@@ -306,10 +306,20 @@ it does drop it, retain provenance through the EXISTING boundary — the
 `env NAME=value` splice after the wrapper separator that already carries the
 unattended marker. That is a known mechanism, not new scope.
 
-Equally open and equally unmet: proving that actual PASSING and FAILING
-candidate canary DECISIONS leave execution unchanged. Nothing in this
-work-item observes a real canary verdict; cycle 12's control asserts a
-constructed PATH, which is not that. Path equality is not a decision.
+CANARY DECISIONS — NOW EVIDENCED, and it needed no host. Measured 2026-10-06
+at the decision surface: `canary_verdict` yields `pass` at exit 0 and `fail` at
+exit 1, the two are distinct, and across both `executing_payload_root()` and
+the resolving module's own `__file__` are unchanged. The bounded case already
+PASSED, so per the standing instruction it is preserved as a CONTROL
+(`tests/bin/test_payload_canary_decision_leaves_execution.py`) rather than
+turned into a Red, and no product edit was made. Two observables rather than
+one because the root is derived from the module, so either alone could agree
+with itself while the module had been reloaded from another tree. This closes
+the "path equality is not a decision" gap; it observes no update applied, no
+install promoted and no restart, the running Dispatcher being read-only about
+its own artifact by contract.
+
+The WRAPPER leg above remains the one genuinely unmeasurable obligation here.
 
 ## What is NOT a Red, stated plainly
 
