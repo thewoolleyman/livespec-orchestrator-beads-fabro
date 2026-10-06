@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.173.5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.173.4...v0.173.5) (2026-10-06)
+
+
+### Bug Fixes
+
+* **calibration:** correlate the PR-open diff size in the analysis pass ([cce89d7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cce89d70ec8a85815e3e86a84cc47a5388481e69))
+* **calibration:** count assertions with the sanctioned parser at both ends ([2c7068b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2c7068bb16de1f0f4ad35f72541ee2ad5b516830))
+* **calibration:** record branch-versus-base diff size when a pull request opens ([1c10d21](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1c10d21521d2b71ee2ac30b685ef8e5c206c5d86))
+* **calibration:** ship the repaired sizing fields to the calibration span ([4d5456f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4d5456f5c959a3443ae26365d574af08f63e544e))
+* **dispatch:** name the cap a non-convergence bounce tripped ([2ffe3b6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2ffe3b69c17c73c9a1babada030d7e67c3882d78))
+
 ## [0.173.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.173.3...v0.173.4) (2026-10-06)
 
 
