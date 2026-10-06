@@ -492,6 +492,7 @@ subprocess_spawn_allowlist = [
     "tests/bin/test_payload_lifetime_release.py",
     "tests/bin/test_payload_candidate_and_credential_boundary.py",
     "tests/bin/test_payload_public_cli_routes_after_eviction.py",
+    "tests/bin/test_payload_provisioning_interruption.py",
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]
