@@ -79,7 +79,11 @@ def run_codex_cred_refresh_with(
     runner_factory: Callable[[], CodexAppServerRunner],
 ) -> int:
     """Guardedly invoke Codex so the host-owned credential refreshes itself."""
-    requirement = operator_credential_requirement(repo=cwd())
+    requirement = operator_credential_requirement(
+        repo=cwd(),
+        workflow_name=getattr(args, "workflow_name", None),
+        review_fix_cap=getattr(args, "review_fix_cap", None),
+    )
     if isinstance(requirement, str | WorkflowFaultDeferral):
         # Eligibility is DERIVED from the dispatch requirement, so a requirement
         # that cannot be resolved leaves no eligibility to compute. Refusing is
