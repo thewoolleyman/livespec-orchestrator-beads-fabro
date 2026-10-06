@@ -42,6 +42,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
+from livespec_orchestrator_beads_fabro.commands._dispatcher_assertion_count import (
+    assertion_count_of,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_advisories import (
     advisory_definition_of_done_findings,
 )
@@ -101,9 +104,15 @@ def filing_display(*, item: WorkItem, cwd: Path) -> str:
     The parse line is FIRST and unconditional, because it is the line that says
     whether the Definition of Done section was read at all — and it carries the
     `definition-of-done: missing` marker for an item that declined it.
+
+    It is rendered through `assertion_count_of` rather than straight off the
+    resolution, so this display and the terminal calibration record read the
+    count, the source and the line from ONE projection (plan slice S4,
+    `bd-ib-tbgxm4`). The two reported different counts for the same item before
+    that, and nothing structural prevented it.
     """
     resolved = effective_criteria(item=item)
-    lines = [resolved.parse_display()]
+    lines = [assertion_count_of(criteria=resolved).parse_display]
     lines.extend(_assertion_lines(criteria=resolved))
     lines.append(_capability_line(cwd=cwd))
     lines.extend(_finding_lines(item=item, cwd=cwd))

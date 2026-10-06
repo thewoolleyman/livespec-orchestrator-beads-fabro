@@ -179,6 +179,11 @@ def test_build_calibration_record_populates_every_spec_field() -> None:
         gap_id="G-1",
         depends_on=("d1", "d2", "d3"),
         description="- one\n- two\nScenario: foo\nGiven a thing",
+        # The acceptance count reads the SANCTIONED parser, so it is the
+        # criteria field that decides it here — the description's four bullet
+        # and Gherkin markers are the retired derivation's input, and leaving
+        # them in place is what shows they no longer move the number.
+        acceptance_criteria="- One criteria-field assertion.\n- A second one.\n",
     )
     record = build_calibration_record(
         item=item,
@@ -202,7 +207,8 @@ def test_build_calibration_record_populates_every_spec_field() -> None:
     assert record.token_cost_micros == 4200
     assert record.bounced_to_regroom is False
     # mechanical size proxies
-    assert record.acceptance_count == 4
+    assert record.acceptance_count == 2
+    assert record.acceptance_count_source == "criteria-field"
     assert record.merged_pr_diff_size == 145
     assert record.dependency_fan_out == 3
     assert record.spec_surface_touched is True
@@ -277,10 +283,16 @@ def test_fix_loop_count_clean_single_pass_is_zero() -> None:
     assert fix_loop_count(records=records, work_item_id="a") == 0
 
 
-def test_acceptance_count_sums_bullets_and_gherkin() -> None:
+def test_acceptance_count_ignores_description_bullets_and_gherkin_markers() -> None:
+    """The retired derivation read this item as six; the parser reads it as none.
+
+    Two bullets plus four Gherkin markers, and NOT one gradeable assertion: the
+    description carries no Definition of Done section and the item carries no
+    criteria field, so there is nothing the acceptance evaluator would grade.
+    The repair is covered end to end in `test_dispatcher_assertion_count.py`.
+    """
     item = _item(description="- a\n* b\nScenario: x\nGiven y\nWhen z\nThen w\nplain prose")
-    # two bullets + four gherkin markers
-    assert acceptance_count(item=item) == 6
+    assert acceptance_count(item=item) == 0
 
 
 def test_acceptance_count_bare_prose_is_zero() -> None:
@@ -319,6 +331,7 @@ def test_calibration_journal_record_flattens_every_field() -> None:
         token_cost_micros=99,
         bounced_to_regroom=False,
         acceptance_count=2,
+        acceptance_count_source="criteria-field",
         merged_pr_diff_size=50,
         dependency_fan_out=1,
         spec_surface_touched=True,
@@ -336,6 +349,7 @@ def test_calibration_journal_record_flattens_every_field() -> None:
     assert journal["token_cost_micros"] == 99
     assert journal["bounced_to_regroom"] is False
     assert journal["acceptance_count"] == 2
+    assert journal["acceptance_count_source"] == "criteria-field"
     assert journal["merged_pr_diff_size"] == 50
     assert journal["dependency_fan_out"] == 1
     assert journal["spec_surface_touched"] is True

@@ -37,9 +37,11 @@ to "what does this number mean" for each:
 - `tdd.assertion_count` — the number of gradeable assertions in the item's
   EFFECTIVE acceptance criteria, through `effective_criteria` — the exact
   segmentation the acceptance evaluator grades and the operator sees at filing
-  time. Deliberately NOT the legacy `acceptance_count`, which counts bullet
-  and Gherkin markers in the DESCRIPTION and reads zero on most items; slice
-  S4 owns repairing that field, and this one does not touch it.
+  time. It was deliberately NOT the sibling `acceptance_count`, which counted
+  bullet and Gherkin markers in the DESCRIPTION and read zero on most items;
+  slice S4 (`bd-ib-tbgxm4`) has since repaired that field to the same parser,
+  and both now read `_dispatcher_assertion_count` so the two cannot diverge
+  again.
 - `livespec.implement.adapter` — the registry agent id of the implement
   node's resolved ACP adapter. Source: `_dispatcher_implement_adapter`.
 
@@ -62,8 +64,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
-    effective_criteria,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_assertion_count import (
+    assertion_count_for,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_commits import TddCommitSignals
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_order_sink import TddOrderSignals
@@ -171,8 +173,14 @@ def assertion_count(*, item: WorkItem) -> int:
     section, else the criteria field, else the description's exit criteria —
     so this number is the one an operator already sees at filing time rather
     than a second, differently-wrong count.
+
+    It reaches that parser through `_dispatcher_assertion_count`, the shared
+    projection plan slice S4 (`bd-ib-tbgxm4`) adopted once the legacy
+    `acceptance_count` beside it was repaired to the same number: two fields on
+    one span reporting different counts of the same thing is exactly what S4
+    retired, and it would have returned had each kept its own resolution.
     """
-    return len(effective_criteria(item=item).assertions)
+    return assertion_count_for(item=item).count
 
 
 def tdd_signal_fields(*, signals: TddSignals) -> dict[str, object | None]:

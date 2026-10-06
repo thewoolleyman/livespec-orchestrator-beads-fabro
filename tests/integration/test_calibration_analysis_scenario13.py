@@ -65,6 +65,7 @@ def _record(
         token_cost_micros=1000,
         bounced_to_regroom=bounced_to_regroom,
         acceptance_count=acceptance_count,
+        acceptance_count_source="description-definition-of-done",
         merged_pr_diff_size=merged_pr_diff_size,
         dependency_fan_out=dependency_fan_out,
         spec_surface_touched=False,
