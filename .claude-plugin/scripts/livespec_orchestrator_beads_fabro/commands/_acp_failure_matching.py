@@ -58,10 +58,20 @@ _MESSAGE_SOURCE = "protocol.message"
 
 # The vocabulary a bare HTTP 400/404 already contains. A signature naming
 # nothing else is claiming the status itself, which the contract forbids.
+#
+# THE FULL PHRASES BELONG HERE because `_STATUS_MARKERS` below recognises
+# a generic status BY them: without `404 not found` in this set, a text
+# signature naming only the marker phrase counted as naming something
+# outside the status vocabulary and made the very 400/404 it had matched
+# fallback-eligible. Every marker literal must therefore appear here, or
+# the discriminator rule is permissive in exactly the place the
+# non-eligible list exists to close.
 GENERIC_STATUS_LITERALS: frozenset[str] = frozenset(
     {
         "400",
+        "400 bad request",
         "404",
+        "404 not found",
         "bad request",
         "http 400",
         "http 404",
