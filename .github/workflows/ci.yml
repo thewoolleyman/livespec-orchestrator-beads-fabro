@@ -859,6 +859,7 @@ jobs:
           just check-plan-anchor-declared || failed="$failed check-plan-anchor-declared"
           just check-plan-no-live-handoff-file || failed="$failed check-plan-no-live-handoff-file"
           just check-plan-no-tombstone || failed="$failed check-plan-no-tombstone"
+          just check-plan-close-proof || failed="$failed check-plan-close-proof"
           just check-primary-checkout-commit-refuse-hook-installed || failed="$failed check-primary-checkout-commit-refuse-hook-installed"
           just check-required-role-keys-declared || failed="$failed check-required-role-keys-declared"
           just check-self-hosted-routing || failed="$failed check-self-hosted-routing"
