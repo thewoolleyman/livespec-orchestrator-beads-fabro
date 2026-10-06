@@ -43,10 +43,16 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_credential_gat
     CODEX_CREDENTIAL_REQUIREMENT_STAGE,
     codex_credential_refusal_for_items,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_freshness import (
+    graded_freshness,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement import (
     operator_credential_requirement,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
+    CODEX_FRESHNESS_MARGIN_SECONDS,
+)
 
 _NOW = 1_700_000_000
 
@@ -344,3 +350,76 @@ def test_manual_renewal_below_the_requirement_actually_spends_the_request(
         "initialized",
         "account/read",
     ]
+
+
+@pytest.mark.parametrize(
+    ("offset", "admitted"),
+    [
+        pytest.param(-1, False, id="below"),
+        pytest.param(0, False, id="equal"),
+        pytest.param(1, True, id="above"),
+    ],
+)
+def test_admission_requires_the_lifetime_to_exceed_the_requirement(
+    tmp_path: Path, offset: int, *, admitted: bool
+) -> None:
+    """The boundary is STRICT: equality does not exceed, so equality refuses.
+
+    The ratified assertion is that the remaining lifetime EXCEEDS the maximum
+    enforced credential-use duration plus the documented margin. The comparator
+    was `>=`, which admitted a credential whose remaining lifetime EQUALS that
+    figure -- and equality is not academic here: it is precisely the credential
+    that would finish its last enforced second with zero margin left, which is
+    the state the margin exists to prevent.
+
+    All three points are asserted because no single one pins a comparator: the
+    below case passes under both `>` and `>=`, the above case passes under both,
+    and only the EQUAL case tells them apart.
+    """
+    repo = _repo(tmp_path=tmp_path)
+    required = _required_seconds(repo=repo)
+
+    verdict = graded_freshness(
+        source_auth_json=_auth_json(exp=_NOW + required + offset),
+        now_epoch=_NOW,
+        run_budget_seconds=required - CODEX_FRESHNESS_MARGIN_SECONDS,
+    )
+
+    assert verdict is not None
+    assert verdict.fresh_enough is admitted
+
+
+@pytest.mark.parametrize(
+    ("offset", "due"),
+    [
+        pytest.param(-1, True, id="below"),
+        pytest.param(0, True, id="equal"),
+        pytest.param(1, False, id="above"),
+    ],
+)
+def test_renewal_eligibility_mirrors_the_strict_admission_boundary(
+    tmp_path: Path, offset: int, capsys: pytest.CaptureFixture[str], *, due: bool
+) -> None:
+    """The dead zone is EMPTY at the boundary, not merely near it.
+
+    Admission refuses at equality, so renewal must be DUE at equality too. While
+    the guard used `<` the two disagreed at exactly one lifetime: dispatch
+    refused it while the sanctioned refresher reported "not due" and told a
+    human to run `codex login`. One second wide is still a dead zone, and it is
+    the same defect deriving this guard was adopted to retire.
+    """
+    repo = _repo(tmp_path=tmp_path)
+    required = _required_seconds(repo=repo)
+    runner = _AppServerRunner()
+
+    exit_code = run_codex_cred_refresh_with(
+        args=argparse.Namespace(as_json=True, dry_run=True),
+        cwd=lambda: repo,
+        now_epoch=lambda: _NOW,
+        read_host_codex_auth=lambda: _auth_json(exp=_NOW + required + offset),
+        runner_factory=lambda: runner,
+    )
+
+    payload: dict[str, Any] = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["would_invoke_codex"] is due
