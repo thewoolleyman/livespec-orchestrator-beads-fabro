@@ -31,6 +31,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import GitAuthor
 
+# The review-fix VISIT cap the shipped default renders -- `DEFAULT_REVIEW_FIX_CAP`
+# of three repair rounds plus the initial review visit. Immaterial to what these
+# cases measure (none of their graphs guards an edge on it), but it is a real
+# rendered value rather than an invented one, so a reader is not left wondering
+# whether the number carries meaning here.
+_REVIEW_FIX_VISIT_CAP = 4
+
+
 _COMMITTED_WORKFLOW_TOML = (
     "_version = 1\n"
     "\n"
@@ -119,6 +127,7 @@ def test_scenario18_dispatch_overlay_projects_dual_credentials(
         dispatch_id="dispatch-1",
         token=lambda: _FAKE_GITHUB_TOKEN,
         git_author=_GIT_AUTHOR,
+        review_fix_visit_cap=_REVIEW_FIX_VISIT_CAP,
     )
 
     assert error is None
@@ -162,6 +171,7 @@ def test_scenario19_stale_codex_credential_refuses_before_overlay(
         dispatch_id="dispatch-1",
         token=lambda: _FAKE_GITHUB_TOKEN,
         git_author=_GIT_AUTHOR,
+        review_fix_visit_cap=_REVIEW_FIX_VISIT_CAP,
     )
 
     assert error is not None

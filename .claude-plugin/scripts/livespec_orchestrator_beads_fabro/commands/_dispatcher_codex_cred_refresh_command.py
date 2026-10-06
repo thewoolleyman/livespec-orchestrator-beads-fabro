@@ -8,9 +8,10 @@ then spends one request near the cliff.
 The request is the app-server `account/read` with `refreshToken`, NOT
 `codex exec`. Upstream gates the ordinary refresh on a five-minute window
 (`should_refresh_proactively` in `codex-rs/login/src/auth/manager.rs`), and the
-guard is now derived from the dispatch freshness requirement (five hours), so a
-`codex exec` spent anywhere in that span could not advance the expiry: the
-timer would attempt and decline while reporting that it had tried.
+guard is derived from the dispatch freshness requirement — which is itself
+resolved per workflow and is DAYS rather than hours for this repository's own
+graph — so a `codex exec` spent anywhere in that span could not advance the
+expiry: the timer would attempt and decline while reporting that it had tried.
 
 Dropping `codex exec` dropped a privilege with it. That invocation carried
 Codex's approvals-and-sandbox bypass flag, and a hook gate existed only to
@@ -38,13 +39,18 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_early_renewal 
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_refresh import (
     CODEX_ALARM_THRESHOLD_SECONDS,
-    CODEX_REFRESH_GUARD_SECONDS,
     HostCodexCredentialStatus,
     assess_host_codex_credential,
     classify_refresh_outcome,
+    codex_refresh_guard_seconds,
     should_invoke_codex_refresh,
 )
-from livespec_orchestrator_beads_fabro.io import write_stdout
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement import (
+    WorkflowFaultDeferral,
+    operator_credential_requirement,
+    requirement_refusal_text,
+)
+from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 
 __all__: list[str] = [
     "run_codex_cred_refresh_with",
@@ -73,9 +79,20 @@ def run_codex_cred_refresh_with(
     runner_factory: Callable[[], CodexAppServerRunner],
 ) -> int:
     """Guardedly invoke Codex so the host-owned credential refreshes itself."""
+    requirement = operator_credential_requirement(repo=cwd())
+    if isinstance(requirement, str | WorkflowFaultDeferral):
+        # Eligibility is DERIVED from the dispatch requirement, so a requirement
+        # that cannot be resolved leaves no eligibility to compute. Refusing is
+        # the only honest answer: spending a provider request against a guard
+        # derived from nothing, or declining against one, would both report an
+        # eligibility nobody established.
+        _ = write_stderr(text=f"{requirement_refusal_text(outcome=requirement)}\n")
+        return 1
+    guard_seconds = codex_refresh_guard_seconds(run_budget_seconds=requirement.allowance_seconds)
     before = _assess_host_codex_credential(
         now_epoch=now_epoch,
         read_host_codex_auth=read_host_codex_auth,
+        guard_seconds=guard_seconds,
     )
     invoked_codex = False
     codex_exit_code: int | None = None
@@ -95,6 +112,7 @@ def run_codex_cred_refresh_with(
         after = _assess_host_codex_credential(
             now_epoch=now_epoch,
             read_host_codex_auth=read_host_codex_auth,
+            guard_seconds=guard_seconds,
         )
     outcome = classify_refresh_outcome(
         before=before,
@@ -128,12 +146,13 @@ def _assess_host_codex_credential(
     *,
     now_epoch: Callable[[], int],
     read_host_codex_auth: Callable[[], str | None],
+    guard_seconds: int,
 ) -> HostCodexCredentialStatus:
     return assess_host_codex_credential(
         source_auth_json=read_host_codex_auth(),
         now_epoch=now_epoch(),
         alarm_threshold_seconds=CODEX_ALARM_THRESHOLD_SECONDS,
-        refresh_guard_seconds=CODEX_REFRESH_GUARD_SECONDS,
+        refresh_guard_seconds=guard_seconds,
     )
 
 
@@ -188,9 +207,16 @@ def _codex_cred_refresh_message(*, codex_stderr: str, dry_run: bool, outcome: st
         )
     if dry_run:
         return "Dry run: host Codex credential is refresh-due; codex was not invoked."
+    # NAMES THE ROUTE ACTUALLY TAKEN. This said "after codex exec", which this
+    # command stopped spending when the renewal moved to the app-server
+    # `account/read` request — so it pointed an operator at a mechanism no longer
+    # on this path, and implicitly at the five-minute window that no longer gates
+    # it. The module docstring has described the real route all along; this one
+    # line had not caught up.
     return (
-        "Host Codex credential is still stale after codex exec; run `codex login` "
-        "on the orchestrator host if this persists."
+        "Host Codex credential is still stale after one bounded app-server "
+        "account/read renewal request; run `codex login` on the orchestrator "
+        "host if this persists."
     )
 
 

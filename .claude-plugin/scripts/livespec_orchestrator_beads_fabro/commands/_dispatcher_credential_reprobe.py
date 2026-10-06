@@ -66,7 +66,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
     ClaudeCredentialStatus,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_env import (
     assess_credential_status,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile

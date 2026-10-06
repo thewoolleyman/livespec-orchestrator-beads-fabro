@@ -41,9 +41,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_identity_obser
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_refresh import (
     CODEX_ALARM_THRESHOLD_SECONDS,
-    CODEX_REFRESH_GUARD_SECONDS,
     HostCodexCredentialStatus,
     assess_host_codex_credential,
+    codex_refresh_guard_seconds,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement import (
+    WorkflowFaultDeferral,
+    operator_credential_requirement,
+    requirement_refusal_text,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     project_codex_auth_snapshot,
@@ -52,7 +57,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
     CodexFreshnessVerdict,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
-from livespec_orchestrator_beads_fabro.io import write_stdout
+from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 
 __all__: list[str] = [
     "CodexProjectionRefusal",
@@ -126,7 +131,9 @@ def renew_host_codex_credential() -> CodexRenewalOutcome:
     )
 
 
-def project_codex_auth(*, clock: Callable[[], int]) -> str | CodexProjectionRefusal:
+def project_codex_auth(
+    *, clock: Callable[[], int], run_budget_seconds: int
+) -> str | CodexProjectionRefusal:
     """Grade the host Codex credential BEFORE the item is claimed, renewing once.
 
     The pre-claim gate's decision function, reached through
@@ -157,11 +164,21 @@ def project_codex_auth(*, clock: Callable[[], int]) -> str | CodexProjectionRefu
     no longer has. That error runs in the UNSAFE direction — it would admit a
     dispatch whose credential is already below the floor — so the clock is
     read again after the request and the stale reading is never reused.
+
+    `run_budget_seconds` is the caller's RESOLVED execution allowance for the
+    workflow this dispatch selected, which is what makes the floor follow the
+    configuration rather than a constant. It is threaded down to the
+    post-renewal re-grade too, so the credential is measured against ONE
+    requirement on both sides of the request.
     """
     source_auth_json = read_host_codex_auth()
     if source_auth_json is None:
         return CodexProjectionRefusal(message=absent_credential_refusal())
-    verdict = graded_freshness(source_auth_json=source_auth_json, now_epoch=clock())
+    verdict = graded_freshness(
+        source_auth_json=source_auth_json,
+        now_epoch=clock(),
+        run_budget_seconds=run_budget_seconds,
+    )
     # An UNDECODABLE credential is refused here rather than renewed: a rotation
     # request cannot repair bytes that will not parse, so spending one would buy
     # nothing and would report a renewal the operator cannot act on.
@@ -169,13 +186,14 @@ def project_codex_auth(*, clock: Callable[[], int]) -> str | CodexProjectionRefu
         return CodexProjectionRefusal(message=unparseable_credential_refusal())
     if verdict.fresh_enough:
         return project_codex_auth_snapshot(source_auth_json=source_auth_json)
-    return _renew_then_regrade(verdict=verdict, clock=clock)
+    return _renew_then_regrade(verdict=verdict, clock=clock, run_budget_seconds=run_budget_seconds)
 
 
 def _renew_then_regrade(
     *,
     verdict: CodexFreshnessVerdict,
     clock: Callable[[], int],
+    run_budget_seconds: int,
 ) -> str | CodexProjectionRefusal:
     """Spend the ONE bounded renewal, then grade the re-read against the clock.
 
@@ -206,6 +224,7 @@ def _renew_then_regrade(
     renewed = graded_freshness(
         source_auth_json=renewed_auth_json,
         now_epoch=now_after_renewal,
+        run_budget_seconds=run_budget_seconds,
     )
     # The credential was rewritten under this dispatch and is now undecodable.
     # Reporting the PRE-renewal shortfall would report a lifetime this file no
@@ -223,7 +242,9 @@ def _renew_then_regrade(
     )
 
 
-def project_host_codex_auth(*, clock: Callable[[], int]) -> str | CodexProjectionRefusal:
+def project_host_codex_auth(
+    *, clock: Callable[[], int], run_budget_seconds: int
+) -> str | CodexProjectionRefusal:
     """Project the host Codex credential as it now stands, renewing NOTHING.
 
     The overlay's projection step, and the second half of a decision whose first
@@ -250,7 +271,11 @@ def project_host_codex_auth(*, clock: Callable[[], int]) -> str | CodexProjectio
     source_auth_json = read_host_codex_auth()
     if source_auth_json is None:
         return CodexProjectionRefusal(message=absent_credential_refusal())
-    verdict = graded_freshness(source_auth_json=source_auth_json, now_epoch=clock())
+    verdict = graded_freshness(
+        source_auth_json=source_auth_json,
+        now_epoch=clock(),
+        run_budget_seconds=run_budget_seconds,
+    )
     if verdict is None:
         return CodexProjectionRefusal(message=unparseable_credential_refusal())
     if verdict.fresh_enough:
@@ -265,11 +290,22 @@ def run_codex_cred_status(*, args: argparse.Namespace) -> int:
     touches the exit code: external monitoring is already wired to the alarm,
     so letting an observation move that signal would change what a page means.
     """
+    requirement = operator_credential_requirement(repo=Path.cwd())
+    if isinstance(requirement, str | WorkflowFaultDeferral):
+        # A status that cannot state the requirement it grades against is not a
+        # status, so it refuses rather than printing a `refresh_due` computed
+        # from nothing. The exit code is the ALARM code, which external
+        # monitoring already watches: an unresolvable requirement means no
+        # dispatch can be graded at all, which is at least as urgent as a short
+        # credential.
+        _ = write_stderr(text=f"{requirement_refusal_text(outcome=requirement)}\n")
+        return 1
     source_auth_json = read_host_codex_auth()
     now_epoch = int(time.time())
     status = _assess_host_codex_credential_now(
         source_auth_json=source_auth_json,
         now_epoch=now_epoch,
+        run_budget_seconds=requirement.allowance_seconds,
     )
     payload = _codex_cred_status_payload(status=status)
     observation = identity_observation_for(
@@ -301,12 +337,13 @@ def _assess_host_codex_credential_now(
     *,
     source_auth_json: str | None,
     now_epoch: int,
+    run_budget_seconds: int,
 ) -> HostCodexCredentialStatus:
     return assess_host_codex_credential(
         source_auth_json=source_auth_json,
         now_epoch=now_epoch,
         alarm_threshold_seconds=CODEX_ALARM_THRESHOLD_SECONDS,
-        refresh_guard_seconds=CODEX_REFRESH_GUARD_SECONDS,
+        refresh_guard_seconds=codex_refresh_guard_seconds(run_budget_seconds=run_budget_seconds),
     )
 
 

@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import Literal
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
-    CODEX_FRESHNESS_RUN_BUDGET_SECONDS,
     codex_freshness_required_seconds,
     decode_codex_access_token_exp,
 )
@@ -15,32 +14,39 @@ from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [
     "CODEX_ALARM_THRESHOLD_SECONDS",
-    "CODEX_REFRESH_GUARD_SECONDS",
     "HostCodexCredentialStatus",
     "assess_host_codex_credential",
     "classify_refresh_outcome",
+    "codex_refresh_guard_seconds",
     "should_invoke_codex_refresh",
 ]
 
 CODEX_ALARM_THRESHOLD_SECONDS = 172_800
 
-# DERIVED from the dispatch freshness requirement, never written as its own
-# number. The two diverging IS the dead zone: the guard was 360 seconds — sized
-# to Codex's own five-minute proactive-refresh window, because the refresher
-# then spent a `codex exec` that could not refresh outside it — while the
-# freshness gate demanded 18000. Every lifetime between them refused dispatch
-# while this guard reported "not due", so the sanctioned refresh declined to
-# act and the refusal told a human to run `codex login`. Measured 2026-10-04 at
-# remaining_seconds 13517.
-#
-# Deriving it makes that interval empty by construction. The companion half of
-# the fix is that the renewal now drives the UNGATED app-server `account/read`
-# request (`_dispatcher_codex_early_renewal`) instead of the window-gated
-# `codex exec`: widening eligibility over a refresher that still cannot act
-# would only convert a refusal into an attempt that declines.
-CODEX_REFRESH_GUARD_SECONDS = codex_freshness_required_seconds(
-    run_budget_seconds=CODEX_FRESHNESS_RUN_BUDGET_SECONDS
-)
+
+def codex_refresh_guard_seconds(*, run_budget_seconds: int) -> int:
+    """The manual-renewal eligibility guard, DERIVED from the dispatch requirement.
+
+    Never written as its own number. The two diverging IS the dead zone: the
+    guard was 360 seconds — sized to Codex's own five-minute proactive-refresh
+    window, because the refresher then spent a `codex exec` that could not
+    refresh outside it — while the freshness gate demanded 18000. Every lifetime
+    between them refused dispatch while this guard reported "not due", so the
+    sanctioned refresh declined to act and the refusal told a human to run
+    `codex login`. Measured 2026-10-04 at remaining_seconds 13517.
+
+    Deriving it makes that interval empty by construction. The companion half of
+    the fix is that the renewal drives the UNGATED app-server `account/read`
+    request (`_dispatcher_codex_early_renewal`) instead of the window-gated
+    `codex exec`: widening eligibility over a refresher that still cannot act
+    would only convert a refusal into an attempt that declines.
+
+    It is a FUNCTION rather than a constant for the same reason the requirement
+    is resolved per dispatch: the run budget it is derived from is the selected
+    workflow's resolved allowance, and a constant could not follow it. A guard
+    frozen at one workflow's figure would re-open the dead zone for every other.
+    """
+    return codex_freshness_required_seconds(run_budget_seconds=run_budget_seconds)
 
 
 @dataclass(frozen=True, kw_only=True)
