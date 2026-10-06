@@ -26,12 +26,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop_selection, needs_attention
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_minimum_release_floor as _floor_module,
+)
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_staleness_gate as gate,
 )
@@ -267,6 +271,14 @@ def test_scenario95_a_release_below_the_committed_floor_refuses_fail_closed(
         tmp_path=tmp_path, monkeypatch=monkeypatch, name=_BUILD_ID, version="0.97.1"
     )
     _install_runner(monkeypatch=monkeypatch, runner=_release_head_runner())
+    # In this scenario the PROVISIONED build is the one executing. That used to
+    # follow from CLAUDE_PLUGIN_ROOT alone; the floor now judges the retained
+    # payload, so the scenario states which tree that is.
+    monkeypatch.setattr(
+        _floor_module,
+        "executing_payload_root",
+        lambda: Path(os.environ["CLAUDE_PLUGIN_ROOT"]),
+    )
     repo = _repo(tmp_path=tmp_path, minimum_release="0.98.0")
 
     prepared, journal = _prepare(repo=repo)
