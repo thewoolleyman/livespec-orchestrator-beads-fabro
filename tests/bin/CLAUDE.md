@@ -195,6 +195,18 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   is the success case, which is why the release is copied aside at all.
   Scope is copy-vs-its-own-source coherence, NOT integrity or
   tamper-resistance.
+- `test_payload_canary_decision_leaves_execution.py` — the half of the
+  fifth assertion that had no evidence: a canary DECISION, passing or
+  failing, must not move the running Dispatcher. Cycle 12's control
+  asserted where a CONSTRUCTED path sits, and a path is not a decision.
+  Drives `canary_verdict` at both exit codes and requires the verdicts to
+  differ while `executing_payload_root()` AND the loaded module's own
+  resolved `__file__` are both unchanged — two observables, because the
+  root is derived from the module, so either alone could agree with
+  itself while the module came from elsewhere. NOT a Red: measured
+  correct and passing on first write. Observes no update applied, no
+  install promoted and no restart; the running Dispatcher is read-only
+  about its own artifact by contract.
 - `test_payload_inventory_boundaries.py` — the refusal/cleanup/fail-closed
   semantics of the pre-copy inventory's own NEW code, both faults being
   regressions against contracts this module had already established. The
