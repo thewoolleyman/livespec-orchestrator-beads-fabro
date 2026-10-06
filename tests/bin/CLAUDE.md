@@ -97,6 +97,17 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   the pairs that implement the behaviour; its docstring records the
   control that shows it fails against the pre-fix tree. Listed in
   `subprocess_spawn_allowlist`.
+- `test_payload_provisioning_interruption.py` — the two literal cases
+  the refusal file above does NOT reach, plus the cleanup assertion it
+  omits: a source deleted while the real `copytree` walks it, a
+  provision INTERRUPTED mid-copy (which arrives as `KeyboardInterrupt`,
+  not `OSError`, so an error-enumerating handler never sees it), and an
+  incomplete source creating no private directory at all. Each drives
+  the real Dispatcher entry point and observes the same zero-claim
+  evidence. The disappearance and interruption each need ONE narrow
+  control on the product's own seam inside the child, because a
+  wall-clock race would pass or fail on load. Listed in
+  `subprocess_spawn_allowlist`.
 - `test_host_side_self_contained_import.py` — the end-to-end
   counterpart of `test_bootstrap.py`: it spawns a `-S` (no-site)
   subprocess that runs the real bootstrap and imports the host-side
