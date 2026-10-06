@@ -51,6 +51,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFil
 from livespec_orchestrator_beads_fabro.commands._dispatcher_lifecycle_writes import (
     write_work_item_status_and_reconcile,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_non_convergence_cap import (
+    NON_CONVERGENCE_BOUNCE_STAGE,
+    non_convergence_cap,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     is_non_convergence_outcome,
@@ -64,6 +68,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     acceptance_decision,
     effective_acceptance_policy,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import resolve_stall_seconds
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
@@ -313,6 +318,12 @@ def bounce_non_convergence_to_backlog(
     """
     if not is_non_convergence_outcome(outcome=outcome):
         return
+    # WHICH cap tripped, and what it observed (plan slice S4, `bd-ib-tbgxm4`).
+    # Resolved BEFORE the ledger write so both arms below carry it: an escalation
+    # that could not land is the one most worth naming, and an error record that
+    # said only "the write failed" leaves nobody able to tell a hung sandbox from
+    # a slice that genuinely would not converge.
+    cap = non_convergence_cap(outcome=outcome, stall_seconds=resolve_stall_seconds())
     updated = attempt(
         action=lambda: update_work_item_status(
             path=store_config(repo=repo),
@@ -327,15 +338,17 @@ def bounce_non_convergence_to_backlog(
                 "stage": "non-convergence-bounce-error",
                 "work_item_id": item.id,
                 "reason": f"{type(updated.error).__name__}",
+                **cap.as_record(),
             }
         )
         return
     journal.append(
         record={
-            "stage": "non-convergence-bounce",
+            "stage": NON_CONVERGENCE_BOUNCE_STAGE,
             "work_item_id": item.id,
             "outcome_stage": outcome.stage,
             "outcome_status": outcome.status,
+            **cap.as_record(),
         }
     )
     surface_line = (
