@@ -138,6 +138,26 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   control keeps this repository's own checkout exempt, so the
   source-checkout, currency and canary policies are preserved. Listed in
   `subprocess_spawn_allowlist`.
+- `test_payload_inherited_source_identity.py` — `PAYLOAD_ROOT_ENV` is
+  ordinary inherited environment, so it also reaches a process pointed at
+  a DIFFERENT installation on purpose. Adoption was unconditional, so the
+  inherited tree won and the explicitly selected release was silently
+  ignored (measured: 7.1.0 executing where 9.9.9 was named, and an
+  inherited payload displacing this project's own source checkout). The
+  payload now carries a holder-level record of the source it was copied
+  from, and an inherited tree is reused only when the selected source IS
+  that origin or IS the payload itself — the second being how a
+  `scripts/bin/` helper spawned from inside the payload names its own
+  root. Carries both hand-down cases as controls, so the suite cannot
+  pass against a launcher that stops reusing anything.
+- `test_payload_grading.py` — structural guard for the `_payload_grading`
+  cut, plus the grading cases whose only caller is now across a module
+  boundary. NOT a Red: every function in that module was MOVED verbatim
+  out of `_payload.py` and is already covered through the names `_payload`
+  re-exports. It asserts the module stays cut, that the names which had
+  to become PUBLIC to cross the boundary are public while the private
+  spellings are gone, and that `IGNORED_NAMES` is one shared constant
+  rather than two that could drift.
 - `test_host_side_self_contained_import.py` — the end-to-end
   counterpart of `test_bootstrap.py`: it spawns a `-S` (no-site)
   subprocess that runs the real bootstrap and imports the host-side
