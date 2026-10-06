@@ -51,6 +51,20 @@ def add_credential_selection_arguments(*, parser: argparse.ArgumentParser) -> No
     gets the reading they got before these existed.
     """
     _ = parser.add_argument(
+        "--workflow",
+        dest="workflow",
+        default=None,
+        metavar="<path>",
+        help=(
+            "Resolve the credential requirement for the committed workflow at "
+            "this explicit path, which outranks --workflow-name exactly as it "
+            "does for `dispatch`. Declaring it also removes the argparse prefix "
+            "abbreviation that previously read `--workflow <path>` as "
+            "`--workflow-name <path>` and refused the path as an unregistered "
+            "variant."
+        ),
+    )
+    _ = parser.add_argument(
         "--workflow-name",
         dest="workflow_name",
         default=None,
