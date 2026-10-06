@@ -138,6 +138,22 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   control keeps this repository's own checkout exempt, so the
   source-checkout, currency and canary policies are preserved. Listed in
   `subprocess_spawn_allowlist`.
+- `test_payload_candidate_root_without_claude_env.py` — the
+  candidate-boundary case `test_payload_candidate_and_credential_boundary.py`
+  cannot reach, because that file sets `CLAUDE_PLUGIN_ROOT` on every
+  child and so only ever exercises the Claude path. Normal Codex
+  exports no such variable, and there `plugin_root()` fell through to
+  `parents[3]` — which, after retention, is the PAYLOAD. Measured with a
+  real child and no `CLAUDE_PLUGIN_ROOT`: both roots reported the same
+  payload directory while the installation was named by neither, so the
+  candidate root and the execution path collapsed and every currency
+  comparison became the running build against itself. The launcher now
+  records the installation it copied aside and `plugin_root()` consults
+  that record between the harness export and the `__file__` fall-through.
+  Carries three controls the fix must not disturb: an exported
+  `CLAUDE_PLUGIN_ROOT` still wins, packaged assets still resolve inside
+  the payload, and this project's own checkout still resolves to itself.
+  Listed in `subprocess_spawn_allowlist`.
 - `test_payload_public_route_exact_outcomes.py` — the EXACT-outcome
   counterpart of the file above, which accepts any `int` helper exit code
   and any `failed` envelope and reaches no `.fabro/` asset. Both public
