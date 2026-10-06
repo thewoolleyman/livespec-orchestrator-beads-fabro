@@ -81,6 +81,7 @@ def run_codex_cred_refresh_with(
     """Guardedly invoke Codex so the host-owned credential refreshes itself."""
     requirement = operator_credential_requirement(
         repo=cwd(),
+        workflow_override=getattr(args, "workflow", None),
         workflow_name=getattr(args, "workflow_name", None),
         review_fix_cap=getattr(args, "review_fix_cap", None),
     )
