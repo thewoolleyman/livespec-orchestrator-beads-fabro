@@ -15,10 +15,23 @@ It consumes EXACTLY the calibration telemetry behavior 6
 records onto the existing Dispatcher journal: one flat `calibration`-stage
 record per terminal dispatch carrying the run-outcome signal (`converged`,
 `bounced_to_regroom`, `outcome_class`, …) plus the mechanical size proxies
-(`acceptance_count`, `merged_pr_diff_size`, `dependency_fan_out`,
-`dispatch_context_size`, …). This pass reads that accumulated journal,
-correlates the size proxies against non-convergence, and proposes a ceiling
-for each proxy whose larger values empirically predict non-convergence.
+(`acceptance_count`, `merged_pr_diff_size`, `pr_open_diff_size`,
+`dependency_fan_out`, `dispatch_context_size`, …). This pass reads that
+accumulated journal, correlates the size proxies against non-convergence, and
+proposes a ceiling for each proxy whose larger values empirically predict
+non-convergence.
+
+WHAT PLAN SLICE S4 (`bd-ib-tbgxm4`) CHANGED HERE, AND WHY IT IS ONE LINE. This
+pass was never wrong; it had nothing to correlate on. Measured across 445 of
+this repository's own records, `acceptance_count` read a median of ZERO on both
+sides (it counted description markers rather than the graded assertions),
+`merged_pr_diff_size` existed only on converged runs, and `bounced_to_regroom`
+was true on NONE of them — so three of the four inputs the predictive gate
+depends on carried no signal, and the single ceiling the pass did propose
+(`dispatch_context_size` at 1283, with 442 runs above it and 3 below) was noise.
+S4 repaired those inputs at the PRODUCING end. The only change needed here is
+to correlate the new PR-open churn proxy; the repaired assertion count and the
+repaired bounce signal arrive under the keys this pass already read.
 
 Two design commitments hold the spec's guardrails:
 
@@ -65,6 +78,13 @@ __all__: list[str] = [
 _NUMERIC_SIZE_PROXIES: tuple[str, ...] = (
     "acceptance_count",
     "merged_pr_diff_size",
+    # Plan slice S4's repaired churn proxy (`bd-ib-tbgxm4`): the
+    # branch-versus-base size recorded as the pull request OPENED, which a run
+    # keeps whatever terminal follows. `merged_pr_diff_size` above exists only
+    # on a green outcome, so it was present on all 292 converged runs of this
+    # repository's 445 records and on NONE of the 153 non-converged ones — a
+    # proxy the correlation target decides rather than one that predicts it.
+    "pr_open_diff_size",
     "dependency_fan_out",
     "dispatch_context_size",
 )
