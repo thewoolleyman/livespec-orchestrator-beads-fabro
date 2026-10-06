@@ -121,7 +121,7 @@ on it at all:
 The underlying behaviour is NOT repaired here — that is outside this
 work-item's declared assertions and no product change was requested — and it
 is recorded as an additive incident in
-`plan/dispatcher-cache-lifetime/research/003-red-provenance-cycles-9-to-11-2026-10-06.md`
+`plan/archive/dispatcher-cache-lifetime/research/003-red-provenance-cycles-9-to-11-2026-10-06.md`
 so the next reader examines it instead of trusting a "not a finding" label.
 
 Real child processes are the only way to ask any of this, so this file is

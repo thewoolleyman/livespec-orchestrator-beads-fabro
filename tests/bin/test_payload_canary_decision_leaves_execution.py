@@ -22,7 +22,7 @@ leg is discharged only by driving the exported `self_update_after_release`
 boundary with a real bounded subprocess and a recording journal, which belongs
 to the downstream `proof_capture` node and its independent `proof_verify`
 replay. See
-`plan/dispatcher-cache-lifetime/research/003-red-provenance-cycles-9-to-11-2026-10-06.md`
+`plan/archive/dispatcher-cache-lifetime/research/003-red-provenance-cycles-9-to-11-2026-10-06.md`
 section "CORRECTION, 2026-10-06". No product defect is inferred from the gap.
 
 NOT a Red, and it must not be cited as one. The behaviour was already correct

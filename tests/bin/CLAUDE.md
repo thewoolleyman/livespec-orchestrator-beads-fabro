@@ -253,7 +253,7 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   bounded subprocess and a recording journal; that capture belongs to the
   downstream `proof_capture` node and its independent `proof_verify`
   replay. Full statement, including the two expected journal outcomes:
-  `plan/dispatcher-cache-lifetime/research/003-red-provenance-cycles-9-to-11-2026-10-06.md`
+  `plan/archive/dispatcher-cache-lifetime/research/003-red-provenance-cycles-9-to-11-2026-10-06.md`
   §"CORRECTION, 2026-10-06". No product defect is inferred from this gap.
 
   **That last sentence was FALSIFIED on 2026-10-06, and the correction is
