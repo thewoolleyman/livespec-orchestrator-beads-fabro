@@ -200,31 +200,51 @@ def effective_policy_inputs(*, review_fix_cap: int) -> dict[str, int]:
 
 
 def operator_credential_requirement(
-    *, repo: Path
+    *,
+    repo: Path,
+    workflow_name: str | None = None,
+    review_fix_cap: int | None = None,
 ) -> CredentialLifetimeRequirement | str | WorkflowFaultDeferral:
     """The requirement the OPERATOR surfaces grade against, or a refusal.
 
-    `codex-cred-status` and `codex-cred-refresh` hold no work item, so the
-    effective cap they can resolve is the REPOSITORY-level
-    `dispatcher.review_fix_cap` -- the same value `effective_review_fix_cap`
-    returns for an item carrying no `review-fix-cap:` label, which is every
-    ordinary item. The resulting figure is therefore the one an ordinary dispatch
-    of the reserved workflow is graded against, and `detail` names the inputs it
-    used so an operator comparing it against a dispatch refusal for a LABELLED
-    item can see which cap each reading took rather than having to guess.
+    `codex-cred-status` and `codex-cred-refresh` hold no work item, so by DEFAULT
+    the selection they resolve is the one an ordinary dispatch makes: the reserved
+    workflow, and the REPOSITORY-level `dispatcher.review_fix_cap` -- the same
+    value `effective_review_fix_cap` returns for an item carrying no
+    `review-fix-cap:` label, which is every ordinary item.
+
+    WHY THE SELECTION IS OVERRIDABLE. Those defaults are the common case, not the
+    only case, and an operator runs these commands to answer "will the next
+    dispatch be admitted?". A dispatch can select a registered VARIANT whose
+    graph is longer, and a per-item `review-fix-cap:<n>` label can raise the loop
+    bound the dispatch renders; in either case a reading taken for the default
+    selection answers confidently about a DIFFERENT dispatch than the one being
+    predicted. `workflow_name` and `review_fix_cap` name the selection, and the
+    requirement is resolved FOR it -- which is what makes the operator figure and
+    the dispatch figure the same figure, rather than two readings that agree only
+    while nothing was overridden.
+
+    Explicit context does NOT make this surface permissive: an unregistered
+    `workflow_name` still refuses to be sized off the reserved graph, exactly as
+    the dispatch path refuses. And `detail` names the inputs the figure used, so
+    an operator comparing this reading against a dispatch refusal can see which
+    cap each one took rather than having to guess.
 
     An unreadable `.livespec.jsonc` degrades to the documented default, which is
-    what `resolve_review_fix_cap`'s own failure track means; the alternative
-    would make a status command unable to report anything because a config file
-    was briefly unreadable.
+    what `resolve_review_fix_cap`'s own failure track means; the alternative would
+    make a status command unable to report anything because a config file was
+    briefly unreadable. An EXPLICIT cap skips that read entirely, because the
+    caller already holds the effective value.
     """
+    effective_cap = (
+        review_fix_cap
+        if review_fix_cap is not None
+        else unsafe_perform_io(resolve_review_fix_cap(cwd=repo).value_or(DEFAULT_REVIEW_FIX_CAP))
+    )
     return resolve_credential_lifetime_requirement(
         repo=repo,
-        policy_inputs=effective_policy_inputs(
-            review_fix_cap=unsafe_perform_io(
-                resolve_review_fix_cap(cwd=repo).value_or(DEFAULT_REVIEW_FIX_CAP)
-            )
-        ),
+        workflow_name=workflow_name,
+        policy_inputs=effective_policy_inputs(review_fix_cap=effective_cap),
     )
 
 
