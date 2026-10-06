@@ -26,6 +26,14 @@ The fields realize the spec's two enumerated lists exactly:
     `dependency_fan_out`, `spec_surface_touched`, `dispatch_context_size`,
     `archetype`, `repo`.
 
+Plan slice S4 (`bd-ib-tbgxm4`) adds the provenance and shape fields each of
+those two lists was missing to be USABLE rather than merely present:
+`acceptance_count_source` says which text the count counted, and
+`pr_open_diff_size` / `bounce_cap` / `bounce_cap_observed` are derived from
+this item's own journal records for the same reason `fix_loop_count` is — the
+stage that observed each one wrote it down, and re-observing it here could not
+be shown to agree with what was recorded.
+
 A proxy whose underlying signal is not (yet) observable for this dispatch
 is recorded as `None` (e.g. the merged-PR diff size when fabro / gh did
 not report it, or the token cost when no CC telemetry arrived) — the
@@ -35,9 +43,11 @@ mirroring the cost gate's fail-soft derivation.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_assertion_count import (
+    assertion_count_for,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_signals import (
     UNOBSERVED_TDD_SIGNALS,
@@ -62,16 +72,6 @@ __all__: list[str] = [
 # finding off). The first `pr-view` is the baseline confirmation; each
 # additional poll re-view plus each `pr-update-branch` is one fix-loop.
 _BASELINE_PR_VIEWS = 1
-
-# Acceptance-criteria proxy: a leading-dash / leading-asterisk bullet or a
-# "Scenario:" / "Given/When/Then" Gherkin marker in the description is one
-# acceptance signal. The spec's Definition-of-Ready requires "exactly one
-# coherent done" — this counts the ENUMERATED acceptance lines as a
-# mechanical proxy for how the item's done-condition was specified.
-_ACCEPTANCE_BULLET_RE = re.compile(r"(?m)^\s*[-*]\s+\S")
-_ACCEPTANCE_GHERKIN_RE = re.compile(
-    r"(?im)^\s*(?:scenario|given|when|then)\b",
-)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -108,6 +108,13 @@ class CalibrationRecord:
     bounced_to_regroom: bool
     # --- mechanical size proxies ---
     acceptance_count: int
+    # WHICH text the count counted. A legacy `criteria-field` /
+    # `description-exit-criteria` item declares no proof mode and carries no
+    # Definition of Done section, so a reading that could not separate those
+    # records would average two populations; and the value is the one
+    # `parse_display()` names, so the record and the filing display cannot
+    # disagree about provenance.
+    acceptance_count_source: str
     merged_pr_diff_size: int | None
     dependency_fan_out: int
     spec_surface_touched: bool
@@ -145,6 +152,10 @@ def build_calibration_record(  # noqa: PLR0913 — kw-only pure builder; each fi
     run did not merge or the size was not observed).
     """
     converged = outcome.status == "green"
+    # Resolved ONCE and read for both fields: a second resolution could not be
+    # shown to agree with the first, and a count paired with another read's
+    # source is the exact mismatch this projection exists to retire.
+    assertions = assertion_count_for(item=item)
     return CalibrationRecord(
         work_item_id=item.id,
         converged=converged,
@@ -156,7 +167,8 @@ def build_calibration_record(  # noqa: PLR0913 — kw-only pure builder; each fi
         wall_clock_seconds=wall_clock_seconds,
         token_cost_micros=token_cost_micros,
         bounced_to_regroom=bounced_to_regroom(outcome=outcome),
-        acceptance_count=acceptance_count(item=item),
+        acceptance_count=assertions.count,
+        acceptance_count_source=assertions.source,
         merged_pr_diff_size=merged_pr_diff_size,
         dependency_fan_out=len(item.depends_on),
         spec_surface_touched=spec_surface_touched(item=item),
@@ -218,17 +230,24 @@ def fix_loop_count(*, records: tuple[dict[str, object], ...], work_item_id: str)
 
 
 def acceptance_count(*, item: WorkItem) -> int:
-    """Mechanical acceptance-criteria proxy from the item's description.
+    """The item's gradeable assertion count, through the sanctioned parser.
 
-    Counts enumerated acceptance signals — leading bullet lines plus
-    Gherkin `Scenario:` / `Given` / `When` / `Then` markers — as a size
-    proxy for how the done-condition was specified. A bare prose item with
-    no enumerated acceptance reads as 0; the count is a proxy, not a
-    semantic parse of the acceptance itself.
+    Plan slice S4's repair. This counted leading-bullet and Gherkin markers in
+    the item's DESCRIPTION, which is neither the text the acceptance evaluator
+    grades nor the number the filing display shows an operator — so it
+    over-counted a description whose bullets sit outside its Definition of Done
+    section, and under-counted to ZERO an item whose criteria live in the
+    criteria field. Measured across 445 of this repository's own calibration
+    records, its median was zero on both the converged and the non-converged
+    side, so the proxy carried no signal for the analysis pass to correlate.
+
+    It now reads `_dispatcher_assertion_count`, the ONE projection intake also
+    reads, so the two ends of a dispatch report the same number and the same
+    source by construction. A bare prose item with no section and no criteria
+    field still reads 0 — that is an item with nothing gradeable, which is a
+    finding rather than a measurement artifact.
     """
-    bullets = len(_ACCEPTANCE_BULLET_RE.findall(item.description))
-    gherkin = len(_ACCEPTANCE_GHERKIN_RE.findall(item.description))
-    return bullets + gherkin
+    return assertion_count_for(item=item).count
 
 
 def spec_surface_touched(*, item: WorkItem) -> bool:
@@ -265,6 +284,7 @@ def calibration_journal_record(*, record: CalibrationRecord) -> dict[str, object
         "token_cost_micros": record.token_cost_micros,
         "bounced_to_regroom": record.bounced_to_regroom,
         "acceptance_count": record.acceptance_count,
+        "acceptance_count_source": record.acceptance_count_source,
         "merged_pr_diff_size": record.merged_pr_diff_size,
         "dependency_fan_out": record.dependency_fan_out,
         "spec_surface_touched": record.spec_surface_touched,
