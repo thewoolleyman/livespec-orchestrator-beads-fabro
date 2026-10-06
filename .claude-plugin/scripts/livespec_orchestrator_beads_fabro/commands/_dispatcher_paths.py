@@ -16,6 +16,7 @@ __all__: list[str] = [
     "calibration_spans_path",
     "cost_report_spans_path",
     "cost_sink_path",
+    "executing_payload_root",
     "heartbeat_path",
     "journal_path",
     "plugin_root",
@@ -72,7 +73,10 @@ def workflow_toml(*, args: argparse.Namespace, variant_directory: str | None = N
        orchestrator's Python-only pin) governs its own execution substrate
        rather than silently inheriting one that cannot build it.
     4. Otherwise the plugin's bundled workflow — the default for every
-       dispatch target that commits none.
+       dispatch target that commits none. Resolved under
+       `executing_payload_root`, NOT `plugin_root`: this is an asset read, and
+       it has to keep working after the harness evicts the installation this
+       invocation launched from.
 
     `args` is not guaranteed to carry a `repo` attribute: only the
     dispatch-common subparsers define `--repo`, so BOTH repo-anchored steps
@@ -91,7 +95,7 @@ def workflow_toml(*, args: argparse.Namespace, variant_directory: str | None = N
         repo_local = repo_root.joinpath(*_RESERVED_WORKFLOW_SUBPATH)
         if repo_local.is_file():
             return repo_local
-    return plugin_root().joinpath(*_RESERVED_WORKFLOW_SUBPATH)
+    return executing_payload_root().joinpath(*_RESERVED_WORKFLOW_SUBPATH)
 
 
 def journal_path(*, args: argparse.Namespace, repo: Path) -> Path:
@@ -202,17 +206,47 @@ def tdd_order_sink_path(*, args: argparse.Namespace, repo: Path) -> Path:
     return journal.with_name(f"{journal.stem}-tdd-order.json")
 
 
+def executing_payload_root() -> Path:
+    """The root of the payload THIS process is executing its own code out of.
+
+    Distinct from `plugin_root` on purpose, and the distinction is the whole
+    point. `plugin_root` answers "which installation is present", which is the
+    question the self-update canary and the currency findings ask — and the
+    answer has to keep being the INSTALLED tree, because a newer build landing
+    there mid-run is exactly what they exist to discover. This function answers
+    "where is the code that is running", and after `bin/_payload.py` has copied
+    a harness-managed release aside, those are two different trees.
+
+    Packaged ASSET reads resolve through here. Derived from `__file__` rather
+    than from an environment variable, so it cannot disagree with where the
+    importing module actually came from: whichever tree this module was loaded
+    out of is the tree its sibling assets sit in. The layout is the same in
+    both cases — in source this module is at
+    `.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_paths.py`,
+    and a retained payload is a whole-tree copy — so `parents[3]` is the root
+    either way.
+    """
+    return Path(__file__).resolve().parents[3]
+
+
 def plugin_root() -> Path:
-    """The plugin root, resolving in BOTH the source tree and the flattened cache.
+    """The INSTALLED plugin root, resolving in BOTH the source tree and the flattened cache.
 
     In source this module lives at
     `.claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_paths.py`,
     so the plugin root is `parents[3]` (the `.claude-plugin/` dir). The Claude
     install flattens that dir to the cache root and exports
-    `CLAUDE_PLUGIN_ROOT`; when that env var is set and non-empty it wins. Both
-    the `.fabro/` workflow payload and the `scripts/bin/` wrappers ship UNDER
-    this root, so a cache-installed plugin resolves them with no repo checkout
-    present.
+    `CLAUDE_PLUGIN_ROOT`; when that env var is set and non-empty it wins.
+
+    This is the INSTALLATION, which is not necessarily where this process's
+    code came from — see `executing_payload_root`. Keep the two apart: the
+    self-update canary reads THIS root late, so that a newer build installed
+    mid-run is discovered as a candidate, and the minimum-release floor and
+    registered-install currency finding identify the executing build through
+    it. Pointing it at a retained copy makes every one of those comparisons
+    the running build against itself. Packaged ASSET reads therefore go
+    through `executing_payload_root` instead, so they survive the
+    installation being evicted.
     """
     env_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
     if env_root:

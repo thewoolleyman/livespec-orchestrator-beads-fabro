@@ -78,6 +78,15 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   must leave a still-parked invocation's payload and the
   harness-managed installation usable (proven by a fresh invocation
   from it afterwards). Listed in `subprocess_spawn_allowlist`.
+- `test_payload_candidate_and_credential_boundary.py` — the two things
+  retention must NOT change. `plugin_root()` must keep naming the
+  INSTALLED tree (so the self-update canary, the minimum-release floor
+  and the registered-install currency finding can still see a newer
+  build land there) while the bundled workflow manifest nevertheless
+  resolves inside the payload; and the credential re-exec must still
+  invoke the wrapper AND still run, against a wrapper double that
+  evicts the installation and scrubs the payload environment variable
+  the way `sudo` does. Listed in `subprocess_spawn_allowlist`.
 - `test_host_side_self_contained_import.py` — the end-to-end
   counterpart of `test_bootstrap.py`: it spawns a `-S` (no-site)
   subprocess that runs the real bootstrap and imports the host-side
