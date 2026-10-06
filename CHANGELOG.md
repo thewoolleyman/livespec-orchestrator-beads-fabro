@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.173.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.173.2...v0.173.3) (2026-10-06)
+
+
+### Bug Fixes
+
+* **acp:** record the registry snapshot digest the catalog was seeded from ([f4cb3c2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f4cb3c2c0131f674a70e07e2557036d65bd8534d))
+* **acp:** seed the registry agent entries from the registry snapshot ([1677f04](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1677f04b020d86595735d458aa5b038830077452))
+* **acp:** withhold an agent entry that names no recorded verification run ([90bf3f2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/90bf3f2fbc7b4db1c5a8ca78fae0e5d93ae4998a))
+
 ## [0.173.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.173.1...v0.173.2) (2026-10-06)
 
 
