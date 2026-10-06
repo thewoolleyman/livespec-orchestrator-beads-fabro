@@ -87,6 +87,16 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   invoke the wrapper AND still run, against a wrapper double that
   evicts the installation and scrubs the payload environment variable
   the way `sudo` does. Listed in `subprocess_spawn_allowlist`.
+- `test_payload_public_cli_routes_after_eviction.py` — the two entry
+  points `bd-ib-mtuqxb`'s first assertion NAMES, driven as the shipped
+  executables an operator actually invokes: `bin/dispatcher.py
+  ledger-check` and `bin/drive.py --action impl:<id>`, each with its
+  installation evicted mid-invocation through the credential-wrapper
+  seam. Side-effect-free by construction (in-memory fake ledger,
+  read-only check, nonexistent item). NOT a Red — it was authored after
+  the pairs that implement the behaviour; its docstring records the
+  control that shows it fails against the pre-fix tree. Listed in
+  `subprocess_spawn_allowlist`.
 - `test_host_side_self_contained_import.py` — the end-to-end
   counterpart of `test_bootstrap.py`: it spawns a `-S` (no-site)
   subprocess that runs the real bootstrap and imports the host-side
