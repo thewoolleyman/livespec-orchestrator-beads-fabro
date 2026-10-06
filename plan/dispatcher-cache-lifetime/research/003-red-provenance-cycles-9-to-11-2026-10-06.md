@@ -420,6 +420,85 @@ task for `proof_capture` and `proof_verify`, not a maintainer question: no
 decision is pending, no spec amendment is implied, and no product defect is
 inferred.
 
+### FOLLOW-UP, 2026-10-06 — the capture was taken, and it DID find a product defect
+
+The sentence immediately above — "no product defect is inferred" — was a
+statement about evidence not yet gathered, and the evidence has now been
+gathered. **It is withdrawn as a prediction while standing as an accurate
+description of what was known when it was written.** The `proof_capture` node
+took the owed capture, graded assertion 5 `not_captured`, and published a work
+order on pull request 2634 (comment `6017296491`). Reproduced first-hand before
+any edit, and the defect is real.
+
+**The defect.** The canary launches the candidate by PATHNAME and the candidate
+child inherits this process's environment, which carries the launcher's
+`LIVESPEC_RETAINED_PAYLOAD_ROOT` hand-down. `retain_payload` adopts an inherited
+payload whenever the selected source equals the holder's recorded source, and
+that comparison is a **path** comparison — so once a newer build has landed at
+the installation path, the path still matches and the candidate executes the
+RUNNING build's code. The canary validates the running build against itself.
+
+Measured at the exported boundary with a candidate deliberately broken by
+removing one module `ledger-check` imports (and still passing the launcher's own
+completeness grade, so a candidate REGRESSION rather than an incomplete
+payload):
+
+| | Candidate exit | Journal stage | Alarm class |
+| --- | --- | --- | --- |
+| Before the fix | `0`, stdout `[]` | `self-update-restart-due` | `self-update-restart-due` |
+| After the fix | `1`, `ModuleNotFoundError: ..._dispatcher_run_checks` raised from a payload at **9.9.9** | `self-update-kept-last-known-good` | `self-update-canary-failed` |
+
+The post-fix traceback's frames sit under a payload provisioned at the
+CANDIDATE's own release, which is what establishes that the subject changed
+rather than merely the verdict.
+
+**The repair is at the CALL SITE.** `_self_update` now passes an environment
+overlay neutralising the hand-down, so the candidate resolves its own payload
+from its own installation. The launcher's adoption rule is UNCHANGED, and that
+is deliberate: the two directions are not interchangeable.
+
+**The "bind the source record to CONTENT identity" direction the work order
+offered as the more general repair was considered and REJECTED, on evidence.**
+It would invert this module's central guarantee. `_inherited_payload` runs FIRST
+in `retain_payload`, before the completeness grade, precisely so a child whose
+installation has been evicted still adopts its parent's payload. Require the
+source tree to still match a recorded content identity and that child gets no
+adoption — the source is gone, so no identity can match — and it falls through
+to a refusal. `tests/bin/test_payload_public_cli_routes_after_eviction.py` pins
+exactly that child, and assertions 1, 2 and 4 all depend on it. A source
+REPLACED rather than removed fails the other way: the child would provision the
+NEWER build mid-dispatch, which is the mixed-build hazard retention exists to
+prevent. The docstring the work order cited for that direction (`version TEXT is
+not content provenance`) governs whether to SHARE a payload keyed by release
+identity, which is a different question from whether a child may adopt its
+parent's; applying it here misreads it.
+
+So the general direction is not merely the riskier option — it is the wrong one,
+and the narrow one is not a workaround. A canary addresses a DIFFERENT BUILD by
+construction, so a call site that hands it this process's payload is asking for
+the wrong thing. Note what is NOT being done: the hand-down is not scrubbed in
+the surrounding environment, which is what the work order correctly forbade as
+an operator workaround.
+
+**One finding about the work order's own harness, not about the product.** Its
+reproduction runner double calls `subprocess.Popen(argv, env=env)` directly,
+while the production `ShellCommandRunner` passes `{**os.environ, **env}`. So
+once the stage began supplying an overlay, that double made the overlay the
+child's ENTIRE environment: re-run post-fix it reports exit `3`,
+`required secret env var(s) ... absent`, and the correct journal stage **for the
+wrong reason**. A faithful variant delegating to the real `ShellCommandRunner`
+reproduces the authoritative result in the table above. Anyone replaying that
+harness must fix its runner first, or it will grade an environment collapse as a
+canary failure.
+
+The regression that carries this is cycle 16,
+`tests/bin/test_payload_canary_subject_is_the_candidate.py`, a genuine
+behavioural Red observed failing before the product change (`assert 0 != 0` on
+the broken candidate's exit code, with the full journal in the message). It
+carries its own control — a HEALTHY candidate at the same newer release must
+still record `self-update-restart-due` — which passed against the pre-fix tree
+too, so the fix cannot be satisfied by failing every canary.
+
 ## What is NOT a Red, stated plainly
 
 Five artifacts in this work-item are supplemental and must never be cited as

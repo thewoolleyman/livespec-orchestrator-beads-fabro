@@ -224,6 +224,43 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   replay. Full statement, including the two expected journal outcomes:
   `plan/dispatcher-cache-lifetime/research/003-red-provenance-cycles-9-to-11-2026-10-06.md`
   §"CORRECTION, 2026-10-06". No product defect is inferred from this gap.
+
+  **That last sentence was FALSIFIED on 2026-10-06, and the correction is
+  the point.** The capture was taken, and the gap was hiding a real defect:
+  the canary's subject was the RUNNING build, not the candidate, so a broken
+  candidate reported PASS. The entry above is otherwise accurate and stands;
+  only "no product defect is inferred" is withdrawn — it described what was
+  known before the measurement, and a mapping control was structurally
+  incapable of discovering what the measurement found. The regression and
+  the fix are the file below; the full account is that research document's
+  §"FOLLOW-UP, 2026-10-06".
+- `test_payload_canary_subject_is_the_candidate.py` — the candidate canary's
+  SUBJECT must be the candidate. The canary launches the candidate by
+  pathname and the child inherits the launcher's
+  `LIVESPEC_RETAINED_PAYLOAD_ROOT` hand-down, which `retain_payload` adopts
+  whenever the selected source equals the holder's recorded source — a PATH
+  comparison, so once a newer build has landed at the installation path the
+  path still matches and the candidate executes the RUNNING build's code.
+  Measured at the exported `self_update_after_release` boundary with a
+  candidate broken by removing one module `ledger-check` imports, which still
+  passes the launcher's completeness grade so it is a candidate REGRESSION
+  rather than an incomplete payload: before the fix, exit 0 and
+  `self-update-restart-due` — a restart recommended onto a build that cannot
+  start; after, exit 1 with that module's `ModuleNotFoundError` raised from a
+  payload at the CANDIDATE's own release, `self-update-kept-last-known-good`
+  and a `self-update-canary-failed` alarm. The fix is at the CALL SITE: the
+  stage passes an overlay neutralising the hand-down, and the launcher's
+  adoption rule is deliberately UNCHANGED, because `_inherited_payload` runs
+  before the completeness grade precisely so an evicted-installation child
+  still adopts its parent's payload — the child
+  `test_payload_public_cli_routes_after_eviction.py` pins. Uses the REAL
+  `ShellCommandRunner` behind a recording decorator, because the production
+  merge (`{**os.environ, **env}`) is load-bearing: a double that passes `env`
+  straight to `Popen` makes the overlay the child's whole environment and
+  grades an environment collapse as a canary failure. Carries its own control
+  — a HEALTHY candidate at the same newer release must still record
+  `self-update-restart-due`, which passed pre-fix too — so the fix cannot be
+  satisfied by failing every canary. Listed in `subprocess_spawn_allowlist`.
 - `test_payload_inventory_boundaries.py` — the refusal/cleanup/fail-closed
   semantics of the pre-copy inventory's own NEW code, both faults being
   regressions against contracts this module had already established. The
