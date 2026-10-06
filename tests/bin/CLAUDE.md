@@ -117,6 +117,16 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   usable release must still provision — so the suite cannot pass
   against a launcher that refuses unconditionally. Listed in
   `subprocess_spawn_allowlist`.
+- `test_payload_completeness.py` — completeness as USABLE and
+  SAME-RELEASE rather than "these paths exist": a required tree present
+  but EMPTY, a required path of the wrong FILE TYPE, and a copy that
+  landed SHORT of its source (the literal incident — `_dispatcher_cost_wave`,
+  a module no fixed list names). Same-release is established by
+  comparing the copy against the tree it was made from, which needs no
+  file manifest; `cache-manifest.json` cannot serve here, its
+  `required_paths` being top-level and omitting `scripts/_vendor` and
+  `.fabro/` entirely. Carries its own control. Listed in
+  `subprocess_spawn_allowlist`.
 - `test_host_side_self_contained_import.py` — the end-to-end
   counterpart of `test_bootstrap.py`: it spawns a `-S` (no-site)
   subprocess that runs the real bootstrap and imports the host-side

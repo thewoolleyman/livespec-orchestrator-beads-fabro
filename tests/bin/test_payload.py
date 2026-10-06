@@ -52,16 +52,27 @@ def _import_payload() -> Any:
 
 
 def _install(*, root: Path, manifest: str = f'{{"version": "{_RELEASE}"}}') -> Path:
-    """A COMPLETE minimal installed plugin root, plus a stale cache to be dropped."""
-    for relative in ("scripts/bin", "scripts/livespec_orchestrator_beads_fabro"):
+    """A COMPLETE minimal installed plugin root, plus a stale cache to be dropped.
+
+    "Complete" is type- and emptiness-aware since `_payload` stopped grading
+    with `exists()`: the required TREES must be directories that hold
+    something, so each gets a file, and the required FILES must be files.
+    """
+    for relative in (
+        "scripts/bin",
+        "scripts/livespec_orchestrator_beads_fabro/commands",
+        "scripts/_vendor/livespec_runtime",
+        ".fabro/workflows/implement-work-item",
+        "scripts/__pycache__",
+    ):
         (root / relative).mkdir(parents=True)
-    (root / "scripts" / "_vendor").mkdir(parents=True)
-    (root / ".fabro" / "workflows").mkdir(parents=True)
-    (root / "scripts" / "__pycache__").mkdir(parents=True)
     for relative in (
         "scripts/bin/_bootstrap.py",
         "scripts/bin/_payload.py",
         "scripts/livespec_orchestrator_beads_fabro/__init__.py",
+        "scripts/livespec_orchestrator_beads_fabro/commands/__init__.py",
+        "scripts/_vendor/livespec_runtime/__init__.py",
+        ".fabro/workflows/implement-work-item/workflow.toml",
         "scripts/__pycache__/stale.pyc",
     ):
         _ = (root / relative).write_text("", encoding="utf-8")
@@ -279,13 +290,15 @@ def test_an_unusable_release_manifest_is_refused_naming_its_fault(
     ), "a provenance refusal created a private directory before refusing"
 
 
-def test_an_unreadable_release_manifest_is_refused_naming_its_fault(
+def test_a_manifest_that_is_a_directory_is_refused_as_incomplete(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Present but unreadable is its own shape: the completeness probe passes.
+    """A DIRECTORY named `plugin.json` is a TYPE fault, caught before the read.
 
-    A DIRECTORY named `plugin.json` satisfies an existence check and then fails
-    the text read, which is exactly the gap a presence-only contract leaves.
+    This case used to reach the provenance read and be refused there. Since
+    completeness became type-aware it is refused one step earlier, as an
+    incomplete installation — which is the better place: a directory where a
+    module or manifest belongs is a broken install, not a broken manifest.
     """
     payload = _import_payload()
     temp_root = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
@@ -295,8 +308,41 @@ def test_an_unreadable_release_manifest_is_refused_naming_its_fault(
 
     refusal = payload.retain_payload(source_root=source_root, environ={})
     assert isinstance(refusal, payload.PayloadRefusal)
-    assert "could not be read" in refusal.message
+    assert "plugin.json" in refusal.message
+    assert "is missing" in refusal.message
     assert list(temp_root.iterdir()) == []
+
+
+def test_a_manifest_whose_read_itself_fails_is_refused_naming_that_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A real I/O error on the read — EIO, a vanished mount — not a type fault.
+
+    It cannot be produced from a fixture: the suite runs as a uid that reads
+    mode-000 files, and anything the filesystem WILL refuse also fails the
+    type grade one step earlier. So the read itself is driven to fail, which
+    is the same technique `test_bootstrap.py` uses for its exit-127 arm rather
+    than a coverage pragma. Without this the launcher would turn a transient
+    read error into a traceback instead of an actionable refusal.
+    """
+    payload = _import_payload()
+    temp_root = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
+    source_root = _install(root=tmp_path / "cache" / "abc123")
+
+    def _failing_read_text(self: Path, *args: object, **kwargs: object) -> str:
+        # The manifest is the only text this path reads, so no name guard is
+        # needed — and a guard would add a branch nothing exercises.
+        _ = (self, args, kwargs)
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(Path, "read_text", _failing_read_text)
+    refusal = payload.retain_payload(source_root=source_root, environ={})
+    assert isinstance(refusal, payload.PayloadRefusal)
+    assert "could not be read" in refusal.message
+    assert "Input/output error" in refusal.message
+    assert (
+        list(temp_root.iterdir()) == []
+    ), "a provenance refusal created a private directory before refusing"
 
 
 def test_a_child_inherits_its_parents_payload_and_does_not_own_it(
@@ -430,3 +476,72 @@ def test_an_unresolvable_program_path_leaves_the_argv_unchanged(tmp_path: Path) 
         )
         == argv
     )
+
+
+def test_fidelity_reports_a_file_the_copy_lacks_and_one_that_is_short(tmp_path: Path) -> None:
+    """Absence and truncation are the two ways a copy stops being its source."""
+    payload = _import_payload()
+    source_root = _install(root=tmp_path / "source")
+    _ = (source_root / "scripts" / "livespec_orchestrator_beads_fabro" / "deferred.py").write_text(
+        "DEFERRED = 1\n", encoding="utf-8"
+    )
+    copy_root = tmp_path / "copy"
+    _ = shutil.copytree(source_root, copy_root)
+    (copy_root / "scripts" / "livespec_orchestrator_beads_fabro" / "deferred.py").unlink()
+    _ = (copy_root / "plugin.json").write_text("", encoding="utf-8")
+
+    gaps = payload.payload_fidelity_gaps(source_root=source_root, payload_root=copy_root)
+    assert "scripts/livespec_orchestrator_beads_fabro/deferred.py" in gaps
+    assert "plugin.json" in gaps
+
+
+def test_fidelity_ignores_what_the_copy_deliberately_drops(tmp_path: Path) -> None:
+    """`__pycache__` is excluded from the copy, so it must not read as a gap."""
+    payload = _import_payload()
+    source_root = _install(root=tmp_path / "source")
+    copy_root = tmp_path / "copy"
+    _ = shutil.copytree(source_root, copy_root, ignore=shutil.ignore_patterns("__pycache__"))
+    assert (source_root / "scripts" / "__pycache__" / "stale.pyc").is_file()
+    assert payload.payload_fidelity_gaps(source_root=source_root, payload_root=copy_root) == ()
+
+
+def test_a_fidelity_report_is_capped_and_says_so(tmp_path: Path) -> None:
+    """An operator needs enough paths to recognise the fault, not all of them."""
+    payload = _import_payload()
+    source_root = _install(root=tmp_path / "source")
+    for index in range(12):
+        _ = (source_root / f"extra-{index}.txt").write_text("x", encoding="utf-8")
+    copy_root = tmp_path / "copy"
+    copy_root.mkdir()
+
+    gaps = payload.payload_fidelity_gaps(source_root=source_root, payload_root=copy_root)
+    assert len(gaps) == 5, f"the report was not capped: {gaps}"
+    assert "possibly more" in payload._fidelity_message(root=source_root, gaps=gaps)  # noqa: SLF001
+
+
+def test_a_copy_that_lands_short_refuses_and_leaves_no_holder(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The in-process counterpart of the short-copy CLI case.
+
+    The product's own `ignore_patterns` seam is wrapped so the real copy skips
+    one deferred module — the shape of a copy truncated by an eviction landing
+    mid-provision.
+    """
+    payload = _import_payload()
+    temp_root = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
+    source_root = _install(root=tmp_path / "cache" / "abc123")
+    _ = (
+        source_root / "scripts" / "livespec_orchestrator_beads_fabro" / "commands" / "deferred.py"
+    ).write_text("DEFERRED = 1\n", encoding="utf-8")
+    real_ignore = payload.shutil.ignore_patterns
+    monkeypatch.setattr(
+        payload.shutil, "ignore_patterns", lambda *names: real_ignore(*names, "deferred.py")
+    )
+
+    refusal = payload.retain_payload(source_root=source_root, environ={})
+    assert isinstance(refusal, payload.PayloadRefusal)
+    assert "did not land complete" in refusal.message
+    assert "deferred.py" in refusal.message
+    assert "DIFFERENT release" in refusal.message
+    assert list(temp_root.iterdir()) == [], "the short copy left its holder behind"
