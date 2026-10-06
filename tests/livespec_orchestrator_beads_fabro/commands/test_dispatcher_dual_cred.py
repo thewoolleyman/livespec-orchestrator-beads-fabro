@@ -139,6 +139,15 @@ _FAKE_SNAPSHOT = json.dumps(
     indent=2,
 )
 
+# A stamped credential-use deadline, which every case projecting the snapshot above
+# must now supply. A credential projected WITHOUT one is broken protection -- a
+# sandbox holding a live credential under no bound -- so the renderer declines to
+# produce an overlay at all, and these cases would receive None rather than the
+# text they assert about. The VALUE is immaterial to what they measure; that it is
+# present is not. `test_dispatcher_credential_use_projection` owns the behaviour
+# itself, including the fail-closed arm.
+_DEADLINE_EPOCH = 4102444800
+
 
 def _required_floor_for(*, committed: Path) -> int:
     """The floor the PRODUCTION derivation resolves for one committed workflow.
@@ -196,6 +205,7 @@ def test_render_overlay_projects_codex_auth_snapshot(tmp_path: Path) -> None:
         github_token=_FAKE_GITHUB_TOKEN,
         siblings=None,
         codex_auth_snapshot=_FAKE_SNAPSHOT,
+        credential_use_deadline_epoch=_DEADLINE_EPOCH,
     )
     assert rendered is not None
     # The prepare step writes the file the codex-acp adapter reads, before
@@ -235,6 +245,7 @@ def test_render_overlay_projects_the_codex_otel_config(tmp_path: Path) -> None:
         github_token=_FAKE_GITHUB_TOKEN,
         siblings=None,
         codex_auth_snapshot=_FAKE_SNAPSHOT,
+        credential_use_deadline_epoch=_DEADLINE_EPOCH,
         codex_otel_config='[otel]\nenvironment = "livespec"\n',
     )
     assert rendered is not None
@@ -296,6 +307,7 @@ def test_render_overlay_contains_the_refresh_sentinel_to_a_closed_loopback_port(
         github_token=_FAKE_GITHUB_TOKEN,
         siblings=None,
         codex_auth_snapshot=_FAKE_SNAPSHOT,
+        credential_use_deadline_epoch=_DEADLINE_EPOCH,
     )
     assert rendered is not None
     _, env_table = rendered.split("[environments.livespec-ci.env]", 1)

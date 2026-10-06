@@ -21,6 +21,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_otel_config im
     codex_otel_env_lines,
     codex_otel_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_projection import (
+    credential_use_env_lines,
+    credential_use_guard_prepare_steps_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_provenance import (
     factory_run_id_prepare_steps_block,
 )
@@ -179,6 +183,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     proof_store_env: str = "",
     proof_credentials_env: str = "",
     git_author: GitAuthor | None = None,
+    credential_use_deadline_epoch: int | None = None,
 ) -> str | None:
     """Render the dispatch-time run-config overlay.
 
@@ -198,7 +203,18 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     only the overlay reaches every dispatch — see
     `_dispatcher_factory_provenance` for that rationale and for why the Fabro
     run id cannot serve.
+
+    `credential_use_deadline_epoch` is the ABSOLUTE instant after which the
+    worker may not use the projected Codex credential. A credential projected
+    WITHOUT one is broken protection rather than a legitimate configuration —
+    the sandbox would hold a live credential under no bound — so this returns
+    None instead, which the dispatch path reports as a pre-launch refusal. A
+    caller projecting NO Codex credential has nothing to bound and passes None
+    for both, which renders no guard and no deadline and leaves ordinary
+    execution untouched.
     """
+    if codex_auth_snapshot is not None and credential_use_deadline_epoch is None:
+        return None
     graph_value = toml_section_string(text=committed_text, section="workflow", key="graph")
     environment_id = toml_section_string(text=committed_text, section="run.environment", key="id")
     if graph_value is None or environment_id is None:
@@ -245,6 +261,13 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     plugin_cache_steps = plugin_cache_gate_prepare_steps_block()
     factory_provenance_steps = factory_run_id_prepare_steps_block(dispatch_id=dispatch_id)
     author_env_lines = git_author_env_lines(author=git_author)
+    # Rendered LAST among the prepare steps, so the startup check observes the
+    # time preparation itself consumed. Placed earlier it would forgive exactly
+    # the queue-and-prepare aging it exists to catch.
+    credential_use_steps = credential_use_guard_prepare_steps_block(
+        deadline_epoch=credential_use_deadline_epoch
+    )
+    credential_use_env = credential_use_env_lines(deadline_epoch=credential_use_deadline_epoch)
     # The publish branch the `publish_draft` COMMAND node pushes, plus the resolved
     # proof asset store the `proof_capture` node uploads through. A command node
     # cannot read the rendered goal and `CONTRACT_INPUT_NAMES` is closed, so this
@@ -259,6 +282,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + codex_steps
         + codex_otel_steps
         + plugin_cache_steps
+        + credential_use_steps
         + "\n# --- Dispatcher-materialized run-scoped credential projection"
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
         + f"[environments.{environment_id}.env]\n"
@@ -273,6 +297,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + otel_env_lines
         + codex_env_lines
         + codex_otel_env
+        + credential_use_env
         + proof_store_env
         # The repository's declared proof credentials, rendered inline in THIS
         # table rather than through a second channel: the pinned engine offers no
