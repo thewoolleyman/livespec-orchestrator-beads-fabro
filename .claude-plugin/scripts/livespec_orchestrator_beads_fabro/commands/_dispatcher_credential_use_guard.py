@@ -44,6 +44,31 @@ FAIL-CLOSED, AND WHY THE ABSENT-DEADLINE ARM MATTERS. A guard that ran the
 command when it could not read its own deadline would turn this whole mechanism
 into decoration the first time a projection changed shape. The script refuses
 when the variable is absent or unparseable, and says which.
+
+THE REAPER DISARMS WHEN ITS GROUP IS FINISHED, and this is a correctness
+requirement rather than hygiene. The first draft never cancelled the reaper --
+correctly, because the adapter is often not the process holding the credential,
+so cancelling on the direct child's exit left a grandchild unbounded. But it
+bought that by sleeping blindly to the deadline and then signalling. At the
+allowance this actually runs at, roughly seven days, a one-second command left a
+kill armed against a RECYCLABLE pid/pgid for a week; inside a long-lived sandbox
+that number is reused by ordinary work, so the reaper could signal a group it
+never launched. The reaper therefore polls, and OWNERSHIP decides: it disarms the
+first pass on which the group is finished or no longer ours, and it stays armed
+while any member survives.
+
+WHAT "OURS" MEANS, STATED NARROWLY SO THE GUARANTEE IS NOT OVERSOLD. Polling a
+bare numeric pgid narrows the exposure but proves nothing -- the group can empty
+and the number be reused between two passes. So the leader's INCARNATION (its
+`/proc/<pid>/stat` start time) is recorded at launch and checked on every pass
+and again immediately before each signal: a resident leader with that start time
+is unambiguously ours, a resident leader with a different one is a recycled id
+and disarms, and an absent leader means surviving members carrying that pgrp are
+still ours because claiming the id requires a process whose pid equals it. The
+residual window is the check-then-signal race inherent to signalling by pid on
+POSIX -- sh has no pidfd -- NOT the multi-day exposure a blind sleep carried.
+This is a bounded-exposure claim, not a proof that a recycled identifier can
+never be signalled.
 """
 
 from __future__ import annotations
@@ -234,12 +259,80 @@ fi
 
 # TERM lands a grace BEFORE the deadline so a well-behaved agent can exit
 # cleanly inside its allowance; KILL lands AT the deadline. A grace that ran
-# past the deadline would permit credential use beyond the stated bound.
-term_wait=$((remaining - {GUARD_TERM_GRACE_SECONDS}))
-if [ "$term_wait" -lt 0 ]; then
-    term_wait=0
-fi
-kill_wait=$((remaining - term_wait))
+# past the deadline would permit credential use beyond the stated bound. Both
+# are ABSOLUTE instants rather than durations, because the reaper POLLS now: a
+# duration recomputed on each pass would drift, while an instant cannot.
+term_epoch=$((deadline - {GUARD_TERM_GRACE_SECONDS}))
+kill_epoch="$deadline"
+
+# Field 22 of /proc/<pid>/stat -- the start time of one process INCARNATION,
+# which is what turns a recyclable numeric id into an identity. Parsed after the
+# FINAL ')' because the comm field can itself contain spaces and parentheses,
+# which would otherwise shift every column behind it. `read` is a builtin, so
+# this costs no fork.
+incarnation() {{
+    read -r _inc_line < "/proc/$1/stat" 2>/dev/null || return 1
+    _inc_rest="${{_inc_line#*') '}}"
+    [ "$_inc_rest" != "$_inc_line" ] || return 1
+    # Deliberate word splitting: positionals are the only POSIX way to index.
+    # shellcheck disable=SC2086
+    set -- $_inc_rest
+    [ "$#" -ge 20 ] || return 1
+    shift 19
+    echo "$1"
+}}
+
+# Does ANY process still carry our process-group id? Consulted only once our
+# leader has exited -- the orphaned-group case, i.e. a credential-using
+# grandchild that outlived the adapter.
+group_has_member() {{
+    for _ghm_proc in /proc/[0-9]*; do
+        read -r _ghm_line < "$_ghm_proc/stat" 2>/dev/null || continue
+        _ghm_rest="${{_ghm_line#*') '}}"
+        [ "$_ghm_rest" != "$_ghm_line" ] || continue
+        # shellcheck disable=SC2086
+        set -- $_ghm_rest
+        [ "$#" -ge 3 ] || continue
+        shift 2
+        if [ "$1" = "$pgid" ]; then
+            return 0
+        fi
+    done
+    return 1
+}}
+
+# IS THE GROUP STILL OURS, AND STILL OCCUPIED? This is the ownership test the
+# whole disarm rests on, and the reason it is not merely `kill -0 -$pgid`.
+#
+# If our leader is resident with the RECORDED start time, the id is
+# unambiguously ours. If a process with that pid exists carrying a DIFFERENT
+# start time, the id has already been recycled by a new leader and signalling it
+# would reach unrelated work -- so that is a disarm, never a signal. If no such
+# process exists our leader has exited, and the id cannot be claimed by anyone
+# else without a process whose pid equals it appearing, which the previous branch
+# detects; so surviving members carrying that pgrp are still ours.
+#
+# THE GUARANTEE THIS BUYS, STATED NARROWLY. The reaper signals only while
+# ownership is positively established, and it re-establishes it immediately
+# before each signal. The residual window is the check-then-signal race inherent
+# to signalling by pid on POSIX -- there is no pidfd in sh -- NOT the multi-day
+# exposure a blind sleep carried.
+group_is_ours() {{
+    _gio_now="$(incarnation "$pgid")" || {{
+        group_has_member && return 0
+        return 1
+    }}
+    [ "$_gio_now" = "$leader_incarnation" ] || return 1
+    return 0
+}}
+
+# Seconds until an absolute epoch, floored CONSERVATIVELY, so a wait is due at
+# or BEFORE the instant rather than after it.
+until_epoch() {{
+    awk -v d="$1" -v n="$(date +%s.%N)" \\
+        'BEGIN{{r=d-n; if (r<0) r=0; printf "%d", int(r)}}' 2>/dev/null ||
+        echo 0
+}}
 
 # STDIN IS PRESERVED EXPLICITLY, and this is not optional: ACP is a
 # bidirectional stdio protocol, and POSIX gives an ASYNCHRONOUS command in a
@@ -254,18 +347,47 @@ exec 3<&0
 # rather than only the adapter that happened to be the direct child.
 setsid "$@" <&3 &
 child=$!
+pgid="$child"
 
 exec 3<&-
+
+# The leader's incarnation, recorded ONCE and immediately. This is the ownership
+# token: every later decision to signal is checked against it, so a recycled
+# pgid is distinguishable from our own group. Recorded before the reaper starts
+# so the reaper can never run without it.
+leader_incarnation="$(incarnation "$pgid")" || leader_incarnation=""
 
 # The reaper's stdio is detached. It outlives this shell deliberately (see
 # below), and a reaper still holding the inherited stdout would keep the pipe
 # open after the agent finished -- so any consumer reading this launch to EOF
 # would block until the deadline instead of seeing the agent exit.
+#
+# IT POLLS RATHER THAN SLEEPING, and that is the correctness fix rather than a
+# refinement. A blind sleep to the deadline left a kill armed against a
+# recyclable pgid for the WHOLE allowance -- roughly seven days here -- so a
+# command that finished in a second could signal whatever inherited the number a
+# week later. The reaper now disarms the moment the group is finished or no
+# longer ours, and re-establishes ownership immediately before each signal.
 (
-    sleep "$term_wait"
-    kill -TERM "-$child" 2>/dev/null || kill -TERM "$child" 2>/dev/null
-    sleep "$kill_wait"
-    kill -KILL "-$child" 2>/dev/null || kill -KILL "$child" 2>/dev/null
+    while :; do
+        group_is_ours || exit 0
+        left="$(until_epoch "$term_epoch")"
+        [ "$left" -le 0 ] && break
+        # Capped so a finished group is noticed promptly rather than at the
+        # deadline, which is the entire point of polling.
+        [ "$left" -gt 5 ] && left=5
+        sleep "$left"
+    done
+    group_is_ours || exit 0
+    kill -TERM "-$pgid" 2>/dev/null || kill -TERM "$pgid" 2>/dev/null
+    while :; do
+        group_is_ours || exit 0
+        left="$(until_epoch "$kill_epoch")"
+        [ "$left" -le 0 ] && break
+        sleep 0.2
+    done
+    group_is_ours || exit 0
+    kill -KILL "-$pgid" 2>/dev/null || kill -KILL "$pgid" 2>/dev/null
 ) >/dev/null 2>&1 </dev/null &
 
 wait "$child"
@@ -278,5 +400,9 @@ status=$?
 # child's exit left exactly that grandchild unbounded. Leaving it armed means
 # the group is signalled at the deadline whatever the adapter did -- and because
 # it is detached, it keeps enforcing even if this shell is killed.
+#
+# What ENDS the reaper is therefore the group emptying, not this shell exiting:
+# a finished group disarms it within one poll, while a surviving descendant
+# keeps it armed exactly as before.
 exit "$status"
 """
