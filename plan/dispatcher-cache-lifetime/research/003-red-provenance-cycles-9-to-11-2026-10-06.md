@@ -197,6 +197,86 @@ cost of each was a wrong conclusion, not an error message.
   fixture installation outside the pytest tree, and the fixture now ASSERTS the
   installation is not a checkout so this cannot recur unnoticed.
 
+## Two corrections from read-only review, and one of them is mine
+
+Additive. Nothing below moved a ref or edited an accepted Red.
+
+### A hypothesis that was never a defect: the credential `os.exec` path
+
+A coordinator continuation carried the phrase "Credential `os.exec` must retain
+creator cleanup ownership without giving helpers ownership". A read-only review
+on 2026-10-06 flagged that as a HYPOTHESIS rather than a measured defect, and
+it is right. Measured:
+
+- `grep -rn 'os\.exec' .claude-plugin/scripts/bin/` returns **NOTHING**. The
+  API path the phrase presupposes does not exist anywhere in the launcher.
+- `_bootstrap._self_heal_credentials` uses `subprocess.run` (line 262) and then
+  `raise SystemExit(completed.returncode)` (line 285). The parent process is
+  never replaced, so the `atexit` handler registered at line 102 still runs.
+- End to end with `TMPDIR` pointed at a private directory and the self-heal
+  actually taken: **`payload holders left in TMPDIR: NONE (all cleaned)`**. The
+  owning parent removes its own holder after its child wrapper has run.
+
+The line-102 comment already stated the intended guarantee — "Registered BEFORE
+the credential self-heal can re-exec … removed exactly once, by its creator" —
+and the measurement agrees with it. **No product cycle was added for this, and
+none should be.** Recorded so the phrase does not get re-read later as an open
+defect.
+
+### A finding I mislabelled as "not a finding"
+
+This one is a correction to my OWN work, and it is the more important of the
+two, because the wrong label was written into a merged-bound docstring where it
+would stop the next reader from looking.
+
+While building the exact-outcome public-route guard I found that an `exec`-form
+credential-wrapper double drove `ledger-check` fine but would not drive
+`dispatch` to completion. I recorded that in the test's docstring as "fixture
+mechanics, not product behaviour … recorded here so the shape is not mistaken
+for a finding", and said the same in my turn summary. **Both were false.**
+
+The mechanism, measured 2026-10-06 and now pinned to exact lines.
+`_self_heal_credentials` runs the wrapper with `capture_output=True`, then at
+`_bootstrap.py` lines 276-284:
+
+```python
+if completed.returncode != 0 and not stdout:
+    ...  # write wrapper_launch_failure
+elif stderr:
+    ...  # write the child's stderr
+```
+
+A child that REFUSES — non-zero exit, diagnostic on STDERR, empty STDOUT —
+takes the first arm, and the `elif` is therefore SKIPPED. Its real stderr is
+**discarded**, not supplemented. The operator receives "credential_wrapper
+could not run in this environment … This can happen in a sandbox that blocks
+sudo or sets no_new_privs", which names a cause that did not occur.
+
+Measured instance: a dispatch whose genuine outcome was
+`ERROR: dispatcher plugin release 7.1.0 is below the committed
+dispatcher.minimum_release floor 9.9.9` exited 3 and emitted the wrapper-launch
+message, with the real refusal appearing **nowhere** in stdout or stderr. The
+sibling supplement's `exec`-form double works only because `ledger-check`
+succeeds and prints to stdout, which is the condition that keeps it out of that
+arm.
+
+Why this is worth its own entry rather than a line in the trap list: a wrong
+measurement gets contradicted by the next reader, but a confident "this is not
+a finding" FORECLOSES the examination — which is the exact failure mode this
+repository's own verification discipline warns about, committed by the session
+that had just finished citing it. The docstring in
+`tests/bin/test_payload_public_route_exact_outcomes.py` now carries the
+correction and points here.
+
+**Not repaired.** Changing that branch is outside this work-item's declared
+assertions, and the read-only review explicitly ruled out added scope. It is
+left as a filed finding: any refusal routed through the credential wrapper on
+stderr with empty stdout is reported to the operator as a wrapper-launch
+failure. Note the blast radius before deciding priority — this is the surface
+every wrapped dispatch refusal passes through, and it converts an actionable
+diagnostic into a misleading one, which is the same "manufactures a counterfeit
+environmental fault" shape AGENTS.md treats as worse than an honest failure.
+
 ## Operational disclosure
 
 While diagnosing the checkout exemption, `env | grep -i '^GIT'` was run in this
