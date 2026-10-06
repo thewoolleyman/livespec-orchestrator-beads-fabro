@@ -36,6 +36,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requireme
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
     credential_use_deadline_epoch_capped,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_projection import (
+    CredentialUseProjection,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
     select_factory_credential,
 )
@@ -51,6 +54,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     resolve_sandbox_otel_endpoint,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
+    codex_freshness_required_seconds,
     decode_codex_access_token_exp,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_lease import (
@@ -268,11 +272,24 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     # `project_codex_auth_snapshot` rewrites the refresh token alone. A failure
     # would therefore be a broken invariant — a bug, which raises — not an
     # expected condition to be reported as a refusal.
-    credential_use_deadline = credential_use_deadline_epoch_capped(
-        projected_epoch=int(time.time()),
-        allowance_seconds=requirement.allowance_seconds,
-        credential_expiry_epoch=decode_codex_access_token_exp(source_auth_json=codex_snapshot),
-        margin_seconds=requirement.margin_seconds,
+    credential_expiry_epoch = decode_codex_access_token_exp(source_auth_json=codex_snapshot)
+    credential_use = CredentialUseProjection(
+        deadline_epoch=credential_use_deadline_epoch_capped(
+            projected_epoch=int(time.time()),
+            allowance_seconds=requirement.allowance_seconds,
+            credential_expiry_epoch=credential_expiry_epoch,
+            margin_seconds=requirement.margin_seconds,
+        ),
+        # The expiry and the requirement travel WITH the deadline so the sandbox
+        # can re-grade the credential on its own clock. The grade taken a few lines
+        # above was taken HERE, before the run was queued and prepared, and it
+        # cannot speak for the instant an agent would actually use the credential.
+        # The requirement is composed by the same function admission used, so the
+        # sandbox cannot grade more leniently than the host did.
+        credential_expiry_epoch=credential_expiry_epoch,
+        required_remaining_seconds=codex_freshness_required_seconds(
+            run_budget_seconds=requirement.allowance_seconds
+        ),
     )
     sandbox_otel_endpoint = resolve_sandbox_otel_endpoint(environ=dict(os.environ))
     otel_env = cc_otel_overlay_env(
@@ -351,7 +368,7 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # which is why the marker cannot carry the Fabro run id.
         dispatch_id=dispatch_id,
         git_author=git_author,
-        credential_use_deadline_epoch=credential_use_deadline,
+        credential_use=credential_use,
     )
     if rendered is None:
         # The credentials minted just above belong to a run that will now never
