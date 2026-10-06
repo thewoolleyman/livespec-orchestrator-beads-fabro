@@ -54,6 +54,12 @@ _RECIPIENT_EMAIL = "operator@example.test"
 _API_KEY = "not-a-real-key"
 _DATASET = "livespec-dispatcher"
 _PANEL_COUNT = 7
+# A Query cannot be listed, fetched or updated through the API, so the only
+# observable record of WHICH specification a persisted query id holds is the
+# digest the provisioner writes into that query's annotation. The marker is
+# part of the committed contract — `panel_identity_key` in the board
+# definition's `livespec` block states it — so a test may name it.
+_FINGERPRINT_MARKER = "query-spec-fingerprint="
 
 # The documented Create a Board request body. Anything else is a legacy shape
 # or a typo, and the fixture refuses both rather than storing them.
@@ -530,6 +536,99 @@ def test_a_second_run_updates_in_place_and_creates_nothing(
         for record in collection.values()
     }
     assert still_present == created_ids
+
+
+def test_reapplying_preserves_every_identifier_without_duplicating_panels(
+    honeycomb: tuple[_FakeHoneycomb, str],
+) -> None:
+    """Acceptance assertion 2 — a re-apply updates, it does not accumulate.
+
+    The board, the two derived columns and the trigger are looked up by their
+    stable identity, so their ids survive. The panels are the hard half: a
+    Query has no list, get or update verb, so re-applying would persist seven
+    NEW queries and attach seven NEW annotations unless the provisioner
+    recognises the ones already there.
+    """
+    api, api_base = honeycomb
+
+    first = _run(api_base=api_base)
+    assert first.returncode == 0, first.stderr
+    identifiers = (
+        set(api.boards),
+        set(api.derived_columns),
+        set(api.triggers),
+        set(api.queries),
+        set(api.query_annotations),
+    )
+    first_board = next(iter(api.boards.values()))
+    panels_before = [panel["query_panel"] for panel in first_board["panels"]]
+    assert len(api.query_annotations) == _PANEL_COUNT
+    assert all(
+        _FINGERPRINT_MARKER in record["description"] for record in api.query_annotations.values()
+    )
+
+    second = _run(api_base=api_base)
+
+    assert second.returncode == 0, second.stderr
+    assert (
+        set(api.boards),
+        set(api.derived_columns),
+        set(api.triggers),
+        set(api.queries),
+        set(api.query_annotations),
+    ) == identifiers
+    # No duplicate panels and no duplicate annotations: the second run reused
+    # every persisted query and updated each annotation in place.
+    assert len(api.queries) == _PANEL_COUNT
+    assert len(api.query_annotations) == _PANEL_COUNT
+    assert len(api.annotation_creates) == _PANEL_COUNT
+    assert len(api.annotation_updates) == _PANEL_COUNT
+    assert len(api.query_creates) == _PANEL_COUNT
+    board = next(iter(api.boards.values()))
+    assert [panel["query_panel"] for panel in board["panels"]] == panels_before
+    assert "reused query" in second.stdout
+    assert "updated query_annotation" in second.stdout
+
+
+def test_a_moved_specification_repoints_the_same_annotation_at_a_fresh_query(
+    honeycomb: tuple[_FakeHoneycomb, str],
+) -> None:
+    """Reuse must be CONDITIONAL on the specification, not unconditional.
+
+    Pre-seed the annotation a panel would match — right name, stale
+    fingerprint, pointing at some other query. Blind reuse would leave the
+    board rendering that stale query forever, which is the failure mode an
+    idempotence rule can hide. The provisioner must persist a fresh query and
+    re-point the SAME annotation at it, so the identifier survives while the
+    content moves.
+    """
+    api, api_base = honeycomb
+    caption = _committed_panels()[0]["query_panel"]["caption"]
+    stale_query = api.create(
+        kind="queries", dataset=_DATASET, payload={"calculations": [{"op": "COUNT"}]}
+    )
+    stale = api.create(
+        kind="query_annotations",
+        dataset=_DATASET,
+        payload={
+            "name": caption,
+            "description": f"{_FINGERPRINT_MARKER}0000000000000000",
+            "query_id": stale_query["id"],
+        },
+    )
+
+    result = _run(api_base=api_base, overrides={"HONEYCOMB_TDD_RESOURCES": "board"})
+
+    assert result.returncode == 0, result.stderr
+    assert len(api.query_annotations) == _PANEL_COUNT, "the stale annotation was reused"
+    assert stale["id"] in api.query_annotations
+    refreshed = api.query_annotations[stale["id"]]
+    assert refreshed["query_id"] != stale_query["id"]
+    assert refreshed["query_id"] in api.queries
+    assert f"{_FINGERPRINT_MARKER}0000000000000000" not in refreshed["description"]
+    first_panel = next(iter(api.boards.values()))["panels"][0]["query_panel"]
+    assert first_panel["query_annotation_id"] == stale["id"]
+    assert first_panel["query_id"] == refreshed["query_id"]
 
 
 def test_the_board_is_flexible_and_its_panels_reference_persisted_queries(

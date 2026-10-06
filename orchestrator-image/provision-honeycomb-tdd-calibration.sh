@@ -59,6 +59,13 @@ frequency_seconds="${HONEYCOMB_TDD_TRIGGER_FREQUENCY_SECONDS:-7200}"
 # definition without touching the others.
 resources="${HONEYCOMB_TDD_RESOURCES:-derived_columns,board,trigger}"
 
+# The marker the board's query annotations carry in front of their query
+# specification digest. NOT configurable: it is the only observable record of
+# which specification a persisted query id holds (a Query has no list, get or
+# update verb), so a run that changed it would stop recognising every panel it
+# had already provisioned and silently rebuild the whole set.
+fingerprint_marker="query-spec-fingerprint="
+
 dry_run="${DRY_RUN:-0}"
 
 if [[ -z "${api_key}" && "${dry_run}" != "1" ]]; then
@@ -218,49 +225,99 @@ payload_field() {
 # Write each committed panel's query specification to its own file and print
 # one planning row per panel:
 #
-#   board<TAB>panel<TAB>caption<TAB>spec_path
+#   board<TAB>panel<TAB>fingerprint<TAB>caption<TAB>annotation_id<TAB>query_id<TAB>spec_path
+#
+# `annotation_id` and `query_id` are the identifiers to REUSE, or the literal
+# `-` when the panel needs a fresh one. A sentinel rather than an empty field
+# because tab is an IFS WHITESPACE character, so bash's `read` folds
+# consecutive tabs into one delimiter and an empty field would shift every
+# later column left. `annotations` is the query-annotation listing, or `-` in
+# dry-run mode, where nothing may be read from the network.
+#
+# Reuse is keyed on the caption, which is the annotation `name`, and GATED on
+# the fingerprint: a Query has no list, get or update verb, so the digest the
+# provisioner wrote into the annotation description is the only observable
+# record of which specification a persisted query id holds. An unchanged
+# fingerprint reuses the query; a changed one leaves `query_id` empty so a
+# fresh query is persisted and the SAME annotation is re-pointed at it. Reusing
+# unconditionally would leave a moved specification rendering the stale query
+# forever, which an idempotence rule would otherwise hide.
 board_panel_plan() {
   local rendered="$1"
   local prefix="$2"
-  python3 - "${rendered}" "${prefix}" <<'PY'
+  local annotations="$3"
+  python3 - "${rendered}" "${prefix}" "${annotations}" "${fingerprint_marker}" <<'PY'
+import hashlib
 import json
 import sys
 
-rendered, prefix = sys.argv[1:]
+rendered, prefix, annotations_path, marker = sys.argv[1:]
 
 with open(rendered, encoding="utf-8") as handle:
     payloads = json.load(handle)
+
+existing = {}
+if annotations_path != "-":
+    with open(annotations_path, encoding="utf-8") as handle:
+        listing = json.load(handle)
+    if isinstance(listing, dict):
+        listing = listing.get("query_annotations") or []
+    for record in listing:
+        if isinstance(record, dict) and record.get("name"):
+            existing[record["name"]] = record
 
 for board_index, payload in enumerate(payloads):
     for index, panel in enumerate(payload["panels"]):
         specification = panel["query_panel"]["query"]
         caption = panel["query_panel"]["caption"]
+        canonical = json.dumps(specification, sort_keys=True, separators=(",", ":"))
+        fingerprint = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
         path = f"{prefix}.{board_index}.{index}.query.json"
         with open(path, "w", encoding="utf-8") as handle:
             json.dump(specification, handle, indent=2, sort_keys=True)
             handle.write("\n")
-        print("\t".join((str(board_index), str(index), caption, path)))
+        record = existing.get(caption) or {}
+        annotation_id = record.get("id") or ""
+        query_id = record.get("query_id") or ""
+        if marker + fingerprint not in (record.get("description") or ""):
+            query_id = ""
+        print(
+            "\t".join(
+                (
+                    str(board_index),
+                    str(index),
+                    fingerprint,
+                    caption,
+                    annotation_id or "-",
+                    query_id or "-",
+                    path,
+                )
+            )
+        )
 PY
 }
 
 # Build the query annotation that names one panel's persisted query. The
 # annotation `name` IS the committed caption: a flexible board renders the
 # annotation as the panel's title, so carrying the caption here is what keeps
-# the operator-facing labels the legacy board had.
+# the operator-facing labels the legacy board had. The `description` carries
+# the specification fingerprint, which is what makes the next run's reuse
+# decision observable.
 annotation_payload() {
   local caption="$1"
-  local query_id="$2"
-  local out="$3"
-  python3 - "${caption}" "${query_id}" "${out}" <<'PY'
+  local fingerprint="$2"
+  local query_id="$3"
+  local out="$4"
+  python3 - "${caption}" "${fingerprint}" "${query_id}" "${out}" "${fingerprint_marker}" <<'PY'
 import json
 import sys
 
-caption, query_id, out = sys.argv[1:]
+caption, fingerprint, query_id, out, marker = sys.argv[1:]
 payload = {
     "name": caption,
     "description": (
         "Provisioned from orchestrator-image/honeycomb/tdd-calibration-board.json "
-        "(livespec work-item bd-ib-3h5vfq)."
+        f"(livespec work-item bd-ib-3h5vfq). {marker}{fingerprint}"
     ),
     "query_id": query_id,
 }
@@ -318,32 +375,51 @@ apply_board() {
   local prefix="$2"
   local plan="${prefix}.plan.tsv"
   local resolved="${prefix}.resolved.tsv"
-  board_panel_plan "${rendered}" "${prefix}" >"${plan}"
+  local annotations="-"
+  if [[ "${dry_run}" != "1" ]]; then
+    annotations="${prefix}.annotations.json"
+    curl_json GET "${api_base}/1/query_annotations/${dataset}" >"${annotations}"
+  fi
+  board_panel_plan "${rendered}" "${prefix}" "${annotations}" >"${plan}"
   : >"${resolved}"
-  local board panel caption spec
-  while IFS=$'\t' read -r board panel caption spec; do
+  local board panel fingerprint caption annotation_id query_id spec
+  while IFS=$'\t' read -r board panel fingerprint caption annotation_id query_id spec; do
     local annotation="${prefix}.${board}.${panel}.annotation.json"
-    local query_id=""
-    local annotation_id=""
+    if [[ "${annotation_id}" == "-" ]]; then
+      annotation_id=""
+    fi
+    if [[ "${query_id}" == "-" ]]; then
+      query_id=""
+    fi
     if [[ "${dry_run}" == "1" ]]; then
       query_id="<query-id-assigned-at-apply>"
       annotation_id="<query-annotation-id-assigned-at-apply>"
       printf 'DRY_RUN query panel=%s caption=%s payload:\n' "${panel}" "${caption}"
       cat "${spec}"
-      annotation_payload "${caption}" "${query_id}" "${annotation}"
+      annotation_payload "${caption}" "${fingerprint}" "${query_id}" "${annotation}"
       printf 'DRY_RUN query_annotation panel=%s name=%s payload:\n' "${panel}" "${caption}"
       cat "${annotation}"
     else
-      local created_query="${prefix}.${board}.${panel}.query-created.json"
-      curl_json POST "${api_base}/1/queries/${dataset}" "${spec}" >"${created_query}"
-      query_id="$(payload_field "${created_query}" id)"
-      printf 'created query %s (panel=%s)\n' "${query_id}" "${panel}"
-      annotation_payload "${caption}" "${query_id}" "${annotation}"
-      local created_annotation="${prefix}.${board}.${panel}.annotation-created.json"
-      curl_json POST "${api_base}/1/query_annotations/${dataset}" "${annotation}" \
-        >"${created_annotation}"
-      annotation_id="$(payload_field "${created_annotation}" id)"
-      printf 'created query_annotation %s (panel=%s)\n' "${annotation_id}" "${panel}"
+      if [[ -n "${query_id}" ]]; then
+        printf 'reused query %s (panel=%s)\n' "${query_id}" "${panel}"
+      else
+        local created_query="${prefix}.${board}.${panel}.query-created.json"
+        curl_json POST "${api_base}/1/queries/${dataset}" "${spec}" >"${created_query}"
+        query_id="$(payload_field "${created_query}" id)"
+        printf 'created query %s (panel=%s)\n' "${query_id}" "${panel}"
+      fi
+      annotation_payload "${caption}" "${fingerprint}" "${query_id}" "${annotation}"
+      if [[ -n "${annotation_id}" ]]; then
+        curl_json PUT "${api_base}/1/query_annotations/${dataset}/${annotation_id}" \
+          "${annotation}" >/dev/null
+        printf 'updated query_annotation %s (panel=%s)\n' "${annotation_id}" "${panel}"
+      else
+        local created_annotation="${prefix}.${board}.${panel}.annotation-created.json"
+        curl_json POST "${api_base}/1/query_annotations/${dataset}" "${annotation}" \
+          >"${created_annotation}"
+        annotation_id="$(payload_field "${created_annotation}" id)"
+        printf 'created query_annotation %s (panel=%s)\n' "${annotation_id}" "${panel}"
+      fi
     fi
     printf '%s\t%s\t%s\t%s\n' "${board}" "${panel}" "${query_id}" "${annotation_id}" >>"${resolved}"
   done <"${plan}"
