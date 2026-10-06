@@ -36,7 +36,10 @@ because the catalog owes them parity.
 
 from __future__ import annotations
 
+import hashlib
+import importlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +47,9 @@ from livespec_orchestrator_beads_fabro.commands._acp_agent_catalog import builti
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _SNAPSHOT = _REPO_ROOT / "tests" / "fixtures" / "acp_registry_snapshot"
+
+_PACKAGE = "livespec_orchestrator_beads_fabro.commands"
+_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 
 # The platform a `binary` distribution is rendered for. The registry's binary
 # block is keyed by platform target and the factory's sandbox runs Linux on
@@ -80,6 +86,24 @@ def _declared_launch(*, document: dict[str, Any]) -> tuple[str, tuple[str, ...]]
         return (f"npx -y {npx['package']}", tuple(npx.get("args", ())))
     platform = distribution["binary"][_PLATFORM]
     return (platform["cmd"], tuple(platform.get("args", ())))
+
+
+def _committed_snapshot_digest() -> str:
+    """The sha256 of the committed registry snapshot, by the recorded recipe.
+
+    The recipe is the one `_acp_agent_catalog` states beside the literal it
+    records: in SORTED agent-id order, the id, a newline, then the verbatim
+    `agent.json` bytes. Sorting is what makes the digest a function of the
+    snapshot's CONTENT rather than of the order a directory listing happened to
+    return, and the id is folded in so two documents cannot be exchanged between
+    ids without moving the digest.
+    """
+    running = hashlib.sha256()
+    for path in sorted(_SNAPSHOT.glob("*.json")):
+        running.update(path.stem.encode("utf-8"))
+        running.update(b"\n")
+        running.update(path.read_bytes())
+    return running.hexdigest()
 
 
 def test_the_registry_snapshot_fixture_holds_every_ratified_agent_id() -> None:
@@ -134,3 +158,51 @@ def test_the_pinned_version_appears_in_a_pinned_package_launch_command() -> None
         entry = catalog[agent_id]
 
         assert entry.command.endswith(f"@{entry.version}"), (agent_id, entry.command)
+
+
+def test_the_catalog_records_the_digest_of_the_committed_registry_snapshot() -> None:
+    """The recorded REGISTRY digest is the digest of the registry's own bytes.
+
+    The module is imported through `importlib` and the constant read with a
+    default, so the absence of the constant is a FAILED ASSERTION naming what is
+    missing rather than a collection error that proves only unimportability.
+    """
+    catalog = importlib.import_module(f"{_PACKAGE}._acp_agent_catalog")
+    recorded = getattr(catalog, "REGISTRY_SNAPSHOT_DIGEST", "")
+
+    assert _DIGEST_RE.match(recorded) is not None, recorded
+    assert recorded == _committed_snapshot_digest()
+
+
+def test_the_registry_commit_the_snapshot_was_taken_at_is_recorded() -> None:
+    """A re-derivable digest needs the revision its bytes came from.
+
+    Without the commit, the recorded digest can only ever be checked against the
+    fixture it was computed from -- so a fixture and a digest updated together
+    from the wrong revision agree perfectly. The commit is what lets a reader
+    re-fetch the exact documents and settle it independently.
+    """
+    catalog = importlib.import_module(f"{_PACKAGE}._acp_agent_catalog")
+    commit = getattr(catalog, "REGISTRY_SNAPSHOT_COMMIT", "")
+
+    assert re.match(r"^[0-9a-f]{40}$", commit) is not None, commit
+
+
+def test_the_snapshot_record_carries_the_registry_digest_and_the_seed_date() -> None:
+    """Both halves of the snapshot identity reach the record a journal carries.
+
+    The REGISTRY digest is asserted to DIFFER from the catalog's own self-digest,
+    which is the whole content of the finding this case closes: the record used to
+    carry a digest over the module's shipped entries under a name that promised a
+    registry snapshot, so two dispatches could prove they rendered against the
+    same committed bytes while neither said which registry those bytes came from.
+    """
+    catalogs = importlib.import_module(f"{_PACKAGE}._acp_catalogs")
+    record = catalogs.catalog_snapshot_record()
+
+    assert record.get("registry_snapshot_digest", "") == _committed_snapshot_digest()
+    assert (
+        record["registry_snapshot_date"]
+        == importlib.import_module(f"{_PACKAGE}._acp_agent_catalog").REGISTRY_SNAPSHOT_DATE
+    )
+    assert record["registry_snapshot_digest"] != record["agent_catalog_digest"]
