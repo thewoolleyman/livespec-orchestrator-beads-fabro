@@ -63,6 +63,14 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   packaged asset), which is what forces an invocation-private payload
   rather than one keyed by version text. Listed in
   `subprocess_spawn_allowlist`.
+- `test_payload_provisioning_refusal.py` — drives the real packaged
+  Dispatcher entry point against an incomplete source, and against a
+  source whose copy breaks part-way, and observes that the refusal is
+  actionable AND that nothing irreversible happened: `bd` and `fabro`
+  are replaced on `PATH` by recorders that must never be called, the
+  dispatch journal must not exist, and `TMPDIR` must be left empty so
+  no partial payload survives for a later invocation to adopt. Listed
+  in `subprocess_spawn_allowlist`.
 - `test_host_side_self_contained_import.py` — the end-to-end
   counterpart of `test_bootstrap.py`: it spawns a `-S` (no-site)
   subprocess that runs the real bootstrap and imports the host-side
