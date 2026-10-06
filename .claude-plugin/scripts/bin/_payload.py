@@ -72,15 +72,21 @@ PAYLOAD_ROOT_ENV = "LIVESPEC_RETAINED_PAYLOAD_ROOT"
 # `mkdtemp`, never from anything about the release.
 _PAYLOAD_PREFIX = "livespec-orchestrator-beads-fabro-payload-"
 _STAGED_NAME = "payload"
-# The release this payload carries, read from the released plugin manifest and
-# used ONLY to label the holder directory for a human reader.
-# `_UNKNOWN_RELEASE` keeps an unreadable or malformed manifest on the retention
-# path rather than refusing: a payload under a vaguer LABEL is still a payload
-# that survives eviction, and refusing here would turn a cosmetic manifest
-# fault into a dead launcher.
+# The release this payload carries, read from the released plugin manifest.
+# It labels the holder directory for a human reader, but it is NOT only a
+# label: it is the payload's PROVENANCE, and provenance is what every
+# downstream build comparison is made of — the minimum-release floor, the
+# self-update canary and the registered-install currency finding all compare
+# one build's release against another's. So an unusable manifest REFUSES.
+#
+# This degraded to the placeholder string `unknown-release` and carried on,
+# which was the wrong direction: a payload whose own release cannot be
+# established cannot be compared with anything, and a placeholder leaves
+# "which build is this" unanswerable while every surface that asks keeps
+# reporting an answer. It also made two such payloads indistinguishable in the
+# one place an operator reads these directories by eye.
 _RELEASE_MANIFEST = "plugin.json"
 _RELEASE_KEY = "version"
-_UNKNOWN_RELEASE = "unknown-release"
 # What marks the tree one level above the plugin root as this plugin's own
 # source repository rather than a cache directory that merely contains an
 # install. Both are files the repository builds with and a released payload
@@ -265,6 +271,10 @@ def _retained_root(*, source_root: Path) -> Path | PayloadRefusal:
     no identity weight at all.
     """
     release = _release_identity(source_root=source_root)
+    if isinstance(release, PayloadRefusal):
+        # BEFORE `mkdtemp`, so a refused provision creates no private directory
+        # at all rather than one it then has to clean up.
+        return release
     holder = Path(tempfile.mkdtemp(prefix=f"{_PAYLOAD_PREFIX}{release}-"))
     # The holder is removed by `finally` unless this function RETURNS a usable
     # payload. Enumerating the failures instead — which is what this did — left
@@ -314,22 +324,44 @@ def _incomplete_message(*, root: Path, missing: tuple[str, ...], subject: str) -
     )
 
 
-def _release_identity(*, source_root: Path) -> str:
-    """The released version this payload carries, or `_UNKNOWN_RELEASE`."""
+def _release_identity(*, source_root: Path) -> str | PayloadRefusal:
+    """The released version this payload carries, or a refusal naming the fault.
+
+    Four distinct faults, one verdict: unreadable, unparseable, not an object,
+    and no usable `version`. Each is reported with its own cause so an operator
+    is told which one to fix, and none of them falls through to a placeholder.
+    """
+    manifest = source_root / _RELEASE_MANIFEST
     try:
-        text = (source_root / _RELEASE_MANIFEST).read_text(encoding="utf-8")
-    except OSError:
-        return _UNKNOWN_RELEASE
+        text = manifest.read_text(encoding="utf-8")
+    except OSError as failure:
+        return _provenance_refusal(root=source_root, cause=f"it could not be read ({failure})")
     try:
         parsed = json.loads(text)
-    except ValueError:
-        return _UNKNOWN_RELEASE
+    except ValueError as failure:
+        return _provenance_refusal(root=source_root, cause=f"it is not valid JSON ({failure})")
     if not isinstance(parsed, dict):
-        return _UNKNOWN_RELEASE
+        return _provenance_refusal(root=source_root, cause="its top level is not a JSON object")
     version = cast("dict[str, object]", parsed).get(_RELEASE_KEY)
     if not isinstance(version, str) or not version.strip():
-        return _UNKNOWN_RELEASE
+        return _provenance_refusal(
+            root=source_root, cause=f"it declares no usable {_RELEASE_KEY!r} string"
+        )
     return version.strip()
+
+
+def _provenance_refusal(*, root: Path, cause: str) -> PayloadRefusal:
+    """One actionable line naming the manifest, the fault, and that nothing ran."""
+    return PayloadRefusal(
+        message=(
+            f"ERROR: livespec payload provisioning refused: the plugin installation "
+            f"at {root} carries a {_RELEASE_MANIFEST} this launcher cannot establish a "
+            f"release from — {cause}. The release is the payload's provenance, which "
+            f"the minimum-release floor and the build-currency findings compare "
+            f"against other builds, so it cannot be substituted. Nothing was claimed "
+            f"and no factory run was started. Reinstall the plugin, then retry."
+        )
+    )
 
 
 def payload_relative_argv(

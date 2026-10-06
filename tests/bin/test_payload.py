@@ -246,37 +246,57 @@ def test_a_copy_that_silently_truncates_is_refused_and_leaves_no_holder(
     [
         pytest.param("{not json", id="malformed"),
         pytest.param("[]", id="not-an-object"),
+        pytest.param("{}", id="no-version-key"),
         pytest.param('{"version": 7}', id="version-not-a-string"),
         pytest.param('{"version": "   "}', id="version-blank"),
     ],
 )
-def test_an_unparseable_release_label_still_yields_a_retained_payload(
+def test_an_unusable_release_manifest_is_refused_naming_its_fault(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, manifest: str
 ) -> None:
-    """A manifest that is PRESENT but odd is cosmetic — it only labels the holder."""
+    """A manifest present but unusable is a PROVENANCE fault, not a cosmetic one.
+
+    These cases used to degrade to the placeholder `unknown-release` and
+    provision anyway. A payload whose own release cannot be established cannot
+    be compared against another build, which is what the minimum-release floor
+    and the build-currency findings do, so the placeholder left "which build is
+    this" unanswerable while those surfaces kept answering.
+    """
     payload = _import_payload()
-    _ = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
+    temp_root = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
     source_root = _install(root=tmp_path / "cache" / "abc123", manifest=manifest)
-    retained = payload.retain_payload(source_root=source_root, environ={})
-    assert retained.retained is True
-    assert retained.root.parent.name.startswith(f"{_HOLDER_PREFIX}{_UNKNOWN_RELEASE}-")
-    assert retained.vendor_root.is_dir()
+
+    refusal = payload.retain_payload(source_root=source_root, environ={})
+    assert isinstance(refusal, payload.PayloadRefusal)
+    assert "plugin.json" in refusal.message
+    assert str(source_root) in refusal.message
+    assert "Nothing was claimed" in refusal.message
+    assert (
+        _UNKNOWN_RELEASE not in refusal.message
+    ), "the refusal still reports a placeholder release"
+    assert (
+        list(temp_root.iterdir()) == []
+    ), "a provenance refusal created a private directory before refusing"
 
 
-def test_an_unreadable_release_manifest_still_yields_a_retained_payload(
+def test_an_unreadable_release_manifest_is_refused_naming_its_fault(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Present but unreadable is cosmetic too — the read error must not refuse."""
+    """Present but unreadable is its own shape: the completeness probe passes.
+
+    A DIRECTORY named `plugin.json` satisfies an existence check and then fails
+    the text read, which is exactly the gap a presence-only contract leaves.
+    """
     payload = _import_payload()
-    _ = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
+    temp_root = _private_tempdir(monkeypatch=monkeypatch, tmp_path=tmp_path)
     source_root = _install(root=tmp_path / "cache" / "abc123")
-    # A DIRECTORY named plugin.json exists, so the completeness check passes
-    # while the text read raises OSError.
     (source_root / "plugin.json").unlink()
     (source_root / "plugin.json").mkdir()
-    retained = payload.retain_payload(source_root=source_root, environ={})
-    assert retained.retained is True
-    assert retained.root.parent.name.startswith(f"{_HOLDER_PREFIX}{_UNKNOWN_RELEASE}-")
+
+    refusal = payload.retain_payload(source_root=source_root, environ={})
+    assert isinstance(refusal, payload.PayloadRefusal)
+    assert "could not be read" in refusal.message
+    assert list(temp_root.iterdir()) == []
 
 
 def test_a_child_inherits_its_parents_payload_and_does_not_own_it(
