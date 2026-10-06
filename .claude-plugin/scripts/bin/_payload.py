@@ -54,6 +54,7 @@ __all__: list[str] = [
     "RetainedPayload",
     "harness_managed",
     "missing_payload_paths",
+    "payload_fidelity_gaps",
     "payload_relative_argv",
     "release_payload",
     "retain_payload",
@@ -95,22 +96,31 @@ _SOURCE_REPOSITORY_MARKERS = ("pyproject.toml", "justfile")
 # Byte-compiled caches are reproducible from the sources beside them, so they
 # are the one thing the copy leaves behind.
 _IGNORED_NAMES = ("__pycache__",)
-# What this launcher needs present for a payload to be usable at all — one
-# entry per failure mode a dispatch would otherwise hit HOURS later: the
-# release manifest, both pre-import launcher modules, the package root, the
-# vendored dependency tree, and the Fabro workflow assets.
+# How many differing paths a fidelity refusal names. An operator needs enough
+# to recognise WHAT is missing, not the whole set.
+_FIDELITY_REPORT_LIMIT = 5
+# What this launcher needs for a payload to be usable at all, split by TYPE
+# because `exists()` is blind to it: a directory satisfies `exists()` where a
+# module is needed, and a plain file satisfies it where a tree is needed.
 #
 # Deliberately NOT read from `cache-manifest.json`. That manifest serves the
 # fleet's `ensure-plugins` verification and omits `scripts/_vendor` and
 # `.fabro/` entirely — the two trees whose absence produced the measured
 # `ModuleNotFoundError`. A completeness contract that cannot see the thing that
 # broke is not the contract to validate against.
-_REQUIRED_PAYLOAD_PATHS: tuple[tuple[str, ...], ...] = (
+_REQUIRED_FILES: tuple[tuple[str, ...], ...] = (
     ("plugin.json",),
     ("scripts", "bin", "_bootstrap.py"),
     ("scripts", "bin", "_payload.py"),
     ("scripts", "livespec_orchestrator_beads_fabro", "__init__.py"),
+)
+# Required trees, which must also be NON-EMPTY. An empty `_vendor` fails every
+# deferred `livespec_runtime` import and an empty `workflows` fails every
+# packaged asset read — both at the far end of a dispatch, which is the
+# failure retention exists to prevent, so neither may be published.
+_REQUIRED_TREES: tuple[tuple[str, ...], ...] = (
     ("scripts", "_vendor"),
+    ("scripts", "livespec_orchestrator_beads_fabro", "commands"),
     (".fabro", "workflows"),
 )
 
@@ -221,12 +231,63 @@ def _inherited_payload(*, environ: MutableMapping[str, str]) -> RetainedPayload 
 
 
 def missing_payload_paths(*, root: Path) -> tuple[str, ...]:
-    """The required payload members absent from `root`, as POSIX relative paths."""
-    return tuple(
+    """The required payload members `root` cannot supply, as POSIX relative paths.
+
+    "Cannot supply" rather than "does not have": a required FILE that is a
+    directory, and a required TREE that is a plain file or is empty, are all
+    reported. Each was `exists()`-complete and unusable.
+    """
+    gaps = [
+        "/".join(relative) for relative in _REQUIRED_FILES if not root.joinpath(*relative).is_file()
+    ]
+    gaps.extend(
         "/".join(relative)
-        for relative in _REQUIRED_PAYLOAD_PATHS
-        if not root.joinpath(*relative).exists()
+        for relative in _REQUIRED_TREES
+        if not _usable_tree(path=root.joinpath(*relative))
     )
+    return tuple(gaps)
+
+
+def _usable_tree(*, path: Path) -> bool:
+    """Whether `path` is a directory that actually holds something."""
+    if not path.is_dir():
+        return False
+    return any(path.iterdir())
+
+
+def payload_fidelity_gaps(*, source_root: Path, payload_root: Path) -> tuple[str, ...]:
+    """Files the SOURCE has that the payload does not, or holds at a different size.
+
+    This is what makes the payload provably the SAME RELEASE rather than
+    merely the right shape. No list of required paths can answer that: the
+    incident module `_dispatcher_cost_wave.py` is one of hundreds no contract
+    enumerates, and a copy missing exactly it satisfied every structural
+    grade. Comparing the copy against the tree it was made from needs no
+    manifest and no registry, and it catches a copy truncated by an eviction
+    landing mid-provision.
+
+    Size, not content hash: the realistic failure here is a file ABSENT or
+    SHORT, which size settles, and byte-integrity of an extracted release is
+    the fleet packaging concern tracked separately — not this launcher's.
+
+    Returns at most `_FIDELITY_REPORT_LIMIT` paths. The whole set is not
+    useful in a refusal an operator reads, and a truncated report is marked as
+    such by the caller.
+    """
+    gaps: list[str] = []
+    ignored = frozenset(_IGNORED_NAMES)
+    for source_file in sorted(source_root.rglob("*")):
+        if any(part in ignored for part in source_file.parts):
+            continue
+        if not source_file.is_file():
+            continue
+        relative = source_file.relative_to(source_root)
+        copied = payload_root / relative
+        if not copied.is_file() or copied.stat().st_size != source_file.stat().st_size:
+            gaps.append(relative.as_posix())
+            if len(gaps) == _FIDELITY_REPORT_LIMIT:
+                break
+    return tuple(gaps)
 
 
 def harness_managed(*, source_root: Path) -> bool:
@@ -307,11 +368,26 @@ def _retained_root(*, source_root: Path) -> Path | PayloadRefusal:
             return PayloadRefusal(
                 message=_incomplete_message(root=source_root, missing=missing, subject="copy")
             )
+        gaps = payload_fidelity_gaps(source_root=source_root, payload_root=root)
+        if gaps:
+            return PayloadRefusal(message=_fidelity_message(root=source_root, gaps=gaps))
         published = True
         return root
     finally:
         if not published:
             shutil.rmtree(holder, ignore_errors=True)
+
+
+def _fidelity_message(*, root: Path, gaps: tuple[str, ...]) -> str:
+    """One actionable line: the copy is not the same release as its source."""
+    truncated = " (and possibly more)" if len(gaps) == _FIDELITY_REPORT_LIMIT else ""
+    return (
+        f"ERROR: livespec payload provisioning refused: the copy of the plugin "
+        f"installation at {root} did not land complete — {', '.join(gaps)}{truncated} "
+        f"is missing or short, so this invocation would be running a DIFFERENT "
+        f"release from the one installed. Nothing was claimed and no factory run "
+        f"was started. Reinstall the plugin, then retry."
+    )
 
 
 def _incomplete_message(*, root: Path, missing: tuple[str, ...], subject: str) -> str:
