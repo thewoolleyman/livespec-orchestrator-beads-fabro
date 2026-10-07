@@ -204,12 +204,96 @@ public. The waiver costs an inline rendering; it never costs the proof. Say
 in your final reply that you took the fallback, so a reader can tell it
 from a measured `authenticated_link`.
 
+### Keep the record within its size budget
+
+A record is ONE forge comment, and the forge enforces a ceiling on it. A
+record the forge REJECTS is a LOST proof that reads downstream as an ABSENT
+one: the acceptance pass finds no record, reports every assertion
+unevidenced, and the item parks on a refusal naming the missing record
+rather than the size that lost it. Nothing points at the real cause.
+
+Three declared numbers bound this, all in **UTF-8 BYTES**, never characters:
+
+- **262144 bytes** — the measured, enforced forge comment ceiling.
+- **196608 bytes** — the declared record budget. Stay under it.
+- **32768 bytes** — the per-assertion **inline allowance**: what ONE
+  assertion's proof may spend inline before it must travel as an attachment.
+
+Do not take the forge's own word for the ceiling. Its rejection message
+reads `Body is too long (maximum is 65536 characters)`, and that message is
+wrong in BOTH its number and its unit — the enforced ceiling is four times
+it, and it counts bytes. The figures above were measured against live
+GitHub; the measurement and its controls are in
+`plan/definition-and-proof-of-done/research/005-forge-comment-ceiling-measurement-2026-10-07.md`.
+
+Measure in BYTES. `wc -c` counts bytes; `wc -m` counts characters, and on
+multibyte proof — box-drawing tables, `git log --graph` glyphs, em dashes —
+the two differ by up to a factor of four, in the direction that loses the
+proof.
+
+**Plan the recipe before you run it.** The allowance exists so you can
+choose a bounded capture up front rather than discover at post time that
+your evidence does not fit, by which point the steps have already run. Where
+a step would print an unbounded amount, bound it AT THE STEP — name the
+`| tail -50`, the `--max-count`, the summarising command — and publish the
+bounded command as the step, because the step you publish is the step that
+gets replayed.
+
+**When a proof genuinely exceeds the inline allowance, attach it.** Never
+truncate a proof to fit, and never drop an assertion to fit. A truncated
+proof is a proof of something else, and a dropped assertion reads
+downstream as unevidenced. Instead write the full captured
+output to the scratch directory, upload it as an asset exactly as an image
+is uploaded, and reference it from the record **in place of** the fenced
+block. Name it with its own digest, so the name itself identifies the bytes:
+
+    <work-item-id>__<run-id>__capture__<NN>__proof-sha256-<first 16 hex>.txt
+
+Compute the digest and the size from the file you upload:
+
+    sha256sum "<file>" | cut -d' ' -f1
+    wc -c < "<file>"
+
+and render these FOUR plain lines where the fenced block would have gone —
+plain lines, not bullets, and each on its own line:
+
+    Attached proof: <asset name>
+    Attached proof bytes: <byte size>
+    Attached proof digest: sha256:<hex digest>
+    Attached proof asset: <asset url>
+
+All four are load-bearing. The replay leg and the post-merge acceptance pass
+FETCH that asset and check its digest against the one the record states; an
+asset that is missing, or whose bytes hash to something else, is graded
+**absent evidence** rather than a pass. So a digest that does not match what
+you uploaded fails the assertion as surely as no proof at all.
+
 ## Step 5 — publish the record
 
 Post exactly **one NEW comment** on the draft pull request for this item's
 publish branch. Find it with `gh pr list --head <publish branch> --state
 open --json number`, and post with `gh pr comment <number> --body-file
 <file>`.
+
+**MEASURE THE BODY FILE BEFORE YOU POST IT, and refuse to post it over
+budget:**
+
+    wc -c < <file>
+
+If that is more than **196608** bytes, **do NOT post**. Attach the largest
+proofs per the budget subsection of Step 4 and re-measure, until the body
+fits. Report, in your final reply, the measured size, the budget, and the
+assertion whose proof overflowed.
+
+The measurement goes BEFORE the post and not after, because a record comment
+**MUST NOT be edited after posting**: a body you have already posted is one
+you can no longer withhold, and a rejected post leaves nothing behind to
+read at all.
+
+If every proof is already attached and the body is still over budget, then
+the record is over budget in AGGREGATE rather than on any single proof — the
+remedy is a smaller proof recipe, not another attachment. Say so and end
+with the needs-human protocol, naming the measured size and the budget.
 
 A record comment **MUST NOT be edited after posting**; if you get it
 wrong, post a new record rather than editing the old one. Do not delete

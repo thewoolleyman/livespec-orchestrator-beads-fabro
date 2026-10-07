@@ -49,6 +49,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     CommandRunner,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_budget import (
+    PROOF_RECORD_BUDGET_BYTES,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
     VERDICT_CAPTURED,
     VERDICT_VERIFIED,
@@ -60,6 +63,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_proof_record import (
     latest_plan_proof_entry,
     plan_proof_entries,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_record_post import PLAN_RECORD_SURFACE
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 _SLUG = "record-post-thread"
@@ -225,3 +229,103 @@ def test_the_primitive_posts_a_capture_and_an_independent_replay_and_refuses_a_s
     # The mode comes from the plan's own section, never from the payload, so a
     # record cannot declare a leg the maintainer did not.
     assert f"Proof mode: {PROOF_MODE_HOST_CAPTURED}" in replay.record.body
+
+
+# ---------------------------------------------------------------------------
+# bd-ib-555xcd: the plan record is measured against the SAME declared budget,
+# and an over-budget record is refused rather than appended.
+#
+# WHY THIS SURFACE IS COVERED SEPARATELY RATHER THAN BY ANALOGY WITH THE ITEM
+# ONE. A plan record does not go to the forge at all: it is appended to the
+# epic through the ledger, so the forge ceiling the budget was measured
+# against is not the limit this path will actually meet. Applying the budget
+# here is the conservative reading — the ledger's own comment column is
+# unmeasured — and the thing worth asserting is that the refusal reaches this
+# publisher too, since nothing about the forge measurement implies it.
+# ---------------------------------------------------------------------------
+
+_PLAN_BULK_ASSERTIONS = tuple(
+    f"The bounded plan record arm number {index} holds in a real session." for index in range(7)
+)
+
+
+def _bulk_payload(*, path: Path, proof_bytes: int) -> Path:
+    document: dict[str, object] = {
+        "build": {"release_tag": "v0.173.7", "installed_build": "0.173.7"},
+        "assertions": [
+            {
+                "text": text,
+                "steps": ["Install the released build.", "Run it in an operator session."],
+                "proof": "p" * proof_bytes,
+                "reproduced": None,
+            }
+            for text in _PLAN_BULK_ASSERTIONS
+        ],
+    }
+    _ = path.write_text(json.dumps(document), encoding="utf-8")
+    return path
+
+
+def _bulk_epic(*, tmp_path: Path) -> str:
+    plan = importlib.import_module("livespec_orchestrator_beads_fabro.commands.plan")
+    created = plan.create_thread(
+        project_root=tmp_path,
+        config=_config(),
+        slug="bounded-plan-record",
+        title="Bounded plan record thread",
+        research_filename="initial.md",
+        research_text="research\n",
+        now="2026-10-07T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when every arm has been run in a real session.",
+            assertions=_PLAN_BULK_ASSERTIONS,
+        ),
+    )
+    return str(created["epic_id"])
+
+
+def _post_bulk_plan(*, tmp_path: Path, proof_bytes: int) -> tuple[int, str, int]:
+    """Drive one plan post and report its code, output, and the epic's comment count."""
+    module = importlib.import_module("livespec_orchestrator_beads_fabro.commands._plan_record_post")
+    reset_fake_singleton()
+    epic_id = _bulk_epic(tmp_path=tmp_path)
+    emitted: list[str] = []
+    code = _post(
+        module=module,
+        epic_id=epic_id,
+        verdict=VERDICT_CAPTURED,
+        record=_bulk_payload(path=tmp_path / "bulk.json", proof_bytes=proof_bytes),
+        session=_CAPTURING,
+        emitted=emitted,
+    )
+    return code, "".join(emitted), len(_fake().list_comments(issue_id=epic_id))
+
+
+def test_an_under_budget_plan_record_of_the_same_shape_still_appends(tmp_path: Path) -> None:
+    """The control: this seven-assertion plan fixture CAN publish when it fits.
+
+    Without it the refusal below is equally consistent with a budget doing its job
+    and with a fixture that could never append, and the output of the two is
+    identical. The pair differs only in the per-assertion proof size.
+    """
+    code, _, comments = _post_bulk_plan(tmp_path=tmp_path, proof_bytes=4096)
+
+    assert code == 0
+    assert comments == 1
+
+
+def test_an_over_budget_plan_record_is_refused_and_never_appended(tmp_path: Path) -> None:
+    """The refusal fires BEFORE the append, so the epic carries no oversize record.
+
+    The comment COUNT is the assertion rather than the exit code, for the reason the
+    rest of this module's refusals assert it: a plan record must not be edited after
+    posting, so an append that happened before the refusal could not be taken back.
+    """
+    code, emitted, comments = _post_bulk_plan(tmp_path=tmp_path, proof_bytes=30000)
+
+    assert code == 3
+    assert comments == 0
+    assert PLAN_RECORD_SURFACE in emitted
+    assert str(PROOF_RECORD_BUDGET_BYTES) in emitted
+    assert "No single proof" in emitted
+    assert "Nothing was published" in emitted
