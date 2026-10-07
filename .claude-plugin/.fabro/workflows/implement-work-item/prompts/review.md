@@ -81,12 +81,32 @@ A pending host leg excuses nothing else. A record that leaves any
 listed with no reproduction steps and no proof — is an **INCOMPLETE factory
 proof record** and is `[BLOCKING]`. It is **blocking even when every
 host-captured assertion is correctly listed as pending** the host leg, and
-even when the code is perfect. Check the record against the Definition of
-Done's own assertion list, not against the set of assertions the record
-chose to mention: an omitted assertion is invisible to any reading that
-starts from the record. Name each uncaptured `factory_captured` assertion;
-a blocking finding **re-enters `proof_capture`** through the review-fix
-route, which is where the missing capture is owed.
+even when the code is perfect. Name each uncaptured `factory_captured`
+assertion; a blocking finding **re-enters `proof_capture`** through the
+review-fix route, which is where the missing capture is owed.
+
+Make that comparison a **REQUIRED, SHOWN enumeration** — not a check you
+run in your head. Build it from the `## Definition of Done` section's own
+`- ` bullets, never from the set of assertions the record chose to
+mention: an omitted assertion is invisible to any reading that starts from
+the record, so a reading that starts there cannot find the defect this
+section exists to catch. Read the modes off those bullets YOURSELF,
+positionally — bullets under a `### Host-captured` sub-heading are
+`host_captured`, bullets under a `### Human-attested` sub-heading are
+`human_attested`, every other bullet is `factory_captured` — then emit the
+coverage enumeration the output section below specifies, one line per
+assertion, stating for each `factory_captured` one whether the record
+carries reproduction steps AND proof for it.
+
+**A review that emits no coverage enumeration is itself incomplete.** The
+enumeration is the only thing that separates a reviewer who made the
+comparison from one who skipped it: both otherwise emit the same `approve`
+with no finding, so the comparison is satisfiable in silence, and this
+stage HAS been measured approving a record that omitted a
+`factory_captured` assertion while its host and human legs were correctly
+pending. If the Definition of Done is unreadable and you cannot build the
+enumeration at all, say THAT as a `[BLOCKING]` finding — never an
+`approve` without it.
 
 ### A record older than the tree is `[BLOCKING]`
 
@@ -191,7 +211,32 @@ green.
 
 ## Output (required, exact)
 
-List each finding on its own line:
+FIRST, emit the factory proof coverage enumeration — the shown comparison
+of the published record against the `## Definition of Done`'s own bullets
+that the proof section above requires. One line per assertion, in that
+section's own order:
+
+    Factory proof coverage:
+    - Assertion <N> — captured: yes — proved by the record's step(s) <n>
+    - Assertion <N> — captured: NO — <absent from the record, or listed with no steps and no proof>
+    - Assertion <N> — pending host leg — not owed by the factory
+    - Assertion <N> — pending human attestation — not owed by the factory
+
+Every `factory_captured` assertion gets a line, the satisfied ones
+included. A list naming only the uncaptured ones would be EMPTY on a
+record that omitted an assertion and equally empty on a complete one,
+which is the ambiguity this enumeration exists to remove. A `captured: NO`
+line requires a matching `[BLOCKING]` finding below, and a `[BLOCKING]`
+incomplete-record finding requires a `captured: NO` line above.
+
+Each `host_captured` assertion is listed `pending host leg` and each
+`human_attested` assertion `pending human attestation`, under those names,
+so the record's two SEPARATE pending headings are checked too. A pending
+leg here is the correct and complete state for that assertion — neither is
+a finding on its own, and grading one as a missing capture would send a
+correct run back through a capture no sandbox can perform.
+
+THEN list each finding on its own line:
 
     [BLOCKING] <file:line> — <defect + why it matters>
     [ADVISORY] <file:line> — <suggestion>
@@ -202,10 +247,11 @@ complete findings text for this review round in workflow context:
 1. Determine the round number N for the context key: count prior visible `review_findings_r*`
    run-context keys, then use the next
    integer. If none are visible, use `review_findings_r1`.
-2. The context value MUST be the exact finding lines you listed above,
-   preserving both `[BLOCKING]` and `[ADVISORY]` lines in their original
-   order. Do not summarize them and do not omit advisory findings from a
-   blocking review round.
+2. The context value MUST be the exact finding lines you listed above —
+   the `[BLOCKING]` and `[ADVISORY]` lines, both preserved in their
+   original order, and not the coverage enumeration above them. Do not
+   summarize them and do not omit advisory findings from a blocking
+   review round.
 3. Include that value under `review_findings_r<N>` in the final routing
    JSON's `context_updates`.
 
@@ -214,7 +260,13 @@ Then end your reply with a single JSON object on the LAST line:
 - correct & in-scope (no blocking findings): `{"preferred_next_label": "approve"}`
 - at least one BLOCKING finding:             `{"preferred_next_label": "fix", "context_updates": {"review_findings_r<N>": "<the exact finding lines>"}}`
 
-Use those exact lowercase tokens. An empty blocking list ⇒ approve.
+Use those exact lowercase tokens. An empty blocking list ⇒ approve — but
+only beside a coverage enumeration that is PRESENT and on which every
+`factory_captured` assertion reads `captured: yes`. An empty blocking list
+with no enumeration is the unreviewed record this prompt's proof section
+forbids, not an approval, and reading this line as permission to skip the
+enumeration would restore exactly the silence that let an incomplete
+record reach `pr`.
 
 If you genuinely CANNOT perform the review (e.g. you cannot access the
 diff), do NOT guess — end instead with the structured needs-human
