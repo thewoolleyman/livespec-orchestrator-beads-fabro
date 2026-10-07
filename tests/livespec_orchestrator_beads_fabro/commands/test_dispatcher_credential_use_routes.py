@@ -336,6 +336,70 @@ def test_a_class_selector_can_make_a_node_acp_and_is_graded() -> None:
     assert "/usr/bin/true" in refusal
 
 
+# A node's CLASS MEMBERSHIP ACCUMULATES ACROSS DECLARATIONS while its `class`
+# ATTRIBUTE is last-wins, and the two diverge the moment a node is declared twice.
+# The pinned `fabro-graphviz/src/parser/semantic.rs` `process_node` OVERWRITES
+# `node.attrs` but only ever PUSHES onto `node.classes` and never clears it, and
+# `transforms/stylesheet.rs` matches `Selector::Class` against that ACCUMULATED
+# list -- not against the final attribute. So reconstructing membership from the
+# merged `class` attribute silently drops every class an earlier declaration
+# contributed, and a rule the engine still matches reads as not matching.
+
+_CLASS_REDECLARED = """digraph G {
+  graph [model_stylesheet=".retained { backend: acp; }"]
+  start [shape=Mdiamond]
+  implement [class="retained", acp.command="/usr/bin/true", timeout="60s"]
+  implement [class="replacement"]
+  start -> implement
+  implement -> exit
+  exit [shape=Msquare]
+}
+"""
+
+
+def test_a_class_retained_from_an_earlier_declaration_still_selects_the_node() -> None:
+    """THE REGRESSION: re-declaring a node must not drop its earlier classes.
+
+    `implement` is declared twice. Its `class` ATTRIBUTE ends as `replacement`, but
+    the engine's accumulated `node.classes` is `[retained, replacement]`, so
+    `.retained { backend: acp; }` still selects it and the literal launches over
+    ACP. Measured before the fix: this exact graph was ADMITTED, while the
+    single-declaration form of it was correctly refused.
+    """
+    refusal = unguardable_launch_refusal(
+        graph_text=_CLASS_REDECLARED, adapter_inputs=_WRAPPED_INPUTS
+    )
+    assert refusal is not None, "a re-declared node dropped the class that selects it"
+    assert "implement" in refusal
+    assert "/usr/bin/true" in refusal
+
+
+def test_a_class_added_by_a_later_declaration_also_selects_the_node() -> None:
+    """The mirror direction: the LATER declaration's class counts too.
+
+    Accumulation is a union, not a swap, so a fix that merely read the FIRST
+    declaration's classes instead of the last would pass the case above and fail
+    this one.
+    """
+    graph = _CLASS_REDECLARED.replace(
+        '".retained { backend: acp; }"', '".replacement { backend: acp; }"'
+    )
+    refusal = unguardable_launch_refusal(graph_text=graph, adapter_inputs=_WRAPPED_INPUTS)
+    assert refusal is not None, "a class added by a later declaration was ignored"
+    assert "implement" in refusal
+    assert "/usr/bin/true" in refusal
+
+
+def test_a_re_declared_node_whose_launch_stays_templated_is_still_admitted() -> None:
+    """THE POSITIVE CONTROL for accumulation: re-declaration is not itself a fault.
+
+    Without it, both cases above would be satisfied by refusing every graph that
+    declares a node more than once, which DOT permits and real graphs do.
+    """
+    graph = _CLASS_REDECLARED.replace('"/usr/bin/true"', '"{{ inputs.implement_adapter }}"')
+    assert unguardable_launch_refusal(graph_text=graph, adapter_inputs=_WRAPPED_INPUTS) is None
+
+
 def test_a_universal_selector_makes_every_node_acp_including_the_terminals() -> None:
     """`* { backend: acp; }` reaches EVERY node, so the terminals are graded too.
 
@@ -613,5 +677,35 @@ def test_a_dispatch_selecting_a_styled_templated_launch_still_materializes(
     `model_stylesheet` at all.
     """
     error = _materialize_with(graph=_STYLED_TEMPLATED, tmp_path=tmp_path, monkeypatch=monkeypatch)
+    assert error is None, error
+    assert (tmp_path / "overlay.toml").exists()
+
+
+def test_a_dispatch_whose_class_was_re_declared_is_refused_before_launch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The accumulated-class route reaches the REAL materializer too.
+
+    Same distinction the styled cases above draw: grading the decision establishes
+    that it is right, not that a dispatch asks it. This drives `materialize_overlay`
+    over a graph whose ACP-ness comes from a class an EARLIER declaration
+    contributed and the final `class` attribute no longer names.
+    """
+    error = _materialize_with(graph=_CLASS_REDECLARED, tmp_path=tmp_path, monkeypatch=monkeypatch)
+    assert error is not None, "a re-declared-class literal launch materialized an overlay"
+    assert "implement" in error
+    assert "literal acp.command" in error
+    assert not (tmp_path / "overlay.toml").exists()
+
+
+def test_a_dispatch_with_a_re_declared_templated_launch_still_materializes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The materializer-seam positive control for the same accumulation."""
+    error = _materialize_with(
+        graph=_CLASS_REDECLARED.replace('"/usr/bin/true"', '"{{ inputs.implement_adapter }}"'),
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+    )
     assert error is None, error
     assert (tmp_path / "overlay.toml").exists()

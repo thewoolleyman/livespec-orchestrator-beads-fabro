@@ -36,6 +36,17 @@ engine's `ensure_node` creates a node for any edge endpoint, and a universal rul
 then reaches it too, so an endpoint named only in an edge is included here with no
 attributes. Leaving it out would hide a node that a `*` rule makes ACP.
 
+AND CLASS MEMBERSHIP COMES FROM THE PARSER'S ACCUMULATED LIST, never from the
+node's final `class` attribute -- the second measured bypass, and the subtler one
+because the two agree on every graph that declares each node once. The engine
+OVERWRITES `node.attrs` per declaration but only PUSHES onto `node.classes`, so a
+node declared twice ends with the LAST attribute and the UNION of its classes, and
+`Selector::Class` matches that union. Re-deriving membership from the attribute
+therefore drops whatever only an earlier declaration carried: re-declaring
+`implement` with `class="replacement"` made a `.retained` rule read as not
+matching, and the literal launch it guarded was ADMITTED. `DotGraph.node_classes`
+carries the union; this module must not reconstruct it.
+
 AND TWO DELIBERATE FAIL-CLOSED DEPARTURES, each stricter than the pinned engine,
 because this module's answer is used to decide whether a live credential may be
 spent with enforcement claimed over it:
@@ -68,7 +79,6 @@ __all__: list[str] = [
 _STYLESHEET_ATTRIBUTE = "model_stylesheet"
 _BACKEND = "backend"
 _SHAPE = "shape"
-_CLASS = "class"
 
 # The four selector kinds and the engine's specificity for each.
 _UNIVERSAL = "universal"
@@ -131,7 +141,14 @@ def nodes_with_effective_backend(*, graph: DotGraph) -> Mapping[str, Mapping[str
     deciding = tuple(rule for rule in rules if _BACKEND in rule.declarations)
     resolved: dict[str, Mapping[str, str]] = {}
     for node, attributes in declared.items():
-        effective = _effective_node(node=node, attributes=attributes, rules=deciding)
+        effective = _effective_node(
+            node=node,
+            attributes=attributes,
+            # The ACCUMULATED membership, never a re-read of the `class`
+            # attribute: the two diverge whenever a node is declared twice.
+            classes=graph.node_classes.get(node, ()),
+            rules=deciding,
+        )
         if isinstance(effective, str):
             return effective
         resolved[node] = effective
@@ -149,7 +166,11 @@ def _every_node(*, graph: DotGraph) -> dict[str, Mapping[str, str]]:
 
 
 def _effective_node(
-    *, node: str, attributes: Mapping[str, str], rules: tuple[_Rule, ...]
+    *,
+    node: str,
+    attributes: Mapping[str, str],
+    classes: tuple[str, ...],
+    rules: tuple[_Rule, ...],
 ) -> Mapping[str, str] | str:
     """One node's attributes with its stylesheet-resolved backend, or a refusal."""
     if _BACKEND in attributes:
@@ -159,7 +180,7 @@ def _effective_node(
     undecidable = _undecidable_shape_refusal(node=node, attributes=attributes, rules=rules)
     if undecidable is not None:
         return undecidable
-    backend = _styled_backend(node=node, attributes=attributes, rules=rules)
+    backend = _styled_backend(node=node, attributes=attributes, classes=classes, rules=rules)
     if backend is None:
         return attributes
     return {**attributes, _BACKEND: backend}
@@ -182,7 +203,11 @@ def _undecidable_shape_refusal(
 
 
 def _styled_backend(
-    *, node: str, attributes: Mapping[str, str], rules: tuple[_Rule, ...]
+    *,
+    node: str,
+    attributes: Mapping[str, str],
+    classes: tuple[str, ...],
+    rules: tuple[_Rule, ...],
 ) -> str | None:
     """The winning rule's backend for this node, or None when no rule selects it.
 
@@ -197,25 +222,29 @@ def _styled_backend(
     """
     winner: str | None = None
     for rule in sorted(rules, key=lambda rule: _SPECIFICITY[rule.selector.kind]):
-        if _selects(node=node, attributes=attributes, selector=rule.selector):
+        if _selects(node=node, attributes=attributes, classes=classes, selector=rule.selector):
             winner = rule.declarations[_BACKEND]
     return winner
 
 
-def _selects(*, node: str, attributes: Mapping[str, str], selector: _Selector) -> bool:
+def _selects(
+    *,
+    node: str,
+    attributes: Mapping[str, str],
+    classes: tuple[str, ...],
+    selector: _Selector,
+) -> bool:
     """Whether one selector matches one node. A shape match is decidable by here."""
     if selector.kind == _UNIVERSAL:
         return True
     if selector.kind == _BY_ID:
         return node == selector.name
     if selector.kind == _BY_CLASS:
-        return selector.name in _classes(attributes=attributes)
+        # The parser's ACCUMULATED membership, which is what the engine matches.
+        # Re-deriving it from the node's `class` attribute would be last-wins and
+        # would drop every class an earlier declaration contributed.
+        return selector.name in classes
     return attributes.get(_SHAPE) == selector.name
-
-
-def _classes(*, attributes: Mapping[str, str]) -> frozenset[str]:
-    """The node's classes, as the engine's `process_node` splits its `class` attribute."""
-    return frozenset(part.strip() for part in attributes.get(_CLASS, "").split(",") if part.strip())
 
 
 def _parse_stylesheet(*, text: str) -> tuple[_Rule, ...] | str:
