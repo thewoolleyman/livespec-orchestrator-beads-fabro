@@ -188,7 +188,11 @@ def test_promotion_decision_keeps_and_alarms_on_fail() -> None:
     assert decision.alarm is True
 
 
-def test_candidate_dispatcher_bin_points_at_the_released_payload_bin_wrapper() -> None:
+def test_candidate_dispatcher_bin_points_at_the_released_payload_bin_wrapper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
+    monkeypatch.delenv("LIVESPEC_INSTALLED_PLUGIN_ROOT", raising=False)
     assert (
         candidate_dispatcher_bin().as_posix().endswith(".claude-plugin/scripts/bin/dispatcher.py")
     )

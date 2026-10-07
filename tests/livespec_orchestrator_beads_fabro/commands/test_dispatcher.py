@@ -362,6 +362,8 @@ def fabro_dispatch_env(
     parallel pytest-xdist workers never collide on the dispatcher's
     goal/overlay temp files."""
     scratch = tmp_path_factory.mktemp("fabro-dispatch")
+    # These hermetic dispatches describe this checkout, not the janitor's launcher.
+    monkeypatch.delenv("LIVESPEC_INSTALLED_PLUGIN_ROOT", raising=False)
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(scratch))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token")
     monkeypatch.setattr(

@@ -361,6 +361,7 @@ def test_candidate_dispatcher_bin_resolves_from_plugin_root(
 ) -> None:
     """The canary bin anchors on the same plugin root (no `.claude-plugin` re-segment)."""
     monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
+    monkeypatch.delenv("LIVESPEC_INSTALLED_PLUGIN_ROOT", raising=False)
     assert candidate_dispatcher_bin() == _PLUGIN_ROOT / "scripts" / "bin" / "dispatcher.py"
 
 
