@@ -5,7 +5,7 @@ dataset `livespec-dispatcher`. Measurements below were taken on 2026-10-07 UTC.
 This receipt records live provisioning, not completion of the separate
 seven-field terminal-event proof.
 
-## Executed artifact and reproduction
+## Executed artifact and historical invocation
 
 The provisioner and its three definition files were byte-identical to release
 `v0.173.7`, commit `7eea7be2dbb633eed6f73577eb82dfca1394a40d`.
@@ -19,8 +19,10 @@ git diff --exit-code v0.173.7 -- \
   orchestrator-image/honeycomb
 ```
 
-Run from the repository root using its normal credential wrapper. The command
-uses an existing recipient identifier, not a new notification destination:
+The following historical command ran from the repository root using its normal
+credential wrapper. It used an existing recipient identifier, not a new
+notification destination. Read the credential-transport limitation below before
+considering a replay:
 
 ```bash
 mise exec -- just gate-start -- \
@@ -30,9 +32,14 @@ mise exec -- just gate-start -- \
   bash orchestrator-image/provision-honeycomb-tdd-calibration.sh
 ```
 
-The wrapper supplies the configuration key. Do not print it, put it in an
-argument, or copy it into a sandbox. The provider's public resource identifiers
-below are not credentials.
+The wrapper supplies the configuration key. The operator invocation contains no
+literal key, but the released script expands it into curl's `--header` argument.
+It is therefore NOT protected against process-argument inspection, contrary to
+the script's own comments. Independent review identified this inherited defect;
+separate backlog item `bd-ib-lckfxl` owns private header transport and a sentinel
+credential regression. This receipt neither proves argv secrecy nor repairs it.
+Do not print credentials, inspect live secret-bearing argv, or copy host keys
+into a sandbox. The public resource identifiers below are not credentials.
 
 ## Live API refusal and supported configuration
 
