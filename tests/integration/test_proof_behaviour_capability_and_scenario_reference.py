@@ -452,3 +452,83 @@ def test_the_gate_prompt_carries_the_pending_released_build_obligation() -> None
     assert "rests in `acceptance` after merge" in check
     assert "records it against the released build" in check
     assert "a different session replays it" in check
+
+
+def test_the_gate_prompt_reports_a_missing_reason_under_either_sub_heading() -> None:
+    """The Reason requirement is SYMMETRIC across the two declaring sub-headings.
+
+    Scenario 136's first gherkin case is a Reason-less `### Host-captured`
+    sub-heading, and the asymmetric prompt could not report it: naming only
+    `### Human-attested` leaves the host sub-heading's missing Reason
+    unreported by the one node positioned to catch what the host-side wall
+    did not.
+    """
+    check = _dod_gate_check(number=3)
+
+    assert (
+        "A `### Host-captured` or `### Human-attested` sub-heading carrying no "
+        "non-empty `Reason:` line" in check
+    )
+
+
+def test_the_gate_prompt_reports_a_proof_mode_outside_the_closed_triple() -> None:
+    """An unsupported mode is still a finding — widening the enumeration did not retire it.
+
+    The word PAIR is asserted absent from check 3 as well. Leaving it would
+    keep the contradiction alive one layer down: the enumeration would read
+    as a triple while the finding that enforces it still described two.
+    """
+    check = _dod_gate_check(number=3)
+
+    assert "A proof mode outside that closed triple" in check
+    assert "closed pair" not in check
+
+
+def test_the_gate_prompt_refuses_a_host_or_human_mode_the_sandbox_could_exercise() -> None:
+    """The too-weak refusal reaches `host_captured`, not just `human_attested`.
+
+    An assertion a published capability can exercise is `factory_captured`
+    whichever weaker mode was declared, so a refusal naming only
+    `human_attested` admits the identical mistake spelled `host_captured`.
+    The capability must be NAMED, because a refusal that cannot say which
+    surface would have captured it rests the item with a question nobody can
+    act on.
+    """
+    check = _dod_gate_check(number=3)
+
+    assert "A `host_captured` or `human_attested` assertion the sandbox could exercise" in check
+    assert "name the assertion AND the sandbox capability that makes it capturable" in check
+
+
+def test_the_gate_prompt_refuses_human_attested_an_agent_could_exercise_on_a_host() -> None:
+    """Scenario 136's last gherkin case: the host surface makes it `host_captured`.
+
+    This is the refusal the closed PAIR made unstatable. With only two modes
+    available, an assertion no sandbox can reach had nowhere to go but
+    `human_attested`, so the gate had no ground to refuse it. The finding
+    names the HOST SURFACE for the same reason the one above names the
+    capability — it is what tells the human which mode to write instead.
+    """
+    check = _dod_gate_check(number=3)
+
+    assert (
+        "A `human_attested` assertion an agent session could exercise on an operator host" in check
+    )
+    assert "name the assertion AND the host surface that makes it host-capturable" in check
+
+
+def test_the_gate_missing_capability_remedy_no_longer_defers_host_captured() -> None:
+    """Check 5's remedy is an edit the human can make NOW, not a request for future stages.
+
+    Check 5 used to hedge its own remedy against check 3's narrower
+    enumeration — "where `host_captured` is not among them, this remedy is
+    the human's request for that mode's stages rather than an edit to make
+    right now". That hedge is the written form of the contradiction, and it
+    survives any fix confined to check 3, so it is asserted gone from check 5
+    itself.
+    """
+    check = _dod_gate_check(number=5)
+
+    assert "Check 3 ACCEPTS that mode" in check
+    assert "is not among them" not in check
+    assert "rather than an edit to make right now" not in check
