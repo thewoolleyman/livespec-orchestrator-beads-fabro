@@ -532,3 +532,144 @@ def test_the_gate_missing_capability_remedy_no_longer_defers_host_captured() -> 
     assert "Check 3 ACCEPTS that mode" in check
     assert "is not among them" not in check
     assert "rather than an edit to make right now" not in check
+
+
+def test_the_capture_prompt_classifies_a_host_captured_sub_heading() -> None:
+    """Step 1's classification is where a host assertion is either seen or lost.
+
+    Capture's parse said "every other bullet has proof mode
+    `factory_captured`", so a `### Host-captured` bullet fell into the
+    factory bucket and the stage would try to capture inside the sandbox the
+    one thing the sandbox cannot reach. Asserted inside Step 1 so the worked
+    example at the bottom of the file cannot satisfy it.
+    """
+    step = _step(name="proof-capture.md", number=1)
+
+    assert "Bullets under a `### Host-captured` sub-heading have proof mode `host_captured`" in step
+    assert (
+        "bullets under a `### Human-attested` sub-heading have proof mode `human_attested`" in step
+    )
+
+
+def test_the_capture_prompt_captures_every_factory_assertion_and_no_other() -> None:
+    """EVERY factory assertion, and neither of the two kinds it must not capture.
+
+    "Only the factory ones" and "every one of them" are a pair: the first
+    stops the stage reaching for a host surface it has no route to, and the
+    second is what an incomplete record violates. The host exclusion carries
+    its reason, so the stage can tell a host assertion from a factory one it
+    merely found awkward.
+    """
+    step = _step(name="proof-capture.md", number=1)
+
+    assert "You capture ONLY the `factory_captured` assertions, and you capture EVERY one" in step
+    assert "You never attempt to capture a `host_captured` one" in step
+    assert "an agent session on a host records it after merge" in step
+
+
+def test_the_capture_record_keeps_the_host_leg_separate_from_human_attestation() -> None:
+    """Two pending legs, two headings — one heading cannot stand for both.
+
+    The legs differ in WHO owes the proof: an agent performs the host leg,
+    and no agent can perform a human attestation. A record collapsing them
+    misreports which is owed, and the acceptance pass reads those headings to
+    decide whether an `ai-only` item may close.
+    """
+    step = _step(name="proof-capture.md", number=5)
+
+    assert "pending the host leg" in step
+    assert "SEPARATE heading" in step
+    assert "pending human attestation" in step
+    assert "neither absorbs the other" in step
+
+
+def test_the_capture_prompt_denies_a_pending_host_assertion_as_an_excuse() -> None:
+    """A legitimate pending host leg discharges NOTHING on the factory side.
+
+    This is the failure the separation newly makes available: once a stage
+    may legitimately leave an assertion uncaptured, "pending the host leg"
+    becomes an attractive label for a factory assertion that was simply hard.
+    The record then reads complete while proving less than it claims.
+    """
+    step = _step(name="proof-capture.md", number=1)
+
+    assert "A pending host-captured assertion NEVER excuses an uncaptured" in step
+    assert "INCOMPLETE factory proof record" in step
+
+
+def test_the_verify_prompt_classifies_and_replays_every_factory_assertion() -> None:
+    """The replay leg parses modes independently, so it needs the same triple.
+
+    The replayer reads the Definition of Done itself rather than trusting the
+    captured record's labels — that independence is the point of the stage —
+    so a parse that knows only two modes reproduces the capture stage's bug
+    one node later, on the leg meant to catch it.
+    """
+    step = _step(name="proof-verify.md", number=1)
+
+    assert "Bullets under a `### Host-captured` sub-heading have proof mode `host_captured`" in step
+    assert "you replay EVERY one of them" in step
+
+
+def test_the_verify_record_keeps_the_host_leg_separate_from_human_attestation() -> None:
+    """The replayed record carries the same two pending headings as the capture.
+
+    The pointer and the acceptance pass index the VERIFIED record, not only
+    the captured one, so a replay that merged the two legs would undo the
+    separation at exactly the surface that decides whether the item closes.
+    """
+    step = _step(name="proof-verify.md", number=5)
+
+    assert "pending the host leg" in step
+    assert "SEPARATE heading" in step
+    assert "pending human attestation" in step
+
+
+def test_the_verify_prompt_rejects_an_incomplete_factory_record() -> None:
+    """An uncaptured factory assertion earns NEITHER verdict — the record is the defect.
+
+    Same shape as the suite-only backstop beside it, and wrong in the same
+    two directions: `not_reproduced` sends an implementer to repair code that
+    was never exercised, and `verified` certifies an assertion with no
+    published steps at all. Asserted inside Step 4, which is where the
+    verdict is chosen.
+    """
+    step = _step(name="proof-verify.md", number=4)
+
+    assert "has NOT thereby discharged any `factory_captured` assertion" in step
+    assert "INCOMPLETE factory proof record" in step
+    assert "is still `not_reproduced`" in step
+
+
+def test_the_review_prompt_accepts_a_host_captured_assertion_listed_as_pending() -> None:
+    """A correctly-pending host assertion is complete, not a finding.
+
+    Without this the separation over-applies in the refusing direction: the
+    reviewer, told the factory must capture every assertion, would block the
+    one record shape Scenario 136 requires and send a correct run back
+    through a capture it cannot perform.
+    """
+    section = _review_proof_section()
+
+    assert "names every `host_captured` assertion as pending the host leg" in section
+    assert "never a finding on its own" in section
+
+
+def test_the_review_prompt_blocks_an_incomplete_factory_record_beside_a_pending_host_leg() -> None:
+    """Severity and route, on the record that hides an uncaptured factory assertion.
+
+    The severity token is the assertion: this prompt's severity section tells
+    the reviewer to DEFAULT TO ADVISORY, so a finding stated without
+    `[BLOCKING]` would be sorted advisory and reach `pr` with the proof
+    unexercised. The route is named for the same reason the suite-only
+    finding names it — capture, not fix, is what is owed.
+    """
+    section = _review_proof_section()
+
+    assert "INCOMPLETE factory proof record" in section
+    incomplete = section.index("INCOMPLETE factory proof record")
+    assert "[BLOCKING]" in section[incomplete : incomplete + 400]
+    assert (
+        "blocking even when every host-captured assertion is correctly listed as pending" in section
+    )
+    assert "re-enters `proof_capture`" in section

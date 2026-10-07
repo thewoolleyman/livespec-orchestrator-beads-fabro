@@ -61,11 +61,22 @@ round re-earns a green janitor and therefore re-captures, so an older record
 describes a tree that no longer exists.
 
 Each `- ` bullet of the `## Definition of Done` section is one assertion.
-Bullets under a `### Human-attested` sub-heading have proof mode
-`human_attested`; every other bullet has proof mode `factory_captured`. You
-replay ONLY the `factory_captured` assertions — a human attests the others
-on the same pull request later — but you MUST still list them in your own
-record under the heading named in Step 5.
+The declaration is POSITIONAL.
+Bullets under a `### Host-captured` sub-heading have proof mode
+`host_captured`; bullets under a `### Human-attested` sub-heading have proof
+mode `human_attested`; every other bullet has proof mode `factory_captured`.
+
+You replay ONLY the `factory_captured` assertions, and you replay EVERY one
+of them. An agent session on an operator host records and replays the
+`host_captured` ones against the released build after merge, and a human
+attests the `human_attested` ones on the same pull request later; you MUST
+still list both kinds in your own record, under the TWO SEPARATE headings
+named in Step 5.
+
+Read those modes off the Definition of Done YOURSELF rather than trusting
+the captured record's labels. Being a stranger to the capture is the whole
+value of this leg, and a mode is exactly the kind of thing the capture can
+have got wrong.
 
 Keep the section's own order. You publish per assertion in **Definition of
 Done order**, exactly as the captured record does, because the post-merge
@@ -153,19 +164,35 @@ There are exactly two:
 - **`not_reproduced`** — at least one did not. Name EACH assertion that did
   not reproduce, the step it failed at, and what you observed instead.
 
-`human_attested` assertions never affect the verdict; they are listed as
-pending, not graded.
+`host_captured` and `human_attested` assertions never affect the verdict;
+they are listed as pending — under their two separate headings — not graded.
+A captured record that lists a host-captured assertion as pending the host
+leg has NOT thereby discharged any `factory_captured` assertion, and the
+verdict you publish is about the factory ones alone.
 
-### The one record shape that earns NEITHER verdict
+### The record shapes that earn NEITHER verdict
 
-A record whose proof of a behavioural assertion is **test-suite output
-alone** gets no verdict from you at all. The reviewer is supposed to have
-blocked it; you are the backstop for the case where it got through.
+Two shapes get no verdict from you at all. The reviewer is supposed to have
+blocked each of them; you are the backstop for the case where one got
+through.
+
+The first is a record whose proof of a behavioural assertion is
+**test-suite output alone**.
+
+The second is an **INCOMPLETE factory proof record**: one that leaves a
+`factory_captured` assertion with no capture — absent from the record
+entirely, or present with no reproduction steps and no proof. Judge this
+against the Definition of Done you parsed in Step 1, never against the set
+of assertions the record happens to list, because an assertion the record
+omits is invisible to any check that reads only the record. A correctly
+pending host-captured or human-attested assertion is NOT this shape — those
+are legitimately uncaptured, and a record carrying them is complete when
+every factory assertion is captured.
 
 End through the structured needs-human ending naming that assertion, as a
 JSON object on the last line of your reply:
 
-    {"outcome": "failed", "failure_reason": "<the assertion; that its published proof is test-suite output alone and exercises no behaviour>"}
+    {"outcome": "failed", "failure_reason": "<the assertion; that its published proof is test-suite output alone and exercises no behaviour, or that no capture of it was published at all>"}
 
 You **MUST NOT publish `not_reproduced`** for it and you **MUST NOT publish
 `verified`** for it. Both are wrong, in opposite directions, because the
@@ -173,14 +200,19 @@ You **MUST NOT publish `not_reproduced`** for it and you **MUST NOT publish
 `fix` and sends an implementer to repair code that may be perfectly correct,
 while `verified` certifies a behaviour nobody exercised and lets it reach
 `pr`. Replaying the suite run faithfully — which you could — would produce
-the same passing output and prove the same nothing.
+the same passing output and prove the same nothing; and an assertion with no
+published steps gives you nothing to replay at all, so neither verdict is a
+replay result.
 
 Keep this NARROW. It fires on the published record's SHAPE, never on a replay
 that went badly: a step you could not follow, an observation that differed
 from the stated expectation, a missing program source **is still
 `not_reproduced`**, exactly as before. Reading this section as "anything I
 cannot reproduce rests the item" would retire that verdict and the fix loop
-with it.
+with it. The discriminator is whether there were STEPS TO REPLAY: steps that
+ran and did not reproduce are `not_reproduced`; steps that prove nothing, or
+that were never published for an assertion the Definition of Done requires,
+are a defect in the record.
 
 ## Step 5 — publish the record
 
@@ -211,9 +243,14 @@ The body then carries, **per assertion in Definition of Done order**:
 5. Whether that assertion reproduced. On a `not_reproduced` record this is
    the load-bearing line: the acceptance pass reads it per assertion.
 
-When this item has any `human_attested` assertions, the record MUST also
-carry a heading stating that those assertions are **pending human
-attestation**, listing each of them.
+When this item has any `host_captured` assertions, the record MUST also
+carry a heading stating that those assertions are **pending the host leg**,
+listing each of them. When it has any `human_attested` assertions, the
+record MUST carry a SEPARATE heading stating that those are **pending human
+attestation**, listing each of them. Where the item has both, both headings
+appear; they name different legs, owed by different parties, and the
+pointer and the post-merge acceptance pass read THIS record to decide what
+the item is still waiting on.
 
 A worked shape, for an item with one reproducing assertion and one that did
 not:

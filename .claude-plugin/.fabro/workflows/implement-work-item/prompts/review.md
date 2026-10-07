@@ -65,8 +65,28 @@ Judge the record on three things, in the work-item's own scope:
   this a finding where the assertion's own subject IS a test, a check or a
   gate: suite output is the correct proof for exactly that item.
 
-A record that names every `human_attested` assertion as pending attestation
-is correct and complete — the factory is not meant to have captured those.
+A record that names every `host_captured` assertion as pending the host leg,
+and every `human_attested` assertion as pending attestation, under those two
+SEPARATE headings, is correct and complete for those assertions — the factory
+is not meant to have captured either kind. A host-captured assertion listed as
+pending is a LEGITIMATE pending leg and is **never a finding on its own**: an
+agent session on an operator host records it against the released build after
+merge, and a different session replays it. Blocking it would send a correct run
+back through a capture no sandbox can perform.
+
+### An incomplete factory proof record is `[BLOCKING]`
+
+A pending host leg excuses nothing else. A record that leaves any
+`factory_captured` assertion with no capture — absent from the record, or
+listed with no reproduction steps and no proof — is an **INCOMPLETE factory
+proof record** and is `[BLOCKING]`. It is **blocking even when every
+host-captured assertion is correctly listed as pending** the host leg, and
+even when the code is perfect. Check the record against the Definition of
+Done's own assertion list, not against the set of assertions the record
+chose to mention: an omitted assertion is invisible to any reading that
+starts from the record. Name each uncaptured `factory_captured` assertion;
+a blocking finding **re-enters `proof_capture`** through the review-fix
+route, which is where the missing capture is owed.
 
 ### A record older than the tree is `[BLOCKING]`
 
