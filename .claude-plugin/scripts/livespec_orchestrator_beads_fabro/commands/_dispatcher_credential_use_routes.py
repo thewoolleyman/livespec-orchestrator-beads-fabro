@@ -53,6 +53,18 @@ brackets or comments. `parse_dot_graph` tokenizes properly and merges repeated
 declarations last-wins, which is the engine's own semantics, so the attributes
 graded here are the EFFECTIVE ones.
 
+AND A NODE'S BACKEND IS NOT NECESSARILY WRITTEN ON THE NODE, which is the second
+unsoundness a control found in this module. The pinned engine applies the graph's
+`model_stylesheet` to every property a node leaves undeclared, and `backend` is
+one of them, so `backend: acp` can arrive from a CSS-like rule. Keyed on the
+literal attribute, this module read a stylesheet-selected ACP node as an ordinary
+command node: removing only `implement`'s explicit `backend="acp"` from the
+shipped graph, pointing its `acp.command` at a literal and adding
+`model_stylesheet="#implement { backend: acp; }"` left the dispatch ADMITTED while
+the engine would launch the literal unguarded. `nodes_with_effective_backend`
+resolves that ladder -- and refuses an unreadable stylesheet or an undecidable
+shape selector -- so the backend graded here is the EFFECTIVE one.
+
 AND AN UNPARSEABLE GRAPH IS A REFUSAL, not an empty one. The reader it replaced was
 total by construction -- a text it recognised nothing in yielded an empty graph --
 which for this question means "no ACP nodes to check" and therefore admission. A
@@ -66,10 +78,14 @@ caller's, and it is owed exactly when a Codex credential is projected.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._acp_workflow_graph import ACP_BACKEND
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
+from livespec_orchestrator_beads_fabro.commands._dispatcher_graph_stylesheet import (
+    nodes_with_effective_backend,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import workflow_graph_path
 
 __all__: list[str] = [
@@ -113,41 +129,68 @@ def unguardable_launch_refusal(*, graph_text: str, adapter_inputs: frozenset[str
             f"the selected workflow graph could not be parsed, so this dispatch "
             f"cannot establish how its coding agents launch: {graph}. {_GUIDANCE}"
         )
-    for node, attributes in sorted(graph.nodes.items()):
-        # The EFFECTIVE attributes, merged across every declaration of this node.
+    nodes = nodes_with_effective_backend(graph=graph)
+    if isinstance(nodes, str):
+        return (
+            f"the selected workflow graph's effective backends could not be "
+            f"established, so this dispatch cannot enumerate its coding-agent "
+            f"launches: {nodes}. {_GUIDANCE}"
+        )
+    for node, attributes in sorted(nodes.items()):
+        # The EFFECTIVE attributes: merged across every declaration of this node,
+        # and carrying the backend a `model_stylesheet` supplies when the node
+        # declares none of its own.
         if attributes.get("backend") != ACP_BACKEND:
             continue
-        unrecognised = sorted(
-            key
-            for key in attributes
-            if key.startswith(_ACP_ATTRIBUTE_PREFIX) and key != _LAUNCH_ATTRIBUTE
+        refusal = _node_launch_refusal(
+            node=node, attributes=attributes, adapter_inputs=adapter_inputs
         )
-        if unrecognised:
-            return (
-                f"ACP node {node!r} declares {', '.join(unrecognised)}, which the "
-                f"credential-use guard does not wrap. {_GUIDANCE}"
-            )
-        command = attributes.get(_LAUNCH_ATTRIBUTE)
-        if command is None:
-            return (
-                f"ACP node {node!r} declares no {_LAUNCH_ATTRIBUTE}, so this "
-                f"dispatch cannot establish how it launches. {_GUIDANCE}"
-            )
-        match = _TEMPLATED_INPUT_RE.match(command.strip())
-        if match is None:
-            return (
-                f"ACP node {node!r} declares a literal {_LAUNCH_ATTRIBUTE} "
-                f"({command!r}), which does not consume a wrapped adapter input, so "
-                f"its launch would not run behind the guard. {_GUIDANCE}"
-            )
-        name = match.group("name")
-        if name not in adapter_inputs:
-            wrapped = ", ".join(sorted(adapter_inputs)) or "none"
-            return (
-                f"ACP node {node!r} launches from workflow input {name!r}, which "
-                f"this dispatch did not wrap, so it would run the workflow's own "
-                f"unwrapped default. Wrapped inputs: {wrapped}. {_GUIDANCE}"
-            )
+        if refusal is not None:
+            return refusal
+    return None
+
+
+def _node_launch_refusal(
+    *, node: str, attributes: Mapping[str, str], adapter_inputs: frozenset[str]
+) -> str | None:
+    """Grade ONE ACP node's declared launch, or None when the guard reaches it.
+
+    Split from the enumeration above so each function answers one question: that one
+    decides WHICH nodes launch a coding agent, this one decides whether a given
+    launch is reachable by the wrap. Every refusal names the node, because the
+    caller reports only the first and an unnamed one is not actionable.
+    """
+    unrecognised = sorted(
+        key
+        for key in attributes
+        if key.startswith(_ACP_ATTRIBUTE_PREFIX) and key != _LAUNCH_ATTRIBUTE
+    )
+    if unrecognised:
+        return (
+            f"ACP node {node!r} declares {', '.join(unrecognised)}, which the "
+            f"credential-use guard does not wrap. {_GUIDANCE}"
+        )
+    command = attributes.get(_LAUNCH_ATTRIBUTE)
+    if command is None:
+        return (
+            f"ACP node {node!r} declares no {_LAUNCH_ATTRIBUTE}, so this "
+            f"dispatch cannot establish how it launches. {_GUIDANCE}"
+        )
+    match = _TEMPLATED_INPUT_RE.match(command.strip())
+    if match is None:
+        return (
+            f"ACP node {node!r} declares a literal {_LAUNCH_ATTRIBUTE} "
+            f"({command!r}), which does not consume a wrapped adapter input, so "
+            f"its launch would not run behind the guard. {_GUIDANCE}"
+        )
+    name = match.group("name")
+    if name not in adapter_inputs:
+        wrapped = ", ".join(sorted(adapter_inputs)) or "none"
+        return (
+            f"ACP node {node!r} launches from workflow input {name!r}, which "
+            f"this dispatch did not wrap, so it would run the workflow's own "
+            f"unwrapped default. Wrapped inputs: {wrapped}. {_GUIDANCE}"
+        )
     return None
 
 
