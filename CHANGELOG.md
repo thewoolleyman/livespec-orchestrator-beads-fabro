@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.173.7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.173.6...v0.173.7) (2026-10-07)
+
+
+### Bug Fixes
+
+* **dod-gate:** admit a justified Host-captured assertion and keep its mode ([fe9c4f0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fe9c4f0b1717ecb5c32d83c10a321319d61ed64b))
+* **dod-gate:** refuse unsupported modes, missing Reasons and weaker declarations ([38127d7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/38127d71b2593e093afeccdd17bd5ed5d2a2892b))
+* **proof-stages:** hold a declared host assertion pending apart from human attestation ([c0c5adf](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c0c5adf189ea743d5742f2e56fef450e3162112f))
+* **proof-verify:** keep the no-verdict ending to the suite-only shape ([dd3435f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/dd3435f5d21f3c0b9c1fb9acf9010732c639f047))
+* **review:** require a shown per-assertion factory proof coverage enumeration ([ad4d5c9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ad4d5c97b1fdca19f97efdcbd0a949850213d073))
+
 ## [0.173.6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.173.5...v0.173.6) (2026-10-06)
 
 
