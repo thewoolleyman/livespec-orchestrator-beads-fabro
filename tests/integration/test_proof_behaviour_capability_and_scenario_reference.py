@@ -104,6 +104,24 @@ def _review_proof_section() -> str:
     return prompt[start : prompt.index("## The lens —", start)]
 
 
+def _review_output_section() -> str:
+    """The review prompt's required-output section, collapsed.
+
+    A SECOND bounded slice is needed beside `_review_proof_section` because
+    the two sections answer different questions, and the measured failure
+    lives in the gap between them. The proof section states the rule; this
+    one states what the reviewer must EMIT. A requirement to compare the
+    record against the Definition of Done is satisfiable in silence when it
+    appears only in the prose that states the rule, so asserting it there
+    cannot distinguish a reviewer who performed the comparison from one who
+    skipped it. Bounded by its own H2 and the next so a needle found here is
+    part of the output contract rather than a sentence from the lens.
+    """
+    prompt = _prompt(name="review.md")
+    start = prompt.index("## Output (required, exact)")
+    return prompt[start : prompt.index("## Ending the turn —", start)]
+
+
 def test_the_gate_prompt_resolves_the_capability_set_from_both_sources_in_order() -> None:
     """The published file is the authority; the committed mirror is the fallback.
 
@@ -707,3 +725,87 @@ def test_the_verify_prompt_keeps_the_no_verdict_ending_to_the_suite_only_shape()
     assert "An INCOMPLETE factory proof record is `not_reproduced`" in step
     assert "This is the ONLY shape that earns neither" in step
     assert "Two shapes get no verdict" not in step
+
+
+def test_the_review_prompt_requires_the_record_comparison_be_performed_and_shown() -> None:
+    """The incomplete-record check is a performed enumeration, not a rule to remember.
+
+    WHY THE STATED RULE WAS NOT ENOUGH, measured. `review.md` already carries
+    the rule and even carries the trap — "Check the record against the
+    Definition of Done's own assertion list, not against the set of
+    assertions the record chose to mention" — and the stage was still
+    observed APPROVING an incomplete factory proof record: the
+    `review-incomplete-factory-v4b` case of this item's own capture, whose
+    supplied Definition of Done carried two `factory_captured` assertions
+    while the supplied record captured only the first and correctly listed
+    the host and human legs as pending. Two sibling observations of the
+    identical condition DID block, one of them naming the omitted assertion,
+    so this is a reliability failure of a stated rule and not a missing rule.
+
+    WHAT MAKES A PROSE RULE UNRELIABLE HERE, and therefore what this case
+    asserts. The rule is satisfiable in silence: a reviewer who never
+    compares the record against the Definition of Done emits output that is
+    byte-indistinguishable from one who compared and found nothing wrong —
+    both produce `approve` and no finding. The sibling `proof_verify` stage
+    reproduces the same rule deterministically, and the difference is not
+    emphasis but ARTIFACT: its record format requires a per-assertion body,
+    so a skipped comparison is visible as a missing section. This case
+    requires the review to carry the same shape, and requires the ABSENCE of
+    the enumeration to be a defect in its own right — without that last
+    clause the enumeration is merely encouraged, which is the state measured
+    to fail.
+
+    The needles are scoped to the proof section rather than the whole prompt
+    because a prompt that mentioned an enumeration anywhere else — in the
+    lens, or in the severity section — would satisfy a whole-file probe while
+    the reviewer judging the record read nothing about it.
+    """
+    section = _review_proof_section()
+
+    assert "REQUIRED, SHOWN enumeration" in section
+    assert "A review that emits no coverage enumeration is itself incomplete" in section
+    assert "never from the set of assertions the record chose to mention" in section
+
+
+def test_the_review_output_contract_carries_the_per_assertion_coverage_enumeration() -> None:
+    """The enumeration is an emitted artifact, with both answers expressible.
+
+    WHY THE OUTPUT SECTION IS THE OPERATIVE ONE. An instruction to enumerate
+    that lives only where the rule is stated leaves the reviewer's OUTPUT
+    unchanged, and the output is the only thing the next stage and a human
+    ever see. Requiring the enumeration in the section headed `## Output
+    (required, exact)` is what converts the comparison from a private step
+    into a checkable one, so this case reads the output contract and not the
+    prose above it.
+
+    WHY A LINE PER ASSERTION, INCLUDING THE PASSING ONES. An enumeration that
+    listed only the uncaptured assertions would be satisfied by emitting
+    nothing on the very record that motivated it — a reviewer who never
+    looked would print an empty list, which is exactly what a clean record
+    also produces. Requiring a line for every `factory_captured` assertion,
+    in Definition of Done order, is what makes the two cases differ on the
+    page. Both tokens are asserted for the same reason the severity token is
+    asserted elsewhere in this file: a format that can only express `yes` is
+    not a check.
+
+    WHY THE PENDING LEGS ARE ASSERTED HERE TOO. This is the over-application
+    guard, and it is the direction a new mandatory enumeration is most likely
+    to break. Scenario 136 requires a correctly-pending `host_captured` or
+    `human_attested` assertion to draw no finding; a coverage enumeration
+    that recognised only `captured: yes` / `captured: NO` would press the
+    reviewer to grade a legitimately-uncaptured host leg as missing and block
+    the one record shape the scenario mandates — sending a correct run back
+    through a capture no sandbox can perform. The two legs must appear on the
+    enumeration under their own separate labels, and be stated not to be
+    findings.
+    """
+    section = _review_output_section()
+
+    assert "Factory proof coverage:" in section
+    assert "captured: yes" in section
+    assert "captured: NO" in section
+    assert "Every `factory_captured` assertion gets a line" in section
+    assert "requires a matching `[BLOCKING]` finding" in section
+    assert "pending host leg" in section
+    assert "pending human attestation" in section
+    assert "neither is a finding on its own" in section
