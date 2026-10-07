@@ -555,3 +555,63 @@ def test_a_dispatch_selecting_a_guardable_graph_still_materializes(
     error = _materialize_with(graph=_GUARDABLE, tmp_path=tmp_path, monkeypatch=monkeypatch)
     assert error is None, error
     assert (tmp_path / "overlay.toml").exists()
+
+
+def test_a_dispatch_selecting_a_styled_literal_launch_is_refused_before_launch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The styled route reaches the REAL materializer, not just the decision above.
+
+    The stylesheet cases earlier in this file grade `unguardable_launch_refusal`
+    directly, which establishes that the decision is right and NOT that a real
+    dispatch asks it about a styled graph -- the distinction this repository keeps
+    paying for elsewhere ("an argv-transform unit test is not proof that those
+    production routes invoke it"). So this drives `materialize_overlay` over a graph
+    whose ACP-ness exists ONLY in its `model_stylesheet`.
+
+    Pre-fix this returned no refusal at all: the measured control had
+    `unguardable_launch_refusal` returning None for this exact shape, so the
+    materializer had nothing to refuse and wrote the overlay.
+    """
+    error = _materialize_with(
+        graph=_STYLED_TEMPLATED.replace('"{{ inputs.implement_adapter }}"', '"/usr/bin/true"'),
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+    )
+    assert error is not None, "a styled literal launch materialized an overlay"
+    assert "implement" in error
+    assert "literal acp.command" in error
+    assert not (tmp_path / "overlay.toml").exists()
+
+
+def test_a_dispatch_selecting_a_styled_config_launch_is_refused_before_launch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other engine-accepted launch form, styled, at the same seam."""
+    error = _materialize_with(
+        graph=_STYLED_TEMPLATED.replace(
+            'acp.command="{{ inputs.implement_adapter }}"',
+            'acp.config="{\\"command\\": \\"/usr/bin/true\\"}"',
+        ),
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+    )
+    assert error is not None, "a styled acp.config launch materialized an overlay"
+    assert "implement" in error
+    assert "acp.config" in error
+    assert not (tmp_path / "overlay.toml").exists()
+
+
+def test_a_dispatch_selecting_a_styled_templated_launch_still_materializes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """THE STYLED WIRING POSITIVE CONTROL, and the one that makes the pair meaningful.
+
+    A stylesheet is not itself a defect: a repository may legitimately select its
+    backends that way, and such a dispatch must still run. Without this, both styled
+    refusals above would be satisfied by refusing every graph carrying a
+    `model_stylesheet` at all.
+    """
+    error = _materialize_with(graph=_STYLED_TEMPLATED, tmp_path=tmp_path, monkeypatch=monkeypatch)
+    assert error is None, error
+    assert (tmp_path / "overlay.toml").exists()
