@@ -33,6 +33,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria 
     CriterionCheck,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    PROOF_MODE_HOST_CAPTURED,
     PROOF_MODE_HUMAN_ATTESTED,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_leg import HostLeg
@@ -108,6 +109,32 @@ class ProofLeg:
     def host_verified_record(self) -> ProofRecord | None:
         """The `host_verified` record this pass rested on, for the pointer to cite."""
         return self.host.verified_record
+
+    @property
+    def host_captured_only(self) -> bool:
+        """Whether EVERY assertion this item declares is `host_captured`.
+
+        The question the pointer write asks before it may cite a HOST record as the
+        record the merge was judged against. It is deliberately a property of the
+        DECLARED modes rather than of which records happened to be readable: the
+        item's Definition of Done is what decides whether a factory `verified`
+        record is owed at all, and a run whose factory record was merely
+        unattributable still owes one.
+
+        That is what keeps the factory attribution fail-closed. A MIXED item whose
+        `verified` record could not be attributed has `factory_captured` assertions
+        with no evidence — they are unevidenced, the pass reaches NEEDS_ATTENTION,
+        and promoting a host record into its pointer would advertise provenance for
+        a merge whose factory leg nothing graded.
+
+        An item with NO assertions answers False rather than True, which is the
+        same fail-closed direction: `all()` over an empty sequence is vacuously
+        true, and a leg carrying no assertions has no host evidence to be the whole
+        of.
+        """
+        return bool(self.assertions) and all(
+            one.proof_mode == PROOF_MODE_HOST_CAPTURED for one in self.assertions
+        )
 
     @property
     def pending_human_attested(self) -> tuple[str, ...]:
