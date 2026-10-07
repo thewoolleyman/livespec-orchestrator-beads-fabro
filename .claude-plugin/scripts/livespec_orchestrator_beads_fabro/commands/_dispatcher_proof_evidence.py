@@ -72,7 +72,17 @@ WHY THE CONTAINMENT READER DEFAULTS TO NOT-CHECKED. `proof_leg` is pure and take
 containment answer as a callable; its default answers `None` for every build, which
 the host leg treats as a refusal. So a caller that forgot to supply one PARKS the
 item rather than closing it on a build nothing compared — the fail-closed direction.
-`read_proof_leg` is the one production caller and always supplies one.
+`read_proof_leg` is the one production caller and always supplies one — on EVERY arm
+that read records at all, which is the host-only repair. The empty-identifier arm
+used to return without a reader, on the reasoning that an unattributable dispatch is
+owed no evidence. That reasoning holds for the FACTORY leg and is false for the host
+one: `proof_leg` deliberately does not filter host records by `run_ids`, so the
+factory identifiers say nothing about whether a published replay names a build
+containing the merge. A host-only item therefore rested in `acceptance` for ever,
+with an independent `host_verified` replay standing on its pull request, refused for
+a containment comparison nobody had made — and that refusal reads IDENTICALLY to the
+one a genuinely unreadable comparison earns, so nothing in the record said which had
+happened.
 
 This module performs the ONE forge read of the records, and it is deliberately
 the only one in the acceptance path: the pointer write consumes the same
@@ -202,9 +212,24 @@ def read_proof_leg(
             reason=f"pull request #{pr_number} comments unreadable",
         )
     run_ids = dispatch.run_ids
+    # Resolved BEFORE the identifier arm splits, because the HOST leg does not
+    # depend on the factory identifiers at all: a host replay carries a session
+    # identity, `proof_leg` deliberately does not filter host records by
+    # `run_ids`, and so an unattributable factory dispatch says nothing about
+    # whether a published replay names a build containing the merge. Returning on
+    # that arm with no reader left the default "not checked" answer standing, which
+    # the host leg treats as a refusal — so a host-only item whose merge named no
+    # attributable run rested in `acceptance` for ever on a comparison nobody made.
+    # The reader is lazy and memoized, so building it on an arm that never asks
+    # about a build costs no forge round trip.
+    contains_merge = containment_reader(repo=repo, merge_sha=outcome.merge_sha, runner=runner)
     if not run_ids:
         return proof_leg(
-            criteria=criteria, records=records, run_ids=(), reason="merging run id unavailable"
+            criteria=criteria,
+            records=records,
+            run_ids=(),
+            reason="merging run id unavailable",
+            contains_merge=contains_merge,
         )
     return proof_leg(
         criteria=criteria,
@@ -215,7 +240,7 @@ def read_proof_leg(
         # which dispatch the pass was asking about to tell a stale record from an
         # unresolved dispatch.
         reason=f"pull request #{pr_number} records read for run {' or '.join(run_ids)}",
-        contains_merge=containment_reader(repo=repo, merge_sha=outcome.merge_sha, runner=runner),
+        contains_merge=contains_merge,
     )
 
 
