@@ -131,7 +131,7 @@ outside existing authority routes to a person.
 ## Required released-host scenario
 
 Provide one runnable isolated scenario through the normally installed releases:
-start an authorized detached operation from a real coordinator session, register
+start an authorized detached operation from a real Codex coordinator in Herdr, register
 the obligation at launch, deliberately omit wait registration, end the owning
 turn, and let the target gate fail later. Prove the independent consumer observes
 the failure, refreshes the stale diagnostic pointer and executes the correct
@@ -155,3 +155,10 @@ recovery latency, overdue age, retry/duplicate/fencing counts and coverage state
 as typed measurements. Keep all controls locally effective with telemetry down.
 Independent replay against released installations is mandatory. Closing the
 sibling referral, or merely writing this scenario, cannot discharge the plan.
+
+The discriminating incident surface is real Codex/Herdr turn completion, including
+FINAL, through normally installed releases. A Claude Stop hook or a simulated
+session cannot satisfy this proof. Label Claude, pi and any other runtime results
+independently. Missing Codex automatic hooks do not waive launch registration
+and independent consumption on its no-wait path: if that path is unsupported,
+record the actual incident as uncovered and leave this assertion unmet.
