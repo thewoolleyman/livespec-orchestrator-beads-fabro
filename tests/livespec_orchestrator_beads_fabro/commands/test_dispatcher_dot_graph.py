@@ -181,3 +181,64 @@ def test_an_edge_with_no_destination_is_refused() -> None:
 
 def test_an_edge_cut_off_after_its_arrow_is_refused() -> None:
     assert "no destination" in _refusal(text="digraph G {\n  a ->")
+
+
+# --- Accumulated class membership ------------------------------------------------
+#
+# A node's `class` ATTRIBUTE is last-wins like every other attribute, but its class
+# MEMBERSHIP is not: the pinned `parser/semantic.rs` `process_node` overwrites
+# `node.attrs` per declaration while only ever PUSHING onto `node.classes`, which it
+# never clears. `transforms/stylesheet.rs` matches `Selector::Class` against that
+# accumulated list, so the two diverge the moment a node is declared twice -- and a
+# consumer reading membership off the final attribute silently loses whatever only
+# an earlier declaration carried. `node_classes` is that accumulation.
+
+
+def test_a_single_declaration_splits_its_class_attribute() -> None:
+    """The ordinary case: commas separate, surrounding space is trimmed."""
+    graph = _parsed(text='digraph G {\n  a [class="planning , code"]\n}\n')
+    assert graph.node_classes["a"] == ("planning", "code")
+
+
+def test_class_membership_accumulates_across_declarations() -> None:
+    """THE REGRESSION: the attribute is last-wins, the membership is a union.
+
+    `a`'s final `class` attribute is `replacement`, but the engine still holds
+    `retained` -- so both must be here, in first-seen order.
+    """
+    graph = _parsed(text='digraph G {\n  a [class="retained"]\n  a [class="replacement"]\n}\n')
+    assert graph.nodes["a"]["class"] == "replacement", "the ATTRIBUTE is still last-wins"
+    assert graph.node_classes["a"] == ("retained", "replacement")
+
+
+def test_a_repeated_class_is_not_duplicated() -> None:
+    """`add_class_to_node` pushes only what the list does not already contain.
+
+    The empty part is in the same fixture on purpose: it exercises the skip arm
+    with another part still to come after it.
+    """
+    graph = _parsed(text='digraph G {\n  a [class="code,,code,review"]\n}\n')
+    assert graph.node_classes["a"] == ("code", "review")
+
+
+def test_a_later_declaration_without_a_class_attribute_retains_the_earlier_classes() -> None:
+    """The engine re-reads the MERGED attribute, so an omission adds nothing new."""
+    graph = _parsed(text='digraph G {\n  a [class="code"]\n  a [timeout="60s"]\n}\n')
+    assert graph.node_classes["a"] == ("code",)
+
+
+def test_an_empty_class_attribute_clears_nothing() -> None:
+    """`class=""` contributes no part, and cannot remove a membership already held.
+
+    This is precisely why membership cannot be reconstructed from the attribute:
+    here the final attribute names NO class while the engine still holds one.
+    """
+    graph = _parsed(text='digraph G {\n  a [class="code"]\n  a [class=""]\n}\n')
+    assert graph.nodes["a"]["class"] == ""
+    assert graph.node_classes["a"] == ("code",)
+
+
+def test_a_node_declaring_no_class_has_no_entry() -> None:
+    """Absence is absence; a caller reads it as the empty membership."""
+    graph = _parsed(text='digraph G {\n  a [timeout="60s"]\n}\n')
+    assert "a" not in graph.node_classes

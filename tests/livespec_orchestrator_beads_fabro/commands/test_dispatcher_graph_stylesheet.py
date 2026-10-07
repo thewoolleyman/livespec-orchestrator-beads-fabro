@@ -309,3 +309,48 @@ def test_a_class_name_may_carry_digits_and_hyphens() -> None:
         text=_styled(stylesheet=".loop-a2 { backend: acp; }", node='a [class="loop-a2"]')
     )
     assert resolved["a"]["backend"] == "acp"
+
+
+# --- Class membership comes from the parser's accumulation -----------------------
+#
+# Not from the node's final `class` attribute. The engine overwrites `node.attrs`
+# per declaration but only pushes onto `node.classes`, and `Selector::Class`
+# matches the latter -- so the two disagree whenever a node is declared twice, and
+# reconstructing membership from the attribute drops the earlier classes.
+
+
+def test_a_class_only_an_earlier_declaration_carried_still_selects() -> None:
+    """THE REGRESSION, at this module's own seam.
+
+    `a`'s final `class` attribute is `replacement`; its accumulated membership is
+    `[retained, replacement]`. A `.retained` rule must still reach it.
+    """
+    resolved = _resolved(
+        text=(
+            'digraph G {\n  graph [model_stylesheet=".retained { backend: acp; }"]\n'
+            '  a [class="retained"]\n  a [class="replacement"]\n  a -> b\n}\n'
+        )
+    )
+    assert resolved["a"]["backend"] == "acp"
+
+
+def test_a_class_only_a_later_declaration_carried_also_selects() -> None:
+    """The mirror direction, so a first-wins read cannot pass the case above."""
+    resolved = _resolved(
+        text=(
+            'digraph G {\n  graph [model_stylesheet=".replacement { backend: acp; }"]\n'
+            '  a [class="retained"]\n  a [class="replacement"]\n  a -> b\n}\n'
+        )
+    )
+    assert resolved["a"]["backend"] == "acp"
+
+
+def test_a_class_no_declaration_ever_carried_does_not_select() -> None:
+    """The negative half: accumulation is a union of what was declared, not a wildcard."""
+    resolved = _resolved(
+        text=(
+            'digraph G {\n  graph [model_stylesheet=".absent { backend: acp; }"]\n'
+            '  a [class="retained"]\n  a [class="replacement"]\n  a -> b\n}\n'
+        )
+    )
+    assert "backend" not in resolved["a"]
