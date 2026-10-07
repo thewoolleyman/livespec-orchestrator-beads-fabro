@@ -148,6 +148,11 @@
   // accepted by typed cross-tenant `depends_on` refs so the Dispatcher
   // readiness gate can fail closed on still-open sibling work.
   "cross_repo_targets": {
+    "livespec-overseer": {
+      "github_url": "https://github.com/thewoolleyman/livespec-overseer",
+      "local_clone": "/data/projects/livespec-overseer",
+      "default_branch": "master"
+    },
     "livespec-dev-tooling": {
       "github_url": "https://github.com/thewoolleyman/livespec-dev-tooling",
       "local_clone": "/data/projects/livespec-dev-tooling",
