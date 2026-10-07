@@ -626,13 +626,21 @@ def test_the_verify_record_keeps_the_host_leg_separate_from_human_attestation() 
 
 
 def test_the_verify_prompt_rejects_an_incomplete_factory_record() -> None:
-    """An uncaptured factory assertion earns NEITHER verdict — the record is the defect.
+    """An uncaptured factory assertion is rejected, inside Step 4 where the verdict is chosen.
 
-    Same shape as the suite-only backstop beside it, and wrong in the same
-    two directions: `not_reproduced` sends an implementer to repair code that
-    was never exercised, and `verified` certifies an assertion with no
-    published steps at all. Asserted inside Step 4, which is where the
-    verdict is chosen.
+    CORRECTION — this docstring's first version was wrong, and is kept
+    accurate here rather than quietly dropped. It claimed the incomplete
+    record was the "same shape as the suite-only backstop beside it" and so
+    earned NEITHER verdict. The ratified `proof_verify` contract does not say
+    that: it mandates `verified` when every factory assertion reproduced or
+    `not_reproduced` naming each that did not, and grants the needs-human
+    no-verdict ending to ONE shape only — a behavioural assertion whose proof
+    is test-suite output alone. An assertion with no published capture did
+    not reproduce, so it is `not_reproduced` and routes to `fix`, which
+    re-enters capture. The analogy was the error; the three assertions below
+    were never affected by it, which is why they stand unchanged.
+    `test_the_verify_prompt_keeps_the_no_verdict_ending_to_the_suite_only_shape`
+    is what now pins the routing this docstring got wrong.
     """
     step = _step(name="proof-verify.md", number=4)
 
@@ -673,3 +681,29 @@ def test_the_review_prompt_blocks_an_incomplete_factory_record_beside_a_pending_
         "blocking even when every host-captured assertion is correctly listed as pending" in section
     )
     assert "re-enters `proof_capture`" in section
+
+
+def test_the_verify_prompt_keeps_the_no_verdict_ending_to_the_suite_only_shape() -> None:
+    """The needs-human no-verdict ending covers ONE shape, and the contract names which.
+
+    The ratified `proof_verify` clause mandates `verified` when every
+    `factory_captured` assertion reproduced, or `not_reproduced` naming each
+    that did not, and grants the structured needs-human ending as a backstop
+    to exactly one record shape: a behavioural assertion whose proof is
+    test-suite output alone. Routing a MISSING capture there instead would
+    be a new human-routing policy the spec does not authorise, and it costs
+    the ratified recovery — `not_reproduced` reaches `fix`, which re-earns a
+    janitor and re-enters `proof_capture`, so the missing capture is taken.
+    A needs-human ending rests the item instead, with no route back.
+
+    The plural heading is asserted ABSENT because that is the form the
+    over-broad version took: a prompt can name the ratified route for the
+    incomplete record and still offer the no-verdict ending beside it, and
+    an agent reading two permissions takes the one that ends its turn.
+    """
+    step = _step(name="proof-verify.md", number=4)
+
+    assert "### The one record shape that earns NEITHER verdict" in step
+    assert "An INCOMPLETE factory proof record is `not_reproduced`" in step
+    assert "This is the ONLY shape that earns neither" in step
+    assert "Two shapes get no verdict" not in step
