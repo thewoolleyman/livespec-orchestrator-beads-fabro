@@ -110,22 +110,31 @@ question of fact — the spec tree above all.
    neither capture it here nor rewrite it, and that pending released-build
    obligation is part of what you are admitting.
 
-   Three ways this fails, each a finding:
-   - A `### Human-attested` sub-heading carrying no non-empty `Reason:` line
-     before its first bullet.
-   - A proof mode outside that closed pair.
-   - A `human_attested` assertion the sandbox could exercise. This is the
-     deliverable policy, and it is the one most often got wrong: behaviour of
-     this repository's own application, plugin, command-line surface, API,
-     web interface, or test suite is factory-capturable, so declaring it
-     human-attested is a finding — name the assertion AND the sandbox
-     capability that makes it capturable. Needing a write-scoped or
-     production credential is NOT a reason to declare `human_attested`;
-     such an item is host-routed and its proof is still captured
-     mechanically. A legitimate `human_attested` assertion is one whose
-     proof genuinely requires a surface outside every sandbox — a physical
-     device, a session on an external administrative console, a route to a
-     production host.
+   Four ways this fails, each a finding:
+   - A `### Host-captured` or `### Human-attested` sub-heading carrying no
+     non-empty `Reason:` line before its first bullet. Name the
+     sub-heading; the requirement is the same for both, because the Reason
+     is what makes the declaration checkable at all.
+   - A proof mode outside that closed triple.
+   - A `host_captured` or `human_attested` assertion the sandbox could
+     exercise. This is the deliverable policy, and it is the one most often
+     got wrong: behaviour of this repository's own application, plugin,
+     command-line surface, API, web interface, or test suite is
+     factory-capturable, so declaring it host-captured or human-attested is
+     a finding — name the assertion AND the sandbox capability that makes it
+     capturable. Needing a write-scoped or production credential is NOT a
+     reason to declare `human_attested`; such an item is host-routed and its
+     proof is still captured mechanically.
+   - A `human_attested` assertion an agent session could exercise on an
+     operator host. The modes are ORDERED, so an assertion no sandbox
+     capability can reach but an agent session CAN reach on an operator
+     host — the released, normally installed build, or a host surface no
+     image carries — is `host_captured`, never `human_attested`, so
+     name the assertion AND the host surface that makes it host-capturable.
+     A legitimate `human_attested` assertion is one whose proof neither a
+     sandbox capability nor an agent session on an operator host can
+     exercise — a physical device, a session on an external administrative
+     console that admits only an interactive human login.
 4. **The assertions are coherent.** This is the judgement only you can make.
    Read each assertion against the item's title, its description, and the
    **referenced heading** you resolved in step 2, then ask: could a competent
@@ -163,11 +172,9 @@ question of fact — the spec tree above all.
    - declare the assertion `host_captured`, with a `Reason:` naming the host
      surface, when its proof needs the released, normally installed build or
      a surface of an operator host that no sandbox image can carry. Check 3
-     names the modes this gate ACCEPTS today; where `host_captured` is not
-     among them, this remedy is the human's request for that mode's stages
-     rather than an edit to make right now — report it anyway, because it is
-     still the correct remedy and the human is the one who decides how to
-     sequence it;
+     ACCEPTS that mode, so this is an ordinary edit the human can make and
+     the item then passes this gate on its strength — the proof is owed on
+     a host and the stages that collect it already exist;
    - declare it `human_attested` only when no agent session, in a sandbox or
      on an operator host, can exercise the proof at all.
 
