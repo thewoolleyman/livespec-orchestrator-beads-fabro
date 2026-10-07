@@ -1,9 +1,8 @@
-"""The gate, capture, review and replay prompts under Scenarios 137, 139 and 141.
+"""The gate, capture, review and replay prompts under Scenarios 136, 137, 139 and 141.
 
-Binds the three `SPECIFICATION/scenarios.md` headings ratified in v115 that
-govern WHAT the proof stages are told to do — not how the graph routes them
-(Scenario 131 owns that) and not how a finding reaches `fix` (Scenario 138
-owns that):
+Binds the `SPECIFICATION/scenarios.md` headings that govern WHAT the proof
+stages are told to do — not how the graph routes them (Scenario 131 owns
+that) and not how a finding reaches `fix` (Scenario 138 owns that):
 
 - Scenario 139 — the gate reads the capability set the image publishes,
   falls back to the committed mirror, and reports a `factory_captured`
@@ -15,6 +14,12 @@ owns that):
   backstop does not call it `not_reproduced`.
 - Scenario 141 — the referenced scenario governs the proof, and the captured
   record names it per assertion.
+- Scenario 136 — the PROMPT half of the host-captured leg: the gate admits a
+  justified `### Host-captured` assertion and preserves the pending
+  released-build obligation, refuses the declarations the deliverable policy
+  forbids, and the capture, review and replay stages hold a declared host
+  assertion pending SEPARATELY from a human attestation while still demanding
+  every `factory_captured` assertion.
 
 WHY THE PROMPT TEXT IS THE SUBJECT. These four payloads are the deliverable:
 each node is an agent reading its prompt, so the prompt IS the implementation
@@ -54,6 +59,49 @@ def _prompt(*, name: str) -> str:
     path = _PROMPTS / name
     assert path.is_file(), path
     return re.sub(r"\s+", " ", path.read_text(encoding="utf-8"))
+
+
+def _dod_gate_check(*, number: int) -> str:
+    """One numbered check of the gate prompt's six-check list, collapsed.
+
+    WHY THE SLICE EXISTS. The closed-pair prohibition this file's Scenario 136
+    cases retire — "one of exactly `factory_captured` or `human_attested`" —
+    lives inside check 3 and nowhere else, so a whole-prompt probe for
+    `host_captured` already passes today: check 5's remedy list names the mode
+    while check 3 still refuses it. That is exactly the contradiction the
+    measured `overseer-emzwpx` gate run acted on. Scoping each needle to the
+    OPERATIVE numbered check is what makes these assertions able to return the
+    other answer; a prompt that merely mentioned the mode somewhere else would
+    fail them.
+    """
+    prompt = _prompt(name="dod-gate.md")
+    start = prompt.index(f" {number}. **")
+    return prompt[start : prompt.index(f" {number + 1}. **", start)]
+
+
+def _step(*, name: str, number: int) -> str:
+    """One numbered `## Step N — …` section of a capture or replay prompt, collapsed.
+
+    Same discipline as `_dod_gate_check`, for the same reason: the stage
+    prompts classify assertions in Step 1 and shape the record in Step 5, and
+    a needle satisfied by the worked example at the bottom of the file would
+    say nothing about the instruction the stage actually follows.
+    """
+    prompt = _prompt(name=name)
+    start = prompt.index(f"## Step {number} —")
+    return prompt[start : prompt.index(f"## Step {number + 1} —", start)]
+
+
+def _review_proof_section() -> str:
+    """The review prompt's proof-record section, collapsed.
+
+    Bounded by its own H2 and the next one so a finding asserted here is one
+    the reviewer reads while judging the record, not a sentence from the
+    severity section that follows.
+    """
+    prompt = _prompt(name="review.md")
+    start = prompt.index("## The captured Proof of Done is part of this review")
+    return prompt[start : prompt.index("## The lens —", start)]
 
 
 def test_the_gate_prompt_resolves_the_capability_set_from_both_sources_in_order() -> None:
@@ -341,3 +389,66 @@ def test_the_gate_prompt_directs_a_search_before_concluding_no_scenario_governs(
 
     assert "Search `scenarios.md`" in prompt
     assert "before concluding none does" in prompt
+
+
+def test_the_gate_prompt_accepts_the_closed_triple_of_proof_modes() -> None:
+    """Check 3's enumeration is the ratified TRIPLE, and the old PAIR is gone.
+
+    The removal is asserted, not merely the addition. A check 3 that listed
+    the third mode while still carrying "one of exactly `factory_captured` or
+    `human_attested`" reads as a contradiction, and an agent resolving a
+    contradiction picks one arm: on the measured `overseer-emzwpx` gate run it
+    picked the prohibition and rested an item whose Host-captured declaration
+    was correct.
+    """
+    check = _dod_gate_check(number=3)
+
+    assert "`factory_captured`, `host_captured` or `human_attested`" in check
+    assert "closed triple" in check
+    assert "one of exactly `factory_captured` or `human_attested`" not in check
+
+
+def test_the_gate_prompt_reads_a_host_captured_sub_heading_as_that_mode() -> None:
+    """The positional sub-heading is what DECLARES the mode, so check 3 must name it.
+
+    Both sub-headings are asserted together because the rule is positional and
+    symmetric: a check 3 naming only `### Human-attested` classifies every
+    bullet under `### Host-captured` as `factory_captured` and then refuses it
+    for a surface no sandbox provides.
+    """
+    check = _dod_gate_check(number=3)
+
+    assert "`### Host-captured` sub-heading (`host_captured`)" in check
+    assert "`### Human-attested` sub-heading (`human_attested`)" in check
+
+
+def test_the_gate_prompt_passes_a_justified_host_captured_assertion() -> None:
+    """A justified host declaration is ADMITTED, and its mode is left alone.
+
+    The pass verdict and the preservation duty are one rule. A gate that
+    admitted the item but rewrote the mode would hand the capture stage an
+    assertion it cannot capture; a gate that preserved the mode but refused
+    the item is the measured failure this work-item repairs.
+    """
+    check = _dod_gate_check(number=3)
+
+    assert "A justified `host_captured` declaration PASSES this gate" in check
+    assert "Preserve the mode exactly as declared" in check
+
+
+def test_the_gate_prompt_carries_the_pending_released_build_obligation() -> None:
+    """What the gate admits is an item with proof still OWED on a host.
+
+    Scenario 136's whole point is that admitting the assertion is not waving
+    it through: the factory lists it pending, the item rests in `acceptance`
+    after merge, and two different session identities record and replay it
+    against the released build. Each clause is asserted because dropping any
+    one of them turns the admission into exactly the wave-through the scenario
+    forbids.
+    """
+    check = _dod_gate_check(number=3)
+
+    assert "pending the host leg" in check
+    assert "rests in `acceptance` after merge" in check
+    assert "records it against the released build" in check
+    assert "a different session replays it" in check

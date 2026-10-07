@@ -85,10 +85,32 @@ question of fact — the spec tree above all.
    or your memory of the tree. Name any heading that does not resolve, with
    its exact text.
 3. **Every proof-mode declaration is valid under the deliverable policy.**
-   Each assertion's proof mode is one of exactly `factory_captured` or
-   `human_attested`. An assertion is `factory_captured` unless it appears
-   under a `### Human-attested` sub-heading inside the section. Three ways
-   this fails, each a finding:
+   Each assertion's proof mode is one of exactly `factory_captured`,
+   `host_captured` or `human_attested` — a closed triple. An assertion is
+   `factory_captured` unless it appears under a `### Host-captured`
+   sub-heading (`host_captured`) or a `### Human-attested` sub-heading
+   (`human_attested`) inside the section. The declaration is POSITIONAL:
+   the sub-heading a bullet sits under is what sets its mode, and each of
+   those two sub-headings carries, before its first bullet, a non-empty
+   `Reason:` line — under `### Host-captured` naming the host surface or
+   the released-build requirement, under `### Human-attested` naming why
+   no agent session can exercise the proof.
+
+   A `host_captured` assertion is one whose proof needs the released,
+   normally installed artifact, or a surface of an operator host that no
+   sandbox image can carry, and which an agent session can nonetheless
+   exercise without a human. **A justified `host_captured` declaration
+   PASSES this gate.** Admitting it is not waving it through: the proof is
+   still OWED, and it is owed on a host. The capture and replay stages list
+   such an assertion as **pending the host leg** rather than capturing it,
+   the item **rests in `acceptance` after merge** until that leg lands, and
+   an agent session on an operator host **records it against the released
+   build** while **a different session replays it** and publishes the
+   independent verdict. **Preserve the mode exactly as declared** — you
+   neither capture it here nor rewrite it, and that pending released-build
+   obligation is part of what you are admitting.
+
+   Three ways this fails, each a finding:
    - A `### Human-attested` sub-heading carrying no non-empty `Reason:` line
      before its first bullet.
    - A proof mode outside that closed pair.
