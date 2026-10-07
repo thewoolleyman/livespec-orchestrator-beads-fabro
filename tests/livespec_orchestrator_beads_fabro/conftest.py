@@ -27,6 +27,19 @@ from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 
 
 @pytest.fixture(autouse=True)
+def _hermetic_installed_plugin_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep source-tree unit fixtures independent of the launching installation.
+
+    A released dispatcher correctly exports its installed root to children,
+    including the post-merge janitor. These unit tests describe their own
+    checkout or set an explicit root per test, rather than the parent runtime.
+    The native launcher tests in the sibling ``tests/bin`` tree retain their
+    real inheritance behavior.
+    """
+    monkeypatch.delenv("LIVESPEC_INSTALLED_PLUGIN_ROOT", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _hermetic_fake_backend(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
     # No test may make a real ntfy POST. The dispatcher's fail-open
