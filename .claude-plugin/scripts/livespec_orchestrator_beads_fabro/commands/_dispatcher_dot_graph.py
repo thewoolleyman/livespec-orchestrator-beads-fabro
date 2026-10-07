@@ -79,6 +79,9 @@ _STRICT_KEYWORD = "strict"
 # class this module exists to close.
 _UNSUPPORTED_KEYWORDS = frozenset({"subgraph", "node", "edge"})
 _STATEMENT_SEPARATOR = ";"
+# The one attribute whose declarations ACCUMULATE rather than overwrite; see
+# `DotGraph.node_classes`.
+_CLASS_ATTRIBUTE = "class"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -102,10 +105,23 @@ class DotGraph:
     lets a node be declared more than once and the later value of a repeated
     key wins. A node named ONLY by an edge is absent, deliberately; see the
     module docstring.
+
+    `node_classes` is SEPARATE FROM `nodes` because the engine treats the two
+    differently, and collapsing them loses a membership it still honours. Its
+    `process_node` OVERWRITES `node.attrs` per declaration but only ever PUSHES
+    onto `node.classes` and never clears it, so a node declared twice ends with
+    the LAST `class` attribute and the UNION of every class it was ever given.
+    `transforms/stylesheet.rs` then matches `Selector::Class` against that
+    accumulated list, so a rule naming a class only an EARLIER declaration
+    carried still selects the node. Reconstructing membership from the merged
+    attribute reports the opposite -- measured, and it admitted an unguarded
+    launch. Entries are deduplicated in first-seen order, as `add_class_to_node`
+    does.
     """
 
     attributes: Mapping[str, str]
     nodes: Mapping[str, Mapping[str, str]]
+    node_classes: Mapping[str, tuple[str, ...]]
     edges: tuple[DotEdge, ...]
 
 
@@ -139,6 +155,7 @@ class _Body:
 
     attributes: dict[str, str] = field(default_factory=dict[str, str])
     nodes: dict[str, dict[str, str]] = field(default_factory=dict[str, dict[str, str]])
+    node_classes: dict[str, list[str]] = field(default_factory=dict[str, list[str]])
     edges: list[DotEdge] = field(default_factory=list[DotEdge])
 
 
@@ -161,6 +178,7 @@ def parse_dot_graph(*, text: str) -> DotGraph | str:
             return DotGraph(
                 attributes=body.attributes,
                 nodes=body.nodes,
+                node_classes={name: tuple(classes) for name, classes in body.node_classes.items()},
                 edges=tuple(body.edges),
             )
         refusal = _parse_statement(cursor=cursor, body=body)
@@ -280,8 +298,29 @@ def _parse_node_statement(*, cursor: _Cursor, body: _Body, name: str) -> str | N
     if isinstance(attributes, str):
         return attributes
     body.nodes.setdefault(name, {}).update(attributes)
+    _accumulate_classes(body=body, name=name, declared=attributes.get(_CLASS_ATTRIBUTE))
     _ = cursor.accept(value=_STATEMENT_SEPARATOR)
     return None
+
+
+def _accumulate_classes(*, body: _Body, name: str, declared: str | None) -> None:
+    """Add this declaration's classes to the node's running list, as the engine does.
+
+    The engine re-reads the MERGED `class` attribute at every declaration and
+    pushes each comma-separated part it has not already got. Taking THIS
+    declaration's own value instead reaches the identical set: a declaration that
+    omits `class` makes the engine re-read the previous value and add nothing new,
+    and one that supplies it contributes exactly these parts. Empty parts are
+    dropped on both sides, so `class=""` clears nothing -- which is the whole
+    reason a node's classes cannot be read off its final attribute.
+    """
+    if declared is None:
+        return
+    classes = body.node_classes.setdefault(name, [])
+    for part in declared.split(","):
+        cls = part.strip()
+        if cls and cls not in classes:
+            classes.append(cls)
 
 
 def _parse_attribute_list(*, cursor: _Cursor) -> dict[str, str] | str:
