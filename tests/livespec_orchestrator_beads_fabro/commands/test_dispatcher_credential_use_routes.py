@@ -241,6 +241,214 @@ def test_an_unparseable_graph_is_refused_rather_than_read_as_empty() -> None:
     assert "could not be parsed" in refusal
 
 
+# --- Stylesheet-selected backends ------------------------------------------------
+#
+# A node's backend does NOT have to be written on the node. The pinned engine's
+# `StylesheetApplicationTransform` (`fabro-workflow/src/transforms/stylesheet_
+# application.rs`) reads the graph's `model_stylesheet` attribute and fills in any
+# of five properties a node does not declare explicitly -- and `backend` is one of
+# them (`transforms/stylesheet.rs` `STYLESHEET_PROPERTIES`). So `backend: acp` can
+# arrive from the stylesheet, and a validator keyed on the literal node attribute
+# sees an ordinary command node where the engine will launch a coding agent.
+#
+# THAT WAS MEASURED on the implementation these cases drive: taking the shipped
+# graph, removing ONLY `implement`'s explicit `backend="acp"`, pointing its
+# `acp.command` at a literal, and adding `model_stylesheet="#implement { backend:
+# acp; }"` left `unguardable_launch_refusal` returning None -- admitted -- while
+# the engine would select ACP and launch the literal outside the guard.
+#
+# The four selector kinds and their specificities are the engine's own
+# (`fabro-graphviz/src/stylesheet.rs`): `*` universal 0, a bare word matching the
+# node's SHAPE 1, `.class` 2, `#id` 3. Higher specificity wins; an EXPLICIT node
+# attribute is never overridden at all.
+
+_STYLED_TEMPLATED = """digraph G {
+  graph [model_stylesheet="#implement { backend: acp; }"]
+  start [shape=Mdiamond]
+  implement [acp.command="{{ inputs.implement_adapter }}", timeout="60s"]
+  start -> implement
+  implement -> exit
+  exit [shape=Msquare]
+}
+"""
+
+
+def test_a_stylesheet_selected_acp_node_launching_from_a_wrapped_input_is_admitted() -> None:
+    """THE POSITIVE CONTROL for this whole section, and it comes first deliberately.
+
+    Every negative below is refused by an implementation that refuses every graph
+    carrying a `model_stylesheet` at all, which would break any repository using
+    one. This case is the styled route done RIGHT: no explicit backend, the
+    stylesheet supplies `acp`, and the command is still the wrapped input -- so the
+    guard reaches it and the dispatch must be admitted.
+    """
+    assert (
+        unguardable_launch_refusal(graph_text=_STYLED_TEMPLATED, adapter_inputs=_WRAPPED_INPUTS)
+        is None
+    )
+
+
+def test_a_stylesheet_selected_acp_node_with_a_literal_command_is_refused() -> None:
+    """THE REGRESSION: the exact shape the control reproduced.
+
+    Differs from the admitted case above in ONE way -- the command is a literal --
+    so the refusal is attributable to the launch, not to the stylesheet.
+    """
+    graph = _STYLED_TEMPLATED.replace('"{{ inputs.implement_adapter }}"', '"/usr/bin/true"')
+    refusal = unguardable_launch_refusal(graph_text=graph, adapter_inputs=_WRAPPED_INPUTS)
+    assert refusal is not None, "a stylesheet-selected ACP node with a literal command was admitted"
+    assert "implement" in refusal
+    assert "/usr/bin/true" in refusal
+
+
+def test_a_stylesheet_selected_acp_node_declaring_acp_config_is_refused() -> None:
+    """The other launch form the engine accepts, reached through the stylesheet.
+
+    `fabro-acp/src/command.rs` takes `acp.config` JSON carrying its own command,
+    args and env, so this node launches without ever reading a wrapped input.
+    """
+    graph = _STYLED_TEMPLATED.replace(
+        'acp.command="{{ inputs.implement_adapter }}"',
+        'acp.config="{\\"command\\": \\"/usr/bin/true\\"}"',
+    )
+    refusal = unguardable_launch_refusal(graph_text=graph, adapter_inputs=_WRAPPED_INPUTS)
+    assert refusal is not None, "a stylesheet-selected acp.config launch was admitted"
+    assert "implement" in refusal
+    assert "acp.config" in refusal
+
+
+def test_a_class_selector_can_make_a_node_acp_and_is_graded() -> None:
+    """Specificity 2, and the class comes from the node's own `class` attribute.
+
+    The engine splits `class` on commas into `node.classes`
+    (`fabro-graphviz/src/parser/semantic.rs` `process_node`), which is what a
+    `.code` selector matches.
+    """
+    graph = _STYLED_TEMPLATED.replace(
+        '"#implement { backend: acp; }"', '".code { backend: acp; }"'
+    ).replace(
+        '  implement [acp.command="{{ inputs.implement_adapter }}"',
+        '  implement [class="planning,code", acp.command="/usr/bin/true"',
+    )
+    refusal = unguardable_launch_refusal(graph_text=graph, adapter_inputs=_WRAPPED_INPUTS)
+    assert refusal is not None, "a class-selected ACP node with a literal command was admitted"
+    assert "implement" in refusal
+    assert "/usr/bin/true" in refusal
+
+
+def test_a_universal_selector_makes_every_node_acp_including_the_terminals() -> None:
+    """`* { backend: acp; }` reaches EVERY node, so the terminals are graded too.
+
+    `start` and `exit` declare no `acp.command`, and under this stylesheet the
+    engine would select ACP for them, so the missing-command refusal is the correct
+    verdict and `exit` is simply the first node in sorted order to hit it. Recorded
+    as an assertion rather than left implicit because it is the one case where the
+    refusal names a node the author did not write a launch for.
+    """
+    graph = _STYLED_TEMPLATED.replace('"#implement { backend: acp; }"', '"* { backend: acp; }"')
+    refusal = unguardable_launch_refusal(graph_text=graph, adapter_inputs=_WRAPPED_INPUTS)
+    assert refusal is not None, "a universal backend stylesheet was admitted"
+    assert "'exit'" in refusal
+    assert "no acp.command" in refusal
+
+
+def test_an_explicit_backend_is_not_overridden_by_the_stylesheet() -> None:
+    """The engine fills in only what a node does NOT declare.
+
+    `apply_stylesheet` inserts a property only `if !node.attrs.contains_key(prop)`,
+    so a node explicitly declaring a non-ACP backend stays non-ACP and launches no
+    coding agent -- it must still be admitted, or a stylesheet anywhere in a graph
+    would refuse every command node in it.
+    """
+    graph = _STYLED_TEMPLATED.replace(
+        '  implement [acp.command="{{ inputs.implement_adapter }}"',
+        '  implement [backend=command, script="just check"',
+    )
+    assert unguardable_launch_refusal(graph_text=graph, adapter_inputs=_WRAPPED_INPUTS) is None
+
+
+def test_a_higher_specificity_rule_decides_the_backend() -> None:
+    """Id (3) beats universal (0), which is what makes the ladder worth modelling.
+
+    Written so the universal rule names a NON-ACP backend: the terminals take it and
+    drop out of grading, and `implement` is ACP only if the `#id` rule won. An
+    implementation that merely scanned the stylesheet for `backend: acp` would pass
+    this; one that took the LAST rule regardless of specificity would not.
+    """
+    graph = _STYLED_TEMPLATED.replace(
+        '"#implement { backend: acp; }"',
+        '"#implement { backend: acp; } * { backend: command; }"',
+    ).replace('"{{ inputs.implement_adapter }}"', '"/usr/bin/true"')
+    refusal = unguardable_launch_refusal(graph_text=graph, adapter_inputs=_WRAPPED_INPUTS)
+    assert refusal is not None, "an id-selected ACP node was admitted"
+    assert "implement" in refusal
+    assert "/usr/bin/true" in refusal
+
+
+def test_an_unparseable_stylesheet_is_refused_rather_than_ignored() -> None:
+    """FAIL CLOSED, and deliberately STRICTER than the pinned engine.
+
+    `StylesheetApplicationTransform` swallows a parse error and runs the graph with
+    the stylesheet UNAPPLIED, so this graph would launch today with `implement` left
+    non-ACP. We refuse anyway: a stylesheet we cannot read is one whose effective
+    backends we cannot enumerate, and the cost of being wrong in the admitting
+    direction is a live credential with no enforcement. A dispatch refused here is
+    told exactly which declaration to fix.
+    """
+    graph = _STYLED_TEMPLATED.replace(
+        '"#implement { backend: acp; }"', '"#implement { backend acp; }"'
+    )
+    refusal = unguardable_launch_refusal(graph_text=graph, adapter_inputs=_WRAPPED_INPUTS)
+    assert refusal is not None, "an unparseable model_stylesheet was admitted"
+    assert "model_stylesheet" in refusal
+
+
+def test_a_shape_selector_against_a_node_declaring_no_shape_is_refused() -> None:
+    """The one genuinely UNDECIDABLE case, and it must not resolve to "no match".
+
+    A bare-word selector matches a node's SHAPE, and a node declaring none takes the
+    engine's default -- a value this repository cannot read from the pinned source it
+    has. So whether `box { backend: acp; }` selects `implement` is unknown, and an
+    unknown that defaulted to "not selected" would admit an unguarded launch.
+    """
+    graph = _STYLED_TEMPLATED.replace(
+        '"#implement { backend: acp; }"', '"box { backend: acp; }"'
+    ).replace('"{{ inputs.implement_adapter }}"', '"/usr/bin/true"')
+    refusal = unguardable_launch_refusal(graph_text=graph, adapter_inputs=_WRAPPED_INPUTS)
+    assert refusal is not None, "an undecidable shape selector was admitted"
+    assert "implement" in refusal
+    assert "shape" in refusal
+
+
+def test_a_shape_selector_matching_a_declared_shape_is_graded() -> None:
+    """A node that DOES declare its shape is decidable, and this one is selected."""
+    graph = _STYLED_TEMPLATED.replace(
+        '"#implement { backend: acp; }"', '"box { backend: acp; }"'
+    ).replace(
+        '  implement [acp.command="{{ inputs.implement_adapter }}"',
+        '  implement [shape=box, acp.command="/usr/bin/true"',
+    )
+    refusal = unguardable_launch_refusal(graph_text=graph, adapter_inputs=_WRAPPED_INPUTS)
+    assert refusal is not None, "a shape-selected ACP node was admitted"
+    assert "implement" in refusal
+    assert "/usr/bin/true" in refusal
+
+
+def test_a_shape_selector_not_matching_a_declared_shape_leaves_the_node_alone() -> None:
+    """The positive half of the pair above: a decidable NON-match still admits.
+
+    Without it, the undecidable-shape refusal could be satisfied by refusing every
+    graph whose stylesheet carries any shape selector.
+    """
+    graph = _STYLED_TEMPLATED.replace(
+        '"#implement { backend: acp; }"', '"box { backend: acp; }"'
+    ).replace(
+        '  implement [acp.command="{{ inputs.implement_adapter }}"',
+        '  implement [shape=ellipse, script="just check"',
+    )
+    assert unguardable_launch_refusal(graph_text=graph, adapter_inputs=_WRAPPED_INPUTS) is None
+
+
 # --- The wiring: the refusal has to reach a real dispatch ------------------------
 #
 # The cases above grade the decision. These two grade that `materialize_overlay`
