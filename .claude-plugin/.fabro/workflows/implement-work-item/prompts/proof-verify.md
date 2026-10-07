@@ -170,29 +170,36 @@ A captured record that lists a host-captured assertion as pending the host
 leg has NOT thereby discharged any `factory_captured` assertion, and the
 verdict you publish is about the factory ones alone.
 
-### The record shapes that earn NEITHER verdict
+### An INCOMPLETE factory proof record is `not_reproduced`
 
-Two shapes get no verdict from you at all. The reviewer is supposed to have
-blocked each of them; you are the backstop for the case where one got
-through.
+A record that leaves a `factory_captured` assertion with no capture —
+absent from the record entirely, or present with no reproduction steps and
+no proof — is an **INCOMPLETE factory proof record**. Name that assertion
+on a `not_reproduced` record. An assertion you did not reach is not an
+assertion that reproduced, so it denies `verified` exactly as a failed
+replay does, and `not_reproduced` is also the route that RECOVERS: it
+reaches `fix`, which re-earns a green janitor and re-enters
+`proof_capture`, so the capture that was missing is actually taken.
 
-The first is a record whose proof of a behavioural assertion is
-**test-suite output alone**.
+Judge this against the Definition of Done you parsed in Step 1, never
+against the set of assertions the record happens to list, because an
+assertion the record omits is invisible to any check that reads only the
+record. A correctly pending host-captured or human-attested assertion is
+NOT this shape — those are legitimately uncaptured, and a record carrying
+them is complete when every factory assertion is captured.
 
-The second is an **INCOMPLETE factory proof record**: one that leaves a
-`factory_captured` assertion with no capture — absent from the record
-entirely, or present with no reproduction steps and no proof. Judge this
-against the Definition of Done you parsed in Step 1, never against the set
-of assertions the record happens to list, because an assertion the record
-omits is invisible to any check that reads only the record. A correctly
-pending host-captured or human-attested assertion is NOT this shape — those
-are legitimately uncaptured, and a record carrying them is complete when
-every factory assertion is captured.
+### The one record shape that earns NEITHER verdict
+
+A record whose proof of a behavioural assertion is **test-suite output
+alone** gets no verdict from you at all. This is the ONLY shape that earns
+neither; an incomplete record is `not_reproduced` per the section above.
+The reviewer is supposed to have blocked it; you are the backstop for the
+case where it got through.
 
 End through the structured needs-human ending naming that assertion, as a
 JSON object on the last line of your reply:
 
-    {"outcome": "failed", "failure_reason": "<the assertion; that its published proof is test-suite output alone and exercises no behaviour, or that no capture of it was published at all>"}
+    {"outcome": "failed", "failure_reason": "<the assertion; that its published proof is test-suite output alone and exercises no behaviour>"}
 
 You **MUST NOT publish `not_reproduced`** for it and you **MUST NOT publish
 `verified`** for it. Both are wrong, in opposite directions, because the
@@ -200,19 +207,16 @@ You **MUST NOT publish `not_reproduced`** for it and you **MUST NOT publish
 `fix` and sends an implementer to repair code that may be perfectly correct,
 while `verified` certifies a behaviour nobody exercised and lets it reach
 `pr`. Replaying the suite run faithfully — which you could — would produce
-the same passing output and prove the same nothing; and an assertion with no
-published steps gives you nothing to replay at all, so neither verdict is a
-replay result.
+the same passing output and prove the same nothing.
 
 Keep this NARROW. It fires on the published record's SHAPE, never on a replay
 that went badly: a step you could not follow, an observation that differed
 from the stated expectation, a missing program source **is still
 `not_reproduced`**, exactly as before. Reading this section as "anything I
 cannot reproduce rests the item" would retire that verdict and the fix loop
-with it. The discriminator is whether there were STEPS TO REPLAY: steps that
-ran and did not reproduce are `not_reproduced`; steps that prove nothing, or
-that were never published for an assertion the Definition of Done requires,
-are a defect in the record.
+with it. An assertion with no published capture at all is NOT this shape
+either — that is the `not_reproduced` case above, and routing it here would
+rest an item the fix loop could have closed.
 
 ## Step 5 — publish the record
 
