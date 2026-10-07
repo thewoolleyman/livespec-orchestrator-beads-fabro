@@ -463,3 +463,60 @@ def test_a_host_only_item_closes_when_its_merge_names_no_factory_run_identifier(
     assert _REPLAYING_SESSION in reason
     assert _CAPTURING_SESSION not in reason
     assert _RELEASE_TAG in reason
+
+
+def test_the_host_only_pointer_identifies_the_independently_verified_host_record(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The pointer cites the record the pass rested on, which here is the HOST one.
+
+    The pointer write used to require `proof.record` — the FACTORY `verified`
+    record — so a host-only item whose factory record was unattributable wrote no
+    pointer at all, and the `accept` valve then refused the item for carrying
+    none. That is the second half of the live incident, and it is a provenance
+    loss rather than a verdict one: the item's own description ends up naming no
+    evidence for the merge its acceptance was judged against.
+
+    THE CITED BULLETS ARE ASSERTED AS A LIST, not by containment. A build that
+    promoted the UNATTRIBUTABLE factory record instead would also leave a pointer
+    section standing, and an `in`-containment check on the heading would pass for
+    it — so the two records on this pull request are discriminated by which
+    identifier, timestamp and verdict the section actually carries. The capture is
+    excluded for the same reason in the other direction: a capture is not its own
+    replay, and a pointer naming it would advertise one party's word as
+    independent proof.
+
+    The Definition of Done is compared BYTE FOR BYTE, because a build that
+    rewrote the section while appending the pointer would satisfy a containment
+    check just as well — and the clause requires the section preserved.
+    """
+    exit_code, repo, _ = _reconcile(monkeypatch=monkeypatch, tmp_path=tmp_path)
+
+    _ = capsys.readouterr()
+    assert exit_code == 0
+    description = _stored().description
+    head, _, pointer = description.partition("## Proof of Done")
+    assert pointer != ""
+    assert head.rstrip("\n") == _definition_of_done().rstrip("\n")
+    assert pointer.splitlines()[1:] == [
+        "",
+        f"- Pull request: #{_PR_NUMBER}",
+        f"- Verified record: {_REPLAY_URL}",
+        f"- Run: {_REPLAYING_SESSION}",
+        f"- Timestamp: {_REPLAY_TIMESTAMP}",
+        "- Verdict: host_verified",
+        f"- Host-verified record: {_REPLAY_URL}",
+    ]
+    # Neither the unattributable factory record nor the capture is cited.
+    assert _VERIFIED_URL not in description
+    assert _CAPTURE_URL not in description
+    # The section carries the POINTER, never the proof.
+    assert "Reproduced:" not in description
+    written = next(
+        one for one in _journal_records(repo=repo) if one.get("stage") == "proof-pointer"
+    )
+    assert written["run_id"] == _REPLAYING_SESSION
+    assert written["record_comment"] == _REPLAY_URL
+    assert written["host_verified_record"] == _REPLAY_URL
