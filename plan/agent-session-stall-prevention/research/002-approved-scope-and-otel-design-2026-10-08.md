@@ -8,6 +8,11 @@ The opening note remains the original evidence and session-derived proposal;
 this note records the subsequent authorization and engineering decisions.
 Status, carrier assignments and the next action remain on epic `bd-ib-jnpvh4`.
 
+Research 003 supersedes this note's wait-only coverage boundary, its treatment
+of acknowledgement as consumption, and its report-only overseer scope. The
+approved correction registers obligations at dispatch/delegation and requires
+actual independently consumed recovery after the owning turn ends.
+
 The additional plan outcome is: With telemetry configured, an operator can query
 wait lifecycle events, inventory observations and their numeric measurements in
 Honeycomb by repository, session and wait identity through the existing livespec
