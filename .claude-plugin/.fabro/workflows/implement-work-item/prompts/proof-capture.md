@@ -49,18 +49,36 @@ needs a code change" below.
 ## Step 1 — read the Definition of Done and classify every assertion
 
 Parse the `## Definition of Done` section out of the assignment. Each `- `
-bullet is one assertion. Bullets under a `### Human-attested`
-sub-heading have proof mode `human_attested`; every other bullet has proof
-mode `factory_captured`.
+bullet is one assertion, and the declaration is POSITIONAL.
+Bullets under a `### Host-captured` sub-heading have proof mode
+`host_captured`; bullets under a `### Human-attested` sub-heading have proof
+mode `human_attested`; every other bullet has proof mode `factory_captured`.
 
 Keep the section's own order. You will publish per assertion in
 **Definition of Done order**, and the replay leg and the post-merge
 acceptance pass both index your record against that order.
 
-You capture ONLY the `factory_captured` assertions. You never attempt to
-capture a `human_attested` one — a human attests those on the same pull
-request later — but you MUST still list them in your record under the
-heading named in Step 5.
+You capture ONLY the `factory_captured` assertions, and you capture EVERY one
+of them. Neither of the other two modes is yours:
+
+- You never attempt to capture a `host_captured` one. Its proof needs the
+  released, normally installed artifact, or a surface of an operator host
+  that no sandbox image carries, so **an agent session on a host records it
+  after merge** and a different session replays it.
+- You never attempt to capture a `human_attested` one — a human attests
+  those on the same pull request later.
+
+You MUST still list both kinds in your record, under the TWO SEPARATE
+headings named in Step 5. They are different pending legs and a reader has
+to be able to tell them apart: an agent owes the host leg, and no agent can
+owe an attestation.
+
+A pending host-captured assertion NEVER excuses an uncaptured
+`factory_captured` one. A record that lists a host assertion as pending the
+host leg while leaving a factory assertion with no steps and no proof is an
+INCOMPLETE factory proof record — the review and replay stages reject it as
+such, and "pending" is not a label a factory assertion may borrow because
+capturing it turned out to be awkward.
 
 ## Step 2 — author the reproduction steps for each factory_captured assertion
 
@@ -226,13 +244,18 @@ The body then carries, **per assertion in Definition of Done order**:
    program to an interpreter, the program's source is part of what is
    published, never replaced by the output it produced.
 
-When this item has any `human_attested` assertions, the record MUST also
-carry a heading stating that those assertions are **pending human
-attestation**, listing each of them. A reader of this record must be able
-to see what the factory did not prove.
+When this item has any `host_captured` assertions, the record MUST also
+carry a heading stating that those assertions are **pending the host leg**,
+listing each of them. When it has any `human_attested` assertions, the
+record MUST carry a SEPARATE heading stating that those are **pending human
+attestation**, listing each of them. Where the item has both, both headings
+appear and neither absorbs the other — they name different legs, owed by
+different parties, and the post-merge acceptance pass reads them to decide
+what the item is still waiting on. A reader of this record must be able to
+see what the factory did not prove AND who owes each remaining piece.
 
-A worked shape, for an item with two factory-captured assertions and one
-human-attested one:
+A worked shape, for an item with two factory-captured assertions, one
+host-captured one and one human-attested one:
 
     Proof of Done — captured — run 01M3EXAMPLERUNID — 2026-10-01T06:00:00Z
 
@@ -273,6 +296,14 @@ human-attested one:
     Proof 02:
 
     ![capacity-banner (proof 02)](<asset url>)
+
+    ## Pending the host leg
+
+    These assertions are NOT captured here. Their proof needs the released
+    build on an operator host, so an agent session there records them after
+    merge and a different session replays them:
+
+    - The installed plugin resolves its prompts from the released build.
 
     ## Pending human attestation
 
