@@ -839,22 +839,25 @@ across server restarts and returns connection-refused while the loopback backend
 is down — so a `:32276` listener owned by `tailscaled` (not `fabro`) means the
 proxy is up but the backend is not.
 
-### Host Codex credential refresher timer
+### Host Codex credential preflight and timer retirement
 
 The Dispatcher projects the host's Codex `~/.codex/auth.json` into worker
 sandboxes with the real refresh token replaced by the non-rotatable sentinel.
 The host is therefore the only process allowed to refresh or rotate the real
-Codex refresh credential. Today that host credential has measured as a
-240-hour / 10-day access token. If no host Codex process runs near the end of
-that window, the token reaches a cliff: the dispatch freshness gate refuses new
-runs until an operator runs `codex login` on the orchestrator host.
+Codex refresh credential. Dispatch preflight is the normal renewal path. Before
+claiming an item or creating a factory run, the pre-claim credential gate
+resolves the requirement for the effective workflow and review-fix cap, grades
+the host credential, and renews it once in place when its
+remaining lifetime is insufficient. The gate then re-reads and re-grades the
+credential; it admits the dispatch only when the renewed credential outlives
+the requirement.
 
-The fix is a host-side user timer that runs the guarded refresher about every
-five minutes. The refresher first decodes the access-token `exp` locally and
-spends a renewal request only when the credential is inside the refresh guard.
-A naive hourly cron would spend roughly 240 real Codex requests per 10-day
-cycle. The guarded timer normally spends none, then roughly one to three tiny
-requests near the cliff.
+The requirement is the selected workflow's engine-enforced credential-use
+allowance plus the documented 3,600-second margin. It is derived for each
+selection, including a named or explicit workflow and an effective per-item
+review-fix cap, rather than copied from an old fixed-hours estimate. Use the
+required lifetime reported by `codex-cred-status` for the selection being
+diagnosed; it is the same derivation the preflight gate uses.
 
 The renewal request is the host **app-server `account/read` with
 `refreshToken`**, not `codex exec`. Codex exposes no force-refresh command, and
@@ -874,50 +877,50 @@ Because `account/read` executes nothing, the refresher needs no sandbox bypass
 and consults no full-access gate — a privilege the old `codex exec` invocation
 required and this one does not.
 
-The actual host install is a manual maintainer step. Install these as the
-`ubuntu` user on the orchestrator host, replacing the checkout path only if the
-host checkout differs:
+Retire an existing refresh timer only on the **credential-source host** as the
+user that owns the Dispatcher and `$CODEX_HOME`. Capture its current state
+first, then disable it. The service and timer unit files are retained for
+rollback; this migration removes neither file.
 
 ```bash
-mkdir -p ~/.config/systemd/user
+install -d -m 700 ~/.local/state/livespec
+systemctl --user show livespec-codex-cred-refresh.timer \
+  --property=FragmentPath,LoadState,UnitFileState,ActiveState,SubState,NextElapseUSecRealtime \
+  | tee ~/.local/state/livespec/codex-cred-refresh-timer-before-retirement.txt
 
-cat > ~/.config/systemd/user/livespec-codex-cred-refresh.service <<'EOF'
-[Unit]
-Description=Refresh the host Codex credential for the livespec dark factory
-Documentation=file:/data/projects/livespec-orchestrator-beads-fabro/orchestrator-image/README.md
-
-[Service]
-Type=oneshot
-WorkingDirectory=/data/projects/livespec-orchestrator-beads-fabro
-ExecStart=/usr/local/bin/with-livespec-env.sh -- python3 /data/projects/livespec-orchestrator-beads-fabro/.claude-plugin/scripts/bin/dispatcher.py codex-cred-refresh --json
-EOF
-
-cat > ~/.config/systemd/user/livespec-codex-cred-refresh.timer <<'EOF'
-[Unit]
-Description=Run the livespec host Codex credential refresher every five minutes
-
-[Timer]
-OnBootSec=2min
-OnUnitActiveSec=5min
-AccuracySec=30s
-Persistent=true
-Unit=livespec-codex-cred-refresh.service
-
-[Install]
-WantedBy=timers.target
-EOF
-
-systemctl --user daemon-reload
-systemctl --user enable --now livespec-codex-cred-refresh.timer
+systemctl --user disable --now livespec-codex-cred-refresh.timer
 ```
 
-Verify the timer and one manual dry run:
+Verify both retirement properties explicitly. The first two `test` commands
+exit `0` only for the expected `disabled` and `inactive` values:
 
 ```bash
-systemctl --user list-timers livespec-codex-cred-refresh.timer
-systemctl --user status livespec-codex-cred-refresh.timer
-journalctl --user -u livespec-codex-cred-refresh.service -n 50 --no-pager
+systemctl --user show livespec-codex-cred-refresh.timer \
+  --property=FragmentPath,LoadState,UnitFileState,ActiveState,SubState
+test "$(systemctl --user show livespec-codex-cred-refresh.timer \
+  --property=UnitFileState --value)" = disabled
+test "$(systemctl --user show livespec-codex-cred-refresh.timer \
+  --property=ActiveState --value)" = inactive
+systemctl --user list-timers --all livespec-codex-cred-refresh.timer
+```
 
+If preflight renewal must be rolled back, the captured state and retained unit
+files make that reversible. Re-enable and start the timer as two explicit steps,
+then inspect it:
+
+```bash
+systemctl --user enable livespec-codex-cred-refresh.timer
+systemctl --user start livespec-codex-cred-refresh.timer
+systemctl --user show livespec-codex-cred-refresh.timer \
+  --property=UnitFileState,ActiveState,SubState
+```
+
+`codex-cred-refresh` remains a bounded manual diagnostic, not a scheduler or the
+normal renewal path. From the repository root on the credential-source host,
+first ask what it would do; omit `--dry-run` only when an operator deliberately
+wants to spend the one bounded renewal request:
+
+```bash
 /usr/local/bin/with-livespec-env.sh -- \
   python3 /data/projects/livespec-orchestrator-beads-fabro/.claude-plugin/scripts/bin/dispatcher.py \
     codex-cred-refresh --dry-run --json
@@ -937,16 +940,12 @@ The status command is the alerting surface:
 human-readable `message` carrying remaining versus required lifetime. The alarm
 threshold is two days before expiry.
 
-The **refresh guard is the dispatch freshness requirement** — the run budget
-plus its margin, 18000 seconds (5h) — and it is DERIVED from that requirement
-in code rather than written as its own number. It used to be six minutes,
-matching Codex's five-minute proactive-refresh window, which left a dead zone:
-for the last five hours of every 10-day cycle the freshness gate refused every
-Codex-projecting dispatch while the refresher reported `"refresh_due": false`
-and the refusal told a human to run `codex login`. Measured 2026-10-04 at
-`remaining_seconds` 13517. Widening the guard is only half the fix, which is
-why the renewal moved to the ungated `account/read` route above: a wider guard
-over a window-gated `codex exec` would merely attempt and decline.
+The **refresh guard is the effective dispatch freshness requirement**: the
+selected workflow's resolved run allowance plus its margin. The guard follows
+that derivation instead of preserving the former fixed six-minute or
+fixed-hours windows. Moving renewal to the ungated `account/read` route is the
+other half of the fix: a wider guard over a window-gated `codex exec` would
+merely attempt and decline.
 
 A status alarm means the 10-day cliff is close and deserves attention. A timer
 run returning non-zero, or a repeated `"refresh_due": true` after a non-dry-run

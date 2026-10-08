@@ -1,9 +1,9 @@
-"""Guarded host Codex credential refresh command.
+"""Bounded manual host Codex credential refresh diagnostic.
 
-The body behind `dispatcher.py codex-cred-refresh`, which the five-minute host
-timer runs. It decodes the access-token expiry locally and spends a renewal
-request ONLY inside the refresh guard, so the timer normally costs nothing and
-then spends one request near the cliff.
+The body behind `dispatcher.py codex-cred-refresh`, retained as an on-demand
+operator diagnostic after dispatch preflight became the normal renewal path. It
+decodes the access-token expiry locally and spends at most one renewal request,
+ONLY inside the refresh guard.
 
 The request is the app-server `account/read` with `refreshToken`, NOT
 `codex exec`. Upstream gates the ordinary refresh on a five-minute window
@@ -11,7 +11,7 @@ The request is the app-server `account/read` with `refreshToken`, NOT
 guard is derived from the dispatch freshness requirement — which is itself
 resolved per workflow and is DAYS rather than hours for this repository's own
 graph — so a `codex exec` spent anywhere in that span could not advance the
-expiry: the timer would attempt and decline while reporting that it had tried.
+expiry: a call would attempt and decline while reporting that it had tried.
 
 Dropping `codex exec` dropped a privilege with it. That invocation carried
 Codex's approvals-and-sandbox bypass flag, and a hook gate existed only to
