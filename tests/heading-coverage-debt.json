@@ -677,5 +677,54 @@
     "heading": "## Scenario 145 — A failed post-merge janitor retains its complete output and exit code as a private artifact the journal names",
     "work_item": "bd-ib-7sjdzv",
     "first_seen": "2026-10-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 146 — Authoritative result readers distinguish fulfillment from observation failure",
+    "work_item": "bd-ib-77dipw",
+    "first_seen": "2026-10-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 147 — A plan deadline survives pointer rewrites and permits causal recovery",
+    "work_item": "bd-ib-zi5ygh",
+    "first_seen": "2026-10-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 148 — Unattended resume observes expired, legacy and unobservable progress",
+    "work_item": "bd-ib-zi5ygh",
+    "first_seen": "2026-10-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 149 — Acknowledgment cannot discharge a target-effect relay",
+    "work_item": "bd-ib-t3znvw",
+    "first_seen": "2026-10-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 150 — Plan attention names missing results despite busy repair work",
+    "work_item": "bd-ib-u4gqpp",
+    "first_seen": "2026-10-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 151 — Repeated item failures require a causal dispatch attempt",
+    "work_item": "bd-ib-s5idxj",
+    "first_seen": "2026-10-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 152 — Independent recovery executes after Codex turn completion without wait registration",
+    "work_item": "bd-ib-ezuj43",
+    "first_seen": "2026-10-08"
   }
 ]

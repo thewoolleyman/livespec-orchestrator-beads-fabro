@@ -1248,7 +1248,7 @@
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_plan_next_action_resume_scenario111.test_scenario111_an_unattended_resume_takes_the_impl_next_action_without_asking",
     "work_item": "bd-ib-3hxs57",
-    "reason": "Ratified with the plan-slug-anchor-and-typed-next-action revision (epic bd-ib-w3nwz5, child bd-ib-w3nwz5.1, console decision D6 item 5), implemented by bd-ib-yq2tx6 and bound to this integration-tier test by bd-ib-3hxs57. Typed next_action epic metadata is the sole unattended-resume authority: impl/spec-op refs act without asking, human/none raise the picker, a handoff write updates it in the same call, and the wrapped-prose marker parse is retired so a truncated fragment can never execute. The bound case creates the plan through create_thread, hands it off through append_handoff, reads the unattended marker off the real environment through is_unattended_session, and asserts the directive takes impl:<ref> without asking; its sibling cases in the same module cover the human kind raising the picker with its kind as the reason, the wrapped prose marker that is still present and still readable yet decides nothing, and the attended control that asks while carrying the same dispatchable pointer."
+    "reason": "Ratified with the plan-slug-anchor-and-typed-next-action revision (epic bd-ib-w3nwz5, child bd-ib-w3nwz5.1, console decision D6 item 5), implemented by bd-ib-yq2tx6 and bound to this integration-tier test by bd-ib-3hxs57. Typed next_action epic metadata is the sole unattended-resume authority: impl/spec-op refs act without asking, human/none raise the picker, a handoff write updates it in the same call, and the wrapped-prose marker parse is retired so a truncated fragment can never execute. The bound case creates the plan through create_thread, hands it off through append_handoff, reads the unattended marker off the real environment through is_unattended_session, and asserts the directive takes impl:<ref> without asking; its sibling cases in the same module cover the human kind raising the picker with its kind as the reason, the wrapped prose marker that is still present and still readable yet decides nothing, and the attended control that asks while carrying the same dispatchable pointer. The existing test binds the routing assertions; the new valid-tracking preconditions are separate owed integration-tier coverage under Scenarios 147 and 148, owned by bd-ib-zi5ygh, and are not claimed as proved by this routing test."
   },
   {
     "heading": "## Scenario 112 — The one-shot anchor migration is complete and idempotent",
@@ -1519,5 +1519,61 @@
     "test": "TODO",
     "reason": "Ratified 2026-10-08 by the chain-recovery-and-failed-janitor-diagnosis revision for work-item bd-ib-nezrrh (failed post-merge janitor output retention). An integration-tier test is owed that runs the post-merge janitor with a child command writing distinct stdout and stderr longer than the journal excerpt and exiting non-zero, then reads back the artifact, its digest in the journal row, the second-failure path and the write-failure row.",
     "work_item": "bd-ib-7sjdzv"
+  },
+  {
+    "heading": "## Scenario 146 — Authoritative result readers distinguish fulfillment from observation failure",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for this new behavior; the named work item owns landing it, with released host capture and independent replay additionally owed where the scenario requires them.",
+    "work_item": "bd-ib-77dipw"
+  },
+  {
+    "heading": "## Scenario 147 — A plan deadline survives pointer rewrites and permits causal recovery",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for this new behavior; the named work item owns landing it, with released host capture and independent replay additionally owed where the scenario requires them.",
+    "work_item": "bd-ib-zi5ygh"
+  },
+  {
+    "heading": "## Scenario 148 — Unattended resume observes expired, legacy and unobservable progress",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for this new behavior; the named work item owns landing it, with released host capture and independent replay additionally owed where the scenario requires them.",
+    "work_item": "bd-ib-zi5ygh"
+  },
+  {
+    "heading": "## Scenario 149 — Acknowledgment cannot discharge a target-effect relay",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for this new behavior; the named work item owns landing it, with released host capture and independent replay additionally owed where the scenario requires them.",
+    "work_item": "bd-ib-t3znvw"
+  },
+  {
+    "heading": "## Scenario 150 — Plan attention names missing results despite busy repair work",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for this new behavior; the named work item owns landing it, with released host capture and independent replay additionally owed where the scenario requires them.",
+    "work_item": "bd-ib-u4gqpp"
+  },
+  {
+    "heading": "## Scenario 151 — Repeated item failures require a causal dispatch attempt",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for this new behavior; the named work item owns landing it, with released host capture and independent replay additionally owed where the scenario requires them.",
+    "work_item": "bd-ib-s5idxj"
+  },
+  {
+    "heading": "## Scenario 152 — Independent recovery executes after Codex turn completion without wait registration",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for this new behavior; the named work item owns landing it, with released host capture and independent replay additionally owed where the scenario requires them.",
+    "work_item": "bd-ib-ezuj43"
   }
 ]
