@@ -79,13 +79,22 @@ class LiveRun:
 class ResumeObservation:
     """Every measurement the refusal ladder grades, gathered before it runs.
 
-    THREE FIELDS ENCODE "COULD NOT BE ASKED" DISTINCTLY FROM AN ANSWER, because
+    FOUR FIELDS ENCODE "COULD NOT BE ASKED" DISTINCTLY FROM AN ANSWER, because
     for each of them the two support opposite decisions. `pull_request_state` and
     `pull_request_head` are `None` when the forge did not answer — never when it
     answered that there is nothing there, which `pull_request=None` says. And
     `liveness_observed` is false when the factory did not answer, which is
     deliberately not the same value as the empty `live_runs` tuple an answering
     factory with nothing alive produces.
+
+    `forge_observed` is the fourth, and it is the one whose absence cost the most.
+    A forge outage leaves no pull request NUMBER either, so without it the
+    nothing-to-resume-from arm fired and advised a plain dispatch — which reclaims
+    the publish branch, preserving the dead run's head to a ref and deleting the
+    branch, so a transient `gh` failure destroyed the publication the resume
+    exists to finish and left a journal record reading like a healthy recovery.
+    It defaults to TRUE so every caller that measured the forge successfully, and
+    every caller written before the field existed, is unchanged.
 
     `changed_assertions` is the Definition-of-Done difference as a LIST of the
     assertions the anchoring record does not carry, rather than a boolean, so the
@@ -96,6 +105,7 @@ class ResumeObservation:
     status: str
     blocked_reason: str | None = None
     anchor_head: str | None = None
+    forge_observed: bool = True
     pull_request: int | None = None
     pull_request_state: str | None = None
     pull_request_head: str | None = None
@@ -161,7 +171,22 @@ def _anchor_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
     request carries no head-naming record published before the head declaration
     was ratified. An operator reading the second knows a resume can never work
     for that pull request, however many times it is retried.
+
+    The UNOBSERVABLE forge read is a THIRD, and it precedes both: it is the same
+    question — does this branch carry a pull request — gone unanswered, so it sits
+    where that measurement would have sat. Its remedy is deliberately NOT a plain
+    dispatch, which is the difference that matters: a plain dispatch reclaims the
+    branch, so advising one on an unmeasured read destroys the publication this
+    whole surface exists to finish.
     """
+    if not observation.forge_observed:
+        unobservable = (
+            "the forge could not report whether this item's publish branch carries"
+            " a pull request, so the publication a resume would finish could not be"
+            " measured at all; a resume does not proceed on an unobservable answer."
+            " Retry once the forge answers"
+        )
+        return (unobservable,)
     if observation.pull_request is None:
         unpublished = (
             "the item's publish branch carries no open pull request, so there is"
