@@ -31,6 +31,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_pointer import
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     OBSERVATION_SATISFIED,
+    OBSERVATION_UNSATISFIED,
     SOURCE_PROOF_RECORD,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_proof import (
@@ -187,18 +188,24 @@ def test_a_host_verified_record_naming_a_commit_build_is_satisfied(tmp_path: Pat
 
 
 def test_a_comment_saying_verified_is_not_a_typed_record(tmp_path: Path) -> None:
-    """The clause: the read validates record semantics rather than matching text."""
+    """The clause: the read validates record semantics rather than matching text.
+
+    The comment is on the pull request and WAS read, so this is an unmet target
+    rather than a failed observation — and the evidence says how many records the
+    read found, which for a comment that is not a record at all is zero.
+    """
     repository = _repo(tmp_path=tmp_path)
     _seed_subject(repository=repository, description=_pointed_description())
-    assert (
-        observe_verified_proof(
-            repository=repository,
-            target=_target(),
-            runner=_runner(bodies=("Everything is verified. Reproduced: yes.\n",)),
-            now=_NOW,
-        )
-        is None
+    observation = observe_verified_proof(
+        repository=repository,
+        target=_target(),
+        runner=_runner(bodies=("Everything is verified. Reproduced: yes.\n",)),
+        now=_NOW,
     )
+    assert observation is not None
+    assert observation.status == OBSERVATION_UNSATISFIED
+    assert observation.source == SOURCE_PROOF_RECORD
+    assert observation.evidence == f"0 Proof of Done record(s) on pull request #{_PR_NUMBER}"
 
 
 def test_a_non_verified_verdict_is_not_evidence(tmp_path: Path) -> None:
@@ -206,15 +213,15 @@ def test_a_non_verified_verdict_is_not_evidence(tmp_path: Path) -> None:
     repository = _repo(tmp_path=tmp_path)
     _seed_subject(repository=repository, description=_pointed_description())
     for verdict in ("captured", "not_reproduced"):
-        assert (
-            observe_verified_proof(
-                repository=repository,
-                target=_target(),
-                runner=_runner(bodies=(_record_body(verdict=verdict),)),
-                now=_NOW,
-            )
-            is None
+        observation = observe_verified_proof(
+            repository=repository,
+            target=_target(),
+            runner=_runner(bodies=(_record_body(verdict=verdict),)),
+            now=_NOW,
         )
+        assert observation is not None, verdict
+        assert observation.status == OBSERVATION_UNSATISFIED, verdict
+        assert f"names build {_BUILD}" in observation.detail, verdict
 
 
 def test_a_record_naming_another_build_or_no_build_is_not_evidence(tmp_path: Path) -> None:
@@ -228,12 +235,12 @@ def test_a_record_naming_another_build_or_no_build_is_not_evidence(tmp_path: Pat
         "Reproduced: yes.\n"
     )
     for bodies in ((_record_body(build="v0.1.0"),), (buildless,)):
-        assert (
-            observe_verified_proof(
-                repository=repository, target=_target(), runner=_runner(bodies=bodies), now=_NOW
-            )
-            is None
+        observation = observe_verified_proof(
+            repository=repository, target=_target(), runner=_runner(bodies=bodies), now=_NOW
         )
+        assert observation is not None
+        assert observation.status == OBSERVATION_UNSATISFIED
+        assert f"names build {_BUILD}" in observation.detail
 
 
 def test_a_newer_record_for_another_build_does_not_shadow_the_requested_one(
@@ -265,24 +272,24 @@ def test_an_assertion_the_record_does_not_reproduce_is_not_in_scope(tmp_path: Pa
     """
     repository = _repo(tmp_path=tmp_path)
     _seed_subject(repository=repository, description=_pointed_description())
-    assert (
-        observe_verified_proof(
-            repository=repository,
-            target=_target(assertions=(_ASSERTION, "An assertion nobody published.")),
-            runner=_runner(bodies=(_record_body(),)),
-            now=_NOW,
-        )
-        is None
+    unevidenced = observe_verified_proof(
+        repository=repository,
+        target=_target(assertions=(_ASSERTION, "An assertion nobody published.")),
+        runner=_runner(bodies=(_record_body(),)),
+        now=_NOW,
     )
-    assert (
-        observe_verified_proof(
-            repository=repository,
-            target=_target(),
-            runner=_runner(bodies=(_record_body(reproduced="no"),)),
-            now=_NOW,
-        )
-        is None
+    assert unevidenced is not None
+    assert unevidenced.status == OBSERVATION_UNSATISFIED
+    assert "does not list 1 of the 2 requested assertion(s)" in unevidenced.detail
+    refused = observe_verified_proof(
+        repository=repository,
+        target=_target(),
+        runner=_runner(bodies=(_record_body(reproduced="no"),)),
+        now=_NOW,
     )
+    assert refused is not None
+    assert refused.status == OBSERVATION_UNSATISFIED
+    assert "does not list 1 of the 1 requested assertion(s)" in refused.detail
 
 
 def test_a_subject_with_no_resolvable_pull_request_stops_the_read(tmp_path: Path) -> None:
