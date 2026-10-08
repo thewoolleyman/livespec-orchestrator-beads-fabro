@@ -241,7 +241,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-10-08T09:42:12.381259962Z",
-  "last_event_at": "2026-10-08T09:42:15.029109046Z",
+  "last_event_at": "2026-10-08T09:42:17.402337721Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -283,36 +283,36 @@
     {
       "seq": 0,
       "checkpoint": {
-        "timestamp": "2026-10-08T09:42:15.189824694Z",
-        "current_node": "improve",
+        "timestamp": "2026-10-08T09:42:19.880664657Z",
+        "current_node": "gate",
         "completed_nodes": [
           "start",
-          "improve"
+          "improve",
+          "gate"
         ],
         "node_retries": {},
         "context_values": {
+          "internal.acp_attempt.gate": 0,
           "internal.run_id": "01M4DE8FYY4TB2PSA08E7JF0AN",
           "graph.goal": "# Fabro Enemy Unit Test: visit-count-loop\n",
           "internal.retry_count.start": 0,
           "outcome": "succeeded",
-          "current_node": "improve",
+          "current_node": "gate",
           "thread.start.current_node": "improve",
+          "internal.retry_count.gate": 0,
           "failure_signature": "",
           "internal.acp_attempt.improve": 0,
           "command.output": "blob://sha256/26d482798b1414b8c2fb6d6203aaa6f32d34fe57fc781d3bfa63fd82f03d3bf1",
           "internal.node_visit_count": 1,
           "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
           "failure_class": "",
+          "thread.improve.current_node": "gate",
           "internal.fidelity": "compact",
-          "internal.thread_id": "start",
+          "internal.thread_id": "improve",
           "internal.acp_attempt.start": 0,
           "internal.retry_count.improve": 0
         },
         "node_outcomes": {
-          "start": {
-            "status": "succeeded",
-            "usage": null
-          },
           "improve": {
             "status": "succeeded",
             "context_updates": {
@@ -326,10 +326,20 @@
               "tool_time_ms": 146,
               "active_time_ms": 146
             }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          },
+          "gate": {
+            "status": "succeeded",
+            "notes": "Conditional node evaluated: gate",
+            "usage": null
           }
         },
-        "next_node_id": "gate",
+        "next_node_id": "improve",
         "node_visits": {
+          "gate": 1,
           "start": 1,
           "improve": 1
         }
@@ -402,7 +412,12 @@
       "first_event_seq": 20,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Script completed: c=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
+        "failure_reason": null,
+        "timestamp": "2026-10-08T09:42:15.188147557Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": {
@@ -410,11 +425,27 @@
         "command": "exec 2>&1\nc=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
         "language": "shell"
       },
-      "script_timing": null,
+      "script_timing": {
+        "output": "blob://sha256/26d482798b1414b8c2fb6d6203aaa6f32d34fe57fc781d3bfa63fd82f03d3bf1",
+        "exit_code": 0,
+        "duration_ms": 146,
+        "termination": "exited",
+        "output_bytes": 16,
+        "live_streaming": true
+      },
       "parallel_results": null,
       "output": null,
+      "output_bytes": 16,
+      "live_streaming": true,
+      "termination": "exited",
       "started_at": "2026-10-08T09:42:15.029072237Z",
       "handler": "command",
+      "timing": {
+        "wall_time_ms": 158,
+        "inference_time_ms": 0,
+        "tool_time_ms": 146,
+        "active_time_ms": 146
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -423,7 +454,7 @@
         "cache_read_tokens": 0,
         "cache_write_tokens": 0
       },
-      "state": "running"
+      "state": "succeeded"
     }
   }
 }
