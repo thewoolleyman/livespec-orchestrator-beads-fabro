@@ -1,0 +1,7 @@
+digraph P5Quoting {
+    start [shape=Mdiamond, label="Start"]
+    q [shape=parallelogram, label="Quote", goal_gate=true, script="X='a b'; Y=\"$X-$(echo c)\"; test \"$Y\" = 'a b-c' && printf 'quoting-ok %s\\n' \"$Y\" >&2"]
+    exit [shape=Msquare, label="Exit"]
+    start -> q
+    q -> exit
+}
