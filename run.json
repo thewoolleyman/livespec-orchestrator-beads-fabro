@@ -207,14 +207,111 @@
     }
   },
   "web_url": "https://hp-xubuntu.perch-rudd.ts.net:32276/runs/01M4DEPEDRZ86YAQ6QEAQY3B74",
-  "start": null,
-  "status": {
-    "kind": "starting"
+  "start": {
+    "start_time": "2026-10-08T09:49:49.135085909Z",
+    "run_branch": "fabro/run/01M4DEPEDRZ86YAQ6QEAQY3B74",
+    "base_sha": "799517a37dd9196975f3c496783eaa602beff614"
   },
-  "status_updated_at": "2026-10-08T09:49:46.175169878Z",
-  "last_event_at": "2026-10-08T09:49:48.746168008Z",
+  "status": {
+    "kind": "running"
+  },
+  "status_updated_at": "2026-10-08T09:49:49.135122828Z",
+  "last_event_at": "2026-10-08T09:49:51.833608486Z",
   "pending_control": null,
-  "checkpoints": [],
+  "checkpoints": [
+    {
+      "seq": 19,
+      "checkpoint": {
+        "timestamp": "2026-10-08T09:49:51.833449068Z",
+        "current_node": "start",
+        "completed_nodes": [
+          "start"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "outcome": "succeeded",
+          "internal.acp_attempt.start": 0,
+          "internal.fidelity": "compact",
+          "current_node": "start",
+          "internal.retry_count.start": 0,
+          "internal.node_visit_count": 1,
+          "internal.run_id": "01M4DEPEDRZ86YAQ6QEAQY3B74",
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "graph.goal": "# Fabro Enemy Unit Test: resource-limits\n",
+          "internal.thread_id": null,
+          "failure_signature": "",
+          "failure_class": ""
+        },
+        "node_outcomes": {
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "check",
+        "node_visits": {
+          "start": 1
+        }
+      },
+      "diff": {}
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-10-08T09:49:51.991985379Z",
+        "current_node": "check",
+        "completed_nodes": [
+          "start",
+          "check"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.retry_count.start": 0,
+          "internal.retry_count.check": 0,
+          "internal.run_id": "01M4DEPEDRZ86YAQ6QEAQY3B74",
+          "failure_signature": "",
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "internal.acp_attempt.start": 0,
+          "graph.goal": "# Fabro Enemy Unit Test: resource-limits\n",
+          "internal.acp_attempt.check": 0,
+          "internal.fidelity": "compact",
+          "outcome": "succeeded",
+          "current_node": "check",
+          "failure_class": "",
+          "thread.start.current_node": "check",
+          "internal.node_visit_count": 1,
+          "command.output": "blob://sha256/eeedd0f06b8ed89bb7c37ed2ed3da9ec1d6ba3bdd378afe2484f1d44b3e5f302",
+          "internal.thread_id": "start"
+        },
+        "node_outcomes": {
+          "check": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/eeedd0f06b8ed89bb7c37ed2ed3da9ec1d6ba3bdd378afe2484f1d44b3e5f302"
+            },
+            "notes": "Script completed: c=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo none); m=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo none); echo \"cpu.max=$c memory.max=$m\" >&2; test \"$c\" = '200000 100000' && test \"$m\" -ge 3990000000 && test \"$m\" -le 4000000000",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 143,
+              "active_time_ms": 143
+            }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "exit",
+        "node_visits": {
+          "check": 1,
+          "start": 1
+        }
+      },
+      "diff": {}
+    }
+  ],
   "conclusion": null,
   "sandbox": {
     "kind": "ready",
@@ -241,5 +338,67 @@
   "pull_request": null,
   "superseded_by": null,
   "pending_interviews": {},
-  "stages": {}
+  "stages": {
+    "check@1": {
+      "first_event_seq": 20,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "c=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo none); m=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo none); echo \"cpu.max=$c memory.max=$m\" >&2; test \"$c\" = '200000 100000' && test \"$m\" -ge 3990000000 && test \"$m\" -le 4000000000",
+        "command": "exec 2>&1\nc=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo none); m=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo none); echo \"cpu.max=$c memory.max=$m\" >&2; test \"$c\" = '200000 100000' && test \"$m\" -ge 3990000000 && test \"$m\" -le 4000000000",
+        "language": "shell"
+      },
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-08T09:49:51.833565246Z",
+      "handler": "command",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "running"
+    },
+    "start@1": {
+      "first_event_seq": 16,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-10-08T09:49:51.833270735Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-08T09:49:51.833148306Z",
+      "handler": "start",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    }
+  }
 }
