@@ -36,6 +36,7 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro._store_merge_hold import update_work_item_merge_hold
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
+    DispatchOutcome,
     FabroRunResult,
     PollPolicy,
     run_dispatch,
@@ -203,15 +204,31 @@ class _Launcher:
         return FabroRunResult(command=CommandResult(exit_code=0, stdout="", stderr=""))
 
 
-def _dispatch(*, repo: Path, runner: _Runner, journal: _Journal) -> None:
-    _ = run_dispatch(
+@dataclass(frozen=True, kw_only=True)
+class _Dispatched:
+    """One dispatch's terminal outcome beside the waits it performed.
+
+    The waits ride along because "the run never waits" is not readable off an
+    outcome: a poll budget spent and then reported green would carry the same
+    status and stage as a run that short-circuited.
+    """
+
+    outcome: DispatchOutcome
+    sleeps: tuple[float, ...]
+
+
+def _dispatch(*, repo: Path, runner: _Runner, journal: _Journal) -> _Dispatched:
+    """One dispatch with a poll budget of TWO, so a run that waits can be seen to."""
+    sleeps: list[float] = []
+    outcome = run_dispatch(
         plan=_plan(repo=repo),
         runner=runner,
         journal=journal,
-        sleep=lambda _seconds: None,
-        poll=PollPolicy(attempts=1, interval_seconds=0.0),
+        sleep=sleeps.append,
+        poll=PollPolicy(attempts=2, interval_seconds=0.0),
         fabro_launcher=_Launcher(),
     )
+    return _Dispatched(outcome=outcome, sleeps=tuple(sleeps))
 
 
 def _forge_verbs(*, runner: _Runner) -> set[tuple[str, ...]]:
@@ -225,7 +242,7 @@ def test_the_host_arms_nothing_when_the_ledger_currently_holds_an_item_dispatche
     _tenant(repo=tmp_path, held=True)
     runner = _Runner(queue=[_view(armed=False)])
 
-    _dispatch(repo=tmp_path, runner=runner, journal=_Journal())
+    _ = _dispatch(repo=tmp_path, runner=runner, journal=_Journal())
 
     assert _forge_verbs(runner=runner) == {_VIEW_ARGV_HEAD}
 
@@ -242,7 +259,7 @@ def test_the_host_disarms_a_pull_request_it_finds_armed_while_the_item_is_now_he
     runner = _Runner(queue=[_view(armed=True), CommandResult(exit_code=0, stdout="", stderr="")])
     journal = _Journal()
 
-    _dispatch(repo=tmp_path, runner=runner, journal=journal)
+    _ = _dispatch(repo=tmp_path, runner=runner, journal=journal)
 
     assert _DISARM_ARGV in runner.calls
     assert _ARM_ARGV not in runner.calls
@@ -260,7 +277,7 @@ def test_the_host_writes_nothing_to_the_forge_when_the_hold_authority_is_unreada
     """
     runner = _Runner(queue=[_view(armed=False)])
 
-    _dispatch(repo=tmp_path, runner=runner, journal=_Journal())
+    _ = _dispatch(repo=tmp_path, runner=runner, journal=_Journal())
 
     assert _forge_verbs(runner=runner) == {_VIEW_ARGV_HEAD}
 
@@ -284,7 +301,41 @@ def test_an_unheld_item_keeps_the_host_fallback_arming_with_its_journaled_merge_
     )
     journal = _Journal()
 
-    _dispatch(repo=tmp_path, runner=runner, journal=journal)
+    dispatched = _dispatch(repo=tmp_path, runner=runner, journal=journal)
 
     assert _ARM_ARGV in runner.calls
     assert "pr-arm-fallback" in [record["stage"] for record in journal.records]
+    # And it WAITS for the merge it just armed. This is the control for the held
+    # terminal below: without it, "the held run never waited" is equally consistent
+    # with a merge poll that no dispatch reaches any more.
+    assert dispatched.outcome.stage == "merge-poll"
+    assert dispatched.sleeps == (0.0,)
+
+
+def test_a_run_held_after_dispatch_terminates_green_at_the_held_publication_boundary(
+    tmp_path: Path,
+) -> None:
+    """The hold's TERMINAL, keyed on the hold the ledger carries NOW.
+
+    Nothing may merge a held pull request, so a run that polled for its merge could
+    only spend the whole budget and then report a FAILURE for work that succeeded --
+    which is precisely what the stale-snapshot build did to a run held mid-flight,
+    because its terminal classification read the same launch snapshot its arming did.
+
+    Green is also what reclaims the claim under the ordinary green-terminal rule, so
+    a held item holds no capacity slot while it waits for a person; and the green
+    carries NO merge sha, because nothing merged.
+    """
+    _tenant(repo=tmp_path, held=True)
+    # Stocked with everything the unheld control needed, so the held run is short of
+    # nothing: a one-answer fixture would make an exhausted queue the verdict.
+    runner = _Runner(queue=[_view(armed=False)] * 4)
+
+    dispatched = _dispatch(repo=tmp_path, runner=runner, journal=_Journal())
+
+    assert (dispatched.outcome.status, dispatched.outcome.stage) == ("green", "pr")
+    assert dispatched.outcome.pr_number == _PR_NUMBER
+    assert dispatched.outcome.merge_sha is None
+    assert dispatched.sleeps == ()
+    assert len(runner.calls) == 1
+    assert f"set-merge-hold:{_ITEM_ID}:off" in dispatched.outcome.detail
