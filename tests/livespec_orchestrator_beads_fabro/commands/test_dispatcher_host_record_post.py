@@ -50,8 +50,18 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_post imp
     host_record_argv,
     run_post_host_record_command,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_assets import (
+    PROOF_STAGE_HOST_CAPTURE,
+    proof_asset_name,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attachment import (
+    ATTACHED_PROOF_EXTENSION,
+    attached_proof_slug,
+    proof_digest,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_budget import (
     FORGE_COMMENT_CEILING_BYTES,
+    INLINE_PROOF_ALLOWANCE_BYTES,
     PROOF_RECORD_BUDGET_BYTES,
     measured_bytes,
 )
@@ -103,6 +113,10 @@ class _Runner:
     comment_exit: int = 0
     comments_exit: int = 0
     merged: bool = True
+    # The proof-asset store's upload leg. Defaults to SUCCEEDING, so a test that is
+    # not about the store does not have to stub one; the failure arm is what the
+    # upload-refusal case sets.
+    upload_exit: int = 0
     calls: list[list[str]] = field(default_factory=list)
 
     def run(
@@ -134,6 +148,8 @@ class _Runner:
             return CommandResult(exit_code=self.comment_exit, stdout="posted\n", stderr="")
         if argv[:3] == ["gh", "pr", "list"]:
             return CommandResult(exit_code=0, stdout=self._merged_search(), stderr="")
+        if argv[:3] == ["gh", "release", "upload"]:
+            return CommandResult(exit_code=self.upload_exit, stdout="", stderr="")
         return CommandResult(exit_code=1, stdout="", stderr="unstubbed")
 
     def _merged_search(self) -> str:
@@ -1103,4 +1119,152 @@ def test_an_over_budget_record_is_refused_and_never_reaches_the_forge(tmp_path: 
     # the named one does not read as the culprit when the remedy is a smaller item.
     assert "No single proof" in emitted
     assert any(one in emitted for one in _BULK_ASSERTIONS)
+    assert "Nothing was published" in emitted
+
+
+# ---------------------------------------------------------------------------
+# bd-ib-555xcd: a proof over the per-assertion inline allowance travels as a
+# digest-named attachment, and the record carries the asset's name, byte size
+# and digest in place of the inline output.
+# ---------------------------------------------------------------------------
+
+
+def _post_one(*, repo: Path, runner: _Runner, proof: str) -> tuple[int, str]:
+    """Drive one capture whose single declared assertion carries `proof`."""
+    payload: dict[str, object] = {
+        "build": {"release_tag": _RELEASE_TAG, "installed_build": "0.173.7"},
+        "assertions": [
+            {
+                "text": _HOST_ASSERTION,
+                "steps": ["Install the released build.", "Drive the valve. Produces proof 01."],
+                "proof": proof,
+                "reproduced": None,
+            }
+        ],
+    }
+    target = repo / "one-record.json"
+    _ = target.write_text(json.dumps(payload), encoding="utf-8")
+    emitted: list[str] = []
+    code = run_post_host_record_command(
+        post=HostRecordPost(
+            repo=repo,
+            work_item_id=_ITEM_ID,
+            verdict=VERDICT_HOST_RECORDED,
+            record_path=target,
+        ),
+        runner=runner,
+        env={"CLAUDE_CODE_SESSION_ID": _SESSION},
+        emit=emitted.append,
+        reconcile=_Reconciles().drive,
+    )
+    return code, "".join(emitted)
+
+
+def _posted_body(*, runner: _Runner) -> str:
+    posted = [call for call in runner.calls if call[:3] == ["gh", "pr", "comment"]]
+    assert len(posted) == 1
+    return Path(posted[0][-1]).read_text(encoding="utf-8")
+
+
+def test_an_over_allowance_proof_is_uploaded_and_referenced_by_name_size_and_digest(
+    tmp_path: Path,
+) -> None:
+    """The whole of the attachment path, end to end through the real primitive."""
+    _file_item(repo=tmp_path)
+    runner = _Runner(comments=_comments())
+    bulky = "L" * (INLINE_PROOF_ALLOWANCE_BYTES + 1)
+
+    exit_code, _ = _post_one(repo=tmp_path, runner=runner, proof=bulky)
+
+    assert exit_code == 0
+    uploads = [call for call in runner.calls if call[:3] == ["gh", "release", "upload"]]
+    assert len(uploads) == 1
+    # The asset is named by its own DIGEST, under the ratified five-field form, and
+    # carries the HOST stage word rather than the factory leg's.
+    digest = proof_digest(text=bulky)
+    expected_name = proof_asset_name(
+        work_item_id=_ITEM_ID,
+        run_id=_SESSION,
+        stage=PROOF_STAGE_HOST_CAPTURE,
+        ordinal=1,
+        slug=attached_proof_slug(digest=digest),
+        extension=ATTACHED_PROOF_EXTENSION,
+    )
+    assert f"#{expected_name}" in uploads[0][-2]
+
+    body = _posted_body(runner=runner)
+    # The record carries the three fields the Definition of Done names...
+    assert f"Attached proof: {expected_name}" in body
+    assert f"Attached proof bytes: {len(bulky.encode('utf-8'))}" in body
+    assert f"Attached proof digest: {digest}" in body
+    # ...IN PLACE OF the inline output. The proof bytes must not also be inline, or
+    # attaching bought nothing and the record is still over budget.
+    assert bulky not in body
+    assert measured_bytes(text=body) <= PROOF_RECORD_BUDGET_BYTES
+
+
+def test_the_attached_record_is_read_back_through_the_production_reader(
+    tmp_path: Path,
+) -> None:
+    """A record whose proof is attached is still a parseable record.
+
+    Asserted through the production reader rather than on the body text, because a
+    body that merely CONTAINS the right lines is not the same as a record the
+    acceptance pass can read: the attachment sits inside the assertion's own
+    section, and the reader has to still find that section's verdict and text.
+    """
+    _file_item(repo=tmp_path)
+    runner = _Runner(comments=_comments())
+    bulky = "M" * (INLINE_PROOF_ALLOWANCE_BYTES * 3)
+
+    _ = _post_one(repo=tmp_path, runner=runner, proof=bulky)
+
+    body = _posted_body(runner=runner)
+    records = proof_records(comments=[{"body": body, "url": "u"}])
+    assert len(records) == 1
+    assert records[0].verdict == VERDICT_HOST_RECORDED
+    assert records[0].run_id == _SESSION
+    # The assertion is still located by its own text within the record.
+    assert records[0].reproduced(assertion=_HOST_ASSERTION) is None
+
+
+def test_a_proof_exactly_at_the_allowance_still_publishes_inline(tmp_path: Path) -> None:
+    """The boundary is inclusive on the admitted side, and it is a REAL boundary.
+
+    This is the control for the attachment test above: one byte smaller and the
+    store is never called, so the upload in that test is attributable to the size
+    rather than to the primitive now attaching everything.
+    """
+    _file_item(repo=tmp_path)
+    runner = _Runner(comments=_comments())
+    fits = "F" * INLINE_PROOF_ALLOWANCE_BYTES
+
+    exit_code, _ = _post_one(repo=tmp_path, runner=runner, proof=fits)
+
+    assert exit_code == 0
+    assert [call for call in runner.calls if call[:3] == ["gh", "release", "upload"]] == []
+    body = _posted_body(runner=runner)
+    assert fits in body
+    assert "Attached proof:" not in body
+
+
+def test_an_upload_failure_refuses_and_publishes_nothing(tmp_path: Path) -> None:
+    """A proof that must be attached and cannot be is a refusal, not an inline fallback.
+
+    Falling back to inline would hand the budget check a record it is bound to
+    refuse, and that refusal would advise attaching the proof — the very thing that
+    had just failed. So the failure is reported where it happened.
+    """
+    _file_item(repo=tmp_path)
+    runner = _Runner(comments=_comments(), upload_exit=1)
+
+    exit_code, emitted = _post_one(
+        repo=tmp_path, runner=runner, proof="X" * (INLINE_PROOF_ALLOWANCE_BYTES + 10)
+    )
+
+    assert exit_code == 3
+    assert [call for call in runner.calls if call[:3] == ["gh", "pr", "comment"]] == []
+    assert HOST_RECORD_SURFACE in emitted
+    assert _HOST_ASSERTION in emitted
+    assert str(INLINE_PROOF_ALLOWANCE_BYTES) in emitted
     assert "Nothing was published" in emitted

@@ -71,6 +71,9 @@ from dataclasses import dataclass
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_build_identity import (
     BuildIdentity,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attachment import (
+    ProofAttachment,
+)
 
 __all__: list[str] = [
     "ASSERTION_HEADING_PREFIX",
@@ -117,6 +120,16 @@ class RecordAssertion:
     steps: tuple[str, ...]
     proof: str
     reproduced: bool | None
+    # Set when this proof was too large to publish inline and travels as an asset
+    # instead (`_dispatcher_proof_attachment`). `None` — the default, and the
+    # ordinary case — renders the fenced inline proof exactly as it always has.
+    #
+    # `proof` is deliberately NOT cleared when an attachment is set: it is the
+    # bytes the digest was taken over, so the budget measurement and the upload
+    # both still have the subject in hand, and the renderer decides which of the
+    # two forms the record carries. A field that replaced the proof would make the
+    # record the only remaining account of what was attached.
+    attachment: ProofAttachment | None = None
 
     def render(self, *, index: int) -> str:
         """This assertion's whole section, with no trailing newline.
@@ -135,12 +148,29 @@ class RecordAssertion:
             lines.extend([f"{GOVERNING_SCENARIO_LABEL}: {self.governing_scenario}", ""])
         lines.extend([f"{REPRODUCTION_STEPS_HEADING}:", ""])
         lines.extend(f"{number}. {step}" for number, step in enumerate(self.steps, start=1))
-        fence = _fence_for(text=self.proof)
-        lines.extend(["", f"{PROOF_HEADING}:", "", fence, self.proof.rstrip("\n"), fence])
+        lines.extend(["", f"{PROOF_HEADING}:", ""])
+        lines.extend(self._proof_lines())
         if self.reproduced is not None:
             verdict = _REPRODUCED_YES if self.reproduced else _REPRODUCED_NO
             lines.extend(["", f"{REPRODUCED_LABEL}: {verdict}."])
         return "\n".join(lines)
+
+    def _proof_lines(self) -> list[str]:
+        """The proof itself, inline in a sized fence, or the attachment reference.
+
+        The inline arm is byte-for-byte what this renderer has always produced, and
+        is asserted so by the golden-master fixture: the attachment path is additive,
+        so a record that was publishable before must render identically now.
+
+        The attachment arm is deliberately NOT fenced. The record reader ignores
+        fenced content — it cannot otherwise tell a verdict a verifier authored from
+        one a proof printed — so a reference inside a fence would be invisible to the
+        very surfaces that must check its digest.
+        """
+        if self.attachment is not None:
+            return self.attachment.render().splitlines()
+        fence = _fence_for(text=self.proof)
+        return [fence, self.proof.rstrip("\n"), fence]
 
 
 def render_proof_record(
