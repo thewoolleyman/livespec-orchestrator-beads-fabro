@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.173.9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.173.8...v0.173.9) (2026-10-08)
+
+
+### Bug Fixes
+
+* **dispatcher:** honor the current merge hold at the host merge boundary ([7b537ae](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7b537ae727a98124f87b4a9d9f49eff81034b587))
+* **dispatcher:** refuse a held pull request the host could not disarm ([898d737](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/898d737d577b3ff3018b0f27b61e668e005e18a9))
+* **dispatcher:** refuse the host merge when the hold authority is unreadable ([da10486](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/da1048622096d5004d0b0272ebf0d4fc09ce38bf))
+* **dispatcher:** terminate a newly-held run green at the held boundary ([474b449](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/474b44901e0a5df22c40cf3e74fb44814ce4e935))
+
 ## [0.173.8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.173.7...v0.173.8) (2026-10-08)
 
 
