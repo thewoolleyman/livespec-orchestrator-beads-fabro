@@ -241,7 +241,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-10-08T09:42:12.381259962Z",
-  "last_event_at": "2026-10-08T09:42:17.402337721Z",
+  "last_event_at": "2026-10-08T09:42:23.596452671Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -281,36 +281,32 @@
       "diff": {}
     },
     {
-      "seq": 0,
+      "seq": 28,
       "checkpoint": {
-        "timestamp": "2026-10-08T09:42:19.880664657Z",
-        "current_node": "gate",
+        "timestamp": "2026-10-08T09:42:19.876527509Z",
+        "current_node": "improve",
         "completed_nodes": [
           "start",
-          "improve",
-          "gate"
+          "improve"
         ],
         "node_retries": {},
         "context_values": {
-          "internal.acp_attempt.gate": 0,
-          "internal.run_id": "01M4DE8FYY4TB2PSA08E7JF0AN",
-          "graph.goal": "# Fabro Enemy Unit Test: visit-count-loop\n",
-          "internal.retry_count.start": 0,
-          "outcome": "succeeded",
-          "current_node": "gate",
-          "thread.start.current_node": "improve",
-          "internal.retry_count.gate": 0,
-          "failure_signature": "",
-          "internal.acp_attempt.improve": 0,
-          "command.output": "blob://sha256/26d482798b1414b8c2fb6d6203aaa6f32d34fe57fc781d3bfa63fd82f03d3bf1",
-          "internal.node_visit_count": 1,
-          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
-          "failure_class": "",
-          "thread.improve.current_node": "gate",
-          "internal.fidelity": "compact",
-          "internal.thread_id": "improve",
           "internal.acp_attempt.start": 0,
-          "internal.retry_count.improve": 0
+          "internal.thread_id": "start",
+          "internal.node_visit_count": 1,
+          "failure_class": "",
+          "command.output": "blob://sha256/26d482798b1414b8c2fb6d6203aaa6f32d34fe57fc781d3bfa63fd82f03d3bf1",
+          "internal.retry_count.improve": 0,
+          "internal.acp_attempt.improve": 0,
+          "current_node": "improve",
+          "internal.fidelity": "compact",
+          "internal.run_id": "01M4DE8FYY4TB2PSA08E7JF0AN",
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "outcome": "succeeded",
+          "thread.start.current_node": "improve",
+          "internal.retry_count.start": 0,
+          "failure_signature": "",
+          "graph.goal": "# Fabro Enemy Unit Test: visit-count-loop\n"
         },
         "node_outcomes": {
           "improve": {
@@ -330,6 +326,136 @@
           "start": {
             "status": "succeeded",
             "usage": null
+          }
+        },
+        "next_node_id": "gate",
+        "git_commit_sha": "799517a37dd9196975f3c496783eaa602beff614",
+        "node_visits": {
+          "start": 1,
+          "improve": 1
+        }
+      },
+      "diff": {}
+    },
+    {
+      "seq": 36,
+      "checkpoint": {
+        "timestamp": "2026-10-08T09:42:23.593226446Z",
+        "current_node": "gate",
+        "completed_nodes": [
+          "start",
+          "improve",
+          "gate"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "thread.improve.current_node": "gate",
+          "internal.retry_count.gate": 0,
+          "internal.run_id": "01M4DE8FYY4TB2PSA08E7JF0AN",
+          "outcome": "succeeded",
+          "failure_signature": "",
+          "failure_class": "",
+          "current_node": "gate",
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "internal.node_visit_count": 1,
+          "command.output": "blob://sha256/26d482798b1414b8c2fb6d6203aaa6f32d34fe57fc781d3bfa63fd82f03d3bf1",
+          "internal.acp_attempt.start": 0,
+          "internal.retry_count.improve": 0,
+          "internal.fidelity": "compact",
+          "internal.thread_id": "improve",
+          "thread.start.current_node": "improve",
+          "internal.retry_count.start": 0,
+          "internal.acp_attempt.improve": 0,
+          "internal.acp_attempt.gate": 0,
+          "graph.goal": "# Fabro Enemy Unit Test: visit-count-loop\n"
+        },
+        "node_outcomes": {
+          "improve": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/26d482798b1414b8c2fb6d6203aaa6f32d34fe57fc781d3bfa63fd82f03d3bf1"
+            },
+            "notes": "Script completed: c=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 146,
+              "active_time_ms": 146
+            }
+          },
+          "gate": {
+            "status": "succeeded",
+            "notes": "Conditional node evaluated: gate",
+            "usage": null
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "improve",
+        "git_commit_sha": "799517a37dd9196975f3c496783eaa602beff614",
+        "node_visits": {
+          "start": 1,
+          "gate": 1,
+          "improve": 1
+        }
+      },
+      "diff": {}
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-10-08T09:42:23.750076844Z",
+        "current_node": "improve",
+        "completed_nodes": [
+          "start",
+          "improve",
+          "gate",
+          "improve"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.acp_attempt.gate": 0,
+          "internal.run_id": "01M4DE8FYY4TB2PSA08E7JF0AN",
+          "graph.goal": "# Fabro Enemy Unit Test: visit-count-loop\n",
+          "internal.retry_count.start": 0,
+          "outcome": "succeeded",
+          "thread.gate.current_node": "improve",
+          "current_node": "improve",
+          "thread.start.current_node": "improve",
+          "internal.retry_count.gate": 0,
+          "failure_signature": "",
+          "internal.acp_attempt.improve": 0,
+          "command.output": "blob://sha256/a0eeb4c77a611843fdfdb75e9b28f28b2dbb26baa6e46c28347d884f51dc8ebe",
+          "internal.node_visit_count": 2,
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "failure_class": "",
+          "thread.improve.current_node": "gate",
+          "internal.fidelity": "compact",
+          "internal.thread_id": "gate",
+          "internal.acp_attempt.start": 0,
+          "internal.retry_count.improve": 0
+        },
+        "node_outcomes": {
+          "improve": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/a0eeb4c77a611843fdfdb75e9b28f28b2dbb26baa6e46c28347d884f51dc8ebe"
+            },
+            "notes": "Script completed: c=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 145,
+              "active_time_ms": 145
+            }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
           },
           "gate": {
             "status": "succeeded",
@@ -337,11 +463,11 @@
             "usage": null
           }
         },
-        "next_node_id": "improve",
+        "next_node_id": "gate",
         "node_visits": {
           "gate": 1,
           "start": 1,
-          "improve": 1
+          "improve": 2
         }
       },
       "diff": {}
@@ -374,6 +500,67 @@
   "superseded_by": null,
   "pending_interviews": {},
   "stages": {
+    "gate@1": {
+      "first_event_seq": 30,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Conditional node evaluated: gate",
+        "failure_reason": null,
+        "timestamp": "2026-10-08T09:42:19.879617368Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-08T09:42:19.878559720Z",
+      "handler": "conditional",
+      "timing": {
+        "wall_time_ms": 1,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
+    "improve@2": {
+      "first_event_seq": 38,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "c=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
+        "command": "exec 2>&1\nc=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
+        "language": "shell"
+      },
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-08T09:42:23.595452991Z",
+      "handler": "command",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "running"
+    },
     "start@1": {
       "first_event_seq": 16,
       "prompt": null,
