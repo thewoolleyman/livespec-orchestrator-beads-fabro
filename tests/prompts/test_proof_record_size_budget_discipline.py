@@ -35,6 +35,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attachment import (
+    ATTACHED_PROOF_ASSET_LABEL,
+    ATTACHED_PROOF_BYTES_LABEL,
+    ATTACHED_PROOF_DIGEST_LABEL,
+    ATTACHED_PROOF_LABEL,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_budget import (
     FORGE_COMMENT_CEILING_BYTES,
     INLINE_PROOF_ALLOWANCE_BYTES,
@@ -155,3 +161,63 @@ def test_the_prompt_forbids_truncating_a_proof_to_fit(*, name: str) -> None:
 
     assert "truncate" in text
     assert "proof of something else" in text
+
+
+# ---------------------------------------------------------------------------
+# bd-ib-555xcd assertion 3, replay-stage half: the REPLAY stage grades an
+# attachment-backed capture by fetching the asset and checking its digest. The
+# acceptance pass does this in code; the replay stage is an agent following
+# prose, so the prose is the deliverable and these are its contract tests.
+# ---------------------------------------------------------------------------
+
+_REPLAY_PROMPT = "proof-verify.md"
+
+
+def test_the_replay_prompt_fetches_and_verifies_an_attached_capture() -> None:
+    """The replay must DOWNLOAD the asset and compare digests, not read the record.
+
+    A record carrying an attachment does not contain its own evidence, so a replay
+    that compared its output against the record's prose would be comparing against
+    a pointer. The prompt therefore names the download and the digest comparison.
+    """
+    text = _text(name=_REPLAY_PROMPT)
+
+    assert "gh release download" in text
+    assert "sha256sum" in text
+    assert "Attached proof digest:" in text
+    assert "verify its digest before you compare" in text
+
+
+def test_the_replay_prompt_grades_a_missing_or_mismatched_asset_as_non_reproduction() -> None:
+    """Never a pass on the record's prose, and the finding names what was observed.
+
+    This is the arm that fails open if it is left vague: the record states the
+    assertion reproduced, so an agent with no instruction would take its word and
+    publish `verified` for bytes it never saw.
+    """
+    text = _text(name=_REPLAY_PROMPT)
+
+    assert "Asset missing, or digest does NOT match" in text
+    assert "non-reproduction" in text
+    assert "not the bytes the capture measured" in text
+    assert "not anywhere" in text
+
+
+@pytest.mark.parametrize("name", _KNOWN_PUBLISHERS)
+def test_the_prompt_states_the_four_attachment_labels_the_code_parses(*, name: str) -> None:
+    """Prose and parser share ONE vocabulary, and the labels come from the code.
+
+    The two stages hand-write these lines, and the acceptance pass parses them. A
+    label that drifted in either direction would publish a record whose attachment
+    no grading surface can see — and the assertion would then read as unevidenced,
+    which is indistinguishable from a proof nobody captured.
+    """
+    text = _text(name=name)
+
+    for label in (
+        ATTACHED_PROOF_LABEL,
+        ATTACHED_PROOF_BYTES_LABEL,
+        ATTACHED_PROOF_DIGEST_LABEL,
+        ATTACHED_PROOF_ASSET_LABEL,
+    ):
+        assert f"{label}: " in text
