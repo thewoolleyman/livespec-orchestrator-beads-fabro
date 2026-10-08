@@ -45,6 +45,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import 
     ProofRecord,
     latest_proof_record,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
+    read_journal_records,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_journal import was_resumed
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
@@ -67,6 +71,7 @@ __all__: list[str] = [
     "host_only_record",
     "host_verified_record_url",
     "human_attested_record_url",
+    "resumed_run_id",
     "write_proof_pointer",
 ]
 
@@ -129,6 +134,12 @@ def write_proof_pointer(
             run_id=record.run_id,
             timestamp=record.timestamp,
             verdict=record.verdict,
+            resumed_run_id=resumed_run_id(
+                journal_path=journal.path,
+                item=item,
+                outcome=outcome,
+                pull_request=pr_number,
+            ),
             # The host link comes off the leg's OWN verdict rather than from a scan
             # of the records: the leg populates it only for a `host_verified` record
             # that actually passed an assertion, so the pointer can never cite a
@@ -138,6 +149,40 @@ def write_proof_pointer(
         ),
         journal=journal,
     )
+
+
+def resumed_run_id(
+    *, journal_path: Path, item: WorkItem, outcome: DispatchOutcome, pull_request: int
+) -> str | None:
+    """The dispatch that MERGED a resumed item, or `None` for an ordinary one.
+
+    The clause asks the pointer of a resumed item to name "the resumed run's
+    identifier beside the record's own run id", and those two differ precisely
+    because the record was published by the EARLIER run. So the value here is the
+    merging dispatch's own identifier, taken off the outcome, and the journal is
+    consulted only to answer whether this merge was reached through a resume at
+    all.
+
+    KEYED ON THE PULL REQUEST, not on the item. An item whose earlier pull
+    request was resumed and whose current one was dispatched plainly was not
+    resumed into THIS merge, and naming a resumed run on its pointer would credit
+    a dispatch that had nothing to do with the record being cited.
+
+    `None` also covers a resumed merge whose outcome carries no run id — the
+    reconcile path builds its outcome from a resolved merged pull request and has
+    none. An empty bullet would be worse than no bullet: the clause says the
+    section carries only the fields it names, and a reader would take the blank
+    for an identifier that had been recorded and lost.
+    """
+    if outcome.fabro_run_id is None:
+        return None
+    if not was_resumed(
+        records=read_journal_records(journal_path=journal_path),
+        work_item_id=item.id,
+        pull_request=pull_request,
+    ):
+        return None
+    return outcome.fabro_run_id
 
 
 def _skip(*, journal: JournalFile, item: WorkItem, reason: str) -> None:
