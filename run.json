@@ -241,7 +241,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-10-08T09:46:03.160876839Z",
-  "last_event_at": "2026-10-08T09:46:25.276102895Z",
+  "last_event_at": "2026-10-08T09:46:30.143808745Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -544,47 +544,42 @@
       "diff": {}
     },
     {
-      "seq": 0,
+      "seq": 64,
       "checkpoint": {
-        "timestamp": "2026-10-08T09:46:26.605802133Z",
-        "current_node": "gate",
+        "timestamp": "2026-10-08T09:46:26.599247697Z",
+        "current_node": "improve",
         "completed_nodes": [
           "start",
           "improve",
           "gate",
           "improve",
           "gate",
-          "improve",
-          "gate"
+          "improve"
         ],
         "node_retries": {},
         "context_values": {
-          "command.output": "blob://sha256/9d219de8c77bdf7617c9f231ddc49eee587bcbc7405f719fbdbf6cb0c8b43b6b",
-          "internal.acp_attempt.improve": 0,
-          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
-          "thread.start.current_node": "improve",
-          "current_node": "gate",
-          "outcome": "succeeded",
-          "thread.improve.current_node": "gate",
-          "failure_signature": "",
-          "internal.retry_count.improve": 0,
           "internal.acp_attempt.gate": 0,
-          "thread.gate.current_node": "improve",
-          "graph.goal": "# Fabro Enemy Unit Test: visit-count-loop\n",
-          "internal.retry_count.start": 0,
-          "internal.fidelity": "compact",
-          "internal.node_visit_count": 3,
-          "failure_class": "",
-          "internal.thread_id": "improve",
-          "internal.retry_count.gate": 0,
+          "thread.start.current_node": "improve",
           "internal.acp_attempt.start": 0,
-          "internal.run_id": "01M4DEFHM4FB9HSHA1GXHETMWF"
+          "graph.goal": "# Fabro Enemy Unit Test: visit-count-loop\n",
+          "internal.acp_attempt.improve": 0,
+          "thread.gate.current_node": "improve",
+          "internal.run_id": "01M4DEFHM4FB9HSHA1GXHETMWF",
+          "outcome": "succeeded",
+          "internal.retry_count.improve": 0,
+          "failure_signature": "",
+          "internal.fidelity": "compact",
+          "internal.retry_count.gate": 0,
+          "internal.retry_count.start": 0,
+          "internal.thread_id": "gate",
+          "internal.node_visit_count": 3,
+          "thread.improve.current_node": "gate",
+          "current_node": "improve",
+          "failure_class": "",
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "command.output": "blob://sha256/9d219de8c77bdf7617c9f231ddc49eee587bcbc7405f719fbdbf6cb0c8b43b6b"
         },
         "node_outcomes": {
-          "start": {
-            "status": "succeeded",
-            "usage": null
-          },
           "gate": {
             "status": "succeeded",
             "notes": "Conditional node evaluated: gate",
@@ -603,19 +598,143 @@
               "tool_time_ms": 140,
               "active_time_ms": 140
             }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "gate",
+        "git_commit_sha": "799517a37dd9196975f3c496783eaa602beff614",
+        "node_visits": {
+          "improve": 3,
+          "start": 1,
+          "gate": 2
+        }
+      },
+      "diff": {}
+    },
+    {
+      "seq": 72,
+      "checkpoint": {
+        "timestamp": "2026-10-08T09:46:30.143671949Z",
+        "current_node": "gate",
+        "completed_nodes": [
+          "start",
+          "improve",
+          "gate",
+          "improve",
+          "gate",
+          "improve",
+          "gate"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.node_visit_count": 3,
+          "internal.acp_attempt.improve": 0,
+          "graph.goal": "# Fabro Enemy Unit Test: visit-count-loop\n",
+          "thread.gate.current_node": "improve",
+          "failure_class": "",
+          "internal.retry_count.start": 0,
+          "current_node": "gate",
+          "internal.fidelity": "compact",
+          "internal.run_id": "01M4DEFHM4FB9HSHA1GXHETMWF",
+          "internal.acp_attempt.gate": 0,
+          "internal.thread_id": "improve",
+          "thread.start.current_node": "improve",
+          "internal.retry_count.improve": 0,
+          "failure_signature": "",
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "internal.acp_attempt.start": 0,
+          "outcome": "succeeded",
+          "command.output": "blob://sha256/9d219de8c77bdf7617c9f231ddc49eee587bcbc7405f719fbdbf6cb0c8b43b6b",
+          "thread.improve.current_node": "gate",
+          "internal.retry_count.gate": 0
+        },
+        "node_outcomes": {
+          "gate": {
+            "status": "succeeded",
+            "notes": "Conditional node evaluated: gate",
+            "usage": null
+          },
+          "improve": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/9d219de8c77bdf7617c9f231ddc49eee587bcbc7405f719fbdbf6cb0c8b43b6b"
+            },
+            "notes": "Script completed: c=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 140,
+              "active_time_ms": 140
+            }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
           }
         },
         "next_node_id": "exit",
+        "git_commit_sha": "799517a37dd9196975f3c496783eaa602beff614",
         "node_visits": {
           "start": 1,
-          "gate": 3,
-          "improve": 3
+          "improve": 3,
+          "gate": 3
         }
       },
       "diff": {}
     }
   ],
-  "conclusion": null,
+  "conclusion": {
+    "timestamp": "2026-10-08T09:46:30.190336100Z",
+    "status": "succeeded",
+    "timing": {
+      "wall_time_ms": 26984,
+      "inference_time_ms": 0,
+      "tool_time_ms": 433,
+      "active_time_ms": 433
+    },
+    "final_git_commit_sha": "799517a37dd9196975f3c496783eaa602beff614",
+    "stages": [
+      {
+        "stage_id": "start",
+        "stage_label": "start",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "improve",
+        "stage_label": "improve",
+        "timing": {
+          "wall_time_ms": 468,
+          "inference_time_ms": 0,
+          "tool_time_ms": 433,
+          "active_time_ms": 433
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "gate",
+        "stage_label": "gate",
+        "timing": {
+          "wall_time_ms": 2,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      }
+    ],
+    "total_retries": 0,
+    "diff": {}
+  },
   "sandbox": {
     "kind": "ready",
     "plan": {
@@ -772,6 +891,122 @@
       },
       "state": "succeeded"
     },
+    "improve@3": {
+      "first_event_seq": 56,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Script completed: c=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
+        "failure_reason": null,
+        "timestamp": "2026-10-08T09:46:22.648730056Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "c=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
+        "command": "exec 2>&1\nc=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
+        "language": "shell"
+      },
+      "script_timing": {
+        "output": "blob://sha256/9d219de8c77bdf7617c9f231ddc49eee587bcbc7405f719fbdbf6cb0c8b43b6b",
+        "exit_code": 0,
+        "duration_ms": 140,
+        "termination": "exited",
+        "output_bytes": 16,
+        "live_streaming": true
+      },
+      "parallel_results": null,
+      "output": null,
+      "output_bytes": 16,
+      "live_streaming": true,
+      "termination": "exited",
+      "started_at": "2026-10-08T09:46:22.497797274Z",
+      "handler": "command",
+      "timing": {
+        "wall_time_ms": 150,
+        "inference_time_ms": 0,
+        "tool_time_ms": 140,
+        "active_time_ms": 140
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
+    "exit@1": {
+      "first_event_seq": 74,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-10-08T09:46:30.143808745Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-08T09:46:30.143776865Z",
+      "handler": "exit",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
+    "gate@3": {
+      "first_event_seq": 66,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Conditional node evaluated: gate",
+        "failure_reason": null,
+        "timestamp": "2026-10-08T09:46:26.604803115Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-08T09:46:26.603839063Z",
+      "handler": "conditional",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
     "start@1": {
       "first_event_seq": 16,
       "prompt": null,
@@ -829,54 +1064,6 @@
         "inference_time_ms": 0,
         "tool_time_ms": 0,
         "active_time_ms": 0
-      },
-      "usage": {
-        "input_tokens": 0,
-        "output_tokens": 0,
-        "total_tokens": 0,
-        "reasoning_tokens": 0,
-        "cache_read_tokens": 0,
-        "cache_write_tokens": 0
-      },
-      "state": "succeeded"
-    },
-    "improve@3": {
-      "first_event_seq": 56,
-      "prompt": null,
-      "response": null,
-      "completion": {
-        "outcome": "succeeded",
-        "notes": "Script completed: c=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
-        "failure_reason": null,
-        "timestamp": "2026-10-08T09:46:22.648730056Z"
-      },
-      "provider_used": null,
-      "diff": null,
-      "script_invocation": {
-        "script": "c=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
-        "command": "exec 2>&1\nc=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
-        "language": "shell"
-      },
-      "script_timing": {
-        "output": "blob://sha256/9d219de8c77bdf7617c9f231ddc49eee587bcbc7405f719fbdbf6cb0c8b43b6b",
-        "exit_code": 0,
-        "duration_ms": 140,
-        "termination": "exited",
-        "output_bytes": 16,
-        "live_streaming": true
-      },
-      "parallel_results": null,
-      "output": null,
-      "output_bytes": 16,
-      "live_streaming": true,
-      "termination": "exited",
-      "started_at": "2026-10-08T09:46:22.497797274Z",
-      "handler": "command",
-      "timing": {
-        "wall_time_ms": 150,
-        "inference_time_ms": 0,
-        "tool_time_ms": 140,
-        "active_time_ms": 140
       },
       "usage": {
         "input_tokens": 0,
