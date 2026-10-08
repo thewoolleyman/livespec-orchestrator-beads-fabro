@@ -1,0 +1,5 @@
+{
+  "script": "X='a b'; Y=\"$X-$(echo c)\"; test \"$Y\" = 'a b-c' && printf 'quoting-ok %s\\n' \"$Y\" >&2",
+  "command": "exec 2>&1\nX='a b'; Y=\"$X-$(echo c)\"; test \"$Y\" = 'a b-c' && printf 'quoting-ok %s\\n' \"$Y\" >&2",
+  "language": "shell"
+}
