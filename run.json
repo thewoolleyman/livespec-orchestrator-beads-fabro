@@ -241,7 +241,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-10-08T09:42:12.381259962Z",
-  "last_event_at": "2026-10-08T09:42:34.197088732Z",
+  "last_event_at": "2026-10-08T09:42:38.797621509Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -544,43 +544,47 @@
       "diff": {}
     },
     {
-      "seq": 0,
+      "seq": 64,
       "checkpoint": {
-        "timestamp": "2026-10-08T09:42:35.411571266Z",
-        "current_node": "gate",
+        "timestamp": "2026-10-08T09:42:35.407337148Z",
+        "current_node": "improve",
         "completed_nodes": [
           "start",
           "improve",
           "gate",
           "improve",
           "gate",
-          "improve",
-          "gate"
+          "improve"
         ],
         "node_retries": {},
         "context_values": {
-          "internal.acp_attempt.gate": 0,
-          "internal.run_id": "01M4DE8FYY4TB2PSA08E7JF0AN",
-          "graph.goal": "# Fabro Enemy Unit Test: visit-count-loop\n",
-          "internal.retry_count.start": 0,
-          "outcome": "succeeded",
-          "thread.gate.current_node": "improve",
-          "current_node": "gate",
-          "thread.start.current_node": "improve",
-          "internal.retry_count.gate": 0,
-          "failure_signature": "",
-          "internal.acp_attempt.improve": 0,
-          "command.output": "blob://sha256/9d219de8c77bdf7617c9f231ddc49eee587bcbc7405f719fbdbf6cb0c8b43b6b",
-          "internal.node_visit_count": 3,
-          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
           "failure_class": "",
           "thread.improve.current_node": "gate",
+          "internal.thread_id": "gate",
           "internal.fidelity": "compact",
-          "internal.thread_id": "improve",
+          "internal.acp_attempt.gate": 0,
+          "current_node": "improve",
           "internal.acp_attempt.start": 0,
-          "internal.retry_count.improve": 0
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "thread.gate.current_node": "improve",
+          "internal.retry_count.start": 0,
+          "command.output": "blob://sha256/9d219de8c77bdf7617c9f231ddc49eee587bcbc7405f719fbdbf6cb0c8b43b6b",
+          "internal.acp_attempt.improve": 0,
+          "internal.retry_count.gate": 0,
+          "internal.run_id": "01M4DE8FYY4TB2PSA08E7JF0AN",
+          "graph.goal": "# Fabro Enemy Unit Test: visit-count-loop\n",
+          "internal.retry_count.improve": 0,
+          "internal.node_visit_count": 3,
+          "outcome": "succeeded",
+          "failure_signature": "",
+          "thread.start.current_node": "improve"
         },
         "node_outcomes": {
+          "gate": {
+            "status": "succeeded",
+            "notes": "Conditional node evaluated: gate",
+            "usage": null
+          },
           "improve": {
             "status": "succeeded",
             "context_updates": {
@@ -598,24 +602,139 @@
           "start": {
             "status": "succeeded",
             "usage": null
-          },
+          }
+        },
+        "next_node_id": "gate",
+        "git_commit_sha": "799517a37dd9196975f3c496783eaa602beff614",
+        "node_visits": {
+          "start": 1,
+          "gate": 2,
+          "improve": 3
+        }
+      },
+      "diff": {}
+    },
+    {
+      "seq": 72,
+      "checkpoint": {
+        "timestamp": "2026-10-08T09:42:38.797526261Z",
+        "current_node": "gate",
+        "completed_nodes": [
+          "start",
+          "improve",
+          "gate",
+          "improve",
+          "gate",
+          "improve",
+          "gate"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.retry_count.start": 0,
+          "internal.retry_count.gate": 0,
+          "failure_class": "",
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "internal.node_visit_count": 3,
+          "internal.fidelity": "compact",
+          "command.output": "blob://sha256/9d219de8c77bdf7617c9f231ddc49eee587bcbc7405f719fbdbf6cb0c8b43b6b",
+          "current_node": "gate",
+          "internal.acp_attempt.gate": 0,
+          "internal.retry_count.improve": 0,
+          "internal.acp_attempt.start": 0,
+          "thread.improve.current_node": "gate",
+          "thread.start.current_node": "improve",
+          "thread.gate.current_node": "improve",
+          "internal.run_id": "01M4DE8FYY4TB2PSA08E7JF0AN",
+          "internal.thread_id": "improve",
+          "internal.acp_attempt.improve": 0,
+          "graph.goal": "# Fabro Enemy Unit Test: visit-count-loop\n",
+          "outcome": "succeeded",
+          "failure_signature": ""
+        },
+        "node_outcomes": {
           "gate": {
             "status": "succeeded",
             "notes": "Conditional node evaluated: gate",
             "usage": null
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          },
+          "improve": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/9d219de8c77bdf7617c9f231ddc49eee587bcbc7405f719fbdbf6cb0c8b43b6b"
+            },
+            "notes": "Script completed: c=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 142,
+              "active_time_ms": 142
+            }
           }
         },
         "next_node_id": "exit",
+        "git_commit_sha": "799517a37dd9196975f3c496783eaa602beff614",
         "node_visits": {
           "gate": 3,
-          "start": 1,
-          "improve": 3
+          "improve": 3,
+          "start": 1
         }
       },
       "diff": {}
     }
   ],
-  "conclusion": null,
+  "conclusion": {
+    "timestamp": "2026-10-08T09:42:38.840990939Z",
+    "status": "succeeded",
+    "timing": {
+      "wall_time_ms": 26419,
+      "inference_time_ms": 0,
+      "tool_time_ms": 433,
+      "active_time_ms": 433
+    },
+    "final_git_commit_sha": "799517a37dd9196975f3c496783eaa602beff614",
+    "stages": [
+      {
+        "stage_id": "start",
+        "stage_label": "start",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "improve",
+        "stage_label": "improve",
+        "timing": {
+          "wall_time_ms": 468,
+          "inference_time_ms": 0,
+          "tool_time_ms": 433,
+          "active_time_ms": 433
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "gate",
+        "stage_label": "gate",
+        "timing": {
+          "wall_time_ms": 2,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      }
+    ],
+    "total_retries": 0,
+    "diff": {}
+  },
   "sandbox": {
     "kind": "ready",
     "plan": {
@@ -676,6 +795,122 @@
       },
       "state": "succeeded"
     },
+    "improve@1": {
+      "first_event_seq": 20,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Script completed: c=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
+        "failure_reason": null,
+        "timestamp": "2026-10-08T09:42:15.188147557Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "c=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
+        "command": "exec 2>&1\nc=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
+        "language": "shell"
+      },
+      "script_timing": {
+        "output": "blob://sha256/26d482798b1414b8c2fb6d6203aaa6f32d34fe57fc781d3bfa63fd82f03d3bf1",
+        "exit_code": 0,
+        "duration_ms": 146,
+        "termination": "exited",
+        "output_bytes": 16,
+        "live_streaming": true
+      },
+      "parallel_results": null,
+      "output": null,
+      "output_bytes": 16,
+      "live_streaming": true,
+      "termination": "exited",
+      "started_at": "2026-10-08T09:42:15.029072237Z",
+      "handler": "command",
+      "timing": {
+        "wall_time_ms": 158,
+        "inference_time_ms": 0,
+        "tool_time_ms": 146,
+        "active_time_ms": 146
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
+    "gate@2": {
+      "first_event_seq": 48,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Conditional node evaluated: gate",
+        "failure_reason": null,
+        "timestamp": "2026-10-08T09:42:27.570457320Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-08T09:42:27.569392448Z",
+      "handler": "conditional",
+      "timing": {
+        "wall_time_ms": 1,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
+    "exit@1": {
+      "first_event_seq": 74,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-10-08T09:42:38.797621509Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-08T09:42:38.797600340Z",
+      "handler": "exit",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
     "improve@2": {
       "first_event_seq": 38,
       "prompt": null,
@@ -713,40 +948,6 @@
         "inference_time_ms": 0,
         "tool_time_ms": 145,
         "active_time_ms": 145
-      },
-      "usage": {
-        "input_tokens": 0,
-        "output_tokens": 0,
-        "total_tokens": 0,
-        "reasoning_tokens": 0,
-        "cache_read_tokens": 0,
-        "cache_write_tokens": 0
-      },
-      "state": "succeeded"
-    },
-    "gate@2": {
-      "first_event_seq": 48,
-      "prompt": null,
-      "response": null,
-      "completion": {
-        "outcome": "succeeded",
-        "notes": "Conditional node evaluated: gate",
-        "failure_reason": null,
-        "timestamp": "2026-10-08T09:42:27.570457320Z"
-      },
-      "provider_used": null,
-      "diff": null,
-      "script_invocation": null,
-      "script_timing": null,
-      "parallel_results": null,
-      "output": null,
-      "started_at": "2026-10-08T09:42:27.569392448Z",
-      "handler": "conditional",
-      "timing": {
-        "wall_time_ms": 1,
-        "inference_time_ms": 0,
-        "tool_time_ms": 0,
-        "active_time_ms": 0
       },
       "usage": {
         "input_tokens": 0,
@@ -840,43 +1041,29 @@
       },
       "state": "succeeded"
     },
-    "improve@1": {
-      "first_event_seq": 20,
+    "gate@3": {
+      "first_event_seq": 66,
       "prompt": null,
       "response": null,
       "completion": {
         "outcome": "succeeded",
-        "notes": "Script completed: c=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
+        "notes": "Conditional node evaluated: gate",
         "failure_reason": null,
-        "timestamp": "2026-10-08T09:42:15.188147557Z"
+        "timestamp": "2026-10-08T09:42:35.410555747Z"
       },
       "provider_used": null,
       "diff": null,
-      "script_invocation": {
-        "script": "c=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
-        "command": "exec 2>&1\nc=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
-        "language": "shell"
-      },
-      "script_timing": {
-        "output": "blob://sha256/26d482798b1414b8c2fb6d6203aaa6f32d34fe57fc781d3bfa63fd82f03d3bf1",
-        "exit_code": 0,
-        "duration_ms": 146,
-        "termination": "exited",
-        "output_bytes": 16,
-        "live_streaming": true
-      },
+      "script_invocation": null,
+      "script_timing": null,
       "parallel_results": null,
       "output": null,
-      "output_bytes": 16,
-      "live_streaming": true,
-      "termination": "exited",
-      "started_at": "2026-10-08T09:42:15.029072237Z",
-      "handler": "command",
+      "started_at": "2026-10-08T09:42:35.409527123Z",
+      "handler": "conditional",
       "timing": {
-        "wall_time_ms": 158,
+        "wall_time_ms": 0,
         "inference_time_ms": 0,
-        "tool_time_ms": 146,
-        "active_time_ms": 146
+        "tool_time_ms": 0,
+        "active_time_ms": 0
       },
       "usage": {
         "input_tokens": 0,
