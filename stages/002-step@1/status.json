@@ -1,0 +1,6 @@
+{
+  "outcome": "succeeded",
+  "notes": "Script completed: c=$(cat /tmp/eut-outcome-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-outcome-count; echo \"step visit $c\" >&2; test $c -lt 3",
+  "failure_reason": null,
+  "timestamp": "2026-10-08T09:41:48.360270096Z"
+}

@@ -244,7 +244,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-10-08T09:41:44.577190689Z",
-  "last_event_at": "2026-10-08T09:41:48.201393057Z",
+  "last_event_at": "2026-10-08T09:41:53.545378465Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -284,9 +284,9 @@
       "diff": {}
     },
     {
-      "seq": 0,
+      "seq": 28,
       "checkpoint": {
-        "timestamp": "2026-10-08T09:41:48.361987519Z",
+        "timestamp": "2026-10-08T09:41:53.542501353Z",
         "current_node": "step",
         "completed_nodes": [
           "start",
@@ -294,24 +294,28 @@
         ],
         "node_retries": {},
         "context_values": {
-          "internal.node_visit_count": 1,
-          "internal.acp_attempt.step": 0,
           "failure_class": "",
-          "thread.start.current_node": "step",
-          "graph.goal": "# Fabro Enemy Unit Test: outcome-loop\n",
-          "internal.acp_attempt.start": 0,
           "internal.run_id": "01M4DE7MSQMV222XS8D4H0463E",
-          "current_node": "step",
-          "internal.thread_id": "start",
+          "internal.acp_attempt.step": 0,
           "outcome": "succeeded",
-          "internal.fidelity": "compact",
-          "internal.retry_count.step": 0,
           "failure_signature": "",
+          "graph.goal": "# Fabro Enemy Unit Test: outcome-loop\n",
           "command.output": "blob://sha256/8de82914a10667a4b35da1e0e0c55af8f3e71565939fc524ec3c7b53d69614e7",
+          "internal.fidelity": "compact",
+          "internal.acp_attempt.start": 0,
+          "current_node": "step",
+          "internal.node_visit_count": 1,
+          "internal.retry_count.step": 0,
           "internal.retry_count.start": 0,
-          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro"
+          "thread.start.current_node": "step",
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "internal.thread_id": "start"
         },
         "node_outcomes": {
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          },
           "step": {
             "status": "succeeded",
             "context_updates": {
@@ -325,6 +329,61 @@
               "tool_time_ms": 147,
               "active_time_ms": 147
             }
+          }
+        },
+        "next_node_id": "step",
+        "git_commit_sha": "799517a37dd9196975f3c496783eaa602beff614",
+        "node_visits": {
+          "step": 1,
+          "start": 1
+        }
+      },
+      "diff": {}
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-10-08T09:41:53.703115662Z",
+        "current_node": "step",
+        "completed_nodes": [
+          "start",
+          "step",
+          "step"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.node_visit_count": 2,
+          "internal.acp_attempt.step": 0,
+          "failure_class": "",
+          "thread.start.current_node": "step",
+          "graph.goal": "# Fabro Enemy Unit Test: outcome-loop\n",
+          "internal.acp_attempt.start": 0,
+          "internal.run_id": "01M4DE7MSQMV222XS8D4H0463E",
+          "current_node": "step",
+          "internal.thread_id": "step",
+          "outcome": "succeeded",
+          "internal.fidelity": "compact",
+          "internal.retry_count.step": 0,
+          "failure_signature": "",
+          "command.output": "blob://sha256/19ce592e41c3d4d447cffef83c61e3403d28ccb30341798c9be3502a1149b6b6",
+          "internal.retry_count.start": 0,
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "thread.step.current_node": "step"
+        },
+        "node_outcomes": {
+          "step": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/19ce592e41c3d4d447cffef83c61e3403d28ccb30341798c9be3502a1149b6b6"
+            },
+            "notes": "Script completed: c=$(cat /tmp/eut-outcome-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-outcome-count; echo \"step visit $c\" >&2; test $c -lt 3",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 144,
+              "active_time_ms": 144
+            }
           },
           "start": {
             "status": "succeeded",
@@ -334,7 +393,7 @@
         "next_node_id": "step",
         "node_visits": {
           "start": 1,
-          "step": 1
+          "step": 2
         }
       },
       "diff": {}
@@ -405,6 +464,54 @@
       "first_event_seq": 20,
       "prompt": null,
       "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Script completed: c=$(cat /tmp/eut-outcome-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-outcome-count; echo \"step visit $c\" >&2; test $c -lt 3",
+        "failure_reason": null,
+        "timestamp": "2026-10-08T09:41:48.360270096Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "c=$(cat /tmp/eut-outcome-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-outcome-count; echo \"step visit $c\" >&2; test $c -lt 3",
+        "command": "exec 2>&1\nc=$(cat /tmp/eut-outcome-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-outcome-count; echo \"step visit $c\" >&2; test $c -lt 3",
+        "language": "shell"
+      },
+      "script_timing": {
+        "output": "blob://sha256/8de82914a10667a4b35da1e0e0c55af8f3e71565939fc524ec3c7b53d69614e7",
+        "exit_code": 0,
+        "duration_ms": 147,
+        "termination": "exited",
+        "output_bytes": 13,
+        "live_streaming": true
+      },
+      "parallel_results": null,
+      "output": null,
+      "output_bytes": 13,
+      "live_streaming": true,
+      "termination": "exited",
+      "started_at": "2026-10-08T09:41:48.201372369Z",
+      "handler": "command",
+      "timing": {
+        "wall_time_ms": 158,
+        "inference_time_ms": 0,
+        "tool_time_ms": 147,
+        "active_time_ms": 147
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
+    "step@2": {
+      "first_event_seq": 30,
+      "prompt": null,
+      "response": null,
       "completion": null,
       "provider_used": null,
       "diff": null,
@@ -416,7 +523,7 @@
       "script_timing": null,
       "parallel_results": null,
       "output": null,
-      "started_at": "2026-10-08T09:41:48.201372369Z",
+      "started_at": "2026-10-08T09:41:53.544453605Z",
       "handler": "command",
       "usage": {
         "input_tokens": 0,
