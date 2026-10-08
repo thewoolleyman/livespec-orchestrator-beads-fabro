@@ -107,3 +107,12 @@ def test_host_runbook_preserves_the_on_demand_credential_alarm_contract() -> Non
     assert 'exits `0` when `"alarm": false`' in _IMAGE_RUNBOOK
     assert 'exits `1` when `"alarm": true`' in _IMAGE_RUNBOOK
     assert "does not schedule itself or promise automatic alert delivery" in _IMAGE_RUNBOOK
+
+
+def test_host_runbook_distinguishes_the_three_credential_recovery_states() -> None:
+    assert "**Insufficient lifetime.**" in _IMAGE_RUNBOOK
+    assert "preflight spends its one bounded renewal" in _IMAGE_RUNBOOK
+    assert '**Unanswered renewal (`"renewal_answered": false`).**' in _IMAGE_RUNBOOK
+    assert "missing executable, transport failure, or error response" in _IMAGE_RUNBOOK
+    assert "**Explicit provider authentication failure.**" in _IMAGE_RUNBOOK
+    assert "Only this state calls for `codex login`" in _IMAGE_RUNBOOK

@@ -954,16 +954,29 @@ fixed-hours windows. Moving renewal to the ungated `account/read` route is the
 other half of the fix: a wider guard over a window-gated `codex exec` would
 merely attempt and decline.
 
-A status alarm means the 10-day cliff is close and deserves attention. A timer
-run returning non-zero, or a repeated `"refresh_due": true` after a non-dry-run
-refresh, means the renewal is not advancing the expiry — **which is not by
-itself evidence that authentication has failed, and is not grounds for
-`codex login`.** The renewal route cannot report an auth failure either: Codex
-discards the refresh outcome on the `account/read` path. Check
-`"renewal_answered"` in the refresh payload to tell "Codex answered and the
-expiry held" from "no successful renewal response came back" (a missing
-executable, a transport failure, an error response). Run `codex login` only
-when Codex EXPLICITLY reports an unrecoverable authentication failure.
+Do not collapse these recovery states; they carry different evidence and call
+for different responses:
+
+- **Insufficient lifetime.** The credential is readable but shorter-lived than
+  the effective dispatch requirement. Dispatch preflight spends its one bounded renewal
+  before refusing. Re-run `codex-cred-status --json` with the same `--workflow`,
+  `--workflow-name`, and `--review-fix-cap` selection the dispatch used, compare
+  `remaining_seconds` with the required lifetime in `message`, and use the
+  bounded manual diagnostic above if another controlled observation is needed.
+  A short lifetime or a repeated `"refresh_due": true` is not evidence that
+  provider authentication failed.
+- **Unanswered renewal (`"renewal_answered": false`).** No successful renewal
+  response came back. Diagnose the credential-source host for a missing executable, transport failure, or error response
+  using the secret-free refresh payload and host logs. This is an execution or
+  response-path finding, not proof that the provider rejected the credential.
+  Conversely, `"renewal_answered": true` with an unchanged expiry means Codex
+  answered but the expiry held; it is not the unanswered case.
+- **Explicit provider authentication failure.** Only this state calls for `codex login`
+  on the credential-source host. Require an explicit, unrecoverable
+  authentication failure from Codex; neither an insufficient lifetime nor an
+  unanswered renewal establishes one. The `account/read` renewal route itself
+  discards the provider's refresh outcome, so it cannot manufacture that
+  evidence from a held expiry.
 
 Diagnose on the right host. The credential lives on the **credential-source
 host** — the one running the Dispatcher, which reads `$CODEX_HOME/auth.json`
