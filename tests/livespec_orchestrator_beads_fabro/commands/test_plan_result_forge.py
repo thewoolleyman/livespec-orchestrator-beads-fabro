@@ -19,6 +19,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_forge import (
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     OBSERVATION_SATISFIED,
+    OBSERVATION_UNSATISFIED,
     SOURCE_FORGE,
     SOURCE_GIT_OBJECT,
 )
@@ -99,17 +100,18 @@ def test_a_matching_state_is_satisfied_and_runs_from_the_named_clone() -> None:
     assert runner.calls[0][1] == Path("/clone")
 
 
-def test_a_different_state_is_not_satisfied() -> None:
+def test_a_different_state_is_unsatisfied_and_reports_the_state_it_read() -> None:
     runner = _runner(stdout='{"state": "OPEN", "updatedAt": "2026-10-08T09:00:00Z"}')
-    assert (
-        observe_pull_request_state(
-            repository=_REPOSITORY,
-            target=PullRequestStateTarget(number=9, state="MERGED"),
-            runner=runner,
-            now=_NOW,
-        )
-        is None
+    observation = observe_pull_request_state(
+        repository=_REPOSITORY,
+        target=PullRequestStateTarget(number=9, state="MERGED"),
+        runner=runner,
+        now=_NOW,
     )
+    assert observation is not None
+    assert observation.status == OBSERVATION_UNSATISFIED
+    assert observation.evidence == "forge pull request #9 state OPEN at 2026-10-08T09:00:00Z"
+    assert "not the expected MERGED" in observation.detail
 
 
 def test_a_failed_malformed_or_incomplete_state_read_is_not_satisfied() -> None:
@@ -152,18 +154,30 @@ def test_a_matching_remote_blob_is_satisfied_and_cites_the_git_object() -> None:
     assert "no local checkout was consulted" in observation.detail
 
 
-def test_a_different_absent_or_unreadable_blob_is_not_satisfied() -> None:
+def test_a_different_remote_blob_is_unsatisfied() -> None:
+    """The remote answered, and the object it named is not the requested one."""
+    observation = observe_file_on_branch(
+        repository=_REPOSITORY,
+        target=FileOnBranchTarget(branch="master", path="a/b.md", blob=_BLOB),
+        runner=_runner(stdout="1111111111111111111111111111111111111111\n"),
+        now=_NOW,
+    )
+    assert observation is not None
+    assert observation.status == OBSERVATION_UNSATISFIED
+    assert (
+        observation.evidence == "git blob 1111111111111111111111111111111111111111 at master:a/b.md"
+    )
+    assert f"not the expected {_BLOB}" in observation.detail
+
+
+def test_an_absent_or_unreadable_blob_is_not_a_mismatch() -> None:
     """A blank answer is NOT a mismatch, and neither is a failed read.
 
     The forge returns an empty body for a path it cannot resolve, so treating
     blank as a mismatch would report a confident negative about a path the read
-    never reached.
+    never reached — which the clause forbids outright.
     """
-    for runner in (
-        _runner(stdout="1111111111111111111111111111111111111111\n"),
-        _runner(stdout="\n"),
-        _runner(exit_code=1),
-    ):
+    for runner in (_runner(stdout="\n"), _runner(exit_code=1)):
         assert (
             observe_file_on_branch(
                 repository=_REPOSITORY,

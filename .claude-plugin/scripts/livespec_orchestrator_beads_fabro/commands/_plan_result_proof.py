@@ -60,6 +60,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_observation import 
     SOURCE_PROOF_RECORD,
     ResultObservation,
     satisfied,
+    unsatisfied,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_repository import (
     ResultRepository,
@@ -111,9 +112,33 @@ def observe_verified_proof(
         return None
     record = _verified_record(records=records, build=target.build)
     if record is None:
-        return None
-    if not all(record.reproduced(assertion=one) is True for one in target.assertions):
-        return None
+        return _unmet(
+            repository=repository,
+            target=target,
+            pull_request=pull_request,
+            records=records,
+            now=now,
+            detail=(
+                f"no verified Proof of Done record on pull request #{pull_request}"
+                f" names build {target.build}"
+            ),
+        )
+    unreproduced = tuple(
+        one for one in target.assertions if record.reproduced(assertion=one) is not True
+    )
+    if unreproduced:
+        return _unmet(
+            repository=repository,
+            target=target,
+            pull_request=pull_request,
+            records=records,
+            now=now,
+            detail=(
+                f"the {record.verdict} record {record.url} does not list"
+                f" {len(unreproduced)} of the {len(target.assertions)} requested"
+                " assertion(s) as reproduced"
+            ),
+        )
     return satisfied(
         repo=repository.name,
         target=target.identity,
@@ -125,6 +150,31 @@ def observe_verified_proof(
             f" names build {target.build} and lists all {len(target.assertions)}"
             " requested assertion(s) as reproduced"
         ),
+    )
+
+
+def _unmet(
+    *,
+    repository: ResultRepository,
+    target: VerifiedProofTarget,
+    pull_request: int,
+    records: Sequence[ProofRecord],
+    now: str,
+    detail: str,
+) -> ResultObservation:
+    """The unmet reading of a pull request whose records WERE read.
+
+    One constructor for both unmet arms, because the evidence identity is the same
+    in each — the records that were read — and only the reason differs. Splitting
+    it would let the two arms cite different evidence for one reading.
+    """
+    return unsatisfied(
+        repo=repository.name,
+        target=target.identity,
+        source=SOURCE_PROOF_RECORD,
+        now=now,
+        evidence=f"{len(records)} Proof of Done record(s) on pull request #{pull_request}",
+        detail=detail,
     )
 
 
