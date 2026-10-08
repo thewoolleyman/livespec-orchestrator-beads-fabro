@@ -235,14 +235,111 @@
     }
   },
   "web_url": "https://hp-xubuntu.perch-rudd.ts.net:32276/runs/01M4DE7MSQMV222XS8D4H0463E",
-  "start": null,
-  "status": {
-    "kind": "starting"
+  "start": {
+    "start_time": "2026-10-08T09:41:44.577172555Z",
+    "run_branch": "fabro/run/01M4DE7MSQMV222XS8D4H0463E",
+    "base_sha": "799517a37dd9196975f3c496783eaa602beff614"
   },
-  "status_updated_at": "2026-10-08T09:41:41.197264121Z",
-  "last_event_at": "2026-10-08T09:41:44.226184776Z",
+  "status": {
+    "kind": "running"
+  },
+  "status_updated_at": "2026-10-08T09:41:44.577190689Z",
+  "last_event_at": "2026-10-08T09:41:48.201393057Z",
   "pending_control": null,
-  "checkpoints": [],
+  "checkpoints": [
+    {
+      "seq": 19,
+      "checkpoint": {
+        "timestamp": "2026-10-08T09:41:48.201229532Z",
+        "current_node": "start",
+        "completed_nodes": [
+          "start"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "current_node": "start",
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "failure_signature": "",
+          "internal.retry_count.start": 0,
+          "failure_class": "",
+          "internal.node_visit_count": 1,
+          "internal.run_id": "01M4DE7MSQMV222XS8D4H0463E",
+          "outcome": "succeeded",
+          "graph.goal": "# Fabro Enemy Unit Test: outcome-loop\n",
+          "internal.fidelity": "compact",
+          "internal.thread_id": null,
+          "internal.acp_attempt.start": 0
+        },
+        "node_outcomes": {
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "step",
+        "node_visits": {
+          "start": 1
+        }
+      },
+      "diff": {}
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-10-08T09:41:48.361987519Z",
+        "current_node": "step",
+        "completed_nodes": [
+          "start",
+          "step"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.node_visit_count": 1,
+          "internal.acp_attempt.step": 0,
+          "failure_class": "",
+          "thread.start.current_node": "step",
+          "graph.goal": "# Fabro Enemy Unit Test: outcome-loop\n",
+          "internal.acp_attempt.start": 0,
+          "internal.run_id": "01M4DE7MSQMV222XS8D4H0463E",
+          "current_node": "step",
+          "internal.thread_id": "start",
+          "outcome": "succeeded",
+          "internal.fidelity": "compact",
+          "internal.retry_count.step": 0,
+          "failure_signature": "",
+          "command.output": "blob://sha256/8de82914a10667a4b35da1e0e0c55af8f3e71565939fc524ec3c7b53d69614e7",
+          "internal.retry_count.start": 0,
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro"
+        },
+        "node_outcomes": {
+          "step": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/8de82914a10667a4b35da1e0e0c55af8f3e71565939fc524ec3c7b53d69614e7"
+            },
+            "notes": "Script completed: c=$(cat /tmp/eut-outcome-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-outcome-count; echo \"step visit $c\" >&2; test $c -lt 3",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 147,
+              "active_time_ms": 147
+            }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "step",
+        "node_visits": {
+          "start": 1,
+          "step": 1
+        }
+      },
+      "diff": {}
+    }
+  ],
   "conclusion": null,
   "sandbox": {
     "kind": "ready",
@@ -269,5 +366,67 @@
   "pull_request": null,
   "superseded_by": null,
   "pending_interviews": {},
-  "stages": {}
+  "stages": {
+    "start@1": {
+      "first_event_seq": 16,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-10-08T09:41:48.201116741Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-08T09:41:48.201006725Z",
+      "handler": "start",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
+    "step@1": {
+      "first_event_seq": 20,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "c=$(cat /tmp/eut-outcome-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-outcome-count; echo \"step visit $c\" >&2; test $c -lt 3",
+        "command": "exec 2>&1\nc=$(cat /tmp/eut-outcome-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-outcome-count; echo \"step visit $c\" >&2; test $c -lt 3",
+        "language": "shell"
+      },
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-08T09:41:48.201372369Z",
+      "handler": "command",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "running"
+    }
+  }
 }
