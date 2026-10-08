@@ -1,0 +1,8 @@
+digraph P3LoopCap {
+    start [shape=Mdiamond, label="Start"]
+    step [shape=parallelogram, label="Step", script="echo visit"]
+    exit [shape=Msquare, label="Exit"]
+    start -> step
+    step -> step [label="again", condition="context.internal.node_visit_count < 3"]
+    step -> exit
+}
