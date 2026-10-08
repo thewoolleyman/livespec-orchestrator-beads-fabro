@@ -926,7 +926,8 @@ wants to spend the one bounded renewal request:
     codex-cred-refresh --dry-run --json
 ```
 
-The status command is the alerting surface:
+**On-demand credential-status alarm.** Run the status command from the
+repository root on the credential-source host:
 
 ```bash
 /usr/local/bin/with-livespec-env.sh -- \
@@ -934,11 +935,17 @@ The status command is the alerting surface:
     codex-cred-status --json
 ```
 
-`codex-cred-status --json` exits `0` when `"alarm": false` and exits `1` when
-`"alarm": true`; wire external monitoring to that exit code. The JSON includes
+`codex-cred-status --json` exits `0` when `"alarm": false`.
+It exits `1` when `"alarm": true`. An unresolvable credential requirement also
+refuses with exit `1` and a diagnostic on stderr. The JSON includes
 `remaining_seconds`, `remaining_days`, `expires_at_iso`, `refresh_due`, and a
 human-readable `message` carrying remaining versus required lifetime. The alarm
 threshold is two days before expiry.
+
+It does not schedule itself or promise automatic alert delivery. An external
+monitor may invoke this executable alarm surface and page on its exit code, but
+after timer retirement no repository component delivers that page
+automatically.
 
 The **refresh guard is the effective dispatch freshness requirement**: the
 selected workflow's resolved run allowance plus its margin. The guard follows

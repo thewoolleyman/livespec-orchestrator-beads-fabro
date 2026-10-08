@@ -98,3 +98,12 @@ def test_host_runbook_makes_preflight_the_normal_renewal_and_retires_the_timer()
     assert "systemctl --user enable --now livespec-codex-cred-refresh.timer" not in _IMAGE_RUNBOOK
     assert "18000 seconds (5h)" not in _IMAGE_RUNBOOK
     assert "five-minute host\ntimer runs" not in _CODEX_REFRESH_COMMAND
+
+
+def test_host_runbook_preserves_the_on_demand_credential_alarm_contract() -> None:
+    assert "**On-demand credential-status alarm.**" in _IMAGE_RUNBOOK
+    assert "credential-source host" in _IMAGE_RUNBOOK
+    assert "codex-cred-status --json" in _IMAGE_RUNBOOK
+    assert 'exits `0` when `"alarm": false`' in _IMAGE_RUNBOOK
+    assert 'exits `1` when `"alarm": true`' in _IMAGE_RUNBOOK
+    assert "does not schedule itself or promise automatic alert delivery" in _IMAGE_RUNBOOK
