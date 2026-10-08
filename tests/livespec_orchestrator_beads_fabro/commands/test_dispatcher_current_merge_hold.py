@@ -282,6 +282,35 @@ def test_the_host_writes_nothing_to_the_forge_when_the_hold_authority_is_unreada
     assert _forge_verbs(runner=runner) == {_VIEW_ARGV_HEAD}
 
 
+def test_an_unreadable_hold_authority_refuses_the_host_merge_instead_of_waiting(
+    tmp_path: Path,
+) -> None:
+    """The refusal half of failing closed, and it has to be EXPLICIT.
+
+    Writing nothing to the forge is only half an answer: a host that then fell
+    through to the merge poll would spend the whole budget waiting for a merge it
+    had just declined to arm, and report "PR did not reach MERGED within the poll
+    budget" -- a diagnosis that names the pull request as the problem and never
+    mentions the ledger it could not read. So the stage is its own, the detail names
+    the item and the hold, and the poll-budget sentence is asserted ABSENT: an
+    operator reading this result must not be sent to look at the forge.
+    """
+    runner = _Runner(queue=[_view(armed=False)])
+
+    dispatched = _dispatch(repo=tmp_path, runner=runner, journal=_Journal())
+
+    assert (dispatched.outcome.status, dispatched.outcome.stage) == (
+        "failed",
+        "merge-hold-authority",
+    )
+    assert dispatched.outcome.pr_number == _PR_NUMBER
+    assert dispatched.outcome.merge_sha is None
+    assert dispatched.sleeps == ()
+    assert _ITEM_ID in dispatched.outcome.detail
+    assert "merge hold" in dispatched.outcome.detail
+    assert "poll budget" not in dispatched.outcome.detail
+
+
 def test_an_unheld_item_keeps_the_host_fallback_arming_with_its_journaled_merge_method(
     tmp_path: Path,
 ) -> None:
