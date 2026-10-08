@@ -28,6 +28,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_ledger import (
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     OBSERVATION_SATISFIED,
+    OBSERVATION_UNSATISFIED,
     SOURCE_LEDGER,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_repository import ResultRepository
@@ -91,17 +92,21 @@ def test_a_matching_status_is_satisfied_with_the_record_as_its_evidence(
     assert observation.observed_at == _NOW
 
 
-def test_a_different_status_is_not_satisfied(tmp_path: Path) -> None:
+def test_a_different_status_is_unsatisfied_and_reports_the_status_it_read(
+    tmp_path: Path,
+) -> None:
+    """A confident negative, citing the status actually standing on the record."""
     repository = _repo(tmp_path=tmp_path)
     _seed(repository=repository, status="ready")
-    assert (
-        observe_item_status(
-            repository=repository,
-            target=ItemStatusTarget(item_id=_ITEM_ID, status="done"),
-            now=_NOW,
-        )
-        is None
+    observation = observe_item_status(
+        repository=repository,
+        target=ItemStatusTarget(item_id=_ITEM_ID, status="done"),
+        now=_NOW,
     )
+    assert observation is not None
+    assert observation.status == OBSERVATION_UNSATISFIED
+    assert observation.evidence == f"ledger record {_ITEM_ID} at status ready"
+    assert "not the expected done" in observation.detail
 
 
 def test_an_unreadable_connection_stops_the_status_read(tmp_path: Path) -> None:
@@ -199,21 +204,28 @@ def test_the_comment_evidence_prefers_a_recorded_instant_over_a_position(
     assert observation.evidence == f"ledger comment 2026-10-07T10:00:00Z on {_ITEM_ID}"
 
 
-def test_a_marker_no_comment_carries_is_not_satisfied(tmp_path: Path) -> None:
-    """The scan walks every comment, so the control seeds two that do not match."""
+def test_a_marker_no_comment_carries_is_unsatisfied_and_counts_what_it_read(
+    tmp_path: Path,
+) -> None:
+    """The scan walks every comment, so the control seeds two that do not match.
+
+    The count is the evidence identity for this arm: there is no comment to cite,
+    and "two comments were read and neither carried it" is a different claim from
+    "the comments could not be read" — which is the next cycle's status.
+    """
     repository = _repo(tmp_path=tmp_path)
     _seed(repository=repository, status="active")
     client = make_beads_client(config=store_config(repo=repository.clone))
     client.add_comment(issue_id=_ITEM_ID, body="one unrelated rider\n")
     client.add_comment(issue_id=_ITEM_ID, body="another unrelated rider\n")
-    assert (
-        observe_item_comment(
-            repository=repository,
-            target=ItemCommentTarget(item_id=_ITEM_ID, marker=_MARKER),
-            now=_NOW,
-        )
-        is None
+    observation = observe_item_comment(
+        repository=repository,
+        target=ItemCommentTarget(item_id=_ITEM_ID, marker=_MARKER),
+        now=_NOW,
     )
+    assert observation is not None
+    assert observation.status == OBSERVATION_UNSATISFIED
+    assert observation.evidence == f"2 ledger comment(s) read on {_ITEM_ID}"
 
 
 def test_an_unreadable_connection_stops_the_comment_read(tmp_path: Path) -> None:

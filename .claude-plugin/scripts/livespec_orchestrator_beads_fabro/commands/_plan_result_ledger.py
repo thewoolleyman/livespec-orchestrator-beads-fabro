@@ -43,6 +43,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_observation import 
     SOURCE_LEDGER,
     ResultObservation,
     satisfied,
+    unsatisfied,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_repository import (
     ResultRepository,
@@ -105,7 +106,17 @@ def observe_item_status(
     if not isinstance(status, str) or status == "":
         return None
     if status != target.status:
-        return None
+        return unsatisfied(
+            repo=repository.name,
+            target=target.identity,
+            source=SOURCE_LEDGER,
+            now=now,
+            evidence=f"ledger record {target.item_id} at status {status}",
+            detail=(
+                f"the ledger reports {target.item_id} at status {status}, not the"
+                f" expected {target.status}"
+            ),
+        )
     return satisfied(
         repo=repository.name,
         target=target.identity,
@@ -129,7 +140,8 @@ def observe_item_comment(
     )
     if isinstance(read, AttemptFailure):
         return None
-    for position, comment in enumerate(read, start=1):
+    comments = tuple(read)
+    for position, comment in enumerate(comments, start=1):
         if target.marker not in comment.text:
             continue
         identity = comment.comment_id or comment.created_at or f"position {position}"
@@ -144,4 +156,14 @@ def observe_item_comment(
                 f" marker {target.marker!r}; {MARKER_NARROWING}"
             ),
         )
-    return None
+    return unsatisfied(
+        repo=repository.name,
+        target=target.identity,
+        source=SOURCE_LEDGER,
+        now=now,
+        evidence=f"{len(comments)} ledger comment(s) read on {target.item_id}",
+        detail=(
+            f"none of the {len(comments)} comment(s) on {target.item_id} carries the"
+            f" marker {target.marker!r}"
+        ),
+    )

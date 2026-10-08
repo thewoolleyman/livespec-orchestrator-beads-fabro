@@ -37,6 +37,7 @@ from typing import Literal
 
 __all__: list[str] = [
     "OBSERVATION_SATISFIED",
+    "OBSERVATION_UNSATISFIED",
     "SOURCE_FORGE",
     "SOURCE_GIT_OBJECT",
     "SOURCE_LEDGER",
@@ -45,9 +46,11 @@ __all__: list[str] = [
     "SOURCE_REPOSITORY_RESOLUTION",
     "ResultObservation",
     "satisfied",
+    "unsatisfied",
 ]
 
 OBSERVATION_SATISFIED = "satisfied"
+OBSERVATION_UNSATISFIED = "unsatisfied"
 
 # The sources the clause enumerates, plus the two the reader itself can fail at
 # before any of them is reached. A reference that will not parse and a repository
@@ -72,7 +75,7 @@ class ResultObservation:
     fields beside it.
     """
 
-    status: Literal["satisfied"]
+    status: Literal["satisfied", "unsatisfied"]
     repo: str
     target: str
     source: str
@@ -92,6 +95,29 @@ def satisfied(
     """The requested target was observed, through its named source, as fulfilled."""
     return ResultObservation(
         status="satisfied",
+        repo=repo,
+        target=target,
+        source=source,
+        observed_at=now,
+        evidence=evidence,
+        detail=detail,
+    )
+
+
+def unsatisfied(
+    *, repo: str, target: str, source: str, now: str, evidence: str, detail: str
+) -> ResultObservation:
+    """The requested target was observed, through its named source, as UNMET.
+
+    A confident negative, and it is earned rather than defaulted: it is returned
+    only on an arm that READ its source and found the target wanting. The clause
+    forbids an observation failure becoming "a confident negative", so an arm that
+    could not read answers `unobservable` instead — and an unsatisfied reading
+    still carries its evidence, because what WAS observed is the only thing that
+    distinguishes a target that has not moved from an instrument pointed elsewhere.
+    """
+    return ResultObservation(
+        status="unsatisfied",
         repo=repo,
         target=target,
         source=source,
