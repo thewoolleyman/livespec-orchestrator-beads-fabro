@@ -216,7 +216,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-10-08T09:49:21.086959161Z",
-  "last_event_at": "2026-10-08T09:49:23.840219836Z",
+  "last_event_at": "2026-10-08T09:49:28.661584174Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -256,9 +256,9 @@
       "diff": {}
     },
     {
-      "seq": 0,
+      "seq": 28,
       "checkpoint": {
-        "timestamp": "2026-10-08T09:49:24.000010412Z",
+        "timestamp": "2026-10-08T09:49:28.661550050Z",
         "current_node": "check",
         "completed_nodes": [
           "start",
@@ -266,22 +266,22 @@
         ],
         "node_retries": {},
         "context_values": {
+          "internal.retry_count.check": 0,
+          "command.output": "blob://sha256/eeedd0f06b8ed89bb7c37ed2ed3da9ec1d6ba3bdd378afe2484f1d44b3e5f302",
+          "failure_class": "deterministic",
+          "internal.run_id": "01M4DENJY7D7EKF6DMASHK814H",
+          "outcome": "failed",
+          "thread.start.current_node": "check",
           "graph.goal": "# Fabro Enemy Unit Test: resource-limits\n",
           "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
-          "internal.fidelity": "compact",
           "current_node": "check",
-          "internal.acp_attempt.check": 0,
-          "command.output": "blob://sha256/eeedd0f06b8ed89bb7c37ed2ed3da9ec1d6ba3bdd378afe2484f1d44b3e5f302",
-          "internal.retry_count.check": 0,
-          "internal.retry_count.start": 0,
-          "internal.thread_id": "start",
-          "thread.start.current_node": "check",
-          "outcome": "failed",
-          "internal.node_visit_count": 1,
-          "internal.run_id": "01M4DENJY7D7EKF6DMASHK814H",
-          "failure_class": "deterministic",
           "failure_signature": "check|deterministic|script failed with exit code: <n> ## output cpu.max=<n> <n> memory.max=<hex>",
-          "internal.acp_attempt.start": 0
+          "internal.thread_id": "start",
+          "internal.node_visit_count": 1,
+          "internal.retry_count.start": 0,
+          "internal.acp_attempt.check": 0,
+          "internal.acp_attempt.start": 0,
+          "internal.fidelity": "compact"
         },
         "node_outcomes": {
           "start": {
@@ -307,6 +307,10 @@
           }
         },
         "next_node_id": "exit",
+        "git_commit_sha": "799517a37dd9196975f3c496783eaa602beff614",
+        "loop_failure_signatures": {
+          "check|deterministic|script failed with exit code: <n> ## output cpu.max=<n> <n> memory.max=<hex>": 1
+        },
         "node_visits": {
           "check": 1,
           "start": 1
@@ -315,7 +319,50 @@
       "diff": {}
     }
   ],
-  "conclusion": null,
+  "conclusion": {
+    "timestamp": "2026-10-08T09:49:28.687672108Z",
+    "status": "failed",
+    "timing": {
+      "wall_time_ms": 7577,
+      "inference_time_ms": 0,
+      "tool_time_ms": 145,
+      "active_time_ms": 145
+    },
+    "failure": {
+      "reason": "workflow_error",
+      "detail": {
+        "message": "goal gate unsatisfied for node check and no retry target",
+        "category": "deterministic"
+      }
+    },
+    "final_git_commit_sha": "799517a37dd9196975f3c496783eaa602beff614",
+    "stages": [
+      {
+        "stage_id": "start",
+        "stage_label": "start",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "check",
+        "stage_label": "check",
+        "timing": {
+          "wall_time_ms": 156,
+          "inference_time_ms": 0,
+          "tool_time_ms": 145,
+          "active_time_ms": 145
+        },
+        "retries": 0
+      }
+    ],
+    "total_retries": 0,
+    "diff": {}
+  },
   "sandbox": {
     "kind": "ready",
     "plan": {
@@ -346,7 +393,12 @@
       "first_event_seq": 20,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "failed",
+        "notes": null,
+        "failure_reason": "Script failed with exit code: 1\n\n## output\ncpu.max=200000 100000 memory.max=3999997952\n",
+        "timestamp": "2026-10-08T09:49:23.998235994Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": {
@@ -354,11 +406,27 @@
         "command": "exec 2>&1\nc=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo none); m=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo none); echo \"cpu.max=$c memory.max=$m\" >&2; test \"$c\" = '200000 100000' && test \"$m\" = '4000000000'",
         "language": "shell"
       },
-      "script_timing": null,
+      "script_timing": {
+        "output": "blob://sha256/eeedd0f06b8ed89bb7c37ed2ed3da9ec1d6ba3bdd378afe2484f1d44b3e5f302",
+        "exit_code": 1,
+        "duration_ms": 145,
+        "termination": "exited",
+        "output_bytes": 44,
+        "live_streaming": true
+      },
       "parallel_results": null,
       "output": null,
+      "output_bytes": 44,
+      "live_streaming": true,
+      "termination": "exited",
       "started_at": "2026-10-08T09:49:23.840188257Z",
       "handler": "command",
+      "timing": {
+        "wall_time_ms": 156,
+        "inference_time_ms": 0,
+        "tool_time_ms": 145,
+        "active_time_ms": 145
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -367,7 +435,7 @@
         "cache_read_tokens": 0,
         "cache_write_tokens": 0
       },
-      "state": "running"
+      "state": "failed"
     },
     "start@1": {
       "first_event_seq": 16,
