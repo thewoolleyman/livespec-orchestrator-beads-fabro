@@ -60,6 +60,27 @@ _WORK_ITEM_ID = "x-1"
 _STAGE = "pr-open-diff-size"
 _SIZE_KEY = "pr_open_diff_size"
 
+# The committed connection block the host's CURRENT-merge-hold read resolves
+# (`_dispatcher_current_merge_hold`). Any fixture that drives `run_dispatch` PAST the
+# pull-request confirmation needs it: without it `resolve_store_config` raises on the
+# absent `connection.prefix`, the hold reads `unreadable`, and the boundary fails
+# CLOSED at `merge-hold-authority` rather than reaching the merge poll. The item id
+# is deliberately NOT appended — an id absent from the held set reads `unheld`, which
+# is the ordinary path these size tests are about.
+_TENANT_CONFIG = """{
+  "livespec-orchestrator-beads-fabro": {
+    "connection": {
+      "tenant": "livespec-impl-beads",
+      "prefix": "bd",
+      "server_user": "livespec-impl-beads",
+      "database": "livespec-impl-beads",
+      "bd_path": "bd",
+      "fake": true
+    }
+  }
+}
+"""
+
 
 def _module() -> ModuleType:
     """Import the module under test, asserting it exists first."""
@@ -177,6 +198,11 @@ def _venue_resolution() -> list[CommandResult]:
     return [_ok(stdout="master"), _ok(stdout="master")]
 
 
+def _readable_unheld_tenant(*, repo: Path) -> None:
+    """Give the host's hold read a connection block to resolve, naming no held item."""
+    _ = (repo / ".livespec.jsonc").write_text(_TENANT_CONFIG, encoding="utf-8")
+
+
 def _dispatch(
     *, runner: _FakeRunner, repo: Path, attempts: int = 3
 ) -> tuple[DispatchOutcome, _RecordingJournal]:
@@ -254,6 +280,7 @@ def test_the_journal_record_names_the_stage_the_item_and_the_pull_request() -> N
 def test_a_merged_run_records_the_size_before_its_merge_disposition(tmp_path: Path) -> None:
     """The record lands between the pull-request confirmation and the merge poll."""
     _ = _module()
+    _readable_unheld_tenant(repo=tmp_path)
     runner = _FakeRunner(
         queue=[
             _ok(stdout="fabro done"),
@@ -283,6 +310,7 @@ def test_a_run_that_fails_after_its_pull_request_opened_still_carries_the_size(
 ) -> None:
     """The repair's whole point: the metric no longer requires a green terminal."""
     _ = _module()
+    _readable_unheld_tenant(repo=tmp_path)
     runner = _FakeRunner(
         queue=[
             _ok(stdout="fabro done"),
