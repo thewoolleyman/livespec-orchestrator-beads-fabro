@@ -113,6 +113,14 @@ def _disarm_held(
     run. The arming is almost always this host's own, from a dispatch that read the
     stale snapshot, so refusing to undo it would leave the measured defect's effect
     standing while fixing only its cause.
+
+    The disarm command's result is JOURNALED and deliberately not routed on, because
+    it decides nothing: the re-read below is the authoritative post-condition, and
+    `merge_hold_terminal` refuses on a view that still carries an auto-merge request
+    whatever the command said. That cuts both ways -- a failed write whose pull
+    request is nonetheless unarmed is a hold that holds, and a successful write whose
+    pull request is still armed is one that does not. The journal row is where an
+    operator tells those two apart.
     """
     disarm = runner.run(
         argv=pr_disarm_argv(plan=plan, number=view.number),
