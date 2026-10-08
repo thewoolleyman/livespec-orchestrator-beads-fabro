@@ -49,6 +49,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import
     resolve_acp_primary_generations,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import (
+    factory_fabro_bin,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
@@ -202,8 +205,7 @@ def project_run_events(
             factory_name=factory.name,
             factory_server_url=factory.server,
         ),
-        dev_token=factory.dev_token,
-        server_url=factory.server,
+        factory=factory,
         journal=journal,
         runner=runner,
     )
@@ -233,15 +235,21 @@ def _fetch_and_project(
     *,
     request: AcpProjectionRequest,
     target: AcpProjectionTarget,
-    dev_token: str | None,
-    server_url: str,
+    factory: FactoryTarget,
     journal: ProjectionJournal,
     runner: CommandRunner | None,
 ) -> AcpProjectionResult:
-    """Shell the server-qualified events read, then route what came back."""
+    """Shell the server-qualified events read, then route what came back.
+
+    The whole `factory` rides in rather than its server url and dev token
+    alone, because the client binary is a third property of the same target:
+    reading a candidate-engine run's events through the legacy client returns
+    an unusable payload that is indistinguishable from a run with nothing to
+    project.
+    """
     port = FabroPort(
-        fabro_bin=resolve_fabro_bin(cwd=request.repo),
-        target=FabroTarget(server_url=server_url, dev_token=dev_token),
+        fabro_bin=factory_fabro_bin(factory=factory, fallback=resolve_fabro_bin(cwd=request.repo)),
+        target=FabroTarget(server_url=factory.server, dev_token=factory.dev_token),
         runner=ShellCommandRunner() if runner is None else runner,
         cwd=request.repo,
     )

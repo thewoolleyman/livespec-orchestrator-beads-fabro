@@ -23,6 +23,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
     JournalWriter,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import (
+    factory_fabro_bin,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attribution import (
     JournaledRuns,
 )
@@ -93,9 +96,16 @@ class ReconcileInputs:
 
 
 def port_for(*, inputs: ReconcileInputs, factory: FactoryTarget) -> FabroPort:
-    """Open a Fabro port onto one declared factory's server."""
+    """Open a Fabro port onto one declared factory's server, with ITS client.
+
+    `inputs.fabro_bin` is the GLOBAL resolution and is the fallback, not the
+    answer: a survey that addressed every factory by its own server while
+    speaking to all of them through one client would get a clean, plausible,
+    empty inventory from any factory running a different engine — and would
+    reconcile nothing on the strength of it.
+    """
     return FabroPort(
-        fabro_bin=inputs.fabro_bin,
+        fabro_bin=factory_fabro_bin(factory=factory, fallback=inputs.fabro_bin),
         target=FabroTarget(server_url=factory.server, dev_token=factory.dev_token),
         runner=inputs.runner,
         cwd=inputs.repo,
