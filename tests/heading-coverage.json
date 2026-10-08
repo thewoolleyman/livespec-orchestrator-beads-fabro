@@ -1487,5 +1487,37 @@
     "test": "TODO",
     "reason": "Ratified 2026-10-04 by the definition-and-proof-of-done-repair revision. The PROMPT half now has a binding — tests/integration/test_proof_behaviour_capability_and_scenario_reference.py binds the gate's finding for a reference line naming only a non-scenario H2 while a scenario states the behaviour, its converse (a non-scenario H2 stays valid where no scenario states it), the directed search of scenarios.md before that negative verdict is reached, and the captured record's per-assertion governing-scenario entry including the explicit no-scenario-governs statement — so this row is re-pointed to work-item bd-ib-zljjrb. It stays TODO because ONE integration-tier test does not yet bind the heading WHOLE: what remains is a real captured record read back and shown to name its governing scenario per assertion, and a gate run that reports the generic-reference finding on a dispatched item. A further integration-tier test is therefore still owed for this heading; both halves need the nodes driven end to end (requirement carrier R9), not prompt text.",
     "work_item": "bd-ib-zljjrb"
+  },
+  {
+    "heading": "## Scenario 142 — A run that terminated after publishing is resumed at its first unfinished stage from its pull request, and nothing it completed runs again",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified 2026-10-08 by the chain-recovery-and-failed-janitor-diagnosis revision for work-item bd-ib-fngpwg (resume a terminated run from its published pull request at its first unfinished stage, with the earlier run's records attributed and no implement stage). An integration-tier test is owed that drives the resume command against a journaled dead run and a published draft pull request and reads back the resumed run's entry stage, the resume journal record and the pointer; it is filed under the implementing child, not this plan epic, once the child lands.",
+    "work_item": "bd-ib-7sjdzv"
+  },
+  {
+    "heading": "## Scenario 143 — A resume refuses, naming the mismatch, when the head moved, the earlier run is live, or the pull request is closed or merged",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified 2026-10-08 by the chain-recovery-and-failed-janitor-diagnosis revision for work-item bd-ib-fngpwg. An integration-tier test is owed for each refusal arm (not ready, moved head, changed Definition of Done, live run, live lock, closed or merged pull request, nothing to resume from, third resume, unobservable forge or factory), asserting exit 3 before any run exists and an unchanged branch and pull request.",
+    "work_item": "bd-ib-7sjdzv"
+  },
+  {
+    "heading": "## Scenario 144 — A plain re-dispatch of an item whose run died after publishing reclaims the stale publish branch and holds when it cannot measure",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified 2026-10-08 by the chain-recovery-and-failed-janitor-diagnosis revision, stating the pre-dispatch publish-branch reclaim bd-ib-yebrb7 shipped. tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_publish_branch_reclaim.py binds the decision arms at unit tier; an integration-tier test driving dispatch against a surviving branch on a real origin and reading back the preservation ref, the deleted branch and the journal record is still owed under bd-ib-fngpwg's fourth assertion.",
+    "work_item": "bd-ib-7sjdzv"
+  },
+  {
+    "heading": "## Scenario 145 — A failed post-merge janitor retains its complete output and exit code as a private artifact the journal names",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "Ratified 2026-10-08 by the chain-recovery-and-failed-janitor-diagnosis revision for work-item bd-ib-nezrrh (failed post-merge janitor output retention). An integration-tier test is owed that runs the post-merge janitor with a child command writing distinct stdout and stderr longer than the journal excerpt and exiting non-zero, then reads back the artifact, its digest in the journal row, the second-failure path and the write-failure row.",
+    "work_item": "bd-ib-7sjdzv"
   }
 ]

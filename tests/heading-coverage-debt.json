@@ -649,5 +649,33 @@
     "heading": "## What this spec is not",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 142 — A run that terminated after publishing is resumed at its first unfinished stage from its pull request, and nothing it completed runs again",
+    "work_item": "bd-ib-7sjdzv",
+    "first_seen": "2026-10-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 143 — A resume refuses, naming the mismatch, when the head moved, the earlier run is live, or the pull request is closed or merged",
+    "work_item": "bd-ib-7sjdzv",
+    "first_seen": "2026-10-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 144 — A plain re-dispatch of an item whose run died after publishing reclaims the stale publish branch and holds when it cannot measure",
+    "work_item": "bd-ib-7sjdzv",
+    "first_seen": "2026-10-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 145 — A failed post-merge janitor retains its complete output and exit code as a private artifact the journal names",
+    "work_item": "bd-ib-7sjdzv",
+    "first_seen": "2026-10-08"
   }
 ]
