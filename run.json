@@ -216,7 +216,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-10-08T09:18:45.382699960Z",
-  "last_event_at": "2026-10-08T09:18:48.007622331Z",
+  "last_event_at": "2026-10-08T09:18:52.632549884Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -256,9 +256,9 @@
       "diff": {}
     },
     {
-      "seq": 0,
+      "seq": 28,
       "checkpoint": {
-        "timestamp": "2026-10-08T09:18:48.165987604Z",
+        "timestamp": "2026-10-08T09:18:52.632475254Z",
         "current_node": "nh",
         "completed_nodes": [
           "start",
@@ -266,22 +266,22 @@
         ],
         "node_retries": {},
         "context_values": {
+          "internal.run_id": "01M4DCXHTECHG3XMNERTS0R4AN",
+          "graph.goal": "# probe goal\n",
           "internal.fidelity": "compact",
-          "current_node": "nh",
-          "internal.acp_attempt.nh": 0,
-          "failure_signature": "nh|deterministic|script failed with exit code: <n> ## output livespec_needs_human: probe cannot auto-resolve",
-          "internal.retry_count.start": 0,
-          "failure_class": "deterministic",
-          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
-          "outcome": "failed",
+          "internal.thread_id": "start",
           "command.output": "blob://sha256/4490723674dfaa56d3e4117e916999c3054477f5dba0a2da36a0246a6c90157e",
           "thread.start.current_node": "nh",
-          "internal.retry_count.nh": 0,
           "internal.acp_attempt.start": 0,
-          "internal.run_id": "01M4DCXHTECHG3XMNERTS0R4AN",
-          "internal.thread_id": "start",
-          "graph.goal": "# probe goal\n",
-          "internal.node_visit_count": 1
+          "failure_signature": "nh|deterministic|script failed with exit code: <n> ## output livespec_needs_human: probe cannot auto-resolve",
+          "internal.node_visit_count": 1,
+          "internal.retry_count.nh": 0,
+          "current_node": "nh",
+          "outcome": "failed",
+          "internal.acp_attempt.nh": 0,
+          "internal.retry_count.start": 0,
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "failure_class": "deterministic"
         },
         "node_outcomes": {
           "nh": {
@@ -307,6 +307,10 @@
           }
         },
         "next_node_id": "exit",
+        "git_commit_sha": "a179ac0b2e8e625c96ffc1ae822b27ef8d7a9164",
+        "loop_failure_signatures": {
+          "nh|deterministic|script failed with exit code: <n> ## output livespec_needs_human: probe cannot auto-resolve": 1
+        },
         "node_visits": {
           "start": 1,
           "nh": 1
@@ -315,7 +319,50 @@
       "diff": {}
     }
   ],
-  "conclusion": null,
+  "conclusion": {
+    "timestamp": "2026-10-08T09:18:52.657140608Z",
+    "status": "failed",
+    "timing": {
+      "wall_time_ms": 7251,
+      "inference_time_ms": 0,
+      "tool_time_ms": 140,
+      "active_time_ms": 140
+    },
+    "failure": {
+      "reason": "workflow_error",
+      "detail": {
+        "message": "goal gate unsatisfied for node nh and no retry target",
+        "category": "deterministic"
+      }
+    },
+    "final_git_commit_sha": "a179ac0b2e8e625c96ffc1ae822b27ef8d7a9164",
+    "stages": [
+      {
+        "stage_id": "start",
+        "stage_label": "start",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "nh",
+        "stage_label": "nh",
+        "timing": {
+          "wall_time_ms": 154,
+          "inference_time_ms": 0,
+          "tool_time_ms": 140,
+          "active_time_ms": 140
+        },
+        "retries": 0
+      }
+    ],
+    "total_retries": 0,
+    "diff": {}
+  },
   "sandbox": {
     "kind": "ready",
     "plan": {
@@ -346,7 +393,12 @@
       "first_event_seq": 20,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "failed",
+        "notes": null,
+        "failure_reason": "Script failed with exit code: 1\n\n## output\nLIVESPEC_NEEDS_HUMAN: probe cannot auto-resolve\n",
+        "timestamp": "2026-10-08T09:18:48.164250394Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": {
@@ -354,11 +406,27 @@
         "command": "exec 2>&1\necho 'LIVESPEC_NEEDS_HUMAN: probe cannot auto-resolve' >&2; exit 1",
         "language": "shell"
       },
-      "script_timing": null,
+      "script_timing": {
+        "output": "blob://sha256/4490723674dfaa56d3e4117e916999c3054477f5dba0a2da36a0246a6c90157e",
+        "exit_code": 1,
+        "duration_ms": 140,
+        "termination": "exited",
+        "output_bytes": 48,
+        "live_streaming": true
+      },
       "parallel_results": null,
       "output": null,
+      "output_bytes": 48,
+      "live_streaming": true,
+      "termination": "exited",
       "started_at": "2026-10-08T09:18:48.007582246Z",
       "handler": "command",
+      "timing": {
+        "wall_time_ms": 154,
+        "inference_time_ms": 0,
+        "tool_time_ms": 140,
+        "active_time_ms": 140
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -367,7 +435,7 @@
         "cache_read_tokens": 0,
         "cache_write_tokens": 0
       },
-      "state": "running"
+      "state": "failed"
     },
     "start@1": {
       "first_event_seq": 16,
