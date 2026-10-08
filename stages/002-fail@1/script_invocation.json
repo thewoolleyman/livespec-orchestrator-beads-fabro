@@ -1,0 +1,5 @@
+{
+  "script": "echo fabro-enemy-tier1-fail >&2; exit 1",
+  "command": "exec 2>&1\necho fabro-enemy-tier1-fail >&2; exit 1",
+  "language": "shell"
+}
