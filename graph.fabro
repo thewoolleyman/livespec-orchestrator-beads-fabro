@@ -1,0 +1,10 @@
+digraph FabroEnemyVisitCountLoop {
+    start [shape=Mdiamond, label="Start"]
+    improve [shape=parallelogram, label="Improve", goal_gate=true, script="c=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5"]
+    gate [shape=diamond, label="Done?"]
+    exit [shape=Msquare, label="Exit"]
+    start -> improve
+    improve -> gate
+    gate -> exit [condition="context.internal.node_visit_count >= 3"]
+    gate -> improve
+}
