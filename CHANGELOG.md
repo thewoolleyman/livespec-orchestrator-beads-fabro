@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.174.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.173.9...v0.174.0) (2026-10-08)
+
+
+### Features
+
+* **dispatch:** accept an explicit --workflow path on the operator surfaces ([1beaf31](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1beaf318716e89ae98ac3ba127ec86022280187c))
+* **dispatch:** derive the workflow graph's own maximum wall clock ([1df5385](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1df53851873c9f92d559e0afbdecfd3a467941a3))
+* **dispatch:** enforce the absolute credential-use deadline in the sandbox ([dc43230](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/dc432300115f9fd4b2261bd1ac1c40e8a7bc89de))
+* **dispatch:** launch every coding agent behind the credential-use guard ([42775da](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/42775dafdef22604be655c4dbb71e96d7e0656bc))
+* **dispatch:** let the operator surfaces name the selection they grade ([702cf66](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/702cf662bc02bdd74123c67e387b743cf5829041))
+* **dispatch:** project the absolute credential-use deadline into the sandbox ([8e085d5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8e085d528d7f017c7a364e0444c3c5145dc9dd95))
+* **dispatch:** size the Codex freshness floor from the resolved workflow ([b575679](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b5756791c032f17e9d7fe5d9f7b638b26725fed1))
+
+
+### Bug Fixes
+
+* **dispatch:** disarm the credential-use reaper once its group has finished ([33b81a8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/33b81a808e871b5983e8501ae1efa6f8e36406ba))
+* **dispatch:** grade the projected credential against the sandbox clock ([8a1bbf4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8a1bbf4e307cfaf104caa688098d012e0757d76f))
+* **dispatch:** guard the launches a model_stylesheet makes ACP ([9d8f6ea](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9d8f6ea687a7c2b01bcdd8c3adf3c2c5cc685516))
+* **dispatch:** keep the classes an earlier node declaration contributed ([1bee6e8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1bee6e8e0bab8139cfb3e50df59759040d5f6261))
+* **dispatch:** parse /proc stat after the FINAL comm delimiter ([1a84095](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1a840955f778ddb8b95314beccfe46bbe174b176))
+
 ## [0.173.9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.173.8...v0.173.9) (2026-10-08)
 
 
