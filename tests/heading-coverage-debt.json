@@ -726,5 +726,12 @@
     "heading": "## Scenario 152 — Independent recovery executes after Codex turn completion without wait registration",
     "work_item": "bd-ib-ezuj43",
     "first_seen": "2026-10-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 153 — An adopted assertion ceiling requires an attributed exception without waiving other gates",
+    "work_item": "bd-ib-pwqxso",
+    "first_seen": "2026-10-08"
   }
 ]
