@@ -392,6 +392,9 @@ supervisor_entry_files = [
     # the fake agent owns ACP JSON-RPC stdout. No tree-wide exemption.
     "plan/fabro-currency/research/004-acp-spend-limit-repro.py",
     "plan/fabro-currency/research/004-fake-acp-agent.py",
+    # The Enemy Unit Test copy of that fake agent: it owns ACP JSON-RPC stdout
+    # inside the sandbox for the tier 1 ACP-launch test.
+    "fabro-enemy-unit-tests/_fake_acp_agent.py",
 ]
 # UNARMED, and deliberately NOT `not_applicable` — the concept applies here and
 # is currently undischarged. This repo's own ratified
