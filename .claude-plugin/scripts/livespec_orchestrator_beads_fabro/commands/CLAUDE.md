@@ -627,6 +627,43 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   outlasts the attempt that asked for it — the FIRST read's stale account is what
   the refusal carries, because an attempt reporting "evidence is required" would
   hide the records it had just read and rejected.
+- The SHARED AUTHORITATIVE RESULT READER of `contracts.md`'s
+  shared-authoritative-result-reader clause (`bd-ib-77dipw`, Scenario 146) —
+  the ONE reader both the relay-delivery and the plan-deadline callers observe a
+  required result through. Eight cohesive modules, and the dependency direction
+  reads bottom-up: `_plan_result_targets` (PURE: the closed five-kind grammar,
+  each target's own identity rendering, the reference, and the parse refusal) and
+  `_plan_result_observation` (PURE: the observation value plus its constructors
+  and the named sources) → `_plan_result_reference` (PURE: the parse and its
+  whole refusal ladder) → `_plan_result_repository` (the named repository
+  resolved to ONE clone plus that clone's own tenant connection) →
+  `_plan_result_ledger` / `_plan_result_forge` / `_plan_result_proof` (the five
+  adapters, grouped by the source each reads) → `_plan_result_reader` (the ONE
+  public entry point: parse, resolve, then exactly one source).
+  Five properties an editor must not invert. The KIND SET IS CLOSED, and that is
+  the entire mechanism for the clause's prohibition on arbitrary shell
+  predicates — a predicate is refused for the same reason a typo is, so widening
+  the parse to tolerate an unknown field re-opens it. EXACTLY ONE target is
+  COUNTED rather than selected: a reference carrying two valid targets is a
+  well-formed object, and picking the first in enumeration order would discharge
+  the obligation on the weaker of the two while reporting the reference the
+  caller wrote. The repository resolution answers BOTH the configuration
+  question and the working-directory question from one value, because getting
+  the first right and the second wrong reads the correct configuration while
+  asking the wrong forge repository. The FILE result is compared against the
+  REMOTE blob through the forge and never against a local checkout, because a
+  local object for a path is whatever this host's last fetch left — an answer
+  about fetch state reported as a fact about the branch. And the VERIFIED-PROOF
+  read validates four things through the EXISTING typed reader — record
+  semantics, a verified-class verdict, the build's containment ref, and every
+  requested assertion reading as reproduced — never text; the installed build
+  identifier is deliberately not compared, because the host-leg clause records
+  it without verifying it.
+  The ORDER of the reader's three steps is load-bearing and is the fail-closed
+  order: an unparseable reference names no target to read, and every adapter
+  needs the clone it executes from, so a reversed pair would spend a read on a
+  question that had not been established and then attribute the failure to the
+  wrong source — which is the one thing the clause requires naming correctly.
 
 Rules an agent editing this tree must follow:
 
