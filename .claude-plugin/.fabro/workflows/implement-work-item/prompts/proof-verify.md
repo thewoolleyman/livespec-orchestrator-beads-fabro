@@ -314,6 +314,21 @@ verbatim:
 
 using the run id you resolved in Step 3 and an ISO-8601 UTC timestamp.
 
+The SECOND line must declare, exactly once, the publish-branch head YOUR
+replay ran on:
+
+    Publish-branch head: <the full 40-character commit sha of HEAD>
+
+Read it with `git rev-parse HEAD` in the sandbox clone and paste the full
+sha — your own reading, never the one the captured record declares, even
+when the two agree. It is what lets a later `resume` finish this run from
+this pull request instead of re-implementing it, and the resume compares it
+against the pull request's current head. Declare it in PROSE, outside every
+fenced block. Your replay re-prints the captured record's own lines, this
+label among them, so a fenced occurrence is proof OUTPUT and is
+deliberately ignored — and naming two different shas in prose makes the
+record anchor nothing.
+
 The body then carries, **per assertion in Definition of Done order**:
 
 1. The assertion text, verbatim.
