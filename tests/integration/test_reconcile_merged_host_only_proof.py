@@ -54,6 +54,7 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
+from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_completion
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_ai import (
     AcceptancePassResult,
@@ -69,6 +70,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_build_identity 
     RELEASE_TAG_LABEL,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_containment import compare_argv
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_leg import (
+    NOT_EVIDENCE_SELF_REPLAY,
+    NOT_EVIDENCE_UNOBSERVABLE_CONTAINMENT,
+    PENDING_HOST_LEG_REASON,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
+    VERDICT_HOST_VERIFIED,
+)
+from livespec_orchestrator_beads_fabro.commands._needs_attention_proof import (
+    stale_proof_pointer_items,
+)
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
@@ -89,6 +101,8 @@ _SIBLING_DISPATCH_ID = "aaaa1111bbbb2222cccc3333dddd4444"
 _UNATTRIBUTED_RUN_ID = "01M4UNATTRIBUTEDRUN"
 _CAPTURING_SESSION = "01a0f0d2-8ae8-7ec3-9c29-5ff9bef058f2"
 _REPLAYING_SESSION = "724787ab-cfc0-4dc6-9123-1c706769c5ab"
+# A THIRD session, which publishes the corrected replay the stale lane must see.
+_CORRECTING_SESSION = "9f2c1d40-0b77-4c8e-9a51-2d6c5b7a1e33"
 _RELEASE_TAG = "v0.173.8"
 _ASSERTION = "Reconciliation closes a host-only item whose merge names no factory run."
 _HOST_REASON = "the proof needs the released build installed on an operator host."
@@ -96,6 +110,8 @@ _VERIFIED_URL = f"https://example.test/owner/repo/pull/{_PR_NUMBER}#issuecomment
 _CAPTURE_URL = f"https://example.test/owner/repo/pull/{_PR_NUMBER}#issuecomment-6048738746"
 _REPLAY_URL = f"https://example.test/owner/repo/pull/{_PR_NUMBER}#issuecomment-6048809393"
 _REPLAY_TIMESTAMP = "2026-10-07T23:18:22Z"
+_CORRECTED_URL = f"https://example.test/owner/repo/pull/{_PR_NUMBER}#issuecomment-6049000000"
+_PARKING_TITLE = "Acceptance parking record"
 # Shares no significant term with the assertion, so a PASS cannot have come from
 # the merged-diff vocabulary matcher.
 _MERGED_DIFF = "diff --git a/x b/x\n+rearranged an unrelated helper\n"
@@ -207,7 +223,7 @@ def _definition_of_done() -> str:
     )
 
 
-def _item() -> WorkItem:
+def _item(*, acceptance_policy: str = "ai-only") -> WorkItem:
     return WorkItem(
         id=_ITEM_ID,
         type="bug",
@@ -225,10 +241,12 @@ def _item() -> WorkItem:
         audit=None,
         superseded_by=None,
         admission_policy="auto",
-        # `ai-only` is the discriminating policy: it is the one policy that CLOSES
-        # a passing item, so an item that rests under it rests because of its host
-        # leg and not because a human was owed the acceptance.
-        acceptance_policy="ai-only",
+        # `ai-only` is the discriminating policy for every case about RESTING: it
+        # is the one policy that CLOSES a passing item, so an item that rests under
+        # it rests because of its host leg and not because a human was owed the
+        # acceptance. The hygiene case overrides it to a parked policy instead, so
+        # the item keeps the pointer in a status the lane still reads.
+        acceptance_policy=acceptance_policy,
     )
 
 
@@ -337,6 +355,30 @@ def _comments_payload(*, replaying: str = _REPLAYING_SESSION) -> str:
     )
 
 
+def _corrected_replay_payload() -> str:
+    """The same pull request, plus a LATER `host_verified` replay from a third party.
+
+    The shape a correction takes: a record is never edited after posting, so a
+    replay that supersedes an earlier one is a new comment — and a pointer naming
+    the superseded record is then genuinely stale.
+    """
+    payload = json.loads(_comments_payload())
+    comments = payload["comments"]
+    assert isinstance(comments, list)
+    comments.append(
+        {
+            "url": _CORRECTED_URL,
+            "body": _host_record_body(
+                verdict="host_verified",
+                identity=_CORRECTING_SESSION,
+                timestamp="2026-10-08T07:00:00Z",
+                reproduced="yes.",
+            ),
+        }
+    )
+    return json.dumps(payload)
+
+
 def _pr_view_json() -> str:
     return json.dumps(
         {
@@ -365,9 +407,10 @@ def _reconcile(
     comments: str | None = None,
     status: str = "ahead",
     compare_exit_code: int = 0,
+    acceptance_policy: str = "ai-only",
 ) -> tuple[int, Path, _ForgeRunner]:
     repo = _repo(tmp_path=tmp_path)
-    append_work_item(path=_config(), item=_item())
+    append_work_item(path=_config(), item=_item(acceptance_policy=acceptance_policy))
     valve = _ValveRunner(queue=_merged_queue())
     monkeypatch.setattr(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_merged.ShellCommandRunner",
@@ -409,6 +452,15 @@ def _stored() -> WorkItem:
 def _journal_records(*, repo: Path) -> list[dict[str, object]]:
     text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
     return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+def _comment_bodies(*, item_id: str) -> list[str]:
+    """The item's ledger comments, read through `bd comments` and indexed on `text`.
+
+    Never through `bd show`, which carries only `comment_count` and no bodies at
+    all — so a read through it reports every successful append as lost.
+    """
+    return [one.text for one in read_work_item_comments(path=_config(), work_item_id=item_id)]
 
 
 def _acceptance_pass_record(*, repo: Path) -> dict[str, object]:
@@ -520,3 +572,141 @@ def test_the_host_only_pointer_identifies_the_independently_verified_host_record
     assert written["run_id"] == _REPLAYING_SESSION
     assert written["record_comment"] == _REPLAY_URL
     assert written["host_verified_record"] == _REPLAY_URL
+
+
+@pytest.mark.parametrize(
+    ("comments", "compare_exit_code", "refusal"),
+    [
+        (None, 1, NOT_EVIDENCE_UNOBSERVABLE_CONTAINMENT),
+        (_comments_payload(replaying=_CAPTURING_SESSION), 0, NOT_EVIDENCE_SELF_REPLAY),
+    ],
+    ids=["unreadable-containment", "capturing-identity"],
+)
+def test_a_refused_host_replay_rests_the_item_with_its_own_pending_evidence_reason(
+    comments: str | None,
+    compare_exit_code: int,
+    refusal: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The two ways the repaired host-only path must still REFUSE, under `ai-only`.
+
+    Both are preservation cases, and both are worth binding on the host-only path
+    specifically: wiring the containment reader onto the empty-identifier arm is
+    exactly the change that could have turned either refusal into a close, and
+    under `ai-only` a close is what an over-permissive host leg would produce
+    silently.
+
+    The item rests rather than closing, the pass consumes no rework attempt (the
+    verdict is PASS — the factory leg is green and the host assertion is PENDING,
+    not failed), NO pointer is written because the leg rested on nothing, and the
+    parking record names the SPECIFIC refusal. The reason is the whole content of
+    the park: an operator told only "pending" would re-run the replay and meet the
+    same answer, while "names a build whose containment could not be read" and
+    "was published by the identity that recorded the capture" have entirely
+    different remedies.
+
+    Both legs also assert the comparison was ATTEMPTED, for the reason the closing
+    case does: a refusal earned by a failed measurement and one manufactured by a
+    gauge nobody pointed produce the identical string, and only the seam tells them
+    apart.
+
+    THE REASON IS ASSERTED ON BOTH SURFACES THAT CARRY IT, because they are two
+    different readers' answers and neither is recoverable from the other. The
+    acceptance journal carries the per-assertion CHECK reason — the standing
+    "passes only from an independent host_verified record" clause, extended with
+    every refusal — and the ledger's parking record carries the refusal leading the
+    ACTION, which is what an operator reads to know whether to republish or to
+    start. A build that dropped either would still look repaired through the other.
+    """
+    exit_code, repo, forge = _reconcile(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        comments=comments,
+        compare_exit_code=compare_exit_code,
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload[0]["stage"] == "acceptance"
+    assert payload[0]["verdict"] == "PASS"
+    assert _stored().status == "acceptance"
+    assert compare_argv(base=_MERGE_SHA, head=_RELEASE_TAG) in forge.argvs
+    record = _acceptance_pass_record(repo=repo)
+    proof = record["proof"]
+    assert isinstance(proof, dict)
+    assert proof["pending_host_captured"] == [_ASSERTION]
+    criteria = record["criteria"]
+    assert isinstance(criteria, dict)
+    checks = criteria["checks"]
+    assert isinstance(checks, list)
+    reason = str(checks[0]["reason"])
+    assert reason.startswith(PENDING_HOST_LEG_REASON)
+    assert refusal in reason
+    # Fail-closed provenance: a pointer is written only for a replay that PASSED,
+    # so a refused one leaves the description naming no evidence at all.
+    assert "## Proof of Done" not in _stored().description
+    skipped = next(
+        one for one in _journal_records(repo=repo) if one.get("stage") == "proof-pointer-skipped"
+    )
+    assert skipped["reason"] == "no verified Proof of Done record for the merging run"
+    parking = [body for body in _comment_bodies(item_id=_ITEM_ID) if _PARKING_TITLE in body]
+    assert len(parking) == 1
+    assert refusal in parking[0]
+    assert _ASSERTION in parking[0]
+    # The refused record and the build it claimed are both named: the remedy
+    # differs by which build was replayed, and an operator told only that the
+    # record is not evidence has to open the comment to find out which.
+    assert _REPLAY_URL in parking[0]
+    assert _RELEASE_TAG in parking[0]
+
+
+def test_a_host_only_pointer_is_not_stale_against_a_record_it_never_cited(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Staleness compares the pointer against the latest record OF ITS OWN KIND.
+
+    A host-only pointer cites a `host_verified` record, and this pull request also
+    carries the unattributable factory `verified` record the merge published. A
+    lane that always compared against the latest `verified` record would report
+    every host-only pointer as stale the moment it was written — a hygiene row
+    against a pointer that is exactly right, and one no operator can clear, since
+    the `verified` record it names is the one the pass is required NOT to cite.
+
+    THE CONTROL IS IN THE SAME CASE, because "no fact appeared" is otherwise
+    indistinguishable from a lane that reports nothing: a LATER `host_verified`
+    replay from a third session — the shape a corrected replay takes, since a
+    record is never edited and a correction is a new record — must still raise the
+    fact. Both legs read the same pointer through the same lane and differ only in
+    what the pull request carries.
+    """
+    exit_code, repo, _ = _reconcile(
+        monkeypatch=monkeypatch, tmp_path=tmp_path, acceptance_policy="ai-then-human"
+    )
+
+    _ = capsys.readouterr()
+    assert exit_code == 0
+    # The lane only reads a pointer on a non-closed item, so the parked policy is
+    # what keeps this case reachable at all.
+    assert _stored().status == "acceptance"
+    assert f"- Verdict: {VERDICT_HOST_VERIFIED}" in _stored().description
+    items = list(materialize_work_items(records=read_work_items(path=_config())).values())
+
+    unchanged = stale_proof_pointer_items(
+        project_root=repo,
+        repo="repo",
+        items=items,
+        runner=_ForgeRunner(comments=_comments_payload()),
+    )
+    corrected = stale_proof_pointer_items(
+        project_root=repo,
+        repo="repo",
+        items=items,
+        runner=_ForgeRunner(comments=_corrected_replay_payload()),
+    )
+
+    assert unchanged == []
+    assert [one.id for one in corrected] == [f"hygiene:stale-proof-pointer:{_ITEM_ID}"]

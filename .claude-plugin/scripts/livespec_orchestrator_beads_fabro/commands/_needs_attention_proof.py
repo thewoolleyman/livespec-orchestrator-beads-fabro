@@ -33,17 +33,20 @@ with the posting primitive), and a forge read per parked item would make the
 snapshot pay a round trip for an answer the status already gives.
 
 WHY THE STALE LANE READS THE FORGE AND THE PENDING LANES DO NOT. Staleness is a
-comparison between the pointer and the pull request's LATEST record, so there is
-no way to decide it from the ledger alone. The read is scoped to items that have
-NOT closed and that carry a pointer, which bounds it to the work in flight: a
-closed item's pointer is frozen history, and re-reading every closed item's pull
-request on every snapshot would make the attention pass a function of the whole
-ledger's size.
+comparison between the pointer and the pull request's latest record OF THE KIND
+THE POINTER CITES, so there is no way to decide it from the ledger alone. The
+kind is the pointer's own verdict rather than a fixed `verified`, because a
+host-only item's pointer cites its independent `host_verified` replay —
+`_is_stale` carries why a fixed comparison reported every such pointer stale.
+The read is scoped to items that have NOT closed and that carry a pointer, which
+bounds it to the work in flight: a closed item's pointer is frozen history, and
+re-reading every closed item's pull request on every snapshot would make the
+attention pass a function of the whole ledger's size.
 
 AN UNREADABLE PULL REQUEST IS NOT A STALE POINTER. A failed read and a pull
-request carrying no `verified` record both yield NO fact, because the lane would
-otherwise manufacture a staleness finding out of an absent observation — the same
-rule the acceptance pass's evidence legs obey.
+request carrying no record of the cited kind both yield NO fact, because the lane
+would otherwise manufacture a staleness finding out of an absent observation —
+the same rule the acceptance pass's evidence legs obey.
 """
 
 from __future__ import annotations
@@ -70,7 +73,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import 
     VERDICT_HOST_RECORDED,
     VERDICT_HOST_VERIFIED,
     VERDICT_HUMAN_ATTESTED,
-    VERDICT_VERIFIED,
     latest_proof_record,
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
@@ -146,19 +148,37 @@ def stale_proof_pointer_items(
 
 
 def _is_stale(*, project_root: Path, pointer: ProofPointer, runner: CommandRunner) -> bool:
-    """Whether the pull request's latest verified record is not the one cited.
+    """Whether the pull request's latest record OF THE POINTER'S KIND is not the cited one.
 
     Both the run id and the comment link are compared, because the clause names
     both and they fail independently: a re-dispatch publishes a record under a new
     RUN id, while a corrected record from the same run publishes under a new
     COMMENT id — and a check on either alone is blind to the other.
+
+    THE COMPARISON IS SCOPED TO THE POINTER'S OWN VERDICT, not fixed at `verified`.
+    A pointer cites the record its acceptance pass rested on, and for a HOST-ONLY
+    item — one declaring no `factory_captured` assertion, which therefore owes no
+    factory record — that is the independent `host_verified` replay. Comparing such
+    a pointer against the latest `verified` record compares two different kinds of
+    record and reports a correct pointer as stale on every snapshot, naming as "the
+    latest verified record" the very record the acceptance pass is required NOT to
+    cite. That is a hygiene row an operator cannot clear: repairing the pointer to
+    satisfy it would mean citing an unattributed record, which the evidence rule
+    forbids. Scoping to the kind keeps the fact meaningful in BOTH directions — a
+    newer `host_verified` replay, which is how a correction is published, still
+    makes a host-only pointer stale.
+
+    An UNREADABLE pointer whose verdict bullet is missing carries the empty string,
+    which matches no record and yields no fact — the same answer an unreadable pull
+    request gives, and the right one: the lane disposes on observed evidence, and a
+    pointer nobody can read is evidence of nothing.
     """
     records = read_pull_request_records(
         repo=project_root, pr_number=pointer.pull_request, runner=runner
     )
     if records is None:
         return False
-    latest = latest_proof_record(records=records, verdict=VERDICT_VERIFIED)
+    latest = latest_proof_record(records=records, verdict=pointer.verdict)
     if latest is None:
         return False
     return latest.run_id != pointer.run_id or latest.url != pointer.record_url
