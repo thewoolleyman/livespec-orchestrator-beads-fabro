@@ -1,0 +1,245 @@
+{
+  "title": "probe goal",
+  "spec": {
+    "run_id": "01M4DCWK7PMR274RR3SS2WVFP5",
+    "settings": {
+      "project": {
+        "name": null,
+        "description": null,
+        "metadata": {}
+      },
+      "workflow": {
+        "name": null,
+        "description": null,
+        "graph": "workflow.fabro",
+        "metadata": {}
+      },
+      "run": {
+        "goal": {
+          "type": "inline",
+          "value": "# probe goal\n"
+        },
+        "working_dir": null,
+        "metadata": {},
+        "inputs": {},
+        "model": {
+          "provider": "anthropic",
+          "name": "claude-sonnet-4-6",
+          "fallbacks": [],
+          "controls": {
+            "reasoning_effort": null,
+            "speed": null
+          }
+        },
+        "git": {
+          "author": null
+        },
+        "prepare": {
+          "commands": [],
+          "timeout_ms": 300000
+        },
+        "execution": {
+          "mode": "normal",
+          "approval": "prompt"
+        },
+        "checkpoint": {
+          "exclude_globs": [],
+          "skip_git_hooks": false,
+          "commit_timeout_ms": 30000
+        },
+        "clone": {
+          "enabled": true
+        },
+        "run_branch": {
+          "enabled": true,
+          "push": true
+        },
+        "meta_branch": {
+          "enabled": true,
+          "push": true
+        },
+        "environment": {
+          "id": "default",
+          "provider": "docker",
+          "image": {
+            "docker": "buildpack-deps:noble",
+            "dockerfile": null
+          },
+          "resources": {
+            "cpu": 2,
+            "memory": "4GB",
+            "disk": null
+          },
+          "network": {
+            "mode": "allow_all",
+            "allow": []
+          },
+          "lifecycle": {
+            "preserve": false,
+            "stop_on_terminal": true,
+            "auto_stop": null
+          },
+          "labels": {},
+          "volumes": [],
+          "env": {}
+        },
+        "notifications": {},
+        "interviews": {
+          "provider": null,
+          "slack": null
+        },
+        "agent": {
+          "fabro_tools": false,
+          "permissions": null,
+          "mcps": {}
+        },
+        "hooks": [],
+        "scm": {
+          "provider": null,
+          "owner": null,
+          "repository": null,
+          "github": null
+        },
+        "pull_request": null,
+        "artifacts": {
+          "include": []
+        },
+        "integrations": {
+          "github": {
+            "permissions": {}
+          }
+        }
+      }
+    },
+    "graph": {
+      "name": "P4Resources",
+      "nodes": {
+        "check": {
+          "id": "check",
+          "attrs": {
+            "label": {
+              "String": "Check"
+            },
+            "shape": {
+              "String": "parallelogram"
+            },
+            "script": {
+              "String": "n=$(nproc); m=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo none); echo \"nproc=$n memory.max=$m cpu.max=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo none)\" >&2; test \"$n\" -eq 2 && test \"$m\" = 4294967296"
+            },
+            "goal_gate": {
+              "Boolean": true
+            }
+          }
+        },
+        "exit": {
+          "id": "exit",
+          "attrs": {
+            "label": {
+              "String": "Exit"
+            },
+            "shape": {
+              "String": "Msquare"
+            }
+          }
+        },
+        "start": {
+          "id": "start",
+          "attrs": {
+            "label": {
+              "String": "Start"
+            },
+            "shape": {
+              "String": "Mdiamond"
+            }
+          }
+        }
+      },
+      "edges": [
+        {
+          "from": "start",
+          "to": "check",
+          "attrs": {}
+        },
+        {
+          "from": "check",
+          "to": "exit",
+          "attrs": {}
+        }
+      ],
+      "attrs": {
+        "goal": {
+          "String": "# probe goal\n"
+        }
+      }
+    },
+    "graph_source": "digraph P4Resources {\n    start [shape=Mdiamond, label=\"Start\"]\n    check [shape=parallelogram, label=\"Check\", goal_gate=true, script=\"n=$(nproc); m=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo none); echo \\\"nproc=$n memory.max=$m cpu.max=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo none)\\\" >&2; test \\\"$n\\\" -eq 2 && test \\\"$m\\\" = 4294967296\"]\n    exit [shape=Msquare, label=\"Exit\"]\n    start -> check\n    check -> exit\n}\n",
+    "workflow_slug": "p4_resources",
+    "source_directory": "/data/projects/livespec-orchestrator-beads-fabro",
+    "provenance": {
+      "server": {
+        "version": "0.254.0"
+      },
+      "client": {
+        "user_agent": "fabro-cli/0.254.0",
+        "name": "fabro-cli",
+        "version": "0.254.0"
+      },
+      "subject": {
+        "kind": "user",
+        "identity": {
+          "issuer": "fabro:dev",
+          "subject": "dev"
+        },
+        "login": "dev",
+        "auth_method": "dev_token"
+      }
+    },
+    "manifest_blob": "4b0880fa9d19d9342db9fca4e1ac1b2053b14f523c148ffebcc0a49fc8f79dd8",
+    "definition_blob": "584d86d46bac1380fc524a3a66a5bdc12abfd7c9a72d87e6d2a59d5ca645938c",
+    "git": {
+      "origin_url": "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+      "branch": "master",
+      "sha": "a179ac0b2e8e625c96ffc1ae822b27ef8d7a9164",
+      "dirty": "clean",
+      "push_outcome": {
+        "type": "not_attempted"
+      }
+    }
+  },
+  "web_url": "https://hp-xubuntu.perch-rudd.ts.net:32276/runs/01M4DCWK7PMR274RR3SS2WVFP5",
+  "start": null,
+  "status": {
+    "kind": "starting"
+  },
+  "status_updated_at": "2026-10-08T09:18:10.566554057Z",
+  "last_event_at": "2026-10-08T09:18:13.793490301Z",
+  "pending_control": null,
+  "checkpoints": [],
+  "conclusion": null,
+  "sandbox": {
+    "kind": "ready",
+    "plan": {
+      "provider": "docker",
+      "image": "buildpack-deps:noble"
+    },
+    "instance": {
+      "provider": "docker",
+      "image": "buildpack-deps:noble",
+      "runtime": {
+        "id": "0021f295c5453659d6b6fd328768c4a840a796487b6368235e269ec18879f2a5",
+        "working_directory": "/workspace/livespec-orchestrator-beads-fabro",
+        "repo_cloned": true,
+        "clone_origin_url": "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+        "clone_branch": "master",
+        "workspace_root": "/workspace",
+        "repos_root": "/repos",
+        "primary_repo_path": "/repos/thewoolleyman/livespec-orchestrator-beads-fabro",
+        "primary_repo_link": "/workspace/livespec-orchestrator-beads-fabro"
+      }
+    }
+  },
+  "pull_request": null,
+  "superseded_by": null,
+  "pending_interviews": {},
+  "stages": {}
+}
