@@ -1,0 +1,7 @@
+digraph FabroEnemyAcpCommandLaunch {
+    start [shape=Mdiamond, label="Start"]
+    agent [shape=box, label="Agent", backend="acp", goal_gate=true, acp.command="EUT_PROBE=1 python3 fabro-enemy-unit-tests/_fake_acp_agent.py success /tmp/eut-acp-command-record.jsonl", prompt="say hi"]
+    exit [shape=Msquare, label="Exit"]
+    start -> agent
+    agent -> exit
+}

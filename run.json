@@ -1,0 +1,251 @@
+{
+  "title": "Fabro Enemy Unit Test: acp-command-launch",
+  "spec": {
+    "run_id": "01M4DK42Z8C28M0M8KT1Z49F8C",
+    "settings": {
+      "project": {
+        "name": null,
+        "description": null,
+        "metadata": {}
+      },
+      "workflow": {
+        "name": null,
+        "description": null,
+        "graph": "workflow.fabro",
+        "metadata": {}
+      },
+      "run": {
+        "goal": {
+          "type": "inline",
+          "value": "# Fabro Enemy Unit Test: acp-command-launch\n"
+        },
+        "working_dir": null,
+        "metadata": {},
+        "inputs": {},
+        "model": {
+          "provider": "anthropic",
+          "name": "claude-sonnet-4-6",
+          "fallbacks": [],
+          "controls": {
+            "reasoning_effort": null,
+            "speed": null
+          }
+        },
+        "git": {
+          "author": null
+        },
+        "prepare": {
+          "commands": [],
+          "timeout_ms": 300000
+        },
+        "execution": {
+          "mode": "normal",
+          "approval": "prompt"
+        },
+        "checkpoint": {
+          "exclude_globs": [],
+          "skip_git_hooks": false,
+          "commit_timeout_ms": 30000
+        },
+        "clone": {
+          "enabled": true
+        },
+        "run_branch": {
+          "enabled": true,
+          "push": true
+        },
+        "meta_branch": {
+          "enabled": true,
+          "push": true
+        },
+        "environment": {
+          "id": "default",
+          "provider": "docker",
+          "image": {
+            "docker": "buildpack-deps:noble",
+            "dockerfile": null
+          },
+          "resources": {
+            "cpu": 2,
+            "memory": "4GB",
+            "disk": null
+          },
+          "network": {
+            "mode": "allow_all",
+            "allow": []
+          },
+          "lifecycle": {
+            "preserve": false,
+            "stop_on_terminal": true,
+            "auto_stop": null
+          },
+          "labels": {},
+          "volumes": [],
+          "env": {}
+        },
+        "notifications": {},
+        "interviews": {
+          "provider": null,
+          "slack": null
+        },
+        "agent": {
+          "fabro_tools": false,
+          "permissions": null,
+          "mcps": {}
+        },
+        "hooks": [],
+        "scm": {
+          "provider": null,
+          "owner": null,
+          "repository": null,
+          "github": null
+        },
+        "pull_request": null,
+        "artifacts": {
+          "include": []
+        },
+        "integrations": {
+          "github": {
+            "permissions": {}
+          }
+        }
+      }
+    },
+    "graph": {
+      "name": "FabroEnemyAcpCommandLaunch",
+      "nodes": {
+        "start": {
+          "id": "start",
+          "attrs": {
+            "label": {
+              "String": "Start"
+            },
+            "shape": {
+              "String": "Mdiamond"
+            }
+          }
+        },
+        "exit": {
+          "id": "exit",
+          "attrs": {
+            "label": {
+              "String": "Exit"
+            },
+            "shape": {
+              "String": "Msquare"
+            }
+          }
+        },
+        "agent": {
+          "id": "agent",
+          "attrs": {
+            "backend": {
+              "String": "acp"
+            },
+            "acp.command": {
+              "String": "EUT_PROBE=1 python3 fabro-enemy-unit-tests/_fake_acp_agent.py success /tmp/eut-acp-command-record.jsonl"
+            },
+            "shape": {
+              "String": "box"
+            },
+            "prompt": {
+              "String": "say hi"
+            },
+            "label": {
+              "String": "Agent"
+            },
+            "goal_gate": {
+              "Boolean": true
+            }
+          }
+        }
+      },
+      "edges": [
+        {
+          "from": "start",
+          "to": "agent",
+          "attrs": {}
+        },
+        {
+          "from": "agent",
+          "to": "exit",
+          "attrs": {}
+        }
+      ],
+      "attrs": {
+        "goal": {
+          "String": "# Fabro Enemy Unit Test: acp-command-launch\n"
+        }
+      }
+    },
+    "graph_source": "digraph FabroEnemyAcpCommandLaunch {\n    start [shape=Mdiamond, label=\"Start\"]\n    agent [shape=box, label=\"Agent\", backend=\"acp\", goal_gate=true, acp.command=\"EUT_PROBE=1 python3 fabro-enemy-unit-tests/_fake_acp_agent.py success /tmp/eut-acp-command-record.jsonl\", prompt=\"say hi\"]\n    exit [shape=Msquare, label=\"Exit\"]\n    start -> agent\n    agent -> exit\n}\n",
+    "workflow_slug": "acp-command-launch",
+    "source_directory": "/home/ubuntu/.worktrees/livespec-orchestrator-beads-fabro/fabro-currency-enemy-matrix",
+    "provenance": {
+      "server": {
+        "version": "0.254.0"
+      },
+      "client": {
+        "user_agent": "fabro-cli/0.254.0",
+        "name": "fabro-cli",
+        "version": "0.254.0"
+      },
+      "subject": {
+        "kind": "user",
+        "identity": {
+          "issuer": "fabro:dev",
+          "subject": "dev"
+        },
+        "login": "dev",
+        "auth_method": "dev_token"
+      }
+    },
+    "manifest_blob": "f51018a003f064308cec9ca9e0f8a292f6d661f67d356427ff9e40a32cbd86d2",
+    "definition_blob": "60c52a76eaf0abff317ee4255b22176fa7f5e8e07f1560d29a9ebba45ebe5373",
+    "git": {
+      "origin_url": "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+      "branch": "fabro-currency-enemy-matrix",
+      "sha": "73c3559a79d49b674b30ede27dd90aff5a87afb0",
+      "dirty": "clean",
+      "push_outcome": {
+        "type": "not_attempted"
+      }
+    }
+  },
+  "web_url": "https://hp-xubuntu.perch-rudd.ts.net:32276/runs/01M4DK42Z8C28M0M8KT1Z49F8C",
+  "start": null,
+  "status": {
+    "kind": "starting"
+  },
+  "status_updated_at": "2026-10-08T11:07:07.686260642Z",
+  "last_event_at": "2026-10-08T11:07:10.469330199Z",
+  "pending_control": null,
+  "checkpoints": [],
+  "conclusion": null,
+  "sandbox": {
+    "kind": "ready",
+    "plan": {
+      "provider": "docker",
+      "image": "buildpack-deps:noble"
+    },
+    "instance": {
+      "provider": "docker",
+      "image": "buildpack-deps:noble",
+      "runtime": {
+        "id": "1c3959ce92d15bbcd6608c2b33efda6bcd8236e43de4c7a8c0333eddf4e8e04f",
+        "working_directory": "/workspace/livespec-orchestrator-beads-fabro",
+        "repo_cloned": true,
+        "clone_origin_url": "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+        "clone_branch": "fabro-currency-enemy-matrix",
+        "workspace_root": "/workspace",
+        "repos_root": "/repos",
+        "primary_repo_path": "/repos/thewoolleyman/livespec-orchestrator-beads-fabro",
+        "primary_repo_link": "/workspace/livespec-orchestrator-beads-fabro"
+      }
+    }
+  },
+  "pull_request": null,
+  "superseded_by": null,
+  "pending_interviews": {},
+  "stages": {}
+}
