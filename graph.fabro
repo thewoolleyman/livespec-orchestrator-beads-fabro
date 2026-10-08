@@ -1,0 +1,10 @@
+digraph FabroEnemyOutcomeLoop {
+    start [shape=Mdiamond, label="Start"]
+    step [shape=parallelogram, label="Step", script="c=$(cat /tmp/eut-outcome-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-outcome-count; echo \"step visit $c\" >&2; test $c -lt 3"]
+    gate [shape=parallelogram, label="Gate", goal_gate=true, script="test \"$(cat /tmp/eut-outcome-count)\" = 3"]
+    exit [shape=Msquare, label="Exit"]
+    start -> step
+    step -> step [condition="outcome=succeeded"]
+    step -> gate
+    gate -> exit
+}
