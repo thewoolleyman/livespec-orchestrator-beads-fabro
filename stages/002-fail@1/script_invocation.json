@@ -1,0 +1,5 @@
+{
+  "script": "echo p2-fail >&2; exit 1",
+  "command": "exec 2>&1\necho p2-fail >&2; exit 1",
+  "language": "shell"
+}
