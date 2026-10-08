@@ -1,0 +1,5 @@
+{
+  "script": "c=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo none); m=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo none); echo \"cpu.max=$c memory.max=$m\" >&2; test \"$c\" = '200000 100000' && test \"$m\" = '4000000000'",
+  "command": "exec 2>&1\nc=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo none); m=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo none); echo \"cpu.max=$c memory.max=$m\" >&2; test \"$c\" = '200000 100000' && test \"$m\" = '4000000000'",
+  "language": "shell"
+}
