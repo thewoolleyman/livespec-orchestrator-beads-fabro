@@ -1,0 +1,7 @@
+digraph FabroEnemyFailing {
+    start [shape=Mdiamond, label="Start"]
+    fail [shape=parallelogram, label="Fail", goal_gate=true, script="echo fabro-enemy-tier1-fail >&2; exit 1"]
+    exit [shape=Msquare, label="Exit"]
+    start -> fail
+    fail -> exit
+}
