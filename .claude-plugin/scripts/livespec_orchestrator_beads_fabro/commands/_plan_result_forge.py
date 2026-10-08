@@ -38,6 +38,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_observation import 
     SOURCE_GIT_OBJECT,
     ResultObservation,
     satisfied,
+    unsatisfied,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_repository import ResultRepository
 from livespec_orchestrator_beads_fabro.commands._plan_result_targets import (
@@ -99,7 +100,17 @@ def observe_pull_request_state(
     if not isinstance(state, str) or state == "" or not isinstance(updated, str):
         return None
     if state.casefold() != target.state.casefold():
-        return None
+        return unsatisfied(
+            repo=repository.name,
+            target=target.identity,
+            source=SOURCE_FORGE,
+            now=now,
+            evidence=f"forge pull request #{target.number} state {state} at {updated}",
+            detail=(
+                f"the forge reports pull request #{target.number} at state {state},"
+                f" not the expected {target.state}"
+            ),
+        )
     return satisfied(
         repo=repository.name,
         target=target.identity,
@@ -128,7 +139,18 @@ def observe_file_on_branch(
     if blob == "":
         return None
     if blob != target.blob:
-        return None
+        return unsatisfied(
+            repo=repository.name,
+            target=target.identity,
+            source=SOURCE_GIT_OBJECT,
+            now=now,
+            evidence=f"git blob {blob} at {target.branch}:{target.path}",
+            detail=(
+                f"the remote branch {target.branch} holds blob {blob} at"
+                f" {target.path}, not the expected {target.blob}; no local checkout"
+                " was consulted"
+            ),
+        )
     return satisfied(
         repo=repository.name,
         target=target.identity,

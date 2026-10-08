@@ -71,6 +71,14 @@ _NOW = "2026-10-08T12:00:00Z"
 _PR_STATE_KEY = "state,updatedAt"
 _PR_COMMENTS_KEY = "comments"
 _BLOB_KEY = "contents/"
+# Spelled as a LITERAL rather than imported from the observation module, and that
+# is deliberate. Each status arrives in its own Red-Green cycle, so a Red that
+# imported the not-yet-existing constant would die at COLLECTION — proving only
+# that a name is missing, never that the behaviour is unimplemented. The literal
+# is bound back to the production constant by an assertion in
+# `tests/livespec_orchestrator_beads_fabro/commands/test_plan_result_observation.py`,
+# so a renamed constant still fails somewhere rather than drifting silently.
+_UNSATISFIED = "unsatisfied"
 
 
 @pytest.fixture(autouse=True)
@@ -332,6 +340,70 @@ def test_an_observable_unmet_target_is_never_reported_satisfied(tmp_path: Path) 
             project_root=repo, reference=reference, runner=_runner(), now=_NOW
         )
         assert _status(observation=observation) != OBSERVATION_SATISFIED, kind
+
+
+def test_an_observable_unmet_target_of_every_kind_is_unsatisfied(tmp_path: Path) -> None:
+    """Assertion 2: an unmet target the reader DID observe is a confident negative.
+
+    One case per row of the scenario outline, over the same fixtures the satisfied
+    case passes on — the outline requires both answers from one reading of one
+    source. The provenance is asserted on this arm too: an unsatisfied observation
+    has to say what WAS observed, or an operator cannot tell a target that moved
+    from an instrument that was pointed somewhere else.
+
+    `outstanding` is asserted rather than inferred from the status, because that is
+    the question both tracking callers ask of the result.
+    """
+    repo = _seeded_project(tmp_path=tmp_path)
+    for kind, reference in _unmet_references().items():
+        observation = read_result(
+            project_root=repo, reference=reference, runner=_runner(), now=_NOW
+        )
+        assert observation is not None, kind
+        assert observation.status == _UNSATISFIED, kind
+        assert observation.repo == _PROJECT_NAME, kind
+        assert kind in observation.target, kind
+        assert observation.observed_at == _NOW, kind
+        assert observation.evidence != "", kind
+        assert observation.source != "", kind
+        assert observation.outstanding is True, kind
+
+
+def test_a_record_that_is_not_evidence_is_unsatisfied_and_not_unobservable(
+    tmp_path: Path,
+) -> None:
+    """The discriminating line between an unmet target and a failed observation.
+
+    All three of these READ their source successfully and found it wanting: a
+    comment that says verified but is not a typed record, a verified record naming
+    another build, and a remote blob differing from a path that exists locally.
+    Reporting any of them as unobservable would hide a real negative behind a
+    diagnostic, and the clause's own prohibition runs the other way too —
+    unobservable must not become "a confident negative", so the two statuses have
+    to be earned separately.
+    """
+    repo = _seeded_project(tmp_path=tmp_path)
+    local = repo / _FILE_PATH
+    local.parent.mkdir(parents=True, exist_ok=True)
+    _ = local.write_text("a stale local copy of the governed clause\n", encoding="utf-8")
+    cases = (
+        (
+            _fulfilled_references()["verified_proof"],
+            _runner(proof_body="Everything here is verified and reproduced: yes.\n"),
+        ),
+        (
+            _fulfilled_references()["verified_proof"],
+            _runner(proof_body=_proof_body(build="v0.1.0")),
+        ),
+        (
+            _fulfilled_references()["file_on_branch"],
+            _runner(blob="1111111111111111111111111111111111111111"),
+        ),
+    )
+    for reference, runner in cases:
+        observation = read_result(project_root=repo, reference=reference, runner=runner, now=_NOW)
+        assert observation is not None
+        assert observation.status == _UNSATISFIED
 
 
 def test_a_comment_saying_verified_cannot_satisfy_a_typed_verified_proof(
