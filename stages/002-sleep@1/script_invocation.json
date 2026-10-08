@@ -1,0 +1,6 @@
+{
+  "script": "sleep 600",
+  "command": "exec 2>&1\nsleep 600",
+  "language": "shell",
+  "timeout_ms": 600000
+}
