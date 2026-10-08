@@ -213,7 +213,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-10-08T09:17:21.337759993Z",
-  "last_event_at": "2026-10-08T09:17:24.037640500Z",
+  "last_event_at": "2026-10-08T09:17:29.575693230Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -253,9 +253,9 @@
       "diff": {}
     },
     {
-      "seq": 0,
+      "seq": 28,
       "checkpoint": {
-        "timestamp": "2026-10-08T09:17:24.199389101Z",
+        "timestamp": "2026-10-08T09:17:29.575464151Z",
         "current_node": "fail",
         "completed_nodes": [
           "start",
@@ -263,28 +263,24 @@
         ],
         "node_retries": {},
         "context_values": {
+          "internal.acp_attempt.start": 0,
+          "internal.node_visit_count": 1,
+          "internal.retry_count.fail": 0,
+          "graph.goal": "# probe goal\n",
+          "internal.acp_attempt.fail": 0,
+          "internal.run_id": "01M4DCTZKQ2N8KK2DHPY2ZSFV9",
           "internal.retry_count.start": 0,
           "internal.fidelity": "compact",
-          "internal.run_id": "01M4DCTZKQ2N8KK2DHPY2ZSFV9",
           "internal.thread_id": "start",
-          "internal.retry_count.fail": 0,
-          "outcome": "failed",
-          "graph.goal": "# probe goal\n",
-          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
-          "failure_class": "deterministic",
-          "failure_signature": "fail|deterministic|script failed with exit code: <n> ## output p1-fail",
-          "internal.acp_attempt.fail": 0,
+          "thread.start.current_node": "fail",
           "command.output": "blob://sha256/2b5459cffe03f02d4f00f304d7e6df792e6a04b70e597e6cdf37def692abc666",
-          "internal.node_visit_count": 1,
-          "internal.acp_attempt.start": 0,
           "current_node": "fail",
-          "thread.start.current_node": "fail"
+          "failure_signature": "fail|deterministic|script failed with exit code: <n> ## output p1-fail",
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "outcome": "failed",
+          "failure_class": "deterministic"
         },
         "node_outcomes": {
-          "start": {
-            "status": "succeeded",
-            "usage": null
-          },
           "fail": {
             "status": "failed",
             "context_updates": {
@@ -301,18 +297,62 @@
               "tool_time_ms": 145,
               "active_time_ms": 145
             }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
           }
         },
         "next_node_id": "exit",
+        "git_commit_sha": "a179ac0b2e8e625c96ffc1ae822b27ef8d7a9164",
+        "loop_failure_signatures": {
+          "fail|deterministic|script failed with exit code: <n> ## output p1-fail": 1
+        },
         "node_visits": {
-          "fail": 1,
-          "start": 1
+          "start": 1,
+          "fail": 1
         }
       },
       "diff": {}
     }
   ],
-  "conclusion": null,
+  "conclusion": {
+    "timestamp": "2026-10-08T09:17:29.625589705Z",
+    "status": "succeeded",
+    "timing": {
+      "wall_time_ms": 8239,
+      "inference_time_ms": 0,
+      "tool_time_ms": 145,
+      "active_time_ms": 145
+    },
+    "final_git_commit_sha": "a179ac0b2e8e625c96ffc1ae822b27ef8d7a9164",
+    "stages": [
+      {
+        "stage_id": "start",
+        "stage_label": "start",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "fail",
+        "stage_label": "fail",
+        "timing": {
+          "wall_time_ms": 158,
+          "inference_time_ms": 0,
+          "tool_time_ms": 145,
+          "active_time_ms": 145
+        },
+        "retries": 0
+      }
+    ],
+    "total_retries": 0,
+    "diff": {}
+  },
   "sandbox": {
     "kind": "ready",
     "plan": {
@@ -343,7 +383,12 @@
       "first_event_seq": 20,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "failed",
+        "notes": null,
+        "failure_reason": "Script failed with exit code: 1\n\n## output\np1-fail\n",
+        "timestamp": "2026-10-08T09:17:24.197925363Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": {
@@ -351,11 +396,27 @@
         "command": "exec 2>&1\necho p1-fail >&2; exit 1",
         "language": "shell"
       },
-      "script_timing": null,
+      "script_timing": {
+        "output": "blob://sha256/2b5459cffe03f02d4f00f304d7e6df792e6a04b70e597e6cdf37def692abc666",
+        "exit_code": 1,
+        "duration_ms": 145,
+        "termination": "exited",
+        "output_bytes": 8,
+        "live_streaming": true
+      },
       "parallel_results": null,
       "output": null,
+      "output_bytes": 8,
+      "live_streaming": true,
+      "termination": "exited",
       "started_at": "2026-10-08T09:17:24.037620653Z",
       "handler": "command",
+      "timing": {
+        "wall_time_ms": 158,
+        "inference_time_ms": 0,
+        "tool_time_ms": 145,
+        "active_time_ms": 145
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -364,7 +425,7 @@
         "cache_read_tokens": 0,
         "cache_write_tokens": 0
       },
-      "state": "running"
+      "state": "failed"
     },
     "start@1": {
       "first_event_seq": 16,
@@ -384,6 +445,40 @@
       "output": null,
       "started_at": "2026-10-08T09:17:24.037229131Z",
       "handler": "start",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
+    "exit@1": {
+      "first_event_seq": 30,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-10-08T09:17:29.575693230Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-08T09:17:29.575596900Z",
+      "handler": "exit",
       "timing": {
         "wall_time_ms": 0,
         "inference_time_ms": 0,
