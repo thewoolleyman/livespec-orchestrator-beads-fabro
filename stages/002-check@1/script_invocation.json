@@ -1,0 +1,5 @@
+{
+  "script": "n=$(nproc); m=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo none); echo \"nproc=$n memory.max=$m cpu.max=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo none)\" >&2; test \"$n\" -eq 2 && test \"$m\" = 4294967296",
+  "command": "exec 2>&1\nn=$(nproc); m=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo none); echo \"nproc=$n memory.max=$m cpu.max=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo none)\" >&2; test \"$n\" -eq 2 && test \"$m\" = 4294967296",
+  "language": "shell"
+}

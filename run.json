@@ -207,14 +207,114 @@
     }
   },
   "web_url": "https://hp-xubuntu.perch-rudd.ts.net:32276/runs/01M4DCWK7PMR274RR3SS2WVFP5",
-  "start": null,
-  "status": {
-    "kind": "starting"
+  "start": {
+    "start_time": "2026-10-08T09:18:14.157994440Z",
+    "run_branch": "fabro/run/01M4DCWK7PMR274RR3SS2WVFP5",
+    "base_sha": "a179ac0b2e8e625c96ffc1ae822b27ef8d7a9164"
   },
-  "status_updated_at": "2026-10-08T09:18:10.566554057Z",
-  "last_event_at": "2026-10-08T09:18:13.793490301Z",
+  "status": {
+    "kind": "running"
+  },
+  "status_updated_at": "2026-10-08T09:18:14.158012263Z",
+  "last_event_at": "2026-10-08T09:18:16.734159761Z",
   "pending_control": null,
-  "checkpoints": [],
+  "checkpoints": [
+    {
+      "seq": 19,
+      "checkpoint": {
+        "timestamp": "2026-10-08T09:18:16.733988601Z",
+        "current_node": "start",
+        "completed_nodes": [
+          "start"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.acp_attempt.start": 0,
+          "failure_signature": "",
+          "current_node": "start",
+          "internal.retry_count.start": 0,
+          "graph.goal": "# probe goal\n",
+          "internal.fidelity": "compact",
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "outcome": "succeeded",
+          "internal.node_visit_count": 1,
+          "internal.thread_id": null,
+          "internal.run_id": "01M4DCWK7PMR274RR3SS2WVFP5",
+          "failure_class": ""
+        },
+        "node_outcomes": {
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "check",
+        "node_visits": {
+          "start": 1
+        }
+      },
+      "diff": {}
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-10-08T09:18:16.902313201Z",
+        "current_node": "check",
+        "completed_nodes": [
+          "start",
+          "check"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.acp_attempt.check": 0,
+          "outcome": "failed",
+          "internal.retry_count.check": 0,
+          "internal.fidelity": "compact",
+          "graph.goal": "# probe goal\n",
+          "current_node": "check",
+          "failure_signature": "check|deterministic|script failed with exit code: <n> ## output nproc=<n> memory.max=<hex> cpu.max=<n> <n>",
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "failure_class": "deterministic",
+          "internal.run_id": "01M4DCWK7PMR274RR3SS2WVFP5",
+          "internal.retry_count.start": 0,
+          "internal.thread_id": "start",
+          "thread.start.current_node": "check",
+          "command.output": "blob://sha256/d1adea73b41b0a9007645f5eb491e21dc84122d68e1f78f82960ffff07ce5a14",
+          "internal.acp_attempt.start": 0,
+          "internal.node_visit_count": 1
+        },
+        "node_outcomes": {
+          "check": {
+            "status": "failed",
+            "context_updates": {
+              "command.output": "blob://sha256/d1adea73b41b0a9007645f5eb491e21dc84122d68e1f78f82960ffff07ce5a14"
+            },
+            "failure": {
+              "message": "Script failed with exit code: 1\n\n## output\nnproc=16 memory.max=3999997952 cpu.max=200000 100000\n",
+              "category": "deterministic"
+            },
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 151,
+              "active_time_ms": 151
+            }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "exit",
+        "node_visits": {
+          "start": 1,
+          "check": 1
+        }
+      },
+      "diff": {}
+    }
+  ],
   "conclusion": null,
   "sandbox": {
     "kind": "ready",
@@ -241,5 +341,67 @@
   "pull_request": null,
   "superseded_by": null,
   "pending_interviews": {},
-  "stages": {}
+  "stages": {
+    "start@1": {
+      "first_event_seq": 16,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-10-08T09:18:16.733839462Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-08T09:18:16.733667771Z",
+      "handler": "start",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
+    "check@1": {
+      "first_event_seq": 20,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "n=$(nproc); m=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo none); echo \"nproc=$n memory.max=$m cpu.max=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo none)\" >&2; test \"$n\" -eq 2 && test \"$m\" = 4294967296",
+        "command": "exec 2>&1\nn=$(nproc); m=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo none); echo \"nproc=$n memory.max=$m cpu.max=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo none)\" >&2; test \"$n\" -eq 2 && test \"$m\" = 4294967296",
+        "language": "shell"
+      },
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-08T09:18:16.734122852Z",
+      "handler": "command",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "running"
+    }
+  }
 }
