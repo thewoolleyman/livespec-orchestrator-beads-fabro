@@ -1,0 +1,7 @@
+digraph FabroEnemySleeping {
+    start [shape=Mdiamond, label="Start"]
+    sleep [shape=parallelogram, label="Sleep", timeout="600s", script="sleep 600"]
+    exit [shape=Msquare, label="Exit"]
+    start -> sleep
+    sleep -> exit
+}
