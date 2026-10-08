@@ -5,10 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
-from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
+from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_siblings import (
     SiblingClones,
-    parse_fleet_members,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import parse_fleet_members
 
 __all__: list[str] = [
     "fetch_fleet_manifest_text",

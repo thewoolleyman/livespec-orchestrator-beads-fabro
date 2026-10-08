@@ -161,6 +161,11 @@ def materialize_dispatch(
         payload_dir=workflow_payload_dir(work_item_id=work_item_id),
         journal=journal,
         work_item_id=work_item_id,
+        # The RESUMED-AT stage, when this dispatch is a resume. Read defensively
+        # for the same reason `acp_node` above is: only the resume entry point
+        # ever sets it, and every other command reaches this code with a
+        # Namespace that never carried the argument.
+        entry_node=getattr(args, "resume_entry_node", None),
     )
     if isinstance(payload, str):
         return MaterializationRefusal(stage=_WORKFLOW_PAYLOAD_STAGE, detail=payload)

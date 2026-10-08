@@ -28,6 +28,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_graph_render import 
     render_workflow_graph,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import workflow_graph_path
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import graph_entered_at
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     NodeTimeouts,
     node_timeouts_journal_record,
@@ -71,6 +72,7 @@ def prepare_workflow_payload(
     payload_dir: Path,
     journal: JournalWriter,
     work_item_id: str,
+    entry_node: str | None = None,
 ) -> WorkflowPayload | str:
     """Resolve node timeouts, materialize the payload, and journal the result.
 
@@ -87,6 +89,7 @@ def prepare_workflow_payload(
         committed=committed,
         payload_dir=payload_dir,
         timeouts=timeouts,
+        entry_node=entry_node,
     )
     if isinstance(payload, str):
         return payload
@@ -105,8 +108,17 @@ def materialize_workflow_payload(
     committed: Path,
     payload_dir: Path,
     timeouts: NodeTimeouts,
+    entry_node: str | None = None,
 ) -> WorkflowPayload | str:
-    """Copy the committed workflow payload and render its graph literally."""
+    """Copy the committed workflow payload and render its graph literally.
+
+    `entry_node` is the RESUMED-AT stage of a resume, and it is applied to the
+    payload's own copy of the graph for exactly the reason the timeouts are: the
+    derived graph is this one run's, never a registered variant and never
+    recorded as the item's workflow. A node the graph does not declare refuses
+    here, before any run exists, rather than failing validation at run-create
+    with an error naming a graph the operator never wrote.
+    """
     committed_graph = _committed_graph(committed=committed)
     if isinstance(committed_graph, str):
         return committed_graph
@@ -119,13 +131,19 @@ def materialize_workflow_payload(
     rendered = render_workflow_graph(committed_text=graph_text, timeouts=timeouts)
     if isinstance(rendered, str):
         return rendered
+    entered = _entered_text(text=rendered.text, entry_node=entry_node)
+    if entered is None:
+        return (
+            f"workflow graph {committed_graph} declares no node {entry_node!r} to"
+            " resume at, or carries no unconditional `start` edge to move onto it"
+        )
     graph = payload_dir / committed_graph.name
     copied = attempt(
         action=lambda: _copy_payload(
             source=committed_graph.parent,
             payload_dir=payload_dir,
             graph=graph,
-            text=rendered.text,
+            text=entered,
         ),
         exceptions=_COPY_ERRORS,
     )
@@ -149,6 +167,18 @@ def remove_workflow_payload(*, payload_dir: Path | None) -> None:
     """
     if payload_dir is not None:
         shutil.rmtree(payload_dir, ignore_errors=True)
+
+
+def _entered_text(*, text: str, entry_node: str | None) -> str | None:
+    """The graph as the run will see it: derived for a resume, unchanged otherwise.
+
+    An ordinary dispatch returns the rendered text ITSELF rather than a copy
+    passed through the derivation, so the resume path cannot change a byte of
+    what every other dispatch ships.
+    """
+    if entry_node is None:
+        return text
+    return graph_entered_at(graph_text=text, node=entry_node)
 
 
 def _committed_graph(*, committed: Path) -> Path | str:

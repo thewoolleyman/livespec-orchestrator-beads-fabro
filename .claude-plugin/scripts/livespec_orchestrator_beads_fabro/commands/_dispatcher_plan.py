@@ -88,14 +88,16 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_only import (
     is_host_only_item,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
-    CORE_PLUGIN_ROOT_ENV_VAR,
     CURRENCY_GATE_ENV_VALUE,
     CURRENCY_GATE_ENV_VAR,
-    SIBLING_CLONES_ROOT_ENV_VAR,
-    SiblingClones,
     escape_minijinja_literal,
     render_run_config_overlay,
     workflow_graph_path,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_siblings import (
+    CORE_PLUGIN_ROOT_ENV_VAR,
+    SIBLING_CLONES_ROOT_ENV_VAR,
+    SiblingClones,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import (
     DispatchPlan,

@@ -218,6 +218,7 @@ def test_dispatcher_plan_decomposition_contract() -> None:
         _dispatcher_goal,
         _dispatcher_host_only,
         _dispatcher_overlay,
+        _dispatcher_overlay_siblings,
         _dispatcher_plan,
         _dispatcher_run_status,
     )
@@ -254,15 +255,23 @@ def test_dispatcher_plan_decomposition_contract() -> None:
         "PrView",
         "parse_pr_view",
     }
+    # The sibling-clone surface moved OUT of the overlay into the cohesive leaf
+    # `_dispatcher_overlay_siblings`: the overlay renders a run config, while
+    # that module answers which family repos a dispatched sandbox clones, where
+    # they land, and which env keys point at them.
     assert set(_dispatcher_overlay.__all__) == {
-        "CORE_PLUGIN_ROOT_ENV_VAR",
         "CURRENCY_GATE_ENV_VALUE",
         "CURRENCY_GATE_ENV_VAR",
-        "SIBLING_CLONES_ROOT_ENV_VAR",
-        "SiblingClones",
         "escape_minijinja_literal",
         "render_run_config_overlay",
         "workflow_graph_path",
+    }
+    assert set(_dispatcher_overlay_siblings.__all__) == {
+        "CORE_PLUGIN_ROOT_ENV_VAR",
+        "SIBLING_CLONES_ROOT_ENV_VAR",
+        "SiblingClones",
+        "core_plugin_env_line",
+        "sibling_clone_steps_block",
     }
     assert set(_dispatcher_goal.__all__) == {
         "GoalBriefMiniJinjaFinding",
@@ -283,6 +292,12 @@ def test_dispatcher_plan_decomposition_contract() -> None:
         | set(_dispatcher_host_only.__all__)
         | set(_dispatcher_run_status.__all__)
         | set(_dispatcher_overlay.__all__)
+        # `_dispatcher_overlay_siblings` is deliberately NOT in this union. The
+        # façade re-exports the modules the plan layer was decomposed INTO; that
+        # module is a LEAF the overlay consumes, and its two rendering functions
+        # are public only because they now cross a module boundary. Re-exporting
+        # them through the façade would advertise a surface no caller of the plan
+        # layer has any use for.
     )
 
 

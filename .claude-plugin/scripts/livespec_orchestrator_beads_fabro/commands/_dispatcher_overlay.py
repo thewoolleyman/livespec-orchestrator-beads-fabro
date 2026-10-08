@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth_projection import (
@@ -38,42 +37,36 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import (
     git_author_env_lines,
     resolve_workflow_git_author,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_siblings import (
+    SIBLING_CLONES_ROOT_ENV_VAR,
+    SiblingClones,
+    core_plugin_env_line,
+    sibling_clone_steps_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
     plugin_cache_gate_prepare_steps_block,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
+    ResumeCheckout,
+    resume_checkout_prepare_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_toml_read import (
     toml_section_string,
 )
 
 __all__: list[str] = [
-    "CORE_PLUGIN_ROOT_ENV_VAR",
     "CURRENCY_GATE_ENV_VALUE",
     "CURRENCY_GATE_ENV_VAR",
-    "SIBLING_CLONES_ROOT_ENV_VAR",
-    "SiblingClones",
     "escape_minijinja_literal",
     "render_run_config_overlay",
     "workflow_graph_path",
 ]
-
-SIBLING_CLONES_ROOT_ENV_VAR = "LIVESPEC_SIBLING_CLONES_ROOT"
-
-# The env-var a fleet repo's janitor reads to resolve the livespec CORE plugin
-# inside the Fabro sandbox (the console's `check-doctor-static`). The sandbox
-# spawns with a fail-closed env allowlist (fabro-server/src/spawn_env.rs) and
-# carries no installed-plugin registry, so without this projection a
-# CORE-dependent `just check` cannot find core. The Dispatcher's overlay
-# projects it at the in-sandbox core-sibling clone path
-# (`<clones_root>/livespec/.claude-plugin`); `_CORE_SIBLING_SLUG` is the livespec
-# CORE repo's clone slug.
-CORE_PLUGIN_ROOT_ENV_VAR = "LIVESPEC_CORE_PLUGIN_ROOT"
 
 # Factory dispatch makes undeterminable plugin currency fail hard inside every
 # sandbox, matching livespec core Design D2. This is non-secret policy, not a
 # credential.
 CURRENCY_GATE_ENV_VAR = "LIVESPEC_CURRENCY_GATE"
 CURRENCY_GATE_ENV_VALUE = "fail"
-_CORE_SIBLING_SLUG = "livespec"
 # MiniJinja's three OPENING delimiters: expression `{{`, statement `{%`,
 # comment `{#` (fabro v0.254.0 renders the run goal through MiniJinja —
 # fabro issue #124 — storing it in the graph's `goal` attribute and
@@ -83,21 +76,6 @@ _CORE_SIBLING_SLUG = "livespec"
 # opener therefore guarantees arbitrary goal prose cannot alter graph
 # semantics regardless of content (work-item livespec-impl-beads-ajv).
 _MINIJINJA_OPEN_DELIMITER_RE = re.compile(r"\{\{|\{%|\{#")
-
-
-@dataclass(frozen=True, kw_only=True)
-class SiblingClones:
-    """The per-dispatch sandbox sibling-clone plan.
-
-    `repos` is the fleet member set MINUS the dispatch target (the
-    target is already the sandbox workspace clone); `clones_root` is
-    the in-sandbox directory the clones land under — the same path the
-    overlay projects as `LIVESPEC_SIBLING_CLONES_ROOT`.
-    """
-
-    owner: str
-    repos: tuple[str, ...]
-    clones_root: str
 
 
 # Sandbox-local tmux socket root. tmux appends its own tmux-<uid>/default
@@ -185,6 +163,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     proof_credentials_env: str = "",
     git_author: GitAuthor | None = None,
     credential_use: CredentialUseProjection | None = None,
+    resume_checkout: ResumeCheckout | None = None,
 ) -> str | None:
     """Render the dispatch-time run-config overlay.
 
@@ -242,14 +221,14 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     rewritten = _substitute_input_tokens(text=rewritten, prepare_inputs=prepare_inputs)
     token_literal = json.dumps(token)
     github_token_literal = json.dumps(github_token)
-    sibling_steps = "" if siblings is None else _sibling_clone_steps_block(siblings=siblings)
+    sibling_steps = "" if siblings is None else sibling_clone_steps_block(siblings=siblings)
     sibling_env_line = (
         ""
         if siblings is None
         else f"{SIBLING_CLONES_ROOT_ENV_VAR} = {json.dumps(siblings.clones_root)}\n"
     )
     currency_gate_env_line = f"{CURRENCY_GATE_ENV_VAR} = {json.dumps(CURRENCY_GATE_ENV_VALUE)}\n"
-    core_plugin_env_line = _core_plugin_env_line(siblings=siblings)
+    core_plugin_env = core_plugin_env_line(siblings=siblings)
     otel_env_lines = _otel_env_lines(otel_env=otel_env)
     tmux_steps = _tmux_tmpdir_prepare_steps_block()
     tmux_env_line = f"TMUX_TMPDIR = {json.dumps(_SANDBOX_TMUX_TMPDIR)}\n"
@@ -265,6 +244,12 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     # Rendered LAST among the prepare steps, so the startup check observes the
     # time preparation itself consumed. Placed earlier it would forgive exactly
     # the queue-and-prepare aging it exists to catch.
+    # The resume checkout is appended LAST among the prepare steps, after the
+    # committed provisioning: every committed step acts on `.git` or on untracked
+    # state a checkout does not disturb, while a checkout performed BEFORE the
+    # unshallow would be unshallowed out from under. For an ordinary dispatch it
+    # renders the empty string, so no other dispatch sees a byte of it.
+    resume_checkout_steps = resume_checkout_prepare_steps_block(checkout=resume_checkout)
     credential_use_steps = credential_use_guard_prepare_steps_block(projection=credential_use)
     credential_use_env = credential_use_env_lines(projection=credential_use)
     # The publish branch the `publish_draft` COMMAND node pushes, plus the resolved
@@ -281,6 +266,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + codex_steps
         + codex_otel_steps
         + plugin_cache_steps
+        + resume_checkout_steps
         + credential_use_steps
         + "\n# --- Dispatcher-materialized run-scoped credential projection"
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
@@ -291,7 +277,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + tmux_env_line
         + gh_refresh_env_lines
         + sibling_env_line
-        + core_plugin_env_line
+        + core_plugin_env
         + currency_gate_env_line
         + otel_env_lines
         + codex_env_lines
@@ -392,24 +378,6 @@ def _tmux_tmpdir_prepare_steps_block() -> str:
     return "\n".join(lines) + "\n"
 
 
-def _core_plugin_env_line(*, siblings: SiblingClones | None) -> str:
-    """Project LIVESPEC_CORE_PLUGIN_ROOT at the in-sandbox core-sibling clone.
-
-    A fleet repo whose janitor resolves the livespec CORE plugin (the console's
-    `check-doctor-static`) cannot find core inside the sandbox: the worker env
-    is a fail-closed allowlist and the container carries no installed-plugin
-    registry. So the overlay projects CORE's location as a container-level env
-    key — the SAME mechanism that carries GITHUB_TOKEN — valued at the cloned core
-    sibling's plugin root (`<clones_root>/livespec/.claude-plugin`). Returns the
-    empty string when no core sibling is cloned (the derived path would not
-    resolve), mirroring the sibling-clones-root guard.
-    """
-    if siblings is None or _CORE_SIBLING_SLUG not in siblings.repos:
-        return ""
-    core_plugin_root = f"{siblings.clones_root}/{_CORE_SIBLING_SLUG}/.claude-plugin"
-    return f"{CORE_PLUGIN_ROOT_ENV_VAR} = {json.dumps(core_plugin_root)}\n"
-
-
 def _otel_env_lines(*, otel_env: dict[str, str] | None) -> str:
     """Render the in-sandbox CC OTel env keys as `[environments.<id>.env]` lines.
 
@@ -424,66 +392,3 @@ def _otel_env_lines(*, otel_env: dict[str, str] | None) -> str:
     if otel_env is None:
         return ""
     return "".join(f"{key} = {json.dumps(otel_env[key])}\n" for key in sorted(otel_env))
-
-
-def _sibling_clone_steps_block(*, siblings: SiblingClones) -> str:
-    """Render the appended sibling-clone `[[run.prepare.steps]]` blocks.
-
-    One step per fleet member (the dispatch target is excluded
-    upstream): a depth-1 default-branch `git clone` into
-    `<clones_root>/<repo>` — mirroring how livespec CI provisions the
-    `LIVESPEC_SIBLING_CLONES_ROOT` siblings-root for the cross-repo
-    wiring check. Plain `git clone` over https is used (NOT `gh`): the
-    sandbox clones its own workspace repo the same way, while `gh api`
-    is unauthenticated there.
-
-    Each step TOLERATES its own member's failure: a member that cannot
-    be cloned is reported as a one-line stderr diagnostic and skipped
-    (`exit 0`), never failing the whole prepare step. The manifest is
-    fetched fresh from livespec master on every dispatch, so an entry
-    naming a repo that does not exist YET (registration precedes birth)
-    would otherwise kill every dispatch across the fleet — the
-    2026-08-15 livespec-driver-pi outage. Manifest consumers other than
-    the conformance check MUST degrade per-member: livespec core
-    `SPECIFICATION/non-functional-requirements.md`, Fleet membership
-    contract / Repo birth procedure, ratified v210.
-
-    `GIT_TERMINAL_PROMPT=0` on both git invocations is what makes the
-    diagnostic honest: without it, an unreachable repo makes git's https
-    backend fall back to a credential prompt, which in the TTY-less
-    sandbox surfaces as `could not read Username ... No such device or
-    address` and reads as an auth failure (it cost a real
-    misdiagnosis). The explicit `git ls-remote --exit-code` probe then
-    separates "repository not reachable (nonexistent or no access)"
-    from a "clone failed after a successful reachability probe
-    (transient)". Only the `mkdir` can fail the step. On the
-    all-members-healthy path the observable result is unchanged: the
-    same depth-1 quiet https clone into the same `<clones_root>/<repo>`.
-    """
-    lines: list[str] = [
-        "",
-        "# --- Dispatcher-materialized sibling clones (from livespec master's",
-        "# --- .livespec-fleet-manifest.jsonc): depth-1 default-branch clones so",
-        "# --- cross-repo checks resolve every family sibling under",
-        f"# --- {siblings.clones_root} inside the sandbox ---",
-    ]
-    for repo_name in siblings.repos:
-        url = f"https://github.com/{siblings.owner}/{repo_name}.git"
-        diagnostic = (
-            "livespec-orchestrator-beads-fabro dispatcher: sibling clone skipped"
-            f" for {repo_name}: "
-        )
-        script = (
-            f"mkdir -p {siblings.clones_root} || exit 1;"
-            f" GIT_TERMINAL_PROMPT=0 git ls-remote --exit-code {url} HEAD"
-            " >/dev/null 2>&1 ||"
-            f" {{ echo '{diagnostic}repository not reachable"
-            " (nonexistent or no access)' >&2; exit 0; };"
-            f" GIT_TERMINAL_PROMPT=0 git clone --quiet --depth 1 {url}"
-            f" {siblings.clones_root}/{repo_name} ||"
-            f" {{ echo '{diagnostic}clone failed after a successful"
-            " reachability probe (transient)' >&2; exit 0; }"
-        )
-        lines.append("[[run.prepare.steps]]")
-        lines.append(f"script = {json.dumps(script)}")
-    return "\n".join(lines) + "\n"
