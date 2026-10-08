@@ -593,6 +593,14 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   needs the clone it executes from, so a reversed pair would spend a read on a
   question that had not been established and then attribute the failure to the
   wrong source — which is the one thing the clause requires naming correctly.
+  EVERY STATUS IS EARNED ON THE ARM THAT ESTABLISHED IT, and the two
+  non-satisfied statuses are not interchangeable. `unsatisfied` is a CONFIDENT
+  NEGATIVE and is returned only where the source WAS read and the target found
+  wanting; an arm that could not read answers `unobservable` and names the
+  source that failed. Moving a read-failure arm onto `unsatisfied` reports a
+  diagnostic as a measurement, and moving an unmet arm onto `unobservable` hides
+  a real negative behind one — the clause forbids both directions, so neither
+  default is safe.
 
 Rules an agent editing this tree must follow:
 
