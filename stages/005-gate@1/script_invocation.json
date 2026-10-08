@@ -1,0 +1,5 @@
+{
+  "script": "test \"$(cat /tmp/eut-outcome-count)\" = 3",
+  "command": "exec 2>&1\ntest \"$(cat /tmp/eut-outcome-count)\" = 3",
+  "language": "shell"
+}
