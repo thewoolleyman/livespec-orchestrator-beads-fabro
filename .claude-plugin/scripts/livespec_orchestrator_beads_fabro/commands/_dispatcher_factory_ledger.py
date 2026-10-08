@@ -12,6 +12,9 @@ from livespec_orchestrator_beads_fabro.commands._config import (
     has_fabro_factory,
     resolve_fabro_factory,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import (
+    factory_effective_fabro_bin,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.store import (
     dispatch_factory_for,
@@ -48,13 +51,24 @@ def args_with_dispatch_factory_target(
     repo: Path,
     work_item_id: str,
 ) -> argparse.Namespace:
-    """Return an args clone carrying the ledger-pinned factory target."""
+    """Return an args clone carrying the ledger-pinned factory target.
+
+    The engine binary travels WITH the target. The pin can select a different
+    factory than the dispatch preamble resolved, and the candidate client
+    cannot talk to the legacy server, so a clone carrying the new target beside
+    the old factory's binary would send one factory's client at another
+    factory's engine — with nothing in the record to say so.
+    """
     cloned = argparse.Namespace(**vars(args))
-    cloned.fabro_factory_target = resolve_dispatch_factory_target(
+    target = resolve_dispatch_factory_target(
         args=args,
         repo=repo,
         work_item_id=work_item_id,
     )
+    cloned.fabro_factory_target = target
+    effective = factory_effective_fabro_bin(args=args, factory=target)
+    if effective is not None:
+        cloned.fabro_bin = effective
     return cloned
 
 

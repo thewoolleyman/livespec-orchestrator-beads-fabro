@@ -12,10 +12,12 @@ from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._config import (
     FactoryTarget,
-    resolve_fabro_bin,
     resolve_fabro_factory,
 )
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import (
+    resolve_dispatch_fabro_bin,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_validation import (
     schema_validation_refusal,
 )
@@ -230,18 +232,6 @@ def _emit_check_findings(*, findings: list[LedgerFinding], as_json: bool, label:
     return _EXIT_FAILURE if actionable else 0
 
 
-def _resolve_fabro_bin_for(*, args: argparse.Namespace, repo: Path) -> str:
-    """The effective `fabro` binary for this run: explicit flag wins, else resolve.
-
-    An explicit `--fabro-bin <path>` (non-None) is an operator override and is
-    returned verbatim; None (the flag's default) defers to
-    `resolve_fabro_bin`'s env > config > absolute-default precedence.
-    """
-    if args.fabro_bin is not None:
-        return cast("str", args.fabro_bin)
-    return resolve_fabro_bin(cwd=repo)
-
-
 def _resolve_fabro_factory_for(*, args: argparse.Namespace, repo: Path) -> FactoryTarget:
     factory = cast("str | None", getattr(args, "factory", None))
     return resolve_fabro_factory(cwd=repo, factory=factory)
@@ -338,8 +328,14 @@ def dispatch_preamble(
     if config_refusal is not None:
         _ = write_stderr(text=config_refusal)
         return None, _EXIT_PRECONDITION_ERROR
-    args.fabro_bin = _resolve_fabro_bin_for(args=args, repo=repo)
+    # The factory is resolved BEFORE the binary, because which client this
+    # dispatch drives is a property of the factory it is routed to: a factory
+    # declaring a `bin` wins over the global resolution, and resolving the
+    # binary first would preflight a client this dispatch never uses.
     args.fabro_factory_target = _resolve_fabro_factory_for(args=args, repo=repo)
+    args.fabro_bin = resolve_dispatch_fabro_bin(
+        args=args, repo=repo, factory=args.fabro_factory_target
+    )
     fabro_error = _fabro_preflight_error(fabro_bin=args.fabro_bin)
     if fabro_error is not None:
         _ = write_stderr(text=fabro_error)

@@ -74,6 +74,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
     DispatchOutcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import (
+    factory_fabro_bin,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
@@ -207,7 +210,7 @@ def _scan(
 ) -> AcpEventScan | None:
     """Fetch and read the run's event stream, or None when it is unusable."""
     port = FabroPort(
-        fabro_bin=resolve_fabro_bin(cwd=repo),
+        fabro_bin=factory_fabro_bin(factory=factory, fallback=resolve_fabro_bin(cwd=repo)),
         target=FabroTarget(server_url=factory.server, dev_token=factory.dev_token),
         runner=runner,
         cwd=repo,
