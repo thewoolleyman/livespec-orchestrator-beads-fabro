@@ -51,6 +51,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_leg import (
     NOT_EVIDENCE_SELF_REPLAY,
     NOT_EVIDENCE_UNOBSERVABLE_CONTAINMENT,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attachment_verify import (
+    attachment_digest_reader,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attribution import (
     MergingDispatch,
 )
@@ -659,3 +662,40 @@ def test_the_projection_reports_no_record_when_none_was_attributed() -> None:
     assert projection["record_comment"] is None
     assert projection["record_run_id"] is None
     assert projection["record_verdict"] is None
+
+
+def test_a_download_that_leaves_no_file_reads_as_an_unfetchable_asset(tmp_path: Path) -> None:
+    """A successful-looking download with nothing on disk is `None`, not a crash.
+
+    Covered here rather than beside the pure attachment decision because this is the
+    acceptance pass's own FETCH seam, and this is the module that owns that seam's
+    production wiring.
+
+    The arm is real rather than defensive: `gh release download` can exit 0 having
+    matched no asset, and the digest step then opens a path that is not there. A
+    reader that let the `OSError` escape would turn a missing asset into a traceback
+    out of the acceptance pass — a bug-class escape from a surface whose whole job is
+    to report absent evidence calmly.
+    """
+
+    @dataclass(kw_only=True)
+    class _EmptyDownload:
+        """Exits 0 and writes nothing, which is what a no-match download looks like."""
+
+        def run(
+            self,
+            *,
+            argv: list[str],
+            cwd: Path,
+            timeout_seconds: float,
+            env: dict[str, str] | None = None,
+            stdin: int | None = None,
+        ) -> CommandResult:
+            del argv, cwd, timeout_seconds, env, stdin
+            return CommandResult(exit_code=0, stdout="", stderr="")
+
+    reader = attachment_digest_reader(
+        repo=tmp_path, release_tag="proof-assets", runner=_EmptyDownload()
+    )
+
+    assert reader(name="bd-ib-555xcd__01M4__capture__01__proof-sha256-aaaaaaaaaaaaaaaa.txt") is None

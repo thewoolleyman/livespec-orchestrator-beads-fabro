@@ -92,6 +92,11 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attachment import (
+    ProofAttachment,
+    attached_proof_in,
+)
+
 __all__: list[str] = [
     "PROOF_RECORD_TITLE",
     "PROOF_RECORD_VERDICTS",
@@ -225,6 +230,24 @@ class ProofRecord:
         if section is None:
             return None
         return _reproduced_in(section=section)
+
+    def attachment(self, *, assertion: str) -> ProofAttachment | None:
+        """The attached asset one assertion's proof lives in, or `None` for inline.
+
+        Resolved through the SAME section walk `reproduced` uses, which is what
+        keeps the verdict and the attachment attributed to one assertion: a
+        separately-derived section could place them differently, and the grading
+        surface would then check one assertion's digest against another's verdict.
+
+        `None` means this assertion publishes its proof inline — the ordinary case —
+        and is deliberately not distinguished from an assertion the record does not
+        mention at all, because `reproduced` already answers that question and a
+        caller reaches here only after it has.
+        """
+        section = _assertion_section(body=self.body, assertion=assertion)
+        if section is None:
+            return None
+        return attached_proof_in(section=section)
 
 
 def proof_records(
