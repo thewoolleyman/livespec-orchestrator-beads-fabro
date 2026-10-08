@@ -1,0 +1,6 @@
+{
+  "outcome": "succeeded",
+  "notes": "Script completed: c=$(cat /tmp/eut-max-visits 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-max-visits; echo \"step visit $c\" >&2; test $c -lt 10",
+  "failure_reason": null,
+  "timestamp": "2026-10-08T09:42:48.309945943Z"
+}
