@@ -207,14 +207,114 @@
     }
   },
   "web_url": "https://hp-xubuntu.perch-rudd.ts.net:32276/runs/01M4DEEACNVE3XTTDB9X1NR9G1",
-  "start": null,
-  "status": {
-    "kind": "starting"
+  "start": {
+    "start_time": "2026-10-08T09:45:22.893009538Z",
+    "run_branch": "fabro/run/01M4DEEACNVE3XTTDB9X1NR9G1",
+    "base_sha": "799517a37dd9196975f3c496783eaa602beff614"
   },
-  "status_updated_at": "2026-10-08T09:45:19.883840809Z",
-  "last_event_at": "2026-10-08T09:45:22.522424029Z",
+  "status": {
+    "kind": "running"
+  },
+  "status_updated_at": "2026-10-08T09:45:22.893026400Z",
+  "last_event_at": "2026-10-08T09:45:25.424853987Z",
   "pending_control": null,
-  "checkpoints": [],
+  "checkpoints": [
+    {
+      "seq": 19,
+      "checkpoint": {
+        "timestamp": "2026-10-08T09:45:25.424769088Z",
+        "current_node": "start",
+        "completed_nodes": [
+          "start"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.acp_attempt.start": 0,
+          "internal.run_id": "01M4DEEACNVE3XTTDB9X1NR9G1",
+          "internal.node_visit_count": 1,
+          "current_node": "start",
+          "failure_class": "",
+          "internal.fidelity": "compact",
+          "internal.retry_count.start": 0,
+          "internal.thread_id": null,
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "failure_signature": "",
+          "outcome": "succeeded",
+          "graph.goal": "# Fabro Enemy Unit Test: resource-limits\n"
+        },
+        "node_outcomes": {
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "check",
+        "node_visits": {
+          "start": 1
+        }
+      },
+      "diff": {}
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-10-08T09:45:25.583836492Z",
+        "current_node": "check",
+        "completed_nodes": [
+          "start",
+          "check"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "thread.start.current_node": "check",
+          "internal.fidelity": "compact",
+          "internal.thread_id": "start",
+          "failure_class": "deterministic",
+          "internal.acp_attempt.start": 0,
+          "internal.acp_attempt.check": 0,
+          "current_node": "check",
+          "failure_signature": "check|deterministic|script failed with exit code: <n> ## output cpu.max=<n> <n> memory.max=<hex>",
+          "graph.goal": "# Fabro Enemy Unit Test: resource-limits\n",
+          "outcome": "failed",
+          "command.output": "blob://sha256/eeedd0f06b8ed89bb7c37ed2ed3da9ec1d6ba3bdd378afe2484f1d44b3e5f302",
+          "internal.run_id": "01M4DEEACNVE3XTTDB9X1NR9G1",
+          "internal.node_visit_count": 1,
+          "internal.retry_count.start": 0,
+          "internal.retry_count.check": 0,
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro"
+        },
+        "node_outcomes": {
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          },
+          "check": {
+            "status": "failed",
+            "context_updates": {
+              "command.output": "blob://sha256/eeedd0f06b8ed89bb7c37ed2ed3da9ec1d6ba3bdd378afe2484f1d44b3e5f302"
+            },
+            "failure": {
+              "message": "Script failed with exit code: 1\n\n## output\ncpu.max=200000 100000 memory.max=3999997952\n",
+              "category": "deterministic"
+            },
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 143,
+              "active_time_ms": 143
+            }
+          }
+        },
+        "next_node_id": "exit",
+        "node_visits": {
+          "check": 1,
+          "start": 1
+        }
+      },
+      "diff": {}
+    }
+  ],
   "conclusion": null,
   "sandbox": {
     "kind": "ready",
@@ -241,5 +341,67 @@
   "pull_request": null,
   "superseded_by": null,
   "pending_interviews": {},
-  "stages": {}
+  "stages": {
+    "start@1": {
+      "first_event_seq": 16,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-10-08T09:45:25.424702895Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-08T09:45:25.424641350Z",
+      "handler": "start",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
+    "check@1": {
+      "first_event_seq": 20,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "c=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo none); m=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo none); echo \"cpu.max=$c memory.max=$m\" >&2; test \"$c\" = '200000 100000' && test \"$m\" = '4000000000'",
+        "command": "exec 2>&1\nc=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo none); m=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo none); echo \"cpu.max=$c memory.max=$m\" >&2; test \"$c\" = '200000 100000' && test \"$m\" = '4000000000'",
+        "language": "shell"
+      },
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-08T09:45:25.424837126Z",
+      "handler": "command",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "running"
+    }
+  }
 }
