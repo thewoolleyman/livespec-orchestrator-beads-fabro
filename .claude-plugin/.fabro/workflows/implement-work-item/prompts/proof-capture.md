@@ -305,6 +305,22 @@ The comment's FIRST LINE must be exactly:
 
 using the run id you resolved in Step 4 and an ISO-8601 UTC timestamp.
 
+The SECOND line must declare, exactly once, the publish-branch head these
+steps ran on:
+
+    Publish-branch head: <the full 40-character commit sha of HEAD>
+
+Read it with `git rev-parse HEAD` in the sandbox clone and paste the full
+sha — never an abbreviation, and never a branch name. It is what lets a
+later `resume` finish this run from this pull request instead of
+re-implementing it: the resume refuses when the pull request's head no
+longer equals the head this record names, because proof verified on one
+tree is not proof of another. Declare it in PROSE, outside every fenced
+block; a head line inside a fence is proof OUTPUT and is deliberately
+ignored. If any proof below happens to print this label, that printed line
+is ignored too — so the declaration above is the only one that counts, and
+naming two different shas in prose makes the record anchor nothing.
+
 The body then carries, **per assertion in Definition of Done order**:
 
 1. The assertion text, verbatim.
