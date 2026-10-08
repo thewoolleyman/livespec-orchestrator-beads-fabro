@@ -507,6 +507,47 @@ factories are down.
   `bd-ib-l3nptz.2`; it runs the default of 60. That fix landed in vps-info's
   versioned unit and had no path to hp's unversioned one.
 
+#### The hp-candidate instance (Petri-era candidate; plan `fabro-currency`)
+
+Since 2026-10-08 hp ALSO runs a THIRD Fabro server, `fabro-server-candidate`,
+the Petri-era upgrade candidate that plan `fabro-currency` (`bd-ib-6tcjfx`,
+P3 child `bd-ib-4jzql3`) qualifies beside production. It shares nothing with
+the production unit except the host, the service account and the GitHub App:
+
+| Property | Value |
+| --- | --- |
+| Unit | `fabro-server-candidate.service` (hand-installed; NOT yet in the `fabro_server` Ansible role, which hardcodes one shared binary per host — `bd-ib-sxcnj7` owns that lockstep change, so `just ansible-drift` reports this unit until it lands) |
+| Binary | `/home/cwoolley/.fabro-candidate/bin/fabro`, an exact published upstream tag (`v0.378.0-nightly.0` at stand-up); the production binary at `~/.fabro/bin/fabro` is untouched |
+| HOME, storage, settings | `/home/cwoolley/.fabro-candidate/{storage,settings.toml,environments}`; the unit sets `HOME` to that directory |
+| Bind, console | `127.0.0.1:32278`; `https://hp-xubuntu.perch-rudd.ts.net:32278` via `tailscale serve` (beside 32276 and 32277) |
+| Auth | `dev-token`, its OWN `server.env` (mode 600) with a fresh `SESSION_SECRET` and a fresh `FABRO_DEV_TOKEN` |
+| Scheduler | `max_concurrent_runs = 3`, deliberately small beside production's 15 |
+| Storage engine | SQLite (`storage/db/fabro.sqlite3`); the legacy build used SlateDB objects. Nothing is migrated from production storage |
+
+Three Petri-era start-up refusals, each silent until the previous one is fixed:
+`server.auth.methods = ["dev-token"]` requires BOTH `SESSION_SECRET` and
+`FABRO_DEV_TOKEN` in the environment (the server never generates a dev token);
+the dev token must be exactly `fabro_dev_` followed by 64 lowercase hex
+characters (74 bytes) or it is refused as "invalid format"; and the legacy
+plain-JSON vault (`storage/vaults/default/secrets.json`) is imported into the
+SQLite vault on first start with an UPSTREAM REMOVAL DEADLINE of 2026-10-11, so
+a later tag needs `fabro secret set` instead.
+
+Query it from vps with the matching client, never with the 0.254 one:
+
+```bash
+~/.local/state/fabro-currency/v0.378.0-nightly.0/fabro version --server https://hp-xubuntu.perch-rudd.ts.net:32278
+~/.local/state/fabro-currency/v0.378.0-nightly.0/fabro ps -a  --server https://hp-xubuntu.perch-rudd.ts.net:32278
+```
+
+`~/.fabro/auth.json` carries the `:32278` entry (same `{kind, logged_in_at,
+token}` shape as the 0.254 client writes, so the file is shared safely; the
+pre-change copy is `~/.local/state/fabro-currency/auth.json.pre-candidate-2026-10-08.bak`).
+Measurements, payload shapes and the pinned-versus-candidate Enemy Unit Test
+table live in `plan/fabro-currency/research/006-hp-candidate-first-measurements-2026-10-08.md`.
+The rollout and rollback design — cut over by one `dispatcher.default_factory`
+change, never an in-place migration — is in research note 005 of the same plan.
+
 ### Enabling fabro span export (O1 Lever A — opt-in)
 
 The server's tracing spans (the top-level `run` span it mints per dispatch) are
