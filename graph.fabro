@@ -1,0 +1,7 @@
+digraph FabroEnemyPassing {
+    start [shape=Mdiamond, label="Start"]
+    done [shape=parallelogram, label="Done", script="echo fabro-enemy-tier1-pass"]
+    exit [shape=Msquare, label="Exit"]
+    start -> done
+    done -> exit
+}
