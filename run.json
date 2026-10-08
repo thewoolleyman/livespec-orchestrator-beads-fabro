@@ -207,14 +207,114 @@
     }
   },
   "web_url": "https://hp-xubuntu.perch-rudd.ts.net:32276/runs/01M4DEJGCC33HT9371BGXB0QMD",
-  "start": null,
-  "status": {
-    "kind": "starting"
+  "start": {
+    "start_time": "2026-10-08T09:47:40.065325776Z",
+    "run_branch": "fabro/run/01M4DEJGCC33HT9371BGXB0QMD",
+    "base_sha": "799517a37dd9196975f3c496783eaa602beff614"
   },
-  "status_updated_at": "2026-10-08T09:47:37.116192240Z",
-  "last_event_at": "2026-10-08T09:47:39.693430337Z",
+  "status": {
+    "kind": "running"
+  },
+  "status_updated_at": "2026-10-08T09:47:40.065346915Z",
+  "last_event_at": "2026-10-08T09:47:42.509783446Z",
   "pending_control": null,
-  "checkpoints": [],
+  "checkpoints": [
+    {
+      "seq": 19,
+      "checkpoint": {
+        "timestamp": "2026-10-08T09:47:42.509651990Z",
+        "current_node": "start",
+        "completed_nodes": [
+          "start"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.acp_attempt.start": 0,
+          "graph.goal": "# Fabro Enemy Unit Test: failed\n",
+          "internal.fidelity": "compact",
+          "internal.retry_count.start": 0,
+          "failure_class": "",
+          "internal.thread_id": null,
+          "current_node": "start",
+          "failure_signature": "",
+          "internal.node_visit_count": 1,
+          "internal.run_id": "01M4DEJGCC33HT9371BGXB0QMD",
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "outcome": "succeeded"
+        },
+        "node_outcomes": {
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "fail",
+        "node_visits": {
+          "start": 1
+        }
+      },
+      "diff": {}
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-10-08T09:47:42.675698084Z",
+        "current_node": "fail",
+        "completed_nodes": [
+          "start",
+          "fail"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.fidelity": "compact",
+          "internal.acp_attempt.start": 0,
+          "failure_class": "deterministic",
+          "command.output": "blob://sha256/2a350eb731a6af4b8255a1eed7090d828f248b45de6b6c5e66795e1a43eb49e7",
+          "internal.retry_count.fail": 0,
+          "graph.goal": "# Fabro Enemy Unit Test: failed\n",
+          "thread.start.current_node": "fail",
+          "internal.thread_id": "start",
+          "internal.acp_attempt.fail": 0,
+          "internal.retry_count.start": 0,
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "failure_signature": "fail|deterministic|script failed with exit code: <n> ## output fabro-enemy-tier1-fail",
+          "outcome": "failed",
+          "current_node": "fail",
+          "internal.run_id": "01M4DEJGCC33HT9371BGXB0QMD",
+          "internal.node_visit_count": 1
+        },
+        "node_outcomes": {
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          },
+          "fail": {
+            "status": "failed",
+            "context_updates": {
+              "command.output": "blob://sha256/2a350eb731a6af4b8255a1eed7090d828f248b45de6b6c5e66795e1a43eb49e7"
+            },
+            "failure": {
+              "message": "Script failed with exit code: 1\n\n## output\nfabro-enemy-tier1-fail\n",
+              "category": "deterministic"
+            },
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 149,
+              "active_time_ms": 149
+            }
+          }
+        },
+        "next_node_id": "exit",
+        "node_visits": {
+          "start": 1,
+          "fail": 1
+        }
+      },
+      "diff": {}
+    }
+  ],
   "conclusion": null,
   "sandbox": {
     "kind": "ready",
@@ -241,5 +341,67 @@
   "pull_request": null,
   "superseded_by": null,
   "pending_interviews": {},
-  "stages": {}
+  "stages": {
+    "fail@1": {
+      "first_event_seq": 20,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "echo fabro-enemy-tier1-fail >&2; exit 1",
+        "command": "exec 2>&1\necho fabro-enemy-tier1-fail >&2; exit 1",
+        "language": "shell"
+      },
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-08T09:47:42.509756976Z",
+      "handler": "command",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "running"
+    },
+    "start@1": {
+      "first_event_seq": 16,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-10-08T09:47:42.509536544Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-08T09:47:42.509430476Z",
+      "handler": "start",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    }
+  }
 }
