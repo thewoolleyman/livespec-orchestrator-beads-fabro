@@ -26,7 +26,9 @@ __all__: list[str] = []
 
 POLL_TIMEOUT_SECONDS = 180.0
 POLL_INTERVAL_SECONDS = 2.0
-EVENT_TIMESTAMP_FIELDS = frozenset(("timestamp", "ts", "at"))
+# `recorded_at` is the Petri-era envelope field (measured 0.378.0-nightly.0);
+# the three older names are what 0.254.0 emitted.
+EVENT_TIMESTAMP_FIELDS = frozenset(("timestamp", "ts", "at", "recorded_at"))
 EVENT_NAME_FIELDS = frozenset(("event", "event_name", "kind", "type"))
 
 
