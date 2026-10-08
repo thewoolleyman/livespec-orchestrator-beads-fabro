@@ -50,6 +50,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
     CREDENTIAL_USE_DEADLINE_ENV_VAR,
     guard_script_text,
@@ -120,6 +121,25 @@ def _await_no_guard_process(*, guard: Path, budget_seconds: float) -> list[int]:
         time.sleep(_POLL_SECONDS)
         remaining = _processes_naming(guard=guard)
     return remaining
+
+
+def test_process_scan_tolerates_a_process_disappearing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A vanished proc entry must not hide a later, still-running owned process."""
+    guard = tmp_path / "unique-guard.sh"
+    matching = tmp_path / "123"
+    unrelated = tmp_path / "456"
+    matching.mkdir()
+    unrelated.mkdir()
+    (matching / "cmdline").write_bytes(b"/bin/sh\0" + str(guard).encode() + b"\0")
+    (unrelated / "cmdline").write_bytes(b"/bin/sh\0unrelated.sh\0")
+    # The numeric entry has vanished after listing; the nonnumeric entry is
+    # deliberately unreadable too, but must be skipped before any read.
+    entries = [tmp_path / "789", tmp_path / "self", unrelated, matching]
+    monkeypatch.setattr(Path, "iterdir", lambda _path: iter(entries))
+
+    assert _processes_naming(guard=guard) == [123]
 
 
 @contextmanager
@@ -204,8 +224,11 @@ def test_a_surviving_descendant_keeps_the_reaper_armed(tmp_path: Path) -> None:
     # Stands in for an adapter that spawns a worker and returns. The descendant
     # is a plain sleep -- harmless -- and it holds the group open. Its stdio
     # goes to /dev/null so it does not hold the launch's capture pipes open.
+    # The adapter records its child's PID synchronously before returning, so
+    # observing ownership does not depend on when the descendant is scheduled.
     adapter = (
-        f"/bin/sh -c 'echo $$ > {pid_file}; exec sleep 600' " ">/dev/null 2>&1 </dev/null & exit 0"
+        "sleep 600 >/dev/null 2>&1 </dev/null & child=$!; "
+        f"printf '%s' \"$child\" > {pid_file}; exit 0"
     )
     with _owned_processes(guard=guard) as owned:
         result = subprocess.run(
@@ -218,9 +241,6 @@ def test_a_surviving_descendant_keeps_the_reaper_armed(tmp_path: Path) -> None:
         )
         assert result.returncode == 0, result.stderr
 
-        settle = time.monotonic() + 10
-        while not pid_file.exists() and time.monotonic() < settle:
-            time.sleep(_POLL_SECONDS)
         assert pid_file.exists(), "the descendant never recorded its pid"
         owned.append(int(pid_file.read_text(encoding="utf-8").strip()))
 
