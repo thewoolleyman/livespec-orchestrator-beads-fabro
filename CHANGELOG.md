@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.173.8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.173.7...v0.173.8) (2026-10-08)
+
+
+### Bug Fixes
+
+* **proof:** cite the host record in a host-only Proof of Done pointer ([2016539](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2016539b6a825a5821cb71f2f3d3524bc788fd91))
+* **proof:** scope pointer staleness to the record kind the pointer cites ([f95ad6f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f95ad6fd45e6058ad521eabfd8e6b6c7043bf9fe))
+* **proof:** wire host containment when no factory run id is attributable ([5ad301b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5ad301b3bb2a7e37197bf610334f03804ec5f338))
+
 ## [0.173.7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.173.6...v0.173.7) (2026-10-07)
 
 
