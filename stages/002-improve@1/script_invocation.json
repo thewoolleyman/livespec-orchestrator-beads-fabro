@@ -1,0 +1,5 @@
+{
+  "script": "c=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
+  "command": "exec 2>&1\nc=$(cat /tmp/eut-visit-count 2>/dev/null || echo 0); c=$((c+1)); echo $c > /tmp/eut-visit-count; echo \"improve visit $c\" >&2; test $c -le 5",
+  "language": "shell"
+}
