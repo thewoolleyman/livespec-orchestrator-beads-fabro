@@ -248,6 +248,33 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   factory stages hand-format their records, so for them it is a prompt
   instruction that `tests/prompts/test_proof_record_size_budget_discipline.py`
   binds to these constants.
+- The DIGEST-NAMED ATTACHMENT a bulky proof travels as (`bd-ib-555xcd`) is split
+  pure-from-impure across two modules, the usual split here:
+  `_dispatcher_proof_attachment` (PURE: the digest, the digest-bearing slug, the
+  four-line rendered reference, and the read-back) and
+  `_dispatcher_proof_attachment_store` (the upload leg, which swaps each
+  over-allowance proof for a stored asset). Four properties an editor must not
+  invert. The record carries the asset's NAME, BYTE SIZE and DIGEST, and the
+  digest is the load-bearing one — the other two say where the bytes are and how
+  many to expect, while only the digest says WHICH bytes, which is what lets the
+  acceptance pass and the replay stage verify the asset they fetch is the one the
+  capture measured. The rendered block is PLAIN LINES and never fenced, because
+  the record reader ignores fenced content (it cannot tell a verdict a verifier
+  authored from one a proof printed), so a reference inside a fence would be
+  invisible to the surfaces that must check it. The READER is fence-aware for the
+  mirror reason: a replay whose proof `cat`s an earlier record prints these very
+  labels, and matching them would attribute another assertion's asset to this one
+  and then grade this one on whether those foreign bytes still hash correctly.
+  And every partial read fails CLOSED — three of four labels, or an unparseable
+  byte size, yields `None` — because a half-populated attachment sends the digest
+  check after an asset with no digest to compare, and the natural coding of
+  "nothing to compare" is "no mismatch found", a pass earned by missing data.
+  The ORDER at the two call sites is load-bearing and identical in both: attach,
+  then render, then measure. Attaching after the render would measure a record it
+  then changed; measuring before the attachment would refuse records the
+  attachment was about to rescue. An UNDER-allowance assertion is handed back as
+  the very object it came in as, which is what makes an ordinary inline record
+  render byte-for-byte as it did before any of this existed.
 - `_dispatcher_pre_dispatch_wall.py` — the ONE wall both dispatch paths run,
   holding every refusal that must land after selection and BEFORE admission:
   the variant-aware acceptance-criteria wall, the proof-assets gate, the

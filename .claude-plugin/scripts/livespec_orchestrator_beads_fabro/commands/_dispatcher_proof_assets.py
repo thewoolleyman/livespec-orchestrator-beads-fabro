@@ -44,9 +44,13 @@ from typing import Protocol, runtime_checkable
 
 __all__: list[str] = [
     "PROOF_ASSET_FIELD_SEPARATOR",
+    "PROOF_ASSET_MAX_ORDINAL",
+    "PROOF_ASSET_MIN_ORDINAL",
     "PROOF_RENDERINGS",
     "PROOF_STAGES",
     "PROOF_STAGE_CAPTURE",
+    "PROOF_STAGE_HOST_CAPTURE",
+    "PROOF_STAGE_HOST_VERIFY",
     "PROOF_STAGE_VERIFY",
     "RENDERING_AUTHENTICATED_LINK",
     "RENDERING_INLINE",
@@ -56,12 +60,28 @@ __all__: list[str] = [
     "proof_asset_slug",
 ]
 
-# The two stages that produce proof, and the field value each writes into a name.
-# A CLOSED pair: the replay's same-ordinal comparison is defined between exactly
-# these two, so a third value has no counterpart to compare against.
+# The stages that produce proof, and the field value each writes into a name. These
+# are CLOSED, and they are closed as two PAIRS rather than as one flat set: the
+# same-ordinal comparison is defined WITHIN a pair — a `verify` asset compares to
+# the `capture` asset of the same ordinal, and a `host-verify` asset to the
+# `host-capture` one — so a value outside both pairs has no counterpart to compare
+# against.
+#
+# The host pair is the ratified naming form's own vocabulary
+# (`<capture|verify|host-capture|host-verify>`) and was simply unimplemented until
+# the host leg needed to name an asset: `bd-ib-555xcd` is the first slice to upload
+# one, and a host asset named `capture` would claim the factory leg's word. Adding
+# them is conformance with what the clause already spells, not a new option.
 PROOF_STAGE_CAPTURE = "capture"
 PROOF_STAGE_VERIFY = "verify"
-PROOF_STAGES: tuple[str, ...] = (PROOF_STAGE_CAPTURE, PROOF_STAGE_VERIFY)
+PROOF_STAGE_HOST_CAPTURE = "host-capture"
+PROOF_STAGE_HOST_VERIFY = "host-verify"
+PROOF_STAGES: tuple[str, ...] = (
+    PROOF_STAGE_CAPTURE,
+    PROOF_STAGE_VERIFY,
+    PROOF_STAGE_HOST_CAPTURE,
+    PROOF_STAGE_HOST_VERIFY,
+)
 
 # How a record REFERENCES a stored image. Self-describing names rather than
 # numbered modes, per the maintainer ruling that every enumeration value names
@@ -76,8 +96,12 @@ PROOF_RENDERINGS: tuple[str, ...] = (RENDERING_INLINE, RENDERING_AUTHENTICATED_L
 PROOF_ASSET_FIELD_SEPARATOR = "__"
 
 # The two-digit ordinal's representable range, which is what makes `NN` literal.
-_MIN_ORDINAL = 1
-_MAX_ORDINAL = 99
+# PUBLIC so a caller GENERATING ordinals can guard against the same bounds this
+# namer validates, rather than against a second copy of them that could drift —
+# and so that caller's own refusal is reachable instead of the namer's being a
+# branch nothing can take.
+PROOF_ASSET_MIN_ORDINAL = 1
+PROOF_ASSET_MAX_ORDINAL = 99
 
 _NON_SLUG = re.compile(r"[^a-z0-9]+")
 
@@ -169,21 +193,23 @@ def proof_asset_name(
     """One asset name in the ratified flat form, or an actionable refusal.
 
     The form is
-    `<work-item-id>__<run-id>__<capture|verify>__<NN>__<slug>.<ext>`.
+    `<work-item-id>__<run-id>__<capture|verify|host-capture|host-verify>__<NN>__<slug>.<ext>`.
 
     The run id is a FIELD rather than decoration: it is what makes "no run may
     overwrite another run's asset" true of the store, so two runs alike in every
     other field still write two distinct objects.
     """
     if stage not in PROOF_STAGES:
+        # Enumerated FROM `PROOF_STAGES` rather than spelled, so widening the set
+        # cannot leave a refusal advertising a narrower one — which is exactly what
+        # happened when the host pair was added to a hand-written message.
+        admissible = ", ".join(repr(one) for one in PROOF_STAGES)
+        return f"proof asset stage must be one of {admissible}; got {stage!r}"
+    if ordinal < PROOF_ASSET_MIN_ORDINAL or ordinal > PROOF_ASSET_MAX_ORDINAL:
         return (
-            f"proof asset stage must be one of {PROOF_STAGE_CAPTURE!r} or "
-            f"{PROOF_STAGE_VERIFY!r}; got {stage!r}"
-        )
-    if ordinal < _MIN_ORDINAL or ordinal > _MAX_ORDINAL:
-        return (
-            f"proof asset ordinal must be between {_MIN_ORDINAL} and {_MAX_ORDINAL} "
-            f"so it renders as the form's two digits; got {ordinal}"
+            f"proof asset ordinal must be between {PROOF_ASSET_MIN_ORDINAL} and "
+            f"{PROOF_ASSET_MAX_ORDINAL} so it renders as the form's two digits; "
+            f"got {ordinal}"
         )
     fields = (
         work_item_id,
