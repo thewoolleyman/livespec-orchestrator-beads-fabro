@@ -1,0 +1,7 @@
+digraph FabroEnemyResourceLimits {
+    start [shape=Mdiamond, label="Start"]
+    check [shape=parallelogram, label="Check", goal_gate=true, script="c=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo none); m=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo none); echo \"cpu.max=$c memory.max=$m\" >&2; test \"$c\" = '200000 100000' && test \"$m\" -ge 3990000000 && test \"$m\" -le 4000000000"]
+    exit [shape=Msquare, label="Exit"]
+    start -> check
+    check -> exit
+}
