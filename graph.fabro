@@ -1,0 +1,7 @@
+digraph FabroEnemyNeedsHuman {
+    start [shape=Mdiamond, label="Start"]
+    nh [shape=parallelogram, label="NeedsHuman", goal_gate=true, script="echo 'LIVESPEC_NEEDS_HUMAN: enemy probe cannot auto-resolve' >&2; exit 1"]
+    exit [shape=Msquare, label="Exit"]
+    start -> nh
+    nh -> exit
+}
