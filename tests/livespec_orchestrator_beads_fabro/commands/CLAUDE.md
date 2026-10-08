@@ -35,6 +35,23 @@ Tests for the thin-transport command modules under
   drift-capture routing through an injected propose-change CLI, and
   the injected-argv / payload wire-shape validation.
 
+- `test_plan_result_targets.py`, `test_plan_result_reference.py`,
+  `test_plan_result_observation.py`, `test_plan_result_repository.py`,
+  `test_plan_result_ledger.py`, `test_plan_result_forge.py`,
+  `test_plan_result_proof.py` and `test_plan_result_reader.py` — the eight
+  modules of the shared authoritative result reader. The scenario itself is
+  bound at the integration tier by
+  `tests/integration/test_plan_result_reader_scenario146.py`; these cover what
+  that tier cannot observe. Two of them are worth knowing about before editing:
+  `test_plan_result_forge.py` asserts each adapter's ARGV on its own, because the
+  argv is the only thing that decides which repository and which ref the answer
+  is about and a stub that answers whatever it is asked cannot tell a correct
+  query from a plausible one; and `test_plan_result_reader.py` asserts the
+  fail-closed ORDER of the reader's three steps by counting the commands the
+  runner received, with a positive control showing that same runner IS reached
+  once the parse and the resolution both succeed — without it, a reader that
+  never reached any adapter would satisfy both order cases.
+
 Conventions:
 
 - Exercise both `main()` (supervisor: exit codes, stdout/stderr
