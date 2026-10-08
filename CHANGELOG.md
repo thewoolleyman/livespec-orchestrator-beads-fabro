@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.174.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.174.0...v0.174.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **proof:** bound a proof record against a declared budget before posting ([3ae814f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3ae814fcb0a002630be8fd9e376ff5b16903ea08))
+* **proof:** grade an attached proof by fetching and checking its digest ([104a780](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/104a780646c83f1ae12e0fe16e513e0159485471))
+* **proof:** pin the under-budget inline record to its pre-change bytes ([9475e29](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9475e29d92c2b83b3496f01115726450f512f042))
+* **proof:** travel a bulky proof as a digest-named attachment ([c47f915](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c47f9155152da61a126ff638a8ba96a25dac0931))
+
 ## [0.174.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.173.9...v0.174.0) (2026-10-08)
 
 
