@@ -42,19 +42,22 @@ digraph FabroEnemyPassing {
 }
 """
 # A script node's non-zero exit does NOT by itself fail the run: fabro routes
-# the node's outcome along its outgoing edges, so `fail -> exit` would carry a
-# failed node straight to the success terminal and the run reports SUCCEEDED
-# (measured on 0.254.0 / 8de6611). A run fails deterministically only when a
-# failed node has no outgoing edge to follow -- the same construct the real
-# implement-work-item workflow's `abandon` terminal uses. `fail` is therefore a
-# deliberate dead end; the Msquare `exit` node stays only to satisfy fabro's
-# "exactly one terminal node" validation rule (it is unreachable here).
+# the node's outcome along its outgoing edges, so `fail -> exit` alone would
+# carry a failed node straight to the success terminal and the run reports
+# SUCCEEDED (measured on 0.254.0 / 8de6611 AND on 0.378.0-nightly.0 / 64b9d88).
+# The earlier fixture made `fail` a dead end with no outgoing edge; the
+# Petri-era engine refuses such a graph at run creation
+# (`attractor.exit_unreachable`, measured 2026-10-08), so the fixture now fails
+# the run through `goal_gate=true`, which both engines honour: a goal-gated node
+# that exits non-zero fails the run deterministically even though an edge to
+# `exit` exists.
 _FAILING_WORKFLOW = """
 digraph FabroEnemyFailing {
     start [shape=Mdiamond, label="Start"]
-    fail [shape=parallelogram, label="Fail", script="echo fabro-enemy-tier1-fail >&2; exit 1"]
+    fail [shape=parallelogram, label="Fail", goal_gate=true, script="echo fabro-enemy-tier1-fail >&2; exit 1"]
     exit [shape=Msquare, label="Exit"]
     start -> fail
+    fail -> exit
 }
 """
 _SLEEPING_WORKFLOW = """
