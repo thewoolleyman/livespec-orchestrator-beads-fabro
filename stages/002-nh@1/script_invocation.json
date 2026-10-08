@@ -1,0 +1,5 @@
+{
+  "script": "echo 'LIVESPEC_NEEDS_HUMAN: probe cannot auto-resolve' >&2; exit 1",
+  "command": "exec 2>&1\necho 'LIVESPEC_NEEDS_HUMAN: probe cannot auto-resolve' >&2; exit 1",
+  "language": "shell"
+}
