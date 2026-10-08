@@ -207,14 +207,111 @@
     }
   },
   "web_url": "https://hp-xubuntu.perch-rudd.ts.net:32276/runs/01M4DEAH0QFHX2JZQBKVGT0NP1",
-  "start": null,
-  "status": {
-    "kind": "starting"
+  "start": {
+    "start_time": "2026-10-08T09:43:19.139057480Z",
+    "run_branch": "fabro/run/01M4DEAH0QFHX2JZQBKVGT0NP1",
+    "base_sha": "799517a37dd9196975f3c496783eaa602beff614"
   },
-  "status_updated_at": "2026-10-08T09:43:15.665971881Z",
-  "last_event_at": "2026-10-08T09:43:18.767202607Z",
+  "status": {
+    "kind": "running"
+  },
+  "status_updated_at": "2026-10-08T09:43:19.139074322Z",
+  "last_event_at": "2026-10-08T09:43:21.756789590Z",
   "pending_control": null,
-  "checkpoints": [],
+  "checkpoints": [
+    {
+      "seq": 19,
+      "checkpoint": {
+        "timestamp": "2026-10-08T09:43:21.756639249Z",
+        "current_node": "start",
+        "completed_nodes": [
+          "start"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "outcome": "succeeded",
+          "internal.retry_count.start": 0,
+          "graph.goal": "# Fabro Enemy Unit Test: quoting\n",
+          "internal.acp_attempt.start": 0,
+          "internal.thread_id": null,
+          "current_node": "start",
+          "internal.fidelity": "compact",
+          "internal.run_id": "01M4DEAH0QFHX2JZQBKVGT0NP1",
+          "internal.node_visit_count": 1,
+          "failure_class": "",
+          "failure_signature": ""
+        },
+        "node_outcomes": {
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "q",
+        "node_visits": {
+          "start": 1
+        }
+      },
+      "diff": {}
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-10-08T09:43:21.939509994Z",
+        "current_node": "q",
+        "completed_nodes": [
+          "start",
+          "q"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.fidelity": "compact",
+          "internal.retry_count.start": 0,
+          "failure_signature": "",
+          "command.output": "blob://sha256/bb28e85784205086368e62fdc1f34d4527308530e41754af87e89f5d6b71092a",
+          "outcome": "succeeded",
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "current_node": "q",
+          "internal.node_visit_count": 1,
+          "internal.acp_attempt.start": 0,
+          "graph.goal": "# Fabro Enemy Unit Test: quoting\n",
+          "internal.thread_id": "start",
+          "thread.start.current_node": "q",
+          "internal.acp_attempt.q": 0,
+          "internal.run_id": "01M4DEAH0QFHX2JZQBKVGT0NP1",
+          "internal.retry_count.q": 0,
+          "failure_class": ""
+        },
+        "node_outcomes": {
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          },
+          "q": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/bb28e85784205086368e62fdc1f34d4527308530e41754af87e89f5d6b71092a"
+            },
+            "notes": "Script completed: X='a b'; Y=\"$X-$(echo c)\"; test \"$Y\" = 'a b-c' && printf 'quoting-ok %s\\n' \"$Y\" >&2",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 168,
+              "active_time_ms": 168
+            }
+          }
+        },
+        "next_node_id": "exit",
+        "node_visits": {
+          "q": 1,
+          "start": 1
+        }
+      },
+      "diff": {}
+    }
+  ],
   "conclusion": null,
   "sandbox": {
     "kind": "ready",
@@ -241,5 +338,67 @@
   "pull_request": null,
   "superseded_by": null,
   "pending_interviews": {},
-  "stages": {}
+  "stages": {
+    "q@1": {
+      "first_event_seq": 20,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "X='a b'; Y=\"$X-$(echo c)\"; test \"$Y\" = 'a b-c' && printf 'quoting-ok %s\\n' \"$Y\" >&2",
+        "command": "exec 2>&1\nX='a b'; Y=\"$X-$(echo c)\"; test \"$Y\" = 'a b-c' && printf 'quoting-ok %s\\n' \"$Y\" >&2",
+        "language": "shell"
+      },
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-08T09:43:21.756750176Z",
+      "handler": "command",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "running"
+    },
+    "start@1": {
+      "first_event_seq": 16,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-10-08T09:43:21.756514947Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-08T09:43:21.756395423Z",
+      "handler": "start",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    }
+  }
 }
