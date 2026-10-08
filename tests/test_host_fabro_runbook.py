@@ -3,6 +3,14 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _AGENT_INSTRUCTIONS = (_REPO_ROOT / "AGENTS.md").read_text()
 _IMAGE_RUNBOOK = (_REPO_ROOT / "orchestrator-image" / "README.md").read_text()
+_CODEX_REFRESH_COMMAND = (
+    _REPO_ROOT
+    / ".claude-plugin"
+    / "scripts"
+    / "livespec_orchestrator_beads_fabro"
+    / "commands"
+    / "_dispatcher_codex_cred_refresh_command.py"
+).read_text()
 
 
 def test_host_fabro_runbooks_require_supervised_web_console() -> None:
@@ -76,3 +84,17 @@ def test_host_runbook_documents_the_credential_destination_refusal() -> None:
     # And the `unknown`-not-`first-observation` rule for an unseen identifier.
     assert "`unknown` even on a first reading" in _IMAGE_RUNBOOK
     assert "not UTF-8" in _IMAGE_RUNBOOK
+
+
+def test_host_runbook_makes_preflight_the_normal_renewal_and_retires_the_timer() -> None:
+    assert "### Host Codex credential preflight and timer retirement" in _IMAGE_RUNBOOK
+    assert "pre-claim credential gate" in _IMAGE_RUNBOOK
+    assert "effective workflow and review-fix cap" in _IMAGE_RUNBOOK
+    assert "systemctl --user disable --now livespec-codex-cred-refresh.timer" in _IMAGE_RUNBOOK
+    assert "UnitFileState" in _IMAGE_RUNBOOK
+    assert "ActiveState" in _IMAGE_RUNBOOK
+    assert "unit files are retained" in _IMAGE_RUNBOOK
+    assert "bounded manual diagnostic" in _IMAGE_RUNBOOK
+    assert "systemctl --user enable --now livespec-codex-cred-refresh.timer" not in _IMAGE_RUNBOOK
+    assert "18000 seconds (5h)" not in _IMAGE_RUNBOOK
+    assert "five-minute host\ntimer runs" not in _CODEX_REFRESH_COMMAND
