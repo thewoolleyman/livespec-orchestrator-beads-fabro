@@ -1575,5 +1575,13 @@
     "test": "TODO",
     "reason": "A real integration-tier test is owed for this new behavior; the named work item owns landing it, with released host capture and independent replay additionally owed where the scenario requires them.",
     "work_item": "bd-ib-ezuj43"
+  },
+  {
+    "heading": "## Scenario 153 — An adopted assertion ceiling requires an attributed exception without waiving other gates",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for the adopted assertion ceiling, parser-count boundary, malformed configuration and justification refusals, preserved ordinary gates, telemetry tag and stricter consensus-first-cut bound; the named work item owns landing it. No numeric ceiling is adopted by this revision.",
+    "work_item": "bd-ib-pwqxso"
   }
 ]
