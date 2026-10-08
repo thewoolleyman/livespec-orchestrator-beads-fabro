@@ -67,6 +67,9 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
     read_journal_records,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_journal import (
+    resume_linked_run_ids,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_probe import dispatch_ids_for
 from livespec_orchestrator_beads_fabro.commands._run_attribution import journaled_run_ids
 
@@ -124,8 +127,18 @@ def merging_dispatch(
     records = read_journal_records(journal_path=journal_path)
     runs = journaled_run_ids(records=records, work_item_id=work_item_id)
     dispatches = dispatch_ids_for(records=records, work_item_id=work_item_id)
+    # The RESUME chain is read even though the two readers above already return
+    # every identifier THIS checkout journaled a dispatch under, because a resume
+    # record names identifiers a dispatch record need not: the earlier run may
+    # have been dispatched from another checkout, whose journal is invisible here
+    # (the publish-branch reclaim's "only a re-dispatch asks" bullet records the
+    # same blind spot). Dropping them would read the earlier run's verified record
+    # as another item's and report every assertion unevidenced -- the exact
+    # failure this module was built to repair, arriving through the resume door
+    # instead of the newest-wins one.
+    resumed = resume_linked_run_ids(records=records, work_item_id=work_item_id)
     return MergingDispatch(
         fabro_run_id=fabro_run_id if fabro_run_id is not None else (runs[-1] if runs else None),
         dispatch_id=dispatches[-1] if dispatches else None,
-        journaled_ids=(*runs, *dispatches),
+        journaled_ids=(*runs, *dispatches, *resumed),
     )
