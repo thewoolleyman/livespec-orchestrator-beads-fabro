@@ -42,6 +42,11 @@ other way — env is highest-priority):
    it exists and is executable, else a `PATH` lookup, else the concrete
    home-path string, with the two-deploy-environment reasoning recorded there.
 
+`resolve_fabro_factory` resolves the selected `dispatcher.factories` entry,
+whose optional `bin` key names the engine CLIENT binary that factory's server
+speaks to. It lands on `FactoryTarget.fabro_bin`; what it means NEXT TO the
+three global legs above is `_dispatcher_factory_bin`'s, not this module's.
+
 The function signature keeps the plaintext sibling's
 `work_items_arg` parameter (`resolve_store_config(*, cwd,
 work_items_arg)`) so the command call sites do not change. The
@@ -109,6 +114,7 @@ _ENV_BD_PATH = "LIVESPEC_BD_PATH"
 _ENV_FAKE = "LIVESPEC_BEADS_FAKE"
 _ENV_FABRO_BIN = "LIVESPEC_FABRO_BIN"
 _ENV_FABRO_FACTORY = "LIVESPEC_FABRO_FACTORY"
+_FACTORY_BIN_KEY = "bin"
 _FABRO_DEV_AUTH_ENV_PREFIX = "FABRO_DEV_TOKEN__"
 _ENV_FABRO_SANDBOX_IMAGE = "LIVESPEC_FABRO_SANDBOX_IMAGE"
 
@@ -122,6 +128,11 @@ class FactoryTarget:
     name: str
     server: str | None
     dev_token: str | None
+    # The engine CLIENT binary this factory declares, from its optional `bin`
+    # key. None means the entry declares none, which is a complete answer: the
+    # factory runs whatever the host's global resolution supplies.
+    # `_dispatcher_factory_bin` owns what the two layers mean together.
+    fabro_bin: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -448,19 +459,30 @@ def _resolve_configured_factory_name(*, block: dict[str, Any]) -> str:
 
 
 def _factory_target_for(*, name: str, block: dict[str, Any]) -> FactoryTarget:
-    factories_raw = block.get("factories")
-    server: str | None = None
-    if isinstance(factories_raw, dict):
-        factories = cast("dict[str, Any]", factories_raw)
-        factory_raw = factories.get(name)
-        if isinstance(factory_raw, dict):
-            factory = cast("dict[str, Any]", factory_raw)
-            server = _optional_str(value=factory.get("server"))
+    entry = _factory_entry(block=block, name=name)
     return FactoryTarget(
         name=name,
-        server=server,
+        server=_optional_str(value=entry.get("server")),
+        fabro_bin=_optional_str(value=entry.get(_FACTORY_BIN_KEY)),
         dev_token=_optional_str(value=os.environ.get(f"{_FABRO_DEV_AUTH_ENV_PREFIX}{name}")),
     )
+
+
+def _factory_entry(*, block: dict[str, Any], name: str) -> dict[str, Any]:
+    """One named `dispatcher.factories` entry, or `{}` when it is not declared.
+
+    An undeclared name is not an error here: the implicit single-factory
+    `"default"` target is exactly this case, and it must keep resolving to a
+    target with no server so an unconfigured repo preserves the ambient Fabro
+    CLI behaviour.
+    """
+    factories_raw = block.get("factories")
+    if not isinstance(factories_raw, dict):
+        return {}
+    factory_raw = cast("dict[str, Any]", factories_raw).get(name)
+    if not isinstance(factory_raw, dict):
+        return {}
+    return cast("dict[str, Any]", factory_raw)
 
 
 def _resolve_fake(*, block: dict[str, Any]) -> bool:
