@@ -154,6 +154,85 @@ visibility measurement reached this run, and of the two forms only the
 inline one can publish a reference that leaks from a repository nobody
 established was public. Say in your final reply that you took the fallback.
 
+### Keep the record within its size budget
+
+Your record is ONE forge comment, and the forge enforces a ceiling on it. A
+record the forge REJECTS is a LOST proof that reads downstream as an ABSENT
+one: the acceptance pass finds no record and reports every assertion
+unevidenced, so a replay that genuinely reproduced everything parks the item
+anyway, on a refusal naming the missing record rather than the size.
+
+Three declared numbers bound this, all in **UTF-8 BYTES**, never characters:
+
+- **262144 bytes** — the measured, enforced forge comment ceiling.
+- **196608 bytes** — the declared record budget. Stay under it.
+- **32768 bytes** — the per-assertion **inline allowance**: what ONE
+  assertion's proof may spend inline before it must travel as an attachment.
+
+Do not take the forge's own word for the ceiling. Its rejection message
+reads `Body is too long (maximum is 65536 characters)`, and that message is
+wrong in BOTH its number and its unit — the enforced ceiling is four times
+it, and it counts bytes. The figures above were measured against live
+GitHub; the measurement and its controls are in
+`plan/definition-and-proof-of-done/research/005-forge-comment-ceiling-measurement-2026-10-07.md`.
+
+Measure in BYTES. `wc -c` counts bytes; `wc -m` counts characters, and on
+multibyte proof the two differ by up to a factor of four, in the direction
+that loses the proof.
+
+**When your own replay output exceeds the inline allowance, attach it** —
+exactly as the capture stage does, with the same four plain lines and the
+same digest-bearing name, carrying `verify` where the capture carries
+`capture`:
+
+    <work-item-id>__<run-id>__verify__<NN>__proof-sha256-<first 16 hex>.txt
+
+    Attached proof: <asset name>
+    Attached proof bytes: <byte size>
+    Attached proof digest: sha256:<hex digest>
+    Attached proof asset: <asset url>
+
+Compute both from the file you upload, never from the terminal buffer:
+
+    sha256sum "<file>" | cut -d' ' -f1
+    wc -c < "<file>"
+
+Never truncate a proof to fit, and never drop an assertion to fit. A
+truncated proof is a proof of something else, and a dropped assertion reads
+downstream as unevidenced.
+
+**MEASURE THE BODY FILE BEFORE YOU POST IT, and refuse to post it over
+budget:** `wc -c < <file>`. If that is more than **196608** bytes, do NOT
+post — attach the largest proofs and re-measure until it fits. The
+measurement goes before the post because a record comment MUST NOT be
+edited after posting: a body already posted is one you can
+no longer withhold, and a rejected post leaves nothing behind to read at
+all. Report the measured size, the budget, and the assertion whose proof
+overflowed.
+
+### A capture whose proof is itself attached
+
+Where the record you are replaying carries `Attached proof:` lines in place
+of a fenced block, the capture's evidence lives in that asset, so reading the
+record alone does not show you what to compare against. **Fetch it and
+verify its digest before you compare:**
+
+    gh release download "$LIVESPEC_PROOF_ASSETS_RELEASE_TAG" \
+      --pattern "<asset name>" --dir "${TMPDIR:-/tmp}/proof-verify" --clobber
+    sha256sum "${TMPDIR:-/tmp}/proof-verify/<asset name>" | cut -d' ' -f1
+
+Compare that digest to the `Attached proof digest:` the record states.
+
+- **Digest matches** — those are the capture's real bytes. Compare your
+  replay output against them and grade the assertion normally.
+- **Asset missing, or digest does NOT match** — the capture's evidence
+  cannot be read, so there is nothing to have reproduced. Grade that
+  assertion a **non-reproduction**, and put the asset name, the digest the
+  record states, and what you observed instead into the finding. Do NOT
+  grade it reproduced on the strength of the record's prose: a mismatched
+  digest means those are not the bytes the capture measured, and a missing
+  asset means they are not anywhere.
+
 ## Step 4 — decide the verdict
 
 There are exactly two:
