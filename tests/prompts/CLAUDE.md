@@ -20,6 +20,16 @@ instead.
   the test, because a hand-written list is blind to an ACP node added later; a
   sibling control asserts the derivation reached every prompt file on disk, so a
   scan that matched nothing fails rather than reporting clean.
+- `test_proof_record_size_budget_discipline.py` — bd-ib-555xcd: every prompt that
+  publishes a Proof of Done record states the declared size budget, measures the
+  rendered body in BYTES, and refuses to post over budget. The two posting
+  PRIMITIVES enforce this in code; the two factory STAGES hand-format their record
+  and post it with `gh pr comment`, so for them the budget is prose — and the
+  figures are IMPORTED from `_dispatcher_proof_budget` rather than spelled, so a
+  constant changed without re-wording the prompts fails here instead of as a
+  rejected comment in production. The publisher set is derived by CONTENT (a
+  prompt carrying both the record title and the post call), with a control
+  asserting it reached the two publishers known today.
 
 Conventions:
 

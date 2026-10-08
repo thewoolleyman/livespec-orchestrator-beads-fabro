@@ -42,12 +42,18 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_cli impo
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_post import (
     HOST_RECORD_STAGE,
+    HOST_RECORD_SURFACE,
     NO_CAPTURE_REFUSAL,
     NO_IDENTITY_REFUSAL,
     SELF_REPLAY_REFUSAL,
     HostRecordPost,
     host_record_argv,
     run_post_host_record_command,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_budget import (
+    FORGE_COMMENT_CEILING_BYTES,
+    PROOF_RECORD_BUDGET_BYTES,
+    measured_bytes,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
     VERDICT_HOST_NOT_REPRODUCED,
@@ -972,3 +978,129 @@ def test_the_help_states_the_two_rules_the_skeleton_alone_cannot_carry() -> None
     assert '"text" MUST match, verbatim, an assertion' in normalized
     assert "the item's own Definition of Done declares" in normalized
     assert '"reproduced" is read ONLY for a replay verdict' in normalized
+
+
+# ---------------------------------------------------------------------------
+# bd-ib-555xcd: the record is measured against the declared budget before the
+# post, and an over-budget record is refused rather than published.
+#
+# WHY THESE ASSERTIONS ARE MANY AND MODEST RATHER THAN ONE ENORMOUS ONE. A
+# single over-allowance proof does not reach this refusal at all once the
+# attachment path exists: it travels as a digest-named asset and the record
+# comes back under budget. The durable way to be over budget is in AGGREGATE —
+# every proof under the per-assertion inline allowance, their SUM over the
+# budget — which is also the arm whose remedy is not an attachment, and so the
+# arm that must stay refusable for good.
+# ---------------------------------------------------------------------------
+
+_BULK_ASSERTIONS = tuple(
+    f"The bounded-record arm number {index} holds on an operator host." for index in range(7)
+)
+_BULK_BULLETS = "\n".join(f"- {one}" for one in _BULK_ASSERTIONS)
+_BULK_DESCRIPTION = f"""Implement the slice.
+
+## Definition of Done
+
+### Host-captured
+
+Reason: the proof needs the released build installed on an operator host.
+
+{_BULK_BULLETS}
+
+References: ## Scenario 136 — A host-captured assertion holds the item in acceptance
+"""
+
+
+def _bulk_item(*, repo: Path) -> None:
+    """File an item declaring seven host-captured assertions."""
+    _govern(repo=repo)
+    append_work_item(
+        path=_config(),
+        item=_work_item(description=_BULK_DESCRIPTION, title="A bounded-record slice"),
+    )
+
+
+def _bulk_record_file(*, path: Path, proof_bytes: int) -> Path:
+    """A payload carrying one equally-sized proof per declared assertion."""
+    payload: dict[str, object] = {
+        "build": {
+            "release_tag": _RELEASE_TAG,
+            "installed_build": "livespec-orchestrator-beads-fabro 0.173.7",
+        },
+        "assertions": [
+            {
+                "text": text,
+                "steps": ["Install the released build.", "Drive the valve."],
+                "proof": "p" * proof_bytes,
+                "reproduced": None,
+            }
+            for text in _BULK_ASSERTIONS
+        ],
+    }
+    target = path / "bulk-record.json"
+    _ = target.write_text(json.dumps(payload), encoding="utf-8")
+    return target
+
+
+def _post_bulk(*, repo: Path, runner: _Runner, proof_bytes: int) -> tuple[int, str]:
+    emitted: list[str] = []
+    code = run_post_host_record_command(
+        post=HostRecordPost(
+            repo=repo,
+            work_item_id=_ITEM_ID,
+            verdict=VERDICT_HOST_RECORDED,
+            record_path=_bulk_record_file(path=repo, proof_bytes=proof_bytes),
+        ),
+        runner=runner,
+        env={"CLAUDE_CODE_SESSION_ID": _SESSION},
+        emit=emitted.append,
+        reconcile=_Reconciles().drive,
+    )
+    return code, "".join(emitted)
+
+
+def test_an_under_budget_record_of_the_same_shape_still_posts(tmp_path: Path) -> None:
+    """The control, and it is the load-bearing half of this pair.
+
+    Without it, the refusal below is equally consistent with "the budget refused an
+    over-budget record" and with "this seven-assertion fixture cannot post at all",
+    and nothing in either output distinguishes those. The two cases differ ONLY in
+    the per-assertion proof size, so a green here localizes the refusal to the size.
+    """
+    _bulk_item(repo=tmp_path)
+    runner = _Runner(comments=_comments())
+
+    exit_code, emitted = _post_bulk(repo=tmp_path, runner=runner, proof_bytes=4096)
+
+    assert exit_code == 0
+    posted = [call for call in runner.calls if call[:3] == ["gh", "pr", "comment"]]
+    assert len(posted) == 1
+    body = Path(posted[0][-1]).read_text(encoding="utf-8")
+    assert measured_bytes(text=body) <= PROOF_RECORD_BUDGET_BYTES
+    assert body in emitted
+
+
+def test_an_over_budget_record_is_refused_and_never_reaches_the_forge(tmp_path: Path) -> None:
+    """The refusal fires BEFORE the post, and names the size, the budget and an assertion.
+
+    The absence of the `gh pr comment` call is the assertion that matters most. A
+    record comment must not be edited after posting, so a refusal that fired after
+    the forge call would leave the oversize record permanently on the pull request —
+    and the budget would have measured a record it could no longer withhold.
+    """
+    _bulk_item(repo=tmp_path)
+    runner = _Runner(comments=_comments())
+
+    exit_code, emitted = _post_bulk(repo=tmp_path, runner=runner, proof_bytes=30000)
+
+    assert exit_code == 3
+    assert [call for call in runner.calls if call[:3] == ["gh", "pr", "comment"]] == []
+    assert HOST_RECORD_SURFACE in emitted
+    # The measured size, the declared budget, and the measured ceiling.
+    assert str(PROOF_RECORD_BUDGET_BYTES) in emitted
+    assert str(FORGE_COMMENT_CEILING_BYTES) in emitted
+    # The aggregate arm names an assertion AND says no single proof overflowed, so
+    # the named one does not read as the culprit when the remedy is a smaller item.
+    assert "No single proof" in emitted
+    assert any(one in emitted for one in _BULK_ASSERTIONS)
+    assert "Nothing was published" in emitted

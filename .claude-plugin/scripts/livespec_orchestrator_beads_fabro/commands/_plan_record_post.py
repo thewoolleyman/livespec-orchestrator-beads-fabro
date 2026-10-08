@@ -61,6 +61,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_payload 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_render import (
     render_proof_record,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_budget import (
+    record_budget_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_identity import (
     computed_publishing_identity,
 )
@@ -190,6 +193,21 @@ def _publish(
         build=evidence.build,
         assertions=evidence.assertions,
     )
+    # The same budget as the item surface, measured on the same rendered bytes.
+    # A plan record is appended to the EPIC through the ledger rather than posted
+    # to the forge, so the forge's ceiling is not the limit it will meet — the
+    # ledger's own comment column is, and that one is UNMEASURED (no tenant
+    # credential reaches the sandbox that measured the forge). Applying the
+    # forge-derived budget here is therefore the conservative reading rather than
+    # the exact one: it bounds the record by a number somebody measured instead of
+    # by none at all. Narrowing it for this path is a one-line change to the
+    # declared constant once the ledger ceiling has been measured.
+    over_budget = record_budget_refusal(
+        body=body, surface=PLAN_RECORD_SURFACE, assertions=evidence.assertions
+    )
+    if over_budget is not None:
+        emit(over_budget)
+        return _EXIT_REFUSED
     emit(body)
     client.add_comment(issue_id=post.epic_id, body=body)
     return 0

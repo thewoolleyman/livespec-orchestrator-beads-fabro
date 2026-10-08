@@ -228,6 +228,26 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   construction and its value is one the Dispatcher itself supplies. The
   projection is fail-closed in both arms: a declaration the parse refuses, or a
   name whose value is absent, renders NO overlay line.
+- `_dispatcher_proof_budget.py` — the declared size budget every proof record is
+  measured against before it is posted (`bd-ib-555xcd`). PURE, and the ONE place
+  the three figures are named: the MEASURED forge comment ceiling, the record
+  budget below it, and the per-assertion inline allowance a capture agent plans
+  its proof recipe against. Three properties an editor must not invert. The
+  ceiling is a MEASUREMENT with its provenance recorded beside it
+  (`plan/definition-and-proof-of-done/research/005-forge-comment-ceiling-measurement-2026-10-07.md`),
+  and it is NOT 65536 — that figure is what the forge's own rejection message
+  says, and that message is wrong in both its number (the enforced ceiling is
+  four times it) and its unit. Every measurement is in UTF-8 BYTES and never
+  characters, which is the arm most easily simplified away because on ASCII the
+  two agree: the discriminating probe was 131072 em dashes, half the character
+  ceiling but 393216 bytes, and refused. And the refusal has TWO arms because the
+  remedy differs — one enormous proof is attached, whereas many modest proofs
+  summing over budget need a smaller recipe — so the aggregate arm says outright
+  that no single proof overflowed, or the assertion it names reads as a culprit
+  when it is innocent. The two posting primitives enforce it in code; the two
+  factory stages hand-format their records, so for them it is a prompt
+  instruction that `tests/prompts/test_proof_record_size_budget_discipline.py`
+  binds to these constants.
 - `_dispatcher_pre_dispatch_wall.py` — the ONE wall both dispatch paths run,
   holding every refusal that must land after selection and BEFORE admission:
   the variant-aware acceptance-criteria wall, the proof-assets gate, the

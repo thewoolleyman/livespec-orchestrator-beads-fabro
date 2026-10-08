@@ -68,6 +68,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_target i
     host_record_target,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import load_items
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_budget import (
+    record_budget_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import (
     read_pull_request_records,
 )
@@ -221,7 +224,16 @@ def run_post_host_record_command(
 
 
 def _publish(*, post: HostRecordPost, item: WorkItem, evidence: Evidence, seams: _Seams) -> int:
-    """Resolve the target, clear the ladder, render, post, and drive the reconcile."""
+    """Clear the RESOLUTION half of the ladder, then hand the record to the post.
+
+    Split from `_render_and_post` along the seam between the refusals that are
+    answerable BEFORE a record exists — who is publishing, onto which pull request,
+    and against which capture — and the one that can only be answered AFTER it has
+    been rendered, because it measures the rendered bytes. Keeping the two in one
+    function put it over this tree's return-statement ceiling, and the ceiling was
+    right: the resolution ladder reads as one sequence, and the size measurement is
+    not part of it.
+    """
     runner = seams.runner
     emit = seams.emit
     identity = computed_publishing_identity(repo=post.repo, env=seams.env, runner=runner)
@@ -238,16 +250,53 @@ def _publish(*, post: HostRecordPost, item: WorkItem, evidence: Evidence, seams:
     if refusal is not None:
         emit(refusal)
         return _EXIT_REFUSED
+    return _render_and_post(
+        post=post,
+        item=item,
+        evidence=evidence,
+        seams=seams,
+        header_field=identity.header_field,
+        pr_number=pr_number,
+    )
+
+
+def _render_and_post(
+    *,
+    post: HostRecordPost,
+    item: WorkItem,
+    evidence: Evidence,
+    seams: _Seams,
+    header_field: str,
+    pr_number: int,
+) -> int:
+    """Render the record, bound it against the budget, post it, drive the reconcile.
+
+    `header_field` and `pr_number` arrive already RESOLVED rather than as the values
+    they were resolved from, so this half cannot re-resolve either and reach a
+    different answer than the refusals upstream were cleared against.
+    """
+    emit = seams.emit
     body = render_proof_record(
         title=PROOF_RECORD_TITLE,
         verdict=post.verdict,
-        identity=identity.header_field,
+        identity=header_field,
         timestamp=_utc_now_iso(),
         build=evidence.build,
         assertions=evidence.assertions,
     )
+    # The LAST refusal before the post, and deliberately so: it measures the exact
+    # bytes `_posted` would send, which only exist once everything above has been
+    # resolved and rendered. It is also the only refusal here whose failure mode is
+    # silent — every other one names a record or an identity a reader can go and
+    # look at, while a rejected comment leaves nothing behind at all.
+    over_budget = record_budget_refusal(
+        body=body, surface=HOST_RECORD_SURFACE, assertions=evidence.assertions
+    )
+    if over_budget is not None:
+        emit(over_budget)
+        return _EXIT_REFUSED
     emit(body)
-    if not _posted(post=post, pr_number=pr_number, body=body, runner=runner):
+    if not _posted(post=post, pr_number=pr_number, body=body, runner=seams.runner):
         emit(_POST_FAILED_TEXT.format(pr_number=pr_number))
         return _EXIT_FAILED
     if post.verdict not in REPLAY_VERDICTS:
