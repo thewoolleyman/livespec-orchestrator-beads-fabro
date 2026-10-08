@@ -1,0 +1,6 @@
+{
+  "outcome": "succeeded",
+  "notes": "Script completed: X='a b'; Y=\"$X-$(echo c)\"; test \"$Y\" = 'a b-c' && printf 'quoting-ok %s\\n' \"$Y\" >&2",
+  "failure_reason": null,
+  "timestamp": "2026-10-08T09:18:32.950630616Z"
+}
