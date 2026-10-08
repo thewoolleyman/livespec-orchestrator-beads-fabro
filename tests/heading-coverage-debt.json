@@ -284,42 +284,42 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario 135 — A plan cannot archive until its own Definition of Done is proved against the released build",
     "work_item": "bd-ib-wbdgil",
-    "first_seen": "2026-10-04"
+    "first_seen": "2026-10-03"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 136 — A host-captured assertion holds the item in acceptance until an independent host replay verifies it against the released build",
     "work_item": "bd-ib-fkrrgp",
-    "first_seen": "2026-10-04"
+    "first_seen": "2026-10-03"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 137 — A behavioural assertion is proved by exercising the behaviour, and a sandbox that cannot exercise it says so",
     "work_item": "bd-ib-zljjrb",
-    "first_seen": "2026-10-04"
+    "first_seen": "2026-10-03"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 138 — A proof finding reaches the fix stage, and a parked acceptance verdict is recorded with its reason and its pointer",
     "work_item": "bd-ib-lhfz4b",
-    "first_seen": "2026-10-04"
+    "first_seen": "2026-10-03"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 139 — The gate checks each proof mode against the capabilities the sandbox image publishes",
     "work_item": "bd-ib-zljjrb",
-    "first_seen": "2026-10-04"
+    "first_seen": "2026-10-03"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 141 — The referenced scenario governs the proof, and the record names it",
     "work_item": "bd-ib-zljjrb",
-    "first_seen": "2026-10-04"
+    "first_seen": "2026-10-03"
   },
   {
     "spec_root": "SPECIFICATION",
