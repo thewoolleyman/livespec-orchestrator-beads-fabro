@@ -53,6 +53,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro._beads_client import BeadsClient, make_beads_client
+from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_payload import (
     Evidence,
@@ -61,6 +62,16 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_payload 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_render import (
     render_proof_record,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_assets import (
+    PROOF_STAGE_CAPTURE,
+    PROOF_STAGE_VERIFY,
+    RENDERING_AUTHENTICATED_LINK,
+    ReleaseAssetProofStore,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attachment_store import (
+    AttachmentTarget,
+    attached_assertions,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_budget import (
     record_budget_refusal,
 )
@@ -68,6 +79,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_identity impor
     computed_publishing_identity,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import VERDICT_CAPTURED
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_release import (
+    proof_assets_release_tag,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import (
     plan_definition_of_done,
 )
@@ -185,13 +199,26 @@ def _publish(
     if refusal is not None:
         emit(refusal)
         return _EXIT_REFUSED
+    # Attachment BEFORE the render, and the render before the budget measurement, for
+    # the reason the item surface does it in that order: a bulky proof becomes a
+    # reference, the record is rendered carrying references, and the budget then
+    # measures what would actually be appended.
+    assertions = attached_assertions(
+        assertions=evidence.assertions,
+        target=_attachment_target(post=post, identity=identity.identity),
+        runner=runner,
+        surface=PLAN_RECORD_SURFACE,
+        emit=emit,
+    )
+    if assertions is None:
+        return _EXIT_REFUSED
     body = render_proof_record(
         title=PLAN_PROOF_RECORD_TITLE,
         verdict=post.verdict,
         identity=identity.header_field,
         timestamp=_utc_now_iso(),
         build=evidence.build,
-        assertions=evidence.assertions,
+        assertions=assertions,
     )
     # The same budget as the item surface, measured on the same rendered bytes.
     # A plan record is appended to the EPIC through the ledger rather than posted
@@ -203,7 +230,7 @@ def _publish(
     # by none at all. Narrowing it for this path is a one-line change to the
     # declared constant once the ledger ceiling has been measured.
     over_budget = record_budget_refusal(
-        body=body, surface=PLAN_RECORD_SURFACE, assertions=evidence.assertions
+        body=body, surface=PLAN_RECORD_SURFACE, assertions=assertions
     )
     if over_budget is not None:
         emit(over_budget)
@@ -211,6 +238,32 @@ def _publish(
     emit(body)
     client.add_comment(issue_id=post.epic_id, body=body)
     return 0
+
+
+def _attachment_target(*, post: PlanRecordPost, identity: str) -> AttachmentTarget:
+    """Where this plan record's bulky proofs are stored, and under which name.
+
+    The ratified naming form says a plan record's asset carries the EPIC id and the
+    publishing session identity, which is what `epic_id` and the bare identity are
+    here. The stage word is the FACTORY pair's `capture`/`verify` rather than the
+    host pair's: a plan record is not a host-leg record, and its own verdict
+    vocabulary carries no host word.
+
+    The scratch directory is under `repo`, which this primitive otherwise uses only
+    to compute the identity. That is sound rather than incidental — the asset store
+    is the governed repository's own release, so the repository is where the bytes
+    staged for it belong.
+    """
+    stage = PROOF_STAGE_VERIFY if post.verdict in PLAN_REPLAY_VERDICTS else PROOF_STAGE_CAPTURE
+    tag = proof_assets_release_tag(block=dispatcher_block(cwd=post.repo))
+    return AttachmentTarget(
+        work_item_id=post.epic_id,
+        run_id=identity,
+        stage=stage,
+        release_tag=tag,
+        store=ReleaseAssetProofStore(release_tag=tag, rendering=RENDERING_AUTHENTICATED_LINK),
+        scratch=post.repo / "tmp",
+    )
 
 
 def _declared_modes(*, client: BeadsClient, epic_id: str) -> dict[str, str]:

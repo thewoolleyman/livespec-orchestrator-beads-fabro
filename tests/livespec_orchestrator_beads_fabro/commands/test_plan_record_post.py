@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import importlib
 import json
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
@@ -49,7 +50,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     CommandRunner,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_assets import (
+    PROOF_STAGE_CAPTURE,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_budget import (
+    INLINE_PROOF_ALLOWANCE_BYTES,
     PROOF_RECORD_BUDGET_BYTES,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
@@ -329,3 +334,104 @@ def test_an_over_budget_plan_record_is_refused_and_never_appended(tmp_path: Path
     assert str(PROOF_RECORD_BUDGET_BYTES) in emitted
     assert "No single proof" in emitted
     assert "Nothing was published" in emitted
+
+
+@dataclass(kw_only=True)
+class _UploadRunner:
+    """A runner that admits ONLY the proof-asset upload, and fails it.
+
+    Deliberately not a blanket permissive double. The identity computation must
+    still never reach the forge — that is what `_NeverRuns` guards everywhere else
+    in this module — so anything other than the upload still raises here.
+    """
+
+    exit_code: int
+    calls: list[list[str]] = field(default_factory=list)
+
+    def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
+        del cwd, timeout_seconds
+        self.calls.append(list(argv))
+        if argv[:3] != ["gh", "release", "upload"]:
+            raise AssertionError(f"only the asset upload may run: {argv}")
+        return CommandResult(exit_code=self.exit_code, stdout="", stderr="")
+
+
+def test_a_plan_record_whose_bulky_proof_cannot_be_uploaded_is_refused(tmp_path: Path) -> None:
+    """A plan proof that must be attached and cannot be publishes nothing.
+
+    The comment COUNT is the assertion, as it is for every other refusal here: a
+    plan record cannot be edited after posting, so a record appended before the
+    refusal could not be withdrawn.
+    """
+    # The upload-only guard is a REAL instrument before anything relies on it, for
+    # the same reason `_NeverRuns` is exercised above: "only the upload ran" is
+    # evidence only if a non-upload command would actually have complained.
+    with pytest.raises(AssertionError):
+        _ = _UploadRunner(exit_code=0).run(
+            argv=["gh", "api", "user"], cwd=tmp_path, timeout_seconds=1.0
+        )
+    module = importlib.import_module("livespec_orchestrator_beads_fabro.commands._plan_record_post")
+    reset_fake_singleton()
+    epic_id = _bulk_epic(tmp_path=tmp_path)
+    runner = _UploadRunner(exit_code=1)
+    emitted: list[str] = []
+
+    code = module.run_post_plan_record_command(  # pyright: ignore[reportAttributeAccessIssue]
+        post=module.PlanRecordPost(  # pyright: ignore[reportAttributeAccessIssue]
+            repo=tmp_path,
+            epic_id=epic_id,
+            verdict=VERDICT_CAPTURED,
+            record_path=_bulk_payload(
+                path=tmp_path / "bulky.json", proof_bytes=INLINE_PROOF_ALLOWANCE_BYTES + 1
+            ),
+        ),
+        config=_config(),
+        runner=runner,
+        env={_SESSION_ENV: _CAPTURING},
+        emit=emitted.append,
+    )
+
+    text = "".join(emitted)
+    assert code == 3
+    assert len(_fake().list_comments(issue_id=epic_id)) == 0
+    assert [one for one in runner.calls if one[:3] == ["gh", "release", "upload"]] != []
+    assert PLAN_RECORD_SURFACE in text
+    assert "Nothing was published" in text
+
+
+def test_a_plan_records_bulky_proof_is_attached_under_the_epic_id_and_factory_stage(
+    tmp_path: Path,
+) -> None:
+    """The control for the refusal above, and it asserts the plan-specific naming.
+
+    A plan record's asset carries the EPIC id and the publishing session identity,
+    and its stage word is the FACTORY pair's `capture` — a plan record is not a
+    host-leg record, and its verdict vocabulary carries no host word.
+    """
+    module = importlib.import_module("livespec_orchestrator_beads_fabro.commands._plan_record_post")
+    reset_fake_singleton()
+    epic_id = _bulk_epic(tmp_path=tmp_path)
+    runner = _UploadRunner(exit_code=0)
+    emitted: list[str] = []
+
+    code = module.run_post_plan_record_command(  # pyright: ignore[reportAttributeAccessIssue]
+        post=module.PlanRecordPost(  # pyright: ignore[reportAttributeAccessIssue]
+            repo=tmp_path,
+            epic_id=epic_id,
+            verdict=VERDICT_CAPTURED,
+            record_path=_bulk_payload(
+                path=tmp_path / "bulky.json", proof_bytes=INLINE_PROOF_ALLOWANCE_BYTES + 1
+            ),
+        ),
+        config=_config(),
+        runner=runner,
+        env={_SESSION_ENV: _CAPTURING},
+        emit=emitted.append,
+    )
+
+    assert code == 0
+    comments = _fake().list_comments(issue_id=epic_id)
+    assert len(comments) == 1
+    body = str(comments[0]["text"])
+    assert f"{epic_id}__{_CAPTURING}__{PROOF_STAGE_CAPTURE}__01__proof-sha256-" in body
+    assert "Attached proof digest: sha256:" in body

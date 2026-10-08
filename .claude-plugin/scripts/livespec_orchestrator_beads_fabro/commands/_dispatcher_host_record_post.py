@@ -51,9 +51,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
-    effective_criteria,
-)
+from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_leg import REPLAY_VERDICTS
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_payload import (
@@ -64,23 +62,38 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_render i
     NO_GOVERNING_SCENARIO,
     render_proof_record,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_subject import (
+    NO_CAPTURE_REFUSAL,
+    SELF_REPLAY_REFUSAL,
+    declared_host_modes,
+    ledger_item,
+    replay_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_target import (
     host_record_target,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import load_items
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_assets import (
+    PROOF_STAGE_HOST_CAPTURE,
+    PROOF_STAGE_HOST_VERIFY,
+    RENDERING_AUTHENTICATED_LINK,
+    ReleaseAssetProofStore,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attachment_store import (
+    AttachmentTarget,
+    attached_assertions,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_budget import (
     record_budget_refusal,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import (
-    read_pull_request_records,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_identity import (
+    PublishingIdentity,
     computed_publishing_identity,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
     PROOF_RECORD_TITLE,
-    VERDICT_HOST_RECORDED,
-    latest_proof_record,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_release import (
+    proof_assets_release_tag,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -101,8 +114,6 @@ HOST_RECORD_STAGE = "host-record-post"
 # named peer rather than beside a literal nobody can find from the other module.
 HOST_RECORD_SURFACE = "post-host-record"
 NO_IDENTITY_REFUSAL = "no publishing identity could be computed for this invocation"
-SELF_REPLAY_REFUSAL = "the computed identity equals the identity that recorded the capture"
-NO_CAPTURE_REFUSAL = "no host_recorded record on the pull request for this replay to replay"
 
 # Every refusal this primitive can emit, as a template formatted at its site. Module
 # level for the reason the reconcile valve's refusals are: a refusal is operator-facing
@@ -121,20 +132,6 @@ _IDENTITY_REFUSAL_TEXT = "ERROR: post-host-record refused: {reason}.\n"
 _POST_FAILED_TEXT = (
     "ERROR: post-host-record failed: the forge refused the comment on pull request"
     " #{pr_number}; nothing was published and no acceptance pass was re-run.\n"
-)
-_UNREADABLE_PULL_REQUEST_REFUSAL = (
-    "ERROR: post-host-record refused: pull request #{pr_number} comments could not be"
-    " read, so the capturing identity this replay must differ from is unknown. A replay"
-    " is not published against an unread pull request.\n"
-)
-_NO_CAPTURE_REFUSAL_TEXT = (
-    "ERROR: post-host-record refused: {reason} (pull request #{pr_number}). Publish the"
-    " {capture} capture first.\n"
-)
-_SELF_REPLAY_REFUSAL_TEXT = (
-    "ERROR: post-host-record refused: {reason} ({identity}), so this post would not be"
-    " evidence. The {capture} record it replays is {url}. A DIFFERENT session identity"
-    " must replay those steps.\n"
 )
 
 _POST_TIMEOUT_SECONDS = 60.0
@@ -193,11 +190,11 @@ def run_post_host_record_command(
     without running a real acceptance pass, and so the ONE production wiring of it
     lives at the CLI boundary where every other subcommand's wiring lives.
     """
-    item = _item(repo=post.repo, work_item_id=post.work_item_id)
+    item = ledger_item(repo=post.repo, work_item_id=post.work_item_id)
     if item is None:
         emit(_NO_ITEM_REFUSAL.format(item_id=post.work_item_id))
         return _EXIT_REFUSED
-    declared = _declared_modes(item=item)
+    declared = declared_host_modes(item=item)
     if not declared:
         emit(_NO_HOST_LEG_REFUSAL.format(item_id=item.id))
         return _EXIT_REFUSED
@@ -244,8 +241,12 @@ def _publish(*, post: HostRecordPost, item: WorkItem, evidence: Evidence, seams:
     if pr_number is None:
         emit(_NO_TARGET_REFUSAL.format(item_id=item.id))
         return _EXIT_REFUSED
-    refusal = _replay_refusal(
-        post=post, pr_number=pr_number, identity=identity.identity, runner=runner
+    refusal = replay_refusal(
+        repo=post.repo,
+        verdict=post.verdict,
+        pr_number=pr_number,
+        identity=identity.identity,
+        runner=runner,
     )
     if refusal is not None:
         emit(refusal)
@@ -255,7 +256,7 @@ def _publish(*, post: HostRecordPost, item: WorkItem, evidence: Evidence, seams:
         item=item,
         evidence=evidence,
         seams=seams,
-        header_field=identity.header_field,
+        identity=identity,
         pr_number=pr_number,
     )
 
@@ -266,23 +267,42 @@ def _render_and_post(
     item: WorkItem,
     evidence: Evidence,
     seams: _Seams,
-    header_field: str,
+    identity: PublishingIdentity,
     pr_number: int,
 ) -> int:
     """Render the record, bound it against the budget, post it, drive the reconcile.
 
-    `header_field` and `pr_number` arrive already RESOLVED rather than as the values
-    they were resolved from, so this half cannot re-resolve either and reach a
-    different answer than the refusals upstream were cleared against.
+    `identity` and `pr_number` arrive already RESOLVED rather than as the values they
+    were resolved from, so this half cannot re-resolve either and reach a different
+    answer than the refusals upstream were cleared against. The identity is carried
+    WHOLE rather than as its rendered header field, because the record and the asset
+    name need different spellings of it — the header carries the `session `
+    introducer the reader keys on, and an asset name cannot carry a space.
+
+    The attachment pass runs BEFORE the render and the render before the budget
+    measurement, and that order is the whole mechanism: a bulky proof becomes a
+    reference, the record is then rendered carrying references rather than bytes,
+    and the budget measures what would actually be posted. Attaching after the
+    render would measure a record it then changed; measuring before the attachment
+    would refuse records the attachment was about to rescue.
     """
     emit = seams.emit
+    assertions = attached_assertions(
+        assertions=evidence.assertions,
+        target=_attachment_target(post=post, identity=identity.identity),
+        runner=seams.runner,
+        surface=HOST_RECORD_SURFACE,
+        emit=emit,
+    )
+    if assertions is None:
+        return _EXIT_REFUSED
     body = render_proof_record(
         title=PROOF_RECORD_TITLE,
         verdict=post.verdict,
-        identity=header_field,
+        identity=identity.header_field,
         timestamp=_utc_now_iso(),
         build=evidence.build,
-        assertions=evidence.assertions,
+        assertions=assertions,
     )
     # The LAST refusal before the post, and deliberately so: it measures the exact
     # bytes `_posted` would send, which only exist once everything above has been
@@ -290,7 +310,7 @@ def _render_and_post(
     # silent — every other one names a record or an identity a reader can go and
     # look at, while a rejected comment leaves nothing behind at all.
     over_budget = record_budget_refusal(
-        body=body, surface=HOST_RECORD_SURFACE, assertions=evidence.assertions
+        body=body, surface=HOST_RECORD_SURFACE, assertions=assertions
     )
     if over_budget is not None:
         emit(over_budget)
@@ -304,57 +324,28 @@ def _render_and_post(
     return seams.reconcile(work_item_id=item.id)
 
 
-def _item(*, repo: Path, work_item_id: str) -> WorkItem | None:
-    """The named item from the repository's ledger, or `None` when it was never filed.
+def _attachment_target(*, post: HostRecordPost, identity: str) -> AttachmentTarget:
+    """Where this host record's bulky proofs are stored, and under which name.
 
-    `load_items` is the Dispatcher's own ledger read, reused rather than re-rolled so
-    the primitive sees the same tenant, through the same backend selection, as the
-    acceptance pass whose verdict its post re-runs.
+    The identity carried into the asset name is the record's own PUBLISHING
+    identity — the session, not a run — because a host record is published by a
+    session on an operator host long after the merging run has finished. It arrives
+    as the rendered header field, which is the same string the record states, so the
+    asset name and the record agree by construction rather than by two lookups.
+
+    The stage word is the HOST pair's, selected on the same `REPLAY_VERDICTS` set
+    that decides every other replay-versus-capture question in this module, so a
+    verdict added to that set cannot leave this one behind.
     """
-    return next((one for one in load_items(repo=repo) if one.id == work_item_id), None)
-
-
-def _declared_modes(*, item: WorkItem) -> dict[str, str]:
-    """Each host-captured assertion the item declares, mapped to its proof mode.
-
-    A MAPPING rather than a set because the mode is what the record publishes, and
-    computing it here is what stops a caller declaring one: the record can only ever
-    carry the mode the item's own Definition of Done assigned.
-    """
-    criteria = effective_criteria(item=item)
-    host = set(criteria.host_captured_assertions)
-    return {
-        text: mode
-        for text, mode in zip(criteria.assertions, criteria.proof_modes, strict=True)
-        if text in host
-    }
-
-
-def _replay_refusal(
-    *, post: HostRecordPost, pr_number: int, identity: str, runner: CommandRunner
-) -> str | None:
-    """The refusal a REPLAY earns from the records already on the pull request.
-
-    A capture earns none: it is the first leg, there is nothing for it to collide with,
-    and requiring one would make the first host record of every item unpublishable.
-    """
-    if post.verdict not in REPLAY_VERDICTS:
-        return None
-    records = read_pull_request_records(repo=post.repo, pr_number=pr_number, runner=runner)
-    if records is None:
-        return _UNREADABLE_PULL_REQUEST_REFUSAL.format(pr_number=pr_number)
-    capture = latest_proof_record(records=records, verdict=VERDICT_HOST_RECORDED)
-    if capture is None:
-        return _NO_CAPTURE_REFUSAL_TEXT.format(
-            reason=NO_CAPTURE_REFUSAL, pr_number=pr_number, capture=VERDICT_HOST_RECORDED
-        )
-    if capture.run_id != identity:
-        return None
-    return _SELF_REPLAY_REFUSAL_TEXT.format(
-        reason=SELF_REPLAY_REFUSAL,
-        identity=identity,
-        capture=VERDICT_HOST_RECORDED,
-        url=capture.url,
+    stage = PROOF_STAGE_HOST_VERIFY if post.verdict in REPLAY_VERDICTS else PROOF_STAGE_HOST_CAPTURE
+    tag = proof_assets_release_tag(block=dispatcher_block(cwd=post.repo))
+    return AttachmentTarget(
+        work_item_id=post.work_item_id,
+        run_id=identity,
+        stage=stage,
+        release_tag=tag,
+        store=ReleaseAssetProofStore(release_tag=tag, rendering=RENDERING_AUTHENTICATED_LINK),
+        scratch=post.repo / "tmp",
     )
 
 
