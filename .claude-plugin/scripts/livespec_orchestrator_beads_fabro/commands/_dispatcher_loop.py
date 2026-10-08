@@ -76,6 +76,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_run_claim import
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (
     journaled_proof_rendering,
+    publish_branch_for,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
+    resume_checkout_for,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_review_gate import (
     ReviewGateEmission,
@@ -192,6 +196,13 @@ def _dispatch_one_locked(
         # rather than from the committed default a bare `fabro run` would see.
         review_fix_visit_cap=plan.review_fix_visit_cap,
         graph_override=recorded.payload.graph,
+        # The publish branch and head a RESUME puts the sandbox clone on, built
+        # from the head the anchoring record names rather than from the branch
+        # tip: a tip read at prepare time may have moved since the record was
+        # published, which is the state the head-moved refusal exists to catch.
+        resume_checkout=resume_checkout_for(
+            args=args, branch=publish_branch_for(work_item_id=item.id)
+        ),
         # The ONE contract the plan already resolved, projected once more: the
         # committed run config's prepare commands template these values as
         # `{{ inputs.* }}`, and the pinned engine renders that site for the
