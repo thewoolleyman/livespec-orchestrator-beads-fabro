@@ -216,7 +216,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-10-08T09:49:49.135122828Z",
-  "last_event_at": "2026-10-08T09:49:51.833608486Z",
+  "last_event_at": "2026-10-08T09:49:56.492054752Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -256,9 +256,9 @@
       "diff": {}
     },
     {
-      "seq": 0,
+      "seq": 28,
       "checkpoint": {
-        "timestamp": "2026-10-08T09:49:51.991985379Z",
+        "timestamp": "2026-10-08T09:49:56.491885846Z",
         "current_node": "check",
         "completed_nodes": [
           "start",
@@ -266,24 +266,28 @@
         ],
         "node_retries": {},
         "context_values": {
-          "internal.retry_count.start": 0,
-          "internal.retry_count.check": 0,
-          "internal.run_id": "01M4DEPEDRZ86YAQ6QEAQY3B74",
-          "failure_signature": "",
-          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "thread.start.current_node": "check",
           "internal.acp_attempt.start": 0,
+          "command.output": "blob://sha256/eeedd0f06b8ed89bb7c37ed2ed3da9ec1d6ba3bdd378afe2484f1d44b3e5f302",
+          "internal.run_id": "01M4DEPEDRZ86YAQ6QEAQY3B74",
+          "failure_class": "",
+          "internal.retry_count.check": 0,
+          "internal.work_dir": "/workspace/livespec-orchestrator-beads-fabro",
+          "internal.thread_id": "start",
           "graph.goal": "# Fabro Enemy Unit Test: resource-limits\n",
+          "outcome": "succeeded",
+          "internal.retry_count.start": 0,
+          "current_node": "check",
           "internal.acp_attempt.check": 0,
           "internal.fidelity": "compact",
-          "outcome": "succeeded",
-          "current_node": "check",
-          "failure_class": "",
-          "thread.start.current_node": "check",
           "internal.node_visit_count": 1,
-          "command.output": "blob://sha256/eeedd0f06b8ed89bb7c37ed2ed3da9ec1d6ba3bdd378afe2484f1d44b3e5f302",
-          "internal.thread_id": "start"
+          "failure_signature": ""
         },
         "node_outcomes": {
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          },
           "check": {
             "status": "succeeded",
             "context_updates": {
@@ -297,13 +301,10 @@
               "tool_time_ms": 143,
               "active_time_ms": 143
             }
-          },
-          "start": {
-            "status": "succeeded",
-            "usage": null
           }
         },
         "next_node_id": "exit",
+        "git_commit_sha": "799517a37dd9196975f3c496783eaa602beff614",
         "node_visits": {
           "check": 1,
           "start": 1
@@ -312,7 +313,43 @@
       "diff": {}
     }
   ],
-  "conclusion": null,
+  "conclusion": {
+    "timestamp": "2026-10-08T09:49:56.542133248Z",
+    "status": "succeeded",
+    "timing": {
+      "wall_time_ms": 7359,
+      "inference_time_ms": 0,
+      "tool_time_ms": 143,
+      "active_time_ms": 143
+    },
+    "final_git_commit_sha": "799517a37dd9196975f3c496783eaa602beff614",
+    "stages": [
+      {
+        "stage_id": "start",
+        "stage_label": "start",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "check",
+        "stage_label": "check",
+        "timing": {
+          "wall_time_ms": 156,
+          "inference_time_ms": 0,
+          "tool_time_ms": 143,
+          "active_time_ms": 143
+        },
+        "retries": 0
+      }
+    ],
+    "total_retries": 0,
+    "diff": {}
+  },
   "sandbox": {
     "kind": "ready",
     "plan": {
@@ -343,7 +380,12 @@
       "first_event_seq": 20,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Script completed: c=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo none); m=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo none); echo \"cpu.max=$c memory.max=$m\" >&2; test \"$c\" = '200000 100000' && test \"$m\" -ge 3990000000 && test \"$m\" -le 4000000000",
+        "failure_reason": null,
+        "timestamp": "2026-10-08T09:49:51.990176236Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": {
@@ -351,11 +393,27 @@
         "command": "exec 2>&1\nc=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo none); m=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo none); echo \"cpu.max=$c memory.max=$m\" >&2; test \"$c\" = '200000 100000' && test \"$m\" -ge 3990000000 && test \"$m\" -le 4000000000",
         "language": "shell"
       },
-      "script_timing": null,
+      "script_timing": {
+        "output": "blob://sha256/eeedd0f06b8ed89bb7c37ed2ed3da9ec1d6ba3bdd378afe2484f1d44b3e5f302",
+        "exit_code": 0,
+        "duration_ms": 143,
+        "termination": "exited",
+        "output_bytes": 44,
+        "live_streaming": true
+      },
       "parallel_results": null,
       "output": null,
+      "output_bytes": 44,
+      "live_streaming": true,
+      "termination": "exited",
       "started_at": "2026-10-08T09:49:51.833565246Z",
       "handler": "command",
+      "timing": {
+        "wall_time_ms": 156,
+        "inference_time_ms": 0,
+        "tool_time_ms": 143,
+        "active_time_ms": 143
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -364,7 +422,41 @@
         "cache_read_tokens": 0,
         "cache_write_tokens": 0
       },
-      "state": "running"
+      "state": "succeeded"
+    },
+    "exit@1": {
+      "first_event_seq": 30,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-10-08T09:49:56.492054752Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-10-08T09:49:56.491999699Z",
+      "handler": "exit",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
     },
     "start@1": {
       "first_event_seq": 16,
