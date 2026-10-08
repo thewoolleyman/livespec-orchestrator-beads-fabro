@@ -727,3 +727,39 @@ def test_a_tilde_fence_hides_a_printed_verdict_exactly_as_a_backtick_fence_does(
 
     assert record.reproduced(assertion="The tilde-fenced proof prints a verdict line.") is None
     assert closed.reproduced(assertion="The verdict follows the tilde fence that closed.")
+
+
+def test_an_assertion_absent_from_the_record_carries_no_attachment() -> None:
+    """`attachment` answers `None` for an assertion the record never mentions.
+
+    The accessor walks the SAME sections `reproduced` does, so an assertion with no
+    section has neither a verdict nor an attachment. Covered explicitly because the
+    two answers are reached by different returns, and the grading surface calls
+    `reproduced` first — so a reader who deleted this early return would see nothing
+    break while leaving `attachment` to index a section that does not exist.
+    """
+    records = proof_records(
+        comments=[
+            _record(
+                body=textwrap.dedent(
+                    """\
+                    Proof of Done — verified — run 01M4 — 2026-10-08T00:00:00Z
+
+                    ## Assertion 1 — The assertion the record does carry.
+
+                    Proof:
+
+                    ```
+                    output
+                    ```
+
+                    Reproduced: yes.
+                    """
+                )
+            )
+        ]
+    )
+    assert len(records) == 1
+
+    assert records[0].attachment(assertion="An assertion nobody published.") is None
+    assert records[0].reproduced(assertion="An assertion nobody published.") is None

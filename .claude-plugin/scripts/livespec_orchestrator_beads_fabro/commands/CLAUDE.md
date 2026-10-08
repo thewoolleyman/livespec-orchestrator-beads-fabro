@@ -275,6 +275,26 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   attachment was about to rescue. An UNDER-allowance assertion is handed back as
   the very object it came in as, which is what makes an ordinary inline record
   render byte-for-byte as it did before any of this existed.
+- `_dispatcher_proof_attachment_verify.py` — fetching an attached proof and
+  deciding whether it IS the evidence it claims (`bd-ib-555xcd`). Pure decision
+  (`attachment_is_evidence`) beside one impure seam (`attachment_digest_reader`),
+  the usual split. Four properties an editor must not invert. The digest is taken
+  over the DOWNLOADED FILE's bytes and nothing derived from the record — hashing
+  the record's own stated digest, or the proof text it no longer carries, would
+  compare a value with itself and pass every asset. The default reader
+  (`unverified_attachment`) answers `None` for every asset, so a caller that wires
+  none PARKS an attachment-bearing assertion instead of closing it on a digest
+  nobody compared; the opposite default would make forgetting the wiring
+  indistinguishable from verifying successfully. An unfetchable asset is `None`
+  rather than an empty digest, because an empty string reaches the right verdict
+  while asserting something false — that the asset WAS read and found different,
+  which has a different remedy and is what the journal would carry. And a missing
+  or mismatched asset is ABSENT EVIDENCE, never a FAIL: it says nothing about
+  whether the behaviour holds, and a FAIL would route the item to rework and
+  consume an `acceptance_rework_cap` attempt the unevidenceable-assertion clause
+  forbids spending. `ProofRecord.attachment` resolves the asset through the SAME
+  section walk `reproduced` uses, which is what keeps one assertion's digest from
+  being checked against another assertion's verdict.
 - `_dispatcher_pre_dispatch_wall.py` — the ONE wall both dispatch paths run,
   holding every refusal that must land after selection and BEFORE admission:
   the variant-aware acceptance-criteria wall, the proof-assets gate, the

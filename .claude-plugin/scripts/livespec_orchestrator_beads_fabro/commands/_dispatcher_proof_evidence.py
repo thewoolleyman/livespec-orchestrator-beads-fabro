@@ -86,6 +86,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
+from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria import (
     CriterionCheck,
 )
@@ -110,6 +111,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_leg import (
     PENDING_HOST_LEG_REASON,
     HostAssertionGrade,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attachment_verify import (
+    AttachmentDigestReader,
+    attachment_digest_reader,
+    attachment_is_evidence,
+    unverified_attachment,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_attribution import (
     MergingDispatch,
 )
@@ -124,6 +131,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import 
     ProofRecord,
     latest_proof_record,
     proof_records,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_release import (
+    proof_assets_release_tag,
 )
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
@@ -216,6 +226,11 @@ def read_proof_leg(
         # unresolved dispatch.
         reason=f"pull request #{pr_number} records read for run {' or '.join(run_ids)}",
         contains_merge=containment_reader(repo=repo, merge_sha=outcome.merge_sha, runner=runner),
+        attachment_digest=attachment_digest_reader(
+            repo=repo,
+            release_tag=proof_assets_release_tag(block=dispatcher_block(cwd=repo)),
+            runner=runner,
+        ),
     )
 
 
@@ -226,6 +241,7 @@ def proof_leg(
     run_ids: tuple[str, ...],
     reason: str,
     contains_merge: ContainmentReader = unchecked_containment,
+    attachment_digest: AttachmentDigestReader = unverified_attachment,
 ) -> ProofLeg:
     """Grade one item's assertions against the records published for its dispatch.
 
@@ -242,6 +258,10 @@ def proof_leg(
     finished, so it carries a session identity where a factory record carries a run
     id — filtering it by the merging dispatch's identifiers would match nothing and
     hold every host-captured item pending for ever.
+
+    `attachment_digest` defaults to the FAIL-CLOSED reader for the same reason
+    `contains_merge` does: a caller that forgot to supply one parks an
+    attachment-bearing assertion rather than closing it on a digest nobody compared.
     """
     record = latest_proof_record(records=records, verdict=VERDICT_VERIFIED, run_ids=run_ids)
     host = host_leg_for_records(
@@ -252,7 +272,13 @@ def proof_leg(
     grades = {one.text: one for one in host.grades}
     return ProofLeg(
         assertions=tuple(
-            _assertion_evidence(text=text, proof_mode=mode, record=record, host=grades.get(text))
+            _assertion_evidence(
+                text=text,
+                proof_mode=mode,
+                record=record,
+                host=grades.get(text),
+                attachment_digest=attachment_digest,
+            )
             for text, mode in zip(criteria.assertions, criteria.proof_modes, strict=True)
         ),
         record=record,
@@ -263,7 +289,12 @@ def proof_leg(
 
 
 def _assertion_evidence(
-    *, text: str, proof_mode: str, record: ProofRecord | None, host: HostAssertionGrade | None
+    *,
+    text: str,
+    proof_mode: str,
+    record: ProofRecord | None,
+    host: HostAssertionGrade | None,
+    attachment_digest: AttachmentDigestReader,
 ) -> AssertionEvidence:
     if proof_mode == PROOF_MODE_HOST_CAPTURED and host is not None:
         return AssertionEvidence(
@@ -300,6 +331,24 @@ def _assertion_evidence(
         )
     reproduced = record.reproduced(assertion=text)
     if reproduced is None:
+        return AssertionEvidence(
+            text=text,
+            proof_mode=proof_mode,
+            leg=PROOF_RECORD_EVIDENCE_LEG,
+            record_comment=record.url,
+            check=None,
+        )
+    # An assertion whose proof travels as an ASSET is graded on the asset, not on
+    # the record's account of it: the record holds a pointer rather than the
+    # evidence, so a verdict read from the record alone would rest on the
+    # publisher's say-so. A missing or mismatched asset is ABSENT evidence — the
+    # same unevidenced shape as an unreadable verdict — and never a FAIL, because
+    # an unfetchable proof says nothing about whether the behaviour holds and a
+    # FAIL would consume a rework attempt the clause forbids spending.
+    attachment = record.attachment(assertion=text)
+    if attachment is not None and not attachment_is_evidence(
+        attachment=attachment, fetched=attachment_digest(name=attachment.name)
+    ):
         return AssertionEvidence(
             text=text,
             proof_mode=proof_mode,
