@@ -10,6 +10,7 @@ stated on their own so a future reader can see which way each arm fails.
 from __future__ import annotations
 
 from livespec_orchestrator_beads_fabro.commands._plan_completeness_recency import (
+    OutdatedPlanChild,
     PlanChildStatus,
     StaleEvidenceReport,
     latest_status_instant,
@@ -43,16 +44,14 @@ def _detail(
     *,
     added: tuple[str, ...] = (),
     removed: tuple[str, ...] = (),
-    outdated_child_id: str | None = None,
-    outdated_child_instant: str | None = None,
+    outdated_child: OutdatedPlanChild | None = None,
 ) -> str:
     return stale_evidence_detail(
         report=StaleEvidenceReport(
             evidence_id=_EVIDENCE,
             added_child_ids=added,
             removed_child_ids=removed,
-            outdated_child_id=outdated_child_id,
-            outdated_child_instant=outdated_child_instant,
+            outdated_child=outdated_child,
         )
     )
 
@@ -145,7 +144,7 @@ def test_children_added_since_the_review_are_reported_as_added() -> None:
     assert report.evidence_id == _EVIDENCE
     assert report.added_child_ids == ("bd-ib-b", "bd-ib-c")
     assert report.removed_child_ids == ()
-    assert report.outdated_child_id is None
+    assert report.outdated_child is None
 
 
 def test_children_removed_since_the_review_are_reported_as_removed() -> None:
@@ -185,31 +184,44 @@ def test_the_most_recent_postdating_child_is_the_one_reported() -> None:
     assert report is not None
     assert report.added_child_ids == ()
     assert report.removed_child_ids == ()
-    assert report.outdated_child_id == "bd-ib-b"
-    assert report.outdated_child_instant == "2026-10-08T09:00:00Z"
+    assert report.outdated_child == OutdatedPlanChild(
+        child_id="bd-ib-b", status_instant="2026-10-08T09:00:00Z"
+    )
 
 
-def test_an_unreported_instant_outranks_a_merely_late_one() -> None:
-    """The observation a reviewer most needs to see wins the single slot.
+def test_a_child_reporting_no_instant_places_no_recency_floor() -> None:
+    """The one arm that does not fail closed, and why it does not have to.
 
-    A child whose record cannot date its latest status change is a stronger
-    finding than one that changed late: the late one tells the reviewer exactly
-    what to re-read, while the undated one says the ledger cannot answer the
-    question at all. Ties among undated children resolve by id so the refusal is
-    deterministic.
+    A child whose record cannot date its latest status change has no latest
+    status change to postdate, so it is skipped by the instant leg — while the
+    MEMBERSHIP leg, which reads no instant at all, still binds it: it is named in
+    the reviewed set here, and dropping it would be reported as a removal. So an
+    unreadable instant can hide only a state change inside a set already being
+    compared.
+
+    Treating it as a finding instead was measured and rejected: it named the
+    undatable child while `bd-ib-a`, which demonstrably changed late, sat beside
+    it, and it left a plan carrying such a member unarchivable.
     """
     report = _report(
-        reviewed_child_ids=("bd-ib-a", "bd-ib-b", "bd-ib-c"),
+        reviewed_child_ids=("bd-ib-a", "bd-ib-b"),
         children=(
             _child(child_id="bd-ib-a", instant="2026-10-08T09:00:00Z"),
             _child(child_id="bd-ib-b", instant=None),
-            _child(child_id="bd-ib-c", instant=None),
         ),
     )
 
     assert report is not None
-    assert report.outdated_child_id == "bd-ib-c"
-    assert report.outdated_child_instant is None
+    assert report.outdated_child == OutdatedPlanChild(
+        child_id="bd-ib-a", status_instant="2026-10-08T09:00:00Z"
+    )
+    assert (
+        _report(
+            reviewed_child_ids=("bd-ib-b",),
+            children=(_child(child_id="bd-ib-b", instant=None),),
+        )
+        is None
+    )
 
 
 def test_the_detail_renders_only_the_clauses_that_apply() -> None:
@@ -232,29 +244,19 @@ def test_the_detail_renders_only_the_clauses_that_apply() -> None:
     assert "bd-ib-gone" in removed_only
 
 
-def test_the_detail_distinguishes_a_late_change_from_an_undatable_one() -> None:
-    """The remedy is one fresh review either way; the CAUSE is not the same.
+def test_the_detail_names_the_late_child_and_the_instant_it_changed_at() -> None:
+    """The instant is QUOTED, because it is what tells the reviewer what it missed.
 
-    A measured instant is quoted, because the reviewer can see at a glance what
-    it missed. An unreported one says so outright rather than quoting nothing: a
-    clause implying a measured instant would send an operator looking for a
-    change that may never have happened.
+    A clause that said only "a child changed after the review" would leave its
+    reader diffing the whole plan to find which one, which is the retry loop this
+    refusal exists to avoid.
     """
-    late = _detail(outdated_child_id="bd-ib-late", outdated_child_instant="2026-10-08T09:00:00Z")
-    undatable = _detail(outdated_child_id="bd-ib-undated")
-    with_drift = _detail(
-        added=("bd-ib-new",),
-        removed=("bd-ib-gone",),
-        outdated_child_id="bd-ib-late",
-        outdated_child_instant="2026-10-08T09:00:00Z",
-    )
+    outdated = OutdatedPlanChild(child_id="bd-ib-late", status_instant="2026-10-08T09:00:00Z")
+    late = _detail(outdated_child=outdated)
+    with_drift = _detail(added=("bd-ib-new",), removed=("bd-ib-gone",), outdated_child=outdated)
 
     assert late.endswith(
         "child bd-ib-late last changed status at 2026-10-08T09:00:00Z, after the review"
-    )
-    assert undatable.endswith(
-        "child bd-ib-undated reports no readable status instant,"
-        " so the review cannot be shown to postdate its latest status change"
     )
     # All three findings ride one detail, in the order the clauses are built, so a
     # record that drifted in every way reports every way it drifted.

@@ -47,12 +47,27 @@ status — and over-reporting is the direction a terminal gate must fail in: a
 stale report costs one fresh review, while a missed one archives a plan nobody
 has reviewed and nothing re-examines a disposed thread.
 
+A CHILD REPORTING NO READABLE INSTANT PLACES NO FLOOR, which is the one point
+here that does not fail closed, so the reason is recorded rather than left to be
+re-litigated. The usual argument applies everywhere else: a gauge that passes when
+it cannot observe its input turns a refusal into a pass. It does not bite here
+because the MEMBERSHIP leg reads no instant at all and binds every current child
+unconditionally — so an unreadable instant can hide only a state change inside a
+set that is already being compared, never a child appearing or disappearing. And
+the alternative was measured: treating it as a finding named the undatable child
+while one that demonstrably changed late sat beside it, and left a plan carrying
+such a member unarchivable, because no review can postdate a change the ledger
+declines to date.
+
 THE COMPARISON IS LEXICOGRAPHIC, for the reason `_plan_close_proof` records about
 the same class of value: ISO-8601 instants sort lexicographically, and parsing to
 a datetime would add an unparseable-input failure mode whose only honest answer is
 the one the raw comparison already gives. A review record carrying no readable
 timestamp therefore compares as earlier than every instant, which is the
-fail-closed direction.
+fail-closed direction — and note the asymmetry with the paragraph above: an
+unreadable instant on the REVIEW side refuses, because the review's own record is
+the thing being graded, while one on a CHILD side does not, because the set leg
+already binds that child.
 """
 
 from __future__ import annotations
@@ -64,6 +79,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 __all__: list[str] = [
+    "OutdatedPlanChild",
     "PlanChildStatus",
     "StaleEvidenceReport",
     "latest_status_instant",
@@ -83,12 +99,27 @@ class PlanChildStatus:
 
     `status_instant` is OPTIONAL because a record can report none, and an absent
     instant is not the same observation as an early one: it says the ledger cannot
-    show when this child last moved, which is the fail-closed arm rather than a
-    quietly passing one.
+    show when this child last moved. Such a child places no recency floor — see
+    `_outdated_child` for why that is not the fail-open hole it looks like — but it
+    is still a full member of the set the membership leg compares.
     """
 
     child_id: str
     status_instant: str | None
+
+
+@dataclass(frozen=True, kw_only=True)
+class OutdatedPlanChild:
+    """A child whose latest status change postdates the review, and when it was.
+
+    A PAIR rather than two optional fields on the report, so the id and the
+    instant cannot be set apart: a report naming a child with no instant would
+    render "last changed status at None", and one carrying an instant with no
+    child would name nothing to go and re-read.
+    """
+
+    child_id: str
+    status_instant: str
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -106,8 +137,7 @@ class StaleEvidenceReport:
     evidence_id: str
     added_child_ids: tuple[str, ...]
     removed_child_ids: tuple[str, ...]
-    outdated_child_id: str | None
-    outdated_child_instant: str | None
+    outdated_child: OutdatedPlanChild | None
 
 
 def latest_status_instant(*, record: Mapping[str, object]) -> str | None:
@@ -150,8 +180,7 @@ def stale_evidence_report(
         evidence_id=evidence_id,
         added_child_ids=added,
         removed_child_ids=removed,
-        outdated_child_id=None if outdated is None else outdated.child_id,
-        outdated_child_instant=None if outdated is None else outdated.status_instant,
+        outdated_child=outdated,
     )
 
 
@@ -159,31 +188,36 @@ def _outdated_child(
     *,
     reviewed_at: str,
     children: tuple[PlanChildStatus, ...],
-) -> PlanChildStatus | None:
-    """The current child this review cannot be shown to have read, if any.
+) -> OutdatedPlanChild | None:
+    """The current child whose latest status change postdates this review, if any.
 
-    TWO conditions, and they are deliberately one answer rather than two reports.
-    A child whose latest status instant POSTDATES the review moved after the
-    attestation was written. A child reporting NO readable instant cannot be shown
-    to have predated it — and a gauge that passed when it could not observe its
-    own input would make an unreadable instant the cheapest way past this leg.
+    A child reporting NO readable instant is SKIPPED rather than treated as a
+    finding, and that is the one place this leg deliberately does not fail closed.
+    The usual argument would apply — a gauge that passes when it cannot observe
+    its input turns a refusal into a pass — but it does not bite here, because the
+    MEMBERSHIP leg beside this one reads no instant at all and binds every current
+    child unconditionally. So an unreadable instant cannot hide a child appearing
+    or disappearing; it can hide only a state change inside a membership set that
+    is already being compared.
 
-    The LATEST such child is reported rather than the first found, because one
-    name is what the refusal carries and the most recent change is the one that
-    makes every earlier one moot. An unreported instant sorts last, so it wins
-    that choice: it is the observation a reviewer most needs to see.
+    What treating it as a finding DID cost is concrete: it named the undatable
+    child while one that demonstrably changed late sat beside it, and it left a
+    plan carrying such a member unarchivable, since no review can postdate a
+    change the ledger declines to date.
+
+    The LATEST qualifying child is reported rather than the first found, because
+    one name is what the refusal carries and the most recent change is the one
+    that makes every earlier one moot: a reviewer sent back to re-read the plan as
+    of that instant has covered the earlier ones by construction.
     """
-    unreported = tuple(child for child in children if child.status_instant is None)
-    if unreported:
-        return max(unreported, key=lambda child: child.child_id)
     postdating = tuple(
-        child
+        OutdatedPlanChild(child_id=child.child_id, status_instant=instant)
         for child in children
         if (instant := child.status_instant) is not None and instant > reviewed_at.strip()
     )
     if not postdating:
         return None
-    return max(postdating, key=lambda child: (child.status_instant or "", child.child_id))
+    return max(postdating, key=lambda child: (child.status_instant, child.child_id))
 
 
 def stale_evidence_detail(*, report: StaleEvidenceReport) -> str:
@@ -203,28 +237,7 @@ def stale_evidence_detail(*, report: StaleEvidenceReport) -> str:
         )
         if child_ids
     ]
-    if report.outdated_child_id is not None:
-        clauses.append(_outdated_clause(report=report))
+    if (outdated := report.outdated_child) is not None:
+        changed_at = f"last changed status at {outdated.status_instant}, after the review"
+        clauses.append(f"child {outdated.child_id} {changed_at}")
     return f"completeness-review evidence {report.evidence_id} is stale: {'; '.join(clauses)}"
-
-
-def _outdated_clause(*, report: StaleEvidenceReport) -> str:
-    """Name the child whose status the review cannot be shown to have read.
-
-    The two cases read differently on purpose. A known instant is quoted, because
-    the reviewer compares it against when it worked and can see at a glance what
-    it missed. An UNREPORTED instant says so outright rather than quoting nothing:
-    the remedy is the same fresh review either way, but the cause is a ledger
-    record that cannot evidence when its child last moved, and a clause implying
-    a measured instant would send an operator looking for a change that may not
-    have happened.
-    """
-    if report.outdated_child_instant is None:
-        return (
-            f"child {report.outdated_child_id} reports no readable status instant,"
-            " so the review cannot be shown to postdate its latest status change"
-        )
-    return (
-        f"child {report.outdated_child_id} last changed status at"
-        f" {report.outdated_child_instant}, after the review"
-    )
