@@ -48,6 +48,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import cast
+from urllib.parse import quote
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
@@ -103,14 +104,27 @@ def blob_argv(*, branch: str, path: str) -> list[str]:
     The `{owner}`/`{repo}` placeholders are `gh`'s own, resolved from the
     repository the command runs in — which is the named repository's clone, so the
     answer is about the requested repository rather than the invoking one.
+
+    BOTH COMPONENTS ARE PERCENT-ENCODED, AND EACH BY ITS OWN RULE, because this
+    endpoint is a URL and neither a branch nor a path is URL text. The branch is a
+    QUERY-STRING VALUE, so `safe=""` encodes everything including `/` — a
+    `release/1.0` must arrive as one value rather than as a path segment. The path
+    is a SEQUENCE OF PATH SEGMENTS, so `safe="/"` keeps the separators that
+    structure it and encodes everything else.
+
+    WHAT RAW INTERPOLATION COST, since the correct form looks like mere hygiene. A
+    `#` is legal in a Git branch (`git check-ref-format --branch proof#variant`
+    succeeds) and legal in a path, but in a URL it opens a FRAGMENT, which RFC
+    3986 says is never transmitted. So `?ref=proof#variant` reached the forge as
+    `ref=proof`: a request for a DIFFERENT, shorter target, whose answer was then
+    reported as the answer about the requested one — satisfaction earned against a
+    branch nobody asked about. A `#` in the path took the whole query with it, and
+    a space produced a URL no client would send at all.
     """
-    return [
-        "gh",
-        "api",
-        f"repos/{{owner}}/{{repo}}/contents/{path}?ref={branch}",
-        "--jq",
-        ".sha",
-    ]
+    segments = quote(path, safe="/")
+    ref = quote(branch, safe="")
+    endpoint = f"repos/{{owner}}/{{repo}}/contents/{segments}?ref={ref}"
+    return ["gh", "api", endpoint, "--jq", ".sha"]
 
 
 @dataclass(frozen=True, kw_only=True)

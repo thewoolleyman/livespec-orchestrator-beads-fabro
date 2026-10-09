@@ -76,7 +76,12 @@ def test_the_state_argv_asks_for_the_state_and_its_last_update() -> None:
 
 
 def test_the_blob_argv_names_the_path_at_the_requested_ref() -> None:
-    """The ref is in the query, which is what makes the answer about that branch."""
+    """The ref is in the query, which is what makes the answer about that branch.
+
+    An ordinary branch and path are left legible: percent-encoding must not turn
+    the common endpoint into an unreadable one, so a reader comparing this argv
+    against a forge URL still recognises it.
+    """
     assert blob_argv(branch="master", path="a/b.md") == [
         "gh",
         "api",
@@ -84,6 +89,38 @@ def test_the_blob_argv_names_the_path_at_the_requested_ref() -> None:
         "--jq",
         ".sha",
     ]
+
+
+def test_the_blob_argv_encodes_each_component_by_its_own_rule() -> None:
+    """A branch and a path are not URL text, and they are not encoded alike.
+
+    The endpoint is a URL, so every character legal in a Git ref or a path but
+    MEANINGFUL in a URL has to be escaped — otherwise the forge is asked about a
+    different target and answers about that one. `#` is the costly case: legal in
+    a branch and in a path, and in a URL it opens a fragment that RFC 3986 says is
+    never transmitted.
+
+    The two rules differ on `/` alone, and that difference is the point. The
+    branch is a QUERY VALUE, so its `/` is escaped — `release/1.0` must arrive as
+    one value, not as a path segment. The path is a SEQUENCE OF SEGMENTS, so its
+    `/` is preserved as the separator that structures it.
+    """
+    assert blob_argv(branch="proof#variant", path="a/b.md")[2] == (
+        "repos/{owner}/{repo}/contents/a/b.md?ref=proof%23variant"
+    )
+    assert blob_argv(branch="release/1.0", path="a/b.md")[2] == (
+        "repos/{owner}/{repo}/contents/a/b.md?ref=release%2F1.0"
+    )
+    assert blob_argv(branch="master", path="docs/a#b.md")[2] == (
+        "repos/{owner}/{repo}/contents/docs/a%23b.md?ref=master"
+    )
+    assert blob_argv(branch="master", path="docs/a b.md")[2] == (
+        "repos/{owner}/{repo}/contents/docs/a%20b.md?ref=master"
+    )
+    # The `{owner}`/`{repo}` placeholders are `gh`'s own and must survive intact:
+    # encoding them would leave `gh` substituting nothing and the read aimed at a
+    # literal-braces repository that does not exist.
+    assert blob_argv(branch="master", path="a.md")[2].startswith("repos/{owner}/{repo}/contents/")
 
 
 def test_a_matching_state_is_satisfied_and_runs_from_the_named_clone() -> None:
