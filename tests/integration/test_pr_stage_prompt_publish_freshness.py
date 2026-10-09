@@ -29,6 +29,13 @@ _WORKFLOWS_PERMISSION_REJECTION = (
     ".github/workflows/ci.yml without workflows permission"
 )
 _NON_FAST_FORWARD_REJECTION = "non-fast-forward"
+# The verify query names the pull request step 5 found. The BRANCH-resolved form
+# is the shape being repaired: a landed auto-merge deletes the publish branch, so
+# `gh pr view` with no subject resolves from a remote that no longer exists.
+_EXACT_PR_VIEW = (
+    "gh pr view <number> --json number,state,mergeCommit,autoMergeRequest,mergeStateStatus"
+)
+_BRANCH_RESOLVED_PR_VIEW = "gh pr view --json"
 
 
 def _prompt_text() -> str:
@@ -134,6 +141,124 @@ def test_pr_stage_reports_the_hold_beside_the_pr_number_line() -> None:
     assert "report `MERGE_HOLD=held` on its own line beside that PR-number line" in (
         normalized_prompt
     )
+
+
+def test_pr_stage_verifies_the_exact_pull_request_with_state_and_merge_commit() -> None:
+    """The verify query names its subject and asks for what makes a merge legible.
+
+    Three obligations, each failing in its own direction if dropped. The NUMBER
+    must be named, because a landed auto-merge DELETES the publish branch and a
+    branch-resolved view then resolves nothing at all. `state` and `mergeCommit`
+    must be requested, because a null `autoMergeRequest` has two causes — an
+    arming that never took, and a merge that consumed the request — which the
+    pre-repair query could not separate. And the branch-resolved form must be
+    GONE rather than merely joined: a query that appended the two fields while
+    still resolving from the current branch satisfies a containment check on the
+    field names just as well, and is exactly the shape being repaired.
+    """
+    prompt = _prompt_text()
+    normalized_prompt = " ".join(prompt.split())
+
+    assert _EXACT_PR_VIEW in prompt
+    assert _BRANCH_RESOLVED_PR_VIEW not in prompt
+    assert prompt.index("by the number step 5 found") < prompt.index(_EXACT_PR_VIEW)
+    assert "a landed auto-merge DELETES the publish branch" in normalized_prompt
+    assert "a null `autoMergeRequest` has TWO causes" in normalized_prompt
+
+
+def test_pr_stage_reports_a_merged_pull_request_as_a_landed_publish() -> None:
+    """A MERGED pull request with a merge commit ends the stage as a success.
+
+    The arm is keyed on BOTH observations the query added, because `state` alone
+    would read a merge queue's intermediate state as a landing. The two negative
+    duties are asserted explicitly: the run must not spend its one arming retry
+    on a pull request that has nothing left to arm, and must not route a fully
+    successful publish to `needs_human`, which is the measured failure this item
+    was filed for. The reply marker is asserted BESIDE `PR_NUMBER=<n>` and in
+    order, since a landed-merge line reported anywhere else does not let a reader
+    of the reply tell merged work from an arming still pending.
+    """
+    prompt = _prompt_text()
+    normalized_prompt = " ".join(prompt.split())
+
+    assert (
+        "When the hold is `false` and `state` is `MERGED` with a non-null `mergeCommit`"
+        in normalized_prompt
+    )
+    assert "the publish LANDED" in normalized_prompt
+    assert (
+        "Report the merge as a landed publish, naming the pull request number and the"
+        " `mergeCommit`." in normalized_prompt
+    )
+    assert "Do NOT retry the arming, and do NOT enter the needs-human protocol" in normalized_prompt
+    assert prompt.count("MERGE_LANDED=<merge-commit-sha>") == 1
+    assert prompt.index("PR_NUMBER=<n>") < prompt.index("MERGE_LANDED=<merge-commit-sha>")
+
+
+def test_pr_stage_preserves_the_open_unarmed_retry_and_its_needs_human_exit() -> None:
+    """The genuine arming failure keeps its one retry and its needs-human exit.
+
+    This is the control on the landed-publish arm above: without it, a prompt
+    that simply stopped treating a null `autoMergeRequest` as a finding would
+    satisfy the MERGED case while silently passing every run whose arming really
+    did fail. The arm is now keyed on `OPEN`, so it cannot fire on a merge.
+    """
+    prompt = _prompt_text()
+    normalized_prompt = " ".join(prompt.split())
+
+    assert (
+        "When the hold is `false` and `state` is `OPEN` with a null `autoMergeRequest`"
+        in normalized_prompt
+    )
+    assert "Retry the arming exactly once, then re-verify by number" in normalized_prompt
+    assert (
+        "If the retry leaves `autoMergeRequest` null, report that verbatim and end with the"
+        " needs-human protocol" in normalized_prompt
+    )
+
+
+def test_pr_stage_treats_an_already_merged_arming_failure_as_a_landed_merge() -> None:
+    """`gh pr merge` losing the race to the merge is a landing, not a failure.
+
+    The arming command can fail for the same reason the verify query now reads as
+    success, and a stage that reported that exit status as an arming failure
+    would reach the needs-human protocol before step 7 ever ran. The last needle
+    is what binds the clause to the RETRY as well as the first attempt: an
+    already-merged pull request fails the retry identically, so an arm scoped to
+    the first attempt alone leaves the measured failure reachable.
+    """
+    prompt = _prompt_text()
+    normalized_prompt = " ".join(prompt.split())
+
+    assert "If an arming attempt FAILS because the pull request is ALREADY MERGED" in (
+        normalized_prompt
+    )
+    assert "that is a LANDED MERGE and not an arming failure" in normalized_prompt
+    assert "re-verify the exact pull request by its number in step 7" in normalized_prompt
+    assert "This holds for the retry in step 7 as much as for this first attempt." in (
+        normalized_prompt
+    )
+
+
+def test_pr_stage_merge_hold_arm_survives_the_landed_publish_repair() -> None:
+    """A hold is never satisfied by a merge, so the landed-publish arm must not reach it.
+
+    The hold's own requirements are re-asserted here rather than left to the
+    sibling cases above, because the landed-publish arm is the first thing in
+    this prompt that treats a merge as a SUCCESS: a build that widened it to the
+    hold would still satisfy every hold assertion written before it, and would
+    report a merge that happened under a hold as a clean publish.
+    """
+    prompt = _prompt_text()
+    normalized_prompt = " ".join(prompt.split())
+
+    assert "When the hold is `true`: `autoMergeRequest` MUST be null." in normalized_prompt
+    assert prompt.count("MERGE_HOLD=held") == 1
+    assert (
+        "If `state` is `MERGED`, the pull request merged while the hold stood — report that"
+        " verbatim and end with the needs-human protocol below as well." in normalized_prompt
+    )
+    assert "the landed-publish arm above does NOT apply under a hold" in normalized_prompt
 
 
 def test_pr_stage_does_not_authorize_workflow_file_edits() -> None:

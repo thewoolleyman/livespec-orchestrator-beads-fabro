@@ -142,20 +142,51 @@ The complete work-item goal is in the Fabro-injected `Goal:` preamble above.
    - When it is `false`, arm auto-merge with the repository's declared
      merge mode:
      `gh pr merge --{{ inputs.merge_mode }} --auto --delete-branch <pr-url-or-number>`.
+     If an arming attempt FAILS because the pull request is ALREADY
+     MERGED, that is a LANDED MERGE and not an arming failure: the merge
+     beat your command to the pull request, which is the outcome you were
+     arming FOR. Do NOT report it as a failure — re-verify the exact pull
+     request by its number in step 7 and report the landed publish from
+     there. This holds for the retry in step 7 as much as for this first
+     attempt.
    - When it is `true`, the item is under a per-item MERGE HOLD: a
      maintainer wants it implemented now and merged in a window they
      choose. Arm NOTHING — do not run `gh pr merge` at all, in any form.
      The hold is released later by an operator through the
      `set-merge-hold:<work-item-id>:off` valve, which arms the merge from
      the host; it is not yours to release and not yours to work around.
-7. VERIFY the pull request is in the state the hold implies:
-   `gh pr view --json number,autoMergeRequest,mergeStateStatus`.
-   - When the hold is `false`: if `autoMergeRequest` is null, retry the
-     arming once and re-verify.
+7. VERIFY the pull request is in the state the hold implies — the EXACT
+   pull request, by the number step 5 found, never one the forge resolves
+   from the current branch:
+   `gh pr view <number> --json number,state,mergeCommit,autoMergeRequest,mergeStateStatus`.
+   Both halves of that command are load-bearing. Naming the NUMBER
+   matters because a landed auto-merge DELETES the publish branch, so a
+   branch-resolved view can find nothing at all and a fully successful
+   publish reads as one that never happened. Requesting `state` and
+   `mergeCommit` matters because a null `autoMergeRequest` has TWO
+   causes — an arming that never took, and a merge that CONSUMED the
+   request — and without those two fields they are indistinguishable.
+   - When the hold is `false` and `state` is `MERGED` with a non-null
+     `mergeCommit`: the publish LANDED, and that is the strongest proof
+     available that this stage did its job. `publish_draft` opened the
+     pull request early, so its CI is often already green by the time you
+     arm, and the forge can merge within seconds of `gh pr ready`.
+     Report the merge as a landed publish, naming the pull request number
+     and the `mergeCommit`. Do NOT retry the arming, and do NOT enter the
+     needs-human protocol: nothing is blocked and there is no human
+     decision to make.
+   - When the hold is `false` and `state` is `OPEN` with a null
+     `autoMergeRequest`: the arming did not take. Retry the arming
+     exactly once, then re-verify by number with the same command. If the
+     retry leaves `autoMergeRequest` null, report that verbatim and end
+     with the needs-human protocol below.
    - When the hold is `true`: `autoMergeRequest` MUST be null. If it is
      NOT null, an auto-merge request exists that must not — report that
      verbatim and end with the needs-human protocol below rather than
-     disarming it yourself.
+     disarming it yourself. If `state` is `MERGED`, the pull request
+     merged while the hold stood — report that verbatim and end with the
+     needs-human protocol below as well. A hold is never satisfied by a
+     merge, so the landed-publish arm above does NOT apply under a hold.
    - If `mergeStateStatus` is `BEHIND`, the repo automation updates the
      branch; if it stays `BEHIND` for more than 10 minutes, report it —
      do NOT attempt a manual update.
@@ -168,7 +199,10 @@ The complete work-item goal is in the Fabro-injected `Goal:` preamble above.
    deviation verbatim. When the hold is `true`, report `MERGE_HOLD=held`
    on its own line beside that PR-number line, so a reader of the reply
    can tell a deliberately unarmed pull request from an arming that
-   failed.
+   failed. When step 7 observed the landed merge instead, report
+   `MERGE_LANDED=<merge-commit-sha>` on its own line beside that
+   PR-number line, so a reader can tell work that has already merged from
+   an arming that is still pending.
 
 ## When publishing is blocked (needs-human protocol)
 
