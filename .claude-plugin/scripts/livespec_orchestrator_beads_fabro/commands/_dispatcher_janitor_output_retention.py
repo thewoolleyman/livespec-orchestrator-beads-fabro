@@ -88,6 +88,8 @@ def retained_output_record(
     *, retention: JanitorRetention, stage: str, result: CommandResult
 ) -> dict[str, object]:
     """The journal-row fields naming what this stage's failure retained."""
+    if result.exit_code == 0:
+        return {}
     payload = _artifact_payload(result=result)
     try:
         written = _write_artifact(retention=retention, stage=stage, payload=payload)
