@@ -358,7 +358,7 @@ def run_dispatch(
         exit_code=fabro.exit_code,
         stderr=fabro.stderr,
     )
-    successful_evidence = successful_store_loss_evidence(run_id=run_id, inspect=inspect)
+    successful_evidence = successful_store_loss_evidence(plan=plan, run_id=run_id, inspect=inspect)
     # THE CURRENT HOLD, read ONCE for the whole merge-confirmation boundary. The
     # plan's `merge_hold` is the launch snapshot the sandbox and the dispatch record
     # share and must keep; this is what the ledger says now, hours later, and a hold

@@ -820,20 +820,6 @@
   },
   {
     "spec_root": "SPECIFICATION",
-    "spec_file": "contracts.md",
-    "heading": "## Dispatcher successful terminal evidence",
-    "work_item": "bd-ib-l55d7e",
-    "first_seen": "2026-10-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 166 \u2014 Successful terminal evidence survives an engine terminal-event persistence failure",
-    "work_item": "bd-ib-l55d7e",
-    "first_seen": "2026-10-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 167 \u2014 A failed janitor names the aggregate runner's failed targets",
     "work_item": "bd-ib-ma3fvj",
