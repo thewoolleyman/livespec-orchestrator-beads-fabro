@@ -229,7 +229,9 @@ def _dispatch_one_locked(
         # contract gives: a credential stored in one server's vault while the run
         # launched against another's resolves to nothing.
         factory_name=plan.fabro_factory_name,
-        secret_sink=fabro_vault_sink_for_plan(plan=plan, runner=ShellCommandRunner()),
+        secret_sink=fabro_vault_sink_for_plan(
+            plan=plan, runner=ShellCommandRunner(), journal=journal
+        ),
     )
     if overlay_error is not None:
         return failed_dispatch_outcome(

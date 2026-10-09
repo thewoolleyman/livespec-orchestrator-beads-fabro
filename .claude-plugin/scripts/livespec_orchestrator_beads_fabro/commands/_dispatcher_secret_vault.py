@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import JournalWriter
 from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_channel import VaultSecret
 from livespec_orchestrator_beads_fabro.commands._fabro_port_types import (
     FabroCommand,
@@ -46,10 +47,24 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_types import (
 
 __all__: list[str] = [
     "SECRET_SET_TIMEOUT_SECONDS",
+    "VAULT_STORE_JOURNAL_STAGE",
     "FabroVaultSink",
     "fabro_vault_sink_for_plan",
     "secret_set_argv",
 ]
+
+# The dispatch-journal stage each store is recorded under.
+#
+# WHY THE STORE IS RECORDED AT ALL. The vault key is derived from the
+# environment-variable name alone, so a rotated credential takes effect against
+# the bundle already on the server and two launches render BYTE-IDENTICAL
+# bundles. That invariance is the point -- a Petri-era server stores each
+# workflow version immutably, so a transport needing a new bundle per rotation
+# would make every credential refresh a redeploy -- but it also means the bundle
+# cannot answer whether THIS launch re-wrote the vault. Only a record can, and
+# without one a dispatch running on a stale credential looks exactly like one
+# running on a fresh credential.
+VAULT_STORE_JOURNAL_STAGE = "secret-channel-store"
 
 # One `fabro secret set` round trip. Generous enough for a loopback-or-tailnet
 # server under load, and short enough that an unreachable one refuses the
@@ -83,14 +98,43 @@ class FabroVaultSink:
     runner: FabroRunner
     cwd: Path
     timeout_seconds: float = SECRET_SET_TIMEOUT_SECONDS
+    # Where each store is recorded. OPTIONAL because the sink is constructed in
+    # places that have no journal to write to -- a hermetic test, a direct
+    # caller -- and a record is evidence about a dispatch rather than part of
+    # the store itself. The production dispatch path always supplies one.
+    journal: JournalWriter | None = None
 
     def set(self, *, secret: VaultSecret) -> str | None:
         """Store `secret`; a scrubbed message when the server would not take it."""
         result = self._store(secret=secret)
         if result.exit_code == 0:
+            self._record(secret=secret, outcome="stored", exit_code=0)
             return None
+        # Recorded as REFUSED rather than omitted. An absent row reads as "this
+        # launch never tried", which is the wrong conclusion in exactly the case
+        # that matters: the vault still holds the previous launch's credential,
+        # and the bundle gives no sign of it.
+        self._record(secret=secret, outcome="refused", exit_code=result.exit_code)
         return f"`fabro secret set {secret.secret_name}` exited {result.exit_code}: " + _scrubbed(
             text=_excerpt(text=result.stderr or result.stdout), value=secret.value
+        )
+
+    def _record(self, *, secret: VaultSecret, outcome: str, exit_code: int) -> None:
+        """Journal one store by NAME: the vault key, the env name, the outcome.
+
+        No value and no server message: the contract requires journals to carry
+        names only, and a journal row cannot be edited after it is appended.
+        """
+        if self.journal is None:
+            return
+        self.journal.append(
+            record={
+                "stage": VAULT_STORE_JOURNAL_STAGE,
+                "secret": secret.secret_name,
+                "env": secret.env_name,
+                "outcome": outcome,
+                "exit_code": exit_code,
+            }
         )
 
     def _store(self, *, secret: VaultSecret) -> FabroCommand:
@@ -110,7 +154,9 @@ class FabroVaultSink:
             )
 
 
-def fabro_vault_sink_for_plan(*, plan: Any, runner: FabroRunner) -> FabroVaultSink:
+def fabro_vault_sink_for_plan(
+    *, plan: Any, runner: FabroRunner, journal: JournalWriter | None = None
+) -> FabroVaultSink:
     """Build the sink from a dispatch plan's ALREADY-RESOLVED factory target.
 
     Read off the plan rather than re-resolved from configuration, for the same
@@ -124,6 +170,7 @@ def fabro_vault_sink_for_plan(*, plan: Any, runner: FabroRunner) -> FabroVaultSi
         server_url=plan.fabro_factory_server,
         runner=runner,
         cwd=plan.repo,
+        journal=journal,
     )
 
 

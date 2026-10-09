@@ -497,6 +497,42 @@
       // that factory resolves the global binary exactly as before the key
       // existed. A `bin` naming no file, or a file with no execute bit, is
       // refused before the item is claimed.
+      //
+      // Each entry may ALSO carry an optional `secret_channel` key: the
+      // transport that factory's engine resolves a projected credential
+      // through. The two values are self-describing, never numbered:
+      //
+      //   "inline_overlay"  -- the value is written into the uncommitted,
+      //                        mode-600 run-configuration overlay. The pinned
+      //                        0.254 engine offers no secret-reference syntax
+      //                        at all, so this is the ONLY thing that works on
+      //                        it, and it is what an entry declaring no
+      //                        channel resolves to.
+      //   "native_secrets"  -- the overlay carries a by-name vault reference
+      //                        and the Dispatcher stores each value through
+      //                        `fabro secret set` before the launch. Required
+      //                        on a Petri-era engine, where a workflow version
+      //                        is stored IMMUTABLY ON THE SERVER: an inline
+      //                        value there does not expire with the overlay
+      //                        file, it persists server-side for the life of
+      //                        the version, which is what `fabro inspect`
+      //                        returned unredacted on hp run 01M058955QQ5.
+      //
+      // A value this build does not recognise is REFUSED before the launch
+      // rather than falling back to the inline transport -- guessing the
+      // inline one on a Petri-era server is precisely the exposure above.
+      // The 0.378-nightly upgrade CANDIDATE instance on hp:32278 (plan
+      // `fabro-currency` research note 006) is deliberately NOT declared here
+      // yet, and the reason is this table's own first rule rather than
+      // reluctance. Every declared entry is surveyed by each `reconcile-runs`
+      // pass, and a Petri-era server cannot answer the pinned 0.254 client, so
+      // an entry without a `bin` pin would add one `ps-failed` error row to
+      // every pass until that pin lands. The pin is an absolute host path this
+      // repository cannot establish from a sandbox, so the entry belongs with
+      // the cutover that measures it (`bd-ib-sxcnj7`), alongside the Ansible
+      // per-instance binary override the same item owns. A canary against the
+      // candidate therefore declares its entry host-side, where the client
+      // path is known, which is also where that canary's proof is captured.
       "factories": {
         "hp": {
           "server": "https://hp-xubuntu.perch-rudd.ts.net:32276"
