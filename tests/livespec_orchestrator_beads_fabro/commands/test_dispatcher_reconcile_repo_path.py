@@ -16,6 +16,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_preflight 
     repo_path_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
+from livespec_orchestrator_beads_fabro.errors import ConnectionPrefixMissingError
 
 # The phrase the refusal states the requirement in. Named once so a test asserts
 # the same bytes the module renders rather than a paraphrase of them.
@@ -89,6 +90,53 @@ def test_reconcile_merged_refuses_a_repo_directory_holding_no_livespec_config(
     assert _LIVESPEC_CONFIG in err
     assert "connection.prefix" not in err
     assert exit_code == 3
+
+
+def test_the_connection_prefix_refusal_is_reached_only_for_a_config_that_was_read(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`connection.prefix` may only be blamed for a configuration actually READ.
+
+    The two shapes are the discriminating pair. A `.livespec.jsonc` that is a
+    DIRECTORY is PRESENT but is not a file the loader can read, so the loader
+    falls back to an empty block and blames the prefix — the incident's own
+    failure, reached through a path an existence test admits. A `.livespec.jsonc`
+    that IS a readable file and declares no prefix is the one case the refusal
+    describes truthfully, and it must keep firing.
+    """
+    monkeypatch.chdir(tmp_path)
+    unreadable = tmp_path / "repo-with-unreadable-config"
+    (unreadable / _LIVESPEC_CONFIG).mkdir(parents=True)
+    prefixless = tmp_path / "repo-with-prefixless-config"
+    prefixless.mkdir()
+    _ = (prefixless / _LIVESPEC_CONFIG).write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"tenant": "t"}}}',
+        encoding="utf-8",
+    )
+
+    unreadable_outcome, unreadable_err = _outcome(repo=unreadable, capsys=capsys)
+    prefixless_outcome, _ = _outcome(repo=prefixless, capsys=capsys)
+
+    assert unreadable_outcome == 3
+    assert _LIVESPEC_CONFIG in unreadable_err
+    assert isinstance(prefixless_outcome, ConnectionPrefixMissingError)
+
+
+def _outcome(*, repo: Path, capsys: pytest.CaptureFixture[str]) -> tuple[object, str]:
+    """One invocation's observable outcome: its exit code, or the raise.
+
+    `ConnectionPrefixMissingError` is CAUGHT and RETURNED rather than allowed to
+    escape, because whether it is REACHED is exactly what this assertion is
+    about: a shape that reaches it and a shape that refuses must be compared
+    side by side, and an escaping exception would end the test at the first one.
+    """
+    try:
+        outcome: object = main(argv=_reconcile_argv(repo=str(repo)))
+    except ConnectionPrefixMissingError as error:
+        outcome = error
+    return outcome, capsys.readouterr().err
 
 
 def _non_directory_repo_value(*, shape: str, tmp_path: Path) -> str:
