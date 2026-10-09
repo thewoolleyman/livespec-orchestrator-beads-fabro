@@ -50,6 +50,7 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
                                  --record <path> [--invoker <id>]
   dispatcher.py probe --repo <path> --item <id> [common flags]
   dispatcher.py dispatch --repo <path> --item <id> [common flags]
+  dispatcher.py resume --repo <path> --item <id> [common flags]
   dispatcher.py loop --repo <path> --budget <n> [--parallel <k>]
                      [--dry-run] [--item <id>]... [common flags]
 
@@ -359,6 +360,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_comma
     run_reconcile_runs_command,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection import reflect
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_command import (
+    add_resume_arguments,
+    run_resume_command,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_checks import (
     dispatch_preamble,
     requested_items_preflight_error,
@@ -446,6 +451,7 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "probe": run_probe_command,
     "reconcile-merged": run_reconcile_merged_command,
     "reconcile-runs": run_reconcile_runs_command,
+    "resume": run_resume_command,
     "spec-check": run_spec_check,
 }
 
@@ -484,6 +490,7 @@ def _build_parser() -> argparse.ArgumentParser:
     dispatch = subparsers.add_parser("dispatch")
     add_dispatch_common(parser=dispatch)
     _ = dispatch.add_argument("--item", dest="item", required=True)
+    add_resume_arguments(parser=subparsers.add_parser("resume"))
     loop = subparsers.add_parser("loop")
     add_dispatch_common(parser=loop)
     _ = loop.add_argument("--budget", dest="budget", type=int, required=True)
