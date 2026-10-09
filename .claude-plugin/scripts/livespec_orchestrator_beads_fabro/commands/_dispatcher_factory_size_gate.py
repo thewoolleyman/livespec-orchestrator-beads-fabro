@@ -46,7 +46,7 @@ def factory_size_decision(
     """Apply the adopted ceiling to the sanctioned effective-criteria count."""
     observed = assertion_count_for(item=item).count
     del raw_justification
-    if adopted_ceiling is not None:
+    if adopted_ceiling is not None and observed > adopted_ceiling:
         return FactorySizeDecision(
             disposition="decompose",
             adopted_ceiling=adopted_ceiling,
