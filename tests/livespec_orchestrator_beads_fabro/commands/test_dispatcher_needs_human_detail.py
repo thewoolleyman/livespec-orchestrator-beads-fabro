@@ -32,6 +32,7 @@ def test_an_agent_reported_ending_keeps_the_wording_it_always_had() -> None:
     detail = needs_human_terminal_detail(
         work_item_id=_ITEM,
         run_id=_RUN,
+        text="",
         causal=None,
         failure=None,
     )
@@ -50,6 +51,7 @@ def test_an_engine_routed_ending_names_the_stage_cause_and_signature() -> None:
     detail = needs_human_terminal_detail(
         work_item_id=_ITEM,
         run_id=_RUN,
+        text="",
         causal=_causal(stages=("pr",), signatures=(_PR_SIGNATURE,)),
         failure=_failure(cause=_CAUSE),
     )
@@ -67,6 +69,7 @@ def test_a_cause_that_is_not_a_transport_fault_is_quoted_and_not_labelled() -> N
     detail = needs_human_terminal_detail(
         work_item_id=_ITEM,
         run_id=_RUN,
+        text="",
         causal=_causal(stages=("janitor",), signatures=("janitor|deterministic|script failed",)),
         failure=_failure(cause=plain),
     )
@@ -79,6 +82,7 @@ def test_several_causal_stages_are_pluralised_rather_than_reduced_to_one() -> No
     detail = needs_human_terminal_detail(
         work_item_id=_ITEM,
         run_id=_RUN,
+        text="",
         causal=_causal(stages=("pr", "review"), signatures=(_PR_SIGNATURE, _REVIEW_SIGNATURE)),
         failure=_failure(cause=_CAUSE),
     )
@@ -92,6 +96,7 @@ def test_an_unreadable_failure_block_still_attributes_the_stage() -> None:
     detail = needs_human_terminal_detail(
         work_item_id=_ITEM,
         run_id=_RUN,
+        text="",
         causal=_causal(stages=("pr",), signatures=(_PR_SIGNATURE,)),
         failure=None,
     )
@@ -104,6 +109,7 @@ def test_a_failure_block_with_no_cause_names_no_cause() -> None:
     detail = needs_human_terminal_detail(
         work_item_id=_ITEM,
         run_id=_RUN,
+        text="",
         causal=_causal(stages=("pr",), signatures=(_PR_SIGNATURE,)),
         failure=_failure(cause=None),
     )
@@ -112,12 +118,16 @@ def test_a_failure_block_with_no_cause_names_no_cause() -> None:
     assert "innermost cause" not in detail
 
 
-def test_an_unparsed_run_id_renders_the_unknown_run_label() -> None:
+def test_an_unparsed_run_id_renders_the_unknown_run_label_and_offers_no_ref() -> None:
+    """A run-scoped ref cannot be named without a run id, so none is claimed."""
     detail = needs_human_terminal_detail(
         work_item_id=_ITEM,
         run_id=None,
+        text="",
         causal=None,
         failure=None,
     )
 
     assert "run unknown-run terminated at the needs_human node" in detail
+    assert "refs/heads/needs-human/" not in detail
+    assert "no run id was parsed from the launch output" in detail
