@@ -208,7 +208,11 @@ def _reconcile_one_run(
     export = export_orphan_reference(
         orphan=orphan,
         repo=inputs.repo,
-        fabro_bin=inputs.fabro_bin,
+        # The PORT's client, not the bundle's global one. The export runs
+        # `fabro dump --server <this orphan's factory>`, so it is a call
+        # against a NAMED factory and takes that factory's client for the
+        # same reason every other verb on this port does.
+        fabro_bin=port.fabro_bin,
         runner=inputs.runner,
         ledger=inputs.ledger,
     )

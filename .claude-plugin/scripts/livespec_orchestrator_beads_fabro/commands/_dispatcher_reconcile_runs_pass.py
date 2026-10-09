@@ -48,6 +48,7 @@ from returns.unsafe import unsafe_perform_io
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import JournalWriter
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import global_fabro_bin
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import invoker_from_args
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
@@ -222,7 +223,13 @@ def _survey(
     summary = reconcile_runs(
         inputs=ReconcileInputs(
             repo=repo,
-            fabro_bin=args.fabro_bin,
+            # The GLOBAL leg, not `args.fabro_bin`. On the dispatch path the
+            # preamble has already overwritten that with the DISPATCH factory's
+            # declared client, and this pass surveys every OTHER declared
+            # factory too -- so reading it here would drive each no-`bin`
+            # factory with one particular factory's client and take the empty
+            # inventory a mismatched engine returns for a healthy pass.
+            fabro_bin=global_fabro_bin(args=args, fallback=args.fabro_bin),
             id_prefix=store.prefix,
             items=load_items(repo=repo),
             journaled=read_journaled_runs(path=journal.path),

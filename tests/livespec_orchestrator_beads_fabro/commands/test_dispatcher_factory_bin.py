@@ -11,6 +11,14 @@ Coverage spans the resolution's two arcs — a factory declaring no `bin`, which
 must resolve exactly as the single global setting always did, and one declaring
 it, which must drive every Fabro CLI call the dispatch makes against that
 factory — plus the pre-claim refusal and the dispatch record's engine fields.
+
+The two arcs MEET on the dispatch path, which is where the resolution is
+easiest to get wrong and hardest to notice: one dispatch routed to a
+`bin`-declaring factory also reconciles every OTHER declared factory, so a
+survey taking its client from the dispatch is a survey speaking the wrong
+engine's protocol — and it reports that as a healthy empty inventory. The
+cross-factory case is covered here rather than beside the survey because the
+leak is a property of the two layers meeting, not of either one alone.
 """
 
 from __future__ import annotations
@@ -18,10 +26,14 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import Any
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_reconcile_runs_pass as reconcile_pass,
+)
 from livespec_orchestrator_beads_fabro.commands._config import (
     resolve_fabro_bin,
     resolve_fabro_factory,
@@ -45,6 +57,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_input
     ReconcileInputs,
     port_for,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_records import (
+    ReconcileRunsSummary,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
 from livespec_orchestrator_beads_fabro.commands._needs_attention_orphan_runs import (
     InertJournal,
@@ -61,9 +76,17 @@ _GLOBAL_BIN = "/global/fabro"
 _EXIT_PRECONDITION_ERROR = 3
 
 
-def _write_config(*, cwd: Path, dispatcher: dict[str, object]) -> None:
+def _write_config(
+    *,
+    cwd: Path,
+    dispatcher: dict[str, object],
+    connection: dict[str, object] | None = None,
+) -> None:
+    block: dict[str, object] = {"dispatcher": dispatcher}
+    if connection is not None:
+        block["connection"] = connection
     _ = (cwd / ".livespec.jsonc").write_text(
-        json.dumps({"livespec-orchestrator-beads-fabro": {"dispatcher": dispatcher}}),
+        json.dumps({"livespec-orchestrator-beads-fabro": block}),
         encoding="utf-8",
     )
 
@@ -115,6 +138,27 @@ def _reconcile_inputs(*, repo: Path, runner: _RecordingRunner) -> ReconcileInput
         journal=InertJournal(),
         ledger=InertLedger(),
     )
+
+
+def _capture_survey(*, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Capture the bundle one reconciliation pass builds, without reconciling.
+
+    `reconcile_runs` is the ONLY seam stubbed, and only because surveying a
+    factory is a Fabro round trip this test has no server for. Everything
+    upstream of it — the factory enumeration, the store resolution, the
+    work-item read — runs for real against the hermetic fake tenant, so the
+    bundle captured here is the one a dispatch genuinely built.
+    """
+    captured: dict[str, Any] = {}
+
+    def _reconcile(*, inputs: Any, factories: Any, dry_run: bool) -> ReconcileRunsSummary:
+        _ = dry_run
+        captured["inputs"] = inputs
+        captured["factories"] = tuple(factories)
+        return ReconcileRunsSummary(reconciled=(), errors=(), dry_run=False)
+
+    monkeypatch.setattr(reconcile_pass, "reconcile_runs", _reconcile)
+    return captured
 
 
 def test_factory_without_a_bin_key_resolves_the_global_binary_in_order(
@@ -230,6 +274,87 @@ def test_a_declared_factory_bin_drives_every_fabro_call_against_that_factory(
         timeout_seconds=1.0
     )
     assert [call[0] for call in reconcile_runner.calls] == [str(candidate), _GLOBAL_BIN]
+
+
+def test_a_declared_bin_never_follows_the_dispatch_into_another_factorys_survey(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The survey's fallback is the GLOBAL leg, never the dispatch factory's client.
+
+    `dispatch_preamble` overwrites `args.fabro_bin` with the client the
+    DISPATCH factory declares and then reconciles EVERY declared factory, so a
+    survey taking its fallback from `args.fabro_bin` drives every no-`bin`
+    factory with the dispatch factory's client. That is this item's own
+    production shape — a candidate entry added beside the legacy one — and per
+    `port_for`'s own docstring it yields a clean, plausible, empty inventory
+    from the factory running the other engine, which reconciles nothing and
+    reads as a healthy pass.
+
+    The factory enumeration is deliberately NOT stubbed: which factories a
+    pass surveys is read from the same committed declaration the dispatch
+    resolved its own factory from, and a hand-built pair here could not catch
+    a survey that disagreed with it.
+    """
+    candidate = _make_executable(path=tmp_path / "candidate" / "fabro")
+    _write_config(
+        cwd=tmp_path,
+        dispatcher={
+            "default_factory": "hp-candidate",
+            "factories": {
+                "hp": {"server": _LEGACY_SERVER},
+                "hp-candidate": {"server": _CANDIDATE_SERVER, "bin": str(candidate)},
+            },
+        },
+        connection={"prefix": "bd-ib"},
+    )
+    monkeypatch.setenv("LIVESPEC_FABRO_BIN", _GLOBAL_BIN)
+    captured = _capture_survey(monkeypatch=monkeypatch)
+
+    args = argparse.Namespace(fabro_bin=None, janitor=None, journal=None)
+    assert dispatch_preamble(args=args, repo=tmp_path) == (None, None)
+
+    # The dispatch itself really was routed to the candidate's client...
+    assert args.fabro_bin == str(candidate)
+    inputs = captured["inputs"]
+    assert isinstance(inputs, ReconcileInputs)
+    # ...while the survey it ran kept the GLOBAL leg as its fallback.
+    assert inputs.fabro_bin == _GLOBAL_BIN
+
+    runner = _RecordingRunner()
+    surveyed = replace(inputs, runner=runner)
+    for factory in captured["factories"]:
+        _ = port_for(inputs=surveyed, factory=factory).ps(timeout_seconds=1.0)
+    # Declared order is alphabetical, so `hp` (no `bin`) is surveyed first: it
+    # must be driven by the global client even though the dispatch that ran
+    # this pass was routed to the candidate.
+    assert [factory.name for factory in captured["factories"]] == ["hp", "hp-candidate"]
+    assert [call[0] for call in runner.calls] == [_GLOBAL_BIN, str(candidate)]
+
+
+def test_a_caller_that_ran_no_preamble_keeps_the_global_leg_it_arrived_with() -> None:
+    """No stamp to read: the global leg is whatever the caller already resolved.
+
+    The standalone `reconcile-runs` command and the needs-attention lane build
+    their own arguments and never run the preamble, so there is nothing stamped
+    and `args.fabro_bin` is itself the global resolution. Handing the fallback
+    straight back there is the pre-factory behaviour rather than a fault — and
+    it is why neither surface was ever reached by the cross-factory leak the
+    dispatch path had.
+    """
+    factory_bin = importlib.import_module(_FACTORY_BIN_MODULE)
+
+    assert (
+        factory_bin.global_fabro_bin(args=argparse.Namespace(), fallback=_GLOBAL_BIN) == _GLOBAL_BIN
+    )
+    # An explicit `--fabro-bin` IS the global leg for such a caller, so it wins
+    # over a fallback derived from anywhere else.
+    assert (
+        factory_bin.global_fabro_bin(
+            args=argparse.Namespace(fabro_bin="/flag/fabro"), fallback=_GLOBAL_BIN
+        )
+        == "/flag/fabro"
+    )
 
 
 def test_the_dispatch_record_names_the_binary_that_drove_the_dispatch(
