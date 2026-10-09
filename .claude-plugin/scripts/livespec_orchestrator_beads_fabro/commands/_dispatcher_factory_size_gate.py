@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from returns.io import IOResult
+from returns.pipeline import is_successful
 from returns.result import Failure, Result, Success
+from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro._store_factory_size_gate import (
     size_justification_for,
@@ -27,8 +30,10 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "FactorySizeDecision",
+    "factory_size_configuration_refusal",
     "factory_size_decision",
     "resolve_adopted_assertion_count_ceiling",
+    "resolved_stored_factory_size_decision",
     "stored_factory_size_decision",
 ]
 
@@ -98,6 +103,35 @@ def resolve_adopted_assertion_count_ceiling(
     return read_dispatcher_config_value(cwd=cwd, key=ADOPTED_ASSERTION_COUNT_CEILING).bind_result(
         lambda value: _adopted_ceiling_value(value=value)
     )
+
+
+def resolved_stored_factory_size_decision(
+    *, cwd: Path, path_factory: Callable[[], StoreConfig], item: WorkItem
+) -> IOResult[FactorySizeDecision, PolicySettingUnreadable]:
+    """Resolve committed configuration before reading the item's exception."""
+    return resolve_adopted_assertion_count_ceiling(cwd=cwd).map(
+        lambda ceiling: (
+            factory_size_decision(
+                item=item,
+                adopted_ceiling=None,
+                raw_justification=None,
+            )
+            if ceiling is None
+            else stored_factory_size_decision(
+                path=path_factory(),
+                item=item,
+                adopted_ceiling=ceiling,
+            )
+        )
+    )
+
+
+def factory_size_configuration_refusal(*, cwd: Path) -> str | None:
+    """Return configured-ceiling refusal detail, or none when readable."""
+    ceiling = resolve_adopted_assertion_count_ceiling(cwd=cwd)
+    if is_successful(ceiling):
+        return None
+    return unsafe_perform_io(ceiling.failure()).detail
 
 
 def _adopted_ceiling_value(*, value: object) -> Result[int | None, PolicySettingUnreadable]:
