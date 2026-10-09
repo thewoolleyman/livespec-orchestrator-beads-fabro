@@ -442,7 +442,16 @@ push = false
 # Gate-heavy repositories can legitimately spend minutes in those hooks.
 # Fabro's stock 30-second checkpoint budget destroyed completed work when
 # `git add` or `git commit` crossed that ceiling (ledger bd-ib-6ka).
-commit_timeout = "10m"
+# The 10m successor died the same way on 2026-10-08/09 (hp runs
+# 01M4F05QCN3J, 01M4FCFHVY7A and 01M4FCCPEABA, ledger bd-ib-ctagnf): a Green
+# amend that stages impl plus more than one test file runs the full check
+# aggregate in pre-commit, which takes 12-40 minutes in a contended sandbox.
+# CEILING: the Dispatcher's credential-lifetime floor bills this budget three
+# times per attempt (`_dispatcher_credential_requirement.py`), and the Codex
+# freshness gate demands that floor from a ten-day Codex token; 15m keeps the
+# floor at ~9.0 days, 20m would push it to ~10.6 days and refuse every Codex
+# dispatch. Raising it further needs that derivation revisited first.
+commit_timeout = "15m"
 skip_git_hooks = false
 exclude_globs = ["**/.venv/**", "**/node_modules/**", "**/.cache/**"]
 

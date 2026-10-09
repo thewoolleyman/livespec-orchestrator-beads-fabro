@@ -209,7 +209,7 @@ enabled = true
 push = false
 
 [run.checkpoint]
-commit_timeout = "10m"
+commit_timeout = "15m"
 skip_git_hooks = false
 exclude_globs = ["**/.venv/**", "**/node_modules/**", "**/.cache/**"]
 
