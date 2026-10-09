@@ -559,16 +559,26 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
 - The SHARED AUTHORITATIVE RESULT READER of `contracts.md`'s
   shared-authoritative-result-reader clause (`bd-ib-77dipw`, Scenario 146) —
   the ONE reader both the relay-delivery and the plan-deadline callers observe a
-  required result through. Eight cohesive modules, and the dependency direction
+  required result through. Nine cohesive modules, and the dependency direction
   reads bottom-up: `_plan_result_targets` (PURE: the closed five-kind grammar,
   each target's own identity rendering, the reference, and the parse refusal) and
   `_plan_result_observation` (PURE: the observation value plus its constructors
   and the named sources) → `_plan_result_reference` (PURE: the parse and its
   whole refusal ladder) → `_plan_result_repository` (the named repository
   resolved to ONE clone plus that clone's own tenant connection) →
-  `_plan_result_ledger` / `_plan_result_forge` / `_plan_result_proof` (the five
-  adapters, grouped by the source each reads) → `_plan_result_reader` (the ONE
-  public entry point: parse, resolve, then exactly one source).
+  `_plan_result_proof_grade` (PURE: what a pull request's records PROVE — the
+  factory leg's attribution and containment, and the reading order that keeps
+  `unsatisfied` and `unobservable` apart) → `_plan_result_ledger` /
+  `_plan_result_forge` / `_plan_result_proof` (the five adapters, grouped by the
+  source each reads) → `_plan_result_reader` (the ONE public entry point: parse,
+  resolve, then exactly one source).
+  THE PROOF ADAPTER IS SPLIT PURE-FROM-IMPURE for the reason that split exists
+  everywhere else in this tree: `_plan_result_proof` resolves the subject through
+  the ledger, reads the pull request and builds the containment reader, while
+  `_plan_result_proof_grade` decides what the records mean. The grading is a pure
+  function of a record set plus three answers about it, and a decision that
+  reached for the forge itself could not be exercised across every state the
+  clause distinguishes without a double for one.
   Five properties an editor must not invert. The KIND SET IS CLOSED, and that is
   the entire mechanism for the clause's prohibition on arbitrary shell
   predicates — a predicate is refused for the same reason a typo is, so widening
