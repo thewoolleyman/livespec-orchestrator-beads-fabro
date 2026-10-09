@@ -71,6 +71,15 @@ half is VACUOUS when the subject records no merge, because "containing the merge
 change" presupposes a merged change and failing closed there would make this result
 permanently unobservable for every subject whose work has not closed.
 
+AND "RECORDS NO MERGE" IS NARROWER THAN "YIELDED NO MERGE". The vacuous arm above is
+for a record that OMITS its merge; a record whose audit evidence is PRESENT holding
+a value of the wrong type yielded nothing for a different reason, and `_recorded_merge`
+reports that as `_MalformedAudit` rather than as an absence. Both answers were one
+value until 2026-10-09, which made this adapter's most forbidden direction reachable
+from a malformed record: the containment relation silently did not run, so the
+reading SATISFIED on the requested build alone — a verified proof accepted for a
+build nobody showed carries the work, on evidence nobody could read.
+
 WHY A SELF-REPLAY AND A RETRACTED SUCCESS ARE REFUSED HERE EVEN THOUGH THE POSTING
 PRIMITIVE ALSO REFUSES ONE. For the reason the host-leg module gives: the clause
 says such a record is not evidence "however it was posted", and a record reaches a
@@ -95,6 +104,7 @@ hole the clause closes by refusing arbitrary predicates.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast
 
@@ -179,6 +189,28 @@ class _SubjectRefusal:
 
 
 @dataclass(frozen=True, kw_only=True)
+class _MalformedAudit:
+    """Audit evidence that is PRESENT and holds a value of the wrong type.
+
+    DISTINCT FROM `None` BECAUSE AN ABSENCE AND A WRONG TYPE ARE OPPOSITE
+    OBSERVATIONS, and collapsing them is what let a merge nobody could read grade
+    as a merge nobody recorded. `omitempty` only ever OMITS a field — it never
+    retypes one — so a `metadata` holding a string, an `audit` holding a list, or a
+    `merge_sha` holding a number cannot be the sparse encoding of "this subject
+    records no merge". It is evidence the clause calls malformed, which routes to
+    `unobservable` naming the ledger.
+
+    The field path and the type found are carried rather than rendered here, so the
+    refusal names WHICH of the three nested reads could not be made and what stood
+    where a merge belongs. A refusal saying only "malformed metadata" would leave an
+    operator to re-read the record to find out which key to repair.
+    """
+
+    field: str
+    found: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class _Subject:
     """What the subject's own ledger record says about where its proof lives.
 
@@ -190,7 +222,10 @@ class _Subject:
     requires a build to contain.
 
     `merge_sha` is `None` for a subject whose work has not closed, and that is a
-    legitimate state rather than a fault — see `_authoritative_containment`.
+    legitimate state rather than a fault — see `_authoritative_containment`. A
+    subject whose audit evidence is present but unreadable never reaches this value
+    at all: `_subject_proof` returns a `_SubjectRefusal` for it, because a merge
+    that could not be read is not a subject that recorded none.
     """
 
     pull_request: int
@@ -339,30 +374,76 @@ def _subject_proof(*, repository: ResultRepository, subject_id: str) -> _Subject
                 " request, so there is no published record to validate"
             ),
         )
+    merge = _recorded_merge(record=read)
+    if isinstance(merge, _MalformedAudit):
+        return _SubjectRefusal(
+            source=SOURCE_LEDGER,
+            detail=(
+                f"the ledger record for subject {subject_id} carries {merge.field} as"
+                f" a {merge.found}, so the merge a verified build must contain could"
+                " not be read"
+            ),
+        )
     return _Subject(
         pull_request=pointer.pull_request,
         run_id=pointer.run_id,
-        merge_sha=_recorded_merge(record=read),
+        merge_sha=merge,
     )
 
 
-def _recorded_merge(*, record: BeadsRecord) -> str | None:
-    """The merge the subject's audit metadata records, or `None` when it records none.
+def _mapping_at(
+    *, holder: Mapping[str, object], field: str, path: str
+) -> dict[str, object] | None | _MalformedAudit:
+    """One level of the audit descent, keeping ABSENT and PRESENT-AND-WRONG apart.
+
+    EXTRACTED BECAUSE THE DECISION IS THE SAME AT EVERY LEVEL and stating it twice
+    inline is how the two answers get folded back into one: the levels are read in
+    sequence, so a reader skimming the second naturally copies whatever the first
+    did. Naming it once means `metadata` and `metadata.audit` cannot disagree about
+    what a present value of the wrong type means.
+
+    `path` is passed rather than derived, because the refusal names the FULL dotted
+    field an operator has to repair and a level cannot know what it is nested under.
+    """
+    value: object = holder.get(field)
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        return _MalformedAudit(field=path, found=type(value).__name__)
+    return cast("dict[str, object]", value)
+
+
+def _recorded_merge(*, record: BeadsRecord) -> str | None | _MalformedAudit:
+    """The merge the subject's audit metadata records, or why it yielded none.
 
     Read from the raw record's own nested keys rather than through the store's
     item mapping, because this adapter holds a `show_issue` payload and the
-    mapping's audit parse is private to that module. The two nested reads are
-    tolerant in the `omitempty`-sparse direction: a record carrying no metadata,
-    no audit, or no merge is a subject whose work has not closed, which is a
-    legitimate state and not a malformed one.
+    mapping's audit parse is private to that module.
+
+    EACH OF THE THREE NESTED READS DISTINGUISHES ABSENT FROM PRESENT-AND-WRONG, and
+    that is the whole decision this function makes. A field that is MISSING — or a
+    `merge_sha` that is blank, which is what `omitempty` means by empty — is a
+    subject whose work has not closed: a legitimate state leaving the containment
+    requirement vacuous. A field that is PRESENT holding another type is malformed
+    evidence, because omission is the only thing sparseness does to a record.
+
+    Both answers were `None` until 2026-10-09, so a merge that could not be read
+    was indistinguishable from one that was never recorded, and the merge-containment
+    relation then silently did not run — the reading satisfied on the requested
+    build alone, which is satisfaction earned by unreadable evidence.
     """
-    metadata: object = record.get(_METADATA_FIELD)
+    metadata = _mapping_at(holder=record, field=_METADATA_FIELD, path=_METADATA_FIELD)
     if not isinstance(metadata, dict):
-        return None
-    audit: object = cast("dict[str, object]", metadata).get(_AUDIT_FIELD)
+        return metadata
+    audit_path = f"{_METADATA_FIELD}.{_AUDIT_FIELD}"
+    audit = _mapping_at(holder=metadata, field=_AUDIT_FIELD, path=audit_path)
     if not isinstance(audit, dict):
+        return audit
+    merge: object = audit.get(_MERGE_SHA_FIELD)
+    if merge is None:
         return None
-    merge: object = cast("dict[str, object]", audit).get(_MERGE_SHA_FIELD)
-    if not isinstance(merge, str) or merge.strip() == "":
+    if not isinstance(merge, str):
+        return _MalformedAudit(field=f"{audit_path}.{_MERGE_SHA_FIELD}", found=type(merge).__name__)
+    if merge.strip() == "":
         return None
     return merge
