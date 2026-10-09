@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.180.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.180.1...v0.180.2) (2026-10-09)
+
+
+### Bug Fixes
+
+* **dispatcher:** blame connection.prefix only for a config the loader read ([67c25a1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/67c25a15f59260ca7b4a498f3f324aa16229b672))
+* **dispatcher:** name the absent .livespec.jsonc in the reconcile --repo refusal ([5f17710](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5f17710f4216b043125c5efd9c188cbe3094f898))
+* **dispatcher:** refuse a reconcile-merged --repo value that is not a directory ([62212aa](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/62212aa1ed3a74d9afe0a5392b75f21485a55a39))
+
 ## [0.180.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.180.0...v0.180.1) (2026-10-09)
 
 
