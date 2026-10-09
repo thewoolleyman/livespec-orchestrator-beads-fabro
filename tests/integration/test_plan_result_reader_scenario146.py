@@ -26,9 +26,14 @@ status their own assertion names.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Thread
+from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.request import Request, urlopen
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import (
@@ -59,6 +64,19 @@ _PR_NUMBER = 146
 _BRANCH = "master"
 _FILE_PATH = "SPECIFICATION/contracts.md"
 _BLOB = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+# Three targets a RAW URL interpolation corrupts, each in its own way. A `#` is a
+# legal Git branch character — `git check-ref-format --branch proof#variant`
+# succeeds — and a legal path character, but in a URL it opens a FRAGMENT, which
+# RFC 3986 says is never transmitted. A space is legal in a path and illegal in a
+# URL outright.
+_VARIANT_BRANCH = "proof#variant"
+_FRAGMENT_PATH = "docs/a#b.md"
+_SPACED_PATH = "docs/a b.md"
+# The loopback forge answers `_BLOB_EXACT` for the ONE requested (path, ref) pair
+# and `_BLOB_SHADOW` for every other, so a reference naming the shadow blob is
+# satisfied only by a request that reached the WRONG target.
+_BLOB_EXACT = "b" * 40
+_BLOB_SHADOW = "a" * 40
 _BUILD = "v0.170.0"
 _ASSERTION = "The result reader reports an observable unmet target as unsatisfied."
 _RECORD_URL = f"https://example.test/owner/repo/pull/{_PR_NUMBER}#issuecomment-146"
@@ -618,6 +636,146 @@ def test_a_failed_or_malformed_observation_is_unobservable_and_names_the_failed_
         assert observation.observed_at == _NOW, source
         assert observation.detail != "", source
         assert observation.outstanding is True, source
+
+
+@dataclass(kw_only=True)
+class _HttpTransport:
+    """A `CommandRunner` that issues the adapter's OWN endpoint over real HTTP.
+
+    This is the one case in the module where a recording stand-in cannot answer
+    the question. Every other case asserts the argv the adapter BUILT, and an
+    argv assertion cannot see what a transport then does with it: the defect this
+    guards is that `?ref=proof#variant` is a perfectly well-formed endpoint string
+    whose `#` an HTTP client reads as a FRAGMENT DELIMITER, so the server is asked
+    for `ref=proof` and never learns that `variant` was wanted. The request has to
+    actually be issued for that to be observable.
+
+    `urlopen` is used rather than the `gh` binary deliberately. The fragment is
+    dropped by URL parsing — RFC 3986 says a fragment is not transmitted — so the
+    stdlib client reproduces the defect byte for byte while keeping this tier
+    hermetic and free of a `gh` installation. The argv is asserted to be the
+    production shape before it is used, so this transport cannot quietly accept an
+    endpoint the real adapter would never emit.
+    """
+
+    base: str
+    calls: list[tuple[str, ...]] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        del cwd, env, stdin
+        self.calls.append(tuple(argv))
+        assert argv[:2] == ["gh", "api"], argv
+        assert argv[3:] == ["--jq", ".sha"], argv
+        request = Request(url=f"{self.base}/{argv[2]}")  # noqa: S310 — loopback fixture.
+        with urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
+            payload: object = json.loads(response.read().decode())
+        assert isinstance(payload, dict)
+        return CommandResult(exit_code=0, stdout=f"{payload['sha']}\n", stderr="")
+
+
+def _remote_fixture(
+    *, exact: tuple[str, str], received: list[tuple[str, str]]
+) -> ThreadingHTTPServer:
+    """A loopback forge that answers `_BLOB_EXACT` for ONE (path, ref) pair.
+
+    EVERY OTHER PAIR — including every corruption of the requested one — answers
+    `_BLOB_SHADOW`. That asymmetry is what makes the regression discriminating in
+    both directions rather than merely failing: a reference asking for the SHADOW
+    blob is satisfied only by a request that reached the wrong target, and one
+    asking for the EXACT blob is satisfied only by a request that reached the
+    right one. A fixture answering the same blob everywhere would pass whatever
+    the transport sent.
+    """
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802 — the stdlib fixes this method name.
+            split = urlsplit(self.path)
+            path = unquote(split.path.split("/contents/", 1)[-1])
+            ref = parse_qs(split.query).get("ref", [""])[0]
+            received.append((path, ref))
+            blob = _BLOB_EXACT if (path, ref) == exact else _BLOB_SHADOW
+            body = json.dumps({"sha": blob}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            _ = self.wfile.write(body)
+
+        def log_message(self, format: str, *args: object) -> None:
+            del format, args
+
+    return ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+
+
+@pytest.mark.parametrize(
+    ("branch", "path"),
+    [
+        (_VARIANT_BRANCH, _FILE_PATH),
+        (_BRANCH, _FRAGMENT_PATH),
+        (_BRANCH, _SPACED_PATH),
+    ],
+)
+def test_a_remote_blob_read_asks_for_the_exact_branch_and_path_requested(
+    tmp_path: Path, branch: str, path: str
+) -> None:
+    """Scenario 146's remote-blob requirement, read through a real HTTP request.
+
+    The clause requires a file result to compare "the remote branch's blob
+    identity". That is a statement about WHICH branch and WHICH path, and the
+    adapter interpolated both raw into an API URL — so a target whose branch or
+    path contains a `#` silently became a request for a DIFFERENT, shorter target,
+    and the answer about that other target was reported as the answer about this
+    one. `git check-ref-format --branch proof#variant` succeeds, so the branch is
+    not exotic; it is simply a name no raw interpolation survives.
+
+    Each row is a target a raw interpolation corrupts differently: a `#` in the
+    BRANCH truncates the query value, a `#` in the PATH truncates the path and
+    takes the whole query with it, and a SPACE in the path produces a URL no
+    client can send intact. All three are asserted three ways, because each alone
+    admits a wrong reading — the SHADOW case alone cannot tell a corrected request
+    from a broken fixture, the EXACT case alone cannot tell a correct request from
+    a fixture answering everything, and the received-pair assertion alone says
+    nothing about which observation the reader published.
+    """
+    repo = _seeded_project(tmp_path=tmp_path)
+    received: list[tuple[str, str]] = []
+    server = _remote_fixture(exact=(path, branch), received=received)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        shadow = read_result(
+            project_root=repo,
+            reference=_reference(
+                kind="file_on_branch",
+                target={"branch": branch, "path": path, "blob": _BLOB_SHADOW},
+            ),
+            runner=_HttpTransport(base=base),
+            now=_NOW,
+        )
+        exact = read_result(
+            project_root=repo,
+            reference=_reference(
+                kind="file_on_branch",
+                target={"branch": branch, "path": path, "blob": _BLOB_EXACT},
+            ),
+            runner=_HttpTransport(base=base),
+            now=_NOW,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert received == [(path, branch), (path, branch)], received
+    assert _status(observation=shadow) == _UNSATISFIED
+    assert _status(observation=exact) == OBSERVATION_SATISFIED
+    assert exact.evidence == f"git blob {_BLOB_EXACT} at {branch}:{path}"
 
 
 def test_a_query_to_the_wrong_repository_cannot_discharge_the_requested_target(

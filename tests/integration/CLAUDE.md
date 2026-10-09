@@ -658,6 +658,18 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   `_status` is the one accessor the negative controls read through, so they stay
   true as the `unsatisfied` and `unobservable` statuses land in their own
   Red-Green cycles rather than having to be rewritten by a later one.
+  ONE case in the module does NOT use the recording stand-in, and that is
+  deliberate: the remote-target-identity case issues the adapter's own endpoint
+  over a real HTTP request to a loopback forge, because an argv assertion cannot
+  see what a transport then does with a well-formed endpoint string. The defect it
+  guards is that `?ref=proof#variant` is legal argv whose `#` a client reads as a
+  FRAGMENT DELIMITER, so the forge was asked for `ref=proof` and the blob that
+  OTHER branch holds satisfied a result naming this one. `urlopen` stands in for
+  `gh` rather than the binary itself — a fragment is dropped by URL parsing, so
+  the stdlib client reproduces it byte for byte while the tier stays hermetic —
+  and the loopback forge answers one blob for the exact requested (path, ref) pair
+  and a different one for every corruption of it, so the case discriminates in
+  both directions instead of merely failing.
 
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
