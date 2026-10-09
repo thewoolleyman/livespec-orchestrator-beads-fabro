@@ -144,6 +144,71 @@ def test_a_failed_malformed_or_incomplete_state_read_is_unobservable() -> None:
         assert observation.evidence == ""
 
 
+def test_a_state_outside_the_forge_vocabulary_is_unobservable() -> None:
+    """A malformed state value is MALFORMED EVIDENCE, never a confident negative.
+
+    The clause requires malformed evidence to be `unobservable`. A payload whose
+    state is not one the forge can report says nothing about where the pull
+    request stands, so comparing it against the requested state manufactures a
+    negative out of a value the reader could not interpret — and `unsatisfied`
+    there leaves the obligation looking measured and unmet rather than unread,
+    which are the two readings the clause most needs kept apart.
+    """
+    for state in ("INVALID", "42", "OPENED"):
+        observation = observe_pull_request_state(
+            repository=_REPOSITORY,
+            target=PullRequestStateTarget(number=9, state="OPEN"),
+            runner=_runner(stdout=f'{{"state": "{state}", "updatedAt": "2026-10-08T09:00:00Z"}}'),
+            now=_NOW,
+        )
+        assert observation.status == OBSERVATION_UNOBSERVABLE
+        assert observation.source == SOURCE_FORGE
+        assert observation.evidence == ""
+
+
+def test_every_state_the_forge_can_report_still_reaches_a_verdict() -> None:
+    """The positive control on the vocabulary: narrowing it must not blind the read.
+
+    A malformed-state refusal is only correct while the states the forge ACTUALLY
+    reports still reach a verdict. Without this control the refusal above is
+    equally consistent with a vocabulary so narrow that every real read is
+    unobservable — the instrument-aimed-at-nothing failure, which reports clean.
+    """
+    for state, expected in (
+        ("OPEN", OBSERVATION_SATISFIED),
+        ("CLOSED", OBSERVATION_UNSATISFIED),
+        ("MERGED", OBSERVATION_UNSATISFIED),
+    ):
+        observation = observe_pull_request_state(
+            repository=_REPOSITORY,
+            target=PullRequestStateTarget(number=9, state="OPEN"),
+            runner=_runner(stdout=f'{{"state": "{state}", "updatedAt": "2026-10-08T09:00:00Z"}}'),
+            now=_NOW,
+        )
+        assert observation.status == expected
+
+
+def test_a_blank_state_observation_timestamp_is_unobservable() -> None:
+    """The timestamp is HALF the evidence identity, so a blank one is not evidence.
+
+    The clause requires every observation to carry a source evidence identity, and
+    for this kind that identity is the forge state together with its timestamp. A
+    payload whose `updatedAt` is empty was accepted as satisfaction, publishing an
+    evidence line that trails off after `at ` and names no forge observation
+    anyone can look up.
+    """
+    for updated in ("", "   "):
+        observation = observe_pull_request_state(
+            repository=_REPOSITORY,
+            target=PullRequestStateTarget(number=9, state="OPEN"),
+            runner=_runner(stdout=f'{{"state": "OPEN", "updatedAt": "{updated}"}}'),
+            now=_NOW,
+        )
+        assert observation.status == OBSERVATION_UNOBSERVABLE
+        assert observation.source == SOURCE_FORGE
+        assert observation.evidence == ""
+
+
 def test_a_failed_state_read_names_the_first_line_of_its_diagnostic() -> None:
     """One line of stderr, and a STATED absence when there is none.
 
@@ -217,6 +282,33 @@ def test_an_absent_or_unreadable_blob_is_unobservable_and_not_a_mismatch() -> No
             repository=_REPOSITORY,
             target=FileOnBranchTarget(branch="master", path="a/b.md", blob=_BLOB),
             runner=runner,
+            now=_NOW,
+        )
+        assert observation.status == OBSERVATION_UNOBSERVABLE
+        assert observation.source == SOURCE_GIT_OBJECT
+        assert observation.evidence == ""
+
+
+def test_an_answer_that_is_not_an_object_identity_is_unobservable() -> None:
+    """`null` is the shape this failed in, and it read as a DIFFERING object.
+
+    `gh api --jq .sha` prints the literal `null` when the payload carries no
+    `sha`. That is four characters rather than none, so it cleared the blank arm
+    above and fell through to the mismatch arm, publishing a confident negative
+    about an object identity the read never obtained — the clause's forbidden
+    direction, reached by a value that merely was not empty.
+
+    The uppercase case is here because it is what makes the VERBATIM comparison
+    sound. The forge renders a blob id as forty lowercase hex digits and nothing
+    else, so any other rendering is a value this reader cannot assume it
+    understands; admitting one while comparing verbatim would report a matching
+    object as a mismatch.
+    """
+    for stdout in ("null\n", "not-a-sha\n", f"{_BLOB[:39]}\n", f"{_BLOB}0\n", f"{_BLOB.upper()}\n"):
+        observation = observe_file_on_branch(
+            repository=_REPOSITORY,
+            target=FileOnBranchTarget(branch="master", path="a/b.md", blob=_BLOB),
+            runner=_runner(stdout=stdout),
             now=_NOW,
         )
         assert observation.status == OBSERVATION_UNOBSERVABLE

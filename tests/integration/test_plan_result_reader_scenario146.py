@@ -516,12 +516,22 @@ def test_a_failed_or_malformed_observation_is_unobservable_and_names_the_failed_
 
     One case per way an observation can fail, and each asserts the SOURCE the
     clause requires naming after a bounded read — because "unobservable" alone
-    sends an operator looking at whichever source they guess. The seven cover
-    every named source plus the two the reader can fail at before any of them is
+    sends an operator looking at whichever source they guess. They cover every
+    named source plus the two the reader can fail at before any of them is
     reached: a reference that will not parse and a repository that will not
     resolve. Authentication, a payload that is not the shape the read asked for,
     an absent ledger record and a source that answers nothing are all here, and
     none of them may become satisfaction or a confident negative.
+
+    THE MALFORMED-VALUE CASES ARE NOT THE MALFORMED-PAYLOAD CASES, and the
+    distinction is why both sets are present. A payload of the wrong SHAPE fails
+    the read before any comparison is reachable; a well-formed payload carrying a
+    value that is not evidence reaches the comparison, and a reader that compares
+    first turns it into a verdict. Those three — a blank `updatedAt`, a state
+    outside the forge's vocabulary, and a blob answer of `null` — each failed in a
+    direction the clause names, two as confident negatives and one as outright
+    satisfaction, so neither a permissive nor a strict default would have caught
+    all three.
 
     `outstanding` is asserted on every case, since the clause requires a bounded
     read failure to leave the obligation outstanding — which is a different
@@ -542,6 +552,31 @@ def test_a_failed_or_malformed_observation_is_unobservable_and_names_the_failed_
         answers={_PR_COMMENTS_KEY: CommandResult(exit_code=4, stdout="", stderr="gh: no access\n")}
     )
     blank_blob = _Runner(answers={_BLOB_KEY: CommandResult(exit_code=0, stdout="\n", stderr="")})
+    # The three MALFORMED-VALUE readings, each of which the forge answers
+    # SUCCESSFULLY and in a well-formed payload of exactly the requested shape.
+    # They are here rather than only at the unit tier because they are the ones
+    # that crossed the clause's line in BOTH directions: the blank timestamp read
+    # as SATISFACTION, while the uninterpretable state and the `null` blob read as
+    # CONFIDENT NEGATIVES. The payload-shape cases above cannot stand in for any of
+    # them — there the shape is wrong, here it is right and the VALUE is not
+    # evidence.
+    blank_updated_at = _Runner(
+        answers={
+            _PR_STATE_KEY: CommandResult(
+                exit_code=0, stdout='{"state": "OPEN", "updatedAt": ""}', stderr=""
+            )
+        }
+    )
+    uninterpretable_state = _Runner(
+        answers={
+            _PR_STATE_KEY: CommandResult(
+                exit_code=0,
+                stdout='{"state": "INVALID", "updatedAt": "2026-10-08T09:00:00Z"}',
+                stderr="",
+            )
+        }
+    )
+    null_blob = _Runner(answers={_BLOB_KEY: CommandResult(exit_code=0, stdout="null\n", stderr="")})
     cases = (
         ("result reference", {"repo": _PROJECT_NAME, "shell": "test -f a.md"}, _runner()),
         (
@@ -570,8 +605,11 @@ def test_a_failed_or_malformed_observation_is_unobservable_and_names_the_failed_
         ),
         ("forge", _fulfilled_references()["pull_request_state"], unauthenticated),
         ("forge", _fulfilled_references()["pull_request_state"], malformed_state),
+        ("forge", _fulfilled_references()["pull_request_state"], blank_updated_at),
+        ("forge", _fulfilled_references()["pull_request_state"], uninterpretable_state),
         ("proof record", _fulfilled_references()["verified_proof"], unreadable_comments),
         ("git object", _fulfilled_references()["file_on_branch"], blank_blob),
+        ("git object", _fulfilled_references()["file_on_branch"], null_blob),
     )
     for source, reference, runner in cases:
         observation = read_result(project_root=repo, reference=reference, runner=runner, now=_NOW)
