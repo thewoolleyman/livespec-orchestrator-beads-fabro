@@ -59,6 +59,7 @@ class _Runner:
     """One fake `fabro` CLI; every verb other than `ps` succeeds silently."""
 
     ps_rows: str = "[]"
+    stamp_on_dump: tuple[Path, str] | None = None
     calls: list[str] = field(default_factory=list)
 
     def run(
@@ -74,6 +75,9 @@ class _Runner:
         self.calls.append(argv[1])
         if argv[1] == "ps":
             return CommandResult(exit_code=0, stdout=self.ps_rows, stderr="")
+        if argv[1] == "dump" and self.stamp_on_dump is not None:
+            path, run_id = self.stamp_on_dump
+            _append_stamps(path=path, run_ids=[run_id])
         return CommandResult(exit_code=0, stdout="", stderr="")
 
 
@@ -181,6 +185,42 @@ def test_a_run_stamped_after_the_snapshot_is_not_cancelled(tmp_path: Path) -> No
     # Nothing was exported and nothing was destroyed: the run never reached the
     # termination path at all.
     assert runner.calls == ["ps"]
+
+
+def test_a_run_stamped_during_export_is_rechecked_at_the_cancel_boundary(
+    tmp_path: Path,
+) -> None:
+    """A stamp landing during `dump` invalidates the earlier supersession reading.
+
+    Export and ledger read-back intentionally precede termination.  The final
+    journal read therefore belongs after them: a read before `dump` cannot
+    authorize the later cancel when another dispatch stamps this run while the
+    export is in flight.
+    """
+    journal = _stamped(tmp_path=tmp_path, run_ids=[_FIRST_RUN])
+    runner = _Runner(
+        ps_rows=_ps(run_id=_SECOND_RUN),
+        stamp_on_dump=(journal, _SECOND_RUN),
+    )
+    transport = _Transport()
+    journal_writer = _Journal()
+    ledger = _Ledger()
+    inputs = _inputs(
+        tmp_path=tmp_path,
+        journal_path=journal,
+        runner=runner,
+        transport=transport,
+        journal=journal_writer,
+        ledger=ledger,
+    )
+
+    summary = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert summary.reconciled == ()
+    assert transport.calls == []
+    assert runner.calls == ["ps", "dump"]
+    assert len(ledger.comments[_ITEM_ID]) == 1
+    assert [row["stage"] for row in journal_writer.written] == [_HOLD_STAGE]
 
 
 def test_a_snapshot_that_cannot_be_re_read_holds_rather_than_cancelling(tmp_path: Path) -> None:
@@ -316,6 +356,7 @@ def _inputs(
     runner: _Runner,
     transport: _Transport,
     journal: _Journal | None = None,
+    ledger: _Ledger | None = None,
 ) -> ReconcileInputs:
     return ReconcileInputs(
         repo=tmp_path,
@@ -325,7 +366,7 @@ def _inputs(
         journaled=read_journaled_runs(path=journal_path),
         runner=runner,
         journal=_Journal() if journal is None else journal,
-        ledger=_Ledger(),
+        ledger=_Ledger() if ledger is None else ledger,
         attribution=RunAttribution(metadata_run_ids={_SECOND_RUN: _ITEM_ID}),
         http=transport,
         blocked_run_grace_seconds=0,
