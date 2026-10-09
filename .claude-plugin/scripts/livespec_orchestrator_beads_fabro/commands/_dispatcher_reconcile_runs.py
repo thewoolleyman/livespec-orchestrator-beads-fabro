@@ -202,7 +202,7 @@ def _reconcile_one_factory(
         # the re-read is WHEN it happens: the join is pure and ran against the
         # snapshot the pass opened with, and this is the last moment before the
         # export and the terminate.
-        if supersession_held(orphan=orphan, inputs=inputs):
+        if supersession_held(orphan=orphan, inputs=inputs, dry_run=dry_run):
             continue
         outcome = _reconcile_one_run(inputs=inputs, port=port, orphan=orphan, dry_run=dry_run)
         if isinstance(outcome, ReconcileError):

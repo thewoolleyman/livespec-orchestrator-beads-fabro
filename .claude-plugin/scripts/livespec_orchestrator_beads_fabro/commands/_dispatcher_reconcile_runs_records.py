@@ -24,6 +24,18 @@ and the bound it passed. Every other orphan reason is a JOIN, reproducible
 from the ledger at any later time; this one is a MEASUREMENT taken once
 against a clock, and a record that omitted it would leave no way to tell a
 correct reap from a misread timestamp.
+
+One record here is written for a run the pass did NOT touch: the
+`superseded-run` reading a fresh journal read refused to reproduce
+(`_dispatcher_reconcile_supersession.py`). It is on this surface because
+without it a pass that declined a cancellation leaves a record
+byte-identical to a pass that found no orphan at all, and those mean
+opposite things about the inventory. Its `hold_reason` is deliberately not
+one of the grace arm's: those say a human decision is still waiting, while
+this one says the sweep's own evidence was older than the run it judged.
+It takes the verdict's three fields rather than the verdict OBJECT, which
+keeps the dependency pointing from the decision to this module and leaves
+every reconcile journal row in one place.
 """
 
 from __future__ import annotations
@@ -43,6 +55,7 @@ __all__: list[str] = [
     "JOURNAL_STAGE_EXPORT",
     "JOURNAL_STAGE_RECONCILED",
     "JOURNAL_STAGE_RM_FALLBACK",
+    "JOURNAL_STAGE_SUPERSESSION_HOLD",
     "JOURNAL_STAGE_UNAUTHENTICATED",
     "TERMINATION_ROUTE_NONE",
     "ReconcileError",
@@ -51,6 +64,7 @@ __all__: list[str] = [
     "journal_error",
     "journal_export",
     "journal_reconciled",
+    "journal_supersession_hold",
     "journal_unauthenticated",
     "reconciled_from",
 ]
@@ -60,6 +74,7 @@ JOURNAL_STAGE_ERROR = "orphan-run-reconcile-error"
 JOURNAL_STAGE_EXPORT = "orphan-run-reconcile-export"
 JOURNAL_STAGE_RM_FALLBACK = "orphan-run-reconcile-rm-fallback"
 JOURNAL_STAGE_UNAUTHENTICATED = "terminate-route-unauthenticated"
+JOURNAL_STAGE_SUPERSESSION_HOLD = "orphan-run-reconcile-held"
 
 _UNAUTHENTICATED_DETAIL = (
     "no bearer credential resolved for this factory: neither a "
@@ -196,6 +211,32 @@ def journal_unauthenticated(*, journal: JournalWriter, orphan: OrphanRun) -> Non
             "factory_server_url": orphan.factory_server_url,
             "work_item_id": orphan.work_item_id,
             "detail": _UNAUTHENTICATED_DETAIL,
+        }
+    )
+
+
+def journal_supersession_hold(
+    *,
+    journal: JournalWriter,
+    orphan: OrphanRun,
+    hold_reason: str,
+    newest_run_id: str | None,
+    detail: str,
+) -> None:
+    """Record one `superseded-run` reading a fresh journal read did not reproduce."""
+    journal.append(
+        record={
+            "stage": JOURNAL_STAGE_SUPERSESSION_HOLD,
+            "run_id": orphan.run_id,
+            "factory_name": orphan.factory_name,
+            "factory_server_url": orphan.factory_server_url,
+            "status_kind": orphan.status_kind,
+            "work_item_id": orphan.work_item_id,
+            "work_item_status": orphan.work_item_status,
+            "orphan_reason": orphan.orphan_reason,
+            "hold_reason": hold_reason,
+            "newest_journaled_run_id": newest_run_id,
+            "detail": detail,
         }
     )
 
