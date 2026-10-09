@@ -38,6 +38,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_observation import 
     SOURCE_GIT_OBJECT,
     ResultObservation,
     satisfied,
+    unobservable,
     unsatisfied,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_repository import ResultRepository
@@ -82,7 +83,7 @@ def blob_argv(*, branch: str, path: str) -> list[str]:
 
 def observe_pull_request_state(
     *, repository: ResultRepository, target: PullRequestStateTarget, runner: CommandRunner, now: str
-) -> ResultObservation | None:
+) -> ResultObservation:
     """Observe whether one pull request stands at the expected forge state."""
     result = runner.run(
         argv=pull_request_state_argv(number=target.number),
@@ -90,15 +91,42 @@ def observe_pull_request_state(
         timeout_seconds=_FORGE_TIMEOUT_SECONDS,
     )
     if result.exit_code != 0:
-        return None
+        return _unreadable(
+            repository=repository,
+            target=target,
+            source=SOURCE_FORGE,
+            now=now,
+            detail=(
+                f"the forge read of pull request #{target.number} exited"
+                f" {result.exit_code}: {_first_line(text=result.stderr)}"
+            ),
+        )
     parsed = parse_json(text=result.stdout)
     if isinstance(parsed, JsonParseFailure) or not isinstance(parsed, dict):
-        return None
+        return _unreadable(
+            repository=repository,
+            target=target,
+            source=SOURCE_FORGE,
+            now=now,
+            detail=(
+                f"the forge answered for pull request #{target.number} with a payload"
+                " that is not the requested object"
+            ),
+        )
     fields = cast("dict[str, object]", parsed)
     state: object = fields.get(_STATE_FIELD)
     updated: object = fields.get(_UPDATED_AT_FIELD)
     if not isinstance(state, str) or state == "" or not isinstance(updated, str):
-        return None
+        return _unreadable(
+            repository=repository,
+            target=target,
+            source=SOURCE_FORGE,
+            now=now,
+            detail=(
+                f"the forge payload for pull request #{target.number} carries no"
+                f" readable {_STATE_FIELD} and {_UPDATED_AT_FIELD} pair"
+            ),
+        )
     if state.casefold() != target.state.casefold():
         return unsatisfied(
             repo=repository.name,
@@ -126,7 +154,7 @@ def observe_pull_request_state(
 
 def observe_file_on_branch(
     *, repository: ResultRepository, target: FileOnBranchTarget, runner: CommandRunner, now: str
-) -> ResultObservation | None:
+) -> ResultObservation:
     """Observe whether a remote branch's path holds the expected Git blob."""
     result = runner.run(
         argv=blob_argv(branch=target.branch, path=target.path),
@@ -134,10 +162,32 @@ def observe_file_on_branch(
         timeout_seconds=_FORGE_TIMEOUT_SECONDS,
     )
     if result.exit_code != 0:
-        return None
+        return _unreadable(
+            repository=repository,
+            target=target,
+            source=SOURCE_GIT_OBJECT,
+            now=now,
+            detail=(
+                f"the remote read of {target.branch}:{target.path} exited"
+                f" {result.exit_code}: {_first_line(text=result.stderr)}"
+            ),
+        )
     blob = result.stdout.strip()
     if blob == "":
-        return None
+        # A BLANK answer is UNOBSERVABLE and never a mismatch. The forge returns
+        # an empty body for a path it cannot resolve at that ref, so reading
+        # blank as "a different object" would publish a confident negative about
+        # a path the read never reached.
+        return _unreadable(
+            repository=repository,
+            target=target,
+            source=SOURCE_GIT_OBJECT,
+            now=now,
+            detail=(
+                f"the remote named no object for {target.path} at {target.branch},"
+                " which is an unresolved read rather than a differing object"
+            ),
+        )
     if blob != target.blob:
         return unsatisfied(
             repo=repository.name,
@@ -162,3 +212,41 @@ def observe_file_on_branch(
             " no local checkout was consulted"
         ),
     )
+
+
+def _unreadable(
+    *,
+    repository: ResultRepository,
+    target: PullRequestStateTarget | FileOnBranchTarget,
+    source: str,
+    now: str,
+    detail: str,
+) -> ResultObservation:
+    """One unobservable forge reading, carrying the source its own kind names.
+
+    `source` is a parameter rather than a constant here because the two kinds
+    this module answers for rest on different evidence — a pull-request state is
+    forge state, a blob is a Git object — and the clause requires the FAILED
+    source named, not the transport that failed to reach it.
+    """
+    return unobservable(
+        repo=repository.name,
+        target=target.identity,
+        source=source,
+        now=now,
+        detail=detail,
+    )
+
+
+def _first_line(*, text: str) -> str:
+    """The first line of a command's stderr, or a stated absence.
+
+    One line, because a diagnostic that pasted a multi-line stderr into an
+    observation would make the observation unreadable at every surface that
+    renders one. The absence is STATED rather than left blank, since a blank tail
+    reads as a truncation of the sentence it ends.
+    """
+    stripped = text.strip()
+    if stripped == "":
+        return "no diagnostic on stderr"
+    return stripped.splitlines()[0]
