@@ -471,13 +471,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 167 \u2014 A failed janitor names the aggregate runner's failed targets",
-    "work_item": "bd-ib-ma3fvj",
-    "first_seen": "2026-10-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 17 \u2014 drive operator-surface defaults",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-06"

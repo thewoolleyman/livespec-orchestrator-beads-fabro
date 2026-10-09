@@ -87,7 +87,12 @@ def _unstructured_janitor_argv() -> tuple[str, ...]:
     return ("sh", "-c", script)
 
 
-def _plan(*, repo: Path, janitor: tuple[str, ...]) -> DispatchPlan:
+def _plan(
+    *,
+    repo: Path,
+    janitor: tuple[str, ...],
+    retention_directory: Path | None = None,
+) -> DispatchPlan:
     checkout = repo / "janitor-co"
     checkout.mkdir(parents=True, exist_ok=True)
     plan = build_plan(
@@ -104,7 +109,7 @@ def _plan(*, repo: Path, janitor: tuple[str, ...]) -> DispatchPlan:
     return replace(
         plan,
         janitor_retention=janitor_retention(
-            directory=repo / "tmp",
+            directory=repo / "tmp" if retention_directory is None else retention_directory,
             invocation=_INVOCATION,
         ),
     )
@@ -204,3 +209,35 @@ def test_without_a_summary_both_bounded_streams_are_labelled_observations(
         assert "stderr-observation-300" in detail
     assert "failed_targets" not in row
     assert Path(str(row["retained_output_path"])).is_file()
+
+
+def test_retention_failure_preserves_target_attribution_and_the_red_verdict(
+    *, tmp_path: Path
+) -> None:
+    """Artifact-write failure is journaled without erasing the observed summary."""
+    targets = ("check-per-file-coverage", "check-coverage")
+    janitor = _janitor_argv(targets=targets)
+    journal = JournalFile(path=tmp_path / "tmp" / "fabro-dispatch-journal.jsonl")
+    blocked_directory = tmp_path / "not-a-directory"
+    blocked_directory.write_text("retention cannot descend here\n", encoding="utf-8")
+
+    outcome = post_merge(
+        outcome_type=DispatchOutcome,
+        plan=_plan(
+            repo=tmp_path,
+            janitor=janitor,
+            retention_directory=blocked_directory,
+        ),
+        runner=_JanitorRunner(janitor=janitor),
+        journal=journal,
+        merged=_merged(),
+    )
+
+    row = _janitor_rows(journal=journal)[0]
+    assert (outcome.status, outcome.stage) == ("failed", _JANITOR_STAGE)
+    assert all(target in outcome.detail for target in targets)
+    assert row["failed_targets"] == list(targets)
+    assert row["exit_code"] == _EXIT_CODE
+    assert isinstance(row.get("retained_output_error"), str)
+    assert "retained_output_path" not in row
+    assert "retained_output_sha256" not in row
