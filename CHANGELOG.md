@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.177.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.176.0...v0.177.0) (2026-10-09)
+
+
+### Features
+
+* **dispatcher:** render literal ACP commands into the payload graph ([aabe4d9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/aabe4d936d60326b90558e99b7779e64ee020264))
+
+
+### Bug Fixes
+
+* **plan:** compute the archive's own identity instead of a constant actor ([0dee446](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0dee4469fcb89eeea06a6202016aa9a12d215d20))
+* **plan:** compute the commissioned reviewer's identity from its own session ([0c14d43](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0c14d43ffeaa330e732eddd1a3206f99103ebfce))
+* **plan:** refuse a self-reviewed archive, naming the identity and evidence ([e5911f1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e5911f19fb97530f98cccd63e1024fa5eadf9ad1))
+
+
+### Refactoring
+
+* **dispatcher:** compose adapter rendering with the resume entry node ([5ee2f99](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5ee2f99f3467ea3f8b4db7751dfad759ee3ca894))
+
 ## [0.176.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.175.0...v0.176.0) (2026-10-09)
 
 
