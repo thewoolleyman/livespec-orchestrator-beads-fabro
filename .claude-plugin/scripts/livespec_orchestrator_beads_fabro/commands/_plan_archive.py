@@ -33,6 +33,10 @@ from livespec_orchestrator_beads_fabro.commands._plan_archive_review import (
 from livespec_orchestrator_beads_fabro.commands._plan_carrier_map import (
     last_carrier_map_position,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_completeness_identity import (
+    ARCHIVING_PARTY,
+    completeness_leg_identity,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import (
     plan_definition_of_done,
 )
@@ -50,9 +54,11 @@ from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from pathlib import Path
 
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
@@ -65,13 +71,15 @@ _PLAN_DIR = "plan"
 _ARCHIVE_DIR = "archive"
 # The reserved author literal the archive leg signs its own handoff entry with,
 # computed here rather than accepted from a caller — the same reservation
-# `append_supervisor_handoff` makes for `<slug>-supervisor`. PUBLIC because the
-# completeness-review evidence rules have to exclude the archive actor's own
-# comment from counting as independent evidence.
+# `append_supervisor_handoff` makes for `<slug>-supervisor`. It is the TIMELINE
+# AUTHOR word and nothing else: it was once also the value the completeness leg
+# compared a reviewer identity against, which is the defect `bd-ib-3xsz` records,
+# and that comparand is now the archiving party's COMPUTED identity
+# (`_plan_completeness_identity`).
 PLAN_ARCHIVE_ACTOR = "plan-archive"
 
 
-def archive_thread(
+def archive_thread(  # noqa: PLR0913 — package primitive mirrors the archive inputs.
     *,
     project_root: Path,
     config: StoreConfig,
@@ -79,6 +87,8 @@ def archive_thread(
     epic_id: str,
     completeness_review_comment_id: str | None,
     review_launcher: CompletenessReviewLauncher | None = None,
+    env: Mapping[str, str] | None = None,
+    runner: CommandRunner | None = None,
 ) -> dict[str, str]:
     """Archive a thread once the child, working-tree, review and proof gates pass.
 
@@ -94,6 +104,13 @@ def archive_thread(
     party of the plan Proof of Done record, which only reads sensibly if the
     review resolves first. What matters for correctness is that it runs before
     the move and the close, not where it sits among the refusals.
+
+    THE ARCHIVING PARTY'S IDENTITY IS COMPUTED, and `env`/`runner` are the two
+    seams that computation reads — never an identity a caller could supply. It is
+    resolved AFTER the two cheap mechanical gates and before the review leg
+    because it is that leg's own comparand: a plan refusing for undisposed
+    children owes nobody a forge round trip, and a leg comparing two identities
+    cannot run before one of them exists.
     """
     client = make_beads_client(config=config)
     undisposed = list(undisposed_plan_child_ids(client=client, epic_id=epic_id))
@@ -102,12 +119,19 @@ def archive_thread(
     referencing = outside_plan_path_references(project_root=project_root, slug=slug)
     if referencing:
         raise PlanArchiveRefusedError.outside_path_references(slug=slug, paths=referencing)
+    archive_identity = completeness_leg_identity(
+        role=ARCHIVING_PARTY,
+        project_root=project_root,
+        env=env,
+        runner=runner,
+    )
     source = project_root / _PLAN_DIR / slug
     evidence_id = _resolve_completeness_review_evidence(
         client=client,
         epic_id=epic_id,
         completeness_review_comment_id=completeness_review_comment_id,
         review_launcher=review_launcher,
+        archive_identity=archive_identity,
         request=archive_completeness_review_request(
             client=client,
             project_root=project_root,
@@ -181,13 +205,14 @@ def _resolve_completeness_review_evidence(
     epic_id: str,
     completeness_review_comment_id: str | None,
     review_launcher: CompletenessReviewLauncher | None,
+    archive_identity: str,
     request: ArchiveCompletenessReviewRequest,
 ) -> str | None:
     evidence_id = valid_completeness_review_evidence_id(
         client=client,
         epic_id=epic_id,
         evidence_id=completeness_review_comment_id,
-        archive_actor=PLAN_ARCHIVE_ACTOR,
+        archive_actor=archive_identity,
     )
     if evidence_id is not None or review_launcher is None:
         return evidence_id
@@ -196,7 +221,7 @@ def _resolve_completeness_review_evidence(
         client=client,
         epic_id=epic_id,
         evidence_id=launched_id,
-        archive_actor=PLAN_ARCHIVE_ACTOR,
+        archive_actor=archive_identity,
     )
 
 

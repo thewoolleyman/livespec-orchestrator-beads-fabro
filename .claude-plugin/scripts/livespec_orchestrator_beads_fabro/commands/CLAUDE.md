@@ -556,6 +556,22 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
     retired built-in tier values because they no longer exist anywhere else,
     and a migration that omitted them would silently re-point a node that had
     relied on a partial tier table.
+- `_plan_completeness_identity.py` — the identity each party to the plan
+  archive's completeness leg is computed under, through the SAME primitive the
+  proof-record surfaces publish under (`_dispatcher_proof_identity`). ONE
+  resolver for both sides, because the leg's whole guarantee is that the two
+  values are COMPARABLE: two resolvers reading different inputs would each look
+  correct while making the comparison between them meaningless. Two properties
+  an editor must not invert. There is deliberately NO parameter an identity can
+  be put in — the leg used to compare a reviewer identity against the literal
+  `plan-archive`, a constant no reviewer would adopt, so the check could only
+  refuse a reviewer literally named that and an archiving session could author
+  its own evidence under any other name (`bd-ib-3xsz`); an identity a caller
+  could NAME is one a caller could RENAME, which puts the refusal one flag away
+  from passing. And an UNRESOLVED identity REFUSES rather than falling back:
+  `_dispatcher_invoker`'s `unattributed:<user>@<host>` mark compares EQUAL
+  between two parties on one host, refusing a genuinely independent review, and
+  DIFFERENT across hosts, admitting a genuine self-review.
 
 Rules an agent editing this tree must follow:
 

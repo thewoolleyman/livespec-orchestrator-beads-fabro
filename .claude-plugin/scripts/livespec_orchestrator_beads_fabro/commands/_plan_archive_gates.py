@@ -68,6 +68,21 @@ class PlanArchiveRefusedError(Exception):
         return cls("independent completeness-review evidence is required")
 
     @classmethod
+    def unresolved_publishing_identity(cls, *, role: str) -> PlanArchiveRefusedError:
+        """Refuse while one party to the completeness leg cannot be named.
+
+        DISTINCT from `missing_completeness_review` because the remedy is
+        ENVIRONMENTAL — drive the operation from an agent session, or from a host
+        whose forge token resolves a login — rather than a review somebody still
+        has to perform. Reporting the generic refusal here would send its reader
+        off to commission a review that the gate could not grade either.
+        """
+        cause = f"no publishing identity could be computed, so the {role} cannot be named"
+        consequence = "the completeness leg compares the archiving identity against the"
+        detail = "reviewer's, and a comparison with one side unknown is no check at all"
+        return cls(f"{cause}; {consequence} {detail}")
+
+    @classmethod
     def undisposed_children(cls, *, child_ids: list[str]) -> PlanArchiveRefusedError:
         return cls(f"undisposed child work-items: {', '.join(child_ids)}")
 
