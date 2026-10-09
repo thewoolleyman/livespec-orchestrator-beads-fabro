@@ -27,6 +27,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_archive_review import (
     ArchiveCompletenessReviewRequest,
     CompletenessReviewLauncher,
     archive_completeness_review_request,
+    plan_child_statuses,
     undisposed_plan_child_ids,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_carrier_map import (
@@ -61,6 +62,9 @@ if TYPE_CHECKING:
 
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
+    from livespec_orchestrator_beads_fabro.commands._plan_completeness_recency import (
+        PlanChildStatus,
+    )
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
@@ -128,14 +132,19 @@ def archive_thread(  # noqa: PLR0913 — package primitive mirrors the archive i
         runner=runner,
     )
     source = project_root / _PLAN_DIR / slug
+    # ONE membership read feeds both the brief a fresh reviewer is commissioned
+    # with and the grade a recorded review is held to, which is what makes the set
+    # a reviewer is GIVEN the set it is JUDGED against.
+    children = plan_child_statuses(client=client, epic_id=epic_id)
     evidence_id = _resolve_completeness_review_evidence(
         client=client,
         epic_id=epic_id,
         completeness_review_comment_id=completeness_review_comment_id,
         review_launcher=review_launcher,
         archive_identity=archive_identity,
+        children=children,
         request=archive_completeness_review_request(
-            client=client,
+            children=children,
             project_root=project_root,
             source=source,
             slug=slug,
@@ -201,21 +210,28 @@ def resolve_plan_proof_leg(
     )
 
 
-def _resolve_completeness_review_evidence(
+def _resolve_completeness_review_evidence(  # noqa: PLR0913 — mirrors the leg's inputs.
     *,
     client: BeadsClient,
     epic_id: str,
     completeness_review_comment_id: str | None,
     review_launcher: CompletenessReviewLauncher | None,
     archive_identity: str,
+    children: tuple[PlanChildStatus, ...],
     request: ArchiveCompletenessReviewRequest,
 ) -> str | None:
+    """The accepted evidence id, commissioning one fresh review when none is on record.
+
+    `children` and `request.child_ids` are the SAME membership read, threaded in
+    rather than re-derived here, so the brief a commissioned reviewer receives and
+    the grade its record is held to cannot disagree.
+    """
     evidence_id = _accepted_evidence_id(
         client=client,
         epic_id=epic_id,
         candidate=completeness_review_comment_id,
         archive_identity=archive_identity,
-        current_child_ids=request.child_ids,
+        children=children,
     )
     if evidence_id is not None or review_launcher is None:
         return evidence_id
@@ -224,7 +240,7 @@ def _resolve_completeness_review_evidence(
         epic_id=epic_id,
         candidate=review_launcher(request=request),
         archive_identity=archive_identity,
-        current_child_ids=request.child_ids,
+        children=children,
     )
 
 
@@ -234,7 +250,7 @@ def _accepted_evidence_id(
     epic_id: str,
     candidate: str | None,
     archive_identity: str,
-    current_child_ids: tuple[str, ...],
+    children: tuple[PlanChildStatus, ...],
 ) -> str | None:
     """The candidate evidence id the leg accepts, refusing outright on a bad record.
 
@@ -252,7 +268,7 @@ def _accepted_evidence_id(
         epic_id=epic_id,
         evidence_id=candidate,
         archive_identity=archive_identity,
-        current_child_ids=current_child_ids,
+        children=children,
     )
     if evidence.self_review_identity is not None:
         raise PlanArchiveRefusedError.self_reviewed_completeness(

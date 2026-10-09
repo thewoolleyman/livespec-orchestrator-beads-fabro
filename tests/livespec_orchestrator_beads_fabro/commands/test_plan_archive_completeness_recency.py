@@ -305,3 +305,44 @@ def test_a_stale_scope_is_reported_as_stale_and_names_what_changed(tmp_path: Pat
     assert "bd-ib-recency-b" not in message
     assert (tmp_path / "plan" / _SLUG).is_dir()
     assert _fake().show_issue(issue_id=epic_id)["status"] != "closed"
+
+
+def test_evidence_predating_a_childs_status_change_is_stale_with_the_child_and_instant(
+    tmp_path: Path,
+) -> None:
+    """The set can match exactly and the review still not cover the plan.
+
+    This is the arm the set comparison structurally CANNOT catch, and it is why
+    the leg needs a second measurement rather than a stricter first one. The
+    membership here is precisely what the record names, so the set test passes —
+    yet the child's own record places its earliest status transition three hours
+    AFTER the attestation was written, which means the reviewer cannot have read
+    it whatever its scope list says.
+
+    That matters because the scope list is SELF-DECLARED, exactly like the two
+    attestations beside it. A set comparison on its own is therefore defeated by
+    a record that simply names the right ids; the ledger's own instants are the
+    part its author does not control.
+
+    The refusal NAMES the child and the instant rather than reporting staleness
+    in the abstract: a reviewer told only that its record is out of date has to
+    diff the whole plan to find out which child moved underneath it.
+    """
+    epic_id = _plan(project_root=tmp_path)
+    _child(epic_id=epic_id, child_id="bd-ib-recency-e", created_at="2026-10-08T05:00:00Z")
+    _record_evidence(
+        epic_id=epic_id,
+        evidence_id="predating-review",
+        reviewed_child_ids=("bd-ib-recency-e",),
+        now="2026-10-08T02:00:00Z",
+    )
+
+    with pytest.raises(PlanArchiveRefusedError) as refused:
+        _ = _archive(project_root=tmp_path, epic_id=epic_id, evidence_id="predating-review")
+
+    message = str(refused.value)
+    assert "predating-review" in message
+    assert "bd-ib-recency-e" in message
+    assert "2026-10-08T05:00:00Z" in message
+    assert (tmp_path / "plan" / _SLUG).is_dir()
+    assert _fake().show_issue(issue_id=epic_id)["status"] != "closed"

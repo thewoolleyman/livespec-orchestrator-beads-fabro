@@ -181,7 +181,7 @@ def test_evidence_from_a_different_identity_is_accepted() -> None:
         epic_id="bd-ib-epic",
         evidence_id="review-evidence-1",
         archive_identity=_ARCHIVER,
-        current_child_ids=(),
+        children=(),
     )
 
     assert graded.accepted_id == "review-evidence-1"
@@ -203,7 +203,7 @@ def test_evidence_from_the_archiving_identity_is_a_self_review() -> None:
         epic_id="bd-ib-epic",
         evidence_id="review-evidence-1",
         archive_identity=_ARCHIVER,
-        current_child_ids=(),
+        children=(),
     )
 
     assert graded.accepted_id is None
@@ -226,7 +226,7 @@ def test_a_self_review_does_not_hide_a_later_independent_comment_on_one_id() -> 
         epic_id="bd-ib-epic",
         evidence_id="review-evidence-1",
         archive_identity=_ARCHIVER,
-        current_child_ids=(),
+        children=(),
     )
 
     assert graded.accepted_id == "review-evidence-1"
@@ -250,7 +250,7 @@ def test_withheld_coverage_and_an_unknown_id_are_neither_accepted_nor_a_self_rev
             epic_id="bd-ib-epic",
             evidence_id=evidence_id,
             archive_identity=_ARCHIVER,
-            current_child_ids=(),
+            children=(),
         )
 
         assert graded.accepted_id is None
@@ -270,7 +270,7 @@ def test_the_grade_ignores_non_string_comment_text() -> None:
         epic_id="bd-ib-epic",
         evidence_id="review-evidence-1",
         archive_identity=_ARCHIVER,
-        current_child_ids=(),
+        children=(),
     )
 
     assert graded.accepted_id is None

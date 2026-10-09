@@ -27,6 +27,10 @@ from livespec_orchestrator_beads_fabro.commands._plan_child_edges import (
     is_blocks_edge_to_epic,
     linked_plan_gate_ids_for_epic,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_completeness_recency import (
+    PlanChildStatus,
+    latest_status_instant,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
@@ -40,6 +44,7 @@ __all__: list[str] = [
     "has_blocks_edge_to_epic",
     "is_blocks_dependency_edge",
     "is_blocks_edge_to_epic",
+    "plan_child_statuses",
     "undisposed_plan_child_ids",
 ]
 
@@ -73,19 +78,49 @@ class CompletenessReviewLauncher(Protocol):
 
 def archive_completeness_review_request(
     *,
-    client: BeadsClient,
+    children: tuple[PlanChildStatus, ...],
     project_root: Path,
     source: Path,
     slug: str,
     epic_id: str,
 ) -> ArchiveCompletenessReviewRequest:
-    """Build the request context for a fresh archive completeness reviewer."""
+    """Build the request context for a fresh archive completeness reviewer.
+
+    Takes the already-read membership rather than a client, so the brief handed to
+    a reviewer and the grade its record is held to come from ONE read. A builder
+    that re-read the ledger could hand over a set that had moved since the grade's
+    own read, and both readings would look well-formed.
+    """
     return ArchiveCompletenessReviewRequest(
         project_root=project_root,
         slug=slug,
         epic_id=epic_id,
-        child_ids=_current_plan_child_ids(client=client, epic_id=epic_id),
+        child_ids=tuple(child.child_id for child in children),
         research_paths=_research_paths(project_root=project_root, source=source),
+    )
+
+
+def plan_child_statuses(*, client: BeadsClient, epic_id: str) -> tuple[PlanChildStatus, ...]:
+    """Every linked plan member this epic carries now, with its latest status instant.
+
+    NOT narrowed to closed members, though at the point the archive leg reads it
+    the two sets are equal: the child-disposition gate has already refused while
+    any member is undisposed. Narrowing anyway would make the set a reviewer is
+    handed depend on a condition this function cannot see, and that set is what a
+    recorded review is graded against.
+    """
+    return tuple(
+        sorted(
+            (
+                PlanChildStatus(
+                    child_id=record["id"],
+                    status_instant=latest_status_instant(record=record),
+                )
+                for record in _plan_archive_gate_records(client=client, epic_id=epic_id)
+                if isinstance(record.get("id"), str)
+            ),
+            key=lambda child: child.child_id,
+        )
     )
 
 
@@ -112,24 +147,6 @@ def _plan_archive_gate_records(*, client: BeadsClient, epic_id: str) -> list[Bea
         for record in records
         if isinstance(issue_id := record.get("id"), str) and issue_id in linked_ids
     ]
-
-
-def _current_plan_child_ids(*, client: BeadsClient, epic_id: str) -> tuple[str, ...]:
-    """Every linked plan member this epic carries right now, whatever its status.
-
-    NOT narrowed to closed members, though at the point the archive leg reads it
-    the two sets are equal: the child-disposition gate has already refused while
-    any member is undisposed. Narrowing anyway would make the set a reviewer is
-    handed depend on a condition this function cannot see, and the set is what a
-    recorded review is graded against.
-    """
-    return tuple(
-        sorted(
-            record["id"]
-            for record in _plan_archive_gate_records(client=client, epic_id=epic_id)
-            if isinstance(record.get("id"), str)
-        )
-    )
 
 
 def _research_paths(*, project_root: Path, source: Path) -> tuple[str, ...]:
