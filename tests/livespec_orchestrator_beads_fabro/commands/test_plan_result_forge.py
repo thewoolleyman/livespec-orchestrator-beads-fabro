@@ -19,6 +19,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_forge import (
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     OBSERVATION_SATISFIED,
+    OBSERVATION_UNOBSERVABLE,
     OBSERVATION_UNSATISFIED,
     SOURCE_FORGE,
     SOURCE_GIT_OBJECT,
@@ -114,12 +115,15 @@ def test_a_different_state_is_unsatisfied_and_reports_the_state_it_read() -> Non
     assert "not the expected MERGED" in observation.detail
 
 
-def test_a_failed_malformed_or_incomplete_state_read_is_not_satisfied() -> None:
-    """Three ways the forge can answer without answering the question.
+def test_a_failed_malformed_or_incomplete_state_read_is_unobservable() -> None:
+    """Six ways the forge can answer without answering the question.
 
-    A non-zero exit, output that is not JSON at all, and a payload missing either
-    field. The last is the one most easily left out: a reader that defaulted the
-    missing timestamp would publish an evidence identity nobody can look up.
+    A non-zero exit, output that is not JSON at all, JSON that is not an object,
+    and a payload missing either field. Each must be unobservable rather than a
+    confident negative, and each names the forge as the failed source. The
+    incomplete-payload cases are the ones most easily left out: a reader that
+    defaulted the missing timestamp would publish an evidence identity nobody can
+    look up, and one that defaulted the missing state would invent a verdict.
     """
     for runner in (
         _runner(exit_code=4),
@@ -129,15 +133,44 @@ def test_a_failed_malformed_or_incomplete_state_read_is_not_satisfied() -> None:
         _runner(stdout='{"state": "", "updatedAt": "2026-10-08T09:00:00Z"}'),
         _runner(stdout='{"state": "MERGED"}'),
     ):
-        assert (
-            observe_pull_request_state(
-                repository=_REPOSITORY,
-                target=PullRequestStateTarget(number=9, state="MERGED"),
-                runner=runner,
-                now=_NOW,
-            )
-            is None
+        observation = observe_pull_request_state(
+            repository=_REPOSITORY,
+            target=PullRequestStateTarget(number=9, state="MERGED"),
+            runner=runner,
+            now=_NOW,
         )
+        assert observation.status == OBSERVATION_UNOBSERVABLE
+        assert observation.source == SOURCE_FORGE
+        assert observation.evidence == ""
+
+
+def test_a_failed_state_read_names_the_first_line_of_its_diagnostic() -> None:
+    """One line of stderr, and a STATED absence when there is none.
+
+    A diagnostic that pasted a multi-line stderr into an observation would make
+    the observation unreadable wherever one is rendered; a blank tail would read
+    as a truncated sentence rather than as a command that said nothing.
+    """
+    noisy = _Runner(
+        result=CommandResult(
+            exit_code=4, stdout="", stderr="gh: authentication required\nrun gh auth login\n"
+        )
+    )
+    observation = observe_pull_request_state(
+        repository=_REPOSITORY,
+        target=PullRequestStateTarget(number=9, state="MERGED"),
+        runner=noisy,
+        now=_NOW,
+    )
+    assert "gh: authentication required" in observation.detail
+    assert "run gh auth login" not in observation.detail
+    silent = observe_pull_request_state(
+        repository=_REPOSITORY,
+        target=PullRequestStateTarget(number=9, state="MERGED"),
+        runner=_runner(exit_code=1),
+        now=_NOW,
+    )
+    assert "no diagnostic on stderr" in silent.detail
 
 
 def test_a_matching_remote_blob_is_satisfied_and_cites_the_git_object() -> None:
@@ -170,20 +203,22 @@ def test_a_different_remote_blob_is_unsatisfied() -> None:
     assert f"not the expected {_BLOB}" in observation.detail
 
 
-def test_an_absent_or_unreadable_blob_is_not_a_mismatch() -> None:
+def test_an_absent_or_unreadable_blob_is_unobservable_and_not_a_mismatch() -> None:
     """A blank answer is NOT a mismatch, and neither is a failed read.
 
-    The forge returns an empty body for a path it cannot resolve, so treating
-    blank as a mismatch would report a confident negative about a path the read
-    never reached — which the clause forbids outright.
+    The forge returns an empty body for a path it cannot resolve at that ref, so
+    treating blank as a differing object would publish a confident negative about
+    a path the read never reached — which the clause forbids outright. The source
+    named is the Git object rather than the forge, because that is the evidence
+    the reading rests on and the thing a retry has to reach.
     """
     for runner in (_runner(stdout="\n"), _runner(exit_code=1)):
-        assert (
-            observe_file_on_branch(
-                repository=_REPOSITORY,
-                target=FileOnBranchTarget(branch="master", path="a/b.md", blob=_BLOB),
-                runner=runner,
-                now=_NOW,
-            )
-            is None
+        observation = observe_file_on_branch(
+            repository=_REPOSITORY,
+            target=FileOnBranchTarget(branch="master", path="a/b.md", blob=_BLOB),
+            runner=runner,
+            now=_NOW,
         )
+        assert observation.status == OBSERVATION_UNOBSERVABLE
+        assert observation.source == SOURCE_GIT_OBJECT
+        assert observation.evidence == ""

@@ -681,13 +681,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 146 \u2014 Authoritative result readers distinguish fulfillment from observation failure",
-    "work_item": "bd-ib-77dipw",
-    "first_seen": "2026-10-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 147 \u2014 A plan deadline survives pointer rewrites and permits causal recovery",
     "work_item": "bd-ib-zi5ygh",
     "first_seen": "2026-10-08"

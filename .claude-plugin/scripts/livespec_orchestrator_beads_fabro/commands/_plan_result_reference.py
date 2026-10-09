@@ -34,6 +34,7 @@ number 1, which is a real pull request in every repository in this fleet.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro.commands._plan_result_targets import (
@@ -83,30 +84,42 @@ def parse_result_reference(*, value: object) -> ResultReference | ResultReferenc
             )
         )
     fields = cast("dict[str, Any]", value)
+    # THE REPOSITORY IS READ FIRST, before any other field is judged, so that
+    # every later refusal can carry the identity the reference did name. The
+    # reader turns a refusal into an UNOBSERVABLE observation, and the clause
+    # requires every observation to report its repository — an unobservable
+    # reading with no repository is unattributable to the obligation that
+    # produced it, which is the one thing it is read for.
+    repo = _repo(fields=fields)
+    if isinstance(repo, ResultReferenceRefusal):
+        return repo
     unknown = sorted(one for one in fields if one != REPO_FIELD and one not in RESULT_KINDS)
     if unknown:
         return ResultReferenceRefusal(
+            repo=repo,
             detail=(
                 f"unknown result reference field(s) {', '.join(unknown)};"
                 f" only {REPO_FIELD} and the typed kinds {', '.join(RESULT_KINDS)}"
                 " are accepted, and no shell predicate is a result reference"
-            )
+            ),
         )
-    repo = _repo(fields=fields)
-    if isinstance(repo, ResultReferenceRefusal):
-        return repo
     present = tuple(one for one in RESULT_KINDS if one in fields)
     if len(present) != 1:
         return ResultReferenceRefusal(
+            repo=repo,
             detail=(
                 "a result reference carries exactly one typed target; this one carries"
                 f" {len(present)} ({', '.join(present) if present else 'none'})"
-            )
+            ),
         )
     kind = present[0]
     target = _target(kind=kind, value=fields[kind])
     if isinstance(target, ResultReferenceRefusal):
-        return target
+        # The repository identity is attached HERE rather than inside each per-kind
+        # parser: those parsers see only their own field set, and threading the
+        # repository into all five would be five chances to forget it on the arm
+        # whose refusal an operator actually reads.
+        return replace(target, repo=repo)
     return ResultReference(repo=repo, target=target)
 
 
