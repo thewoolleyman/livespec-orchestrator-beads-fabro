@@ -1,9 +1,12 @@
 # Workflow-edit exemption - one exemption binds to one reviewed change.
 #
-# The change: add `just check-plan-close-proof` to the check-metadata-batch
-# job's run block in .github/workflows/ci.yml, beside the three existing plan
-# checks, and remove the PROVISIONAL repo_local_ci_skips entry that declared
-# the slug pre-push-only while this edit waited for human authorization. No
-# product code changes; the check itself landed in bd-ib-wbdgil.
-work_item=bd-ib-buthgw
-reason=Wire the plan-record conformance check check-plan-close-proof (bd-ib-wbdgil, plan definition-and-proof-of-done, epic bd-ib-7sjdzv) into CI so a plan epic closed after 2026-10-04 without a verified plan Proof of Done record is reported on every path to master, not only at pre-push. Maintainer authorized in session on 2026-10-06.
+# The change: add `just check-fabro-port-seam` to the check-metadata-batch
+# job's run block in .github/workflows/ci.yml, beside the other repo-local
+# slugs, so the CI-matrix completeness check sees the new `just check`
+# aggregate member that bd-ib-sbg3ze introduces (the executable guard that
+# refuses a Fabro engine call outside the FabroPort family). No product code
+# changes in this commit; the check and its tests landed in the same pull
+# request (2692) through the factory. Human authorization: the maintainer
+# wrote "I authorize the CI job" in the fabro-currency session on 2026-10-09.
+work_item=bd-ib-sbg3ze
+reason=CI must run the repo-local check-fabro-port-seam slug that pull request 2692 adds to the check aggregate; the maintainer authorized this workflow edit on 2026-10-09.

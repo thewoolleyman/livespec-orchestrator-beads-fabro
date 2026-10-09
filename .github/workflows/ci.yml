@@ -898,6 +898,7 @@ jobs:
           # (livespec-dev-tooling-8o8e.18); check-ci-matrix-completeness fails
           # this batch if one goes missing (bd-ib-74sqh7).
           just check-closed-item-integrity || failed="$failed check-closed-item-integrity"
+          just check-fabro-port-seam || failed="$failed check-fabro-port-seam"
           just check-needs-attention-surface-ownership || failed="$failed check-needs-attention-surface-ownership"
           just check-no-fleet-pat-dispatch-surface || failed="$failed check-no-fleet-pat-dispatch-surface"
           just check-pi-plugin-structure || failed="$failed check-pi-plugin-structure"
