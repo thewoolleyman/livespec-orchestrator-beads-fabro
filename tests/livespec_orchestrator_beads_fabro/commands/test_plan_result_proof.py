@@ -5,6 +5,16 @@ and scope — each get their own control, because a reader that skipped any one 
 them would still pass every other case in this file. The fourth, scope, is the
 one a text match would appear to satisfy, so its control publishes a record that
 says "verified" in prose and nothing a typed reader can grade.
+
+THE BUILD CONTROL NEEDS TWO RECORD SHAPES, AND THAT IS WHY `_record_body` AND
+`_factory_body` BOTH EXIST. A host record declares its build through the host
+`Build identity` bullets; an ordinary factory record declares a
+`Publish-branch head:` prose line and carries no such section, because that
+section names a release and the capture and verify stages run on the draft pull
+request before the merge any release could contain. Every factory case here used
+to render the HOST shape, so each one passed through the host parser and the
+reader looked correct while no real factory record has ever carried that
+section — a fixture that could not fail in the direction that mattered.
 """
 
 from __future__ import annotations
@@ -29,6 +39,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_c
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_pointer import (
     ProofPointer,
     description_with_pointer,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import (
+    PUBLISH_HEAD_LABEL,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     OBSERVATION_SATISFIED,
@@ -63,6 +76,17 @@ _MERGE_SHA = "c" * 40
 # needs one identity used twice.
 _CAPTURE_IDENTITY = "session 1e14094a-0000-4000-8000-000000000001"
 _REPLAY_IDENTITY = "session b1e14094-0000-4000-8000-000000000002"
+# The publish-branch head a NATIVE factory record declares, and a second one for the
+# cases that turn on WHICH head was compared. A factory record carries no host
+# `Build identity` section at all — the two capture prompts render a
+# `Publish-branch head:` prose line instead — because that section names a RELEASE
+# and the factory's capture and verify stages run on the draft pull request, before
+# the merge any release could contain.
+_PUBLISH_HEAD = "f" * 40
+_OTHER_HEAD = "e" * 40
+# The run the subject's own proof pointer names, which is the factory leg's whole
+# attribution anchor.
+_SUBJECT_RUN_ID = "01M4PROOF"
 
 
 @dataclass(kw_only=True)
@@ -194,7 +218,7 @@ def _pointed_description() -> str:
         pointer=ProofPointer(
             pull_request=_PR_NUMBER,
             record_url=_RECORD_URL,
-            run_id="01M4PROOF",
+            run_id=_SUBJECT_RUN_ID,
             timestamp="2026-10-08T08:00:00Z",
             verdict="verified",
         ),
@@ -207,13 +231,47 @@ def _record_body(
     label: str = RELEASE_TAG_LABEL,
     build: str = _BUILD,
     reproduced: str = "yes",
-    identity: str = "run 01M4PROOF",
+    identity: str = f"run {_SUBJECT_RUN_ID}",
     minute: str = "00",
 ) -> str:
+    """One HOST record, declaring its build through the host `Build identity` bullets.
+
+    The host-leg clause requires a host record to name the release tag it exercised,
+    or the default-branch commit where no release applies, so this is the shape every
+    host capture and replay carries. `_factory_body` below renders the other shape;
+    the two are not interchangeable and no record carries both.
+    """
     return (
         f"Proof of Done — {verdict} — {identity} — 2026-10-08T08:{minute}:00Z\n"
         "\n"
         f"- {label}: {build}\n"
+        "\n"
+        f"## Assertion 1 — {_ASSERTION}\n"
+        f"Reproduced: {reproduced}.\n"
+    )
+
+
+def _factory_body(
+    *,
+    verdict: str = "verified",
+    head: str | None = _PUBLISH_HEAD,
+    reproduced: str = "yes",
+    run_id: str = _SUBJECT_RUN_ID,
+    minute: str = "00",
+) -> str:
+    """One NATIVE factory record, declaring its build the way the capture prompts do.
+
+    SEPARATE FROM `_record_body` BECAUSE THE TWO SHAPES ARE GENUINELY DIFFERENT, and
+    rendering a factory record with a host build-identity bullet is what hid this
+    adapter's factory defect: every factory case passed through the host parser, so
+    the reader looked correct while no real factory record has ever carried that
+    section. `head=None` is a record declaring none, which is the missing-declaration
+    refusal rather than a shape the factory stages can publish.
+    """
+    declaration = "" if head is None else f"{PUBLISH_HEAD_LABEL}: {head}\n"
+    return (
+        f"Proof of Done — {verdict} — run {run_id} — 2026-10-08T08:{minute}:00Z\n"
+        f"{declaration}"
         "\n"
         f"## Assertion 1 — {_ASSERTION}\n"
         f"Reproduced: {reproduced}.\n"
@@ -287,13 +345,58 @@ def test_a_verified_record_naming_the_build_and_scope_is_satisfied(tmp_path: Pat
     observation = observe_verified_proof(
         repository=repository,
         target=_target(),
-        runner=_runner(bodies=(_record_body(),)),
+        runner=_runner(bodies=(_factory_body(),)),
         now=_NOW,
     )
     assert observation is not None
     assert observation.status == OBSERVATION_SATISFIED
     assert observation.source == SOURCE_PROOF_RECORD
     assert observation.evidence == f"proof record {_RECORD_URL} verdict verified build {_BUILD}"
+
+
+def test_an_ordinary_factory_record_declares_its_build_as_a_publish_branch_head(
+    tmp_path: Path,
+) -> None:
+    """THE REAL FACTORY RECORD SHAPE, which this read could not grade at all.
+
+    Measured against `overseer-s32tdk`'s own `verified` record on pull request
+    #2376: the typed parser reads it, reproduces its first assertion and names
+    `Publish-branch head f5a8185687f111807a7e1fe926674fe316bc8fb2`, while this
+    reader reported UNSATISFIED for exactly that build and assertion. A factory
+    record carries no host `Build identity` section — that section names a release,
+    and the capture and verify stages run on the draft pull request before the
+    merge any release could contain — so a reader asking for one asks every
+    ordinary factory proof for a field it structurally cannot have, and the refusal
+    is indistinguishable from a record that genuinely proves nothing.
+
+    TWO INDEPENDENT DEFECTS HAVE TO BE REPAIRED FOR THIS CASE TO PASS, which is why
+    it is one case rather than two. The build DECLARATION must be read through the
+    canonical publish-head parser, and the composed HOST containment — the
+    requested build AND the subject's recorded merge — must not be imposed here:
+    the publish head of a pre-merge candidate cannot contain the merge that
+    candidate later became, so a factory record would be refused on a relation its
+    own lifecycle forbids it from satisfying.
+
+    The subject therefore RECORDS a merge the publish head does not carry, and both
+    halves are read off the comparison list rather than off the status: exactly one
+    comparison was asked, and it names the requested build against the declared
+    head. A status alone cannot show either — the fixture answers `behind` for
+    every other pair, so satisfaction is reachable only by asking that one.
+    """
+    repository = _repo(tmp_path=tmp_path)
+    _seed_subject(repository=repository, description=_pointed_description(), merge_sha=_MERGE_SHA)
+    runner = _runner(
+        bodies=(_factory_body(),),
+        containment="behind",
+        statuses={f"compare/{_BUILD}...{_PUBLISH_HEAD}": "identical"},
+    )
+    observation = observe_verified_proof(
+        repository=repository, target=_target(), runner=runner, now=_NOW
+    )
+    assert observation.status == OBSERVATION_SATISFIED, observation.detail
+    assert runner.comparisons == (
+        f"repos/{{owner}}/{{repo}}/compare/{_BUILD}...{_PUBLISH_HEAD}",
+    ), runner.comparisons
 
 
 def test_a_host_verified_record_naming_a_commit_build_is_satisfied(tmp_path: Path) -> None:
@@ -501,14 +604,14 @@ def test_a_factory_record_from_another_dispatch_is_not_evidence(tmp_path: Path) 
     unrelated = observe_verified_proof(
         repository=repository,
         target=_target(),
-        runner=_runner(bodies=(_record_body(identity="run 01M4OTHERRUN"),)),
+        runner=_runner(bodies=(_factory_body(run_id="01M4OTHERRUN"),)),
         now=_NOW,
     )
     assert unrelated.status == OBSERVATION_UNSATISFIED
     attributed = observe_verified_proof(
         repository=repository,
         target=_target(),
-        runner=_runner(bodies=(_record_body(identity="run 01M4PROOF"),)),
+        runner=_runner(bodies=(_factory_body(),)),
         now=_NOW,
     )
     assert attributed.status == OBSERVATION_SATISFIED
@@ -530,7 +633,7 @@ def test_an_unreadable_containment_is_unobservable_on_the_factory_leg_too(
     observation = observe_verified_proof(
         repository=repository,
         target=_target(),
-        runner=_runner(bodies=(_record_body(),), containment_exit=1),
+        runner=_runner(bodies=(_factory_body(),), containment_exit=1),
         now=_NOW,
     )
     assert observation.status == OBSERVATION_UNOBSERVABLE
@@ -693,7 +796,7 @@ def test_a_non_verified_verdict_is_not_evidence(tmp_path: Path) -> None:
         observation = observe_verified_proof(
             repository=repository,
             target=_target(),
-            runner=_runner(bodies=(_record_body(verdict=verdict),)),
+            runner=_runner(bodies=(_factory_body(verdict=verdict),)),
             now=_NOW,
         )
         assert observation is not None, verdict
@@ -701,32 +804,42 @@ def test_a_non_verified_verdict_is_not_evidence(tmp_path: Path) -> None:
         assert f"against build {_BUILD}" in observation.detail, verdict
 
 
-def test_a_record_naming_another_build_or_no_build_is_not_evidence(tmp_path: Path) -> None:
-    """A record whose build section is absent names no ref to compare against.
+@pytest.mark.parametrize(
+    "head",
+    [
+        pytest.param(_OTHER_HEAD, id="another-build"),
+        pytest.param(None, id="no-build-declared"),
+        pytest.param("deadbeef", id="malformed-build-declaration"),
+    ],
+)
+def test_a_record_naming_another_build_or_no_build_is_not_evidence(
+    tmp_path: Path, head: str | None
+) -> None:
+    """Three ways a factory record's own build declaration fails to carry the request.
 
-    The other-build leg answers `behind`, which is the forge OBSERVING that the
-    record's build does not carry the requested one. That is what keeps it an unmet
-    target rather than an unreadable comparison — the distinction the unobservable
-    case above rests on.
+    The another-build leg answers `behind`, which is the forge OBSERVING that the
+    declared candidate does not carry the requested build. That is what keeps it an
+    unmet target rather than an unreadable comparison — the distinction the
+    unobservable case above rests on.
+
+    The other two legs never reach a comparison at all, and both must still refuse:
+    a record declaring NO head and one declaring something that is not a full sha
+    name nothing for the query to aim at. `published_head` answers `None` for each,
+    and a missing or malformed declaration must never satisfy — the alternative is
+    satisfaction earned by a record whose own account of which tree it ran on is
+    absent or unreadable.
     """
     repository = _repo(tmp_path=tmp_path)
     _seed_subject(repository=repository, description=_pointed_description())
-    buildless = (
-        "Proof of Done — verified — run 01M4PROOF — 2026-10-08T08:00:00Z\n"
-        "\n"
-        f"## Assertion 1 — {_ASSERTION}\n"
-        "Reproduced: yes.\n"
+    observation = observe_verified_proof(
+        repository=repository,
+        target=_target(),
+        runner=_runner(bodies=(_factory_body(head=head),), containment="behind"),
+        now=_NOW,
     )
-    for bodies in ((_record_body(build="v0.1.0"),), (buildless,)):
-        observation = observe_verified_proof(
-            repository=repository,
-            target=_target(),
-            runner=_runner(bodies=bodies, containment="behind"),
-            now=_NOW,
-        )
-        assert observation is not None
-        assert observation.status == OBSERVATION_UNSATISFIED
-        assert f"against build {_BUILD}" in observation.detail
+    assert observation is not None
+    assert observation.status == OBSERVATION_UNSATISFIED
+    assert f"against build {_BUILD}" in observation.detail
 
 
 def test_a_newer_record_for_another_build_does_not_shadow_the_requested_one(
@@ -743,7 +856,11 @@ def test_a_newer_record_for_another_build_does_not_shadow_the_requested_one(
     observation = observe_verified_proof(
         repository=repository,
         target=_target(),
-        runner=_runner(bodies=(_record_body(), _record_body(build="v0.9.9"))),
+        runner=_runner(
+            bodies=(_factory_body(), _factory_body(head=_OTHER_HEAD, minute="01")),
+            containment="behind",
+            statuses={f"compare/{_BUILD}...{_PUBLISH_HEAD}": "identical"},
+        ),
         now=_NOW,
     )
     assert observation is not None
@@ -761,7 +878,7 @@ def test_an_assertion_the_record_does_not_reproduce_is_not_in_scope(tmp_path: Pa
     unevidenced = observe_verified_proof(
         repository=repository,
         target=_target(assertions=(_ASSERTION, "An assertion nobody published.")),
-        runner=_runner(bodies=(_record_body(),)),
+        runner=_runner(bodies=(_factory_body(),)),
         now=_NOW,
     )
     assert unevidenced is not None
@@ -770,7 +887,7 @@ def test_an_assertion_the_record_does_not_reproduce_is_not_in_scope(tmp_path: Pa
     refused = observe_verified_proof(
         repository=repository,
         target=_target(),
-        runner=_runner(bodies=(_record_body(reproduced="no"),)),
+        runner=_runner(bodies=(_factory_body(reproduced="no"),)),
         now=_NOW,
     )
     assert refused is not None

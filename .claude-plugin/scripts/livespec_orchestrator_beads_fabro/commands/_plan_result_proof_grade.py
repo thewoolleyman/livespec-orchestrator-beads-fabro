@@ -20,9 +20,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_host_build_identity import (
-    build_identity_in,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_containment import (
     ContainmentReader,
 )
@@ -35,6 +32,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import 
     VERDICT_VERIFIED,
     ProofRecord,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import published_head
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     SOURCE_PROOF_RECORD,
     ResultObservation,
@@ -226,7 +224,7 @@ def _unmet(*, read: ProofReading, detail: str) -> ResultObservation:
 
 
 def factory_leg(
-    *, records: Sequence[ProofRecord], run_id: str, contains: ContainmentReader
+    *, records: Sequence[ProofRecord], run_id: str, contains_requested: ContainmentReader
 ) -> FactoryLeg:
     """The newest FACTORY-verified record this subject's own dispatch published.
 
@@ -245,13 +243,44 @@ def factory_leg(
     evidenced its merge; it is the only attribution this reader has, and it is
     durable in the ledger rather than reconstructed here.
 
-    CONTAINMENT IS A MEASUREMENT, NOT A LABEL COMPARISON. Comparing
-    `containment_ref` to the requested build as STRINGS asks whether the record
-    happens to name the same identity, which is a question about spelling: it
-    refuses a record taken against a later release that plainly carries the
-    requested build, and — far worse — makes a record whose build nobody could
-    resolve indistinguishable from one that genuinely matched, because no part of
-    a string comparison can fail.
+    THE BUILD A FACTORY RECORD DECLARES IS ITS PUBLISH-BRANCH HEAD, NOT A HOST
+    `Build identity` SECTION. The two capture prompts render a `Publish-branch
+    head:` prose line and nothing else: that section names a RELEASE TAG, and the
+    capture and verify stages run on the DRAFT pull request, before the merge any
+    release could contain. So this read asked every factory record for a field its
+    own lifecycle forbids it from carrying — `build_identity_in` answered `None`,
+    the record named no ref, and it was skipped. Measured 2026-10-09 against
+    `overseer-s32tdk`'s `verified` record on pull request 2376: the typed parser
+    reads it, reproduces its first assertion and names its publish head, while
+    this read reported a confident negative for exactly that build and assertion.
+    `published_head` is the canonical parser for that line — fence-aware, and
+    answering `None` for a record naming none, naming a value that is not a full
+    sha, or naming two different ones — and reusing it is what keeps the reader
+    and the two prompts from drifting into different wordings.
+
+    AND THE CONTAINMENT ASKED HERE IS THE REQUESTED BUILD ALONE. The host leg's
+    composed reader also demands the SUBJECT'S RECORDED MERGE, which is correct
+    for a host replay — a post-merge release that predates the merge does not
+    carry the work — and is unsatisfiable for a factory record by construction,
+    since a pre-merge candidate's head cannot contain the merge that candidate
+    later became. Imposing it here refused every ordinary factory proof on a
+    relation its own position in the lifecycle rules out, which is why the two
+    legs take SEPARATE readers rather than one: a single parameter is one
+    refactor away from re-imposing it, and the refusal reads exactly like a
+    record that genuinely proves nothing.
+
+    CONTAINMENT IS A MEASUREMENT, NOT A LABEL COMPARISON. Comparing the declared
+    candidate to the requested build as STRINGS asks whether the record happens to
+    name the same identity, which is a question about spelling: it refuses a
+    record taken against a later candidate that plainly carries the requested
+    build, and — far worse — makes a record whose build nobody could resolve
+    indistinguishable from one that genuinely matched, because no part of a string
+    comparison can fail.
+
+    A MISSING OR MALFORMED DECLARATION NEVER SATISFIES, and it is not `unreadable`
+    either. There is nothing for the query to aim at, so no measurement was
+    attempted and none failed: the record is skipped, and with no other evidence
+    the reading is the confident negative it earned from the record's own text.
 
     AN UNREADABLE COMPARISON IS REPORTED, NOT SWALLOWED. An attributed record
     whose containment answered `None` is carried out as `unreadable` so the
@@ -268,11 +297,10 @@ def factory_leg(
     for record in reversed(tuple(records)):
         if record.verdict != VERDICT_VERIFIED or record.run_id != run_id:
             continue
-        identity = build_identity_in(body=record.body)
-        ref = None if identity is None else identity.containment_ref
-        if ref is None:
+        head = published_head(body=record.body)
+        if head is None:
             continue
-        carried = contains(ref=ref)
+        carried = contains_requested(ref=head)
         if carried is True:
             return FactoryLeg(record=record, unreadable=False)
         if carried is None:
