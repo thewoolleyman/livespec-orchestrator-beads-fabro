@@ -75,6 +75,7 @@ __all__: list[str] = [
     "StallVerdict",
     "decide_stall",
     "parse_last_event_epoch",
+    "quiet_window_seconds",
     "resolve_stall_seconds",
 ]
 
@@ -288,13 +289,33 @@ def decide_stall(
     so a burst of probe failures in the middle of a healthy run cannot
     manufacture a false stall.
     """
-    timestamped = tuple(sample for sample in samples if sample.last_event_epoch is not None)
-    if len(timestamped) < _MIN_READINGS_TO_COMPARE:
+    quiet_seconds = quiet_window_seconds(samples=samples)
+    if quiet_seconds is None:
         return StallVerdict.CONTINUE
-    last = timestamped[-1]
-    if last.observed_at - _quiet_window_opened_at(timestamped=timestamped) >= stall_seconds:
+    if quiet_seconds >= stall_seconds:
         return StallVerdict.STALLED
     return StallVerdict.CONTINUE
+
+
+def quiet_window_seconds(*, samples: tuple[LivenessSample, ...]) -> float | None:
+    """Wall-clock seconds the CURRENT quiet window has run, or None when unmeasured.
+
+    The measurement `decide_stall` grades against the configured stall
+    interval, exposed on its own so a caller acting on that verdict — the
+    launcher, journaling why it cancelled a run — can record the window it
+    actually confirmed rather than restate the interval and call it the
+    evidence.
+
+    None means the window is UNMEASURED, not zero: fewer than two readings
+    carried a timestamp, so there is no pair of observations to span. A
+    zero would read as a window that was measured and found empty, which
+    is a different claim and the one that would let a probe outage look
+    like a healthy run that had just reported progress.
+    """
+    timestamped = tuple(sample for sample in samples if sample.last_event_epoch is not None)
+    if len(timestamped) < _MIN_READINGS_TO_COMPARE:
+        return None
+    return timestamped[-1].observed_at - _quiet_window_opened_at(timestamped=timestamped)
 
 
 def _quiet_window_opened_at(*, timestamped: tuple[LivenessSample, ...]) -> float:

@@ -660,6 +660,39 @@ def test_watched_launcher_cancels_a_confirmed_stall(
     assert "watchdog-stall-cancel" in stages
 
 
+def test_watched_launcher_cancels_after_progress_then_a_confirmed_quiet_window(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The production shape of bd-ib-n44n4e, driven through the real watch loop.
+
+    The run emits for a couple of polls and then goes silent while `fabro
+    ps` keeps reporting it `running` — the 2026-10-09 incident exactly.
+    The CONFIGURED stall interval is what governs the cancellation of that
+    discovered running target, so the cancel record names the interval
+    that governed it alongside the quiet window actually confirmed. The
+    incident had to be reconstructed by hand from a run's event stream
+    because the journal recorded a cancel with neither figure in it.
+    """
+    monkeypatch.setenv(STALL_SECONDS_ENV_VAR, "1000")
+    # Two advancing readings, then the scripted runner clamps to the last
+    # one: progress, then silence. The injected clock advances 600s per
+    # sample, so the quiet window reaches 1200s at the fourth poll.
+    progress_then_silence = [
+        '[{"timestamp": "2026-06-13T08:00:00Z"}]',
+        '[{"timestamp": "2026-06-13T08:10:00Z"}]',
+    ]
+    runner = _ScriptedFabroRunner(events_jsons=progress_then_silence)
+    journal = _RecordingJournal()
+    launcher = WatchedFabroLauncher(sleep=lambda _s: None, clock=_advancing_clock())
+    result = launcher.launch(plan=_plan(repo=tmp_path), runner=runner, journal=journal)
+
+    assert result.stalled_run_id == "01RUN"
+    assert runner.rm_calls == ["01RUN"]
+    cancels = [r for r in journal.records if r.get("stage") == "watchdog-stall-cancel"]
+    assert [record.get("stall_seconds") for record in cancels] == [1000.0]
+    assert [record.get("quiet_seconds") for record in cancels] == [1200.0]
+
+
 def test_watched_launcher_lets_a_healthy_run_complete(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
