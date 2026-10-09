@@ -25,6 +25,35 @@ THAN THROUGH THIS MODULE'S OWN STRING WORK:
   from `reproduced` is UNEVIDENCED rather than false, and it is not satisfaction
   either: the requested scope was not established, so the result is not satisfied.
 
+TWO LEGS GRADE THOSE FOUR, AND THEY ARE THE ACCEPTANCE SECTION'S OWN LEGS RATHER
+THAN A SECOND ACCOUNT OF THEM. `host_leg_for_records` grades every HOST record — it
+owns the independence rule, the newest-wins supersession rule and the containment
+refusal — and `_factory_record` grades the FACTORY record on the rule that applies
+to one. Neither substitutes for the other: a host replay demands a replaying
+identity distinct from the capture's, while a factory verification happens inside
+the run that produced the proof, so there is no second party for an independence
+rule to be about.
+
+WHY THE BUILD IS COMPARED THROUGH THE FORGE AND NOT AS A LABEL. This read used to
+ask whether a record's `containment_ref` EQUALLED the requested build, and a string
+comparison is a question about spelling rather than a measurement. It failed in
+both directions at once: a record taken against a later release that plainly
+carries the requested build was refused, and — the costly half — a record whose
+build nobody could resolve was indistinguishable from one that genuinely matched,
+because no part of a string comparison can fail. Asking `containment_reader` makes
+an unresolvable build UNREADABLE, which the host leg already treats as a refusal
+rather than as a pass, and makes a containing later build the satisfaction it
+genuinely is.
+
+WHY A SELF-REPLAY AND A RETRACTED SUCCESS ARE REFUSED HERE EVEN THOUGH THE POSTING
+PRIMITIVE ALSO REFUSES ONE. For the reason the host-leg module gives: the clause
+says such a record is not evidence "however it was posted", and a record reaches a
+pull request by routes that primitive does not own. Before this read consulted the
+host leg, both readings came back SATISFIED — the self-replay because no identity
+was compared at all, and the retracted success because the newest DECIDING record
+was never sought, so a `host_verified` comment kept an obligation discharged after
+its own publisher had retracted it.
+
 WHY THE SUBJECT IS RESOLVED THROUGH ITS OWN PROOF POINTER. A record lives on a
 pull request, and the subject's description is where this repository already
 records which pull request carried its proof. Asking the forge to search for a
@@ -47,6 +76,16 @@ from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_build_identity import (
     build_identity_in,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_containment import (
+    ContainmentReader,
+    containment_reader,
+    host_leg_for_records,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_leg import (
+    NOT_EVIDENCE_UNOBSERVABLE_CONTAINMENT,
+    HostAssertionGrade,
+    HostLeg,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import (
     read_pull_request_records,
@@ -143,58 +182,166 @@ def observe_verified_proof(
                 " whether a verified proof was published is unknown"
             ),
         )
-    record = _verified_record(records=records, build=target.build)
-    if record is None:
-        return _unmet(
-            repository=repository,
-            target=target,
-            pull_request=pull_request,
-            records=records,
-            now=now,
-            detail=(
-                f"no verified Proof of Done record on pull request #{pull_request}"
-                f" names build {target.build}"
-            ),
-        )
-    unreproduced = tuple(
-        one for one in target.assertions if record.reproduced(assertion=one) is not True
+    # The build comparison is resolved ONCE and shared by both legs. It is lazy and
+    # memoized, so a record naming no build costs no forge round trip and a capture
+    # and its replay naming one release cost a single comparison between them.
+    contains_requested_build = containment_reader(
+        repo=repository.clone, merge_sha=target.build, runner=runner
     )
-    if unreproduced:
-        return _unmet(
+    host = host_leg_for_records(
+        assertions=target.assertions, records=records, contains_merge=contains_requested_build
+    )
+    factory = _factory_record(records=records, contains_requested_build=contains_requested_build)
+    return _reading(
+        read=_Read(
             repository=repository,
             target=target,
             pull_request=pull_request,
-            records=records,
+            records=tuple(records),
             now=now,
+        ),
+        host=host,
+        factory=factory,
+    )
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Read:
+    """The read that was performed, as one value every arm reports against.
+
+    These five travel together because they are invariant across the four arms
+    below and because the clause requires every observation of one read to agree
+    about them — the repository, the target identity, the pull request the records
+    came from, those records, and the instant. Threading them as five parameters
+    through each arm is what lets a satisfied arm and an unobservable arm come to
+    disagree about which read produced them.
+    """
+
+    repository: ResultRepository
+    target: VerifiedProofTarget
+    pull_request: int
+    records: tuple[ProofRecord, ...]
+    now: str
+
+
+def _reading(*, read: _Read, host: HostLeg, factory: ProofRecord | None) -> ResultObservation:
+    """One observation from the two legs' grades, in the ONE order that is safe.
+
+    REFUTED FIRST. An assertion a `host_not_reproduced` replay decided against is a
+    measurement that stands on its own, so it settles the result whatever else the
+    pull request carries — including an older factory record still claiming the
+    assertion, which is exactly the retracted-proof case.
+
+    SATISFIED SECOND, and it cannot be reached on a blinded comparison: a replay
+    whose containment is unreadable is refused by `HostReplay.refusal` and a factory
+    record's build is admitted by the same reader, so neither leg can pass an
+    assertion without a comparison that was made and came back containing.
+
+    UNOBSERVABLE THIRD — not first. It is asked only once the result is known not to
+    be satisfied and not to be refuted, which is precisely when an unmade comparison
+    could still have changed the answer. Asking it earlier would report a perfectly
+    decided result as unobservable because some unrelated record on the same pull
+    request named a build nobody could resolve.
+
+    UNSATISFIED LAST, as the observed-but-unmet default: the records WERE read and
+    nothing in them is evidence for the requested scope. That is a confident
+    negative the reader earned, and it is reported with every refusal named so an
+    operator can tell "nothing was published" from "something was published and
+    rejected".
+    """
+    target = read.target
+    grades = {one.text: one for one in host.grades}
+    refuted = tuple(
+        one for one in target.assertions if (grade := grades.get(one)) and grade.passed is False
+    )
+    if refuted:
+        reasons = "; ".join(grades[one].reason for one in refuted)
+        return _unmet(
+            read=read,
             detail=(
-                f"the {record.verdict} record {record.url} does not list"
-                f" {len(unreproduced)} of the {len(target.assertions)} requested"
-                " assertion(s) as reproduced"
+                f"a published replay reports {len(refuted)} of the"
+                f" {len(target.assertions)} requested assertion(s) as NOT reproduced:"
+                f" {reasons}"
             ),
         )
-    return satisfied(
-        repo=repository.name,
-        target=target.identity,
-        source=SOURCE_PROOF_RECORD,
-        now=now,
-        evidence=f"proof record {record.url} verdict {record.verdict} build {target.build}",
+    unproven = tuple(
+        one
+        for one in target.assertions
+        if not _assertion_proven(text=one, grade=grades.get(one), factory=factory)
+    )
+    if not unproven:
+        return _satisfied(read=read, host=host, factory=factory)
+    unreadable = tuple(one for one in host.refused if NOT_EVIDENCE_UNOBSERVABLE_CONTAINMENT in one)
+    if unreadable:
+        return unobservable(
+            repo=read.repository.name,
+            target=target.identity,
+            source=SOURCE_PROOF_RECORD,
+            now=read.now,
+            detail=(
+                "whether a published replay names a build containing"
+                f" {target.build} could not be read, so whether the requested"
+                f" proof exists is unknown: {'; '.join(unreadable)}"
+            ),
+        )
+    refusals = f": {'; '.join(host.refused)}" if host.refused else ""
+    return _unmet(
+        read=read,
         detail=(
-            f"the {record.verdict} Proof of Done record on pull request #{pull_request}"
-            f" names build {target.build} and lists all {len(target.assertions)}"
-            " requested assertion(s) as reproduced"
+            f"no Proof of Done record on pull request #{read.pull_request} is evidence"
+            f" for {len(unproven)} of the {len(target.assertions)} requested"
+            f" assertion(s) against build {target.build}{refusals}"
         ),
     )
 
 
-def _unmet(
-    *,
-    repository: ResultRepository,
-    target: VerifiedProofTarget,
-    pull_request: int,
-    records: Sequence[ProofRecord],
-    now: str,
-    detail: str,
-) -> ResultObservation:
+def _assertion_proven(
+    *, text: str, grade: HostAssertionGrade | None, factory: ProofRecord | None
+) -> bool:
+    """Whether EITHER leg proves this assertion, each by its own evidence rule.
+
+    THE TWO RULES ARE DISTINCT AND NEITHER SUBSTITUTES FOR THE OTHER. A host replay
+    passes only through `host_leg`, which demands an independent replaying identity
+    and a build whose containment was read and holds. A factory record passes on the
+    factory rule — a `verified` verdict naming a containing build that lists the
+    assertion as reproduced — because the factory verification happens inside the run
+    that produced the proof, so there is no second party for an independence rule to
+    be about. Collapsing them would either impose independence on a factory record,
+    which nothing can satisfy, or drop it from a host replay, which is the hole this
+    read had.
+    """
+    if grade is not None and grade.passed is True:
+        return True
+    return factory is not None and factory.reproduced(assertion=text) is True
+
+
+def _satisfied(*, read: _Read, host: HostLeg, factory: ProofRecord | None) -> ResultObservation:
+    """The satisfied reading, citing the record the verdict actually rested on.
+
+    The HOST record is preferred in the citation when there is one, because it is
+    the stronger evidence — it cleared independence and containment — and because
+    `host.verified_record` is already keyed on a grade that PASSED, so it can never
+    name a record this reader refused.
+    """
+    record = host.verified_record or factory
+    url = "" if record is None else record.url
+    verdict = "" if record is None else record.verdict
+    target = read.target
+    return satisfied(
+        repo=read.repository.name,
+        target=target.identity,
+        source=SOURCE_PROOF_RECORD,
+        now=read.now,
+        evidence=f"proof record {url} verdict {verdict} build {target.build}",
+        detail=(
+            f"the {verdict} Proof of Done record on pull request #{read.pull_request}"
+            f" names a build containing {target.build} and lists all"
+            f" {len(target.assertions)} requested assertion(s) as reproduced"
+        ),
+    )
+
+
+def _unmet(*, read: _Read, detail: str) -> ResultObservation:
     """The unmet reading of a pull request whose records WERE read.
 
     One constructor for both unmet arms, because the evidence identity is the same
@@ -202,11 +349,13 @@ def _unmet(
     it would let the two arms cite different evidence for one reading.
     """
     return unsatisfied(
-        repo=repository.name,
-        target=target.identity,
+        repo=read.repository.name,
+        target=read.target.identity,
         source=SOURCE_PROOF_RECORD,
-        now=now,
-        evidence=f"{len(records)} Proof of Done record(s) on pull request #{pull_request}",
+        now=read.now,
+        evidence=(
+            f"{len(read.records)} Proof of Done record(s) on pull request" f" #{read.pull_request}"
+        ),
         detail=detail,
     )
 
@@ -251,18 +400,36 @@ def _subject_pull_request(
     return pointer.pull_request
 
 
-def _verified_record(*, records: Sequence[ProofRecord], build: str) -> ProofRecord | None:
-    """The newest verified-class record naming the requested build identity.
+def _factory_record(
+    *, records: Sequence[ProofRecord], contains_requested_build: ContainmentReader
+) -> ProofRecord | None:
+    """The newest FACTORY-verified record whose build contains the requested one.
 
     Newest wins because the records arrive in the forge's own chronological order
-    and a later replay supersedes an earlier one. The build filter is applied
-    BEFORE the choice rather than after it, so a newer record naming a different
-    build does not shadow an older one that genuinely covers the requested build.
+    and a later record supersedes an earlier one. The build filter is applied
+    BEFORE the choice rather than after it, so a newer record naming a build that
+    does not contain the requested one does not shadow an older record that does.
+
+    CONTAINMENT, NOT A LABEL COMPARISON, and the difference is the whole repair.
+    Comparing `containment_ref` to the requested build as STRINGS asks whether the
+    record happens to name the same build identity, which is a question about
+    spelling: a record taken against a later release that plainly carries the
+    requested build was refused, and — far worse — a record whose build nobody
+    could resolve was indistinguishable from one that genuinely matched, because
+    neither comparison involves a measurement that can fail. Asking the forge makes
+    an unresolvable build UNREADABLE, which `refusal` treats as a refusal rather
+    than as a pass.
+
+    `host_verified` is deliberately NOT admitted here. A host replay is governed by
+    `host_leg`'s independence and supersession rules, and admitting one on the
+    factory rule would route it past both — the exact bypass that let a self-replay
+    and a retracted success satisfy this read.
     """
     for record in reversed(tuple(records)):
-        if record.verdict not in VERIFIED_PROOF_VERDICTS:
+        if record.verdict != VERDICT_VERIFIED:
             continue
         identity = build_identity_in(body=record.body)
-        if identity is not None and identity.containment_ref == build:
+        ref = None if identity is None else identity.containment_ref
+        if ref is not None and contains_requested_build(ref=ref) is True:
             return record
     return None
