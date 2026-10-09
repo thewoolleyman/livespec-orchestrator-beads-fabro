@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.179.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.178.0...v0.179.0) (2026-10-09)
+
+
+### Features
+
+* **dev-tooling:** refuse a Fabro engine call outside the port family ([e164175](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e164175afddc021309f652146bd39e1ec0b952db))
+* **dispatcher:** carry the candidate's run wall time into the cost audit record ([fdb47f5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fdb47f516ef516eb507a692f3229c88691758be8))
+* **dispatcher:** route every Fabro call through the FabroPort facade ([7353a51](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7353a51820c024c043b345378297a2e931b14c89))
+* **fabro-port:** parse the candidate's event stream as an events payload ([ba0a463](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ba0a46376baab7336f7f9aad0e552abfc9a7bac0))
+* **fabro-port:** read the needs-human marker from the Petri failure detail ([3383c02](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3383c02f01486067fdd17687bb03342ec25df044))
+
+
+### Bug Fixes
+
+* **fabro-port:** classify a Petri failure from its detail category and message ([ac0e219](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ac0e219821e65747eff7f399df98fb5bdddfe428))
+* **watchdog:** accept the Petri recorded_at field as a liveness timestamp ([7c9d661](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7c9d661ec7e34dc61517297ddccfba7f3b0eb670))
+
+
+### Refactoring
+
+* **fabro-port:** split the permanent-failure classification out of records ([abfd488](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/abfd4882360eab40a0296f765cde575fb6add201))
+
 ## [0.178.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.177.0...v0.178.0) (2026-10-09)
 
 
