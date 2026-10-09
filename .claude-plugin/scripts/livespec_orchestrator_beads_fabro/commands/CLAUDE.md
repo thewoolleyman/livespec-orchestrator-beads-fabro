@@ -578,8 +578,9 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `_plan_archive_review` (which keeps the plan-MEMBERSHIP concern) and
   deliberately keeping the RENDER beside the PARSE, so one comment format cannot
   drift across two files. Read its docstring before touching the grade: of the
-  four fields an evidence comment carries, only `reviewer-identity` is
-  cross-checked against anything its author does not control, while
+  FIVE fields an evidence comment carries, only `reviewer-identity` and
+  `reviewed-children` are cross-checked against anything their author does not
+  control, while
   `separate-reviewer` and `attests-complete-requirement-coverage` are
   SELF-DECLARED attestations the gate records rather than establishes. Three
   properties an editor must not invert. The payload carries NO reviewer-identity
@@ -595,6 +596,37 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   "self-review" needs a different PARTY — `_plan_archive` raises a distinct
   refusal for each, and the generic one would send the only session that cannot
   satisfy the leg back to author a second comment under the same identity.
+- `_plan_completeness_recency.py` — whether a recorded completeness review still
+  covers the plan it attested to (`bd-ib-0pf5`). PURE, and the repair of a
+  fail-open measured BY EXECUTION on the live store: evidence written for plan
+  epic `bd-ib-l3nptz` on 2026-08-17 still validated five days later, after seven
+  further children had landed across four repositories. Three properties an
+  editor must not invert. The binding takes TWO measurements because the first
+  one's input is SELF-DECLARED — `reviewed-children` sits in the same comment as
+  the two attestations, written by the same party, so a record that simply names
+  the right ids satisfies the set test; each child's own STATUS INSTANT, read off
+  the ledger record, is the part its author does not control. The instant is the
+  LATEST of `created_at`, `updated_at` and `closed_at`, which OVER-reports (a
+  mutation that changed no status moves `updated_at`) and that is the direction a
+  terminal gate must fail in: a stale report costs one fresh review, a missed one
+  archives a plan nobody reviewed and nothing re-examines a disposed thread. And
+  a child reporting NO readable instant is reported rather than skipped, because
+  an unreadable instant would otherwise be the cheapest way past the leg — while
+  `latest_status_instant` returns `None` and never the empty string, which
+  compares as earlier than every real instant and would make the same record read
+  as one that last moved before the beginning of time.
+- `_plan_completeness_leg.py` — resolving that leg end to end: grade the recorded
+  evidence, commission one fresh reviewer when none is valid, and raise whichever
+  of the three refusals is owed. Split out of `_plan_archive` (which keeps the
+  ARCHIVE SEQUENCE) and cutting at ONE public entry point that either returns the
+  accepted id or raises, so the refusal CHOICE stays beside the grade that
+  distinguishes the three states. STALE evidence is commissioned around exactly as
+  MISSING evidence is, because the ratified clause asks for a fresh reviewer
+  whenever the timeline carries no VALID evidence; and when the commissioned
+  reviewer records nothing the leg can read — the common case, since a review
+  outlasts the attempt that asked for it — the FIRST read's stale account is what
+  the refusal carries, because an attempt reporting "evidence is required" would
+  hide the records it had just read and rejected.
 
 Rules an agent editing this tree must follow:
 
