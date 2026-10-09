@@ -46,6 +46,7 @@ _MODULE_PATH = _COMMANDS_DIR / "_dispatcher_secret_vault.py"
 
 _SERVER = "https://hp-xubuntu.example.invalid:32278"
 _FABRO_BIN = "/home/operator/.fabro-candidate/bin/fabro"
+_SCOPE = "dispatch-vault-sink"
 
 # An opaque non-secret placeholder carrying a shape worth asserting against: it
 # is long enough that a substring match is meaningful, and it is the string the
@@ -53,7 +54,7 @@ _FABRO_BIN = "/home/operator/.fabro-candidate/bin/fabro"
 _VALUE = "vault-sink-placeholder-0123456789"
 _SECRET = VaultSecret(
     env_name="CLAUDE_CODE_OAUTH_TOKEN",
-    secret_name=vault_secret_name(env_name="CLAUDE_CODE_OAUTH_TOKEN"),
+    secret_name=vault_secret_name(env_name="CLAUDE_CODE_OAUTH_TOKEN", scope=_SCOPE),
     value=_VALUE,
 )
 

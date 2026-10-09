@@ -33,6 +33,8 @@ on hp run 01M058955QQ5.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -165,16 +167,17 @@ class VaultSecretSink(Protocol):
         ...
 
 
-def vault_secret_name(*, env_name: str) -> str:
-    """The STABLE vault key one environment variable's value is stored under.
+def vault_secret_name(*, env_name: str, scope: str) -> str:
+    """The launch-scoped vault key one environment variable is stored under.
 
-    Stability across launches is load-bearing rather than tidy: the reference
-    token is rendered into a workflow version the server stores immutably, so a
-    run- or dispatch-scoped key would mean every rotation needed a NEW bundle.
-    Deriving the key from the environment-variable name alone is what lets a
-    rotated credential take effect against the bundle already on the server.
+    Fabro's vault is server-global. A name derived from ``env_name`` alone lets
+    overlapping dispatchers replace a value after another dispatch rendered its
+    reference but before its worker resolved it. The dispatch scope prevents
+    that cross-launch read; its digest keeps arbitrary dispatch-id punctuation
+    out of the expression grammar while retaining collision-resistant identity.
     """
-    return f"{VAULT_SECRET_PREFIX}{env_name}"
+    scope_digest = hashlib.sha256(scope.encode("utf-8")).hexdigest()[:32].upper()
+    return f"{VAULT_SECRET_PREFIX}{scope_digest}_{env_name}"
 
 
 def secret_reference(*, secret_name: str) -> str:
@@ -255,6 +258,7 @@ def route_dispatch_secrets(
     *,
     overlay_text: str,
     channel: str,
+    scope: str,
     proof_credentials_env: str,
     sink: VaultSecretSink | None,
 ) -> RoutedOverlay | SecretChannelRefusal:
@@ -294,7 +298,7 @@ def route_dispatch_secrets(
     if isinstance(names, SecretChannelRefusal):
         return names
     routed = route_secrets_through_vault(
-        overlay_text=overlay_text, channel=channel, env_names=names
+        overlay_text=overlay_text, channel=channel, env_names=names, scope=scope
     )
     if isinstance(routed, SecretChannelRefusal):
         return routed
@@ -336,7 +340,7 @@ def declared_env_names(*, text: str) -> tuple[str, ...]:
 
 
 def route_secrets_through_vault(
-    *, overlay_text: str, channel: str, env_names: Sequence[str]
+    *, overlay_text: str, channel: str, env_names: Sequence[str], scope: str
 ) -> RoutedOverlay | SecretChannelRefusal:
     """Route each named credential line onto the channel the factory declared.
 
@@ -356,7 +360,7 @@ def route_secrets_through_vault(
     text = overlay_text
     routed: list[VaultSecret] = []
     for env_name in sorted(set(env_names)):
-        replaced = _route_one(text=text, env_name=env_name)
+        replaced = _route_one(text=text, env_name=env_name, scope=scope)
         if isinstance(replaced, SecretChannelRefusal):
             return replaced
         text, secret = replaced
@@ -369,7 +373,9 @@ def route_secrets_through_vault(
     )
 
 
-def _route_one(*, text: str, env_name: str) -> tuple[str, VaultSecret] | SecretChannelRefusal:
+def _route_one(
+    *, text: str, env_name: str, scope: str
+) -> tuple[str, VaultSecret] | SecretChannelRefusal:
     """Replace one env line's value with its reference; refuse on any surprise."""
     matches = list(re.finditer(_env_line_pattern(env_name=env_name), text))
     if len(matches) != 1:
@@ -389,7 +395,7 @@ def _route_one(*, text: str, env_name: str) -> tuple[str, VaultSecret] | SecretC
                 "decode, so routing it to the vault would store the wrong bytes"
             )
         )
-    secret_name = vault_secret_name(env_name=env_name)
+    secret_name = vault_secret_name(env_name=env_name, scope=scope)
     reference = _render_string(value=secret_reference(secret_name=secret_name))
     rewritten = f"{text[: match.start(1)]}{reference}{text[match.end(1) :]}"
     return rewritten, VaultSecret(env_name=env_name, secret_name=secret_name, value=decoded)
@@ -447,11 +453,12 @@ def _decode_rendered_string(*, rendered: str) -> str | None:
 def _render_string(*, value: str) -> str:
     """One value as the TOML basic string the env table carries it in.
 
-    Spelled through `parse_json`'s inverse rather than imported from the overlay
-    renderer, so this module depends on no renderer and can be read on its own.
+    The overlay renderers use ``json.dumps`` because its output is also a valid
+    TOML basic string. Reusing that exact serializer is load-bearing for the
+    residual scan: newlines, controls and non-ASCII must have the same encoded
+    spelling here as they do everywhere else in the bundle.
     """
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
+    return json.dumps(value)
 
 
 def _residual_refusal(

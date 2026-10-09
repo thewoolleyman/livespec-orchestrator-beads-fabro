@@ -6,22 +6,16 @@ Petri-era engine a workflow version is stored IMMUTABLY on the server, so
 version, and a transport that needed one per rotation would make every
 credential refresh a redeploy.
 
-Two things have to hold, and they pull in opposite directions, which is why both
-are asserted here. The bundle must be INVARIANT under rotation: the vault key is
-derived from the environment-variable name alone, so two launches whose
-credentials differ produce byte-identical bundles. And the vault must be
-RE-WRITTEN on every launch: resolution happens in the worker at consumption
-time, so the value the server holds at launch is the value the run uses, and a
-transport that stored only on first use would pin every later run to the first
-launch's credential.
+Two things have to hold. The repository's workflow source needs no credential
+edit or rebuild when a credential rotates: the run overlay is generated through
+the same path and still contains references only. And each launch must use its
+OWN vault keys, so a later or overlapping launch cannot replace a value before
+the first launch's worker resolves it.
 
-The third assertion is about EVIDENCE rather than mechanism. Because the bundle
-is invariant, two launches are indistinguishable from the bundle alone -- so
-whether the second launch actually re-set the vault is unanswerable unless the
-dispatch records it. The store is therefore journaled per credential, by vault
-key and outcome, and the row carries no value: `SPECIFICATION/contracts.md`
-section "Proof credential projection" requires journals and records to carry
-names only.
+The third assertion is about EVIDENCE rather than mechanism. Each store is
+journaled per credential, by launch-scoped vault key and outcome, and the row
+carries no value: `SPECIFICATION/contracts.md` section "Proof credential
+projection" requires journals and records to carry names only.
 """
 
 from __future__ import annotations
@@ -48,6 +42,8 @@ _FIRST = ("rotation-anthropic-1", "rotation-github-1", "rotation-openai-1")
 _SECOND = ("rotation-anthropic-2", "rotation-github-2", "rotation-openai-2")
 
 _ENV_NAMES = ("CLAUDE_CODE_OAUTH_TOKEN", "GITHUB_TOKEN", "CODEX_AUTH_JSON")
+_FIRST_SCOPE = "dispatch-rotation-first"
+_SECOND_SCOPE = "dispatch-rotation-second"
 
 
 @dataclass(kw_only=True)
@@ -112,42 +108,50 @@ def test_the_sink_can_record_what_it_stored() -> None:
     assert "journal" in {field_.name for field_ in fields(FabroVaultSink)}
 
 
-def test_two_launches_with_rotated_credentials_write_identical_bundles(
+def test_two_launches_with_rotated_credentials_need_no_source_bundle_edit(
     tmp_path: Path,
 ) -> None:
-    """The bundle is invariant under rotation, so the server needs no new version."""
+    """Both launches use the same renderer and persist references, never values."""
     first = tmp_path / "first.toml"
     second = tmp_path / "second.toml"
     sink = _RecordingSink()
-    for overlay, values in ((first, _FIRST), (second, _SECOND)):
+    for overlay, values, scope in (
+        (first, _FIRST, _FIRST_SCOPE),
+        (second, _SECOND, _SECOND_SCOPE),
+    ):
         assert (
             write_routed_overlay(
                 overlay=overlay,
                 rendered=_bundle(values=values),
                 channel=SECRET_CHANNEL_NATIVE_SECRETS,
+                scope=scope,
                 proof_credentials_env="",
                 sink=sink,
             )
             is None
         )
-    assert first.read_bytes() == second.read_bytes()
+    for path, values in ((first, _FIRST), (second, _SECOND)):
+        rendered = path.read_text(encoding="utf-8")
+        assert "{{ secrets." in rendered
+        assert all(value not in rendered for value in values)
 
 
-def test_the_second_launch_leaves_the_rotated_value_in_the_vault(tmp_path: Path) -> None:
-    """Every launch re-writes the vault, so the newest credential is what runs."""
+def test_each_launch_leaves_its_own_value_in_the_vault(tmp_path: Path) -> None:
+    """Rotation takes effect without replacing an overlapping launch's values."""
     sink = _RecordingSink()
-    for values in (_FIRST, _SECOND):
+    for values, scope in ((_FIRST, _FIRST_SCOPE), (_SECOND, _SECOND_SCOPE)):
         _ = write_routed_overlay(
             overlay=tmp_path / "overlay.toml",
             rendered=_bundle(values=values),
             channel=SECRET_CHANNEL_NATIVE_SECRETS,
+            scope=scope,
             proof_credentials_env="",
             sink=sink,
         )
     assert sink.stored == {
-        vault_secret_name(env_name="CLAUDE_CODE_OAUTH_TOKEN"): _SECOND[0],
-        vault_secret_name(env_name="GITHUB_TOKEN"): _SECOND[1],
-        vault_secret_name(env_name="CODEX_AUTH_JSON"): _SECOND[2],
+        vault_secret_name(env_name=env_name, scope=scope): value
+        for values, scope in ((_FIRST, _FIRST_SCOPE), (_SECOND, _SECOND_SCOPE))
+        for env_name, value in zip(_ENV_NAMES, values, strict=True)
     }
 
 
@@ -166,14 +170,14 @@ def test_each_store_is_journaled_by_vault_key_and_outcome() -> None:
             sink.set(
                 secret=VaultSecret(
                     env_name=env_name,
-                    secret_name=vault_secret_name(env_name=env_name),
+                    secret_name=vault_secret_name(env_name=env_name, scope=_SECOND_SCOPE),
                     value=value,
                 )
             )
             is None
         )
     keys = [record.get("secret") for record in journal.records]
-    assert keys == [vault_secret_name(env_name=name) for name in _ENV_NAMES]
+    assert keys == [vault_secret_name(env_name=name, scope=_SECOND_SCOPE) for name in _ENV_NAMES]
     assert {record.get("outcome") for record in journal.records} == {"stored"}
     rendered = json.dumps(journal.records)
     for value in _SECOND:
@@ -198,7 +202,7 @@ def test_a_refused_store_is_journaled_as_refused() -> None:
     )
     secret = VaultSecret(
         env_name="GITHUB_TOKEN",
-        secret_name=vault_secret_name(env_name="GITHUB_TOKEN"),
+        secret_name=vault_secret_name(env_name="GITHUB_TOKEN", scope=_SECOND_SCOPE),
         value=_SECOND[1],
     )
     assert sink.set(secret=secret) is not None

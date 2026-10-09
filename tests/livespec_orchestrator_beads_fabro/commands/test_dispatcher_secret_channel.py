@@ -26,11 +26,15 @@ from __future__ import annotations
 
 import importlib
 import json
+import sys
+from collections.abc import Callable
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from types import ModuleType
 from typing import cast
 
 import livespec_orchestrator_beads_fabro.commands._acp_candidate_secrets as _commands_anchor
+import pytest
 
 _MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._dispatcher_secret_channel"
 # Resolved off an existing sibling's own location, so the path is correct from
@@ -50,6 +54,7 @@ _GITHUB_VALUE = "github-installation-placeholder-value"
 _OPENAI_VALUE = '{"tokens": {"access_token": "codex-placeholder-value"}}'
 
 _ENV_NAMES = ("CLAUDE_CODE_OAUTH_TOKEN", "CODEX_AUTH_JSON", "GITHUB_TOKEN")
+_SCOPE = "dispatch-secret-channel"
 
 
 def _module() -> ModuleType:
@@ -77,10 +82,11 @@ def test_native_channel_renders_references_and_retains_no_resolved_value() -> No
         overlay_text=_overlay_text(),
         channel=module.SECRET_CHANNEL_NATIVE_SECRETS,
         env_names=_ENV_NAMES,
+        scope=_SCOPE,
     )
     text = cast("str", routed.overlay_text)
     for env_name in _ENV_NAMES:
-        secret_name = module.vault_secret_name(env_name=env_name)
+        secret_name = module.vault_secret_name(env_name=env_name, scope=_SCOPE)
         reference = module.secret_reference(secret_name=secret_name)
         assert f"{env_name} = {json.dumps(reference)}\n" in text
     for value in (_ANTHROPIC_VALUE, _GITHUB_VALUE, _OPENAI_VALUE):
@@ -92,25 +98,26 @@ def test_native_channel_renders_references_and_retains_no_resolved_value() -> No
 
 
 def test_routed_secrets_carry_each_value_for_the_vault() -> None:
-    """Each routed entry pairs its stable vault name with the value it displaced."""
+    """Each routed entry pairs its launch-scoped vault name with its displaced value."""
     module = _module()
     routed = module.route_secrets_through_vault(
         overlay_text=_overlay_text(),
         channel=module.SECRET_CHANNEL_NATIVE_SECRETS,
         env_names=_ENV_NAMES,
+        scope=_SCOPE,
     )
     projected = {secret.env_name: (secret.secret_name, secret.value) for secret in routed.secrets}
     assert projected == {
         "CLAUDE_CODE_OAUTH_TOKEN": (
-            module.vault_secret_name(env_name="CLAUDE_CODE_OAUTH_TOKEN"),
+            module.vault_secret_name(env_name="CLAUDE_CODE_OAUTH_TOKEN", scope=_SCOPE),
             _ANTHROPIC_VALUE,
         ),
         "CODEX_AUTH_JSON": (
-            module.vault_secret_name(env_name="CODEX_AUTH_JSON"),
+            module.vault_secret_name(env_name="CODEX_AUTH_JSON", scope=_SCOPE),
             _OPENAI_VALUE,
         ),
         "GITHUB_TOKEN": (
-            module.vault_secret_name(env_name="GITHUB_TOKEN"),
+            module.vault_secret_name(env_name="GITHUB_TOKEN", scope=_SCOPE),
             _GITHUB_VALUE,
         ),
     }
@@ -124,6 +131,7 @@ def test_inline_channel_leaves_the_pinned_engine_bundle_untouched() -> None:
         overlay_text=text,
         channel=module.SECRET_CHANNEL_INLINE_OVERLAY,
         env_names=_ENV_NAMES,
+        scope=_SCOPE,
     )
     assert routed.overlay_text == text
     assert routed.secrets == ()
@@ -143,9 +151,10 @@ def test_a_value_surviving_the_rewrite_refuses_instead_of_publishing_it() -> Non
         overlay_text=leaked,
         channel=module.SECRET_CHANNEL_NATIVE_SECRETS,
         env_names=_ENV_NAMES,
+        scope=_SCOPE,
     )
     message = cast("str", refusal.message)
-    assert module.vault_secret_name(env_name="GITHUB_TOKEN") in message
+    assert module.vault_secret_name(env_name="GITHUB_TOKEN", scope=_SCOPE) in message
     assert _GITHUB_VALUE not in message
 
 
@@ -162,6 +171,7 @@ def test_a_named_credential_absent_from_the_bundle_refuses() -> None:
         overlay_text=_overlay_text(),
         channel=module.SECRET_CHANNEL_NATIVE_SECRETS,
         env_names=(*_ENV_NAMES, "ACME_ABSENT_CREDENTIAL"),
+        scope=_SCOPE,
     )
     assert "ACME_ABSENT_CREDENTIAL" in cast("str", refusal.message)
 
@@ -186,5 +196,40 @@ def test_an_undecodable_rendered_value_refuses_rather_than_guessing() -> None:
             overlay_text=bundle,
             channel=module.SECRET_CHANNEL_NATIVE_SECRETS,
             env_names=("CLAUDE_CODE_OAUTH_TOKEN",),
+            scope=_SCOPE,
         )
         assert "CLAUDE_CODE_OAUTH_TOKEN" in cast("str", refusal.message)
+
+
+def test_red_transition_helper_exercises_the_pre_scope_interface(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The immutable Red test's compatibility arm remains covered at Green.
+
+    Red had to call the old, unscoped interface so its failure was behavioural
+    rather than a ``TypeError``. Red-to-Green keeps that test byte-identical, so
+    this ride-along case exercises the old-interface arm with a local stub after
+    production has made the launch scope mandatory.
+    """
+    test_path = Path(__file__).with_name("test_dispatcher_secret_review_fixes.py")
+    spec = spec_from_file_location("_secret_review_red_transition", test_path)
+    assert spec is not None
+    assert spec.loader is not None
+    review_module = module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, review_module)
+    spec.loader.exec_module(review_module)
+
+    def legacy_route(*, overlay_text: str, channel: str, env_names: tuple[str, ...]) -> object:
+        _ = channel, env_names
+        return review_module.RoutedOverlay(
+            channel="native_secrets", overlay_text=overlay_text, secrets=()
+        )
+
+    monkeypatch.setattr(review_module, "route_secrets_through_vault", legacy_route)
+    route = cast("Callable[..., object]", vars(review_module)["_route"])
+    result = route(
+        text='GITHUB_TOKEN = "placeholder"\n',
+        value_name="GITHUB_TOKEN",
+        scope="not-forwarded-to-the-legacy-stub",
+    )
+    assert isinstance(result, review_module.RoutedOverlay)

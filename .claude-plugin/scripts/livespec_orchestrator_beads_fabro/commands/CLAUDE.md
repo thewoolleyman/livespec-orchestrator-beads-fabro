@@ -298,7 +298,7 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
 - The TRANSPORT a projected credential reaches the worker through lives in three
   cohesive modules, split pure-from-impure the usual way:
   `_dispatcher_secret_channel` (PURE: the two transports a factory may declare,
-  the stable vault key each credential is stored under, the reference token, the
+  the launch-scoped vault key each credential is stored under, the reference token, the
   bundle rewrite and every refusal), `_dispatcher_overlay_write` (routing plus
   the mode-600 write, which are ONE act) and `_dispatcher_secret_vault`
   (dispatch policy, rejection scrubbing and per-store journaling). The store is
@@ -310,7 +310,7 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   INPUT, from an UNLINKED temporary file's descriptor — never an argument, which
   is visible in the host process table, is what a runner echoes into a log, and
   is what a timeout or not-found diagnostic quotes back verbatim. And the
-  server's own rejection text is SCRUBBED of the value before it is returned:
+  server's own rejection text is SCRUBBED BEFORE its bounded excerpt is taken:
   the dispatch journals that refusal, so an echoing message would put the
   credential into the one record written to say it could not be stored. It is
   a specialized `FabroPort` verb so every engine invocation remains behind the
@@ -325,14 +325,15 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   transport on a Petri-era server persists a literal credential in an immutable
   server-side workflow version, which is the exposure the whole transport exists
   to close (`fabro inspect` returned the projected `CLAUDE_CODE_OAUTH_TOKEN`
-  unredacted on hp run 01M058955QQ5). The vault key is STABLE across launches,
-  derived from the environment-variable name alone, because a run-scoped key
-  would mean every rotation needed a new bundle. Routing finishes BEFORE
+  unredacted on hp run 01M058955QQ5). The vault key is LAUNCH-SCOPED from the
+  dispatch id: the vault is server-global, so a name derived from the environment
+  variable alone lets overlapping launches overwrite a value before the first
+  worker resolves it. Routing finishes BEFORE
   anything is stored, so a refusal leaves the vault untouched rather than
   seeding credentials for a dispatch the next line declines. A store failure
   REFUSES rather than being ignored: the bundle is unchanged either way, so an
-  ignored failure launches the run against whatever the vault held from an
-  earlier launch. And the routed name list is read back off the lines each
+  ignored failure launches the run against an absent or incomplete launch-scoped
+  entry. And the routed name list is read back off the lines each
   projection ACTUALLY rendered — never re-derived from a declaration — because
   `contracts.md` section "Proof credential projection" requires that a change of
   transport leave the declaration, its refusals and its journal rows alone.

@@ -20,8 +20,8 @@ names the family.
 
 Third, the values have to REACH THE VAULT. A reference is only a credential once
 the server holds the value it names, so the routed secrets are pushed through a
-sink and the sink is asserted to have received each one under its stable vault
-key.
+    sink and the sink is asserted to have received each one under its
+    launch-scoped vault key.
 
 `SPECIFICATION/contracts.md` section "Proof credential projection" governs the
 declared-proof-credential half: the transport is implementation-owned and a
@@ -61,6 +61,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_channel impor
 _FACTORY = "hp-candidate"
 _GIT_AUTHOR = GitAuthor(name="Operator", email="operator@example.com")
 _REVIEW_FIX_VISIT_CAP = 4
+_DISPATCH_SCOPE = "01M4G085KXTH03ME7KDARYG8G8"
 
 # Opaque non-secret placeholders, bound to locals so ruff's hardcoded-credential
 # rules do not read the literals at the call sites as real ones.
@@ -160,7 +161,7 @@ def _materialize(
         overlay=overlay,
         repo=repo,
         work_item_id="wi-secret-channel",
-        dispatch_id="01M4G085KXTH03ME7KDARYG8G8",
+        dispatch_id=_DISPATCH_SCOPE,
         token=lambda: _FAKE_GITHUB_TOKEN,
         git_author=_GIT_AUTHOR,
         review_fix_visit_cap=_REVIEW_FIX_VISIT_CAP,
@@ -262,15 +263,15 @@ def test_a_dispatch_to_a_native_factory_routes_all_three_families(
     assert error is None
     rendered = overlay.read_text(encoding="utf-8")
     for env_name in sorted(_EXPECTED_FAMILIES):
-        secret_name = channel_module.vault_secret_name(env_name=env_name)
+        secret_name = channel_module.vault_secret_name(env_name=env_name, scope=_DISPATCH_SCOPE)
         reference = channel_module.secret_reference(secret_name=secret_name)
         assert f"{env_name} = {json.dumps(reference)}\n" in rendered
         assert secret_name in sink.stored
     assert _FAKE_TOKEN not in rendered
     assert _FAKE_GITHUB_TOKEN not in rendered
-    assert sink.stored[channel_module.vault_secret_name(env_name="GITHUB_TOKEN")] == (
-        _FAKE_GITHUB_TOKEN
-    )
+    assert sink.stored[
+        channel_module.vault_secret_name(env_name="GITHUB_TOKEN", scope=_DISPATCH_SCOPE)
+    ] == (_FAKE_GITHUB_TOKEN)
 
 
 def test_a_dispatch_to_an_undeclared_factory_still_inlines_and_stores_nothing(
