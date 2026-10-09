@@ -62,6 +62,17 @@ _REPO_PATH_REFUSAL = (
     "repository directory, and {given} is not one. Pass the repository's path — "
     "absolute, or relative to the current directory — rather than its name.\n"
 )
+# The committed configuration file every read below the wall resolves against.
+_LIVESPEC_CONFIG = ".livespec.jsonc"
+# The second refusal, and it NAMES the absent file. The naming IS the repair:
+# the configuration read this replaces lands on an empty block and then refuses
+# on whichever key it finds unset, which sends the operator to a key that is not
+# the problem and away from the file that is.
+_REPO_CONFIG_REFUSAL = (
+    "ERROR: reconcile-merged refused: --repo directory {repo} holds no "
+    "{config}, so this invocation has no repository configuration to read. "
+    "Pass the path of a repository whose committed {config} is present.\n"
+)
 
 # The one status that selects the re-accept arm rather than the janitor arm.
 ACCEPTANCE_STATUS = "acceptance"
@@ -106,9 +117,16 @@ def repo_path_refusal(*, repo: Path, given: str) -> str | None:
     An existence test is deliberately not enough: a regular file EXISTS, so the
     configuration read it admits lands on nothing in exactly the way an absent
     path does, and the refusal downstream names the same wrong cause.
+
+    The second arm asks the narrower question the first cannot: a directory that
+    IS one may still hold no `.livespec.jsonc`, and the reads below the wall all
+    resolve against that file. Refusing here names the file; letting the read
+    proceed names whichever key the empty block leaves unset.
     """
     if not repo.is_dir():
         return _REPO_PATH_REFUSAL.format(given=given)
+    if not (repo / _LIVESPEC_CONFIG).exists():
+        return _REPO_CONFIG_REFUSAL.format(repo=repo, config=_LIVESPEC_CONFIG)
     return None
 
 
