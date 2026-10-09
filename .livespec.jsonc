@@ -478,6 +478,31 @@
       // new headroom. cnkf's own intake triage named this override as the
       // operator follow-up owed once evidence appeared; the run above is that
       // evidence.
+      // Per-node ACP adapters, the PER-REPOSITORY layer (contracts.md, "ACP
+      // node adapter configuration"). Maintainer direction 2026-10-09, relayed
+      // through the herdr plan root during the fabro-currency P4 wave: the
+      // standing factory requirement is CODEX ONLY, so every agent node routes
+      // to the baked Codex ACP adapter here, mirroring livespec-overseer's
+      // committed block. A structured entry replaces the workflow default's
+      // environment completely, so no Anthropic model or effort variable is
+      // inherited; the resolver derives read-only mode from node posture
+      // (review and disposition). The history above explains why the review
+      // node had reverted to Opus on 2026-08-28; that reversal is superseded
+      // by this direction. The baked adapter's CODEX_CONFIG JSON carries
+      // double quotes, which the payload renderer refuses until bd-ib-4gkfaa
+      // lands (DOT escaping); dispatches rendered before that release are
+      // refused before any Fabro run exists, which is the fail-closed shape.
+      "acp_nodes": {
+        "dod_gate": { "agent": "codex-acp", "model": "gpt-5.6-sol", "effort": "xhigh" },
+        "implement": { "agent": "codex-acp", "model": "gpt-5.6-sol", "effort": "xhigh" },
+        "fix": { "agent": "codex-acp", "model": "gpt-5.6-sol", "effort": "xhigh" },
+        "review_fix": { "agent": "codex-acp", "model": "gpt-5.6-sol", "effort": "xhigh" },
+        "proof_capture": { "agent": "codex-acp", "model": "gpt-5.6-sol", "effort": "xhigh" },
+        "proof_verify": { "agent": "codex-acp", "model": "gpt-5.6-sol", "effort": "xhigh" },
+        "review": { "agent": "codex-acp", "model": "gpt-5.6-sol", "effort": "xhigh" },
+        "pr": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" },
+        "disposition": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "medium" }
+      },
       "node_timeouts": {
         "implement": 14400,
         "janitor": 3600,

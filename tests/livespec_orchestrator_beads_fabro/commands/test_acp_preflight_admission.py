@@ -728,9 +728,12 @@ def test_this_repository_resolves_the_viable_no_op_verdict(tmp_path: Path) -> No
     modules = _modules()
     composer = modules["_dispatcher_acp_preflight"]
 
-    for repo in (_REPO_ROOT, tmp_path):
+    # This repository's committed Codex routing (maintainer direction
+    # 2026-10-09, Codex-only) resolves through the chain composer, so the
+    # verdict reports the chain enabled; an empty target carries no chain.
+    for repo, fallback_enabled in ((_REPO_ROOT, True), (tmp_path, False)):
         verdict = composer.resolve_acp_preflight(repo=repo, journal_path=None, now_iso=_NOW)
-        assert verdict.fallback_enabled is False
+        assert verdict.fallback_enabled is fallback_enabled
         assert verdict.viable is True
 
 
