@@ -77,6 +77,16 @@ def _janitor_argv(*, targets: tuple[str, ...]) -> tuple[str, ...]:
     return ("sh", "-c", script)
 
 
+def _unstructured_janitor_argv() -> tuple[str, ...]:
+    script = (
+        "i=0; while [ $i -lt 300 ]; do i=$((i+1)); "
+        "printf 'stdout-observation-%s-aaaaaaaaaa\\n' \"$i\"; "
+        "printf 'stderr-observation-%s-bbbbbbbbbb\\n' \"$i\" >&2; done; "
+        f"exit {_EXIT_CODE}"
+    )
+    return ("sh", "-c", script)
+
+
 def _plan(*, repo: Path, janitor: tuple[str, ...]) -> DispatchPlan:
     checkout = repo / "janitor-co"
     checkout.mkdir(parents=True, exist_ok=True)
@@ -169,3 +179,28 @@ def test_a_passing_recipe_in_the_stderr_tail_is_not_reported_as_the_cause(
     assert _PASSING_RECIPE not in outcome.detail, outcome.detail
     assert _PASSING_RECIPE not in str(row["detail"]), row["detail"]
     assert row["failed_targets"] == list(targets)
+
+
+def test_without_a_summary_both_bounded_streams_are_labelled_observations(
+    *, tmp_path: Path
+) -> None:
+    """Unstructured output stays observational and the complete artifact stays named."""
+    janitor = _unstructured_janitor_argv()
+    journal = JournalFile(path=tmp_path / "tmp" / "fabro-dispatch-journal.jsonl")
+
+    outcome = post_merge(
+        outcome_type=DispatchOutcome,
+        plan=_plan(repo=tmp_path, janitor=janitor),
+        runner=_JanitorRunner(janitor=janitor),
+        journal=journal,
+        merged=_merged(),
+    )
+
+    row = _janitor_rows(journal=journal)[0]
+    for detail in (outcome.detail, str(row["detail"])):
+        assert "stdout observation (bounded):" in detail
+        assert "stderr observation (bounded):" in detail
+        assert "stdout-observation-300" in detail
+        assert "stderr-observation-300" in detail
+    assert "failed_targets" not in row
+    assert Path(str(row["retained_output_path"])).is_file()

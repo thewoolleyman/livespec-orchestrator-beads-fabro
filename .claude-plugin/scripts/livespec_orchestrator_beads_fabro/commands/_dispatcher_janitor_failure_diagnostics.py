@@ -42,7 +42,14 @@ def janitor_failure_diagnosis(*, stdout: str, stderr: str) -> JanitorFailureDiag
             detail=rendered,
             failed_targets=targets,
         )
-    return JanitorFailureDiagnosis(detail=_tail(text=stderr), failed_targets=())
+    return JanitorFailureDiagnosis(
+        detail=(
+            "No structured Failed targets summary was emitted.\n"
+            f"stdout observation (bounded): {_tail(text=stdout) or '<empty>'}\n"
+            f"stderr observation (bounded): {_tail(text=stderr) or '<empty>'}"
+        ),
+        failed_targets=(),
+    )
 
 
 def _failed_targets(*, text: str) -> tuple[str, ...]:
