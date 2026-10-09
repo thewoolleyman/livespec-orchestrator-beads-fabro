@@ -130,6 +130,10 @@ def _post_merge_locked(
             _JANITOR_TIMEOUT_SECONDS,
             {CORE_PLUGIN_ROOT_ENV_VAR: str(plan.janitor_core_checkout / ".claude-plugin")},
         ),
+        # The check suite is the command whose red the retention clause exists
+        # for: its excerpt names the suite, and the failing target it reports
+        # is on the stream the excerpt did not keep.
+        retention=plan.janitor_retention,
     )
     if janitor.exit_code != 0:
         return outcome_type(

@@ -340,6 +340,13 @@ def provision_janitor_checkout(
             stage=stage,
             command=(argv, cwd, _GIT_TIMEOUT_SECONDS, None),
             streams=True,
+            # The venue's own provisioning commands are covered by the
+            # retention clause alongside the check suite, because a bootstrap
+            # or core-provision failure is diagnosed from the same disposable
+            # checkout and disappears with it. The PRECLEAN above is not: its
+            # non-zero exit is the ordinary answer when there is no worktree to
+            # remove, carries no verdict, and is discarded by this caller.
+            retention=plan.janitor_retention,
         )
         if result.exit_code != 0:
             return merged_degraded_for_plan(

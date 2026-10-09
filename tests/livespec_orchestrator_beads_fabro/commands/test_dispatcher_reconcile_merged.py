@@ -153,6 +153,9 @@ def test_reconcile_merged_active_item_runs_post_merge_janitor_then_accepts(
     stages = [record["stage"] for record in records]
     assert "fabro-run" not in stages
     assert stages == [
+        # The valve's own identity, minted and journaled before any arm runs,
+        # so a retained janitor-output artifact can be tied back to it.
+        "reconcile-merged-invocation",
         "reconcile-pr-view-branch",
         "pull-primary",
         "janitor-checkout-preclean",
@@ -207,7 +210,11 @@ def test_reconcile_merged_resolves_merged_pr_by_title_search(
     assert stored.audit is not None
     assert (stored.audit.pr_number, stored.audit.merge_sha) == (17, "abc777")
     stages = [record["stage"] for record in _journal_records(repo=repo)]
-    assert stages[:2] == ["reconcile-pr-view-branch", "reconcile-pr-list-merged"]
+    assert stages[:3] == [
+        "reconcile-merged-invocation",
+        "reconcile-pr-view-branch",
+        "reconcile-pr-list-merged",
+    ]
 
 
 @pytest.mark.parametrize("status", ["backlog", "ready", "blocked"])
@@ -246,7 +253,11 @@ def test_reconcile_merged_accepts_merge_verified_parked_items(
     assert (stored.audit.pr_number, stored.audit.merge_sha) == (1654, "33b230b6")
     stages = [record["stage"] for record in _journal_records(repo=repo)]
     assert "fabro-run" not in stages
-    assert stages[:2] == ["reconcile-pr-view-branch", "pull-primary"]
+    assert stages[:3] == [
+        "reconcile-merged-invocation",
+        "reconcile-pr-view-branch",
+        "pull-primary",
+    ]
 
 
 def test_reconcile_merged_janitor_red_leaves_item_active(
@@ -597,6 +608,9 @@ def test_reconcile_merged_refuses_ambiguous_title_search_candidates(
     assert unrelated_record in records
     assert [record["stage"] for record in records] == [
         "dispatch-id",
+        # The valve's own identity, minted and journaled before any arm runs,
+        # so a retained janitor-output artifact can be tied back to it.
+        "reconcile-merged-invocation",
         "reconcile-pr-view-branch",
         "reconcile-pr-list-merged",
     ]
@@ -695,6 +709,9 @@ def test_regrade_pass_closes_the_item_and_clears_rework_pending(
     assert "fabro-run" not in stages
     assert not [stage for stage in stages if str(stage).startswith("janitor-")]
     assert stages == [
+        # The valve's own identity, minted and journaled before any arm runs,
+        # so a retained janitor-output artifact can be tied back to it.
+        "reconcile-merged-invocation",
         "reconcile-pr-view-branch",
         "regrade-merge-containment",
         "acceptance-ai-pass",

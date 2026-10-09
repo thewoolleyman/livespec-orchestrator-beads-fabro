@@ -6,7 +6,7 @@ import argparse
 import time
 from collections.abc import Callable
 from contextlib import ExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from time import sleep as _real_sleep
 
@@ -19,6 +19,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
     WatchedFabroLauncher,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_output_retention import (
+    janitor_retention,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import heartbeat_path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_payload import (
@@ -77,7 +80,17 @@ def run_dispatch_with_watchdog(
         _ = stack.callback(lambda: context.overlay_file.unlink(missing_ok=True))
         _ = stack.callback(lambda: remove_workflow_payload(payload_dir=context.payload_dir))
         outcome = run_dispatch_func(
-            plan=context.plan,
+            # The post-merge janitor's output-retention venue, resolved HERE
+            # because this is where both of its inputs stand together: the
+            # journal whose directory the artifact lands beside, and the
+            # dispatch id the artifact's path is keyed on.
+            plan=replace(
+                context.plan,
+                janitor_retention=janitor_retention(
+                    directory=context.journal.path.parent,
+                    invocation=context.dispatch_id,
+                ),
+            ),
             # Pillar 1 (first-class remint): the decorator re-resolves
             # GH_TOKEN from the caching provider before EVERY engine
             # subprocess, so the ~76-min merge-poll and the post-merge
