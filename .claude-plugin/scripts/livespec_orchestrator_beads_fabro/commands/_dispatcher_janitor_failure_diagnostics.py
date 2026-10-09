@@ -39,9 +39,7 @@ def janitor_failure_diagnosis(*, stdout: str, stderr: str) -> JanitorFailureDiag
             [f"Failed targets ({len(targets)}):", *(f"  - {target}" for target in targets)]
         )
         return JanitorFailureDiagnosis(
-            detail=(
-                f"{rendered}\n" f"stderr observation (bounded): {_tail(text=stderr) or '<empty>'}"
-            ),
+            detail=rendered,
             failed_targets=targets,
         )
     return JanitorFailureDiagnosis(detail=_tail(text=stderr), failed_targets=())

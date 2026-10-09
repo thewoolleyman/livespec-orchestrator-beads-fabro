@@ -147,3 +147,25 @@ def test_every_summarized_failed_target_reaches_both_reports_and_the_log_is_name
     assert artifact.is_file()
     assert row["retained_output_sha256"] == hashlib.sha256(payload).hexdigest()
     assert "Failed targets" in str(json.loads(payload)["stdout"])
+
+
+def test_a_passing_recipe_in_the_stderr_tail_is_not_reported_as_the_cause(
+    *, tmp_path: Path
+) -> None:
+    """A structured summary excludes unrelated recipe output from attribution."""
+    targets = ("check-per-file-coverage", "check-coverage")
+    janitor = _janitor_argv(targets=targets)
+    journal = JournalFile(path=tmp_path / "tmp" / "fabro-dispatch-journal.jsonl")
+
+    outcome = post_merge(
+        outcome_type=DispatchOutcome,
+        plan=_plan(repo=tmp_path, janitor=janitor),
+        runner=_JanitorRunner(janitor=janitor),
+        journal=journal,
+        merged=_merged(),
+    )
+
+    row = _janitor_rows(journal=journal)[0]
+    assert _PASSING_RECIPE not in outcome.detail, outcome.detail
+    assert _PASSING_RECIPE not in str(row["detail"]), row["detail"]
+    assert row["failed_targets"] == list(targets)
