@@ -639,6 +639,26 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   because a lane nothing composed would satisfy a per-lane assertion while the
   snapshot an operator reads carried no such row.
 
+- `test_plan_result_reader_scenario146.py` — binds
+  `SPECIFICATION/scenarios.md` "Scenario 146 — Authoritative result readers
+  distinguish fulfillment from observation failure" and the
+  shared-authoritative-result-reader clause it governs. Every case drives
+  `read_result` itself over the REAL store/client seam and one recording
+  `CommandRunner`; no adapter is stood in under the reader, so the parse, the
+  repository resolution, all five adapters and every observation are production
+  code. The scenario outline's five rows are asserted in BOTH directions against
+  the SAME fixtures — each fulfilled target satisfied with its repository,
+  target identity, UTC observation time and evidence identity, and each unmet
+  target not satisfied — because a reader that reported satisfaction
+  unconditionally would pass the first half and one that could never report it
+  would pass the second. The three "cannot satisfy" controls the scenario names
+  each get their own case: a comment saying verified against a typed verified
+  proof, a stale local file that genuinely EXISTS in the working tree against a
+  differing remote blob, and a shell predicate against the closed kind set.
+  `_status` is the one accessor the negative controls read through, so they stay
+  true as the `unsatisfied` and `unobservable` statuses land in their own
+  Red-Green cycles rather than having to be rewritten by a later one.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read
