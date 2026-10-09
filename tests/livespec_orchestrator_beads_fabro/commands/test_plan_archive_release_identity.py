@@ -69,6 +69,10 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 _SLUG = "release-identity-thread"
 _ASSERTION = "The released build runs in a real operator session."
+# The archiving session's own environment, supplied explicitly so each archive
+# grades against a known identity rather than against whatever session happens
+# to be running pytest.
+_ARCHIVING_SESSION_ENV = {"CLAUDE_CODE_SESSION_ID": "archiving-session"}
 _TAG = "v0.167.0"
 
 
@@ -161,6 +165,7 @@ def _plan_ready_to_archive(*, repo: Path) -> str:
 
 def _archive(*, repo: Path, epic_id: str) -> dict[str, str]:
     return archive_thread(
+        env=_ARCHIVING_SESSION_ENV,
         project_root=repo,
         config=_config(),
         slug=_SLUG,

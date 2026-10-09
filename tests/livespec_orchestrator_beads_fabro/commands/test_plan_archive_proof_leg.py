@@ -40,6 +40,10 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 _SLUG = "proof-leg-thread"
 _ASSERTION = "The operator drives the delivered command and sees it work."
+# The archiving session's own environment, supplied explicitly so each archive
+# grades against a known identity rather than against whatever session happens
+# to be running pytest.
+_ARCHIVING_SESSION_ENV = {"CLAUDE_CODE_SESSION_ID": "archiving-session"}
 
 
 def _config() -> StoreConfig:
@@ -105,6 +109,7 @@ def test_closed_children_and_a_coverage_review_do_not_archive_an_unproved_plan(
 
     with pytest.raises(plan.PlanArchiveRefusedError) as refused:
         plan.archive_thread(
+            env=_ARCHIVING_SESSION_ENV,
             project_root=tmp_path,
             config=_config(),
             slug=_SLUG,

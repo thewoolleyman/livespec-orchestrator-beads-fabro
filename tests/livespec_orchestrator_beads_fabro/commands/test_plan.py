@@ -37,6 +37,10 @@ from livespec_orchestrator_beads_fabro.commands._plan_proof_record import (
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 _PLAN_ASSERTION = "The operator drives the delivered command and sees it work."
+# The archiving session's own environment, supplied explicitly so each archive
+# grades against a known identity rather than against whatever session happens
+# to be running pytest.
+_ARCHIVING_SESSION_ENV = {"CLAUDE_CODE_SESSION_ID": "archiving-session"}
 
 
 def _config() -> StoreConfig:
@@ -303,6 +307,7 @@ def test_archive_refuses_undisposed_children(tmp_path: Path) -> None:
 
     with pytest.raises(plan.PlanArchiveRefusedError) as exc:
         plan.archive_thread(
+            env=_ARCHIVING_SESSION_ENV,
             project_root=tmp_path,
             config=_config(),
             slug="archive-thread",
@@ -334,6 +339,7 @@ def test_archive_refuses_undisposed_parent_child_children(tmp_path: Path) -> Non
 
     with pytest.raises(plan.PlanArchiveRefusedError) as exc:
         plan.archive_thread(
+            env=_ARCHIVING_SESSION_ENV,
             project_root=tmp_path,
             config=_config(),
             slug="archive-thread",
@@ -386,6 +392,7 @@ def test_archive_requires_completeness_review_evidence(tmp_path: Path) -> None:
 
     with pytest.raises(plan.PlanArchiveRefusedError) as exc:
         plan.archive_thread(
+            env=_ARCHIVING_SESSION_ENV,
             project_root=tmp_path,
             config=_config(),
             slug="archive-thread",
@@ -432,6 +439,7 @@ def test_archive_launches_independent_review_and_waits_for_durable_evidence(
 
     with pytest.raises(plan.PlanArchiveRefusedError) as exc:
         plan.archive_thread(
+            env=_ARCHIVING_SESSION_ENV,
             project_root=tmp_path,
             config=_config(),
             slug="archive-thread",
@@ -492,6 +500,7 @@ def test_archive_after_reviewer_records_valid_durable_evidence(tmp_path: Path) -
     _seed_plan_proof(epic_id=created["epic_id"])
 
     result = plan.archive_thread(
+        env=_ARCHIVING_SESSION_ENV,
         project_root=tmp_path,
         config=_config(),
         slug="archive-thread",
@@ -527,7 +536,10 @@ def test_archive_rejects_self_review_and_incomplete_coverage_evidence(tmp_path: 
         config=_config(),
         epic_id=created["epic_id"],
         evidence_id="self-review",
-        reviewer_identity="plan-archive",
+        # The ARCHIVING session's own computed identity, which is what makes this a
+        # self-review. The reserved `plan-archive` literal used to stand here and is
+        # no longer the comparand the leg compares against (`bd-ib-3xsz`).
+        reviewer_identity="archiving-session",
         separate_reviewer=True,
         attests_complete_requirement_coverage=True,
         body="Self-attested complete.",
@@ -547,6 +559,7 @@ def test_archive_rejects_self_review_and_incomplete_coverage_evidence(tmp_path: 
     for evidence_id in ("self-review", "partial-review"):
         with pytest.raises(plan.PlanArchiveRefusedError):
             plan.archive_thread(
+                env=_ARCHIVING_SESSION_ENV,
                 project_root=tmp_path,
                 config=_config(),
                 slug="archive-thread",
@@ -600,6 +613,7 @@ def test_archive_refuses_while_a_file_outside_plan_reads_the_thread_by_path(
 
     with pytest.raises(plan.PlanArchiveRefusedError) as exc:
         plan.archive_thread(
+            env=_ARCHIVING_SESSION_ENV,
             project_root=tmp_path,
             config=_config(),
             slug="archive-thread",
@@ -650,6 +664,7 @@ def test_archive_with_no_outside_references_closes_and_stamps_the_epic_once(
     _ = unrelated.write_text('LABEL = "origin:archive-thread"\n', encoding="utf-8")
 
     result = plan.archive_thread(
+        env=_ARCHIVING_SESSION_ENV,
         project_root=tmp_path,
         config=_config(),
         slug="archive-thread",
@@ -700,6 +715,7 @@ def test_archive_moves_thread_and_closes_epic_after_two_gates(tmp_path: Path) ->
     _seed_plan_proof(epic_id=created["epic_id"])
 
     result = plan.archive_thread(
+        env=_ARCHIVING_SESSION_ENV,
         project_root=tmp_path,
         config=_config(),
         slug="archive-thread",
