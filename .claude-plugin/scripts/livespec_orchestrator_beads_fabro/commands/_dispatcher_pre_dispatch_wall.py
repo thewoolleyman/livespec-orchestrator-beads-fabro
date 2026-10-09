@@ -92,6 +92,7 @@ def pre_dispatch_wall_exit(
     repo: Path,
     items: Sequence[WorkItem],
     journal: JournalFile,
+    reclaim_publish_branches: bool = True,
 ) -> int | None:
     """The whole wall, as ONE decision: an exit code, or None to proceed.
 
@@ -192,7 +193,19 @@ def pre_dispatch_wall_exit(
         if codex_refusal is not None:
             _ = write_stderr(text=f"{codex_refusal}\n")
             return EXIT_PRECONDITION_ERROR
-    reclaim_stale_publish_branches(args=args, repo=repo, items=items, journal=journal)
+    # A RESUME passes False, and the clause requires it: "It MUST NOT run the
+    # stale publish-branch reclaim above: the surviving publish branch is the
+    # branch the run resumes on, and no preservation ref is created." The two
+    # routes are exclusive per dispatch — one KEEPS the dead run's work by
+    # finishing it, the other makes a fresh start possible by clearing it — and
+    # running both would preserve the head to a ref and delete the very branch
+    # the resumed run was about to check out.
+    #
+    # It is a parameter rather than a second wall because every OTHER refusal
+    # here applies to a resume unchanged, and a resume-specific copy of this
+    # sequence is exactly the drift the one-wall consolidation retired.
+    if reclaim_publish_branches:
+        reclaim_stale_publish_branches(args=args, repo=repo, items=items, journal=journal)
     return None
 
 

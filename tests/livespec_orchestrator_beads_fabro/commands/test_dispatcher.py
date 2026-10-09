@@ -50,6 +50,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_admission_eligibility,
     _dispatcher_completion,
     _dispatcher_dispatch_lock,
+    _dispatcher_dispatch_tail,
     _dispatcher_goal,
     _dispatcher_ledger_close,
     _dispatcher_loop,
@@ -218,6 +219,7 @@ def test_dispatcher_plan_decomposition_contract() -> None:
         _dispatcher_goal,
         _dispatcher_host_only,
         _dispatcher_overlay,
+        _dispatcher_overlay_siblings,
         _dispatcher_plan,
         _dispatcher_run_status,
     )
@@ -254,15 +256,23 @@ def test_dispatcher_plan_decomposition_contract() -> None:
         "PrView",
         "parse_pr_view",
     }
+    # The sibling-clone surface moved OUT of the overlay into the cohesive leaf
+    # `_dispatcher_overlay_siblings`: the overlay renders a run config, while
+    # that module answers which family repos a dispatched sandbox clones, where
+    # they land, and which env keys point at them.
     assert set(_dispatcher_overlay.__all__) == {
-        "CORE_PLUGIN_ROOT_ENV_VAR",
         "CURRENCY_GATE_ENV_VALUE",
         "CURRENCY_GATE_ENV_VAR",
-        "SIBLING_CLONES_ROOT_ENV_VAR",
-        "SiblingClones",
         "escape_minijinja_literal",
         "render_run_config_overlay",
         "workflow_graph_path",
+    }
+    assert set(_dispatcher_overlay_siblings.__all__) == {
+        "CORE_PLUGIN_ROOT_ENV_VAR",
+        "SIBLING_CLONES_ROOT_ENV_VAR",
+        "SiblingClones",
+        "core_plugin_env_line",
+        "sibling_clone_steps_block",
     }
     assert set(_dispatcher_goal.__all__) == {
         "GoalBriefMiniJinjaFinding",
@@ -283,6 +293,12 @@ def test_dispatcher_plan_decomposition_contract() -> None:
         | set(_dispatcher_host_only.__all__)
         | set(_dispatcher_run_status.__all__)
         | set(_dispatcher_overlay.__all__)
+        # `_dispatcher_overlay_siblings` is deliberately NOT in this union. The
+        # façade re-exports the modules the plan layer was decomposed INTO; that
+        # module is a LEAF the overlay consumes, and its two rendering functions
+        # are public only because they now cross a module boundary. Re-exporting
+        # them through the façade would advertise a surface no caller of the plan
+        # layer has any use for.
     )
 
 
@@ -4135,7 +4151,7 @@ def test_dispatch_green_closes_item_and_journals(
         lambda **_: _FakeAcceptancePass(verdict="PASS"),
         raising=False,
     )
-    monkeypatch.setattr(_dispatcher_run_commands, "cost_gate_after_verdict", lambda **_: None)
+    monkeypatch.setattr(_dispatcher_dispatch_tail, "cost_gate_after_verdict", lambda **_: None)
     monkeypatch.setattr(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_plan.tempfile.gettempdir",
         lambda: str(tmp_path),
@@ -5147,7 +5163,7 @@ def test_dispatch_finalize_invokes_cost_gate_once(
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
     cost_gate = _RecordingCostGate()
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
-    monkeypatch.setattr(_dispatcher_run_commands, "cost_gate_after_verdict", cost_gate)
+    monkeypatch.setattr(_dispatcher_dispatch_tail, "cost_gate_after_verdict", cost_gate)
 
     exit_code = main(
         argv=[

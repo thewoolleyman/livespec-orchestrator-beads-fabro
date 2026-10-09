@@ -63,6 +63,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_pro
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (
     proof_store_env_lines,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
+    ResumeCheckout,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones import (
     fetch_fleet_manifest_text,
     resolve_sibling_clones,
@@ -160,6 +163,7 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     prepare_inputs: Mapping[str, str] | None = None,
     proof_rendering: str = "",
     adapter_inputs: frozenset[str] = frozenset(),
+    resume_checkout: ResumeCheckout | None = None,
 ) -> str | None:
     """Write the uncommitted mode-600 run-config overlay.
 
@@ -320,6 +324,9 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # The per-dispatch payload's rendered graph, carrying this dispatch's
         # resolved node timeouts as literal durations.
         graph_override=graph_override,
+        # The publish branch and head a RESUME places the sandbox clone on.
+        # None for every other dispatch, which renders no step at all.
+        resume_checkout=resume_checkout,
         # The resolved integration contract's values, substituted into the
         # committed run config's `{{ inputs.* }}` prepare commands because the
         # pinned engine does not render that site. Forwarded rather than
