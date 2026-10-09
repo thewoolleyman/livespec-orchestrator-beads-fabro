@@ -27,6 +27,10 @@ from __future__ import annotations
 from livespec_orchestrator_beads_fabro.commands._fabro_causal_stage import CausalStageFailure
 from livespec_orchestrator_beads_fabro.commands._fabro_escalation import ESCALATION_NODE_ID
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import FabroFailureDetail
+from livespec_orchestrator_beads_fabro.commands._fabro_transport_fault import (
+    transport_fault_clause,
+    transport_fault_from_cause,
+)
 
 __all__: list[str] = [
     "needs_human_terminal_detail",
@@ -83,12 +87,21 @@ def _attribution(
     attribute. The cause is the INNERMOST element of the chain, already selected
     by `_fabro_port_records`: the outer element is the fixed `ACP protocol
     error` wrapper, which identifies the transport and names no fault.
+
+    The CLASSIFICATION rides beside the cause rather than replacing it. Quoting
+    the cause alone already happens to contain the backgrounded command, inside
+    the engine's own prose — so a reader could find the command and still have
+    no idea it was a transport fault, which is the whole misreading this clause
+    exists to prevent.
     """
     if causal is None:
         return ()
     clauses: list[str] = []
     if failure is not None and failure.cause is not None:
         clauses.append(f"innermost cause: {failure.cause}")
+        fault = transport_fault_from_cause(cause=failure.cause)
+        if fault is not None:
+            clauses.append(transport_fault_clause(fault=fault))
     clauses.append(f"recorded loop failure signature: {', '.join(causal.signatures)}")
     return tuple(clauses)
 

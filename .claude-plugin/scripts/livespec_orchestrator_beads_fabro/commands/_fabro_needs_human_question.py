@@ -82,7 +82,10 @@ from livespec_orchestrator_beads_fabro.commands._fabro_escalation import (
     ESCALATION_NODE_ID,
     fabro_escalation_from_payload,
 )
-from livespec_orchestrator_beads_fabro.commands._fabro_port_records import fabro_inspect_record
+from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
+    fabro_failure_detail_from_payload,
+    fabro_inspect_record,
+)
 
 __all__: list[str] = [
     "NEEDS_HUMAN_NODE_ID",
@@ -150,6 +153,7 @@ class NeedsHumanQuestion:
 
     prompt: str | None
     reason: str | None
+    cause: str | None
     preserved_ref: str | None
     tree_preserved: bool
 
@@ -173,9 +177,24 @@ def needs_human_question_from_payload(*, payload: object | None) -> NeedsHumanQu
     return NeedsHumanQuestion(
         prompt=_after(lines=lines, sentinel=_PROMPT_SENTINEL),
         reason=_engine_reason(record=record),
+        cause=_innermost_cause(record=record),
         preserved_ref=_after(lines=lines, sentinel=_PRESERVED_SENTINEL),
         tree_preserved=not any(_PUSH_FAILED_SENTINEL in line for line in lines),
     )
+
+
+def _innermost_cause(*, record: dict[str, Any]) -> str | None:
+    """The engine's own innermost cause, through the one parser that selects it.
+
+    Carried BESIDE `reason` rather than folded into it, because the two answer
+    different questions and only one of them can be classified. `reason` is the
+    loop failure SIGNATURE — `pr|deterministic|acp turn failed`, which names the
+    stage and the generic ACP label and nothing else; the cause is the sentence
+    behind that label, and it is the only field that can tell a backgrounded
+    tool call from a dead adapter from a spend ceiling.
+    """
+    failure = fabro_failure_detail_from_payload(payload=record)
+    return None if failure is None else failure.cause
 
 
 def _routed_to_terminal(*, record: dict[str, Any]) -> bool:

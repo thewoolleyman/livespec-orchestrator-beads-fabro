@@ -61,6 +61,20 @@ def test_an_engine_routed_ending_names_the_stage_cause_and_signature() -> None:
     assert f"resolve-blocked:{_ITEM}:ready" in detail
 
 
+def test_a_cause_that_is_not_a_transport_fault_is_quoted_and_not_labelled() -> None:
+    """The control for the classification: not every engine fault is transport."""
+    plain = "janitor script exited 1: coverage below 100%"
+    detail = needs_human_terminal_detail(
+        work_item_id=_ITEM,
+        run_id=_RUN,
+        causal=_causal(stages=("janitor",), signatures=("janitor|deterministic|script failed",)),
+        failure=_failure(cause=plain),
+    )
+
+    assert f"innermost cause: {plain}" in detail
+    assert "transport fault" not in detail
+
+
 def test_several_causal_stages_are_pluralised_rather_than_reduced_to_one() -> None:
     detail = needs_human_terminal_detail(
         work_item_id=_ITEM,
