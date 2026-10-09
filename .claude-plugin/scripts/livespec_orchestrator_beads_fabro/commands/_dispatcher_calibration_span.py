@@ -103,6 +103,11 @@ def _attrs(*, record: CalibrationRecord) -> dict[str, object]:
         "fabro.failure.cause": record.fabro_failure_cause,
         "fabro.failure.category": record.fabro_failure_category,
         "fabro.failure.signature": record.fabro_failure_signature,
+        **(
+            {"tdd.size_justified": record.tdd.size_justified}
+            if record.tdd.size_justified is not None
+            else {}
+        ),
         **record.bounce_cap.as_record(),
         **tdd_span_fields(signals=record.tdd),
     }
