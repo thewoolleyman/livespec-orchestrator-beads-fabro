@@ -42,6 +42,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projecti
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_schema import (
     DEFAULT_BRANCH_KEY,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_output_retention import (
+    JanitorRetention,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_overrides import (
     review_fix_visit_cap_for,
 )
@@ -163,6 +166,16 @@ class DispatchPlan:
     # shortening one is not masked. Both launchers read it from here, which
     # is what keeps the watched and synchronous paths on one number.
     fabro_timeout_seconds: float = DEFAULT_FABRO_TIMEOUT_SECONDS
+    # WHERE this invocation retains a FAILED post-merge janitor command's
+    # complete captured output, and under which identity. It rides the plan
+    # because the venue is per-INVOCATION state resolved up front -- the
+    # dispatch id, or the reconcile-merged valve's own journaled identifier --
+    # while the stages that consume it sit two call layers down inside the
+    # post-merge flow, which has no other access to either.
+    #
+    # None is not "retention off by default": it is an invocation that minted
+    # no identity, whose janitor rows then carry their bounded excerpt alone.
+    janitor_retention: JanitorRetention | None = None
 
 
 def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an independent caller input.
