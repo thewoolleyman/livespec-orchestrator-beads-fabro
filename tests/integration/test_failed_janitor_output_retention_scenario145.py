@@ -73,6 +73,14 @@ _CHILD_SCRIPT = (
 )
 _JANITOR_ARGV: tuple[str, ...] = ("sh", "-c", _CHILD_SCRIPT)
 
+_SUCCESS_STDOUT = "post-merge janitor green"
+_SUCCESS_STDERR = ""
+_SUCCESS_JANITOR_ARGV: tuple[str, ...] = (
+    "sh",
+    "-c",
+    f'printf "%s\\n" "{_SUCCESS_STDOUT}"; exit 0',
+)
+
 # pull-primary, the venue's merge-containment probe, the preclean, and the five
 # provisioning steps. The janitor argv itself is never taken from this queue.
 _CANNED_STAGES_BEFORE_JANITOR = 8
@@ -97,13 +105,15 @@ class _JanitorChildRunner:
         env: dict[str, str] | None = None,
     ) -> CommandResult:
         self.calls.append((tuple(argv), env))
-        if tuple(argv) == _JANITOR_ARGV:
+        if tuple(argv) in {_JANITOR_ARGV, _SUCCESS_JANITOR_ARGV}:
             return self.shell.run(argv=argv, cwd=cwd, timeout_seconds=timeout_seconds, env=env)
         return self.canned.pop(0)
 
 
-def _canned_runner() -> _JanitorChildRunner:
-    canned = [CommandResult(exit_code=0, stdout="", stderr="")] * _CANNED_STAGES_BEFORE_JANITOR
+def _canned_runner(*, after_janitor: int = 0) -> _JanitorChildRunner:
+    canned = [CommandResult(exit_code=0, stdout="", stderr="")] * (
+        _CANNED_STAGES_BEFORE_JANITOR + after_janitor
+    )
     return _JanitorChildRunner(canned=list(canned))
 
 
@@ -118,7 +128,9 @@ def _merged() -> PrView:
     )
 
 
-def _plan(*, repo: Path, retention: JanitorRetention | None) -> DispatchPlan:
+def _plan(
+    *, repo: Path, retention: JanitorRetention | None, janitor: tuple[str, ...] = _JANITOR_ARGV
+) -> DispatchPlan:
     checkout = repo / "janitor-co"
     checkout.mkdir(parents=True, exist_ok=True)
     plan = build_plan(
@@ -127,7 +139,7 @@ def _plan(*, repo: Path, retention: JanitorRetention | None) -> DispatchPlan:
         workflow_toml=repo / "wf.toml",
         goal_file=repo / "goal.md",
         fabro_bin="fabro",
-        janitor=_JANITOR_ARGV,
+        janitor=janitor,
         janitor_checkout=checkout,
         config_text=_DECLARED_CONFIG,
         default_branch="master",
@@ -166,11 +178,18 @@ def _umask() -> int:
     return current
 
 
-def _drive(*, repo: Path, journal: JournalFile, retention: JanitorRetention | None) -> _Drive:
-    runner = _canned_runner()
+def _drive(
+    *,
+    repo: Path,
+    journal: JournalFile,
+    retention: JanitorRetention | None,
+    janitor: tuple[str, ...] = _JANITOR_ARGV,
+    canned_after_janitor: int = 0,
+) -> _Drive:
+    runner = _canned_runner(after_janitor=canned_after_janitor)
     outcome = post_merge(
         outcome_type=DispatchOutcome,
-        plan=_plan(repo=repo, retention=retention),
+        plan=_plan(repo=repo, retention=retention, janitor=janitor),
         runner=runner,
         journal=journal,
         merged=_merged(),
@@ -331,6 +350,29 @@ def test_a_retention_write_failure_is_journaled_and_changes_nothing_else(*, tmp_
     assert blocked.row["exit_code"] == control.row["exit_code"] == _EXIT_CODE
     assert blocked.row["detail"] == control.row["detail"]
     assert blocked.umask == control.umask == umask_before
+
+
+def test_a_green_janitor_retains_only_its_existing_journal_tail(*, tmp_path: Path) -> None:
+    """A zero-exit janitor creates no private artifact and keeps today's row."""
+    journal = _journal(repo=tmp_path)
+    drive = _drive(
+        repo=tmp_path,
+        journal=journal,
+        retention=janitor_retention(directory=journal.path.parent, invocation=_INVOCATION),
+        janitor=_SUCCESS_JANITOR_ARGV,
+        canned_after_janitor=1,
+    )
+
+    assert (drive.outcome.status, drive.outcome.stage) == ("green", "done")
+    assert drive.row["exit_code"] == 0
+    assert drive.row["detail"] == _SUCCESS_STDOUT
+    assert drive.row.get("stderr", "") == _SUCCESS_STDERR
+
+    artifact_directory = journal.path.parent / "janitor-failed-output"
+    assert not artifact_directory.exists()
+    assert "retained_output_path" not in drive.row
+    assert "retained_output_sha256" not in drive.row
+    assert "retained_output_error" not in drive.row
 
 
 def test_an_invocation_without_an_identity_resolves_no_retention_venue(*, tmp_path: Path) -> None:
