@@ -38,6 +38,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_b
     DIGEST_UNAVAILABLE_PREFIX,
     PRESERVE_POINTER_MARKER,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
@@ -137,22 +138,25 @@ def check_preserved_pointer(
     fabro_bin: str,
     runner: CommandRunner,
 ) -> PointerCheck:
-    """Re-export the pointer's run and report whether it still resolves."""
+    """Re-export the pointer's run and report whether it still resolves.
+
+    The re-export goes through a `FabroPort` built from the pointer's OWN
+    recorded server url, which is what makes this a check of the promise the
+    pointer made rather than of whatever factory happens to be configured now.
+    """
+    port = FabroPort(
+        fabro_bin=fabro_bin,
+        target=FabroTarget(server_url=pointer.server_url),
+        runner=runner,
+        cwd=repo,
+    )
     with tempfile.TemporaryDirectory(prefix=f"fabro-pointer-check-{pointer.run_id}-") as raw_dir:
         export_dir = Path(raw_dir)
-        dumped = runner.run(
-            argv=[
-                fabro_bin,
-                "dump",
-                pointer.run_id,
-                "--server",
-                pointer.server_url,
-                "-o",
-                str(export_dir),
-            ],
-            cwd=repo,
+        dumped = port.dump(
+            run_id=pointer.run_id,
+            output_dir=export_dir,
             timeout_seconds=_DUMP_TIMEOUT_SECONDS,
-        )
+        ).command
         if dumped.exit_code != 0:
             return PointerCheck(
                 state=POINTER_DANGLING,

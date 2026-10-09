@@ -49,6 +49,7 @@ from livespec_orchestrator_beads_fabro.effects import (
 )
 
 __all__: list[str] = [
+    "SYSTEM_INFO_PATH",
     "FabroHttpPort",
     "FabroHttpResult",
     "FabroHttpTransport",
@@ -61,6 +62,10 @@ _HTTP_SUCCESS_CEILING = 300
 # The server mounts the whole run API under this prefix; the bare `/runs/...`
 # form 404s.
 _API_PREFIX = "/api/v1"
+# The build-identity route the ACP capability gate reads. PUBLIC because that
+# gate's test asserts which url was requested, and a private constant would
+# leave it asserting a literal that could drift from the one sent.
+SYSTEM_INFO_PATH = f"{_API_PREFIX}/system/info"
 # The `SubmitAnswerRequest` variant that picks one option of a multiple-choice
 # question by its `key`.
 _ANSWER_KIND_SELECTED = "selected"
@@ -187,6 +192,22 @@ class FabroHttpPort:
             method="POST",
             path=f"{_API_PREFIX}/runs/{run_id}/questions/{question_id}/answer",
             payload={"kind": _ANSWER_KIND_SELECTED, "option_key": option_key},
+            timeout_seconds=timeout_seconds,
+        )
+
+    def system_info(self, *, timeout_seconds: float) -> FabroHttpResult:
+        """Read this factory's build identity, including its advertised capabilities.
+
+        Sits beside the three run verbs because it is the same transport
+        against the same target, and because the capability gate it serves
+        FAILS CLOSED: a reader that built its own target could be pointed at a
+        factory the dispatch is not using, and would then refuse or admit a
+        chain on another server's advertisement.
+        """
+        return self._verb(
+            method="GET",
+            path=SYSTEM_INFO_PATH,
+            payload=None,
             timeout_seconds=timeout_seconds,
         )
 

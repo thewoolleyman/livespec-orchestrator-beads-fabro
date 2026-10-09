@@ -26,18 +26,16 @@ from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import (
+    FabroHttpPort,
     FabroHttpTransport,
     UrllibFabroHttpTransport,
-    fabro_http_request,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroTarget
 
 __all__: list[str] = [
-    "SYSTEM_INFO_PATH",
     "factory_capability_reader",
 ]
 
-SYSTEM_INFO_PATH = "/api/v1/system/info"
 _CAPABILITIES_KEY = "capabilities"
 _TIMEOUT_SECONDS = 10.0
 
@@ -67,17 +65,19 @@ def factory_capability_reader(
 def _capabilities(
     *, factory: FactoryTarget | None, transport: FabroHttpTransport
 ) -> frozenset[str] | None:
-    """One `GET /system/info` read, or `None` when it cannot be established."""
+    """One `GET /system/info` read, or `None` when it cannot be established.
+
+    The read goes through the Fabro facade's own server-API face rather than
+    the transport function beneath it, so this module names no Fabro route and
+    sends no request of its own — the single-seam rule the Enemy Unit Test
+    suite's evidence depends on.
+    """
     if factory is None or factory.server is None:
         return None
-    result = fabro_http_request(
+    result = FabroHttpPort(
         target=FabroTarget(server_url=factory.server, dev_token=factory.dev_token),
         transport=transport,
-        method="GET",
-        path=SYSTEM_INFO_PATH,
-        payload=None,
-        timeout_seconds=_TIMEOUT_SECONDS,
-    )
+    ).system_info(timeout_seconds=_TIMEOUT_SECONDS)
     if not result.succeeded:
         return None
     return _declared(payload=result.payload)

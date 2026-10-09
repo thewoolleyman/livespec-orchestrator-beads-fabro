@@ -24,10 +24,10 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
     escape_minijinja_literal,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroCommand
 
 __all__: list[str] = [
     "DIGEST_UNAVAILABLE_PREFIX",
@@ -121,7 +121,10 @@ def dump_failed_body(
     *,
     run_id: str,
     server_url: str,
-    command: CommandResult,
+    # The `FabroCommand` protocol rather than the engine's concrete
+    # `CommandResult`: the export now arrives through `FabroPort.dump`, which
+    # reports the protocol, and the three fields read here are all of it.
+    command: FabroCommand,
     fabro_bin: str,
 ) -> tuple[str, str]:
     digest = "(not recorded; dump failed)"
