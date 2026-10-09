@@ -257,18 +257,31 @@ def decide_stall(
     * Fewer than two samples ever carried a timestamp (every probe was "no
       signal") -> CONTINUE. A flaky / unreachable probe can never kill a
       healthy run.
-    * Some QUIET WINDOW — a stretch of consecutive observations reporting
+    * The CURRENT quiet window — the stretch running back from the newest
+      observation through every consecutive earlier observation reporting
       the SAME last-event timestamp — spans >= `stall_seconds` of
-      wall-clock time -> the event stream flatlined for a full window ->
-      STALLED.
+      wall-clock time -> the event stream has flatlined for a full window
+      -> STALLED.
     * Otherwise -> CONTINUE (nothing confirmed yet; keep waiting).
 
-    The window is measured BETWEEN OBSERVATIONS THAT AGREE, never between
-    the oldest and newest reading of the run: this function used to
-    short-circuit to CONTINUE whenever the newest observed epoch exceeded
-    the OLDEST one, so a single early advance made that comparison true
-    for the rest of the run and suppressed every later confirmed stall
-    (bd-ib-n44n4e, observed 2026-10-09 on run 01M4EX8SNQMVNZBPB1WGKGMET1).
+    Two properties of that window are load-bearing, and each is the repair
+    of a way this decision has already gone wrong.
+
+    It is measured FROM THE MOST RECENT OBSERVED PROGRESS, never from the
+    run's first reading. This function used to short-circuit to CONTINUE
+    whenever the newest observed epoch exceeded the OLDEST one, so a single
+    early advance made that comparison true for the rest of the run and
+    suppressed every later confirmed stall — the advertised backstop could
+    never fire again (bd-ib-n44n4e, observed 2026-10-09 on run
+    01M4EX8SNQMVNZBPB1WGKGMET1, silent past 30 minutes while discovery
+    kept reporting `running`).
+
+    And it is the CURRENT window, never the widest one in the run's
+    history. The launcher retains every sample for the life of the run, so
+    a run that went quiet past a full window and then RESUMED still
+    carries that silence in its sample list; holding it against a run that
+    is emitting now would cancel healthy work, which is the one direction
+    this watchdog must never fail in.
 
     Only samples that carry a timestamp (`last_event_epoch is not None`)
     participate in the comparison; no-signal samples are skipped entirely,
@@ -278,26 +291,29 @@ def decide_stall(
     timestamped = tuple(sample for sample in samples if sample.last_event_epoch is not None)
     if len(timestamped) < _MIN_READINGS_TO_COMPARE:
         return StallVerdict.CONTINUE
-    if _longest_quiet_span(timestamped=timestamped) >= stall_seconds:
+    last = timestamped[-1]
+    if last.observed_at - _quiet_window_opened_at(timestamped=timestamped) >= stall_seconds:
         return StallVerdict.STALLED
     return StallVerdict.CONTINUE
 
 
-def _longest_quiet_span(*, timestamped: tuple[LivenessSample, ...]) -> float:
-    """Longest wall-clock span across which the last-event timestamp held still.
+def _quiet_window_opened_at(*, timestamped: tuple[LivenessSample, ...]) -> float:
+    """Wall-clock epoch at which the CURRENT quiet window opened.
 
-    Walks the timestamped readings in observation order, opening a fresh
-    quiet window at every reading whose epoch differs from the one the
-    current window was opened on, and returns the widest window seen.
+    Walks the timestamped readings BACKWARDS from the newest one, which is
+    what makes the answer the current window rather than any earlier one,
+    and stops at the first reading whose last-event epoch DIFFERS: that
+    reading is the most recent observed progress, so the window opened at
+    the observation just after it. A run whose every reading agrees never
+    stops, and its window opened at its first reading.
     """
-    longest = 0.0
-    opened = timestamped[0]
-    for sample in timestamped[1:]:
-        if sample.last_event_epoch != opened.last_event_epoch:
-            opened = sample
-            continue
-        longest = max(longest, sample.observed_at - opened.observed_at)
-    return longest
+    current_event = timestamped[-1].last_event_epoch
+    opened_at = timestamped[-1].observed_at
+    for sample in reversed(timestamped[:-1]):
+        if sample.last_event_epoch != current_event:
+            break
+        opened_at = sample.observed_at
+    return opened_at
 
 
 def _max_event_epoch(*, events_json: str) -> float | None:
