@@ -6,6 +6,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from livespec_orchestrator_beads_fabro.commands._fabro_port_events import (
+    fabro_event_records_from_stdout,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import (
     FabroHttpPort,
     FabroHttpTransport,
@@ -136,7 +139,7 @@ class FabroPort:
             argv=[self.fabro_bin, "events", run_id, "--json", *self._server_suffix()],
             timeout_seconds=timeout_seconds,
         )
-        return FabroEventsResult(command=command, payload=_json_payload(command=command))
+        return FabroEventsResult(command=command, payload=_events_payload(command=command))
 
     def dump(self, *, run_id: str, output_dir: Path, timeout_seconds: float) -> FabroCommandResult:
         """Export one run's whole record into `output_dir`.
@@ -296,6 +299,28 @@ def _input_args(*, inputs: tuple[str, ...]) -> list[str]:
     for item in inputs:
         argv.extend(["--input", item])
     return argv
+
+
+def _events_payload(*, command: FabroCommand) -> object | None:
+    """The events output as a payload, reading the Petri stream form as well.
+
+    `fabro events --json` prints one JSON array on the pinned build and "a
+    stream of envelopes" on the Petri-era one (research note 006), and a stream
+    is not one JSON document, so the ordinary whole-text parse yields nothing
+    for it. The fallback hands the records back as a LIST — the shape every
+    consumer of this payload already accepts — so from here on the two engines'
+    streams project identically rather than through two readers.
+
+    A NON-ZERO exit keeps its `None`, and so does output nothing could be read
+    from. "Read failure is not absence" is what the ACP projection grades an
+    unreadable fetch by, so a refusal's own message must never arrive as an
+    empty event list, which reads as a run that emitted nothing.
+    """
+    payload = _json_payload(command=command)
+    if payload is not None or command.exit_code != 0:
+        return payload
+    records = fabro_event_records_from_stdout(stdout=command.stdout)
+    return None if records is None else list(records)
 
 
 def _json_payload(*, command: FabroCommand) -> object | None:
