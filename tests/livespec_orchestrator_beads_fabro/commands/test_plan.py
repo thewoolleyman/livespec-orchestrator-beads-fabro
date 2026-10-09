@@ -518,6 +518,73 @@ def test_archive_after_reviewer_records_valid_durable_evidence(tmp_path: Path) -
     assert _fake().show_issue(issue_id=created["epic_id"])["status"] == "closed"
 
 
+def test_launched_review_evidence_is_graded_against_the_archiving_identity_too(
+    tmp_path: Path,
+) -> None:
+    """The LAUNCHER path grades its evidence against the same computed identity.
+
+    There are two routes into the completeness leg — a caller-supplied evidence id
+    and one a commissioned reviewer returns — and the defect this closes sat in the
+    value BOTH routes compared against. A fix proven on only the supplied route
+    would leave the launched one grading against the old constant, and that half is
+    the harder one to notice: the launcher has just run, so the evidence is fresh
+    and obviously present.
+
+    The discriminating setup is a launcher that records under the ARCHIVING
+    session's own environment, which is what a session commissioning a review of
+    its own plan and then performing it itself actually produces.
+    """
+    reset_fake_singleton()
+    plan = importlib.import_module("livespec_orchestrator_beads_fabro.commands.plan")
+    created = plan.create_thread(
+        project_root=tmp_path,
+        config=_config(),
+        slug="archive-thread",
+        title="Archive thread",
+        research_filename="initial.md",
+        research_text="research\n",
+        now="2026-08-11T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the operator has driven it and seen it work.",
+            assertions=(_PLAN_ASSERTION,),
+        ),
+    )
+    _fake().create_issue(draft=_draft(issue_id="bd-ib-child", parent_id=created["epic_id"]))
+    _fake().close_issue(issue_id="bd-ib-child", reason="completed")
+    _seed_plan_proof(epic_id=created["epic_id"])
+
+    def launch_self_review(*, request: object) -> str:
+        del request
+        plan.record_completeness_review_evidence(
+            config=_config(),
+            epic_id=created["epic_id"],
+            evidence_id="launched-self-review",
+            env=_ARCHIVING_SESSION_ENV,
+            separate_reviewer=True,
+            attests_complete_requirement_coverage=True,
+            body="Self-attested complete.",
+            now="2026-08-11T02:00:00Z",
+        )
+        return "launched-self-review"
+
+    with pytest.raises(plan.PlanArchiveRefusedError) as refused:
+        plan.archive_thread(
+            env=_ARCHIVING_SESSION_ENV,
+            project_root=tmp_path,
+            config=_config(),
+            slug="archive-thread",
+            epic_id=created["epic_id"],
+            completeness_review_comment_id=None,
+            review_launcher=launch_self_review,
+        )
+
+    assert "archiving-session" in str(refused.value)
+    assert "launched-self-review" in str(refused.value)
+    assert (tmp_path / "plan" / "archive-thread").is_dir()
+    assert not (tmp_path / "plan" / "archive").exists()
+    assert _fake().show_issue(issue_id=created["epic_id"])["status"] != "closed"
+
+
 def test_archive_refuses_a_self_review_and_accepts_an_independent_one(tmp_path: Path) -> None:
     """BOTH legs of the independence check, in one run against one archiving identity.
 
