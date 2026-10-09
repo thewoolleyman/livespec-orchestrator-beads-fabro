@@ -442,6 +442,7 @@ check:
         check-seam-equivalence
         check-ci-wires-repo-local-gates
         check-fabro-graph-validity
+        check-fabro-port-seam
         check-no-workflow-edits
         check-fresh-clone-setup
         check-doctor-static
@@ -805,6 +806,28 @@ check-ci-wires-repo-local-gates:
 # so it is wired in the private block.
 check-fabro-graph-validity:
     uv run python dev-tooling/checks/fabro_graph_validity.py
+
+# `check-fabro-port-seam` — executable guard for the rule the Enemy Unit Test
+# suite's evidence rests on: `commands/_fabro_port*` is the ONE place this
+# package reaches the Fabro engine. The suite exercises Fabro through
+# `FabroPort`, so a green pinned-versus-candidate comparison says nothing about
+# a call site that invokes the binary or the server directly — and nothing in
+# such a call site's code announces that, which is why the rule is executable
+# rather than a docstring. AST-scans the orchestrator package and fails on a
+# module outside that family that builds a Fabro binary argv, calls the Fabro
+# HTTP transport, or names a Fabro server-API route. There is NO allow-list:
+# the three call sites measured on master at 2026-10-09 were all converted, and
+# the facade grew the two verbs (`dump`, `system_info`) whose absence had
+# produced them. Because it reports an ABSENCE it carries four positive
+# controls — package discovery, a matcher control over
+# `fixtures/fabro_port_seam_control.py.txt`, a SEAM control requiring the
+# exempt family to yield every form when scanned unexempted, and an AIM control
+# requiring a Dispatcher module NOT to be exempt, since a family prefix widened
+# to `_` would report a spotless package. Pure AST read of committed files: no
+# beads, no store, no network. Not a canonical livespec-dev-tooling slug, so it
+# is wired in the private block.
+check-fabro-port-seam:
+    uv run python dev-tooling/checks/fabro_port_seam.py
 
 # `install-ci-fabro` — CI's metadata batch runs this before
 # `check-fabro-graph-validity`, which it runs with

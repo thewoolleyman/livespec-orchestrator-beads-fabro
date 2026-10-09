@@ -161,6 +161,46 @@ Current checks:
   those keys, and each stripped key is logged, so CI's normalization is
   reported rather than invisible; a new fork-only key makes the upstream engine
   refuse, failing the gate loudly rather than passing it.
+- `fabro_port_seam.py` — executable guard for the rule the Enemy Unit Test
+  suite's evidence rests on: `commands/_fabro_port*` is the ONE place the
+  orchestrator package reaches the Fabro engine. The suite under
+  `fabro-enemy-unit-tests/` exercises Fabro through `FabroPort`, so a green
+  pinned-versus-candidate comparison is evidence about the DISPATCHER only
+  where the Dispatcher reaches the engine through that same facade — and a call
+  site that invokes the binary or the server directly announces nothing: it
+  looks like every other module and the suite it escapes still reports green.
+  AST-scans the package and fails on a module outside that family carrying any
+  of three forms: a `binary-argv` (a list or tuple whose FIRST element reads
+  the engine binary — a `fabro_bin` name or attribute, a one-argument call
+  wrapping one, or the bare constant), a `transport-call`
+  (`fabro_http_request`, or a `send` carrying both a `method` and a `url`
+  keyword, which is the `FabroHttpTransport` protocol's own call shape), or a
+  `server-api-path` (a string constant opening with the server's API prefix).
+  Keying `binary-argv` on the FIRST element is what separates an invocation
+  from the ordinary act of passing the resolved path around as data, which most
+  of the package does; and CONSTRUCTING `UrllibFabroHttpTransport` is
+  deliberately not a finding, because two reconciler modules hand one to a port
+  as constructor data, which is using the facade rather than going around it.
+  The `server-api-path` form is what closes the hand-rolled-urllib route: this
+  package sends non-Fabro HTTP (Slack, the Messages API, OTLP export) so the
+  urllib surface cannot be banned, but a request to a Fabro server has to name
+  a Fabro route. There is NO allow-list — the three call sites measured on
+  master at 2026-10-09 were all converted, and the facade grew the two verbs
+  (`dump`, `system_info`) whose absence had produced them. It reports an
+  ABSENCE, so it carries FOUR positive controls and refuses to report a clean
+  scan when any fails: package discovery over the five modules that own or
+  recently held the seam; a matcher control over
+  `fixtures/fabro_port_seam_control.py.txt`, which carries one of each form
+  plus the near-misses that must stay unreported; a SEAM control requiring the
+  exempt family, scanned WITHOUT its exemption, to still yield every form, so
+  an exemption covering modules that no longer hold the seam fails rather than
+  certifying; and an AIM control requiring `commands/_dispatcher_engine.py` NOT
+  to be exempt, which is the one evasion the other three cannot see — widening
+  `FAMILY_PREFIX` to `_` would exempt every private module and report the
+  package spotless. The scan does not claim impossibility: a route assembled
+  from fragments, or a binary exec'd through a computed path that never spells
+  `fabro_bin`, would pass. Neither shape exists here and neither is what the
+  measured regressions looked like.
 - `plan_close_proof.py` — the TWELFTH plan-record conformance verdict
   (SPECIFICATION/contracts.md, the plan-record conformance clause, v115): an
   epic whose `plan_slug` names a live or archived plan directory, closed later
