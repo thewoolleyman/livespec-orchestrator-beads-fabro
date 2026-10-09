@@ -52,6 +52,10 @@ from livespec_orchestrator_beads_fabro.commands._fabro_needs_human_question impo
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
 from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroRunner
+from livespec_orchestrator_beads_fabro.commands._fabro_transport_fault import (
+    transport_fault_clause,
+    transport_fault_from_cause,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
@@ -204,11 +208,37 @@ def _enriched(
         f"{handle.factory_name} ({handle.factory_server_url}) terminated at the "
         f"{NEEDS_HUMAN_NODE_ID} node and routed the decision to this valve. "
         f"Why: {question.reason if question.reason is not None else _NO_REASON}. "
+        f"{_cause(question=question)}"
         f"It reported: {question.prompt if question.prompt is not None else _NO_PROMPT}. "
         f"{_preservation(question=question)} "
         f"Available actions: resolve-blocked:{item_id}:ready, "
         f"resolve-blocked:{item_id}:backlog, or leave the item blocked."
     )
+
+
+def _cause(*, question: NeedsHumanQuestion) -> str:
+    """The innermost cause, classified when it is a TRANSPORT fault.
+
+    `reason` above it is the loop failure signature, which names the stage and
+    the engine's generic `ACP turn failed` label — a label that covers a
+    backgrounded tool call, a dead adapter, a timed-out turn and a provider
+    ceiling alike. So the signature alone sends the human who comes to decide
+    looking for a question nobody asked, which is exactly what this valve lane
+    exists to stop. The classification is appended to the cause rather than
+    replacing it: the family says what to do about it, the cause says what
+    happened, and a build that rendered only the family would have dropped the
+    one line a triager quotes.
+
+    EMPTY when no cause is readable, which is the fail-soft posture the whole
+    lane rides: the valve is what matters, and an unreadable failure block costs
+    this sentence and nothing else.
+    """
+    if question.cause is None:
+        return ""
+    fault = transport_fault_from_cause(cause=question.cause)
+    if fault is None:
+        return f"Innermost cause: {question.cause}. "
+    return f"Innermost cause: {question.cause}. {transport_fault_clause(fault=fault)}. "
 
 
 def _preservation(*, question: NeedsHumanQuestion) -> str:
