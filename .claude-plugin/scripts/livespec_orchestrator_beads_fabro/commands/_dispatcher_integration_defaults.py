@@ -52,6 +52,8 @@ __all__: list[str] = [
     "CONFORMANCE_VERIFY_PLUGIN_RESOLUTION_INTERNAL_ARGV",
     "FLEET_CORE_REPO_URL",
     "FLEET_RECIPE_RUNNER",
+    "FLEET_SOURCE_TREE_DECLARATION_SECTION",
+    "FLEET_SOURCE_TREE_KEY",
     "FLEET_TOOL_RUNNER",
     "JANITOR_BOOTSTRAP_RECIPE_DEFAULT",
     "JANITOR_CHECKOUT_PROVISION_DEFAULT",
@@ -80,6 +82,22 @@ __all__: list[str] = [
 # reads it from here instead of keeping a parser constant of its own.
 FLEET_TOOL_RUNNER = "mise"
 FLEET_RECIPE_RUNNER = "just"
+
+# WHERE A GOVERNED REPOSITORY DECLARES ITS FIRST-PARTY SOURCE TREES, as a dotted
+# path into its `pyproject.toml` plus the key each entry of that array of tables
+# carries. The fleet's commit-time gates classify a path as product code by
+# matching it against these declared trees, and the per-cycle product
+# logical-line measurement (`_dispatcher_cycle_measure`) must classify the SAME
+# population or it would measure a tree nobody declared. It is a fleet-toolchain
+# literal rather than an integration point -- a governed repository already
+# declares it, in the fleet's own tooling table -- so by the ban's own rule it is
+# spelled here and read from here.
+FLEET_SOURCE_TREE_DECLARATION_SECTION: tuple[str, ...] = (
+    "tool",
+    "livespec_dev_tooling",
+    "mirror_pairings",
+)
+FLEET_SOURCE_TREE_KEY = "source_tree"
 
 # How this fleet reaches a recipe at all: the tool runner, then the recipe
 # runner. `just` reaches these hosts through mise, so every fleet recipe default
