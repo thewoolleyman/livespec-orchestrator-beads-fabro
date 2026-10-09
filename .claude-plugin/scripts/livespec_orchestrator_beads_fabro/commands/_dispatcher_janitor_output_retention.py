@@ -89,7 +89,10 @@ def retained_output_record(
 ) -> dict[str, object]:
     """The journal-row fields naming what this stage's failure retained."""
     payload = _artifact_payload(result=result)
-    written = _write_artifact(retention=retention, stage=stage, payload=payload)
+    try:
+        written = _write_artifact(retention=retention, stage=stage, payload=payload)
+    except OSError as error:
+        return {"retained_output_error": str(error)}
     return {
         "retained_output_path": str(written),
         "retained_output_sha256": hashlib.sha256(payload).hexdigest(),
