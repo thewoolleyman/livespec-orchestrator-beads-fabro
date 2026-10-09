@@ -22,6 +22,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attri
     JournaledRuns,
     read_journaled_runs,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_grace import (
+    BLOCKED_HOLD_UNMEASURED,
+    BLOCKED_HOLD_WITHIN_GRACE,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_inputs import (
     ReconcileInputs,
 )
@@ -31,6 +35,11 @@ from livespec_orchestrator_beads_fabro.commands._run_attribution import RunAttri
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_supersession"
+_RECORDS_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_records"
+# The stage the sweep writes for a run it declines to cancel. Spelled out here
+# rather than imported so a missing constant is a failed assertion rather than
+# a collection error.
+_HOLD_STAGE = "orphan-run-reconcile-held"
 _MODULE_PATH = (
     Path(__file__).resolve().parents[3]
     / ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands"
@@ -224,9 +233,65 @@ def test_an_orphan_on_another_reason_is_confirmed_without_a_re_read() -> None:
     assert (confirmation.hold_reason, confirmation.newest_run_id) == (None, None)
 
 
+def test_the_declined_cancellation_is_journaled_under_its_own_hold_reason(
+    tmp_path: Path,
+) -> None:
+    """A hold nobody can see is the failure the journal row exists to end.
+
+    The reason has to be distinct from the grace arm's two holds, because those
+    say a human decision is still waiting while this one says the sweep's own
+    evidence was older than the run it was judging.
+    """
+    module = _import()
+    journal_writer = _Journal()
+    journal = _stamped(tmp_path=tmp_path, run_ids=[_FIRST_RUN])
+    inputs = _inputs(
+        tmp_path=tmp_path,
+        journal_path=journal,
+        runner=_Runner(ps_rows=_ps(run_id=_SECOND_RUN)),
+        transport=_Transport(),
+        journal=journal_writer,
+    )
+    _append_stamps(path=journal, run_ids=[_SECOND_RUN])
+
+    summary = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert summary.reconciled == ()
+    assert [row["stage"] for row in journal_writer.written] == [_HOLD_STAGE]
+    assert _records_module().JOURNAL_STAGE_SUPERSESSION_HOLD == _HOLD_STAGE
+    row = journal_writer.written[0]
+    assert row["hold_reason"] == module.HOLD_REASON_SUPERSESSION_UNCONFIRMED
+    assert row["hold_reason"] not in (BLOCKED_HOLD_WITHIN_GRACE, BLOCKED_HOLD_UNMEASURED)
+    assert (row["run_id"], row["newest_journaled_run_id"]) == (_SECOND_RUN, _SECOND_RUN)
+    assert row["orphan_reason"] == ORPHAN_REASON_SUPERSEDED_RUN
+
+
+def test_a_dry_run_declines_the_cancellation_without_journaling_it(tmp_path: Path) -> None:
+    """A dry run projects the same decision and writes nothing, as every dry run does."""
+    journal_writer = _Journal()
+    journal = _stamped(tmp_path=tmp_path, run_ids=[_FIRST_RUN])
+    inputs = _inputs(
+        tmp_path=tmp_path,
+        journal_path=journal,
+        runner=_Runner(ps_rows=_ps(run_id=_SECOND_RUN)),
+        transport=_Transport(),
+        journal=journal_writer,
+    )
+    _append_stamps(path=journal, run_ids=[_SECOND_RUN])
+
+    summary = reconcile.reconcile_runs(inputs=inputs, factories=[_HP], dry_run=True)
+
+    assert summary.reconciled == ()
+    assert journal_writer.written == []
+
+
 def _import() -> Any:
     assert _MODULE_PATH.is_file(), f"the supersession module does not exist: {_MODULE_PATH}"
     return importlib.import_module(_MODULE)
+
+
+def _records_module() -> Any:
+    return importlib.import_module(_RECORDS_MODULE)
 
 
 def _stamped(*, tmp_path: Path, run_ids: list[str]) -> Path:

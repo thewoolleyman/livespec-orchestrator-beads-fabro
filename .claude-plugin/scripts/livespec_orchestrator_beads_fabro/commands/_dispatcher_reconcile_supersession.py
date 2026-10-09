@@ -54,6 +54,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_input
     ReconcileInputs,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_join import OrphanRun
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_records import (
+    journal_supersession_hold,
+)
 
 __all__: list[str] = [
     "HOLD_REASON_SUPERSESSION_UNCONFIRMED",
@@ -65,7 +68,8 @@ __all__: list[str] = [
 HOLD_REASON_SUPERSESSION_UNCONFIRMED = "supersession-unconfirmed"
 
 _DETAIL_NOT_SUPERSEDED = (
-    "this orphan reason does not rest on the journal snapshot, so there is " "nothing to re-confirm"
+    "this orphan reason does not rest on the journal snapshot, so there is "
+    "nothing here to re-confirm"
 )
 _DETAIL_CONFIRMED = (
     "a fresh read of the dispatch journal still names a different run as this "
@@ -119,16 +123,29 @@ def confirm_supersession(
     return _confirmed(newest_run_id=newest, detail=_DETAIL_CONFIRMED)
 
 
-def supersession_held(*, orphan: OrphanRun, inputs: ReconcileInputs) -> bool:
-    """Whether this orphan is held back from the termination path.
+def supersession_held(*, orphan: OrphanRun, inputs: ReconcileInputs, dry_run: bool) -> bool:
+    """Whether this orphan is held back from the termination path, and record it.
 
     The impure half, kept beside the decision rather than at the survey loop so
     that one place owns both "is the reading still good" and "what the pass does
     about it not being". The loop sees a single predicate, which is what keeps a
     hold from becoming a cancellation by an edit that forgets to check a field.
+
+    A dry run takes the same decision and writes nothing, which is what makes a
+    projection and the act it projects agree about every run they both look at.
     """
     confirmation = confirm_supersession(orphan=orphan, journaled=inputs.journaled)
-    return confirmation.hold_reason is not None
+    if confirmation.hold_reason is None:
+        return False
+    if not dry_run:
+        journal_supersession_hold(
+            journal=inputs.journal,
+            orphan=orphan,
+            hold_reason=confirmation.hold_reason,
+            newest_run_id=confirmation.newest_run_id,
+            detail=confirmation.detail,
+        )
+    return True
 
 
 def _confirmed(*, newest_run_id: str | None, detail: str) -> SupersessionConfirmation:
