@@ -74,6 +74,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_merged_pr 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_preflight import (
     ACCEPTANCE_STATUS,
     reconcile_preflight,
+    repo_path_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_regrade import run_regrade
 from livespec_orchestrator_beads_fabro.io import write_stderr
@@ -101,7 +102,16 @@ def run_reconcile_merged_command(
     how they report it.
     """
     repo = Path(args.repo)
-    # FIRST, ahead of the tenant read and of every write: an unattributed
+    # FIRST, ahead of EVERY read: a `--repo` value that is not a repository path
+    # is refused naming the value, because every read below resolves against it
+    # and a read that lands on nothing reports a cause drawn from an empty block.
+    # That puts this one position ahead of the invoker refusal, which reads the
+    # repository's own `dispatcher.require_invoker` key.
+    path_refusal = repo_path_refusal(repo=repo, given=args.repo)
+    if path_refusal is not None:
+        _ = write_stderr(text=path_refusal)
+        return EXIT_PRECONDITION_ERROR
+    # THEN, ahead of the tenant read and of every write: an unattributed
     # invocation under `dispatcher.require_invoker` is refused here so the
     # refusal itself performs no half of the reconcile.
     invoker_refusal = require_invoker_refusal(args=args, repo=repo)

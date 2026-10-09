@@ -12,6 +12,14 @@ decides, then the `--janitor` declaration, and only then the `--force`-gated
 live-dispatch lock. Every refusal reports before any write, which is what lets the
 valve be re-run after one.
 
+The REPOSITORY half of that order is `repo_path_refusal`, and it is published
+because the supervisor calls it ahead of everything — including the invoker
+refusal, which reads `dispatcher.require_invoker` from the repository's committed
+configuration. That is one position earlier than this function, and the position
+is the whole repair: a `--repo` value that is not a repository path resolves a
+configuration read onto nothing, and every refusal downstream of that read then
+names a cause drawn from an EMPTY block rather than from the operator's mistake.
+
 `ACCEPTANCE_STATUS` is published because the supervisor's arm selection reads it:
 the status vocabulary belongs with the admission decision that validates it, and a
 second literal in the supervisor could drift from the admitted set.
@@ -43,7 +51,17 @@ __all__: list[str] = [
     "ACCEPTANCE_STATUS",
     "ReconcilePreflight",
     "reconcile_preflight",
+    "repo_path_refusal",
 ]
+
+# The refusal for a `--repo` value that is not a repository path. It NAMES the
+# submitted value, because the operator's mistake is in that value and a refusal
+# that withheld it left nothing to compare against what was meant.
+_REPO_PATH_REFUSAL = (
+    "ERROR: reconcile-merged refused: --repo requires a path to an existing "
+    "repository directory, and {given} is not one. Pass the repository's path — "
+    "absolute, or relative to the current directory — rather than its name.\n"
+)
 
 # The one status that selects the re-accept arm rather than the janitor arm.
 ACCEPTANCE_STATUS = "acceptance"
@@ -77,10 +95,24 @@ class ReconcilePreflight:
     janitor: tuple[str, ...] | None
 
 
+def repo_path_refusal(*, repo: Path, given: str) -> str | None:
+    """Refuse a `--repo` value that is not a repository path, or `None` to proceed.
+
+    `given` is the value as SUBMITTED rather than the `Path` it was parsed into,
+    because `Path` normalises — a trailing slash, a leading `./` — and a refusal
+    quoting the normalised form asks the operator to recognise a string they did
+    not type.
+
+    An existence test is deliberately not enough: a regular file EXISTS, so the
+    configuration read it admits lands on nothing in exactly the way an absent
+    path does, and the refusal downstream names the same wrong cause.
+    """
+    if not repo.is_dir():
+        return _REPO_PATH_REFUSAL.format(given=given)
+    return None
+
+
 def reconcile_preflight(*, args: argparse.Namespace, repo: Path) -> ReconcilePreflight | int:
-    if not repo.exists():
-        _ = write_stderr(text="ERROR: --repo does not exist\n")
-        return EXIT_PRECONDITION_ERROR
     items = {item.id: item for item in load_items(repo=repo)}
     item = items.get(args.item)
     if item is None:
