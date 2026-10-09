@@ -412,3 +412,59 @@ def test_a_wholly_stale_timeline_commissions_a_fresh_review_before_it_refuses(
     assert (tmp_path / "plan" / _SLUG).is_dir()
     assert not (tmp_path / "plan" / "archive").exists()
     assert _fake().show_issue(issue_id=epic_id)["status"] != "closed"
+
+
+def test_evidence_postdating_every_reported_status_change_archives_as_it_did_before(
+    tmp_path: Path,
+) -> None:
+    """EVERY child's latest status change — and a child reporting none has none.
+
+    The refusing arm and the accepting arm run against ONE plan and differ only
+    in when the review was written, which is what makes the pair evidence about
+    the recency comparison rather than about the fixture.
+
+    `bd-ib-recency-i` is the discriminating member: its record reports no
+    readable status instant at all, the `omitempty`-sparse shape of a column
+    nobody wrote. The instant leg cannot date its latest change, so it must not
+    be what the refusal names while a child that demonstrably DID change late
+    sits beside it — and it must not block the archive once every change the
+    ledger actually reports is covered, or a plan carrying one such member could
+    never be archived at all. The set leg still binds it unconditionally: it is
+    named in both records, and dropping it would be reported as a removal.
+
+    The accepting arm is the control for the whole item. Every refusal above
+    costs a fresh review, so a leg that refused evidence it should accept would
+    be the same defect pointed the other way — and this one proves the archive
+    still completes: the directory moves, nothing remains at `plan/<slug>/`, and
+    the epic closes.
+    """
+    epic_id = _plan(project_root=tmp_path)
+    _child(epic_id=epic_id, child_id="bd-ib-recency-g", created_at="2026-10-08T00:10:00Z")
+    _child(epic_id=epic_id, child_id="bd-ib-recency-h", created_at="2026-10-08T09:00:00Z")
+    _child(epic_id=epic_id, child_id="bd-ib-recency-i", created_at="")
+    reviewed = ("bd-ib-recency-g", "bd-ib-recency-h", "bd-ib-recency-i")
+    _record_evidence(
+        epic_id=epic_id,
+        evidence_id="partial-postdate",
+        reviewed_child_ids=reviewed,
+        now="2026-10-08T02:00:00Z",
+    )
+    _record_evidence(
+        epic_id=epic_id,
+        evidence_id="full-postdate",
+        reviewed_child_ids=reviewed,
+        now="2026-10-08T10:00:00Z",
+    )
+
+    with pytest.raises(PlanArchiveRefusedError) as refused:
+        _ = _archive(project_root=tmp_path, epic_id=epic_id, evidence_id="partial-postdate")
+
+    message = str(refused.value)
+    assert "bd-ib-recency-h" in message
+    assert "2026-10-08T09:00:00Z" in message
+
+    accepted = _archive(project_root=tmp_path, epic_id=epic_id, evidence_id="full-postdate")
+
+    assert accepted["archive_path"] == f"plan/archive/{_SLUG}"
+    assert not (tmp_path / "plan" / _SLUG).exists()
+    assert _fake().show_issue(issue_id=epic_id)["status"] == "closed"

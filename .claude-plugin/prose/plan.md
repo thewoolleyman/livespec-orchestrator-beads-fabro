@@ -89,6 +89,15 @@ The operation's testable package substrate is
   itself, from its own session. A call the archiving session makes on a
   reviewer's behalf records the ARCHIVER as the reviewer, and the archive
   then refuses that evidence as a self-review.
+
+  It DOES take `reviewed_child_ids`, and that argument is required: it is
+  the set of child work-item ids the review actually read, which the
+  archive compares against the epic's child set at archive time. Pass the
+  `child_ids` of the `ArchiveCompletenessReviewRequest` the review was
+  commissioned with — that is the same set the archive grades against,
+  read once. A record naming a different set, or one written before a
+  current child's latest status change, is reported as STALE rather than
+  accepted.
 - `archive_thread(...)` performs the child-disposition gate, sweeps the
   working tree outside `plan/` for files that read `plan/<slug>/` by
   path, computes the archiving party's own identity, launches a supplied
@@ -463,14 +472,34 @@ Archiving has three required legs:
    computed at all reports which party went unnamed rather than archiving
    on a comparison it could not make.
 
+   The RECENCY half is mechanical too, and it is the second thing the
+   archive names on its own. Every evidence record states the child
+   work-item ids it reviewed, and `archive_thread(...)` refuses while that
+   set differs from the epic's child set at archive time — naming each
+   child added and each child removed since the review — or while the
+   record predates the latest status change any current child reports,
+   naming that child and the instant it changed at. A wholly stale
+   timeline is handled exactly as a missing one: a fresh reviewer is
+   commissioned, and the refusal carries the stale account rather than
+   reporting that evidence is required, so nobody is sent hunting for a
+   record already on the timeline. Until this landed, a record of ANY age
+   satisfied the leg forever: evidence written for one plan epic on
+   2026-08-17 still validated five days later, after seven further
+   children had landed across four repositories that its reviewer never
+   saw.
+
    What the gate does NOT verify is worth knowing before citing a passing
    one. `separate-reviewer` and `attests-complete-requirement-coverage`
    are SELF-DECLARED by whoever wrote the comment and are cross-checked
-   against nothing; the gate establishes that they were claimed, and that
-   the party claiming them is not the party archiving. The reviewer's
+   against nothing; the gate establishes that they were claimed, that the
+   party claiming them is not the party archiving, and that the scope they
+   were claimed about is this plan's as it now stands. The reviewer's
    actual independence of the plan's IMPLEMENTATION — as opposed to its
    independence of the archiving session — is still routed socially, by
-   whoever commissions the review.
+   whoever commissions the review. The reviewed child set is likewise
+   written by the reviewer, so it says what the reviewer CLAIMS to have
+   read; what the gate adds is that the claim is checked against the
+   ledger, which the two booleans are not.
 3. The plan's own Proof of Done. The epic must carry a Definition of Done
    section, and the latest plan Proof of Done record on it whose verdict
    is `verified` or `not_reproduced` must be `verified`, must cover every
