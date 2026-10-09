@@ -207,12 +207,15 @@ def _failure_blocks(*, value: object) -> tuple[dict[object, object], ...]:
 def _failure_detail(*, block: dict[object, object]) -> FabroFailureDetail | None:
     causes = _cause_values(value=block.get("causes"))
     permanent_cause = fabro_permanent_cause(causes=causes)
-    selected = permanent_cause or _root_cause(causes=causes)
+    selected = (
+        permanent_cause or _root_cause(causes=causes) or _detail_text(block=block, key="message")
+    )
     cause = selected if selected is None else (fabro_provider_message(text=selected) or selected)
     reclassified = permanent_cause is not None
     usage_limit_provider = fabro_usage_limit_provider(causes=causes)
     category = _failure_category(
-        category=_str_value(value=block.get("category")),
+        category=_str_value(value=block.get("category"))
+        or _detail_text(block=block, key="category"),
         reclassified=reclassified,
     )
     signature = _failure_signature(
@@ -228,6 +231,35 @@ def _failure_detail(*, block: dict[object, object]) -> FabroFailureDetail | None
         provider_usage_limit=usage_limit_provider is not None,
         provider_usage_limit_provider=usage_limit_provider,
     )
+
+
+def _detail_text(*, block: dict[object, object], key: str) -> str | None:
+    """One text field of the block's nested `detail` object, or None.
+
+    The pinned 0.254 engine carries its fault as a `causes` CHAIN. The Petri-era
+    engine (v0.378.0-nightly.0, measured 2026-10-08) carries no chain at all:
+    its block is `{reason, detail: {message, category}}`, and that one message
+    is where a node's own stderr arrives — the ONLY channel the needs-human
+    sentinel travels on that engine (research note 007, probes p2 and p6). The
+    `detail` object is read as a UNIT, message and category together, because
+    the engine writes it as one and reading half of it attributes a cause to a
+    run while reporting no category for it.
+
+    The chain still WINS wherever it exists, so nothing about the legacy
+    reading changes: a 0.254 payload carries BOTH, and preferring the nested
+    message would replace a two-element provider chain with the engine's own
+    one-line summary.
+
+    A `detail` that is not a mapping, or a field that is not text, yields None
+    rather than a rendering of it: an unmeasured shape is an UNKNOWN variant,
+    and the fail-closed answer is to read nothing from it. Stringifying it would
+    put this parser's own rendering of a foreign payload where the engine's
+    message belongs, and no consumer could tell the difference.
+    """
+    detail = block.get("detail")
+    if not isinstance(detail, dict):
+        return None
+    return _str_value(value=cast("dict[object, object]", detail).get(key))
 
 
 def _cause_values(*, value: object) -> tuple[str, ...]:
