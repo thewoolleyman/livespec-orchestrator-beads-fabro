@@ -3,9 +3,11 @@
 These fixtures exist for one reason: the suite must answer the same way on
 every machine it runs on. Each one replaces an AMBIENT host dependency the
 dispatch path would otherwise read — the host Codex credential, the host
-`fabro` engine binary, the host `gh` — with a hermetic stand-in, so the
-suite never depends on whether the runner is logged in, has the engine
-installed, or ships `gh` on the step-subprocess PATH.
+`fabro` engine binary, the host `gh`, the per-profile OAuth token slots
+the credential wrapper injects — with a hermetic stand-in, so the suite
+never depends on whether the runner is logged in, has the engine
+installed, ships `gh` on the step-subprocess PATH, or is running inside
+that wrapper.
 
 The Claude credential pre-flight similarly makes one bounded live Messages
 API request before a dispatch. Tests receive a successful non-secret probe
@@ -127,6 +129,49 @@ def _hermetic_state_home(
     the `~/.local/state` fallback itself delete the variable explicitly.
     """
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path_factory.mktemp("state-home")))
+
+
+_FACTORY_CREDENTIAL_SLOT_PREFIX = "CLAUDE_CODE_OAUTH_TOKEN__"
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_factory_credential_slots(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Scrub the wrapper-injected per-profile credential slots for every test.
+
+    `select_factory_credential` follows the caam rotation: it reads the
+    published profile from `~/.local/state/caam-usage-rotate/selected-account.json`
+    and, when the environment carries the matching
+    `CLAUDE_CODE_OAUTH_TOKEN__<PROFILE>` pool slot, NAMES that slot — and both
+    callers then read its value out of the real process environment. That is
+    correct for a real dispatch and is exactly the ambient host dependency this
+    file exists to replace for a test: a test supplying its own token under the
+    unnumbered `CLAUDE_CODE_OAUTH_TOKEN` had it OVERRIDDEN by the host's real
+    one, so the value reaching the credential gate and the run-config overlay
+    depended on whose machine the suite ran on.
+
+    Scrubbing the SLOTS is what makes the record inert, which is why this
+    fixture does not touch `HOME`. The record can only win THROUGH a matching
+    slot, so with no slot present the selector reaches its documented fallback
+    — the unnumbered token — whatever profile the record names, and whether or
+    not a record exists at all. Repointing `HOME` instead would reach a dozen
+    unrelated `Path.home()` reads (the plugin-cache gate, the janitor worktree
+    roots, the needs-attention core roots) and change answers this defect has
+    nothing to do with.
+
+    Measured on the dispatching host 2026-10-09 (work-item bd-ib-vvs645): the
+    record named `anthropic-1`, the wrapper injected
+    `CLAUDE_CODE_OAUTH_TOKEN__ANTHROPIC_1`, and four dispatcher tests failed
+    inside the credential wrapper while the same aggregate passed outside it —
+    so every post-merge janitor, which runs `just check` under that wrapper,
+    went red and merged items could not be closed. Continuous integration
+    carries no slot variables, so the fallback hid the defect there
+    permanently. The names are enumerated from a SNAPSHOT of `os.environ`
+    because `delenv` mutates the mapping being read; `monkeypatch` restores
+    every one of them at teardown, so a test asserting the rotation-following
+    selection sets the slot it needs back explicitly.
+    """
+    for name in [name for name in os.environ if name.startswith(_FACTORY_CREDENTIAL_SLOT_PREFIX)]:
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture(autouse=True)
