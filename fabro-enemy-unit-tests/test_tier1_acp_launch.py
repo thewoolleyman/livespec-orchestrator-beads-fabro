@@ -19,8 +19,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from _fake_acp_agent import ENV_PROBE_MODE, ENV_PROBE_NAME, ENV_PROBE_VALUE
 from _tier0_support import TIMEOUT_SECONDS, _assert_success, _inspect_record
 from _tier1_support import _failure_block, _write_goal, _write_workflow
+from livespec_orchestrator_beads_fabro.commands._dispatcher_graph_adapters import (
+    render_acp_commands,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
 
 __all__: list[str] = []
@@ -44,6 +48,36 @@ _ACP_COMMAND_WORKFLOW = f"""
 digraph FabroEnemyAcpCommandLaunch {{
     start [shape=Mdiamond, label="Start"]
     agent [shape=box, label="Agent", backend="acp", goal_gate=true, acp.command="EUT_PROBE=1 python3 {_FAKE_AGENT} success /tmp/eut-acp-command-record.jsonl", prompt="say hi"]
+    exit [shape=Msquare, label="Exit"]
+    start -> agent
+    agent -> exit
+}}
+"""
+
+
+# The template token written as two pieces rather than as the literal pair, so
+# quoting this file's text into a ledger comment or a run goal cannot poison the
+# rendering (the fleet convention of livespec-dev-tooling-9yb4).
+_ADAPTER_INPUT = "probe_adapter"
+_TOKEN = "{" + f"{{ inputs.{_ADAPTER_INPUT} }}" + "}"
+
+# The quote-and-backslash-bearing adapter command, assembled from the agent's
+# own three constants so there is exactly ONE declaration of the intended
+# bytes. This is the UNESCAPED command -- what the dispatch record reports and
+# what the agent must observe -- never the DOT form.
+_ESCAPED_PROBE_COMMAND = (
+    f"{ENV_PROBE_NAME}='{ENV_PROBE_VALUE}' "
+    f"python3 {_FAKE_AGENT} {ENV_PROBE_MODE} /tmp/eut-acp-escaped-record.jsonl"
+)
+
+# This node declares the adapter by TEMPLATE REFERENCE rather than literally,
+# because that is the one path through `render_acp_commands` that reaches the
+# escape: a command already written literally in a graph is already graph bytes
+# and passes through untouched.
+_ESCAPED_COMMAND_TEMPLATE = f"""
+digraph FabroEnemyAcpEscapedCommandLaunch {{
+    start [shape=Mdiamond, label="Start"]
+    agent [shape=box, label="Agent", backend="acp", goal_gate=true, acp.command="{_TOKEN}", prompt="say hi"]
     exit [shape=Msquare, label="Exit"]
     start -> agent
     agent -> exit
@@ -82,5 +116,37 @@ def test_acp_agent_launches_from_acp_config_json(*, tmp_path: Path, port: FabroP
 def test_acp_agent_launches_from_literal_acp_command(*, tmp_path: Path, port: FabroPort) -> None:
     kind, message = _run_status(
         port=port, tmp_path=tmp_path, name="acp-command-launch", body=_ACP_COMMAND_WORKFLOW
+    )
+    assert kind == "succeeded", message
+
+
+def test_an_escaped_acp_command_reaches_the_agent_unescaped(
+    *, tmp_path: Path, port: FabroPort
+) -> None:
+    """A quote-and-backslash command survives DOT escaping end to end.
+
+    `bd-ib-4gkfaa`. The graph is produced by the PRODUCTION renderer rather
+    than hand-written, so this exercises the escape the Dispatcher actually
+    emits; and the oracle is the run's terminal status, because the agent exits
+    non-zero unless the environment assignment it observes equals the unescaped
+    intent byte for byte. `fabro validate` cannot answer this -- it accepts the
+    escaped graph on both engines regardless of what the engine then hands the
+    agent -- which is why the proof lives here and runs once per engine.
+    """
+    rendered = render_acp_commands(
+        graph_text=_ESCAPED_COMMAND_TEMPLATE,
+        adapters={_ADAPTER_INPUT: _ESCAPED_PROBE_COMMAND},
+    )
+    assert not isinstance(rendered, str), rendered
+    # The record reports the intent, while the attribute carries the escapes.
+    assert rendered.node_commands == {"agent": _ESCAPED_PROBE_COMMAND}
+    assert f'acp.command="{_ESCAPED_PROBE_COMMAND}"' not in rendered.text
+    assert r"\"approval_policy\"" in rendered.text
+
+    kind, message = _run_status(
+        port=port,
+        tmp_path=tmp_path,
+        name="acp-escaped-command-launch",
+        body=rendered.text,
     )
     assert kind == "succeeded", message
