@@ -73,6 +73,10 @@ _ASSERTION = "The released build runs in a real operator session."
 # grades against a known identity rather than against whatever session happens
 # to be running pytest.
 _ARCHIVING_SESSION_ENV = {"CLAUDE_CODE_SESSION_ID": "archiving-session"}
+# The reviewing session's own environment. The evidence record's reviewer
+# identity is COMPUTED from it — there is no field a caller can name one in —
+# so a reviewer distinct from the archiver is expressed as a distinct session.
+_REVIEWING_SESSION_ENV = {"CLAUDE_CODE_SESSION_ID": "reviewing-session"}
 _TAG = "v0.167.0"
 
 
@@ -154,7 +158,7 @@ def _plan_ready_to_archive(*, repo: Path) -> str:
         config=_config(),
         epic_id=created["epic_id"],
         evidence_id="review-evidence-1",
-        reviewer_identity="fresh-independent-reviewer",
+        env=_REVIEWING_SESSION_ENV,
         separate_reviewer=True,
         attests_complete_requirement_coverage=True,
         body="Every requirement carrier under the plan is covered.",

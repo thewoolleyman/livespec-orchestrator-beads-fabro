@@ -54,13 +54,16 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "ARCHIVING_PARTY",
+    "REVIEWING_PARTY",
     "completeness_leg_identity",
 ]
 
-# The side of the leg this party sits on, as the refusal names whichever one could
+# The side of the leg a party sits on, as the refusal names whichever one could
 # not be computed. Naming it is what tells an operator which half of the
-# comparison went unresolved, since both halves raise the same refusal type.
+# comparison went unresolved, since both halves raise the same refusal type and
+# their remedies sit in different sessions.
 ARCHIVING_PARTY = "archiving party"
+REVIEWING_PARTY = "reviewing party"
 
 
 def completeness_leg_identity(
