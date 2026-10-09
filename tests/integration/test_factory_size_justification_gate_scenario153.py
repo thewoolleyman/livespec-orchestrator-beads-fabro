@@ -50,6 +50,7 @@ from livespec_orchestrator_beads_fabro.commands.groom import (
     GroomApproval,
     file_approved_slices,
 )
+from livespec_orchestrator_beads_fabro.errors import GroomDraftError
 from livespec_orchestrator_beads_fabro.intake_dor import (
     DefinitionOfReadyChecklist,
     apply_intake_dor,
@@ -282,6 +283,91 @@ def test_invalid_adopted_ceiling_refuses_before_lifecycle_mutation(tmp_path: Pat
         for entry in cast("list[dict[str, object]]", api_configurable_key_manifest()["keys"])
     }
     assert "adopted_assertion_count_ceiling" not in manifest_keys
+
+    _exercise_invalid_public_entries(tmp_path=tmp_path)
+
+
+def _exercise_invalid_public_entries(*, tmp_path: Path) -> None:
+    reset_fake_singleton()
+    repo = tmp_path / "public-entries"
+    repo.mkdir()
+    _write_repo_config(repo=repo, ceiling=0, groom_variant="groom-cut")
+    _write_scenario_reference(repo=repo)
+    config = _config(repo_root=repo)
+    _exercise_invalid_approval(repo=repo, config=config)
+    _exercise_invalid_dispatch(repo=repo, config=config)
+    _exercise_invalid_groom_door(repo=repo, config=config)
+    _exercise_invalid_groom_filing(repo=repo, config=config)
+
+
+def _exercise_invalid_approval(*, repo: Path, config: StoreConfig) -> None:
+    approval_item = replace(
+        _item(assertion_count=3, item_id="bd-invalid-approval"),
+        status="pending-approval",
+        admission_policy="manual",
+    )
+    append_work_item(path=config, item=approval_item)
+    approval = run_action(repo=repo, action_id=f"approve:{approval_item.id}")
+    assert approval["domain_error"] == "policy-setting-unreadable"
+    assert "positive integer" in cast("str", approval["summary"])
+    assert _stored(config=config)[approval_item.id].status == "pending-approval"
+
+
+def _exercise_invalid_dispatch(*, repo: Path, config: StoreConfig) -> None:
+    dispatch_item = _item(assertion_count=3, item_id="bd-invalid-dispatch")
+    append_work_item(path=config, item=dispatch_item)
+    admission = admit_and_select(
+        repo=repo,
+        items=[dispatch_item],
+        candidates=[dispatch_item],
+        journal=JournalFile(path=repo / "invalid-dispatch.jsonl"),
+        enforce_cap=False,
+    )
+    assert admission.admitted == []
+    assert admission.refused[0].stage == "configuration"
+    assert "positive integer" in (admission.refused[0].detail or "")
+    assert _stored(config=config)[dispatch_item.id].status == "ready"
+
+
+def _exercise_invalid_groom_door(*, repo: Path, config: StoreConfig) -> None:
+    door_item = replace(_item(assertion_count=3, item_id="bd-invalid-door"), status="backlog")
+    append_work_item(path=config, item=door_item)
+    door = groom_dispatch(
+        repo=repo,
+        item=door_item,
+        variant="groom-cut",
+        journal=JournalFile(path=repo / "invalid-groom-door.jsonl"),
+    )
+    assert isinstance(door, GroomDoorRefusal)
+    assert door.cause == "configuration"
+    assert "positive integer" in door.detail
+    assert _stored(config=config)[door_item.id].status == "backlog"
+
+
+def _exercise_invalid_groom_filing(*, repo: Path, config: StoreConfig) -> None:
+    epic = replace(
+        _item(assertion_count=1, item_id="bd-invalid-epic"), type="epic", status="backlog"
+    )
+    append_work_item(path=config, item=epic)
+    ids_before = set(_stored(config=config))
+    with pytest.raises(GroomDraftError, match="positive integer"):
+        file_approved_slices(
+            path=config,
+            regroom_item_id=epic.id,
+            local_repo=repo.name,
+            approval=GroomApproval(approver="human:maintainer", route="approval comment"),
+            slices=[
+                CandidateSlice(
+                    title="Invalid configuration slice",
+                    description=_item(assertion_count=3).description,
+                    acceptance="The replacement is verified.",
+                    autonomy_tier="factory",
+                    repo_target=repo.name,
+                )
+            ],
+        )
+    assert set(_stored(config=config)) == ids_before
+    assert _stored(config=config)[epic.id].status == "backlog"
 
 
 def _exercise_unjustified_capture(*, tmp_path: Path) -> None:
