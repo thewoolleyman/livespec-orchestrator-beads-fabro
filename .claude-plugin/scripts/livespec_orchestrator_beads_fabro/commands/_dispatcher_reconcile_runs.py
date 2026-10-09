@@ -18,11 +18,11 @@ error and the survey continues on the rest, because the alternative — one
 outage suppressing reconciliation everywhere — is exactly the silent-hold
 failure this command exists to end.
 
-A `superseded-run` reading is RE-CONFIRMED immediately before the export and
-the terminate (`_dispatcher_reconcile_supersession.py`). It is the one orphan
-reason whose evidence is the journal snapshot this pass opened with, and
-another session's launch stamp landing between that read and the inventory
-read leaves the pass about to cancel the item's NEWEST run. A reading the
+A `superseded-run` reading is RE-CONFIRMED before export and again at the
+termination boundary (`_dispatcher_reconcile_supersession.py`). It is the one
+orphan reason whose evidence is the journal snapshot this pass opened with,
+and another session's launch stamp landing between that read and the inventory
+read leaves the pass about to cancel the item's NEWEST run. A reading either
 fresh read does not reproduce is held rather than acted on.
 
 A run parked at a human gate whose item is still live has no moot question to
@@ -198,13 +198,14 @@ def _reconcile_one_factory(
     for orphan in classify_orphans(inventory=inventory, grace=grace):
         if inputs.only_work_item_id is not None and orphan.work_item_id != inputs.only_work_item_id:
             continue
-        # Re-confirmed HERE rather than inside the join because the point of
-        # the re-read is WHEN it happens: the join is pure and ran against the
-        # snapshot the pass opened with, and this is the last moment before the
-        # export and the terminate.
+        # This first re-read cheaply holds a race already visible before export.
+        # `_reconcile_one_run` repeats it at the termination boundary because a
+        # sibling dispatch can stamp this run while the export is in flight.
         if supersession_held(orphan=orphan, inputs=inputs, dry_run=dry_run):
             continue
         outcome = _reconcile_one_run(inputs=inputs, port=port, orphan=orphan, dry_run=dry_run)
+        if outcome is None:
+            continue
         if isinstance(outcome, ReconcileError):
             errors.append(outcome)
             continue
@@ -218,7 +219,7 @@ def _reconcile_one_run(
     port: FabroPort,
     orphan: OrphanRun,
     dry_run: bool,
-) -> ReconciledRun | ReconcileError:
+) -> ReconciledRun | ReconcileError | None:
     if dry_run:
         return reconciled_from(orphan=orphan, termination=None, export_comment_id=None)
     export = export_orphan_reference(
@@ -245,6 +246,13 @@ def _reconcile_one_run(
         journal_export(journal=inputs.journal, orphan=orphan, body=export.journal_body)
     if port.server_api().bearer_token() is None:
         journal_unauthenticated(journal=inputs.journal, orphan=orphan)
+    # Export, ledger write, and read-back are an unconditional precondition of
+    # termination. Re-read only after all three so a sibling's stamp landing
+    # during that work invalidates the stale supersession before any destructive
+    # route is entered. `None` is the held outcome; `supersession_held` records
+    # why this pass declined to act.
+    if supersession_held(orphan=orphan, inputs=inputs, dry_run=False):
+        return None
     termination = terminate_orphan_run(
         port=port,
         run_id=orphan.run_id,
