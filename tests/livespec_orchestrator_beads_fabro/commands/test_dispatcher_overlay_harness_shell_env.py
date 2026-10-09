@@ -47,6 +47,13 @@ _ENV_TABLE_HEADER = "[environments.sandbox.env]"
 
 _TMUX_TMPDIR_ENV_LINE = 'TMUX_TMPDIR = "/workspace/.tmux"\n'
 _NO_AUTO_BACKGROUND_ENV_LINE = 'CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = "1"\n'
+# The harness's own defaults are 120000 ms for a foreground call and a 600000 ms
+# CAP on anything a model asks for, so raising the default to the old cap and the
+# cap to an hour is what lets a call that honestly needs 20 minutes declare it.
+_BASH_DEFAULT_TIMEOUT_ENV_LINE = 'BASH_DEFAULT_TIMEOUT_MS = "600000"\n'
+_BASH_MAX_TIMEOUT_ENV_LINE = 'BASH_MAX_TIMEOUT_MS = "3600000"\n'
+_RAISED_TIMEOUT_ENV_LINES = (_BASH_DEFAULT_TIMEOUT_ENV_LINE, _BASH_MAX_TIMEOUT_ENV_LINE)
+_HARNESS_SHELL_ENV_LINES = (_NO_AUTO_BACKGROUND_ENV_LINE, *_RAISED_TIMEOUT_ENV_LINES)
 
 _RESUME_BRANCH = "feat/bd-ib-k627ja"
 _RESUME_HEAD = "a" * 40
@@ -127,3 +134,53 @@ def test_a_resume_overlay_disables_harness_auto_backgrounding(tmp_path: Path) ->
     assert rendered.count(_NO_AUTO_BACKGROUND_ENV_LINE) == 1
     assert _TMUX_TMPDIR_ENV_LINE in rendered
     assert rendered.index(_NO_AUTO_BACKGROUND_ENV_LINE) > rendered.index(_ENV_TABLE_HEADER)
+
+
+def test_the_harness_shell_env_helper_renders_the_raised_shell_timeouts() -> None:
+    """Both ceilings, spelled once each, in the same named helper.
+
+    The switch above stops a timed-out call from eating the turn; these two are
+    what let a call that honestly needs twenty minutes ASK for twenty minutes
+    instead of being timed out at the harness's two-minute default.
+    """
+    module = importlib.import_module(_OVERLAY_MODULE)
+    rendered: str = module.harness_shell_env_lines()
+    for line in _RAISED_TIMEOUT_ENV_LINES:
+        assert rendered.count(line) == 1
+
+
+def test_an_ordinary_dispatch_overlay_raises_the_harness_shell_timeouts(
+    tmp_path: Path,
+) -> None:
+    """Both ceilings reach an ordinary dispatch's sandbox environment."""
+    rendered = _ordinary_overlay(tmp_path=tmp_path)
+    for line in _RAISED_TIMEOUT_ENV_LINES:
+        assert rendered.count(line) == 1
+        assert rendered.index(line) > rendered.index(_ENV_TABLE_HEADER)
+
+
+def test_a_resume_overlay_raises_the_harness_shell_timeouts(tmp_path: Path) -> None:
+    """And the recovery path's, which is the run most likely to need them."""
+    rendered = _resume_overlay(tmp_path=tmp_path)
+    for line in _RAISED_TIMEOUT_ENV_LINES:
+        assert rendered.count(line) == 1
+        assert rendered.index(line) > rendered.index(_ENV_TABLE_HEADER)
+
+
+def test_both_overlay_shapes_carry_the_three_lines_once_beside_tmux_tmpdir(
+    tmp_path: Path,
+) -> None:
+    """The whole projection, asserted as ONE shape across both dispatch shapes.
+
+    Separate from the per-key tests above because this is the assertion that
+    would catch a THIRD overlay path rendering a second copy, or one of the
+    three being dropped while the other two still pass their own test. The
+    TMUX_TMPDIR line is the anchor: it is the env-table neighbour these three
+    were added beside, so asserting all four together says the projection landed
+    in that table rather than merely somewhere in the file.
+    """
+    for rendered in (_ordinary_overlay(tmp_path=tmp_path), _resume_overlay(tmp_path=tmp_path)):
+        env_table_at = rendered.index(_ENV_TABLE_HEADER)
+        for line in (_TMUX_TMPDIR_ENV_LINE, *_HARNESS_SHELL_ENV_LINES):
+            assert rendered.count(line) == 1
+            assert rendered.index(line) > env_table_at
