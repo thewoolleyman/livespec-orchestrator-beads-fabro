@@ -20,6 +20,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_degraded imp
     merged_degraded_for_plan,
     merged_degraded_outcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_failure_diagnostics import (
+    janitor_failure_diagnosis,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_lock import (
     claim_janitor_lock,
     janitor_lock_path,
@@ -134,9 +137,13 @@ def _post_merge_locked(
         # The check suite is the command whose red the retention clause exists
         # for: its excerpt names the suite, and the failing target it reports
         # is on the stream the excerpt did not keep.
-        journal_options=StageJournalOptions(retention=plan.janitor_retention),
+        journal_options=StageJournalOptions(
+            retention=plan.janitor_retention,
+            janitor_failure_diagnostics=True,
+        ),
     )
     if janitor.exit_code != 0:
+        diagnosis = janitor_failure_diagnosis(stdout=janitor.stdout, stderr=janitor.stderr)
         return outcome_type(
             work_item_id=plan.work_item_id,
             status="failed",
@@ -145,7 +152,7 @@ def _post_merge_locked(
             merge_sha=merged.merge_sha,
             detail=(
                 f"post-merge janitor red in fresh checkout {plan.janitor_checkout} "
-                f"(kept for diagnosis): {tail(text=janitor.stderr)}"
+                f"(kept for diagnosis): {diagnosis.detail}"
             ),
         )
     cleanup = run_stage(

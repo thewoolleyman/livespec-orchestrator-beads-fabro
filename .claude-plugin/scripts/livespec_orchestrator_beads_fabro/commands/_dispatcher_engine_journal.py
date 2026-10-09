@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_failure_diagnostics import (
+    janitor_failure_diagnosis,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_output_retention import (
     retained_output_record,
 )
@@ -38,6 +41,7 @@ class StageJournalOptions:
 
     streams: bool = False
     retention: JanitorRetention | None = None
+    janitor_failure_diagnostics: bool = False
 
 
 _DEFAULT_STAGE_JOURNAL_OPTIONS = StageJournalOptions()
@@ -125,6 +129,11 @@ def journal_stage(
                 result=result,
             )
         )
+    if journal_options.janitor_failure_diagnostics and result.exit_code != 0:
+        diagnosis = janitor_failure_diagnosis(stdout=result.stdout, stderr=result.stderr)
+        record["detail"] = diagnosis.detail
+        if diagnosis.failed_targets:
+            record["failed_targets"] = list(diagnosis.failed_targets)
     journal.append(record=record)
 
 
