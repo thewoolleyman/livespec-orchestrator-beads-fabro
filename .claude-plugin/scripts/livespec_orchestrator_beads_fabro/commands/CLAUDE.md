@@ -682,6 +682,21 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   diagnostic as a measurement, and moving an unmet arm onto `unobservable` hides
   a real negative behind one — the clause forbids both directions, so neither
   default is safe.
+  ONE READ INSIDE THE PROOF ADAPTER IS THE EASIEST PLACE TO RE-COLLAPSE THAT
+  DISTINCTION, so it is named here. `_recorded_merge` yields the merge a verified
+  build must contain, and it answers THREE ways, not two: a merge, an ABSENCE, or
+  `_MalformedAudit`. An absence is a subject whose work has not closed, which
+  leaves the merge-containment relation VACUOUS; audit evidence that is PRESENT
+  holding a value of the wrong type is malformed, which refuses from the LEDGER.
+  Do not fold the third answer back into the second. `omitempty` omits a field and
+  never retypes one, so a `metadata` holding a string, an `audit` holding a list,
+  or a `merge_sha` holding a number is unreadable evidence rather than a sparse
+  record — and folding it onto the vacuous arm skips the containment relation
+  entirely, so the reading SATISFIES on the requested build alone. That is this
+  adapter's most forbidden direction reached from its most innocuous-looking
+  simplification: satisfaction earned on evidence nobody could read, which no
+  `unsatisfied`-versus-`unobservable` reasoning catches because the verdict is
+  neither of them.
 
 Rules an agent editing this tree must follow:
 

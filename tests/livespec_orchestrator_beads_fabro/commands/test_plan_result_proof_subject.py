@@ -11,13 +11,24 @@ additional test files alongside the implementation at the Green amend, which is
 the honest route: the alternative is rewriting a protected Red, and a rewritten
 Red cannot be re-run against the commit that first made it pass.
 
-WHY THE SHAPES ARE NOT MALFORMED RECORDS. `bd` records are `omitempty`-sparse and
+WHY SOME SHAPES ARE NOT MALFORMED RECORDS. `bd` records are `omitempty`-sparse and
 their metadata is a free-form JSON column, so an audit object that carries no
 `merge_sha` — or carries a blank one — is an ordinary record for a subject whose
 work has not closed. It means exactly what absent metadata means: no merge is
 recorded, so the host-leg requirement that a build "contain the merged change"
 has nothing to contain and is vacuous. Reading any of these as a fault would make
 the verified-proof result unobservable for a whole class of normal records.
+
+AND WHY THE REST ARE. An ABSENCE and a PRESENT VALUE OF THE WRONG TYPE are not the
+same observation, and this module is where that line is drawn. `omitempty` only
+ever OMITS a field — it never retypes one — so a `metadata` that is a string, an
+`audit` that is a list, or a `merge_sha` that is a number cannot be the sparse
+encoding of "no merge recorded". They are evidence that is PRESENT and unreadable,
+which the shared-reader clause routes to `unobservable` naming the ledger: the
+merge a build must contain could not be read, so no verdict about containment is
+available in either direction. Grading them as vacuous is the expensive error,
+because the containment requirement then silently does not run and the reading
+SATISFIES on the requested build alone.
 """
 
 from __future__ import annotations
@@ -39,6 +50,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_pointer import
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     OBSERVATION_SATISFIED,
+    OBSERVATION_UNOBSERVABLE,
+    SOURCE_LEDGER,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_proof import observe_verified_proof
 from livespec_orchestrator_beads_fabro.commands._plan_result_repository import ResultRepository
@@ -111,6 +124,24 @@ class _SubjectClient:
         )
 
 
+@dataclass(kw_only=True)
+class _RecordClient:
+    """A read-only tenant returning one record with the whole `metadata` supplied.
+
+    Separate from `_SubjectClient` because the malformed shapes reach one level
+    higher: `metadata` itself can be a value of the wrong type, which a stub that
+    always nests an `audit` under a mapping cannot express.
+    """
+
+    metadata: object
+
+    def show_issue(self, *, issue_id: str) -> BeadsRecord:
+        return cast(
+            "BeadsRecord",
+            {"id": issue_id, "description": _description(), "metadata": self.metadata},
+        )
+
+
 def _description() -> str:
     return description_with_pointer(
         description="## Definition of Done\n\n- Something.\n",
@@ -151,13 +182,12 @@ def _repo(*, tmp_path: Path) -> ResultRepository:
         pytest.param({}, id="audit-object-carrying-no-merge"),
         pytest.param({"merge_sha": ""}, id="audit-carrying-a-blank-merge"),
         pytest.param({"merge_sha": "   "}, id="audit-carrying-a-whitespace-merge"),
-        pytest.param({"merge_sha": 7}, id="audit-carrying-a-non-string-merge"),
     ],
 )
 def test_an_audit_object_recording_no_merge_leaves_the_requirement_vacuous(
     tmp_path: Path, audit: object, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Four audit objects that exist and record no merge, none of them a fault.
+    """Three audit objects that exist and record no merge, none of them a fault.
 
     Each means what absent metadata means — this subject records no merge — so the
     merge-containment requirement is vacuous and the requested build's own
@@ -193,3 +223,59 @@ def test_an_audit_object_recording_no_merge_leaves_the_requirement_vacuous(
     )
     assert observation.status == OBSERVATION_SATISFIED
     assert runner.comparisons == (f"repos/{{owner}}/{{repo}}/compare/{_BUILD}...{_BUILD}",)
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        pytest.param("not-a-mapping", id="metadata-present-as-a-string"),
+        pytest.param([], id="metadata-present-as-a-list"),
+        pytest.param({"audit": "not-a-mapping"}, id="audit-present-as-a-string"),
+        pytest.param({"audit": []}, id="audit-present-as-a-list"),
+        pytest.param({"audit": {"merge_sha": 123}}, id="merge-present-as-a-number"),
+    ],
+)
+def test_audit_evidence_present_as_the_wrong_type_is_unobservable(
+    tmp_path: Path, metadata: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Five PRESENT shapes the sparse reading must not absorb.
+
+    Each carries the field the merge is read from, holding a value whose TYPE makes
+    it unreadable. `omitempty` omits a field and never retypes one, so none of
+    these can be the sparse encoding of "this subject records no merge" — the
+    distinction the vacuous case above turns on. The clause routes malformed
+    evidence to `unobservable` naming its source, which is the LEDGER here: the
+    merge a record's build must contain could not be read, so no containment
+    verdict is available in either direction.
+
+    THE FORBIDDEN DIRECTION IS SATISFACTION, not a negative. Grading these as
+    vacuous skips the containment relation entirely and the reading then satisfies
+    on the requested build alone — a verified proof accepted for a build nobody
+    showed carries the work. So the case asserts that NO command was run at all:
+    the refusal is established from the ledger record before any forge read, which
+    is what tells a refusal apart from a comparison that was asked and failed.
+    """
+    repository = _repo(tmp_path=tmp_path)
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands._plan_result_proof.result_store_config",
+        lambda **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands._plan_result_proof.make_beads_client",
+        lambda **_kwargs: _RecordClient(metadata=metadata),
+    )
+    runner = _Runner(
+        bodies=(
+            _body(verdict="host_recorded", identity=_CAPTURE_IDENTITY, minute="00"),
+            _body(verdict="host_verified", identity=_REPLAY_IDENTITY, minute="01"),
+        )
+    )
+    observation = observe_verified_proof(
+        repository=repository,
+        target=VerifiedProofTarget(subject_id=_SUBJECT_ID, build=_BUILD, assertions=(_ASSERTION,)),
+        runner=runner,
+        now=_NOW,
+    )
+    assert observation.status == OBSERVATION_UNOBSERVABLE
+    assert observation.source == SOURCE_LEDGER
+    assert runner.calls == []

@@ -121,14 +121,14 @@ class _DescriptionlessClient:
 
 @dataclass(kw_only=True)
 class _AuditShapeClient:
-    """A tenant whose audit metadata is present but not the shape it should be.
+    """A tenant whose metadata records no merge, in the shapes sparseness produces.
 
-    `bd` records are `omitempty`-SPARSE and their metadata is a free-form JSON
-    column, so `metadata` or `metadata.audit` can be a value of any type. Neither
-    is a malformed record: the subject simply records no merge, which is the same
-    answer as a subject whose work has not closed. Seeding these through
-    `IssueDraft` is not possible — its `metadata` is typed as a mapping — so this
-    read-only stub supplies the shapes the public write verb cannot.
+    `bd` records are `omitempty`-SPARSE, so `metadata` can be absent outright and a
+    present `metadata` can carry no `audit`. Neither is a malformed record: the
+    subject simply records no merge, which is the same answer as a subject whose
+    work has not closed. Seeding an ABSENT metadata through `IssueDraft` is not
+    possible — its `metadata` is typed as a mapping — so this read-only stub
+    supplies the shape the public write verb cannot.
     """
 
     metadata: object
@@ -621,19 +621,31 @@ def test_an_unreadable_comparison_is_unobservable_once_a_merge_is_recorded_too(
     assert observation.source == SOURCE_PROOF_RECORD
 
 
-@pytest.mark.parametrize("metadata", ["not-a-mapping", {"audit": "not-a-mapping"}, {}])
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        pytest.param(None, id="metadata-absent"),
+        pytest.param({}, id="metadata-carrying-no-audit"),
+    ],
+)
 def test_audit_metadata_that_records_no_merge_leaves_the_requirement_vacuous(
     tmp_path: Path, metadata: object, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Three sparse shapes, none of which is a malformed record.
+    """Two sparse shapes, neither of which is a malformed record.
 
-    A `bd` record is `omitempty`-sparse and its metadata is a free-form JSON
-    column, so absent metadata, a non-mapping metadata, and a non-mapping `audit`
-    are all shapes the store genuinely produces. Each means the same thing — this
-    subject records no merge — so each leaves the merge requirement vacuous rather
-    than refusing the read. Treating any of them as malformed would make the
-    result unobservable for a whole class of perfectly ordinary records, which is
-    the sparseness trap this repository has already paid for once.
+    A `bd` record is `omitempty`-sparse, so a metadata column that is absent
+    altogether and one carrying no `audit` are both shapes the store genuinely
+    produces. Each means the same thing — this subject records no merge — so each
+    leaves the merge requirement vacuous rather than refusing the read. Treating
+    either as malformed would make the result unobservable for a whole class of
+    perfectly ordinary records, which is the sparseness trap this repository has
+    already paid for once.
+
+    THE SHAPES THAT ARE PRESENT AND OF THE WRONG TYPE ARE NOT HERE, and that is the
+    point of the pair: sparseness OMITS a field, so a present value of another type
+    is unreadable evidence rather than an absence.
+    `test_plan_result_proof_subject.py` owns those cases and asserts them
+    `unobservable`.
     """
     repository = _repo(tmp_path=tmp_path)
     monkeypatch.setattr(
