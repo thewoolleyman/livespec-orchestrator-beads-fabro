@@ -307,7 +307,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_identity_command import (
     add_codex_cred_status_arguments,
-    add_credential_selection_arguments,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
     bounce_non_convergence_to_backlog,
@@ -322,9 +321,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_args import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_cli import (
     add_post_host_record_arguments,
     run_post_host_record_cli,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
-    add_invoker_argument,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import (
     emit_outcomes,
@@ -373,6 +369,16 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_checks import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands import (
     run_dispatch_command,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_subcommand_args import (
+    add_claude_cred_status_arguments,
+    add_codex_cred_refresh_arguments,
+    add_janitor_check_arguments,
+    add_ledger_check_arguments,
+    add_ledger_normalize_arguments,
+    add_reconcile_merged_arguments,
+    add_reconcile_runs_arguments,
+    add_spec_check_arguments,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_record_cli import (
     add_post_plan_record_arguments,
@@ -454,11 +460,11 @@ def main(*, argv: list[str] | None = None) -> int:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="dispatcher")
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
-    _add_ledger_check(parser=subparsers.add_parser("ledger-check"))
-    _add_ledger_normalize(parser=subparsers.add_parser("ledger-normalize"))
-    _add_codex_cred_refresh(parser=subparsers.add_parser("codex-cred-refresh"))
+    add_ledger_check_arguments(parser=subparsers.add_parser("ledger-check"))
+    add_ledger_normalize_arguments(parser=subparsers.add_parser("ledger-normalize"))
+    add_codex_cred_refresh_arguments(parser=subparsers.add_parser("codex-cred-refresh"))
     add_codex_cred_status_arguments(parser=subparsers.add_parser("codex-cred-status"))
-    _add_cred_status(parser=subparsers.add_parser("claude-cred-status"))
+    add_claude_cred_status_arguments(parser=subparsers.add_parser("claude-cred-status"))
     add_clear_provider_exhaustion_arguments(
         parser=subparsers.add_parser("clear-provider-exhaustion")
     )
@@ -468,10 +474,10 @@ def _build_parser() -> argparse.ArgumentParser:
     add_clear_model_fallback_projection_arguments(
         parser=subparsers.add_parser("clear-model-fallback-projection")
     )
-    _add_spec_check(parser=subparsers.add_parser("spec-check"))
-    _add_janitor_check(parser=subparsers.add_parser("janitor-check"))
-    _add_reconcile_runs(parser=subparsers.add_parser("reconcile-runs"))
-    _add_reconcile_merged(parser=subparsers.add_parser("reconcile-merged"))
+    add_spec_check_arguments(parser=subparsers.add_parser("spec-check"))
+    add_janitor_check_arguments(parser=subparsers.add_parser("janitor-check"))
+    add_reconcile_runs_arguments(parser=subparsers.add_parser("reconcile-runs"))
+    add_reconcile_merged_arguments(parser=subparsers.add_parser("reconcile-merged"))
     add_post_host_record_arguments(parser=subparsers.add_parser("post-host-record"))
     add_post_plan_record_arguments(parser=subparsers.add_parser("post-plan-record"))
     add_probe_arguments(parser=subparsers.add_parser("probe"))
@@ -485,82 +491,3 @@ def _build_parser() -> argparse.ArgumentParser:
     _ = loop.add_argument("--dry-run", dest="dry_run", action="store_true")
     _ = loop.add_argument("--item", dest="items", action="append", default=None)
     return parser
-
-
-def _add_ledger_check(*, parser: argparse.ArgumentParser) -> None:
-    _ = parser.add_argument("--project-root", dest="project_root", default=None)
-    _ = parser.add_argument("--json", dest="as_json", action="store_true")
-
-
-def _add_ledger_normalize(*, parser: argparse.ArgumentParser) -> None:
-    _ = parser.add_argument("--project-root", dest="project_root", default=None)
-    _ = parser.add_argument("--json", dest="as_json", action="store_true")
-    _ = parser.add_argument("--dry-run", dest="dry_run", action="store_true")
-    # `--gate` is the always-run pre-push mode: auto-heal-loud — it heals the
-    # two safe transient remaps in place, prints each, and sets a fail-soft
-    # exit-code contract (0 clean/healed / 1 residual drift / 2 could-not-check).
-    # See `_dispatcher_ledger_gate.run_ledger_gate`.
-    _ = parser.add_argument("--gate", dest="gate", action="store_true")
-
-
-def _add_spec_check(*, parser: argparse.ArgumentParser) -> None:
-    _ = parser.add_argument("--project-root", dest="project_root", default=None)
-    _ = parser.add_argument("--spec-root", dest="spec_root", default=None)
-    _ = parser.add_argument("--json", dest="as_json", action="store_true")
-
-
-def _add_codex_cred_refresh(*, parser: argparse.ArgumentParser) -> None:
-    _ = parser.add_argument("--json", dest="as_json", action="store_true")
-    _ = parser.add_argument("--dry-run", dest="dry_run", action="store_true")
-    add_credential_selection_arguments(parser=parser)
-
-
-def _add_cred_status(*, parser: argparse.ArgumentParser) -> None:
-    _ = parser.add_argument("--json", dest="as_json", action="store_true")
-
-
-def _add_janitor_check(*, parser: argparse.ArgumentParser) -> None:
-    _ = parser.add_argument("--repo", dest="repo", default=None)
-    _ = parser.add_argument("--json", dest="as_json", action="store_true")
-
-
-def _add_reconcile_runs(*, parser: argparse.ArgumentParser) -> None:
-    # `--factory` NARROWS the survey to one declared factory. Omitting it is
-    # the correct default: reconciliation is an inventory question, and an
-    # inventory taken of one factory says nothing about the others.
-    _ = parser.add_argument("--repo", dest="repo", default=None)
-    _ = parser.add_argument("--factory", dest="factory", default=None)
-    _ = parser.add_argument("--fabro-bin", dest="fabro_bin", default=None)
-    _ = parser.add_argument("--journal", dest="journal", default=None)
-    _ = parser.add_argument("--dry-run", dest="dry_run", action="store_true")
-    add_invoker_argument(parser=parser)
-    _ = parser.add_argument("--json", dest="as_json", action="store_true")
-
-
-def _add_reconcile_merged(*, parser: argparse.ArgumentParser) -> None:
-    _ = parser.add_argument("--repo", dest="repo", required=True)
-    _ = parser.add_argument("--item", dest="item", required=True)
-    _ = parser.add_argument("--janitor", dest="janitor", default=None)
-    _ = parser.add_argument("--journal", dest="journal", default=None)
-    add_invoker_argument(parser=parser)
-    _ = parser.add_argument(
-        "--force",
-        dest="force",
-        action="store_true",
-        help=(
-            "bypass only the live-dispatch heartbeat refusal after confirming the "
-            "original dispatcher process is dead"
-        ),
-    )
-    _ = parser.add_argument(
-        "--regrade",
-        dest="regrade",
-        action="store_true",
-        help=(
-            "re-grade an already-merged rework:pending item against its current "
-            "effective acceptance criteria instead of refusing it; proceeds only "
-            "when the merged PR resolves and its merge commit is an ancestor of the "
-            "default branch, and leaves the item untouched on any non-PASS verdict"
-        ),
-    )
-    _ = parser.add_argument("--json", dest="as_json", action="store_true")
