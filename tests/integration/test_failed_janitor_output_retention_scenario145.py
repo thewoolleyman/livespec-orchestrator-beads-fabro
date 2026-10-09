@@ -47,6 +47,9 @@ _DECLARED_CONFIG = '{"livespec-orchestrator-beads-fabro": {"compat": {"pinned": 
 # The identity the retained artifact's path is keyed on.
 _INVOCATION = "d15fa7c4"
 
+# The one covered stage these cases drive.
+_JANITOR_STAGE = "janitor-post-merge"
+
 # Printed FIRST on each stream, so the journal row's trailing excerpt cannot
 # carry it. Finding either marker in a row would mean the excerpt is not
 # bounded the way this test assumes, which would void the control.
@@ -201,6 +204,41 @@ def test_a_failed_post_merge_janitor_retains_its_complete_output_and_exit_code(
     assert retained["stderr"].count("err-line-") == _LINES
     assert len(retained["stdout"]) > len(excerpt)
     assert len(retained["stderr"]) > len(excerpt)
+
+
+def test_a_second_failure_of_one_stage_retains_a_second_artifact(*, tmp_path: Path) -> None:
+    """Two failures of one stage in one invocation retain two artifacts, each named by its row.
+
+    The path is asserted NOT to be keyed on the invocation and stage alone
+    BEFORE the second run, because at Red that is exactly what it is keyed on:
+    the second retention cannot produce an artifact at all, since the name it
+    would use already exists on disk.
+    """
+    journal = _journal(repo=tmp_path)
+    first_outcome = _run_janitor(repo=tmp_path, journal=journal)
+    assert (first_outcome.status, first_outcome.stage) == ("failed", _JANITOR_STAGE)
+
+    first_rows = _rows(journal=journal, stage=_JANITOR_STAGE)
+    assert len(first_rows) == 1
+    first_artifact = Path(str(first_rows[0]["retained_output_path"]))
+    first_bytes = first_artifact.read_bytes()
+    assert first_artifact.name != f"{_INVOCATION}-{_JANITOR_STAGE}.json"
+
+    second_outcome = _run_janitor(repo=tmp_path, journal=journal)
+    assert (second_outcome.status, second_outcome.stage) == ("failed", _JANITOR_STAGE)
+
+    rows = _rows(journal=journal, stage=_JANITOR_STAGE)
+    assert len(rows) == 2
+    paths = [Path(str(row["retained_output_path"])) for row in rows]
+    assert paths[0] != paths[1]
+    assert all(path.is_file() for path in paths)
+    # The first artifact is what it was: a retention adds evidence, never
+    # replaces it, and a retry is the occasion where both copies matter.
+    assert first_artifact.read_bytes() == first_bytes
+    # Each row names ITS OWN artifact, so neither digest describes the other's
+    # bytes by accident — which two identical payloads would otherwise hide.
+    for row, path in zip(rows, paths, strict=True):
+        assert row["retained_output_sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def test_an_invocation_without_an_identity_resolves_no_retention_venue(*, tmp_path: Path) -> None:
