@@ -140,8 +140,22 @@ class VerifiedProofTarget:
 
     @property
     def identity(self) -> str:
-        """The target identity every observation of this target reports."""
-        return f"{self.kind} {self.subject_id} build {self.build} assertions {len(self.assertions)}"
+        """The target identity every observation of this target reports.
+
+        The identifiers themselves, never their COUNT. Equal counts do not
+        identify a scope: every single-assertion request on one subject and build
+        rendered one identity, so two distinct obligations collided and the
+        carriers that key an outstanding obligation on this line would have read a
+        discharge of either as a discharge of both.
+
+        CANONICAL AS A SET, because the read is. `observe_verified_proof` satisfies
+        this target only when EVERY requested assertion reads as reproduced, so two
+        references differing only in the order or the repetition of their
+        identifiers name one obligation; rendering them as written would track it
+        as two and discharge neither.
+        """
+        scope = sorted(set(self.assertions))
+        return f"{self.kind} {self.subject_id} build {self.build} assertions {scope!r}"
 
 
 @dataclass(frozen=True, kw_only=True)
