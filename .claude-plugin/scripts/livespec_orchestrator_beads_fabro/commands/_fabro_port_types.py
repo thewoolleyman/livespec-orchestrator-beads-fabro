@@ -7,7 +7,10 @@ from pathlib import Path
 from typing import Protocol
 
 from livespec_orchestrator_beads_fabro.commands._fabro_port_failure import FabroFailureDetail
-from livespec_orchestrator_beads_fabro.commands._fabro_port_records import FabroRunSummary
+from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
+    FabroRunSummary,
+    FabroTokenUsage,
+)
 
 __all__: list[str] = [
     "FabroCommand",
@@ -81,10 +84,19 @@ class FabroJsonResult:
 
 @dataclass(frozen=True, kw_only=True)
 class FabroEventsResult:
-    """Parsed `fabro events --json` result."""
+    """Parsed `fabro events --json` result.
+
+    `token_usage` is the token evidence summed off the stream's
+    `token.emitted` events, and is `None` whenever none was readable — which
+    covers both the pinned 0.254 build (where the event does not exist) and a
+    Petri body whose field names the reader does not know. It is carried HERE
+    rather than recomputed by each consumer so the reflection and audit paths
+    read one parse of the stream rather than two that could disagree.
+    """
 
     command: FabroCommand
     payload: object | None
+    token_usage: FabroTokenUsage | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

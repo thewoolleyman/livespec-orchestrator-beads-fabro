@@ -17,10 +17,12 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_http import (
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     FabroRunSummary,
+    FabroTokenUsage,
     fabro_run_id_from_output,
     fabro_run_summaries_from_payload,
     fabro_run_summaries_from_stdout,
     fabro_status_kind_from_payload,
+    fabro_token_usage_from_payload,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_types import (
     FabroCommand,
@@ -49,6 +51,7 @@ __all__: list[str] = [
     "FabroRunResult",
     "FabroRunSummary",
     "FabroTarget",
+    "FabroTokenUsage",
     "FabroVersionResult",
     "fabro_port_for_plan",
     "fabro_run_summaries_from_stdout",
@@ -138,7 +141,12 @@ class FabroPort:
             argv=[self.fabro_bin, "events", run_id, "--json", *self._server_suffix()],
             timeout_seconds=timeout_seconds,
         )
-        return FabroEventsResult(command=command, payload=_json_payload(command=command))
+        payload = _json_payload(command=command)
+        return FabroEventsResult(
+            command=command,
+            payload=payload,
+            token_usage=fabro_token_usage_from_payload(payload=payload),
+        )
 
     def ps(self, *, timeout_seconds: float) -> FabroPsResult:
         command = self._run(
