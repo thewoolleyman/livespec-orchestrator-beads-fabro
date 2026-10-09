@@ -360,13 +360,15 @@ def test_watched_launcher_does_not_stall_cancel_queued_active_run(
     ]
 
     def _next_sample(
-        self: WatchedFabroLauncher,
         *,
         plan: object,
         port: object,
         run_id: str | None,
+        heartbeat_path: object,
+        dispatch_id: object,
+        observed_at: float,
     ) -> LivenessSample:
-        _ = (self, plan, port, run_id)
+        _ = (plan, port, run_id, heartbeat_path, dispatch_id, observed_at)
         return samples.pop(0)
 
     def _discover_runnable_run(self: WatchedFabroLauncher, **_: object) -> FabroRunSummary:
@@ -391,7 +393,10 @@ def test_watched_launcher_does_not_stall_cancel_queued_active_run(
     monkeypatch.setenv(STALL_SECONDS_ENV_VAR, "1000")
     monkeypatch.setattr(_dispatcher_io_fabro_launcher.threading, "Thread", _thread)
     monkeypatch.setattr(_dispatcher_io_fabro_launcher, "_work_item_status", lambda **_: "active")
-    monkeypatch.setattr(WatchedFabroLauncher, "_sample", _next_sample)
+    # The per-poll sample assembly now lives in `_dispatcher_io_liveness_probe`
+    # and the launcher calls it as a module-level function, so the scripted
+    # sample sequence is injected there rather than over a launcher method.
+    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "liveness_sample", _next_sample)
     monkeypatch.setattr(WatchedFabroLauncher, "_discover_run", _discover_runnable_run)
 
     result = launcher.launch(plan=plan, runner=runner, journal=journal)
