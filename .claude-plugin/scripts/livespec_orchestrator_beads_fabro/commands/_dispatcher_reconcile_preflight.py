@@ -122,10 +122,16 @@ def repo_path_refusal(*, repo: Path, given: str) -> str | None:
     IS one may still hold no `.livespec.jsonc`, and the reads below the wall all
     resolve against that file. Refusing here names the file; letting the read
     proceed names whichever key the empty block leaves unset.
+
+    That arm tests for a readable FILE and not merely for PRESENCE, because the
+    loader reads the file through `is_file()` too: a directory carrying that name
+    is present, so an existence test admits it, and the loader then falls back to
+    the same empty block an absent file produces. The two shapes are
+    indistinguishable downstream, so they are refused together here.
     """
     if not repo.is_dir():
         return _REPO_PATH_REFUSAL.format(given=given)
-    if not (repo / _LIVESPEC_CONFIG).exists():
+    if not (repo / _LIVESPEC_CONFIG).is_file():
         return _REPO_CONFIG_REFUSAL.format(repo=repo, config=_LIVESPEC_CONFIG)
     return None
 
