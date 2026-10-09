@@ -7,6 +7,12 @@
 value out of the real process environment, which OVERRIDES the token a test
 supplied under the unnumbered `CLAUDE_CODE_OAUTH_TOKEN`.
 
+It also SUPPLIES one a test deliberately REMOVED, which is the sharper
+direction and gets its own case below: a test that deletes the unnumbered
+token to observe the pre-launch refusal instead finds the slot's value, probes
+it, and sees no refusal at all — so a dispatch the Dispatcher must stop
+proceeds, and the gate's output never says a slot answered for it.
+
 Measured on the dispatching host 2026-10-09 (work-item bd-ib-vvs645): the
 record named profile `anthropic-1` and the wrapper injected
 `CLAUDE_CODE_OAUTH_TOKEN__ANTHROPIC_1`, so four dispatcher tests received the
@@ -28,7 +34,7 @@ it AFTER the scrub and could never measure the fix.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -61,6 +67,12 @@ _SLOT_TOKEN = "host-wrapper-slot-token"
 _TEST_TOKEN = "test-oauth-token"
 _GITHUB_TOKEN = "test-github-token"
 _FALLBACK_WARNING = "factory credential slot fallback"
+# The pre-launch refusal `check_credential_env` composes, and the typed
+# condition `absent_claude_credential_status` carries. Both are asserted so the
+# absent-token case below cannot be satisfied by SOME other refusal arm — a
+# probe failure would refuse with the same prefix and a different condition.
+_REFUSAL_PREFIX = "C-mode dispatch refused before sandbox launch"
+_ABSENT_CONDITION = "Observed condition: absent"
 
 _GIT_AUTHOR = GitAuthor(name="Chad Woolley", email="thewoolleyman@gmail.com")
 # The shipped default's review-fix VISIT cap: three repair rounds plus the
@@ -132,6 +144,24 @@ def _usable_status() -> ClaudeCredentialStatus:
     )
 
 
+def _recording_probe(*, probed: list[str]) -> Callable[..., ClaudeCredentialStatus]:
+    """A usable probe that appends every token the gate hands it to `probed`.
+
+    Module-level rather than a closure per case BECAUSE one case asserts the
+    gate never probes at all: a per-case closure whose body is deliberately
+    never entered is an uncovered body, and this repo requires 100% per-file
+    coverage of its own tests. Sharing one body across the cases that DO probe
+    and the one that must not keeps both honest — the assertion stays
+    `probed == []` rather than becoming a pragma.
+    """
+
+    def probe(*, token: str) -> ClaudeCredentialStatus:
+        probed.append(token)
+        return _usable_status()
+
+    return probe
+
+
 def _workflow_toml(*, tmp_path: Path) -> Path:
     committed = tmp_path / "workflow.toml"
     _ = committed.write_text(_COMMITTED_WORKFLOW_TOML, encoding="utf-8")
@@ -146,12 +176,40 @@ def test_credential_gate_receives_the_token_the_test_supplied(
     monkeypatch.setenv(CLAUDE_OAUTH_TOKEN_ENV, _TEST_TOKEN)
     probed: list[str] = []
 
-    def recording_probe(*, token: str) -> ClaudeCredentialStatus:
-        probed.append(token)
-        return _usable_status()
-
-    assert check_credential_env(repo=tmp_path, probe=recording_probe) is None
+    assert check_credential_env(repo=tmp_path, probe=_recording_probe(probed=probed)) is None
     assert probed == [_TEST_TOKEN]
+
+
+def test_removing_the_tests_own_token_still_refuses_before_sandbox_launch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The gate's ABSENT arm survives the host's pool slots.
+
+    This is the same gate as the case above and the OPPOSITE direction, which
+    is why it is its own case: there, an ambient slot replaced the token a test
+    supplied, and the test failed loudly. Here a test REMOVES its token to
+    assert the refusal — `test_dispatch_fails_fast_when_oauth_token_env_is_absent_or_empty`
+    in `test_dispatcher.py` is the live instance — and an ambient slot supplies
+    one in its place, so `assess_credential_status` finds a non-empty token,
+    probes it, and the gate returns None. The refusal the test exists to
+    observe simply does not happen, and a dispatch the Dispatcher must stop
+    proceeds. Nothing in the gate's own output says a slot answered for it.
+
+    `probed == []` is the load-bearing assertion, not the refusal string: it
+    proves no token reached the probe AT ALL. Were the scrub narrowed to the
+    slot matching the published profile, or keyed on anything but the prefix,
+    this reads `[_SLOT_TOKEN]` and the refusal is None.
+    """
+    monkeypatch.delenv(CLAUDE_OAUTH_TOKEN_ENV, raising=False)
+    probed: list[str] = []
+
+    refusal = check_credential_env(repo=tmp_path, probe=_recording_probe(probed=probed))
+
+    assert probed == []
+    assert refusal is not None
+    assert refusal.startswith(_REFUSAL_PREFIX)
+    assert _ABSENT_CONDITION in refusal
+    assert CLAUDE_OAUTH_TOKEN_ENV in refusal
 
 
 def test_run_config_overlay_projects_the_token_the_test_supplied(
@@ -195,10 +253,6 @@ def test_a_real_dispatch_still_honours_the_published_profile_slot(
     monkeypatch.setenv(_SLOT_ENV, _SLOT_TOKEN)
     probed: list[str] = []
 
-    def recording_probe(*, token: str) -> ClaudeCredentialStatus:
-        probed.append(token)
-        return _usable_status()
-
-    assert check_credential_env(repo=tmp_path, probe=recording_probe) is None
+    assert check_credential_env(repo=tmp_path, probe=_recording_probe(probed=probed)) is None
     assert probed == [_SLOT_TOKEN]
     assert _FALLBACK_WARNING not in capsys.readouterr().err
