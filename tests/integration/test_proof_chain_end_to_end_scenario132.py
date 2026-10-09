@@ -145,18 +145,30 @@ _LABEL_FIX = "fix"
 _LABEL_APPROVE = "approve"
 _LABEL_ALL_REJECTED = "all_rejected"
 
-# The closed context vocabulary the committed graph's conditions read.
+# The closed context vocabulary the committed graph's conditions read. It is
+# exactly `outcome` and `preferred_label` since plan `fabro-currency` P4: the
+# graph's three `inputs.*` conditions and every
+# `context.internal.node_visit_count` guard are gone, because the Petri-era
+# engine rejects the former at load (`attractor.condition.syntax`) and does not
+# populate the latter. Keeping either in THIS vocabulary would be worse than
+# useless — the drive would happily evaluate a guard the engine ignores, and
+# report a journey along a route no run can take. Both now land on the refusal,
+# which is asserted in `test_the_drive_refuses_a_condition_or_a_graph_it_cannot_route`.
 _OUTCOME_TERM = "outcome"
 _PREFERRED_LABEL_TERM = "preferred_label"
-_VISIT_COUNT_TERM = "context.internal.node_visit_count"
-# The two workflow inputs the graph interpolates into a condition. Their VALUES
-# come off the dispatch plan, never off a literal here: the review-fix cap is a
-# repository dial, and a copy of today's number drifts the moment it moves.
+_RETIRED_VISIT_COUNT_TERM = "context.internal.node_visit_count"
+# The two per-item policy inputs the Dispatcher RENDERS. The graph no longer
+# interpolates either into a condition, but the dispatch still sends both, so the
+# drive keeps reading their values off the dispatch plan rather than off a
+# literal here — which is also what makes an input re-appearing in a condition
+# resolvable rather than a refusal for the wrong reason.
 _CAP_INPUT = "review_fix_visit_cap"
 _MERGE_ON_CAP_INPUT = "merge_on_review_cap_outcome"
-# Longest-first so `!=` is never read as `=` with a stray `!` on its left, and
-# `>=` is never read as a bare `>`.
-_OPERATORS = ("!=", ">=", "=", "<")
+# Longest-first so `!=` is never read as `=` with a stray `!` on its left. The
+# ordering operators went with the visit guards: no condition the graph declares
+# compares magnitudes any more, so evaluating one would be modelling a shape the
+# graph may not carry.
+_OPERATORS = ("!=", "=")
 _CLAUSE_SEPARATOR = "&&"
 _INPUT_REFERENCE = re.compile(r"\{\{\s*inputs\.(?P<name>\w+)\s*\}\}")
 # A bare literal: the only term shape that is neither a context read nor an
@@ -443,8 +455,6 @@ def _resolve(*, term: str, state: _State, inputs: dict[str, str]) -> str:
         return state.outcome
     if resolved == _PREFERRED_LABEL_TERM:
         return "" if state.preferred_label is None else state.preferred_label
-    if resolved == _VISIT_COUNT_TERM:
-        return str(state.visit)
     if _LITERAL.fullmatch(resolved) is not None:
         return resolved
     raise _DriveRefusedError(f"no term this drive resolves: {term!r}")
@@ -453,11 +463,7 @@ def _resolve(*, term: str, state: _State, inputs: dict[str, str]) -> str:
 def _compare(*, operator: str, left: str, right: str) -> bool:
     if operator == "=":
         return left == right
-    if operator == "!=":
-        return left != right
-    if operator == ">=":
-        return int(left) >= int(right)
-    return int(left) < int(right)
+    return left != right
 
 
 def _clause_holds(*, clause: str, state: _State, inputs: dict[str, str]) -> bool:
@@ -1025,8 +1031,10 @@ def test_every_condition_the_committed_graph_declares_is_evaluable_by_the_drive(
         _State(outcome=_SUCCEEDED, preferred_label=None, visit=1),
         _State(outcome=_FAILED, preferred_label=None, visit=1),
         _State(outcome=_SUCCEEDED, preferred_label=_LABEL_FIX, visit=1),
-        # At the cap, so the review node's two escape-hatch conditions are
-        # reached instead of being short-circuited by their first clause.
+        # The review node's cap state is kept as a case even though no condition
+        # reads a visit count any more: it is the state the retired escape-hatch
+        # conditions existed for, and driving every declared condition in it is
+        # what would catch one being re-introduced.
         _State(
             outcome=_SUCCEEDED,
             preferred_label=_LABEL_FIX,
@@ -1130,11 +1138,24 @@ def test_the_drive_refuses_a_condition_or_a_graph_it_cannot_route() -> None:
     evaluate, a node whose every edge is conditional with none matching (the
     `all_conditional_edges` shape the pinned engine rejects outright), and a
     graph with no terminal.
+
+    THE RETIRED SHAPES ARE REFUSALS NOW, not evaluations, and that is the point
+    of asserting them here. A `context.internal.node_visit_count` read and a
+    magnitude comparison were both in this drive's vocabulary until plan
+    `fabro-currency` P4. The Petri-era engine does not populate that key, so a
+    drive that still evaluated such a guard would report a journey along a route
+    no real run can take — the most expensive way for this module to be wrong.
     """
     state = _State(outcome=_SUCCEEDED, preferred_label=None, visit=1)
 
     with pytest.raises(_DriveRefusedError):
         _ = _condition_holds(condition="context.internal.attempt=1", state=state, inputs={})
+    with pytest.raises(_DriveRefusedError):
+        _ = _condition_holds(condition=f"{_RETIRED_VISIT_COUNT_TERM}=3", state=state, inputs={})
+    with pytest.raises(_DriveRefusedError):
+        _ = _condition_holds(condition=f"{_OUTCOME_TERM} >= 3", state=state, inputs={})
+    with pytest.raises(_DriveRefusedError):
+        _ = _condition_holds(condition=f"{_OUTCOME_TERM} < 3", state=state, inputs={})
     with pytest.raises(_DriveRefusedError):
         _ = _condition_holds(condition="outcome={{ inputs.no_such_input }}", state=state, inputs={})
     with pytest.raises(_DriveRefusedError):
