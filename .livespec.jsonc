@@ -486,6 +486,17 @@
       // ACTIVE inventory, not endpoint history: an unnamed `reconcile-runs`
       // pass surveys every entry. Intentionally stopped or retired factories
       // must stay absent so the host timer never contacts them.
+      //
+      // Each entry may also carry an optional `bin` key: the absolute path to
+      // the engine CLIENT binary that factory's server speaks to. It wins over
+      // the global `fabro_bin` resolution described below (including over an
+      // explicit `--fabro-bin`), because it states a COMPATIBILITY constraint
+      // rather than a preference -- a Petri-era client cannot talk to a 0.254
+      // server, nor the reverse -- and it is what makes an upgrade candidate
+      // runnable BESIDE production on one host. Omit it, as `hp` does, and
+      // that factory resolves the global binary exactly as before the key
+      // existed. A `bin` naming no file, or a file with no execute bit, is
+      // refused before the item is claimed.
       "factories": {
         "hp": {
           "server": "https://hp-xubuntu.perch-rudd.ts.net:32276"

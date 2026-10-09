@@ -58,6 +58,7 @@ _FABRO_BIN_SHUTIL_WHICH = "livespec_orchestrator_beads_fabro.commands._fabro_bin
 _LEGACY_SERVER = "https://hp-xubuntu.perch-rudd.ts.net:32276"
 _CANDIDATE_SERVER = "https://hp-xubuntu.perch-rudd.ts.net:32278"
 _GLOBAL_BIN = "/global/fabro"
+_EXIT_PRECONDITION_ERROR = 3
 
 
 def _write_config(*, cwd: Path, dispatcher: dict[str, object]) -> None:
@@ -292,3 +293,45 @@ def test_the_dispatch_record_names_the_binary_that_drove_the_dispatch(
     assert record["stage"] == "dispatch-id"
     assert record["fabro_bin"] == str(bin_dir / "fabro-candidate")
     assert record["fabro_version"] == "fabro 0.378.0-nightly.0 (e46845b 2026-10-06)"
+
+
+@pytest.mark.parametrize(
+    ("relative", "executable"),
+    [("absent/fabro", False), ("present/fabro", True)],
+)
+def test_an_unusable_declared_bin_is_refused_before_claim_naming_factory_and_path(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    relative: str,
+    executable: bool,
+) -> None:
+    """A declared `bin` that is not an existing executable refuses, and says whose.
+
+    Both unusable shapes are parameterized because they have ONE remedy and
+    must not have two messages: a path naming nothing, and a path naming a file
+    without the execute bit. The message must name the FACTORY as well as the
+    path — the global knobs the pre-existing preflight enumerates are the wrong
+    remedy here, and an operator told to fix `dispatcher.fabro_bin` would be
+    editing a key this dispatch never read.
+    """
+    declared = tmp_path / relative
+    declared.parent.mkdir(parents=True, exist_ok=True)
+    if executable:
+        _ = declared.write_text("not executable\n", encoding="utf-8")
+        declared.chmod(0o644)
+    _write_config(
+        cwd=tmp_path,
+        dispatcher={
+            "default_factory": "hp-candidate",
+            "factories": {"hp-candidate": {"server": _CANDIDATE_SERVER, "bin": str(declared)}},
+        },
+    )
+    args = argparse.Namespace(fabro_bin=None, janitor=None, journal=None)
+
+    assert dispatch_preamble(args=args, repo=tmp_path) == (None, _EXIT_PRECONDITION_ERROR)
+
+    refusal = capsys.readouterr().err
+    assert "hp-candidate" in refusal
+    assert str(declared) in refusal
+    assert "dispatcher.factories.hp-candidate.bin" in refusal

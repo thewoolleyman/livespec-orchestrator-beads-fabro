@@ -16,6 +16,7 @@ from livespec_orchestrator_beads_fabro.commands._config import (
 )
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import (
+    factory_bin_refusal,
     resolve_dispatch_fabro_bin,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_validation import (
@@ -316,23 +317,31 @@ def dispatch_preamble(
     janitor, janitor_ok = parse_janitor(raw=args.janitor)
     if not janitor_ok:
         return None, _EXIT_USAGE_ERROR
-    # ONE arm, two refusals, because both answer one question -- does this
+    # ONE arm, three refusals, because each answers one question -- does this
     # repository's committed `.livespec.jsonc` admit a dispatch at all -- and
-    # both are read from that one file in this one pass. The ORDER is
+    # all are read from that one file in this one pass. The ORDER is
     # deliberate: the integration-schema pass enumerates EVERY defective point
     # in one message, so reporting a capability-mirror typo ahead of it would
     # hand an adopter one fault out of a file carrying several.
-    config_refusal = schema_validation_refusal(
-        args=args, repo=repo
-    ) or sandbox_capabilities_refusal(repo=repo)
+    #
+    # The factory's declared engine binary is the third, and it is graded HERE
+    # rather than beside the engine-binary preflight below even though both
+    # catch the same file -- a declared client IS the effective one. The
+    # difference is the remedy: the preflight names the GLOBAL knobs, and an
+    # operator sent to fix `dispatcher.fabro_bin` would be editing a key this
+    # dispatch never read. The factory is resolved ahead of the arm so its
+    # declaration can join it, and ahead of the binary resolution below because
+    # which client a dispatch drives is a property of the factory it is routed
+    # to.
+    args.fabro_factory_target = _resolve_fabro_factory_for(args=args, repo=repo)
+    config_refusal = (
+        schema_validation_refusal(args=args, repo=repo)
+        or sandbox_capabilities_refusal(repo=repo)
+        or factory_bin_refusal(factory=args.fabro_factory_target)
+    )
     if config_refusal is not None:
         _ = write_stderr(text=config_refusal)
         return None, _EXIT_PRECONDITION_ERROR
-    # The factory is resolved BEFORE the binary, because which client this
-    # dispatch drives is a property of the factory it is routed to: a factory
-    # declaring a `bin` wins over the global resolution, and resolving the
-    # binary first would preflight a client this dispatch never uses.
-    args.fabro_factory_target = _resolve_fabro_factory_for(args=args, repo=repo)
     args.fabro_bin = resolve_dispatch_fabro_bin(
         args=args, repo=repo, factory=args.fabro_factory_target
     )
