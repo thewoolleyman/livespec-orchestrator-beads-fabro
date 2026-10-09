@@ -56,15 +56,16 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import timezone
-from typing import Any, Final, Protocol, cast
+from typing import Any, Final, Protocol
 
+from livespec_orchestrator_beads_fabro.commands._fabro_port_events import (
+    fabro_event_records_from_stdout,
+)
 from livespec_orchestrator_beads_fabro.effects import (
     FloatParseFailure,
     IsoDatetimeParseFailure,
-    JsonParseFailure,
     parse_float,
     parse_iso_datetime,
-    parse_json,
 )
 
 __all__: list[str] = [
@@ -105,6 +106,16 @@ DEFAULT_STALL_SECONDS = 1500.0
 # falls back to DEFAULT_STALL_SECONDS (a misconfigured window must never
 # disable the backstop).
 STALL_SECONDS_ENV_VAR = "LIVESPEC_DISPATCH_STALL_SECONDS"
+
+# The timestamp fields whose value is an ISO-8601 instant or a count of
+# SECONDS. These are what the pinned 0.254 build emits.
+_SECONDS_EVENT_FIELDS: tuple[str, ...] = ("timestamp", "ts", "at")
+
+# The Petri-era envelope's own timestamp, and its unit. Measured on
+# v0.378.0-nightly.0 (research note 006): the stream's records carry
+# `recorded_at` in integer MILLISECONDS and none of the three fields above.
+_MILLISECOND_EVENT_FIELD = "recorded_at"
+_MILLISECONDS_PER_SECOND = 1000.0
 
 # ISO-8601 timestamps Fabro emits in `events`/`inspect` JSON, e.g.
 # "2026-06-13T08:16:24Z" or "...+00:00" or with fractional seconds. We
@@ -339,35 +350,18 @@ def _quiet_window_opened_at(*, timestamped: tuple[LivenessSample, ...]) -> float
 
 def _max_event_epoch(*, events_json: str) -> float | None:
     """Max event timestamp (epoch seconds) across `fabro events --json`; None on no signal."""
-    parsed_raw = parse_json(text=events_json)
-    if isinstance(parsed_raw, JsonParseFailure):
-        return None
-    events = _events_list(parsed_raw=parsed_raw)
+    events = fabro_event_records_from_stdout(stdout=events_json)
     if events is None:
         return None
-    epochs = [epoch for event in events if (epoch := _event_epoch(event_raw=event)) is not None]
+    epochs = [epoch for event in events if (epoch := _event_epoch(event=event)) is not None]
     if not epochs:
         return None
     return max(epochs)
 
 
-def _events_list(*, parsed_raw: object) -> list[object] | None:
-    """Normalize the events payload to a list (top-level array or {"events": [...]})."""
-    if isinstance(parsed_raw, list):
-        return cast("list[object]", parsed_raw)
-    if isinstance(parsed_raw, dict):
-        events_raw: object = cast("dict[str, Any]", parsed_raw).get("events")
-        if isinstance(events_raw, list):
-            return cast("list[object]", events_raw)
-    return None
-
-
-def _event_epoch(*, event_raw: object) -> float | None:
-    """Read one event's timestamp (`timestamp`/`ts`/`at`) as epoch seconds."""
-    if not isinstance(event_raw, dict):
-        return None
-    event = cast("dict[str, Any]", event_raw)
-    for key in ("timestamp", "ts", "at"):
+def _event_epoch(*, event: dict[str, Any]) -> float | None:
+    """Read one event's timestamp as epoch seconds, on either engine's field set."""
+    for key in _SECONDS_EVENT_FIELDS:
         value: object = event.get(key)
         if isinstance(value, str):
             epoch = _iso_to_epoch(value=value)
@@ -375,6 +369,26 @@ def _event_epoch(*, event_raw: object) -> float | None:
                 return epoch
         if isinstance(value, int | float) and not isinstance(value, bool):
             return float(value)
+    return _millisecond_epoch(value=event.get(_MILLISECOND_EVENT_FIELD))
+
+
+def _millisecond_epoch(*, value: object) -> float | None:
+    """The Petri envelope's `recorded_at` as epoch SECONDS; None when absent.
+
+    The unit conversion is load-bearing rather than cosmetic. This module takes
+    the MAXIMUM across every event, and a run during the parallel rollout can
+    emit both field families, so a millisecond figure left unconverted would
+    outrank every legacy second-valued timestamp by three orders of magnitude
+    and pin the answer to whichever record happened to be in milliseconds.
+
+    Only a NUMBER is read, because that is the whole of what was measured: an
+    integer millisecond count. A text `recorded_at` is left unread rather than
+    parsed as an instant — no engine has been observed writing one, and a
+    reading of a shape nobody has seen is a guess whose failure mode is a
+    plausible epoch rather than an error.
+    """
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        return float(value) / _MILLISECONDS_PER_SECOND
     return None
 
 
