@@ -107,14 +107,14 @@ from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
+from livespec_orchestrator_beads_fabro._intake_factory_size_gate import (
+    apply_intake_factory_size_gate,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_advisories import (
     advisory_definition_of_done_findings,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_findings import (
     definition_of_done_findings,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
-    resolve_adopted_assertion_count_ceiling,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display import (
     ADVISORY_FINDING_PREFIX,
@@ -264,17 +264,17 @@ def apply_intake_dor(
     because a mechanical one is what that step has to stop on, and they are
     recorded on the item afterwards whatever the verdict was.
     """
-    repo_root = path.repo_root
-    if repo_root is not None:
-        ceiling = resolve_adopted_assertion_count_ceiling(cwd=repo_root)
-        if not is_successful(ceiling):
-            return IOFailure(unsafe_perform_io(ceiling.failure()))
-
     client = make_beads_client(config=path)
     if not client.exists(issue_id=item_id):
         return IOFailure(WorkItemNotFoundError(item_id=item_id))
 
     item = materialize_work_items(records=read_work_items(path=path))[item_id]
+    size_route = apply_intake_factory_size_gate(path=path, item=item)
+    if not is_successful(size_route):
+        return IOFailure(unsafe_perform_io(size_route.failure()))
+    size_status = unsafe_perform_io(size_route.unwrap())
+    if size_status is not None:
+        return IOSuccess(size_status)
     verdict = evaluate(checklist=checklist)
     status = _routed_status(verdict=verdict, has_dependencies=bool(item.depends_on))
     findings = filing_findings(item=item, repo_root=path.repo_root)

@@ -15,10 +15,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from returns.unsafe import unsafe_perform_io
+
 from livespec_orchestrator_beads_fabro import store
+from livespec_orchestrator_beads_fabro._store_factory_size_gate import (
+    route_factory_size_decomposition,
+)
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
     acceptance_eligibility,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
+    factory_size_decision,
+    resolve_adopted_assertion_count_ceiling,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
     InvokerIdentity,
@@ -235,6 +244,23 @@ def _approve_item(
             err="invalid-source-state",
             msg="approve requires an effective-manual pending-approval item.",
         )
+    adopted_ceiling = unsafe_perform_io(
+        resolve_adopted_assertion_count_ceiling(cwd=repo).value_or(None)
+    )
+    size = factory_size_decision(
+        item=item,
+        adopted_ceiling=adopted_ceiling,
+        raw_justification=None,
+    )
+    if size.disposition == "decompose":
+        reason = cast("str", size.reason)
+        route_factory_size_decomposition(path=config, work_item_id=item.id, reason=reason)
+        return valve_refusal(
+            aid=action_id,
+            wid=item.id,
+            err="size-decomposition",
+            msg=reason,
+        ) | {"target_status": "backlog", "message": reason}
     # The entry-to-`ready` wall (the effective-acceptance-criteria clause of contracts.md).
     # It consumes the SAME shared eligibility decision the pre-dispatch wall
     # does, so an item this valve admits is one the dispatch path will accept —
