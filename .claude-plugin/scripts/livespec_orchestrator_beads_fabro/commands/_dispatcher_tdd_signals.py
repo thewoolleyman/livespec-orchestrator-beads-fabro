@@ -129,6 +129,7 @@ class TddSignals:
     order_refusals: int | None = None
     assertion_count: int | None = None
     adapter: str | None = None
+    size_justified: bool | None = None
 
 
 # The fully-unobserved record. It is the default on `CalibrationRecord`, so an
@@ -142,6 +143,7 @@ def tdd_signals(
     commits: TddCommitSignals | None,
     order: TddOrderSignals,
     adapter: str | None,
+    size_justified: bool | None = None,
 ) -> TddSignals:
     """Assemble one dispatch's TDD signals from the three derivations.
 
@@ -162,6 +164,7 @@ def tdd_signals(
         order_refusals=order.order_refusals,
         assertion_count=assertion_count(item=item),
         adapter=adapter,
+        size_justified=size_justified,
     )
 
 
