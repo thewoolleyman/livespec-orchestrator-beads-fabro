@@ -295,14 +295,26 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   forbids spending. `ProofRecord.attachment` resolves the asset through the SAME
   section walk `reproduced` uses, which is what keeps one assertion's digest from
   being checked against another assertion's verdict.
-- The TRANSPORT a projected credential reaches the worker through lives in two
+- The TRANSPORT a projected credential reaches the worker through lives in three
   cohesive modules, split pure-from-impure the usual way:
   `_dispatcher_secret_channel` (PURE: the two transports a factory may declare,
   the stable vault key each credential is stored under, the reference token, the
-  bundle rewrite and every refusal) and `_dispatcher_overlay_write` (routing plus
-  the mode-600 write, which are ONE act). The store itself is a `VaultSecretSink`
-  the dispatch path injects, which is what keeps the whole transport exercisable
-  without a factory. `_dispatcher_codex_overlay_leg` is the
+  bundle rewrite and every refusal), `_dispatcher_overlay_write` (routing plus
+  the mode-600 write, which are ONE act) and `_dispatcher_secret_vault` (the ONE
+  place a value is handed to a factory). The store is injected as a
+  `VaultSecretSink`, which is what keeps the whole transport exercisable without
+  a factory.
+  Two properties of the sink an editor must not invert, both about SURFACES
+  rather than about correctness. The value travels on the child's STANDARD
+  INPUT, from an UNLINKED temporary file's descriptor — never an argument, which
+  is visible in the host process table, is what a runner echoes into a log, and
+  is what a timeout or not-found diagnostic quotes back verbatim. And the
+  server's own rejection text is SCRUBBED of the value before it is returned:
+  the dispatch journals that refusal, so an echoing message would put the
+  credential into the one record written to say it could not be stored. It is
+  deliberately NOT a `FabroPort` verb — the port's verbs carry no credential on
+  stdin, and adding one would put the only value-bearing call among the
+  value-free ones. `_dispatcher_codex_overlay_leg` is the
   neighbouring extraction that keeps the materializer inside its size ceiling:
   the run budget, the graded host Codex snapshot, the credential-use enforcement
   inputs and the launch-route guard, in that order, as one unit.
