@@ -172,6 +172,7 @@ def _needs_human_terminal_outcome(
         detail=needs_human_terminal_detail(
             work_item_id=plan.work_item_id,
             run_id=run_id,
+            text=text,
             causal=causal_stage_failure(
                 signatures=() if escalation is None else escalation.loop_failure_signatures
             ),
