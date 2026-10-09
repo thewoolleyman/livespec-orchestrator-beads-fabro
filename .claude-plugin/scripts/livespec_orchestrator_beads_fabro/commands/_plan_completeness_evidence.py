@@ -48,13 +48,22 @@ from typing import TYPE_CHECKING, TypedDict
 from typing_extensions import Unpack
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
+from livespec_orchestrator_beads_fabro.commands._plan_completeness_identity import (
+    REVIEWING_PARTY,
+    completeness_leg_identity,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from pathlib import Path
+
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
     "CompletenessReviewEvidence",
+    "CompletenessReviewEvidenceFields",
     "completeness_review_evidence",
     "record_completeness_review_evidence",
 ]
@@ -64,10 +73,15 @@ _TRUE = "true"
 
 
 class CompletenessReviewEvidenceFields(TypedDict):
-    """Keyword payload for a durable completeness-review evidence record."""
+    """Keyword payload for a durable completeness-review evidence record.
+
+    There is NO `reviewer_identity` field, and that absence is the guarantee
+    rather than an omission: the identity is computed from the reviewing session's
+    own environment, so a caller supplies only what it alone holds — which record
+    this is, what it attests, and the prose behind the attestation.
+    """
 
     evidence_id: str
-    reviewer_identity: str
     separate_reviewer: bool
     attests_complete_requirement_coverage: bool
     body: str
@@ -95,15 +109,38 @@ def record_completeness_review_evidence(
     *,
     config: StoreConfig,
     epic_id: str,
+    project_root: Path | None = None,
+    env: Mapping[str, str] | None = None,
+    runner: CommandRunner | None = None,
     **evidence: Unpack[CompletenessReviewEvidenceFields],
 ) -> None:
-    """Append a durable plan completeness-review evidence comment."""
+    """Append a durable plan completeness-review evidence comment.
+
+    `project_root`, `env` and `runner` are the seams the reviewer's identity is
+    COMPUTED through, and the ordinary in-session call supplies none of them. They
+    are not an identity route: there is no field a caller can put a name in, which
+    is what keeps the archive leg's self-review refusal from being one keyword
+    away from passing.
+
+    The identity resolves BEFORE the append, so an invocation that cannot name its
+    reviewer writes nothing. A record comment must not be edited after posting —
+    a correction is a new record — so an evidence comment naming no reviewer would
+    sit on the timeline permanently, where the archive gate would read it, decline
+    to count it, and report a refusal whose cause the reviewer could not see from
+    its own successful write.
+    """
+    reviewer_identity = completeness_leg_identity(
+        role=REVIEWING_PARTY,
+        project_root=project_root,
+        env=env,
+        runner=runner,
+    )
     client = make_beads_client(config=config)
     client.add_comment(
         issue_id=epic_id,
         body=_evidence_comment_body(
             evidence_id=evidence["evidence_id"],
-            reviewer_identity=evidence["reviewer_identity"],
+            reviewer_identity=reviewer_identity,
             separate_reviewer=evidence["separate_reviewer"],
             attests_complete_requirement_coverage=evidence["attests_complete_requirement_coverage"],
             body=evidence["body"],

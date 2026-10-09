@@ -81,13 +81,20 @@ The operation's testable package substrate is
 - `plan_record_rate_warnings(...)` reports the days on which this thread's
   record authoring ran past a threshold. See Step 3's "Record rate".
 - `record_completeness_review_evidence(...)` appends one durable
-  independent completeness-review evidence comment to the plan epic.
+  independent completeness-review evidence comment to the plan epic. It
+  takes NO reviewer identity: the record's `reviewer-identity` is
+  COMPUTED from the invoking session — its agent-session id, or the forge
+  login for a human at a terminal — exactly as the Proof-of-Done posting
+  primitives compute theirs. The REVIEWER must therefore make this call
+  itself, from its own session. A call the archiving session makes on a
+  reviewer's behalf records the ARCHIVER as the reviewer, and the archive
+  then refuses that evidence as a self-review.
 - `archive_thread(...)` performs the child-disposition gate, sweeps the
   working tree outside `plan/` for files that read `plan/<slug>/` by
-  path, launches a supplied fresh independent reviewer when valid review
-  evidence is absent, re-reads the ledger for durable evidence, and moves
-  the thread directory to `plan/archive/<slug>/` only after every gate
-  passes.
+  path, computes the archiving party's own identity, launches a supplied
+  fresh independent reviewer when valid review evidence is absent,
+  re-reads the ledger for durable evidence, and moves the thread
+  directory to `plan/archive/<slug>/` only after every gate passes.
 - `outside_plan_path_references(...)` is that sweep on its own, for a
   session that wants the hit list before it attempts the archive.
 
@@ -439,10 +446,31 @@ Archiving has three required legs:
    reviewer must have had no role in the plan's implementation, compare
    every research requirement and explicit deferral against the complete
    child set, spot-check closure evidence against the forge, and record
-   the result durably through `record_completeness_review_evidence(...)`.
-   Keep the plan live until that durable evidence exists. A self-review,
-   an unrecorded result, or a review that does not attest complete
-   requirement-carrier coverage is not evidence.
+   the result durably through `record_completeness_review_evidence(...)`,
+   called from the REVIEWER's own session. Keep the plan live until that
+   durable evidence exists. A self-review, an unrecorded result, or a
+   review that does not attest complete requirement-carrier coverage is
+   not evidence.
+
+   The self-review half of that is MECHANICAL, and the archive names it
+   on its own: `archive_thread(...)` compares the evidence record's
+   computed `reviewer-identity` against its own computed archiving
+   identity and refuses, naming both the identity and the evidence id,
+   when they are equal. Two other refusals sit beside it and are
+   deliberately distinct, because each prescribes a different next
+   action: evidence that is absent or does not fully attest reports that
+   evidence is required, and an invocation whose own identity cannot be
+   computed at all reports which party went unnamed rather than archiving
+   on a comparison it could not make.
+
+   What the gate does NOT verify is worth knowing before citing a passing
+   one. `separate-reviewer` and `attests-complete-requirement-coverage`
+   are SELF-DECLARED by whoever wrote the comment and are cross-checked
+   against nothing; the gate establishes that they were claimed, and that
+   the party claiming them is not the party archiving. The reviewer's
+   actual independence of the plan's IMPLEMENTATION — as opposed to its
+   independence of the archiving session — is still routed socially, by
+   whoever commissions the review.
 3. The plan's own Proof of Done. The epic must carry a Definition of Done
    section, and the latest plan Proof of Done record on it whose verdict
    is `verified` or `not_reproduced` must be `verified`, must cover every

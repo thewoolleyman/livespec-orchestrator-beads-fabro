@@ -581,15 +581,20 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   four fields an evidence comment carries, only `reviewer-identity` is
   cross-checked against anything its author does not control, while
   `separate-reviewer` and `attests-complete-requirement-coverage` are
-  SELF-DECLARED attestations the gate records rather than establishes. Two
-  properties an editor must not invert. A self-review is REMEMBERED rather than
-  returned on sight, because two comments can carry one evidence id and refusing
-  on the first read would refuse an archive a later independent comment
-  satisfies. And the verdict carries TWO fields rather than one optional id,
-  because "no evidence" needs a review performed while "self-review" needs a
-  different PARTY — `_plan_archive` raises a distinct refusal for each, and the
-  generic one would send the only session that cannot satisfy the leg back to
-  author a second comment under the same identity.
+  SELF-DECLARED attestations the gate records rather than establishes. Three
+  properties an editor must not invert. The payload carries NO reviewer-identity
+  field — the reviewer's identity is computed from the REVIEWING session's own
+  environment, which is why the reviewer has to make the call itself and why a
+  call made on its behalf records the caller — and the identity resolves BEFORE
+  the append, because a record comment cannot be edited afterwards and one
+  naming no reviewer would sit on the timeline permanently. A self-review is
+  REMEMBERED rather than returned on sight, because two comments can carry one
+  evidence id and refusing on the first read would refuse an archive a later
+  independent comment satisfies. And the verdict carries TWO fields rather than
+  one optional id, because "no evidence" needs a review performed while
+  "self-review" needs a different PARTY — `_plan_archive` raises a distinct
+  refusal for each, and the generic one would send the only session that cannot
+  satisfy the leg back to author a second comment under the same identity.
 
 Rules an agent editing this tree must follow:
 

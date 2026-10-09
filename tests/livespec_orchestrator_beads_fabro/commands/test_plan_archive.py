@@ -45,6 +45,10 @@ _COMMANDS = (
 # grade against a known identity rather than against whatever session happens to
 # be running pytest.
 _ARCHIVING_SESSION_ENV = {"CLAUDE_CODE_SESSION_ID": "archiving-session"}
+# The reviewing session's own environment. The evidence record's reviewer
+# identity is COMPUTED from it — there is no field a caller can name one in —
+# so a reviewer distinct from the archiver is expressed as a distinct session.
+_REVIEWING_SESSION_ENV = {"CLAUDE_CODE_SESSION_ID": "reviewing-session"}
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -151,7 +155,7 @@ def test_the_proof_leg_refuses_an_epic_whose_definition_of_done_section_is_gone(
         config=_config(),
         epic_id=created["epic_id"],
         evidence_id="review-evidence-1",
-        reviewer_identity="fresh-independent-reviewer",
+        env=_REVIEWING_SESSION_ENV,
         separate_reviewer=True,
         attests_complete_requirement_coverage=True,
         body="Every requirement carrier under the plan is covered.",

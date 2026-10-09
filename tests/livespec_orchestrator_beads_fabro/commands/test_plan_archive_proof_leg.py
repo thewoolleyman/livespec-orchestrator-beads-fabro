@@ -44,6 +44,10 @@ _ASSERTION = "The operator drives the delivered command and sees it work."
 # grades against a known identity rather than against whatever session happens
 # to be running pytest.
 _ARCHIVING_SESSION_ENV = {"CLAUDE_CODE_SESSION_ID": "archiving-session"}
+# The reviewing session's own environment. The evidence record's reviewer
+# identity is COMPUTED from it — there is no field a caller can name one in —
+# so a reviewer distinct from the archiver is expressed as a distinct session.
+_REVIEWING_SESSION_ENV = {"CLAUDE_CODE_SESSION_ID": "reviewing-session"}
 
 
 def _config() -> StoreConfig:
@@ -100,7 +104,7 @@ def test_closed_children_and_a_coverage_review_do_not_archive_an_unproved_plan(
         config=_config(),
         epic_id=epic_id,
         evidence_id="review-evidence-1",
-        reviewer_identity="fresh-independent-reviewer",
+        env=_REVIEWING_SESSION_ENV,
         separate_reviewer=True,
         attests_complete_requirement_coverage=True,
         body="Every requirement carrier under the plan is covered.",

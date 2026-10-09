@@ -41,6 +41,10 @@ _PLAN_ASSERTION = "The operator drives the delivered command and sees it work."
 # grades against a known identity rather than against whatever session happens
 # to be running pytest.
 _ARCHIVING_SESSION_ENV = {"CLAUDE_CODE_SESSION_ID": "archiving-session"}
+# The reviewing session's own environment. The evidence record's reviewer
+# identity is COMPUTED from it — there is no field a caller can name one in —
+# so a reviewer distinct from the archiver is expressed as a distinct session.
+_REVIEWING_SESSION_ENV = {"CLAUDE_CODE_SESSION_ID": "reviewing-session"}
 
 
 def _config() -> StoreConfig:
@@ -489,7 +493,7 @@ def test_archive_after_reviewer_records_valid_durable_evidence(tmp_path: Path) -
             config=_config(),
             epic_id=created["epic_id"],
             evidence_id="review-evidence-1",
-            reviewer_identity="fresh-independent-reviewer",
+            env=_REVIEWING_SESSION_ENV,
             separate_reviewer=True,
             attests_complete_requirement_coverage=True,
             body="All research requirements and deferrals have ledger carriers.",
@@ -552,10 +556,10 @@ def test_archive_refuses_a_self_review_and_accepts_an_independent_one(tmp_path: 
         config=_config(),
         epic_id=created["epic_id"],
         evidence_id="self-review",
-        # The ARCHIVING session's own computed identity, which is what makes this a
-        # self-review. The reserved `plan-archive` literal used to stand here and is
-        # no longer the comparand the leg compares against (`bd-ib-3xsz`).
-        reviewer_identity="archiving-session",
+        # Recorded FROM the archiving session, which is the only way a self-review
+        # can now arise: the reviewer identity is computed from whichever session
+        # writes the comment, so this record carries the archiver's own id.
+        env=_ARCHIVING_SESSION_ENV,
         separate_reviewer=True,
         attests_complete_requirement_coverage=True,
         body="Self-attested complete.",
@@ -565,7 +569,7 @@ def test_archive_refuses_a_self_review_and_accepts_an_independent_one(tmp_path: 
         config=_config(),
         epic_id=created["epic_id"],
         evidence_id="partial-review",
-        reviewer_identity="fresh-independent-reviewer",
+        env=_REVIEWING_SESSION_ENV,
         separate_reviewer=True,
         attests_complete_requirement_coverage=False,
         body="Did not attest every requirement carrier.",
@@ -575,7 +579,7 @@ def test_archive_refuses_a_self_review_and_accepts_an_independent_one(tmp_path: 
         config=_config(),
         epic_id=created["epic_id"],
         evidence_id="independent-review",
-        reviewer_identity="reviewing-session",
+        env=_REVIEWING_SESSION_ENV,
         separate_reviewer=True,
         attests_complete_requirement_coverage=True,
         body="All research requirements and deferrals have ledger carriers.",
@@ -649,7 +653,7 @@ def test_archive_refuses_while_a_file_outside_plan_reads_the_thread_by_path(
         config=_config(),
         epic_id=created["epic_id"],
         evidence_id="review-evidence-1",
-        reviewer_identity="fresh-independent-reviewer",
+        env=_REVIEWING_SESSION_ENV,
         separate_reviewer=True,
         attests_complete_requirement_coverage=True,
         body="All research requirements and deferrals have ledger carriers.",
@@ -706,7 +710,7 @@ def test_archive_with_no_outside_references_closes_and_stamps_the_epic_once(
         config=_config(),
         epic_id=created["epic_id"],
         evidence_id="review-evidence-1",
-        reviewer_identity="fresh-independent-reviewer",
+        env=_REVIEWING_SESSION_ENV,
         separate_reviewer=True,
         attests_complete_requirement_coverage=True,
         body="All research requirements and deferrals have ledger carriers.",
@@ -760,7 +764,7 @@ def test_archive_moves_thread_and_closes_epic_after_two_gates(tmp_path: Path) ->
         config=_config(),
         epic_id=created["epic_id"],
         evidence_id="review-evidence-1",
-        reviewer_identity="fresh-independent-reviewer",
+        env=_REVIEWING_SESSION_ENV,
         separate_reviewer=True,
         attests_complete_requirement_coverage=True,
         body="All research requirements and deferrals have ledger carriers.",

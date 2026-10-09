@@ -1,4 +1,4 @@
-"""The completeness-review evidence record: what the grade counts, and what it refuses.
+"""The completeness-review evidence record: what it carries, and what the grade refuses.
 
 Moved here with the record itself, which was split out of `_plan_archive_review`
 by cohesion once the independence check gained a real comparand. The cases that
@@ -9,8 +9,11 @@ against ONE archiving identity.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from pathlib import Path
 from typing import cast
 
+import pytest
 from livespec_orchestrator_beads_fabro._beads_client import (
     BeadsClient,
     FakeBeadsClient,
@@ -18,13 +21,36 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     make_beads_client,
     reset_fake_singleton,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._plan_archive_gates import (
+    PlanArchiveRefusedError,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_completeness_evidence import (
+    CompletenessReviewEvidenceFields,
     completeness_review_evidence,
     record_completeness_review_evidence,
 )
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 _ARCHIVER = "archiving-session"
+_SESSION_VAR = "CLAUDE_CODE_SESSION_ID"
+
+
+@dataclass(frozen=True, kw_only=True)
+class _UnavailableForge:
+    """A `CommandRunner` whose forge-login read never resolves a login."""
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        del argv, cwd, timeout_seconds, env, stdin
+        return CommandResult(exit_code=1, stdout="", stderr="gh: command not found")
 
 
 def _config() -> StoreConfig:
@@ -61,17 +87,69 @@ def _epic() -> None:
     )
 
 
-def _record(*, evidence_id: str, reviewer_identity: str, coverage: bool = True) -> None:
+def _record(*, evidence_id: str, reviewer: str, coverage: bool = True) -> None:
+    """Record evidence as the session whose own id is `reviewer`.
+
+    The identity reaches the record through the reviewing session's ENVIRONMENT,
+    which is the only route there is: the primitive takes no field a caller could
+    put a name in.
+    """
     record_completeness_review_evidence(
         config=_config(),
         epic_id="bd-ib-epic",
+        env={_SESSION_VAR: reviewer},
         evidence_id=evidence_id,
-        reviewer_identity=reviewer_identity,
         separate_reviewer=True,
         attests_complete_requirement_coverage=coverage,
         body="All research requirements and deferrals have ledger carriers.",
         now="2026-10-08T02:00:00Z",
     )
+
+
+def test_the_record_carries_the_reviewers_own_computed_identity() -> None:
+    """The reviewer identity is COMPUTED from the reviewing session, never named.
+
+    The payload-grammar assertion is the load-bearing half. An identity a caller
+    could NAME is one a caller could RENAME, so a self-review would be one keyword
+    away from passing and the independence refusal would be theatre — which is
+    exactly why the proof-record surfaces accept no identity parameter either.
+    Removing the field is what makes the refusal real, not merely stricter.
+    """
+    assert "reviewer_identity" not in CompletenessReviewEvidenceFields.__annotations__
+    _epic()
+
+    _record(evidence_id="review-evidence-1", reviewer="reviewing-session")
+
+    [comment] = _fake().list_comments(issue_id="bd-ib-epic")
+    assert "reviewer-identity: reviewing-session\n" in comment["text"]
+    assert "separate-reviewer: true\n" in comment["text"]
+
+
+def test_an_unresolved_reviewer_identity_records_nothing_at_all() -> None:
+    """Fail-closed BEFORE the append, because a record comment cannot be edited later.
+
+    An evidence comment naming no reviewer would sit on the timeline permanently,
+    where the archive gate would read it, decline to count it, and report a
+    refusal whose cause the reviewer could not see from its own successful write.
+    """
+    _epic()
+
+    with pytest.raises(PlanArchiveRefusedError) as refused:
+        record_completeness_review_evidence(
+            config=_config(),
+            epic_id="bd-ib-epic",
+            project_root=Path("/repo"),
+            env={},
+            runner=_UnavailableForge(),
+            evidence_id="review-evidence-1",
+            separate_reviewer=True,
+            attests_complete_requirement_coverage=True,
+            body="All research requirements and deferrals have ledger carriers.",
+            now="2026-10-08T02:00:00Z",
+        )
+
+    assert "reviewing party" in str(refused.value)
+    assert _fake().list_comments(issue_id="bd-ib-epic") == []
 
 
 def test_evidence_from_a_different_identity_is_accepted() -> None:
@@ -86,7 +164,7 @@ def test_evidence_from_a_different_identity_is_accepted() -> None:
         issue_id="bd-ib-epic",
         text="plan-completeness-review-evidence\nmalformed\n\nbody",
     )
-    _record(evidence_id="review-evidence-1", reviewer_identity="reviewing-session")
+    _record(evidence_id="review-evidence-1", reviewer="reviewing-session")
 
     graded = completeness_review_evidence(
         client=_fake(),
@@ -102,12 +180,12 @@ def test_evidence_from_a_different_identity_is_accepted() -> None:
 def test_evidence_from_the_archiving_identity_is_a_self_review() -> None:
     """The discriminating half: the SAME record, authored by the party archiving.
 
-    It differs from the accepted case in nothing but its reviewer identity, which
-    is what makes the pair evidence about the comparison rather than about the
-    comment's shape.
+    It differs from the accepted case in nothing but the reviewing session's own
+    id, which is what makes the pair evidence about the comparison rather than
+    about the comment's shape.
     """
     _epic()
-    _record(evidence_id="review-evidence-1", reviewer_identity=_ARCHIVER)
+    _record(evidence_id="review-evidence-1", reviewer=_ARCHIVER)
 
     graded = completeness_review_evidence(
         client=_fake(),
@@ -128,8 +206,8 @@ def test_a_self_review_does_not_hide_a_later_independent_comment_on_one_id() -> 
     first one read would refuse an archive the second one satisfies.
     """
     _epic()
-    _record(evidence_id="review-evidence-1", reviewer_identity=_ARCHIVER)
-    _record(evidence_id="review-evidence-1", reviewer_identity="reviewing-session")
+    _record(evidence_id="review-evidence-1", reviewer=_ARCHIVER)
+    _record(evidence_id="review-evidence-1", reviewer="reviewing-session")
 
     graded = completeness_review_evidence(
         client=_fake(),
@@ -151,11 +229,7 @@ def test_withheld_coverage_and_an_unknown_id_are_neither_accepted_nor_a_self_rev
     is correct: the remedy for both is the same recorded review.
     """
     _epic()
-    _record(
-        evidence_id="partial-review",
-        reviewer_identity="reviewing-session",
-        coverage=False,
-    )
+    _record(evidence_id="partial-review", reviewer="reviewing-session", coverage=False)
 
     for evidence_id in ("partial-review", "never-recorded"):
         graded = completeness_review_evidence(
