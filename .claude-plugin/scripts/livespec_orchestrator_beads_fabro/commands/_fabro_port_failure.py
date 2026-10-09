@@ -6,6 +6,25 @@ answers the narrower question of WHY a run failed and whether retrying it could
 possibly help. The provider spend-ceiling detection, the cause chain and the
 permanent-category rewrite all serve that one question.
 
+TWO BLOCK SHAPES REACH THIS READER, and no engine is named anywhere below,
+because the discriminator is the block's own structure rather than a version
+string a payload does not carry:
+
+- a FLAT block keying `category` / `signature` / `causes` at its own top level,
+  which is what the pinned 0.254 build's `checkpoint.failure` carries, and
+- a NESTED block keying `{reason, detail: {message, category}}`, which BOTH
+  builds carry at `conclusion.failure` — measured on 0.254 on 2026-08-20 (the
+  six real payloads behind `test_fabro_port_inspect_list_shape`) and on the
+  Petri-era 0.378.0-nightly.0 candidate on 2026-10-08 (research notes 006 and
+  007 of `plan/fabro-currency`).
+
+The Petri-era build drops `causes` and `signature` entirely, so there the
+nested `detail` is the ONLY carrier of both the message and the category.
+Reading the nested shape is therefore not an engine branch — it is the shape
+both engines already emit, and the pinned build merely happened to ALSO be
+readable through its flat checkpoint block, which is why the nested one went
+unread for so long.
+
 FAIL CLOSED ON A BLOCK THIS READER DOES NOT RECOGNIZE. A block yielding no
 cause, no category and no signature returns `None` rather than an empty
 `FabroFailureDetail`. The difference matters at the consumer: `None` says "this
@@ -146,15 +165,43 @@ def _failure_blocks(*, value: object) -> tuple[dict[object, object], ...]:
     return tuple(blocks)
 
 
+def _nested_detail(*, block: dict[object, object]) -> dict[object, object]:
+    """The block's own `detail` mapping, or an empty one when it carries none.
+
+    An empty mapping rather than `None` keeps the two readers below single
+    expressions: "no `detail` at all" and "a `detail` carrying neither key" are
+    the same answer to the caller, and distinguishing them here would only move
+    the branch outward without giving it anything to decide.
+    """
+    nested = block.get("detail")
+    if isinstance(nested, dict):
+        return cast("dict[object, object]", nested)
+    return {}
+
+
 def _failure_detail(*, block: dict[object, object]) -> FabroFailureDetail | None:
     causes = _cause_values(value=block.get("causes"))
-    permanent_cause = _permanent_cause(causes=causes)
-    selected = permanent_cause or _root_cause(causes=causes)
+    nested = _nested_detail(block=block)
+    nested_message = _str_value(value=nested.get("message"))
+    # The classifier scans the cause chain AND the nested message, because the
+    # two engines put the same sentence in different places: the pinned build
+    # carries a provider spend ceiling in `causes`, while the Petri-era build
+    # drops `causes` entirely and leaves that sentence in `detail.message`. A
+    # scan of `causes` alone reports a ceiling as an ordinary retryable failure
+    # on that engine, and the admission gate then launches another sandbox
+    # against an allowance that is already spent.
+    classifiable = causes if nested_message is None else (*causes, nested_message)
+    permanent_cause = _permanent_cause(causes=classifiable)
+    # `_root_cause` keeps reading the CHAIN only — its outermost-first ordering
+    # is a property of the chain, not of the nested block — so the nested
+    # message is the fallback for the engine that has no chain to read.
+    selected = permanent_cause or _root_cause(causes=causes) or nested_message
     cause = selected if selected is None else (_provider_message(text=selected) or selected)
     reclassified = permanent_cause is not None
-    usage_limit_provider = _provider_usage_limit_provider(causes=causes)
+    usage_limit_provider = _provider_usage_limit_provider(causes=classifiable)
     category = _failure_category(
-        category=_str_value(value=block.get("category")),
+        category=_str_value(value=block.get("category"))
+        or _str_value(value=nested.get("category")),
         reclassified=reclassified,
     )
     signature = _failure_signature(
