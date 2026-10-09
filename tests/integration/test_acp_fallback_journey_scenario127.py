@@ -59,7 +59,6 @@ from livespec_orchestrator_beads_fabro.commands._acp_capability_gate import (
 )
 from livespec_orchestrator_beads_fabro.commands._acp_catalogs import resolve_acp_catalogs
 from livespec_orchestrator_beads_fabro.commands._acp_factory_capabilities import (
-    SYSTEM_INFO_PATH,
     factory_capability_reader,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_fallback_event_types import AcpEventScan
@@ -82,6 +81,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_minimum_release_floo
     minimum_release_verdict,
     resolve_minimum_release,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port_http import SYSTEM_INFO_PATH
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _FACTORY_NAME = "hp"

@@ -22,6 +22,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_b
     error_pointer_body,
     missing_artifact_body,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
@@ -140,22 +141,24 @@ def pointer_record_for_run(
     outcome-shaped entry point above — but it must produce the SAME pointer
     body, or a pointer written by one path would not be recognized by the
     other's read-back.
+
+    The export goes through a `FabroPort` built from the SAME `server_url` the
+    pointer body prints, so the record names the factory the bytes actually
+    came from and this module issues no engine invocation of its own.
     """
+    port = FabroPort(
+        fabro_bin=fabro_bin,
+        target=FabroTarget(server_url=server_url),
+        runner=command_runner,
+        cwd=repo,
+    )
     with tempfile.TemporaryDirectory(prefix=f"fabro-preserve-{item_id}-") as raw_dir:
         output_dir = Path(raw_dir)
-        dumped = command_runner.run(
-            argv=[
-                fabro_bin,
-                "dump",
-                run_id,
-                "--server",
-                server_url,
-                "-o",
-                str(output_dir),
-            ],
-            cwd=repo,
+        dumped = port.dump(
+            run_id=run_id,
+            output_dir=output_dir,
             timeout_seconds=_DUMP_TIMEOUT_SECONDS,
-        )
+        ).command
         artifacts = tuple(
             sorted(path for path in output_dir.glob(FABRO_DIFF_ARTIFACT_GLOB) if path.is_file())
         )

@@ -138,6 +138,21 @@ class FabroPort:
         )
         return FabroEventsResult(command=command, payload=_json_payload(command=command))
 
+    def dump(self, *, run_id: str, output_dir: Path, timeout_seconds: float) -> FabroCommandResult:
+        """Export one run's whole record into `output_dir`.
+
+        Reports WHETHER the export ran rather than what it produced: what
+        counts as the artifact differs per caller — the preserve-by-reference
+        writer globs for a checkpointed diff, while its reader re-digests the
+        paths a pointer already named — so the directory is left to whoever
+        asked for it.
+        """
+        command = self._run(
+            argv=[self.fabro_bin, "dump", run_id, *self._server_suffix(), "-o", str(output_dir)],
+            timeout_seconds=timeout_seconds,
+        )
+        return FabroCommandResult(command=command)
+
     def ps(self, *, timeout_seconds: float) -> FabroPsResult:
         command = self._run(
             argv=[self.fabro_bin, "ps", "-a", "--json", *self._server_suffix()],
