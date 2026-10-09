@@ -14,15 +14,20 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_failure import (
     fabro_failure_outcome_detail,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_detail import (
+    needs_human_terminal_detail,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     NEEDS_HUMAN_MARKER,
     DispatchPlan,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_causal_stage import causal_stage_failure
 from livespec_orchestrator_beads_fabro.commands._fabro_escalation import (
     FabroEscalation,
     fabro_escalation_from_payload,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import (
+    FabroFailureDetail,
     FabroInspectResult,
     fabro_port_for_plan,
 )
@@ -92,6 +97,8 @@ def fabro_run_terminal_outcome(
         outcome_type=outcome_type,
         plan=plan,
         run_id=run_id,
+        inspect=inspect,
+        failure=failure,
         text=f"{stderr}\n{detail}",
     )
     if terminated is not None:
@@ -125,6 +132,8 @@ def _needs_human_terminal_outcome(
     outcome_type: type[DispatchOutcome],
     plan: DispatchPlan,
     run_id: str | None,
+    inspect: FabroInspectResult | None,
+    failure: FabroFailureDetail | None,
     text: str,
 ) -> DispatchOutcome | None:
     """Map the `needs_human` terminal's sentinel onto the `blocked` outcome.
@@ -135,60 +144,44 @@ def _needs_human_terminal_outcome(
     prints `NEEDS_HUMAN_MARKER` and exits non-green. What the Dispatcher owes
     the ledger is unchanged — the item rests at `blocked / needs-human` and
     the dispatch reports exit code 4 — so the sentinel produces the very same
-    `blocked` outcome the gate did, with a detail that names either the
-    preserved ref or the preserve-by-reference fallback and the ledger valve
-    instead of a `fabro attach` that would find no run to attach to. The
-    sentinel is read from BOTH the raw stderr and the structured detail, for
-    the same reason the dead-implementer breaker does: neither channel is
-    guaranteed to carry a node's own output.
+    `blocked` outcome the gate did, with a detail that names the preserved
+    ref and the ledger valve instead of a `fabro attach` that would find no
+    run to attach to. The sentinel is read from BOTH the raw stderr and the
+    structured detail, for the same reason the dead-implementer breaker
+    does: neither channel is guaranteed to carry a node's own output.
+
+    EVERY STRUCTURED FAILURE FIELD IS CARRIED, exactly as the sibling `failed`
+    outcome below carries them. Passing none of them is what made the
+    engine-escalation rendering of `bd-ib-bg2zz5` unreachable for every v093
+    terminal ending, which since v093 is every needs-human ending: the one line
+    a triager needs — the causal stage, its category and its innermost cause —
+    survived only in the run export. The ledger STATUS is deliberately
+    unchanged (`bg2zz5`'s own ruling: a presentation defect over accurate state
+    is fixed in the presentation), so the item still rests at `blocked /
+    needs-human` and only what the outcome REPORTS grows.
     """
     if NEEDS_HUMAN_MARKER not in text:
         return None
-    run_label = "unknown-run" if run_id is None else run_id
-    preserved = f"refs/heads/needs-human/{run_label}"
-    preservation_failed = any(
-        marker in text
-        for marker in (
-            f"{NEEDS_HUMAN_MARKER}_PUSH_FAILED",
-            f"{NEEDS_HUMAN_MARKER}_NO_RUN_ID",
-        )
-    )
-    if preservation_failed:
-        preservation = (
-            "the tree was not pushed to a run-scoped ref; recover it from the "
-            "preserve-by-reference dump pointer on the item"
-        )
-        rework_source = "the preserve-by-reference dump"
-    else:
-        preservation = (
-            f"the tree was preserved on {preserved} (see the preserve-by-reference "
-            "pointer on the item for the dump digest)"
-        )
-        rework_source = "the preserved ref"
-    reason = _needs_human_reason(text=text)
+    escalation = None if inspect is None else fabro_escalation_from_payload(payload=inspect.payload)
     return outcome_type(
         work_item_id=plan.work_item_id,
         status="blocked",
         stage="fabro-run",
         pr_number=None,
         merge_sha=None,
-        detail=(
-            f"run {run_label} terminated at the needs_human node (needs-human); "
-            f"{preservation}; no run is waiting — the "
-            f"decision lives in the ledger. Failure reason: {reason}. Answer with "
-            f"`resolve-blocked:{plan.work_item_id}:ready` (re-dispatch, seeding rework "
-            f"from {rework_source} or from scratch) or leave the item blocked"
+        detail=needs_human_terminal_detail(
+            work_item_id=plan.work_item_id,
+            run_id=run_id,
+            causal=causal_stage_failure(
+                signatures=() if escalation is None else escalation.loop_failure_signatures
+            ),
+            failure=failure,
         ),
         fabro_run_id=run_id,
+        fabro_failure_cause=None if failure is None else failure.cause,
+        fabro_failure_category=None if failure is None else failure.category,
+        fabro_failure_signature=None if failure is None else failure.signature,
     )
-
-
-def _needs_human_reason(*, text: str) -> str:
-    """The terminal node's emitted reason, excluding its routing suffix."""
-    prefix = f"{NEEDS_HUMAN_MARKER}: "
-    suffix = "; run terminated, work preserved by reference, decision routed to the ledger"
-    with_fallback = f"{text}\n{prefix}not recorded"
-    return with_fallback.partition(prefix)[2].partition(suffix)[0].splitlines()[0].strip()
 
 
 def _blocked_detail(
