@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.179.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.179.0...v0.179.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **plan:** accept evidence postdating every REPORTED child status change (bd-ib-0pf5) ([6d0d4b5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6d0d4b581f510edf756e280f357382285b55067d))
+* **plan:** bind completeness-review evidence to the child set it reviewed (bd-ib-0pf5) ([2115ce8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2115ce8e2245477900fdfa88d3c6a4b11aba9fed))
+* **plan:** commission a fresh review when every recorded one is stale (bd-ib-0pf5) ([5b9c394](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5b9c3948fd912b0f32c8678eabd48d49d204ba95))
+* **plan:** refuse completeness evidence that predates a child status change (bd-ib-0pf5) ([8315cd1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8315cd1847c55bcfbbc13af622aeaf8d1ea68380))
+* **plan:** report a stale completeness review and name what changed (bd-ib-0pf5) ([22b997b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/22b997ba8fd27a5c462d5b82253aed4057dadb22))
+
 ## [0.179.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.178.0...v0.179.0) (2026-10-09)
 
 
