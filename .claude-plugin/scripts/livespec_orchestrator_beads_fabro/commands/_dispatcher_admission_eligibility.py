@@ -44,6 +44,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Dispat
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
     factory_size_decision,
     resolve_adopted_assertion_count_ceiling,
+    stored_factory_size_decision,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile, utc_now_iso
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
@@ -95,10 +96,18 @@ def _refusal_for(
     adopted_ceiling = unsafe_perform_io(
         resolve_adopted_assertion_count_ceiling(cwd=repo).value_or(None)
     )
-    size = factory_size_decision(
-        item=item,
-        adopted_ceiling=adopted_ceiling,
-        raw_justification=None,
+    size = (
+        factory_size_decision(
+            item=item,
+            adopted_ceiling=None,
+            raw_justification=None,
+        )
+        if adopted_ceiling is None
+        else stored_factory_size_decision(
+            path=store_config(repo=repo),
+            item=item,
+            adopted_ceiling=adopted_ceiling,
+        )
     )
     if size.disposition == "decompose":
         reason = cast("str", size.reason)
