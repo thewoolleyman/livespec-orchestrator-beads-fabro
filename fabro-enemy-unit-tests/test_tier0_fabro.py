@@ -32,7 +32,12 @@ _EXPECTED_PS_FIELDS = frozenset(("run_id", "status", "goal", "total_usd_micros")
 # `fabro inspect --json` record carries exactly these keys. `updated_at` is
 # NOT among them -- see test_tier0_watchdog_gap.py.
 _EXPECTED_INSPECT_FIELDS = frozenset(("status", "run_id", "conclusion"))
-_EVENT_TIMESTAMP_FIELDS = frozenset(("timestamp", "ts", "at"))
+# `recorded_at` is the Petri-era envelope field (measured on
+# 0.378.0-nightly.0, research note 006, which is why this tier 0 test failed
+# against the candidate); the three older names are what 0.254.0 emitted. Kept
+# in step with `_tier1_support.EVENT_TIMESTAMP_FIELDS` and with the product
+# reader in `_dispatcher_watchdog`, which this set is the live control for.
+_EVENT_TIMESTAMP_FIELDS = frozenset(("timestamp", "ts", "at", "recorded_at"))
 TERMINAL_STATUS_KINDS = frozenset(
     (
         "blocked",
