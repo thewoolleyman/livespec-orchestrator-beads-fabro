@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.180.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.179.1...v0.180.0) (2026-10-09)
+
+
+### Features
+
+* **plan:** authoritative typed result observations report satisfaction ([647415f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/647415f86655e65eb11f16c1dc5ba492efbbcd1a))
+* **plan:** the result reader reports an observable unmet target as unsatisfied ([7061d02](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7061d0289b0bdcea2400886cbd66637a312dd7a7))
+* **plan:** the result reader reports failed observations as unobservable ([30be67d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/30be67db4df97b8887c0444f03212666d3e07c78))
+
+
+### Bug Fixes
+
+* **plan:** a remote blob read asks for the exact branch and path requested ([a4fe52f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a4fe52fccc138f43be40e95a964a98366618ea9f))
+* **plan:** a verified-proof identity names the assertions it requested ([b4f5a5d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b4f5a5d3fbc56ab86b3ed2781ae5c0d0e647254c))
+* **plan:** a verified-proof read applies the existing host-leg evidence rules ([90f48e7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/90f48e75a5370d2b95b1d2500f67e0f92fcfad1b))
+* **plan:** an ordinary factory proof declares its build as a publish-branch head ([b7d500d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b7d500dfa7ae77dc7d038574dbfebe4347b1bbad))
+* **plan:** every rendering of an object identity still reaches a verdict ([ad44131](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ad441318b220a89dc02bdf50b6ebd773163e11f5))
+* **plan:** malformed forge evidence is unobservable, not a confident negative ([852d209](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/852d209a7474fd5a8334847a5f33fc093c2433c5))
+* **plan:** present-but-malformed audit evidence is unobservable ([a940f0b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a940f0b4c6b0b2226af42d98bd720795e4f7e72f))
+* **plan:** the verified-proof read applies both evidence rules in full ([39b5883](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/39b5883fbfc88d46b8d19754ca9198d3706b4a8c))
+
 ## [0.179.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.179.0...v0.179.1) (2026-10-09)
 
 
