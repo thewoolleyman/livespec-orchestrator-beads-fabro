@@ -63,6 +63,18 @@ Tests for the thin-transport command modules under
   what tells "the requirement was vacuous" apart from "the requirement was asked
   and happened to pass".
 
+  It also owns the OTHER half of that read, and the two halves are what give each
+  other meaning: audit evidence that is PRESENT holding a value of the wrong type
+  is `unobservable` naming the LEDGER, because `omitempty` omits a field and never
+  retypes one, so a present wrong type cannot be the sparse encoding of an
+  absence. Those cases assert that NO command ran at all, which is what tells a
+  ledger-side refusal apart from a comparison that was asked and failed. Keep both
+  halves parametrized in this one module: the vacuous arm and the malformed arm
+  differ only in the shape handed to the stub, and splitting them across files is
+  how a later edit silently moves a shape from one verdict to the other — the
+  defect these cases were added to close, where a merge nobody could read graded
+  as a merge nobody recorded and the containment relation then did not run.
+
 Conventions:
 
 - Exercise both `main()` (supervisor: exit codes, stdout/stderr
