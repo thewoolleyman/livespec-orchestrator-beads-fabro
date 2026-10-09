@@ -5167,39 +5167,3 @@ Feature: reconcile successful completion separately from run-store loss
     Then the hold or failure has its ordinary disposition
       And successful workflow classification does not force a green dispatch or close the item
 ```
-
-## Scenario 167 — A failed janitor names the aggregate runner's failed targets
-
-Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Failed post-merge janitor target attribution".
-
-```gherkin
-Feature: report failure attribution from the aggregate summary
-  Scenario Outline: complete failed-target names survive unrelated later output
-    Given a real janitor command exits nonzero and emits a structured Failed targets summary
-      And its summary names <targets> on stdout before later output exceeds the diagnostic tail bound
-      And its stderr tail names a passing recipe not in that summary
-    When the Dispatcher reports the post-merge janitor result
-    Then the outcome detail and janitor-post-merge journal row name every summarized failed target
-      And they do not attribute the failure to the passing recipe
-      And the journal names the retained private complete-output artifact and its digest
-      And the original nonzero exit and ordinary item disposition are preserved
-    Examples:
-      | targets                                  |
-      | two distinct failing targets             |
-      | a target list longer than the tail bound |
-
-  Scenario: absence of a structured summary does not invent a cause
-    Given a real failed janitor emits distinct stdout and stderr without a structured Failed targets summary
-    When the Dispatcher reports its result
-    Then it labels bounded excerpts from both streams as observations
-      And it does not claim a recipe in either excerpt caused the failure
-      And the full private artifact remains the deep-diagnosis reference when retention succeeds
-
-  Scenario: retention failure does not erase the observed attribution
-    Given a failed janitor emitted a structured Failed targets summary
-      And its private artifact cannot be written
-    When the Dispatcher reports its result
-    Then it still names the observed failed targets and journals the retention-write failure reason
-      And the command exit code and ordinary non-green disposition are unchanged
-      And it does not fabricate a retained artifact path or digest
-```
