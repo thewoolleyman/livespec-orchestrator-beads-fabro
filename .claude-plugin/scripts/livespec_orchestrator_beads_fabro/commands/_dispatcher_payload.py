@@ -79,7 +79,7 @@ class WorkflowPayload:
     node_commands: Mapping[str, str]
 
 
-def prepare_workflow_payload(
+def prepare_workflow_payload(  # noqa: PLR0913 — kw-only; adapters and entry_node are two independent rendering inputs.
     *,
     repo: Path,
     committed: Path,
@@ -139,6 +139,57 @@ def materialize_workflow_payload(
     committed_graph = _committed_graph(committed=committed)
     if isinstance(committed_graph, str):
         return committed_graph
+    rendered = _rendered_graph(
+        committed_graph=committed_graph,
+        timeouts=timeouts,
+        adapters=adapters,
+        entry_node=entry_node,
+    )
+    if isinstance(rendered, str):
+        return rendered
+    graph = payload_dir / committed_graph.name
+    copied = attempt(
+        action=lambda: _copy_payload(
+            source=committed_graph.parent,
+            payload_dir=payload_dir,
+            graph=graph,
+            text=rendered.text,
+        ),
+        exceptions=_COPY_ERRORS,
+    )
+    if isinstance(copied, AttemptFailure):
+        return f"workflow payload {payload_dir} is not materializable: {copied.error}"
+    return WorkflowPayload(
+        payload_dir=payload_dir,
+        graph=graph,
+        timeouts=timeouts,
+        node_seconds=rendered.node_seconds,
+        node_commands=rendered.node_commands,
+    )
+
+
+@dataclass(frozen=True, kw_only=True)
+class _RenderedGraph:
+    """The payload graph text as the run will see it, with what each render set."""
+
+    text: str
+    node_seconds: Mapping[str, int]
+    node_commands: Mapping[str, str]
+
+
+def _rendered_graph(
+    *,
+    committed_graph: Path,
+    timeouts: NodeTimeouts,
+    adapters: Mapping[str, str],
+    entry_node: str | None,
+) -> _RenderedGraph | str:
+    """Read the committed graph and apply the three renders in their fixed order.
+
+    Timeouts first, then the literal ACP commands, then the resume derivation:
+    the derivation runs on the ADAPTER-RENDERED text, so a resumed run ships
+    the same literal `acp.command` values an ordinary dispatch does.
+    """
     graph_text = attempt(
         action=lambda: committed_graph.read_text(encoding="utf-8"),
         exceptions=(OSError,),
@@ -151,32 +202,14 @@ def materialize_workflow_payload(
     commands = render_acp_commands(graph_text=rendered.text, adapters=adapters)
     if isinstance(commands, str):
         return commands
-    # The resume derivation runs on the ADAPTER-RENDERED text, so a resumed run
-    # ships the same literal `acp.command` values an ordinary dispatch does.
     entered = _entered_text(text=commands.text, entry_node=entry_node)
     if entered is None:
         return (
             f"workflow graph {committed_graph} declares no node {entry_node!r} to"
             " resume at, or carries no unconditional `start` edge to move onto it"
         )
-    graph = payload_dir / committed_graph.name
-    copied = attempt(
-        action=lambda: _copy_payload(
-            source=committed_graph.parent,
-            payload_dir=payload_dir,
-            graph=graph,
-            text=entered,
-        ),
-        exceptions=_COPY_ERRORS,
-    )
-    if isinstance(copied, AttemptFailure):
-        return f"workflow payload {payload_dir} is not materializable: {copied.error}"
-    return WorkflowPayload(
-        payload_dir=payload_dir,
-        graph=graph,
-        timeouts=timeouts,
-        node_seconds=rendered.node_seconds,
-        node_commands=commands.node_commands,
+    return _RenderedGraph(
+        text=entered, node_seconds=rendered.node_seconds, node_commands=commands.node_commands
     )
 
 

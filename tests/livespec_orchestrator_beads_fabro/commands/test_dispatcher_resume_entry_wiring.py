@@ -125,6 +125,7 @@ def test_the_payload_graph_is_derived_when_an_entry_node_is_asked_for(tmp_path: 
         committed=_committed(tmp_path=tmp_path),
         payload_dir=tmp_path / "payload",
         timeouts=_timeouts(),
+        adapters={},
         entry_node="pr",
     )
     assert not isinstance(payload, str)
@@ -143,6 +144,7 @@ def test_the_payload_refuses_an_entry_node_the_graph_does_not_declare(tmp_path: 
         committed=_committed(tmp_path=tmp_path),
         payload_dir=tmp_path / "payload",
         timeouts=_timeouts(),
+        adapters={},
         entry_node="review_fix",
     )
     assert isinstance(payload, str)
@@ -159,6 +161,7 @@ def test_the_payload_graph_is_untouched_without_an_entry_node(tmp_path: Path) ->
         committed=_committed(tmp_path=tmp_path),
         payload_dir=tmp_path / "payload",
         timeouts=_timeouts(),
+        adapters={},
     )
     assert not isinstance(payload, str)
     assert "start -> dod_gate" in payload.graph.read_text(encoding="utf-8")
