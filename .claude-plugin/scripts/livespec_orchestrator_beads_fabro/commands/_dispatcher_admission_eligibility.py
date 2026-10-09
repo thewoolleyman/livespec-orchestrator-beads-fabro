@@ -29,6 +29,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import cast
 
+from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro._store_factory_size_gate import (
@@ -42,9 +43,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import ho
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import read_dispatch_labels
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
-    factory_size_decision,
-    resolve_adopted_assertion_count_ceiling,
-    stored_factory_size_decision,
+    resolved_stored_factory_size_decision,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile, utc_now_iso
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
@@ -93,22 +92,20 @@ def _refusal_for(
     journal: JournalFile,
 ) -> DispatchOutcome | None:
     """The first condition this row fails, or `None` when it passes all four."""
-    adopted_ceiling = unsafe_perform_io(
-        resolve_adopted_assertion_count_ceiling(cwd=repo).value_or(None)
+    size_result = resolved_stored_factory_size_decision(
+        cwd=repo,
+        path_factory=lambda: store_config(repo=repo),
+        item=item,
     )
-    size = (
-        factory_size_decision(
-            item=item,
-            adopted_ceiling=None,
-            raw_justification=None,
+    if not is_successful(size_result):
+        failure = unsafe_perform_io(size_result.failure())
+        return failed_dispatch_outcome(
+            journal=journal,
+            work_item_id=item.id,
+            stage="configuration",
+            detail=failure.detail,
         )
-        if adopted_ceiling is None
-        else stored_factory_size_decision(
-            path=store_config(repo=repo),
-            item=item,
-            adopted_ceiling=adopted_ceiling,
-        )
-    )
+    size = unsafe_perform_io(size_result.unwrap())
     if size.disposition == "decompose":
         reason = cast("str", size.reason)
         route_factory_size_decomposition(
