@@ -17,27 +17,14 @@ from livespec_orchestrator_beads_fabro.commands._config import (
     dispatcher_block,
     resolve_fabro_sandbox_image,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth import (
-    CodexProjectionRefusal,
-    project_host_codex_auth,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_otel_config import (
     codex_otel_config_toml,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_overlay_leg import (
+    project_codex_overlay_leg,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_env import (
     check_credential_env,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_requirement import (
-    REVIEW_FIX_VISIT_CAP_INPUT,
-    WorkflowFaultDeferral,
-    credential_lifetime_requirement_for,
-    requirement_refusal_text,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_projection import (
-    credential_use_projection_for,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_routes import (
-    selected_graph_launch_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
     select_factory_credential,
@@ -46,6 +33,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import Gi
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     GITHUB_TOKEN_ENV_VAR,
     ShellCommandRunner,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_write import (
+    write_routed_overlay,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
@@ -65,6 +55,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition i
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
     ResumeCheckout,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_channel import (
+    SecretChannelRefusal,
+    VaultSecretSink,
+    resolve_secret_channel,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones import (
     fetch_fleet_manifest_text,
@@ -164,6 +159,12 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     proof_rendering: str = "",
     adapter_inputs: frozenset[str] = frozenset(),
     resume_checkout: ResumeCheckout | None = None,
+    # WHICH factory this dispatch launches at, and where a routed credential is
+    # stored so the worker can resolve it. Both default to the pinned-engine
+    # posture — the implicit single-factory name, and no vault — so a caller that
+    # wires neither renders exactly the inline overlay it always did.
+    factory_name: str = "default",
+    secret_sink: VaultSecretSink | None = None,
 ) -> str | None:
     """Write the uncommitted mode-600 run-config overlay.
 
@@ -214,6 +215,12 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     position from which an unrenewable credential can be reported without
     leaving an `active` row nobody is working.
     """
+    # Resolved FIRST, before any credential is read or minted. It is a pure read
+    # of committed configuration, so it can only refuse on a declaration the
+    # operator can fix, and refusing here leaves nothing behind to clean up.
+    channel = resolve_secret_channel(block=dispatcher_block(cwd=repo), factory=factory_name)
+    if isinstance(channel, SecretChannelRefusal):
+        return channel.message
     env_error = check_credential_env(repo=repo)
     if env_error is not None:
         return env_error
@@ -227,58 +234,23 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     siblings = resolve_sibling_clones(repo=repo)
     if isinstance(siblings, str):
         return siblings
-    # The requirement for the workflow THIS dispatch resolved, derived from the
-    # very file about to be overlaid and from the review-fix guard the plan
-    # renders — not re-resolved from configuration, which would let the
-    # projection size itself against a second read nothing can prove agrees with
-    # the gate's.
-    # The workflow is named by the DIRECTORY `workflow_toml` resolved rather than
-    # by the registry name, which `RecordedDispatch` deliberately does not carry
-    # down to the launch half. The name is a label on a diagnostic here — the
-    # committed path below is what the figure is actually derived from — and the
-    # directory is the more truthful label for "which workflow ran" anyway.
-    requirement = credential_lifetime_requirement_for(
+    # The Codex credential leg: the run budget, the graded host snapshot, the
+    # sandbox's credential-use enforcement inputs, and the launch-route guard.
+    # One unit because the order between them is load-bearing, and refused HERE —
+    # before the proof-credential mint below — so no refusal in it can leave a
+    # live provider credential behind.
+    codex_leg = project_codex_overlay_leg(
         committed=committed,
         block=dispatcher_block(cwd=repo),
-        workflow_name=committed.parent.name,
-        policy_inputs={REVIEW_FIX_VISIT_CAP_INPUT: review_fix_visit_cap},
+        review_fix_visit_cap=review_fix_visit_cap,
+        graph_override=graph_override,
+        adapter_inputs=adapter_inputs,
+        # The ONE wall-clock seam the leg reads, held here so the whole dispatch
+        # path has a single place a test stands time still.
+        clock=lambda: int(time.time()),
     )
-    if isinstance(requirement, str | WorkflowFaultDeferral):
-        return requirement_refusal_text(outcome=requirement)
-    # Graded, never renewed. The bounded in-place renewal belongs to the
-    # pre-claim gate, which has already run for this item; this surface is
-    # downstream of the claim, so a renewal here could only extend a credential
-    # whose shortfall can no longer be reported before one.
-    codex_snapshot = project_host_codex_auth(
-        clock=lambda: int(time.time()), run_budget_seconds=requirement.allowance_seconds
-    )
-    if isinstance(codex_snapshot, CodexProjectionRefusal):
-        return codex_snapshot.message
-    # The three enforcement inputs the sandbox needs, stamped ONCE from this
-    # dispatch's own measurements: the absolute credential-use deadline (capped at the
-    # observed expiry minus the documented margin), that observed expiry, and the
-    # lifetime this dispatch requires. Composed in the projection module, which owns
-    # what they mean; this surface owns only WHEN they are taken, which is here —
-    # after the claim and before anything is written.
-    credential_use = credential_use_projection_for(
-        codex_snapshot=codex_snapshot,
-        allowance_seconds=requirement.allowance_seconds,
-        margin_seconds=requirement.margin_seconds,
-        now_epoch=int(time.time()),
-    )
-    # PROTECTION IS OWED FROM HERE, so the launches this workflow declares must be
-    # ones the guard actually reaches. Wrapping the adapter inputs covers every launch
-    # in the graphs this repository ships, but NOT every graph a dispatch could
-    # select: a node declaring a literal `acp.command`, an `acp.config`, or a late
-    # duplicate declaration overriding the command never consumes the wrapped input,
-    # and a control measured exactly that running 1.003s past the deadline. Refused
-    # BEFORE the proof-credential mint below, so it leaves no live credential behind.
-    if (
-        route_refusal := selected_graph_launch_refusal(
-            committed=committed, graph_override=graph_override, adapter_inputs=adapter_inputs
-        )
-    ) is not None:
-        return route_refusal
+    if isinstance(codex_leg, str):
+        return codex_leg
     sandbox_otel_endpoint = resolve_sandbox_otel_endpoint(environ=dict(os.environ))
     otel_env = cc_otel_overlay_env(
         work_item_id=work_item_id,
@@ -308,6 +280,12 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     minted = mint_proof_credentials(repo=repo, scope=dispatch_id, runner=lease_runner)
     if isinstance(minted, str):
         return minted
+    # Hoisted out of the call below so the routed name list can be read back off
+    # the lines this projection ACTUALLY rendered. The declaration is read once,
+    # by the module that owns it, exactly as it was before the transport moved.
+    proof_credentials_env = proof_credentials_overlay_env(
+        repo=repo, environ=os.environ, minted=minted
+    )
     rendered = render_run_config_overlay(
         committed_text=committed.read_text(encoding="utf-8"),
         workflow_dir=committed.parent.resolve(),
@@ -315,7 +293,7 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         github_token=github_token,
         siblings=siblings,
         otel_env=otel_env,
-        codex_auth_snapshot=codex_snapshot,
+        codex_auth_snapshot=codex_leg.snapshot,
         codex_otel_config=codex_otel_config,
         # An unreadable `.livespec.jsonc` falls back to "no image override",
         # visibly and here rather than inside the reader. `unsafe_perform_io`
@@ -351,15 +329,13 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # A declaration whose provider exposes a management interface takes the
         # value minted a few lines above; every other one takes the
         # wrapper-supplied value out of this process's environment.
-        proof_credentials_env=proof_credentials_overlay_env(
-            repo=repo, environ=os.environ, minted=minted
-        ),
+        proof_credentials_env=proof_credentials_env,
         # The pre-launch dispatch id the sandbox declares as its
         # factory-provenance marker. This function runs BEFORE `fabro run`,
         # which is why the marker cannot carry the Fabro run id.
         dispatch_id=dispatch_id,
         git_author=git_author,
-        credential_use=credential_use,
+        credential_use=codex_leg.credential_use,
     )
     if rendered is None:
         # The credentials minted just above belong to a run that will now never
@@ -371,8 +347,16 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
             f"workflow config {committed} is not materializable: it must carry "
             '[workflow] graph = "..." and [run.environment] id = "..."'
         )
-    overlay.unlink(missing_ok=True)
-    descriptor = os.open(str(overlay), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-        _ = handle.write(rendered)
-    return None
+    write_refusal = write_routed_overlay(
+        overlay=overlay,
+        rendered=rendered,
+        channel=channel,
+        proof_credentials_env=proof_credentials_env,
+        sink=secret_sink,
+    )
+    if write_refusal is not None:
+        # Same reasoning as the unmaterializable-config arm above: this dispatch
+        # will never exist, and the run-teardown revoke is only reached once a
+        # run starts.
+        revoke_proof_credentials(repo=repo, scope=dispatch_id, runner=lease_runner)
+    return write_refusal
