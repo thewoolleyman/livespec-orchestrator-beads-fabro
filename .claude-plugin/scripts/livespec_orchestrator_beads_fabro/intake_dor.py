@@ -103,6 +103,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from returns.io import IOFailure, IOResult, IOSuccess
+from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
@@ -112,9 +113,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_a
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_findings import (
     definition_of_done_findings,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
+    resolve_adopted_assertion_count_ceiling,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display import (
     ADVISORY_FINDING_PREFIX,
     MECHANICAL_FINDING_PREFIX,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
+    PolicySettingUnreadable,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_ADMISSION_POLICY,
@@ -244,7 +251,7 @@ def apply_intake_dor(
     path: StoreConfig,
     item_id: str,
     checklist: DefinitionOfReadyChecklist,
-) -> IOResult[Verdict, WorkItemNotFoundError]:
+) -> IOResult[Verdict, WorkItemNotFoundError | PolicySettingUnreadable]:
     """Evaluate the checklist and route a filed item into its lifecycle state.
 
     An item the store does not hold is an EXPECTED failure and rides the
@@ -257,6 +264,12 @@ def apply_intake_dor(
     because a mechanical one is what that step has to stop on, and they are
     recorded on the item afterwards whatever the verdict was.
     """
+    repo_root = path.repo_root
+    if repo_root is not None:
+        ceiling = resolve_adopted_assertion_count_ceiling(cwd=repo_root)
+        if not is_successful(ceiling):
+            return IOFailure(unsafe_perform_io(ceiling.failure()))
+
     client = make_beads_client(config=path)
     if not client.exists(issue_id=item_id):
         return IOFailure(WorkItemNotFoundError(item_id=item_id))
