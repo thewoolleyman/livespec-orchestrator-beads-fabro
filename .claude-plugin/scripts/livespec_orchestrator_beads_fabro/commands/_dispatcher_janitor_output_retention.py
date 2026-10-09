@@ -27,6 +27,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -113,11 +114,17 @@ def _artifact_payload(*, result: CommandResult) -> bytes:
 def _write_artifact(*, retention: JanitorRetention, stage: str, payload: bytes) -> Path:
     """The path the artifact was written to.
 
-    The name carries the invocation and the stage, in that order, so an
-    operator reading a journal row can find the file by the two identities the
-    row already gave them.
+    The name carries the invocation, the stage and a PER-RETENTION token, in
+    that order, so an operator reading a journal row can find the file by the
+    two identities the row already gave them while a second retention of the
+    same stage still gets its own path. A stage-keyed name would make the
+    second failure of a retried janitor replace the first failure's evidence,
+    which is the one occasion where both copies matter. `O_EXCL` is the belt on
+    that: a name that somehow already exists is a failure to write, never a
+    silent replacement.
     """
-    path = retention.directory / _ARTIFACT_DIRECTORY_NAME / f"{retention.invocation}-{stage}.json"
+    name = f"{retention.invocation}-{stage}-{uuid.uuid4().hex}.json"
+    path = retention.directory / _ARTIFACT_DIRECTORY_NAME / name
     _create_artifact(path=path, payload=payload)
     return path
 
