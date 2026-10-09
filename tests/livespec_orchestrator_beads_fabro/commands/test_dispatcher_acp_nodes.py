@@ -418,5 +418,7 @@ def test_materialize_dispatch_routes_an_adapter_refusal_to_its_own_stage(
     assert isinstance(refusal, MaterializationRefusal)
     assert refusal.stage == ACP_NODES_STAGE
     assert "nope" in refusal.detail
-    # The payload step ran and journaled first; only the adapter step refused.
-    assert [record["stage"] for record in journal.records] == ["node-timeouts"]
+    # The adapter step runs FIRST (its resolution is an input to the payload
+    # generator since plan `fabro-currency` P4), so it refuses before anything
+    # is journaled and the payload step never runs.
+    assert [record["stage"] for record in journal.records] == []

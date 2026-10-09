@@ -52,6 +52,15 @@ _GRAPH = (
 )
 
 
+# One ACP node's attributes, carrying the adapter-input token the generator
+# resolves. The template opener is assembled rather than written literally,
+# because the literal pair poisons ledger and goal rendering wherever this
+# file's text is quoted (the fleet convention of livespec-dev-tooling-9yb4).
+_TOKEN = "{" + "{ inputs.implement_adapter }" + "}"
+_ACP_NODE_ATTRS = f'        backend="acp"\n        acp.command="{_TOKEN}"\n'
+_ACP_NODE_ATTRS += '        timeout="14400s"\n'
+
+
 class _RecordingJournal:
     """Minimal JournalWriter seam that keeps every appended record."""
 
@@ -87,6 +96,7 @@ def test_payload_renders_the_graph_and_carries_its_prompts(tmp_path: Path) -> No
         committed=committed,
         payload_dir=tmp_path / "payload",
         timeouts=default_node_timeouts(),
+        adapters={},
     )
     assert isinstance(payload, WorkflowPayload)
     assert payload.graph == tmp_path / "payload" / "workflow.fabro"
@@ -107,6 +117,7 @@ def test_payload_replaces_a_stale_directory_from_an_earlier_dispatch(tmp_path: P
         committed=committed,
         payload_dir=payload_dir,
         timeouts=default_node_timeouts(),
+        adapters={},
     )
     assert isinstance(payload, WorkflowPayload)
     assert not (payload_dir / "stale.md").exists()
@@ -123,6 +134,7 @@ def test_prepare_journals_the_resolved_timeouts_with_their_layers(tmp_path: Path
         payload_dir=tmp_path / "payload",
         journal=journal,
         work_item_id="bd-ib-test",
+        adapters={},
     )
     assert isinstance(payload, WorkflowPayload)
     assert 'timeout="7200s"' in payload.graph.read_text(encoding="utf-8")
@@ -145,6 +157,7 @@ def test_prepare_refuses_an_invalid_timeout_before_materializing(tmp_path: Path)
         payload_dir=payload_dir,
         journal=journal,
         work_item_id="bd-ib-test",
+        adapters={},
     )
     assert isinstance(refusal, str)
     assert "dispatcher.node_timeouts.implement" in refusal
@@ -162,6 +175,7 @@ def test_prepare_reports_a_materialization_refusal(tmp_path: Path) -> None:
         payload_dir=tmp_path / "payload",
         journal=journal,
         work_item_id="bd-ib-test",
+        adapters={},
     )
     assert isinstance(refusal, str)
     assert "stall_timeout" in refusal
@@ -174,6 +188,7 @@ def test_unreadable_committed_config_is_refused(tmp_path: Path) -> None:
         committed=tmp_path / "absent" / "workflow.toml",
         payload_dir=tmp_path / "payload",
         timeouts=default_node_timeouts(),
+        adapters={},
     )
     assert isinstance(refusal, str)
     assert "is unreadable" in refusal
@@ -187,6 +202,7 @@ def test_config_without_a_graph_key_is_refused(tmp_path: Path) -> None:
         committed=committed,
         payload_dir=tmp_path / "payload",
         timeouts=default_node_timeouts(),
+        adapters={},
     )
     assert isinstance(refusal, str)
     assert "declares no [workflow] graph" in refusal
@@ -200,6 +216,7 @@ def test_missing_graph_file_is_refused(tmp_path: Path) -> None:
         committed=committed,
         payload_dir=tmp_path / "payload",
         timeouts=default_node_timeouts(),
+        adapters={},
     )
     assert isinstance(refusal, str)
     assert "workflow graph" in refusal
@@ -215,6 +232,7 @@ def test_uncopyable_payload_destination_is_refused(tmp_path: Path) -> None:
         committed=committed,
         payload_dir=blocker / "payload",
         timeouts=default_node_timeouts(),
+        adapters={},
     )
     assert isinstance(refusal, str)
     assert "is not materializable" in refusal
@@ -268,3 +286,46 @@ def test_payload_removal_tolerates_an_absent_directory(tmp_path: Path) -> None:
     assert not payload_dir.exists()
     remove_workflow_payload(payload_dir=payload_dir)
     remove_workflow_payload(payload_dir=None)
+
+
+def test_payload_renders_each_acp_node_command_as_a_literal(tmp_path: Path) -> None:
+    """The graph the run receives carries the resolved adapter, not the token.
+
+    Plan `fabro-currency` P4: a templated `acp.command` kills the agent before
+    the ACP protocol completes on the Petri-era engine, so the generator is the
+    seam that resolves it.
+    """
+    graph = _GRAPH.replace(
+        '        timeout="14400s"\n',
+        _ACP_NODE_ATTRS,
+        1,
+    )
+    committed = _committed_workflow(root=tmp_path, graph_text=graph)
+    payload = materialize_workflow_payload(
+        committed=committed,
+        payload_dir=tmp_path / "payload",
+        timeouts=default_node_timeouts(),
+        adapters={"implement_adapter": "npx -y claude-agent-acp"},
+    )
+    assert isinstance(payload, WorkflowPayload)
+    assert payload.node_commands == {"implement": "npx -y claude-agent-acp"}
+    assert 'acp.command="npx -y claude-agent-acp"' in payload.graph.read_text(encoding="utf-8")
+
+
+def test_payload_refuses_an_acp_node_whose_adapter_did_not_resolve(tmp_path: Path) -> None:
+    """A half-rendered graph never reaches the engine: the materializer refuses."""
+    graph = _GRAPH.replace(
+        '        timeout="14400s"\n',
+        _ACP_NODE_ATTRS,
+        1,
+    )
+    committed = _committed_workflow(root=tmp_path, graph_text=graph)
+    refusal = materialize_workflow_payload(
+        committed=committed,
+        payload_dir=tmp_path / "payload",
+        timeouts=default_node_timeouts(),
+        adapters={},
+    )
+    assert isinstance(refusal, str)
+    assert "implement_adapter" in refusal
+    assert not (tmp_path / "payload").exists()
