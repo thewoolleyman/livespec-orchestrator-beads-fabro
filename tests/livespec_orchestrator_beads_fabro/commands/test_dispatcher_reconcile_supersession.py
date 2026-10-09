@@ -52,6 +52,9 @@ _HP = FactoryTarget(name="hp", server=_HP_SERVER, dev_token=_HP_DEV_TOKEN_VALUE)
 _ITEM_ID = "bd-ib-super"
 _FIRST_RUN = "01FIRST"
 _SECOND_RUN = "01SECOND"
+_QUESTIONS_PATH = f"/api/v1/runs/{_SECOND_RUN}/questions"
+_ANSWER_PATH = f"{_QUESTIONS_PATH}/q-abandon/answer"
+_CANCEL_PATH = f"/api/v1/runs/{_SECOND_RUN}/cancel"
 
 
 @dataclass(kw_only=True)
@@ -85,6 +88,9 @@ class _Runner:
 class _Transport:
     """A transport that records every route, so a cancel cannot go unnoticed."""
 
+    response_bodies: dict[tuple[str, str], str] = field(default_factory=dict)
+    failed_routes: set[tuple[str, str]] = field(default_factory=set)
+    stamp_on_route: tuple[str, str, Path, str] | None = None
     calls: list[str] = field(default_factory=list)
 
     def send(
@@ -98,7 +104,27 @@ class _Transport:
     ) -> FabroHttpResult:
         _ = (headers, body, timeout_seconds)
         self.calls.append(f"{method} {url}")
-        return FabroHttpResult(status=200, body="{}", error=None, payload=None, succeeded=True)
+        path = url.removeprefix(_HP_SERVER)
+        route = (method, path)
+        if self.stamp_on_route is not None:
+            stamp_method, stamp_path, journal_path, run_id = self.stamp_on_route
+            if route == (stamp_method, stamp_path):
+                _append_stamps(path=journal_path, run_ids=[run_id])
+        if route in self.failed_routes:
+            return FabroHttpResult(
+                status=500,
+                body="",
+                error=None,
+                payload=None,
+                succeeded=False,
+            )
+        return FabroHttpResult(
+            status=200,
+            body=self.response_bodies.get(route, "{}"),
+            error=None,
+            payload=None,
+            succeeded=True,
+        )
 
 
 @dataclass(kw_only=True)
@@ -220,6 +246,77 @@ def test_a_run_stamped_during_export_is_rechecked_at_the_cancel_boundary(
     assert transport.calls == []
     assert runner.calls == ["ps", "dump"]
     assert len(ledger.comments[_ITEM_ID]) == 1
+    assert [row["stage"] for row in journal_writer.written] == [_HOLD_STAGE]
+
+
+def test_a_run_stamped_during_question_discovery_is_held_before_answer(
+    tmp_path: Path,
+) -> None:
+    """Non-destructive route preparation cannot authorize a later answer."""
+    journal = _stamped(tmp_path=tmp_path, run_ids=[_FIRST_RUN])
+    runner = _Runner(ps_rows=_ps(run_id=_SECOND_RUN, status_kind="blocked"))
+    transport = _Transport(
+        response_bodies={
+            ("GET", _QUESTIONS_PATH): json.dumps(
+                {
+                    "data": [
+                        {
+                            "id": "q-abandon",
+                            "options": [{"key": "A", "label": "Abandon this run"}],
+                        }
+                    ]
+                }
+            )
+        },
+        stamp_on_route=("GET", _QUESTIONS_PATH, journal, _SECOND_RUN),
+    )
+    journal_writer = _Journal()
+
+    summary = reconcile.reconcile_runs(
+        inputs=_inputs(
+            tmp_path=tmp_path,
+            journal_path=journal,
+            runner=runner,
+            transport=transport,
+            journal=journal_writer,
+        ),
+        factories=[_HP],
+    )
+
+    assert summary.reconciled == ()
+    assert transport.calls == [f"GET {_HP_SERVER}{_QUESTIONS_PATH}"]
+    assert f"POST {_HP_SERVER}{_ANSWER_PATH}" not in transport.calls
+    assert f"POST {_HP_SERVER}{_CANCEL_PATH}" not in transport.calls
+    assert runner.calls == ["ps", "dump"]
+    assert [row["stage"] for row in journal_writer.written] == [_HOLD_STAGE]
+
+
+def test_a_run_stamped_during_failed_cancel_is_held_before_rm_force(
+    tmp_path: Path,
+) -> None:
+    """A failed cancel cannot authorize a later destructive CLI fallback."""
+    journal = _stamped(tmp_path=tmp_path, run_ids=[_FIRST_RUN])
+    runner = _Runner(ps_rows=_ps(run_id=_SECOND_RUN))
+    transport = _Transport(
+        failed_routes={("POST", _CANCEL_PATH)},
+        stamp_on_route=("POST", _CANCEL_PATH, journal, _SECOND_RUN),
+    )
+    journal_writer = _Journal()
+
+    summary = reconcile.reconcile_runs(
+        inputs=_inputs(
+            tmp_path=tmp_path,
+            journal_path=journal,
+            runner=runner,
+            transport=transport,
+            journal=journal_writer,
+        ),
+        factories=[_HP],
+    )
+
+    assert summary.reconciled == ()
+    assert transport.calls == [f"POST {_HP_SERVER}{_CANCEL_PATH}"]
+    assert runner.calls == ["ps", "dump"]
     assert [row["stage"] for row in journal_writer.written] == [_HOLD_STAGE]
 
 
@@ -386,13 +483,13 @@ def _orphan(*, run_id: str, reason: str = ORPHAN_REASON_SUPERSEDED_RUN) -> Orpha
     )
 
 
-def _ps(*, run_id: str) -> str:
+def _ps(*, run_id: str, status_kind: str = "running") -> str:
     return json.dumps(
         [
             {
                 "run_id": run_id,
                 "goal": f"Work-item: {_ITEM_ID}\nRepo: /tmp/repo",
-                "status": {"kind": "running"},
+                "status": {"kind": status_kind},
             }
         ]
     )
