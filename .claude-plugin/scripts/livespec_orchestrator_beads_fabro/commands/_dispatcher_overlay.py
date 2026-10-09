@@ -96,7 +96,20 @@ _SANDBOX_TMUX_TMPDIR = "/workspace/.tmux"
 # already run out its clock. Setting this switch makes such a call report back
 # as an ordinary timed-out call the agent can read and retry
 # (work-item bd-ib-k627ja; plan `pr-stage-backgrounded-push-fault`).
-_HARNESS_SHELL_ENV: tuple[tuple[str, str], ...] = (("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1"),)
+#
+# The two timeouts are the OTHER half of the same fault and are not merely a
+# convenience beside it. The harness defaults a foreground call to 120000 ms and
+# CAPS a model-supplied timeout at 600000 ms, so a call that honestly needs
+# twenty minutes — a full pytest run, a coverage pass — cannot ask for the time
+# it needs however carefully the agent reasons about it. Raising the default to
+# the old cap and the cap to an hour lets the call declare its real duration;
+# the switch above then makes the remaining overruns survivable rather than
+# turn-ending. Three P4 implement runs were destroyed this way on 2026-10-09.
+_HARNESS_SHELL_ENV: tuple[tuple[str, str], ...] = (
+    ("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1"),
+    ("BASH_DEFAULT_TIMEOUT_MS", "600000"),
+    ("BASH_MAX_TIMEOUT_MS", "3600000"),
+)
 
 
 def harness_shell_env_lines() -> str:

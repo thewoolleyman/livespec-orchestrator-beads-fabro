@@ -2171,6 +2171,8 @@ _SIBLING_ENV_LINE = 'LIVESPEC_SIBLING_CLONES_ROOT = "/workspace/siblings"'
 _CURRENCY_GATE_ENV_LINE = 'LIVESPEC_CURRENCY_GATE = "fail"'
 _TMUX_TMPDIR_ENV_LINE = 'TMUX_TMPDIR = "/workspace/.tmux"'
 _NO_AUTO_BACKGROUND_ENV_LINE = 'CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = "1"'
+_BASH_DEFAULT_TIMEOUT_ENV_LINE = 'BASH_DEFAULT_TIMEOUT_MS = "600000"'
+_BASH_MAX_TIMEOUT_ENV_LINE = 'BASH_MAX_TIMEOUT_MS = "3600000"'
 _TMUX_TMPDIR_PREPARE_STEP_LINE = (
     'script = "mkdir -p /workspace/.tmux && chmod 700 /workspace/.tmux"'
 )
@@ -2462,6 +2464,8 @@ def test_committed_implement_workflow_overlay_carries_full_fleet_sandbox_env() -
         _CURRENCY_GATE_ENV_LINE,
         _TMUX_TMPDIR_ENV_LINE,
         _NO_AUTO_BACKGROUND_ENV_LINE,
+        _BASH_DEFAULT_TIMEOUT_ENV_LINE,
+        _BASH_MAX_TIMEOUT_ENV_LINE,
     )
     for line in required_sandbox_env_lines:
         assert line in rendered, f"overlay missing required sandbox env line: {line}"
