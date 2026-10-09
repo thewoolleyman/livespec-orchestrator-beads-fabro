@@ -1679,5 +1679,13 @@
     "test": "TODO",
     "reason": "A real integration-tier test is owed.",
     "work_item": "bd-ib-jy23vh"
+  },
+  {
+    "heading": "## Scenario 165 \u2014 Completed-cycle measurements explain runtime non-convergence",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for completed-cycle provenance, measurements, missing-evidence diagnostics and observable non-convergence through the public Dispatcher; existing S6 owns the implementation after ratification.",
+    "work_item": "bd-ib-z2y4ca"
   }
 ]

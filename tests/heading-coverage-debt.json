@@ -817,5 +817,12 @@
     "heading": "## Scenario 164 \u2014 Human HOLD and commit safety barriers retain recovery obligations",
     "work_item": "bd-ib-jy23vh",
     "first_seen": "2026-10-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 165 \u2014 Completed-cycle measurements explain runtime non-convergence",
+    "work_item": "bd-ib-z2y4ca",
+    "first_seen": "2026-10-09"
   }
 ]
