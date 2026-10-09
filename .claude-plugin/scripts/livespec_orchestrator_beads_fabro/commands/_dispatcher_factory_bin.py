@@ -32,6 +32,18 @@ stamp is also what makes a second preamble pass idempotent: the drain runs one
 per tick, and a pass that re-read its own write would mistake the
 factory-effective client for an operator's flag.
 
+`global_fabro_bin` is that stamp's public reader, and it exists because the
+per-item pin is NOT the only thing the preamble's write reaches. The preamble
+also RECONCILES every other declared factory, and a survey taking its fallback
+from `args.fabro_bin` drives each no-`bin` factory with the DISPATCH factory's
+client — which is this item's own production shape, a candidate entry added
+beside the legacy one. That failure is silent in the worst available way: a
+client speaking the other engine's protocol returns a clean, plausible, EMPTY
+inventory, so the pass reconciles nothing and journals a record that reads as
+a healthy one. Any caller holding a factory OTHER than the one the preamble
+resolved therefore asks for the global leg BY NAME rather than reading
+`args.fabro_bin`, which by then names one factory's client and not the host's.
+
 AN UNUSABLE DECLARATION IS REFUSED BEFORE THE CLAIM, and it gets its own
 refusal rather than riding the global engine-binary preflight's. That preflight
 catches the same binary — the declared client IS the effective one — but it
@@ -58,12 +70,14 @@ __all__: list[str] = [
     "factory_bin_refusal",
     "factory_effective_fabro_bin",
     "factory_fabro_bin",
+    "global_fabro_bin",
     "resolve_dispatch_fabro_bin",
 ]
 
 # The `args` attribute carrying the GLOBAL resolution, written by
-# `resolve_dispatch_fabro_bin` and read by `factory_effective_fabro_bin`. Named
-# here, in the module that owns both ends, so the two cannot drift apart.
+# `resolve_dispatch_fabro_bin` and read by `factory_effective_fabro_bin` and
+# `global_fabro_bin`. Named here, in the module that owns every end of it, so
+# they cannot drift apart.
 _GLOBAL_BIN_ATTR = "fabro_bin_global"
 
 
@@ -126,6 +140,19 @@ def resolve_dispatch_fabro_bin(
         global_bin = resolve_fabro_bin(cwd=repo)
     setattr(args, _GLOBAL_BIN_ATTR, global_bin)
     return factory_fabro_bin(factory=factory, fallback=global_bin)
+
+
+def global_fabro_bin(*, args: argparse.Namespace, fallback: str) -> str:
+    """The GLOBAL engine binary this invocation resolved — never a factory's own.
+
+    For a caller holding a factory the dispatch was NOT routed to. The stamp is
+    the answer wherever a preamble has run; `fallback` covers the callers that
+    never run one — the standalone `reconcile-runs` command and the
+    needs-attention lane build their own arguments, and there `args.fabro_bin`
+    IS the global resolution, which is why those surfaces were never affected
+    by the cross-factory leak this exists to close.
+    """
+    return _stamped_global_bin(args=args) or fallback
 
 
 def factory_effective_fabro_bin(

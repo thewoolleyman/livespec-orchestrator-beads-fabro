@@ -41,6 +41,16 @@ _VPS = FactoryTarget(name="vps", server="https://vps.example:32276", dev_token=_
 # The factory an operator host has NOT exported a dev token for, and which no
 # `~/.fabro/auth.json` entry covers either: every HTTP route it offers is 401.
 _UNAUTHENTICATED = FactoryTarget(name="hp", server="https://hp.example:32276", dev_token=None)
+_CANDIDATE_BIN = "/candidate/fabro"
+# The upgrade candidate declaring its own engine client (work-item
+# bd-ib-qytzf4): the one factory shape where "which client" and "which server"
+# can disagree, and the only one that can prove a call was paired correctly.
+_HP_CANDIDATE = FactoryTarget(
+    name="hp-candidate",
+    server="https://hp-candidate.example:32278",
+    dev_token=_HP_DEV_TOKEN_VALUE,
+    fabro_bin=_CANDIDATE_BIN,
+)
 _QUESTIONS_BODY = json.dumps(
     {
         "data": [
@@ -200,6 +210,46 @@ def test_a_closed_item_run_is_exported_then_terminated_and_journaled(tmp_path: P
     )
     assert [record["stage"] for record in journal.written] == ["orphan-run-reconciled"]
     assert journal.written[0]["export_comment_id"] == "c-bd-ib-orphan"
+
+
+def test_every_cli_call_for_one_orphan_runs_that_factorys_declared_client(
+    tmp_path: Path,
+) -> None:
+    """A factory declaring `bin` is surveyed AND exported through that client.
+
+    The export is the one Fabro call reconciliation makes that does not go
+    through a port verb — `export_orphan_reference` runs `fabro dump --server
+    <this orphan's factory>` on an argv built from a binary handed to it — so
+    it is the one place a factory can be addressed by its own server while
+    being spoken to through the host's client. That pairing cannot be read off
+    the result: `dump` against the wrong engine fails, and the failure is
+    journaled as an export that could not be taken, which is the same record a
+    genuinely unreachable run leaves. So the client is asserted per argv.
+    """
+    runner = _Runner(
+        ps_by_server={_HP_CANDIDATE.server or "": _ps(run_id="01ORPHAN", kind="blocked")}
+    )
+
+    summary = reconcile.reconcile_runs(
+        inputs=_inputs(
+            tmp_path=tmp_path,
+            runner=runner,
+            transport=_Transport(),
+            journal=_Journal(),
+            ledger=_Ledger(),
+            items=[_item(id="bd-ib-orphan", status="closed")],
+        ),
+        factories=[_HP_CANDIDATE],
+    )
+
+    assert [run.run_id for run in summary.reconciled] == ["01ORPHAN"]
+    # The bundle's own `fabro_bin` is the GLOBAL leg and is deliberately NOT
+    # what either call used, so a regression here reads as the global client
+    # reaching the candidate's server.
+    assert [(call[0], call[1]) for call in runner.calls] == [
+        (_CANDIDATE_BIN, "ps"),
+        (_CANDIDATE_BIN, "dump"),
+    ]
 
 
 def test_an_unresolved_credential_is_journaled_before_the_rm_fallback(tmp_path: Path) -> None:
