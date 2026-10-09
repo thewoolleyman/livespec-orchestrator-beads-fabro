@@ -5,6 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_output_retention import (
+    retained_output_record,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 
 if TYPE_CHECKING:
@@ -13,6 +16,9 @@ if TYPE_CHECKING:
         CommandRunner,
         DispatchOutcome,
         JournalWriter,
+    )
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_output_retention import (
+        JanitorRetention,
     )
 
 __all__: list[str] = ["failed_outcome", "journal_stage", "run_stage", "stalled_outcome", "tail"]
@@ -67,6 +73,7 @@ def journal_stage(
     stage: str,
     result: CommandResult,
     streams: bool = False,
+    retention: JanitorRetention | None = None,
 ) -> None:
     """Append one stage record, optionally carrying BOTH captured streams.
 
@@ -76,6 +83,12 @@ def journal_stage(
     exit code did not select. That record is indistinguishable from a step which
     genuinely did its work, so the venue's provisioning steps ask for `streams`
     and journal both.
+
+    `retention` is the post-merge janitor's output-retention venue, and it is
+    OPT-IN per call site rather than read off the plan here, because the
+    retention clause covers the janitor's own commands and nothing else: a
+    default that retained for every journaled stage would be the broad capture
+    of every command the clause declines to perform.
     """
     record: dict[str, object] = {
         "work_item_id": plan.work_item_id,
@@ -86,13 +99,15 @@ def journal_stage(
     if streams:
         record["stdout"] = tail(text=result.stdout)
         record["stderr"] = tail(text=result.stderr)
+    if retention is not None:
+        record.update(retained_output_record(retention=retention, stage=stage, result=result))
     journal.append(record=record)
 
 
 StageCommand = tuple[list[str], Path, float, dict[str, str] | None]
 
 
-def run_stage(
+def run_stage(  # noqa: PLR0913 — kw-only passthrough to `journal_stage`, whose own signature this one mirrors argument for argument. Folding `streams` and `retention` into a carrier here would make the two signatures disagree, and the pair is not a grouping anyway: `streams` decides what the ROW carries and `retention` what is written BESIDE it.
     *,
     runner: CommandRunner,
     journal: JournalWriter,
@@ -100,10 +115,18 @@ def run_stage(
     stage: str,
     command: StageCommand,
     streams: bool = False,
+    retention: JanitorRetention | None = None,
 ) -> CommandResult:
     argv, cwd, timeout_seconds, env = command
     result = runner.run(argv=argv, cwd=cwd, timeout_seconds=timeout_seconds, env=env)
-    journal_stage(journal=journal, plan=plan, stage=stage, result=result, streams=streams)
+    journal_stage(
+        journal=journal,
+        plan=plan,
+        stage=stage,
+        result=result,
+        streams=streams,
+        retention=retention,
+    )
     return result
 
 

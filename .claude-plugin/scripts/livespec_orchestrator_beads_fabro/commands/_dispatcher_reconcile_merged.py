@@ -25,8 +25,10 @@ record, the emitted payload and the exit code identical between them.
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_self_update as selfup
 from livespec_orchestrator_beads_fabro.commands._config import resolve_fabro_bin
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_result import (
     ACCEPTANCE_STAGE,
@@ -54,6 +56,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_output_retention import (
+    janitor_retention,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import emit_outcomes
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
@@ -118,7 +123,23 @@ def run_reconcile_merged_command(
         path=journal_path(args=args, repo=repo),
         identity=invoker_from_args(args=args),
     )
-    plan = reconcile_plan(repo=repo, item=item, janitor=janitor, runner=command_runner)
+    # This valve's OWN identity, minted and journaled before the arms run. It
+    # keys the post-merge janitor's retained-output artifacts, so a reader
+    # holding a retained path can tie it back to the invocation that wrote it;
+    # the dispatch path keys those on its dispatch id, and before this record
+    # existed the valve had no identifier of its own to key them on at all.
+    invocation = selfup.run_id()
+    journal.append(
+        record={
+            "stage": "reconcile-merged-invocation",
+            "work_item_id": item.id,
+            "invocation_id": invocation,
+        }
+    )
+    plan = replace(
+        reconcile_plan(repo=repo, item=item, janitor=janitor, runner=command_runner),
+        janitor_retention=janitor_retention(directory=journal.path.parent, invocation=invocation),
+    )
     # The three arms, most specific first. `--regrade` is selected by the FLAG, so
     # it outranks the item's status; an item resting in `acceptance` then takes the
     # re-accept arm, because its merge and its janitor already ran and the clause
