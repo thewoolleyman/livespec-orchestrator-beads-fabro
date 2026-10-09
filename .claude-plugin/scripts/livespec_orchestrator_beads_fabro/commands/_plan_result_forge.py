@@ -26,10 +26,27 @@ folding is the forgiving direction on a closed vocabulary. A blob id is a hex
 digest: it has no vocabulary to be forgiving about, and comparing it case-folded
 would be the same comparison with an extra step — the forge and git both render
 it lower case, so it is compared verbatim and a mismatch is a mismatch.
+
+WHY EACH OBSERVED VALUE IS VALIDATED BEFORE THE REQUESTED TARGET IS COMPARED, AND
+WHY THAT ORDER IS THE WHOLE MECHANISM. The clause requires malformed evidence to be
+`unobservable`, never satisfaction or a confident negative. A comparison performed
+FIRST has already decided: it converts a value the adapter could not interpret into
+a verdict, and the verdict is indistinguishable from one earned against a readable
+source. So each adapter asks whether the forge answered IN ITS OWN GRAMMAR before
+asking whether the answer is the requested one — a state inside the closed
+vocabulary `_PULL_REQUEST_STATES`, a timestamp that is not blank (it is half the
+evidence identity this kind reports), and a blob rendered as an object identity
+rather than merely as something non-empty. Each arm failed in a DIFFERENT direction
+before this ordering existed: a blank timestamp was satisfaction, while an
+uninterpretable state and a `null` blob were confident negatives. Both directions
+are forbidden, which is why neither a permissive nor a strict default is safe and
+the grammar has to be asked explicitly.
 """
 
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
 from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
@@ -59,6 +76,21 @@ _FORGE_TIMEOUT_SECONDS = 30.0
 _STATE_FIELD = "state"
 _UPDATED_AT_FIELD = "updatedAt"
 
+# The CLOSED vocabulary the forge reports a pull-request state in. A value
+# outside it is MALFORMED EVIDENCE: it says nothing about where the pull request
+# stands, so comparing it against the requested state would manufacture a
+# confident negative out of a reading the adapter could not interpret. Narrowing
+# fails CLOSED — an unrecognised state becomes `unobservable`, which leaves the
+# obligation outstanding, rather than a verdict nobody can trust.
+_PULL_REQUEST_STATES: frozenset[str] = frozenset({"open", "closed", "merged"})
+
+# A Git object identity as the forge renders one: forty LOWERCASE hex digits.
+# The case is part of the grammar rather than an incidental detail, because this
+# module compares a blob verbatim — so admitting another rendering would report
+# a matching object as a mismatch. Anything else is unobservable for the same
+# reason a blank answer is: it is not an object identity the reader obtained.
+_OBJECT_IDENTITY = re.compile(r"[0-9a-f]{40}")
+
 
 def pull_request_state_argv(*, number: int) -> list[str]:
     """The forge read that answers one pull request's state and its last update."""
@@ -81,52 +113,49 @@ def blob_argv(*, branch: str, path: str) -> list[str]:
     ]
 
 
+@dataclass(frozen=True, kw_only=True)
+class _ForgeState:
+    """One pull-request state reading that IS evidence: a known state and its time."""
+
+    state: str
+    updated: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class _StateRefusal:
+    """Why a pull-request state reading is not evidence of anything.
+
+    A VALUE rather than a bare `None`, for the reason `_plan_result_proof`'s
+    `_SubjectRefusal` is one: the five ways this read fails have different
+    remedies, and the clause requires the failed source named with a detail an
+    operator can act on. The source is not carried because every arm here rests on
+    the same one — this is the forge answering about its own pull request.
+    """
+
+    detail: str
+
+
 def observe_pull_request_state(
     *, repository: ResultRepository, target: PullRequestStateTarget, runner: CommandRunner, now: str
 ) -> ResultObservation:
-    """Observe whether one pull request stands at the expected forge state."""
-    result = runner.run(
-        argv=pull_request_state_argv(number=target.number),
-        cwd=repository.clone,
-        timeout_seconds=_FORGE_TIMEOUT_SECONDS,
-    )
-    if result.exit_code != 0:
+    """Observe whether one pull request stands at the expected forge state.
+
+    TWO STEPS, AND THEY ARE SPLIT RATHER THAN INTERLEAVED: read the forge into a
+    state that IS evidence, then compare that state against the requested one.
+    Interleaving them is what let a value the reader could not interpret reach the
+    comparison and come back out as a verdict.
+    """
+    reading = _read_pull_request_state(repository=repository, target=target, runner=runner)
+    if isinstance(reading, _StateRefusal):
         return _unreadable(
             repository=repository,
             target=target,
             source=SOURCE_FORGE,
             now=now,
-            detail=(
-                f"the forge read of pull request #{target.number} exited"
-                f" {result.exit_code}: {_first_line(text=result.stderr)}"
-            ),
+            detail=reading.detail,
         )
-    parsed = parse_json(text=result.stdout)
-    if isinstance(parsed, JsonParseFailure) or not isinstance(parsed, dict):
-        return _unreadable(
-            repository=repository,
-            target=target,
-            source=SOURCE_FORGE,
-            now=now,
-            detail=(
-                f"the forge answered for pull request #{target.number} with a payload"
-                " that is not the requested object"
-            ),
-        )
-    fields = cast("dict[str, object]", parsed)
-    state: object = fields.get(_STATE_FIELD)
-    updated: object = fields.get(_UPDATED_AT_FIELD)
-    if not isinstance(state, str) or state == "" or not isinstance(updated, str):
-        return _unreadable(
-            repository=repository,
-            target=target,
-            source=SOURCE_FORGE,
-            now=now,
-            detail=(
-                f"the forge payload for pull request #{target.number} carries no"
-                f" readable {_STATE_FIELD} and {_UPDATED_AT_FIELD} pair"
-            ),
-        )
+    state = reading.state
+    updated = reading.updated
     if state.casefold() != target.state.casefold():
         return unsatisfied(
             repo=repository.name,
@@ -152,6 +181,78 @@ def observe_pull_request_state(
     )
 
 
+def _read_pull_request_state(
+    *, repository: ResultRepository, target: PullRequestStateTarget, runner: CommandRunner
+) -> _ForgeState | _StateRefusal:
+    """The forge's answer about one pull request, admitted only if it IS evidence.
+
+    FIVE WAYS THE FORGE ANSWERS WITHOUT ANSWERING, and the last two are the ones
+    that reach a well-formed payload. A non-zero exit, output that is not the
+    requested object, and a payload missing either field all fail on SHAPE. The
+    remaining two carry the right shape and a value that is not evidence:
+
+    - A BLANK `updatedAt`. The timestamp is HALF the evidence identity this kind
+      reports — the clause names "forge state/timestamp" as one identity — so a
+      blank one cannot be satisfaction. It previously was, publishing an evidence
+      line that trails off after `at ` and names no observation anyone can look up.
+    - A STATE OUTSIDE `_PULL_REQUEST_STATES`. It says nothing about where the pull
+      request stands, so comparing it against the requested state manufactures a
+      confident negative from a reading that was never interpreted.
+
+    Both of those are REFUSED HERE rather than in the caller, which is the whole
+    reason this function exists: a validation living next to the comparison can be
+    reordered after it by an edit that looks harmless, and the comparison is what
+    converts an uninterpretable value into a verdict.
+    """
+    result = runner.run(
+        argv=pull_request_state_argv(number=target.number),
+        cwd=repository.clone,
+        timeout_seconds=_FORGE_TIMEOUT_SECONDS,
+    )
+    if result.exit_code != 0:
+        return _StateRefusal(
+            detail=(
+                f"the forge read of pull request #{target.number} exited"
+                f" {result.exit_code}: {_first_line(text=result.stderr)}"
+            )
+        )
+    parsed = parse_json(text=result.stdout)
+    if isinstance(parsed, JsonParseFailure) or not isinstance(parsed, dict):
+        return _StateRefusal(
+            detail=(
+                f"the forge answered for pull request #{target.number} with a payload"
+                " that is not the requested object"
+            )
+        )
+    fields = cast("dict[str, object]", parsed)
+    state: object = fields.get(_STATE_FIELD)
+    updated: object = fields.get(_UPDATED_AT_FIELD)
+    if not isinstance(state, str) or state == "" or not isinstance(updated, str):
+        return _StateRefusal(
+            detail=(
+                f"the forge payload for pull request #{target.number} carries no"
+                f" readable {_STATE_FIELD} and {_UPDATED_AT_FIELD} pair"
+            )
+        )
+    if updated.strip() == "":
+        return _StateRefusal(
+            detail=(
+                f"the forge reported pull request #{target.number} at state {state}"
+                f" with a blank {_UPDATED_AT_FIELD}, so the reading carries no forge"
+                " observation time to cite as its evidence"
+            )
+        )
+    if state.casefold() not in _PULL_REQUEST_STATES:
+        return _StateRefusal(
+            detail=(
+                f"the forge answered for pull request #{target.number} with state"
+                f" {state!r}, which is not a state the forge reports, so where the"
+                " pull request stands was not observed"
+            )
+        )
+    return _ForgeState(state=state, updated=updated)
+
+
 def observe_file_on_branch(
     *, repository: ResultRepository, target: FileOnBranchTarget, runner: CommandRunner, now: str
 ) -> ResultObservation:
@@ -173,19 +274,23 @@ def observe_file_on_branch(
             ),
         )
     blob = result.stdout.strip()
-    if blob == "":
-        # A BLANK answer is UNOBSERVABLE and never a mismatch. The forge returns
-        # an empty body for a path it cannot resolve at that ref, so reading
-        # blank as "a different object" would publish a confident negative about
-        # a path the read never reached.
+    if _OBJECT_IDENTITY.fullmatch(blob) is None:
+        # AN ANSWER THAT IS NOT AN OBJECT IDENTITY IS UNOBSERVABLE AND NEVER A
+        # MISMATCH. The forge returns an empty body for a path it cannot resolve
+        # at that ref, and `gh api --jq .sha` prints the literal `null` for a
+        # payload carrying no `sha` — four characters rather than none, so a
+        # blank-only guard cleared it and the mismatch arm published a confident
+        # negative about an object identity the read never obtained. Validating
+        # the RENDERING rather than merely its emptiness is what closes both.
         return _unreadable(
             repository=repository,
             target=target,
             source=SOURCE_GIT_OBJECT,
             now=now,
             detail=(
-                f"the remote named no object for {target.path} at {target.branch},"
-                " which is an unresolved read rather than a differing object"
+                f"the remote named no object identity for {target.path} at"
+                f" {target.branch} — it answered {blob!r} — which is an unresolved"
+                " read rather than a differing object"
             ),
         )
     if blob != target.blob:
