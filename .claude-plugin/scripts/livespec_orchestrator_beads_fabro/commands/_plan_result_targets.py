@@ -198,6 +198,13 @@ class ResultReferenceRefusal:
     has to travel to the reader as data it can turn into an observation, not as a
     control-flow escape the reader would have to catch outside this tree's one
     permitted effect boundary.
+
+    `repo` is the repository identity the refused value DID name, where the
+    refusal happened after that field was read, and the empty string where it did
+    not. The clause requires every observation to report its repository, and a
+    refusal that dropped a perfectly good identity would make the resulting
+    unobservable reading unattributable to the obligation that produced it.
     """
 
     detail: str
+    repo: str = ""

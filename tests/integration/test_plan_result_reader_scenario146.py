@@ -79,6 +79,7 @@ _BLOB_KEY = "contents/"
 # `tests/livespec_orchestrator_beads_fabro/commands/test_plan_result_observation.py`,
 # so a renamed constant still fails somewhere rather than drifting silently.
 _UNSATISFIED = "unsatisfied"
+_UNOBSERVABLE = "unobservable"
 
 
 @pytest.fixture(autouse=True)
@@ -506,6 +507,130 @@ def test_a_failed_target_observation_is_never_reported_satisfied(tmp_path: Path)
             now=_NOW,
         )
         assert _status(observation=observation) != OBSERVATION_SATISFIED
+
+
+def test_a_failed_or_malformed_observation_is_unobservable_and_names_the_failed_source(
+    tmp_path: Path,
+) -> None:
+    """Assertion 3, and Scenario 146's second sub-scenario.
+
+    One case per way an observation can fail, and each asserts the SOURCE the
+    clause requires naming after a bounded read — because "unobservable" alone
+    sends an operator looking at whichever source they guess. The seven cover
+    every named source plus the two the reader can fail at before any of them is
+    reached: a reference that will not parse and a repository that will not
+    resolve. Authentication, a payload that is not the shape the read asked for,
+    an absent ledger record and a source that answers nothing are all here, and
+    none of them may become satisfaction or a confident negative.
+
+    `outstanding` is asserted on every case, since the clause requires a bounded
+    read failure to leave the obligation outstanding — which is a different
+    statement from the status and is the one both tracking callers act on.
+    """
+    repo = _seeded_project(tmp_path=tmp_path)
+    malformed_state = _Runner(
+        answers={_PR_STATE_KEY: CommandResult(exit_code=0, stdout="<html>", stderr="")}
+    )
+    unauthenticated = _Runner(
+        answers={
+            _PR_STATE_KEY: CommandResult(
+                exit_code=4, stdout="", stderr="gh: authentication required\n"
+            )
+        }
+    )
+    unreadable_comments = _Runner(
+        answers={_PR_COMMENTS_KEY: CommandResult(exit_code=4, stdout="", stderr="gh: no access\n")}
+    )
+    blank_blob = _Runner(answers={_BLOB_KEY: CommandResult(exit_code=0, stdout="\n", stderr="")})
+    cases = (
+        ("result reference", {"repo": _PROJECT_NAME, "shell": "test -f a.md"}, _runner()),
+        (
+            "repository resolution",
+            {
+                "repo": "a-repository-nobody-configured",
+                "item_status": {"item_id": _ITEM_ID, "status": "ready"},
+            },
+            _runner(),
+        ),
+        (
+            "ledger",
+            {
+                "repo": _PROJECT_NAME,
+                "item_status": {"item_id": "bd-ib-never-filed", "status": "ready"},
+            },
+            _runner(),
+        ),
+        (
+            "ledger",
+            {
+                "repo": _PROJECT_NAME,
+                "item_comment": {"item_id": "bd-ib-never-filed", "marker": _MARKER},
+            },
+            _runner(),
+        ),
+        ("forge", _fulfilled_references()["pull_request_state"], unauthenticated),
+        ("forge", _fulfilled_references()["pull_request_state"], malformed_state),
+        ("proof record", _fulfilled_references()["verified_proof"], unreadable_comments),
+        ("git object", _fulfilled_references()["file_on_branch"], blank_blob),
+    )
+    for source, reference, runner in cases:
+        observation = read_result(project_root=repo, reference=reference, runner=runner, now=_NOW)
+        assert _status(observation=observation) == _UNOBSERVABLE, source
+        assert observation.source == source, source
+        assert observation.observed_at == _NOW, source
+        assert observation.detail != "", source
+        assert observation.outstanding is True, source
+
+
+def test_a_query_to_the_wrong_repository_cannot_discharge_the_requested_target(
+    tmp_path: Path,
+) -> None:
+    """Scenario 146: "a query to the wrong repository cannot discharge the target".
+
+    The item the reference names IS present, at exactly the status requested, in
+    the tenant the reader is standing in — so a reader that ignored the repository
+    identity and read its own would report satisfaction. The requested repository
+    does not resolve, which the clause puts in the unobservable set, so the
+    obligation stays outstanding instead.
+    """
+    repo = _seeded_project(tmp_path=tmp_path)
+    observation = read_result(
+        project_root=repo,
+        reference={
+            "repo": "a-repository-nobody-configured",
+            "item_status": {"item_id": _ITEM_ID, "status": "ready"},
+        },
+        runner=_runner(),
+        now=_NOW,
+    )
+    assert _status(observation=observation) == _UNOBSERVABLE
+    assert observation.repo == "a-repository-nobody-configured"
+    assert _ITEM_ID in observation.target
+
+
+def test_an_unobservable_reading_carries_no_evidence_it_did_not_find(
+    tmp_path: Path,
+) -> None:
+    """A read that failed has nothing to cite, and must not manufacture a citation.
+
+    The clause separates the failed SOURCE from the source EVIDENCE identity for
+    exactly this reason: an unobservable reading names what it could not read and
+    leaves the evidence empty, where a satisfied or unsatisfied reading of the same
+    target carries the artifact it rested on. An evidence string here would read as
+    a record somebody could look up.
+    """
+    repo = _seeded_project(tmp_path=tmp_path)
+    observation = read_result(
+        project_root=repo,
+        reference={
+            "repo": _PROJECT_NAME,
+            "item_status": {"item_id": "bd-ib-never-filed", "status": "ready"},
+        },
+        runner=_runner(),
+        now=_NOW,
+    )
+    assert _status(observation=observation) == _UNOBSERVABLE
+    assert observation.evidence == ""
 
 
 def test_every_cross_tenant_command_executes_from_the_named_repository(

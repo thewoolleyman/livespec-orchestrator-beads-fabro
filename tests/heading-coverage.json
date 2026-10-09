@@ -1524,9 +1524,8 @@
     "heading": "## Scenario 146 — Authoritative result readers distinguish fulfillment from observation failure",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "A real integration-tier test is owed for this new behavior; the named work item owns landing it, with released host capture and independent replay additionally owed where the scenario requires them.",
-    "work_item": "bd-ib-77dipw"
+    "test": "tests.integration.test_plan_result_reader_scenario146.test_each_typed_result_reports_satisfaction_with_source_identity_and_evidence",
+    "reason": "Integration-tier acceptance for the shared authoritative result reader (livespec_orchestrator_beads_fabro.commands._plan_result_reader.read_result), exercised through the real store/client seam against the in-memory FakeBeadsClient and one recording CommandRunner; no adapter is stood in under the reader. The bound node id is the scenario outline's satisfied leg across all five typed kinds, with repository, target identity, UTC observation time and evidence identity asserted per row. Its sibling tests in the same module carry the rest of the heading: the same five kinds unsatisfied against the same fixtures, the unobservable leg with one case per named failed source, the three cannot-satisfy controls the scenario states (a comment saying verified against a typed verified proof, a stale local file against a differing remote blob, and a shell predicate against the closed kind set), the wrong-repository refusal, and the cross-tenant rule that every command executes from the named repository's clone."
   },
   {
     "heading": "## Scenario 147 — A plan deadline survives pointer rewrites and permits causal recovery",
