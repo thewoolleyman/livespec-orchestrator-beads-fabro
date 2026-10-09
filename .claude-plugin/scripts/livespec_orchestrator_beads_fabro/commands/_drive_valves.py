@@ -28,6 +28,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibili
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
     factory_size_decision,
     resolve_adopted_assertion_count_ceiling,
+    stored_factory_size_decision,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
     InvokerIdentity,
@@ -247,10 +248,18 @@ def _approve_item(
     adopted_ceiling = unsafe_perform_io(
         resolve_adopted_assertion_count_ceiling(cwd=repo).value_or(None)
     )
-    size = factory_size_decision(
-        item=item,
-        adopted_ceiling=adopted_ceiling,
-        raw_justification=None,
+    size = (
+        factory_size_decision(
+            item=item,
+            adopted_ceiling=None,
+            raw_justification=None,
+        )
+        if adopted_ceiling is None
+        else stored_factory_size_decision(
+            path=config,
+            item=item,
+            adopted_ceiling=adopted_ceiling,
+        )
     )
     if size.disposition == "decompose":
         reason = cast("str", size.reason)

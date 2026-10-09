@@ -38,13 +38,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from returns.unsafe import unsafe_perform_io
+
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
     DispatchOutcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
+    resolve_adopted_assertion_count_ceiling,
+    stored_factory_size_decision,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_implement_adapter import (
     implement_adapter_label,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_commits import (
     TddCommitSignals,
     commit_trailers,
@@ -107,7 +114,25 @@ def gather_tdd_signals(
             keys=(dispatch_id, item.id) if dispatch_id is not None else (item.id,)
         ),
         adapter=implement_adapter_label(records=records, work_item_id=item.id),
+        size_justified=_size_justified_signal(repo=repo, item=item, outcome=outcome),
     )
+
+
+def _size_justified_signal(*, repo: Path, item: WorkItem, outcome: DispatchOutcome) -> bool | None:
+    """Whether a successful dispatch used the attributed ceiling exception."""
+    if outcome.status != "green":
+        return None
+    adopted_ceiling = unsafe_perform_io(
+        resolve_adopted_assertion_count_ceiling(cwd=repo).value_or(None)
+    )
+    if adopted_ceiling is None:
+        return False
+    decision = stored_factory_size_decision(
+        path=store_config(repo=repo),
+        item=item,
+        adopted_ceiling=adopted_ceiling,
+    )
+    return decision.size_justified
 
 
 def dispatch_ids_for(
