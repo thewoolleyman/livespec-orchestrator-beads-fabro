@@ -13,7 +13,7 @@ provider-limit refusal in their cause chain (10 Codex `usage_limit_exceeded`,
 
 from __future__ import annotations
 
-from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
+from livespec_orchestrator_beads_fabro.commands._fabro_port_failure import (
     fabro_failure_detail_from_payload,
 )
 

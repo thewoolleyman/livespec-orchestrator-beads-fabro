@@ -17,8 +17,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
+from livespec_orchestrator_beads_fabro.commands._fabro_port_failure import (
     fabro_failure_detail_from_payload,
+)
+from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     fabro_status_kind_from_payload,
 )
 

@@ -6,15 +6,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from livespec_orchestrator_beads_fabro.commands._fabro_port_failure import (
+    FabroFailureDetail,
+    fabro_failure_detail_from_payload,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import (
     FabroHttpPort,
     FabroHttpTransport,
     UrllibFabroHttpTransport,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
-    FabroFailureDetail,
     FabroRunSummary,
-    fabro_failure_detail_from_payload,
     fabro_run_id_from_output,
     fabro_run_summaries_from_payload,
     fabro_run_summaries_from_stdout,

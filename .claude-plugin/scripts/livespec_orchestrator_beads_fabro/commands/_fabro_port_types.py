@@ -6,10 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
-    FabroFailureDetail,
-    FabroRunSummary,
-)
+from livespec_orchestrator_beads_fabro.commands._fabro_port_failure import FabroFailureDetail
+from livespec_orchestrator_beads_fabro.commands._fabro_port_records import FabroRunSummary
 
 __all__: list[str] = [
     "FabroCommand",
