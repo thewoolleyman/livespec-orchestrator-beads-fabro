@@ -257,7 +257,14 @@ def _reconcile_one_run(
         port=port,
         run_id=orphan.run_id,
         status_kind=orphan.status_kind,
+        destructive_action_held=lambda: supersession_held(
+            orphan=orphan,
+            inputs=inputs,
+            dry_run=False,
+        ),
     )
+    if termination is None:
+        return None
     run = reconciled_from(
         orphan=orphan,
         termination=termination,

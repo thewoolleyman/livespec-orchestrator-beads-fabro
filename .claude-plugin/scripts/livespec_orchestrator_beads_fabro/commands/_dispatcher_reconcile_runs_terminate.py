@@ -17,7 +17,11 @@ an option carrying no key is not answerable however plainly it says
 posting a body the server will refuse.
 
 Anything else — and any blocked run whose interview could not be answered —
-is cancelled through the server's cancel route.
+is cancelled through the server's cancel route. The caller's hold predicate is
+checked AFTER question discovery and immediately before every answer, cancel,
+or force-remove. Route preparation therefore cannot carry stale authorization
+across a slow request, and one failed destructive route cannot authorize the
+next one.
 
 `fabro rm --force` is the LAST resort, taken only after the HTTP routes
 have failed, and the caller journals it under its own stage name. It
@@ -28,7 +32,7 @@ is an unconditional precondition of reaching this module at all.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -109,12 +113,29 @@ def terminate_orphan_run(
     port: FabroPort,
     run_id: str,
     status_kind: str,
-) -> TerminationOutcome:
-    """Terminate one orphaned run through the first route that works."""
-    answered = _answered_abandon(port=port, run_id=run_id, status_kind=status_kind)
-    if answered is not None:
-        return answered
-    cancelled = port.server_api().cancel(run_id=run_id, timeout_seconds=_HTTP_TIMEOUT_SECONDS)
+    destructive_action_held: Callable[[], bool] = lambda: False,
+) -> TerminationOutcome | None:
+    """Terminate through the first route that works, or hold before an action."""
+    server_api = port.server_api()
+    pending = _pending_abandon(port=port, run_id=run_id, status_kind=status_kind)
+    if pending is not None:
+        if destructive_action_held():
+            return None
+        answered = server_api.answer_question(
+            run_id=run_id,
+            question_id=pending.question_id,
+            option_key=pending.option_key,
+            timeout_seconds=_HTTP_TIMEOUT_SECONDS,
+        )
+        if answered.succeeded:
+            return TerminationOutcome(
+                route=TERMINATION_ROUTE_ANSWER,
+                succeeded=True,
+                detail=f"answered question {pending.question_id} with {pending.option!r}",
+            )
+    if destructive_action_held():
+        return None
+    cancelled = server_api.cancel(run_id=run_id, timeout_seconds=_HTTP_TIMEOUT_SECONDS)
     if cancelled.succeeded:
         return TerminationOutcome(
             route=TERMINATION_ROUTE_CANCEL,
@@ -122,6 +143,8 @@ def terminate_orphan_run(
             detail=f"cancel route returned {cancelled.status}",
         )
     unavailable = _route_detail(status=cancelled.status, error=cancelled.error)
+    if destructive_action_held():
+        return None
     removed = port.rm(run_id=run_id, timeout_seconds=_RM_TIMEOUT_SECONDS)
     return TerminationOutcome(
         route=TERMINATION_ROUTE_RM,
@@ -133,32 +156,16 @@ def terminate_orphan_run(
     )
 
 
-def _answered_abandon(
+def _pending_abandon(
     *,
     port: FabroPort,
     run_id: str,
     status_kind: str,
-) -> TerminationOutcome | None:
+) -> PendingAbandonAnswer | None:
     if status_kind != _BLOCKED_STATUS_KIND:
         return None
-    server_api = port.server_api()
-    listed = server_api.questions(run_id=run_id, timeout_seconds=_HTTP_TIMEOUT_SECONDS)
-    pending = abandon_answer(payload=listed.payload) if listed.succeeded else None
-    if pending is None:
-        return None
-    answered = server_api.answer_question(
-        run_id=run_id,
-        question_id=pending.question_id,
-        option_key=pending.option_key,
-        timeout_seconds=_HTTP_TIMEOUT_SECONDS,
-    )
-    if not answered.succeeded:
-        return None
-    return TerminationOutcome(
-        route=TERMINATION_ROUTE_ANSWER,
-        succeeded=True,
-        detail=f"answered question {pending.question_id} with {pending.option!r}",
-    )
+    listed = port.server_api().questions(run_id=run_id, timeout_seconds=_HTTP_TIMEOUT_SECONDS)
+    return abandon_answer(payload=listed.payload) if listed.succeeded else None
 
 
 def _route_detail(*, status: int, error: str | None) -> str:
