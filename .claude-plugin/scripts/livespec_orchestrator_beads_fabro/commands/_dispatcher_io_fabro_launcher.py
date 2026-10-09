@@ -17,10 +17,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     dispatch_fabro_run_inputs,
     run_fabro_factory_auth_login,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_heartbeat_probe import (
-    HeartbeatLivenessProbe,
-    LayeredLivenessProbe,
-    heartbeat_lookup_keys,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io_liveness_probe import (
+    FABRO_PROBE_TIMEOUT_SECONDS,
+    liveness_sample,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
@@ -31,7 +30,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
     LivenessSample,
     StallVerdict,
     decide_stall,
-    parse_last_event_epoch,
+    quiet_window_seconds,
     resolve_stall_seconds,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog_discovery import (
@@ -42,7 +41,6 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroRunSummary,
     fabro_port_for_plan,
 )
-from livespec_orchestrator_beads_fabro.commands._otel_receive import HeartbeatSink
 from livespec_orchestrator_beads_fabro.commands._run_attribution import RunAttribution
 from livespec_orchestrator_beads_fabro.errors import BeadsCommandError, BeadsConnectionError
 from livespec_orchestrator_beads_fabro.store import read_work_items
@@ -54,7 +52,6 @@ __all__: list[str] = ["WatchedFabroLauncher"]
 # (`_node_timeouts.derive_fabro_timeout_seconds`) — the watched and
 # synchronous launchers deliberately read the SAME number, so a repository
 # that lengthens a node cannot have one path outlive the other.
-_FABRO_PROBE_TIMEOUT_SECONDS = 60.0
 _FABRO_RM_TIMEOUT_SECONDS = 120.0
 _WATCHDOG_POLL_INTERVAL_SECONDS = 30.0
 
@@ -64,32 +61,6 @@ class _WatchResult:
     stalled_run_id: str | None = None
     abandoned_run_id: str | None = None
     abandoned_item_status: str | None = None
-
-
-@dataclass(frozen=True, kw_only=True)
-class _WallClockEventProbe:
-    """The coarse wall-clock backstop expressed as a liveness probe."""
-
-    plan: DispatchPlan
-    port: FabroPort
-    run_id: str | None
-
-    def sample(self, *, observed_at: float) -> LivenessSample:
-        if self.run_id is None:
-            return LivenessSample(last_event_epoch=None, observed_at=observed_at)
-        # `fabro events` is the SOLE source: the `fabro inspect` /
-        # `updated_at` fallback this probe used to also read is removed
-        # (bd-ib-tec5sz — the pinned build never emits that field). Not
-        # probing inspect at all is what keeps a `fabro events` outage a
-        # "no signal", rather than a node-resolution clock that would
-        # read a healthy long node as a stall.
-        events = self.port.events(
-            run_id=self.run_id,
-            timeout_seconds=_FABRO_PROBE_TIMEOUT_SECONDS,
-        )
-        events_json = events.command.stdout if events.command.exit_code == 0 else ""
-        epoch = parse_last_event_epoch(events_json=events_json)
-        return LivenessSample(last_event_epoch=epoch, observed_at=observed_at)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -190,13 +161,28 @@ class WatchedFabroLauncher:
                         abandoned_run_id=run.run_id,
                         abandoned_item_status=item_status,
                     )
-            samples.append(self._sample(plan=plan, port=port, run_id=run_id))
+            samples.append(
+                liveness_sample(
+                    plan=plan,
+                    port=port,
+                    run_id=run_id,
+                    heartbeat_path=self.heartbeat_path,
+                    dispatch_id=self.dispatch_id,
+                    observed_at=self.clock(),
+                )
+            )
             if known_run_id is None or run is None or run.status_kind != "running":
                 continue
-            if decide_stall(samples=tuple(samples), stall_seconds=stall_seconds) == (
-                StallVerdict.STALLED
-            ):
-                self._cancel(plan=plan, port=port, journal=journal, run_id=known_run_id)
+            window = tuple(samples)
+            if decide_stall(samples=window, stall_seconds=stall_seconds) == StallVerdict.STALLED:
+                self._cancel(
+                    plan=plan,
+                    port=port,
+                    journal=journal,
+                    run_id=known_run_id,
+                    stall_seconds=stall_seconds,
+                    quiet_seconds=quiet_window_seconds(samples=window),
+                )
                 return _WatchResult(stalled_run_id=known_run_id)
         return _WatchResult()
 
@@ -223,30 +209,10 @@ class WatchedFabroLauncher:
         """
         return journaled_discovery(
             work_item_id=plan.work_item_id,
-            ps=port.ps(timeout_seconds=_FABRO_PROBE_TIMEOUT_SECONDS),
+            ps=port.ps(timeout_seconds=FABRO_PROBE_TIMEOUT_SECONDS),
             journal=journal,
             attribution=attribution,
         )
-
-    def _sample(
-        self,
-        *,
-        plan: DispatchPlan,
-        port: FabroPort,
-        run_id: str | None,
-    ) -> LivenessSample:
-        observed_at = self.clock()
-        wall_clock = _WallClockEventProbe(plan=plan, port=port, run_id=run_id)
-        if self.heartbeat_path is None:
-            return wall_clock.sample(observed_at=observed_at)
-        heartbeat = HeartbeatLivenessProbe(
-            sink=HeartbeatSink(path=self.heartbeat_path),
-            keys=heartbeat_lookup_keys(
-                work_item_id=plan.work_item_id, dispatch_id=self.dispatch_id
-            ),
-        )
-        layered = LayeredLivenessProbe(primary=heartbeat, fallback=wall_clock)
-        return layered.sample(observed_at=observed_at)
 
     def _cancel(
         self,
@@ -255,7 +221,18 @@ class WatchedFabroLauncher:
         port: FabroPort,
         journal: JournalWriter,
         run_id: str,
+        stall_seconds: float,
+        quiet_seconds: float | None,
     ) -> None:
+        """`fabro rm -f` the stalled run and journal what governed the decision.
+
+        `stall_seconds` is the resolved stall interval and `quiet_seconds`
+        is the window actually confirmed against it. Both ride the record
+        because the interval alone cannot be checked — it says what the
+        threshold was, never that anything reached it — and the 2026-10-09
+        incident (bd-ib-n44n4e) had to be reconstructed from the run's own
+        event stream because the record carried neither figure.
+        """
         rm = port.rm(
             run_id=run_id,
             timeout_seconds=_FABRO_RM_TIMEOUT_SECONDS,
@@ -266,6 +243,8 @@ class WatchedFabroLauncher:
                 "stage": "watchdog-stall-cancel",
                 "run_id": run_id,
                 "rm_exit_code": rm.command.exit_code,
+                "stall_seconds": stall_seconds,
+                "quiet_seconds": quiet_seconds,
             }
         )
 
