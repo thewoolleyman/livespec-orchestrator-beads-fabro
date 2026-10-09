@@ -43,9 +43,21 @@ class FactorySizeDecision:
 def factory_size_decision(
     *, item: WorkItem, adopted_ceiling: int | None, raw_justification: object
 ) -> FactorySizeDecision:
-    """Leave ordinary admission unchanged while no ceiling is adopted."""
+    """Apply the adopted ceiling to the sanctioned effective-criteria count."""
     observed = assertion_count_for(item=item).count
     del raw_justification
+    if adopted_ceiling is not None:
+        return FactorySizeDecision(
+            disposition="decompose",
+            adopted_ceiling=adopted_ceiling,
+            assertion_count=observed,
+            reason=(
+                f"adopted assertion-count ceiling {adopted_ceiling}; "
+                f"sanctioned-parser assertion count {observed}; "
+                "missing or invalid size_justification; route to backlog for decomposition"
+            ),
+            size_justified=False,
+        )
     return FactorySizeDecision(
         disposition="proceed",
         adopted_ceiling=adopted_ceiling,
@@ -67,6 +79,8 @@ def resolve_adopted_assertion_count_ceiling(
 def _adopted_ceiling_value(*, value: object) -> Result[int | None, PolicySettingUnreadable]:
     if value is None:
         return Success(None)
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return Success(value)
     return Failure(
         PolicySettingUnreadable(
             setting=ADOPTED_ASSERTION_COUNT_CEILING,
