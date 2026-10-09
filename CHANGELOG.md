@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.180.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.180.2...v0.180.3) (2026-10-09)
+
+
+### Bug Fixes
+
+* **dispatcher:** group stage journaling policy ([7951fed](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7951fedbf36bf15424eb8f90bec3f4453e0f1154))
+* **dispatcher:** journal a retention write failure and change nothing else ([4da457b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4da457bf6fde317eda2ee0ee65075aa3416dcba0))
+* **dispatcher:** never overwrite a retained janitor-output artifact ([72130d2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/72130d27c339734efeee8e9abbfdc71af66be186))
+* **dispatcher:** retain a failed post-merge janitor's complete output ([c31d3a2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c31d3a20ba14df0417f8ee5f501468eacf71f4f8))
+* **dispatcher:** retain nothing for a green janitor ([6060e3e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6060e3e0317d8af8643beaaa00ee4788a10aa747))
+
 ## [0.180.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.180.1...v0.180.2) (2026-10-09)
 
 
