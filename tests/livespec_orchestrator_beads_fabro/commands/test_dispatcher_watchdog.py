@@ -394,6 +394,40 @@ def test_decide_stall_confirms_a_quiet_window_after_earlier_observed_progress() 
     assert decide_stall(samples=cadence, stall_seconds=1500.0) is StallVerdict.STALLED
 
 
+def test_decide_stall_restarts_the_quiet_window_on_fresh_progress() -> None:
+    """Fresh progress opens a NEW window; unavailable readings stay fail-safe.
+
+    The window is the CURRENT one, not the widest one in the run's
+    history. The launcher retains every sample for the life of the run, so
+    a run that went quiet for longer than a window and then RESUMED still
+    carries that old silence in its sample list — and holding it against a
+    run that is emitting now would kill healthy work, which is the one
+    direction this watchdog must never fail in.
+    """
+    # Quiet for more than a full window, then emitting again.
+    resumed = (
+        _sample(epoch=100.0, observed_at=0.0),
+        _sample(epoch=100.0, observed_at=1800.0),
+        _sample(epoch=300.0, observed_at=1830.0),
+        _sample(epoch=300.0, observed_at=1860.0),
+    )
+    assert decide_stall(samples=resumed, stall_seconds=1500.0) is StallVerdict.CONTINUE
+    # ... and the RESTARTED window still confirms a stall once IT elapses,
+    # so resuming once does not buy permanent immunity.
+    resumed_then_quiet = (*resumed, _sample(epoch=300.0, observed_at=3400.0))
+    assert decide_stall(samples=resumed_then_quiet, stall_seconds=1500.0) is StallVerdict.STALLED
+    # Unavailable observations preserve the existing fail-safe behaviour: a
+    # long burst of no-signal probes after fresh progress cannot manufacture
+    # a stall, because the window is anchored on the last OBSERVED progress
+    # and a no-signal reading observes nothing.
+    unavailable = (
+        _sample(epoch=100.0, observed_at=0.0),
+        _sample(epoch=300.0, observed_at=100.0),
+        *(_sample(epoch=None, observed_at=float(t)) for t in range(130, 3700, 30)),
+    )
+    assert decide_stall(samples=unavailable, stall_seconds=1500.0) is StallVerdict.CONTINUE
+
+
 # ---------------------------------------------------------------------------
 # Engine integration: a launcher-reported stall -> stalled-no-progress
 # ---------------------------------------------------------------------------
