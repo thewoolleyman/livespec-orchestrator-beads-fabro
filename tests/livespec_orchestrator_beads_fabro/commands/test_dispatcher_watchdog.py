@@ -361,6 +361,39 @@ def test_decide_stall_single_reading_is_inconclusive() -> None:
     assert decide_stall(samples=samples, stall_seconds=1500.0) is StallVerdict.CONTINUE
 
 
+def test_decide_stall_confirms_a_quiet_window_after_earlier_observed_progress() -> None:
+    """A full quiet window AFTER the most recent progress is a stall (bd-ib-n44n4e).
+
+    The watchdog used to compare only the OLDEST and NEWEST observed event
+    epochs, so one early advance made `last_event > first_event` true for
+    the rest of the run and suppressed every later confirmed stall — the
+    advertised backstop could never fire again. Observed 2026-10-09 on run
+    01M4EX8SNQMVNZBPB1WGKGMET1 (hp): the last tool completion and dispatch
+    heartbeat sat unchanged past 30 minutes while discovery kept reporting
+    `running`, and no cancellation ever came.
+
+    The quiet window is therefore measured from the MOST RECENT observed
+    progress, not from the first observation of the run.
+    """
+    # The 2026-10-09 reproduction, verbatim: one advance, then silence
+    # well past the 1500s window.
+    reproduction = (
+        _sample(epoch=100.0, observed_at=100.0),
+        _sample(epoch=200.0, observed_at=200.0),
+        _sample(epoch=200.0, observed_at=1801.0),
+    )
+    assert decide_stall(samples=reproduction, stall_seconds=1500.0) is StallVerdict.STALLED
+    # And at the production 30s poll cadence the frozen tail is dozens of
+    # samples long, so a decision reading only the final PAIR of readings
+    # would miss it too (each adjacent pair spans one poll interval).
+    cadence = (
+        _sample(epoch=100.0, observed_at=0.0),
+        _sample(epoch=200.0, observed_at=30.0),
+        *(_sample(epoch=200.0, observed_at=float(t)) for t in range(60, 1891, 30)),
+    )
+    assert decide_stall(samples=cadence, stall_seconds=1500.0) is StallVerdict.STALLED
+
+
 # ---------------------------------------------------------------------------
 # Engine integration: a launcher-reported stall -> stalled-no-progress
 # ---------------------------------------------------------------------------
@@ -627,10 +660,15 @@ def test_watched_launcher_does_not_cancel_when_events_advance(
     # CONTINUE indefinitely; the test ends the run after a few polls via
     # the injected sleep so launch() returns without a cancel.
     monkeypatch.setenv(STALL_SECONDS_ENV_VAR, "1000")
+    # One advancing entry per poll the watch loop can reach. The scripted
+    # runner CLAMPS to the LAST entry once the list is exhausted, so a
+    # short list goes frozen partway through the watch and — correctly,
+    # since the quiet window is now measured from the most recent progress
+    # (bd-ib-n44n4e) — confirms a stall. A fixture for the healthy
+    # advancing run must therefore keep advancing for as long as the loop
+    # runs, or it stops modelling the run it names.
     advancing = [
-        '[{"timestamp": "2026-06-13T08:00:00Z"}]',
-        '[{"timestamp": "2026-06-13T08:10:00Z"}]',
-        '[{"timestamp": "2026-06-13T08:20:00Z"}]',
+        f'[{{"timestamp": "2026-06-13T08:{minute:02d}:00Z"}}]' for minute in range(0, 40, 5)
     ]
     runner = _ScriptedFabroRunner(events_jsons=advancing)
     polls = {"n": 0}
@@ -638,10 +676,14 @@ def test_watched_launcher_does_not_cancel_when_events_advance(
     def _sleep_then_finish(_seconds: float) -> None:
         # Drive the loop deterministically from the (single-threaded under
         # test) sleep hook: after a few polls end the run so launch()
-        # returns. No busy-wait, no second thread.
+        # returns. No busy-wait, no second thread. The hook WAITS for the
+        # background run to return, so the loop stops at a known poll
+        # count instead of spinning an unbounded number of extra polls
+        # while the OS gets round to scheduling the run thread.
         polls["n"] += 1
         if polls["n"] >= 4:
             runner.run_done.set()
+            assert runner.run_returned.wait(timeout=1.0)
 
     journal = _RecordingJournal()
     launcher = WatchedFabroLauncher(sleep=_sleep_then_finish, clock=_advancing_clock())
