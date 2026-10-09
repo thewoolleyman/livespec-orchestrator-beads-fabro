@@ -53,10 +53,46 @@ def test_each_target_renders_its_kind_and_its_discriminating_fields() -> None:
     )
     assert (
         VerifiedProofTarget(subject_id="bd-ib-2", build="v1.2.3", assertions=("a.", "b.")).identity
-        == "verified_proof bd-ib-2 build v1.2.3 assertions 2"
+        == "verified_proof bd-ib-2 build v1.2.3 assertions ['a.', 'b.']"
     )
     assert FileOnBranchTarget(branch="master", path="a/b.md", blob="cafe").identity == (
         "file_on_branch master:a/b.md blob cafe"
+    )
+
+
+def test_a_verified_proof_identity_names_which_assertions_were_requested() -> None:
+    """Two scopes differing only in WHICH assertion was asked for cannot collide.
+
+    The clause requires every observation to report target identity, and the
+    deadline and relay carriers downstream key the outstanding obligation on it.
+    Rendering only the assertion COUNT made every single-assertion scope on one
+    subject and build render identically, so two distinct obligations shared one
+    identity and discharging either would have read as discharging both.
+    """
+    first = VerifiedProofTarget(subject_id="s", build="v1", assertions=("assertion-A",))
+    second = VerifiedProofTarget(subject_id="s", build="v1", assertions=("assertion-B",))
+    assert first.identity != second.identity
+    assert first.identity == "verified_proof s build v1 assertions ['assertion-A']"
+    assert second.identity == "verified_proof s build v1 assertions ['assertion-B']"
+
+
+def test_a_verified_proof_identity_is_canonical_across_order_and_repetition() -> None:
+    """One requested SCOPE renders one identity, however the caller spelled it.
+
+    `observe_verified_proof` satisfies a target only when EVERY requested
+    assertion reads as reproduced, so the scope is a set: two references differing
+    only in the order or the repetition of their identifiers name the same
+    obligation. An order-sensitive identity would let a downstream carrier track
+    that one obligation as two and discharge neither.
+    """
+    canonical = VerifiedProofTarget(subject_id="s", build="v1", assertions=("a.", "b.")).identity
+    assert (
+        VerifiedProofTarget(subject_id="s", build="v1", assertions=("b.", "a.")).identity
+        == canonical
+    )
+    assert (
+        VerifiedProofTarget(subject_id="s", build="v1", assertions=("a.", "b.", "a.")).identity
+        == canonical
     )
 
 
