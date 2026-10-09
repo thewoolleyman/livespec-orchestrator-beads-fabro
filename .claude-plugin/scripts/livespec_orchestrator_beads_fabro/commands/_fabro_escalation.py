@@ -38,8 +38,11 @@ classification.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import cast
 
+from livespec_orchestrator_beads_fabro.commands._fabro_port_checkpoints import (
+    fabro_inspect_checkpoints,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     fabro_inspect_record,
 )
@@ -80,7 +83,7 @@ def fabro_escalation_from_payload(*, payload: object | None) -> FabroEscalation 
         return None
     next_node_id: str | None = None
     signatures: tuple[str, ...] = ()
-    for checkpoint in _checkpoints(record=record):
+    for checkpoint in fabro_inspect_checkpoints(record=record):
         candidate: object = checkpoint.get("next_node_id")
         if isinstance(candidate, str) and candidate.strip():
             next_node_id = candidate
@@ -88,31 +91,6 @@ def fabro_escalation_from_payload(*, payload: object | None) -> FabroEscalation 
     if next_node_id != ESCALATION_NODE_ID or not signatures:
         return None
     return FabroEscalation(next_node_id=next_node_id, loop_failure_signatures=signatures)
-
-
-def _checkpoints(*, record: dict[str, Any]) -> tuple[dict[str, Any], ...]:
-    """Every checkpoint mapping on the record, oldest first.
-
-    `checkpoints[]` entries wrap their state under a nested `checkpoint` key
-    (the shape the measured run carries), so the nested mapping is appended
-    AFTER its wrapper and therefore wins for the same index. The record's own
-    top-level `checkpoint` is appended last as the newest state of all.
-    """
-    found: list[dict[str, Any]] = []
-    entries_raw: object = record.get("checkpoints")
-    if isinstance(entries_raw, list):
-        for entry in cast("list[object]", entries_raw):
-            if not isinstance(entry, dict):
-                continue
-            typed = cast("dict[str, Any]", entry)
-            found.append(typed)
-            nested: object = typed.get("checkpoint")
-            if isinstance(nested, dict):
-                found.append(cast("dict[str, Any]", nested))
-    top_level: object = record.get("checkpoint")
-    if isinstance(top_level, dict):
-        found.append(cast("dict[str, Any]", top_level))
-    return tuple(found)
 
 
 def _signatures(*, value: object) -> tuple[str, ...]:
