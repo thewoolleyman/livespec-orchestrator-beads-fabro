@@ -156,6 +156,7 @@ def test_the_proof_leg_refuses_an_epic_whose_definition_of_done_section_is_gone(
         epic_id=created["epic_id"],
         evidence_id="review-evidence-1",
         env=_REVIEWING_SESSION_ENV,
+        reviewed_child_ids=(),
         separate_reviewer=True,
         attests_complete_requirement_coverage=True,
         body="Every requirement carrier under the plan is covered.",

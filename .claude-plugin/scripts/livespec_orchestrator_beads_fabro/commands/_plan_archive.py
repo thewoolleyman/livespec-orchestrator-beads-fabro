@@ -215,6 +215,7 @@ def _resolve_completeness_review_evidence(
         epic_id=epic_id,
         candidate=completeness_review_comment_id,
         archive_identity=archive_identity,
+        current_child_ids=request.child_ids,
     )
     if evidence_id is not None or review_launcher is None:
         return evidence_id
@@ -223,6 +224,7 @@ def _resolve_completeness_review_evidence(
         epic_id=epic_id,
         candidate=review_launcher(request=request),
         archive_identity=archive_identity,
+        current_child_ids=request.child_ids,
     )
 
 
@@ -232,6 +234,7 @@ def _accepted_evidence_id(
     epic_id: str,
     candidate: str | None,
     archive_identity: str,
+    current_child_ids: tuple[str, ...],
 ) -> str | None:
     """The candidate evidence id the leg accepts, refusing outright on a self-review.
 
@@ -248,6 +251,7 @@ def _accepted_evidence_id(
         epic_id=epic_id,
         evidence_id=candidate,
         archive_identity=archive_identity,
+        current_child_ids=current_child_ids,
     )
     if evidence.self_review_identity is not None:
         raise PlanArchiveRefusedError.self_reviewed_completeness(

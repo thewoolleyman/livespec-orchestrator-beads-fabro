@@ -58,9 +58,19 @@ def _draft(*, issue_id: str, parent_id: str | None) -> IssueDraft:
     )
 
 
-def test_archive_review_request_carries_closed_children_and_research_files(
+def test_archive_review_request_carries_current_children_and_research_files(
     tmp_path: Path,
 ) -> None:
+    """The set handed to the reviewer is the epic's CURRENT linked membership.
+
+    It is no longer narrowed to CLOSED members, and the narrowing's removal is
+    load-bearing rather than cosmetic: the archive leg grades a recorded review's
+    named scope against this very value, so a set derived under a condition this
+    builder cannot see would let a reviewer name exactly what it was given and
+    still be refused as stale (`bd-ib-0pf5`). At the point the leg reads it the
+    two sets are equal anyway — the child-disposition gate has already refused
+    while any member is undisposed.
+    """
     reset_fake_singleton()
     _ = _fake().create_issue(draft=_draft(issue_id="bd-ib-closed", parent_id="bd-ib-epic"))
     _fake().close_issue(issue_id="bd-ib-closed", reason="completed")

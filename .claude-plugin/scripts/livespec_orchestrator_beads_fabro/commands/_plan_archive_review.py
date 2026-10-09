@@ -46,7 +46,15 @@ __all__: list[str] = [
 
 @dataclass(frozen=True, kw_only=True)
 class ArchiveCompletenessReviewRequest:
-    """Context handed to a fresh independent plan completeness reviewer."""
+    """Context handed to a fresh independent plan completeness reviewer.
+
+    `child_ids` is the epic's CURRENT linked membership, and it is the same value
+    the archive leg grades a recorded review's named scope against — handed down
+    from here rather than re-derived there (`_plan_completeness_recency`). The
+    reviewer records this set as the scope it covered, so a second, independently
+    derived reading would let a reviewer name exactly what it was given and still
+    be refused as stale.
+    """
 
     project_root: Path
     slug: str
@@ -76,7 +84,7 @@ def archive_completeness_review_request(
         project_root=project_root,
         slug=slug,
         epic_id=epic_id,
-        child_ids=_disposed_child_ids(client=client, epic_id=epic_id),
+        child_ids=_current_plan_child_ids(client=client, epic_id=epic_id),
         research_paths=_research_paths(project_root=project_root, source=source),
     )
 
@@ -106,12 +114,20 @@ def _plan_archive_gate_records(*, client: BeadsClient, epic_id: str) -> list[Bea
     ]
 
 
-def _disposed_child_ids(*, client: BeadsClient, epic_id: str) -> tuple[str, ...]:
+def _current_plan_child_ids(*, client: BeadsClient, epic_id: str) -> tuple[str, ...]:
+    """Every linked plan member this epic carries right now, whatever its status.
+
+    NOT narrowed to closed members, though at the point the archive leg reads it
+    the two sets are equal: the child-disposition gate has already refused while
+    any member is undisposed. Narrowing anyway would make the set a reviewer is
+    handed depend on a condition this function cannot see, and the set is what a
+    recorded review is graded against.
+    """
     return tuple(
         sorted(
             record["id"]
             for record in _plan_archive_gate_records(client=client, epic_id=epic_id)
-            if isinstance(record.get("id"), str) and record.get("status") == "closed"
+            if isinstance(record.get("id"), str)
         )
     )
 
