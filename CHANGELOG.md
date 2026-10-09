@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.176.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.175.0...v0.176.0) (2026-10-09)
+
+
+### Features
+
+* **dispatcher:** enter a resumed run at its unfinished stage on the published head ([5269dc5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5269dc52eb35c0ff78da2b2da8e58afc4e2b7ba7))
+* **dispatcher:** gather everything one resume measures before it is graded ([733f915](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/733f915ba5012e64bfe61a3960290d9fcef333ae))
+* **dispatcher:** keep the resume and the publish-branch reclaim exclusive ([a414965](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a41496527823aa7aee06c9a80db179f12043d48c))
+* **dispatcher:** name the resumed run beside the record's own in the pointer ([9b5975e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9b5975e04d05a4ddfa6b0bd2b9c25ef2aff574a9))
+* **dispatcher:** read a publish branch's pull request for a resume ([0829555](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/08295559b3721e105924beb95f72e7bbd7d06012))
+* **dispatcher:** refuse a resume naming every applicable mismatch ([73be35f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/73be35fa21262cb2d8b37cf50a245f482210c792))
+* **dispatcher:** refuse a resume whose forge read never happened ([3432fca](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3432fcaf12d0248f74078ada7cf84d7be2cfbc98))
+* **dispatcher:** resume a published pull request through a dispatcher command ([e770640](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e770640634e810fc00169717350cdc94969effe8))
+* **dispatcher:** resume a terminated run from its published pull request ([6e036cf](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6e036cff85df07d06bf493c457e26276c7bc737a))
+
+
+### Refactoring
+
+* **dispatcher:** move every non-dispatch flag declaration out of the router ([c5edb68](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c5edb681e9714d9c97d22a04a62c610e9fd6bfeb))
+* **dispatcher:** run one post-verdict tail from both single-dispatch paths ([2b11668](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2b11668b6864e62e501c1327d7dad14972678fc2))
+
 ## [0.175.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.174.1...v0.175.0) (2026-10-09)
 
 
