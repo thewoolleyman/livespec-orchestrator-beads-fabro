@@ -50,6 +50,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_admission_eligibility,
     _dispatcher_completion,
     _dispatcher_dispatch_lock,
+    _dispatcher_dispatch_tail,
     _dispatcher_goal,
     _dispatcher_ledger_close,
     _dispatcher_loop,
@@ -4150,7 +4151,7 @@ def test_dispatch_green_closes_item_and_journals(
         lambda **_: _FakeAcceptancePass(verdict="PASS"),
         raising=False,
     )
-    monkeypatch.setattr(_dispatcher_run_commands, "cost_gate_after_verdict", lambda **_: None)
+    monkeypatch.setattr(_dispatcher_dispatch_tail, "cost_gate_after_verdict", lambda **_: None)
     monkeypatch.setattr(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_plan.tempfile.gettempdir",
         lambda: str(tmp_path),
@@ -5162,7 +5163,7 @@ def test_dispatch_finalize_invokes_cost_gate_once(
     fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
     cost_gate = _RecordingCostGate()
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
-    monkeypatch.setattr(_dispatcher_run_commands, "cost_gate_after_verdict", cost_gate)
+    monkeypatch.setattr(_dispatcher_dispatch_tail, "cost_gate_after_verdict", cost_gate)
 
     exit_code = main(
         argv=[
