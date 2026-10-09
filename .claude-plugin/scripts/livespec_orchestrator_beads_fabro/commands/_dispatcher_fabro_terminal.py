@@ -159,6 +159,13 @@ def _needs_human_terminal_outcome(
     unchanged (`bg2zz5`'s own ruling: a presentation defect over accurate state
     is fixed in the presentation), so the item still rests at `blocked /
     needs-human` and only what the outcome REPORTS grows.
+
+    THE TWO PROVIDER FIELDS ARE LOAD-BEARING RATHER THAN DECORATIVE, which is
+    why they are listed beside the three taxonomy fields and not left for a
+    consumer to recover from `detail` prose. `record_provider_exhaustion_if_
+    observed` keys on `provider_usage_limit_provider` alone, so dropping it here
+    meant a ceiling observed at a needs-human ending wrote NO dispatcher-owned
+    hold — and the next dispatch burned the same exhausted credential.
     """
     if NEEDS_HUMAN_MARKER not in text:
         return None
@@ -182,6 +189,10 @@ def _needs_human_terminal_outcome(
         fabro_failure_cause=None if failure is None else failure.cause,
         fabro_failure_category=None if failure is None else failure.category,
         fabro_failure_signature=None if failure is None else failure.signature,
+        provider_usage_limit=False if failure is None else failure.provider_usage_limit,
+        provider_usage_limit_provider=(
+            None if failure is None else failure.provider_usage_limit_provider
+        ),
     )
 
 
