@@ -13,8 +13,8 @@ from livespec_orchestrator_beads_fabro._store_factory_size_gate import (
     route_factory_size_decomposition,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
-    factory_size_decision,
     resolve_adopted_assertion_count_ceiling,
+    stored_factory_size_decision,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
     PolicySettingUnreadable,
@@ -42,10 +42,10 @@ def apply_intake_factory_size_gate(
     ceiling = resolve_adopted_assertion_count_ceiling(cwd=repo_root)
     if not is_successful(ceiling):
         return IOFailure(unsafe_perform_io(ceiling.failure()))
-    decision = factory_size_decision(
+    decision = stored_factory_size_decision(
+        path=path,
         item=item,
         adopted_ceiling=unsafe_perform_io(ceiling.unwrap()),
-        raw_justification=None,
     )
     if decision.disposition == "proceed":
         return IOSuccess(None)
