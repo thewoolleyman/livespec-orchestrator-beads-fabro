@@ -36,6 +36,16 @@ the candidate `v0.378.0-nightly.0` and on the pinned 0.254 client. The refusal
 meanwhile blocked EVERY dispatch of a repository whose adapter command carries
 a quote, which the built-in Codex adapter's single-quoted `CODEX_CONFIG` JSON
 prefix requires.
+
+WHAT THE ESCAPE CANNOT REPRESENT IS STILL REFUSED, and that is the narrower
+claim this module now makes: the escape form covers those two characters and
+nothing else, so a LINE BREAK inside a resolved command still ends the
+attribute value rather than travelling inside it. That refusal names the node,
+the workflow input, and the offending character, because a message naming a
+class of characters leaves the operator to guess which one their adapter
+carries. The record side is the other half: `node_commands` reports the
+UNESCAPED resolved command, so the dispatch record says what the agent
+received rather than what the attribute carried.
 """
 
 from __future__ import annotations
@@ -81,6 +91,11 @@ _INPUT_TOKEN_RE = re.compile(r"\{\{[ \t]*inputs\.(?P<name>\w+)[ \t]*\}\}")
 # pair so quoting this module's text into a ledger comment or a run goal cannot
 # poison the rendering (the fleet convention of livespec-dev-tooling-9yb4).
 _OPENER_RE = re.compile(r"\{[{%#]")
+
+# The characters the escape form above cannot represent. A DOT attribute value
+# escapes a double quote and a backslash and nothing else, so a line break
+# inside one still ends the value rather than travelling inside it.
+_UNESCAPABLE_RE = re.compile(r"[\r\n]")
 
 _GRAPH_BLOCK_NAME = "graph"
 
@@ -222,4 +237,12 @@ def _resolved_command(*, node: str, declared: str, adapters: Mapping[str, str]) 
             f"input {name!r}, which this dispatch resolved no adapter for"
         )
     resolved = adapters[name]
+    unescapable = _UNESCAPABLE_RE.search(resolved)
+    if unescapable is not None:
+        return (
+            f"workflow graph is not renderable: ACP node {node!r} rides workflow "
+            f"input {name!r}, whose resolved adapter carries "
+            f"{unescapable.group()!r}, a character no DOT attribute escape can "
+            f"represent"
+        )
     return _Command(value=resolved, written=_dot_escaped(value=resolved))
