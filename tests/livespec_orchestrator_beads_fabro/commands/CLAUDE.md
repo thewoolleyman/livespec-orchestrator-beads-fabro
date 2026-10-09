@@ -52,6 +52,17 @@ Tests for the thin-transport command modules under
   once the parse and the resolution both succeed — without it, a reader that
   never reached any adapter would satisfy both order cases.
 
+- `test_plan_result_proof_subject.py` sits beside those eight and covers the
+  subject-record read behind the verified-proof adapter's merge-containment
+  requirement: the sparse audit shapes that record no merge and therefore leave
+  that requirement vacuous. It is separate from `test_plan_result_proof.py`
+  because those shapes were found by a coverage measurement taken after that
+  module's Red was authored, and a Red's test bytes are fixed across its
+  Red-to-Green pair. Its cases assert SATISFIED rather than merely "not
+  unobservable", and assert that no second comparison base was named — which is
+  what tells "the requirement was vacuous" apart from "the requirement was asked
+  and happened to pass".
+
 Conventions:
 
 - Exercise both `main()` (supervisor: exit codes, stdout/stderr
