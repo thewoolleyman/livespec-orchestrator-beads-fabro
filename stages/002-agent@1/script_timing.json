@@ -1,0 +1,6 @@
+{
+  "stdout": "fixture success",
+  "stderr": "",
+  "stop_reason": "end_turn",
+  "duration_ms": 354
+}
