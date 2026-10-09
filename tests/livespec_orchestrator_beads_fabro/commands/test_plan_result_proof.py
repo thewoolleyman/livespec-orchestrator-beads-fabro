@@ -49,11 +49,30 @@ _BUILD = "v0.170.0"
 _ASSERTION = "The reader validates the typed record rather than matching text."
 _RECORD_URL = f"https://example.test/owner/repo/pull/{_PR_NUMBER}#issuecomment-1"
 _NOW = "2026-10-08T12:00:00Z"
+# The containment comparison is told from the comments read by its own endpoint, so
+# a case can answer each independently.
+_COMPARE_KEY = "/compare/"
+# The capture's identity and an INDEPENDENT replayer's. The host-leg rule admits a
+# replay only from a party other than the one that recorded the capture, so every
+# positive control here needs two distinct identities and the self-replay control
+# needs one identity used twice.
+_CAPTURE_IDENTITY = "session 1e14094a-0000-4000-8000-000000000001"
+_REPLAY_IDENTITY = "session b1e14094-0000-4000-8000-000000000002"
 
 
 @dataclass(kw_only=True)
 class _Runner:
-    result: CommandResult
+    """A `CommandRunner` answering the comments read and the containment compare apart.
+
+    TWO answers rather than one, because validating a host replay's build is a
+    SECOND forge read. A single-answer runner handed the comments payload to the
+    comparison too, whose `.status` then parsed as an unknown value — so every host
+    case would report unreadable containment and the positive controls could not be
+    told from the refusals.
+    """
+
+    comments: CommandResult
+    compare: CommandResult
     calls: list[tuple[tuple[str, ...], Path]] = field(default_factory=list)
 
     def run(
@@ -67,7 +86,9 @@ class _Runner:
     ) -> CommandResult:
         del timeout_seconds, env, stdin
         self.calls.append((tuple(argv), cwd))
-        return self.result
+        if any(_COMPARE_KEY in token for token in argv):
+            return self.compare
+        return self.comments
 
 
 class _DescriptionlessClient:
@@ -121,9 +142,11 @@ def _record_body(
     label: str = RELEASE_TAG_LABEL,
     build: str = _BUILD,
     reproduced: str = "yes",
+    identity: str = "run 01M4PROOF",
+    minute: str = "00",
 ) -> str:
     return (
-        f"Proof of Done — {verdict} — run 01M4PROOF — 2026-10-08T08:00:00Z\n"
+        f"Proof of Done — {verdict} — {identity} — 2026-10-08T08:{minute}:00Z\n"
         "\n"
         f"- {label}: {build}\n"
         "\n"
@@ -133,14 +156,43 @@ def _record_body(
 
 
 def _runner(
-    *, bodies: tuple[str, ...] = (), exit_code: int = 0, stdout: str | None = None
+    *,
+    bodies: tuple[str, ...] = (),
+    exit_code: int = 0,
+    stdout: str | None = None,
+    containment: str = "identical",
+    containment_exit: int = 0,
 ) -> _Runner:
+    """A runner over `bodies`, each comment carrying its own url.
+
+    The urls are numbered from ONE so a single-record case still renders
+    `_RECORD_URL`, and so a multi-record case can say WHICH record an observation
+    cited — the whole supersession question is which of two records was read.
+
+    `containment` is the `.status` the forge comparison answers: `identical` and
+    `ahead` mean the record's build carries the requested one, `behind` means it
+    does not, and `containment_exit` non-zero makes the comparison UNREADABLE,
+    which is a different reading from either.
+    """
     payload = (
         stdout
         if stdout is not None
-        else json.dumps({"comments": [{"body": one, "url": _RECORD_URL} for one in bodies]})
+        else json.dumps(
+            {
+                "comments": [
+                    {
+                        "body": one,
+                        "url": f"https://example.test/owner/repo/pull/{_PR_NUMBER}#issuecomment-{index}",
+                    }
+                    for index, one in enumerate(bodies, start=1)
+                ]
+            }
+        )
     )
-    return _Runner(result=CommandResult(exit_code=exit_code, stdout=payload, stderr=""))
+    return _Runner(
+        comments=CommandResult(exit_code=exit_code, stdout=payload, stderr=""),
+        compare=CommandResult(exit_code=containment_exit, stdout=f"{containment}\n", stderr=""),
+    )
 
 
 def _target(
@@ -189,6 +241,136 @@ def test_a_host_verified_record_naming_a_commit_build_is_satisfied(tmp_path: Pat
     assert observation.status == OBSERVATION_SATISFIED
 
 
+def _capture_and_replay(
+    *, replay_verdict: str = "host_verified", replay_identity: str = _REPLAY_IDENTITY, **kwargs: str
+) -> tuple[str, ...]:
+    """A `host_recorded` capture followed by one replay of it, in forge order."""
+    return (
+        _record_body(verdict="host_recorded", identity=_CAPTURE_IDENTITY, minute="00"),
+        _record_body(verdict=replay_verdict, identity=replay_identity, minute="01", **kwargs),
+    )
+
+
+def test_an_independent_replay_of_a_containing_build_is_satisfied(tmp_path: Path) -> None:
+    """THE POSITIVE CONTROL for every host refusal below, and it is load-bearing.
+
+    Four refusals follow this case, and each of them is only evidence of a working
+    rule if a genuine host proof still SATISFIES. Without this case the whole group
+    is equally consistent with a reader that refuses every host record — which is
+    the failure mode a fail-closed change arrives at most easily.
+
+    "Truly independent" is the operative word: the capture and the replay carry
+    DIFFERENT identities, and the build the replay names is compared against the
+    requested one through the forge rather than string-matched.
+    """
+    repository = _repo(tmp_path=tmp_path)
+    _seed_subject(repository=repository, description=_pointed_description())
+    runner = _runner(bodies=_capture_and_replay(), containment="ahead")
+    observation = observe_verified_proof(
+        repository=repository, target=_target(), runner=runner, now=_NOW
+    )
+    assert observation.status == OBSERVATION_SATISFIED
+    assert observation.source == SOURCE_PROOF_RECORD
+    # `ahead` rather than `identical`, so the control also proves CONTAINMENT is what
+    # is asked. A reader comparing the build labels as strings would refuse this.
+    assert any(_COMPARE_KEY in token for call in runner.calls for token in call[0])
+
+
+def test_a_replay_by_the_capturing_identity_is_not_satisfied(tmp_path: Path) -> None:
+    """The host-leg rule: a record whose replaying identity equals its capturing one.
+
+    The clause rejects it "however it was posted", so this is enforced on the READ
+    rather than left to the posting primitive that also refuses it — a record
+    reaches a pull request by routes that primitive does not own.
+
+    Reported as UNSATISFIED rather than unobservable: the records were read and the
+    reader established that no independent replay exists, which is an observed
+    unmet target rather than a failure to observe.
+    """
+    repository = _repo(tmp_path=tmp_path)
+    _seed_subject(repository=repository, description=_pointed_description())
+    observation = observe_verified_proof(
+        repository=repository,
+        target=_target(),
+        runner=_runner(
+            bodies=_capture_and_replay(replay_identity=_CAPTURE_IDENTITY), containment="identical"
+        ),
+        now=_NOW,
+    )
+    assert observation.status == OBSERVATION_UNSATISFIED
+    assert observation.source == SOURCE_PROOF_RECORD
+
+
+def test_a_newer_failed_replay_supersedes_an_older_success(tmp_path: Path) -> None:
+    """A record is never edited, so a correction is a NEW record and the newest wins.
+
+    The dangerous shape, and the one measured against the candidate: an older
+    `host_verified` success with a newer `host_not_reproduced` on the same build and
+    assertion reported SATISFIED, citing the superseded success. That closes an
+    obligation on proof its own publisher has since retracted.
+    """
+    repository = _repo(tmp_path=tmp_path)
+    _seed_subject(repository=repository, description=_pointed_description())
+    bodies = (
+        _record_body(verdict="host_recorded", identity=_CAPTURE_IDENTITY, minute="00"),
+        _record_body(verdict="host_verified", identity=_REPLAY_IDENTITY, minute="01"),
+        _record_body(
+            verdict="host_not_reproduced",
+            identity=_REPLAY_IDENTITY,
+            minute="02",
+            reproduced="no",
+        ),
+    )
+    observation = observe_verified_proof(
+        repository=repository,
+        target=_target(),
+        runner=_runner(bodies=bodies, containment="identical"),
+        now=_NOW,
+    )
+    assert observation.status == OBSERVATION_UNSATISFIED
+    # The superseded success must not be cited as the evidence of anything.
+    assert "issuecomment-2" not in observation.evidence
+
+
+def test_a_replay_naming_a_non_containing_build_is_not_satisfied(tmp_path: Path) -> None:
+    """A replay of a build that does not carry the requested one proves nothing here.
+
+    `behind` is an OBSERVED answer — the forge compared and said no — so this is an
+    unmet target, which is what separates it from the unreadable case below.
+    """
+    repository = _repo(tmp_path=tmp_path)
+    _seed_subject(repository=repository, description=_pointed_description())
+    observation = observe_verified_proof(
+        repository=repository,
+        target=_target(),
+        runner=_runner(bodies=_capture_and_replay(), containment="behind"),
+        now=_NOW,
+    )
+    assert observation.status == OBSERVATION_UNSATISFIED
+
+
+def test_an_unreadable_containment_comparison_is_unobservable(tmp_path: Path) -> None:
+    """An unmade measurement is NOT an unmet proof, and the two must not collapse.
+
+    This is the pair the finding asks to be kept apart. The record may well be
+    perfectly good evidence; the reader could not establish whether its build
+    carries the requested one, so the obligation is OUTSTANDING rather than refuted.
+    Reporting `unsatisfied` here would publish a confident negative the reader never
+    earned, and would make blinding the comparison the cheapest route to a verdict.
+    """
+    repository = _repo(tmp_path=tmp_path)
+    _seed_subject(repository=repository, description=_pointed_description())
+    observation = observe_verified_proof(
+        repository=repository,
+        target=_target(),
+        runner=_runner(bodies=_capture_and_replay(), containment_exit=1),
+        now=_NOW,
+    )
+    assert observation.status == OBSERVATION_UNOBSERVABLE
+    assert observation.source == SOURCE_PROOF_RECORD
+    assert observation.evidence == ""
+
+
 def test_a_comment_saying_verified_is_not_a_typed_record(tmp_path: Path) -> None:
     """The clause: the read validates record semantics rather than matching text.
 
@@ -223,11 +405,17 @@ def test_a_non_verified_verdict_is_not_evidence(tmp_path: Path) -> None:
         )
         assert observation is not None, verdict
         assert observation.status == OBSERVATION_UNSATISFIED, verdict
-        assert f"names build {_BUILD}" in observation.detail, verdict
+        assert f"against build {_BUILD}" in observation.detail, verdict
 
 
 def test_a_record_naming_another_build_or_no_build_is_not_evidence(tmp_path: Path) -> None:
-    """A record whose build section is absent names no ref to compare against."""
+    """A record whose build section is absent names no ref to compare against.
+
+    The other-build leg answers `behind`, which is the forge OBSERVING that the
+    record's build does not carry the requested one. That is what keeps it an unmet
+    target rather than an unreadable comparison — the distinction the unobservable
+    case above rests on.
+    """
     repository = _repo(tmp_path=tmp_path)
     _seed_subject(repository=repository, description=_pointed_description())
     buildless = (
@@ -238,11 +426,14 @@ def test_a_record_naming_another_build_or_no_build_is_not_evidence(tmp_path: Pat
     )
     for bodies in ((_record_body(build="v0.1.0"),), (buildless,)):
         observation = observe_verified_proof(
-            repository=repository, target=_target(), runner=_runner(bodies=bodies), now=_NOW
+            repository=repository,
+            target=_target(),
+            runner=_runner(bodies=bodies, containment="behind"),
+            now=_NOW,
         )
         assert observation is not None
         assert observation.status == OBSERVATION_UNSATISFIED
-        assert f"names build {_BUILD}" in observation.detail
+        assert f"against build {_BUILD}" in observation.detail
 
 
 def test_a_newer_record_for_another_build_does_not_shadow_the_requested_one(
@@ -282,7 +473,7 @@ def test_an_assertion_the_record_does_not_reproduce_is_not_in_scope(tmp_path: Pa
     )
     assert unevidenced is not None
     assert unevidenced.status == OBSERVATION_UNSATISFIED
-    assert "does not list 1 of the 2 requested assertion(s)" in unevidenced.detail
+    assert "is evidence for 1 of the 2 requested assertion(s)" in unevidenced.detail
     refused = observe_verified_proof(
         repository=repository,
         target=_target(),
@@ -291,7 +482,7 @@ def test_an_assertion_the_record_does_not_reproduce_is_not_in_scope(tmp_path: Pa
     )
     assert refused is not None
     assert refused.status == OBSERVATION_UNSATISFIED
-    assert "does not list 1 of the 1 requested assertion(s)" in refused.detail
+    assert "is evidence for 1 of the 1 requested assertion(s)" in refused.detail
 
 
 def test_a_subject_naming_no_pull_request_is_unobservable_per_failing_source(
