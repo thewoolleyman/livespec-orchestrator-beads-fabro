@@ -242,6 +242,10 @@ def _dispatch_one_locked(
             payload_dir=recorded.payload.payload_dir,
             token_supplier=token_supplier,
             dispatch_id=identity.dispatch_id,
+            # The dispatched item, for the pre-merge runtime-convergence gate
+            # (S6 / bd-ib-z2y4ca): the gate reads the criteria THIS dispatch was
+            # launched with, which is the snapshot the clause requires.
+            item=item,
         ),
         run_dispatch_func=run_dispatch,
         fabro_launcher_type=WatchedFabroLauncher,

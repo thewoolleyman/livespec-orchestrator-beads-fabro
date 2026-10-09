@@ -30,6 +30,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
     complete_and_accept,
     escalate_needs_human_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_cycle_gate import (
+    record_dispatch_runtime_convergence,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dead_implementer import (
     record_dead_implementer_truncation_if_observed,
 )
@@ -349,6 +352,16 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
     )
     if not groom_cut_filed:
         escalate_needs_human_block(repo=repo, item=item, outcome=outcome, journal=journal)
+    # The TERMINAL runtime-convergence reading (S6 / bd-ib-z2y4ca), taken BEFORE
+    # the bounce so the record it journals is on the timeline whichever way the
+    # bounce goes — including the arm where the ledger write fails. It is taken on
+    # EVERY terminal rather than only a non-converged one: a run that merged still
+    # has a completed-cycle series the calibration projection must carry, and
+    # deciding whether to look based on the outcome would make the measurement
+    # available exactly where it is least useful.
+    _ = record_dispatch_runtime_convergence(
+        args=args, repo=repo, item=item, outcome=outcome, journal=journal
+    )
     bounce_non_convergence_to_backlog(repo=repo, item=item, outcome=outcome, journal=journal)
     emit_calibration(
         args=args,

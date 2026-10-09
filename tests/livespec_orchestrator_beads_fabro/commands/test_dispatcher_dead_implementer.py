@@ -177,6 +177,7 @@ def _stub_unrelated_dispositions(*, monkeypatch: pytest.MonkeyPatch) -> None:
         "preserve_checkpointed_work_reference",
         "escalate_needs_human_block",
         "bounce_non_convergence_to_backlog",
+        "record_dispatch_runtime_convergence",
         "emit_calibration",
     ):
         monkeypatch.setattr(_dispatcher_loop_selection, name, lambda **_: None)

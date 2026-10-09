@@ -10,6 +10,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from time import sleep as _real_sleep
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import fix_loop_count
+from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_emit import (
+    read_journal_records_for,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_cycle_gate import (
+    pre_merge_runtime_gate,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     DispatchOutcome,
     PollPolicy,
@@ -28,6 +35,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import Dispatch
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_lease import (
     revoke_proof_credentials,
 )
+from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "DispatchRunContext",
@@ -51,6 +59,33 @@ class DispatchRunContext:
     # watchdog's heartbeat probe can look beats up by the SAME id
     # `cc_otel_overlay_env` projected into the sandbox.
     dispatch_id: str | None = None
+    # The DISPATCHED work-item (S6 / bd-ib-z2y4ca), carried so the pre-merge
+    # runtime-convergence gate can read the criteria THIS dispatch was launched
+    # with. It is the item rather than a pre-computed count because the
+    # sanctioned parser is the one authority on that number, and a count
+    # computed here would be a second reading of the same criteria.
+    #
+    # REQUIRED rather than defaulting to None, which is the whole point: an
+    # optional item would let a context be built that silently skips the runtime
+    # gate, and a gate that is skipped reads exactly like a gate that passed.
+    # Required, the only way to reach a dispatch is to say which item it is for.
+    item: WorkItem
+
+
+def _pre_merge_gate_for(*, context: DispatchRunContext) -> Callable[..., DispatchOutcome | None]:
+    """Bind this dispatch's pre-merge runtime gate to the item it was launched for."""
+    return pre_merge_runtime_gate(
+        repo=context.repo,
+        item=context.item,
+        dispatch_id=context.dispatch_id,
+        fix_loop_count=fix_loop_count(
+            records=read_journal_records_for(args=context.args, repo=context.repo),
+            work_item_id=context.item.id,
+        ),
+        fix_loop_cap=context.plan.review_fix_visit_cap,
+        journal=context.journal,
+        runner=ShellCommandRunner(),
+    )
 
 
 def run_dispatch_with_watchdog(
@@ -105,5 +140,18 @@ def run_dispatch_with_watchdog(
                 heartbeat_path=heartbeat_path(args=context.args, repo=context.repo),
                 dispatch_id=context.dispatch_id,
             ),
+            # The PRE-MERGE runtime-convergence gate (S6 / bd-ib-z2y4ca). It is
+            # bound here, where the dispatched item, the dispatch id and the
+            # rendered fix-loop cap are all in hand, and handed to the engine as
+            # a callable so the engine never imports the gate module.
+            #
+            # The fix-loop count is this dispatch's own, derived from the
+            # journal the engine has already been appending to — the same
+            # poll/retry signal `fix_loop_count` reads for calibration. The
+            # graph's visit counter lives inside the sandbox and no terminal
+            # carries it, which is the limitation `_dispatcher_non_convergence_cap`
+            # records; this is the host-observable stand-in, and naming it in the
+            # journaled record is what keeps the substitution visible.
+            pre_merge_gate=_pre_merge_gate_for(context=context),
         )
     return started_at, outcome
