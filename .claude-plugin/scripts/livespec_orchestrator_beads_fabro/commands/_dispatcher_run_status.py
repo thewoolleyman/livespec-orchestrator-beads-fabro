@@ -40,12 +40,13 @@ class PrView:
     head_ref_oid: str | None = None
     head_repository: str | None = None
 
-    def matches_publication(self, *, branch: str, head: str) -> bool:
+    def matches_publication(self, *, branch: str, head: str, repository: str) -> bool:
         """Whether this is a live or merged publication of the checkpoint head."""
         return (
             self.state in {"OPEN", "MERGED"}
             and self.head_ref_name == branch
             and self.head_ref_oid == head
+            and self.head_repository == repository
         )
 
 
