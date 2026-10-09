@@ -28,10 +28,12 @@ from livespec_orchestrator_beads_fabro.commands._plan_archive_review import (
     CompletenessReviewLauncher,
     archive_completeness_review_request,
     undisposed_plan_child_ids,
-    valid_completeness_review_evidence_id,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_carrier_map import (
     last_carrier_map_position,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_completeness_evidence import (
+    completeness_review_evidence,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_completeness_identity import (
     ARCHIVING_PARTY,
@@ -208,21 +210,51 @@ def _resolve_completeness_review_evidence(
     archive_identity: str,
     request: ArchiveCompletenessReviewRequest,
 ) -> str | None:
-    evidence_id = valid_completeness_review_evidence_id(
+    evidence_id = _accepted_evidence_id(
         client=client,
         epic_id=epic_id,
-        evidence_id=completeness_review_comment_id,
-        archive_actor=archive_identity,
+        candidate=completeness_review_comment_id,
+        archive_identity=archive_identity,
     )
     if evidence_id is not None or review_launcher is None:
         return evidence_id
-    launched_id = review_launcher(request=request)
-    return valid_completeness_review_evidence_id(
+    return _accepted_evidence_id(
         client=client,
         epic_id=epic_id,
-        evidence_id=launched_id,
-        archive_actor=archive_identity,
+        candidate=review_launcher(request=request),
+        archive_identity=archive_identity,
     )
+
+
+def _accepted_evidence_id(
+    *,
+    client: BeadsClient,
+    epic_id: str,
+    candidate: str | None,
+    archive_identity: str,
+) -> str | None:
+    """The candidate evidence id the leg accepts, refusing outright on a self-review.
+
+    The SELF-REVIEW arm raises from here rather than returning `None` up to the
+    caller's generic refusal, and it raises before the launcher is consulted:
+    commissioning a fresh reviewer is the remedy for evidence that is MISSING,
+    and a plan whose evidence was authored by the archiving party needs a
+    different PARTY rather than another round of the same one.
+    """
+    if candidate is None:
+        return None
+    evidence = completeness_review_evidence(
+        client=client,
+        epic_id=epic_id,
+        evidence_id=candidate,
+        archive_identity=archive_identity,
+    )
+    if evidence.self_review_identity is not None:
+        raise PlanArchiveRefusedError.self_reviewed_completeness(
+            identity=evidence.self_review_identity,
+            evidence_id=candidate,
+        )
+    return evidence.accepted_id
 
 
 def _utc_now_iso() -> str:

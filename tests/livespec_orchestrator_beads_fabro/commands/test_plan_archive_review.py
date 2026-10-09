@@ -1,4 +1,8 @@
-"""Plan archive-review helper coverage."""
+"""Plan archive membership-helper coverage.
+
+The evidence record's own coverage moved with it, into
+`test_plan_completeness_evidence.py`.
+"""
 
 from __future__ import annotations
 
@@ -18,9 +22,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_archive_review import (
     archive_completeness_review_request,
     has_blocks_edge_to_epic,
     is_blocks_edge_to_epic,
-    record_completeness_review_evidence,
     undisposed_plan_child_ids,
-    valid_completeness_review_evidence_id,
 )
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
@@ -172,61 +174,3 @@ def test_child_disposition_detects_parent_child_dependency_edge_without_readines
 def test_edge_predicates_ignore_malformed_records() -> None:
     assert not has_blocks_edge_to_epic(record={"dependencies": "not-a-list"}, epic_id="bd-ib-epic")
     assert not is_blocks_edge_to_epic(edge="not-an-edge", epic_id="bd-ib-epic")
-
-
-def test_review_evidence_requires_matching_durable_independent_comment() -> None:
-    reset_fake_singleton()
-    _ = _fake().create_issue(draft=_draft(issue_id="bd-ib-epic", parent_id=None))
-    _fake().seed_comment(issue_id="bd-ib-epic", text="ordinary note")
-    _fake().seed_comment(
-        issue_id="bd-ib-epic",
-        text="plan-completeness-review-evidence\nmalformed\n\nbody",
-    )
-    record_completeness_review_evidence(
-        config=_config(),
-        epic_id="bd-ib-epic",
-        evidence_id="review-evidence-1",
-        reviewer_identity="fresh-independent-reviewer",
-        separate_reviewer=True,
-        attests_complete_requirement_coverage=True,
-        body="Complete.",
-        now="2026-08-11T02:00:00Z",
-    )
-
-    assert (
-        valid_completeness_review_evidence_id(
-            client=_fake(),
-            epic_id="bd-ib-epic",
-            evidence_id="review-evidence-1",
-            archive_actor="plan-archive",
-        )
-        == "review-evidence-1"
-    )
-    assert (
-        valid_completeness_review_evidence_id(
-            client=_fake(),
-            epic_id="bd-ib-epic",
-            evidence_id="missing",
-            archive_actor="plan-archive",
-        )
-        is None
-    )
-
-
-class _NonStringCommentClient:
-    def list_comments(self, *, issue_id: str) -> list[dict[str, object]]:
-        return [{"issue_id": issue_id, "text": object()}]
-
-
-def test_review_evidence_ignores_non_string_comment_text() -> None:
-    client = cast("BeadsClient", _NonStringCommentClient())
-
-    assert (
-        valid_completeness_review_evidence_id(
-            client=client,
-            epic_id="bd-ib-epic",
-            evidence_id="review-evidence-1",
-            archive_actor="plan-archive",
-        )
-        is None
-    )

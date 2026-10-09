@@ -514,7 +514,23 @@ def test_archive_after_reviewer_records_valid_durable_evidence(tmp_path: Path) -
     assert _fake().show_issue(issue_id=created["epic_id"])["status"] == "closed"
 
 
-def test_archive_rejects_self_review_and_incomplete_coverage_evidence(tmp_path: Path) -> None:
+def test_archive_refuses_a_self_review_and_accepts_an_independent_one(tmp_path: Path) -> None:
+    """BOTH legs of the independence check, in one run against one archiving identity.
+
+    A single-leg test proves nothing here, and that is presumably how the defect
+    survived: against the old predicate — which compared the reviewer identity
+    against the literal `plan-archive` — the accepted leg passes, because every
+    other string differs from the constant. Only the pair discriminates, and only
+    while both legs share ONE archiving identity: the refused and the accepted
+    evidence differ in nothing except whether their reviewer is the party
+    archiving.
+
+    The refusal NAMES the identity and the evidence id, because the remedy is
+    neither inferable nor the same as the generic one: the evidence is present,
+    well-formed and fully attesting, so "evidence is required" would send the one
+    session that cannot satisfy this leg back to author a second comment under the
+    same identity.
+    """
     reset_fake_singleton()
     plan = importlib.import_module("livespec_orchestrator_beads_fabro.commands.plan")
     created = plan.create_thread(
@@ -555,20 +571,58 @@ def test_archive_rejects_self_review_and_incomplete_coverage_evidence(tmp_path: 
         body="Did not attest every requirement carrier.",
         now="2026-08-11T02:01:00Z",
     )
+    plan.record_completeness_review_evidence(
+        config=_config(),
+        epic_id=created["epic_id"],
+        evidence_id="independent-review",
+        reviewer_identity="reviewing-session",
+        separate_reviewer=True,
+        attests_complete_requirement_coverage=True,
+        body="All research requirements and deferrals have ledger carriers.",
+        now="2026-08-11T02:02:00Z",
+    )
+    _seed_plan_proof(epic_id=created["epic_id"])
 
-    for evidence_id in ("self-review", "partial-review"):
-        with pytest.raises(plan.PlanArchiveRefusedError):
-            plan.archive_thread(
-                env=_ARCHIVING_SESSION_ENV,
-                project_root=tmp_path,
-                config=_config(),
-                slug="archive-thread",
-                epic_id=created["epic_id"],
-                completeness_review_comment_id=evidence_id,
-            )
+    with pytest.raises(plan.PlanArchiveRefusedError) as self_reviewed:
+        plan.archive_thread(
+            env=_ARCHIVING_SESSION_ENV,
+            project_root=tmp_path,
+            config=_config(),
+            slug="archive-thread",
+            epic_id=created["epic_id"],
+            completeness_review_comment_id="self-review",
+        )
+    with pytest.raises(plan.PlanArchiveRefusedError) as partial:
+        plan.archive_thread(
+            env=_ARCHIVING_SESSION_ENV,
+            project_root=tmp_path,
+            config=_config(),
+            slug="archive-thread",
+            epic_id=created["epic_id"],
+            completeness_review_comment_id="partial-review",
+        )
 
+    assert "archiving-session" in str(self_reviewed.value)
+    assert "self-review" in str(self_reviewed.value)
+    # Withheld coverage earns the GENERIC refusal, because the remedy there IS the
+    # one it names: somebody still has to perform and record a complete review.
+    assert "independent completeness-review evidence is required" in str(partial.value)
     assert (tmp_path / "plan" / "archive-thread").is_dir()
     assert not (tmp_path / "plan" / "archive").exists()
+    assert _fake().show_issue(issue_id=created["epic_id"])["status"] != "closed"
+
+    accepted = plan.archive_thread(
+        env=_ARCHIVING_SESSION_ENV,
+        project_root=tmp_path,
+        config=_config(),
+        slug="archive-thread",
+        epic_id=created["epic_id"],
+        completeness_review_comment_id="independent-review",
+    )
+
+    assert accepted["archive_path"] == "plan/archive/archive-thread"
+    assert not (tmp_path / "plan" / "archive-thread").exists()
+    assert _fake().show_issue(issue_id=created["epic_id"])["status"] == "closed"
 
 
 def test_archive_refuses_while_a_file_outside_plan_reads_the_thread_by_path(

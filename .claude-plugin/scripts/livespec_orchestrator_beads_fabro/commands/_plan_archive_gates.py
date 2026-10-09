@@ -68,6 +68,27 @@ class PlanArchiveRefusedError(Exception):
         return cls("independent completeness-review evidence is required")
 
     @classmethod
+    def self_reviewed_completeness(
+        cls,
+        *,
+        identity: str,
+        evidence_id: str,
+    ) -> PlanArchiveRefusedError:
+        """Name the archiving identity the evidence was authored under, and the record.
+
+        DISTINCT from `missing_completeness_review` because the evidence is
+        PRESENT, well-formed and fully attesting, and the remedy is a different
+        PARTY rather than another review by the same one. Reporting "evidence is
+        required" here would send the one session that cannot satisfy this leg
+        back to author a second comment under the same identity, and naming the
+        identity is what says which party has to be replaced.
+        """
+        found = f"completeness-review evidence {evidence_id} was authored by {identity}"
+        same = "which is the identity archiving this plan, so it is a self-review"
+        remedy = "a party with no role in the plan must perform and record the review"
+        return cls(f"{found}, {same}; {remedy}")
+
+    @classmethod
     def unresolved_publishing_identity(cls, *, role: str) -> PlanArchiveRefusedError:
         """Refuse while one party to the completeness leg cannot be named.
 

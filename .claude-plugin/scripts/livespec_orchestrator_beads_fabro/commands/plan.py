@@ -20,12 +20,14 @@ from livespec_orchestrator_beads_fabro.commands._plan_archive_gates import (
 from livespec_orchestrator_beads_fabro.commands._plan_archive_review import (
     blocking_dependency_ids,
     is_blocks_dependency_edge,
-    record_completeness_review_evidence,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_carrier_map import (
     PlanCarrierMapRefusedError,
     carrier_map_block,
     guard_carrier_map,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_completeness_evidence import (
+    record_completeness_review_evidence,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import (
     PlanDefinitionOfDone,
