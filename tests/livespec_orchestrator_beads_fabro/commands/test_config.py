@@ -744,6 +744,11 @@ def test_render_run_config_overlay_without_sandbox_image_override_is_byte_identi
         + 'CLAUDE_CODE_OAUTH_TOKEN = "test-oauth-token"\n'
         + 'GITHUB_TOKEN = "test-github-token"\n'
         + 'TMUX_TMPDIR = "/workspace/.tmux"\n'
+        # Rendered from the overlay's own helper rather than restated, for the
+        # same reason the prepare-step block above is: this test asserts the
+        # overlay's BYTES AND ORDERING, and the values themselves are bound by
+        # `test_dispatcher_overlay_harness_shell_env`.
+        + _dispatcher_overlay.harness_shell_env_lines()
         + 'LIVESPEC_CURRENCY_GATE = "fail"\n'
     )
     assert rendered == expected
