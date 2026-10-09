@@ -8,6 +8,15 @@ pinned Fabro build silently drops a templated `timeout`, see
 `_dispatcher_graph_render` -- so the resolved values are written into the
 payload's own copy of the graph as literal durations instead.
 
+EACH ACP NODE'S ADAPTER COMMAND IS WRITTEN IN FOR A SEPARATE REASON, settled by
+launching agents against both engines rather than by reading either one's
+source: a TEMPLATED `acp.command` kills the agent before the ACP protocol
+completes on the Petri-era engine, while a literal one launches on both it and
+the pinned build. `_dispatcher_graph_adapters` owns that rewrite and the
+measurement behind it; this module is only where the two rewrites compose, and
+they compose in that order so the adapter rewrite's no-template-token
+guarantee covers the graph the run actually receives.
+
 WHY THE WHOLE DIRECTORY IS COPIED rather than just the rewritten graph: the
 graph references its prompts relatively (`@prompts/implement.md`) and Fabro
 resolves those against THE GRAPH FILE'S OWN PATH. A rendered graph written
@@ -24,6 +33,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_node_timeouts
+from livespec_orchestrator_beads_fabro.commands._dispatcher_graph_adapters import (
+    render_acp_commands,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_graph_render import (
     render_workflow_graph,
 )
@@ -55,14 +67,16 @@ class WorkflowPayload:
 
     `graph` is the RENDERED graph inside `payload_dir`, which is what the
     run-config overlay points Fabro at; `node_seconds` is what each node's
-    timeout attribute actually received, so the dispatch record reports the
-    rendered values rather than a re-derivation of them.
+    timeout attribute actually received, and `node_commands` what each ACP
+    node's `acp.command` attribute received, so the dispatch record reports
+    the rendered values rather than a re-derivation of them.
     """
 
     payload_dir: Path
     graph: Path
     timeouts: NodeTimeouts
     node_seconds: Mapping[str, int]
+    node_commands: Mapping[str, str]
 
 
 def prepare_workflow_payload(
@@ -72,6 +86,7 @@ def prepare_workflow_payload(
     payload_dir: Path,
     journal: JournalWriter,
     work_item_id: str,
+    adapters: Mapping[str, str],
     entry_node: str | None = None,
 ) -> WorkflowPayload | str:
     """Resolve node timeouts, materialize the payload, and journal the result.
@@ -89,6 +104,7 @@ def prepare_workflow_payload(
         committed=committed,
         payload_dir=payload_dir,
         timeouts=timeouts,
+        adapters=adapters,
         entry_node=entry_node,
     )
     if isinstance(payload, str):
@@ -108,6 +124,7 @@ def materialize_workflow_payload(
     committed: Path,
     payload_dir: Path,
     timeouts: NodeTimeouts,
+    adapters: Mapping[str, str],
     entry_node: str | None = None,
 ) -> WorkflowPayload | str:
     """Copy the committed workflow payload and render its graph literally.
@@ -131,7 +148,12 @@ def materialize_workflow_payload(
     rendered = render_workflow_graph(committed_text=graph_text, timeouts=timeouts)
     if isinstance(rendered, str):
         return rendered
-    entered = _entered_text(text=rendered.text, entry_node=entry_node)
+    commands = render_acp_commands(graph_text=rendered.text, adapters=adapters)
+    if isinstance(commands, str):
+        return commands
+    # The resume derivation runs on the ADAPTER-RENDERED text, so a resumed run
+    # ships the same literal `acp.command` values an ordinary dispatch does.
+    entered = _entered_text(text=commands.text, entry_node=entry_node)
     if entered is None:
         return (
             f"workflow graph {committed_graph} declares no node {entry_node!r} to"
@@ -154,6 +176,7 @@ def materialize_workflow_payload(
         graph=graph,
         timeouts=timeouts,
         node_seconds=rendered.node_seconds,
+        node_commands=commands.node_commands,
     )
 
 

@@ -34,6 +34,9 @@ from pathlib import Path
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
+    guarded_adapter_string,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
@@ -58,12 +61,17 @@ _FLEET_MANIFEST_TEXT = (
     "}\n"
 )
 
+_ADAPTER = "npx -y @agentclientprotocol/claude-agent-acp"
 _COMMITTED_WORKFLOW_TOML = (
     '[workflow]\ngraph = "graph.toml"\n\n[run.environment]\nid = "fabro-sandbox"\n'
+    f'\n[run.inputs]\nacp_adapter = "{_ADAPTER}"\n'
 )
 
 # Three nodes with timeouts plus the run-level watchdog: enough to show a
 # configured node diverging from the defaulted ones in one rendered graph.
+# The ACP node declares `backend="acp"` because the payload generator refuses an
+# `acp.command` without it (plan `fabro-currency` P4): the Petri-era engine
+# fails such a node at run creation, so the generator will not ship one.
 _GRAPH = (
     "digraph ImplementWorkItem {\n"
     "    graph [\n"
@@ -71,6 +79,7 @@ _GRAPH = (
     "    ]\n"
     "\n"
     "    implement [\n"
+    '        backend="acp"\n'
     '        acp.command="{{ inputs.acp_adapter }}"\n'
     '        timeout="14400s"\n'
     "    ]\n"
@@ -244,10 +253,13 @@ def test_default_target_renders_every_node_at_1800_seconds(
     assert 'stall_timeout="7200s"' in capturing.graph_text
     for value in _timeout_values(graph_text=capturing.graph_text):
         assert not any(opener in value for opener in _TEMPLATE_OPENERS)
-    # The adapter template is UNTOUCHED: `acp.command` is a string on both
-    # sides of Fabro's expansion, which is why it may be templated and a
-    # timeout may not.
-    assert "inputs.acp_adapter" in capturing.graph_text
+    # The adapter is RESOLVED TO A LITERAL rather than left templated (plan
+    # `fabro-currency` P4): a templated `acp.command` kills the agent before the
+    # ACP protocol completes on the Petri-era engine, so the generator writes the
+    # resolved command in. The guard wrap is what precedes it.
+    assert "inputs.acp_adapter" not in capturing.graph_text
+    guarded = guarded_adapter_string(rendered=_ADAPTER)
+    assert f'acp.command="{guarded}"' in capturing.graph_text
 
 
 def test_configured_node_keeps_its_value_and_others_default(

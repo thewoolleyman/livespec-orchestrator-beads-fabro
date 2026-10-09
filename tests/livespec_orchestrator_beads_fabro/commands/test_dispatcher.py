@@ -4225,8 +4225,14 @@ def test_dispatch_green_closes_item_and_journals(
         # unreachable forge must not be reported as an absent prerelease.
         "proof-asset-store",
         "ledger-admit",
-        "node-timeouts",
+        # ADAPTERS BEFORE THE PAYLOAD, and the order is load-bearing rather than
+        # incidental: since plan `fabro-currency` P4 the payload generator renders
+        # each ACP node's resolved adapter command into the graph as a LITERAL,
+        # because a templated `acp.command` kills the agent before the ACP
+        # protocol completes on the Petri-era engine. The resolution is therefore
+        # an INPUT to generation, so it has to be journaled first.
         "acp-nodes",
+        "node-timeouts",
         "conformance-premise-undeclared",
         "dispatch-id",
         "ledger-complete",

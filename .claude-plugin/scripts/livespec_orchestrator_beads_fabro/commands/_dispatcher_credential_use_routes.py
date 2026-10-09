@@ -18,10 +18,17 @@ through them.
 
 SO THE RULE IS FAIL-CLOSED ON ANYTHING UNRECOGNISED. A protected dispatch is
 admitted only when EVERY ACP node declares exactly one launch attribute,
-`acp.command`, whose value is exactly a reference to an adapter input THIS
-dispatch wrapped. Every other shape is refused by name before launch:
+`acp.command`, and that value is one of exactly TWO recognised shapes: a
+reference to an adapter input THIS dispatch wrapped, or a literal command whose
+own executable position IS the projected guard. Every other shape is refused by
+name before launch:
 
-- a LITERAL command, which the wrap never sees;
+- a LITERAL command that does NOT run behind the guard, which the wrap never
+  sees;
+- a literal running behind the guard whose leading `KEY=value` prefix declares
+  one of the credential-use enforcement variables, which would let the node hand
+  itself any deadline it liked -- the same hazard `_acp_node_layers` refuses for
+  a configured adapter, refused here for the rendered launch;
 - `acp.config`, the pinned engine's JSON stdio form (`fabro-acp/src/command.rs`
   accepts either), which carries its own command, args and env;
 - any other `acp.*` attribute, which includes graph-declared fallback candidates
@@ -71,6 +78,19 @@ which for this question means "no ACP nodes to check" and therefore admission. A
 graph this module cannot read is a graph whose launches it cannot enumerate, and
 that is exactly when it must not claim they are bounded.
 
+WHY THE LITERAL SHAPE IS RECOGNISED AT ALL, since the paragraphs above exist
+because a literal was the measured hole. It was added by plan `fabro-currency`
+P4, which made the literal the ONLY launch shape that works: a TEMPLATED
+`acp.command` kills the agent before the ACP protocol completes on the
+Petri-era engine (upstream fabro 474 de-templated the attribute), so the
+Dispatcher now renders each node's resolved, ALREADY-GUARDED adapter command
+into the payload graph as a literal. Recognising it is not a relaxation -- it
+is STRICTLY STRONGER evidence than the templated form, which only shows that
+the wrap WOULD apply to whatever the input carried. This arm reads the
+executable position of the command that will actually be exec'd and requires
+the guard to be it, so a literal is admitted only when the guard is provably
+first.
+
 This module decides nothing about WHETHER protection is owed -- that is the
 caller's, and it is owed exactly when a Codex credential is projected.
 """
@@ -78,10 +98,17 @@ caller's, and it is owed exactly when a Codex credential is projected.
 from __future__ import annotations
 
 import re
+import shlex
 from collections.abc import Mapping
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._acp_workflow_graph import ACP_BACKEND
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
+    CREDENTIAL_EXPIRY_ENV_VAR,
+    CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
+    CREDENTIAL_USE_DEADLINE_ENV_VAR,
+    guarded_acp_command,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
 from livespec_orchestrator_beads_fabro.commands._dispatcher_graph_stylesheet import (
     nodes_with_effective_backend,
@@ -102,11 +129,35 @@ _TEMPLATED_INPUT_RE = re.compile(r"^\{\{\s*inputs\.(?P<name>\w+)\s*\}\}$")
 _LAUNCH_ATTRIBUTE = "acp.command"
 _ACP_ATTRIBUTE_PREFIX = "acp."
 
+# An env assignment as POSIX tokenization recognizes one. Spelled here rather
+# than imported from the guard module for the reason that module spells its own:
+# the pattern is three characters of syntax, and reaching across for it buys
+# nothing while coupling two modules that otherwise share only constants.
+_ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+# The exact token sequence `guarded_acp_command` puts in front of an adapter's
+# argv, derived from that function rather than spelled, so a change to the wrap
+# cannot leave this recognition asserting a prefix nothing produces any more.
+_GUARD_PREFIX: tuple[str, ...] = tuple(guarded_acp_command(argv=[]))
+
+# The variables the guard itself reads. A launch whose own env prefix sets one
+# would be choosing its own deadline, which is not a bound.
+_ENFORCEMENT_ENV_VARS = frozenset(
+    {
+        CREDENTIAL_EXPIRY_ENV_VAR,
+        CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
+        CREDENTIAL_USE_DEADLINE_ENV_VAR,
+    }
+)
+
 _GUIDANCE = (
     "A protected dispatch projects a live Codex credential, so every ACP node's "
-    "launch must run behind the projected credential-use guard. Only "
-    'acp.command="{{ inputs.<adapter-input> }}" is wrapped; declare the node that '
-    "way, or dispatch this workflow without a Codex credential projection."
+    "launch must run behind the projected credential-use guard. Two shapes carry "
+    'it: acp.command="{{ inputs.<adapter-input> }}", which the launch renderer '
+    "wraps, and a literal command whose executable position is the guard itself "
+    f"({' '.join(_GUARD_PREFIX)} ...), which the payload generator renders. "
+    "Declare the node one of those ways, or dispatch this workflow without a "
+    "Codex credential projection."
 )
 
 
@@ -178,11 +229,7 @@ def _node_launch_refusal(
         )
     match = _TEMPLATED_INPUT_RE.match(command.strip())
     if match is None:
-        return (
-            f"ACP node {node!r} declares a literal {_LAUNCH_ATTRIBUTE} "
-            f"({command!r}), which does not consume a wrapped adapter input, so "
-            f"its launch would not run behind the guard. {_GUIDANCE}"
-        )
+        return _literal_launch_refusal(node=node, command=command)
     name = match.group("name")
     if name not in adapter_inputs:
         wrapped = ", ".join(sorted(adapter_inputs)) or "none"
@@ -190,6 +237,58 @@ def _node_launch_refusal(
             f"ACP node {node!r} launches from workflow input {name!r}, which "
             f"this dispatch did not wrap, so it would run the workflow's own "
             f"unwrapped default. Wrapped inputs: {wrapped}. {_GUIDANCE}"
+        )
+    return None
+
+
+def _peeled_env_prefix(*, tokens: list[str]) -> tuple[list[str], list[str]]:
+    """Split a tokenized command line into its LEADING env assignments and its argv.
+
+    Leading, and the first non-assignment ends the prefix -- exactly as the
+    engine's own POSIX tokenization treats it, so a later token that happens to
+    look like an assignment is an ARGUMENT and never environment.
+    """
+    for index, token in enumerate(tokens):
+        if _ENV_ASSIGNMENT_RE.match(token) is None:
+            return tokens[:index], tokens[index:]
+    return tokens, []
+
+
+def _literal_launch_refusal(*, node: str, command: str) -> str | None:
+    """Grade a LITERAL launch: None only when the guard is provably its executable.
+
+    Separate from the templated arm because the question is different in kind.
+    There, the evidence is that the dispatch wrapped the input the node reads;
+    here, the command IS what the engine execs, so the evidence has to be read
+    out of the command line itself -- the guard in the executable position, and
+    no enforcement variable in the env prefix that precedes it.
+    """
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return (
+            f"ACP node {node!r} declares a {_LAUNCH_ATTRIBUTE} ({command!r}) that "
+            f"does not tokenize as a shell command line, so this dispatch cannot "
+            f"establish what it launches. {_GUIDANCE}"
+        )
+    prefix, argv = _peeled_env_prefix(tokens=tokens)
+    declared = sorted(
+        token.partition("=")[0]
+        for token in prefix
+        if token.partition("=")[0] in _ENFORCEMENT_ENV_VARS
+    )
+    if declared:
+        return (
+            f"ACP node {node!r} declares {', '.join(declared)} ahead of its "
+            f"{_LAUNCH_ATTRIBUTE} executable, which would let the launch choose "
+            f"its own credential-use deadline instead of the one this dispatch "
+            f"projected. {_GUIDANCE}"
+        )
+    if tuple(argv[: len(_GUARD_PREFIX)]) != _GUARD_PREFIX or len(argv) <= len(_GUARD_PREFIX):
+        return (
+            f"ACP node {node!r} declares a literal {_LAUNCH_ATTRIBUTE} "
+            f"({command!r}) whose executable is not the projected guard, so "
+            f"its launch would not run behind it. {_GUIDANCE}"
         )
     return None
 
