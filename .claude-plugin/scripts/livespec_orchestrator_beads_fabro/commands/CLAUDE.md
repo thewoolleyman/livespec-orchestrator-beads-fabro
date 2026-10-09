@@ -295,6 +295,40 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   forbids spending. `ProofRecord.attachment` resolves the asset through the SAME
   section walk `reproduced` uses, which is what keeps one assertion's digest from
   being checked against another assertion's verdict.
+- The TRANSPORT a projected credential reaches the worker through lives in two
+  cohesive modules, split pure-from-impure the usual way:
+  `_dispatcher_secret_channel` (PURE: the two transports a factory may declare,
+  the stable vault key each credential is stored under, the reference token, the
+  bundle rewrite and every refusal) and `_dispatcher_overlay_write` (routing plus
+  the mode-600 write, which are ONE act). The store itself is a `VaultSecretSink`
+  the dispatch path injects, which is what keeps the whole transport exercisable
+  without a factory. `_dispatcher_codex_overlay_leg` is the
+  neighbouring extraction that keeps the materializer inside its size ceiling:
+  the run budget, the graded host Codex snapshot, the credential-use enforcement
+  inputs and the launch-route guard, in that order, as one unit.
+  Five properties an editor must not invert. The INLINE overlay is the default
+  and an UNRECOGNISED declaration REFUSES — the pinned engine resolves no
+  reference, so routing on it breaks every dispatch, while guessing the inline
+  transport on a Petri-era server persists a literal credential in an immutable
+  server-side workflow version, which is the exposure the whole transport exists
+  to close (`fabro inspect` returned the projected `CLAUDE_CODE_OAUTH_TOKEN`
+  unredacted on hp run 01M058955QQ5). The vault key is STABLE across launches,
+  derived from the environment-variable name alone, because a run-scoped key
+  would mean every rotation needed a new bundle. Routing finishes BEFORE
+  anything is stored, so a refusal leaves the vault untouched rather than
+  seeding credentials for a dispatch the next line declines. A store failure
+  REFUSES rather than being ignored: the bundle is unchanged either way, so an
+  ignored failure launches the run against whatever the vault held from an
+  earlier launch. And the routed name list is read back off the lines each
+  projection ACTUALLY rendered — never re-derived from a declaration — because
+  `contracts.md` section "Proof credential projection" requires that a change of
+  transport leave the declaration, its refusals and its journal rows alone.
+  The routed set is EXPLICIT (`REQUIRED_CREDENTIAL_ENV_NAMES` plus
+  `OPTIONAL_CREDENTIAL_ENV_NAMES` plus the rendered proof-credential names)
+  rather than discovered by a marker scan, for the reason that module's own
+  comment gives: the same env table carries `CODEX_REFRESH_TOKEN_URL_OVERRIDE`
+  and the credential-use deadline keys, none of which is a credential. A
+  credential renderer added later must add its env name there.
 - `_dispatcher_pre_dispatch_wall.py` — the ONE wall both dispatch paths run,
   holding every refusal that must land after selection and BEFORE admission:
   the variant-aware acceptance-criteria wall, the proof-assets gate, the
