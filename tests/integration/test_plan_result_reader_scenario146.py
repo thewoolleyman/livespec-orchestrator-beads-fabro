@@ -50,6 +50,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_pointer import
     ProofPointer,
     description_with_pointer,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import (
+    PUBLISH_HEAD_LABEL,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     OBSERVATION_SATISFIED,
     SOURCE_PROOF_RECORD,
@@ -98,6 +101,26 @@ _COMPARE_KEY = "/compare/"
 # so the refusal cases reuse one identity and the control uses two.
 _CAPTURE_IDENTITY = "session 1e14094a-0000-4000-8000-000000000001"
 _REPLAY_IDENTITY = "session b1e14094-0000-4000-8000-000000000002"
+# The publish-branch head an ORDINARY FACTORY record declares, and a second one for
+# the other-build control. A factory record carries no host `Build identity` section
+# at all: that section names a RELEASE, and the capture and verify stages run on the
+# DRAFT pull request, before the merge any release could contain.
+_FACTORY_HEAD = "f" * 40
+_OTHER_FACTORY_HEAD = "e" * 40
+# The dispatch the subject's own proof pointer names, which is the factory leg's
+# whole attribution anchor. Spelled once so the pointer and the records cannot drift.
+_RUN_ID = "01M4RESULTREADER"
+# The merge the subject records once its work closed. It is what the HOST leg
+# additionally requires a released build to contain — and what a PRE-MERGE factory
+# candidate cannot contain, since that candidate is the head the merge was made from.
+_MERGE_SHA = "c" * 40
+# The ancestry these fixtures model, DECLARED pair by pair rather than answered
+# blanket. `_FACTORY_HEAD` is a commit on the draft branch of the work released as
+# `_BUILD`, so it carries `_BUILD`; and `_BUILD` is the release cut after the
+# subject's merge, so it carries `_MERGE_SHA`. Every other pair that is not
+# literally the same ref answers `behind`, because inventing containment between two
+# unrelated identities is what made this module's build control vacuous once already.
+_CONTAINING_PAIRS = frozenset({(_BUILD, _FACTORY_HEAD), (_MERGE_SHA, _BUILD)})
 # Spelled as a LITERAL rather than imported from the observation module, and that
 # is deliberate. Each status arrives in its own Red-Green cycle, so a Red that
 # imported the not-yet-existing constant would die at COLLECTION — proving only
@@ -178,7 +201,31 @@ def _project(*, tmp_path: Path) -> Path:
     return repo
 
 
-def _seed_item(*, repo: Path, issue_id: str, status: str, description: str = "") -> None:
+def _seed_item(
+    *,
+    repo: Path,
+    issue_id: str,
+    status: str,
+    description: str = "",
+    merge_sha: str | None = None,
+) -> None:
+    """Seed one item, optionally recording the merge a HOST build must contain.
+
+    The merge goes into the audit metadata the store maps an item's `audit` from,
+    written through the client's own public create verb. It is what makes the
+    verified-proof cases discriminating about WHICH containment each leg owes: the
+    host leg requires a released build to carry it, and the factory leg must not,
+    because a factory candidate is the pre-merge head the merge was made from.
+    """
+    metadata: dict[str, object] = {}
+    if merge_sha is not None:
+        metadata["audit"] = {
+            "merge_sha": merge_sha,
+            "pr_number": _PR_NUMBER,
+            "verification_timestamp": "2026-10-08T08:00:00Z",
+            "commits": [merge_sha],
+            "files_changed": ["fixture.txt"],
+        }
     config = store_config(repo=repo)
     client = make_beads_client(config=config)
     _ = client.create_issue(
@@ -189,6 +236,7 @@ def _seed_item(*, repo: Path, issue_id: str, status: str, description: str = "")
             description=description,
             assignee=None,
             created_at="2026-10-08T00:00:00Z",
+            metadata=metadata,
         )
     )
     client.update_issue(issue_id=issue_id, status=status)
@@ -200,16 +248,42 @@ def _seed_comment(*, repo: Path, issue_id: str, text: str) -> None:
 
 def _proof_body(
     *,
-    verdict: str = "verified",
+    verdict: str = "host_verified",
     build: str = _BUILD,
     reproduced: str = "yes",
-    identity: str = "run 01M4RESULTREADER",
+    identity: str = _REPLAY_IDENTITY,
     minute: str = "00",
 ) -> str:
+    """One HOST record, declaring its build through the host `Build identity` bullet."""
     return (
         f"Proof of Done — {verdict} — {identity} — 2026-10-08T08:{minute}:00Z\n"
         "\n"
         f"- {RELEASE_TAG_LABEL}: {build}\n"
+        "\n"
+        f"## Assertion 1 — {_ASSERTION}\n"
+        f"Reproduced: {reproduced}.\n"
+    )
+
+
+def _factory_proof_body(
+    *,
+    verdict: str = "verified",
+    head: str = _FACTORY_HEAD,
+    reproduced: str = "yes",
+    run_id: str = _RUN_ID,
+    minute: str = "00",
+) -> str:
+    """One ORDINARY FACTORY record, declaring its build the way the capture prompts do.
+
+    SEPARATE FROM `_proof_body` BECAUSE THE TWO SHAPES ARE GENUINELY DIFFERENT, and
+    rendering a factory record with a host build-identity bullet is what hid this
+    reader's factory defect: every factory case in this module passed through the
+    HOST parser, so the reader looked correct while no real factory record has ever
+    carried that section.
+    """
+    return (
+        f"Proof of Done — {verdict} — run {run_id} — 2026-10-08T08:{minute}:00Z\n"
+        f"{PUBLISH_HEAD_LABEL}: {head}\n"
         "\n"
         f"## Assertion 1 — {_ASSERTION}\n"
         f"Reproduced: {reproduced}.\n"
@@ -240,20 +314,27 @@ def _json_string(*, text: str) -> str:
 
 
 def _derived_containment(*, argv: list[str]) -> CommandResult | None:
-    """The forge's own answer about two builds, derived from the refs it was asked.
+    """The forge's own answer about two refs, derived from the refs it was asked.
 
     `None` for any argv that is not the build comparison, so the caller falls
-    through to its keyed answers. `identical` only when the record's build IS the
-    requested one and `behind` otherwise, which is the honest answer for every
-    fixture in this module: no case here publishes a record against a genuinely
-    later release, and inventing containment for two unrelated version strings is
-    what made the build control vacuous.
+    through to its keyed answers. `identical` when the two refs are the same,
+    `ahead` for the two pairs `_CONTAINING_PAIRS` declares, and `behind` for
+    everything else — which is the honest answer for every fixture in this module.
+    Inventing containment for two unrelated identities is what made the build
+    control vacuous, so the containing relation is ENUMERATED rather than assumed:
+    a reader aiming the comparison at some other pair collects `behind` and the
+    case fails rather than passing on a canned answer.
     """
     endpoint = next((token for token in argv if _COMPARE_KEY in token), None)
     if endpoint is None:
         return None
     base, _, head = endpoint.split(_COMPARE_KEY, 1)[1].partition("...")
-    status = "identical" if base == head else "behind"
+    if base == head:
+        status = "identical"
+    elif (base, head) in _CONTAINING_PAIRS:
+        status = "ahead"
+    else:
+        status = "behind"
     return CommandResult(exit_code=0, stdout=f"{status}\n", stderr="")
 
 
@@ -266,7 +347,7 @@ def _runner(
     the adapter actually asked about — see its docstring for why a canned answer
     would make the build leg vacuous.
     """
-    body = _proof_body() if proof_body is None else proof_body
+    body = _factory_proof_body() if proof_body is None else proof_body
     return _Runner(
         answers={
             _PR_STATE_KEY: CommandResult(
@@ -348,12 +429,13 @@ def _seeded_project(*, tmp_path: Path) -> Path:
         repo=repo,
         issue_id=_SUBJECT_ID,
         status="acceptance",
+        merge_sha=_MERGE_SHA,
         description=description_with_pointer(
             description="## Definition of Done\n\n- Something.\n",
             pointer=ProofPointer(
                 pull_request=_PR_NUMBER,
                 record_url=_RECORD_URL,
-                run_id="01M4RESULTREADER",
+                run_id=_RUN_ID,
                 timestamp="2026-10-08T08:00:00Z",
                 verdict="verified",
             ),
@@ -477,7 +559,7 @@ def test_a_record_that_is_not_evidence_is_unsatisfied_and_not_unobservable(
         ),
         (
             _fulfilled_references()["verified_proof"],
-            _runner(proof_body=_proof_body(build="v0.1.0")),
+            _runner(proof_body=_factory_proof_body(head=_OTHER_FACTORY_HEAD)),
         ),
         (
             _fulfilled_references()["file_on_branch"],
@@ -585,6 +667,53 @@ def test_a_host_record_that_is_not_independent_evidence_cannot_satisfy_the_proof
     assert _status(observation=independent) == OBSERVATION_SATISFIED
 
 
+def test_an_ordinary_factory_proof_of_its_published_candidate_is_satisfied(
+    tmp_path: Path,
+) -> None:
+    """THE REAL FACTORY RECORD SHAPE, read end to end through the reader an operator calls.
+
+    Measured 2026-10-09 against `overseer-s32tdk`'s own `verified` record on pull
+    request 2376: the typed parser reads it, reproduces its first assertion and
+    names `Publish-branch head f5a8185687f111807a7e1fe926674fe316bc8fb2`, while
+    this reader reported UNSATISFIED for exactly that build and assertion. A
+    factory record carries no host `Build identity` section — that section names a
+    release, and the capture and verify stages run on the draft pull request before
+    the merge any release could contain — so a reader asking for one asks every
+    ordinary factory proof for a field it structurally cannot have, and the refusal
+    is indistinguishable from a record that genuinely proves nothing.
+
+    TWO INDEPENDENT REPAIRS ARE BOUND HERE, and both are read off the COMPARISON
+    LIST rather than off the status, because the fixture answers a valid status for
+    any pair it is asked and a status alone therefore cannot say which question was
+    put. The declaration must be read through the canonical publish-head parser:
+    satisfaction is reachable only by asking `compare/<requested>...<declared
+    head>`, the one containing pair the fixture declares for this record. And the
+    host leg's SUBJECT-MERGE containment must not be imposed here: this subject
+    RECORDS a merge, so a composed reader would also ask whether the candidate
+    carries it — a question a pre-merge head cannot answer yes to, since that head
+    is what the merge was made from. Exactly one comparison is therefore asserted.
+
+    The sibling case below is the negative control: the same shape declaring a
+    DIFFERENT head is refused, so this cannot be a reader that admits any factory
+    record carrying a publish-head line.
+    """
+    repo = _seeded_project(tmp_path=tmp_path)
+    runner = _runner()
+    observation = read_result(
+        project_root=repo,
+        reference=_fulfilled_references()["verified_proof"],
+        runner=runner,
+        now=_NOW,
+    )
+    assert _status(observation=observation) == OBSERVATION_SATISFIED, observation.detail
+    comparisons = tuple(
+        token for argv, _cwd in runner.calls for token in argv if _COMPARE_KEY in token
+    )
+    assert comparisons == (
+        f"repos/{{owner}}/{{repo}}/compare/{_BUILD}...{_FACTORY_HEAD}",
+    ), comparisons
+
+
 def test_a_record_naming_another_build_cannot_satisfy_the_requested_build(
     tmp_path: Path,
 ) -> None:
@@ -598,7 +727,7 @@ def test_a_record_naming_another_build_cannot_satisfy_the_requested_build(
     observation = read_result(
         project_root=repo,
         reference=_fulfilled_references()["verified_proof"],
-        runner=_runner(proof_body=_proof_body(build="v0.1.0")),
+        runner=_runner(proof_body=_factory_proof_body(head=_OTHER_FACTORY_HEAD)),
         now=_NOW,
     )
     assert _status(observation=observation) != OBSERVATION_SATISFIED
