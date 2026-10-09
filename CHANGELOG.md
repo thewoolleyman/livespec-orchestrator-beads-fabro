@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.180.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.180.0...v0.180.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **dispatcher:** refuse an adapter command carrying a line break by name ([607c276](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/607c276d67cd075eadab76883c3ef70a6ffe168c))
+* **dispatcher:** render a quote-bearing adapter command as DOT escString ([547456a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/547456a77910fc3a446606e1d1da481203f0c841))
+* **dispatcher:** report the unescaped adapter command in the dispatch record ([f4eeabe](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f4eeabef794d207d02312f4d141343bfa8f3f726))
+
 ## [0.180.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.179.1...v0.180.0) (2026-10-09)
 
 
