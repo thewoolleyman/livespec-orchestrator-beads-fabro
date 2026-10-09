@@ -38,10 +38,16 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
+
+from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro._store_dispatch_workflow import (
     dispatch_workflow_for,
     record_dispatch_workflow,
+)
+from livespec_orchestrator_beads_fabro._store_factory_size_gate import (
+    route_factory_size_decomposition,
 )
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_self_update as selfup
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import (
@@ -51,6 +57,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import
     write_dispatch_lock,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import JournalWriter
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
+    factory_size_decision,
+    resolve_adopted_assertion_count_ceiling,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import resolve_assignee
 from livespec_orchestrator_beads_fabro.commands._workflow_variant_kind import groom_variant_names
@@ -62,6 +72,7 @@ __all__: list[str] = [
     "GROOM_DOOR_NOT_A_GROOM_VARIANT",
     "GROOM_DOOR_NOT_BACKLOG",
     "GROOM_DOOR_REFUSED_STAGE",
+    "GROOM_DOOR_SIZE_DECOMPOSITION",
     "GroomDispatch",
     "GroomDoorRefusal",
     "groom_dispatch",
@@ -78,6 +89,7 @@ GROOM_DOOR_REFUSED_STAGE = "groom-dispatch-refused"
 # journal row says what was wrong without a reader parsing the detail back out.
 GROOM_DOOR_NOT_BACKLOG = "not-backlog"
 GROOM_DOOR_NOT_A_GROOM_VARIANT = "not-a-groom-variant"
+GROOM_DOOR_SIZE_DECOMPOSITION = "size-decomposition"
 
 _BACKLOG_STATUS = "backlog"
 _ACTIVE_STATUS = "active"
@@ -120,6 +132,26 @@ def groom_dispatch(
     the variant or the item and re-run the identical call.
     """
     refusal = _refusal(repo=repo, item=item, variant=variant)
+    if refusal is None:
+        adopted_ceiling = unsafe_perform_io(
+            resolve_adopted_assertion_count_ceiling(cwd=repo).value_or(None)
+        )
+        size = factory_size_decision(
+            item=item,
+            adopted_ceiling=adopted_ceiling,
+            raw_justification=None,
+        )
+        if size.disposition == "decompose":
+            reason = cast("str", size.reason)
+            route_factory_size_decomposition(
+                path=store_config(repo=repo),
+                work_item_id=item.id,
+                reason=reason,
+            )
+            refusal = GroomDoorRefusal(
+                cause=GROOM_DOOR_SIZE_DECOMPOSITION,
+                detail=reason,
+            )
     if refusal is not None:
         journal.append(
             record={
