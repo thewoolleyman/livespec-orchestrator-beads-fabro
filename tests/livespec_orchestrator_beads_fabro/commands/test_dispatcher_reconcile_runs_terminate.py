@@ -121,6 +121,22 @@ def test_a_running_orphan_is_terminated_through_the_cancel_route(tmp_path: Path)
     assert runner.calls == []
 
 
+def test_a_running_orphan_can_be_held_at_the_cancel_boundary(tmp_path: Path) -> None:
+    transport = _FakeTransport(results={"01RUNNING/cancel": _ok(body="{}")})
+    runner = _FakeRunner()
+
+    outcome = term.terminate_orphan_run(
+        port=_port(tmp_path=tmp_path, transport=transport, runner=runner),
+        run_id="01RUNNING",
+        status_kind="running",
+        destructive_action_held=lambda: True,
+    )
+
+    assert outcome is None
+    assert transport.calls == []
+    assert runner.calls == []
+
+
 def test_rm_force_is_the_fallback_only_after_both_http_routes_fail(tmp_path: Path) -> None:
     transport = _FakeTransport(results={})
     runner = _FakeRunner()
