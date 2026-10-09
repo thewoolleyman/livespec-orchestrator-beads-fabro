@@ -73,8 +73,13 @@ def test_comparison_harness_writes_per_assertion_delta(
         ("/opt/fabro-candidate", "http://127.0.0.1:32286"),
     ]
     test_args = [arg for arg in calls[0][2] if arg.startswith("fabro-enemy-unit-tests/")]
+    # A CLOSED list, kept closed on purpose: the harness globs the tier 0
+    # modules, so a new one must be seen here rather than silently joining or
+    # silently missing the comparison the pinned-versus-candidate verdict rests
+    # on. Adding a tier 0 module means updating this line.
     assert test_args == [
         "fabro-enemy-unit-tests/test_tier0_fabro.py",
+        "fabro-enemy-unit-tests/test_tier0_fabro_port_surface.py",
         "fabro-enemy-unit-tests/test_tier0_watchdog_gap.py",
     ]
     artifact = artifact_path.read_text()
