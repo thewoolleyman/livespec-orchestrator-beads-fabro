@@ -111,6 +111,16 @@ STALL_SECONDS_ENV_VAR = "LIVESPEC_DISPATCH_STALL_SECONDS"
 # it on the pinned Python (3.10, where fromisoformat does not parse "Z").
 _TRAILING_Z_RE = re.compile(r"Z$")
 
+# Event timestamp fields GROUPED BY UNIT, because a numeric timestamp means
+# nothing without one. The second-valued names are what the pinned 0.254 build
+# emitted; `recorded_at` is the Petri-era envelope's own field and counts
+# MILLISECONDS (measured 2026-10-08 on 0.378.0-nightly.0, research note 006 of
+# `plan/fabro-currency`). Keep a new field in the group matching its unit —
+# moving `recorded_at` into the second-valued tuple blinds the stall watchdog.
+_SECOND_EPOCH_FIELDS: tuple[str, ...] = ("timestamp", "ts", "at")
+_MILLISECOND_EPOCH_FIELDS: tuple[str, ...] = ("recorded_at",)
+_MILLISECONDS_PER_SECOND = 1000.0
+
 
 @dataclass(frozen=True, kw_only=True)
 class LivenessSample:
@@ -308,18 +318,43 @@ def _events_list(*, parsed_raw: object) -> list[object] | None:
 
 
 def _event_epoch(*, event_raw: object) -> float | None:
-    """Read one event's timestamp (`timestamp`/`ts`/`at`) as epoch seconds."""
+    """Read one event's timestamp as epoch seconds, honouring each field's UNIT.
+
+    The fields are grouped by unit rather than listed together, because a
+    numeric timestamp means nothing without one. The pinned 0.254 build emitted
+    `timestamp` / `ts` / `at` in SECONDS; the Petri-era build emits
+    `recorded_at` in MILLISECONDS (measured 2026-10-08 on 0.378.0-nightly.0,
+    research note 006 of `plan/fabro-currency`).
+
+    Appending `recorded_at` to the second-valued group instead would read a
+    millisecond value as epoch seconds and place every event in the year
+    57000, which holds the observed span near zero and stops the stall
+    watchdog ever firing — the fail-OPEN direction on a safety gauge.
+    """
     if not isinstance(event_raw, dict):
         return None
     event = cast("dict[str, Any]", event_raw)
-    for key in ("timestamp", "ts", "at"):
-        value: object = event.get(key)
-        if isinstance(value, str):
-            epoch = _iso_to_epoch(value=value)
-            if epoch is not None:
-                return epoch
-        if isinstance(value, int | float) and not isinstance(value, bool):
-            return float(value)
+    for key in _SECOND_EPOCH_FIELDS:
+        epoch = _epoch_value(value=event.get(key), per_second=1.0)
+        if epoch is not None:
+            return epoch
+    for key in _MILLISECOND_EPOCH_FIELDS:
+        epoch = _epoch_value(value=event.get(key), per_second=_MILLISECONDS_PER_SECOND)
+        if epoch is not None:
+            return epoch
+    return None
+
+
+def _epoch_value(*, value: object, per_second: float) -> float | None:
+    """One field's value as epoch seconds; `per_second` carries the field's unit.
+
+    An ISO STRING is never rescaled whatever group it was found under: it
+    carries its own unit, so the divisor applies to the numeric form alone.
+    """
+    if isinstance(value, str):
+        return _iso_to_epoch(value=value)
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        return float(value) / per_second
     return None
 
 
