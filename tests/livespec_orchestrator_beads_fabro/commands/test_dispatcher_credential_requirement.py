@@ -68,7 +68,7 @@ goal = "fixture"
 loop_cap = 3
 
 [run.checkpoint]
-commit_timeout = "10m"
+commit_timeout = "15m"
 """
 
 # One retrying node, one node bounded by an edge guard the `[run.inputs]` table
@@ -338,15 +338,15 @@ def test_the_absolute_deadline_is_anchored_at_projection_not_at_the_first_node()
     assert module.credential_use_remaining_seconds(deadline_epoch=1_060, now_epoch=1_050) == 10
 
 
-# Every entry declares `[run.checkpoint] commit_timeout = "10m"` on THIS
+# Every entry declares `[run.checkpoint] commit_timeout = "15m"` on THIS
 # repository's own shipped run config, differing only in TOML spelling. The ids
 # name the spelling so a failure says which one regressed.
 _CHECKPOINT_SPELLINGS = [
-    pytest.param('commit_timeout = "10m"', id="canonical"),
-    pytest.param('    commit_timeout = "10m"', id="indented-assignment"),
-    pytest.param("commit_timeout = '10m'", id="literal-string"),
-    pytest.param('commit_timeout = "10m"  # checkpoint budget', id="trailing-comment"),
-    pytest.param('"commit_timeout" = "10m"', id="quoted-key"),
+    pytest.param('commit_timeout = "15m"', id="canonical"),
+    pytest.param('    commit_timeout = "15m"', id="indented-assignment"),
+    pytest.param("commit_timeout = '15m'", id="literal-string"),
+    pytest.param('commit_timeout = "15m"  # checkpoint budget', id="trailing-comment"),
+    pytest.param('"commit_timeout" = "15m"', id="quoted-key"),
 ]
 
 
@@ -383,7 +383,7 @@ def test_every_checkpoint_spelling_resolves_the_same_requirement(
     """
     assert _REQUIREMENT_PATH.is_file(), "the credential-requirement module is not written yet"
     shipped = _SHIPPED_WORKFLOW.read_text(encoding="utf-8")
-    assert 'commit_timeout = "10m"' in shipped, "the shipped config no longer declares the budget"
+    assert 'commit_timeout = "15m"' in shipped, "the shipped config no longer declares the budget"
     graph = _SHIPPED_WORKFLOW.with_name("workflow.fabro").read_text(encoding="utf-8")
 
     canonical = _resolve(
@@ -392,7 +392,7 @@ def test_every_checkpoint_spelling_resolves_the_same_requirement(
     respelled = _resolve(
         repo=_write_repo(
             tmp_path=tmp_path / "respelled",
-            workflow_toml=shipped.replace('commit_timeout = "10m"', spelling),
+            workflow_toml=shipped.replace('commit_timeout = "15m"', spelling),
             graph=graph,
         )
     )
@@ -419,7 +419,7 @@ def test_a_declared_checkpoint_budget_that_is_not_a_duration_refuses_rather_than
     refusal = _resolve(
         repo=_write_repo(
             tmp_path=tmp_path,
-            workflow_toml=shipped.replace('commit_timeout = "10m"', "commit_timeout = 600"),
+            workflow_toml=shipped.replace('commit_timeout = "15m"', "commit_timeout = 600"),
             graph=graph,
         )
     )
