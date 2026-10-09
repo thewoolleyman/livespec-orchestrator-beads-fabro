@@ -31,11 +31,22 @@ would reach another factory's server, and the record would look healthy. The
 stamp is also what makes a second preamble pass idempotent: the drain runs one
 per tick, and a pass that re-read its own write would mistake the
 factory-effective client for an operator's flag.
+
+AN UNUSABLE DECLARATION IS REFUSED BEFORE THE CLAIM, and it gets its own
+refusal rather than riding the global engine-binary preflight's. That preflight
+catches the same binary — the declared client IS the effective one — but it
+enumerates the global knobs, so an operator was told to fix
+`dispatcher.fabro_bin`, a key this dispatch never read. Refusing before the
+claim is the same reason the global preflight does: a client that cannot
+execute refuses nothing by itself, it fails at launch, after the item has
+already been admitted `ready -> active` with an assignee and no run to show
+for it.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._config import (
@@ -44,6 +55,7 @@ from livespec_orchestrator_beads_fabro.commands._config import (
 )
 
 __all__: list[str] = [
+    "factory_bin_refusal",
     "factory_effective_fabro_bin",
     "factory_fabro_bin",
     "resolve_dispatch_fabro_bin",
@@ -71,6 +83,29 @@ def factory_fabro_bin(*, factory: FactoryTarget | None, fallback: str) -> str:
     if factory is None or factory.fabro_bin is None:
         return fallback
     return factory.fabro_bin
+
+
+def factory_bin_refusal(*, factory: FactoryTarget | None) -> str | None:
+    """Refuse a declared `bin` that is not an existing executable file, else None.
+
+    The declared value must name a FILE: it is deliberately not resolved
+    through `PATH`, because a bare name would reintroduce exactly the ambiguity
+    the key exists to remove — which client a given factory speaks to would
+    again depend on the environment the Dispatcher happened to run in.
+    """
+    if factory is None or factory.fabro_bin is None:
+        return None
+    declared = factory.fabro_bin
+    if Path(declared).is_file() and os.access(declared, os.X_OK):
+        return None
+    return (
+        f"ERROR: factory {factory.name} declares"
+        f" dispatcher.factories.{factory.name}.bin {declared!r},"
+        " which is not an existing executable file; point it at the fabro"
+        f" client binary that matches factory {factory.name}'s server, or"
+        " remove the key to fall back to the global resolution"
+        " (LIVESPEC_FABRO_BIN, dispatcher.fabro_bin, $HOME/.fabro/bin/fabro)\n"
+    )
 
 
 def resolve_dispatch_fabro_bin(
