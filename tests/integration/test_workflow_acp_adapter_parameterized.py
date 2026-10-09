@@ -191,17 +191,44 @@ def test_scenario20_review_approve_edge_is_conditioned() -> None:
     ]
 
 
-def test_scenario20_review_cap_routes_to_escape_hatch_or_needs_human() -> None:
-    """Scenario 20: a still-blocking capped review ships only via the escape hatch."""
+def _code_text(*, text: str) -> str:
+    """The graph with its `//` comment lines dropped.
+
+    An absence assertion over the raw text cannot distinguish a token the graph
+    DECLARES from one its comments merely NAME while recording why it was
+    removed — and this graph's comments name every removed token deliberately.
+    """
+    return "\n".join(line for line in text.splitlines() if not line.strip().startswith("//"))
+
+
+def test_scenario20_review_routes_on_the_label_alone_with_no_cap_edges() -> None:
+    """Scenario 20: the three cap edges are gone; the review loop routes on the label.
+
+    Plan `fabro-currency` P4 (bd-ib-hti4zf) removed all three. Each read an
+    `inputs.*` token inside an edge condition, which the Petri-era engine rejects
+    AT LOAD with `attractor.condition.syntax` — those three errors are the entire
+    reason the candidate refused this graph in the 2026-10-08 Enemy Unit Test
+    comparison — and each also read `context.internal.node_visit_count`, which
+    that engine does not populate even when the cap is rendered to a literal.
+
+    WHAT THAT COSTS, pinned here rather than left to drift: `merge_on_review_cap
+    = true` has no graph expression any more, so the escape hatch cannot ship an
+    exhausted review budget. The `false` posture — do not ship, escalate to
+    blocked / needs-human — is what a `review_fix.max_visits` run failure
+    produces, so the DEFAULT survives and only the hatch is lost. Re-expressing
+    it needs an engine that evaluates a counter in a condition, or a contract
+    amendment; both are maintainer-owned.
+    """
     dot = _WORKFLOW_DOT.read_text(encoding="utf-8")
-    assert (
-        'condition="preferred_label=fix && context.internal.node_visit_count < {{ inputs.review_fix_visit_cap }}"'
-        in dot
-    )
-    assert 'label="ship on review cap"' in dot
-    assert "outcome={{ inputs.merge_on_review_cap_outcome }}" in dot
-    assert 'label="needs-human"' in dot
-    assert "outcome!={{ inputs.merge_on_review_cap_outcome }}" in dot
+    # Comment lines are stripped before the absence assertions: the graph's own
+    # comments NAME the removed tokens in order to record why they went, and a
+    # raw-text scan would read that record as the defect it documents.
+    code = _code_text(text=dot)
+    assert 'review -> disposition [label="fix", condition="preferred_label=fix"]' in code
+    assert 'label="ship on review cap"' not in code
+    assert "inputs.merge_on_review_cap_outcome" not in code
+    assert "inputs.review_fix_visit_cap" not in code
+    assert "context.internal.node_visit_count" not in code
     assert "advisory" not in dot
     assert "SHIP-ON-CAP" not in dot
 
@@ -212,11 +239,25 @@ def test_scenario20_review_has_unconditional_fallback_to_needs_human() -> None:
     assert 'review -> needs_human [label="unmatched review outcome"]' in fallback_edges
 
 
-def test_scenario20_review_fix_cap_counts_fix_rounds_not_review_visits() -> None:
-    """Scenario 20: default cap=3 yields exactly three disposition/fix rounds."""
+def test_scenario20_the_review_fix_loop_is_bounded_on_its_own_nodes() -> None:
+    """Scenario 20: the loop's bound is `max_visits` on the two nodes it drives.
+
+    `review_fix_visit_cap` is still DECLARED in the run config — the Dispatcher
+    renders it, and removing the input is a separate, maintainer-owned decision —
+    but since plan `fabro-currency` P4 no edge condition reads it, so it no
+    longer moves the bound. What does is the `max_visits` on `disposition` and
+    `review_fix`, asserted here, and exhausting it fails the run rather than
+    routing to a cap disposition.
+    """
     dot = _WORKFLOW_DOT.read_text(encoding="utf-8")
     toml = _WORKFLOW_TOML.read_text(encoding="utf-8")
     assert "review_fix_visit_cap = 4" in toml
-    assert "context.internal.node_visit_count < {{ inputs.review_fix_visit_cap }}" in dot
-    assert re.search(r"disposition \[.*?max_visits=10", dot, re.DOTALL) is not None
-    assert re.search(r"review_fix \[.*?max_visits=10", dot, re.DOTALL) is not None
+    assert "inputs.review_fix_visit_cap" not in _code_text(text=dot)
+    # THREE, which is what the retired `review_fix_visit_cap` guard admitted at
+    # the default cap of three fix rounds. The number is load-bearing: the
+    # execution-budget derivation reads it as the loop's bound now that the guard
+    # is gone, and the credential gate sizes a required credential lifetime from
+    # the result, so the retired backstop value of 10 would have raised the
+    # derived allowance past anything a real credential carries.
+    assert re.search(r"disposition \[.*?max_visits=3\n", dot, re.DOTALL) is not None
+    assert re.search(r"review_fix \[.*?max_visits=3\n", dot, re.DOTALL) is not None

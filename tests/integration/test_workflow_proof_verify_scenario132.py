@@ -258,25 +258,35 @@ def test_the_registered_variant_declares_the_verify_node_and_leaves_it_unreached
     assert not any(_VERIFY in edge for edge in _edges(text=_dot(payload=_VARIANT)))
 
 
-def test_the_review_ship_on_cap_edge_targets_proof_verify_and_no_review_edge_reaches_pr() -> None:
-    """The escape hatch skips the reviewer's approval and never the replay.
+def test_no_review_edge_reaches_pr_and_the_ship_on_cap_hatch_is_gone() -> None:
+    """Nothing publishes without the replay, and the escape hatch no longer exists.
 
-    `merge_on_review_cap` exists so an exhausted review budget can still ship;
-    the contract requires its edge to target `proof_verify`, never `pr`, so what
-    it skips is one opinion and not the proof. The APPROVE edge is retargeted for
-    the same reason, and the two are asserted together through the stronger
-    claim: NO `review -> pr` edge survives at all. Asserting only that the cap
-    edge moved would pass a graph where `approve` still published unreplayed —
-    which is the ordinary path, not the edge case.
+    THE SURVIVING CLAIM is the strong one: NO `review -> pr` edge exists, so the
+    replay dominates every publishing path. Asserting only that some cap edge
+    moved would pass a graph where `approve` still published unreplayed — which
+    is the ordinary path, not the edge case.
+
+    THE SHIP-ON-CAP EDGE IS ASSERTED ABSENT, and that is a change of behaviour
+    rather than of wording. `merge_on_review_cap = true` used to let an exhausted
+    review budget ship through `proof_verify`, by an edge conditioned on
+    `context.internal.node_visit_count >= {inputs.review_fix_visit_cap}` and a
+    rendered outcome token. Plan `fabro-currency` P4 removed it because BOTH
+    halves are refused by the Petri-era engine: an `inputs.*` token inside an
+    edge condition is an `attractor.condition.syntax` ERROR AT LOAD, and the
+    visit-count key is not populated even when rendered to a literal. Deciding
+    "the cap is reached" needs a counter the engine evaluates in a condition and
+    this engine supplies none, so the hatch has no expression left. The `false`
+    behaviour — do not ship, escalate to blocked / needs-human — survives as the
+    `review_fix.max_visits` run failure, so the DEFAULT posture is preserved and
+    only the hatch is lost. Re-expressing it is a maintainer-owned contract
+    question, which is why its absence is pinned here rather than left to drift.
     """
     review = _edges_from(text=_dot(payload=_BUNDLE), node="review")
 
     assert review, "the reserved workflow routes nothing out of review"
     assert not [edge for edge in review if _target_of(edge=edge) == "pr"]
-    hatch = [edge for edge in review if "ship on review cap" in edge]
-    assert len(hatch) == 1
-    assert _target_of(edge=hatch[0]) == _VERIFY
-    assert "merge_on_review_cap_outcome" in hatch[0]
+    assert not [edge for edge in review if "ship on review cap" in edge]
+    assert "merge_on_review_cap_outcome" not in "".join(review)
     approve = [edge for edge in review if 'label="approve"' in edge]
     assert len(approve) == 1
     assert _target_of(edge=approve[0]) == _VERIFY
@@ -334,42 +344,48 @@ def test_a_verified_verdict_is_the_only_thing_that_reaches_pr() -> None:
     assert "preferred_label=approve" in published[0]
 
 
-def test_a_non_reproduction_routes_to_fix_under_a_visit_bound_of_three() -> None:
-    """`not_reproduced` goes back to `fix`, and only below the third visit.
+def test_a_non_reproduction_routes_to_fix_bounded_by_the_shared_fix_budget() -> None:
+    """`not_reproduced` goes back to `fix`, and `fix.max_visits` is what bounds it.
 
-    The bound is read off the EDGE GUARD rather than off a node attribute, and
-    the guard is on this node's OWN visit count — the same shape the janitor fix
-    loop uses, for the same engine reason: a `max_visits` abort emits no outcome,
-    so nothing could route the exhaustion onward.
+    S6 read the bound off an EDGE GUARD on this node's own visit count, for a
+    correct reason: a `max_visits` abort emits no outcome, so nothing can route
+    the exhaustion onward. Plan `fabro-currency` P4 removed the guard anyway,
+    because the key it reads IS NOT POPULATED on the Petri-era engine (research
+    note 007, probe p3). There the conjunct is permanently false, so a
+    non-reproduction could never reach `fix` at all — it would take the
+    `needs_human` fallthrough on the FIRST failed replay, reporting an
+    unconverged slice as a parked one.
 
-    The literal `3` is asserted rather than a rendered input token, because
-    `constraints.md` forbids these nodes from referencing an `inputs.*` token
-    inside an edge condition: the pinned engine expands graph templates at
-    run-create time and an un-expanded token in a condition is a guard that
-    never matches.
+    The absent `inputs.` token is still asserted in its own right: the Petri-era
+    engine rejects such a token at load with `attractor.condition.syntax`, so one
+    written here does not merely fail to bind, it refuses the whole graph.
     """
     repaired = _verify_edges_to(target="fix")
 
     assert len(repaired) == 1, f"expected exactly one proof_verify -> fix edge, got {repaired}"
-    assert "preferred_label=fix" in repaired[0]
-    assert "context.internal.node_visit_count < 3" in repaired[0]
+    assert 'condition="preferred_label=fix"' in repaired[0]
+    assert "context.internal.node_visit_count" not in repaired[0]
     assert "inputs." not in repaired[0]
 
 
-def test_the_third_non_reproduction_routes_to_the_non_converged_terminal() -> None:
-    """Exhaustion reaches the EXISTING terminal, not a new one and not a park.
+def test_replay_exhaustion_has_no_routed_terminal_on_this_engine() -> None:
+    """The exhaustion EDGE is gone, and its absence is the assertion.
 
-    `non_converged` is what the Dispatcher reads as `needs-regroom`: a slice
-    whose proof will not replay three times running is the empirical too-big
-    signal and belongs in grooming. Its guard is asserted as the exact
-    complement of the `fix` edge's, so no verdict can fall between the two.
+    S6 paired the `< 3` guard with a complementary `>= 3` edge to
+    `non_converged`, so no verdict could fall between the two into the
+    fallthrough. Plan `fabro-currency` P4 removed BOTH, because the visit-count
+    key is not populated on the Petri-era engine and a half-removed pair is the
+    gap the complement existed to close.
+
+    WHAT THAT COSTS, asserted rather than left implicit: replay-loop exhaustion
+    no longer reaches `non_converged` and no longer emits LIVESPEC_NON_CONVERGED
+    for the Dispatcher to read as `needs-regroom`. It arrives as a
+    `fix.max_visits` RUN FAILURE instead.
     """
-    exhausted = _verify_edges_to(target="non_converged")
-
-    assert len(exhausted) == 1, f"expected one proof_verify -> non_converged edge, {exhausted}"
-    assert "preferred_label=fix" in exhausted[0]
-    assert "context.internal.node_visit_count >= 3" in exhausted[0]
-    assert "inputs." not in exhausted[0]
+    assert _verify_edges_to(target="non_converged") == []
+    assert "context.internal.node_visit_count" not in "".join(
+        _edges_from(text=_dot(payload=_BUNDLE), node=_VERIFY)
+    )
 
 
 def test_a_failed_replay_parks_and_an_unmatched_verdict_falls_through_to_needs_human() -> None:
@@ -398,27 +414,28 @@ def test_a_failed_replay_parks_and_an_unmatched_verdict_falls_through_to_needs_h
     assert "weight=100" in blocked[0]
 
 
-def test_the_fix_backstop_outlives_every_graceful_bound_that_now_feeds_it() -> None:
-    """`fix.max_visits` is an abort backstop, and three nodes now route into it.
+def test_the_fix_budget_admits_every_loop_that_now_feeds_it() -> None:
+    """`fix.max_visits` IS the bound, and three nodes route into it.
 
-    This is the one existing node the replay edge changes the arithmetic of, and
-    the change is not cosmetic. A node that reaches `max_visits` ABORTS the run at
-    entry (`VisitLimitExceeded`) and emits NO outcome, so no edge can route the
-    exhaustion onward — the run simply dies with nothing to read. Before this
-    slice, `fix` was fed by the janitor loop's two attempts and by
-    `proof_capture`; `max_visits=3` was the documented "unreachable unless this
-    routing regresses" backstop against that.
+    A node that reaches `max_visits` ABORTS the run at entry
+    (`VisitLimitExceeded` on the pinned engine; a firing-budget failure on the
+    Petri-era one) and emits NO outcome, so no edge can route the exhaustion
+    onward — the run simply dies with nothing to read. That is why this value was
+    historically a BACKSTOP above three graceful `< 3` edge guards.
 
-    Adding `proof_verify -> fix` makes it reachable on the ORDINARY contract path:
-    the janitor's two Red attempts plus two non-reproductions is a FOURTH `fix`
-    entry, so the run would abort on the very route the contract requires to
-    converge. The backstop is therefore raised to the value the repository already
-    uses for exactly this role on `disposition` and `review_fix`, and the three
-    are compared to each other rather than to a number written only here.
+    SINCE plan `fabro-currency` P4 IT IS THE ONLY BOUND. The three guards are
+    gone, because `context.internal.node_visit_count` is not populated on the
+    Petri-era engine and a guard reading it blocks its route outright there. So
+    the value is sized to exactly what those guards admitted — two entries per
+    producer — which keeps the derived execution budget, and therefore the
+    required credential lifetime, identical to the pre-port graph's. It is NO
+    LONGER equal to `disposition` and `review_fix`, which bound a different loop
+    with a different number of rounds; asserting the three equal would now be
+    asserting a coincidence.
 
-    The PRODUCER COUNT is asserted as the tripwire. The graceful bounds live on
-    the edges, so a fourth node routing into `fix` would silently re-open this gap
-    — and this is the assertion that notices.
+    The PRODUCER COUNT is asserted as the tripwire: a fourth node routing into
+    `fix` would silently halve somebody's share, and this is the assertion that
+    notices.
     """
     text = _dot(payload=_BUNDLE)
     producers = {
@@ -432,10 +449,8 @@ def test_the_fix_backstop_outlives_every_graceful_bound_that_now_feeds_it() -> N
     }
     assert all(match is not None for match in budgets.values()), budgets
     values = {node: int(match.group("value")) for node, match in budgets.items() if match}
-    assert values["fix"] == values["disposition"] == values["review_fix"]
-    # The janitor loop admits two `fix` attempts and the replay admits two more,
-    # so four is reachable; the backstop must sit strictly above that.
-    assert values["fix"] > 4
+    assert values["fix"] == 2 * len(producers)
+    assert values["disposition"] == values["review_fix"]
 
 
 def test_the_review_prompt_reviews_the_latest_captured_record_alongside_the_code() -> None:

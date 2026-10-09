@@ -188,35 +188,18 @@ digraph ImplementWorkItem {
         script="{{ inputs.sandbox_check_suite }}"
     ]
 
-    // max_visits=6 IS THE BOUND for every loop that enters this node, and since
-    // plan `fabro-currency` P4 (bd-ib-hti4zf) it is the ONLY one. Three loops
-    // route here — the janitor's Red, a `proof_capture` finding and a
-    // `proof_verify` non-reproduction — and each used to carry its own graceful
-    // `context.internal.node_visit_count < 3` edge guard, admitting two entries
-    // apiece, with a `max_visits=10` backstop behind the three. Those guards are
-    // gone: the key is not populated on the Petri-era engine (research note 007,
-    // probe p3), so on the candidate they made their conjuncts permanently false
-    // and no Red, no capture finding and no failed replay could reach this node
-    // at all.
-    //
-    // THE VALUE IS 6 BECAUSE 6 IS WHAT THE THREE RETIRED GUARDS ADMITTED, and
-    // this number is now load-bearing in a way the backstop was not. The
-    // execution-budget derivation (`_dispatcher_execution_budget`) reads this
-    // attribute as the loop's bound and the credential gate sizes a REQUIRED
-    // CREDENTIAL LIFETIME from the result, so leaving it at the old 10 raised the
-    // derived allowance from 82 hours to 186 and the gate would then have
-    // refused every Codex-projecting dispatch for a lifetime no real credential
-    // carries. At 6 — with `disposition` and `review_fix` at 3 for the same
-    // reason — the derivation reproduces the pre-port allowance of 295680
-    // seconds and the pre-port visit table exactly, so the port changes HOW the
-    // budget is expressed and not how large it is.
-    //
-    // Exhausting it is a RUN FAILURE rather than a route: a node that reaches
-    // max_visits aborts at entry (the pinned engine's VisitLimitExceeded; the
-    // candidate reports that the node exceeded its firing budget) emitting NO
-    // outcome, so no edge can route the exhaustion onward. That is the trade the
-    // measurement forces — a graceful, routable exhaustion needs a counter the
-    // engine evaluates in a condition, and this engine supplies none.
+    // max_visits=10 is the ungraceful runaway-loop backstop, raised from 3 by
+    // S6 / bd-ib-msnlnv. It MUST exceed every GRACEFUL bound that routes here,
+    // summed, and three nodes now carry one apiece: the janitor's own `< 3` visit
+    // guard (two Red attempts), `proof_capture` on a capture finding under its
+    // `< 3` guard (two more, added in v115), and `proof_verify` on a
+    // non-reproduction under its own `< 3` guard (two more again). SIX entries are
+    // therefore reachable on the ordinary contract path, and a node that reaches
+    // max_visits ABORTS the run at entry (VisitLimitExceeded) emitting NO outcome
+    // — so the run would die with nothing for any edge to route and nothing in the
+    // record to explain it. The graceful bounds all live on the edges; this is
+    // only the backstop behind them, at the same value `disposition` and
+    // `review_fix` carry for exactly this role.
     fix [
         label="Fix gate or proof findings"
         backend="acp"
@@ -225,7 +208,7 @@ digraph ImplementWorkItem {
         // requesting a fix. Preserve their exact source-labelled findings.
         fidelity="summary:high"
         timeout="1800s"
-        max_visits=6
+        max_visits=10
         prompt="@prompts/fix.md"
     ]
 
@@ -324,13 +307,13 @@ digraph ImplementWorkItem {
     // its own rather than a consequence of the implementer tier moving.
     //
     // max_retries=1 is the same bn4 retry discipline every ACP node here carries.
-    // Deliberately NO max_visits: the node is reached once per green janitor, so
-    // its visit count tracks the review loop's, and a max_visits here would
-    // hard-abort (VisitLimitExceeded) on the very visit that must re-capture for a
-    // re-reviewed tree. Its capture-finding route is bounded by `fix.max_visits`
-    // instead (plan `fabro-currency` P4): the `< 3` visit guard this node's edge
-    // used to carry is gone, because the key it read is not populated on the
-    // Petri-era engine and the guard therefore blocked the route outright there.
+    // Deliberately NO max_visits, now for two reasons: the node is reached once
+    // per green janitor, so its visit count tracks the review loop's, and a
+    // max_visits here would hard-abort (VisitLimitExceeded) on the very visit that
+    // must re-capture for a re-reviewed tree — and, since v115, on the very visit
+    // that must route the third capture finding to `non_converged`. The graceful
+    // bound is the `< 3` guard on this node's own visit count below, exactly as
+    // `proof_verify` and the janitor fix loop carry theirs on an edge.
     proof_capture [
         label="Capture Proof of Done on the draft PR (read-only on the tree)"
         backend="acp"
@@ -369,13 +352,11 @@ digraph ImplementWorkItem {
     // carefully its proof should be replayed.
     //
     // max_retries=1 is the same bn4 retry discipline every ACP node here carries.
-    // Deliberately NO max_visits: the node is re-entered once per review round, so
-    // a max_visits here would hard-abort (VisitLimitExceeded) on a visit that must
-    // replay a re-reviewed tree. Its non-reproduction route is bounded by
-    // `fix.max_visits` instead (plan `fabro-currency` P4): the `< 3` visit guard
-    // this node's edge used to carry is gone, because the key it read is not
-    // populated on the Petri-era engine and the guard therefore blocked the route
-    // outright there.
+    // Deliberately NO max_visits: the graceful bound is the `< 3` guard on this
+    // node's own visit count below, and a max_visits here would hard-abort
+    // (VisitLimitExceeded) on the very visit that must route the third
+    // non-reproduction to `non_converged` — the same reason `janitor` carries the
+    // fix-loop guard on an edge rather than as a node attribute.
     proof_verify [
         label="Replay the Proof of Done on this tree (read-only on the tree)"
         backend="acp"
@@ -506,11 +487,11 @@ digraph ImplementWorkItem {
     // OWN env (ANTHROPIC_MODEL + CLAUDE_CODE_EFFORT_LEVEL) — NOT a node
     // attr or a model_stylesheet. max_retries=1 gives a transient ACP
     // blip one auto-retry before the `outcome=failed` edge escalates.
-    // Deliberately NO max_visits: the review<->review_fix loop is bounded on the
-    // nodes it drives (`disposition.max_visits` and `review_fix.max_visits`), and a
-    // max_visits here would hard-abort (VisitLimitExceeded) on a visit that must
-    // still route an approve to the replay. The review edge's own visit guard is
-    // gone — see the routing comment below for what that costs.
+    // Deliberately NO max_visits: the review<->review_fix loop is bounded
+    // GRACEFULLY by the edge guard below (on review's own visit count); a
+    // max_visits here would hard-abort (VisitLimitExceeded) on the very
+    // visit that must route to either PR (escape hatch) or needs-human
+    // escalation.
     review [
         label="Review (Claude Opus 4.8): correctness + senior-engineer design lens"
         backend="acp"
@@ -527,28 +508,16 @@ digraph ImplementWorkItem {
     // one-line rationale. It has its own adapter input so the maintainer can
     // pin adjudication independently from both review and implementation.
     //
-    // max_visits=3 IS THE BOUND for the review<->review_fix loop, together with
-    // `review_fix.max_visits` (plan `fabro-currency` P4). It was a `max_visits=10`
-    // backstop behind the review edge's `review_fix_visit_cap` visit guard; that
-    // guard is gone, because an `inputs.*` token inside an edge condition is an
-    // `attractor.condition.syntax` ERROR on the Petri-era engine and the
-    // visit-count key it compared is not populated there either.
-    //
-    // THE VALUE IS 3 BECAUSE 3 IS WHAT THE RETIRED GUARD ADMITTED at the default
-    // `dispatcher.review_fix_cap` of three fix rounds, and the number is now
-    // load-bearing: the execution-budget derivation reads it as the bound and the
-    // credential gate sizes a required credential lifetime from the result, so
-    // the retired 10 would have raised the derived allowance past anything a real
-    // credential carries. Consequence, recorded on the routing comment below:
-    // `dispatcher.review_fix_cap` and its per-item label no longer move this
-    // bound, so an item asking for more or fewer rounds gets three.
+    // max_visits=10 is the ungraceful runaway-loop backstop. It MUST exceed
+    // the largest supported review_fix_visit_cap override; the graceful
+    // bound remains the review edge guard below.
     disposition [
         label="Disposition review findings"
         backend="acp"
         acp.command="{{ inputs.disposition_adapter }}"
         timeout="1800s"
         max_retries=1
-        max_visits=3
+        max_visits=10
         prompt="@prompts/disposition.md"
     ]
 
@@ -560,16 +529,15 @@ digraph ImplementWorkItem {
     // two fix budgets. Mirrors `fix` (implementer adapter, re-enters
     // janitor).
     //
-    // max_visits=3 IS THE BOUND for the review<->review_fix loop, together with
-    // `disposition.max_visits` — see that node's comment for why the review edge's
-    // `review_fix_visit_cap` visit guard is gone, why the value is 3, and what it
-    // costs.
+    // max_visits=10 is the ungraceful runaway-loop backstop. It MUST exceed
+    // the largest supported review_fix_visit_cap override; the graceful
+    // bound remains the review edge guard below.
     review_fix [
         label="Implement accepted review findings"
         backend="acp"
         acp.command="{{ inputs.review_fix_adapter }}"
         timeout="1800s"
-        max_visits=3
+        max_visits=10
         prompt="@prompts/review-fix.md"
     ]
 
@@ -611,33 +579,22 @@ digraph ImplementWorkItem {
     // (commands/_dispatcher_plan.NEEDS_HUMAN_MARKER) — keep the two in
     // lockstep, exactly as LIVESPEC_NON_CONVERGED is.
     //
-    // THE RUN ID ARRIVES ON STDIN, FROM THE ENGINE'S OWN CONTEXT, and that is a
-    // change of SOURCE rather than of policy (plan `fabro-currency` P4,
-    // bd-ib-hti4zf). The ref used to be derived from `$FABRO_RUN_ID`, which the
-    // pinned fabro exports to HOOKS ONLY and never to a script node -- so the
-    // variable was reliably absent here and the step reliably pushed nothing.
-    // The Petri-era engine supplies run identity to a script node through
-    // `stdin_source`, so the node declares `stdin_source="context.internal.run_id"`
-    // and the script reads the id off stdin.
-    //
-    // THERE IS STILL DELIBERATELY NO PLACEHOLDER FALLBACK, for the reason the
-    // variable form had none: a `${id:-<placeholder>}` shape silently collapsed
-    // every run onto ONE shared ref, so the second needs-human exit clobbered or
-    // failed against the first and the console's needs-human valve could not find
-    // the tree it was asked to rule on. With no id on stdin the step therefore
-    // pushes NOTHING and says so loudly on stderr
-    // (LIVESPEC_NEEDS_HUMAN_NO_RUN_ID), leaving the operator on the
-    // preserve-by-reference dump pointer. That absent-id arm is also what keeps
-    // ONE graph running on BOTH engines through the parallel rollout: the pinned
-    // build supplies no stdin here, so it takes the no-id arm exactly as it does
-    // today, and the run-scoped ref appears on the Petri-era engine with no
-    // further change.
+    // The ref is derived ONLY from FABRO_RUN_ID; there is deliberately NO
+    // placeholder fallback. The pinned fabro exports that variable to HOOKS
+    // only, never to script nodes, so a `${FABRO_RUN_ID:-<placeholder>}`
+    // form silently collapsed every run onto ONE shared ref: the second
+    // needs-human exit clobbered or failed against the first, and the
+    // console's needs-human valve could not find the tree it was asked to
+    // rule on. With no id in the environment the step therefore pushes
+    // NOTHING and says so loudly on stderr (LIVESPEC_NEEDS_HUMAN_NO_RUN_ID),
+    // leaving the operator on the preserve-by-reference dump pointer; the
+    // run-scoped ref reappears with no change here once the fork half
+    // (bd-ib-bb41.1) exports the run id to script nodes and is re-pinned.
     needs_human [
         label="Needs human: terminate, preserve the tree, route the decision to the ledger"
         shape=parallelogram
         timeout="600s"
-        stdin_source="context.internal.run_id"
-        script="run_id=''; read -r run_id 2>/dev/null || true; if test -n \"$run_id\"; then ref=\"refs/heads/needs-human/$run_id\"; git add -A >/dev/null 2>&1 || true; GIT_AUTHOR_NAME=\"${LIVESPEC_GIT_AUTHOR_NAME:?missing LIVESPEC_GIT_AUTHOR_NAME}\" GIT_AUTHOR_EMAIL=\"${LIVESPEC_GIT_AUTHOR_EMAIL:?missing LIVESPEC_GIT_AUTHOR_EMAIL}\" git commit -q -m 'needs-human: preserve tree before terminating' >/dev/null 2>&1 || true; if git push origin \"HEAD:$ref\" >/dev/null 2>&1; then echo \"LIVESPEC_NEEDS_HUMAN_PRESERVED: $ref\" >&2; else echo 'LIVESPEC_NEEDS_HUMAN_PUSH_FAILED: tree not pushed; rely on the preserve-by-reference dump pointer' >&2; fi; else echo 'LIVESPEC_NEEDS_HUMAN_NO_RUN_ID: no run id arrived on the stdin of this script node, so no run-scoped ref exists to push and nothing was pushed; rely on the preserve-by-reference dump pointer' >&2; fi; echo 'LIVESPEC_NEEDS_HUMAN: loop cannot auto-resolve this work-item; run terminated, work preserved by reference, decision routed to the ledger (blocked / needs-human)' >&2; exit 1"
+        script="if test -n \"${FABRO_RUN_ID:-}\"; then ref=\"refs/heads/needs-human/$FABRO_RUN_ID\"; git add -A >/dev/null 2>&1 || true; GIT_AUTHOR_NAME=\"${LIVESPEC_GIT_AUTHOR_NAME:?missing LIVESPEC_GIT_AUTHOR_NAME}\" GIT_AUTHOR_EMAIL=\"${LIVESPEC_GIT_AUTHOR_EMAIL:?missing LIVESPEC_GIT_AUTHOR_EMAIL}\" git commit -q -m 'needs-human: preserve tree before terminating' >/dev/null 2>&1 || true; if git push origin \"HEAD:$ref\" >/dev/null 2>&1; then echo \"LIVESPEC_NEEDS_HUMAN_PRESERVED: $ref\" >&2; else echo 'LIVESPEC_NEEDS_HUMAN_PUSH_FAILED: tree not pushed; rely on the preserve-by-reference dump pointer' >&2; fi; else echo 'LIVESPEC_NEEDS_HUMAN_NO_RUN_ID: no FABRO_RUN_ID in this script environment, so no run-scoped ref exists to push and nothing was pushed; rely on the preserve-by-reference dump pointer' >&2; fi; echo 'LIVESPEC_NEEDS_HUMAN: loop cannot auto-resolve this work-item; run terminated, work preserved by reference, decision routed to the ledger (blocked / needs-human)' >&2; exit 1"
     ]
 
     // Terminal non-converged node (work-item livespec-impl-beads-rw75ym,
@@ -645,15 +602,9 @@ digraph ImplementWorkItem {
     // exhaustion BACK to the Dispatcher (-> needs-regroom) within Fabro's
     // EXISTING DOT vocabulary — a plain dead-end command node, the same
     // shape the `abandon` terminal uses, requiring NO Fabro platform or
-    // setup change. SINCE plan `fabro-currency` P4 THIS TERMINAL IS THE
-    // JANITOR'S REQUIRED UNCONDITIONAL FALLTHROUGH RATHER THAN A REACHABLE CAP
-    // ROUTE: the `< 3` visit guard that used to send the third Red here is gone
-    // (the key is not populated on the Petri-era engine), so the janitor's two
-    // conditional edges partition every outcome and fix-loop exhaustion now
-    // arrives as a `fix.max_visits` RUN FAILURE instead. It is kept because fabro
-    // rejects a node whose every outgoing edge carries a condition, and because
-    // restoring a routable non-convergence signal needs only a counter the engine
-    // will evaluate in a condition. The script
+    // setup change. The fix-loop CAP is the unchanged `< 3` visit guard on
+    // the janitor->fix edge below (two fix attempts); the THIRD Red, which
+    // used to park at the human gate, now routes HERE instead. The script
     // emits the LIVESPEC_NON_CONVERGED sentinel to stderr and exits 1
     // (deterministic, never-retried), so the run terminates non-green and
     // the foreground `fabro run` surfaces the sentinel in its output. The
@@ -708,42 +659,37 @@ digraph ImplementWorkItem {
     implementation_diff -> janitor          [label="changed", condition="outcome=succeeded"]
     implementation_diff -> dead_implementer [label="unchanged or unprovable"]
 
-    // Janitor outcome routing: exit 0 -> Green -> publish_draft; non-zero ->
-    // Red -> fix, bounded by `fix.max_visits`.
+    // Janitor outcome routing: exit 0 -> Green -> review (-> pr on
+    // approve); non-zero -> Red -> fix while the loop budget remains,
+    // then Exhausted -> non_converged.
     //
-    // THE FIX-LOOP CAP MOVED FROM THIS EDGE ONTO `fix.max_visits` (plan
-    // `fabro-currency` P4, bd-ib-hti4zf), and the reason is a MEASUREMENT on the
-    // Petri-era engine rather than a preference. This edge used to carry
-    // `context.internal.node_visit_count < 3` as a graceful guard, with
-    // `fix.max_visits` as the ungraceful backstop behind it. On the candidate
-    // `v0.378.0-nightly.0` that key IS NOT POPULATED: research-note-007 probe p3
-    // looped ZERO times, because routing took the unconditional edge at visit 1.
-    // So the guard does not merely stop capping on the new engine — it makes the
-    // whole conjunct false, the Red never reaches `fix` at all, and every Red run
-    // falls straight through to `non_converged` on its FIRST janitor failure.
-    // Probe p3f showed the cap that does work: `max_visits=N` fails the run
-    // deterministically after N firings.
+    // The fix-loop CAP is enforced HERE, as a visit guard on the
+    // janitor's own visit count, NOT by fix's max_visits alone:
+    // verified against fabro v0.254.0 source (fabro-core executor.rs),
+    // a node that reaches max_visits ABORTS the whole run at entry
+    // (Error::VisitLimitExceeded) — it does NOT emit outcome=failed,
+    // so no edge could route the exhaustion onward. Janitor visit N means
+    // N-1 completed fix attempts; the `< 3` guard allows two fix attempts,
+    // then the third Red falls through to the `non_converged` terminal.
+    // fix's max_visits is the abort backstop behind that guard, and it is no
+    // longer sized against this loop alone: `proof_capture` and `proof_verify`
+    // route here too, so it sits at 10 (see the node's own comment above).
     //
-    // WHAT THAT COSTS, STATED RATHER THAN HIDDEN. A `max_visits` abort is a run
-    // FAILURE, not a route, so exhausting the fix budget no longer reaches the
-    // `non_converged` terminal and no longer emits LIVESPEC_NON_CONVERGED — the
-    // Dispatcher sees a failed run instead of a `needs-regroom` bounce. The
-    // `non_converged` terminal therefore survives below as this node's required
-    // UNCONDITIONAL fallthrough (fabro rejects a node whose every outgoing edge
-    // carries a condition — `all_conditional_edges`, the defect that took the
-    // whole factory down twice) rather than as a reachable cap route: the two
-    // conditional edges above it partition every outcome between them. Restoring
-    // a graceful, routable non-convergence signal needs a counter the engine
-    // carries into a condition, which this engine does not supply.
-    //
-    // S5 / bd-ib-b4u6b7: the Green edge targets `publish_draft`, which publishes
-    // the draft pull request and falls through to `proof_capture`;
+    // Scenario 14 (work-item livespec-impl-beads-rw75ym): the Exhausted
+    // edge routes to `non_converged` (the non-converged EXIT EDGE back to
+    // the Dispatcher -> needs-regroom), NOT to `escalate`. A non-converging
+    // slice is the empirical "too big" signal and belongs in grooming, not
+    // the in-loop human gate — the Dispatcher marks it `needs-regroom` and
+    // surfaces it (escalate-don't-drop), rather than the operator answering
+    // [R]/[I]/[A] only to face the same non-convergence again.
+    // S5 / bd-ib-b4u6b7: the Green edge now targets `publish_draft`, which
+    // publishes the draft pull request and falls through to `proof_capture`;
     // `proof_capture` is what reaches `review`. The old direct `janitor -> review`
     // edge is GONE on purpose — leaving it in place would let every run reach the
     // reviewer with no draft and no captured record while both new nodes still
     // existed, and the graph would still look correct.
     janitor -> publish_draft [label="Green", condition="outcome=succeeded"]
-    janitor -> fix [label="Red", condition="outcome!=succeeded"]
+    janitor -> fix [label="Red", condition="outcome!=succeeded && context.internal.node_visit_count < 3"]
     janitor -> non_converged [label="Exhausted (fix-loop cap)"]
     fix -> janitor
 
@@ -763,77 +709,82 @@ digraph ImplementWorkItem {
     // converge; a FAILED outcome is the structured needs-human ending every other
     // ACP node shares. `review` is the ordinary unconditional fallthrough.
     //
-    // THE FIX ROUTE'S BOUND IS `fix.max_visits` (plan `fabro-currency` P4,
-    // bd-ib-hti4zf), not a visit guard on this edge. v115 / bd-ib-2s3kkq added a
-    // `context.internal.node_visit_count < 3` guard here and a complementary
-    // `>= 3` edge to `non_converged`, for the sound reason that a max_visits
-    // abort cannot be routed onward. Both are GONE because the key they read is
-    // not populated on the Petri-era engine (research note 007, probe p3): with
-    // the guard in place, a capture finding could never reach `fix` on the
-    // candidate at all — the conjunct is always false — and the finding would
-    // slip into the `review` fallthrough and reach the reviewer unreported,
-    // which is precisely the hole the two complementary guards existed to close.
-    // Routing on `preferred_label` alone closes it on both engines; the budget is
-    // `fix.max_visits`, shared with the janitor and replay loops that also enter
-    // `fix`, and exhausting it fails the run rather than reaching `non_converged`.
+    // THE FIX ROUTE IS CAPPED (v115, work-item bd-ib-2s3kkq), and until it was,
+    // this was the one proof edge carrying no bound at all. `proof_verify` has
+    // had a `< 3` guard since S6; this edge had none, so a capture that kept
+    // finding the same defect re-entered `fix` until `fix.max_visits` aborted the
+    // run AT ENTRY (VisitLimitExceeded) emitting NO outcome — the run died with
+    // nothing for any edge to route and nothing in the record to explain it.
+    //
+    // The guard is the same shape and the same literal as the replay's, for the
+    // same two reasons. It reads this node's OWN visit count rather than relying
+    // on `max_visits`, because a max_visits abort cannot be routed onward. And
+    // the bound is a LITERAL 3 rather than a rendered input, because
+    // constraints.md forbids these nodes from referencing an `inputs.*` token
+    // inside an edge condition: the engine expands graph templates at run-create
+    // time, so an un-expanded token in a condition is a guard that never matches
+    // — it would read as present and bound nothing. Visits 1 and 2 route a
+    // capture finding back to `fix`; the THIRD falls to `non_converged`, which the
+    // Dispatcher reads as `needs-regroom` — a Definition of Done that will not
+    // capture three times running is the empirical too-big signal and belongs in
+    // grooming. The two guards are exact complements (`< 3` and `>= 3`), so no
+    // `fix` verdict can slip between them into the `review` fallthrough and reach
+    // the reviewer with the defect unreported.
+    //
+    // THE GUARD COUNTS VISITS, NOT FINDINGS, and the difference is real rather
+    // than pedantic: this node is re-entered once per accepted review-fix round
+    // too, so a run that spends two review rounds before its first capture
+    // finding sends that FIRST finding to `non_converged`. Counting findings would
+    // need state the engine does not carry on an edge, and of the two directions
+    // this is the conservative one — an exhausted slice reaches grooming rather
+    // than looping. The contract calls these visit caps for that reason.
     proof_capture -> needs_human [label="Blocked", condition="outcome=failed", weight=100]
-    proof_capture -> fix [label="capture needs a code change", condition="preferred_label=fix"]
+    proof_capture -> fix [label="capture needs a code change", condition="preferred_label=fix && context.internal.node_visit_count < 3"]
+    proof_capture -> non_converged [label="Exhausted (proof-capture cap)", condition="preferred_label=fix && context.internal.node_visit_count >= 3"]
     proof_capture -> review
 
     // Review gate routing (Slice A / bd-ib-egms32, blocking-by-default
     // revision bd-ib-6ytmik). The review node emits a routing verdict
     // (prompts/review.md) -> {"preferred_next_label": "approve"|"fix"}
-    // on its last line.
+    // on its last line. fabro renders the `inputs.*` tokens below at
+    // run-create time; the Dispatcher passes the effective per-item policy
+    // values, and workflow.toml supplies the safe defaults for direct runs.
     //
-    // THE THREE REVIEW-CAP CONDITIONS ARE GONE, and this is the single largest
-    // behavioural consequence of plan `fabro-currency` P4 (bd-ib-hti4zf). They
-    // read `context.internal.node_visit_count` against a rendered
-    // `inputs.review_fix_visit_cap`, and BOTH halves are refused by the
-    // Petri-era engine: an `inputs.*` token inside an edge condition is an
-    // `attractor.condition.syntax` ERROR AT LOAD — those three errors are the
-    // entire reason the candidate rejected this graph in the 2026-10-08 Enemy
-    // Unit Test comparison, so the graph could not be dispatched at all — and the
-    // visit-count key is not populated, so even rendered to a literal the guard
-    // never fires (research note 007, probe p3).
+    // `review_fix_visit_cap` is intentionally one larger than the configured
+    // `dispatcher.review_fix_cap`: the setting counts FIX ROUNDS, while
+    // `context.internal.node_visit_count` counts review VISITS including the
+    // first review. The default cap=3 therefore renders as visit guard `< 4`,
+    // allowing exactly three disposition/review_fix rounds before a fourth
+    // blocking review reaches the cap disposition. disposition.max_visits and
+    // review_fix.max_visits are hard abort backstops for the same budget and
+    // MUST exceed the largest supported review_fix_visit_cap override.
     //
-    // WHAT THAT COSTS, STATED RATHER THAN HIDDEN, because two configured dials
-    // lose their graph expression here and nothing else in the graph can carry
-    // them. Deciding "the cap is reached" needs a COUNTER the engine will
-    // evaluate in a condition, and the Petri-era engine supplies none; the cap
-    // that does work, `max_visits`, FAILS THE RUN rather than routing, so it
-    // cannot express a ship-on-cap route at all. Therefore:
-    //
-    //   - `dispatcher.review_fix_cap` (and its per-item label) no longer bounds
-    //     the loop. The bound is `review_fix.max_visits` / `disposition.max_visits`
-    //     below, which are literals this graph declares.
-    //   - `dispatcher.merge_on_review_cap = true` has NO effect: the ship-on-cap
-    //     edge to `proof_verify` is gone. The `false` behaviour — do not ship, the
-    //     item escalates to blocked / needs-human — is what a `max_visits` run
-    //     failure produces, so the DEFAULT posture is preserved and only the
-    //     escape hatch is lost.
-    //
-    // Both are maintainer-owned follow-ups rather than something this port could
-    // decide: restoring them needs either an engine that evaluates a counter in a
-    // condition, or a contract amendment that re-expresses the cap.
-    //
-    // S6 / bd-ib-msnlnv: no `review -> pr` edge remains, and the APPROVE edge
-    // targets `proof_verify`. Approve is the ORDINARY path, so leaving it on `pr`
-    // would publish almost every run unreplayed. Nothing reaches `pr` except
-    // through the replay, which is what makes "no unreplayed proof ships" a
-    // property of the graph rather than of the reviewer's mood.
+    // S6 / bd-ib-msnlnv: BOTH former `review -> pr` edges now target
+    // `proof_verify`, and no `review -> pr` edge remains. The contract requires it
+    // of the ship-on-review-cap edge specifically — `merge_on_review_cap` must
+    // skip only the reviewer's approval and never the replay — and the APPROVE
+    // edge moves for the same reason one step sharper: approve is the ORDINARY
+    // path, so leaving it on `pr` would publish almost every run unreplayed while
+    // the escape hatch alone looked correct. Nothing reaches `pr` except through
+    // the replay now, which is what makes "no unreplayed proof ships" a property
+    // of the graph rather than of the reviewer's mood.
     //
     // Routing:
-    //   - approve       -> proof_verify, by explicit condition only.
-    //   - fix           -> disposition, then accepted findings route to
-    //                      review_fix and all-rejected rounds route directly
-    //                      back to review; the budget is review_fix.max_visits.
-    //   - node failure  -> needs_human; weight=100 keeps that deterministic
-    //                      against other conditions.
-    //   - anything else -> needs_human, the unconditional fallthrough that keeps
-    //                      `all_conditional_edges` from rejecting this node.
+    //   - approve                 -> proof_verify, by explicit condition only.
+    //   - fix & under cap         -> disposition, then accepted findings route
+    //                                to review_fix and all-rejected rounds
+    //                                route directly back to review.
+    //   - fix & cap + escape hatch -> proof_verify, only when merge_on_review_cap
+    //                                is rendered to outcome=succeeded.
+    //   - fix & cap + default      -> needs_human; the reviewer said fix
+    //                                this, so the run must not ship.
+    //   - node failure             -> needs_human; weight=100 keeps that
+    //                                deterministic against other conditions.
     review -> needs_human [label="Blocked", condition="outcome=failed", weight=100]
-    review -> disposition [label="fix", condition="preferred_label=fix"]
+    review -> disposition [label="fix", condition="preferred_label=fix && context.internal.node_visit_count < {{ inputs.review_fix_visit_cap }}"]
     review -> proof_verify [label="approve", condition="preferred_label=approve"]
+    review -> proof_verify [label="ship on review cap", condition="preferred_label=fix && context.internal.node_visit_count >= {{ inputs.review_fix_visit_cap }} && outcome={{ inputs.merge_on_review_cap_outcome }}"]
+    review -> needs_human [label="needs-human", condition="preferred_label=fix && context.internal.node_visit_count >= {{ inputs.review_fix_visit_cap }} && outcome!={{ inputs.merge_on_review_cap_outcome }}"]
     review -> needs_human [label="unmatched review outcome"]
     disposition -> needs_human [label="Blocked", condition="outcome=failed", weight=100]
     disposition -> review_fix [label="fix accepted", condition="preferred_label=fix"]
@@ -857,15 +808,17 @@ digraph ImplementWorkItem {
     // `all_conditional_edges` (a node whose every outgoing edge is conditional is
     // rejected outright by the engine, before any node runs).
     //
-    // THE REPLAY LOOP'S BOUND IS `fix.max_visits`, not a visit guard on this edge
-    // (plan `fabro-currency` P4, bd-ib-hti4zf). S6 bounded it with a
-    // `context.internal.node_visit_count < 3` guard and a complementary `>= 3`
-    // edge to `non_converged`; both are gone for the reason the capture loop's
-    // were. The key is not populated on the Petri-era engine (research note 007,
-    // probe p3), so the guard's conjunct is always false there and a
-    // non-reproduction could never reach `fix` — it would take the `needs_human`
-    // fallthrough on the FIRST failed replay. Routing on `preferred_label` alone
-    // behaves identically on both engines.
+    // THE VISIT BOUND IS A LITERAL 3, not a rendered input, because
+    // constraints.md forbids these nodes from referencing an `inputs.*` token
+    // inside an edge condition: the engine expands graph templates at run-create
+    // time and an un-expanded token in a condition is a guard that never matches.
+    // It reads this node's OWN visit count, exactly as the janitor's fix-loop
+    // guard reads the janitor's: visits 1 and 2 route a non-reproduction back to
+    // `fix`, and the THIRD falls to `non_converged`, which the Dispatcher reads as
+    // `needs-regroom` — a proof that will not replay three times running is the
+    // empirical too-big signal and belongs in grooming. The two guards are exact
+    // complements (`< 3` and `>= 3`), so no `fix` verdict can slip between them
+    // into the fallthrough.
     //
     // A `fix` round re-enters `janitor`, which re-earns a green janitor and
     // therefore re-enters `publish_draft`, `proof_capture` and `review` before
@@ -873,7 +826,8 @@ digraph ImplementWorkItem {
     // review-fix budget like any other, which is what the contract says it is.
     proof_verify -> needs_human   [label="Blocked", condition="outcome=failed", weight=100]
     proof_verify -> pr            [label="verified", condition="preferred_label=approve"]
-    proof_verify -> fix           [label="not reproduced", condition="preferred_label=fix"]
+    proof_verify -> fix           [label="not reproduced", condition="preferred_label=fix && context.internal.node_visit_count < 3"]
+    proof_verify -> non_converged [label="Exhausted (proof-replay cap)", condition="preferred_label=fix && context.internal.node_visit_count >= 3"]
     proof_verify -> needs_human   [label="unmatched proof_verify outcome"]
 
     // A failed pr stage (hook rejection, gh failure — structured
