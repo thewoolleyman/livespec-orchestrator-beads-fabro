@@ -28,6 +28,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     dispatch_fabro_run_inputs,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_binary_record import (
+    EngineBinary,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_argv import pr_arm_argv
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_contract import (
     ResolvedIntegrationContract,
@@ -145,6 +148,7 @@ def test_the_dispatch_record_journals_the_resolved_contract(tmp_path: Path) -> N
         journal=journal,
         work_item_id="x-1",
         identity=DispatchJournalIdentity(dispatch_id="d-1", dispatch_factory=None),
+        engine=EngineBinary(path="/global/fabro", version="fabro 0.254.0"),
         started_at_epoch=1.0,
         workflow_toml=tmp_path / "wf.toml",
         workflow_name="implement-work-item",

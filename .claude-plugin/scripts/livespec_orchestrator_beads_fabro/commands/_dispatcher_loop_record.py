@@ -53,6 +53,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_id_journal 
     append_dispatch_id_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_binary_record import (
+    engine_binary,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import GitAuthor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
@@ -156,6 +159,11 @@ def record_dispatch(
         journal=journal,
         work_item_id=item.id,
         identity=identity,
+        # Measured from the PLAN's binary, which is the one
+        # `fabro_port_for_plan` opens every verb on, rather than from `args`:
+        # the plan is what the launch half actually drives, so a reading taken
+        # anywhere else could disagree with it without the record showing it.
+        engine=engine_binary(fabro_bin=plan.fabro_bin, runner=ShellCommandRunner(), cwd=repo),
         started_at_epoch=time.time(),
         workflow_toml=committed_workflow,
         workflow_name=materialized.workflow_name,

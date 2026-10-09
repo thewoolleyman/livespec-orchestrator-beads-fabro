@@ -19,6 +19,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_id_journal 
     DispatchJournalIdentity,
     append_dispatch_id_record,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_binary_record import (
+    EngineBinary,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_contract import (
     resolve_integration_contract,
 )
@@ -161,6 +164,7 @@ def test_the_dispatch_record_carries_workflow_name_beside_workflow_toml(
         journal=journal,
         work_item_id="li-wfl-journal",
         identity=DispatchJournalIdentity(dispatch_id="d-1", dispatch_factory=None),
+        engine=EngineBinary(path="/global/fabro", version="fabro 0.254.0"),
         started_at_epoch=1.0,
         workflow_toml=committed,
         workflow_name="codex-first",
