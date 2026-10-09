@@ -22,6 +22,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_archive_review import (
     archive_completeness_review_request,
     has_blocks_edge_to_epic,
     is_blocks_edge_to_epic,
+    plan_child_statuses,
     undisposed_plan_child_ids,
 )
 from livespec_orchestrator_beads_fabro.types import StoreConfig
@@ -82,7 +83,7 @@ def test_archive_review_request_carries_current_children_and_research_files(
     (research / "nested" / "detail.md").write_text("detail\n", encoding="utf-8")
 
     request = archive_completeness_review_request(
-        client=_fake(),
+        children=plan_child_statuses(client=_fake(), epic_id="bd-ib-epic"),
         project_root=tmp_path,
         source=source,
         slug="archive-thread",
@@ -100,7 +101,7 @@ def test_archive_review_request_allows_missing_research_directory(tmp_path: Path
     reset_fake_singleton()
 
     request = archive_completeness_review_request(
-        client=_fake(),
+        children=plan_child_statuses(client=_fake(), epic_id="bd-ib-epic"),
         project_root=tmp_path,
         source=tmp_path / "plan" / "archive-thread",
         slug="archive-thread",

@@ -22,24 +22,73 @@ against the COMPLETE child set — which an evidence record can only attest for 
 child set it actually saw.
 
 THE SET THE REVIEWER IS HANDED IS THE SET THE GATE COMPARES AGAINST, and that is
-structural rather than conventional: `archive_thread` passes the very
-`ArchiveCompletenessReviewRequest.child_ids` it commissioned the review with into
-this grade. Two independently-derived readings of "the plan's child set" would
-let a reviewer name exactly what it was given and still be refused.
+structural rather than conventional: `plan_child_statuses` is read ONCE and feeds
+both the brief a fresh reviewer is commissioned with and the grade a recorded
+review is held to. Two independently-derived readings of "the plan's child set"
+would let a reviewer name exactly what it was given and still be refused.
+
+AND THE SCOPE LIST IS SELF-DECLARED, which is why the set test is not the whole
+binding. It sits beside `separate-reviewer` and
+`attests-complete-requirement-coverage` in the same comment, written by the same
+party, so a record that simply names the right ids satisfies it. The second
+measurement is the one its author does not control: each child's own STATUS
+INSTANT, read off the ledger record, compared against the instant the review was
+written at. A review that predates a child's latest status change did not read
+the plan as it now stands, whatever its scope list claims.
+
+WHICH INSTANT COUNTS AS A CHILD'S STATUS CHANGE. A `bd` record reports up to
+three and the LATEST of them is taken: `created_at` is the transition into the
+record's initial status and the one instant every record carries (measured
+523/523 on the `livespec-dev-tooling` tenant), `closed_at` is the close
+transition (298/523), and `updated_at` is the record's last mutation, which every
+status write moves (523/523). Taking the latest OVER-reports rather than
+under-reports, because `updated_at` also moves on a mutation that changed no
+status — and over-reporting is the direction a terminal gate must fail in: a
+stale report costs one fresh review, while a missed one archives a plan nobody
+has reviewed and nothing re-examines a disposed thread.
+
+THE COMPARISON IS LEXICOGRAPHIC, for the reason `_plan_close_proof` records about
+the same class of value: ISO-8601 instants sort lexicographically, and parsing to
+a datetime would add an unparseable-input failure mode whose only honest answer is
+the one the raw comparison already gives. A review record carrying no readable
+timestamp therefore compares as earlier than every instant, which is the
+fail-closed direction.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 __all__: list[str] = [
+    "PlanChildStatus",
     "StaleEvidenceReport",
+    "latest_status_instant",
     "stale_evidence_detail",
     "stale_evidence_report",
 ]
 
 _ADDED_CLAUSE = "children added since the review"
 _REMOVED_CLAUSE = "children removed since the review"
+# The record fields a status transition can be read from, latest wins.
+_STATUS_INSTANT_FIELDS: tuple[str, ...] = ("created_at", "updated_at", "closed_at")
+
+
+@dataclass(frozen=True, kw_only=True)
+class PlanChildStatus:
+    """One current plan member, with the latest status instant its record reports.
+
+    `status_instant` is OPTIONAL because a record can report none, and an absent
+    instant is not the same observation as an early one: it says the ledger cannot
+    show when this child last moved, which is the fail-closed arm rather than a
+    quietly passing one.
+    """
+
+    child_id: str
+    status_instant: str | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -57,31 +106,84 @@ class StaleEvidenceReport:
     evidence_id: str
     added_child_ids: tuple[str, ...]
     removed_child_ids: tuple[str, ...]
+    outdated_child_id: str | None
+    outdated_child_instant: str | None
+
+
+def latest_status_instant(*, record: Mapping[str, object]) -> str | None:
+    """The latest status instant this record reports, or `None` when it reports none.
+
+    `None` rather than an empty string, because the empty string compares as
+    earlier than every real instant — so a record whose instants are unreadable
+    would silently read as one that last moved before the beginning of time, which
+    is the answer that makes the gate pass.
+    """
+    reported = tuple(
+        instant
+        for field in _STATUS_INSTANT_FIELDS
+        if isinstance(value := record.get(field), str) and (instant := value.strip())
+    )
+    return max(reported) if reported else None
 
 
 def stale_evidence_report(
     *,
     evidence_id: str,
     reviewed_child_ids: tuple[str, ...],
-    current_child_ids: tuple[str, ...],
+    reviewed_at: str,
+    children: tuple[PlanChildStatus, ...],
 ) -> StaleEvidenceReport | None:
-    """How this record fails to cover `current_child_ids`, or `None` when it covers them.
+    """How this record fails to cover `children`, or `None` when it covers them.
 
-    Compared as SETS, so neither the order a reviewer lists its scope in nor a
-    repeated id changes the verdict: the question is which children the review
-    covered, and a list is only how that set is spelled on the timeline.
+    The membership is compared as SETS, so neither the order a reviewer lists its
+    scope in nor a repeated id changes the verdict: the question is which children
+    the review covered, and a list is only how that set is spelled on the timeline.
     """
-    current = frozenset(current_child_ids)
+    current = frozenset(child.child_id for child in children)
     reviewed = frozenset(reviewed_child_ids)
     added = tuple(sorted(current - reviewed))
     removed = tuple(sorted(reviewed - current))
-    if not added and not removed:
+    outdated = _outdated_child(reviewed_at=reviewed_at, children=children)
+    if not added and not removed and outdated is None:
         return None
     return StaleEvidenceReport(
         evidence_id=evidence_id,
         added_child_ids=added,
         removed_child_ids=removed,
+        outdated_child_id=None if outdated is None else outdated.child_id,
+        outdated_child_instant=None if outdated is None else outdated.status_instant,
     )
+
+
+def _outdated_child(
+    *,
+    reviewed_at: str,
+    children: tuple[PlanChildStatus, ...],
+) -> PlanChildStatus | None:
+    """The current child this review cannot be shown to have read, if any.
+
+    TWO conditions, and they are deliberately one answer rather than two reports.
+    A child whose latest status instant POSTDATES the review moved after the
+    attestation was written. A child reporting NO readable instant cannot be shown
+    to have predated it — and a gauge that passed when it could not observe its
+    own input would make an unreadable instant the cheapest way past this leg.
+
+    The LATEST such child is reported rather than the first found, because one
+    name is what the refusal carries and the most recent change is the one that
+    makes every earlier one moot. An unreported instant sorts last, so it wins
+    that choice: it is the observation a reviewer most needs to see.
+    """
+    unreported = tuple(child for child in children if child.status_instant is None)
+    if unreported:
+        return max(unreported, key=lambda child: child.child_id)
+    postdating = tuple(
+        child
+        for child in children
+        if (instant := child.status_instant) is not None and instant > reviewed_at.strip()
+    )
+    if not postdating:
+        return None
+    return max(postdating, key=lambda child: (child.status_instant or "", child.child_id))
 
 
 def stale_evidence_detail(*, report: StaleEvidenceReport) -> str:
@@ -101,4 +203,28 @@ def stale_evidence_detail(*, report: StaleEvidenceReport) -> str:
         )
         if child_ids
     ]
+    if report.outdated_child_id is not None:
+        clauses.append(_outdated_clause(report=report))
     return f"completeness-review evidence {report.evidence_id} is stale: {'; '.join(clauses)}"
+
+
+def _outdated_clause(*, report: StaleEvidenceReport) -> str:
+    """Name the child whose status the review cannot be shown to have read.
+
+    The two cases read differently on purpose. A known instant is quoted, because
+    the reviewer compares it against when it worked and can see at a glance what
+    it missed. An UNREPORTED instant says so outright rather than quoting nothing:
+    the remedy is the same fresh review either way, but the cause is a ledger
+    record that cannot evidence when its child last moved, and a clause implying
+    a measured instant would send an operator looking for a change that may not
+    have happened.
+    """
+    if report.outdated_child_instant is None:
+        return (
+            f"child {report.outdated_child_id} reports no readable status instant,"
+            " so the review cannot be shown to postdate its latest status change"
+        )
+    return (
+        f"child {report.outdated_child_id} last changed status at"
+        f" {report.outdated_child_instant}, after the review"
+    )

@@ -56,6 +56,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_completeness_identity impo
     completeness_leg_identity,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_completeness_recency import (
+    PlanChildStatus,
     StaleEvidenceReport,
     stale_evidence_report,
 )
@@ -77,6 +78,7 @@ __all__: list[str] = [
 
 _PLAN_COMPLETENESS_REVIEW_PREFIX = "plan-completeness-review-evidence"
 _REVIEWED_CHILDREN_FIELD = "reviewed-children"
+_TIMESTAMP_FIELD = "timestamp"
 _TRUE = "true"
 
 
@@ -171,11 +173,11 @@ def completeness_review_evidence(
     epic_id: str,
     evidence_id: str,
     archive_identity: str,
-    current_child_ids: tuple[str, ...],
+    children: tuple[PlanChildStatus, ...],
 ) -> CompletenessReviewEvidence:
     """Grade this epic's evidence comments for `evidence_id` against the archiver.
 
-    The FIRST independent comment that still covers `current_child_ids` wins, and
+    The FIRST independent comment that still covers `children` wins, and
     both failures are REMEMBERED rather than returned on sight: two comments can
     carry one evidence id, and refusing on the first one read would refuse an
     archive that a later, genuinely independent and current comment satisfies.
@@ -202,7 +204,8 @@ def completeness_review_evidence(
         report = stale_evidence_report(
             evidence_id=evidence_id,
             reviewed_child_ids=_reviewed_child_ids(fields=fields),
-            current_child_ids=current_child_ids,
+            reviewed_at=fields.get(_TIMESTAMP_FIELD, ""),
+            children=children,
         )
         if report is None:
             return CompletenessReviewEvidence(
@@ -239,7 +242,7 @@ def _evidence_comment_body(
         f"{_REVIEWED_CHILDREN_FIELD}: {reviewed}\n"
         f"separate-reviewer: {separate}\n"
         f"attests-complete-requirement-coverage: {coverage}\n"
-        f"timestamp: {evidence['now']}\n\n"
+        f"{_TIMESTAMP_FIELD}: {evidence['now']}\n\n"
         f"{evidence['body']}"
     )
 
