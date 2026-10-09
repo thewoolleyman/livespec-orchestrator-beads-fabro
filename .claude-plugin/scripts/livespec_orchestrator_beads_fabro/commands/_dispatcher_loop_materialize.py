@@ -30,7 +30,9 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro.commands._acp_node_layers import AcpNodeResolution
+from livespec_orchestrator_beads_fabro.commands._acp_node_layers import (
+    AcpNodeResolution,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import (
     ACP_NODES_STAGE,
     prepare_acp_nodes,
@@ -41,13 +43,19 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import (
     read_dispatch_git_author,
     workflow_git_author_error,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_graph_adapters import (
+    guarded_adapter_commands,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_groom_draft import (
     approved_groom_draft_for,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_plan import (
     workflow_payload_dir,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config, workflow_toml
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
+    store_config,
+    workflow_toml,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_payload import (
     WorkflowPayload,
     prepare_workflow_payload,
@@ -141,35 +149,22 @@ def materialize_dispatch(
     # that workflow's graph as literal durations; a config typo refuses here,
     # before any Fabro run exists.
     committed_workflow = workflow_toml(args=args, variant_directory=variant.directory)
-    author_policy = read_dispatch_git_author(repo=repo)
-    if isinstance(author_policy, str):
-        return MaterializationRefusal(stage=_GIT_AUTHOR_STAGE, detail=author_policy)
-    committed_text = attempt(
-        action=lambda: committed_workflow.read_text(encoding="utf-8"),
-        exceptions=(OSError,),
-    )
-    if not isinstance(committed_text, AttemptFailure):
-        author_error = workflow_git_author_error(
-            committed_text=committed_text,
-            author=author_policy.operator,
-        )
-        if author_error is not None:
-            return MaterializationRefusal(stage=_GIT_AUTHOR_STAGE, detail=author_error)
-    payload = prepare_workflow_payload(
-        repo=repo,
-        committed=committed_workflow,
-        payload_dir=workflow_payload_dir(work_item_id=work_item_id),
-        journal=journal,
-        work_item_id=work_item_id,
-    )
-    if isinstance(payload, str):
-        return MaterializationRefusal(stage=_WORKFLOW_PAYLOAD_STAGE, detail=payload)
+    author = _dispatch_author(repo=repo, committed_workflow=committed_workflow)
+    if isinstance(author, MaterializationRefusal):
+        return author
     # Every ACP node's adapter, resolved through the workflow's own declared
     # defaults, the target's `dispatcher.acp_nodes` / `codex_models` block and
     # this dispatch's `--acp-node` arguments, then journaled with the layer
     # behind each field. A node named in configuration but absent from the
     # workflow refuses HERE, before any Fabro run exists — the alternative is
     # a run that silently carries the default the operator meant to replace.
+    #
+    # THIS RESOLUTION PRECEDES THE PAYLOAD, and the order is load-bearing rather
+    # than incidental: since plan `fabro-currency` P4 the payload's graph carries
+    # each ACP node's adapter command as a LITERAL rather than as a template
+    # token, because a templated `acp.command` kills the agent on the Petri-era
+    # engine. The generator therefore needs the resolved adapters as an input,
+    # and resolving them afterwards would leave the graph templated.
     #
     # `acp_node` is read defensively: only the dispatching subparsers define
     # it, and the reconcile and check subcommands reach this code with a
@@ -187,13 +182,60 @@ def materialize_dispatch(
     )
     if isinstance(acp_nodes, str):
         return MaterializationRefusal(stage=ACP_NODES_STAGE, detail=acp_nodes)
+    payload = prepare_workflow_payload(
+        repo=repo,
+        committed=committed_workflow,
+        payload_dir=workflow_payload_dir(work_item_id=work_item_id),
+        journal=journal,
+        work_item_id=work_item_id,
+        adapters=guarded_adapter_commands(run_inputs=acp_nodes.run_inputs),
+    )
+    if isinstance(payload, str):
+        return MaterializationRefusal(stage=_WORKFLOW_PAYLOAD_STAGE, detail=payload)
     return MaterializedDispatch(
         committed_workflow=committed_workflow,
         workflow_name=variant.name,
         payload=payload,
         acp_nodes=acp_nodes,
-        git_author=author_policy.operator,
+        git_author=author,
     )
+
+
+def _dispatch_author(*, repo: Path, committed_workflow: Path) -> GitAuthor | MaterializationRefusal:
+    """This dispatch's declared commit author, graded against the selected workflow.
+
+    Factored out of `materialize_dispatch` because it is one question with three
+    ways to fail and the caller is a sequence of independent steps: keeping its
+    three refusals here leaves that sequence readable.
+
+    AN UNREADABLE RUN CONFIG IS REFUSED HERE, AT THE PAYLOAD STAGE, rather than
+    inside whichever step reads the file first. Both steps below the caller read
+    it, so the stage a journal reader sees would otherwise be decided by their
+    relative order -- and that order is a property of the adapter rewrite
+    (adapters are an INPUT to generation since plan `fabro-currency` P4), not a
+    statement about what went wrong. The distinction the journal has to preserve
+    is a selection fault from an adapter fault from a timeout fault, so the
+    selected file being unreadable stays on the payload stage.
+    """
+    policy = read_dispatch_git_author(repo=repo)
+    if isinstance(policy, str):
+        return MaterializationRefusal(stage=_GIT_AUTHOR_STAGE, detail=policy)
+    committed_text = attempt(
+        action=lambda: committed_workflow.read_text(encoding="utf-8"),
+        exceptions=(OSError,),
+    )
+    if isinstance(committed_text, AttemptFailure):
+        return MaterializationRefusal(
+            stage=_WORKFLOW_PAYLOAD_STAGE,
+            detail=f"workflow config {committed_workflow} is unreadable: {committed_text.error}",
+        )
+    author_error = workflow_git_author_error(
+        committed_text=committed_text,
+        author=policy.operator,
+    )
+    if author_error is not None:
+        return MaterializationRefusal(stage=_GIT_AUTHOR_STAGE, detail=author_error)
+    return policy.operator
 
 
 def approved_groom_draft_pin(*, repo: Path, work_item_id: str) -> str | None:

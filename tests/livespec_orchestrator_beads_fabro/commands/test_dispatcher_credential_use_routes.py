@@ -35,6 +35,10 @@ from livespec_orchestrator_beads_fabro.commands._acp_catalogs import builtin_cat
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import resolve_acp_nodes
 from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import workflow_layer
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
+    CREDENTIAL_USE_DEADLINE_ENV_VAR,
+    GUARD_SCRIPT_PATH,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_routes import (
     unguardable_launch_refusal,
 )
@@ -709,3 +713,56 @@ def test_a_dispatch_with_a_re_declared_templated_launch_still_materializes(
     )
     assert error is None, error
     assert (tmp_path / "overlay.toml").exists()
+
+
+# THE SECOND RECOGNISED SHAPE, added by plan `fabro-currency` P4: the payload
+# generator now renders each ACP node's resolved, ALREADY-GUARDED adapter command
+# into the graph as a LITERAL, because a templated `acp.command` kills the agent
+# before the ACP protocol completes on the Petri-era engine. Recognising it is
+# strictly stronger than recognising the template, which only shows the wrap WOULD
+# apply; these cases read the executable position of the command that will be
+# exec'd and require the guard to be it.
+_GUARD = f"/bin/sh {GUARD_SCRIPT_PATH} --"
+
+
+def _literal(*, command: str) -> str:
+    """The guardable probe graph with its ACP node declaring a literal command."""
+    return _GUARDABLE.replace('"{{ inputs.implement_adapter }}"', f'"{command}"', 1)
+
+
+def test_a_literal_running_behind_the_projected_guard_is_admitted() -> None:
+    """The rendered shape: the guard IS the executable, so the bound binds."""
+    graph = _literal(command=f"{_GUARD} npx -y claude-agent-acp")
+    assert unguardable_launch_refusal(graph_text=graph, adapter_inputs=frozenset()) is None
+
+
+def test_a_guarded_literal_keeps_its_leading_key_value_prefix() -> None:
+    """The engine peels leading assignments into the GUARD's environment, not past it."""
+    graph = _literal(command=f"ANTHROPIC_MODEL=m EFFORT=high {_GUARD} npx -y acp")
+    assert unguardable_launch_refusal(graph_text=graph, adapter_inputs=frozenset()) is None
+
+
+def test_a_guarded_literal_declaring_an_enforcement_variable_is_refused() -> None:
+    """A launch that could set its own deadline is not bounded by one."""
+    graph = _literal(
+        command=f"{CREDENTIAL_USE_DEADLINE_ENV_VAR}=1 {_GUARD} npx -y acp",
+    )
+    refusal = unguardable_launch_refusal(graph_text=graph, adapter_inputs=frozenset())
+    assert refusal is not None
+    assert CREDENTIAL_USE_DEADLINE_ENV_VAR in refusal
+
+
+def test_a_command_that_is_only_env_assignments_is_refused() -> None:
+    """Assignments with nothing after them launch nothing the guard could wrap."""
+    graph = _literal(command="FOO=bar BAZ=qux")
+    refusal = unguardable_launch_refusal(graph_text=graph, adapter_inputs=frozenset())
+    assert refusal is not None
+    assert "not the projected guard" in refusal
+
+
+def test_a_command_that_does_not_tokenize_is_refused() -> None:
+    """An unparseable command line is a launch this dispatch cannot establish."""
+    graph = _literal(command="npx -y 'unbalanced")
+    refusal = unguardable_launch_refusal(graph_text=graph, adapter_inputs=frozenset())
+    assert refusal is not None
+    assert "does not tokenize" in refusal
