@@ -16,11 +16,15 @@ THAN THROUGH THIS MODULE'S OWN STRING WORK:
 - VERDICT. Only the two VERIFIED-class verdicts are evidence here. A `captured`
   record states that a proof was produced, not that anyone reproduced it, and a
   `not_reproduced` record states the opposite of the result.
-- BUILD. `build_identity_in` recovers the record's own build section and
-  `containment_ref` is the ref the host-leg clause checks against — the release
-  tag where a release applies, else the default-branch commit. The installed
-  build identifier is deliberately NOT compared, because that clause records it
-  without verifying it.
+- BUILD. EACH LEG READS ITS OWN RECORD SHAPE, and they are not interchangeable. A
+  HOST record names a `Build identity` section, from which `containment_ref` is the
+  ref the host-leg clause checks against — the release tag where a release applies,
+  else the default-branch commit; the installed build identifier is deliberately
+  NOT compared, because that clause records it without verifying it. An ordinary
+  FACTORY record names a `Publish-branch head:` prose line and no such section at
+  all, because that section names a release and the capture and verify stages run
+  on the draft pull request, before the merge any release could contain — so
+  `published_head` is what recovers its candidate.
 - SCOPE. Every requested assertion identifier must read as reproduced. `None`
   from `reproduced` is UNEVIDENCED rather than false, and it is not satisfaction
   either: the requested scope was not established, so the result is not satisfied.
@@ -33,14 +37,19 @@ one. Neither substitutes for the other, and each rule has TWO halves that are ea
 to implement one of:
 
 - The HOST rule's halves are INDEPENDENCE (a replaying identity distinct from the
-  capture's) and CONTAINMENT. A factory verification happens inside the run that
-  produced the proof, so there is no second party for independence to be about,
-  and imposing it there would refuse every factory record.
+  capture's) and CONTAINMENT OF BOTH the requested build and the subject's recorded
+  merge. A factory verification happens inside the run that produced the proof, so
+  there is no second party for independence to be about, and imposing it there
+  would refuse every factory record.
 - The FACTORY rule's halves are ATTRIBUTION (the record belongs to the dispatch
-  the subject's own proof pointer names) and the same CONTAINMENT. Omitting
-  attribution let a `verified` record from ANOTHER dispatch satisfy the result,
-  which `_dispatcher_proof_evidence` rules out in as many words: "a record from
-  another dispatch describes another tree".
+  the subject's own proof pointer names) and containment of the REQUESTED BUILD
+  ALONE. Omitting attribution let a `verified` record from ANOTHER dispatch satisfy
+  the result, which `_dispatcher_proof_evidence` rules out in as many words: "a
+  record from another dispatch describes another tree". And the merge half is a
+  POST-MERGE requirement that a pre-merge factory candidate cannot meet — its
+  publish-branch head cannot contain the merge that head later became — so
+  imposing it refused every ordinary factory proof of its own exact candidate.
+  `_Containment` keeps the two readers apart for exactly that reason.
 
 AND THE UNREADABLE-CONTAINMENT ARM BELONGS TO BOTH LEGS. The host leg has always
 answered `unobservable` when a replay's build comparison could not be read. The
@@ -62,14 +71,24 @@ an unresolvable build UNREADABLE, which the host leg already treats as a refusal
 rather than as a pass, and makes a containing later build the satisfaction it
 genuinely is.
 
-AND A RECORD'S BUILD HAS TWO THINGS TO CARRY, NOT ONE. The requested build says
+AND A HOST RECORD'S BUILD HAS TWO THINGS TO CARRY, NOT ONE. The requested build says
 which build the reference is ABOUT; the subject's recorded merge says which change
 that build must CONTAIN. Checking only the first leaves a replay taken against a
 release predating the merge as satisfaction — proof of a build that does not carry
-the work. `_authoritative_containment` composes both into one reader, and the merge
+the work. `_authoritative_containment` composes both for the HOST leg, and the merge
 half is VACUOUS when the subject records no merge, because "containing the merged
 change" presupposes a merged change and failing closed there would make this result
 permanently unobservable for every subject whose work has not closed.
+
+THAT SECOND RELATION IS HOST-ONLY, AND IMPOSING IT ON THE FACTORY LEG WAS A DEFECT
+RATHER THAN EXTRA RIGOUR. The merge requirement is about a build RELEASED after the
+merge; a factory record is published on the draft pull request by the dispatch that
+produced it, so the candidate it names is a PRE-MERGE head and cannot contain the
+merge that head later became. The composed reader therefore answered `False` for
+every ordinary factory proof of its own exact candidate — a confident negative no
+re-dispatch could ever turn into satisfaction, because the relation is unsatisfiable
+from that position in the lifecycle rather than merely unmet. `_Containment` carries
+one reader per leg so the distinction survives the next edit.
 
 AND "RECORDS NO MERGE" IS NARROWER THAN "YIELDED NO MERGE". The vacuous arm above is
 for a record that OMITS its merge; a record whose audit evidence is PRESENT holding
@@ -211,6 +230,29 @@ class _MalformedAudit:
 
 
 @dataclass(frozen=True, kw_only=True)
+class _Containment:
+    """The containment reader each leg is entitled to, as one value.
+
+    TWO FIELDS RATHER THAN ONE READER, because the two legs owe DIFFERENT
+    relations and the difference is not a detail either can be trusted to apply
+    for itself. `requested` asks only whether a candidate carries the build the
+    reference names; `host` asks that AND whether it carries the subject's
+    recorded merge, which is the post-merge requirement the host-leg clause
+    states.
+
+    The factory leg takes `requested` because a factory record is published on
+    the draft pull request by the dispatch that produced it, so its publish-branch
+    head cannot contain the merge that head later became — the host relation is
+    unsatisfiable there by construction rather than merely stricter. Handing both
+    legs one composed reader is what made every ordinary factory proof report as
+    an observed unmet target.
+    """
+
+    requested: ContainmentReader
+    host: ContainmentReader
+
+
+@dataclass(frozen=True, kw_only=True)
 class _Subject:
     """What the subject's own ledger record says about where its proof lives.
 
@@ -265,9 +307,11 @@ def observe_verified_proof(
         repository=repository, target=target, subject=subject, runner=runner
     )
     host = host_leg_for_records(
-        assertions=target.assertions, records=records, contains_merge=contains
+        assertions=target.assertions, records=records, contains_merge=contains.host
     )
-    factory = factory_leg(records=records, run_id=subject.run_id, contains=contains)
+    factory = factory_leg(
+        records=records, run_id=subject.run_id, contains_requested=contains.requested
+    )
     return grade_verified_proof(
         read=ProofReading(
             repository=repository,
@@ -287,20 +331,28 @@ def _authoritative_containment(
     target: VerifiedProofTarget,
     subject: _Subject,
     runner: CommandRunner,
-) -> ContainmentReader:
-    """Whether a record's build carries BOTH things it has to carry.
+) -> _Containment:
+    """The two readers this read needs, one per leg's own containment obligation.
 
-    TWO RELATIONS, COMPOSED INTO ONE READER, because a record's build has two
-    separate obligations and each alone admits a record the other rejects:
+    TWO RELATIONS EXIST, and each alone admits a record the other rejects:
 
     - THE REQUESTED BUILD. The reference names a build identity, and a record
       whose build does not cover it is about other work. Comparing the two as
       LABELS is what the clause rules out, and it also refuses a record taken
-      against a later release that plainly carries the requested build.
+      against a later build that plainly carries the requested one.
     - THE SUBJECT'S RECORDED MERGE. The host-leg clause admits a record "naming a
       build identity containing the merged change". Checking only the requested
       build leaves a replay taken against a release PREDATING the merge as
       satisfaction — proof of a build that does not carry the work.
+
+    ONLY THE HOST LEG OWES BOTH. The merge relation is a POST-MERGE requirement on
+    a released build, and the factory leg grades a record published on the DRAFT
+    pull request by the dispatch that produced it — so its candidate cannot contain
+    the merge that candidate later became, and demanding it refused every ordinary
+    factory proof. That is why this returns a VALUE carrying both rather than one
+    composed reader: a single reader is one call site away from re-imposing the
+    host requirement on the factory leg, and the refusal that follows is
+    indistinguishable from a record that genuinely proves nothing.
 
     THE MERGE RELATION IS VACUOUS WHEN NO MERGE IS RECORDED, and that is a rule
     rather than a convenience: "containing the merged change" presupposes a merged
@@ -310,17 +362,17 @@ def _authoritative_containment(
     guards, which is the failure the requested-build relation already exists to
     avoid in the other direction.
 
-    EITHER RELATION BEING UNREADABLE MAKES THE ANSWER UNREADABLE, never `False`.
-    `host_leg` treats `None` as a refusal naming unobservable containment, so an
-    unmade comparison leaves the obligation outstanding instead of convicting a
-    record on a measurement nobody took.
+    EITHER RELATION BEING UNREADABLE MAKES THE HOST ANSWER UNREADABLE, never
+    `False`. `host_leg` treats `None` as a refusal naming unobservable containment,
+    so an unmade comparison leaves the obligation outstanding instead of convicting
+    a record on a measurement nobody took.
     """
     contains_requested = containment_reader(
         repo=repository.clone, merge_sha=target.build, runner=runner
     )
     merge_sha = subject.merge_sha
     if merge_sha is None:
-        return contains_requested
+        return _Containment(requested=contains_requested, host=contains_requested)
     contains_merge = containment_reader(repo=repository.clone, merge_sha=merge_sha, runner=runner)
 
     def contains_both(*, ref: str) -> bool | None:
@@ -330,7 +382,7 @@ def _authoritative_containment(
             return None
         return requested and merged
 
-    return contains_both
+    return _Containment(requested=contains_requested, host=contains_both)
 
 
 def _subject_proof(*, repository: ResultRepository, subject_id: str) -> _Subject | _SubjectRefusal:

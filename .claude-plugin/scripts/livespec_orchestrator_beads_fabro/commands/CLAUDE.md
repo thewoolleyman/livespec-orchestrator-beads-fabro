@@ -606,7 +606,8 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   whole refusal ladder) → `_plan_result_repository` (the named repository
   resolved to ONE clone plus that clone's own tenant connection) →
   `_plan_result_proof_grade` (PURE: what a pull request's records PROVE — the
-  factory leg's attribution and containment, and the reading order that keeps
+  factory leg's attribution, its publish-head build declaration and its
+  requested-build containment, and the reading order that keeps
   `unsatisfied` and `unobservable` apart) → `_plan_result_ledger` /
   `_plan_result_forge` / `_plan_result_proof` (the five adapters, grouped by the
   source each reads) → `_plan_result_reader` (the ONE public entry point: parse,
@@ -633,10 +634,31 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   local object for a path is whatever this host's last fetch left — an answer
   about fetch state reported as a fact about the branch. And the VERIFIED-PROOF
   read validates four things through the EXISTING typed reader — record
-  semantics, a verified-class verdict, the build's containment ref, and every
+  semantics, a verified-class verdict, the build the record declares, and every
   requested assertion reading as reproduced — never text; the installed build
   identifier is deliberately not compared, because the host-leg clause records
   it without verifying it.
+  THAT THIRD THING IS READ FROM A DIFFERENT PLACE PER LEG, and the two shapes are
+  not interchangeable. A HOST record declares a `Build identity` section, whose
+  `containment_ref` is the release tag or, where no release applies, the
+  default-branch commit. An ordinary FACTORY record declares a `Publish-branch
+  head:` prose line and carries no such section AT ALL, because that section names
+  a release and the capture and verify stages run on the draft pull request, before
+  the merge any release could contain — so `published_head` is what recovers its
+  candidate. Asking every record for the host section refused every ordinary
+  factory proof of its own exact candidate, and the refusal read exactly like a
+  record that proves nothing (measured 2026-10-09 against `overseer-s32tdk`'s
+  `verified` record on pull request 2376).
+  THE CONTAINMENT THE TWO LEGS OWE ALSO DIFFERS, which is why
+  `_authoritative_containment` returns a `_Containment` carrying ONE READER PER LEG
+  rather than one composed reader. Both legs ask whether the declared candidate
+  carries the REQUESTED build; only the host leg additionally asks whether it
+  carries the SUBJECT'S RECORDED MERGE, which is the post-merge requirement on a
+  released build. A pre-merge factory candidate is the head that merge was made
+  from, so it cannot contain it: imposing the host relation there produced a
+  confident negative no re-dispatch could ever turn into satisfaction. Do not
+  collapse the two readers back into one — a single parameter is one edit away from
+  re-imposing it, and neither leg's refusal announces which relation refused it.
   The ORDER of the reader's three steps is load-bearing and is the fail-closed
   order: an unparseable reference names no target to read, and every adapter
   needs the clone it executes from, so a reversed pair would spend a read on a
