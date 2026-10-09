@@ -373,3 +373,26 @@ def test_above_ceiling_without_justification_routes_every_public_gate_to_backlog
     _exercise_unjustified_approval(tmp_path=tmp_path)
     _exercise_unjustified_dispatch(tmp_path=tmp_path)
     _exercise_unjustified_groom_door(tmp_path=tmp_path)
+
+
+def test_items_at_or_below_ceiling_continue_through_ordinary_gates() -> None:
+    """The adopted ceiling is inclusive and adds no justification duty below it."""
+    module = _size_gate_module()
+
+    decisions = [
+        cast(
+            "Any",
+            module.factory_size_decision(
+                item=_item(assertion_count=count, item_id=f"bd-{surface}-{count}"),
+                adopted_ceiling=2,
+                raw_justification=None,
+            ),
+        )
+        for surface in ("capture", "groom", "approval", "dispatch")
+        for count in (1, 2)
+    ]
+
+    assert [decision.disposition for decision in decisions] == ["proceed"] * 8
+    assert [decision.assertion_count for decision in decisions] == [1, 2] * 4
+    assert all(decision.reason is None for decision in decisions)
+    assert all(decision.size_justified is False for decision in decisions)
