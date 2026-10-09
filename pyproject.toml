@@ -51,6 +51,7 @@ dev = [
     "import-linter==2.1",
     "livespec-dev-tooling",
     "livespec-runtime>=0.18.0",
+    "pyte==0.8.2",
 ]
 
 # livespec-dev-tooling is consumed from the github.com sibling-library
