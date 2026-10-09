@@ -159,6 +159,7 @@ def _plan_ready_to_archive(*, repo: Path) -> str:
         epic_id=created["epic_id"],
         evidence_id="review-evidence-1",
         env=_REVIEWING_SESSION_ENV,
+        reviewed_child_ids=(),
         separate_reviewer=True,
         attests_complete_requirement_coverage=True,
         body="Every requirement carrier under the plan is covered.",

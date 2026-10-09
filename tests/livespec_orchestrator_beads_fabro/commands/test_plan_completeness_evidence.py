@@ -87,18 +87,27 @@ def _epic() -> None:
     )
 
 
-def _record(*, evidence_id: str, reviewer: str, coverage: bool = True) -> None:
+def _record(
+    *,
+    evidence_id: str,
+    reviewer: str,
+    coverage: bool = True,
+    reviewed_child_ids: tuple[str, ...] = (),
+) -> None:
     """Record evidence as the session whose own id is `reviewer`.
 
     The identity reaches the record through the reviewing session's ENVIRONMENT,
     which is the only route there is: the primitive takes no field a caller could
-    put a name in.
+    put a name in. The reviewed child set, by contrast, IS a caller field — only
+    the reviewer knows what it read — and it defaults to the empty set here
+    because this epic carries no children, which is the scope these records cover.
     """
     record_completeness_review_evidence(
         config=_config(),
         epic_id="bd-ib-epic",
         env={_SESSION_VAR: reviewer},
         evidence_id=evidence_id,
+        reviewed_child_ids=reviewed_child_ids,
         separate_reviewer=True,
         attests_complete_requirement_coverage=coverage,
         body="All research requirements and deferrals have ledger carriers.",
@@ -142,6 +151,7 @@ def test_an_unresolved_reviewer_identity_records_nothing_at_all() -> None:
             env={},
             runner=_UnavailableForge(),
             evidence_id="review-evidence-1",
+            reviewed_child_ids=(),
             separate_reviewer=True,
             attests_complete_requirement_coverage=True,
             body="All research requirements and deferrals have ledger carriers.",
@@ -171,6 +181,7 @@ def test_evidence_from_a_different_identity_is_accepted() -> None:
         epic_id="bd-ib-epic",
         evidence_id="review-evidence-1",
         archive_identity=_ARCHIVER,
+        current_child_ids=(),
     )
 
     assert graded.accepted_id == "review-evidence-1"
@@ -192,6 +203,7 @@ def test_evidence_from_the_archiving_identity_is_a_self_review() -> None:
         epic_id="bd-ib-epic",
         evidence_id="review-evidence-1",
         archive_identity=_ARCHIVER,
+        current_child_ids=(),
     )
 
     assert graded.accepted_id is None
@@ -214,6 +226,7 @@ def test_a_self_review_does_not_hide_a_later_independent_comment_on_one_id() -> 
         epic_id="bd-ib-epic",
         evidence_id="review-evidence-1",
         archive_identity=_ARCHIVER,
+        current_child_ids=(),
     )
 
     assert graded.accepted_id == "review-evidence-1"
@@ -237,6 +250,7 @@ def test_withheld_coverage_and_an_unknown_id_are_neither_accepted_nor_a_self_rev
             epic_id="bd-ib-epic",
             evidence_id=evidence_id,
             archive_identity=_ARCHIVER,
+            current_child_ids=(),
         )
 
         assert graded.accepted_id is None
@@ -256,6 +270,7 @@ def test_the_grade_ignores_non_string_comment_text() -> None:
         epic_id="bd-ib-epic",
         evidence_id="review-evidence-1",
         archive_identity=_ARCHIVER,
+        current_child_ids=(),
     )
 
     assert graded.accepted_id is None

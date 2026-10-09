@@ -105,6 +105,7 @@ def test_closed_children_and_a_coverage_review_do_not_archive_an_unproved_plan(
         epic_id=epic_id,
         evidence_id="review-evidence-1",
         env=_REVIEWING_SESSION_ENV,
+        reviewed_child_ids=("bd-ib-proofchild",),
         separate_reviewer=True,
         attests_complete_requirement_coverage=True,
         body="Every requirement carrier under the plan is covered.",

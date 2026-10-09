@@ -13,12 +13,15 @@ have put them in different files, which is the same trap `_plan_timeline` was
 assembled to close for the plan handoff header.
 
 WHAT THIS GATE VERIFIES, AND WHAT IT MERELY RECORDS — stated here because a reader
-of a PASSING gate would otherwise infer enforcement that is absent. Of the four
-fields an evidence comment carries, exactly ONE is cross-checked against anything
-its author does not control. `reviewer-identity` is COMPUTED by
+of a PASSING gate would otherwise infer enforcement that is absent. Of the five
+fields an evidence comment carries, exactly TWO are cross-checked against anything
+their author does not control. `reviewer-identity` is COMPUTED by
 `_plan_completeness_identity` from the reviewing session's own environment, and the
 archive leg compares it against the ARCHIVING session's identity computed by the
 same resolver; that comparison is the whole of the independence guarantee.
+`reviewed-children` is the reviewer's own statement of the scope it read, and the
+archive leg compares it against the epic's CURRENT child set; that comparison is
+the whole of the recency guarantee (`_plan_completeness_recency`, `bd-ib-0pf5`).
 
 `separate-reviewer` and `attests-complete-requirement-coverage` are SELF-DECLARED
 ATTESTATIONS. The party that authored the comment set both, nothing cross-checks
@@ -26,8 +29,8 @@ either, and no reading of a passing gate establishes that either claim is true.
 They are recorded for two reasons that do not require verification: a reviewer
 unwilling to make the claim leaves a comment that does not satisfy the leg, and an
 audit can read afterwards what was claimed and by whom. What the gate establishes
-is that the two attestations WERE made, and that the party who made them is not
-the party archiving.
+is that the two attestations WERE made, that the party who made them is not the
+party archiving, and that the scope they were made about is this plan's.
 
 THE ONE BEHAVIOUR THE COMPUTED IDENTITY RELAXES, named here rather than left to be
 discovered. Until the comparand became the archiving party's computed identity,
@@ -52,6 +55,10 @@ from livespec_orchestrator_beads_fabro.commands._plan_completeness_identity impo
     REVIEWING_PARTY,
     completeness_leg_identity,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_completeness_recency import (
+    StaleEvidenceReport,
+    stale_evidence_report,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -69,6 +76,7 @@ __all__: list[str] = [
 ]
 
 _PLAN_COMPLETENESS_REVIEW_PREFIX = "plan-completeness-review-evidence"
+_REVIEWED_CHILDREN_FIELD = "reviewed-children"
 _TRUE = "true"
 
 
@@ -79,9 +87,17 @@ class CompletenessReviewEvidenceFields(TypedDict):
     rather than an omission: the identity is computed from the reviewing session's
     own environment, so a caller supplies only what it alone holds — which record
     this is, what it attests, and the prose behind the attestation.
+
+    `reviewed_child_ids` is REQUIRED and is the scope the attestation is about.
+    Unlike the identity it is a caller field, because only the reviewer knows what
+    it actually read, and unlike the two booleans it is cross-checked: the archive
+    leg compares it against the epic's current child set, which is what makes a
+    review of an earlier phase of the plan distinguishable from a review of this
+    one (`bd-ib-0pf5`).
     """
 
     evidence_id: str
+    reviewed_child_ids: tuple[str, ...]
     separate_reviewer: bool
     attests_complete_requirement_coverage: bool
     body: str
@@ -92,17 +108,24 @@ class CompletenessReviewEvidenceFields(TypedDict):
 class CompletenessReviewEvidence:
     """How one candidate evidence id graded against the archiving party's identity.
 
-    TWO fields rather than one optional id, because the two failures prescribe
+    THREE fields rather than one optional id, because the three failures prescribe
     different next actions and nothing at the surface distinguishes them. A
     missing, malformed or non-attesting comment needs a review somebody still has
     to perform and record. A comment whose reviewer identity EQUALS the archiving
     session's needs a DIFFERENT party to perform it — and an archive reporting
     only "evidence is required" would send the one session that cannot satisfy
-    this leg back to author a second comment under the same identity.
+    this leg back to author a second comment under the same identity. A STALE
+    comment needs a fresh review of the plan as it now stands, and reporting it as
+    absent would send its reader hunting for a record already on the timeline.
+
+    `stale` is EMPTY on an accepted verdict even when earlier comments were stale,
+    for the same reason a self-review is not returned on sight: an archive a later
+    record satisfies must not be refused by an earlier one.
     """
 
     accepted_id: str | None
     self_review_identity: str | None
+    stale: tuple[StaleEvidenceReport, ...]
 
 
 def record_completeness_review_evidence(
@@ -138,14 +161,7 @@ def record_completeness_review_evidence(
     client = make_beads_client(config=config)
     client.add_comment(
         issue_id=epic_id,
-        body=_evidence_comment_body(
-            evidence_id=evidence["evidence_id"],
-            reviewer_identity=reviewer_identity,
-            separate_reviewer=evidence["separate_reviewer"],
-            attests_complete_requirement_coverage=evidence["attests_complete_requirement_coverage"],
-            body=evidence["body"],
-            now=evidence["now"],
-        ),
+        body=_evidence_comment_body(reviewer_identity=reviewer_identity, evidence=evidence),
     )
 
 
@@ -155,48 +171,92 @@ def completeness_review_evidence(
     epic_id: str,
     evidence_id: str,
     archive_identity: str,
+    current_child_ids: tuple[str, ...],
 ) -> CompletenessReviewEvidence:
     """Grade this epic's evidence comments for `evidence_id` against the archiver.
 
-    The FIRST attesting comment whose reviewer is not the archiving party wins,
-    and a self-review is REMEMBERED rather than returned on sight: two comments
-    can carry one evidence id, and refusing on the first one read would refuse an
-    archive that a later, genuinely independent comment satisfies.
+    The FIRST independent comment that still covers `current_child_ids` wins, and
+    both failures are REMEMBERED rather than returned on sight: two comments can
+    carry one evidence id, and refusing on the first one read would refuse an
+    archive that a later, genuinely independent and current comment satisfies.
+
+    The self-review test runs BEFORE the scope test, so a record authored by the
+    archiving party reports as a self-review whether or not it is also stale. Its
+    remedy subsumes the other — a different party reviewing the plan as it now
+    stands satisfies both — and naming the stale scope instead would send that
+    party's work back to the identity that cannot count.
     """
     self_review_identity: str | None = None
+    stale: list[StaleEvidenceReport] = []
     for comment in client.list_comments(issue_id=epic_id):
         text = comment.get("text")
         if not isinstance(text, str):
             continue
-        reviewer = _attesting_reviewer(fields=_evidence_fields(text=text), evidence_id=evidence_id)
+        fields = _evidence_fields(text=text)
+        reviewer = _attesting_reviewer(fields=fields, evidence_id=evidence_id)
         if reviewer is None:
             continue
-        if reviewer != archive_identity:
-            return CompletenessReviewEvidence(accepted_id=evidence_id, self_review_identity=None)
-        self_review_identity = reviewer
-    return CompletenessReviewEvidence(accepted_id=None, self_review_identity=self_review_identity)
+        if reviewer == archive_identity:
+            self_review_identity = reviewer
+            continue
+        report = stale_evidence_report(
+            evidence_id=evidence_id,
+            reviewed_child_ids=_reviewed_child_ids(fields=fields),
+            current_child_ids=current_child_ids,
+        )
+        if report is None:
+            return CompletenessReviewEvidence(
+                accepted_id=evidence_id,
+                self_review_identity=None,
+                stale=(),
+            )
+        stale.append(report)
+    return CompletenessReviewEvidence(
+        accepted_id=None,
+        self_review_identity=self_review_identity,
+        stale=tuple(stale),
+    )
 
 
 def _evidence_comment_body(
     *,
-    evidence_id: str,
     reviewer_identity: str,
-    separate_reviewer: bool,
-    attests_complete_requirement_coverage: bool,
-    body: str,
-    now: str,
+    evidence: CompletenessReviewEvidenceFields,
 ) -> str:
-    separate = str(separate_reviewer).lower()
-    coverage = str(attests_complete_requirement_coverage).lower()
+    """Render the header the parse below reads back, plus the reviewer's prose.
+
+    The payload rides as ONE value rather than as a parameter each because every
+    field of it but the identity belongs to the caller, and a per-field signature
+    grows with the record format while this body says the same thing.
+    """
+    separate = str(evidence["separate_reviewer"]).lower()
+    coverage = str(evidence["attests_complete_requirement_coverage"]).lower()
+    reviewed = ", ".join(evidence["reviewed_child_ids"])
     return (
         f"{_PLAN_COMPLETENESS_REVIEW_PREFIX}\n"
-        f"evidence-id: {evidence_id}\n"
+        f"evidence-id: {evidence['evidence_id']}\n"
         f"reviewer-identity: {reviewer_identity}\n"
+        f"{_REVIEWED_CHILDREN_FIELD}: {reviewed}\n"
         f"separate-reviewer: {separate}\n"
         f"attests-complete-requirement-coverage: {coverage}\n"
-        f"timestamp: {now}\n\n"
-        f"{body}"
+        f"timestamp: {evidence['now']}\n\n"
+        f"{evidence['body']}"
     )
+
+
+def _reviewed_child_ids(*, fields: dict[str, str]) -> tuple[str, ...]:
+    """The child ids this record names, or `()` when it names none.
+
+    A record written BEFORE the field existed carries no scope, and it is graded
+    exactly like one that reviewed an empty plan: the set it names is compared
+    against the epic's current one, so a legacy record on a plan with any child
+    reports every child as added since the review. That is the correct reading
+    rather than a harsh one — a record that never stated a scope cannot be shown
+    to have covered this plan's, and the measured instance of this defect is a
+    legacy record on an epic that grew seven children after it was written.
+    """
+    named = fields.get(_REVIEWED_CHILDREN_FIELD, "")
+    return tuple(child_id for part in named.split(",") if (child_id := part.strip()))
 
 
 def _evidence_fields(*, text: str) -> dict[str, str]:
