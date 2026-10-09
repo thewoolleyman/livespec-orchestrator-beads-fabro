@@ -36,6 +36,16 @@ class PrView:
     merge_sha: str | None
     terminal_required_check_failures: tuple[str, ...]
     diff_size: int | None = None
+    head_ref_name: str | None = None
+    head_ref_oid: str | None = None
+
+    def matches_publication(self, *, branch: str, head: str) -> bool:
+        """Whether this is a live or merged publication of the checkpoint head."""
+        return (
+            self.state in {"OPEN", "MERGED"}
+            and self.head_ref_name == branch
+            and self.head_ref_oid == head
+        )
 
 
 _TERMINAL_CHECK_CONCLUSIONS = frozenset(
@@ -77,7 +87,13 @@ def parse_pr_view(*, stdout: str) -> PrView | None:
         merge_sha=_merge_sha_of(parsed=parsed),
         terminal_required_check_failures=terminal_failures,
         diff_size=pr_diff_size_of(payload=parsed),
+        head_ref_name=_optional_string(value=parsed.get("headRefName")),
+        head_ref_oid=_optional_string(value=parsed.get("headRefOid")),
     )
+
+
+def _optional_string(*, value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
 
 
 def _status_check_rollup_items(*, rollup_raw: object) -> list[object]:

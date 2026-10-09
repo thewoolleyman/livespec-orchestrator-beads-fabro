@@ -44,6 +44,8 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "fabro_run_terminal_outcome",
     "inspect_run",
+    "inspect_terminal_run",
+    "successful_store_loss_checkpoint_head",
 ]
 
 _FABRO_INSPECT_TIMEOUT_SECONDS = 300.0
@@ -73,6 +75,32 @@ def inspect_run(
     return inspect
 
 
+def inspect_terminal_run(
+    *,
+    plan: DispatchPlan,
+    runner: CommandRunner,
+    journal: JournalWriter,
+    run_id: str | None,
+    exit_code: int,
+) -> FabroInspectResult | None:
+    """Inspect once, then refresh a failed record whose cause has not arrived."""
+    inspect = inspect_run(plan=plan, runner=runner, journal=journal, run_id=run_id)
+    needs_refresh = bool(
+        exit_code != 0
+        and run_id is not None
+        and inspect is not None
+        and inspect.command.exit_code == 0
+        and inspect.status_kind == "failed"
+        and inspect.failure is None
+    )
+    refreshed = (
+        inspect_run(plan=plan, runner=runner, journal=journal, run_id=run_id)
+        if needs_refresh
+        else None
+    )
+    return refreshed if refreshed is not None and refreshed.failure is not None else inspect
+
+
 def fabro_run_terminal_outcome(
     *,
     outcome_type: type[DispatchOutcome],
@@ -92,8 +120,6 @@ def fabro_run_terminal_outcome(
     if blocked is not None:
         return blocked
     if exit_code == 0:
-        return None
-    if _successful_store_loss_checkpoint(run_id=run_id, inspect=inspect):
         return None
     failure = None if inspect is None else inspect.failure
     detail = fabro_failure_outcome_detail(failure=failure, fallback=tail(text=stderr))
@@ -129,10 +155,10 @@ def fabro_run_terminal_outcome(
     )
 
 
-def _successful_store_loss_checkpoint(
+def successful_store_loss_checkpoint_head(
     *, run_id: str | None, inspect: FabroInspectResult | None
-) -> bool:
-    """Recognize the incident's last durable successful checkpoint."""
+) -> str | None:
+    """Return the incident checkpoint's published head, or no override."""
     record = None if inspect is None else fabro_inspect_record(payload=inspect.payload)
     checkpoints = () if record is None else fabro_inspect_checkpoints(record=record)
     checkpoint: dict[str, Any] = {} if not checkpoints else checkpoints[-1]
@@ -141,7 +167,8 @@ def _successful_store_loss_checkpoint(
     final_raw: object = outcomes.get("verify_pr")
     final = cast("dict[object, object]", final_raw) if isinstance(final_raw, dict) else {}
     failure = None if inspect is None else inspect.failure
-    return bool(
+    commit_raw: object = checkpoint.get("git_commit_sha")
+    qualifies = bool(
         run_id is not None
         and inspect is not None
         and inspect.command.exit_code == 0
@@ -153,8 +180,9 @@ def _successful_store_loss_checkpoint(
         and checkpoint.get("current_node") == "verify_pr"
         and checkpoint.get("next_node_id") == "exit"
         and final.get("status") == "succeeded"
-        and isinstance(checkpoint.get("git_commit_sha"), str)
+        and isinstance(commit_raw, str)
     )
+    return cast("str", commit_raw) if qualifies else None
 
 
 def _needs_human_terminal_outcome(

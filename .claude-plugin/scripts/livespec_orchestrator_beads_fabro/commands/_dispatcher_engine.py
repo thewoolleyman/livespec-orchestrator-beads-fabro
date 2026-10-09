@@ -62,7 +62,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
 from livespec_orchestrator_beads_fabro.commands._dispatcher_current_merge_hold import (
     MERGE_HELD_STAGE,
     merge_hold_terminal,
-    read_current_merge_hold,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import (
     failed_outcome,
@@ -71,18 +70,21 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_merge import (
     await_merge,
-    confirm_pr,
     outcome_after_await,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal import (
     fabro_run_terminal_outcome,
-    inspect_run,
+    inspect_terminal_run,
+    successful_store_loss_checkpoint_head,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pr_open_diff import (
     pr_open_diff_record,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_publication import (
+    reconcile_terminal_publication,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
 
@@ -339,20 +341,13 @@ def run_dispatch(
             outcome_type=DispatchOutcome, plan=plan, run_id=launched.stalled_run_id
         )
     run_id = launched.run_id
-    inspect = inspect_run(plan=plan, runner=runner, journal=journal, run_id=run_id)
-    if (
-        fabro.exit_code != 0
-        and run_id is not None
-        and (
-            inspect is not None
-            and inspect.command.exit_code == 0
-            and inspect.status_kind == "failed"
-            and inspect.failure is None
-        )
-    ):
-        refreshed = inspect_run(plan=plan, runner=runner, journal=journal, run_id=run_id)
-        if refreshed is not None and refreshed.failure is not None:
-            inspect = refreshed
+    inspect = inspect_terminal_run(
+        plan=plan,
+        runner=runner,
+        journal=journal,
+        run_id=run_id,
+        exit_code=fabro.exit_code,
+    )
     terminal = fabro_run_terminal_outcome(
         outcome_type=DispatchOutcome,
         plan=plan,
@@ -361,15 +356,22 @@ def run_dispatch(
         exit_code=fabro.exit_code,
         stderr=fabro.stderr,
     )
-    if terminal is not None:
-        return terminal
+    successful_head = successful_store_loss_checkpoint_head(run_id=run_id, inspect=inspect)
     # THE CURRENT HOLD, read ONCE for the whole merge-confirmation boundary. The
     # plan's `merge_hold` is the launch snapshot the sandbox and the dispatch record
     # share and must keep; this is what the ledger says now, hours later, and a hold
     # set during the run is visible in exactly one of the two
     # (`_dispatcher_current_merge_hold`).
-    hold = read_current_merge_hold(repo=plan.repo, work_item_id=plan.work_item_id)
-    view = confirm_pr(plan=plan, runner=runner, journal=journal, hold=hold)
+    publication = reconcile_terminal_publication(
+        plan=plan,
+        runner=runner,
+        journal=journal,
+        terminal=terminal,
+        checkpoint_head=successful_head,
+    )
+    if publication.refusal is not None:
+        return publication.refusal
+    hold, view = publication.hold, publication.view
     if view is None:
         return failed_outcome(
             outcome_type=DispatchOutcome,
