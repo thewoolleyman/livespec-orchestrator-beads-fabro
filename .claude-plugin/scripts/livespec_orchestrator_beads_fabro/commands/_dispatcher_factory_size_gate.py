@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from returns.io import IOResult
 from returns.result import Failure, Result, Success
 
+from livespec_orchestrator_beads_fabro._store_factory_size_gate import (
+    size_justification_for,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_assertion_count import (
     assertion_count_for,
 )
@@ -20,10 +23,13 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from livespec_orchestrator_beads_fabro.types import StoreConfig
+
 __all__: list[str] = [
     "FactorySizeDecision",
     "factory_size_decision",
     "resolve_adopted_assertion_count_ceiling",
+    "stored_factory_size_decision",
 ]
 
 ADOPTED_ASSERTION_COUNT_CEILING = "adopted_assertion_count_ceiling"
@@ -45,8 +51,15 @@ def factory_size_decision(
 ) -> FactorySizeDecision:
     """Apply the adopted ceiling to the sanctioned effective-criteria count."""
     observed = assertion_count_for(item=item).count
-    del raw_justification
     if adopted_ceiling is not None and observed > adopted_ceiling:
+        if _valid_size_justification(raw=raw_justification):
+            return FactorySizeDecision(
+                disposition="proceed",
+                adopted_ceiling=adopted_ceiling,
+                assertion_count=observed,
+                reason=None,
+                size_justified=True,
+            )
         return FactorySizeDecision(
             disposition="decompose",
             adopted_ceiling=adopted_ceiling,
@@ -64,6 +77,17 @@ def factory_size_decision(
         assertion_count=observed,
         reason=None,
         size_justified=False,
+    )
+
+
+def stored_factory_size_decision(
+    *, path: StoreConfig, item: WorkItem, adopted_ceiling: int | None
+) -> FactorySizeDecision:
+    """Apply the gate to the item's raw, ledger-held justification metadata."""
+    return factory_size_decision(
+        item=item,
+        adopted_ceiling=adopted_ceiling,
+        raw_justification=size_justification_for(path=path, work_item_id=item.id),
     )
 
 
@@ -90,3 +114,12 @@ def _adopted_ceiling_value(*, value: object) -> Result[int | None, PolicySetting
             ),
         )
     )
+
+
+def _valid_size_justification(*, raw: object) -> bool:
+    values = cast("dict[str, str]", raw)
+    try:
+        stripped = tuple(map(str.strip, (values["rationale"], values["author"], values["at"])))
+    except (KeyError, TypeError):
+        return False
+    return all(stripped)
