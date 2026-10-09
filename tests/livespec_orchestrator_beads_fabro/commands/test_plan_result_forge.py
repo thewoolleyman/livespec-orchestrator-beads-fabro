@@ -33,6 +33,11 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_targets import (
 _REPOSITORY = ResultRepository(name="repo", clone=Path("/clone"))
 _NOW = "2026-10-08T12:00:00Z"
 _BLOB = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+# The SHA-256 rendering of an object identity. A repository on that object format
+# reports identities of this length, and a shape check admitting only SHA-1 would
+# call every one of them malformed — which makes the file result PERMANENTLY
+# unobservable there rather than merely wrong once.
+_BLOB_SHA256 = "473a0f4c3be8a93681a267e3b1e9a7dcda1185436fe141f7749120a303721813"
 
 
 @dataclass(kw_only=True)
@@ -335,13 +340,15 @@ def test_an_answer_that_is_not_an_object_identity_is_unobservable() -> None:
     about an object identity the read never obtained — the clause's forbidden
     direction, reached by a value that merely was not empty.
 
-    The uppercase case is here because it is what makes the VERBATIM comparison
-    sound. The forge renders a blob id as forty lowercase hex digits and nothing
-    else, so any other rendering is a value this reader cannot assume it
-    understands; admitting one while comparing verbatim would report a matching
-    object as a mismatch.
+    What is NOT here is as load-bearing as what is. An identity at the SHA-256
+    length and an identity in upper case are both perfectly good object
+    identities, so neither is malformed — see the two cases below. The thing this
+    check separates is an IDENTITY from a non-identity, never one legitimate
+    rendering of an identity from another; a shape narrow enough to exclude a
+    rendering reports "the forge did not tell me an identity" about an answer in
+    which it plainly did.
     """
-    for stdout in ("null\n", "not-a-sha\n", f"{_BLOB[:39]}\n", f"{_BLOB}0\n", f"{_BLOB.upper()}\n"):
+    for stdout in ("null\n", "not-a-sha\n", f"{_BLOB[:39]}\n", f"{_BLOB}0\n", f"{_BLOB_SHA256}0\n"):
         observation = observe_file_on_branch(
             repository=_REPOSITORY,
             target=FileOnBranchTarget(branch="master", path="a/b.md", blob=_BLOB),
@@ -351,3 +358,49 @@ def test_an_answer_that_is_not_an_object_identity_is_unobservable() -> None:
         assert observation.status == OBSERVATION_UNOBSERVABLE
         assert observation.source == SOURCE_GIT_OBJECT
         assert observation.evidence == ""
+
+
+def test_every_rendering_of_a_real_object_identity_still_reaches_a_verdict() -> None:
+    """The positive control on the SHAPE, and it caught a regression this cycle.
+
+    A shape check is only correct while every legitimate rendering still reaches a
+    comparison. Narrowing the blob guard from "non-empty" to "forty LOWERCASE hex
+    digits" made two of them unobservable:
+
+    - A SHA-256 object identity, which a repository on that object format reports
+      for every path. Measured on this tree: a MATCHING 64-character identity went
+      from `satisfied` to `unobservable`, so the file result was not merely wrong
+      once but permanently unobservable on such a repository.
+    - An upper-case digest, which is the same object as its lower-case spelling.
+      Reporting it as malformed says the identity was not observed, which is
+      false; comparing it verbatim would say it is a DIFFERENT object, which is
+      also false. Hex is case-insensitive, so the comparison folds and the two
+      spellings are one object — the only reading that is true of both.
+
+    Both are asserted SATISFIED against the matching target rather than merely
+    "not unobservable", because a reader that admitted the shape and then compared
+    it verbatim would clear an unobservable assertion while still reporting the
+    same object as a mismatch.
+    """
+    for label, target, answer in (
+        ("sha-256 identity", _BLOB_SHA256, _BLOB_SHA256),
+        ("upper-case sha-1 identity", _BLOB, _BLOB.upper()),
+        ("upper-case target, lower-case answer", _BLOB.upper(), _BLOB),
+    ):
+        observation = observe_file_on_branch(
+            repository=_REPOSITORY,
+            target=FileOnBranchTarget(branch="master", path="a/b.md", blob=target),
+            runner=_runner(stdout=f"{answer}\n"),
+            now=_NOW,
+        )
+        assert observation.status == OBSERVATION_SATISFIED, label
+        assert observation.source == SOURCE_GIT_OBJECT, label
+    # The genuine mismatch still reports a confident negative at both lengths, so
+    # folding the comparison has not made every identity match every other.
+    differing = observe_file_on_branch(
+        repository=_REPOSITORY,
+        target=FileOnBranchTarget(branch="master", path="a/b.md", blob=_BLOB_SHA256),
+        runner=_runner(stdout=f"{_BLOB_SHA256[:-1]}0\n"),
+        now=_NOW,
+    )
+    assert differing.status == OBSERVATION_UNSATISFIED
