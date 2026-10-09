@@ -1707,8 +1707,7 @@
     "heading": "## Scenario 167 \u2014 A failed janitor names the aggregate runner's failed targets",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "A real integration-tier test is owed for complete failed-target summaries, labelled fallback and retained-artifact references through the actual Dispatcher; existing child bd-ib-ma3fvj owns it.",
-    "work_item": "bd-ib-ma3fvj"
+    "test": "tests.integration.test_failed_janitor_target_attribution_scenario167.test_every_summarized_failed_target_reaches_both_reports_and_the_log_is_named",
+    "reason": "Integration-tier acceptance completed by bd-ib-ma3fvj. The bound node drives the real post-merge janitor child process with a structured Failed targets list longer than the journal tail window, later stdout, and a passing recipe at the end of stderr; it asserts every target on the outcome and journal, the original nonzero exit, and the retained artifact path and digest. Three sibling cases in the same module bind the heading's remaining scenarios: the passing stderr recipe is absent from both attributions, an unstructured failure labels bounded observations from both streams while retaining the complete artifact, and an artifact-write failure preserves the target attribution, exit code and non-green disposition while journaling only the retention error."
   }
 ]
