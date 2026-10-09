@@ -85,6 +85,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_review_gate import (
     ReviewGateEmission,
     emit_review_gate_from_fabro_events,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_vault import (
+    fabro_vault_sink_for_plan,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -220,6 +223,13 @@ def _dispatch_one_locked(
         adapter_inputs=(
             frozenset() if plan.acp_nodes is None else frozenset(plan.acp_nodes.inputs.values())
         ),
+        # WHICH factory this dispatch launches at, and that factory's own vault.
+        # Both read off the plan's already-resolved target rather than from a
+        # second configuration read, for the resolve-once reason the integration
+        # contract gives: a credential stored in one server's vault while the run
+        # launched against another's resolves to nothing.
+        factory_name=plan.fabro_factory_name,
+        secret_sink=fabro_vault_sink_for_plan(plan=plan, runner=ShellCommandRunner()),
     )
     if overlay_error is not None:
         return failed_dispatch_outcome(

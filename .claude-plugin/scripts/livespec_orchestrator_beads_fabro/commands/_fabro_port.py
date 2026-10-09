@@ -6,13 +6,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from livespec_orchestrator_beads_fabro.commands._fabro_port_events import (
-    fabro_event_records_from_stdout,
-)
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import (
     FabroHttpPort,
     FabroHttpTransport,
     UrllibFabroHttpTransport,
+)
+from livespec_orchestrator_beads_fabro.commands._fabro_port_payload import (
+    fabro_events_payload,
+    fabro_json_payload,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     FabroFailureDetail,
@@ -35,7 +36,6 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_types import (
     FabroTarget,
     FabroVersionResult,
 )
-from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 __all__: list[str] = [
     "FabroCommand",
@@ -121,12 +121,28 @@ class FabroPort:
         )
         return FabroCommandResult(command=command)
 
+    def secret_set(self, *, secret_name: str, stdin: int, timeout_seconds: float) -> FabroCommand:
+        """Store one named secret while its value travels only on stdin."""
+        return self.runner.run(
+            argv=[
+                self.fabro_bin,
+                "secret",
+                "set",
+                secret_name,
+                "--value-stdin",
+                *self._server_suffix(),
+            ],
+            cwd=self.cwd,
+            timeout_seconds=timeout_seconds,
+            stdin=stdin,
+        )
+
     def inspect(self, *, run_id: str, timeout_seconds: float) -> FabroInspectResult:
         command = self._run(
             argv=[self.fabro_bin, "inspect", run_id, "--json", *self._server_suffix()],
             timeout_seconds=timeout_seconds,
         )
-        payload = _json_payload(command=command)
+        payload = fabro_json_payload(command=command)
         return FabroInspectResult(
             command=command,
             payload=payload,
@@ -139,7 +155,7 @@ class FabroPort:
             argv=[self.fabro_bin, "events", run_id, "--json", *self._server_suffix()],
             timeout_seconds=timeout_seconds,
         )
-        return FabroEventsResult(command=command, payload=_events_payload(command=command))
+        return FabroEventsResult(command=command, payload=fabro_events_payload(command=command))
 
     def dump(self, *, run_id: str, output_dir: Path, timeout_seconds: float) -> FabroCommandResult:
         """Export one run's whole record into `output_dir`.
@@ -161,7 +177,7 @@ class FabroPort:
             argv=[self.fabro_bin, "ps", "-a", "--json", *self._server_suffix()],
             timeout_seconds=timeout_seconds,
         )
-        payload = _json_payload(command=command)
+        payload = fabro_json_payload(command=command)
         return FabroPsResult(
             command=command,
             payload=payload,
@@ -191,7 +207,7 @@ class FabroPort:
             timeout_seconds=timeout_seconds,
             env=self._server_env(),
         )
-        return FabroJsonResult(command=command, payload=_json_payload(command=command))
+        return FabroJsonResult(command=command, payload=fabro_json_payload(command=command))
 
     def rm(self, *, run_id: str, timeout_seconds: float) -> FabroCommandResult:
         command = self._run(
@@ -229,7 +245,7 @@ class FabroPort:
             argv=[self.fabro_bin, "validate", str(workflow_toml), "--json"],
             timeout_seconds=timeout_seconds,
         )
-        return FabroJsonResult(command=command, payload=_json_payload(command=command))
+        return FabroJsonResult(command=command, payload=fabro_json_payload(command=command))
 
     def version(self, *, timeout_seconds: float) -> FabroVersionResult:
         command = self._run(
@@ -299,34 +315,3 @@ def _input_args(*, inputs: tuple[str, ...]) -> list[str]:
     for item in inputs:
         argv.extend(["--input", item])
     return argv
-
-
-def _events_payload(*, command: FabroCommand) -> object | None:
-    """The events output as a payload, reading the Petri stream form as well.
-
-    `fabro events --json` prints one JSON array on the pinned build and "a
-    stream of envelopes" on the Petri-era one (research note 006), and a stream
-    is not one JSON document, so the ordinary whole-text parse yields nothing
-    for it. The fallback hands the records back as a LIST — the shape every
-    consumer of this payload already accepts — so from here on the two engines'
-    streams project identically rather than through two readers.
-
-    A NON-ZERO exit keeps its `None`, and so does output nothing could be read
-    from. "Read failure is not absence" is what the ACP projection grades an
-    unreadable fetch by, so a refusal's own message must never arrive as an
-    empty event list, which reads as a run that emitted nothing.
-    """
-    payload = _json_payload(command=command)
-    if payload is not None or command.exit_code != 0:
-        return payload
-    records = fabro_event_records_from_stdout(stdout=command.stdout)
-    return None if records is None else list(records)
-
-
-def _json_payload(*, command: FabroCommand) -> object | None:
-    if command.exit_code != 0:
-        return None
-    parsed = parse_json(text=command.stdout)
-    if isinstance(parsed, JsonParseFailure):
-        return None
-    return parsed

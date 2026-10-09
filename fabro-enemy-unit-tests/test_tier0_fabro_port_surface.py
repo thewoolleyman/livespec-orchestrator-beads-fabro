@@ -34,6 +34,7 @@ fail here rather than quietly succeed.
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 from typing import Any, cast
 
@@ -61,6 +62,8 @@ _BOGUS_DEV_TOKEN = "fabro-enemy-unit-test-not-a-credential"
 _HTTP_UNAUTHORIZED = 401
 _CLIENT_ERROR_FLOOR = 400
 _CAPABILITIES_KEY = "capabilities"
+_SECRET_SET_NAME = "LIVESPEC_EUT_NATIVE_SECRET_CHANNEL"
+_SECRET_SET_VALUE = "fabro-enemy-unit-test-not-a-credential"
 
 
 def test_system_info_reports_this_factory_build_and_its_capability_list(
@@ -108,6 +111,32 @@ def test_client_version_reports_the_client_build_alone(
     # `version` reports, are absent here.
     assert "server" not in client.text.lower()
     assert config.server_url not in client.text
+
+
+def test_secret_set_stores_a_noncredential_canary_without_echoing_it(
+    *,
+    port: FabroPort,
+) -> None:
+    """The candidate vault accepts a value through stdin and does not echo it.
+
+    The key and value are deliberately fixed, recognisable non-credentials: an
+    explicit Enemy Unit Test run overwrites one dedicated canary entry rather
+    than accumulating secrets, and no operator credential enters this process.
+    Older engines without the native secret channel fail this assertion, which
+    is the capability delta the pinned-versus-candidate comparison must expose.
+    """
+    with tempfile.TemporaryFile() as handle:
+        _ = handle.write(_SECRET_SET_VALUE.encode("utf-8"))
+        _ = handle.seek(0)
+        result = port.secret_set(
+            secret_name=_SECRET_SET_NAME,
+            stdin=handle.fileno(),
+            timeout_seconds=TIMEOUT_SECONDS,
+        )
+
+    _assert_success(command=result)
+    assert _SECRET_SET_VALUE not in result.stdout
+    assert _SECRET_SET_VALUE not in result.stderr
 
 
 def test_dump_exports_a_completed_run_into_the_requested_directory(
