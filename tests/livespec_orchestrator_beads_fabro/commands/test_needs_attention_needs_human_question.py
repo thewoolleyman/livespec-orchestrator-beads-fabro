@@ -25,6 +25,13 @@ _TITLE = "b3.S1 — publish the needs-human question"
 _DEFAULT = f"Resolve human-needed block for work-item {_ITEM}: {_TITLE}"
 _PROMPT = "loop cannot auto-resolve this work-item; run terminated, work preserved by reference"
 _REF = f"refs/heads/needs-human/{_RUN_ID}"
+_BACKGROUNDED_COMMAND = "mise exec -- just check-coverage 2>&1 | tail -200"
+_BACKGROUNDED_CAUSE = (
+    f"ACP tool call toolu_012SANITIZED ({_BACKGROUNDED_COMMAND}) continued in "
+    "background as task bai98447y; Fabro terminated the turn before the agent "
+    "could start conflicting work"
+)
+_PLAIN_CAUSE = "review script exited 1: the implementation does not satisfy criterion 3"
 
 
 @dataclass(kw_only=True)
@@ -213,6 +220,42 @@ def test_a_failed_push_tells_the_human_a_rework_starts_from_scratch(
     assert "from scratch" in summary
 
 
+def test_a_transport_fault_cause_is_classified_and_a_plain_one_is_not(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The loop signature names the stage; only the cause can name the fault.
+
+    The two legs are one case because either alone is uninformative: a build
+    that labelled EVERY cause a transport fault passes the first, and a build
+    that labelled none passes the second. The classified leg also asserts the
+    raw cause survives beside its label, since the label says what to do and the
+    cause says what happened.
+    """
+    module = importlib.import_module(_MODULE_NAME)
+    repo = _repo(tmp_path=tmp_path, monkeypatch=monkeypatch)
+
+    classified = module.needs_human_question_summary(
+        project_root=repo,
+        item_id=_ITEM,
+        default_summary=_DEFAULT,
+        runner=_terminated_runner(cause=_BACKGROUNDED_CAUSE),
+    )
+    plain = module.needs_human_question_summary(
+        project_root=repo,
+        item_id=_ITEM,
+        default_summary=_DEFAULT,
+        runner=_terminated_runner(cause=_PLAIN_CAUSE),
+    )
+
+    assert f"Innermost cause: {_BACKGROUNDED_CAUSE}." in classified
+    assert "transport fault (backgrounded-tool)" in classified
+    assert f"the backgrounded command was `{_BACKGROUNDED_COMMAND}`" in classified
+    assert f"Innermost cause: {_PLAIN_CAUSE}." in plain
+    assert "transport fault" not in plain
+
+
 def test_a_run_record_with_no_needs_human_account_says_nothing_extra(
     *,
     monkeypatch: pytest.MonkeyPatch,
@@ -383,15 +426,29 @@ def _terminated_runner(
     stderr: str | None = None,
     engine_routed: bool = True,
     checkpoints: list[object] | None = None,
+    cause: str | None = None,
 ) -> _Runner:
     """A fake `fabro inspect` for a run that terminated at the needs_human node.
 
     `engine_routed=False` is the agent-reported ending: it rode a conditional
     edge off a node that SUCCEEDED, so the loop recorded no failure signature.
+    `cause` adds the engine's failure block, whose innermost element is the one
+    field that can be classified — the loop signature carries only the generic
+    `ACP turn failed` label.
     """
     checkpoint: dict[str, object] = {"next_node_id": "needs_human"}
     if engine_routed:
         checkpoint["loop_failure_signatures"] = {"review|deterministic|acp turn failed": 1}
+    if cause is not None:
+        checkpoint["node_outcomes"] = {
+            "review": {
+                "failure": {
+                    "category": "deterministic",
+                    "signature": "review|deterministic|acp turn failed",
+                    "causes": ["ACP protocol error", cause],
+                }
+            }
+        }
     record: dict[str, object] = {
         "run_id": _RUN_ID,
         "status": {"kind": "failed"},
