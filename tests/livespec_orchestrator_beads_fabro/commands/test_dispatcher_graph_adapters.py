@@ -256,6 +256,20 @@ def test_the_record_reports_the_escaped_command_unescaped() -> None:
     assert rendered.node_commands == {"agent": _QUOTED_INTENT}
 
 
+def test_a_resolved_command_carrying_a_newline_is_still_refused() -> None:
+    """A line break has no DOT escape, so this one stays a pre-run refusal."""
+    assert _MODULE_PATH.is_file()
+    module = _module()
+    refusal = module.render_acp_commands(  # pyright: ignore[reportAttributeAccessIssue]
+        graph_text=_synthetic(command=_TOKEN),
+        adapters={"probe_adapter": "codex-acp\n--sandbox"},
+    )
+    assert isinstance(refusal, str)
+    assert "agent" in refusal
+    assert "probe_adapter" in refusal
+    assert repr("\n") in refusal
+
+
 def test_a_surviving_opener_elsewhere_in_an_acp_block_refuses() -> None:
     """The guarantee is per BLOCK, so an opener in a sibling attribute still refuses."""
     assert _MODULE_PATH.is_file()
