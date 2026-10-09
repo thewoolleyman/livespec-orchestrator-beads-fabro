@@ -1,4 +1,4 @@
-"""Plan archive completeness-review evidence helpers.
+"""Plan archive membership helpers, and the context a fresh reviewer is handed.
 
 The archive completeness gate refuses disposal while any linked plan member is
 undisposed. Membership comes from `parent-child` and `tracks` edges pointing to
@@ -6,17 +6,19 @@ the epic. The same gate also counts upstream `blocks` dependencies carried by
 the epic as blockers that must be disposed before archive; `supersedes` edges
 are deliberately ignored because supersession is not plan membership or a
 blocking prerequisite.
+
+The EVIDENCE RECORD that same gate reads is a different concern and lives in
+`_plan_completeness_evidence`: the comment a reviewer writes, the parse that
+reads it back, and the grade that decides whether it satisfies the leg.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, TypedDict
+from typing import TYPE_CHECKING, Protocol
 
-from typing_extensions import Unpack
-
-from livespec_orchestrator_beads_fabro._beads_client import BeadsRecord, make_beads_client
+from livespec_orchestrator_beads_fabro._beads_client import BeadsRecord
 from livespec_orchestrator_beads_fabro.commands._plan_child_edges import (
     bd_child_surface_mismatch_ids,
     blocking_dependency_ids,
@@ -28,7 +30,6 @@ from livespec_orchestrator_beads_fabro.commands._plan_child_edges import (
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
-    from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
     "ArchiveCompletenessReviewRequest",
@@ -39,24 +40,8 @@ __all__: list[str] = [
     "has_blocks_edge_to_epic",
     "is_blocks_dependency_edge",
     "is_blocks_edge_to_epic",
-    "record_completeness_review_evidence",
     "undisposed_plan_child_ids",
-    "valid_completeness_review_evidence_id",
 ]
-
-_PLAN_COMPLETENESS_REVIEW_PREFIX = "plan-completeness-review-evidence"
-_TRUE = "true"
-
-
-class CompletenessReviewEvidenceFields(TypedDict):
-    """Keyword payload for a durable completeness-review evidence record."""
-
-    evidence_id: str
-    reviewer_identity: str
-    separate_reviewer: bool
-    attests_complete_requirement_coverage: bool
-    body: str
-    now: str
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -76,27 +61,6 @@ class CompletenessReviewLauncher(Protocol):
     def __call__(self, *, request: ArchiveCompletenessReviewRequest) -> str | None:
         """Launch the reviewer and return its durable evidence id, if any."""
         ...
-
-
-def record_completeness_review_evidence(
-    *,
-    config: StoreConfig,
-    epic_id: str,
-    **evidence: Unpack[CompletenessReviewEvidenceFields],
-) -> None:
-    """Append a durable plan completeness-review evidence comment."""
-    client = make_beads_client(config=config)
-    client.add_comment(
-        issue_id=epic_id,
-        body=_evidence_comment_body(
-            evidence_id=evidence["evidence_id"],
-            reviewer_identity=evidence["reviewer_identity"],
-            separate_reviewer=evidence["separate_reviewer"],
-            attests_complete_requirement_coverage=evidence["attests_complete_requirement_coverage"],
-            body=evidence["body"],
-            now=evidence["now"],
-        ),
-    )
 
 
 def archive_completeness_review_request(
@@ -122,31 +86,6 @@ def undisposed_plan_child_ids(*, client: BeadsClient, epic_id: str) -> tuple[str
     return tuple(
         sorted(record["id"] for record in _undisposed_plan_children(client=client, epic_id=epic_id))
     )
-
-
-def valid_completeness_review_evidence_id(
-    *,
-    client: BeadsClient,
-    epic_id: str,
-    evidence_id: str | None,
-    archive_actor: str,
-) -> str | None:
-    """Return `evidence_id` only when the ledger has a valid evidence comment."""
-    if evidence_id is None:
-        return None
-    for comment in client.list_comments(issue_id=epic_id):
-        text = comment.get("text")
-        if not isinstance(text, str):
-            continue
-        fields = _evidence_fields(text=text)
-        if not _is_valid_evidence(
-            fields=fields,
-            evidence_id=evidence_id,
-            archive_actor=archive_actor,
-        ):
-            continue
-        return evidence_id
-    return None
 
 
 def _undisposed_plan_children(*, client: BeadsClient, epic_id: str) -> list[BeadsRecord]:
@@ -193,54 +132,3 @@ def _research_paths(*, project_root: Path, source: Path) -> tuple[str, ...]:
 def _is_undisposed_plan_child(*, record: BeadsRecord) -> bool:
     issue_id = record.get("id")
     return isinstance(issue_id, str) and record.get("status") != "closed"
-
-
-def _evidence_comment_body(
-    *,
-    evidence_id: str,
-    reviewer_identity: str,
-    separate_reviewer: bool,
-    attests_complete_requirement_coverage: bool,
-    body: str,
-    now: str,
-) -> str:
-    separate = str(separate_reviewer).lower()
-    coverage = str(attests_complete_requirement_coverage).lower()
-    return (
-        f"{_PLAN_COMPLETENESS_REVIEW_PREFIX}\n"
-        f"evidence-id: {evidence_id}\n"
-        f"reviewer-identity: {reviewer_identity}\n"
-        f"separate-reviewer: {separate}\n"
-        f"attests-complete-requirement-coverage: {coverage}\n"
-        f"timestamp: {now}\n\n"
-        f"{body}"
-    )
-
-
-def _evidence_fields(*, text: str) -> dict[str, str]:
-    header = text.split("\n\n", maxsplit=1)[0]
-    lines = header.splitlines()
-    if not lines or lines[0] != _PLAN_COMPLETENESS_REVIEW_PREFIX:
-        return {}
-    fields: dict[str, str] = {}
-    for line in lines[1:]:
-        key, separator, value = line.partition(": ")
-        if separator == "":
-            return {}
-        fields[key] = value
-    return fields
-
-
-def _is_valid_evidence(
-    *,
-    fields: dict[str, str],
-    evidence_id: str,
-    archive_actor: str,
-) -> bool:
-    reviewer_identity = fields.get("reviewer-identity")
-    return (
-        fields.get("evidence-id") == evidence_id
-        and reviewer_identity not in (None, archive_actor)
-        and fields.get("separate-reviewer") == _TRUE
-        and fields.get("attests-complete-requirement-coverage") == _TRUE
-    )

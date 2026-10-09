@@ -572,6 +572,24 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   `_dispatcher_invoker`'s `unattributed:<user>@<host>` mark compares EQUAL
   between two parties on one host, refusing a genuinely independent review, and
   DIFFERENT across hosts, admitting a genuine self-review.
+- `_plan_completeness_evidence.py` — the completeness-review evidence record
+  itself: the comment a reviewer writes, the parse that reads it back, and the
+  grade that decides whether it satisfies the leg. Split out of
+  `_plan_archive_review` (which keeps the plan-MEMBERSHIP concern) and
+  deliberately keeping the RENDER beside the PARSE, so one comment format cannot
+  drift across two files. Read its docstring before touching the grade: of the
+  four fields an evidence comment carries, only `reviewer-identity` is
+  cross-checked against anything its author does not control, while
+  `separate-reviewer` and `attests-complete-requirement-coverage` are
+  SELF-DECLARED attestations the gate records rather than establishes. Two
+  properties an editor must not invert. A self-review is REMEMBERED rather than
+  returned on sight, because two comments can carry one evidence id and refusing
+  on the first read would refuse an archive a later independent comment
+  satisfies. And the verdict carries TWO fields rather than one optional id,
+  because "no evidence" needs a review performed while "self-review" needs a
+  different PARTY — `_plan_archive` raises a distinct refusal for each, and the
+  generic one would send the only session that cannot satisfy the leg back to
+  author a second comment under the same identity.
 
 Rules an agent editing this tree must follow:
 
