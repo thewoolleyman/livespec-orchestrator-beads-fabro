@@ -24,6 +24,7 @@ text would be churn in the one arm this change is not about.
 
 from __future__ import annotations
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import NEEDS_HUMAN_MARKER
 from livespec_orchestrator_beads_fabro.commands._fabro_causal_stage import CausalStageFailure
 from livespec_orchestrator_beads_fabro.commands._fabro_escalation import ESCALATION_NODE_ID
 from livespec_orchestrator_beads_fabro.commands._fabro_port_records import FabroFailureDetail
@@ -38,21 +39,37 @@ __all__: list[str] = [
 
 _UNKNOWN_RUN = "unknown-run"
 _PRESERVED_POINTER = "see the preserve-by-reference pointer on the item for the dump digest"
+_FALL_BACK_TO_POINTER = (
+    "so rely on the preserve-by-reference pointer on the item for the dump digest"
+)
+
+# The two NEGATIVE sentinels the terminal node writes when it preserved
+# nothing, derived from the ONE shared marker so a workflow edit cannot
+# desynchronise them. Both CONTAIN the bare marker, so each match keys on its
+# own distinguishing suffix.
+_PUSH_FAILED_SENTINEL = f"{NEEDS_HUMAN_MARKER}_PUSH_FAILED"
+_NO_RUN_ID_SENTINEL = f"{NEEDS_HUMAN_MARKER}_NO_RUN_ID"
 
 
 def needs_human_terminal_detail(
     *,
     work_item_id: str,
     run_id: str | None,
+    text: str,
     causal: CausalStageFailure | None,
     failure: FabroFailureDetail | None,
 ) -> str:
-    """Render one needs-human terminal for the operator who has to triage it."""
+    """Render one needs-human terminal for the operator who has to triage it.
+
+    `text` is the run's own output — the same channel the sentinel was matched
+    on — and it is read for ONE question: whether the terminal preserved
+    anything. Nothing else in the render depends on it.
+    """
     run_label = _UNKNOWN_RUN if run_id is None else run_id
     clauses = (
         _head(run_label=run_label, causal=causal),
         *_attribution(causal=causal, failure=failure),
-        _preservation(run_label=run_label),
+        _preservation(run_id=run_id, text=text),
         _decision(work_item_id=work_item_id),
     )
     return "; ".join(clauses)
@@ -106,8 +123,36 @@ def _attribution(
     return tuple(clauses)
 
 
-def _preservation(*, run_label: str) -> str:
-    ref = f"refs/heads/needs-human/{run_label}"
+def _preservation(*, run_id: str | None, text: str) -> str:
+    """What a rework can start FROM — the fact the ledger answer turns on.
+
+    The ref used to be DERIVED from the run id and asserted unconditionally, so
+    a preservation push that failed read exactly like one that landed and sent
+    the operator to a ref `git fetch` cannot find. The terminal node says which
+    happened; this reads it.
+
+    SILENCE IS THE PRESERVED ARM, deliberately. Only an explicit negative
+    sentinel — or an unparsed run id, which makes a run-scoped ref unnameable
+    on its face — retracts the ref. A record that reports neither outcome is
+    the ordinary one, and treating it as failure would retract a ref that is
+    really there, which is the mirror-image lie.
+    """
+    if run_id is None:
+        return (
+            "the tree was NOT preserved on a run-scoped ref (no run id was parsed from "
+            f"the launch output, so no such ref can be named), {_FALL_BACK_TO_POINTER}"
+        )
+    if _NO_RUN_ID_SENTINEL in text:
+        return (
+            "the tree was NOT preserved on a run-scoped ref (the terminal reported that "
+            f"no run id reached it, so there was no ref to push), {_FALL_BACK_TO_POINTER}"
+        )
+    if _PUSH_FAILED_SENTINEL in text:
+        return (
+            "the tree was NOT preserved on a run-scoped ref (the terminal reported that "
+            f"its preservation push failed), {_FALL_BACK_TO_POINTER}"
+        )
+    ref = f"refs/heads/needs-human/{run_id}"
     return f"the tree was preserved on {ref} ({_PRESERVED_POINTER})"
 
 
