@@ -73,6 +73,7 @@ class _Runner:
 
     comments: CommandResult
     compare: CommandResult
+    statuses: dict[str, str] = field(default_factory=dict)
     calls: list[tuple[tuple[str, ...], Path]] = field(default_factory=list)
 
     def run(
@@ -87,8 +88,23 @@ class _Runner:
         del timeout_seconds, env, stdin
         self.calls.append((tuple(argv), cwd))
         if any(_COMPARE_KEY in token for token in argv):
+            head = argv[2].rsplit("...", maxsplit=1)[-1]
+            if head in self.statuses:
+                return CommandResult(exit_code=0, stdout=f"{self.statuses[head]}\n", stderr="")
             return self.compare
         return self.comments
+
+    @property
+    def comparisons(self) -> tuple[str, ...]:
+        """The endpoint of every containment comparison asked, in order.
+
+        Exposed so a case can assert WHICH refs were compared. A canned answer
+        makes a comparison aimed at the wrong refs indistinguishable from one
+        aimed correctly, because the fixture replies the same either way.
+        """
+        return tuple(
+            argv[2] for argv, _cwd in self.calls if any(_COMPARE_KEY in token for token in argv)
+        )
 
 
 class _DescriptionlessClient:
@@ -162,6 +178,7 @@ def _runner(
     stdout: str | None = None,
     containment: str = "identical",
     containment_exit: int = 0,
+    statuses: dict[str, str] | None = None,
 ) -> _Runner:
     """A runner over `bodies`, each comment carrying its own url.
 
@@ -169,10 +186,14 @@ def _runner(
     `_RECORD_URL`, and so a multi-record case can say WHICH record an observation
     cited — the whole supersession question is which of two records was read.
 
-    `containment` is the `.status` the forge comparison answers: `identical` and
-    `ahead` mean the record's build carries the requested one, `behind` means it
-    does not, and `containment_exit` non-zero makes the comparison UNREADABLE,
-    which is a different reading from either.
+    `containment` is the `.status` the forge comparison answers for any refs: it is
+    `identical` and `ahead` when the record's build carries the requested one,
+    `behind` when it does not, and `containment_exit` non-zero makes the comparison
+    UNREADABLE, which is a different reading from either.
+
+    `statuses` answers PER HEAD REF instead, for the one case that asserts which
+    refs were compared rather than what the comparison said. A canned answer
+    cannot discriminate there — it replies the same whatever the adapter asked.
     """
     payload = (
         stdout
@@ -192,6 +213,7 @@ def _runner(
     return _Runner(
         comments=CommandResult(exit_code=exit_code, stdout=payload, stderr=""),
         compare=CommandResult(exit_code=containment_exit, stdout=f"{containment}\n", stderr=""),
+        statuses={} if statuses is None else statuses,
     )
 
 
@@ -274,6 +296,42 @@ def test_an_independent_replay_of_a_containing_build_is_satisfied(tmp_path: Path
     # `ahead` rather than `identical`, so the control also proves CONTAINMENT is what
     # is asked. A reader comparing the build labels as strings would refuse this.
     assert any(_COMPARE_KEY in token for call in runner.calls for token in call[0])
+
+
+def test_the_containment_comparison_names_the_requested_build_as_its_base(
+    tmp_path: Path,
+) -> None:
+    """WHICH refs the comparison names, not merely that a comparison was made.
+
+    `compare/<base>...<head>` asks whether HEAD carries BASE, so the requested
+    build has to be the base and the record's build the head. Get that pair wrong
+    — swap them, or aim either at some other value — and the relation inverts
+    while every status the forge can answer stays a perfectly valid status.
+
+    THE SIBLING CASES ABOVE CANNOT SEE THAT. They assert the status the comparison
+    returned, from a fixture that returns it for any refs at all, so a reader
+    aiming the comparison at the wrong pair collects the same canned answer and
+    reports the same verdict. Measured on this tree: rebuilding the containment
+    reader with the subject id as its base left all 33 unit cases passing.
+
+    So this case answers per-REF instead. The record names a LATER release than
+    the one requested, `v0.9.9` is the only ref with an answer, and every other
+    comparison falls through to `behind` — so satisfaction is reachable only by
+    asking exactly `compare/<requested>...<record build>`. The endpoint is then
+    asserted literally, which pins the order a status alone cannot.
+    """
+    repository = _repo(tmp_path=tmp_path)
+    _seed_subject(repository=repository, description=_pointed_description())
+    runner = _runner(
+        bodies=_capture_and_replay(build="v0.9.9"),
+        containment="behind",
+        statuses={"v0.9.9": "ahead"},
+    )
+    observation = observe_verified_proof(
+        repository=repository, target=_target(), runner=runner, now=_NOW
+    )
+    assert observation.status == OBSERVATION_SATISFIED
+    assert runner.comparisons == (f"repos/{{owner}}/{{repo}}/compare/{_BUILD}...v0.9.9",)
 
 
 def test_a_replay_by_the_capturing_identity_is_not_satisfied(tmp_path: Path) -> None:
