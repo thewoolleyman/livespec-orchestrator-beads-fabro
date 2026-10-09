@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro.commands import _jsonc, _jsonc_splice
+from livespec_orchestrator_beads_fabro.commands._dispatcher_cycle_ceilings import (
+    COMMITTED_ONLY_RUNTIME_CEILING_KEYS,
+)
 from livespec_orchestrator_beads_fabro.commands._drive_config_schema import (
     CONFIG_KEYS,
     ConfigKey,
@@ -112,6 +115,8 @@ def _parse_set_config_action(*, action_id: str) -> dict[str, Any]:
     key, raw_value = parts
     config_key = config_key_by_name(key=key)
     if config_key is None:
+        if key in COMMITTED_ONLY_RUNTIME_CEILING_KEYS:
+            return _committed_only_key(action_id=action_id, key=key)
         return _invalid_key(action_id=action_id, key=key)
     value = parse_config_value(config_key=config_key, raw_value=raw_value)
     if value is None:
@@ -183,6 +188,34 @@ def _effective_setting(*, config_key: ConfigKey, dispatcher: dict[str, Any]) -> 
     if value is None:
         return {"key": config_key.key, "value": config_key.default, "source": "default"}
     return {"key": config_key.key, "value": value, "source": "explicit"}
+
+
+def _committed_only_key(*, action_id: str, key: str) -> dict[str, Any]:
+    """Refuse a setting that is real but deliberately not API-configurable.
+
+    Its OWN verdict rather than the generic unknown-key one, because the two
+    faults have opposite remedies: an unknown key is a typo to correct, while
+    these two runtime ceilings are settings the specification excludes from
+    API-configurable policy and keeps inactive "until a maintainer separately
+    adopts its numeric value through a reviewed committed change". Reporting
+    them as unsupported would tell an operator the key does not exist, and the
+    advice that follows from that is to stop looking for it.
+
+    It returns BEFORE `.livespec.jsonc` is read or written, so the refusal
+    leaves committed policy byte-identical — which the clause requires in those
+    words.
+    """
+    return {
+        "action_id": action_id,
+        "kind": "config-write",
+        "status": "failed",
+        "domain_error": "non-api-configurable-setting",
+        "summary": (
+            f"dispatcher.{key} is a committed-only setting and is excluded from "
+            "API-configurable policy; adopt its value through a reviewed committed "
+            ".livespec.jsonc change instead."
+        ),
+    }
 
 
 def _invalid_key(*, action_id: str, key: str) -> dict[str, Any]:
