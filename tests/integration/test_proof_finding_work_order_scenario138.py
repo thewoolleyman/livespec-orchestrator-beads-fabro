@@ -17,17 +17,26 @@ non-green status, and the dispatch-id attribution. Those belong to requirement
 carrier R7's acceptance slice, not to this one, and the row stays `TODO` until a
 test binds them.
 
-WHY THE CAP IS READ OFF THE EDGE GUARD AND NOT OFF A `max_visits`. The pinned
-engine ABORTS a run at entry to a node that has reached `max_visits`
+WHY THE CAP IS `fix.max_visits` AND NOT AN EDGE GUARD — AND NOTE THAT THIS
+SECTION SAID THE OPPOSITE UNTIL 2026-10-09. v115 read the cap off an edge guard
+on the node's own visit count, for a correct reason: the pinned engine ABORTS a
+run at entry to a node that has reached `max_visits`
 (`Error::VisitLimitExceeded`) rather than emitting a failed outcome, so no edge
-could route the exhaustion onward — the run dies with nothing for any edge to
-read. The bound therefore has to be the edge guard on the node's own visit
-count, which is the shape the janitor fix loop and `proof_verify` already use.
+can route the exhaustion onward. That reason still holds; what changed is that
+the guard's input does not exist on the engine the factory is moving onto.
+`context.internal.node_visit_count` is NOT POPULATED on the Petri-era candidate
+(plan `fabro-currency` research note 007, probe p3: a self-loop guarded on it
+looped ZERO times, taking the unconditional edge at visit 1), so the guard's
+conjunct is permanently false there and the guarded route is unreachable rather
+than merely unbounded. Probe p3f showed `max_visits=N` failing the run
+deterministically after N firings, which is the only cap that works on both
+builds. So the bound moved onto the node and the exhaustion ROUTE was given up
+with it — a trade the measurement forces, not a preference.
 
-WHY THE TWO CAPS ARE COMPARED TO EACH OTHER. `proof_verify` has carried this
-bound since v114 and `proof_capture` is acquiring it now. Asserting each against
-a literal written here would let one drift while both tests stayed green, so the
-guards are compared as a pair and the literal is asserted once.
+WHY THE TWO PROOF ROUTES ARE COMPARED TO EACH OTHER. `proof_capture` and
+`proof_verify` bound their fix routes the same way for the same engine reason,
+so asserting each in its own test would let one drift while both stayed green.
+The two conditions are compared as a pair and the shared bound is asserted once.
 
 THE ENGINE LEG IS NOT HERE, DELIBERATELY. Whether the new conditions PARSE on
 the engine is a question only `fabro validate` can answer, and this repository
@@ -176,80 +185,76 @@ def test_the_capture_prompt_still_refuses_to_touch_the_tree_while_reporting() ->
     assert "git status --porcelain" in prompt
 
 
-def test_a_capture_finding_routes_to_fix_under_a_visit_bound_of_three() -> None:
-    """`preferred_label=fix` goes to `fix`, and only below the third visit.
+def test_a_capture_finding_routes_to_fix_bounded_by_the_shared_fix_budget() -> None:
+    """`preferred_label=fix` goes to `fix`, and `fix.max_visits` is what bounds it.
 
-    Before v115 this was the one proof edge carrying no bound, so a capture that
-    kept finding the same defect re-entered `fix` until `fix.max_visits` aborted
-    the run at entry — which emits no outcome, so the run died with nothing in
-    the record to explain it.
+    v115 bounded this edge with a `context.internal.node_visit_count < 3` guard,
+    for the sound reason that a `max_visits` abort emits no outcome and so cannot
+    be routed onward. Plan `fabro-currency` P4 removed the guard because the key
+    it reads IS NOT POPULATED on the Petri-era engine (research note 007, probe
+    p3): the conjunct is permanently false there, so a capture finding could
+    never reach `fix` at all and would slip into the unconditional `review`
+    fallthrough — reaching the reviewer with the defect unreported, which is the
+    one outcome this edge exists to prevent. Routing on `preferred_label` alone
+    behaves identically on both engines.
 
     The absent `inputs.` token is asserted in its own right. `constraints.md`
     forbids these nodes from referencing an `inputs.*` token inside an edge
-    condition, because the engine expands graph templates at run-create time and
-    an un-expanded token in a condition is a guard that NEVER MATCHES — a bound
-    written that way would read as present and bound nothing.
+    condition, and the Petri-era engine rejects one at load with
+    `attractor.condition.syntax` — a bound written that way does not merely fail
+    to bind, it refuses the whole graph.
     """
     repaired = _edge(source=_CAPTURE, target="fix")
 
-    assert "preferred_label=fix" in repaired
-    assert f"{_VISIT_COUNT} < 3" in repaired
+    assert _condition_of(edge=repaired) == "preferred_label=fix"
+    assert _VISIT_COUNT not in repaired
     assert "inputs." not in repaired
+    assert "max_visits=" in (_node_body(text=_dot(), node="fix") or "")
 
 
-def test_the_third_capture_finding_routes_to_the_non_converged_terminal() -> None:
-    """Exhaustion reaches the EXISTING terminal, not a new one and not a park.
+def test_capture_exhaustion_has_no_routed_terminal_on_this_engine() -> None:
+    """The exhaustion EDGE is gone, and its absence is the assertion.
 
-    `non_converged` is what the Dispatcher reads as `needs-regroom`: a Definition
-    of Done that will not capture three times running is the empirical too-big
-    signal and belongs in grooming, not in the in-loop human gate.
+    v115 paired the `< 3` guard with a complementary `>= 3` edge to
+    `non_converged`, so no third `fix` verdict could fall past both conditions
+    into the `review` fallthrough. Plan `fabro-currency` P4 removed BOTH, because
+    the visit-count key is not populated on the Petri-era engine and a
+    half-removed pair is the gap the complement existed to close.
 
-    The guard is asserted as the EXACT COMPLEMENT of the `fix` edge's, and that
-    pairing is the assertion rather than two separate facts: a gap between the
-    two would let a third `fix` verdict fall past both conditions into the
-    unconditional `review` fallthrough — reaching the reviewer with the defect
-    unreported, which is the one outcome this node exists to prevent.
+    WHAT THAT COSTS, asserted rather than left implicit: capture-loop exhaustion
+    no longer reaches `non_converged` and no longer emits LIVESPEC_NON_CONVERGED
+    for the Dispatcher to read as `needs-regroom`. It arrives instead as a
+    `fix.max_visits` RUN FAILURE. Restoring a routed exhaustion needs a counter
+    the engine will evaluate in a condition, which this engine does not supply.
     """
-    exhausted = _edge(source=_CAPTURE, target="non_converged")
-    repaired = _edge(source=_CAPTURE, target="fix")
+    targets = {_target_of(edge=edge) for edge in _edges_from(node=_CAPTURE)}
 
-    assert "preferred_label=fix" in exhausted
-    assert f"{_VISIT_COUNT} >= 3" in exhausted
-    assert "inputs." not in exhausted
-    # The complement, asserted as an identity between the two conditions rather
-    # than as two independent substring hits: flipping the operator must turn one
-    # guard into exactly the other, which is false the moment a term is added to
-    # or dropped from either side.
-    assert _condition_of(edge=repaired).replace("< 3", ">= 3") == _condition_of(edge=exhausted)
+    assert "non_converged" not in targets
+    assert _VISIT_COUNT not in "".join(_edges_from(node=_CAPTURE))
 
 
-def test_the_two_proof_caps_are_one_bound_rather_than_two_literals() -> None:
-    """The capture cap and the replay cap are compared to each other.
+def test_the_two_proof_fix_routes_are_one_bound_rather_than_two_literals() -> None:
+    """The capture route and the replay route are compared to each other.
 
-    Both nodes bound their fix route at the same visit count for the same engine
-    reason, so asserting each against a number written in its own test would let
-    one move while both tests stayed green. Reading the bound off `proof_verify`
-    — which has carried it since v114 — and requiring `proof_capture` to match is
-    what makes a drift in either a failure.
+    Both nodes bound their fix route the same way for the same engine reason, so
+    asserting each in its own test would let one drift while both stayed green.
+    Since plan `fabro-currency` P4 the shared bound is `fix.max_visits` and the
+    shared edge condition is `preferred_label=fix` with NO visit term, which is
+    asserted as an identity between the two rather than as two substring hits.
     """
-    bound = re.compile(rf"{re.escape(_VISIT_COUNT)} (?P<operator><|>=) (?P<value>\d+)")
-    guards = {
-        (node, _target_of(edge=edge)): bound.search(edge)
-        for node in (_CAPTURE, _VERIFY)
-        for edge in _edges_from(node=node)
-        if _target_of(edge=edge) in ("fix", "non_converged")
+    conditions = {
+        node: _condition_of(edge=_edge(source=node, target="fix")) for node in (_CAPTURE, _VERIFY)
     }
 
-    assert set(guards) == {
-        (_CAPTURE, "fix"),
-        (_CAPTURE, "non_converged"),
-        (_VERIFY, "fix"),
-        (_VERIFY, "non_converged"),
-    }, sorted(guards)
-    assert all(match is not None for match in guards.values()), guards
-    found = {key: match.group("operator", "value") for key, match in guards.items() if match}
-    assert found[(_CAPTURE, "fix")] == found[(_VERIFY, "fix")] == ("<", "3")
-    assert found[(_CAPTURE, "non_converged")] == found[(_VERIFY, "non_converged")] == (">=", "3")
+    assert conditions[_CAPTURE] == conditions[_VERIFY] == "preferred_label=fix"
+    # Neither node routes an exhaustion any more, which is the half that would
+    # otherwise drift apart silently.
+    for node in (_CAPTURE, _VERIFY):
+        assert "non_converged" not in {
+            _target_of(edge=edge) for edge in _edges_from(node=node)
+        }, node
+    bound = re.search(r"max_visits=(?P<value>\d+)", _node_body(text=_dot(), node="fix") or "")
+    assert bound is not None
 
 
 def test_review_remains_the_capture_nodes_only_unconditional_route() -> None:
@@ -267,22 +272,25 @@ def test_review_remains_the_capture_nodes_only_unconditional_route() -> None:
     assert {_target_of(edge=edge) for edge in edges} == {
         "needs_human",
         "fix",
-        "non_converged",
         "review",
     }
 
 
-def test_the_fix_backstop_still_outlives_every_graceful_bound_feeding_it() -> None:
-    """`fix.max_visits` is an abort backstop, and the capture cap changes its sum.
+def test_the_fix_budget_is_shared_across_every_loop_feeding_it() -> None:
+    """`fix.max_visits` is THE bound now, and it is shared by three producers.
 
-    A node that reaches `max_visits` ABORTS the run at entry and emits NO
-    outcome, so the backstop must sit strictly above every graceful bound that
-    routes here, summed. Three nodes feed `fix` and each now admits two attempts
-    — the janitor's two Reds, two capture findings, two non-reproductions — so
-    six entries are reachable on the ordinary contract path.
+    Until plan `fabro-currency` P4 each producer carried its own graceful `< 3`
+    edge guard and this attribute was the abort backstop sitting strictly above
+    their sum — six reachable entries behind three separate caps. Those guards
+    are gone (the key is not populated on the Petri-era engine), so the three
+    loops now draw on this ONE budget and exhausting it is a run FAILURE rather
+    than a route.
 
-    The PRODUCER COUNT is the tripwire: a fourth node routing into `fix` would
-    re-open this arithmetic silently, and this is the assertion that notices.
+    The arithmetic is kept as a floor rather than dropped: the budget must still
+    admit at least two entries per producer, or a single misbehaving loop could
+    starve the others of any attempt at all. The PRODUCER COUNT is the tripwire —
+    a fourth node routing into `fix` would re-open this silently, and this is the
+    assertion that notices.
     """
     text = _dot()
     producers = {
@@ -292,7 +300,11 @@ def test_the_fix_backstop_still_outlives_every_graceful_bound_feeding_it() -> No
     assert producers == {"janitor", _CAPTURE, _VERIFY}
     backstop = re.search(r"max_visits=(?P<value>\d+)", _node_body(text=text, node="fix") or "")
     assert backstop is not None
-    assert int(backstop.group("value")) > 2 * len(producers)
+    # AT LEAST two entries per producer, not strictly more: the budget IS the
+    # bound now rather than a backstop sitting above three separate caps, and it
+    # is sized to exactly what those retired caps admitted (plan
+    # `fabro-currency` P4), which is two apiece.
+    assert int(backstop.group("value")) >= 2 * len(producers)
 
 
 def test_the_fix_prompt_reads_the_pull_request_when_the_preamble_carries_none() -> None:
@@ -415,8 +427,8 @@ def test_a_red_janitor_still_reaches_fix_with_its_failure_output() -> None:
     red = _edge(source="janitor", target="fix")
     prompt = _prompt(name="fix.md")
 
-    assert "outcome!=succeeded" in red
-    assert f"{_VISIT_COUNT} < 3" in red
+    assert _condition_of(edge=red) == "outcome!=succeeded"
+    assert _VISIT_COUNT not in red
     assert "preferred_label" not in red
     assert 'fidelity="summary:high"' in (_node_body(text=_dot(), node="fix") or "")
     assert "janitor failure output" in prompt

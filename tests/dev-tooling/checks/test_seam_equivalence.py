@@ -38,6 +38,19 @@ import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _CHECK_PATH = _REPO_ROOT / "dev-tooling" / "checks" / "seam_equivalence.py"
+
+# A graph written to carry an `inputs.*` token inside an edge condition, which
+# is the shape the committed graph may no longer hold. The template opener is
+# assembled rather than written literally, because the literal pair poisons
+# ledger and goal rendering wherever this file's text is quoted (the fleet
+# convention of livespec-dev-tooling-9yb4).
+_CONDITION_TOKEN = "{" + "{ inputs.probe_cap }" + "}"
+_CONDITION_TOKEN_GRAPH = (
+    "digraph Probe {\n"
+    '    a -> b [condition="context.internal.node_visit_count < ' + _CONDITION_TOKEN + '"]\n'
+    "    a -> c\n"
+    "}\n"
+)
 _PAYLOADS_PATH = _REPO_ROOT / "dev-tooling" / "checks" / "_checked_workflow_payloads.py"
 _BUNDLE_WHERE = ".claude-plugin/.fabro/workflows/implement-work-item"
 
@@ -178,11 +191,30 @@ def test_scan_of_the_real_payload_returns_the_tokens_that_are_there(
     occurrences = check.payload_occurrences(payload=payloads.bundle_payload(repo_root=_REPO_ROOT))
 
     # The instrument must be able to return a hit before its clean report on
-    # the integration subset means anything: the adapter and policy tokens ARE
-    # in the payload, so a scan that found none of them is broken, not clean.
+    # the integration subset means anything: the adapter tokens ARE in the
+    # payload, so a scan that found none of them is broken, not clean.
     assert {occurrence.name for occurrence in occurrences if occurrence.position == "acp.command"}
-    assert {occurrence.name for occurrence in occurrences if occurrence.position == "condition"}
     assert all(occurrence.rendered for occurrence in occurrences)
+    # THE `condition` POSITION'S CONTROL IS SYNTHETIC NOW, and deliberately so.
+    # The committed graph carried three `inputs.*` tokens inside edge conditions
+    # until plan `fabro-currency` P4 removed them: the Petri-era engine rejects
+    # such a token at load with `attractor.condition.syntax`, so no graph this
+    # repository dispatches may carry one again. That leaves the real payload
+    # unable to serve as this position's positive fixture — which is exactly the
+    # "instrument that cannot return a hit" trap — so the control moves to a
+    # graph written to carry one.
+    assert {
+        occurrence.name
+        for occurrence in check.graph_occurrences(
+            text=_CONDITION_TOKEN_GRAPH, venue="workflow.fabro"
+        )
+        if occurrence.position == "condition"
+    } == {"probe_cap"}
+    assert {
+        occurrence.name
+        for occurrence in occurrences
+        if occurrence.venue == "workflow.fabro" and occurrence.position == "condition"
+    } == set()
 
 
 # ---------------------------------------------------------------------------

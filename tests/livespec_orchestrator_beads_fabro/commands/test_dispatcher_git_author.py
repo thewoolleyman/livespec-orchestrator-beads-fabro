@@ -242,7 +242,18 @@ def test_needs_human_commit_forces_the_resolved_author_but_preserves_committer_i
         "GIT_COMMITTER_EMAIL": "transport@example.com",
     }
 
-    completed = subprocess.run(["bash", "-c", script], cwd=repo, env=env, check=False)
+    # The run id is supplied BOTH ways on purpose: the grooming graph still reads
+    # `$FABRO_RUN_ID`, while the ported implement graph reads the id off stdin
+    # (`stdin_source="context.internal.run_id"`; plan `fabro-currency` P4), and this
+    # case is parametrized over both payloads.
+    completed = subprocess.run(
+        ["bash", "-c", script],
+        cwd=repo,
+        env=env,
+        check=False,
+        input="01AUTHOR\n",
+        text=True,
+    )
 
     assert completed.returncode == 1
     identity = _git(
