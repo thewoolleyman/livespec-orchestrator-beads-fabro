@@ -27,7 +27,13 @@ plausible wrong answer a reader has no way to catch.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
+from returns.unsafe import unsafe_perform_io
+
+from livespec_orchestrator_beads_fabro._store_factory_size_gate import (
+    route_factory_size_decomposition,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
     acp_preflight_refusal,
@@ -35,10 +41,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import host_only_refusal
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import read_dispatch_labels
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
+    factory_size_decision,
+    resolve_adopted_assertion_count_ceiling,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile, utc_now_iso
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
     failed_dispatch_outcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion import (
     provider_exhaustion_refusal,
 )
@@ -81,6 +92,27 @@ def _refusal_for(
     journal: JournalFile,
 ) -> DispatchOutcome | None:
     """The first condition this row fails, or `None` when it passes all four."""
+    adopted_ceiling = unsafe_perform_io(
+        resolve_adopted_assertion_count_ceiling(cwd=repo).value_or(None)
+    )
+    size = factory_size_decision(
+        item=item,
+        adopted_ceiling=adopted_ceiling,
+        raw_justification=None,
+    )
+    if size.disposition == "decompose":
+        reason = cast("str", size.reason)
+        route_factory_size_decomposition(
+            path=store_config(repo=repo),
+            work_item_id=item.id,
+            reason=reason,
+        )
+        return failed_dispatch_outcome(
+            journal=journal,
+            work_item_id=item.id,
+            stage="size-decomposition",
+            detail=reason,
+        )
     exhaustion_refusal = provider_exhaustion_refusal(
         work_item_id=item.id,
         journal=journal,
