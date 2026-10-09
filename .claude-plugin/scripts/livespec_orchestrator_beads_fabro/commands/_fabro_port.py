@@ -220,6 +220,19 @@ class FabroPort:
         )
         return FabroVersionResult(command=command, text=command.stdout)
 
+    def client_version(self, *, timeout_seconds: float) -> FabroVersionResult:
+        """`fabro --version` — the CLIENT build alone, with no server round trip.
+
+        Distinct from `version`, which ALSO asks the configured server for its
+        own build: a dispatch records which BINARY drove it, and a local flag
+        answers that without putting a network call on the dispatch path.
+        """
+        command = self._run(
+            argv=[self.fabro_bin, "--version"],
+            timeout_seconds=timeout_seconds,
+        )
+        return FabroVersionResult(command=command, text=command.stdout)
+
     def _run(
         self,
         *,

@@ -58,6 +58,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     dispatch_fabro_run_inputs,
     run_dispatch,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_binary_record import (
+    EngineBinary,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_merge import confirm_pr
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_argv import pr_arm_argv
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
@@ -267,6 +270,7 @@ def test_the_dispatch_record_journals_the_rendered_hold(tmp_path: Path) -> None:
         journal=journal,
         work_item_id=plan.work_item_id,
         identity=DispatchJournalIdentity(dispatch_id="d-1", dispatch_factory=None),
+        engine=EngineBinary(path="/global/fabro", version="fabro 0.254.0"),
         started_at_epoch=1.0,
         workflow_toml=tmp_path / "wf.toml",
         workflow_name="implement-work-item",

@@ -26,8 +26,18 @@ from livespec_orchestrator_beads_fabro.commands._config import (
     resolve_fabro_bin,
     resolve_fabro_factory,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io import CommandResult
-from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import build_plan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_id_journal import (
+    DispatchJournalIdentity,
+    append_dispatch_id_record,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
+    CommandResult,
+    JournalFile,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import (
+    UNDECLARED_INTEGRATION_CONTRACT,
+    build_plan,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attribution import (
     journaled_runs,
 )
@@ -68,6 +78,8 @@ def _make_executable(*, path: Path) -> Path:
 class _RecordingRunner:
     """Captures the argv of every Fabro call so argv[0] can be asserted."""
 
+    stdout: str = "[]"
+    exit_code: int = 0
     calls: list[list[str]] = field(default_factory=list)
 
     def run(
@@ -81,7 +93,7 @@ class _RecordingRunner:
     ) -> CommandResult:
         _ = (cwd, timeout_seconds, env, stdin)
         self.calls.append(argv)
-        return CommandResult(exit_code=0, stdout="[]", stderr="")
+        return CommandResult(exit_code=self.exit_code, stdout=self.stdout, stderr="")
 
 
 def _reconcile_inputs(*, repo: Path, runner: _RecordingRunner) -> ReconcileInputs:
@@ -217,3 +229,66 @@ def test_a_declared_factory_bin_drives_every_fabro_call_against_that_factory(
         timeout_seconds=1.0
     )
     assert [call[0] for call in reconcile_runner.calls] == [str(candidate), _GLOBAL_BIN]
+
+
+def test_the_dispatch_record_names_the_binary_that_drove_the_dispatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The record carries the ABSOLUTE path and the `fabro --version` text.
+
+    Both fields, because neither answers the other's question: the path says
+    which file was executed — a bare name or a relative path resolves against
+    a PATH and a working directory the record does not carry — and the version
+    says which build that file is, which a path cannot answer once a path is
+    re-pinned in place, as this fleet's own rollouts do.
+
+    The module path is asserted FIRST so the Red is a genuine assertion rather
+    than a collection error.
+    """
+    module_path = _COMMANDS_DIR / "_dispatcher_engine_binary_record.py"
+    assert module_path.is_file()
+    engine_record = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_engine_binary_record"
+    )
+
+    bin_dir = tmp_path / "candidate-bin"
+    _ = _make_executable(path=bin_dir / "fabro-candidate")
+    monkeypatch.setenv("PATH", str(bin_dir))
+    on_path = _RecordingRunner(stdout="fabro 0.378.0-nightly.0 (e46845b 2026-10-06)\n")
+
+    resolved = engine_record.engine_binary(
+        fabro_bin="fabro-candidate", runner=on_path, cwd=tmp_path
+    )
+
+    assert on_path.calls == [["fabro-candidate", "--version"]]
+    assert resolved.path == str(bin_dir / "fabro-candidate")
+    assert resolved.version == "fabro 0.378.0-nightly.0 (e46845b 2026-10-06)"
+
+    # A client that cannot report its build is `None` rather than an empty
+    # string: "not observed" and "reported nothing" have different remedies.
+    monkeypatch.chdir(tmp_path)
+    unreportable = _RecordingRunner(stdout="", exit_code=127)
+    unresolvable = engine_record.engine_binary(
+        fabro_bin="missing/fabro", runner=unreportable, cwd=tmp_path
+    )
+    assert unresolvable.path == str(tmp_path / "missing" / "fabro")
+    assert unresolvable.version is None
+
+    journal_path = tmp_path / "journal.jsonl"
+    append_dispatch_id_record(
+        journal=JournalFile(path=journal_path),
+        work_item_id="bd-ib-qytzf4",
+        identity=DispatchJournalIdentity(dispatch_id="d-1", dispatch_factory="hp-candidate"),
+        engine=resolved,
+        started_at_epoch=1.0,
+        workflow_toml=tmp_path / "wf.toml",
+        workflow_name="implement-work-item",
+        integration=UNDECLARED_INTEGRATION_CONTRACT,
+        merge_hold=False,
+    )
+
+    record = json.loads(journal_path.read_text(encoding="utf-8").strip())
+    assert record["stage"] == "dispatch-id"
+    assert record["fabro_bin"] == str(bin_dir / "fabro-candidate")
+    assert record["fabro_version"] == "fabro 0.378.0-nightly.0 (e46845b 2026-10-06)"
