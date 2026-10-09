@@ -77,7 +77,7 @@ def gate_wave_refusals(  # noqa: PLR0913 - mirrors the public gate_wave inputs.
         _append_gate(
             journal=journal,
             work_item_id=outcome.work_item_id,
-            run_id=run_id,
+            run=run,
             observation=observation,
             session_usd_micros=session_usd_micros,
             decision=decision,
@@ -125,18 +125,28 @@ def _append_gate(
     *,
     journal: JournalWriter,
     work_item_id: str,
-    run_id: str,
+    run: FabroRunSummary,
     observation: CostObservation,
     session_usd_micros: int,
     decision: CostGateDecision,
 ) -> None:
+    """Journal the one audit record this wave writes for a launched run.
+
+    `wall_time_ms` is the engine's own per-run wall clock, which only the
+    Petri-era build reports; it rides the SAME record as the identity and the
+    cost because that is the record the mechanical reflection scan reads back
+    per item, and a second record would be a second place to keep in step. It
+    is `None` whenever the engine emitted none — the scalar-only discipline this
+    record is held to admits an absent measurement, never an invented zero.
+    """
     journal.append(
         record={
             "stage": "cost-gate",
             "work_item_id": work_item_id,
-            "run_id": run_id,
+            "run_id": run.run_id,
             "observable": observation.observable,
             "usd_micros": observation.usd_micros,
+            "wall_time_ms": run.wall_time_ms,
             "session_usd_micros": session_usd_micros,
             "refuse": decision.refuse,
             "severity": decision.severity,

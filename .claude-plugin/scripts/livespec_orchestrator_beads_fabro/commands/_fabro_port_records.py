@@ -59,12 +59,20 @@ class FabroFailureDetail:
 
 @dataclass(frozen=True, kw_only=True)
 class FabroRunSummary:
-    """Run row from `fabro ps -a --json` that livespec code reads."""
+    """Run row from `fabro ps -a --json` that livespec code reads.
+
+    `wall_time_ms` is the engine's own per-run wall clock, which the Petri-era
+    build reports on this record and the pinned build does not emit at all
+    (measured on v0.378.0-nightly.0, research note 006). It defaults to None
+    because an absent measurement is ABSENT: a zero would read as a run the
+    engine timed and found instantaneous.
+    """
 
     run_id: str
     status_kind: str | None
     goal: str | None
     total_usd_micros: int | None
+    wall_time_ms: int | None = None
     work_item_id: str | None = field(default=None, compare=False)
 
 
@@ -170,6 +178,7 @@ def _run_summary(*, run: object) -> FabroRunSummary | None:
         goal=goal,
         work_item_id=_work_item_id(goal=goal),
         total_usd_micros=_optional_int(value=record.get("total_usd_micros")),
+        wall_time_ms=_optional_int(value=record.get("wall_time_ms")),
     )
 
 
