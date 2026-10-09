@@ -51,6 +51,10 @@ from livespec_orchestrator_beads_fabro.commands._plan_archive import archive_thr
 from livespec_orchestrator_beads_fabro.commands._plan_archive_gates import (
     PlanArchiveRefusedError,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_archive_review import (
+    ArchiveCompletenessReviewRequest,
+    CompletenessReviewLauncher,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_completeness_evidence import (
     CompletenessReviewEvidenceFields,
     record_completeness_review_evidence,
@@ -208,13 +212,20 @@ def _legacy_evidence(*, epic_id: str, evidence_id: str, now: str) -> None:
     )
 
 
-def _archive(*, project_root: Path, epic_id: str, evidence_id: str | None) -> dict[str, str]:
+def _archive(
+    *,
+    project_root: Path,
+    epic_id: str,
+    evidence_id: str | None,
+    review_launcher: CompletenessReviewLauncher | None = None,
+) -> dict[str, str]:
     return archive_thread(
         project_root=project_root,
         config=_config(),
         slug=_SLUG,
         epic_id=epic_id,
         completeness_review_comment_id=evidence_id,
+        review_launcher=review_launcher,
         env=_ARCHIVING_SESSION_ENV,
     )
 
@@ -345,4 +356,59 @@ def test_evidence_predating_a_childs_status_change_is_stale_with_the_child_and_i
     assert "bd-ib-recency-e" in message
     assert "2026-10-08T05:00:00Z" in message
     assert (tmp_path / "plan" / _SLUG).is_dir()
+    assert _fake().show_issue(issue_id=epic_id)["status"] != "closed"
+
+
+def test_a_wholly_stale_timeline_commissions_a_fresh_review_before_it_refuses(
+    tmp_path: Path,
+) -> None:
+    """Stale evidence is handled like MISSING evidence, not like a dead end.
+
+    The ratified clause says an archive attempt whose ledger timeline carries no
+    VALID independent evidence must commission a fresh independent reviewer, and
+    evidence that no longer covers the plan is not valid evidence. A leg that
+    refused on sight would leave every stale plan waiting on a human to notice
+    the gap — which is the thing commissioning exists to retire — and a plan
+    archived once and reopened reaches exactly this state by default.
+
+    The brief that reviewer is handed is asserted too, because a commission that
+    named the OLD scope would send it to re-perform the same stale review: the
+    set in the request is the set the grade compares against, read once.
+
+    Refusing AFTER commissioning is what makes both halves observable in one run.
+    The reviewer here records nothing — the common case, since a review takes
+    longer than the archive attempt that asked for it — so the refusal still has
+    to carry the stale account rather than falling back to "evidence is
+    required", and the plan must be exactly as it was.
+    """
+    epic_id = _plan(project_root=tmp_path)
+    _child(epic_id=epic_id, child_id="bd-ib-recency-f", created_at="2026-10-08T00:10:00Z")
+    _record_evidence(
+        epic_id=epic_id,
+        evidence_id="stale-review",
+        reviewed_child_ids=(),
+        now="2026-10-08T02:00:00Z",
+    )
+    commissioned: list[ArchiveCompletenessReviewRequest] = []
+
+    def launch_review(*, request: ArchiveCompletenessReviewRequest) -> str | None:
+        commissioned.append(request)
+        return None
+
+    with pytest.raises(PlanArchiveRefusedError) as refused:
+        _ = _archive(
+            project_root=tmp_path,
+            epic_id=epic_id,
+            evidence_id="stale-review",
+            review_launcher=launch_review,
+        )
+
+    assert len(commissioned) == 1
+    assert commissioned[0].child_ids == ("bd-ib-recency-f",)
+    message = str(refused.value)
+    assert "stale-review" in message
+    assert "stale" in message
+    assert "bd-ib-recency-f" in message
+    assert (tmp_path / "plan" / _SLUG).is_dir()
+    assert not (tmp_path / "plan" / "archive").exists()
     assert _fake().show_issue(issue_id=epic_id)["status"] != "closed"

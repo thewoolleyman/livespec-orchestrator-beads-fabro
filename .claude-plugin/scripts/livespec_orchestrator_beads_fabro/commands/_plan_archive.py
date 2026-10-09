@@ -24,7 +24,6 @@ from livespec_orchestrator_beads_fabro.commands._plan_archive_gates import (
     outside_plan_path_references,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_archive_review import (
-    ArchiveCompletenessReviewRequest,
     CompletenessReviewLauncher,
     archive_completeness_review_request,
     plan_child_statuses,
@@ -33,12 +32,12 @@ from livespec_orchestrator_beads_fabro.commands._plan_archive_review import (
 from livespec_orchestrator_beads_fabro.commands._plan_carrier_map import (
     last_carrier_map_position,
 )
-from livespec_orchestrator_beads_fabro.commands._plan_completeness_evidence import (
-    completeness_review_evidence,
-)
 from livespec_orchestrator_beads_fabro.commands._plan_completeness_identity import (
     ARCHIVING_PARTY,
     completeness_leg_identity,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_completeness_leg import (
+    accepted_completeness_review_evidence,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import (
     plan_definition_of_done,
@@ -62,9 +61,6 @@ if TYPE_CHECKING:
 
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
-    from livespec_orchestrator_beads_fabro.commands._plan_completeness_recency import (
-        PlanChildStatus,
-    )
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
@@ -136,7 +132,7 @@ def archive_thread(  # noqa: PLR0913 — package primitive mirrors the archive i
     # with and the grade a recorded review is held to, which is what makes the set
     # a reviewer is GIVEN the set it is JUDGED against.
     children = plan_child_statuses(client=client, epic_id=epic_id)
-    evidence_id = _resolve_completeness_review_evidence(
+    evidence_id = accepted_completeness_review_evidence(
         client=client,
         epic_id=epic_id,
         completeness_review_comment_id=completeness_review_comment_id,
@@ -151,8 +147,6 @@ def archive_thread(  # noqa: PLR0913 — package primitive mirrors the archive i
             epic_id=epic_id,
         ),
     )
-    if evidence_id is None:
-        raise PlanArchiveRefusedError.missing_completeness_review()
     proof = resolve_plan_proof_leg(client=client, project_root=project_root, epic_id=epic_id)
     if not proof.met:
         raise PlanArchiveRefusedError.unproved_plan_assertions(
@@ -208,76 +202,6 @@ def resolve_plan_proof_leg(
         carrier_map_position=last_carrier_map_position(comments=comments),
         release_tags=repository_release_tags(project_root=project_root),
     )
-
-
-def _resolve_completeness_review_evidence(  # noqa: PLR0913 — mirrors the leg's inputs.
-    *,
-    client: BeadsClient,
-    epic_id: str,
-    completeness_review_comment_id: str | None,
-    review_launcher: CompletenessReviewLauncher | None,
-    archive_identity: str,
-    children: tuple[PlanChildStatus, ...],
-    request: ArchiveCompletenessReviewRequest,
-) -> str | None:
-    """The accepted evidence id, commissioning one fresh review when none is on record.
-
-    `children` and `request.child_ids` are the SAME membership read, threaded in
-    rather than re-derived here, so the brief a commissioned reviewer receives and
-    the grade its record is held to cannot disagree.
-    """
-    evidence_id = _accepted_evidence_id(
-        client=client,
-        epic_id=epic_id,
-        candidate=completeness_review_comment_id,
-        archive_identity=archive_identity,
-        children=children,
-    )
-    if evidence_id is not None or review_launcher is None:
-        return evidence_id
-    return _accepted_evidence_id(
-        client=client,
-        epic_id=epic_id,
-        candidate=review_launcher(request=request),
-        archive_identity=archive_identity,
-        children=children,
-    )
-
-
-def _accepted_evidence_id(
-    *,
-    client: BeadsClient,
-    epic_id: str,
-    candidate: str | None,
-    archive_identity: str,
-    children: tuple[PlanChildStatus, ...],
-) -> str | None:
-    """The candidate evidence id the leg accepts, refusing outright on a bad record.
-
-    Both arms raise from here rather than returning `None` up to the caller's
-    generic refusal, because the generic one is wrong for each in a different
-    way. Evidence authored by the ARCHIVING party needs a different PARTY rather
-    than another round of the same one; evidence whose named scope is no longer
-    the plan's needs a review of the plan as it now stands, and reporting it as
-    absent would send its reader after a record already on the timeline.
-    """
-    if candidate is None:
-        return None
-    evidence = completeness_review_evidence(
-        client=client,
-        epic_id=epic_id,
-        evidence_id=candidate,
-        archive_identity=archive_identity,
-        children=children,
-    )
-    if evidence.self_review_identity is not None:
-        raise PlanArchiveRefusedError.self_reviewed_completeness(
-            identity=evidence.self_review_identity,
-            evidence_id=candidate,
-        )
-    if evidence.stale:
-        raise PlanArchiveRefusedError.stale_completeness_review(reports=evidence.stale)
-    return evidence.accepted_id
 
 
 def _utc_now_iso() -> str:
