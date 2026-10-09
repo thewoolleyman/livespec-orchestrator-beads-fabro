@@ -57,15 +57,11 @@ __all__: list[str] = [
 
 # The dispatch-journal stage each store is recorded under.
 #
-# WHY THE STORE IS RECORDED AT ALL. The vault key is derived from the
-# environment-variable name alone, so a rotated credential takes effect against
-# the bundle already on the server and two launches render BYTE-IDENTICAL
-# bundles. That invariance is the point -- a Petri-era server stores each
-# workflow version immutably, so a transport needing a new bundle per rotation
-# would make every credential refresh a redeploy -- but it also means the bundle
-# cannot answer whether THIS launch re-wrote the vault. Only a record can, and
-# without one a dispatch running on a stale credential looks exactly like one
-# running on a fresh credential.
+# WHY THE STORE IS RECORDED AT ALL. A launch-scoped reference proves which vault
+# ENTRY the worker will read, but the bundle cannot prove whether this launch
+# successfully put a value there. Only the dispatch-time store result can, so a
+# names-only row records that operation without copying the credential onto a
+# persisted surface.
 VAULT_STORE_JOURNAL_STAGE = "secret-channel-store"
 
 # One `fabro secret set` round trip. Generous enough for a loopback-or-tailnet
@@ -102,12 +98,11 @@ class FabroVaultSink:
             self._record(secret=secret, outcome="stored", exit_code=0)
             return None
         # Recorded as REFUSED rather than omitted. An absent row reads as "this
-        # launch never tried", which is the wrong conclusion in exactly the case
-        # that matters: the vault still holds the previous launch's credential,
-        # and the bundle gives no sign of it.
+        # launch never tried", which is the wrong conclusion when the worker's
+        # launch-scoped reference resolves an entry this store never populated.
         self._record(secret=secret, outcome="refused", exit_code=result.exit_code)
-        return f"`fabro secret set {secret.secret_name}` exited {result.exit_code}: " + _scrubbed(
-            text=_excerpt(text=result.stderr or result.stdout), value=secret.value
+        return f"`fabro secret set {secret.secret_name}` exited {result.exit_code}: " + _excerpt(
+            text=_scrubbed(text=result.stderr or result.stdout, value=secret.value)
         )
 
     def _record(self, *, secret: VaultSecret, outcome: str, exit_code: int) -> None:
@@ -167,7 +162,7 @@ def fabro_vault_sink_for_plan(
 
 
 def _excerpt(*, text: str) -> str:
-    """At most `_REJECTION_EXCERPT_CHARS` of the server's own message."""
+    """At most `_REJECTION_EXCERPT_CHARS` of an already-scrubbed message."""
     stripped = text.strip()
     return stripped[:_REJECTION_EXCERPT_CHARS]
 

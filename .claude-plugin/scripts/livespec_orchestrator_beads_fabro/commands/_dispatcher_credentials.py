@@ -351,6 +351,7 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         overlay=overlay,
         rendered=rendered,
         channel=channel,
+        scope=dispatch_id,
         proof_credentials_env=proof_credentials_env,
         sink=secret_sink,
     )
