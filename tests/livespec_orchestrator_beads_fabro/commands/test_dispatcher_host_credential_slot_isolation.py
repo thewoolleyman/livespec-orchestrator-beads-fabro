@@ -144,19 +144,21 @@ def _usable_status() -> ClaudeCredentialStatus:
     )
 
 
-def _recording_probe(*, probed: list[str]) -> Callable[..., ClaudeCredentialStatus]:
-    """A usable probe that appends every token the gate hands it to `probed`.
+def _recording_probe(
+    *, expected_token: str, probe_matches: list[bool]
+) -> Callable[..., ClaudeCredentialStatus]:
+    """A usable probe that records only whether the selected token is expected.
 
     Module-level rather than a closure per case BECAUSE one case asserts the
     gate never probes at all: a per-case closure whose body is deliberately
     never entered is an uncovered body, and this repo requires 100% per-file
     coverage of its own tests. Sharing one body across the cases that DO probe
-    and the one that must not keeps both honest — the assertion stays
-    `probed == []` rather than becoming a pragma.
+    and the one that must not keeps both honest. Recording only a boolean keeps
+    failure and replay output from disclosing the selected credential.
     """
 
     def probe(*, token: str) -> ClaudeCredentialStatus:
-        probed.append(token)
+        probe_matches.append(token == expected_token)
         return _usable_status()
 
     return probe
@@ -174,10 +176,19 @@ def test_credential_gate_receives_the_token_the_test_supplied(
 ) -> None:
     """The gate probes the test's own token, not the host's selected slot."""
     monkeypatch.setenv(CLAUDE_OAUTH_TOKEN_ENV, _TEST_TOKEN)
-    probed: list[str] = []
+    probe_matches: list[bool] = []
 
-    assert check_credential_env(repo=tmp_path, probe=_recording_probe(probed=probed)) is None
-    assert probed == [_TEST_TOKEN]
+    assert (
+        check_credential_env(
+            repo=tmp_path,
+            probe=_recording_probe(
+                expected_token=_TEST_TOKEN,
+                probe_matches=probe_matches,
+            ),
+        )
+        is None
+    )
+    assert probe_matches == [True]
 
 
 def test_removing_the_tests_own_token_still_refuses_before_sandbox_launch(
@@ -195,17 +206,24 @@ def test_removing_the_tests_own_token_still_refuses_before_sandbox_launch(
     observe simply does not happen, and a dispatch the Dispatcher must stop
     proceeds. Nothing in the gate's own output says a slot answered for it.
 
-    `probed == []` is the load-bearing assertion, not the refusal string: it
+    `probe_matches == []` is the load-bearing assertion, not the refusal string: it
     proves no token reached the probe AT ALL. Were the scrub narrowed to the
     slot matching the published profile, or keyed on anything but the prefix,
-    this reads `[_SLOT_TOKEN]` and the refusal is None.
+    this reads `[False]` and the refusal is None, without retaining the selected
+    credential.
     """
     monkeypatch.delenv(CLAUDE_OAUTH_TOKEN_ENV, raising=False)
-    probed: list[str] = []
+    probe_matches: list[bool] = []
 
-    refusal = check_credential_env(repo=tmp_path, probe=_recording_probe(probed=probed))
+    refusal = check_credential_env(
+        repo=tmp_path,
+        probe=_recording_probe(
+            expected_token=_TEST_TOKEN,
+            probe_matches=probe_matches,
+        ),
+    )
 
-    assert probed == []
+    assert probe_matches == []
     assert refusal is not None
     assert refusal.startswith(_REFUSAL_PREFIX)
     assert _ABSENT_CONDITION in refusal
@@ -251,8 +269,17 @@ def test_a_real_dispatch_still_honours_the_published_profile_slot(
     """
     monkeypatch.setenv(CLAUDE_OAUTH_TOKEN_ENV, _TEST_TOKEN)
     monkeypatch.setenv(_SLOT_ENV, _SLOT_TOKEN)
-    probed: list[str] = []
+    probe_matches: list[bool] = []
 
-    assert check_credential_env(repo=tmp_path, probe=_recording_probe(probed=probed)) is None
-    assert probed == [_SLOT_TOKEN]
+    assert (
+        check_credential_env(
+            repo=tmp_path,
+            probe=_recording_probe(
+                expected_token=_SLOT_TOKEN,
+                probe_matches=probe_matches,
+            ),
+        )
+        is None
+    )
+    assert probe_matches == [True]
     assert _FALLBACK_WARNING not in capsys.readouterr().err
