@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.175.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.174.1...v0.175.0) (2026-10-09)
+
+
+### Features
+
+* **dispatcher:** drive each factory with its own engine client binary ([2b10cd6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2b10cd61251caa91e41ce852f3018a1aa92032e7))
+* **dispatcher:** journal which engine binary drove the dispatch ([c69b331](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c69b33114005cfa8816f26f6d07a901d90ccf54f))
+* **dispatcher:** refuse an unusable factory bin before claim, naming whose ([6e13c54](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6e13c54ff3b28414ac21f64cfede7df33dc1201d))
+* **dispatcher:** resolve the engine binary per factory ([3515113](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/35151136255fa9a084c90807a969daadba2651c6))
+
+
+### Bug Fixes
+
+* **dispatcher:** keep one factory's engine binary out of another's survey ([7748de7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7748de7c5749f7953e32ff099571132a9a17841b))
+* **watchdog:** anchor the quiet window on the last observed progress ([aded477](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/aded4775882272d8253de9ae77dd72af0a6c73d9))
+* **watchdog:** measure the quiet window from the most recent progress ([0a7b38f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0a7b38fb02fe82a715d0b67106a4efa8d6702892))
+* **watchdog:** record the interval that governed a stall cancellation ([ebafdbc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ebafdbc8723afc08378761e592d77c74fa08a888))
+
 ## [0.174.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.174.0...v0.174.1) (2026-10-08)
 
 
