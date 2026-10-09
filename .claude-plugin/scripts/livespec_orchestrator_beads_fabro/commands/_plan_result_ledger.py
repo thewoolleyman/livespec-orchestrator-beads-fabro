@@ -43,6 +43,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_observation import 
     SOURCE_LEDGER,
     ResultObservation,
     satisfied,
+    unobservable,
     unsatisfied,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_repository import (
@@ -64,6 +65,7 @@ from livespec_orchestrator_beads_fabro.errors import (
 
 __all__: list[str] = [
     "MARKER_NARROWING",
+    "UNRESOLVED_CONNECTION",
     "observe_item_comment",
     "observe_item_status",
 ]
@@ -88,23 +90,44 @@ _LEDGER_ERRORS: tuple[type[Exception], ...] = (
 
 _STATUS_FIELD = "status"
 
+# The one diagnostic both ledger adapters share, worded once so a reader of
+# either observation is pointed at the same thing to fix.
+UNRESOLVED_CONNECTION = (
+    "the named repository's own configuration did not resolve a tenant connection"
+)
+
 
 def observe_item_status(
     *, repository: ResultRepository, target: ItemStatusTarget, now: str
-) -> ResultObservation | None:
+) -> ResultObservation:
     """Observe whether one ledger item stands at the expected status."""
     config = result_store_config(repository=repository)
     if config is None:
-        return None
+        return _unreadable(
+            repository=repository, target=target, now=now, detail=UNRESOLVED_CONNECTION
+        )
     read = attempt(
         action=lambda: make_beads_client(config=config).show_issue(issue_id=target.item_id),
         exceptions=_LEDGER_ERRORS,
     )
     if isinstance(read, AttemptFailure):
-        return None
+        return _unreadable(
+            repository=repository,
+            target=target,
+            now=now,
+            detail=f"the ledger read of {target.item_id} failed: {_named(failure=read)}",
+        )
     status: object = read.get(_STATUS_FIELD)
     if not isinstance(status, str) or status == "":
-        return None
+        return _unreadable(
+            repository=repository,
+            target=target,
+            now=now,
+            detail=(
+                f"the ledger record for {target.item_id} carries no readable status,"
+                " so it is evidence of nothing about where the item stands"
+            ),
+        )
     if status != target.status:
         return unsatisfied(
             repo=repository.name,
@@ -129,17 +152,26 @@ def observe_item_status(
 
 def observe_item_comment(
     *, repository: ResultRepository, target: ItemCommentTarget, now: str
-) -> ResultObservation | None:
+) -> ResultObservation:
     """Observe whether one ledger item carries the exact requested marker."""
     config = result_store_config(repository=repository)
     if config is None:
-        return None
+        return _unreadable(
+            repository=repository, target=target, now=now, detail=UNRESOLVED_CONNECTION
+        )
     read = attempt(
         action=lambda: read_work_item_comments(path=config, work_item_id=target.item_id),
         exceptions=_LEDGER_ERRORS,
     )
     if isinstance(read, AttemptFailure):
-        return None
+        return _unreadable(
+            repository=repository,
+            target=target,
+            now=now,
+            detail=(
+                f"the ledger comment read of {target.item_id} failed:" f" {_named(failure=read)}"
+            ),
+        )
     comments = tuple(read)
     for position, comment in enumerate(comments, start=1):
         if target.marker not in comment.text:
@@ -167,3 +199,30 @@ def observe_item_comment(
             f" marker {target.marker!r}"
         ),
     )
+
+
+def _unreadable(
+    *,
+    repository: ResultRepository,
+    target: ItemStatusTarget | ItemCommentTarget,
+    now: str,
+    detail: str,
+) -> ResultObservation:
+    """One unobservable reading of the ledger, for either kind it answers for.
+
+    Shared because the SOURCE is the same for both and the clause requires that
+    source named: a caller deciding what to retry needs "the ledger" rather than
+    whichever of the two verbs happened to be issued.
+    """
+    return unobservable(
+        repo=repository.name,
+        target=target.identity,
+        source=SOURCE_LEDGER,
+        now=now,
+        detail=detail,
+    )
+
+
+def _named(*, failure: AttemptFailure) -> str:
+    """One expected ledger failure, named by its type and its own message."""
+    return f"{type(failure.error).__name__}: {failure.error}"

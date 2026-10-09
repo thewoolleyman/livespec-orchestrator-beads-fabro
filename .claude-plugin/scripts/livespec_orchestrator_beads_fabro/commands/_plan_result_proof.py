@@ -41,6 +41,7 @@ hole the clause closes by refusing arbitrary predicates.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
@@ -57,9 +58,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import 
     ProofRecord,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
+    SOURCE_LEDGER,
     SOURCE_PROOF_RECORD,
     ResultObservation,
     satisfied,
+    unobservable,
     unsatisfied,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_repository import (
@@ -98,18 +101,48 @@ _LEDGER_ERRORS: tuple[type[Exception], ...] = (
 _DESCRIPTION_FIELD = "description"
 
 
+@dataclass(frozen=True, kw_only=True)
+class _SubjectRefusal:
+    """Why the subject named no pull request, and which source could not answer.
+
+    A VALUE rather than a bare `None`, because the four ways this step fails have
+    different remedies and the clause requires the failed source named: an
+    unresolvable connection and an absent proof pointer are both unobservable, but
+    one is a configuration fault in the named repository and the other is a
+    subject whose proof was never published. A bare `None` collapsed them.
+    """
+
+    source: str
+    detail: str
+
+
 def observe_verified_proof(
     *, repository: ResultRepository, target: VerifiedProofTarget, runner: CommandRunner, now: str
-) -> ResultObservation | None:
+) -> ResultObservation:
     """Observe whether a typed verified proof covers the requested build and scope."""
     pull_request = _subject_pull_request(repository=repository, subject_id=target.subject_id)
-    if pull_request is None:
-        return None
+    if isinstance(pull_request, _SubjectRefusal):
+        return unobservable(
+            repo=repository.name,
+            target=target.identity,
+            source=pull_request.source,
+            now=now,
+            detail=pull_request.detail,
+        )
     records = read_pull_request_records(
         repo=repository.clone, pr_number=pull_request, runner=runner
     )
     if records is None:
-        return None
+        return unobservable(
+            repo=repository.name,
+            target=target.identity,
+            source=SOURCE_PROOF_RECORD,
+            now=now,
+            detail=(
+                f"the records on pull request #{pull_request} could not be read, so"
+                " whether a verified proof was published is unknown"
+            ),
+        )
     record = _verified_record(records=records, build=target.build)
     if record is None:
         return _unmet(
@@ -178,23 +211,43 @@ def _unmet(
     )
 
 
-def _subject_pull_request(*, repository: ResultRepository, subject_id: str) -> int | None:
-    """The pull request the subject's own proof pointer names, or `None`."""
+def _subject_pull_request(
+    *, repository: ResultRepository, subject_id: str
+) -> int | _SubjectRefusal:
+    """The pull request the subject's own proof pointer names, or why it did not."""
     config = result_store_config(repository=repository)
     if config is None:
-        return None
+        return _SubjectRefusal(
+            source=SOURCE_LEDGER,
+            detail="the named repository's own configuration did not resolve a tenant connection",
+        )
     read = attempt(
         action=lambda: make_beads_client(config=config).show_issue(issue_id=subject_id),
         exceptions=_LEDGER_ERRORS,
     )
     if isinstance(read, AttemptFailure):
-        return None
+        return _SubjectRefusal(
+            source=SOURCE_LEDGER,
+            detail=(
+                f"the ledger read of subject {subject_id} failed:"
+                f" {type(read.error).__name__}: {read.error}"
+            ),
+        )
     description: object = read.get(_DESCRIPTION_FIELD)
     if not isinstance(description, str):
-        return None
+        return _SubjectRefusal(
+            source=SOURCE_LEDGER,
+            detail=f"the ledger record for subject {subject_id} carries no description",
+        )
     pointer = pointer_in(description=description)
     if pointer is None:
-        return None
+        return _SubjectRefusal(
+            source=SOURCE_PROOF_RECORD,
+            detail=(
+                f"subject {subject_id} carries no Proof of Done pointer naming a pull"
+                " request, so there is no published record to validate"
+            ),
+        )
     return pointer.pull_request
 
 
