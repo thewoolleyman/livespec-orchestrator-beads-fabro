@@ -45,7 +45,12 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_ledger import (
     observe_item_comment,
     observe_item_status,
 )
-from livespec_orchestrator_beads_fabro.commands._plan_result_observation import ResultObservation
+from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
+    SOURCE_REFERENCE,
+    SOURCE_REPOSITORY_RESOLUTION,
+    ResultObservation,
+    unobservable,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_result_proof import observe_verified_proof
 from livespec_orchestrator_beads_fabro.commands._plan_result_reference import (
     parse_result_reference,
@@ -66,8 +71,15 @@ from livespec_orchestrator_beads_fabro.commands._plan_result_targets import (
 )
 
 __all__: list[str] = [
+    "UNPARSED_TARGET",
     "read_result",
 ]
+
+# What a reference that will not parse names as its target. STATED rather than
+# left empty, because the clause requires every observation to report a target
+# identity and "" renders as a field the writer forgot; this says outright that
+# no target was ever named.
+UNPARSED_TARGET = "(no typed target: the reference did not parse)"
 
 
 def read_result(
@@ -76,19 +88,36 @@ def read_result(
     reference: object,
     runner: CommandRunner,
     now: str | None = None,
-) -> ResultObservation | None:
+) -> ResultObservation:
     """Observe one required result through the source its typed reference names."""
+    observed_at = utc_now_iso() if now is None else now
     parsed = parse_result_reference(value=reference)
     if isinstance(parsed, ResultReferenceRefusal):
-        return None
+        return unobservable(
+            repo=parsed.repo,
+            target=UNPARSED_TARGET,
+            source=SOURCE_REFERENCE,
+            now=observed_at,
+            detail=parsed.detail,
+        )
     repository = resolve_result_repository(project_root=project_root, name=parsed.repo)
     if repository is None:
-        return None
+        return unobservable(
+            repo=parsed.repo,
+            target=parsed.target.identity,
+            source=SOURCE_REPOSITORY_RESOLUTION,
+            now=observed_at,
+            detail=(
+                f"the repository {parsed.repo} is neither this project nor a configured"
+                " cross-repo target resolving to a clone on this host, so the requested"
+                " target was never queried"
+            ),
+        )
     return _observe(
         repository=repository,
         reference=parsed,
         runner=runner,
-        now=utc_now_iso() if now is None else now,
+        now=observed_at,
     )
 
 
@@ -98,7 +127,7 @@ def _observe(
     reference: ResultReference,
     runner: CommandRunner,
     now: str,
-) -> ResultObservation | None:
+) -> ResultObservation:
     """Route one resolved reference to the single adapter its kind names."""
     target: ResultTarget = reference.target
     match target:

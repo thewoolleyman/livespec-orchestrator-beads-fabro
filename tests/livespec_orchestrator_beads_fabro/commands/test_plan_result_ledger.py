@@ -23,11 +23,13 @@ from livespec_orchestrator_beads_fabro._beads_client import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._plan_result_ledger import (
     MARKER_NARROWING,
+    UNRESOLVED_CONNECTION,
     observe_item_comment,
     observe_item_status,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     OBSERVATION_SATISFIED,
+    OBSERVATION_UNOBSERVABLE,
     OBSERVATION_UNSATISFIED,
     SOURCE_LEDGER,
 )
@@ -109,52 +111,64 @@ def test_a_different_status_is_unsatisfied_and_reports_the_status_it_read(
     assert "not the expected done" in observation.detail
 
 
-def test_an_unreadable_connection_stops_the_status_read(tmp_path: Path) -> None:
+def test_an_unreadable_connection_makes_the_status_read_unobservable(
+    tmp_path: Path,
+) -> None:
+    """A repository whose configuration resolves no connection was never queried."""
     repository = _repo(tmp_path=tmp_path, prefix=None)
-    assert (
-        observe_item_status(
-            repository=repository,
-            target=ItemStatusTarget(item_id=_ITEM_ID, status="ready"),
-            now=_NOW,
-        )
-        is None
+    observation = observe_item_status(
+        repository=repository,
+        target=ItemStatusTarget(item_id=_ITEM_ID, status="ready"),
+        now=_NOW,
     )
+    assert observation.status == OBSERVATION_UNOBSERVABLE
+    assert observation.source == SOURCE_LEDGER
+    assert observation.detail == UNRESOLVED_CONNECTION
+    assert observation.evidence == ""
 
 
-def test_an_item_absent_from_the_tenant_stops_the_status_read(tmp_path: Path) -> None:
+def test_an_item_absent_from_the_tenant_makes_the_status_read_unobservable(
+    tmp_path: Path,
+) -> None:
+    """An item the tenant does not hold says nothing about where that item stands.
+
+    Deliberately NOT a confident negative: "this item is not at `ready`" would be
+    a claim about an item the read never found, and its remedy — file it, or fix
+    the id — is not the remedy an unsatisfied reading points at.
+    """
     repository = _repo(tmp_path=tmp_path)
-    assert (
-        observe_item_status(
-            repository=repository,
-            target=ItemStatusTarget(item_id="bd-ib-never-filed", status="ready"),
-            now=_NOW,
-        )
-        is None
+    observation = observe_item_status(
+        repository=repository,
+        target=ItemStatusTarget(item_id="bd-ib-never-filed", status="ready"),
+        now=_NOW,
     )
+    assert observation.status == OBSERVATION_UNOBSERVABLE
+    assert observation.source == SOURCE_LEDGER
+    assert "BeadsMappingError" in observation.detail
 
 
-def test_a_record_carrying_no_status_is_not_satisfied(
+def test_a_record_carrying_no_status_is_malformed_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A sparse record is not evidence that the item stands anywhere.
 
-    Reading an absent key as a mismatch would be the same answer by accident;
-    reading it as a match would satisfy every status result against a record that
-    says nothing.
+    The clause puts malformed evidence in the unobservable set, and this is why:
+    reading an absent key as a mismatch reaches a plausible answer by accident,
+    and reading it as a match would satisfy every status result against a record
+    that says nothing.
     """
     repository = _repo(tmp_path=tmp_path)
     monkeypatch.setattr(
         "livespec_orchestrator_beads_fabro.commands._plan_result_ledger.make_beads_client",
         lambda **_kwargs: _StatuslessClient(),
     )
-    assert (
-        observe_item_status(
-            repository=repository,
-            target=ItemStatusTarget(item_id=_ITEM_ID, status="ready"),
-            now=_NOW,
-        )
-        is None
+    observation = observe_item_status(
+        repository=repository,
+        target=ItemStatusTarget(item_id=_ITEM_ID, status="ready"),
+        now=_NOW,
     )
+    assert observation.status == OBSERVATION_UNOBSERVABLE
+    assert "carries no readable status" in observation.detail
 
 
 def test_an_exact_marker_is_satisfied_and_says_what_it_does_not_prove(
@@ -228,25 +242,33 @@ def test_a_marker_no_comment_carries_is_unsatisfied_and_counts_what_it_read(
     assert observation.evidence == f"2 ledger comment(s) read on {_ITEM_ID}"
 
 
-def test_an_unreadable_connection_stops_the_comment_read(tmp_path: Path) -> None:
+def test_an_unreadable_connection_makes_the_comment_read_unobservable(
+    tmp_path: Path,
+) -> None:
     repository = _repo(tmp_path=tmp_path, prefix=None)
-    assert (
-        observe_item_comment(
-            repository=repository,
-            target=ItemCommentTarget(item_id=_ITEM_ID, marker=_MARKER),
-            now=_NOW,
-        )
-        is None
+    observation = observe_item_comment(
+        repository=repository,
+        target=ItemCommentTarget(item_id=_ITEM_ID, marker=_MARKER),
+        now=_NOW,
     )
+    assert observation.status == OBSERVATION_UNOBSERVABLE
+    assert observation.detail == UNRESOLVED_CONNECTION
 
 
-def test_an_item_absent_from_the_tenant_stops_the_comment_read(tmp_path: Path) -> None:
+def test_an_item_absent_from_the_tenant_makes_the_comment_read_unobservable(
+    tmp_path: Path,
+) -> None:
+    """Zero comments READ and zero comments READABLE are different facts.
+
+    The unsatisfied arm cites how many comments it read; this arm could read
+    none, so reporting "no comment carries the marker" would be a negative about
+    a population nobody enumerated.
+    """
     repository = _repo(tmp_path=tmp_path)
-    assert (
-        observe_item_comment(
-            repository=repository,
-            target=ItemCommentTarget(item_id="bd-ib-never-filed", marker=_MARKER),
-            now=_NOW,
-        )
-        is None
+    observation = observe_item_comment(
+        repository=repository,
+        target=ItemCommentTarget(item_id="bd-ib-never-filed", marker=_MARKER),
+        now=_NOW,
     )
+    assert observation.status == OBSERVATION_UNOBSERVABLE
+    assert "BeadsMappingError" in observation.detail

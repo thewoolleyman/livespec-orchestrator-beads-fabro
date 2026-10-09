@@ -37,6 +37,7 @@ from typing import Literal
 
 __all__: list[str] = [
     "OBSERVATION_SATISFIED",
+    "OBSERVATION_UNOBSERVABLE",
     "OBSERVATION_UNSATISFIED",
     "SOURCE_FORGE",
     "SOURCE_GIT_OBJECT",
@@ -46,11 +47,13 @@ __all__: list[str] = [
     "SOURCE_REPOSITORY_RESOLUTION",
     "ResultObservation",
     "satisfied",
+    "unobservable",
     "unsatisfied",
 ]
 
 OBSERVATION_SATISFIED = "satisfied"
 OBSERVATION_UNSATISFIED = "unsatisfied"
+OBSERVATION_UNOBSERVABLE = "unobservable"
 
 # The sources the clause enumerates, plus the two the reader itself can fail at
 # before any of them is reached. A reference that will not parse and a repository
@@ -75,7 +78,7 @@ class ResultObservation:
     fields beside it.
     """
 
-    status: Literal["satisfied", "unsatisfied"]
+    status: Literal["satisfied", "unsatisfied", "unobservable"]
     repo: str
     target: str
     source: str
@@ -123,5 +126,33 @@ def unsatisfied(
         source=source,
         observed_at=now,
         evidence=evidence,
+        detail=detail,
+    )
+
+
+def unobservable(
+    *, repo: str, target: str, source: str, now: str, detail: str
+) -> ResultObservation:
+    """The requested target could NOT be observed, and this names what failed.
+
+    No `evidence` parameter, and that absence is the point rather than an
+    omission: a read that failed has nothing to cite, and an evidence string here
+    would read as an artifact somebody could look up. The clause keeps the failed
+    SOURCE and the source EVIDENCE identity as separate requirements for exactly
+    this case — "A bounded read failure MUST name the failed source" — so `source`
+    carries what could not be read and `evidence` stays empty.
+
+    This is the arm the clause protects hardest: authentication, network,
+    malformed evidence and missing repository resolution must land here and never
+    on satisfaction or on a confident negative, because the obligation remains
+    outstanding and a transition claiming completion must be refused.
+    """
+    return ResultObservation(
+        status="unobservable",
+        repo=repo,
+        target=target,
+        source=source,
+        observed_at=now,
+        evidence="",
         detail=detail,
     )
