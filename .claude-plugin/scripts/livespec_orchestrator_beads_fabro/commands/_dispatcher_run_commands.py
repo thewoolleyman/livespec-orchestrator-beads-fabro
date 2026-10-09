@@ -11,11 +11,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
     EXIT_FAILURE,
     EXIT_PRECONDITION_ERROR,
-    alarm_on_terminal_failure,
-    dispatch_exit_code,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
-    cost_gate_after_verdict,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_tail import (
+    dispatch_tail_exit,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
@@ -23,7 +21,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import (
-    emit_outcomes,
     ledger_blocked_after_normalization,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import dispatch_one
@@ -32,36 +29,19 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection impor
     ready_items,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import arm_otel_egress
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
-    journal_path,
-    run_turn_sink_path,
-    spans_path,
-    store_config,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_post_verdict import (
-    reflector_oob_after_verdict,
-)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall import (
     pre_dispatch_wall_exit,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_readiness_diagnostics import (
     not_ready_requested_items_error,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection import reflect
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import (
     ReworkPass,
     rework_redispatch_eligible_ids,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_checks import (
     dispatch_preamble,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_run_turn_guard import (
-    append_run_turn_checks,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_run_turn_sink import RunTurnSink
-from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
-    post_verdict_runner,
-    self_update_after_verdict,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_ledger import (
     args_with_dispatch_workflow_name,
@@ -108,44 +88,10 @@ def run_dispatch_command(*, args: argparse.Namespace) -> int:
         janitor=janitor,
         marked=marked,
     )
-    emit_outcomes(outcomes=[outcome], as_json=args.as_json)
-    # Verdict computed BEFORE the fail-open reflection + notification
-    # stages; immutable by both (loop-reflection-gate best-practices §6 /
-    # 0jxs operability gate). The alarm is strictly best-effort.
-    exit_code = dispatch_exit_code(outcomes=[outcome])
-    alarm_on_terminal_failure(
-        outcomes=[outcome],
-        include_loop_summary=False,
-        journal=journal,
-    )
-    cost_gate_after_verdict(
-        args=args,
-        repo=repo,
-        outcomes=[outcome],
-        journal=journal,
-        runner=post_verdict_runner(runner=None),
-    )
-    self_update_after_verdict(
-        repo=repo,
-        outcomes=[outcome],
-        journal=journal,
-        runner=post_verdict_runner(runner=None),
-    )
-    dispatch_journal_path = journal_path(args=args, repo=repo)
-    append_run_turn_checks(
-        outcomes=(outcome,),
-        journal=journal,
-        journal_path=dispatch_journal_path,
-        sink=RunTurnSink(path=run_turn_sink_path(args=args, repo=repo)),
-    )
-    reflect(
-        outcomes=[outcome],
-        journal=journal,
-        journal_path=dispatch_journal_path,
-        spans_path=spans_path(args=args, repo=repo),
-    )
-    reflector_oob_after_verdict(args=args, repo=repo, journal=journal)
-    return exit_code
+    # Every post-verdict stage, as ONE sequence. The SAME tail the resume runs,
+    # which is what makes "both paths journal the same" a property of one
+    # function rather than a claim about two copies of it.
+    return dispatch_tail_exit(args=args, repo=repo, outcome=outcome, journal=journal)
 
 
 def _target_item(
