@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,7 +22,25 @@ if TYPE_CHECKING:
         JanitorRetention,
     )
 
-__all__: list[str] = ["failed_outcome", "journal_stage", "run_stage", "stalled_outcome", "tail"]
+__all__: list[str] = [
+    "StageJournalOptions",
+    "failed_outcome",
+    "journal_stage",
+    "run_stage",
+    "stalled_outcome",
+    "tail",
+]
+
+
+@dataclass(frozen=True, kw_only=True)
+class StageJournalOptions:
+    """Optional journal-row and failed-output behavior for one stage."""
+
+    streams: bool = False
+    retention: JanitorRetention | None = None
+
+
+_DEFAULT_STAGE_JOURNAL_OPTIONS = StageJournalOptions()
 
 
 def failed_outcome(
@@ -72,8 +91,7 @@ def journal_stage(
     plan: DispatchPlan,
     stage: str,
     result: CommandResult,
-    streams: bool = False,
-    retention: JanitorRetention | None = None,
+    journal_options: StageJournalOptions = _DEFAULT_STAGE_JOURNAL_OPTIONS,
 ) -> None:
     """Append one stage record, optionally carrying BOTH captured streams.
 
@@ -84,11 +102,11 @@ def journal_stage(
     genuinely did its work, so the venue's provisioning steps ask for `streams`
     and journal both.
 
-    `retention` is the post-merge janitor's output-retention venue, and it is
-    OPT-IN per call site rather than read off the plan here, because the
-    retention clause covers the janitor's own commands and nothing else: a
-    default that retained for every journaled stage would be the broad capture
-    of every command the clause declines to perform.
+    `journal_options.retention` is the post-merge janitor's output-retention
+    venue, and it is OPT-IN per call site rather than read off the plan here,
+    because the retention clause covers the janitor's own commands and nothing
+    else: a default that retained for every journaled stage would be the broad
+    capture of every command the clause declines to perform.
     """
     record: dict[str, object] = {
         "work_item_id": plan.work_item_id,
@@ -96,26 +114,31 @@ def journal_stage(
         "exit_code": result.exit_code,
         "detail": tail(text=result.stderr if result.exit_code != 0 else result.stdout),
     }
-    if streams:
+    if journal_options.streams:
         record["stdout"] = tail(text=result.stdout)
         record["stderr"] = tail(text=result.stderr)
-    if retention is not None:
-        record.update(retained_output_record(retention=retention, stage=stage, result=result))
+    if journal_options.retention is not None:
+        record.update(
+            retained_output_record(
+                retention=journal_options.retention,
+                stage=stage,
+                result=result,
+            )
+        )
     journal.append(record=record)
 
 
 StageCommand = tuple[list[str], Path, float, dict[str, str] | None]
 
 
-def run_stage(  # noqa: PLR0913 — kw-only passthrough to `journal_stage`, whose own signature this one mirrors argument for argument. Folding `streams` and `retention` into a carrier here would make the two signatures disagree, and the pair is not a grouping anyway: `streams` decides what the ROW carries and `retention` what is written BESIDE it.
+def run_stage(
     *,
     runner: CommandRunner,
     journal: JournalWriter,
     plan: DispatchPlan,
     stage: str,
     command: StageCommand,
-    streams: bool = False,
-    retention: JanitorRetention | None = None,
+    journal_options: StageJournalOptions = _DEFAULT_STAGE_JOURNAL_OPTIONS,
 ) -> CommandResult:
     argv, cwd, timeout_seconds, env = command
     result = runner.run(argv=argv, cwd=cwd, timeout_seconds=timeout_seconds, env=env)
@@ -124,8 +147,7 @@ def run_stage(  # noqa: PLR0913 — kw-only passthrough to `journal_stage`, whos
         plan=plan,
         stage=stage,
         result=result,
-        streams=streams,
-        retention=retention,
+        journal_options=journal_options,
     )
     return result
 

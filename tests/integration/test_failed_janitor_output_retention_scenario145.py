@@ -17,6 +17,7 @@ and the journal is a real `JournalFile` whose records are read back off disk.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import os
 import stat
@@ -28,6 +29,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     DispatchOutcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_janitor import post_merge
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import run_stage
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
@@ -84,6 +86,13 @@ _SUCCESS_JANITOR_ARGV: tuple[str, ...] = (
 # pull-primary, the venue's merge-containment probe, the preclean, and the five
 # provisioning steps. The janitor argv itself is never taken from this queue.
 _CANNED_STAGES_BEFORE_JANITOR = 8
+
+
+def test_run_stage_groups_its_journaling_policy() -> None:
+    """Row-stream and artifact choices cross the stage boundary as one policy."""
+    parameters = inspect.signature(run_stage).parameters
+    assert "streams" not in parameters
+    assert "retention" not in parameters
 
 
 @dataclass(kw_only=True)

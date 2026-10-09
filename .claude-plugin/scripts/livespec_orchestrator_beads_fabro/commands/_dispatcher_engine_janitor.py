@@ -6,6 +6,7 @@ from contextlib import ExitStack
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import (
+    StageJournalOptions,
     run_stage,
     tail,
 )
@@ -133,7 +134,7 @@ def _post_merge_locked(
         # The check suite is the command whose red the retention clause exists
         # for: its excerpt names the suite, and the failing target it reports
         # is on the stream the excerpt did not keep.
-        retention=plan.janitor_retention,
+        journal_options=StageJournalOptions(retention=plan.janitor_retention),
     )
     if janitor.exit_code != 0:
         return outcome_type(

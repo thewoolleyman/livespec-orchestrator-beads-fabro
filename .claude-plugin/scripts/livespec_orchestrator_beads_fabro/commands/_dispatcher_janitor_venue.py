@@ -73,7 +73,10 @@ from typing import TYPE_CHECKING
 from livespec_orchestrator_beads_fabro.commands._dispatcher_core_provisioning_view import (
     janitor_core_provisioning_defect,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import run_stage
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import (
+    StageJournalOptions,
+    run_stage,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_defaults import (
     UNRESOLVED_NAME,
 )
@@ -339,14 +342,16 @@ def provision_janitor_checkout(
             plan=plan,
             stage=stage,
             command=(argv, cwd, _GIT_TIMEOUT_SECONDS, None),
-            streams=True,
+            journal_options=StageJournalOptions(
+                streams=True,
+                retention=plan.janitor_retention,
+            ),
             # The venue's own provisioning commands are covered by the
             # retention clause alongside the check suite, because a bootstrap
             # or core-provision failure is diagnosed from the same disposable
             # checkout and disappears with it. The PRECLEAN above is not: its
             # non-zero exit is the ordinary answer when there is no worktree to
             # remove, carries no verdict, and is discarded by this caller.
-            retention=plan.janitor_retention,
         )
         if result.exit_code != 0:
             return merged_degraded_for_plan(
