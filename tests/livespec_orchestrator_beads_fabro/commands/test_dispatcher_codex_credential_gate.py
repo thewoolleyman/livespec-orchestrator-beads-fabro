@@ -36,6 +36,7 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_codex_auth,
     _dispatcher_codex_credential_gate,
+    _dispatcher_dispatch_tail,
     _dispatcher_loop_command,
     _dispatcher_run_commands,
 )
@@ -645,17 +646,20 @@ def _stub_dispatch(
             detail="stood in",
         ),
     )
-    monkeypatch.setattr(module, "journal_path", lambda **_kwargs: journal_path)
-    monkeypatch.setattr(module, "run_turn_sink_path", lambda **_kwargs: journal_path)
-    monkeypatch.setattr(module, "spans_path", lambda **_kwargs: journal_path)
-    monkeypatch.setattr(module, "emit_outcomes", lambda **_kwargs: None)
-    monkeypatch.setattr(module, "dispatch_exit_code", lambda **_kwargs: 0)
-    monkeypatch.setattr(module, "alarm_on_terminal_failure", lambda **_kwargs: None)
-    monkeypatch.setattr(module, "cost_gate_after_verdict", lambda **_kwargs: None)
-    monkeypatch.setattr(module, "self_update_after_verdict", lambda **_kwargs: None)
-    monkeypatch.setattr(module, "append_run_turn_checks", lambda **_kwargs: None)
-    monkeypatch.setattr(module, "reflect", lambda **_kwargs: None)
-    monkeypatch.setattr(module, "reflector_oob_after_verdict", lambda **_kwargs: None)
+    # The post-verdict stages live in the SHARED tail both single-dispatch paths
+    # run, so they are stood in THERE rather than on the command module.
+    tail = _dispatcher_dispatch_tail
+    monkeypatch.setattr(tail, "journal_path", lambda **_kwargs: journal_path)
+    monkeypatch.setattr(tail, "run_turn_sink_path", lambda **_kwargs: journal_path)
+    monkeypatch.setattr(tail, "spans_path", lambda **_kwargs: journal_path)
+    monkeypatch.setattr(tail, "emit_outcomes", lambda **_kwargs: None)
+    monkeypatch.setattr(tail, "dispatch_exit_code", lambda **_kwargs: 0)
+    monkeypatch.setattr(tail, "alarm_on_terminal_failure", lambda **_kwargs: None)
+    monkeypatch.setattr(tail, "cost_gate_after_verdict", lambda **_kwargs: None)
+    monkeypatch.setattr(tail, "self_update_after_verdict", lambda **_kwargs: None)
+    monkeypatch.setattr(tail, "append_run_turn_checks", lambda **_kwargs: None)
+    monkeypatch.setattr(tail, "reflect", lambda **_kwargs: None)
+    monkeypatch.setattr(tail, "reflector_oob_after_verdict", lambda **_kwargs: None)
 
 
 def test_both_dispatch_paths_refuse_an_unrenewable_credential_before_claiming(
