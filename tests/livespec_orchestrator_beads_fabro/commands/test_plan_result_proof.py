@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import (
@@ -52,6 +53,10 @@ _NOW = "2026-10-08T12:00:00Z"
 # The containment comparison is told from the comments read by its own endpoint, so
 # a case can answer each independently.
 _COMPARE_KEY = "/compare/"
+# The merge the subject records in its audit metadata. The host-leg rule admits a
+# record "naming a build identity containing the merged change", so this is the
+# other thing a record's build must contain besides the requested build.
+_MERGE_SHA = "c" * 40
 # The capture's identity and an INDEPENDENT replayer's. The host-leg rule admits a
 # replay only from a party other than the one that recorded the capture, so every
 # positive control here needs two distinct identities and the self-replay control
@@ -88,9 +93,9 @@ class _Runner:
         del timeout_seconds, env, stdin
         self.calls.append((tuple(argv), cwd))
         if any(_COMPARE_KEY in token for token in argv):
-            head = argv[2].rsplit("...", maxsplit=1)[-1]
-            if head in self.statuses:
-                return CommandResult(exit_code=0, stdout=f"{self.statuses[head]}\n", stderr="")
+            for ref, status in self.statuses.items():
+                if ref in argv[2]:
+                    return CommandResult(exit_code=0, stdout=f"{status}\n", stderr="")
             return self.compare
         return self.comments
 
@@ -114,6 +119,27 @@ class _DescriptionlessClient:
         return {"id": issue_id}
 
 
+@dataclass(kw_only=True)
+class _AuditShapeClient:
+    """A tenant whose audit metadata is present but not the shape it should be.
+
+    `bd` records are `omitempty`-SPARSE and their metadata is a free-form JSON
+    column, so `metadata` or `metadata.audit` can be a value of any type. Neither
+    is a malformed record: the subject simply records no merge, which is the same
+    answer as a subject whose work has not closed. Seeding these through
+    `IssueDraft` is not possible — its `metadata` is typed as a mapping — so this
+    read-only stub supplies the shapes the public write verb cannot.
+    """
+
+    metadata: object
+
+    def show_issue(self, *, issue_id: str) -> BeadsRecord:
+        return cast(
+            "BeadsRecord",
+            {"id": issue_id, "description": _pointed_description(), "metadata": self.metadata},
+        )
+
+
 def _repo(*, tmp_path: Path, prefix: str | None = "bd-ib") -> ResultRepository:
     clone = tmp_path / "repo"
     clone.mkdir()
@@ -125,7 +151,29 @@ def _repo(*, tmp_path: Path, prefix: str | None = "bd-ib") -> ResultRepository:
     return ResultRepository(name="repo", clone=clone)
 
 
-def _seed_subject(*, repository: ResultRepository, description: str) -> None:
+def _seed_subject(
+    *, repository: ResultRepository, description: str, merge_sha: str | None = None
+) -> None:
+    """Seed the subject, optionally recording the merge its proof must contain.
+
+    `merge_sha` goes into the audit metadata the store maps an item's `audit`
+    from, written through the client's own public create verb. It is OPTIONAL
+    because the host-leg rule admits a record "naming a build identity containing
+    the merged change" — which presupposes a merged change. A subject whose work
+    has not closed carries no recorded merge, so that requirement is vacuous for
+    it rather than unmet; the case below asserts exactly that, because making it
+    fail closed would leave every not-yet-closed subject permanently
+    unobservable.
+    """
+    metadata: dict[str, object] = {}
+    if merge_sha is not None:
+        metadata["audit"] = {
+            "merge_sha": merge_sha,
+            "pr_number": _PR_NUMBER,
+            "verification_timestamp": "2026-10-08T08:00:00Z",
+            "commits": [merge_sha],
+            "files_changed": ["fixture.txt"],
+        }
     client = make_beads_client(config=store_config(repo=repository.clone))
     _ = client.create_issue(
         draft=IssueDraft(
@@ -135,6 +183,7 @@ def _seed_subject(*, repository: ResultRepository, description: str) -> None:
             description=description,
             assignee=None,
             created_at="2026-10-08T00:00:00Z",
+            metadata=metadata,
         )
     )
 
@@ -191,9 +240,13 @@ def _runner(
     `behind` when it does not, and `containment_exit` non-zero makes the comparison
     UNREADABLE, which is a different reading from either.
 
-    `statuses` answers PER HEAD REF instead, for the one case that asserts which
-    refs were compared rather than what the comparison said. A canned answer
-    cannot discriminate there — it replies the same whatever the adapter asked.
+    `statuses` answers PER REF NAMED ANYWHERE IN THE COMPARISON instead, for the
+    cases that assert which refs were compared rather than what the comparison
+    said. A canned answer cannot discriminate there — it replies the same whatever
+    the adapter asked. Matching anywhere in the endpoint rather than on the head
+    alone is what lets a case key the comparison whose BASE it cares about: the
+    requested-build relation puts the record's build in the head, while the
+    merge-containment relation puts the merge in the base.
     """
     payload = (
         stdout
@@ -427,6 +480,176 @@ def test_an_unreadable_containment_comparison_is_unobservable(tmp_path: Path) ->
     assert observation.status == OBSERVATION_UNOBSERVABLE
     assert observation.source == SOURCE_PROOF_RECORD
     assert observation.evidence == ""
+
+
+def test_a_factory_record_from_another_dispatch_is_not_evidence(tmp_path: Path) -> None:
+    """The FACTORY leg's attribution half, which the host leg's independence mirrors.
+
+    `_dispatcher_proof_evidence` states the rule outright — "a record from another
+    dispatch describes another tree" — and makes an unidentifiable dispatch fatal
+    to attribution rather than a reason to fall back on the newest verified record
+    whoever published it. This read admitted ANY `verified` record on the pull
+    request, so a record belonging to a different dispatch satisfied the result.
+
+    The subject's own proof pointer names the run that evidenced its merge, which
+    is the attribution anchor this reader has. The positive control is the SAME
+    record published by that run, so the refusal cannot be a reader that rejects
+    every factory record.
+    """
+    repository = _repo(tmp_path=tmp_path)
+    _seed_subject(repository=repository, description=_pointed_description())
+    unrelated = observe_verified_proof(
+        repository=repository,
+        target=_target(),
+        runner=_runner(bodies=(_record_body(identity="run 01M4OTHERRUN"),)),
+        now=_NOW,
+    )
+    assert unrelated.status == OBSERVATION_UNSATISFIED
+    attributed = observe_verified_proof(
+        repository=repository,
+        target=_target(),
+        runner=_runner(bodies=(_record_body(identity="run 01M4PROOF"),)),
+        now=_NOW,
+    )
+    assert attributed.status == OBSERVATION_SATISFIED
+
+
+def test_an_unreadable_containment_is_unobservable_on_the_factory_leg_too(
+    tmp_path: Path,
+) -> None:
+    """The unreadable/unmet distinction must hold on BOTH legs, not just the host one.
+
+    The host leg answers `unobservable` when a replay's containment could not be
+    read. The factory leg skipped such a record silently, and with no host record
+    to carry a refusal the reading fell through to `unsatisfied` — a confident
+    negative about a build nobody compared, which is the clause's forbidden
+    direction and the exact asymmetry a one-leg fix leaves behind.
+    """
+    repository = _repo(tmp_path=tmp_path)
+    _seed_subject(repository=repository, description=_pointed_description())
+    observation = observe_verified_proof(
+        repository=repository,
+        target=_target(),
+        runner=_runner(bodies=(_record_body(),), containment_exit=1),
+        now=_NOW,
+    )
+    assert observation.status == OBSERVATION_UNOBSERVABLE
+    assert observation.source == SOURCE_PROOF_RECORD
+    assert observation.evidence == ""
+
+
+def test_a_build_excluding_the_subjects_recorded_merge_is_not_evidence(
+    tmp_path: Path,
+) -> None:
+    """The host-leg rule names a build "containing the merged change", not any build.
+
+    Validating only that the record's build covers the REQUESTED build leaves a
+    replay taken against a release predating the subject's merge as satisfaction —
+    proof of a build that does not carry the work. So when the subject records a
+    merge, the record's build must contain THAT too, and the comparison names it.
+
+    The positive control is the same record against a build that does contain the
+    merge, so this cannot be a reader that refuses every record once a merge is
+    recorded.
+    """
+    repository = _repo(tmp_path=tmp_path)
+    _seed_subject(repository=repository, description=_pointed_description(), merge_sha=_MERGE_SHA)
+    excluding = observe_verified_proof(
+        repository=repository,
+        target=_target(),
+        runner=_runner(bodies=_capture_and_replay(), statuses={_MERGE_SHA: "behind"}),
+        now=_NOW,
+    )
+    assert excluding.status == OBSERVATION_UNSATISFIED
+    containing = observe_verified_proof(
+        repository=repository,
+        target=_target(),
+        runner=_runner(bodies=_capture_and_replay()),
+        now=_NOW,
+    )
+    assert containing.status == OBSERVATION_SATISFIED
+    # The comparison must NAME the merge, which is what a status alone cannot show.
+    runner = _runner(bodies=_capture_and_replay())
+    _ = observe_verified_proof(repository=repository, target=_target(), runner=runner, now=_NOW)
+    assert any(f"compare/{_MERGE_SHA}..." in one for one in runner.comparisons), runner.comparisons
+
+
+def test_a_subject_recording_no_merge_has_no_merge_to_contain(tmp_path: Path) -> None:
+    """The vacuous arm, and it is load-bearing rather than a convenience.
+
+    "A build identity containing the merged change" presupposes a merged change. A
+    subject whose work has not closed records none, and treating that absence as a
+    failed containment would make the verified-proof result PERMANENTLY
+    unobservable for every such subject — the instrument-blinded-by-its-own-guard
+    failure, arriving from the fail-closed direction.
+
+    So the requirement applies when a merge IS recorded and is vacuous when it is
+    not; the requested build's own containment still applies either way, which the
+    sibling cases above assert.
+    """
+    repository = _repo(tmp_path=tmp_path)
+    _seed_subject(repository=repository, description=_pointed_description())
+    runner = _runner(bodies=_capture_and_replay())
+    observation = observe_verified_proof(
+        repository=repository, target=_target(), runner=runner, now=_NOW
+    )
+    assert observation.status == OBSERVATION_SATISFIED
+    assert all(f"compare/{_MERGE_SHA}..." not in one for one in runner.comparisons)
+
+
+def test_an_unreadable_comparison_is_unobservable_once_a_merge_is_recorded_too(
+    tmp_path: Path,
+) -> None:
+    """The composed reader's unreadable arm, which needs BOTH relations in play.
+
+    The sibling unreadable cases record no merge, so only the requested-build
+    relation is asked and the composition never runs. With a merge recorded the
+    reader asks two questions, and EITHER being unreadable has to make the answer
+    unreadable rather than `False` — a composition that returned `False` when one
+    relation could not be read would convict a record on a measurement nobody
+    took, which is the whole thing the unobservable status exists to prevent.
+    """
+    repository = _repo(tmp_path=tmp_path)
+    _seed_subject(repository=repository, description=_pointed_description(), merge_sha=_MERGE_SHA)
+    observation = observe_verified_proof(
+        repository=repository,
+        target=_target(),
+        runner=_runner(bodies=_capture_and_replay(), containment_exit=1),
+        now=_NOW,
+    )
+    assert observation.status == OBSERVATION_UNOBSERVABLE
+    assert observation.source == SOURCE_PROOF_RECORD
+
+
+@pytest.mark.parametrize("metadata", ["not-a-mapping", {"audit": "not-a-mapping"}, {}])
+def test_audit_metadata_that_records_no_merge_leaves_the_requirement_vacuous(
+    tmp_path: Path, metadata: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Three sparse shapes, none of which is a malformed record.
+
+    A `bd` record is `omitempty`-sparse and its metadata is a free-form JSON
+    column, so absent metadata, a non-mapping metadata, and a non-mapping `audit`
+    are all shapes the store genuinely produces. Each means the same thing — this
+    subject records no merge — so each leaves the merge requirement vacuous rather
+    than refusing the read. Treating any of them as malformed would make the
+    result unobservable for a whole class of perfectly ordinary records, which is
+    the sparseness trap this repository has already paid for once.
+    """
+    repository = _repo(tmp_path=tmp_path)
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands._plan_result_proof.result_store_config",
+        lambda **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands._plan_result_proof.make_beads_client",
+        lambda **_kwargs: _AuditShapeClient(metadata=metadata),
+    )
+    runner = _runner(bodies=_capture_and_replay())
+    observation = observe_verified_proof(
+        repository=repository, target=_target(), runner=runner, now=_NOW
+    )
+    assert observation.status == OBSERVATION_SATISFIED
+    assert all(f"compare/{_MERGE_SHA}..." not in one for one in runner.comparisons)
 
 
 def test_a_comment_saying_verified_is_not_a_typed_record(tmp_path: Path) -> None:
