@@ -236,13 +236,14 @@ def _accepted_evidence_id(
     archive_identity: str,
     current_child_ids: tuple[str, ...],
 ) -> str | None:
-    """The candidate evidence id the leg accepts, refusing outright on a self-review.
+    """The candidate evidence id the leg accepts, refusing outright on a bad record.
 
-    The SELF-REVIEW arm raises from here rather than returning `None` up to the
-    caller's generic refusal, and it raises before the launcher is consulted:
-    commissioning a fresh reviewer is the remedy for evidence that is MISSING,
-    and a plan whose evidence was authored by the archiving party needs a
-    different PARTY rather than another round of the same one.
+    Both arms raise from here rather than returning `None` up to the caller's
+    generic refusal, because the generic one is wrong for each in a different
+    way. Evidence authored by the ARCHIVING party needs a different PARTY rather
+    than another round of the same one; evidence whose named scope is no longer
+    the plan's needs a review of the plan as it now stands, and reporting it as
+    absent would send its reader after a record already on the timeline.
     """
     if candidate is None:
         return None
@@ -258,6 +259,8 @@ def _accepted_evidence_id(
             identity=evidence.self_review_identity,
             evidence_id=candidate,
         )
+    if evidence.stale:
+        raise PlanArchiveRefusedError.stale_completeness_review(reports=evidence.stale)
     return evidence.accepted_id
 
 

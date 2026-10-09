@@ -34,6 +34,16 @@ from __future__ import annotations
 import re
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+from livespec_orchestrator_beads_fabro.commands._plan_completeness_recency import (
+    stale_evidence_detail,
+)
+
+if TYPE_CHECKING:
+    from livespec_orchestrator_beads_fabro.commands._plan_completeness_recency import (
+        StaleEvidenceReport,
+    )
 
 __all__: list[str] = [
     "PlanArchiveRefusedError",
@@ -87,6 +97,29 @@ class PlanArchiveRefusedError(Exception):
         same = "which is the identity archiving this plan, so it is a self-review"
         remedy = "a party with no role in the plan must perform and record the review"
         return cls(f"{found}, {same}; {remedy}")
+
+    @classmethod
+    def stale_completeness_review(
+        cls,
+        *,
+        reports: tuple[StaleEvidenceReport, ...],
+    ) -> PlanArchiveRefusedError:
+        """Name every recorded review whose scope is no longer this plan's, and why.
+
+        DISTINCT from `missing_completeness_review` because the evidence is
+        PRESENT, independently authored and fully attesting — and what it attested
+        was a DIFFERENT plan than the one being archived. Reporting that evidence
+        is required would send its reader hunting for a record already on the
+        timeline, and would leave a reviewer re-issuing the same record against
+        the same refusal.
+
+        EVERY stale record is named rather than only the first, because the
+        candidate evidence id can carry more than one comment and an operator
+        deciding what to re-review needs the union of what each of them missed.
+        """
+        detail = "; ".join(stale_evidence_detail(report=report) for report in reports)
+        remedy = "a review of the plan's current child set must be performed and recorded"
+        return cls(f"{detail}; {remedy}")
 
     @classmethod
     def unresolved_publishing_identity(cls, *, role: str) -> PlanArchiveRefusedError:

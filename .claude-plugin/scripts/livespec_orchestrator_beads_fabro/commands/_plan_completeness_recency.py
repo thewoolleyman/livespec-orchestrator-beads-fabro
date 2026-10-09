@@ -34,8 +34,12 @@ from dataclasses import dataclass
 
 __all__: list[str] = [
     "StaleEvidenceReport",
+    "stale_evidence_detail",
     "stale_evidence_report",
 ]
+
+_ADDED_CLAUSE = "children added since the review"
+_REMOVED_CLAUSE = "children removed since the review"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -78,3 +82,23 @@ def stale_evidence_report(
         added_child_ids=added,
         removed_child_ids=removed,
     )
+
+
+def stale_evidence_detail(*, report: StaleEvidenceReport) -> str:
+    """One clause per way this record no longer covers the plan, naming every id.
+
+    Only the ids that CHANGED are named. Listing the whole current child set would
+    read as though the review had covered none of it, which points a reviewer at a
+    far larger re-read than the refusal actually calls for; and the two clauses are
+    labelled separately because an added child and a removed one prescribe
+    different reading.
+    """
+    clauses = [
+        f"{clause} {', '.join(child_ids)}"
+        for clause, child_ids in (
+            (_ADDED_CLAUSE, report.added_child_ids),
+            (_REMOVED_CLAUSE, report.removed_child_ids),
+        )
+        if child_ids
+    ]
+    return f"completeness-review evidence {report.evidence_id} is stale: {'; '.join(clauses)}"

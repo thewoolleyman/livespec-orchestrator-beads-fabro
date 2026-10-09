@@ -10,10 +10,22 @@ own so a future reader can see which way each arm fails.
 from __future__ import annotations
 
 from livespec_orchestrator_beads_fabro.commands._plan_completeness_recency import (
+    StaleEvidenceReport,
+    stale_evidence_detail,
     stale_evidence_report,
 )
 
 _EVIDENCE = "review-evidence-1"
+
+
+def _detail(*, added: tuple[str, ...], removed: tuple[str, ...]) -> str:
+    return stale_evidence_detail(
+        report=StaleEvidenceReport(
+            evidence_id=_EVIDENCE,
+            added_child_ids=added,
+            removed_child_ids=removed,
+        )
+    )
 
 
 def test_a_review_naming_the_current_set_is_not_stale() -> None:
@@ -98,3 +110,27 @@ def test_a_review_of_a_wholly_different_set_reports_both_halves() -> None:
     assert report is not None
     assert report.added_child_ids == ("bd-ib-new",)
     assert report.removed_child_ids == ("bd-ib-old",)
+
+
+def test_the_detail_renders_only_the_clauses_that_apply() -> None:
+    """A clause is present only when its own id set is, and never empty-handed.
+
+    An "added: " clause with nothing after it reads as a rendering bug at exactly
+    the moment an operator is trying to work out what to re-review, and the
+    single-direction cases are the common ones: a plan usually grows children
+    after a review rather than losing them.
+    """
+    added_only = _detail(added=("bd-ib-new",), removed=())
+    removed_only = _detail(added=(), removed=("bd-ib-gone",))
+    both = _detail(added=("bd-ib-new",), removed=("bd-ib-gone",))
+
+    assert added_only == (
+        f"completeness-review evidence {_EVIDENCE} is stale:"
+        " children added since the review bd-ib-new"
+    )
+    assert "removed" not in added_only
+    assert "added" not in removed_only
+    assert "bd-ib-gone" in removed_only
+    assert both.endswith(
+        "children added since the review bd-ib-new; children removed since the review bd-ib-gone"
+    )

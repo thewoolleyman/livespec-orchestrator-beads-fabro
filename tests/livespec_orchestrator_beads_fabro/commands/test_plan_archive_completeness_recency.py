@@ -263,3 +263,45 @@ def test_evidence_is_accepted_only_when_it_names_the_epics_current_child_set(
 
     assert accepted["archive_path"] == f"plan/archive/{_SLUG}"
     assert _fake().show_issue(issue_id=epic_id)["status"] == "closed"
+
+
+def test_a_stale_scope_is_reported_as_stale_and_names_what_changed(tmp_path: Path) -> None:
+    """The refusal NAMES each child added and each child removed since the review.
+
+    A generic "evidence is required" here is actively harmful, and that is why
+    this is a separate refusal rather than stricter grading: the evidence IS on
+    the timeline, independently authored and fully attesting, so its reader goes
+    hunting for a record that is already there. Worse, the reader cannot tell
+    whether the remedy is to review work nobody has reviewed or to re-read a plan
+    whose carriers moved — so a reviewer re-issues the same record and the
+    refusal becomes a retry loop.
+
+    Both directions are present in one setup because they are different
+    omissions. `bd-ib-recency-c` is work that landed after the attestation;
+    `bd-ib-recency-a` is a carrier the attestation counted that the plan no
+    longer has.
+    """
+    epic_id = _plan(project_root=tmp_path)
+    _child(epic_id=epic_id, child_id="bd-ib-recency-b", created_at="2026-10-08T00:10:00Z")
+    _child(epic_id=epic_id, child_id="bd-ib-recency-c", created_at="2026-10-08T00:20:00Z")
+    _record_evidence(
+        epic_id=epic_id,
+        evidence_id="drifted-review",
+        reviewed_child_ids=("bd-ib-recency-a", "bd-ib-recency-b"),
+        now="2026-10-08T02:00:00Z",
+    )
+
+    with pytest.raises(PlanArchiveRefusedError) as refused:
+        _ = _archive(project_root=tmp_path, epic_id=epic_id, evidence_id="drifted-review")
+
+    message = str(refused.value)
+    assert "drifted-review" in message
+    assert "stale" in message
+    added, _, removed = message.partition("removed")
+    assert "bd-ib-recency-c" in added
+    assert "bd-ib-recency-a" in removed
+    # The child the review DID cover is not named: a refusal that listed the whole
+    # current set would read as though the review had covered none of it.
+    assert "bd-ib-recency-b" not in message
+    assert (tmp_path / "plan" / _SLUG).is_dir()
+    assert _fake().show_issue(issue_id=epic_id)["status"] != "closed"
