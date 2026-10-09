@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.180.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.180.3...v0.180.4) (2026-10-09)
+
+
+### Bug Fixes
+
+* **dispatcher:** guard every destructive orphan route ([757a50a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/757a50afe7745d3e129196628721321ade2a52da))
+* **dispatcher:** journal the declined supersession under its own hold reason ([0f22770](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0f22770173cb3cadc6f6429fc6f878d533dff4dc))
+* **dispatcher:** keep cancelling a genuinely superseded factory run ([668c182](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/668c1820683b2e1b76dffd9c6e21c6db9301247d))
+* **dispatcher:** recheck supersession at cancel boundary ([d2c77ac](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d2c77ace909ff4d385e5ff5511779a9e9f7232af))
+* **dispatcher:** stop the orphan sweep cancelling a run newer than its snapshot ([e4b5262](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e4b52626bd08e295857fec40afd64a85e778f9b7))
+
 ## [0.180.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.180.2...v0.180.3) (2026-10-09)
 
 
