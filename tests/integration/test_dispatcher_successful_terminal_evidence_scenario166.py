@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -36,6 +37,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
     build_plan,
 )
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 _RUN_ID = "01PROOFTERMINAL"
 _HEAD = "a" * 40
@@ -97,6 +99,8 @@ class _Runner:
     pr_overrides: dict[str, object] = field(default_factory=dict)
     pr_available: bool = True
     repository_slug: str = _REPOSITORY
+    repository_exit_code: int = 0
+    repository_stdout: str | None = None
     calls: list[tuple[list[str], Path]] = field(default_factory=list)
 
     def run(
@@ -113,7 +117,15 @@ class _Runner:
         if argv[:2] == ["synthetic-fabro", "inspect"]:
             return _ok(stdout=json.dumps([self.inspect_record]))
         if argv[:3] == ["gh", "repo", "view"]:
-            return _ok(stdout=json.dumps({"nameWithOwner": self.repository_slug}))
+            return CommandResult(
+                exit_code=self.repository_exit_code,
+                stdout=(
+                    json.dumps({"nameWithOwner": self.repository_slug})
+                    if self.repository_stdout is None
+                    else self.repository_stdout
+                ),
+                stderr="repository unavailable" if self.repository_exit_code else "",
+            )
         if argv[:3] == ["gh", "pr", "view"]:
             if not self.pr_available:
                 return CommandResult(exit_code=1, stdout="", stderr="not found")
@@ -221,6 +233,8 @@ def _dispatch(
     pr_overrides: dict[str, object] | None = None,
     pr_available: bool = True,
     repository_slug: str = _REPOSITORY,
+    repository_exit_code: int = 0,
+    repository_stdout: str | None = None,
     launcher_stderr: str = _WORKER_EXIT_MESSAGE,
 ) -> tuple[DispatchOutcome, _Journal, _Runner]:
     plan = _plan(root=root)
@@ -234,6 +248,8 @@ def _dispatch(
         pr_overrides=pr_overrides or {},
         pr_available=pr_available,
         repository_slug=repository_slug,
+        repository_exit_code=repository_exit_code,
+        repository_stdout=repository_stdout,
     )
     journal = _Journal()
     outcome = run_dispatch(
@@ -478,3 +494,49 @@ def test_scenario_166_authenticates_terminal_success_and_preserves_non_green_con
     assert any(
         record.get("stage") == "fabro-terminal-classification" for record in held_journal.records
     )
+
+
+def test_unavailable_or_unstructured_evidence_retains_the_failed_disposition(
+    tmp_path: Path,
+) -> None:
+    incomplete = _successful_checkpoint()
+    incomplete["completed_nodes"] = ["start", "verify_pr"]
+    incomplete["node_outcomes"] = {
+        "start": {"status": "succeeded"},
+        "verify_pr": {"status": "succeeded"},
+    }
+    malformed = _successful_checkpoint()
+    _ = malformed.pop("node_outcomes")
+    cases: tuple[tuple[str, dict[str, object], int, str | None], ...] = (
+        ("repository-unavailable", _failed_inspect(checkpoint=_successful_checkpoint()), 1, ""),
+        (
+            "repository-malformed",
+            _failed_inspect(checkpoint=_successful_checkpoint()),
+            0,
+            "not-json",
+        ),
+        ("incomplete-route", _failed_inspect(checkpoint=incomplete), 0, None),
+        ("malformed-checkpoint", _failed_inspect(checkpoint=malformed), 0, None),
+    )
+    observed: list[tuple[str, DispatchOutcome | AttemptFailure]] = []
+    for name, inspect_record, repository_exit_code, repository_stdout in cases:
+        dispatched = attempt(
+            action=partial(
+                _dispatch,
+                root=tmp_path / name,
+                inspect_record=inspect_record,
+                repository_exit_code=repository_exit_code,
+                repository_stdout=repository_stdout,
+            ),
+            exceptions=(AttributeError, TypeError),
+        )
+        observed.append(
+            (name, dispatched if isinstance(dispatched, AttemptFailure) else dispatched[0])
+        )
+
+    assert [
+        (name, value.status, value.stage, value.pr_number)
+        if isinstance(value, DispatchOutcome)
+        else (name, type(value.error).__name__, "raised", None)
+        for name, value in observed
+    ] == [(name, "failed", "fabro-run", None) for name, *_rest in cases]

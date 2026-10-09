@@ -116,7 +116,13 @@ def _checkpoint_completed_route(
     """Whether the newest checkpoint proves either supported green-terminal shape."""
     completed_raw: object = checkpoint.get("completed_nodes")
     outcomes_raw: object = checkpoint.get("node_outcomes")
-    current_raw = cast("str", checkpoint.get("current_node"))
+    current_raw: object = checkpoint.get("current_node")
+    if (
+        not isinstance(completed_raw, list)
+        or not isinstance(outcomes_raw, dict)
+        or not isinstance(current_raw, str)
+    ):
+        return False
     completed = frozenset(
         item for item in cast("list[object]", completed_raw) if isinstance(item, str)
     )

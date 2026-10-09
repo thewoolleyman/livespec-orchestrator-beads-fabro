@@ -131,9 +131,12 @@ def terminal_repository_name(
         stage="fabro-terminal-repository-probe",
         result=result,
     )
+    if result.exit_code != 0:
+        return None
     parsed_raw = parse_json(text=result.stdout)
-    parsed = cast("dict[str, object]", parsed_raw)
-    return cast("str | None", parsed.get("nameWithOwner"))
+    if not isinstance(parsed_raw, dict):
+        return None
+    return cast("str | None", cast("dict[str, object]", parsed_raw).get("nameWithOwner"))
 
 
 def _journal_successful_classification(
