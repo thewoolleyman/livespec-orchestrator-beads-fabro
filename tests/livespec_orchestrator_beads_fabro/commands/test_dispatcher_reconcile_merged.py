@@ -478,7 +478,10 @@ def test_reconcile_merged_refuses_unknown_repo_and_item(
 
     assert (missing_repo_exit, missing_item_exit) == (3, 3)
     err = capsys.readouterr().err
-    assert "--repo does not exist" in err
+    # The repository refusal NAMES the submitted value and the path requirement;
+    # `test_dispatcher_reconcile_repo_path.py` owns that wall's own assertions.
+    assert "--repo requires a path to an existing repository directory" in err
+    assert str(missing_repo) in err
     assert "work-item bd-ib-missing not found" in err
 
 
