@@ -1,0 +1,116 @@
+"""POSITIVE CONTROL for fabro_port_seam — this file MUST produce findings.
+
+Not a module. It is stored with a `.py.txt` suffix so no linter, typechecker,
+coverage gate or mirror-pairing check treats it as first-party source, while
+the check still reads and parses it through the same path it uses for the real
+package walk.
+
+Every call below REACHES THE ENGINE, in one of the three shapes this
+repository measured on `origin/master` at 2026-10-09 before the facade became
+the single seam. If `fabro_port_seam` reports no finding of some form here,
+that sub-matcher is broken and its clean report on the real package says
+nothing about that form.
+
+The file also carries the near-misses deliberately — passing the resolved
+binary around as data, constructing a port, sending a non-Fabro request,
+naming a route that is not a Fabro API route — because a matcher that fired on
+those would make the guard useless in the opposite direction, refusing most of
+a package that reaches the engine nowhere.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+def export_run_record(*, fabro_bin: str, run_id: str, server_url: str, runner: Any) -> Any:
+    # `binary-argv`, from a bare local name: the shape both
+    # preserve-by-reference modules carried.
+    return runner.run(
+        argv=[fabro_bin, "dump", run_id, "--server", server_url, "-o", "/tmp/export"],
+        cwd=None,
+        timeout_seconds=300.0,
+    )
+
+
+def list_runs(*, args: Any, runner: Any) -> Any:
+    # `binary-argv` through an ATTRIBUTE read, which is how a dispatch-time
+    # argv reaches a runner.
+    return runner.run(argv=[args.fabro_bin, "ps", "-a", "--json"], cwd=None, timeout_seconds=30.0)
+
+
+def inspect_run(*, plan: Any, run_id: str, runner: Any) -> Any:
+    # `binary-argv` behind a one-argument conversion of the read.
+    return runner.run(
+        argv=[str(plan.fabro_bin), "inspect", run_id, "--json"],
+        cwd=None,
+        timeout_seconds=30.0,
+    )
+
+
+def client_version(*, runner: Any) -> Any:
+    # `binary-argv` from the BARE binary name as a constant: an invocation
+    # that never mentions a resolved path at all.
+    return runner.run(argv=["fabro", "--version"], cwd=None, timeout_seconds=30.0)
+
+
+def events_tuple_argv(*, args: Any, run_id: str, runner: Any) -> Any:
+    # `binary-argv` in a TUPLE: the same invocation with different brackets.
+    return runner.run(argv=(args.fabro_bin, "events", run_id), cwd=None, timeout_seconds=30.0)
+
+
+def read_pending_questions(*, target: Any, transport: Any, run_id: str) -> Any:
+    # `transport-call` — the transport function called directly, which is what
+    # the ACP capability reader did.
+    return fabro_http_request(
+        target=target,
+        transport=transport,
+        method="GET",
+        path=f"/runs/{run_id}/questions",
+        payload=None,
+        timeout_seconds=10.0,
+    )
+
+
+def send_one_exchange(*, transport: Any) -> Any:
+    # `transport-call` through the protocol's own call shape, one level below
+    # the function above.
+    return transport.send(
+        method="POST",
+        url="https://factory.example/runs/1/cancel",
+        headers={},
+        body=None,
+        timeout_seconds=10.0,
+    )
+
+
+SYSTEM_INFO_ROUTE = "/api/v1/system/info"
+"""`server-api-path` — a Fabro server route named outside the facade."""
+
+
+# ---------------------------------------------------------------------------
+# NEAR-MISSES — every one of these MUST stay unreported.
+# ---------------------------------------------------------------------------
+
+
+def resolve_and_build_port(*, args: Any, runner: Any) -> Any:
+    # Naming the binary as DATA: resolving it, passing it by keyword, and
+    # carrying it in a record. None of this invokes anything, and most of the
+    # package does exactly this.
+    resolved = resolve_fabro_bin(cwd=args.repo)
+    carried = [args.repo, resolved]
+    return FabroPort(fabro_bin=resolved, target=None, runner=runner, cwd=None), carried
+
+
+def send_a_non_fabro_request(*, queue: Any, runner: Any) -> Any:
+    # A `send` with no `method`/`url` pair is some other object's verb, and a
+    # `git` argv is not an engine invocation.
+    queue.send(payload={"fabro_bin": "/usr/bin/fabro"})
+    return runner.run(argv=["git", "status"], cwd=None, timeout_seconds=30.0)
+
+
+def name_a_route_that_is_not_a_fabro_api_route(*, port: Any) -> Any:
+    # A path that does not open with the server's API prefix, and a verb
+    # reached through the facade.
+    unrelated = "/runs/42/questions"
+    return unrelated, port.ps(timeout_seconds=30.0)
