@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.178.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.177.0...v0.178.0) (2026-10-09)
+
+
+### Features
+
+* **dispatcher:** disable harness auto-backgrounding in the sandbox env ([3376699](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3376699e33ea9dcd59de025655b0af8ed9716bfa))
+* **dispatcher:** raise the sandbox harness shell-call timeouts ([d33156e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d33156e317033ab415b1ba12123166b28c6ebc1a))
+
 ## [0.177.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.176.0...v0.177.0) (2026-10-09)
 
 
