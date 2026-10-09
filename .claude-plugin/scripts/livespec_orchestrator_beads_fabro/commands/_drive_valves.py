@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro import store
@@ -26,9 +27,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibili
     acceptance_eligibility,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
-    factory_size_decision,
-    resolve_adopted_assertion_count_ceiling,
-    stored_factory_size_decision,
+    resolved_stored_factory_size_decision,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
     InvokerIdentity,
@@ -245,22 +244,20 @@ def _approve_item(
             err="invalid-source-state",
             msg="approve requires an effective-manual pending-approval item.",
         )
-    adopted_ceiling = unsafe_perform_io(
-        resolve_adopted_assertion_count_ceiling(cwd=repo).value_or(None)
+    size_result = resolved_stored_factory_size_decision(
+        cwd=repo,
+        path_factory=lambda: config,
+        item=item,
     )
-    size = (
-        factory_size_decision(
-            item=item,
-            adopted_ceiling=None,
-            raw_justification=None,
+    if not is_successful(size_result):
+        failure = unsafe_perform_io(size_result.failure())
+        return valve_refusal(
+            aid=action_id,
+            wid=item.id,
+            err="policy-setting-unreadable",
+            msg=failure.detail,
         )
-        if adopted_ceiling is None
-        else stored_factory_size_decision(
-            path=config,
-            item=item,
-            adopted_ceiling=adopted_ceiling,
-        )
-    )
+    size = unsafe_perform_io(size_result.unwrap())
     if size.disposition == "decompose":
         reason = cast("str", size.reason)
         route_factory_size_decomposition(path=config, work_item_id=item.id, reason=reason)

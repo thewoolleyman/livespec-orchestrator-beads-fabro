@@ -52,6 +52,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria i
     EffectiveCriteria,
     effective_criteria,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
+    factory_size_configuration_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_groom_door import (
     GroomDispatch,
     GroomDoorRefusal,
@@ -245,6 +248,10 @@ def file_approved_slices(
     Raises `WorkItemNotFoundError` if `regroom_item_id` is absent.
     """
     approved = require_groom_approval(approval=approval)
+    if path.repo_root is not None and (
+        detail := factory_size_configuration_refusal(cwd=path.repo_root)
+    ):
+        raise GroomDraftError(detail=detail)
     # The WHOLE cut is resolved before the FIRST write. Filing a slice is three
     # writes with no transaction behind them and no compensating delete, so a
     # malformed draft discovered mid-loop would leave the ledger holding some
