@@ -192,3 +192,25 @@ def test_provider_message_extraction_falls_back_when_data_is_not_an_object(
 
     assert detail is not None
     assert detail.cause == cause
+
+
+def test_provider_message_extraction_falls_back_when_the_message_is_not_text(
+    tmp_path: Path,
+) -> None:
+    """A `data.message` that is not a string keeps the raw cause.
+
+    The lift REFUSES a non-text message rather than coercing one: a number
+    rendered through `str()` would read as the provider's own sentence while
+    being an artefact of this parser. Asserted here beside its two sibling
+    fallbacks because `fabro_provider_message` is now the only reader of that
+    field — before the permanent-failure split it shared a text helper with the
+    records module, whose other callers exercised this arm incidentally.
+    """
+    cause = 'Internal error: {"data": {"message": 7}}'
+    detail = _inspect_failure(
+        tmp_path=tmp_path,
+        stdout=json.dumps({"failure": {"causes": ["ACP protocol error", cause]}}),
+    )
+
+    assert detail is not None
+    assert detail.cause == cause
