@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import stat
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
@@ -32,6 +33,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     ShellCommandRunner,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_output_retention import (
+    JanitorRetention,
     janitor_retention,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
@@ -82,6 +84,9 @@ class _JanitorChildRunner:
 
     shell: ShellCommandRunner = field(default_factory=ShellCommandRunner)
     canned: list[CommandResult] = field(default_factory=list)
+    # Recorded so a retention-blocked run can be compared, call for call,
+    # against a control run that performed no retention at all.
+    calls: list[tuple[tuple[str, ...], dict[str, str] | None]] = field(default_factory=list)
 
     def run(
         self,
@@ -91,6 +96,7 @@ class _JanitorChildRunner:
         timeout_seconds: float,
         env: dict[str, str] | None = None,
     ) -> CommandResult:
+        self.calls.append((tuple(argv), env))
         if tuple(argv) == _JANITOR_ARGV:
             return self.shell.run(argv=argv, cwd=cwd, timeout_seconds=timeout_seconds, env=env)
         return self.canned.pop(0)
@@ -112,7 +118,7 @@ def _merged() -> PrView:
     )
 
 
-def _plan(*, repo: Path, retention_directory: Path) -> DispatchPlan:
+def _plan(*, repo: Path, retention: JanitorRetention | None) -> DispatchPlan:
     checkout = repo / "janitor-co"
     checkout.mkdir(parents=True, exist_ok=True)
     plan = build_plan(
@@ -126,10 +132,7 @@ def _plan(*, repo: Path, retention_directory: Path) -> DispatchPlan:
         config_text=_DECLARED_CONFIG,
         default_branch="master",
     )
-    return replace(
-        plan,
-        janitor_retention=janitor_retention(directory=retention_directory, invocation=_INVOCATION),
-    )
+    return replace(plan, janitor_retention=retention)
 
 
 def _journal(*, repo: Path) -> JournalFile:
@@ -142,15 +145,50 @@ def _rows(*, journal: JournalFile, stage: str) -> list[dict[str, object]]:
     return [record for record in records if record.get("stage") == stage]
 
 
-def _run_janitor(*, repo: Path, journal: JournalFile) -> DispatchOutcome:
-    plan = _plan(repo=repo, retention_directory=journal.path.parent)
-    return post_merge(
+@dataclass(frozen=True, kw_only=True)
+class _Drive:
+    """One post-merge janitor run, with everything a comparison needs off it."""
+
+    outcome: DispatchOutcome
+    row: dict[str, object]
+    calls: list[tuple[tuple[str, ...], dict[str, str] | None]]
+    umask: int
+
+
+def _umask() -> int:
+    """The process umask, read by setting and restoring it.
+
+    `os.umask` has no read-only form. The window is one call wide and inside a
+    single pytest worker process, which runs its tests one at a time.
+    """
+    current = os.umask(0o022)
+    _ = os.umask(current)
+    return current
+
+
+def _drive(*, repo: Path, journal: JournalFile, retention: JanitorRetention | None) -> _Drive:
+    runner = _canned_runner()
+    outcome = post_merge(
         outcome_type=DispatchOutcome,
-        plan=plan,
-        runner=_canned_runner(),
+        plan=_plan(repo=repo, retention=retention),
+        runner=runner,
         journal=journal,
         merged=_merged(),
     )
+    return _Drive(
+        outcome=outcome,
+        row=_rows(journal=journal, stage=_JANITOR_STAGE)[-1],
+        calls=runner.calls,
+        umask=_umask(),
+    )
+
+
+def _run_janitor(*, repo: Path, journal: JournalFile) -> DispatchOutcome:
+    return _drive(
+        repo=repo,
+        journal=journal,
+        retention=janitor_retention(directory=journal.path.parent, invocation=_INVOCATION),
+    ).outcome
 
 
 def test_a_failed_post_merge_janitor_retains_its_complete_output_and_exit_code(
@@ -239,6 +277,60 @@ def test_a_second_failure_of_one_stage_retains_a_second_artifact(*, tmp_path: Pa
     # bytes by accident — which two identical payloads would otherwise hide.
     for row, path in zip(rows, paths, strict=True):
         assert row["retained_output_sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_a_retention_write_failure_is_journaled_and_changes_nothing_else(*, tmp_path: Path) -> None:
+    """An unwritable artifact location becomes a reason on the row and nothing more.
+
+    The CONTROL is the same drive with no retention venue at all, which is
+    exactly "what it would be without retention": every claim about the
+    command and the verdict is read as EQUALITY against that run rather than
+    against literals written here, so a drift in either leg is what fails.
+
+    At Red the retention-blocked leg does not reach a verdict at all — the
+    write error escapes `post_merge` — which is the failure this assertion
+    forbids in its sharpest form.
+    """
+    umask_before = _umask()
+    journal = _journal(repo=tmp_path)
+
+    # BOTH legs run in the SAME repository, so the only difference between them
+    # is the retention venue. Two repositories would differ in every path the
+    # recorded argvs carry, which is the one comparison this case rests on.
+    control = _drive(repo=tmp_path, journal=journal, retention=None)
+
+    # A regular FILE where the retention directory must be, so the artifact
+    # cannot be written for a reason that has nothing to do with the command.
+    unwritable = tmp_path / "not-a-directory"
+    unwritable.write_text("retention cannot descend into a file\n", encoding="utf-8")
+    blocked = _drive(
+        repo=tmp_path,
+        journal=journal,
+        retention=janitor_retention(directory=unwritable, invocation=_INVOCATION),
+    )
+
+    # The row SAYS the artifact was not retained, and names why.
+    reason = blocked.row["retained_output_error"]
+    assert isinstance(reason, str)
+    assert reason != ""
+    assert "retained_output_path" not in blocked.row
+    assert "retained_output_sha256" not in blocked.row
+    assert "retained_output_error" not in control.row
+
+    # The verdict is unchanged.
+    assert (blocked.outcome.status, blocked.outcome.stage) == (
+        control.outcome.status,
+        control.outcome.stage,
+    )
+    assert blocked.outcome.stage == _JANITOR_STAGE
+
+    # So are the command's argv, its environment and its exit code, plus the
+    # row's own bounded excerpt — and the process umask, which retention
+    # reaches the artifact's mode without touching.
+    assert blocked.calls == control.calls
+    assert blocked.row["exit_code"] == control.row["exit_code"] == _EXIT_CODE
+    assert blocked.row["detail"] == control.row["detail"]
+    assert blocked.umask == control.umask == umask_before
 
 
 def test_an_invocation_without_an_identity_resolves_no_retention_venue(*, tmp_path: Path) -> None:
