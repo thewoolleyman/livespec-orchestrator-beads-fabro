@@ -31,7 +31,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_pointer import
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     OBSERVATION_SATISFIED,
+    OBSERVATION_UNOBSERVABLE,
     OBSERVATION_UNSATISFIED,
+    SOURCE_LEDGER,
     SOURCE_PROOF_RECORD,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_proof import (
@@ -292,44 +294,51 @@ def test_an_assertion_the_record_does_not_reproduce_is_not_in_scope(tmp_path: Pa
     assert "does not list 1 of the 1 requested assertion(s)" in refused.detail
 
 
-def test_a_subject_with_no_resolvable_pull_request_stops_the_read(tmp_path: Path) -> None:
-    """Four ways the subject itself fails to name a pull request.
+def test_a_subject_naming_no_pull_request_is_unobservable_per_failing_source(
+    tmp_path: Path,
+) -> None:
+    """Four ways the subject itself fails to name a pull request, each with a source.
 
     The pointer is the only thing that says WHICH pull request's records belong to
     this subject, so each of these leaves the typed read with nothing to aim at.
+    The SOURCES differ, and that is the reason the refusal is a value rather than a
+    bare absence: an unresolvable connection, an unreadable record and a sparse
+    record are LEDGER failures whose remedy is in the named repository, while a
+    subject carrying no proof pointer is a PROOF RECORD that was never published.
+    Collapsing them would point every retry at whichever one the reader guessed.
     """
-    repository = _repo(tmp_path=tmp_path)
-    _seed_subject(repository=repository, description="## Definition of Done\n\n- Something.\n")
-    assert (
-        observe_verified_proof(
-            repository=repository, target=_target(), runner=_runner(bodies=()), now=_NOW
-        )
-        is None
+    pointerless = _repo(tmp_path=tmp_path)
+    _seed_subject(repository=pointerless, description="## Definition of Done\n\n- Something.\n")
+    no_pointer = observe_verified_proof(
+        repository=pointerless, target=_target(), runner=_runner(bodies=()), now=_NOW
     )
-    assert (
-        observe_verified_proof(
-            repository=repository,
-            target=VerifiedProofTarget(
-                subject_id="bd-ib-never-filed", build=_BUILD, assertions=(_ASSERTION,)
-            ),
-            runner=_runner(bodies=()),
-            now=_NOW,
-        )
-        is None
+    assert no_pointer.status == OBSERVATION_UNOBSERVABLE
+    assert no_pointer.source == SOURCE_PROOF_RECORD
+    assert "carries no Proof of Done pointer" in no_pointer.detail
+    absent_subject = observe_verified_proof(
+        repository=pointerless,
+        target=VerifiedProofTarget(
+            subject_id="bd-ib-never-filed", build=_BUILD, assertions=(_ASSERTION,)
+        ),
+        runner=_runner(bodies=()),
+        now=_NOW,
     )
+    assert absent_subject.status == OBSERVATION_UNOBSERVABLE
+    assert absent_subject.source == SOURCE_LEDGER
+    assert "BeadsMappingError" in absent_subject.detail
 
 
-def test_an_unreadable_target_configuration_stops_the_read(tmp_path: Path) -> None:
+def test_an_unreadable_target_configuration_is_unobservable(tmp_path: Path) -> None:
     repository = _repo(tmp_path=tmp_path, prefix=None)
-    assert (
-        observe_verified_proof(
-            repository=repository, target=_target(), runner=_runner(bodies=()), now=_NOW
-        )
-        is None
+    observation = observe_verified_proof(
+        repository=repository, target=_target(), runner=_runner(bodies=()), now=_NOW
     )
+    assert observation.status == OBSERVATION_UNOBSERVABLE
+    assert observation.source == SOURCE_LEDGER
+    assert "did not resolve a tenant connection" in observation.detail
 
 
-def test_a_record_carrying_no_description_stops_the_read(
+def test_a_record_carrying_no_description_is_unobservable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A sparse record names no pointer, which is not the same as naming none."""
@@ -338,21 +347,26 @@ def test_a_record_carrying_no_description_stops_the_read(
         "livespec_orchestrator_beads_fabro.commands._plan_result_proof.make_beads_client",
         lambda **_kwargs: _DescriptionlessClient(),
     )
-    assert (
-        observe_verified_proof(
-            repository=repository, target=_target(), runner=_runner(bodies=()), now=_NOW
-        )
-        is None
+    observation = observe_verified_proof(
+        repository=repository, target=_target(), runner=_runner(bodies=()), now=_NOW
     )
+    assert observation.status == OBSERVATION_UNOBSERVABLE
+    assert observation.source == SOURCE_LEDGER
+    assert "carries no description" in observation.detail
 
 
-def test_an_unreadable_pull_request_stops_the_read(tmp_path: Path) -> None:
-    """A failed comments read is evidence of nothing, not of an absent record."""
+def test_an_unreadable_pull_request_is_unobservable(tmp_path: Path) -> None:
+    """A failed comments read is evidence of nothing, not of an absent record.
+
+    The contrast with the unsatisfied arm above is the whole point: there, zero
+    records were READ and that is a negative; here the read failed, so whether a
+    verified proof was published is unknown.
+    """
     repository = _repo(tmp_path=tmp_path)
     _seed_subject(repository=repository, description=_pointed_description())
-    assert (
-        observe_verified_proof(
-            repository=repository, target=_target(), runner=_runner(exit_code=4), now=_NOW
-        )
-        is None
+    observation = observe_verified_proof(
+        repository=repository, target=_target(), runner=_runner(exit_code=4), now=_NOW
     )
+    assert observation.status == OBSERVATION_UNOBSERVABLE
+    assert observation.source == SOURCE_PROOF_RECORD
+    assert observation.evidence == ""

@@ -17,8 +17,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Comman
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     OBSERVATION_SATISFIED,
+    OBSERVATION_UNOBSERVABLE,
+    SOURCE_REFERENCE,
+    SOURCE_REPOSITORY_RESOLUTION,
 )
-from livespec_orchestrator_beads_fabro.commands._plan_result_reader import read_result
+from livespec_orchestrator_beads_fabro.commands._plan_result_reader import (
+    UNPARSED_TARGET,
+    read_result,
+)
 
 _ITEM_ID = "bd-ib-reader"
 
@@ -83,9 +89,10 @@ def test_an_unobservable_reference_is_refused_before_any_source_is_read(
     be caught here rather than merely producing the same verdict by a worse route.
     """
     runner = _Runner()
-    assert (
-        read_result(project_root=_project(tmp_path=tmp_path), reference=[], runner=runner) is None
-    )
+    observation = read_result(project_root=_project(tmp_path=tmp_path), reference=[], runner=runner)
+    assert observation.status == OBSERVATION_UNOBSERVABLE
+    assert observation.source == SOURCE_REFERENCE
+    assert observation.target == UNPARSED_TARGET
     assert runner.calls == []
 
 
@@ -93,14 +100,15 @@ def test_an_unresolvable_repository_is_refused_before_any_source_is_read(
     tmp_path: Path,
 ) -> None:
     runner = _Runner()
-    assert (
-        read_result(
-            project_root=_project(tmp_path=tmp_path),
-            reference=_reference(repo="a-repository-nobody-configured"),
-            runner=runner,
-        )
-        is None
+    observation = read_result(
+        project_root=_project(tmp_path=tmp_path),
+        reference=_reference(repo="a-repository-nobody-configured"),
+        runner=runner,
     )
+    assert observation.status == OBSERVATION_UNOBSERVABLE
+    assert observation.source == SOURCE_REPOSITORY_RESOLUTION
+    assert observation.repo == "a-repository-nobody-configured"
+    assert _ITEM_ID in observation.target
     assert runner.calls == []
 
 
@@ -112,14 +120,12 @@ def test_a_resolved_forge_reference_reaches_the_forge_adapter(tmp_path: Path) ->
     the forge read once the parse and the resolution both succeed.
     """
     runner = _Runner()
-    assert (
-        read_result(
-            project_root=_project(tmp_path=tmp_path),
-            reference={"repo": "repo", "pull_request_state": {"number": 9, "state": "MERGED"}},
-            runner=runner,
-        )
-        is None
+    observation = read_result(
+        project_root=_project(tmp_path=tmp_path),
+        reference={"repo": "repo", "pull_request_state": {"number": 9, "state": "MERGED"}},
+        runner=runner,
     )
+    assert observation.status == OBSERVATION_UNOBSERVABLE
     assert runner.calls == [("gh", "pr", "view", "9", "--json", "state,updatedAt")]
 
 
@@ -133,7 +139,6 @@ def test_an_uninjected_observation_time_is_resolved_as_utc(tmp_path: Path) -> No
     observation = read_result(
         project_root=_project(tmp_path=tmp_path), reference=_reference(), runner=_Runner()
     )
-    assert observation is not None
     assert observation.status == OBSERVATION_SATISFIED
     assert observation.observed_at.endswith("Z")
     assert len(observation.observed_at) == len("2026-10-08T12:00:00Z")
@@ -147,5 +152,26 @@ def test_an_injected_observation_time_is_reported_verbatim(tmp_path: Path) -> No
         runner=_Runner(),
         now="2026-10-08T12:00:00Z",
     )
-    assert observation is not None
     assert observation.observed_at == "2026-10-08T12:00:00Z"
+
+
+def test_a_refused_reference_still_reports_the_repository_it_named(tmp_path: Path) -> None:
+    """A refusal after the repository field was read keeps that identity.
+
+    The clause requires every observation to report its repository, and an
+    unobservable reading that dropped a perfectly good identity would be
+    unattributable to the obligation that produced it. The control is the pair:
+    a value that is not an object at all has no identity to keep, and reports
+    none rather than inventing one.
+    """
+    repo = _project(tmp_path=tmp_path)
+    named = read_result(
+        project_root=repo,
+        reference={"repo": "repo", "shell": "test -f a.md"},
+        runner=_Runner(),
+    )
+    assert named.status == OBSERVATION_UNOBSERVABLE
+    assert named.repo == "repo"
+    anonymous = read_result(project_root=repo, reference="item_status", runner=_Runner())
+    assert anonymous.status == OBSERVATION_UNOBSERVABLE
+    assert anonymous.repo == ""
