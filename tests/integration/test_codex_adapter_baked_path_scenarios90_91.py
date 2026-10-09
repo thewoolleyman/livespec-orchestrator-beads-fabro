@@ -268,30 +268,32 @@ def test_scenario91_the_empty_model_opt_out_omits_the_keys_rather_than_emptying_
     assert disposition == CODEX_ADAPTER_BASE
 
 
-def test_this_repository_reviews_on_opus_while_its_implementer_stays_on_claude_opus_5() -> None:
+def test_this_repository_routes_every_agent_node_to_codex() -> None:
     """The negative control, graded on THIS repository's committed configuration.
 
-    One dispatch, three node classes, three different answers: the review node
-    reverts to the workflow-default Claude Opus 4.8 review adapter (the
-    dispatcher.acp_nodes.review gpt-5.6-terra override was removed 2026-08-28
-    after repeated review non-convergence at the Codex review gate; the
-    contracts material makes review NOT Codex-backed by default), the publish
-    node takes the v107 fleet Claude Haiku default (this repository dropped its
-    former Codex `pr` pin so it now inherits that default), and the implementer
-    class stays on Claude Opus 5. None of the three is a Codex adapter. Asserting
-    them together is the point — a change that accidentally re-providered any one
-    would pass any single assertion taken alone.
+    Maintainer direction 2026-10-09 (relayed through the herdr plan root during
+    plan fabro-currency's P4 wave): the standing factory requirement is CODEX
+    ONLY, so the committed `dispatcher.acp_nodes` table routes every agent node
+    to the baked Codex adapter. This supersedes the 2026-08-28 reversal that
+    had moved review back to Claude Opus. One dispatch, three node classes,
+    three answers that must all be Codex: review renders read-only on
+    gpt-5.6-sol, the implementer renders agent-full-access on gpt-5.6-sol at
+    xhigh, and the publish node renders gpt-5.6-terra. Asserting them together
+    is the point: a change that quietly re-providered any one would pass any
+    single assertion taken alone.
     """
     adapters = _rendered_adapters(repo=_REPO_ROOT)
 
-    assert "claude-opus-4-8[1m]" in adapters["review"]
-    assert "gpt-5.6-terra" not in adapters["review"]
-    assert _CODEX_ADAPTER_COMMAND not in adapters["review"]
-    assert adapters["review"].endswith(" npx -y @agentclientprotocol/claude-agent-acp")
+    for node in ("review", "implement", "pr"):
+        assert adapters[node].endswith(f" {_CODEX_ADAPTER_COMMAND}"), node
+        assert "claude-agent-acp" not in adapters[node], node
 
-    assert adapters["implement"] == _CLAUDE_OPUS_5_ADAPTER
-    assert "claude-opus-5" in adapters["implement"]
-    assert "gpt-5.6-terra" not in adapters["implement"]
+    assert "gpt-5.6-sol" in adapters["review"]
+    assert "INITIAL_AGENT_MODE=read-only" in adapters["review"]
 
-    assert adapters["pr"] == _PUBLISH_DEFAULT_HAIKU
-    assert _CODEX_ADAPTER_COMMAND not in adapters["pr"]
+    assert "gpt-5.6-sol" in adapters["implement"]
+    assert '"model_reasoning_effort":"xhigh"' in adapters["implement"]
+    assert "INITIAL_AGENT_MODE=agent-full-access" in adapters["implement"]
+
+    assert "gpt-5.6-terra" in adapters["pr"]
+    assert adapters["pr"] != _PUBLISH_DEFAULT_HAIKU
