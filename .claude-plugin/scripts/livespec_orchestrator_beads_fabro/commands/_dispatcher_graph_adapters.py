@@ -177,7 +177,7 @@ def _rendered_node(
     command = _resolved_command(node=node, declared=declared.group("value"), adapters=adapters)
     if isinstance(command, str):
         return command
-    rewritten = f'{body[: declared.start()]}acp.command="{command.value}"{body[declared.end() :]}'
+    rewritten = f'{body[: declared.start()]}acp.command="{command.written}"{body[declared.end() :]}'
     if _OPENER_RE.search(rewritten) is not None:
         return (
             f"workflow graph is not renderable: ACP node {node!r} still carries a "
@@ -189,9 +189,19 @@ def _rendered_node(
 
 @dataclass(frozen=True, kw_only=True)
 class _Command:
-    """One resolved adapter command, distinguishable from a refusal string."""
+    """One resolved adapter command in both forms, apart from a refusal string.
+
+    `value` is the command as the adapter resolution produced it, which is what
+    the dispatch record reports; `written` is the DOT escString form the
+    attribute carries. The two differ only for a command carrying a double
+    quote or a backslash, and keeping them apart is the whole reason the record
+    does not claim the agent received the escapes. A command DECLARED literally
+    in the committed graph is already graph bytes and passes through unchanged
+    in both.
+    """
 
     value: str
+    written: str
 
 
 def _resolved_command(*, node: str, declared: str, adapters: Mapping[str, str]) -> _Command | str:
@@ -204,11 +214,12 @@ def _resolved_command(*, node: str, declared: str, adapters: Mapping[str, str]) 
                 f"acp.command template this rewrite does not understand; only a "
                 f"whole-value workflow input reference resolves"
             )
-        return _Command(value=declared)
+        return _Command(value=declared, written=declared)
     name = token.group("name")
     if name not in adapters:
         return (
             f"workflow graph is not renderable: ACP node {node!r} rides workflow "
             f"input {name!r}, which this dispatch resolved no adapter for"
         )
-    return _Command(value=_dot_escaped(value=adapters[name]))
+    resolved = adapters[name]
+    return _Command(value=resolved, written=_dot_escaped(value=resolved))
