@@ -98,10 +98,19 @@ class JournaledRuns:
 
     `newest_run_id_by_item` is last-write-wins over the journal's own append
     order, so a re-dispatch supersedes the run its predecessor recorded.
+
+    `source_path` is where this reading was taken, and it is on the snapshot
+    because the snapshot GOES STALE: another session appends a launch stamp
+    while this pass is surveying, and the one arm that depends on the reading
+    being current — `superseded-run` — has to be able to re-take it at the
+    moment it acts. A snapshot built from literal text has no source and
+    therefore cannot be re-taken, which is a verdict that arm is written to
+    handle rather than a defect.
     """
 
     newest_run_id_by_item: Mapping[str, str]
     item_id_by_run: Mapping[str, str]
+    source_path: Path | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -146,7 +155,7 @@ class AttributedRun:
     base_reason: str | None
 
 
-def journaled_runs(*, text: str) -> JournaledRuns:
+def journaled_runs(*, text: str, source_path: Path | None = None) -> JournaledRuns:
     """Index authoritative launch stamps by work-item and by run id."""
     newest: dict[str, str] = {}
     item_by_run: dict[str, str] = {}
@@ -162,7 +171,11 @@ def journaled_runs(*, text: str) -> JournaledRuns:
             continue
         newest[work_item_id] = run_id
         item_by_run[run_id] = work_item_id
-    return JournaledRuns(newest_run_id_by_item=newest, item_id_by_run=item_by_run)
+    return JournaledRuns(
+        newest_run_id_by_item=newest,
+        item_id_by_run=item_by_run,
+        source_path=source_path,
+    )
 
 
 def read_journaled_runs(*, path: Path) -> JournaledRuns:
@@ -174,8 +187,11 @@ def read_journaled_runs(*, path: Path) -> JournaledRuns:
     """
     read = attempt(action=lambda: path.read_text(encoding="utf-8"), exceptions=(OSError,))
     if isinstance(read, AttemptFailure):
-        return JournaledRuns(newest_run_id_by_item={}, item_id_by_run={})
-    return journaled_runs(text=read)
+        # The source is recorded even when nothing could be read from it: the
+        # reading WAS taken from this path, and a journal unreadable now may be
+        # readable when the `superseded-run` arm re-takes it.
+        return JournaledRuns(newest_run_id_by_item={}, item_id_by_run={}, source_path=path)
+    return journaled_runs(text=read, source_path=path)
 
 
 def attributed_runs(*, inventory: FactoryRunInventory) -> tuple[AttributedRun, ...]:

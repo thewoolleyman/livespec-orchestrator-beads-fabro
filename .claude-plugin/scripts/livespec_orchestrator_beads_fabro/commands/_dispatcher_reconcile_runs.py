@@ -18,6 +18,13 @@ error and the survey continues on the rest, because the alternative — one
 outage suppressing reconciliation everywhere — is exactly the silent-hold
 failure this command exists to end.
 
+A `superseded-run` reading is RE-CONFIRMED immediately before the export and
+the terminate (`_dispatcher_reconcile_supersession.py`). It is the one orphan
+reason whose evidence is the journal snapshot this pass opened with, and
+another session's launch stamp landing between that read and the inventory
+read leaves the pass about to cancel the item's NEWEST run. A reading the
+fresh read does not reproduce is held rather than acted on.
+
 A run parked at a human gate whose item is still live has no moot question to
 release it, so it is governed instead by `dispatcher.blocked_run_grace_seconds`
 (`_dispatcher_reconcile_runs_grace.py`). Past the grace it becomes an orphan
@@ -72,6 +79,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_spans
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_terminate import (
     terminate_orphan_run,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_supersession import (
+    supersession_held,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
 
@@ -187,6 +197,12 @@ def _reconcile_one_factory(
         _ = replay_acp_projection(inputs=inputs, factory=factory)
     for orphan in classify_orphans(inventory=inventory, grace=grace):
         if inputs.only_work_item_id is not None and orphan.work_item_id != inputs.only_work_item_id:
+            continue
+        # Re-confirmed HERE rather than inside the join because the point of
+        # the re-read is WHEN it happens: the join is pure and ran against the
+        # snapshot the pass opened with, and this is the last moment before the
+        # export and the terminate.
+        if supersession_held(orphan=orphan, inputs=inputs):
             continue
         outcome = _reconcile_one_run(inputs=inputs, port=port, orphan=orphan, dry_run=dry_run)
         if isinstance(outcome, ReconcileError):

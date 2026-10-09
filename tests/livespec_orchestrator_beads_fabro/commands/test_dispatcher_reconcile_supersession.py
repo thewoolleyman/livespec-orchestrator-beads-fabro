@@ -17,7 +17,9 @@ from livespec_orchestrator_beads_fabro.commands import _dispatcher_reconcile_run
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attribution import (
+    ORPHAN_REASON_ITEM_NOT_ACTIVE,
     ORPHAN_REASON_SUPERSEDED_RUN,
+    JournaledRuns,
     read_journaled_runs,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_inputs import (
@@ -141,6 +143,85 @@ def test_a_genuinely_superseded_run_is_still_cancelled(tmp_path: Path) -> None:
         (_FIRST_RUN, ORPHAN_REASON_SUPERSEDED_RUN)
     ]
     assert f"POST {_HP_SERVER}/api/v1/runs/{_FIRST_RUN}/cancel" in transport.calls
+
+
+def test_a_run_stamped_after_the_snapshot_is_not_cancelled(tmp_path: Path) -> None:
+    """The measured race: a sibling session's stamp lands after the snapshot read.
+
+    The inventory run is the NEWEST dispatch for the item, but the pass is
+    holding the previous dispatch's run id, so the stale join reads it as
+    `superseded-run`. Cancelling it destroyed live work on 2026-10-09.
+    """
+    journal = _stamped(tmp_path=tmp_path, run_ids=[_FIRST_RUN])
+    runner = _Runner(ps_rows=_ps(run_id=_SECOND_RUN))
+    transport = _Transport()
+    inputs = _inputs(
+        tmp_path=tmp_path,
+        journal_path=journal,
+        runner=runner,
+        transport=transport,
+    )
+    # The sibling session stamps ITS dispatch after this pass took its snapshot.
+    _append_stamps(path=journal, run_ids=[_SECOND_RUN])
+    assert inputs.journaled.newest_run_id_by_item == {_ITEM_ID: _FIRST_RUN}
+
+    summary = reconcile.reconcile_runs(inputs=inputs, factories=[_HP])
+
+    assert summary.reconciled == ()
+    assert transport.calls == []
+    # Nothing was exported and nothing was destroyed: the run never reached the
+    # termination path at all.
+    assert runner.calls == ["ps"]
+
+
+def test_a_snapshot_that_cannot_be_re_read_holds_rather_than_cancelling(tmp_path: Path) -> None:
+    """A snapshot naming no source cannot be re-taken, so the arm refuses to act."""
+    _ = tmp_path
+    module = _import()
+
+    confirmation = module.confirm_supersession(
+        orphan=_orphan(run_id=_FIRST_RUN),
+        journaled=JournaledRuns(
+            newest_run_id_by_item={_ITEM_ID: _SECOND_RUN},
+            item_id_by_run={},
+        ),
+    )
+
+    assert confirmation.hold_reason == module.HOLD_REASON_SUPERSESSION_UNCONFIRMED
+    assert confirmation.newest_run_id is None
+
+
+def test_a_journal_that_no_longer_names_the_item_holds(tmp_path: Path) -> None:
+    """A fresh read naming no run for the item is no evidence of a supersession."""
+    module = _import()
+    journal = _stamped(tmp_path=tmp_path, run_ids=[_FIRST_RUN, _SECOND_RUN])
+    journaled = read_journaled_runs(path=journal)
+    journal.write_text("", encoding="utf-8")
+
+    confirmation = module.confirm_supersession(
+        orphan=_orphan(run_id=_FIRST_RUN),
+        journaled=journaled,
+    )
+
+    assert confirmation.hold_reason == module.HOLD_REASON_SUPERSESSION_UNCONFIRMED
+    assert confirmation.newest_run_id is None
+
+
+def test_an_orphan_on_another_reason_is_confirmed_without_a_re_read() -> None:
+    """Only the `superseded-run` arm depends on the snapshot, so only it is re-read.
+
+    The snapshot handed in names no source, which the arm above holds on; an
+    `item-not-active` orphan passing anyway is what proves the re-read was
+    never reached.
+    """
+    module = _import()
+
+    confirmation = module.confirm_supersession(
+        orphan=_orphan(run_id=_FIRST_RUN, reason=ORPHAN_REASON_ITEM_NOT_ACTIVE),
+        journaled=JournaledRuns(newest_run_id_by_item={}, item_id_by_run={}),
+    )
+
+    assert (confirmation.hold_reason, confirmation.newest_run_id) == (None, None)
 
 
 def _import() -> Any:
