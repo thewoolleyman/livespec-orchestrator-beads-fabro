@@ -40,6 +40,9 @@ from livespec_runtime.work_items.rank import key_between
 from livespec_orchestrator_beads_fabro import regroom
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro._ids import new_work_item_id
+from livespec_orchestrator_beads_fabro._store_factory_size_gate import (
+    record_size_justification,
+)
 from livespec_orchestrator_beads_fabro._store_groom_approval import (
     GroomApproval,
     record_groom_approval,
@@ -127,6 +130,7 @@ class CandidateSlice:
     repo_target: str
     depends_on: tuple[str, ...] = ()
     is_spec_change: bool = False
+    size_justification: object = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -265,7 +269,14 @@ def file_approved_slices(
             dep_entries=planned.dep_entries,
             rank=rank,
         )
-        parses.append(_file_local_slice(path=path, item=item, approval=approved))
+        parses.append(
+            _file_local_slice(
+                path=path,
+                item=item,
+                approval=approved,
+                size_justification=planned.candidate.size_justification,
+            )
+        )
         filed_ids.append(planned.slice_id)
     regroom.close_regroomed_out(path=path, item_id=regroom_item_id, replacement_slice_ids=filed_ids)
     record_groom_approval(path=path, work_item_id=regroom_item_id, approval=approved)
@@ -354,7 +365,11 @@ def _plan_approved_slices(
 
 
 def _file_local_slice(
-    *, path: StoreConfig, item: WorkItem, approval: GroomApproval
+    *,
+    path: StoreConfig,
+    item: WorkItem,
+    approval: GroomApproval,
+    size_justification: object,
 ) -> SliceCriteriaParse:
     """File one approved local slice, route it, stamp its approval, parse it.
 
@@ -363,6 +378,12 @@ def _file_local_slice(
     not stamped is a slice nobody can attribute later.
     """
     append_work_item(path=path, item=item)
+    if size_justification is not None:
+        record_size_justification(
+            path=path,
+            work_item_id=item.id,
+            justification=size_justification,
+        )
     _route_approved_slice_intake(path=path, item_id=item.id)
     # Stamped AFTER intake routing: the router rewrites the slice's modeled
     # metadata, so a stamp placed before it would be overlaid by the very
