@@ -91,6 +91,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
     CURRENCY_GATE_ENV_VALUE,
     CURRENCY_GATE_ENV_VAR,
     escape_minijinja_literal,
+    harness_shell_env_lines,
     render_run_config_overlay,
     workflow_graph_path,
 )
@@ -149,6 +150,7 @@ __all__: list[str] = [
     "codex_adapter",
     "declares_workflow_scope_refusal",
     "escape_minijinja_literal",
+    "harness_shell_env_lines",
     "host_only_refusal_detail",
     "is_host_only_item",
     "is_needs_human_outcome",

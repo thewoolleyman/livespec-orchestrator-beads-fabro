@@ -58,6 +58,7 @@ __all__: list[str] = [
     "CURRENCY_GATE_ENV_VALUE",
     "CURRENCY_GATE_ENV_VAR",
     "escape_minijinja_literal",
+    "harness_shell_env_lines",
     "render_run_config_overlay",
     "workflow_graph_path",
 ]
@@ -82,6 +83,32 @@ _MINIJINJA_OPEN_DELIMITER_RE = re.compile(r"\{\{|\{%|\{#")
 # socket below TMUX_TMPDIR, so bare `tmux kill-server` inside a Fabro sandbox
 # resolves only sandbox-local sockets and never the host default under /tmp.
 _SANDBOX_TMUX_TMPDIR = "/workspace/.tmux"
+
+
+# The Claude harness's own shell-tool policy, projected as NON-SECRET
+# configuration beside the tmux socket root above.
+#
+# The harness moves a foreground shell call that REACHES its timeout into a
+# background task; the ACP engine then raises `BackgroundedTool` and ENDS the
+# turn. So an honest long foreground call — a full pytest run, a coverage pass —
+# destroys the stage instead of returning late, and nothing on the agent's side
+# can prevent it: the decision is the harness's, taken after the call has
+# already run out its clock. Setting this switch makes such a call report back
+# as an ordinary timed-out call the agent can read and retry
+# (work-item bd-ib-k627ja; plan `pr-stage-backgrounded-push-fault`).
+_HARNESS_SHELL_ENV: tuple[tuple[str, str], ...] = (("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1"),)
+
+
+def harness_shell_env_lines() -> str:
+    """Render the harness shell-tool policy as `[environments.<id>.env]` lines.
+
+    Named rather than inlined so the keys and their values have ONE spelling a
+    test can bind, the way `_tmux_tmpdir_prepare_steps_block` does for the tmux
+    socket root. Each value is `json.dumps`-ed for the same reason every other
+    line in that table is: the table is TOML, and a value written raw is a
+    parse hazard rather than a string.
+    """
+    return "".join(f"{name} = {json.dumps(value)}\n" for name, value in _HARNESS_SHELL_ENV)
 
 
 def escape_minijinja_literal(*, text: str) -> str:
@@ -232,6 +259,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     otel_env_lines = _otel_env_lines(otel_env=otel_env)
     tmux_steps = _tmux_tmpdir_prepare_steps_block()
     tmux_env_line = f"TMUX_TMPDIR = {json.dumps(_SANDBOX_TMUX_TMPDIR)}\n"
+    harness_shell_env = harness_shell_env_lines()
     gh_refresh_steps = refreshing_gh_prepare_steps_block()
     gh_refresh_env_lines = refreshing_gh_env_lines()
     codex_steps = codex_auth_prepare_steps_block(codex_auth_snapshot=codex_auth_snapshot)
@@ -275,6 +303,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + f"GITHUB_TOKEN = {github_token_literal}\n"
         + author_env_lines
         + tmux_env_line
+        + harness_shell_env
         + gh_refresh_env_lines
         + sibling_env_line
         + core_plugin_env
