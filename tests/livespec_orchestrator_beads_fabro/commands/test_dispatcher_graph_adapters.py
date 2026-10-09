@@ -96,6 +96,18 @@ _SYNTHETIC = """digraph Probe {
 
 _TOKEN = "{" + "{ inputs.probe_adapter }" + "}"
 
+# The quote-and-backslash-bearing shape the built-in Codex adapter resolves to:
+# a SINGLE-quoted JSON object whose keys and values carry double quotes, and a
+# JSON-escaped backslash inside one of them. Both forms are written as RAW
+# strings so each one reads as the exact bytes it stands for -- the intent the
+# dispatch record must report, and the DOT escString form the attribute must
+# carry. `bd-ib-4gkfaa`: this pair used to be a refusal that blocked every
+# dispatch of a repository whose adapter command carries a quote.
+_QUOTED_INTENT = r"""CODEX_CONFIG='{"approval_policy":"never","path":"a\\b"}' codex-acp"""
+_QUOTED_ESCAPED = (
+    r"""CODEX_CONFIG='{\"approval_policy\":\"never\",\"path\":\"a\\\\b\"}' codex-acp"""
+)
+
 
 def _synthetic(*, command: str) -> str:
     """The probe graph with its one ACP node declaring `command`."""
@@ -220,16 +232,16 @@ def test_an_acp_command_without_the_acp_backend_refuses() -> None:
     assert "acp" in refusal
 
 
-def test_a_resolved_command_carrying_a_quote_refuses_rather_than_being_escaped() -> None:
-    """A value this rewrite cannot write verbatim is a refusal, not a re-quoting."""
+def test_a_resolved_command_carrying_a_quote_renders_dot_escaped() -> None:
+    """A quote or a backslash is escaped into the attribute, not refused."""
     assert _MODULE_PATH.is_file()
     module = _module()
-    refusal = module.render_acp_commands(  # pyright: ignore[reportAttributeAccessIssue]
+    rendered = module.render_acp_commands(  # pyright: ignore[reportAttributeAccessIssue]
         graph_text=_synthetic(command=_TOKEN),
-        adapters={"probe_adapter": 'npx -y "quoted"'},
+        adapters={"probe_adapter": _QUOTED_INTENT},
     )
-    assert isinstance(refusal, str)
-    assert "probe_adapter" in refusal
+    assert not isinstance(rendered, str), rendered
+    assert f'acp.command="{_QUOTED_ESCAPED}"' in rendered.text
 
 
 def test_a_surviving_opener_elsewhere_in_an_acp_block_refuses() -> None:

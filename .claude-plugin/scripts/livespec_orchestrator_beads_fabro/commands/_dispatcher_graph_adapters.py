@@ -22,12 +22,20 @@ refusal rather than left to the validator.
 FAIL-CLOSED, PER NODE BLOCK. Every refusal below happens before any Fabro run
 exists. A node declaring `acp.command` without `backend="acp"` is refused
 because the candidate fails such a node at run creation ("backend=api cannot
-use acp configuration"); a template shape this rewrite does not understand is
-refused rather than passed through, because an un-expanded token reaching the
-engine is exactly the dead-agent case above; and a resolved command carrying a
-double quote or a backslash is refused rather than escaped, because a value
-this module cannot write VERBATIM is not the resolved adapter command the
-dispatch record says the run received.
+use acp configuration"); and a template shape this rewrite does not understand
+is refused rather than passed through, because an un-expanded token reaching
+the engine is exactly the dead-agent case above.
+
+A DOUBLE QUOTE OR A BACKSLASH IS ESCAPED, NOT REFUSED (`bd-ib-4gkfaa`). This
+module used to refuse such a command on the ground that a value it could not
+write VERBATIM is not the command the dispatch record claims the run received.
+That ground was wrong: a DOT attribute string has a defined escape form -- a
+backslash before a double quote or a backslash -- so the value IS writable, and
+measured 2026-10-09 `fabro validate` accepts a graph carrying both escapes on
+the candidate `v0.378.0-nightly.0` and on the pinned 0.254 client. The refusal
+meanwhile blocked EVERY dispatch of a repository whose adapter command carries
+a quote, which the built-in Codex adapter's single-quoted `CODEX_CONFIG` JSON
+prefix requires.
 """
 
 from __future__ import annotations
@@ -74,10 +82,16 @@ _INPUT_TOKEN_RE = re.compile(r"\{\{[ \t]*inputs\.(?P<name>\w+)[ \t]*\}\}")
 # poison the rendering (the fleet convention of livespec-dev-tooling-9yb4).
 _OPENER_RE = re.compile(r"\{[{%#]")
 
-# What this rewrite cannot write verbatim inside a DOT double-quoted value.
-_UNWRITABLE_RE = re.compile(r'["\\]')
-
 _GRAPH_BLOCK_NAME = "graph"
+
+
+def _dot_escaped(*, value: str) -> str:
+    """`value` as a DOT escString: a backslash before each backslash and quote.
+
+    The backslash substitution runs FIRST, so the backslash it introduces in
+    front of a quote is not then escaped a second time.
+    """
+    return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -197,11 +211,4 @@ def _resolved_command(*, node: str, declared: str, adapters: Mapping[str, str]) 
             f"workflow graph is not renderable: ACP node {node!r} rides workflow "
             f"input {name!r}, which this dispatch resolved no adapter for"
         )
-    resolved = adapters[name]
-    if _UNWRITABLE_RE.search(resolved) is not None:
-        return (
-            f"workflow graph is not renderable: the adapter resolved for workflow "
-            f"input {name!r} carries a double quote or a backslash, which cannot be "
-            f"written verbatim into a DOT attribute value"
-        )
-    return _Command(value=resolved)
+    return _Command(value=_dot_escaped(value=adapters[name]))
