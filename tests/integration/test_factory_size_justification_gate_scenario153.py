@@ -23,11 +23,24 @@ from livespec_orchestrator_beads_fabro._beads_client import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
     admit_and_select,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
+    build_calibration_record,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_span import (
+    calibration_request_line,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_groom_door import (
     GroomDoorRefusal,
     groom_dispatch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_order_sink import (
+    TddOrderSink,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_probe import (
+    gather_tdd_signals,
+)
 from livespec_orchestrator_beads_fabro.commands._drive_config_schema import (
     api_configurable_key_manifest,
 )
@@ -161,6 +174,27 @@ def _write_repo_config(*, repo: Path, ceiling: int, groom_variant: str | None = 
 
 def _stored(*, config: StoreConfig) -> dict[str, WorkItem]:
     return materialize_work_items(records=read_work_items(path=config))
+
+
+def _record_size_justification(*, config: StoreConfig, item_id: str, justification: object) -> None:
+    client = make_beads_client(config=config)
+    record = client.show_issue(issue_id=item_id)
+    raw_metadata = record.get("metadata")
+    metadata = (
+        dict(cast("dict[str, object]", raw_metadata)) if isinstance(raw_metadata, dict) else {}
+    )
+    metadata["size_justification"] = justification
+    client.update_issue(issue_id=item_id, metadata=metadata)
+
+
+def _write_scenario_reference(*, repo: Path) -> None:
+    spec = repo / "SPECIFICATION"
+    spec.mkdir()
+    (spec / "scenarios.md").write_text(
+        "## Scenario 153 — An adopted assertion ceiling requires an attributed exception "
+        "without waiving other gates\n",
+        encoding="utf-8",
+    )
 
 
 def _size_reason_for(*, config: StoreConfig, item_id: str) -> str:
@@ -396,3 +430,166 @@ def test_items_at_or_below_ceiling_continue_through_ordinary_gates() -> None:
     assert [decision.assertion_count for decision in decisions] == [1, 2] * 4
     assert all(decision.reason is None for decision in decisions)
     assert all(decision.size_justified is False for decision in decisions)
+
+
+def _valid_justification() -> dict[str, str]:
+    return {
+        "rationale": "This larger slice preserves one coherent transactional change.",
+        "author": "human:maintainer",
+        "at": "2026-10-09T00:00:00Z",
+    }
+
+
+def _assert_valid_size_decision(*, valid: dict[str, str]) -> None:
+    decision = cast(
+        "Any",
+        _size_gate_module().factory_size_decision(
+            item=_item(assertion_count=3, item_id="bd-decision"),
+            adopted_ceiling=2,
+            raw_justification=valid,
+        ),
+    )
+    assert decision.disposition == "proceed"
+    assert decision.size_justified is True
+
+
+def _exercise_valid_capture_dispatch_and_telemetry(
+    *, repo: Path, config: StoreConfig, valid: dict[str, str]
+) -> None:
+    _seed_capture(config=config, item_id="bd-capture-valid", assertion_count=3)
+    _record_size_justification(
+        config=config,
+        item_id="bd-capture-valid",
+        justification=valid,
+    )
+    captured = apply_intake_dor(
+        path=config,
+        item_id="bd-capture-valid",
+        checklist=_ready_checklist(),
+    )
+    assert is_successful(captured)
+    assert unsafe_perform_io(captured.unwrap()) == "ready"
+
+    captured_item = _stored(config=config)["bd-capture-valid"]
+    admission = admit_and_select(
+        repo=repo,
+        items=[captured_item],
+        candidates=[captured_item],
+        journal=JournalFile(path=repo / "journal.jsonl"),
+        enforce_cap=False,
+    )
+    assert [item.id for item in admission.admitted] == [captured_item.id]
+    signals = gather_tdd_signals(
+        repo=repo,
+        item=captured_item,
+        outcome=DispatchOutcome(
+            work_item_id=captured_item.id,
+            status="green",
+            stage="done",
+            pr_number=None,
+            merge_sha="abc123",
+            detail="merged",
+        ),
+        records=(),
+        sink=TddOrderSink(path=repo / "tdd-order.json"),
+        runner=cast("Any", object()),
+    )
+    record = build_calibration_record(
+        item=captured_item,
+        outcome=DispatchOutcome(
+            work_item_id=captured_item.id,
+            status="green",
+            stage="done",
+            pr_number=None,
+            merge_sha="abc123",
+            detail="merged",
+        ),
+        repo_name=repo.name,
+        journal_records=(),
+        wall_clock_seconds=1.0,
+        token_cost_micros=None,
+        dispatch_context_size=1,
+        merged_pr_diff_size=None,
+        tdd=signals,
+    )
+    payload = json.loads(calibration_request_line(record=record, now_ns=1))
+    span = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    attributes = {entry["key"]: entry["value"] for entry in span["attributes"]}
+    assert attributes["tdd.size_justified"] == {"boolValue": True}
+
+
+def _assert_valid_exception_preserves_ordinary_approval_gate(
+    *, repo: Path, config: StoreConfig, valid: dict[str, str]
+) -> None:
+    refused_item = replace(
+        _item(assertion_count=3, item_id="bd-ordinary-refusal"),
+        status="pending-approval",
+        admission_policy="manual",
+        description="## Definition of Done\n\n- An unreferenced assertion remains.\n",
+    )
+    append_work_item(path=config, item=refused_item)
+    _record_size_justification(
+        config=config,
+        item_id=refused_item.id,
+        justification=valid,
+    )
+    approval = run_action(repo=repo, action_id=f"approve:{refused_item.id}")
+    assert approval["domain_error"] == "ungradeable-acceptance-criteria"
+    assert _stored(config=config)[refused_item.id].status == "pending-approval"
+
+
+def _exercise_valid_groom_paths(*, repo: Path, config: StoreConfig, valid: dict[str, str]) -> None:
+    epic = replace(_item(assertion_count=1, item_id="bd-valid-epic"), type="epic", status="backlog")
+    append_work_item(path=config, item=epic)
+    groomed = file_approved_slices(
+        path=config,
+        regroom_item_id=epic.id,
+        local_repo=repo.name,
+        approval=GroomApproval(approver="human:maintainer", route="approval comment"),
+        slices=[
+            CandidateSlice(
+                title="Justified replacement",
+                description=_item(assertion_count=3).description,
+                acceptance="The replacement is verified.",
+                autonomy_tier="factory",
+                repo_target=repo.name,
+                size_justification=valid,
+            )
+        ],
+    )
+    assert _stored(config=config)[groomed.filed_slice_ids[0]].status == "ready"
+
+    door_item = replace(_item(assertion_count=3, item_id="bd-valid-door"), status="backlog")
+    append_work_item(path=config, item=door_item)
+    _record_size_justification(config=config, item_id=door_item.id, justification=valid)
+    door = groom_dispatch(
+        repo=repo,
+        item=door_item,
+        variant="groom-cut",
+        journal=JournalFile(path=repo / "groom-journal.jsonl"),
+    )
+    assert not isinstance(door, GroomDoorRefusal)
+
+
+def test_valid_exception_waives_only_size_and_marks_successful_dispatch_telemetry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An attributed exception survives every public gate but no ordinary one."""
+    valid = _valid_justification()
+    _assert_valid_size_decision(valid=valid)
+
+    monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
+    reset_fake_singleton()
+    repo = tmp_path / "valid"
+    repo.mkdir()
+    _write_repo_config(repo=repo, ceiling=2, groom_variant="groom-cut")
+    _write_scenario_reference(repo=repo)
+    config = _config(repo_root=repo)
+
+    _exercise_valid_capture_dispatch_and_telemetry(repo=repo, config=config, valid=valid)
+    _assert_valid_exception_preserves_ordinary_approval_gate(
+        repo=repo,
+        config=config,
+        valid=valid,
+    )
+    _exercise_valid_groom_paths(repo=repo, config=config, valid=valid)
