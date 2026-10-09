@@ -75,13 +75,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_merge import 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal import (
     fabro_run_terminal_outcome,
     inspect_terminal_run,
-    successful_store_loss_checkpoint_head,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pr_open_diff import (
     pr_open_diff_record,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_successful_terminal import (
+    successful_store_loss_evidence,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_publication import (
     reconcile_terminal_publication,
@@ -356,7 +358,7 @@ def run_dispatch(
         exit_code=fabro.exit_code,
         stderr=fabro.stderr,
     )
-    successful_head = successful_store_loss_checkpoint_head(run_id=run_id, inspect=inspect)
+    successful_evidence = successful_store_loss_evidence(run_id=run_id, inspect=inspect)
     # THE CURRENT HOLD, read ONCE for the whole merge-confirmation boundary. The
     # plan's `merge_hold` is the launch snapshot the sandbox and the dispatch record
     # share and must keep; this is what the ledger says now, hours later, and a hold
@@ -367,7 +369,7 @@ def run_dispatch(
         runner=runner,
         journal=journal,
         terminal=terminal,
-        checkpoint_head=successful_head,
+        evidence=successful_evidence,
     )
     if publication.refusal is not None:
         return publication.refusal

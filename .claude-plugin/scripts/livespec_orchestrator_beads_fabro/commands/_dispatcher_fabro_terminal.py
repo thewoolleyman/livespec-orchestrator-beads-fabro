@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dead_implementer import (
     dead_implementer_condition_from_text,
@@ -26,12 +26,6 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroInspectResult,
     fabro_port_for_plan,
 )
-from livespec_orchestrator_beads_fabro.commands._fabro_port_checkpoints import (
-    fabro_inspect_checkpoints,
-)
-from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
-    fabro_inspect_record,
-)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
@@ -45,11 +39,9 @@ __all__: list[str] = [
     "fabro_run_terminal_outcome",
     "inspect_run",
     "inspect_terminal_run",
-    "successful_store_loss_checkpoint_head",
 ]
 
 _FABRO_INSPECT_TIMEOUT_SECONDS = 300.0
-_RUN_STORE_LOSS_MESSAGE = "Worker exited before emitting a terminal run event: exit status: 0"
 
 
 def inspect_run(
@@ -153,36 +145,6 @@ def fabro_run_terminal_outcome(
         # "no truncation" for a truncation carried on the other.
         dead_implementer_condition=dead_implementer_condition_from_text(text=f"{stderr}\n{detail}"),
     )
-
-
-def successful_store_loss_checkpoint_head(
-    *, run_id: str | None, inspect: FabroInspectResult | None
-) -> str | None:
-    """Return the incident checkpoint's published head, or no override."""
-    record = None if inspect is None else fabro_inspect_record(payload=inspect.payload)
-    checkpoints = () if record is None else fabro_inspect_checkpoints(record=record)
-    checkpoint: dict[str, Any] = {} if not checkpoints else checkpoints[-1]
-    outcomes_raw: object = checkpoint.get("node_outcomes")
-    outcomes = cast("dict[object, object]", outcomes_raw) if isinstance(outcomes_raw, dict) else {}
-    final_raw: object = outcomes.get("verify_pr")
-    final = cast("dict[object, object]", final_raw) if isinstance(final_raw, dict) else {}
-    failure = None if inspect is None else inspect.failure
-    commit_raw: object = checkpoint.get("git_commit_sha")
-    qualifies = bool(
-        run_id is not None
-        and inspect is not None
-        and inspect.command.exit_code == 0
-        and inspect.status_kind == "failed"
-        and failure is not None
-        and failure.cause == _RUN_STORE_LOSS_MESSAGE
-        and record is not None
-        and record.get("run_id") == run_id
-        and checkpoint.get("current_node") == "verify_pr"
-        and checkpoint.get("next_node_id") == "exit"
-        and final.get("status") == "succeeded"
-        and isinstance(commit_raw, str)
-    )
-    return cast("str", commit_raw) if qualifies else None
 
 
 def _needs_human_terminal_outcome(

@@ -230,3 +230,52 @@ def test_publication_must_match_the_checkpoint_head_and_reports_merge_state(
         "fabro-run",
         None,
     )
+
+
+def test_journal_separates_conflict_checkpoint_publication_and_classification(
+    tmp_path: Path,
+) -> None:
+    outcome, journal, _runner = _dispatch(root=tmp_path)
+    records = {str(record.get("stage")): record for record in journal.records}
+
+    assert outcome.status == "green"
+    assert {
+        "fabro-terminal-conflict",
+        "fabro-terminal-checkpoint",
+        "fabro-terminal-publication",
+        "fabro-terminal-classification",
+    }.issubset(records)
+    assert records["fabro-terminal-conflict"] == {
+        "stage": "fabro-terminal-conflict",
+        "work_item_id": "proof-terminal",
+        "run_id": _RUN_ID,
+        "engine_status": "failed",
+        "failure_cause": _WORKER_EXIT_MESSAGE,
+        "failure_category": "deterministic",
+    }
+    assert records["fabro-terminal-checkpoint"] == {
+        "stage": "fabro-terminal-checkpoint",
+        "work_item_id": "proof-terminal",
+        "run_id": _RUN_ID,
+        "timestamp": "2026-10-09T03:15:20.178706428Z",
+        "current_node": "verify_pr",
+        "next_node_id": "exit",
+        "commit_sha": _HEAD,
+    }
+    assert records["fabro-terminal-publication"] == {
+        "stage": "fabro-terminal-publication",
+        "work_item_id": "proof-terminal",
+        "run_id": _RUN_ID,
+        "pr_number": 41,
+        "state": "MERGED",
+        "branch": "feat/proof-terminal",
+        "head": _HEAD,
+        "repository": "thewoolleyman/proof-repo",
+    }
+    assert records["fabro-terminal-classification"] == {
+        "stage": "fabro-terminal-classification",
+        "work_item_id": "proof-terminal",
+        "run_id": _RUN_ID,
+        "classification": "successful-workflow",
+        "evidence": "checkpoint+publication",
+    }
