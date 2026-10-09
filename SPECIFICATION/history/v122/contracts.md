@@ -4633,29 +4633,6 @@ This clause changes no step outcome of §"Dispatch preflight and
 post-merge step discipline": a red janitor leaves the item exactly as it
 did. Scenario 145 in `scenarios.md` exercises this section.
 
-### Failed post-merge janitor target attribution
-
-When a failed post-merge janitor's aggregate runner emits a structured
-`Failed targets` summary, the Dispatcher MUST name every target in that summary
-in both the dispatch outcome detail and the `janitor-post-merge` journal row.
-It MUST inspect the complete captured output before applying any diagnostic
-tail bound: a summary on stdout or before later output MUST NOT be replaced by
-the last recipe printed on stderr, and a long target list MUST NOT be truncated
-into an incomplete failure attribution. Passing recipe output outside the
-structured summary MUST NOT be presented as the cause of failure.
-
-When no structured failed-target summary is present, the Dispatcher MUST label
-its bounded stdout and stderr excerpts as observations, without asserting that
-a recipe in an excerpt failed. The full private artifact's path and digest
-remain the deep-diagnosis reference governed by the retention clause above.
-Extracted failed-target names are permitted diagnostic metadata on the outcome
-and journal surfaces; this exception to the bounded-excerpt limit permits only
-those target names, not additional captured command output. It MUST NOT change
-artifact privacy, retention-failure behavior, exit codes or item disposition.
-These reporting obligations apply equally to member and adopter repositories;
-an aggregate with no recognized summary uses the labelled-excerpt fallback.
-Scenario 167 in `scenarios.md` exercises this section.
-
 ### Repository integration contract
 
 The set of integration points the orchestrator requires of a governed

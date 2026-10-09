@@ -1686,5 +1686,29 @@
     "test": "TODO",
     "reason": "A real integration-tier test is owed for completed-cycle provenance, measurements, missing-evidence diagnostics and observable non-convergence through the public Dispatcher; existing S6 owns the implementation after ratification.",
     "work_item": "bd-ib-z2y4ca"
+  },
+  {
+    "heading": "## Dispatcher successful terminal evidence",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for authenticated completion, matching publication and negative controls through the actual Dispatcher; existing child bd-ib-l55d7e owns it.",
+    "work_item": "bd-ib-l55d7e"
+  },
+  {
+    "heading": "## Scenario 166 \u2014 Successful terminal evidence survives an engine terminal-event persistence failure",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for authenticated completion, matching publication and negative controls through the actual Dispatcher; existing child bd-ib-l55d7e owns it.",
+    "work_item": "bd-ib-l55d7e"
+  },
+  {
+    "heading": "## Scenario 167 \u2014 A failed janitor names the aggregate runner's failed targets",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real integration-tier test is owed for complete failed-target summaries, labelled fallback and retained-artifact references through the actual Dispatcher; existing child bd-ib-ma3fvj owns it.",
+    "work_item": "bd-ib-ma3fvj"
   }
 ]
