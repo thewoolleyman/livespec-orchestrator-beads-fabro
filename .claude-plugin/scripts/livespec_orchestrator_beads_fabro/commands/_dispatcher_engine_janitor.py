@@ -46,6 +46,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_degraded imp
     merged_degraded_for_plan,
     merged_degraded_outcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_failure_diagnostics import (
+    janitor_failure_diagnosis,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_janitor_lock import (
     claim_janitor_lock,
     janitor_lock_path,
@@ -192,11 +195,19 @@ def _check_suite_red(
         journal_options=StageJournalOptions(
             retention=plan.janitor_retention,
             removed_env_vars=janitor_removed_env_vars(),
+            janitor_failure_diagnostics=True,
         ),
     )
     if on_the_cluster:
         return cluster_janitor_red(result=result, checkout=plan.janitor_checkout)
-    return host_janitor_red(result=result, checkout=plan.janitor_checkout)
+    red = host_janitor_red(result=result, checkout=plan.janitor_checkout)
+    if red is None:
+        return None
+    diagnosis = janitor_failure_diagnosis(stdout=result.stdout, stderr=result.stderr)
+    return (
+        f"post-merge janitor red in fresh checkout {plan.janitor_checkout} "
+        f"(kept for diagnosis): {diagnosis.detail}"
+    )
 
 
 def _post_merge_locked(
