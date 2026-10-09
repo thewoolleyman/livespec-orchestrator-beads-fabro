@@ -205,11 +205,9 @@ def _failure_blocks(*, value: object) -> tuple[dict[object, object], ...]:
 
 
 def _failure_detail(*, block: dict[object, object]) -> FabroFailureDetail | None:
-    causes = _cause_values(value=block.get("causes"))
+    causes = _block_cause_texts(block=block)
     permanent_cause = fabro_permanent_cause(causes=causes)
-    selected = (
-        permanent_cause or _root_cause(causes=causes) or _detail_text(block=block, key="message")
-    )
+    selected = permanent_cause or _root_cause(causes=causes)
     cause = selected if selected is None else (fabro_provider_message(text=selected) or selected)
     reclassified = permanent_cause is not None
     usage_limit_provider = fabro_usage_limit_provider(causes=causes)
@@ -231,6 +229,29 @@ def _failure_detail(*, block: dict[object, object]) -> FabroFailureDetail | None
         provider_usage_limit=usage_limit_provider is not None,
         provider_usage_limit_provider=usage_limit_provider,
     )
+
+
+def _block_cause_texts(*, block: dict[object, object]) -> tuple[str, ...]:
+    """Every cause text this block carries, as ONE chain for both engines.
+
+    The classifiers that decide whether a failure is permanent and which vendor
+    refused grade a CHAIN, and on the Petri-era engine there is no chain: the
+    block carries one `detail.message`. Handing that message back as a
+    one-element chain is what makes a provider ceiling reported by the candidate
+    reach the same single classification pass the pinned engine's chain reaches
+    — a second, parallel pass over the message would be a second place for the
+    `transient_infra` rewrite and the vendor attribution to disagree, and both
+    would produce a well-formed verdict while they did.
+
+    The real chain WINS wherever it exists, for the reason `_detail_text`
+    records: a 0.254 payload carries both, and its chain holds the provider
+    payload the engine's own one-line summary does not.
+    """
+    causes = _cause_values(value=block.get("causes"))
+    if causes:
+        return causes
+    message = _detail_text(block=block, key="message")
+    return () if message is None else (message,)
 
 
 def _detail_text(*, block: dict[object, object], key: str) -> str | None:
