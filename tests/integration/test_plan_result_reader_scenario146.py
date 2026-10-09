@@ -52,6 +52,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_pointer import
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
     OBSERVATION_SATISFIED,
+    SOURCE_PROOF_RECORD,
     ResultObservation,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_reader import read_result
@@ -89,6 +90,14 @@ _NOW = "2026-10-08T12:00:00Z"
 _PR_STATE_KEY = "state,updatedAt"
 _PR_COMMENTS_KEY = "comments"
 _BLOB_KEY = "contents/"
+# The verified-proof read's build comparison. It shares the `gh api` verb with the
+# blob read, so it is keyed on its own endpoint segment rather than on the verb.
+_COMPARE_KEY = "/compare/"
+# A capture's publishing identity and an INDEPENDENT replayer's. The host-leg rule
+# admits a replay only from a party other than the one that recorded the capture,
+# so the refusal cases reuse one identity and the control uses two.
+_CAPTURE_IDENTITY = "session 1e14094a-0000-4000-8000-000000000001"
+_REPLAY_IDENTITY = "session b1e14094-0000-4000-8000-000000000002"
 # Spelled as a LITERAL rather than imported from the observation module, and that
 # is deliberate. Each status arrives in its own Red-Green cycle, so a Red that
 # imported the not-yet-existing constant would die at COLLECTION — proving only
@@ -117,7 +126,18 @@ def _hermetic_ledger(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 @dataclass(kw_only=True)
 class _Runner:
-    """A `CommandRunner` that answers by argv substring and records every call."""
+    """A `CommandRunner` that answers by argv substring and records every call.
+
+    THE BUILD COMPARISON IS DERIVED FROM THE ARGV RATHER THAN CANNED. A fixture
+    answering one status for every comparison makes the build leg VACUOUS: the "a
+    record naming another build cannot satisfy the requested build" control passed
+    its record through a comparison that said `identical` about two builds that are
+    nothing of the kind, so the control would have reported a clean pass against a
+    reader that ignored the build entirely — the exact reading it exists to exclude.
+    Deriving the answer from the two refs the adapter actually asked about makes the
+    fixture incapable of that lie, and leaves no canned value for a later case to
+    reach for by accident.
+    """
 
     answers: dict[str, CommandResult]
     calls: list[tuple[tuple[str, ...], Path]] = field(default_factory=list)
@@ -133,6 +153,9 @@ class _Runner:
     ) -> CommandResult:
         del timeout_seconds, env, stdin
         self.calls.append((tuple(argv), cwd))
+        derived = _derived_containment(argv=argv)
+        if derived is not None:
+            return derived
         for key, result in self.answers.items():
             if any(key in token for token in argv):
                 return result
@@ -175,9 +198,16 @@ def _seed_comment(*, repo: Path, issue_id: str, text: str) -> None:
     make_beads_client(config=store_config(repo=repo)).add_comment(issue_id=issue_id, body=text)
 
 
-def _proof_body(*, verdict: str = "verified", build: str = _BUILD, reproduced: str = "yes") -> str:
+def _proof_body(
+    *,
+    verdict: str = "verified",
+    build: str = _BUILD,
+    reproduced: str = "yes",
+    identity: str = "run 01M4RESULTREADER",
+    minute: str = "00",
+) -> str:
     return (
-        f"Proof of Done — {verdict} — run 01M4RESULTREADER — 2026-10-08T08:00:00Z\n"
+        f"Proof of Done — {verdict} — {identity} — 2026-10-08T08:{minute}:00Z\n"
         "\n"
         f"- {RELEASE_TAG_LABEL}: {build}\n"
         "\n"
@@ -190,17 +220,52 @@ def _pr_comments_payload(*, body: str) -> str:
     return '{"comments": [{"body": ' + _json_string(text=body) + ', "url": "' + _RECORD_URL + '"}]}'
 
 
+def _comments(*, bodies: tuple[str, ...]) -> CommandResult:
+    """A comments payload over SEVERAL records, each carrying its own url.
+
+    The single-body helper above gives every comment one url, which is fine while a
+    case publishes one record. The host-leg cases publish two or three and turn on
+    WHICH of them an observation rested on, so each needs a distinct url.
+    """
+    entries = ", ".join(
+        '{"body": ' + _json_string(text=one) + ', "url": "' + f"{_RECORD_URL}{index}" + '"}'
+        for index, one in enumerate(bodies, start=1)
+    )
+    return CommandResult(exit_code=0, stdout='{"comments": [' + entries + "]}", stderr="")
+
+
 def _json_string(*, text: str) -> str:
     escaped = text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
     return f'"{escaped}"'
 
 
+def _derived_containment(*, argv: list[str]) -> CommandResult | None:
+    """The forge's own answer about two builds, derived from the refs it was asked.
+
+    `None` for any argv that is not the build comparison, so the caller falls
+    through to its keyed answers. `identical` only when the record's build IS the
+    requested one and `behind` otherwise, which is the honest answer for every
+    fixture in this module: no case here publishes a record against a genuinely
+    later release, and inventing containment for two unrelated version strings is
+    what made the build control vacuous.
+    """
+    endpoint = next((token for token in argv if _COMPARE_KEY in token), None)
+    if endpoint is None:
+        return None
+    base, _, head = endpoint.split(_COMPARE_KEY, 1)[1].partition("...")
+    status = "identical" if base == head else "behind"
+    return CommandResult(exit_code=0, stdout=f"{status}\n", stderr="")
+
+
 def _runner(
-    *,
-    pr_state: str = "MERGED",
-    proof_body: str | None = None,
-    blob: str = _BLOB,
+    *, pr_state: str = "MERGED", proof_body: str | None = None, blob: str = _BLOB
 ) -> _Runner:
+    """The three keyed forge reads this reader can issue.
+
+    The build comparison carries no key, because `_Runner` derives it from the refs
+    the adapter actually asked about — see its docstring for why a canned answer
+    would make the build leg vacuous.
+    """
     body = _proof_body() if proof_body is None else proof_body
     return _Runner(
         answers={
@@ -213,7 +278,7 @@ def _runner(
                 exit_code=0, stdout=_pr_comments_payload(body=body), stderr=""
             ),
             _BLOB_KEY: CommandResult(exit_code=0, stdout=f"{blob}\n", stderr=""),
-        }
+        },
     )
 
 
@@ -442,6 +507,82 @@ def test_a_comment_saying_verified_cannot_satisfy_a_typed_verified_proof(
         now=_NOW,
     )
     assert _status(observation=observation) != OBSERVATION_SATISFIED
+
+
+def test_a_host_record_that_is_not_independent_evidence_cannot_satisfy_the_proof(
+    tmp_path: Path,
+) -> None:
+    """The two host readings that reported SATISFIED, driven through the real reader.
+
+    The clause requires the verified-proof read to validate the EXISTING typed
+    Proof of Done semantics, and the host leg of the acceptance section already
+    rejects both of these: a replay whose publishing identity equals the capture's
+    is not evidence "however it was posted", and a record is never edited, so a
+    later `host_not_reproduced` supersedes an earlier success rather than sitting
+    beside it.
+
+    They are bound HERE as well as at the unit tier because this is the tier the
+    scenario binds, and because the component reproduction that found them went
+    through `observe_verified_proof` directly — which cannot show that the reader
+    an operator actually calls reaches the same verdict.
+
+    Both are UNSATISFIED rather than unobservable: every record was read and the
+    reader established that no independent, unretracted replay covers the scope.
+    """
+    repo = _seeded_project(tmp_path=tmp_path)
+    capture = _proof_body(verdict="host_recorded", identity=_CAPTURE_IDENTITY, minute="00")
+    cases = (
+        (
+            "a replay published by the capturing identity",
+            (
+                capture,
+                _proof_body(verdict="host_verified", identity=_CAPTURE_IDENTITY, minute="01"),
+            ),
+        ),
+        (
+            "a success a newer failed replay retracted",
+            (
+                capture,
+                _proof_body(verdict="host_verified", identity=_REPLAY_IDENTITY, minute="01"),
+                _proof_body(
+                    verdict="host_not_reproduced",
+                    identity=_REPLAY_IDENTITY,
+                    minute="02",
+                    reproduced="no",
+                ),
+            ),
+        ),
+    )
+    for label, bodies in cases:
+        observation = read_result(
+            project_root=repo,
+            reference=_fulfilled_references()["verified_proof"],
+            runner=_Runner(answers={_PR_COMMENTS_KEY: _comments(bodies=bodies)}),
+            now=_NOW,
+        )
+        assert _status(observation=observation) == _UNSATISFIED, label
+        assert observation.source == SOURCE_PROOF_RECORD, label
+    # THE POSITIVE CONTROL, on the same fixture shape: an INDEPENDENT replay of the
+    # same capture, against the same build, IS satisfied. Without it both refusals
+    # above are equally consistent with a reader that refuses every host record.
+    independent = read_result(
+        project_root=repo,
+        reference=_fulfilled_references()["verified_proof"],
+        runner=_Runner(
+            answers={
+                _PR_COMMENTS_KEY: _comments(
+                    bodies=(
+                        capture,
+                        _proof_body(
+                            verdict="host_verified", identity=_REPLAY_IDENTITY, minute="01"
+                        ),
+                    )
+                )
+            }
+        ),
+        now=_NOW,
+    )
+    assert _status(observation=independent) == OBSERVATION_SATISFIED
 
 
 def test_a_record_naming_another_build_cannot_satisfy_the_requested_build(
