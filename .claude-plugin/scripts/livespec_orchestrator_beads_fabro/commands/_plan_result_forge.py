@@ -20,12 +20,23 @@ a different concern and a different set of imports. The SOURCE each reports
 still differs — a pull-request state is forge state, a blob is a Git object — and
 that is a property of the evidence rather than of the transport.
 
-WHY THE STATE COMPARISON IS CASE-FOLDED AND THE BLOB COMPARISON IS NOT. The forge
-renders pull-request state in upper case and an operator writes it either way, so
-folding is the forgiving direction on a closed vocabulary. A blob id is a hex
-digest: it has no vocabulary to be forgiving about, and comparing it case-folded
-would be the same comparison with an extra step — the forge and git both render
-it lower case, so it is compared verbatim and a mismatch is a mismatch.
+WHY BOTH COMPARISONS ARE CASE-FOLDED, AND WHY THE BLOB ONE DID NOT USED TO BE.
+The forge renders pull-request state in upper case and an operator writes it
+either way, so folding is the forgiving direction on a closed vocabulary. The blob
+comparison was deliberately NOT folded, on the reasoning that a hex digest has no
+vocabulary to be forgiving about and that the forge and git both render one in
+lower case — so a verbatim comparison lost nothing.
+
+That reasoning held only while every answer reaching the comparison shared ONE
+rendering, and the object-identity shape check is what ended it. Hex is
+case-insensitive, so an upper-case digest IS the same object as its lower-case
+spelling, and a shape check has only two coherent options: call that answer
+malformed, which asserts the forge named no identity when it plainly named one, or
+admit it — in which case a verbatim comparison then reports one object as two. The
+second failure is the clause's forbidden direction, a confident negative about an
+object that matches, so the shape admits either case and the comparison folds.
+Folding cannot conflate two DISTINCT identities, because hex digests differing in
+any digit still differ when folded; the genuine-mismatch control asserts that.
 
 WHY EACH OBSERVED VALUE IS VALIDATED BEFORE THE REQUESTED TARGET IS COMPARED, AND
 WHY THAT ORDER IS THE WHOLE MECHANISM. The clause requires malformed evidence to be
@@ -85,12 +96,15 @@ _UPDATED_AT_FIELD = "updatedAt"
 # obligation outstanding, rather than a verdict nobody can trust.
 _PULL_REQUEST_STATES: frozenset[str] = frozenset({"open", "closed", "merged"})
 
-# A Git object identity as the forge renders one: forty LOWERCASE hex digits.
-# The case is part of the grammar rather than an incidental detail, because this
-# module compares a blob verbatim — so admitting another rendering would report
-# a matching object as a mismatch. Anything else is unobservable for the same
-# reason a blank answer is: it is not an object identity the reader obtained.
-_OBJECT_IDENTITY = re.compile(r"[0-9a-f]{40}")
+# A Git object identity: hex at either rendering length — 40 for SHA-1, 64 for
+# SHA-256 — in either case. The shape separates an IDENTITY from a NON-identity
+# (`null`, a truncated digest, an error document), and it must not separate one
+# legitimate rendering from another: a check admitting only lowercase SHA-1
+# reports "the forge named no identity" about answers that plainly carry one, and
+# on a SHA-256 repository that makes the file result PERMANENTLY unobservable
+# rather than merely wrong once. Case is excluded from the grammar for the same
+# reason, which is why the comparison folds — see the module docstring.
+_OBJECT_IDENTITY = re.compile(r"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})")
 
 
 def pull_request_state_argv(*, number: int) -> list[str]:
@@ -307,7 +321,7 @@ def observe_file_on_branch(
                 " read rather than a differing object"
             ),
         )
-    if blob != target.blob:
+    if blob.casefold() != target.blob.casefold():
         return unsatisfied(
             repo=repository.name,
             target=target.identity,
