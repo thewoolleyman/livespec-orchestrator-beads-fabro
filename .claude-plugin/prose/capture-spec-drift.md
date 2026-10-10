@@ -1,26 +1,14 @@
 # capture-spec-drift
 
-Harness-neutral driving prose for the `capture-spec-drift` operation,
-per `SPECIFICATION/constraints.md` §"Skill orchestration constraints":
-this artifact is the plugin-owned LLM-facing half of the operation —
-the consent flow, the multi-step dialogue, the
-`livespec_orchestrator_beads_fabro.*` package calls, and the
-cross-boundary propose-change handoff semantics. Each per-runtime
-SKILL.md is a THIN binding that resolves the plugin root, reads this
-prose in full, and maps its harness-neutral vocabulary (the
-"ask the user" / "read the file" verbs, the propose-change operation
-handoff) to that runtime's tools. Nothing in this file names a specific
-agent runtime's tools or command namespace.
+Per `SPECIFICATION/constraints.md` §"Skill orchestration constraints", this is the harness-neutral operation prose; each runtime binding only maps its tools to it.
 
-Asymmetric counterpart to `capture-impl-gaps`. Where impl-gap detection
-is mechanical, drift detection is heuristic — the implementation may
-have evolved beyond what the spec documents, in ways no static
-pattern-match can flag. The operation drives an LLM-assisted comparison
-between the canonical Specification (via the Spec Reader) and the
-working impl tree, surfaces each candidate finding to the user, and
-hands the confirmed findings off to the propose-change operation
-via the cross-boundary handoff (red-edge handoff 1 per
-livespec/SPECIFICATION/contracts.md §"Cross-boundary handoffs").
+## What done looks like
+
+Done reports the coverage attempt and any withheld reason, including a pass with zero findings,
+plus the disposition of every surfaced drift candidate.
+
+This heuristic counterpart to `capture-impl-gaps` compares the canonical Specification with the
+implementation and routes consented findings through `propose-change`.
 
 ## Pre-requisites
 
