@@ -383,8 +383,9 @@ the plan live with its epic open, or transfer every blocker to another live plan
 
 A live plan has two stores:
 
-- Filesystem research under `plan/<topic>/research/`. Creation writes one initial research note and no other filesystem artifact.
-  Further reasoning updates add or revise research notes deliberately.
+- Filesystem research under `plan/<topic>/research/`. Creation writes one initial research note and the write-once
+  `plan/<topic>/associated_work_item_id` pointer, and no other filesystem artifact. Further reasoning updates add or revise
+  research notes deliberately.
 - One write-once plan epic in the beads ledger. The epic carries the thread slug in its metadata and is the status, handoff,
   scope-event, and archive lifecycle anchor.
 
