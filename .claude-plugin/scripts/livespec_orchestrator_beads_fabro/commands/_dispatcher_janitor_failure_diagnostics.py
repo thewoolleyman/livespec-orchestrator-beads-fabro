@@ -33,7 +33,7 @@ class JanitorFailureDiagnosis:
 
 def janitor_failure_diagnosis(*, stdout: str, stderr: str) -> JanitorFailureDiagnosis:
     """Prefer the aggregate's structured target list to an unrelated stream tail."""
-    targets = _failed_targets(text=f"{stdout}\n{stderr}")
+    targets = _failed_targets(text=stdout) or _failed_targets(text=stderr)
     if targets:
         rendered = "\n".join(
             [f"Failed targets ({len(targets)}):", *(f"  - {target}" for target in targets)]

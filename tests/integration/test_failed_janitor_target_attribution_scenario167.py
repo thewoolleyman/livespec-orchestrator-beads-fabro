@@ -111,6 +111,29 @@ def _nested_summary_janitor_argv(
     return ("sh", "-c", script)
 
 
+def _stderr_decoy_janitor_argv(
+    *, aggregate_targets: tuple[str, ...], decoy_targets: tuple[str, ...]
+) -> tuple[str, ...]:
+    aggregate_summary = "\n".join(
+        [
+            f"Failed targets ({len(aggregate_targets)}):",
+            *(f"  - {target}" for target in aggregate_targets),
+        ]
+    )
+    decoy_summary = "\n".join(
+        [
+            f"Failed targets ({len(decoy_targets)}):",
+            *(f"  - {target}" for target in decoy_targets),
+        ]
+    )
+    script = (
+        f"printf '%s\\n' {shlex.quote(aggregate_summary)}; "
+        f"printf '%s\\n' {shlex.quote(decoy_summary)} >&2; "
+        f"exit {_EXIT_CODE}"
+    )
+    return ("sh", "-c", script)
+
+
 def _plan(
     *,
     repo: Path,
@@ -234,6 +257,30 @@ def test_the_aggregate_terminal_summary_wins_over_a_nested_failed_targets_block(
     assert row["failed_targets"] == list(aggregate_targets)
     assert all(target in outcome.detail for target in aggregate_targets)
     assert all(target not in outcome.detail for target in nested_targets)
+
+
+def test_the_stdout_aggregate_summary_wins_over_a_stderr_decoy(*, tmp_path: Path) -> None:
+    """A target-emitted stderr summary cannot override the aggregate stdout summary."""
+    aggregate_targets = ("check-per-file-coverage", "check-coverage")
+    decoy_targets = ("nested-stderr-decoy",)
+    janitor = _stderr_decoy_janitor_argv(
+        aggregate_targets=aggregate_targets,
+        decoy_targets=decoy_targets,
+    )
+    journal = JournalFile(path=tmp_path / "tmp" / "fabro-dispatch-journal.jsonl")
+
+    outcome = post_merge(
+        outcome_type=DispatchOutcome,
+        plan=_plan(repo=tmp_path, janitor=janitor),
+        runner=_JanitorRunner(janitor=janitor),
+        journal=journal,
+        merged=_merged(),
+    )
+
+    row = _janitor_rows(journal=journal)[0]
+    assert row["failed_targets"] == list(aggregate_targets)
+    assert all(target in outcome.detail for target in aggregate_targets)
+    assert all(target not in outcome.detail for target in decoy_targets)
 
 
 def test_without_a_summary_both_bounded_streams_are_labelled_observations(
