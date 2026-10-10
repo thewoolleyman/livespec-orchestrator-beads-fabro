@@ -200,7 +200,11 @@ def test_factory_authentication_precedes_vault_materialization(
     monkeypatch.setattr(loop_module, "publish_branch_for", lambda **_: "feat/review-fix")
     monkeypatch.setattr(loop_module, "contract_prompt_variables", lambda **_: {})
     monkeypatch.setattr(loop_module, "journaled_proof_rendering", lambda **_: "")
-    monkeypatch.setattr(loop_module, "fabro_vault_sink_for_plan", lambda **_: object())
+    monkeypatch.setattr(
+        loop_module,
+        "fabro_vault_sink_for_plan",
+        lambda **_: SimpleNamespace(release_launch_guard=lambda: None),
+    )
     monkeypatch.setattr(loop_module, "run_id", lambda: "dispatch-secret-review")
     monkeypatch.setattr(loop_module, "release_pre_run_claim_if_needed", lambda **_: None)
     monkeypatch.setattr(
@@ -317,6 +321,11 @@ def test_launch_guard_releases_only_after_the_worker_reports_running(
         on_worker_running=lambda: events.append("released"),
     )
     monkeypatch.setattr(WatchedFabroLauncher, "_discover_run", discover)
+    monkeypatch.setattr(
+        launcher_module,
+        "stamped_attribution",
+        lambda **kwargs: kwargs["attribution"],
+    )
     monkeypatch.setattr(
         launcher_module,
         "liveness_sample",
