@@ -7,6 +7,9 @@ description: Execute one livespec-orchestrator-beads-fabro action-id: impl:<id> 
 
 Thin Codex operator binding for the shared Python CLI.
 
+A valve action is complete when it returns. An `impl:` dispatch spans the run, the merge, the post-merge janitor, and acceptance
+and is reported as observed when its gate reports.
+
 ## Resolving the plugin root
 
 ```bash
