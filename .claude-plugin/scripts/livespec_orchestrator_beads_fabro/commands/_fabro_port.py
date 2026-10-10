@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from livespec_orchestrator_beads_fabro.commands import _fabro_client as client
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import (
     FabroHttpPort,
     FabroHttpTransport,
@@ -76,6 +77,7 @@ class FabroPort:
     runner: FabroRunner
     cwd: Path
     http: FabroHttpTransport = field(default_factory=UrllibFabroHttpTransport)
+    fabro_version: str | None = None
 
     def run(
         self,
@@ -85,14 +87,15 @@ class FabroPort:
         inputs: tuple[str, ...],
         timeout_seconds: float,
     ) -> FabroRunResult:
+        workflow = client.run_workflow(version=self.fabro_version, workflow_toml=workflow_toml)
         command = self._run(
             argv=[
                 self.fabro_bin,
                 "run",
-                str(workflow_toml),
+                str(workflow),
                 "--goal-file",
                 str(goal_file),
-                *_input_args(inputs=inputs),
+                *client.fabro_input_args(inputs=inputs),
                 "--no-upgrade-check",
                 *self._server_suffix(),
             ],
@@ -199,7 +202,7 @@ class FabroPort:
                 str(workflow_toml),
                 "--goal-file",
                 str(goal_file),
-                *_input_args(inputs=inputs),
+                *client.fabro_input_args(inputs=inputs),
                 "--no-upgrade-check",
                 "--json",
                 *self._server_suffix(),
@@ -306,11 +309,5 @@ def fabro_port_for_plan(*, plan: Any, runner: FabroRunner) -> FabroPort:
         ),
         runner=runner,
         cwd=plan.repo,
+        fabro_version=getattr(plan, "fabro_version", None),
     )
-
-
-def _input_args(*, inputs: tuple[str, ...]) -> list[str]:
-    argv: list[str] = []
-    for item in inputs:
-        argv.extend(["--input", item])
-    return argv

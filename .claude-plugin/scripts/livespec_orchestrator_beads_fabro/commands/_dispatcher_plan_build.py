@@ -102,9 +102,10 @@ class DispatchPlan:
     `branch` is the PUBLISH branch (`feat/<work-item-id>`) the phase
     graph's pr stage pushes and the engine polls — the Fabro-managed
     run branch inside the sandbox is run-internal and never leaves it.
-    `workflow_toml` is the MATERIALIZED run-config overlay path (the
-    committed config plus the credential env table), not the committed
-    file itself. `janitor_checkout` is the path the engine provisions
+    `workflow_toml` is the MATERIALIZED run-config path (the committed
+    config plus the credential env table), not the committed file itself:
+    an external overlay on the pinned engine, or the config inside the
+    self-contained package on Petri. `janitor_checkout` is the path the engine provisions
     as a FRESH detached worktree of the merged ref and runs the
     post-merge janitor in — never the host primary's working tree,
     whose environment rot (stale `.venv` shebangs, stale `.coverage`,
@@ -137,6 +138,10 @@ class DispatchPlan:
     # point is how the record and the run come to disagree. Neither seam is
     # authoritative, so a hold reaching only one of them would not hold.
     merge_hold: bool = False
+    # The client build measured from this plan's per-factory binary. It is the
+    # launch-shape discriminator: the pinned engine consumes the materialized
+    # config FILE while Petri consumes the self-contained package DIRECTORY.
+    fabro_version: str | None = None
     # Every ACP node's adapter, already resolved through the workflow /
     # repository / per-dispatch layers (`_acp_node_layers`). It rides the
     # plan rather than being re-resolved at launch because BOTH launchers
@@ -205,6 +210,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
     # The hold has NO repository-level default, so there is no setting to fall
     # through to: False is the absence of a hold, not a configured value.
     merge_hold: bool = False,
+    fabro_version: str | None = None,
     fabro_timeout_seconds: float = DEFAULT_FABRO_TIMEOUT_SECONDS,
     acp_nodes: AcpNodeResolution | None = None,
 ) -> DispatchPlan:
@@ -239,6 +245,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
             "succeeded" if merge_on_review_cap else _MERGE_ON_REVIEW_CAP_DISABLED_OUTCOME
         ),
         merge_hold=merge_hold,
+        fabro_version=fabro_version,
         fabro_timeout_seconds=fabro_timeout_seconds,
         acp_nodes=acp_nodes,
         integration=integration,
