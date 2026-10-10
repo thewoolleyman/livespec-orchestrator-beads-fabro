@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.181.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.180.4...v0.181.0) (2026-10-10)
+
+
+### Features
+
+* **dispatcher:** hand a factory vault its credential on stdin only (bd-ib-4ipmub) ([a0055d4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a0055d45967392fae03d1204275d497b00cdcb13))
+* **dispatcher:** journal each vault store so a rotation is observable (bd-ib-4ipmub) ([3d2b23e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3d2b23e36fe7b7a49330ddb0377af0b3a539d3b3))
+* **dispatcher:** resolve each required worker credential from the factory vault (bd-ib-4ipmub) ([0dbf7fd](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0dbf7fd1d5c05ca3f6d0bd3c8abb528f2d06d5ec))
+* **dispatcher:** route projected credentials through native Fabro secrets (bd-ib-4ipmub) ([5af66b6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5af66b67e996393f01f02dfa7392d9899462fa9b))
+
+
+### Bug Fixes
+
+* **dispatcher:** clean overlay on routing refusal (bd-ib-4ipmub) ([268ced3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/268ced36c418432f7118acff511ea7c69a656398))
+* **dispatcher:** isolate launch guard regression harness (bd-ib-4ipmub) ([e4e21e9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e4e21e9fbd5613dc3817184ac627b3f6f2c1af84))
+* **dispatcher:** isolate native secret launches (bd-ib-4ipmub) ([3c231f0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3c231f09282b5eee2d8e21031d4f1ebc89ed199b))
+* **dispatcher:** reject unsafe native secret launches (bd-ib-4ipmub) ([e033136](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e0331369c0ca735ae8c6405b911fbde0307f42cf))
+* **dispatcher:** serialize native secret launch snapshots (bd-ib-4ipmub) ([aa38d59](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/aa38d59f4d8fd79ad1eec912ee66a9e3efd4e3cf))
+
 ## [0.180.4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.180.3...v0.180.4) (2026-10-09)
 
 
