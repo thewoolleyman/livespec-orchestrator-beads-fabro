@@ -134,3 +134,20 @@ def test_other_operations_name_their_done_state_before_prerequisites() -> None:
         assert done < prerequisites, name
         assert text[:done].count("\n") < 100, name
         assert all(phrase in opening for phrase in phrases), name
+
+
+def test_implement_routes_product_work_and_uses_beads_lifecycle_terms() -> None:
+    text = _read("implement.md")
+    prose = _squash(text)
+
+    assert "route product-code work through `drive` with `impl:<id>`" in prose
+    assert "retain supervision through the detached gate runner" in prose
+    assert "submission alone does not complete the work item" in prose
+    assert "beads work-items store" in prose
+    assert (
+        "`backlog`, `ready`, `blocked`, `active`, `acceptance`, `pending-approval`, and `closed`"
+        in prose
+    )
+    assert "jsonl" not in prose
+    assert "work-items.jsonl" not in prose
+    assert 'status != "open"' not in prose
