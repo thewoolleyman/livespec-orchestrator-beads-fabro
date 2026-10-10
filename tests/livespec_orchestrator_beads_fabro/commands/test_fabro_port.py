@@ -157,6 +157,34 @@ def test_petri_fabro_run_receives_the_self_contained_workflow_package(
     assert runner.calls[0].argv[2] == str(package)
 
 
+def test_pinned_fabro_run_keeps_the_run_config_overlay_file(tmp_path: Path) -> None:
+    """The pinned 0.254 client keeps the file-shaped launch contract exactly."""
+    module = _port_module()
+    overlay = tmp_path / "fabro-run-config-bd-ib-na2ddt.toml"
+    _ = overlay.write_text('_version = 1\n\n[run]\ngoal = "fixture"\n', encoding="utf-8")
+    runner = _Runner(
+        results=[CommandResult(exit_code=0, stdout="Run: 01PINNED\n", stderr="")],
+        calls=[],
+    )
+    port = module.FabroPort(
+        fabro_bin="/opt/fabro-254",
+        target=module.FabroTarget(server_url="http://127.0.0.1:32276"),
+        runner=runner,
+        cwd=tmp_path,
+        fabro_version="fabro 0.254.0 (fixture)",
+    )
+
+    result = port.run(
+        workflow_toml=overlay,
+        goal_file=tmp_path / "goal.md",
+        inputs=(),
+        timeout_seconds=42.0,
+    )
+
+    assert result.run_id == "01PINNED"
+    assert runner.calls[0].argv[2] == str(overlay)
+
+
 def test_fabro_port_auth_login_uses_dev_token_and_server_as_subcommand_flags(
     tmp_path: Path,
 ) -> None:
