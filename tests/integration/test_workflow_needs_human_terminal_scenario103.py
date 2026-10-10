@@ -186,7 +186,29 @@ def test_needs_human_marker_is_shared_between_dot_and_dispatcher() -> None:
 
 
 def test_dispatcher_maps_the_sentinel_onto_the_blocked_outcome(tmp_path: Path) -> None:
-    outcome = fabro_run_terminal_outcome(
+    preserved_ref = "refs/heads/needs-human/01NEEDSHUMAN"
+    preserved = fabro_run_terminal_outcome(
+        outcome_type=DispatchOutcome,
+        plan=_plan(tmp_path=tmp_path),
+        run_id="01NEEDSHUMAN",
+        inspect=None,
+        exit_code=1,
+        stderr=(
+            f"{_PRESERVED_MARKER}: {preserved_ref}\n"
+            f"{_SENTINEL}: loop cannot auto-resolve; work preserved by reference; "
+            "decision routed to the ledger\n"
+        ),
+    )
+
+    assert preserved is not None
+    assert preserved.status == "blocked"
+    assert preserved.stage == "fabro-run"
+    assert preserved.fabro_run_id == "01NEEDSHUMAN"
+    assert preserved_ref in preserved.detail
+    assert "resolve-blocked:bd-ib-8nnu:ready" in preserved.detail
+    assert "fabro attach" not in preserved.detail
+
+    dump_only = fabro_run_terminal_outcome(
         outcome_type=DispatchOutcome,
         plan=_plan(tmp_path=tmp_path),
         run_id="01NEEDSHUMAN",
@@ -198,13 +220,9 @@ def test_dispatcher_maps_the_sentinel_onto_the_blocked_outcome(tmp_path: Path) -
         ),
     )
 
-    assert outcome is not None
-    assert outcome.status == "blocked"
-    assert outcome.stage == "fabro-run"
-    assert outcome.fabro_run_id == "01NEEDSHUMAN"
-    assert "refs/heads/needs-human/01NEEDSHUMAN" in outcome.detail
-    assert "resolve-blocked:bd-ib-8nnu:ready" in outcome.detail
-    assert "fabro attach" not in outcome.detail
+    assert dump_only is not None
+    assert preserved_ref not in dump_only.detail
+    assert "dump pointer is the only preservation" in dump_only.detail
 
 
 def _preservation_script() -> str:

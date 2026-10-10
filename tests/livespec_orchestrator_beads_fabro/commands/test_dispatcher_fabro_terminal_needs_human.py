@@ -168,7 +168,8 @@ def test_petri_needs_human_marker_in_the_conclusion_message_blocks_the_item(
     assert outcome.status == "blocked"
     assert outcome.stage == "fabro-run"
     assert outcome.fabro_run_id == _PETRI_RUN_ID
-    assert f"refs/heads/needs-human/{_PETRI_RUN_ID}" in outcome.detail
+    assert f"refs/heads/needs-human/{_PETRI_RUN_ID}" not in outcome.detail
+    assert "dump pointer is the only preservation" in outcome.detail
 
 
 def test_legacy_needs_human_marker_on_run_stderr_still_blocks_the_item(
@@ -193,4 +194,5 @@ def test_legacy_needs_human_marker_on_run_stderr_still_blocks_the_item(
     assert outcome is not None
     assert outcome.status == "blocked"
     assert outcome.fabro_run_id == _LEGACY_RUN_ID
-    assert f"refs/heads/needs-human/{_LEGACY_RUN_ID}" in outcome.detail
+    assert f"refs/heads/needs-human/{_LEGACY_RUN_ID}" not in outcome.detail
+    assert "dump pointer is the only preservation" in outcome.detail
