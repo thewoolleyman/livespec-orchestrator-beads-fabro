@@ -20,10 +20,23 @@ from __future__ import annotations
 from pathlib import Path
 
 from _fake_acp_agent import ENV_PROBE_MODE, ENV_PROBE_NAME, ENV_PROBE_VALUE
-from _tier0_support import TIMEOUT_SECONDS, _assert_success, _inspect_record
+from _tier0_support import (
+    TIMEOUT_SECONDS,
+    _assert_success,
+    _FabroTier0Config,
+    _inspect_record,
+)
 from _tier1_support import _failure_block, _write_goal, _write_workflow
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+    SynchronousFabroLauncher,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_graph_adapters import (
     render_acp_commands,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import build_plan
+from livespec_orchestrator_beads_fabro.commands._fabro_client import (
+    materialized_workflow_config,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
 
@@ -85,6 +98,24 @@ digraph FabroEnemyAcpEscapedCommandLaunch {{
 """
 
 
+class _Journal:
+    def append(self, *, record: dict[str, object]) -> None:
+        _ = record
+
+
+def _run_config(*, graph: Path) -> str:
+    return f"""_version = 1
+
+[workflow]
+graph = "{graph}"
+
+[run.inputs]
+review_fix_visit_cap = 2
+merge_on_review_cap_outcome = "succeeded"
+merge_hold = false
+"""
+
+
 def _run_status(*, port: FabroPort, tmp_path: Path, name: str, body: str) -> tuple[str, str]:
     workflow = _write_workflow(tmp_path=tmp_path, name=name, body=body)
     goal = _write_goal(tmp_path=tmp_path, title=name)
@@ -106,6 +137,59 @@ def _run_status(*, port: FabroPort, tmp_path: Path, name: str, body: str) -> tup
     return (str(kind), str(message or ""))
 
 
+def _dispatcher_run_status(
+    *,
+    config: _FabroTier0Config,
+    port: FabroPort,
+    tmp_path: Path,
+    name: str,
+    body: str,
+) -> tuple[str, str]:
+    """Launch one self-contained package through the Dispatcher's launcher."""
+    version = f"fabro {config.expected_client_version}"
+    package = tmp_path / f"{name}-package"
+    package.mkdir()
+    graph = package / "workflow.fabro"
+    package_config = package / "workflow.toml"
+    overlay = tmp_path / f"{name}-overlay.toml"
+    _ = graph.write_text(body.strip() + "\n", encoding="utf-8")
+    _ = package_config.write_text(_run_config(graph=Path("workflow.fabro")), encoding="utf-8")
+    _ = overlay.write_text(_run_config(graph=graph), encoding="utf-8")
+    plan = build_plan(
+        repo=Path.cwd(),
+        work_item_id=f"fabro-eut-{name}",
+        workflow_toml=materialized_workflow_config(
+            version=version,
+            overlay=overlay,
+            package_dir=package,
+        ),
+        goal_file=_write_goal(tmp_path=tmp_path, title=name),
+        fabro_bin=config.fabro_bin,
+        fabro_factory_name="fabro-eut",
+        fabro_factory_server=config.server_url,
+        fabro_version=version,
+        janitor=None,
+        janitor_checkout=tmp_path / f"{name}-janitor",
+        review_fix_cap=2,
+        fabro_timeout_seconds=_RUN_TIMEOUT_SECONDS,
+    )
+    launched = SynchronousFabroLauncher().launch(
+        plan=plan,
+        runner=ShellCommandRunner(),
+        journal=_Journal(),
+    )
+    assert launched.run_id is not None, launched.command.stderr or launched.command.stdout
+    inspect = port.inspect(run_id=launched.run_id, timeout_seconds=TIMEOUT_SECONDS)
+    _assert_success(command=inspect.command)
+    record = _inspect_record(value=inspect.payload)
+    status = record.get("status")
+    kind = status.get("kind") if isinstance(status, dict) else status
+    failure = _failure_block(value=record) or {}
+    detail = failure.get("detail")
+    message = detail.get("message") if isinstance(detail, dict) else failure.get("message")
+    return (str(kind), str(message or ""))
+
+
 def test_acp_agent_launches_from_acp_config_json(*, tmp_path: Path, port: FabroPort) -> None:
     kind, message = _run_status(
         port=port, tmp_path=tmp_path, name="acp-config-launch", body=_ACP_CONFIG_WORKFLOW
@@ -113,9 +197,15 @@ def test_acp_agent_launches_from_acp_config_json(*, tmp_path: Path, port: FabroP
     assert kind == "succeeded", message
 
 
-def test_acp_agent_launches_from_literal_acp_command(*, tmp_path: Path, port: FabroPort) -> None:
-    kind, message = _run_status(
-        port=port, tmp_path=tmp_path, name="acp-command-launch", body=_ACP_COMMAND_WORKFLOW
+def test_dispatcher_launches_the_same_literal_acp_command_on_each_engine(
+    *, config: _FabroTier0Config, tmp_path: Path, port: FabroPort
+) -> None:
+    kind, message = _dispatcher_run_status(
+        config=config,
+        port=port,
+        tmp_path=tmp_path,
+        name="acp-command-launch",
+        body=_ACP_COMMAND_WORKFLOW,
     )
     assert kind == "succeeded", message
 
