@@ -34,6 +34,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     DispatchOutcome,
     run_dispatch,
+    run_fabro_factory_auth_login,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
     contract_prompt_variables,
@@ -187,6 +188,12 @@ def _dispatch_one_locked(
     # ABOVE the overlay rather than beside the render it guards: its inputs are
     # the item, its comments and the lessons, none of which the overlay
     # supplies, so it has no reason to run on the leaking side.
+    # A native vault is authenticated through the same Fabro login file as the
+    # later run. Establish that credential before materialization reaches its
+    # first `fabro secret set`; a fresh candidate host otherwise fails while the
+    # dev token is still waiting in the launcher's later auth step.
+    factory_runner = ShellCommandRunner()
+    run_fabro_factory_auth_login(plan=plan, runner=factory_runner)
     overlay_error = materialize_overlay(
         committed=recorded.committed_workflow,
         overlay=overlay_file,
@@ -229,9 +236,7 @@ def _dispatch_one_locked(
         # contract gives: a credential stored in one server's vault while the run
         # launched against another's resolves to nothing.
         factory_name=plan.fabro_factory_name,
-        secret_sink=fabro_vault_sink_for_plan(
-            plan=plan, runner=ShellCommandRunner(), journal=journal
-        ),
+        secret_sink=fabro_vault_sink_for_plan(plan=plan, runner=factory_runner, journal=journal),
     )
     if overlay_error is not None:
         return failed_dispatch_outcome(

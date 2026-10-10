@@ -33,7 +33,6 @@ on hp run 01M058955QQ5.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from collections.abc import Mapping, Sequence
@@ -121,6 +120,7 @@ OPTIONAL_CREDENTIAL_ENV_NAMES: tuple[str, ...] = ("GITHUB_PRIVATE_KEY",)
 # -- it is NOT in this namespace, so it is never read, never written, and never
 # mistaken for a projected credential.
 VAULT_SECRET_PREFIX = "LIVESPEC_DISPATCH_"  # noqa: S105 - a vault-key PREFIX
+_DECLARATION_ABSENT = object()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -167,17 +167,16 @@ class VaultSecretSink(Protocol):
         ...
 
 
-def vault_secret_name(*, env_name: str, scope: str) -> str:
-    """The launch-scoped vault key one environment variable is stored under.
+def vault_secret_name(*, env_name: str) -> str:
+    """The stable vault key one environment variable's value is stored under.
 
-    Fabro's vault is server-global. A name derived from ``env_name`` alone lets
-    overlapping dispatchers replace a value after another dispatch rendered its
-    reference but before its worker resolved it. The dispatch scope prevents
-    that cross-launch read; its digest keeps arbitrary dispatch-id punctuation
-    out of the expression grammar while retaining collision-resistant identity.
+    Stability across launches is load-bearing: the reference token is rendered
+    into a workflow version the server stores immutably, so a launch-scoped key
+    would force every credential rotation to publish a new bundle. The dispatch
+    still stores the freshly resolved value before each launch; only the name in
+    the immutable bundle remains unchanged.
     """
-    scope_digest = hashlib.sha256(scope.encode("utf-8")).hexdigest()[:32].upper()
-    return f"{VAULT_SECRET_PREFIX}{scope_digest}_{env_name}"
+    return f"{VAULT_SECRET_PREFIX}{env_name}"
 
 
 def secret_reference(*, secret_name: str) -> str:
@@ -205,9 +204,9 @@ def resolve_secret_channel(
     speaks.
     """
     declared = _declared_channel(block=block, factory=factory)
-    if declared is None:
+    if declared is _DECLARATION_ABSENT:
         return SECRET_CHANNEL_INLINE_OVERLAY
-    if declared not in SECRET_CHANNELS:
+    if not isinstance(declared, str) or declared == "" or declared not in SECRET_CHANNELS:
         return SecretChannelRefusal(
             message=(
                 f"factory {factory!r} declares {SECRET_CHANNEL_KEY} = {declared!r}, "
@@ -258,7 +257,6 @@ def route_dispatch_secrets(
     *,
     overlay_text: str,
     channel: str,
-    scope: str,
     proof_credentials_env: str,
     sink: VaultSecretSink | None,
 ) -> RoutedOverlay | SecretChannelRefusal:
@@ -298,7 +296,7 @@ def route_dispatch_secrets(
     if isinstance(names, SecretChannelRefusal):
         return names
     routed = route_secrets_through_vault(
-        overlay_text=overlay_text, channel=channel, env_names=names, scope=scope
+        overlay_text=overlay_text, channel=channel, env_names=names
     )
     if isinstance(routed, SecretChannelRefusal):
         return routed
@@ -340,7 +338,7 @@ def declared_env_names(*, text: str) -> tuple[str, ...]:
 
 
 def route_secrets_through_vault(
-    *, overlay_text: str, channel: str, env_names: Sequence[str], scope: str
+    *, overlay_text: str, channel: str, env_names: Sequence[str]
 ) -> RoutedOverlay | SecretChannelRefusal:
     """Route each named credential line onto the channel the factory declared.
 
@@ -360,7 +358,7 @@ def route_secrets_through_vault(
     text = overlay_text
     routed: list[VaultSecret] = []
     for env_name in sorted(set(env_names)):
-        replaced = _route_one(text=text, env_name=env_name, scope=scope)
+        replaced = _route_one(text=text, env_name=env_name)
         if isinstance(replaced, SecretChannelRefusal):
             return replaced
         text, secret = replaced
@@ -373,9 +371,7 @@ def route_secrets_through_vault(
     )
 
 
-def _route_one(
-    *, text: str, env_name: str, scope: str
-) -> tuple[str, VaultSecret] | SecretChannelRefusal:
+def _route_one(*, text: str, env_name: str) -> tuple[str, VaultSecret] | SecretChannelRefusal:
     """Replace one env line's value with its reference; refuse on any surprise."""
     matches = list(re.finditer(_env_line_pattern(env_name=env_name), text))
     if len(matches) != 1:
@@ -395,7 +391,7 @@ def _route_one(
                 "decode, so routing it to the vault would store the wrong bytes"
             )
         )
-    secret_name = vault_secret_name(env_name=env_name, scope=scope)
+    secret_name = vault_secret_name(env_name=env_name)
     reference = _render_string(value=secret_reference(secret_name=secret_name))
     rewritten = f"{text[: match.start(1)]}{reference}{text[match.end(1) :]}"
     return rewritten, VaultSecret(env_name=env_name, secret_name=secret_name, value=decoded)
@@ -417,21 +413,26 @@ def _carries(*, text: str, env_name: str) -> bool:
     return _env_line_pattern(env_name=env_name).search(text) is not None
 
 
-def _declared_channel(*, block: Mapping[str, object], factory: str) -> str | None:
-    """One factory's declared transport, or None when it declares none.
+def _declared_channel(*, block: Mapping[str, object], factory: str) -> object:
+    """One factory's raw transport declaration, or the absent sentinel.
 
-    Walked as a loop rather than three nested reads so every "this level is not
-    a mapping" answer is ONE site: an absent `factories` block, an undeclared
-    factory name and a malformed entry all mean the same thing here, and
-    spelling them separately would invite three slightly different answers.
+    Absence and an explicitly malformed value are different security answers:
+    only absence selects the pinned engine's inline default. Returning the raw
+    value lets ``resolve_secret_channel`` refuse empty, null and non-string
+    declarations rather than collapsing them into that credential-persisting
+    fallback.
     """
     cursor: object = block
-    for key in ("factories", factory, SECRET_CHANNEL_KEY):
+    for key in ("factories", factory):
         if not isinstance(cursor, dict):
-            return None
+            return _DECLARATION_ABSENT
         level = cast("dict[str, Any]", cursor)
-        cursor = level.get(key)
-    return cursor if isinstance(cursor, str) and cursor != "" else None
+        cursor = level.get(key, _DECLARATION_ABSENT)
+        if cursor is _DECLARATION_ABSENT:
+            return _DECLARATION_ABSENT
+    if not isinstance(cursor, dict):
+        return _DECLARATION_ABSENT
+    return cast("dict[str, Any]", cursor).get(SECRET_CHANNEL_KEY, _DECLARATION_ABSENT)
 
 
 def _decode_rendered_string(*, rendered: str) -> str | None:

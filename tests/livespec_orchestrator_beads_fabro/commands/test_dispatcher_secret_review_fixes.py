@@ -1,8 +1,9 @@
 """Regression coverage for the accepted native-secret review findings.
 
-These cases bind the three failure modes found after the first implementation:
-server rejections must be scrubbed before they are shortened, overlapping
-launches must never address the same vault entry, and residual detection must
+These cases bind the failure modes found across the two review rounds: server
+rejections must be scrubbed before they are shortened, references must stay
+stable across rotations, malformed channel declarations must fail closed,
+factory authentication must precede vault writes, and residual detection must
 search the exact JSON/TOML rendering that the overlay renderer emits.
 """
 
@@ -13,14 +14,20 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import cast
 
+import pytest
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop as loop_module
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_channel import (
+    SECRET_CHANNEL_INLINE_OVERLAY,
     SECRET_CHANNEL_NATIVE_SECRETS,
     RoutedOverlay,
     SecretChannelRefusal,
     VaultSecret,
+    resolve_secret_channel,
     route_secrets_through_vault,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_vault import FabroVaultSink
@@ -92,8 +99,8 @@ def test_rejection_is_scrubbed_before_its_excerpt_is_taken() -> None:
     assert "<value withheld>" in message
 
 
-def test_overlapping_launches_route_to_distinct_vault_entries() -> None:
-    """One launch cannot overwrite globally addressed entries another references."""
+def test_rotated_launches_reuse_the_same_vault_reference() -> None:
+    """Credential rotation changes the vault value, not the immutable bundle."""
     first = _route(
         text=f"[environments.sandbox.env]\nGITHUB_TOKEN = {json.dumps('first-value')}\n",
         value_name="GITHUB_TOKEN",
@@ -106,9 +113,74 @@ def test_overlapping_launches_route_to_distinct_vault_entries() -> None:
     )
     assert isinstance(first, RoutedOverlay)
     assert isinstance(second, RoutedOverlay)
-    assert first.secrets[0].secret_name != second.secrets[0].secret_name
-    assert first.secrets[0].secret_name in first.overlay_text
-    assert second.secrets[0].secret_name in second.overlay_text
+    assert first.secrets[0].secret_name == second.secrets[0].secret_name
+    assert first.overlay_text == second.overlay_text
+    assert first.secrets[0].value != second.secrets[0].value
+
+
+@pytest.mark.parametrize("declared", ["", None, 7, []])
+def test_an_explicitly_malformed_channel_declaration_refuses(declared: object) -> None:
+    """Only an absent declaration defaults; an explicit bad value cannot inline."""
+    resolved = resolve_secret_channel(
+        block={"factories": {"candidate": {"secret_channel": declared}}},
+        factory="candidate",
+    )
+    assert isinstance(resolved, SecretChannelRefusal)
+    assert "secret_channel" in resolved.message
+    assert SECRET_CHANNEL_INLINE_OVERLAY in resolved.message
+
+
+def test_factory_authentication_precedes_vault_materialization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fresh dev-token factory is logged in before its first secret store."""
+    events: list[str] = []
+    plan = SimpleNamespace(
+        review_fix_visit_cap=4,
+        branch="feat/review-fix",
+        integration=object(),
+        acp_nodes=None,
+        fabro_factory_name="candidate",
+    )
+    recorded = SimpleNamespace(
+        plan=plan,
+        committed_workflow=tmp_path / "workflow.toml",
+        comments=(),
+        payload=SimpleNamespace(graph=None),
+        git_author=object(),
+    )
+    monkeypatch.setattr(loop_module, "record_dispatch", lambda **_: recorded)
+    monkeypatch.setattr(loop_module.selfup, "github_token_supplier", lambda: lambda: "token")
+    monkeypatch.setattr(loop_module, "read_ratified_lessons", lambda **_: ())
+    monkeypatch.setattr(loop_module, "minijinja_openers_in_goal_sources", lambda **_: ())
+    monkeypatch.setattr(loop_module, "resume_checkout_for", lambda **_: None)
+    monkeypatch.setattr(loop_module, "publish_branch_for", lambda **_: "feat/review-fix")
+    monkeypatch.setattr(loop_module, "contract_prompt_variables", lambda **_: {})
+    monkeypatch.setattr(loop_module, "journaled_proof_rendering", lambda **_: "")
+    monkeypatch.setattr(loop_module, "fabro_vault_sink_for_plan", lambda **_: object())
+    monkeypatch.setattr(loop_module, "run_id", lambda: "dispatch-secret-review")
+    monkeypatch.setattr(loop_module, "release_pre_run_claim_if_needed", lambda **_: None)
+    monkeypatch.setattr(
+        loop_module,
+        "run_fabro_factory_auth_login",
+        lambda **_: events.append("factory-auth"),
+        raising=False,
+    )
+
+    def materialize(**_: object) -> str:
+        events.append("vault-materialization")
+        return "stop after observing the ordering"
+
+    monkeypatch.setattr(loop_module, "materialize_overlay", materialize)
+    outcome = loop_module.dispatch_one(
+        args=SimpleNamespace(),
+        repo=tmp_path,
+        item=SimpleNamespace(id="wi-secret-review"),
+        journal=JournalFile(path=tmp_path / "journal.jsonl"),
+        janitor=None,
+    )
+    assert outcome.status == "failed"
+    assert events == ["factory-auth", "vault-materialization"]
 
 
 def test_residual_guard_matches_the_overlay_renderers_exact_encoding() -> None:
