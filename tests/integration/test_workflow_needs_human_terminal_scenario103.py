@@ -113,6 +113,23 @@ def test_a_run_id_preserves_the_tree_on_its_own_run_scoped_ref(tmp_path: Path) -
     assert _pushed_refs(origin=origin) == [f"{_REF_PREFIX}{_RUN_ID}"]
 
 
+def test_the_candidate_engine_context_run_id_is_authoritative(tmp_path: Path) -> None:
+    """Petri stdin wins if a transitional environment still carries a stale id."""
+    work, origin = _sandbox(tmp_path=tmp_path)
+    stale_environment_id = "01STALEPINNEDRUNID"
+
+    completed = _run_preservation(
+        work=work,
+        run_id=_RUN_ID,
+        environment_run_id=stale_environment_id,
+    )
+
+    assert completed.returncode == 1
+    assert f"{_PRESERVED_MARKER}: {_REF_PREFIX}{_RUN_ID}" in completed.stderr
+    assert stale_environment_id not in completed.stderr
+    assert _pushed_refs(origin=origin) == [f"{_REF_PREFIX}{_RUN_ID}"]
+
+
 def test_the_pinned_engine_environment_run_id_preserves_the_tree(tmp_path: Path) -> None:
     """Fabro 0.254 supplies no stdin, but exports the run id in the environment."""
     work, origin = _sandbox(tmp_path=tmp_path)
