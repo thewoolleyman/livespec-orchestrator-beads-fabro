@@ -52,6 +52,7 @@ def write_routed_overlay(
     existing file would keep that file's permissions, so a leftover overlay from
     an earlier dispatch could silently downgrade this one's.
     """
+    overlay.unlink(missing_ok=True)
     routed = route_dispatch_secrets(
         overlay_text=rendered,
         channel=channel,
@@ -60,7 +61,6 @@ def write_routed_overlay(
     )
     if isinstance(routed, SecretChannelRefusal):
         return routed.message
-    overlay.unlink(missing_ok=True)
     descriptor = os.open(str(overlay), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
         _ = handle.write(routed.overlay_text)
