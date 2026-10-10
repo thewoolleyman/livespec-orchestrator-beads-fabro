@@ -64,3 +64,19 @@ def test_plan_handoff_is_not_progress_and_exit_is_audited() -> None:
     assert "specific unresolved input or refusal" in handoff
     assert "run and verified continuation mechanism" in handoff
     assert "report the work as incomplete" in handoff
+
+
+def test_plan_flow_precedes_a_compact_reference_and_mutation_check() -> None:
+    text = _read("plan.md")
+    lines = text.splitlines()
+    flow = text.index("## Flow")
+    reference = text.index("## Reference")
+    prerequisites = text.index("### Pre-requisites")
+    store = text.index("### The Plan Store")
+    commands = text.index("### Package Commands")
+    first_mutation = text.index("On confirmation, create exactly these records")
+    prerequisite_check = text.index("Before the first mutation, verify")
+
+    assert flow < reference < prerequisites < store < commands
+    assert prerequisite_check < first_mutation
+    assert len(lines) <= 450
