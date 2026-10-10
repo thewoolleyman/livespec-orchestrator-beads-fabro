@@ -105,9 +105,9 @@
     "heading": "## Dispatch-time baseline conformance gate",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "test": "TODO",
-    "reason": "The original baseline-provisioning gate is enforced by the packaged Fabro prepare chain. The fabro-currency revise pass (plan/epic bd-ib-6tcjfx) adds the target-aware pre-claim currency leg specified by Scenario 130; its integration-tier binding must exercise direct, hand-picked, drain, and autonomous-loop admission and is owed by the required post-revise implementation-gap capture rather than represented as existing coverage.",
-    "work_item": "bd-ib-6tcjfx"
+    "test": "tests.integration.test_fabro_currency_admission_scenario130.test_every_dispatch_entry_reaches_the_target_aware_wall_before_claim",
+    "reason": "Integration-tier acceptance for the Fabro-currency leg added to this heading, completed by bd-ib-j9x. The original baseline provisioning remains enforced by the packaged Fabro prepare chain; the bound node proves the successor target-aware predicate is shared by direct, hand-picked, and autonomous-loop admission, resolves the selected factory's own client, and refuses before claim or other mutation. Its sibling cases bind the heading's release-publication, ancestry, stale-observation, and fixed-transition rules.",
+    "work_item": "bd-ib-j9x"
   },
   {
     "heading": "## Self-contained plugin dispatch",

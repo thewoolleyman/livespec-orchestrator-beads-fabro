@@ -121,13 +121,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "heading": "## Dispatch-time baseline conformance gate",
-    "work_item": "bd-ib-6tcjfx",
-    "first_seen": "2026-06-26"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "contracts.md",
     "heading": "## Dispatcher loop invocation surface",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-14"
