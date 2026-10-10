@@ -610,6 +610,87 @@ def _wall_harness() -> _WallHarness:
     )
 
 
+def test_the_currency_wall_uses_the_github_app_token_refreshing_runner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _wall_harness()
+    refreshing_runner = _Runner(results=[], calls=[])
+    runner_resolution_calls: list[object] = []
+    admission_runners: list[object] = []
+
+    def _post_verdict_runner(*, runner: object) -> _Runner:
+        runner_resolution_calls.append(runner)
+        return refreshing_runner
+
+    def _admission(**kwargs: object) -> FabroCurrencyDecision:
+        admission_runners.append(kwargs["runner"])
+        return FabroCurrencyDecision(admitted=True, message="")
+
+    monkeypatch.setattr(
+        _dispatcher_pre_dispatch_wall,
+        "post_verdict_runner",
+        _post_verdict_runner,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        _dispatcher_pre_dispatch_wall,
+        "selected_dispatch_factory_target",
+        lambda **_kwargs: harness.target,
+    )
+    monkeypatch.setattr(
+        _dispatcher_pre_dispatch_wall,
+        "factory_effective_fabro_bin",
+        lambda **_kwargs: "/opt/fabro-edge",
+    )
+    monkeypatch.setattr(
+        _dispatcher_pre_dispatch_wall,
+        "fabro_currency_admission",
+        _admission,
+    )
+    monkeypatch.setattr(
+        _dispatcher_pre_dispatch_wall,
+        "pre_dispatch_criteria_refusal",
+        _none,
+    )
+    monkeypatch.setattr(
+        _dispatcher_pre_dispatch_wall,
+        "proof_assets_refusal_for_items",
+        _none,
+    )
+    monkeypatch.setattr(
+        _dispatcher_pre_dispatch_wall,
+        "proof_credentials_refusal_for_items",
+        _none,
+    )
+    monkeypatch.setattr(
+        _dispatcher_pre_dispatch_wall,
+        "selection_credential_requirement",
+        lambda **_kwargs: _dispatcher_pre_dispatch_wall.WorkflowFaultDeferral(
+            message="not under test"
+        ),
+    )
+    monkeypatch.setattr(
+        _dispatcher_pre_dispatch_wall,
+        "reclaim_stale_publish_branches",
+        _none,
+    )
+
+    wall_exit = _dispatcher_pre_dispatch_wall.pre_dispatch_wall_exit(
+        args=argparse.Namespace(
+            fabro_bin="/opt/fabro-global",
+            workflow_name=None,
+        ),
+        repo=tmp_path,
+        items=[harness.item],
+        journal=harness.journal,
+    )
+
+    assert wall_exit is None
+    assert runner_resolution_calls == [None]
+    assert admission_runners == [refreshing_runner]
+
+
 def _stub_currency_wall(
     *,
     monkeypatch: pytest.MonkeyPatch,
@@ -667,6 +748,17 @@ def _stub_currency_wall(
         _dispatcher_pre_dispatch_wall,
         "ShellCommandRunner",
         lambda: runners.pop(0),
+    )
+
+    def _refreshing_runner(*, runner: object) -> _Runner:
+        assert runner is None
+        return runners.pop(0)
+
+    monkeypatch.setattr(
+        _dispatcher_pre_dispatch_wall,
+        "post_verdict_runner",
+        _refreshing_runner,
+        raising=False,
     )
     cache_paths = iter(cache_root / f"observation-{index}.json" for index in range(3))
     monkeypatch.setattr(

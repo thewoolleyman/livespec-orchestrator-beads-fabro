@@ -5642,6 +5642,11 @@ def test_dispatch_fails_closed_when_github_app_env_is_absent(
         "run_dispatch",
         _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)}),
     )
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands."
+        "_dispatcher_pre_dispatch_wall.post_verdict_runner",
+        lambda **_kwargs: ShellCommandRunner(),
+    )
     # Un-stub the supplier: exercise the REAL fail-closed resolution.
     monkeypatch.setattr(
         _dispatcher_loop.selfup, "github_token_supplier", _real_github_token_supplier
@@ -5675,6 +5680,11 @@ def test_dispatch_routes_a_mint_failure_as_overlay_refusal(
         _dispatcher_loop,
         "run_dispatch",
         _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)}),
+    )
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands."
+        "_dispatcher_pre_dispatch_wall.post_verdict_runner",
+        lambda **_kwargs: ShellCommandRunner(),
     )
 
     def _raising_token() -> str:

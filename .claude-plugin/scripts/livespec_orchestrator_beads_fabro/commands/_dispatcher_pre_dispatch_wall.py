@@ -85,6 +85,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_reclaim import (
     reclaim_stale_publish_branches,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_self_update import (
+    post_verdict_runner,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     ConnectionPrefixMissingError,
@@ -241,7 +244,7 @@ def _fabro_currency_wall_exit(
 ) -> int | None:
     """Apply the selected factory's currency predicate before any mutation."""
     now = datetime.now(timezone.utc)
-    runner = ShellCommandRunner()
+    runner = post_verdict_runner(runner=None)
     for item in items:
         target = selected_dispatch_factory_target(
             args=args,
