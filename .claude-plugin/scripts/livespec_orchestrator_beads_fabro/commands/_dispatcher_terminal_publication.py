@@ -82,14 +82,15 @@ def reconcile_terminal_publication(
                 runner=runner,
                 journal=journal,
                 hold=hold,
+                expected_publication=observed,
             )
-            matches = view is not None and observed.number == view.number
-        if matches and observed is not None:
+            matches = view is not None
+        if matches and view is not None:
             _journal_successful_classification(
                 plan=plan,
                 journal=journal,
                 evidence=evidence,
-                publication=observed,
+                publication=view,
             )
     refusal = terminal if terminal is not None and not matches else None
     return TerminalPublication(hold=hold, view=view, refusal=refusal)

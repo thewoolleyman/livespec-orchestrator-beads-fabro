@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 __all__: list[str] = ["await_merge", "confirm_pr", "outcome_after_await"]
 
 _GH_TIMEOUT_SECONDS = 300.0
+_PUBLICATION_FIELDS = ",headRefName,headRefOid,headRepository"
 
 
 def confirm_pr(
@@ -42,6 +43,7 @@ def confirm_pr(
     runner: CommandRunner,
     journal: JournalWriter,
     hold: CurrentMergeHold,
+    expected_publication: PrView | None = None,
 ) -> PrView | None:
     """Confirm the publish branch's pull request, arming auto-merge only if it may.
 
@@ -56,21 +58,48 @@ def confirm_pr(
     consulted at all: the ratified valve refuses a hold on a merged item as a no-op
     naming the merge, so there is nothing here to hold and nothing to arm.
     """
-    view = _view_pr(plan=plan, runner=runner, journal=journal)
-    if view is None:
+    view = _view_pr(
+        plan=plan,
+        runner=runner,
+        journal=journal,
+        include_publication=expected_publication is not None,
+    )
+    if view is None or not _matches_expected_publication(
+        view=view,
+        expected=expected_publication,
+    ):
         return None
     if view.state == "MERGED":
         return view
     if hold == "unheld":
-        return _arm_fallback(plan=plan, runner=runner, journal=journal, view=view)
-    if hold == "held" and view.auto_merge_armed:
-        return _disarm_held(plan=plan, runner=runner, journal=journal, view=view)
-    # The two write-nothing readings. A held pull request with nothing armed is
-    # already in the state the hold wants. An `unreadable` authority is NOT that same
-    # state -- it is this host declining to answer for a ledger it could not ask, so
-    # it makes no forge write in EITHER direction: arming would reverse a hold it
-    # cannot see, and disarming would reverse an arming it cannot justify.
-    return view
+        confirmed = _arm_fallback(
+            plan=plan,
+            runner=runner,
+            journal=journal,
+            view=view,
+            include_publication=expected_publication is not None,
+        )
+    elif hold == "held" and view.auto_merge_armed:
+        confirmed = _disarm_held(
+            plan=plan,
+            runner=runner,
+            journal=journal,
+            view=view,
+            include_publication=expected_publication is not None,
+        )
+    else:
+        # The two write-nothing readings. A held pull request with nothing armed is
+        # already in the state the hold wants. An `unreadable` authority is NOT that same
+        # state -- it is this host declining to answer for a ledger it could not ask, so
+        # it makes no forge write in EITHER direction: arming would reverse a hold it
+        # cannot see, and disarming would reverse an arming it cannot justify.
+        confirmed = view
+    return (
+        confirmed
+        if confirmed is not None
+        and _matches_expected_publication(view=confirmed, expected=expected_publication)
+        else None
+    )
 
 
 def _arm_fallback(
@@ -79,6 +108,7 @@ def _arm_fallback(
     runner: CommandRunner,
     journal: JournalWriter,
     view: PrView,
+    include_publication: bool,
 ) -> PrView | None:
     """Arm auto-merge for an unheld pull request that is not armed already."""
     if view.auto_merge_armed:
@@ -96,7 +126,12 @@ def _arm_fallback(
         timeout_seconds=_GH_TIMEOUT_SECONDS,
     )
     journal_stage(journal=journal, plan=plan, stage="pr-arm-fallback", result=arm)
-    return _view_pr(plan=plan, runner=runner, journal=journal)
+    return _view_pr(
+        plan=plan,
+        runner=runner,
+        journal=journal,
+        include_publication=include_publication,
+    )
 
 
 def _disarm_held(
@@ -105,6 +140,7 @@ def _disarm_held(
     runner: CommandRunner,
     journal: JournalWriter,
     view: PrView,
+    include_publication: bool,
 ) -> PrView | None:
     """Remove an auto-merge request from a pull request the ledger now holds.
 
@@ -128,7 +164,12 @@ def _disarm_held(
         timeout_seconds=_GH_TIMEOUT_SECONDS,
     )
     journal_stage(journal=journal, plan=plan, stage="pr-disarm-held", result=disarm)
-    return _view_pr(plan=plan, runner=runner, journal=journal)
+    return _view_pr(
+        plan=plan,
+        runner=runner,
+        journal=journal,
+        include_publication=include_publication,
+    )
 
 
 def await_merge(
@@ -218,9 +259,13 @@ def _view_pr(
     plan: DispatchPlan,
     runner: CommandRunner,
     journal: JournalWriter,
+    include_publication: bool = False,
 ) -> PrView | None:
+    argv = pr_view_argv(plan=plan)
+    if include_publication:
+        argv[-1] = f"{argv[-1]}{_PUBLICATION_FIELDS}"
     result = runner.run(
-        argv=pr_view_argv(plan=plan),
+        argv=argv,
         cwd=plan.repo,
         timeout_seconds=_GH_TIMEOUT_SECONDS,
     )
@@ -228,3 +273,19 @@ def _view_pr(
     if result.exit_code != 0:
         return None
     return parse_pr_view(stdout=result.stdout)
+
+
+def _matches_expected_publication(*, view: PrView, expected: PrView | None) -> bool:
+    """Require every terminal-conflict re-read to name the authenticated PR."""
+    if expected is None:
+        return True
+    branch = expected.head_ref_name
+    head = expected.head_ref_oid
+    repository = expected.head_repository
+    return bool(
+        branch
+        and head
+        and repository
+        and view.number == expected.number
+        and view.matches_publication(branch=branch, head=head, repository=repository)
+    )
