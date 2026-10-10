@@ -17,10 +17,12 @@ either way. A typed object has no wrap to truncate. A prose marker line MAY
 still appear in a handoff body for a human reader, but it carries no authority
 here: when the two disagree, the metadata wins.
 
-Refusing to ask stays the narrow case. It requires the unattended marker AND a
-`kind` of `impl` or `spec-op` AND a non-empty `ref`; `human`, `none`, an empty
-ref, an unknown kind, an absent pointer, or an attended session all fall back
-to the picker, reporting the kind as the reason.
+Refusing to ask stays a tracked case. It requires one of the executable kinds,
+a non-empty `ref`, an observable unsatisfied required result, and an unexpired
+budget. An unattended resume may take that action directly. An attended resume
+also requires a current recorded continuation ruling; without one, it offers
+the recorded action as the picker default. `human`, `none`, an empty ref, an
+unknown kind, or an absent pointer always falls back to the picker.
 
 ONE MORE WAY TO ASK, AND IT PRE-EMPTS THE POINTER. A plan epic carrying no
 Definition of Done section is reported by EVERY resume, and an unattended one
@@ -36,35 +38,36 @@ spec operation to ratify toward.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
-from livespec_orchestrator_beads_fabro._store_ready_dwell import utc_now_iso
-from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import (
-    missing_section_finding,
-    missing_section_gap_text,
-    plan_definition_of_done,
-)
+from livespec_orchestrator_beads_fabro.commands._plan_result_observation import ResultObservation
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsRecord
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
+    "ARCHIVE_KIND",
+    "AWAIT_KIND",
     "HUMAN_KIND",
     "IMPL_KIND",
     "LAST_SESSION_METADATA_KEY",
+    "LEGACY_TRACKING",
     "NEXT_ACTION_KINDS",
     "NEXT_ACTION_METADATA_KEY",
     "NONE_KIND",
     "PLAN_RESUME_ACTOR",
+    "PROOF_KIND",
+    "REVIEW_KIND",
     "SPEC_OP_KIND",
     "NextAction",
     "ResumeDirective",
     "dispatchable_action_id",
     "next_action_metadata",
     "parse_next_action",
+    "plan_record_metadata",
     "read_next_action",
     "resume_directive",
     "set_next_action",
@@ -75,23 +78,42 @@ LAST_SESSION_METADATA_KEY = "last_session"
 
 IMPL_KIND = "impl"
 SPEC_OP_KIND = "spec-op"
+PROOF_KIND = "proof"
+REVIEW_KIND = "review"
+ARCHIVE_KIND = "archive"
+AWAIT_KIND = "await"
 HUMAN_KIND = "human"
 NONE_KIND = "none"
 
 NEXT_ACTION_KINDS: tuple[str, ...] = (IMPL_KIND, SPEC_OP_KIND, HUMAN_KIND, NONE_KIND)
 
-_DISPATCHABLE_KINDS: tuple[str, ...] = (IMPL_KIND, SPEC_OP_KIND)
+_DISPATCHABLE_KINDS: tuple[str, ...] = (
+    IMPL_KIND,
+    SPEC_OP_KIND,
+    PROOF_KIND,
+    REVIEW_KIND,
+    ARCHIVE_KIND,
+    AWAIT_KIND,
+)
 _KIND_FIELD = "kind"
 _REF_FIELD = "ref"
 _TEXT_FIELD = "text"
+_REQUIRED_RESULT_FIELD = "required_result"
+_BUDGET_FIELD = "budget"
 _METADATA_FIELD = "metadata"
-_DESCRIPTION_FIELD = "description"
 # The reserved author literal the resume signs its own gap pointer with,
 # computed here rather than accepted from a caller — the same reservation
 # `archive_thread` makes for `plan-archive` and `append_supervisor_handoff`
 # for `<slug>-supervisor`. The resume writes this pointer on its OWN behalf,
 # so no session identity is the honest author of it.
 PLAN_RESUME_ACTOR = "plan-resume"
+
+
+class _LegacyTracking:
+    """Sentinel distinguishing a legacy three-key pointer from explicit null."""
+
+
+LEGACY_TRACKING = _LegacyTracking()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -109,6 +131,8 @@ class NextAction:
     kind: str
     ref: str
     text: str
+    required_result: object = LEGACY_TRACKING
+    budget: object = LEGACY_TRACKING
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -126,6 +150,11 @@ class ResumeDirective:
     next_action: str | None
     reason: str
     findings: tuple[str, ...] = ()
+    # Added after the original three-field directive shipped.  Equality omits
+    # the presentation-only default so legacy callers comparing directives keep
+    # their meaning; callers that render the picker read this field directly.
+    picker_default: str | None = field(default=None, compare=False)
+    observation: ResultObservation | None = None
 
 
 def next_action_metadata(
@@ -143,11 +172,12 @@ def next_action_metadata(
     all three keys every time is what makes that merge harmless here.
     """
     metadata = dict(existing_metadata)
-    metadata[NEXT_ACTION_METADATA_KEY] = {
+    pointer: dict[str, object] = {
         _KIND_FIELD: action.kind,
         _REF_FIELD: action.ref,
         _TEXT_FIELD: action.text,
     }
+    metadata[NEXT_ACTION_METADATA_KEY] = pointer
     metadata[LAST_SESSION_METADATA_KEY] = f"{session} at {now}"
     return metadata
 
@@ -167,6 +197,14 @@ def parse_next_action(*, value: object) -> NextAction | None:
     text = fields.get(_TEXT_FIELD)
     if not isinstance(kind, str) or not isinstance(ref, str) or not isinstance(text, str):
         return None
+    if _REQUIRED_RESULT_FIELD in fields and _BUDGET_FIELD in fields:
+        return NextAction(
+            kind=kind,
+            ref=ref,
+            text=text,
+            required_result=fields[_REQUIRED_RESULT_FIELD],
+            budget=fields[_BUDGET_FIELD],
+        )
     return NextAction(kind=kind, ref=ref, text=text)
 
 
@@ -177,14 +215,18 @@ def dispatchable_action_id(*, action: NextAction) -> str | None:
         return None
     if action.kind == IMPL_KIND:
         return f"{IMPL_KIND}:{ref}"
-    return ref
+    if action.kind == SPEC_OP_KIND:
+        return ref
+    return f"{action.kind}:{ref}"
 
 
 def read_next_action(*, config: StoreConfig, epic_id: str) -> NextAction | None:
     """Read one epic's typed `next_action`, or None when it carries none."""
     client = make_beads_client(config=config)
     record = client.show_issue(issue_id=epic_id)
-    return parse_next_action(value=_record_metadata(record=record).get(NEXT_ACTION_METADATA_KEY))
+    return parse_next_action(
+        value=plan_record_metadata(record=record).get(NEXT_ACTION_METADATA_KEY)
+    )
 
 
 def set_next_action(
@@ -201,7 +243,7 @@ def set_next_action(
     client.update_issue(
         issue_id=epic_id,
         metadata=next_action_metadata(
-            existing_metadata=_record_metadata(record=record),
+            existing_metadata=plan_record_metadata(record=record),
             action=action,
             session=session,
             now=now,
@@ -210,91 +252,13 @@ def set_next_action(
 
 
 def resume_directive(*, config: StoreConfig, epic_id: str, unattended: bool) -> ResumeDirective:
-    """Decide whether this resume asks which action to take, or just takes it.
+    """Delegate the resume decision to its cohesive reconciliation module."""
+    from livespec_orchestrator_beads_fabro.commands._plan_resume import decide_plan_resume
 
-    The epic is read ONCE and both questions are answered from that record — the
-    typed pointer and whether the plan carries its Definition of Done. A second
-    read could not be proven to agree with the first, and the disagreement would
-    be invisible because both reads produce a well-formed epic.
-    """
-    record = make_beads_client(config=config).show_issue(issue_id=epic_id)
-    action = parse_next_action(value=_record_metadata(record=record).get(NEXT_ACTION_METADATA_KEY))
-    findings = _definition_of_done_findings(record=record, epic_id=epic_id)
-    if not unattended:
-        return ResumeDirective(
-            ask=True, next_action=None, reason="interactive resume", findings=findings
-        )
-    if findings and not _is_impl(action=action):
-        return _gap_directive(config=config, epic_id=epic_id, findings=findings)
-    if action is None:
-        return ResumeDirective(
-            ask=True,
-            next_action=None,
-            reason=f"epic {epic_id} carries no typed next_action",
-            findings=findings,
-        )
-    identifier = dispatchable_action_id(action=action)
-    if identifier is None:
-        return ResumeDirective(
-            ask=True,
-            next_action=None,
-            reason=_picker_reason(action=action),
-            findings=findings,
-        )
-    return ResumeDirective(
-        ask=False,
-        next_action=identifier,
-        reason="unattended resume takes the typed next_action",
-        findings=findings,
-    )
+    return decide_plan_resume(config=config, epic_id=epic_id, unattended=unattended)
 
 
-def _is_impl(*, action: NextAction | None) -> bool:
-    """Whether the existing pointer is the one the gap must NOT overwrite.
-
-    `impl` ALONE, as the clause words it. A `spec-op` pointer is dispatchable and
-    is still replaced, because a plan that has not said what done means has
-    nothing for a spec operation to ratify toward — whereas an `impl` pointer
-    names work already filed, groomed and admitted, and overwriting it would
-    strand a live dispatch behind a question nobody is present to answer.
-    """
-    return action is not None and action.kind == IMPL_KIND
-
-
-def _definition_of_done_findings(*, record: BeadsRecord, epic_id: str) -> tuple[str, ...]:
-    description = record.get(_DESCRIPTION_FIELD)
-    text = description if isinstance(description, str) else ""
-    if plan_definition_of_done(description=text).present:
-        return ()
-    return (missing_section_finding(epic_id=epic_id),)
-
-
-def _gap_directive(
-    *, config: StoreConfig, epic_id: str, findings: tuple[str, ...]
-) -> ResumeDirective:
-    """Point the plan at a human and report why, without authoring assertions."""
-    set_next_action(
-        config=config,
-        epic_id=epic_id,
-        action=NextAction(kind=HUMAN_KIND, ref="", text=missing_section_gap_text()),
-        session=PLAN_RESUME_ACTOR,
-        now=utc_now_iso(),
-    )
-    return ResumeDirective(
-        ask=True,
-        next_action=None,
-        reason=f"epic {epic_id} carries no plan Definition of Done section",
-        findings=findings,
-    )
-
-
-def _picker_reason(*, action: NextAction) -> str:
-    if action.kind in _DISPATCHABLE_KINDS:
-        return f"next_action kind {action.kind} carries an empty ref"
-    return f"next_action kind {action.kind} raises the picker"
-
-
-def _record_metadata(*, record: BeadsRecord) -> dict[str, Any]:
+def plan_record_metadata(*, record: BeadsRecord) -> dict[str, Any]:
     """Return a record's metadata, tolerating the key's absence.
 
     Beads records are `omitempty`-sparse: a record holding no metadata omits
