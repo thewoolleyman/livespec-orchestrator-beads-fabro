@@ -52,3 +52,15 @@ def test_plan_picker_defaults_to_the_typed_action_under_standing_direction() -> 
     assert "standing maintainer directive to continue satisfies that picker" in resume
     assert "take the default without re-prompting" in resume
     assert "Store-write consent remains governed by the consent contract" in resume
+
+
+def test_plan_handoff_is_not_progress_and_exit_is_audited() -> None:
+    text = _read("plan.md")
+    handoff = text[text.index("### Step 4") : text.index("### Step 5")]
+
+    assert "Recording a handoff does not complete an executable next action" in handoff
+    assert "Before ending" in handoff
+    assert "successful archive" in handoff
+    assert "specific unresolved input or refusal" in handoff
+    assert "run and verified continuation mechanism" in handoff
+    assert "report the work as incomplete" in handoff
