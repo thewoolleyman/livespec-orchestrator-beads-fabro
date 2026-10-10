@@ -1,22 +1,14 @@
 # implement
 
-Harness-neutral driving prose for the `implement` operation, per
-`SPECIFICATION/constraints.md` §"Skill orchestration constraints":
-this artifact is the plugin-owned LLM-facing half of the operation —
-the disposition/consent flow, the Red→Green driving steps, the
-gap-tied closure re-detection, the `livespec_orchestrator_beads_fabro.*`
-package calls, and the closure-record semantics. Each per-runtime
-SKILL.md is a THIN binding that resolves the plugin root, reads this
-prose in full, and maps its harness-neutral vocabulary (the
-`<plugin-root>` token, the "ask the user" / "read the file" / "write
-the file" verbs, the named sibling operations) to that runtime's
-tools. Nothing in this file names a specific agent runtime's tools or
-command namespace.
+Per `SPECIFICATION/constraints.md` §"Skill orchestration constraints", this is the harness-neutral operation prose; each runtime binding only maps its tools to it.
 
-The Red→Green driver. Walks a single work-item from open through
-implementation to closed-with-audit. Closure branches on `origin ×
-disposition` per livespec/SPECIFICATION/contracts.md
-§"Heavyweight authored skills (5)" → implement.
+## What done looks like
+
+Done is closure with the Definition of Done proved, an administrative resolution, or rest in
+acceptance on a pending host leg; each outcome is reported as what it is.
+
+This Red→Green driver walks one work-item through the disposition and closure rules in
+`SPECIFICATION/contracts.md` §"Heavyweight authored skills (5)" → implement.
 
 ## Pre-requisites
 

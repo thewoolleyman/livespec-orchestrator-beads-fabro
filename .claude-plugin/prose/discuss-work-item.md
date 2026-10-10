@@ -1,26 +1,14 @@
 # discuss-work-item
 
-Harness-neutral driving prose for the `discuss-work-item` operation, per
-`SPECIFICATION/constraints.md` "Skill orchestration constraints". This
-artifact is the plugin-owned LLM-facing half of the interactive stand-by
-surface: the subject resolution, the context assembly, the question-answering
-and research-drafting turns, the recording of maintainer rulings as scope
-events, and the explicit-instruction gate on every lifecycle drive. Each
-per-runtime `SKILL.md` is a thin binding that resolves the plugin root, reads
-this prose in full, and maps the neutral verbs below to that runtime's tools.
+Per `SPECIFICATION/constraints.md` §"Skill orchestration constraints", this is the harness-neutral operation prose; each runtime binding only maps its tools to it.
 
-`discuss-work-item` is the maintainer's day-to-day session over one work item
-or plan, and the surface the console's future chat pane drives. It is layered
-over the `context` read primitive: `context` decides what an item's full
-context IS, and this operation decides what to DO with a maintainer in the
-room. It STANDS BY by default — the resting state is answering, drafting and
-recording, not acting.
+## What done looks like
 
-The operation is registered under the name `discuss-work-item`. It is NOT
-named `plan`: that name collides with the Claude Code built-in on autocomplete,
-so a maintainer reaching for this skill would be silently offered something
-else. The sibling `plan` operation continues to own the Planning Lane's
-create/resume/archive mechanics; this operation converses over them.
+This operation stands by: it answers, drafts, and records while retaining the explicit-instruction
+gate on every lifecycle drive.
+
+`discuss-work-item` is the maintainer's day-to-day session over one work item or plan, layered over
+the `context` read primitive. The sibling `plan` operation owns create, resume, and archive.
 
 ## Pre-requisites
 
