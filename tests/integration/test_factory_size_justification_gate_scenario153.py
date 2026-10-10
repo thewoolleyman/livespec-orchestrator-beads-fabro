@@ -842,6 +842,7 @@ def _exercise_loop_entry(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
             dry_run=False,
             as_json=True,
             skip_ledger_check=True,
+            journal=None,
         )
     )
     assert loop_rc == 1
@@ -993,6 +994,7 @@ def _exercise_valid_capture_dispatch_and_telemetry(
     span = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
     attributes = {entry["key"]: entry["value"] for entry in span["attributes"]}
     assert attributes["tdd.size_justified"] == {"boolValue": True}
+    _write_repo_config(repo=repo, ceiling=2, groom_variant="groom-cut")
 
 
 def _assert_valid_exception_preserves_ordinary_approval_gate(
