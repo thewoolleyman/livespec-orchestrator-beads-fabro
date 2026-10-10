@@ -291,7 +291,16 @@ def test_build_attention_reads_ledger_held_plan_without_handoff_file(
         body="Next action: keep driving bd-plan from the ledger.",
         author="factory-test",
         now="2026-08-11T01:02:03Z",
-        next_action=NextAction(kind="impl", ref="bd-plan", text="Keep driving bd-plan."),
+        next_action=NextAction(
+            kind="impl",
+            ref="bd-plan",
+            text="Keep driving bd-plan.",
+            required_result={
+                "repo": "repo",
+                "item_status": {"item_id": "bd-plan", "status": "closed"},
+            },
+            budget={"deadline": "2099-08-11T00:00:00Z", "max_handoffs": 3},
+        ),
     )
 
     attention = build_attention(
@@ -326,7 +335,16 @@ def test_build_attention_surfaces_a_live_plan_with_an_insufficient_newest_handof
         body="Current state cites bd-ib-qfv9.1.\n\n== EXACTLY ONE NEXT ACTION ==\nImplement it.",
         author="factory-test",
         now="2026-08-11T01:02:03Z",
-        next_action=NextAction(kind="impl", ref="bd-ib-qfv9.1", text="Implement it."),
+        next_action=NextAction(
+            kind="impl",
+            ref="bd-ib-qfv9.1",
+            text="Implement it.",
+            required_result={
+                "repo": "repo",
+                "item_status": {"item_id": "bd-plan", "status": "closed"},
+            },
+            budget={"deadline": "2099-08-11T00:00:00Z", "max_handoffs": 3},
+        ),
     )
 
     attention = build_attention(

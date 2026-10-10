@@ -189,10 +189,9 @@ def next_action_metadata(
         _KIND_FIELD: action.kind,
         _REF_FIELD: action.ref,
         _TEXT_FIELD: action.text,
+        _REQUIRED_RESULT_FIELD: action.required_result,
+        _BUDGET_FIELD: action.budget,
     }
-    if action.required_result is not LEGACY_TRACKING:
-        pointer[_REQUIRED_RESULT_FIELD] = action.required_result
-        pointer[_BUDGET_FIELD] = action.budget
     metadata[NEXT_ACTION_METADATA_KEY] = pointer
     metadata[LAST_SESSION_METADATA_KEY] = f"{session} at {now}"
     return metadata

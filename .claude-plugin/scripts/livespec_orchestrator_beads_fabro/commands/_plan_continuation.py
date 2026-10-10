@@ -10,7 +10,7 @@ safe authority until every required line is present.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
@@ -124,6 +124,6 @@ def _instant(*, value: str) -> datetime | None:
     parsed = parse_iso_datetime(text=normalized)
     if isinstance(parsed, IsoDatetimeParseFailure):
         return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
+    if parsed.tzinfo is None or parsed.utcoffset() != timedelta(0):
+        return None
     return parsed

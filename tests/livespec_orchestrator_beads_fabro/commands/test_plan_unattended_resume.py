@@ -181,6 +181,11 @@ def test_read_timeline_labels_each_entry_with_its_kind() -> None:
             kind="impl",
             ref="bd-ib-idgwyk.1",
             text="Implement bd-ib-idgwyk.1 through the factory.",
+            required_result={
+                "repo": "repo",
+                "item_status": {"item_id": "bd-ib-plan", "status": "closed"},
+            },
+            budget={"deadline": "2099-08-20T00:00:00Z", "max_handoffs": 3},
         ),
     )
 

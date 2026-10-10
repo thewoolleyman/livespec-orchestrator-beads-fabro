@@ -36,7 +36,15 @@ def tracked_resume_directive(
     findings: tuple[str, ...],
 ) -> ResumeDirective | None:
     """Return a terminal tracking directive, or permit bounded continuation."""
-    if observation is not None and observation.status == OBSERVATION_SATISFIED:
+    if observation is None:
+        finding = "plan-progress-tracking: missing — pointer carries no required_result and budget"
+        return ResumeDirective(
+            ask=False,
+            next_action=None,
+            reason=finding,
+            findings=(*findings, finding),
+        )
+    if observation.status == OBSERVATION_SATISFIED:
         finding = (
             f"next_action stale: observed {observation.target} satisfied via"
             f" {observation.evidence}; derive the next step from the ledger"
@@ -48,7 +56,7 @@ def tracked_resume_directive(
             findings=(*findings, finding),
             observation=observation,
         )
-    if observation is not None and observation.status != OBSERVATION_UNSATISFIED:
+    if observation.status != OBSERVATION_UNSATISFIED:
         finding = f"next_action result is unobservable: {observation.detail}"
         return ResumeDirective(
             ask=False,
@@ -57,7 +65,7 @@ def tracked_resume_directive(
             findings=(*findings, finding),
             observation=observation,
         )
-    if observation is None or _budget_unexpired(budget=action.budget):
+    if _budget_unexpired(budget=action.budget):
         return None
     finding = f"next_action obligation expired after observing {observation.target}"
     return ResumeDirective(

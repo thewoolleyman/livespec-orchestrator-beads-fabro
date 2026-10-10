@@ -27,7 +27,6 @@ __all__: list[str] = [
 ]
 
 _EXECUTABLE_KINDS = ("impl", "spec-op", "proof", "review", "archive", "await")
-_LEGACY_KINDS = ("impl", "spec-op", "human", "none")
 _ALL_KINDS = (*_EXECUTABLE_KINDS, "human", "none")
 _AWAIT_PREFIXES = ("run", "gate", "item", "epic")
 
@@ -70,8 +69,7 @@ def validate_next_action(
     elif result_is_legacy != budget_is_legacy:
         refusal = _refusal(detail="required_result and budget must be recorded together")
     elif result_is_legacy:
-        if action.kind not in _LEGACY_KINDS:
-            refusal = _refusal(detail=f"{action.kind} requires required_result and budget")
+        refusal = _refusal(detail="required_result and budget must be recorded on every new write")
     else:
         refusal = _validate_ref(kind=action.kind, ref=action.ref, epic_id=epic_id)
         if refusal is None and action.kind in ("human", "none"):

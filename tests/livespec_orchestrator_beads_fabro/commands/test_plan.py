@@ -200,6 +200,11 @@ def test_handoff_append_is_ledger_comment_and_timeline_readable(tmp_path: Path) 
             kind="impl",
             ref="bd-ib-child",
             text="Dispatch bd-ib-child through the factory.",
+            required_result={
+                "repo": "repo",
+                "item_status": {"item_id": created["epic_id"], "status": "closed"},
+            },
+            budget={"deadline": "2099-08-11T00:00:00Z", "max_handoffs": 3},
         ),
     )
     entries = plan.read_timeline(config=_config(), epic_id=created["epic_id"])
@@ -213,6 +218,11 @@ def test_handoff_append_is_ledger_comment_and_timeline_readable(tmp_path: Path) 
         "kind": "impl",
         "ref": "bd-ib-child",
         "text": "Dispatch bd-ib-child through the factory.",
+        "required_result": {
+            "repo": "repo",
+            "item_status": {"item_id": created["epic_id"], "status": "closed"},
+        },
+        "budget": {"deadline": "2099-08-11T00:00:00Z", "max_handoffs": 3},
     }
     assert metadata["last_session"] == "factory-test at 2026-08-11T01:02:03Z"
 
@@ -244,6 +254,8 @@ def test_supervisor_handoff_computes_reserved_author_literal(tmp_path: Path) -> 
             kind="human",
             ref="",
             text="Confirm the anchor filename with the maintainer.",
+            required_result=None,
+            budget=None,
         ),
     )
     entries = plan.read_timeline(config=_config(), epic_id=created["epic_id"])

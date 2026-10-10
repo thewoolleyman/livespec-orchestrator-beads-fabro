@@ -49,7 +49,13 @@ def missing_definition_gap_directive(
     _ = set_next_action(
         config=config,
         epic_id=epic_id,
-        action=NextAction(kind=HUMAN_KIND, ref="", text=missing_section_gap_text()),
+        action=NextAction(
+            kind=HUMAN_KIND,
+            ref="",
+            text=missing_section_gap_text(),
+            required_result=None,
+            budget=None,
+        ),
         session=PLAN_RESUME_ACTOR,
         now=utc_now_iso(),
     )

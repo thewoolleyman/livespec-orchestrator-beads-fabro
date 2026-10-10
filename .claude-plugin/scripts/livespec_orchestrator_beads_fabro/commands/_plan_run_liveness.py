@@ -20,6 +20,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attri
     NON_TERMINAL_STATUS_KINDS,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
+from livespec_orchestrator_beads_fabro.commands._plan_next_action import SPEC_OP_KIND
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._plan_next_action import NextAction
@@ -32,9 +33,10 @@ __all__: list[str] = [
 _INSPECT_TIMEOUT_SECONDS = 60.0
 
 
-def live_factory_run_id(  # pragma: no cover
+def live_factory_run_id(
     *,
     config: StoreConfig,
+    epic_id: str,
     action: NextAction,
 ) -> str | None:
     """Return the stamped target run only while its own factory says it is live.
@@ -44,11 +46,12 @@ def live_factory_run_id(  # pragma: no cover
     inspected against the factory name recorded beside that stamp, through the
     same target and client-bin resolution used by dispatch reconciliation.
     """
+    target_id = epic_id if action.kind == SPEC_OP_KIND else action.ref
     record = next(
         (
             candidate
             for candidate in make_beads_client(config=config).list_issues()
-            if candidate.get("id") == action.ref
+            if candidate.get("id") == target_id
         ),
         None,
     )

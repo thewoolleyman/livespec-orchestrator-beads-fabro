@@ -94,11 +94,13 @@ def _impl_action() -> NextAction:
         kind="impl",
         ref="bd-ib-w3nwz5.1",
         text="Dispatch b1 through the factory.",
+        required_result=_RESULT,
+        budget=_BUDGET,
     )
 
 
 _RESULT = {
-    "repo": "repo",
+    "repo": "livespec-orchestrator-beads-fabro",
     "item_status": {"item_id": _EPIC_ID, "status": "closed"},
 }
 _BUDGET = {
@@ -345,6 +347,8 @@ def test_set_next_action_writes_the_typed_pointer_and_last_session() -> None:
         "kind": "impl",
         "ref": "bd-ib-w3nwz5.1",
         "text": "Dispatch b1 through the factory.",
+        "required_result": _RESULT,
+        "budget": _BUDGET,
     }
     assert metadata[LAST_SESSION_METADATA_KEY] == (
         "console-control-plane-primitives at 2026-09-04T18:00:00Z"
@@ -364,7 +368,13 @@ def test_set_next_action_updates_in_place_and_preserves_other_metadata() -> None
     set_next_action(
         config=_config(),
         epic_id=_EPIC_ID,
-        action=NextAction(kind="none", ref="", text="Nothing is recorded."),
+        action=NextAction(
+            kind="none",
+            ref="",
+            text="Nothing is recorded.",
+            required_result=None,
+            budget=None,
+        ),
         session="second-session",
         now="2026-09-04T19:00:00Z",
     )
@@ -374,6 +384,8 @@ def test_set_next_action_updates_in_place_and_preserves_other_metadata() -> None
         "kind": "none",
         "ref": "",
         "text": "Nothing is recorded.",
+        "required_result": None,
+        "budget": None,
     }
     assert metadata[LAST_SESSION_METADATA_KEY] == "second-session at 2026-09-04T19:00:00Z"
     assert metadata["rank"] == "a1"
@@ -399,7 +411,7 @@ def test_read_next_action_reports_an_epic_that_carries_none() -> None:
     assert read_next_action(config=_config(), epic_id=_EPIC_ID) is None
 
 
-def test_next_action_metadata_overlays_all_three_keys_onto_existing_metadata() -> None:
+def test_next_action_metadata_overlays_all_five_keys_onto_existing_metadata() -> None:
     overlaid = next_action_metadata(
         existing_metadata={"rank": "a1", "audit": {"captured_at": "2026-09-04T00:00:00Z"}},
         action=_impl_action(),
@@ -407,7 +419,13 @@ def test_next_action_metadata_overlays_all_three_keys_onto_existing_metadata() -
         now="2026-09-04T18:00:00Z",
     )
 
-    assert sorted(overlaid[NEXT_ACTION_METADATA_KEY]) == ["kind", "ref", "text"]
+    assert sorted(overlaid[NEXT_ACTION_METADATA_KEY]) == [
+        "budget",
+        "kind",
+        "ref",
+        "required_result",
+        "text",
+    ]
     assert overlaid["audit"] == {"captured_at": "2026-09-04T00:00:00Z"}
 
 
@@ -500,6 +518,8 @@ def test_unattended_resume_takes_a_spec_op_next_action_without_asking() -> None:
             kind="spec-op",
             ref="propose-change:plan-slug-anchor-and-typed-next-action",
             text="Propose the change.",
+            required_result=_RESULT,
+            budget=_BUDGET,
         ),
         session="console-control-plane-primitives",
         now="2026-09-04T18:00:00Z",
@@ -516,7 +536,13 @@ def test_unattended_resume_raises_the_picker_for_a_human_next_action() -> None:
     set_next_action(
         config=_config(),
         epic_id=_EPIC_ID,
-        action=NextAction(kind="human", ref="", text="Confirm the anchor filename."),
+        action=NextAction(
+            kind="human",
+            ref="",
+            text="Confirm the anchor filename.",
+            required_result=None,
+            budget=None,
+        ),
         session="console-control-plane-primitives",
         now="2026-09-04T18:00:00Z",
     )
@@ -533,7 +559,13 @@ def test_unattended_resume_raises_the_picker_for_a_none_next_action() -> None:
     set_next_action(
         config=_config(),
         epic_id=_EPIC_ID,
-        action=NextAction(kind="none", ref="", text="Nothing is recorded."),
+        action=NextAction(
+            kind="none",
+            ref="",
+            text="Nothing is recorded.",
+            required_result=None,
+            budget=None,
+        ),
         session="console-control-plane-primitives",
         now="2026-09-04T18:00:00Z",
     )
@@ -546,13 +578,20 @@ def test_unattended_resume_raises_the_picker_for_a_none_next_action() -> None:
 
 def test_unattended_resume_raises_the_picker_for_a_dispatchable_kind_with_no_ref() -> None:
     _seed_epic()
-    set_next_action(
-        config=_config(),
-        epic_id=_EPIC_ID,
-        action=NextAction(kind="impl", ref="", text="Dispatch something."),
+    metadata = _epic_metadata()
+    metadata[NEXT_ACTION_METADATA_KEY] = next_action_metadata(
+        existing_metadata={},
+        action=NextAction(
+            kind="impl",
+            ref="",
+            text="Dispatch something.",
+            required_result=_RESULT,
+            budget=_BUDGET,
+        ),
         session="console-control-plane-primitives",
         now="2026-09-04T18:00:00Z",
-    )
+    )[NEXT_ACTION_METADATA_KEY]
+    _fake().update_issue(issue_id=_EPIC_ID, metadata=metadata)
 
     directive = resume_directive(config=_config(), epic_id=_EPIC_ID, unattended=True)
 
@@ -601,7 +640,13 @@ def test_a_wrapped_prose_marker_line_no_longer_decides_the_resume() -> None:
     set_next_action(
         config=_config(),
         epic_id=_EPIC_ID,
-        action=NextAction(kind="impl", ref="overseer-adclcd.6", text="Dispatch it."),
+        action=NextAction(
+            kind="impl",
+            ref="overseer-adclcd.6",
+            text="Dispatch it.",
+            required_result=_RESULT,
+            budget=_BUDGET,
+        ),
         session="console",
         now="2026-09-04T18:00:00Z",
     )
