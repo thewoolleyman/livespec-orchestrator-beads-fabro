@@ -87,13 +87,12 @@
     "revise_decision_mode": "delegated",
     // ratification_review: "auto-spawn" is inert without a configured
     // reviewer model (effective.py's effective_ratification_review returns
-    // requires_input=True when ratification_reviewer_model is None). The
-    // reviewer model is the OpenAI Codex model gpt-6-astra, driven in a
-    // separate read-only Codex session, per maintainer direction 2026-10-10
-    // (it was "sonnet" from 2026-08-24, chosen over livespec core's "fable"
-    // convention when that model returned 529 Overloaded errors).
+    // requires_input=True when ratification_reviewer_model is None) — set
+    // to "sonnet" (livespec core's own convention uses "fable", but that
+    // model was returning 529 Overloaded server-side errors when this was
+    // set, per maintainer direction 2026-08-24).
     "ratification_review": "auto-spawn",
-    "ratification_reviewer_model": "gpt-6-astra",
+    "ratification_reviewer_model": "sonnet",
     "spec_pr_merge": "auto-on-green"
   },
   // Optional — spec_governance: the complete safe-default reference block.

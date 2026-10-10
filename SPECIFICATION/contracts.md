@@ -2058,34 +2058,12 @@ Every OPEN epic that has a live `plan/<slug>/` directory MUST carry a
 metadata key `next_action` whose new writes carry exactly five keys:
 `kind`, `ref`, `text`, `required_result`, and `budget`. Legacy three-key
 pointers remain readable under the migration rules below. `kind` MUST be one of `impl`,
-`spec-op`, `proof`, `review`, `archive`, `await`, `human`, or `none`. `impl` means the next step is factory
+`spec-op`, `human`, or `none`. `impl` means the next step is factory
 implementation of one work-item, and `ref` MUST be that work-item's id,
 so the action executes as the `drive` operation's `impl:<ref>` action-id;
 `spec-op` means the next step is a spec-lifecycle operation, and `ref`
 MUST name the operation and its topic in the form `<operation>:<topic>`
 (for example `propose-change:plan-slug-anchor-and-typed-next-action`);
-`proof` means the next step is the plan-level Proof of Done leg, and `ref`
-MUST be `capture:<epic-id>` (the plan session captures the plan record
-against the released build through the posting primitive of §"Plan
-Definition of Done and Proof of Done") or `verify:<epic-id>` (a separately
-started session replays the latest captured record); `review` means the
-next step is commissioning the independent completeness review of
-§"Archive on completion", and `ref` MUST be the epic id; `archive` means
-the next step is `archive_thread`, and `ref` MUST be the epic id; `await`
-means the next step is a bounded wait on one named obligation outside this
-session's control, and `ref` MUST be one of `item:<work-item-id>`,
-`epic:<epic-id>`, `run:<fabro-run-id>` or `gate:<gate-run-id>`, naming what
-the session observes. Each of `proof`, `review`, `archive` and `await` MUST
-carry `required_result` and `budget` exactly as `impl` does (§"Required
-result, budget and progress epoch"). An `await` pointer's `required_result`
-MUST be one of the result kinds §"Shared authoritative result reader"
-permits — the `item_status` or `item_comment` of the work item a run or gate
-drives, a `pull_request_state`, or a `verified_proof` on an epic — so a
-`run:` or `gate:` ref is an observation handle only and the obligation it
-tracks is the ledger or forge result that run or gate produces; a run or
-gate whose completion produces no permitted result MUST NOT be awaited, and
-the session MUST await the item it drives instead. The budget deadline is
-the wait's deadline;
 `human` means the next step needs a person, and `ref` MAY be empty or MAY
 name the attention item or question that carries the ask; `none` means
 nothing is recorded, and `ref` MUST be empty. `text` MUST be one
@@ -2104,18 +2082,11 @@ keys.
 An unattended resume (the `resume_directive` path under
 `LIVESPEC_PLAN_UNATTENDED`) MUST take its action from `next_action` and
 MUST NOT parse handoff comment bodies for it. It MUST act without asking
-only when `kind` is `impl`, `spec-op`, `proof`, `review`, `archive` or
-`await`, `ref` is non-empty, and the required-result checks below permit
-continuation; `human`
+only when `kind` is `impl` or `spec-op`, `ref` is non-empty, and the
+required-result checks below permit continuation; `human`
 and `none` MUST raise the picker and report the `kind` as the reason. An
 attended resume MUST present `next_action` as the default choice of its
-picker, EXCEPT that while a current continuation ruling (below) exists and
-`kind` is `impl`, `spec-op`, `proof`, `review`, `archive` or `await` with a
-non-empty `ref` and the required-result checks permit continuation, the
-resume MUST take the pointer without presenting the picker and MUST report
-the ruling it acted under; `human` and `none` MUST raise the picker in every
-case, and `resume_directive` MUST return the ruling's identity in its
-`reason` whenever it acts under one. A prose marker line (`next action:`) MAY continue to appear in a
+picker. A prose marker line (`next action:`) MAY continue to appear in a
 handoff comment for a human reader, but it carries no authority: when the
 two disagree, the metadata wins, and the conformance checks in
 §"Plan-record conformance checks" report the disagreement. This retires
@@ -2125,49 +2096,6 @@ fragment that an unattended resume executes. Design record: repo
 `thewoolleyman/livespec-console-beads-fabro`,
 `plan/retire-overseer-and-redesign-control-plane-around-console/research/redesign-brainstorm-and-decisions.md`
 (decision D6, item 5).
-
-**Recorded continuation authorization.** A plan epic MAY carry a
-continuation ruling: a scope event (a ruling, never a carrier-map event)
-whose first line is `plan-continuation: authorized`, followed by the lines
-`until: <archive|<UTC timestamp>>`, `by: <maintainer identity>`,
-`directive: <the maintainer's words, VERBATIM>`, and
-`recorded-attended: true`. The last line MUST be written by the
-scope-event primitive itself, never caller-supplied, exactly as the
-archive entry's `author:` literal is computed: the primitive MUST write it
-only when the recording session is attended (`LIVESPEC_PLAN_UNATTENDED`
-unset) and MUST refuse to record a continuation ruling from an unattended
-session. A ruling is current only when it carries every line above. A
-later ruling whose first line is `plan-continuation: revoked`, with a
-`by:` line, ends it; a ruling with `until: <timestamp>` expires at that
-instant; `until: archive` lasts until the plan archives. When several
-continuation rulings exist, the LATEST in timeline order governs.
-The ruling authorizes CONTINUATION ONLY: it does not waive store-write
-consent (§"Store-write consent discipline"), does not admit a work item,
-and does not authorize any action the sanctioned kinds cannot express.
-
-**Pointer reconciliation before continuation.** Before taking any pointer,
-attended or not, the resume MUST read the pointer's `required_result`
-through §"Shared authoritative result reader" and, for an `impl` or
-`spec-op` pointer, MUST also ask the factory whether a live run is driving
-its target. Two findings follow, evaluated IN THIS ORDER so that at most one applies,
-both tracking findings under §"Required result, budget and progress
-epoch" and never a human escalation by themselves. SATISFIED, checked
-first: the required result already holds; the pointer is reported stale
-with the observed result and the resume advances to the next step the plan
-prose derives from the ledger (the next ready child, the proof leg, the
-review, the archive), recording a new obligation under the ordinary rules,
-whatever any run is still doing. LIVE RUN, checked only when the required
-result is still unsatisfied: an `impl` or `spec-op` pointer whose target a
-live run is driving MUST NOT be executed again; the resume MUST rewrite it
-as `await` with `run:<id>` as the observation handle, and that rewrite is a
-representation change of the SAME obligation — it MUST keep the canonical
-`required_result`, the epoch, the original deadline and the handoff count
-unchanged, MUST NOT extend the budget from the run's own deadline, and when
-the obligation expires while the run is still live the existing expiry
-rules apply. An `await` pointer whose required result is still unsatisfied
-within budget is NOT stale: an unsatisfied, in-budget wait is its expected
-state, and the resume waits or reports the observation without rewriting
-the pointer.
 
 ### Shared authoritative result reader
 
@@ -2187,7 +2115,7 @@ A changed approach MUST be a typed causal recovery event naming the unresolved o
 
 resume_directive MUST report missing, expired and unobservable tracking findings. It MUST NOT automatically dispatch an exhausted or unobservable obligation. An unattended expired resume MUST retain the obligation and expose an authorized diagnosis/recovery action for the independent consumer. Human escalation MUST require an actual human decision or authorization deficit. A typed causal attempt MAY restore bounded execution without resetting the original deadline or bypassing existing admission and safety checks. The progress check MUST precede the unattended dispatch decision; existing human/none picker and missing-Definition-of-Done behavior remain.
 
-The Planning Lane restraint budget MUST explicitly include these two fixed-shape next_action fields, the four kinds `proof`, `review`, `archive` and `await`, the continuation ruling, and progress/relay comments on the existing epic. It MUST continue to forbid parallel plan status files, tables, queues or a second front end. Guidance MUST distinguish a recorded attempt from its required result and instruct readers to diagnose an exceeded record-rate warning instead of merely acknowledging it.
+The Planning Lane restraint budget MUST explicitly include these two fixed-shape next_action fields and progress/relay comments on the existing epic. It MUST continue to forbid parallel plan status files, tables, queues or a second front end. Guidance MUST distinguish a recorded attempt from its required result and instruct readers to diagnose an exceeded record-rate warning instead of merely acknowledging it.
 
 ### Relay delivery
 
@@ -2427,15 +2355,6 @@ refused. Running it twice MUST change nothing the second time. Design
 record: repo `thewoolleyman/livespec-console-beads-fabro`,
 `plan/retire-overseer-and-redesign-control-plane-around-console/research/redesign-brainstorm-and-decisions.md`
 (decision D6, items 4 and 6).
-
-The `plan_next_action_typed` check (error) MUST additionally report an
-open live plan whose `next_action.kind` is outside the eight sanctioned
-kinds. A `plan_continuation_ruling` check (error) MUST report a
-`plan-continuation: authorized` ruling lacking any of its `until:`, `by:`,
-`directive:` or `recorded-attended: true` lines, or a
-`plan-continuation: revoked` ruling lacking its `by:` line; a ruling the
-check reports is not current (§"Typed `next_action` and
-`last_session`").
 
 ### Planning Lane restraint budget
 
