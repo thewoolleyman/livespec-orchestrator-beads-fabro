@@ -8,6 +8,9 @@ allowed-tools: Bash
 
 Thin operator binding over the shared Python CLI:
 
+A valve action is complete when it returns. An `impl:` dispatch spans the run, the merge, the post-merge janitor, and acceptance
+and is reported as observed when its gate reports.
+
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bin/drive.py" "$@"
 ```
