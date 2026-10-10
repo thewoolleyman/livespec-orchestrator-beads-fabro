@@ -370,13 +370,19 @@ def _exercise_invalid_groom_filing(*, repo: Path, config: StoreConfig) -> None:
     assert _stored(config=config)[epic.id].status == "backlog"
 
 
-def _exercise_unjustified_capture(*, tmp_path: Path) -> None:
+def _exercise_unjustified_capture(*, tmp_path: Path, justification: object = None) -> None:
     reset_fake_singleton()
     capture_repo = tmp_path / "capture"
     capture_repo.mkdir()
     _write_repo_config(repo=capture_repo, ceiling=2)
     capture_config = _config(repo_root=capture_repo)
     _seed_capture(config=capture_config, item_id="bd-capture", assertion_count=3)
+    if justification is not None:
+        _record_size_justification(
+            config=capture_config,
+            item_id="bd-capture",
+            justification=justification,
+        )
     capture_result = apply_intake_dor(
         path=capture_config,
         item_id="bd-capture",
@@ -388,7 +394,7 @@ def _exercise_unjustified_capture(*, tmp_path: Path) -> None:
     _assert_missing_reason(reason=_size_reason_for(config=capture_config, item_id="bd-capture"))
 
 
-def _exercise_unjustified_groom(*, tmp_path: Path) -> None:
+def _exercise_unjustified_groom(*, tmp_path: Path, justification: object = None) -> None:
     reset_fake_singleton()
     groom_repo = tmp_path / "groom"
     groom_repo.mkdir()
@@ -412,6 +418,7 @@ def _exercise_unjustified_groom(*, tmp_path: Path) -> None:
                 acceptance="The replacement is verified.",
                 autonomy_tier="factory",
                 repo_target=groom_repo.name,
+                size_justification=justification,
             )
         ],
     )
@@ -423,7 +430,7 @@ def _exercise_unjustified_groom(*, tmp_path: Path) -> None:
     )
 
 
-def _exercise_unjustified_approval(*, tmp_path: Path) -> None:
+def _exercise_unjustified_approval(*, tmp_path: Path, justification: object = None) -> None:
     reset_fake_singleton()
     approval_repo = tmp_path / "approval"
     approval_repo.mkdir()
@@ -435,6 +442,12 @@ def _exercise_unjustified_approval(*, tmp_path: Path) -> None:
         admission_policy="manual",
     )
     append_work_item(path=approval_config, item=approval_item)
+    if justification is not None:
+        _record_size_justification(
+            config=approval_config,
+            item_id=approval_item.id,
+            justification=justification,
+        )
     approval = run_action(repo=approval_repo, action_id="approve:bd-approval")
     assert approval["status"] == "failed"
     assert approval["target_status"] == "backlog"
@@ -442,7 +455,7 @@ def _exercise_unjustified_approval(*, tmp_path: Path) -> None:
     assert _stored(config=approval_config)[approval_item.id].status == "backlog"
 
 
-def _exercise_unjustified_dispatch(*, tmp_path: Path) -> None:
+def _exercise_unjustified_dispatch(*, tmp_path: Path, justification: object = None) -> None:
     reset_fake_singleton()
     dispatch_repo = tmp_path / "dispatch"
     dispatch_repo.mkdir()
@@ -450,6 +463,12 @@ def _exercise_unjustified_dispatch(*, tmp_path: Path) -> None:
     dispatch_config = _config(repo_root=dispatch_repo)
     dispatch_item = _item(assertion_count=3, item_id="bd-dispatch")
     append_work_item(path=dispatch_config, item=dispatch_item)
+    if justification is not None:
+        _record_size_justification(
+            config=dispatch_config,
+            item_id=dispatch_item.id,
+            justification=justification,
+        )
     admission = admit_and_select(
         repo=dispatch_repo,
         items=[dispatch_item],
@@ -463,7 +482,7 @@ def _exercise_unjustified_dispatch(*, tmp_path: Path) -> None:
     assert _stored(config=dispatch_config)[dispatch_item.id].status == "backlog"
 
 
-def _exercise_unjustified_groom_door(*, tmp_path: Path) -> None:
+def _exercise_unjustified_groom_door(*, tmp_path: Path, justification: object = None) -> None:
     reset_fake_singleton()
     door_repo = tmp_path / "groom-door"
     door_repo.mkdir()
@@ -471,6 +490,12 @@ def _exercise_unjustified_groom_door(*, tmp_path: Path) -> None:
     door_config = _config(repo_root=door_repo)
     door_item = replace(_item(assertion_count=3, item_id="bd-groom-door"), status="backlog")
     append_work_item(path=door_config, item=door_item)
+    if justification is not None:
+        _record_size_justification(
+            config=door_config,
+            item_id=door_item.id,
+            justification=justification,
+        )
     door = groom_dispatch(
         repo=door_repo,
         item=door_item,
@@ -493,6 +518,50 @@ def test_above_ceiling_without_justification_routes_every_public_gate_to_backlog
     _exercise_unjustified_approval(tmp_path=tmp_path)
     _exercise_unjustified_dispatch(tmp_path=tmp_path)
     _exercise_unjustified_groom_door(tmp_path=tmp_path)
+
+
+def test_malformed_size_justifications_never_waive_the_gate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the exact attributed and timestamped object is an exception."""
+    valid = _valid_justification()
+    malformed: tuple[object, ...] = (
+        None,
+        [],
+        {},
+        {"rationale": valid["rationale"], "author": valid["author"]},
+        valid | {"unexpected": "not sanctioned"},
+        valid | {"rationale": 1},
+        valid | {"author": False},
+        valid | {"at": []},
+        valid | {"rationale": "  "},
+        valid | {"author": "\t"},
+        valid | {"at": ""},
+        valid | {"at": "not-a-timestamp"},
+    )
+    decisions = [
+        cast(
+            "Any",
+            _size_gate_module().factory_size_decision(
+                item=_item(assertion_count=3, item_id=f"bd-malformed-{index}"),
+                adopted_ceiling=2,
+                raw_justification=raw,
+            ),
+        )
+        for index, raw in enumerate(malformed)
+    ]
+    assert all(decision.disposition == "decompose" for decision in decisions)
+    assert all(decision.size_justified is False for decision in decisions)
+
+    monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
+    invalid_timestamp = valid | {"at": "not-a-timestamp"}
+    journey = tmp_path / "malformed-public-entries"
+    journey.mkdir()
+    _exercise_unjustified_capture(tmp_path=journey, justification=invalid_timestamp)
+    _exercise_unjustified_groom(tmp_path=journey, justification=invalid_timestamp)
+    _exercise_unjustified_approval(tmp_path=journey, justification=invalid_timestamp)
+    _exercise_unjustified_dispatch(tmp_path=journey, justification=invalid_timestamp)
+    _exercise_unjustified_groom_door(tmp_path=journey, justification=invalid_timestamp)
 
 
 def test_items_at_or_below_ceiling_continue_through_ordinary_gates() -> None:
