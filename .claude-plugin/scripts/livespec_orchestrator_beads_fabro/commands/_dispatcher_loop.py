@@ -13,6 +13,8 @@ from __future__ import annotations
 import argparse
 import time
 from contextlib import ExitStack
+from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands import (
@@ -96,6 +98,14 @@ __all__: list[str] = [
 ]
 
 
+@dataclass(frozen=True, kw_only=True)
+class _DispatchLifetime:
+    """The identity and cleanup stack shared by one locked dispatch."""
+
+    identity: DispatchJournalIdentity
+    cleanup: ExitStack
+
+
 def dispatch_one(
     *,
     args: argparse.Namespace,
@@ -125,9 +135,12 @@ def dispatch_one(
             item=item,
             journal=journal,
             janitor=janitor,
-            identity=DispatchJournalIdentity(
-                dispatch_id=dispatch_id,
-                dispatch_factory=dispatch_factory,
+            lifetime=_DispatchLifetime(
+                identity=DispatchJournalIdentity(
+                    dispatch_id=dispatch_id,
+                    dispatch_factory=dispatch_factory,
+                ),
+                cleanup=stack,
             ),
         )
         release_pre_run_claim_if_needed(repo=repo, item=item, outcome=outcome, journal=journal)
@@ -148,8 +161,9 @@ def _dispatch_one_locked(
     item: WorkItem,
     journal: JournalFile,
     janitor: tuple[str, ...] | None,
-    identity: DispatchJournalIdentity,
+    lifetime: _DispatchLifetime,
 ) -> DispatchOutcome:
+    identity = lifetime.identity
     recorded = record_dispatch(
         args=args, repo=repo, item=item, journal=journal, janitor=janitor, identity=identity
     )
@@ -194,6 +208,11 @@ def _dispatch_one_locked(
     # dev token is still waiting in the launcher's later auth step.
     factory_runner = ShellCommandRunner()
     run_fabro_factory_auth_login(plan=plan, runner=factory_runner)
+    secret_sink = fabro_vault_sink_for_plan(plan=plan, runner=factory_runner, journal=journal)
+    # Fallback for every pre-launch refusal and exception. On the normal path
+    # the watched launcher releases much earlier, at RUNNING, immediately after
+    # the candidate worker has snapshotted the vault.
+    _ = lifetime.cleanup.callback(lambda: secret_sink.release_launch_guard())
     overlay_error = materialize_overlay(
         committed=recorded.committed_workflow,
         overlay=overlay_file,
@@ -236,7 +255,7 @@ def _dispatch_one_locked(
         # contract gives: a credential stored in one server's vault while the run
         # launched against another's resolves to nothing.
         factory_name=plan.fabro_factory_name,
-        secret_sink=fabro_vault_sink_for_plan(plan=plan, runner=factory_runner, journal=journal),
+        secret_sink=secret_sink,
     )
     if overlay_error is not None:
         return failed_dispatch_outcome(
@@ -261,7 +280,10 @@ def _dispatch_one_locked(
             dispatch_id=identity.dispatch_id,
         ),
         run_dispatch_func=run_dispatch,
-        fabro_launcher_type=WatchedFabroLauncher,
+        fabro_launcher_type=partial(
+            WatchedFabroLauncher,
+            on_worker_running=secret_sink.release_launch_guard,
+        ),
     )
     # REBOUND, not merely called: the post-merge acceptance valve runs inside, and
     # the outcome it returns is the one the dispatch RESULT must report — a park

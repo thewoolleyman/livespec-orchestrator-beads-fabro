@@ -331,7 +331,13 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   dispatch-derived name would make every credential rotation require a new
   bundle instead of refreshing the value the existing bundle names. Factory
   dev-token login happens BEFORE materialization can perform its first vault
-  store, so a fresh host does not fail before the later launch-time login.
+  store, so a fresh host does not fail before the later launch-time login. A
+  host-global per-factory launch lock spans the first stable-key write through
+  the worker's `running` transition: the candidate records that transition only
+  after it has loaded and snapshotted the vault, so overlapping dispatches from
+  independent operator-host clones cannot interleave a multi-secret batch or
+  replace one launch's values before its snapshot. `runnable` is deliberately
+  too early to release because it reports queue admission, not a started worker.
   Routing finishes BEFORE
   anything is stored, so a refusal leaves the vault untouched rather than
   seeding credentials for a dispatch the next line declines. A store failure

@@ -77,6 +77,11 @@ class WatchedFabroLauncher:
     # probe; None means the caller supplied none, and the probe falls back
     # to the work-item id alone.
     dispatch_id: str | None = None
+    # The native-secret launch transaction is released only once the candidate
+    # worker reports RUNNING. Its worker records that transition after loading
+    # and snapshotting the vault; RUNNABLE is only queue admission and is too
+    # early. None keeps every non-native caller on the old path.
+    on_worker_running: Callable[[], None] | None = None
 
     def launch(
         self,
@@ -138,6 +143,7 @@ class WatchedFabroLauncher:
         stall_seconds = resolve_stall_seconds()
         samples: list[LivenessSample] = []
         known_run_id: str | None = None
+        worker_running_notified = False
         stamp = RunAttribution()
         while thread.is_alive():
             self.sleep(_WATCHDOG_POLL_INTERVAL_SECONDS)
@@ -147,6 +153,10 @@ class WatchedFabroLauncher:
             stamp = stamped_attribution(plan=plan, journal=journal, run=run, attribution=stamp)
             run_id = run.run_id if run is not None and run.status_kind == "running" else None
             known_run_id = run_id if run_id is not None else known_run_id
+            if run_id is not None and not worker_running_notified:
+                if self.on_worker_running is not None:
+                    self.on_worker_running()
+                worker_running_notified = True
             if run is not None:
                 item_status = _work_item_status(repo=plan.repo, work_item_id=plan.work_item_id)
                 if item_status is not None and item_status != "active":

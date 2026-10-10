@@ -23,6 +23,17 @@ specifically to say the credential could not be stored. `contracts.md` section
 names, never values -- and the scrub is how this surface keeps it even when the
 server does not.
 
+WHY ONE FACTORY LAUNCH IS A TRANSACTION. Vault names must stay stable so an
+immutable workflow version survives credential rotation, but the server's vault
+is global and each `secret set` writes only one name. A per-factory advisory
+lock therefore begins before the first write and remains held until the worker
+reports `running`. On the candidate engine that transition is recorded only
+after the worker has loaded its vault and built the run's `VaultSecrets`
+snapshot, so another local dispatch cannot interleave a mixed batch or replace
+the first run's values before its snapshot exists. The lock is host-global, not
+checkout-local: independent dispatcher clones on the operator host address the
+same lock file when they address the same server.
+
 The sink is separate from the ordinary `FabroPort` verbs because it is the only
 one that handles a credential value and it is injected into the pure routing
 layer.  Its direct CLI transport nevertheless belongs to the `_fabro_port*`
@@ -32,10 +43,13 @@ scrubbing without becoming a second route around the engine boundary.
 
 from __future__ import annotations
 
+import fcntl
+import hashlib
+import os
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import JournalWriter
 from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_channel import VaultSecret
@@ -75,6 +89,62 @@ SECRET_SET_TIMEOUT_SECONDS = 120.0
 # arbitrary remote payload into a dispatch journal row.
 _REJECTION_EXCERPT_CHARS = 400
 
+# All dispatcher clones owned by this operator share this root. It deliberately
+# does not live under a repository: the vault it protects is server-global, so a
+# checkout-local lock would reproduce the race across two repositories or
+# plugin sandboxes. The file is never unlinked -- unlinking while another caller
+# waits on its inode can create two independently locked inodes for one factory.
+_LAUNCH_LOCK_ROOT = Path.home() / ".cache" / "livespec" / "factory-vault-launch-locks"
+_LOCK_FAILURE_EXIT_CODE = 1
+
+
+@dataclass(kw_only=True)
+class _FactoryVaultLaunchGuard:
+    """One operator-host mutex spanning vault writes through worker snapshot."""
+
+    server_url: str | None
+    _handle: BinaryIO | None = field(default=None, init=False, repr=False)
+
+    def acquire(self) -> str | None:
+        """Take the factory lock once; a names-only failure, or None."""
+        if self._handle is not None:
+            return None
+        descriptor: int | None = None
+        handle: BinaryIO | None = None
+        try:
+            _LAUNCH_LOCK_ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
+            _LAUNCH_LOCK_ROOT.chmod(0o700)
+            descriptor = os.open(str(self._path()), os.O_RDWR | os.O_CREAT, 0o600)
+            os.fchmod(descriptor, 0o600)
+            handle = os.fdopen(descriptor, "r+b")
+            descriptor = None
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        except OSError as exc:
+            if handle is not None:
+                handle.close()
+            if descriptor is not None:
+                os.close(descriptor)
+            return f"factory vault launch lock could not be acquired ({type(exc).__name__}: {exc})"
+        self._handle = handle
+        return None
+
+    def release(self) -> None:
+        """Release the held transaction, idempotently."""
+        handle = self._handle
+        self._handle = None
+        if handle is None:
+            return
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
+
+    def _path(self) -> Path:
+        """A value-free stable filename for the factory server target."""
+        target = "local" if self.server_url is None else self.server_url.rstrip("/")
+        digest = hashlib.sha256(target.encode("utf-8")).hexdigest()
+        return _LAUNCH_LOCK_ROOT / f"{digest}.lock"
+
 
 @dataclass(frozen=True, kw_only=True)
 class FabroVaultSink:
@@ -90,9 +160,25 @@ class FabroVaultSink:
     # caller -- and a record is evidence about a dispatch rather than part of
     # the store itself. The production dispatch path always supplies one.
     journal: JournalWriter | None = None
+    _launch_guard: _FactoryVaultLaunchGuard = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "_launch_guard",
+            _FactoryVaultLaunchGuard(server_url=self.server_url),
+        )
 
     def set(self, *, secret: VaultSecret) -> str | None:
         """Store `secret`; a scrubbed message when the server would not take it."""
+        lock_failure = self._launch_guard.acquire()
+        if lock_failure is not None:
+            self._record(
+                secret=secret,
+                outcome="refused",
+                exit_code=_LOCK_FAILURE_EXIT_CODE,
+            )
+            return lock_failure
         result = self._store(secret=secret)
         if result.exit_code == 0:
             self._record(secret=secret, outcome="stored", exit_code=0)
@@ -101,9 +187,14 @@ class FabroVaultSink:
         # launch never tried", which is the wrong conclusion when the worker's
         # stable reference resolves an entry this store never refreshed.
         self._record(secret=secret, outcome="refused", exit_code=result.exit_code)
+        self.release_launch_guard()
         return f"`fabro secret set {secret.secret_name}` exited {result.exit_code}: " + _excerpt(
             text=_scrubbed(text=result.stderr or result.stdout, value=secret.value)
         )
+
+    def release_launch_guard(self) -> None:
+        """Let the next same-factory dispatch refresh stable vault names."""
+        self._launch_guard.release()
 
     def _record(self, *, secret: VaultSecret, outcome: str, exit_code: int) -> None:
         """Journal one store by NAME: the vault key, the env name, the outcome.
