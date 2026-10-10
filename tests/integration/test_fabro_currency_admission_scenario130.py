@@ -226,3 +226,64 @@ def test_a_failed_refresh_refuses_instead_of_reusing_a_stale_observation(
             "repos/fabro-sh/fabro/releases?per_page=100",
         ],
     ]
+
+
+def test_the_0254_transition_is_visible_before_its_fixed_deadline_and_expires(
+    tmp_path: Path,
+) -> None:
+    def _carrier_runner() -> _Runner:
+        return _Runner(
+            results=[
+                _command(stdout=f"fabro 0.254.0 ({_SERVING_COMMIT} 2026-06-01)\n"),
+                _command(
+                    stdout=_releases(
+                        records=[
+                            {
+                                "tag_name": "v0.410.0-nightly.0",
+                                "published_at": "2026-11-10T00:00:00Z",
+                                "draft": False,
+                                "prerelease": True,
+                            },
+                            {
+                                "tag_name": "v0.254.0",
+                                "published_at": "2026-06-01T00:00:00Z",
+                                "draft": False,
+                                "prerelease": False,
+                            },
+                        ]
+                    )
+                ),
+                _command(stdout='{"status": "diverged"}'),
+                _command(stdout='{"status": "ahead"}'),
+            ],
+            calls=[],
+        )
+
+    gate = importlib.import_module(_MODULE_NAME)
+    before = gate.fabro_currency_admission(
+        target=FactoryTarget(name="hp", server="https://factory.example", dev_token=None),
+        fabro_bin="/opt/fabro-hp",
+        repo=tmp_path,
+        runner=_carrier_runner(),
+        now=datetime(2026, 11, 13, 23, 59, 59, tzinfo=timezone.utc),
+        cache_path=tmp_path / "before.json",
+    )
+    at_deadline = gate.fabro_currency_admission(
+        target=FactoryTarget(name="hp", server="https://factory.example", dev_token=None),
+        fabro_bin="/opt/fabro-hp",
+        repo=tmp_path,
+        runner=_carrier_runner(),
+        now=datetime(2026, 11, 14, tzinfo=timezone.utc),
+        cache_path=tmp_path / "deadline.json",
+    )
+
+    assert before.admitted is True
+    assert before.message == (
+        "NOTICE: Fabro currency admission admits factory hp under the bd-ib-6tcjfx "
+        "transition: serving integration commit abcdef1234567890 resolves to the "
+        "out-of-window v0.254.0 base published 2026-06-01T00:00:00Z; this "
+        "non-renewable exception expires at 2026-11-14T00:00:00Z.\n"
+    )
+    assert at_deadline.admitted is False
+    assert "base v0.254.0 published 2026-06-01T00:00:00Z" in at_deadline.message
+    assert "the base is more than 30 calendar days behind" in at_deadline.message

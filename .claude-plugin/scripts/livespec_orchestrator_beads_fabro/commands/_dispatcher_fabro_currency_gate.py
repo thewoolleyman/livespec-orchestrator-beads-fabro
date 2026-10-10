@@ -25,6 +25,8 @@ __all__: list[str] = [
 
 _SERVING_COMMIT_RE = re.compile(r"\(([0-9a-fA-F]{7,40})(?:\s|\))")
 _VERSION_TIMEOUT_SECONDS = 20.0
+_TRANSITION_DEADLINE_TEXT = "2026-11-14T00:00:00Z"
+_TRANSITION_DEADLINE = datetime.fromisoformat(_TRANSITION_DEADLINE_TEXT.replace("Z", "+00:00"))
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -88,12 +90,36 @@ def fabro_currency_admission(
             newest=ordered[0],
             observed_at=observation.observed_at,
         )
+    if base.tag == "v0.254.0" and now < _TRANSITION_DEADLINE:
+        return _transition_admission(
+            target=target,
+            serving_commit=serving_commit,
+            base=base,
+        )
     return _window_refusal(
         target=target,
         serving_commit=serving_commit,
         base=base,
         newest=ordered[0],
         observed_at=observation.observed_at,
+    )
+
+
+def _transition_admission(
+    *,
+    target: FactoryTarget,
+    serving_commit: str,
+    base: FabroRelease,
+) -> FabroCurrencyDecision:
+    return FabroCurrencyDecision(
+        admitted=True,
+        message=(
+            f"NOTICE: Fabro currency admission admits factory {target.name} under the "
+            f"bd-ib-6tcjfx transition: serving integration commit {serving_commit} "
+            f"resolves to the out-of-window {base.tag} base published "
+            f"{_timestamp(value=base.published_at)}; this non-renewable exception expires "
+            f"at {_TRANSITION_DEADLINE_TEXT}.\n"
+        ),
     )
 
 
