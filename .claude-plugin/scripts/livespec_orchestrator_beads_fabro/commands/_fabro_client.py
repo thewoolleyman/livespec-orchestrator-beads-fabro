@@ -14,7 +14,11 @@ __all__: list[str] = [
 
 def fabro_uses_workflow_package(*, version: str | None) -> bool:
     """Whether this client accepts a self-contained workflow package."""
-    return version is not None and version.startswith("fabro ")
+    return (
+        version is not None
+        and version.startswith("fabro ")
+        and not version.startswith("fabro 0.254.")
+    )
 
 
 def run_workflow(*, version: str | None, workflow_toml: Path) -> Path:
