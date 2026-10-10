@@ -9,18 +9,15 @@ the same dead-end shape as `non_converged`. The Dispatcher maps that sentinel
 onto its existing `blocked` outcome, so the item rests at
 `blocked / needs-human` in the ledger while the run itself is already gone.
 
-The preservation ref is derived ONLY from the run id the ENGINE supplies on the
-node's stdin — `stdin_source="context.internal.run_id"`, the Petri-era source
-(plan `fabro-currency` P4, bd-ib-hti4zf) — with no placeholder fallback
-(work-item bd-ib-7hta4l). The source moved; the no-placeholder rule did not.
-`$FABRO_RUN_ID` was the former source and the pinned fabro exports it to hooks
-and NOT to script nodes, so it was reliably absent here; a default on either
-source collapses every run onto one shared ref that later runs clobber. The
-last three cases here run the node's OWN script — extracted from the graph and
+The preservation ref is derived ONLY from the run id the running ENGINE
+supplies: `FABRO_RUN_ID` on pinned Fabro 0.254, or the node's
+`stdin_source="context.internal.run_id"` on the Petri-era candidate. Neither
+source has a placeholder fallback (work-item bd-ib-7hta4l), because one would
+collapse every unidentified run onto a shared ref that later runs clobber. The
+last cases here run the node's OWN script — extracted from the graph and
 unescaped, never a paraphrase — inside a throwaway git repository with a real
-bare `origin`, once with a run id on stdin and once without, so "no ref was
-pushed" is MEASURED against a fixture that demonstrably can carry a push rather
-than inferred from a repository where pushing was never possible.
+bare `origin`, so each push or absence is measured against a fixture that
+demonstrably can carry one.
 """
 
 from __future__ import annotations
@@ -85,28 +82,46 @@ def test_needs_human_is_a_terminal_script_node_that_preserves_then_exits_non_gre
     assert "exit 1" in body
     assert "refs/heads/needs-human/" in body
     assert 'stdin_source="context.internal.run_id"' in body
-    assert "FABRO_RUN_ID" not in body
+    assert "FABRO_RUN_ID" in body
     assert "feat/" not in body
     assert not any(re.match(r"^needs_human\s*->", line) for line in _code_lines(text))
 
 
 def test_the_preservation_ref_derives_only_from_the_run_id() -> None:
-    """No placeholder fallback, on the stdin source the engine supplies."""
+    """No placeholder fallback, across the two sources the engines supply."""
     script = _preservation_script()
 
     assert "read -r run_id" in script
     assert f'ref="{_REF_PREFIX}$run_id"' in script
     assert "unknown-run" not in script
-    # NO `:-` default survives anywhere: every one would be a placeholder every
-    # run would share. The two `:?` forms are required-variable assertions, which
-    # fail loudly rather than substituting anything, so they are not defaults.
-    assert re.findall(r"\$\{[A-Za-z_]\w*:-(?P<default>[^}]*)\}", script) == []
+    assert "FABRO_RUN_ID" in script
+    # The ONE permitted `:-` form maps an absent legacy source to empty so the
+    # Petri stdin read can supply it. A non-empty default would be a placeholder
+    # every unidentified run would share.
+    assert re.findall(r"\$\{[A-Za-z_]\w*:-(?P<default>[^}]*)\}", script) == [""]
 
 
 def test_a_run_id_preserves_the_tree_on_its_own_run_scoped_ref(tmp_path: Path) -> None:
     work, origin = _sandbox(tmp_path=tmp_path)
 
     completed = _run_preservation(work=work, run_id=_RUN_ID)
+
+    assert completed.returncode == 1
+    assert f"{_PRESERVED_MARKER}: {_REF_PREFIX}{_RUN_ID}" in completed.stderr
+    assert _NO_RUN_ID_MARKER not in completed.stderr
+    assert _SENTINEL in completed.stderr
+    assert _pushed_refs(origin=origin) == [f"{_REF_PREFIX}{_RUN_ID}"]
+
+
+def test_the_pinned_engine_environment_run_id_preserves_the_tree(tmp_path: Path) -> None:
+    """Fabro 0.254 supplies no stdin, but exports the run id in the environment."""
+    work, origin = _sandbox(tmp_path=tmp_path)
+
+    completed = _run_preservation(
+        work=work,
+        run_id=None,
+        environment_run_id=_RUN_ID,
+    )
 
     assert completed.returncode == 1
     assert f"{_PRESERVED_MARKER}: {_REF_PREFIX}{_RUN_ID}" in completed.stderr
@@ -207,16 +222,22 @@ def _sandbox(*, tmp_path: Path) -> tuple[Path, Path]:
     return work, origin
 
 
-def _run_preservation(*, work: Path, run_id: str | None) -> subprocess.CompletedProcess[str]:
+def _run_preservation(
+    *,
+    work: Path,
+    run_id: str | None,
+    environment_run_id: str | None = None,
+) -> subprocess.CompletedProcess[str]:
     """Run the node's own script with the engine's stdin source stood in for.
 
     `run_id=None` stands in for an engine that supplies NO stdin, which is what
     the pinned build does here; an empty string stands in for one that supplies a
-    blank line. Both must take the loud no-id branch. `FABRO_RUN_ID` is stripped
-    from the environment in every case, because the former source must not be
-    able to rescue a script that no longer reads it.
+    blank line. When `environment_run_id` is also absent, both must take the loud
+    no-id branch.
     """
     env = {key: value for key, value in os.environ.items() if key != "FABRO_RUN_ID"}
+    if environment_run_id is not None:
+        env["FABRO_RUN_ID"] = environment_run_id
     env["LIVESPEC_GIT_AUTHOR_NAME"] = _OPERATOR_NAME
     env["LIVESPEC_GIT_AUTHOR_EMAIL"] = _OPERATOR_EMAIL
     return subprocess.run(
