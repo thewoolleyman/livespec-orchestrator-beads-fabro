@@ -53,3 +53,6 @@ lives in the prose.
 - **"the `propose-change` operation"** — the cross-boundary
   `/livespec:propose-change` skill of the **livespec** plugin (the
   matured-to-spec handoff target).
+- **"drive a typed next action"** — preserve the shared prose's six-kind mapping unchanged: `impl`, `spec-op`, `proof`,
+  `review`, `archive`, and `await` use their named sibling operation or package primitive; result reconciliation and any
+  recorded continuation ruling decide whether this runtime acts or presents the picker.

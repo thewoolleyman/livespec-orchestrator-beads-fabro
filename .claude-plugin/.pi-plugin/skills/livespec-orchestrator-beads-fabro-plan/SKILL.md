@@ -83,3 +83,6 @@ rather than a missing install.
 - **"surface the captured stdout" / "present the JSON verbatim"** —
   plain narration in this session, without re-interpretation or
   re-summarization.
+- **"drive a typed next action"** — preserve the shared prose's six-kind mapping unchanged: `impl`, `spec-op`, `proof`,
+  `review`, `archive`, and `await` use their named sibling operation or package primitive; result reconciliation and any
+  recorded continuation ruling decide whether this runtime acts or presents the picker.
