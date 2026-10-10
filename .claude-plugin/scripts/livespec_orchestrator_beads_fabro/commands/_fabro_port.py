@@ -127,10 +127,10 @@ class FabroPort:
             argv=[
                 self.fabro_bin,
                 "secret",
+                *self._server_suffix(),
                 "set",
                 secret_name,
                 "--value-stdin",
-                *self._server_suffix(),
             ],
             cwd=self.cwd,
             timeout_seconds=timeout_seconds,
@@ -284,9 +284,8 @@ class FabroPort:
         )
 
     def _server_suffix(self) -> list[str]:
-        # `--server` is a per-subcommand Fabro flag. The pinned 0.254.0 CLI
-        # hard-errors on `fabro --server <url> <cmd>`, so the suffix is always
-        # appended after the subcommand and its arguments.
+        # Most verbs take a per-subcommand `--server`; pinned 0.254.0 rejects
+        # global placement. Petri-era `secret` instead owns it on the group.
         if self.target.server_url is None:
             return []
         return ["--server", self.target.server_url]
