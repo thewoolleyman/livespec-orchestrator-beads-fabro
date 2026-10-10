@@ -226,3 +226,35 @@ def test_reentry_after_master_advances_preserves_the_published_tip(
     assert _git(run, "merge-base", "--is-ancestor", published_tip, "HEAD").returncode == 0
     remote_head = _git(run, "ls-remote", "origin", f"refs/heads/{_PUBLISH_BRANCH}").stdout
     assert remote_head.split()[0] == refreshed_tip
+
+
+def test_divergent_prior_run_branch_is_refused_without_mutating_this_run(
+    tmp_path: Path,
+) -> None:
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+    local_tip = _git(run, "rev-parse", "HEAD").stdout.strip()
+    origin = Path(_git(run, "remote", "get-url", "origin").stdout.strip())
+
+    prior = tmp_path / "prior-run"
+    _git(tmp_path, "clone", str(origin), str(prior))
+    _configure(repo=prior)
+    _git(prior, "switch", "-c", "prior-run")
+    prior_tip = _commit(
+        repo=prior,
+        path="src/prior.txt",
+        content="prior run\n",
+        message="prior run work",
+    )
+    _git(prior, "push", "origin", f"HEAD:refs/heads/{_PUBLISH_BRANCH}")
+
+    call = tmp_path / "divergent-call"
+    call.mkdir()
+    refused = _publish(tmp_path=call, run=run)
+
+    assert refused.result.returncode != 0
+    assert "LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED" in refused.result.stderr
+    assert _git(run, "rev-parse", "HEAD").stdout.strip() == local_tip
+    remote = _git(run, "ls-remote", "origin", f"refs/heads/{_PUBLISH_BRANCH}").stdout
+    assert remote.split()[0] == prior_tip
+    assert refused.calls == ()
+    assert refused.draft_created is False
