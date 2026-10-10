@@ -59,27 +59,32 @@ def reconcile_terminal_publication(
     """Confirm a PR only for a normally-green or checkpoint-qualified run."""
     hold: CurrentMergeHold = "unreadable"
     view = None
-    if terminal is None or evidence is not None:
+    matches = False
+    if terminal is None:
         hold = read_current_merge_hold(repo=plan.repo, work_item_id=plan.work_item_id)
         view = confirm_pr(plan=plan, runner=runner, journal=journal, hold=hold)
-    observed = (
-        terminal_publication_view(plan=plan, runner=runner, journal=journal)
-        if view is not None and evidence is not None
-        else None
-    )
-    repository = (
-        terminal_repository_name(plan=plan, runner=runner, journal=journal)
-        if observed is not None
-        else None
-    )
-    matches = False
-    if observed is not None and view is not None and evidence is not None:
-        matches = observed.number == view.number and observed.matches_publication(
+    elif evidence is not None:
+        observed = terminal_publication_view(plan=plan, runner=runner, journal=journal)
+        repository = (
+            terminal_repository_name(plan=plan, runner=runner, journal=journal)
+            if observed is not None
+            else None
+        )
+        authenticated = observed is not None and observed.matches_publication(
             branch=plan.branch,
             head=evidence.commit_sha,
             repository=repository or "",
         )
-        if matches:
+        if authenticated and observed is not None:
+            hold = read_current_merge_hold(repo=plan.repo, work_item_id=plan.work_item_id)
+            view = confirm_pr(
+                plan=plan,
+                runner=runner,
+                journal=journal,
+                hold=hold,
+            )
+            matches = view is not None and observed.number == view.number
+        if matches and observed is not None:
             _journal_successful_classification(
                 plan=plan,
                 journal=journal,

@@ -301,6 +301,36 @@ def test_publication_must_match_the_checkpoint_head_and_reports_merge_state(
     )
 
 
+def test_rejected_publication_is_authenticated_before_any_forge_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        _dispatcher_terminal_publication,
+        "read_current_merge_hold",
+        lambda **_kwargs: "unheld",
+    )
+    cases: tuple[tuple[str, dict[str, object], str], ...] = (
+        ("wrong-head", {"headRefOid": "b" * 40}, _REPOSITORY),
+        ("wrong-branch", {"headRefName": "feat/unrelated"}, _REPOSITORY),
+        ("wrong-repository", {}, "someone-else/proof-repo"),
+    )
+
+    for name, pr_overrides, repository_slug in cases:
+        outcome, _journal, runner = _dispatch(
+            root=tmp_path / name,
+            pr_overrides={"state": "OPEN", "mergeCommit": None, **pr_overrides},
+            repository_slug=repository_slug,
+        )
+
+        assert (outcome.status, outcome.stage, outcome.pr_number) == (
+            "failed",
+            "fabro-run",
+            None,
+        ), name
+        assert not any(argv[:3] == ["gh", "pr", "merge"] for argv, _cwd in runner.calls), name
+
+
 def test_journal_separates_conflict_checkpoint_publication_and_classification(
     tmp_path: Path,
 ) -> None:
