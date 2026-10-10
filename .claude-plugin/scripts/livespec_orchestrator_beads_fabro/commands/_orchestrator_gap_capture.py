@@ -30,9 +30,17 @@ from datetime import datetime, timezone
 from typing import Any, cast
 
 from livespec_runtime.work_items.rank import key_between
+from returns.pipeline import is_successful
+from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro._ids import new_work_item_id
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
+    resolve_adopted_assertion_count_ceiling,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
+    PolicySettingUnreadable,
+)
 from livespec_orchestrator_beads_fabro.commands._orchestrator_shared import (
     CliContext,
     PayloadInvalidError,
@@ -42,11 +50,10 @@ from livespec_orchestrator_beads_fabro.commands._orchestrator_shared import (
 )
 from livespec_orchestrator_beads_fabro.intake_dor import (
     DefinitionOfReadyChecklist,
-    apply_intake_dor,
+    file_captured_work_item,
 )
-from livespec_orchestrator_beads_fabro.io import write_stdout
+from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 from livespec_orchestrator_beads_fabro.store import (
-    append_work_item,
     materialize_work_items,
     read_work_items,
 )
@@ -55,6 +62,7 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 __all__: list[str] = ["GapFinding", "run_gap_capture", "validate_gaps"]
 
 _DEFAULT_PRIORITY = 2
+_EXIT_PRECONDITION_ERROR = 3
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -79,6 +87,11 @@ def run_gap_capture(
     gaps = validate_gaps(payload=load_payload(source=gaps_json))
     spec_version = resolve_spec_version(spec_reader_cli=spec_reader_cli, context=context)
     config = resolve_store_config(cwd=context.project_root, work_items_arg=None)
+    ceiling = resolve_adopted_assertion_count_ceiling(cwd=context.project_root)
+    if not is_successful(ceiling):
+        failure = unsafe_perform_io(ceiling.failure())
+        _ = write_stderr(text=f"ERROR: {failure.detail}\n")
+        return _EXIT_PRECONDITION_ERROR
     seen = _open_gap_ids(config=config)
     created: list[dict[str, str]] = []
     skipped: list[str] = []
@@ -96,8 +109,18 @@ def run_gap_capture(
         prev_rank = rank
         item = _work_item_for(gap=gap, config=config, spec_version=spec_version, rank=rank)
         if not dry_run:
-            append_work_item(path=config, item=item)
-            _route_gap_intake(config=config, item_id=item.id)
+            routed = file_captured_work_item(
+                path=config,
+                item=item,
+                checklist=_gap_intake_checklist(),
+            )
+            if not is_successful(routed):
+                failure = unsafe_perform_io(routed.failure())
+                detail = (
+                    failure.detail if isinstance(failure, PolicySettingUnreadable) else str(failure)
+                )
+                _ = write_stderr(text=f"ERROR: {detail}\n")
+                return _EXIT_PRECONDITION_ERROR
         created.append({"id": item.id, "gap_id": gap.gap_id})
     _emit(
         spec_version=spec_version,
@@ -171,19 +194,15 @@ def _work_item_for(
     )
 
 
-def _route_gap_intake(*, config: StoreConfig, item_id: str) -> None:
-    """Run the shared intake DoR router for a freshly filed gap item."""
-    _ = apply_intake_dor(
-        path=config,
-        item_id=item_id,
-        checklist=DefinitionOfReadyChecklist(
-            single_coherent_done=True,
-            autonomously_verifiable=True,
-            autonomy_tiered=True,
-            dependency_linked=True,
-            repo_targeted=True,
-            above_floor=True,
-        ),
+def _gap_intake_checklist() -> DefinitionOfReadyChecklist:
+    """The six capture answers mechanically known for detected gap items."""
+    return DefinitionOfReadyChecklist(
+        single_coherent_done=True,
+        autonomously_verifiable=True,
+        autonomy_tiered=True,
+        dependency_linked=True,
+        repo_targeted=True,
+        above_floor=True,
     )
 
 
