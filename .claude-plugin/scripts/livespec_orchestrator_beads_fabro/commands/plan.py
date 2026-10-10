@@ -47,6 +47,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_identity import (
 from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
     NEXT_ACTION_KINDS,
     NextAction,
+    NextActionRefusal,
     ResumeDirective,
     resume_directive,
     set_next_action,
@@ -87,6 +88,7 @@ __all__: list[str] = [
     "PLAN_HANDOFF_PREFIX",
     "UNATTENDED_ENV_VAR",
     "NextAction",
+    "NextActionRefusal",
     "PlanArchiveRefusedError",
     "PlanCarrierMapRefusedError",
     "PlanContinuationAuthorization",

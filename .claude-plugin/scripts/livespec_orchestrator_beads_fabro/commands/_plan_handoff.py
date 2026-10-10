@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
     NextAction,
+    NextActionRefusal,
     set_next_action,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
@@ -31,7 +32,7 @@ def append_handoff(
     author: str,
     now: str,
     next_action: NextAction,
-) -> None:
+) -> NextActionRefusal | None:
     """Append one handoff entry AND update the epic's typed next_action.
 
     Per contracts.md's "Ledger-held handoff persistence": the next action is
@@ -46,7 +47,7 @@ def append_handoff(
         issue_id=epic_id,
         body=plan_comment_body(prefix=PLAN_HANDOFF_PREFIX, author=author, now=now, body=body),
     )
-    set_next_action(
+    return set_next_action(
         config=config,
         epic_id=epic_id,
         action=next_action,
@@ -63,7 +64,7 @@ def append_supervisor_handoff(
     body: str,
     now: str,
     next_action: NextAction,
-) -> None:
+) -> NextActionRefusal | None:
     """Append one handoff entry authored as the plan's reserved supervisor literal.
 
     Per contracts.md's "Ledger-held handoff persistence": the supervisor
@@ -71,7 +72,7 @@ def append_supervisor_handoff(
     than accepted as a caller-supplied string, mirroring `archive_thread`'s
     `author="plan-archive"` reservation.
     """
-    append_handoff(
+    return append_handoff(
         config=config,
         epic_id=epic_id,
         body=body,

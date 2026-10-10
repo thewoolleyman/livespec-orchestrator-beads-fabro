@@ -2,8 +2,8 @@
 
 Per contracts.md's "Typed next_action and last_session", an open plan epic's
 `next_action` metadata is the single authority on what happens next: an
-object carrying exactly `kind`, `ref` and `text`, beside a `last_session`
-string naming who wrote it and when. Both are updated IN PLACE, because they
+object carrying `kind`, `ref`, `text`, `required_result` and `budget`, beside
+a `last_session` string naming who wrote it and when. Both are updated IN PLACE, because they
 point at the NEXT step rather than recording the steps taken, and both are
 written only through the plan primitives — `append_handoff`,
 `append_supervisor_handoff`, and `set_next_action` here.
@@ -42,6 +42,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
+from livespec_orchestrator_beads_fabro.commands._plan_next_action_validation import (
+    NextActionRefusal,
+    validate_next_action,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import ResultObservation
 
 if TYPE_CHECKING:
@@ -63,6 +67,7 @@ __all__: list[str] = [
     "REVIEW_KIND",
     "SPEC_OP_KIND",
     "NextAction",
+    "NextActionRefusal",
     "ResumeDirective",
     "dispatchable_action_id",
     "next_action_metadata",
@@ -85,7 +90,16 @@ AWAIT_KIND = "await"
 HUMAN_KIND = "human"
 NONE_KIND = "none"
 
-NEXT_ACTION_KINDS: tuple[str, ...] = (IMPL_KIND, SPEC_OP_KIND, HUMAN_KIND, NONE_KIND)
+NEXT_ACTION_KINDS: tuple[str, ...] = (
+    IMPL_KIND,
+    SPEC_OP_KIND,
+    PROOF_KIND,
+    REVIEW_KIND,
+    ARCHIVE_KIND,
+    AWAIT_KIND,
+    HUMAN_KIND,
+    NONE_KIND,
+)
 
 _DISPATCHABLE_KINDS: tuple[str, ...] = (
     IMPL_KIND,
@@ -120,12 +134,11 @@ LEGACY_TRACKING = _LegacyTracking()
 class NextAction:
     """The typed pointer to a plan's next step.
 
-    `kind` is one of `NEXT_ACTION_KINDS`. For `impl` the `ref` is one
-    work-item id, so the action executes as the `drive` operation's
-    `impl:<ref>` action-id; for `spec-op` the `ref` is already an
-    `<operation>:<topic>` action-id. `human` MAY carry a ref naming the
-    question, and `none` MUST carry none. `text` is one imperative sentence a
-    person can read without any other context.
+    `kind` is one of `NEXT_ACTION_KINDS`. The six executable kinds carry an
+    observable `required_result` and a bounded `budget`; `human` and `none`
+    carry explicit null tracking fields. `text` is one imperative sentence a
+    person can read without any other context. Legacy three-key pointers remain
+    readable while existing plan records migrate through their next write.
     """
 
     kind: str
@@ -169,7 +182,7 @@ def next_action_metadata(
     The whole `next_action` object is rewritten on every call. `bd update
     --metadata` merges at the TOP level but replaces a nested object WHOLESALE,
     so a partial nested write silently destroys the sub-keys it omits; carrying
-    all three keys every time is what makes that merge harmless here.
+    every pointer key on a tracked write is what makes that merge harmless here.
     """
     metadata = dict(existing_metadata)
     pointer: dict[str, object] = {
@@ -177,6 +190,9 @@ def next_action_metadata(
         _REF_FIELD: action.ref,
         _TEXT_FIELD: action.text,
     }
+    if action.required_result is not LEGACY_TRACKING:
+        pointer[_REQUIRED_RESULT_FIELD] = action.required_result
+        pointer[_BUDGET_FIELD] = action.budget
     metadata[NEXT_ACTION_METADATA_KEY] = pointer
     metadata[LAST_SESSION_METADATA_KEY] = f"{session} at {now}"
     return metadata
@@ -197,7 +213,11 @@ def parse_next_action(*, value: object) -> NextAction | None:
     text = fields.get(_TEXT_FIELD)
     if not isinstance(kind, str) or not isinstance(ref, str) or not isinstance(text, str):
         return None
-    if _REQUIRED_RESULT_FIELD in fields and _BUDGET_FIELD in fields:
+    has_result = _REQUIRED_RESULT_FIELD in fields
+    has_budget = _BUDGET_FIELD in fields
+    if has_result != has_budget:
+        return None
+    if has_result:
         return NextAction(
             kind=kind,
             ref=ref,
@@ -236,8 +256,15 @@ def set_next_action(
     action: NextAction,
     session: str,
     now: str,
-) -> None:
+) -> NextActionRefusal | None:
     """Update one epic's `next_action` and `last_session` metadata in place."""
+    refusal = validate_next_action(
+        action=action,
+        epic_id=epic_id,
+        legacy_tracking=LEGACY_TRACKING,
+    )
+    if refusal is not None:
+        return refusal
     client = make_beads_client(config=config)
     record = client.show_issue(issue_id=epic_id)
     client.update_issue(
@@ -249,6 +276,7 @@ def set_next_action(
             now=now,
         ),
     )
+    return None
 
 
 def resume_directive(*, config: StoreConfig, epic_id: str, unattended: bool) -> ResumeDirective:
