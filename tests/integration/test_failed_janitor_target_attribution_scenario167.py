@@ -87,6 +87,30 @@ def _unstructured_janitor_argv() -> tuple[str, ...]:
     return ("sh", "-c", script)
 
 
+def _nested_summary_janitor_argv(
+    *, nested_targets: tuple[str, ...], aggregate_targets: tuple[str, ...]
+) -> tuple[str, ...]:
+    nested_summary = "\n".join(
+        [
+            f"Failed targets ({len(nested_targets)}):",
+            *(f"  - {target}" for target in nested_targets),
+        ]
+    )
+    aggregate_summary = "\n".join(
+        [
+            f"Failed targets ({len(aggregate_targets)}):",
+            *(f"  - {target}" for target in aggregate_targets),
+        ]
+    )
+    script = (
+        f"printf '%s\\n' {shlex.quote(nested_summary)}; "
+        "printf 'nested-check-output\\n'; "
+        f"printf '%s\\n' {shlex.quote(aggregate_summary)}; "
+        f"exit {_EXIT_CODE}"
+    )
+    return ("sh", "-c", script)
+
+
 def _plan(
     *,
     repo: Path,
@@ -184,6 +208,32 @@ def test_a_passing_recipe_in_the_stderr_tail_is_not_reported_as_the_cause(
     assert _PASSING_RECIPE not in outcome.detail, outcome.detail
     assert _PASSING_RECIPE not in str(row["detail"]), row["detail"]
     assert row["failed_targets"] == list(targets)
+
+
+def test_the_aggregate_terminal_summary_wins_over_a_nested_failed_targets_block(
+    *, tmp_path: Path
+) -> None:
+    """An inner check's summary cannot replace the aggregate runner's own summary."""
+    nested_targets = ("nested-check-failure",)
+    aggregate_targets = ("check-per-file-coverage", "check-coverage")
+    janitor = _nested_summary_janitor_argv(
+        nested_targets=nested_targets,
+        aggregate_targets=aggregate_targets,
+    )
+    journal = JournalFile(path=tmp_path / "tmp" / "fabro-dispatch-journal.jsonl")
+
+    outcome = post_merge(
+        outcome_type=DispatchOutcome,
+        plan=_plan(repo=tmp_path, janitor=janitor),
+        runner=_JanitorRunner(janitor=janitor),
+        journal=journal,
+        merged=_merged(),
+    )
+
+    row = _janitor_rows(journal=journal)[0]
+    assert row["failed_targets"] == list(aggregate_targets)
+    assert all(target in outcome.detail for target in aggregate_targets)
+    assert all(target not in outcome.detail for target in nested_targets)
 
 
 def test_without_a_summary_both_bounded_streams_are_labelled_observations(
