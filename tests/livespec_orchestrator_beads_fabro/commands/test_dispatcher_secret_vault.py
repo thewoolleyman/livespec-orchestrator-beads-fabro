@@ -98,7 +98,7 @@ def test_the_value_is_delivered_on_standard_input_and_appears_in_no_argument() -
     assert sink.set(secret=_SECRET) is None
     assert runner.stdin_texts == [_VALUE]
     argv = runner.argvs[0]
-    assert argv[:3] == [_FABRO_BIN, "secret", "set"]
+    assert argv[:5] == [_FABRO_BIN, "secret", "--server", _SERVER, "set"]
     assert _SECRET.secret_name in argv
     assert "--value-stdin" in argv
     # The whole argv as one string, so a value spliced into any argument -- or
@@ -118,8 +118,8 @@ def test_the_value_is_in_no_environment_the_child_inherits() -> None:
     assert _VALUE not in "".join((env or {}).values())
 
 
-def test_the_server_is_named_per_subcommand() -> None:
-    """`--server` is a per-subcommand flag on this CLI, so it rides the argv tail."""
+def test_the_server_is_named_on_the_secret_group() -> None:
+    """The Petri-era CLI owns `--server` on `secret`, before its `set` verb."""
     module = _module()
     runner = _RecordingRunner()
     sink = module.FabroVaultSink(
@@ -127,7 +127,7 @@ def test_the_server_is_named_per_subcommand() -> None:
     )
     _ = sink.set(secret=_SECRET)
     argv = runner.argvs[0]
-    assert argv[-2:] == ["--server", _SERVER]
+    assert argv[1:5] == ["secret", "--server", _SERVER, "set"]
 
 
 def test_a_rejected_write_refuses_with_the_value_scrubbed_out() -> None:

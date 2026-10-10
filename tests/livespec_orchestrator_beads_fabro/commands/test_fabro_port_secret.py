@@ -73,11 +73,11 @@ def test_secret_store_is_a_fabro_port_call_with_no_value_bearing_surface() -> No
         [
             _FABRO_BIN,
             "secret",
+            "--server",
+            _SERVER,
             "set",
             _SECRET_NAME,
             "--value-stdin",
-            "--server",
-            _SERVER,
         ],
         [_FABRO_BIN, "secret", "set", _SECRET_NAME, "--value-stdin"],
     ]
