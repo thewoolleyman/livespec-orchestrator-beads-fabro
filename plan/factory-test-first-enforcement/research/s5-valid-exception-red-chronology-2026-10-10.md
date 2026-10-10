@@ -62,3 +62,72 @@ The implementation sandbox preserves the three objects at:
 This note is the durable branch-visible evidence. The recovery refs preserve
 the exact local objects without changing the product history or presenting a
 later replay as earlier work.
+
+## Review-fix telemetry Red correction
+
+The later review-fix telemetry Red needs a separate provenance account. The
+initial test copied from the sandbox at approximately 02:14Z called
+`size_justified_at_admission(..., dispatch_id=...)` directly. Git object
+`5d4cdaea023c49d0c493dff9be0dce2b739d926d` preserves that exact test-only
+commit over parent `dd436b9c5d54b00ce2944ce9c3cb13381548b782`; its test SHA-256 is
+`04e9a3cb739d49872bd258368f015f608c78ff12c04495117975e09ebc6dce8f`.
+The commit's 02:15:41Z hook trailers record a collection error (captured-output
+SHA-256 `5dd847689e6dc5b516c0966817f74045ffea4f3edff8cdee0cd264d0f47407a2`),
+not a behavioral failure.
+
+An operator replay against the exact retained 45,005-byte WIP overlay (SHA-256
+`20c5c80579c2c57a2cbe6ae3f6f83f36226d507ef5ad9b87441b94cf972407e1`)
+failed at line 135 with `TypeError: unexpected keyword argument 'dispatch_id'`
+(exit 1; one failed in 3.94 seconds). That initial attempt is an interface
+failure, not a behavioral Red, and the successful 02:15:41 commit alone is not
+evidence otherwise. An independent replay of the same test bytes over the same
+verified WIP bytes reproduced that TypeError (exit 1; one failed in 1.24
+seconds). Neither replay is classified as behavioral Red.
+
+The later test-only object `56db7b3c6b4d1ab2fe53849306bcedd15447e123`
+contains a signature adapter that the initial test did not. Its parent is
+`dd436b9c5d54b00ce2944ce9c3cb13381548b782`; that bare parent does not export
+the reader, so a bare-tree replay is also not behavioral evidence. Replaying
+the adapted object over the retained WIP reached assertions but first failed
+`None is False` for a different ordinary item. This is a later correction, not
+the initial Red and not the required stale-true discriminator.
+
+The corrected frozen regression now calls the recovered WIP's existing
+two-argument API directly. It records one justified decision, observes the
+positive control, then offers ordinary decisions for an interleaved item and
+the original item. The WIP writer omits both false decisions and its item-scoped
+reader reuses the earlier true. A minimal interface-compatible prerequisite
+retaining exactly that writer and reader is preserved verbatim in
+`s5-telemetry-red-prerequisite-2026-10-10.py.txt`; its SHA-256 is
+`343e26659c97e96bb96233506a967b0c544a3f6355f398c4082c186a82d4eb04`.
+The corrected test's pre-hook SHA-256 was
+`a12b7704b55912e57e66faf2e76798b583e5db2873573c360fbf8d8945fe2d60`.
+
+The resulting behavioral failure is retained in human-readable form in
+`s5-telemetry-red-output-2026-10-10.txt` (normalized-text SHA-256
+`9c2f3191b1000a1945a7b8d7036e4658b9964679f3d2009fe63e285866f35299`).
+The exact bytes, including pytest's whitespace-only source lines, are retained
+as Base64 in `s5-telemetry-red-output-2026-10-10.txt.b64`; decoding them yields
+SHA-256 `30d2da70d7cc986ef7e420b857a69dd8290717cdc1f9f5c8f47c01c9ee0d5bfa`.
+The later ordinary admission reads the earlier justified admission and fails
+with `AssertionError: assert True is False`. That manual replay is evidence for
+the corrected assertion and prerequisite only.
+
+The normal Red hook then formatted the test without changing its behavior and
+committed the frozen test alone as
+`d89352cf2ea5a7fb02d6b53aaa6103d60e14b039`. Its current-time trailers record
+the frozen test SHA-256
+`391bee019e8eb6ab2d4a37d03e56ae40dde9c0d2d4b6f0833565508d2082c8f0`,
+captured-output SHA-256
+`32d42a42c972f2a3fd3ec26ce0e42b61c4f85d4c973984b29690413a02f610d5`,
+and capture time `2026-10-10T03:59:03Z`. A post-commit replay failed at line
+78 with the same `AssertionError: assert True is False`. This is the behavioral
+review-fix Red; no TypeError, import error, or `None is False` result is being
+substituted for it.
+
+The exact initial interface-failure object is anchored separately at
+`refs/recovery/bd-ib-pwqxso/initial-interface-failure-red`. That preservation
+does not promote its collection failure or its WIP-overlay TypeError into the
+behavioral Red established by the corrected two-argument regression.
+The hook-captured behavioral object is anchored at
+`refs/recovery/bd-ib-pwqxso/review-fix-behavioral-red`.

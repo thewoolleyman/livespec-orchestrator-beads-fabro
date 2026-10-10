@@ -1,0 +1,59 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________ test_size_justification_is_attributed_to_the_exact_dispatch __________
+
+    def test_size_justification_is_attributed_to_the_exact_dispatch() -> None:
+        """Retries and interleaved items cannot inherit another admission decision."""
+        journal = _Journal()
+        first = _Item(id="bd-first")
+        second = _Item(id="bd-second")
+
+        record_factory_size_admission_decision(
+            journal=journal,
+            item=first,
+            decision=_Decision(
+                adopted_ceiling=2,
+                assertion_count=3,
+                size_justified=True,
+            ),
+        )
+        first_admission = _size_justified(
+            records=tuple(journal.records),
+            work_item_id=first.id,
+        )
+        record_factory_size_admission_decision(
+            journal=journal,
+            item=second,
+            decision=_Decision(
+                adopted_ceiling=None,
+                assertion_count=3,
+                size_justified=False,
+            ),
+        )
+        record_factory_size_admission_decision(
+            journal=journal,
+            item=first,
+            decision=_Decision(
+                adopted_ceiling=None,
+                assertion_count=3,
+                size_justified=False,
+            ),
+        )
+
+        records = tuple(journal.records)
+        assert first_admission is True
+>       assert (
+            _size_justified(
+                records=records,
+                work_item_id=first.id,
+            )
+            is False
+        )
+E       AssertionError: assert True is False
+E        +  where True = _size_justified(records=({'adopted_assertion_count_ceiling': 2, 'assertion_count': 3, 'size_justified': True, 'stage': 'factory-size-admission', ...},), work_item_id='bd-first')
+E        +    where 'bd-first' = _Item(id='bd-first').id
+
+tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_factory_size_gate.py:80: AssertionError
+=========================== short test summary info ============================
+FAILED tests/livespec_orchestrator_beads_fabro/commands/test_dispatcher_factory_size_gate.py::test_size_justification_is_attributed_to_the_exact_dispatch
+1 failed in 1.03s

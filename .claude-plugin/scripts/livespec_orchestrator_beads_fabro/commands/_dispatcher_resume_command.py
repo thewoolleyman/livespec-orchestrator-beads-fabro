@@ -62,6 +62,9 @@ import argparse
 from collections.abc import Sequence
 from pathlib import Path
 
+from returns.pipeline import is_successful
+from returns.unsafe import unsafe_perform_io
+
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import admit_and_select
 from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
     EXIT_PRECONDITION_ERROR,
@@ -76,14 +79,20 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Dispat
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
     args_with_dispatch_factory_target,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
+    apply_factory_size_dispatch_entry,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import dispatch_one
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
+    failed_dispatch_outcome,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import prepare
 from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import arm_otel_egress
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import journal_path
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import journal_path, store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall import (
     pre_dispatch_wall_exit,
 )
@@ -166,15 +175,15 @@ def run_resume_command(*, args: argparse.Namespace) -> int:
     if prepared is None:
         return EXIT_PRECONDITION_ERROR
     items, journal = prepared
-    item = next((one for one in items if one.id == args.item), None)
-    if item is None:
-        _ = write_stderr(
-            text=(
-                f"ERROR: work-item {args.item} not found in the target-tenant"
-                f" ({repo.name}); --repo and --item must reference the same tenant\n"
-            )
-        )
-        return EXIT_PRECONDITION_ERROR
+    target = _resume_target_or_exit(
+        args=args,
+        repo=repo,
+        items=items,
+        journal=journal,
+    )
+    if isinstance(target, int):
+        return target
+    item = target
     # The ladder grades the item's ledger status itself, so the item is looked up
     # by id across EVERY row rather than through `ready_items`: a non-`ready`
     # item has to reach the ladder to be refused by name, with the remedy its own
@@ -225,6 +234,49 @@ def run_resume_command(*, args: argparse.Namespace) -> int:
     # The SAME post-verdict tail the single dispatch runs, so the resume journals
     # exactly as a dispatch does and its outcome maps to the same exit codes.
     return dispatch_tail_exit(args=resumed, repo=repo, outcome=outcome, journal=journal)
+
+
+def _resume_target_or_exit(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    items: list[WorkItem],
+    journal: JournalFile,
+) -> WorkItem | int:
+    """Resolve and size-gate the named row before resume observation or walls."""
+    item = next((one for one in items if one.id == args.item), None)
+    if item is None:
+        _ = write_stderr(
+            text=(
+                f"ERROR: work-item {args.item} not found in the target-tenant"
+                f" ({repo.name}); --repo and --item must reference the same tenant\n"
+            )
+        )
+        return EXIT_PRECONDITION_ERROR
+    size_result = apply_factory_size_dispatch_entry(
+        cwd=repo,
+        path_factory=lambda: store_config(repo=repo),
+        items=(item,),
+        journal=journal,
+    )
+    if not is_successful(size_result):
+        failure = unsafe_perform_io(size_result.failure())
+        outcome = failed_dispatch_outcome(
+            journal=journal,
+            work_item_id=item.id,
+            stage="configuration",
+            detail=failure.detail,
+        )
+        return dispatch_tail_exit(args=args, repo=repo, outcome=outcome, journal=journal)
+    size_refusals = unsafe_perform_io(size_result.unwrap())
+    if size_refusals:
+        return dispatch_tail_exit(
+            args=args,
+            repo=repo,
+            outcome=size_refusals[0],
+            journal=journal,
+        )
+    return item
 
 
 def _resumed_args(

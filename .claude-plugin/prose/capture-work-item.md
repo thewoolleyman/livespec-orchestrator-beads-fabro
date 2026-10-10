@@ -37,6 +37,12 @@ Optional follow-ups (skip-confirmable):
 - **Acceptance criteria** — the gradeable assertions the item is judged
   against; string or null (default null). Author them to the rules in
   "Writing acceptance criteria" below BEFORE filing.
+- **Size justification** — null unless the sanctioned effective-criteria
+  count exceeds a configured adopted assertion-count ceiling. An exception is
+  valid only as an object with EXACTLY `rationale`, `author`, and `at`: each
+  value is a non-empty string after trimming and `at` is an ISO-8601
+  timestamp. Gather the rationale and attribution from the approving human;
+  never invent them. A malformed or absent object does not waive the gate.
 - **Assignee** — string or null (default null).
 - **Depends-on** — comma-separated work-item ids (the tenant's
   configured `<prefix>-XXXXXX` form); empty list permitted.
@@ -129,13 +135,20 @@ and the host-side wall both grade it against
 
 ### Step 2 — Confirm and file
 
-Show the user the assembled record and ask "file?". On `yes`, append:
+Resolve the six intake answers in Step 3, show the user the assembled record
+including the raw `size_justification`, and ask "file?". On `yes`, call the
+single filing seam below. It validates the committed adopted-ceiling setting
+BEFORE its first ledger write, records the justification before routing, and
+then invokes the shared intake gate; do not split those acts into hand-written
+store calls:
 
 ```python
 from livespec_orchestrator_beads_fabro._ids import new_work_item_id
-from livespec_orchestrator_beads_fabro._beads_client import EDGE_PARENT_CHILD, make_beads_client
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
-from livespec_orchestrator_beads_fabro.store import append_work_item
+from livespec_orchestrator_beads_fabro.intake_dor import (
+    DefinitionOfReadyChecklist,
+    file_captured_work_item,
+)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 from livespec_runtime.work_items.rank import key_between
 from datetime import datetime, timezone
@@ -166,14 +179,25 @@ item = WorkItem(
     # One `- ` bullet per assertion, each ending in a period, per "Writing acceptance criteria".
     acceptance_criteria=acceptance_criteria,  # str | None; None when unsupplied.
 )
-append_work_item(path=config, item=item)
-if plan_parent_id is not None:
-    make_beads_client(config=config).add_dependency(
-        from_id=item.id,
-        to_id=plan_parent_id,
-        edge_type=EDGE_PARENT_CHILD,
+verdict = file_captured_work_item(
+    path=config,
+    item=item,
+    size_justification=size_justification,
+    plan_parent_id=plan_parent_id,
+    checklist=DefinitionOfReadyChecklist(
+        single_coherent_done=single_coherent_done,
+        autonomously_verifiable=autonomously_verifiable,
+        autonomy_tiered=autonomy_tiered,
+        dependency_linked=dependency_linked,
+        repo_targeted=repo_targeted,
+        above_floor=above_floor,
     )
+)
 ```
+
+`verdict` is an `IOResult`. If it is a failure, surface its configuration or
+store error and STOP: no item was filed when committed ceiling validation
+failed. On success, unwrap the routed status and continue.
 
 An epic IS a plan, so an epic filed here MUST carry the canonical
 `plan_slug` that listings and the Control-Plane surface resolve it by —
@@ -269,35 +293,20 @@ answerable from Step 1):
 - `above_floor` — is it above the size floor (worth a discrete
   dispatch)?
 
-Then route the just-filed item:
-
-```python
-from livespec_orchestrator_beads_fabro.intake_dor import (
-    DefinitionOfReadyChecklist,
-    apply_intake_dor,
-)
-
-verdict = apply_intake_dor(
-    path=config,
-    item_id=item.id,
-    checklist=DefinitionOfReadyChecklist(
-        single_coherent_done=single_coherent_done,
-        autonomously_verifiable=autonomously_verifiable,
-        autonomy_tiered=autonomy_tiered,
-        dependency_linked=dependency_linked,
-        repo_targeted=repo_targeted,
-        above_floor=above_floor,
-    ),
-)
-# verdict is one of "pending-approval" / "ready" / "backlog" / "blocked".
-```
+Step 2 already routed the just-filed item through this checklist. Do NOT call
+the router a second time: comments are append-only and a second pass would
+duplicate the audit record. The unwrapped status is one of
+`pending-approval` / `ready` / `backlog` / `blocked`.
 
 Narrate the verdict to the user:
 
 - `pending-approval` — DoR-passing and waiting for the admission valve.
 - `ready` — DoR-passing and approved onward because the effective
   `admission_policy` is `auto` and no dependency edge blocks dispatch.
-- `backlog` — epic-shaped and waiting for decomposition.
+- `backlog` — either epic-shaped or above the adopted assertion ceiling
+  without a valid justification. For the size case, show the recorded reason
+  verbatim; it names the adopted ceiling, sanctioned-parser count, and missing
+  or invalid justification.
 - `blocked` — not autonomously verifiable or missing a dispatch facet;
   carries `blocked_reason: needs-human` and MUST NOT be filed `ready`.
 
