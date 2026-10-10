@@ -169,3 +169,53 @@ def test_capture_and_plan_use_invocation_values_before_consent() -> None:
         consent = prose.index(consent_text)
 
         assert supplied < missing < consent, name
+
+
+def test_rewrite_preserves_the_protected_normative_force() -> None:
+    plan = _squash(_read("plan.md"))
+    plan_requirements = (
+        "called from the reviewer's own session",
+        "while that set differs from the epic's child set",
+        "record predates the latest status change",
+        "does not attest complete requirement-carrier coverage",
+        "each `human_attested` plan assertion is covered separately",
+        "a later negative verdict defeats an older verified one",
+        "actual independence of the plan's implementation",
+        "still routed socially",
+        "publish every plan record through the one posting primitive",
+        "the primitive computes the rest",
+        "a different session must replay them",
+        "normal installation path",
+        "refuses the move while any file outside `plan/` references",
+        "same pull request as the move",
+        "no stub, marker, forwarding note, or empty directory",
+        "a plan assertion is not transferable",
+        "disposing a plan child is **session-performable**",
+        "both refuse a **spec-change-tier** child",
+        "this guard only warns: it never refuses a write",
+        "the warning must be surfaced",
+        "an unattended resume must not author the assertions",
+        "unless `next_action` was already `kind: impl`",
+        "does not manufacture consent for a new write",
+    )
+    missing = tuple(requirement for requirement in plan_requirements if requirement not in plan)
+    assert not missing, missing
+
+    discuss = _squash(_read("discuss-work-item.md"))
+    assert "executes only on an explicit maintainer instruction" in discuss
+    assert "an implicit or ambiguous request must not trigger a drive" in discuss
+    assert "read the event back" in discuss
+
+    capture = _squash(_read("capture-work-item.md"))
+    assert "capture must not refuse on a finding or on an empty parse" in capture
+
+    groom = _squash(_read("groom.md"))
+    assert "only after explicit approval" in groom
+    assert "an all-spec-change cut" in groom
+    assert "the original stays `backlog`" in groom
+
+    for name in ("capture-impl-gaps.md", "capture-spec-drift.md"):
+        operation = _squash(_read(name))
+        assert "every invocation" in operation, name
+        assert "on every exit path" in operation, name
+        assert "report `withheld_reason` verbatim" in operation, name
