@@ -38,6 +38,7 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "fabro_run_terminal_outcome",
     "inspect_run",
+    "inspect_terminal_run",
 ]
 
 _FABRO_INSPECT_TIMEOUT_SECONDS = 300.0
@@ -64,6 +65,32 @@ def inspect_run(
         result=cast("CommandResult", inspect.command),
     )
     return inspect
+
+
+def inspect_terminal_run(
+    *,
+    plan: DispatchPlan,
+    runner: CommandRunner,
+    journal: JournalWriter,
+    run_id: str | None,
+    exit_code: int,
+) -> FabroInspectResult | None:
+    """Inspect once, then refresh a failed record whose cause has not arrived."""
+    inspect = inspect_run(plan=plan, runner=runner, journal=journal, run_id=run_id)
+    needs_refresh = bool(
+        exit_code != 0
+        and run_id is not None
+        and inspect is not None
+        and inspect.command.exit_code == 0
+        and inspect.status_kind == "failed"
+        and inspect.failure is None
+    )
+    refreshed = (
+        inspect_run(plan=plan, runner=runner, journal=journal, run_id=run_id)
+        if needs_refresh
+        else None
+    )
+    return refreshed if refreshed is not None and refreshed.failure is not None else inspect
 
 
 def fabro_run_terminal_outcome(

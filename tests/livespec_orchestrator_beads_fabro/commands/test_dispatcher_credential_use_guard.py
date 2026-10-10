@@ -52,6 +52,8 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
+    CREDENTIAL_EXPIRY_ENV_VAR,
+    CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
     CREDENTIAL_USE_DEADLINE_ENV_VAR,
     GUARD_REFUSAL_EXIT_CODE,
     GUARD_TERM_GRACE_SECONDS,
@@ -356,6 +358,7 @@ def test_a_deadline_the_guard_cannot_read_refuses_rather_than_running(
 
 
 def test_the_start_check_reports_remaining_budget_without_running_anything(
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     """The QUEUE/PREPARATION-AGING check a prepare step runs before any agent node.
@@ -364,7 +367,15 @@ def test_the_start_check_reports_remaining_budget_without_running_anything(
     command to wrap: a credential that aged below its remaining worker lifetime
     while the run sat queued must refuse at startup, not mid-turn.
     """
+    # This is the deadline-only shape. A factory worker legitimately carries
+    # the OUTER dispatch's credential grade, but inheriting it would make this
+    # subprocess grade that unrelated credential instead of exercising the
+    # synthetic deadline below.
+    monkeypatch.setenv(CREDENTIAL_EXPIRY_ENV_VAR, "1")
+    monkeypatch.setenv(CREDENTIAL_REQUIRED_REMAINING_ENV_VAR, "999999999")
     env = dict(os.environ)
+    env.pop(CREDENTIAL_EXPIRY_ENV_VAR)
+    env.pop(CREDENTIAL_REQUIRED_REMAINING_ENV_VAR)
     env[CREDENTIAL_USE_DEADLINE_ENV_VAR] = str(int(time.time()) + 3600)
     fresh = subprocess.run(
         ["/bin/sh", str(_guard(tmp_path=tmp_path)), "--check-start"],
