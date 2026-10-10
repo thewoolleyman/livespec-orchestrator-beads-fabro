@@ -838,5 +838,12 @@
     "heading": "## Scenario 167 \u2014 A failed janitor names the aggregate runner's failed targets",
     "work_item": "bd-ib-ma3fvj",
     "first_seen": "2026-10-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 168 \u2014 An authorized plan resume continues to the archive without a picker, and the typed next action names every remaining step",
+    "work_item": "bd-ib-7sjdzv",
+    "first_seen": "2026-10-09"
   }
 ]
