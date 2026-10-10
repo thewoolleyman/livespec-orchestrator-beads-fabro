@@ -149,5 +149,7 @@ def _checkpoint_completed_route(
 
 
 def _node_succeeded(*, outcomes: dict[object, object], node: str) -> bool:
-    raw = cast("dict[object, object]", outcomes.get(node))
-    return raw.get("status") == "succeeded"
+    raw = outcomes.get(node)
+    if not isinstance(raw, dict):
+        return False
+    return cast("dict[object, object]", raw).get("status") == "succeeded"
