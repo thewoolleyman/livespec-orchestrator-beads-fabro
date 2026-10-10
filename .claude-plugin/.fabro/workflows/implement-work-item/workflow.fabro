@@ -265,13 +265,13 @@ digraph ImplementWorkItem {
     // idempotence — ask the forge whether an open pull request already exists for
     // this branch, and create one ONLY when there is none.
     //
-    // THE PUSH IS A PLAIN FAST-FORWARD, AND THIS NODE NEVER REWRITES A REF. That
-    // is the contract's own division of labour, not a limitation: the ratified
-    // clause grants a lease-guarded force push to the `pr` node ALONE, for the
-    // rebase it performs, and says nothing of the kind about this node. So the
-    // ordinary case is all this step needs — within one run HEAD only ever
-    // advances, because fabro checkpoints each stage on top of the last, and every
-    // janitor re-entry therefore fast-forwards the same branch.
+    // REFRESH THE DEFAULT-BRANCH BASE BEFORE THE FIRST PUSH. GitHub compares a
+    // new branch's workflow files with the default branch's CURRENT tip. Without
+    // this fetch + rebase, a workflow file changed only by master after dispatch
+    // looks like an older workflow-file update from this App and GitHub refuses
+    // the push for lack of workflows permission. The remote publish ref is still
+    // written by a plain push: this node never force-pushes or rewrites a remote
+    // ref.
     //
     // The case that DIVERGES is a re-DISPATCH whose publish branch still carries a
     // previous run's work: this run's HEAD is not a descendant of that tip, so the
@@ -290,7 +290,7 @@ digraph ImplementWorkItem {
         label="Publish the branch + open the draft PR the proof is captured on"
         shape=parallelogram
         timeout="1800s"
-        script="branch=\"${LIVESPEC_PUBLISH_BRANCH:-}\"; if test -z \"$branch\"; then echo 'LIVESPEC_PUBLISH_DRAFT_NO_BRANCH: no LIVESPEC_PUBLISH_BRANCH in this script environment, so the publish branch cannot be named; failing closed before proof capture' >&2; exit 1; fi; git push -u origin \"HEAD:refs/heads/$branch\"; status=$?; if test \"$status\" -ne 0; then echo 'LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED: origin could not be reached, or refused the publish branch as non-fast-forward because it still carries a previous run of this item; no pull request can carry the Proof of Done record, so failing closed before proof capture. Remedy: clear or reconcile the stale publish branch, then re-dispatch' >&2; exit \"$status\"; fi; existing=$(gh pr list --head \"$branch\" --state open --json number --jq '.[0].number'); status=$?; if test \"$status\" -ne 0; then echo 'LIVESPEC_PUBLISH_DRAFT_LOOKUP_FAILED: the forge could not be asked whether a pull request is already open for the publish branch; failing closed rather than risk opening a second one' >&2; exit \"$status\"; fi; if test -n \"$existing\"; then echo \"LIVESPEC_PUBLISH_DRAFT_EXISTS: pull request #$existing is already open for $branch; pushed this run HEAD and opened nothing\" >&2; exit 0; fi; gh pr create --draft --base \"{{ inputs.default_branch }}\" --head \"$branch\" --title \"$branch\" --body \"Draft opened by the publish_draft stage so the Proof of Done record can be captured on it. The pr stage sets the real title and body, marks this ready and arms auto-merge.\"; status=$?; if test \"$status\" -ne 0; then echo 'LIVESPEC_PUBLISH_DRAFT_CREATE_FAILED: no pull request is open for the publish branch and gh pr create failed; failing closed before proof capture' >&2; exit \"$status\"; fi; exit 0"
+        script="branch=\"${LIVESPEC_PUBLISH_BRANCH:-}\"; if test -z \"$branch\"; then echo 'LIVESPEC_PUBLISH_DRAFT_NO_BRANCH: no LIVESPEC_PUBLISH_BRANCH in this script environment, so the publish branch cannot be named; failing closed before proof capture' >&2; exit 1; fi; default_branch=\"{{ inputs.default_branch }}\"; git fetch origin \"$default_branch\" --quiet; status=$?; if test \"$status\" -ne 0; then echo \"LIVESPEC_PUBLISH_DRAFT_REFRESH_FAILED: origin/$default_branch could not be fetched, so the publish branch base cannot be refreshed; failing closed before proof capture\" >&2; exit \"$status\"; fi; git rebase \"origin/$default_branch\"; status=$?; if test \"$status\" -ne 0; then echo \"LIVESPEC_PUBLISH_DRAFT_REFRESH_FAILED: this run could not be rebased onto origin/$default_branch; failing closed before proof capture with the rebase state preserved\" >&2; exit \"$status\"; fi; git push -u origin \"HEAD:refs/heads/$branch\"; status=$?; if test \"$status\" -ne 0; then echo 'LIVESPEC_PUBLISH_DRAFT_PUSH_FAILED: origin could not be reached, or refused the publish branch as non-fast-forward because it still carries a previous run of this item; no pull request can carry the Proof of Done record, so failing closed before proof capture. Remedy: clear or reconcile the stale publish branch, then re-dispatch' >&2; exit \"$status\"; fi; existing=$(gh pr list --head \"$branch\" --state open --json number --jq '.[0].number'); status=$?; if test \"$status\" -ne 0; then echo 'LIVESPEC_PUBLISH_DRAFT_LOOKUP_FAILED: the forge could not be asked whether a pull request is already open for the publish branch; failing closed rather than risk opening a second one' >&2; exit \"$status\"; fi; if test -n \"$existing\"; then echo \"LIVESPEC_PUBLISH_DRAFT_EXISTS: pull request #$existing is already open for $branch; pushed this run HEAD and opened nothing\" >&2; exit 0; fi; gh pr create --draft --base \"{{ inputs.default_branch }}\" --head \"$branch\" --title \"$branch\" --body \"Draft opened by the publish_draft stage so the Proof of Done record can be captured on it. The pr stage sets the real title and body, marks this ready and arms auto-merge.\"; status=$?; if test \"$status\" -ne 0; then echo 'LIVESPEC_PUBLISH_DRAFT_CREATE_FAILED: no pull request is open for the publish branch and gh pr create failed; failing closed before proof capture' >&2; exit \"$status\"; fi; exit 0"
     ]
 
     // Proof capture (S5 / bd-ib-b4u6b7; SPECIFICATION/contracts.md
