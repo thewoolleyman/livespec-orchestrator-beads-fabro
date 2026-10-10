@@ -53,9 +53,10 @@ def janitor_failure_diagnosis(*, stdout: str, stderr: str) -> JanitorFailureDiag
 
 
 def _failed_targets(*, text: str) -> tuple[str, ...]:
-    summary = _SUMMARY.search(text)
-    if summary is None:
+    summaries = tuple(_SUMMARY.finditer(text))
+    if not summaries:
         return ()
+    summary = summaries[-1]
     return tuple(
         match.group("target")
         for row in summary.group("rows").splitlines()
