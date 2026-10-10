@@ -151,3 +151,21 @@ def test_implement_routes_product_work_and_uses_beads_lifecycle_terms() -> None:
     assert "jsonl" not in prose
     assert "work-items.jsonl" not in prose
     assert 'status != "open"' not in prose
+
+
+def test_capture_and_plan_use_invocation_values_before_consent() -> None:
+    for name in ("capture-work-item.md", "plan.md"):
+        prose = _squash(_read(name))
+        supplied_text = "use values supplied by the invocation"
+        missing_text = "ask only for required values still missing"
+        consent_text = "obtain write consent"
+
+        assert supplied_text in prose, name
+        assert missing_text in prose, name
+        assert consent_text in prose, name
+
+        supplied = prose.index(supplied_text)
+        missing = prose.index(missing_text)
+        consent = prose.index(consent_text)
+
+        assert supplied < missing < consent, name
