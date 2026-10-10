@@ -9,22 +9,32 @@ repository layer and the render order, not of the tier renderer by itself.
 
 The workflow layer is read from THIS repository's own committed
 `workflow.toml` rather than synthesized, and the last test resolves against
-this repository's own `.livespec.jsonc`, so the negative control (all three
-node classes render Claude adapters — implementer Opus 5, review Opus 4.8,
-publish Haiku 4.5 — with none on Codex) is graded against what a dispatch from
-here would really carry.
+this repository's own `.livespec.jsonc`, so the control (every committed
+structured entry's agent, model and effort reach its rendered adapter) is
+graded against what a dispatch from here would really carry, without pinning
+which agent or model the repository has chosen.
 """
 
 from __future__ import annotations
 
 import json
 import shlex
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from livespec_orchestrator_beads_fabro.commands import _jsonc as jsonc
+from livespec_orchestrator_beads_fabro.commands._acp_agent_entry import AcpAgentEntry
+from livespec_orchestrator_beads_fabro.commands._acp_agent_mechanism import (
+    ENV_MECHANISM,
+    JSON_ENV_MECHANISM,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_catalogs import builtin_catalogs
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import resolve_acp_nodes
-from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
+from livespec_orchestrator_beads_fabro.commands._config_acp import (
+    resolve_acp_catalogs_for,
+    resolve_acp_node_overlays,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import (
     workflow_layer,
 )
@@ -268,32 +278,55 @@ def test_scenario91_the_empty_model_opt_out_omits_the_keys_rather_than_emptying_
     assert disposition == CODEX_ADAPTER_BASE
 
 
-def test_this_repository_routes_every_agent_node_to_codex() -> None:
-    """The negative control, graded on THIS repository's committed configuration.
+def _committed_structured_entries() -> dict[str, dict[str, str]]:
+    """This repository's committed structured `acp_nodes` entries, by node."""
+    config = jsonc.loads(text=(_REPO_ROOT / _CONFIG_NAME).read_text(encoding="utf-8"))
+    dispatcher = config["livespec-orchestrator-beads-fabro"]["dispatcher"]
+    return {
+        node: entry
+        for node, entry in dispatcher.get("acp_nodes", {}).items()
+        if isinstance(entry, dict)
+    }
 
-    Maintainer direction 2026-10-09 (relayed through the herdr plan root during
-    plan fabro-currency's P4 wave): the standing factory requirement is CODEX
-    ONLY, so the committed `dispatcher.acp_nodes` table routes every agent node
-    to the baked Codex adapter. This supersedes the 2026-08-28 reversal that
-    had moved review back to Claude Opus. One dispatch, three node classes,
-    three answers that must all be Codex: review renders read-only on
-    gpt-5.6-sol, the implementer renders agent-full-access on gpt-5.6-sol at
-    xhigh, and the publish node renders gpt-5.6-terra. Asserting them together
-    is the point: a change that quietly re-providered any one would pass any
-    single assertion taken alone.
+
+# How a rendered adapter spells one (key, value) setting under each mechanism
+# the built-in agents declare.
+_SPELLINGS: dict[str, Callable[[str, str], str]] = {
+    ENV_MECHANISM: lambda key, value: f"{key}={value}",
+    JSON_ENV_MECHANISM: lambda key, value: f'"{key}":"{value}"',
+}
+
+
+def _model_and_effort_spellings(*, entry: dict[str, str], agent: AcpAgentEntry) -> tuple[str, str]:
+    """How a rendered adapter spells this entry's model and effort for its agent."""
+    spell = _SPELLINGS[agent.mechanism.kind]
+    return (
+        spell(agent.mechanism.model, entry["model"]),
+        spell(agent.mechanism.effort, entry["effort"]),
+    )
+
+
+def test_this_repository_committed_entries_reach_their_rendered_adapters() -> None:
+    """The control graded on THIS repository's committed configuration.
+
+    It pins no model, agent or effort: those are the repository's to choose and
+    change. What it grades is that the committed table resolves and renders
+    through the real dispatch path with no refusal, and that every structured
+    entry's agent, model and effort reach the node's rendered adapter through
+    the mechanism the agent catalog declares for that agent.
     """
+    catalogs = resolve_acp_catalogs_for(cwd=_REPO_ROOT)
+    assert not isinstance(catalogs, str), catalogs
     adapters = _rendered_adapters(repo=_REPO_ROOT)
+    entries = _committed_structured_entries()
 
-    for node in ("review", "implement", "pr"):
-        assert adapters[node].endswith(f" {_CODEX_ADAPTER_COMMAND}"), node
-        assert "claude-agent-acp" not in adapters[node], node
-
-    assert "gpt-5.6-sol" in adapters["review"]
-    assert "INITIAL_AGENT_MODE=read-only" in adapters["review"]
-
-    assert "gpt-5.6-sol" in adapters["implement"]
-    assert '"model_reasoning_effort":"xhigh"' in adapters["implement"]
-    assert "INITIAL_AGENT_MODE=agent-full-access" in adapters["implement"]
-
-    assert "gpt-5.6-terra" in adapters["pr"]
-    assert adapters["pr"] != _PUBLISH_DEFAULT_HAIKU
+    for node, entry in entries.items():
+        agent = catalogs.agents[entry["agent"]]
+        rendered = adapters[node]
+        assert rendered.endswith(f" {agent.command}"), (node, rendered)
+        model, effort = _model_and_effort_spellings(entry=entry, agent=agent)
+        assert model in rendered, (node, rendered)
+        assert effort in rendered, (node, rendered)
+        for other in catalogs.agents.values():
+            if other.command != agent.command:
+                assert other.command not in rendered, (node, rendered)
