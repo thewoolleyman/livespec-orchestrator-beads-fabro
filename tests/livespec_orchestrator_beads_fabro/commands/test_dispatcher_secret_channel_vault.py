@@ -172,6 +172,29 @@ def test_a_routing_refusal_leaves_no_overlay_file_behind(tmp_path: Path) -> None
     assert not overlay.exists()
 
 
+def test_a_routing_refusal_removes_a_preexisting_credential_overlay(
+    tmp_path: Path,
+) -> None:
+    """A refused replacement cannot preserve credentials from an earlier launch.
+
+    The dispatch cleanup stack is registered only after materialization succeeds,
+    so this function owns cleanup when native-secret routing itself refuses.
+    """
+    overlay = tmp_path / "overlay.toml"
+    _ = overlay.write_text(_complete_bundle(), encoding="utf-8")
+
+    refusal = write_routed_overlay(
+        overlay=overlay,
+        rendered=_complete_bundle(),
+        channel=SECRET_CHANNEL_NATIVE_SECRETS,
+        proof_credentials_env="",
+        sink=None,
+    )
+
+    assert refusal is not None
+    assert not overlay.exists()
+
+
 def test_a_routed_bundle_is_written_mode_600(tmp_path: Path) -> None:
     """The written overlay is readable by its owner alone, routed or inline."""
     overlay = tmp_path / "overlay.toml"
