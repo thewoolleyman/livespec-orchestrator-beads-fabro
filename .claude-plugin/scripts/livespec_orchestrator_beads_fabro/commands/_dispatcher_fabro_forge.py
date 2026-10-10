@@ -43,7 +43,7 @@ class FabroReleaseObservation:
 @dataclass(frozen=True, kw_only=True)
 class FabroForgeFailure:
     detail: str
-    stale_observed_at: datetime
+    stale_observation: FabroReleaseObservation | None
 
 
 def fabro_release_cache_path(*, repo: Path) -> Path:
@@ -77,7 +77,7 @@ def release_observation(
     if result.exit_code != 0:
         return FabroForgeFailure(
             detail=result.stderr.strip(),
-            stale_observed_at=cast(FabroReleaseObservation, stale).observed_at,
+            stale_observation=stale,
         )
     pages = cast("list[list[dict[str, object]]]", json.loads(result.stdout))
     releases = tuple(
@@ -87,6 +87,7 @@ def release_observation(
         )
         for page in pages
         for record in page
+        if record.get("draft") is not True
     )
     observation = FabroReleaseObservation(observed_at=now, releases=releases)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -117,7 +118,7 @@ def release_tag_is_ancestor(
     serving_commit: str,
     repo: Path,
     runner: FabroRunner,
-) -> bool:
+) -> bool | FabroForgeFailure:
     endpoint = _COMPARE_ENDPOINT.format(
         tag=quote(tag, safe=""),
         commit=quote(serving_commit, safe=""),
@@ -127,8 +128,27 @@ def release_tag_is_ancestor(
         cwd=repo,
         timeout_seconds=_FORGE_TIMEOUT_SECONDS,
     )
-    payload = cast("dict[str, object]", json.loads(result.stdout))
-    return payload["status"] in {"ahead", "identical"}
+    if result.exit_code != 0:
+        return FabroForgeFailure(
+            detail=(
+                f"GitHub compare failed with exit {result.exit_code}: " f"{result.stderr.strip()}"
+            ),
+            stale_observation=None,
+        )
+    try:
+        payload = cast("dict[str, object]", json.loads(result.stdout))
+        status = cast(str, payload["status"])
+        return {
+            "ahead": True,
+            "identical": True,
+            "behind": False,
+            "diverged": False,
+        }[status]
+    except (KeyError, TypeError, ValueError) as error:
+        return FabroForgeFailure(
+            detail=f"GitHub compare returned malformed metadata: {error}",
+            stale_observation=None,
+        )
 
 
 def _parse_timestamp(*, text: str) -> datetime:

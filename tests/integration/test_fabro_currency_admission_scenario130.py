@@ -81,6 +81,18 @@ def test_an_out_of_window_base_refuses_with_complete_publication_evidence(
                 stdout=_releases(
                     records=[
                         {
+                            "tag_name": "v100.0.0-draft",
+                            "published_at": None,
+                            "draft": True,
+                            "prerelease": True,
+                        },
+                        {
+                            "tag_name": "v100.0.0-rc.1",
+                            "published_at": "2026-10-09T00:00:00Z",
+                            "draft": True,
+                            "prerelease": True,
+                        },
+                        {
                             "tag_name": "v99.0.0",
                             "published_at": "2026-08-01T00:00:00Z",
                             "draft": False,
@@ -234,8 +246,9 @@ def test_a_failed_refresh_refuses_instead_of_reusing_a_stale_observation(
         "ERROR: Fabro currency admission refused factory hp: serving integration commit "
         "abcdef1234567890; cached release metadata observed 2026-10-02T02:59:59Z is "
         "older than seven days, and refresh failed at 2026-10-10T03:00:00Z (GitHub "
-        "unavailable). Restore the fabro-sh/fabro GitHub Releases observation and retry "
-        "dispatch.\n"
+        "unavailable); newest observed release v0.399.0 was published "
+        "2026-10-01T00:00:00Z. Restore the fabro-sh/fabro GitHub Releases observation "
+        "and retry dispatch.\n"
     )
     assert runner.calls == [
         ["/opt/fabro-hp", "--version"],
@@ -247,6 +260,144 @@ def test_a_failed_refresh_refuses_instead_of_reusing_a_stale_observation(
             "repos/fabro-sh/fabro/releases?per_page=100",
         ],
     ]
+
+
+@pytest.mark.parametrize(
+    ("version_result", "failed_condition"),
+    [
+        (
+            _command(stdout="", exit_code=1, stderr="version unavailable"),
+            "fabro --version failed with exit 1 (version unavailable)",
+        ),
+        (
+            _command(stdout="fabro version unknown\n"),
+            "fabro --version output did not identify the serving integration commit",
+        ),
+    ],
+)
+def test_an_unidentifiable_serving_build_refuses_with_release_evidence(
+    tmp_path: Path,
+    version_result: CommandResult,
+    failed_condition: str,
+) -> None:
+    runner = _Runner(
+        results=[
+            version_result,
+            _command(
+                stdout=_releases(
+                    records=[
+                        {
+                            "tag_name": "v0.401.0-nightly.0",
+                            "published_at": "2026-10-09T00:00:00Z",
+                            "draft": False,
+                            "prerelease": True,
+                        }
+                    ]
+                )
+            ),
+        ],
+        calls=[],
+    )
+
+    decision = importlib.import_module(_MODULE_NAME).fabro_currency_admission(
+        target=FactoryTarget(name="edge", server="https://edge.example", dev_token=None),
+        fabro_bin="/opt/fabro-edge",
+        repo=tmp_path,
+        runner=runner,
+        now=datetime(2026, 10, 10, tzinfo=timezone.utc),
+        cache_path=tmp_path / "release-observation.json",
+    )
+
+    assert decision.admitted is False
+    assert decision.message == (
+        "ERROR: Fabro currency admission refused factory edge: serving integration commit "
+        f"is unknown because {failed_condition}; newest observed release "
+        "v0.401.0-nightly.0 was published 2026-10-09T00:00:00Z; release metadata was "
+        "observed 2026-10-10T00:00:00Z. Restore factory edge's Fabro binary so "
+        "`fabro --version` reports its serving integration commit, then retry dispatch.\n"
+    )
+
+
+def test_a_cold_cache_refresh_failure_refuses_without_a_traceback(tmp_path: Path) -> None:
+    runner = _Runner(
+        results=[
+            _command(stdout=f"fabro 0.401.0 ({_SERVING_COMMIT} 2026-10-09)\n"),
+            _command(stdout="", exit_code=1, stderr="GitHub unavailable"),
+        ],
+        calls=[],
+    )
+
+    decision = importlib.import_module(_MODULE_NAME).fabro_currency_admission(
+        target=FactoryTarget(name="edge", server="https://edge.example", dev_token=None),
+        fabro_bin="/opt/fabro-edge",
+        repo=tmp_path,
+        runner=runner,
+        now=datetime(2026, 10, 10, tzinfo=timezone.utc),
+        cache_path=tmp_path / "missing-observation.json",
+    )
+
+    assert decision.admitted is False
+    assert decision.message == (
+        "ERROR: Fabro currency admission refused factory edge: serving integration commit "
+        "abcdef1234567890; no cached release metadata observation exists, and refresh "
+        "failed at 2026-10-10T00:00:00Z (GitHub unavailable); newest observed release "
+        "and observation time are unavailable. Restore the fabro-sh/fabro GitHub Releases "
+        "observation and retry dispatch.\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "compare_result",
+    [
+        _command(stdout="", exit_code=1, stderr="GitHub compare unavailable"),
+        _command(stdout="not-json"),
+        _command(stdout='{"unexpected": "shape"}'),
+    ],
+)
+def test_failed_or_malformed_ancestry_evidence_refuses_with_context(
+    tmp_path: Path,
+    compare_result: CommandResult,
+) -> None:
+    runner = _Runner(
+        results=[
+            _command(stdout=f"fabro 0.401.0 ({_SERVING_COMMIT} 2026-10-09)\n"),
+            _command(
+                stdout=_releases(
+                    records=[
+                        {
+                            "tag_name": "v0.401.0-nightly.0",
+                            "published_at": "2026-10-09T00:00:00Z",
+                            "draft": False,
+                            "prerelease": True,
+                        }
+                    ]
+                )
+            ),
+            compare_result,
+        ],
+        calls=[],
+    )
+
+    decision = importlib.import_module(_MODULE_NAME).fabro_currency_admission(
+        target=FactoryTarget(name="edge", server="https://edge.example", dev_token=None),
+        fabro_bin="/opt/fabro-edge",
+        repo=tmp_path,
+        runner=runner,
+        now=datetime(2026, 10, 10, tzinfo=timezone.utc),
+        cache_path=tmp_path / "release-observation.json",
+    )
+
+    assert decision.admitted is False
+    assert decision.message.startswith(
+        "ERROR: Fabro currency admission refused factory edge: serving integration commit "
+        "abcdef1234567890; could not determine whether published release "
+        "v0.401.0-nightly.0 is an ancestor of the serving commit ("
+    )
+    assert (
+        "; newest observed release v0.401.0-nightly.0 was published "
+        "2026-10-09T00:00:00Z; release metadata was observed 2026-10-10T00:00:00Z. "
+        "Restore fabro-sh/fabro compare evidence and retry dispatch.\n"
+    ) in decision.message
 
 
 def test_the_0254_transition_is_visible_before_its_fixed_deadline_and_expires(
@@ -352,7 +503,13 @@ def _wall_harness() -> _WallHarness:
     )
 
 
-def _stub_currency_wall(*, monkeypatch: pytest.MonkeyPatch, harness: _WallHarness) -> None:
+def _stub_currency_wall(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    harness: _WallHarness,
+    runners: list[_Runner],
+    cache_root: Path,
+) -> None:
     def _deferred(**_kwargs: object) -> object:  # pragma: no cover - refusal returns first
         return _dispatcher_pre_dispatch_wall.WorkflowFaultDeferral(message="not under test")
 
@@ -360,6 +517,7 @@ def _stub_currency_wall(*, monkeypatch: pytest.MonkeyPatch, harness: _WallHarnes
         return harness.target
 
     def _effective_bin(**_kwargs: object) -> str:
+        harness.selected_targets.append((harness.target.name, "/opt/fabro-edge"))
         return "/opt/fabro-edge"
 
     def _reclaim(**_kwargs: object) -> None:  # pragma: no cover - refusal forbids reclaim
@@ -398,17 +556,16 @@ def _stub_currency_wall(*, monkeypatch: pytest.MonkeyPatch, harness: _WallHarnes
         raising=False,
     )
 
-    def _refuse_currency(**kwargs: object) -> FabroCurrencyDecision:
-        selected = kwargs["target"]
-        assert isinstance(selected, FactoryTarget)
-        harness.selected_targets.append((selected.name, str(kwargs["fabro_bin"])))
-        return FabroCurrencyDecision(admitted=False, message="currency refused\n")
-
     monkeypatch.setattr(
         _dispatcher_pre_dispatch_wall,
-        "fabro_currency_admission",
-        _refuse_currency,
-        raising=False,
+        "ShellCommandRunner",
+        lambda: runners.pop(0),
+    )
+    cache_paths = iter(cache_root / f"observation-{index}.json" for index in range(3))
+    monkeypatch.setattr(
+        _dispatcher_pre_dispatch_wall,
+        "fabro_release_cache_path",
+        lambda **_kwargs: next(cache_paths),
     )
     monkeypatch.setattr(
         _dispatcher_pre_dispatch_wall,
@@ -564,7 +721,42 @@ def test_every_dispatch_entry_reaches_the_target_aware_wall_before_claim(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     harness = _wall_harness()
-    _stub_currency_wall(monkeypatch=monkeypatch, harness=harness)
+
+    def _refusal_runner() -> _Runner:
+        return _Runner(
+            results=[
+                _command(stdout=f"fabro 0.300.0 ({_SERVING_COMMIT} 2026-08-01)\n"),
+                _command(
+                    stdout=_releases(
+                        records=[
+                            {
+                                "tag_name": "v0.401.0-nightly.0",
+                                "published_at": "2026-10-09T00:00:00Z",
+                                "draft": False,
+                                "prerelease": True,
+                            },
+                            {
+                                "tag_name": "v0.300.0",
+                                "published_at": "2026-08-01T00:00:00Z",
+                                "draft": False,
+                                "prerelease": False,
+                            },
+                        ]
+                    )
+                ),
+                _command(stdout='{"status": "diverged"}'),
+                _command(stdout='{"status": "ahead"}'),
+            ],
+            calls=[],
+        )
+
+    runners = [_refusal_runner() for _index in range(3)]
+    _stub_currency_wall(
+        monkeypatch=monkeypatch,
+        harness=harness,
+        runners=runners,
+        cache_root=tmp_path,
+    )
     _stub_dispatch_entries(monkeypatch=monkeypatch, harness=harness)
     codes = _dispatch_entry_codes(repo=tmp_path, item_id=harness.item.id)
 
@@ -572,6 +764,7 @@ def test_every_dispatch_entry_reaches_the_target_aware_wall_before_claim(
     assert harness.selected_targets == [("edge", "/opt/fabro-edge")] * 3
     assert harness.downstream == []
     assert harness.reclaims == []
+    assert runners == []
     current, runner = _current_decision_from_cache(tmp_path=tmp_path, target=harness.target)
     assert current == FabroCurrencyDecision(admitted=True, message="")
     assert runner.calls == [
