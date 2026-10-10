@@ -10,6 +10,10 @@ def _read(name: str) -> str:
     return (PROSE / name).read_text(encoding="utf-8")
 
 
+def _squash(text: str) -> str:
+    return " ".join(text.split()).lower()
+
+
 def test_plan_opens_with_the_archive_goal_and_stop_contract() -> None:
     text = _read("plan.md")
     goal = text.index("## Goal")
@@ -80,3 +84,53 @@ def test_plan_flow_precedes_a_compact_reference_and_mutation_check() -> None:
     assert flow < reference < prerequisites < store < commands
     assert prerequisite_check < first_mutation
     assert len(lines) <= 450
+
+
+def test_other_operations_name_their_done_state_before_prerequisites() -> None:
+    expected = {
+        "implement.md": (
+            "definition of done proved",
+            "administrative resolution",
+            "acceptance on a pending host leg",
+            "reported as what it is",
+        ),
+        "groom.md": (
+            "actual routed state",
+            "disposed original",
+            "all-spec cut",
+            "original at `backlog`",
+        ),
+        "capture-work-item.md": (
+            "filed consented item",
+            "every finding displayed",
+            "finding may remain",
+        ),
+        "capture-impl-gaps.md": (
+            "filed consented gap items",
+            "every finding displayed",
+            "no candidate",
+        ),
+        "capture-spec-drift.md": (
+            "coverage attempt",
+            "withheld reason",
+            "zero findings",
+        ),
+        "discuss-work-item.md": (
+            "stands by",
+            "explicit-instruction gate",
+        ),
+    }
+    architecture = (
+        'per `specification/constraints.md` §"skill orchestration constraints", '
+        "this is the harness-neutral operation prose; each runtime binding only maps its tools to it."
+    )
+
+    for name, phrases in expected.items():
+        text = _read(name)
+        done = text.index("## What done looks like")
+        prerequisites = text.index("## Pre-requisites")
+        opening = _squash(text[:prerequisites])
+        assert architecture in opening, name
+        assert done < prerequisites, name
+        assert text[:done].count("\n") < 100, name
+        assert all(phrase in opening for phrase in phrases), name

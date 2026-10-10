@@ -1,21 +1,14 @@
 # capture-work-item
 
-Harness-neutral driving prose for the `capture-work-item` operation,
-per `SPECIFICATION/constraints.md` §"Skill orchestration constraints":
-this artifact is the plugin-owned LLM-facing half of the operation —
-the consent flow, the multi-step dialogue, the
-`livespec_orchestrator_beads_fabro.*` package calls, and the JSON /
-handoff semantics. Each per-runtime SKILL.md is a THIN binding that
-resolves the plugin root, reads this prose in full, and maps its
-harness-neutral vocabulary (the `<plugin-root>` token, the
-"ask the user" / "read the file" / "write the file" verbs, the named
-sibling operations) to that runtime's tools. Nothing in this file
-names a specific agent runtime's tools or command namespace.
+Per `SPECIFICATION/constraints.md` §"Skill orchestration constraints", this is the harness-neutral operation prose; each runtime binding only maps its tools to it.
 
-The freeform direct-filing operation. Use this for bugs, refactors,
-tactical tasks, and anything else that doesn't trace back to a spec
-rule. For spec-traceable items, use the `capture-impl-gaps` operation
-instead.
+## What done looks like
+
+Done is the filed consented item with every finding displayed and its id and actual lifecycle
+state reported. A finding may remain; filing is not admission.
+
+Use this freeform direct-filing operation for work that does not trace to a spec rule; use
+`capture-impl-gaps` for spec-traceable items.
 
 ## Pre-requisites
 
