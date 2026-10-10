@@ -1715,8 +1715,8 @@
     "heading": "## Scenario 168 \u2014 An authorized plan resume continues to the archive without a picker, and the typed next action names every remaining step",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for the attended no-picker path under a continuation ruling, the four new kinds, and pointer reconciliation through resume_directive; epic bd-ib-7sjdzv owns it until the implementing child is filed.",
-    "work_item": "bd-ib-7sjdzv"
+    "test": "tests.integration.test_plan_resume_continuation_scenario168.test_scenario168_current_ruling_takes_all_six_typed_actions_and_preserves_picker_controls",
+    "reason": "Integration-tier acceptance delivered by bd-ib-qnmxzm drives the production resume_directive through the fake-ledger package entry point, covering the attended no-picker path under a current continuation ruling, all six executable typed kinds, picker controls, complete-ruling checks, and required-result tracking refusals.",
+    "work_item": "bd-ib-qnmxzm"
   }
 ]

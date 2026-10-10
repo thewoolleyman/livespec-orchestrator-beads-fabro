@@ -98,6 +98,8 @@ def decide_plan_resume(*, config: StoreConfig, epic_id: str, unattended: bool) -
         )
     observation = result_observation(config=config, action=action)
     tracked = tracked_resume_directive(
+        config=config,
+        epic_id=epic_id,
         action=action,
         observation=observation,
         findings=findings,

@@ -77,8 +77,6 @@ from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
 from livespec_orchestrator_beads_fabro.store import append_work_item
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from livespec_orchestrator_beads_fabro._beads_client import BeadsRecord
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
@@ -181,7 +179,6 @@ def record_scope_event(  # noqa: PLR0913 — package primitive mirrors the scope
     author: str,
     now: str,
     carriers: tuple[str, ...] = (),
-    env: Mapping[str, str] | None = None,
     continuation: PlanContinuationWrite | None = None,
 ) -> PlanContinuationRefusal | None:
     """Record scoped requirements and explicit deferrals before child admission.
@@ -207,7 +204,6 @@ def record_scope_event(  # noqa: PLR0913 — package primitive mirrors the scope
             author=author,
             now=now,
             carriers=carriers,
-            env=env,
             continuation=continuation,
         )
     )
