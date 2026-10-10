@@ -1,8 +1,5 @@
 # plan
 
-Per `SPECIFICATION/constraints.md` "Skill orchestration constraints", this is the harness-neutral operation prose; each runtime
-binding only maps its tools to it.
-
 ## Goal
 
 Drive the plan to a successful archive through child disposition, current independent completeness-review evidence, and a
@@ -24,6 +21,9 @@ supervising mechanism.
 ### Fail
 
 Report a specific unresolved input, refusal, or outage as incomplete work. Never recast it as a human decision.
+
+Per `SPECIFICATION/constraints.md` §"Skill orchestration constraints", this is the harness-neutral operation prose; each runtime
+binding only maps its tools to it.
 
 ## Flow
 
