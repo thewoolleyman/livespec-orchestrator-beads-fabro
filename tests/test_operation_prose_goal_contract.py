@@ -203,6 +203,7 @@ def test_rewrite_preserves_the_protected_normative_force() -> None:
     assert not missing, missing
 
     discuss = _squash(_read("discuss-work-item.md"))
+    assert "it is not named `plan`" in discuss
     assert "executes only on an explicit maintainer instruction" in discuss
     assert "an implicit or ambiguous request must not trigger a drive" in discuss
     assert "read the event back" in discuss
