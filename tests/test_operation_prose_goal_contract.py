@@ -20,6 +20,7 @@ def test_plan_opens_with_the_archive_goal_and_stop_contract() -> None:
     flow = text.index("## Flow")
     prerequisites = text.index("## Pre-requisites")
 
+    assert text.startswith("# plan\n\n## Goal\n")
     assert goal < flow < prerequisites
     opening = text[goal:flow].lower()
     required = (
