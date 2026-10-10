@@ -1,115 +1,32 @@
 # plan
 
-Harness-neutral driving prose for the `plan` operation, per
-`SPECIFICATION/constraints.md` "Skill orchestration constraints".
-This artifact is the plugin-owned LLM-facing half of the Planning Lane:
-the thread create/resume dialogue, write-once research capture, the
-ledger epic anchor, ledger-held handoff timeline entries, scoping
-events, routed child work, and archive gates. Each per-runtime
-`SKILL.md` is a thin binding that resolves the plugin root, reads this
-prose in full, and maps the neutral verbs below to that runtime's tools.
+Per `SPECIFICATION/constraints.md` "Skill orchestration constraints", this is the
+harness-neutral operation prose; each runtime binding only maps its tools to it.
 
-`plan` is stateful and re-entered for the same topic. It decides what
-should become spec, implementation, or research before those lanes are
-committed to. The durable coordination record is the plan epic in the
-beads ledger; filesystem artifacts hold research only.
+## Goal
 
-## Pre-requisites
+Drive the plan to a successful archive through child disposition,
+current independent completeness-review evidence, and a `verified` plan Proof of Done with
+required human attestations, taken against the released artifact where a release applies. The plan's
+Definition of Done is the goal statement. Child closure or a verified record alone is not
+the finish; every archive gate in Step 5 remains binding.
 
-- The `livespec-orchestrator-beads-fabro` Python package is on the
-  import path; the bundled wrappers self-bootstrap it.
-- A reachable work-items store exists. A plan anchors exactly
-  one ledger `epic`.
-- `livespec` is installed for the cross-boundary `propose-change`
-  operation.
-- A `plan/` directory at the project root is the plan store; the
-  operation creates it on first use.
+### Continue
 
-## The Plan Store
+After each action, re-read current state. When continuation is authorized and one current,
+recorded eligible next action exists, take it under the applicable `AGENTS.md` decision-
+authority rules. Ask only when selection remains unresolved or required authorization is
+missing. Store-write consent remains governed by the consent contract.
 
-A live plan has two stores:
+### Suspend
 
-- Filesystem research under `plan/<topic>/research/`. Creation writes
-  one initial research note and no other filesystem artifact. Further
-  reasoning updates add or revise research notes deliberately.
-- One write-once plan epic in the beads ledger. The epic carries the
-  thread slug in its metadata and is the status anchor, handoff anchor,
-  scope-event anchor, and archive lifecycle anchor.
+Suspend only on a recorded human gate, or on a bounded wait whose run, observed state,
+deadline, and verified supervising mechanism are named.
 
-The operation never authors `plan/<topic>/handoff.md`. Handoffs are
-append-only comments on the plan epic. Each entry is one ledger comment,
-attributed and timestamped, and is read through the same timeline read
-path used by the package command. Existing legacy `handoff.md` files may
-be read only as historical migration input; do not create or update one.
+### Fail
 
-Archived threads move whole directories to `plan/archive/<topic>/`.
-There is no root `research/` tree: standalone analysis lives in a plan
-thread, or after closure under `plan/archive/`.
-
-## Package Commands
-
-The operation's testable package substrate is
-`livespec_orchestrator_beads_fabro.commands.plan`:
-
-- `create_thread(...)` creates `plan/<slug>/research/<file>` and one
-  ledger epic anchor. Its `definition_of_done` is a REQUIRED
-  `PlanDefinitionOfDone(statement=..., assertions=...)`. See "The plan
-  Definition of Done" below.
-- `append_handoff(...)` appends one plan-epic comment, with a
-  caller-supplied `author`, and writes the required `next_action` onto the
-  epic in the same call. See "The typed next action" below.
-- `append_supervisor_handoff(...)` appends one plan-epic comment on
-  behalf of the plan's supervisor role, computing the reserved
-  `<slug>-supervisor` author literal internally (never caller-supplied).
-  A supervisor session driving this operation MUST use this call, never
-  `append_handoff`, for its own handoff entries.
-- `set_next_action(...)` updates the epic's `next_action` and
-  `last_session` metadata in place, without appending a comment. Use it
-  when the pointer changes and there is nothing new to narrate.
-- `read_timeline(...)` reads plan handoff and scope comments
-  oldest-first, each labelled with its `kind` (`handoff` or `scope`).
-- `is_unattended_session(...)` reports whether this session carries the
-  unattended marker, and `resume_directive(...)` reads the epic's typed
-  `next_action` and decides whether this resume asks which action to take
-  or takes it. See Step 3's "Unattended resume".
-- `record_scope_event(...)` records requirement carriers and explicit
-  deferrals before implementation children are admitted. Pass `carriers`
-  to make it a carrier-map event; omit it for a ruling. See "The carrier
-  map" below.
-- `close_plan_child(...)` and `reparent_plan_child(...)` dispose one plan
-  child with a recorded rationale. See Step 3's "Child disposition".
-- `plan_record_rate_warnings(...)` reports the days on which this thread's
-  record authoring ran past a threshold. See Step 3's "Record rate".
-- `record_completeness_review_evidence(...)` appends one durable
-  independent completeness-review evidence comment to the plan epic. It
-  takes NO reviewer identity: the record's `reviewer-identity` is
-  COMPUTED from the invoking session — its agent-session id, or the forge
-  login for a human at a terminal — exactly as the Proof-of-Done posting
-  primitives compute theirs. The REVIEWER must therefore make this call
-  itself, from its own session. A call the archiving session makes on a
-  reviewer's behalf records the ARCHIVER as the reviewer, and the archive
-  then refuses that evidence as a self-review.
-
-  It DOES take `reviewed_child_ids`, and that argument is required: it is
-  the set of child work-item ids the review actually read, which the
-  archive compares against the epic's child set at archive time. Pass the
-  `child_ids` of the `ArchiveCompletenessReviewRequest` the review was
-  commissioned with — that is the same set the archive grades against,
-  read once. A record naming a different set, or one written before a
-  current child's latest status change, is reported as STALE rather than
-  accepted.
-- `archive_thread(...)` performs the child-disposition gate, sweeps the
-  working tree outside `plan/` for files that read `plan/<slug>/` by
-  path, computes the archiving party's own identity, launches a supplied
-  fresh independent reviewer when valid review evidence is absent,
-  re-reads the ledger for durable evidence, and moves the thread
-  directory to `plan/archive/<slug>/` only after every gate passes.
-- `outside_plan_path_references(...)` is that sweep on its own, for a
-  session that wants the hit list before it attempts the archive.
-
-Use those package calls when this operation needs deterministic local
-behavior. Continue to use `list-work-items`, `next`, and
-`capture-work-item` for their existing public skill responsibilities.
+Report a specific unresolved input, refusal, or outage as incomplete work. Never recast it
+as a human decision.
 
 ## Flow
 
@@ -608,3 +525,87 @@ or work-item before archiving.
   except for a spec-change-tier child.
 - Does not accept a self-review, an unrecorded result, or a partial
   coverage attestation as archive evidence.
+
+## Reference
+
+### Pre-requisites
+
+- The `livespec-orchestrator-beads-fabro` Python package is on the import path; the bundled
+  wrappers self-bootstrap it.
+- A reachable work-items store exists. A plan anchors exactly one ledger `epic`.
+- `livespec` is installed for the cross-boundary `propose-change` operation.
+- A `plan/` directory at the project root is the plan store; the operation creates it on
+  first use.
+
+### The Plan Store
+
+A live plan has two stores:
+
+- Filesystem research under `plan/<topic>/research/`. Creation writes one initial research
+  note and no other filesystem artifact. Further reasoning updates add or revise research
+  notes deliberately.
+- One write-once plan epic in the beads ledger. The epic carries the thread slug in its
+  metadata and is the status, handoff, scope-event, and archive lifecycle anchor.
+
+The operation never authors `plan/<topic>/handoff.md`. Handoffs are append-only comments on
+the plan epic. Each entry is one ledger comment, attributed and timestamped, and is read
+through the same timeline path used by the package command. Existing legacy `handoff.md`
+files may be read only as historical migration input; do not create or update one.
+
+Archived threads move whole directories to `plan/archive/<topic>/`. There is no root
+`research/` tree: standalone analysis lives in a plan thread, or after closure under
+`plan/archive/`.
+
+### Package Commands
+
+The operation's testable package substrate is
+`livespec_orchestrator_beads_fabro.commands.plan`:
+
+- `create_thread(...)` creates `plan/<slug>/research/<file>` and one ledger epic anchor. Its
+  `definition_of_done` is a REQUIRED `PlanDefinitionOfDone(statement=..., assertions=...)`.
+  See "The plan Definition of Done" above.
+- `append_handoff(...)` appends one plan-epic comment with a caller-supplied `author` and
+  writes the required `next_action` onto the epic in the same call. See "The typed next
+  action" above.
+- `append_supervisor_handoff(...)` appends one plan-epic comment for the plan's supervisor
+  role, computing the reserved `<slug>-supervisor` author literal internally (never caller-
+  supplied). A supervisor session driving this operation MUST use this call, never
+  `append_handoff`, for its own handoff entries.
+- `set_next_action(...)` updates the epic's `next_action` and `last_session` metadata in
+  place, without appending a comment. Use it when the pointer changes and there is nothing
+  new to narrate.
+- `read_timeline(...)` reads plan handoff and scope comments oldest-first, each labelled
+  with its `kind` (`handoff` or `scope`).
+- `is_unattended_session(...)` reports whether this session carries the unattended marker,
+  and `resume_directive(...)` reads the epic's typed `next_action` and decides whether this
+  resume asks which action to take or takes it. See Step 3's "Unattended resume".
+- `record_scope_event(...)` records requirement carriers and explicit deferrals before
+  implementation children are admitted. Pass `carriers` to make it a carrier-map event;
+  omit it for a ruling. See "The carrier map" above.
+- `close_plan_child(...)` and `reparent_plan_child(...)` dispose one plan child with a
+  recorded rationale. See Step 3's "Child disposition".
+- `plan_record_rate_warnings(...)` reports the days on which this thread's record authoring
+  ran past a threshold. See Step 3's "Record rate".
+- `record_completeness_review_evidence(...)` appends one durable independent completeness-
+  review evidence comment to the plan epic. It takes NO reviewer identity: the record's
+  `reviewer-identity` is COMPUTED from the invoking session — its agent-session id, or the
+  forge login for a human at a terminal — exactly as the Proof-of-Done posting primitives
+  compute theirs. The REVIEWER must therefore make this call itself, from its own session. A
+  call the archiving session makes on a reviewer's behalf records the ARCHIVER as the
+  reviewer, and the archive then refuses that evidence as a self-review.
+
+  It DOES take required `reviewed_child_ids`: the child ids the review actually read, which
+  archive compares against the epic's child set. Pass the `child_ids` of the
+  `ArchiveCompletenessReviewRequest` the review was commissioned with — the same set archive
+  grades against, read once. A different set, or evidence older than a current child's
+  latest status change, is STALE rather than accepted.
+- `archive_thread(...)` performs the child-disposition gate, sweeps the working tree outside
+  `plan/` for files that read `plan/<slug>/` by path, computes the archiving party's own
+  identity, launches a supplied fresh independent reviewer when valid evidence is absent,
+  re-reads the ledger for durable evidence, and moves the directory to
+  `plan/archive/<slug>/` only after every gate passes.
+- `outside_plan_path_references(...)` runs that sweep alone for a session that wants the hit
+  list before attempting archive.
+
+Use those package calls for deterministic local behavior. Continue to use
+`list-work-items`, `next`, and `capture-work-item` for their public skill responsibilities.
