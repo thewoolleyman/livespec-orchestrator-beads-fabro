@@ -28,8 +28,6 @@ from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
@@ -80,19 +78,16 @@ class ScopeEventWrite:
     author: str
     now: str
     carriers: tuple[str, ...]
-    env: Mapping[str, str] | None
     continuation: PlanContinuationWrite | None
 
 
 def write_scope_event(*, request: ScopeEventWrite) -> PlanContinuationRefusal | None:
     """Write one scope event, or return an expected continuation refusal."""
-    session_env = os.environ if request.env is None else request.env
     continuation = request.continuation
     if continuation is not None:
         refusal = _continuation_refusal(
             request=request,
             continuation=continuation,
-            env=session_env,
         )
         if refusal is not None:
             return refusal
@@ -126,9 +121,8 @@ def _continuation_refusal(
     *,
     request: ScopeEventWrite,
     continuation: PlanContinuationWrite,
-    env: Mapping[str, str],
 ) -> PlanContinuationRefusal | None:
-    if is_unattended_session(env=env):
+    if is_unattended_session(env=os.environ):
         return PlanContinuationRefusal(
             detail="an unattended plan session cannot record a continuation ruling"
         )

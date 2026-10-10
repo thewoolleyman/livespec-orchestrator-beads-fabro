@@ -492,13 +492,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 168 — An authorized plan resume continues to the archive without a picker, and the typed next action names every remaining step",
-    "work_item": "bd-ib-7sjdzv",
-    "first_seen": "2026-10-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 169 — A dispatch naming a catalog environment runs the catalog's image, and the journal names the image source",
     "work_item": "bd-ib-jy7fuh",
     "first_seen": "2026-10-11"
