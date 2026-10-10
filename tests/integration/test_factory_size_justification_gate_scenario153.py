@@ -142,8 +142,18 @@ def _seed_capture(*, config: StoreConfig, item_id: str, assertion_count: int = 1
     client.update_issue(issue_id=item_id, status="backlog")
 
 
-def _write_repo_config(*, repo: Path, ceiling: int, groom_variant: str | None = None) -> None:
-    dispatcher: dict[str, object] = {"adopted_assertion_count_ceiling": ceiling}
+def _write_repo_config(
+    *,
+    repo: Path,
+    ceiling: int | None,
+    groom_variant: str | None = None,
+    groom_cut_approval: str | None = None,
+) -> None:
+    dispatcher: dict[str, object] = {}
+    if ceiling is not None:
+        dispatcher["adopted_assertion_count_ceiling"] = ceiling
+    if groom_cut_approval is not None:
+        dispatcher["groom_cut_approval"] = groom_cut_approval
     if groom_variant is not None:
         relative = f".fabro/workflows/{groom_variant}"
         workflow = repo / relative
@@ -748,3 +758,92 @@ def test_valid_exception_waives_only_size_and_marks_successful_dispatch_telemetr
         valid=valid,
     )
     _exercise_valid_groom_paths(repo=repo, config=config, valid=valid)
+
+
+def _consensus_cut_fixture(
+    *, tmp_path: Path, name: str, ceiling: int | None
+) -> tuple[Path, StoreConfig, WorkItem, CandidateSlice]:
+    reset_fake_singleton()
+    repo = tmp_path / name
+    repo.mkdir()
+    _write_repo_config(
+        repo=repo,
+        ceiling=ceiling,
+        groom_cut_approval="consensus",
+    )
+    config = _config(repo_root=repo)
+    epic = replace(
+        _item(assertion_count=1, item_id=f"bd-consensus-{name}"),
+        type="epic",
+        status="backlog",
+    )
+    append_work_item(path=config, item=epic)
+    candidate = CandidateSlice(
+        title="Consensus replacement",
+        description=_item(assertion_count=3).description,
+        acceptance="The replacement is verified.",
+        autonomy_tier="factory",
+        repo_target=repo.name,
+        size_justification=_valid_justification(),
+    )
+    return repo, config, epic, candidate
+
+
+def test_consensus_first_cut_requires_an_adopted_ceiling_and_has_no_size_exception(
+    tmp_path: Path,
+) -> None:
+    """The tier cannot approve without a ceiling or waive one with attribution."""
+    absent_repo, absent_config, absent_epic, absent_candidate = _consensus_cut_fixture(
+        tmp_path=tmp_path,
+        name="absent",
+        ceiling=None,
+    )
+    absent_ids = set(_stored(config=absent_config))
+    with pytest.raises(GroomDraftError, match="consensus approval requires an adopted"):
+        file_approved_slices(
+            path=absent_config,
+            regroom_item_id=absent_epic.id,
+            local_repo=absent_repo.name,
+            approval=GroomApproval(
+                approver="consensus:ratified-tier",
+                route="consensus first-cut approval",
+            ),
+            slices=[absent_candidate],
+        )
+    assert set(_stored(config=absent_config)) == absent_ids
+
+    above_repo, above_config, above_epic, above_candidate = _consensus_cut_fixture(
+        tmp_path=tmp_path,
+        name="above",
+        ceiling=4,
+    )
+    above_ids = set(_stored(config=above_config))
+    with pytest.raises(GroomDraftError, match="size_justification cannot waive"):
+        file_approved_slices(
+            path=above_config,
+            regroom_item_id=above_epic.id,
+            local_repo=above_repo.name,
+            approval=GroomApproval(
+                approver="consensus:ratified-tier",
+                route="consensus first-cut approval",
+            ),
+            slices=[above_candidate],
+        )
+    assert set(_stored(config=above_config)) == above_ids
+
+    boundary_repo, boundary_config, boundary_epic, boundary_candidate = _consensus_cut_fixture(
+        tmp_path=tmp_path,
+        name="boundary",
+        ceiling=5,
+    )
+    filed = file_approved_slices(
+        path=boundary_config,
+        regroom_item_id=boundary_epic.id,
+        local_repo=boundary_repo.name,
+        approval=GroomApproval(
+            approver="consensus:ratified-tier",
+            route="consensus first-cut approval",
+        ),
+        slices=[boundary_candidate],
+    )
+    assert _stored(config=boundary_config)[filed.filed_slice_ids[0]].status == "ready"
