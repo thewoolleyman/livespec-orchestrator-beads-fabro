@@ -333,7 +333,7 @@ already `kind: impl`, which it still takes, because that names work
 already filed and admitted. The finding is reported either way: reported
 and acted on are different things.
 
-### Step 4 - Handoff Timeline Requirements
+### Step 4 - Handoff Timeline And Exit Audit
 
 A handoff entry is ready only when a fresh session can continue from the
 ledger timeline without chat history:
@@ -347,6 +347,11 @@ ledger timeline without chat history:
    implementation route.
 4. It does not embed a parallel checklist or status queue. Status is
    composed from the ledger via `list-work-items` and `next`.
+
+Recording a handoff does not complete an executable next action. Before ending, report one
+of: successful archive; the specific unresolved input or refusal; or the
+run and verified continuation mechanism supervising the remaining work. If continuation cannot be armed,
+report the work as incomplete.
 
 ### Step 5 - Archive Gates
 
