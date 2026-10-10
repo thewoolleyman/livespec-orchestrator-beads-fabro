@@ -1482,6 +1482,12 @@ references passes with its guidance orphaned.
   herdr pane, and the plan-primitive gaps (no `title` on `update_issue`, no
   Definition-of-Done amend primitive, `create_thread` writes into
   `project_root`) that stall a ledger rewrite.
+- Read `.ai/herdr-helper-sessions.md` BEFORE opening a second agent session
+  in herdr for a bounded job (an independent critique, a host-proof replay, a
+  second opinion). It records that a helper is a SPLIT of your own pane in the
+  current tab and never a new tab, that `herdr pane run` word-splits a prompt so
+  the agent never starts, and that the pane is closed in the same turn its
+  output is consumed — each from a maintainer correction on 2026-10-10.
 
 ## Decision authority — when to ask, proceed, or self-resolve
 
