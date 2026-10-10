@@ -127,6 +127,8 @@ def _forge_double(*, tmp_path: Path) -> Path:
 
 
 def _calls(*, path: Path) -> tuple[tuple[str, ...], ...]:
+    if not path.exists():
+        return ()
     calls: list[tuple[str, ...]] = []
     current: list[str] = []
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -186,3 +188,41 @@ def test_stale_base_is_refreshed_before_a_workflow_clean_branch_is_published(
     assert "--draft" in create
     assert create[create.index("--base") + 1] == "master"
     assert create[create.index("--head") + 1] == _PUBLISH_BRANCH
+
+
+def test_reentry_after_master_advances_preserves_the_published_tip(
+    tmp_path: Path,
+) -> None:
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+    first_call = tmp_path / "first-call"
+    first_call.mkdir()
+
+    first = _publish(tmp_path=first_call, run=run)
+
+    assert first.result.returncode == 0, first.result.stderr
+    published_tip = _git(run, "rev-parse", "HEAD").stdout.strip()
+
+    origin = Path(_git(run, "remote", "get-url", "origin").stdout.strip())
+    default = tmp_path / "later-default"
+    _git(tmp_path, "clone", str(origin), str(default))
+    _configure(repo=default)
+    current_base = _commit(
+        repo=default,
+        path=".github/workflows/ci.yml",
+        content="name: later\n",
+        message="advance workflow again",
+    )
+    _git(default, "push", "origin", "master")
+
+    second_call = tmp_path / "second-call"
+    second_call.mkdir()
+    second = _publish(tmp_path=second_call, run=run)
+    _git(run, "fetch", "origin", "master")
+
+    assert second.result.returncode == 0, second.result.stderr
+    refreshed_tip = _git(run, "rev-parse", "HEAD").stdout.strip()
+    assert refreshed_tip != published_tip
+    assert _git(run, "merge-base", "HEAD", "origin/master").stdout.strip() == current_base
+    assert _git(run, "merge-base", "--is-ancestor", published_tip, "HEAD").returncode == 0
+    remote_head = _git(run, "ls-remote", "origin", f"refs/heads/{_PUBLISH_BRANCH}").stdout
+    assert remote_head.split()[0] == refreshed_tip
