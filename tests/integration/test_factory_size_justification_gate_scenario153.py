@@ -8,10 +8,12 @@ are stood in.
 
 from __future__ import annotations
 
+import argparse
 import json
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from importlib import import_module
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -29,12 +31,18 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_span import (
     calibration_request_line,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+    CommandResult,
+    DispatchOutcome,
+    PollPolicy,
+    run_dispatch,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_groom_door import (
     GroomDoorRefusal,
     groom_dispatch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import build_plan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_order_sink import (
     TddOrderSink,
 )
@@ -50,10 +58,12 @@ from livespec_orchestrator_beads_fabro.commands.groom import (
     GroomApproval,
     file_approved_slices,
 )
+from livespec_orchestrator_beads_fabro.commands.orchestrator import main as orchestrator_main
 from livespec_orchestrator_beads_fabro.errors import GroomDraftError
 from livespec_orchestrator_beads_fabro.intake_dor import (
     DefinitionOfReadyChecklist,
     apply_intake_dor,
+    file_captured_work_item,
 )
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
@@ -225,6 +235,89 @@ def _assert_missing_reason(*, reason: str, assertion_count: int = 3) -> None:
     assert "missing or invalid size_justification" in reason
 
 
+@dataclass(kw_only=True)
+class _EngineRunner:
+    """Scripted external boundary for one real successful dispatcher engine run."""
+
+    queue: list[CommandResult]
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        _ = (argv, cwd, env, stdin)
+        assert timeout_seconds > 0
+        return self.queue.pop(0)
+
+
+@dataclass(kw_only=True)
+class _MemoryJournal:
+    records: list[dict[str, object]] = field(default_factory=list)
+
+    def append(self, *, record: dict[str, object]) -> None:
+        self.records.append(record)
+
+
+def _ok(*, stdout: str = "") -> CommandResult:
+    return CommandResult(exit_code=0, stdout=stdout, stderr="")
+
+
+def _pr_json(*, state: str = "OPEN", sha: str | None = None) -> str:
+    return json.dumps(
+        {
+            "number": 7,
+            "state": state,
+            "autoMergeRequest": {"enabledAt": "now"},
+            "mergeStateStatus": "CLEAN",
+            "mergeCommit": {"oid": sha} if sha is not None else None,
+            "statusCheckRollup": [],
+        }
+    )
+
+
+def _successful_dispatch(*, repo: Path) -> DispatchOutcome:
+    """Run the real engine to a green terminal against scripted external tools."""
+    plan = build_plan(
+        repo=repo,
+        work_item_id="bd-capture-valid",
+        workflow_toml=repo / "workflow.toml",
+        goal_file=repo / "goal.md",
+        fabro_bin="fabro",
+        janitor=None,
+        janitor_checkout=repo / "janitor-checkout",
+        config_text=('{"livespec-orchestrator-beads-fabro": ' '{"compat": {"pinned": "master"}}}'),
+        default_branch="master",
+    )
+    succeeded = json.dumps({"status": {"kind": "succeeded", "reason": "completed"}})
+    runner = _EngineRunner(
+        queue=[
+            _ok(stdout="Run: 01SCENARIO153\n"),
+            _ok(stdout=succeeded),
+            _ok(stdout=_pr_json()),
+            _ok(stdout=_pr_json(state="MERGED", sha="cafe153")),
+            _ok(stdout=json.dumps([{"number": 7}])),
+            _ok(),
+            _ok(),
+            *[_ok() for _ in range(8)],
+        ]
+    )
+    outcome = run_dispatch(
+        plan=plan,
+        runner=runner,
+        journal=_MemoryJournal(),
+        sleep=lambda _seconds: None,
+        poll=PollPolicy(attempts=1, interval_seconds=0.0),
+    )
+    assert runner.queue == []
+    assert (outcome.status, outcome.stage) == ("green", "done")
+    return outcome
+
+
 def test_absent_ceiling_leaves_every_entry_path_on_ordinary_admission() -> None:
     """No adopted ceiling means justification presence has no gate effect."""
     module = _size_gate_module()
@@ -254,7 +347,10 @@ def test_absent_ceiling_leaves_every_entry_path_on_ordinary_admission() -> None:
     assert all(decision.size_justified is False for decision in decisions)
 
 
-def test_invalid_adopted_ceiling_refuses_before_lifecycle_mutation(tmp_path: Path) -> None:
+def test_invalid_adopted_ceiling_refuses_before_lifecycle_mutation(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Every non-positive or non-integer configured value fails closed."""
     invalid_values: tuple[object, ...] = (0, -1, True, False, 1.5, "3")
 
@@ -295,6 +391,83 @@ def test_invalid_adopted_ceiling_refuses_before_lifecycle_mutation(tmp_path: Pat
     assert "adopted_assertion_count_ceiling" not in manifest_keys
 
     _exercise_invalid_public_entries(tmp_path=tmp_path)
+    _exercise_invalid_gap_capture(tmp_path=tmp_path, capsys=capsys)
+
+
+def _exercise_invalid_gap_capture(*, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """The executable capture front-end refuses before creating its first row."""
+    reset_fake_singleton()
+    repo = tmp_path / "gap-capture"
+    repo.mkdir()
+    _write_repo_config(repo=repo, ceiling=0)
+    (repo / "SPECIFICATION" / "history" / "v001").mkdir(parents=True)
+    (repo / "SPECIFICATION" / "proposed_changes").mkdir()
+    (repo / "SPECIFICATION" / "spec.md").write_text("# Spec\n", encoding="utf-8")
+    payload = repo / "gaps.json"
+    payload.write_text(
+        json.dumps(
+            {
+                "gaps": [
+                    {
+                        "gap_id": "gap-scenario153-invalid-config",
+                        "title": "Must never be filed",
+                        "description": "Configuration refusal precedes capture.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    rc = orchestrator_main(
+        argv=["gap-capture", "--gaps-json", str(payload), "--project-root", str(repo)]
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 3
+    assert "adopted_assertion_count_ceiling must be a positive integer" in captured.err
+    assert _stored(config=_config(repo_root=repo)) == {}
+
+
+def test_public_freeform_capture_records_the_exception_before_shared_routing(
+    tmp_path: Path,
+) -> None:
+    """The operation's filing seam makes valid attribution reachable at intake."""
+    reset_fake_singleton()
+    repo = tmp_path / "public-capture"
+    repo.mkdir()
+    _write_repo_config(repo=repo, ceiling=2)
+    _write_scenario_reference(repo=repo)
+    config = _config(repo_root=repo)
+    item = replace(_item(assertion_count=3, item_id="bd-public-capture"), status="backlog")
+    valid = _valid_justification()
+
+    result = file_captured_work_item(
+        path=config,
+        item=item,
+        checklist=_ready_checklist(),
+        size_justification=valid,
+    )
+
+    assert is_successful(result)
+    assert unsafe_perform_io(result.unwrap()) == "ready"
+    assert _stored(config=config)[item.id].status == "ready"
+    record = make_beads_client(config=config).show_issue(issue_id=item.id)
+    assert cast("dict[str, object]", record["metadata"])["size_justification"] == valid
+
+    reset_fake_singleton()
+    invalid_repo = tmp_path / "public-capture-invalid"
+    invalid_repo.mkdir()
+    _write_repo_config(repo=invalid_repo, ceiling=0)
+    invalid_config = _config(repo_root=invalid_repo)
+    refused = file_captured_work_item(
+        path=invalid_config,
+        item=replace(item, id="bd-public-capture-refused"),
+        checklist=_ready_checklist(),
+        size_justification=valid,
+    )
+    assert not is_successful(refused)
+    assert _stored(config=invalid_config) == {}
 
 
 def _exercise_invalid_public_entries(*, tmp_path: Path) -> None:
@@ -597,6 +770,124 @@ def test_items_at_or_below_ceiling_continue_through_ordinary_gates() -> None:
     assert all(decision.size_justified is False for decision in decisions)
 
 
+def _oversized_entry_fixture(*, tmp_path: Path, name: str) -> tuple[Path, StoreConfig, WorkItem]:
+    reset_fake_singleton()
+    repo = tmp_path / name
+    repo.mkdir()
+    _write_repo_config(repo=repo, ceiling=2)
+    config = _config(repo_root=repo)
+    item = _item(assertion_count=3, item_id=f"bd-{name}")
+    append_work_item(path=config, item=item)
+    return repo, config, item
+
+
+def _exercise_direct_entry(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    direct = import_module("livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands")
+    repo, config, item = _oversized_entry_fixture(tmp_path=tmp_path, name="direct-entry")
+    direct_journal = JournalFile(path=repo / "direct.jsonl")
+    monkeypatch.setattr(direct, "dispatch_preamble", lambda **_kwargs: (None, None))
+    monkeypatch.setattr(direct, "arm_otel_egress", lambda **_kwargs: None)
+    monkeypatch.setattr(direct, "prepare", lambda **_kwargs: ([item], direct_journal))
+    monkeypatch.setattr(
+        direct,
+        "_target_item",
+        lambda **_kwargs: pytest.fail("direct selection ran before the factory-size gate"),
+    )
+    direct_outcomes: list[DispatchOutcome] = []
+
+    def _direct_tail(**kwargs: object) -> int:
+        direct_outcomes.append(cast("DispatchOutcome", kwargs["outcome"]))
+        return 1
+
+    monkeypatch.setattr(direct, "dispatch_tail_exit", _direct_tail)
+    direct_rc = direct.run_dispatch_command(
+        args=argparse.Namespace(repo=str(repo), skip_ledger_check=True, item=item.id)
+    )
+    assert direct_rc == 1
+    assert direct_outcomes[0].stage == "size-decomposition"
+    assert _stored(config=config)[item.id].status == "backlog"
+
+
+def _exercise_loop_entry(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    loop = import_module("livespec_orchestrator_beads_fabro.commands._dispatcher_loop_command")
+    loop_repo, loop_config, loop_item = _oversized_entry_fixture(
+        tmp_path=tmp_path, name="loop-entry"
+    )
+    loop_journal = JournalFile(path=loop_repo / "loop.jsonl")
+    monkeypatch.setattr(loop, "dispatch_preamble", lambda **_kwargs: (None, None))
+    monkeypatch.setattr(loop, "arm_otel_egress", lambda **_kwargs: None)
+    monkeypatch.setattr(loop, "prepare", lambda **_kwargs: ([loop_item], loop_journal))
+    monkeypatch.setattr(
+        loop,
+        "acp_projection_posture",
+        lambda **_kwargs: SimpleNamespace(warning=None, stop_picking=False),
+    )
+    monkeypatch.setattr(
+        loop,
+        "candidates",
+        lambda **_kwargs: pytest.fail("loop selection ran before the factory-size gate"),
+    )
+    loop_outcomes: list[DispatchOutcome] = []
+
+    def _loop_emit(*, outcomes: list[DispatchOutcome], as_json: bool) -> None:
+        _ = as_json
+        loop_outcomes.extend(outcomes)
+
+    monkeypatch.setattr(loop, "emit_outcomes", _loop_emit)
+    loop_rc = loop.run_loop_command(
+        args=argparse.Namespace(
+            repo=str(loop_repo),
+            items=None,
+            budget=1,
+            dry_run=False,
+            as_json=True,
+            skip_ledger_check=True,
+        )
+    )
+    assert loop_rc == 1
+    assert loop_outcomes[0].stage == "size-decomposition"
+    assert _stored(config=loop_config)[loop_item.id].status == "backlog"
+
+
+def _exercise_resume_entry(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    resume = import_module("livespec_orchestrator_beads_fabro.commands._dispatcher_resume_command")
+    resume_repo, resume_config, resume_item = _oversized_entry_fixture(
+        tmp_path=tmp_path, name="resume-entry"
+    )
+    resume_journal = JournalFile(path=resume_repo / "resume.jsonl")
+    monkeypatch.setattr(resume, "dispatch_preamble", lambda **_kwargs: (None, None))
+    monkeypatch.setattr(resume, "arm_otel_egress", lambda **_kwargs: None)
+    monkeypatch.setattr(resume, "prepare", lambda **_kwargs: ([resume_item], resume_journal))
+    monkeypatch.setattr(
+        resume,
+        "gather_resume",
+        lambda **_kwargs: pytest.fail("resume observation ran before the factory-size gate"),
+    )
+    resume_outcomes: list[DispatchOutcome] = []
+
+    def _resume_tail(**kwargs: object) -> int:
+        resume_outcomes.append(cast("DispatchOutcome", kwargs["outcome"]))
+        return 1
+
+    monkeypatch.setattr(resume, "dispatch_tail_exit", _resume_tail)
+    resume_rc = resume.run_resume_command(
+        args=argparse.Namespace(repo=str(resume_repo), item=resume_item.id)
+    )
+    assert resume_rc == 1
+    assert resume_outcomes[0].stage == "size-decomposition"
+    assert _stored(config=resume_config)[resume_item.id].status == "backlog"
+
+
+def test_public_direct_loop_and_resume_gate_size_before_selection_or_walls(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every executable dispatch door decomposes before an earlier filter can win."""
+    _exercise_direct_entry(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    _exercise_loop_entry(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    _exercise_resume_entry(tmp_path=tmp_path, monkeypatch=monkeypatch)
+
+
 def _valid_justification() -> dict[str, str]:
     return {
         "rationale": "This larger slice preserves one coherent transactional change.",
@@ -619,58 +910,79 @@ def _assert_valid_size_decision(*, valid: dict[str, str]) -> None:
 
 
 def _exercise_valid_capture_dispatch_and_telemetry(
-    *, repo: Path, config: StoreConfig, valid: dict[str, str]
+    *,
+    repo: Path,
+    config: StoreConfig,
+    valid: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _seed_capture(config=config, item_id="bd-capture-valid", assertion_count=3)
-    _record_size_justification(
-        config=config,
-        item_id="bd-capture-valid",
-        justification=valid,
-    )
-    captured = apply_intake_dor(
+    captured = file_captured_work_item(
         path=config,
-        item_id="bd-capture-valid",
+        item=replace(_item(assertion_count=3, item_id="bd-capture-valid"), status="backlog"),
         checklist=_ready_checklist(),
+        size_justification=valid,
     )
     assert is_successful(captured)
     assert unsafe_perform_io(captured.unwrap()) == "ready"
 
     captured_item = _stored(config=config)["bd-capture-valid"]
-    admission = admit_and_select(
-        repo=repo,
-        items=[captured_item],
-        candidates=[captured_item],
-        journal=JournalFile(path=repo / "journal.jsonl"),
-        enforce_cap=False,
+    command = import_module("livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands")
+    journal = JournalFile(path=repo / "journal.jsonl")
+    green = _successful_dispatch(repo=repo)
+    monkeypatch.setattr(command, "dispatch_preamble", lambda **_kwargs: (None, None))
+    monkeypatch.setattr(command, "arm_otel_egress", lambda **_kwargs: None)
+    monkeypatch.setattr(command, "prepare", lambda **_kwargs: ([captured_item], journal))
+    monkeypatch.setattr(
+        command,
+        "_target_item",
+        lambda **_kwargs: (captured_item, False),
     )
-    assert [item.id for item in admission.admitted] == [captured_item.id]
+    monkeypatch.setattr(command, "pre_dispatch_wall_exit", lambda **_kwargs: None)
+    monkeypatch.setattr(command, "_admit_and_dispatch_target", lambda **_kwargs: green)
+    terminal: list[DispatchOutcome] = []
+
+    def _terminal_tail(**kwargs: object) -> int:
+        terminal.append(cast("DispatchOutcome", kwargs["outcome"]))
+        return 0
+
+    monkeypatch.setattr(command, "dispatch_tail_exit", _terminal_tail)
+    assert (
+        command.run_dispatch_command(
+            args=argparse.Namespace(
+                repo=str(repo),
+                skip_ledger_check=True,
+                item=captured_item.id,
+            )
+        )
+        == 0
+    )
+    assert terminal == [green]
+
+    records = tuple(
+        cast("dict[str, object]", json.loads(line))
+        for line in (repo / "journal.jsonl").read_text(encoding="utf-8").splitlines()
+    )
+    # Configuration and ledger metadata are mutable after admission.  The
+    # terminal signal must retain the decision that admitted this dispatch.
+    _write_repo_config(repo=repo, ceiling=None)
+    _record_size_justification(
+        config=config,
+        item_id=captured_item.id,
+        justification={"rationale": "changed after admission"},
+    )
     signals = gather_tdd_signals(
         repo=repo,
         item=captured_item,
-        outcome=DispatchOutcome(
-            work_item_id=captured_item.id,
-            status="green",
-            stage="done",
-            pr_number=None,
-            merge_sha="abc123",
-            detail="merged",
-        ),
-        records=(),
+        outcome=green,
+        records=records,
         sink=TddOrderSink(path=repo / "tdd-order.json"),
         runner=cast("Any", object()),
     )
     record = build_calibration_record(
         item=captured_item,
-        outcome=DispatchOutcome(
-            work_item_id=captured_item.id,
-            status="green",
-            stage="done",
-            pr_number=None,
-            merge_sha="abc123",
-            detail="merged",
-        ),
+        outcome=green,
         repo_name=repo.name,
-        journal_records=(),
+        journal_records=records,
         wall_clock_seconds=1.0,
         token_cost_micros=None,
         dispatch_context_size=1,
@@ -751,7 +1063,12 @@ def test_valid_exception_waives_only_size_and_marks_successful_dispatch_telemetr
     _write_scenario_reference(repo=repo)
     config = _config(repo_root=repo)
 
-    _exercise_valid_capture_dispatch_and_telemetry(repo=repo, config=config, valid=valid)
+    _exercise_valid_capture_dispatch_and_telemetry(
+        repo=repo,
+        config=config,
+        valid=valid,
+        monkeypatch=monkeypatch,
+    )
     _assert_valid_exception_preserves_ordinary_approval_gate(
         repo=repo,
         config=config,
