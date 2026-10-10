@@ -79,16 +79,12 @@ def release_observation(
             detail=result.stderr.strip(),
             stale_observation=stale,
         )
-    pages = cast("list[list[dict[str, object]]]", json.loads(result.stdout))
-    releases = tuple(
-        FabroRelease(
-            tag=cast(str, record["tag_name"]),
-            published_at=_parse_timestamp(text=cast(str, record["published_at"])),
+    releases = _release_pages(text=result.stdout)
+    if isinstance(releases, str):
+        return FabroForgeFailure(
+            detail=f"GitHub Releases returned unusable metadata: {releases}",
+            stale_observation=stale,
         )
-        for page in pages
-        for record in page
-        if record.get("draft") is not True
-    )
     observation = FabroReleaseObservation(observed_at=now, releases=releases)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     _ = cache_path.write_text(
@@ -155,18 +151,74 @@ def _parse_timestamp(*, text: str) -> datetime:
     return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
-def _read_cache(*, path: Path) -> FabroReleaseObservation:
-    payload = cast("dict[str, object]", json.loads(path.read_text(encoding="utf-8")))
-    records = cast("list[dict[str, object]]", payload["releases"])
-    return FabroReleaseObservation(
-        observed_at=_parse_timestamp(text=cast(str, payload["observed_at"])),
-        releases=tuple(
+def _read_cache(*, path: Path) -> FabroReleaseObservation | None:
+    try:
+        payload = cast(
+            "dict[str, object]",
+            json.loads(path.read_text(encoding="utf-8")),
+        )
+        records = cast("list[dict[str, object]]", payload["releases"])
+        releases = tuple(
             FabroRelease(
                 tag=cast(str, record["tag_name"]),
                 published_at=_parse_timestamp(text=cast(str, record["published_at"])),
             )
             for record in records
-        ),
+        )
+        _ = max(releases, key=lambda release: (release.published_at, release.tag))
+        observed_at = _parse_timestamp(text=cast(str, payload["observed_at"]))
+    except (
+        AttributeError,
+        IndexError,
+        KeyError,
+        OSError,
+        OverflowError,
+        TypeError,
+        UnicodeDecodeError,
+        ValueError,
+    ):
+        return None
+    return FabroReleaseObservation(
+        observed_at=observed_at,
+        releases=releases,
+    )
+
+
+def _release_pages(*, text: str) -> tuple[FabroRelease, ...] | str:
+    try:
+        pages: object = json.loads(text)
+    except json.JSONDecodeError as error:
+        return f"invalid JSON ({error})"
+    if not isinstance(pages, list):
+        return "top-level response is not a list of pages"
+    records: list[object] = []
+    for page_index, page in enumerate(cast("list[object]", pages)):
+        if not isinstance(page, list):
+            return f"page {page_index} is not a list"
+        records.extend(cast("list[object]", page))
+    return _release_records(records=records)
+
+
+def _release_records(*, records: list[object]) -> tuple[FabroRelease, ...] | str:
+    try:
+        releases = tuple(
+            _release_record(record=record)
+            for record in records
+            if cast("dict[str, object]", record).get("draft") is not True
+        )
+    except (AttributeError, IndexError, KeyError, OverflowError, TypeError, ValueError) as error:
+        return f"malformed published release record ({error})"
+    return tuple(releases) if releases else "response contains no published releases"
+
+
+def _release_record(*, record: object) -> FabroRelease:
+    release_record = cast("dict[str, object]", record)
+    tag = cast(str, release_record["tag_name"])
+    _ = tag.encode("utf-8")
+    _ = tag[0]
+    return FabroRelease(
+        tag=tag,
+        published_at=_parse_timestamp(text=cast(str, release_record["published_at"])),
     )
 
 

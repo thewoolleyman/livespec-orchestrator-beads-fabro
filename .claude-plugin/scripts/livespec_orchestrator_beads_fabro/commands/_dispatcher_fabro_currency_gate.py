@@ -132,7 +132,8 @@ def _currency_evidence(
         cwd=repo,
     ).client_version(timeout_seconds=_VERSION_TIMEOUT_SECONDS)
     match = _SERVING_COMMIT_RE.search(version.text)
-    serving_commit = match.group(1) if match is not None else "unknown"
+    identified = version.command.exit_code == 0 and match is not None
+    serving_commit = match.group(1) if identified and match is not None else "unknown"
     observation = release_observation(
         cache_path=cache_path,
         repo=repo,
@@ -146,7 +147,7 @@ def _currency_evidence(
             failure=observation,
             now=now,
         )
-    if match is None:
+    if not identified:
         return unidentifiable_build_refusal(
             target=target,
             version=version,

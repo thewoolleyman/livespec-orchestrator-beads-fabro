@@ -270,6 +270,14 @@ def test_a_failed_refresh_refuses_instead_of_reusing_a_stale_observation(
             "fabro --version failed with exit 1 (version unavailable)",
         ),
         (
+            _command(
+                stdout=f"fabro 0.401.0 ({_SERVING_COMMIT} 2026-10-09)\n",
+                exit_code=7,
+                stderr="serving build probe failed",
+            ),
+            "fabro --version failed with exit 7 (serving build probe failed)",
+        ),
+        (
             _command(stdout="fabro version unknown\n"),
             "fabro --version output did not identify the serving integration commit",
         ),
@@ -344,6 +352,105 @@ def test_a_cold_cache_refresh_failure_refuses_without_a_traceback(tmp_path: Path
         "and observation time are unavailable. Restore the fabro-sh/fabro GitHub Releases "
         "observation and retry dispatch.\n"
     )
+
+
+def test_a_malformed_cache_is_refreshed_instead_of_raising(tmp_path: Path) -> None:
+    cache_path = tmp_path / "truncated-observation.json"
+    _ = cache_path.write_text('{"observed_at":', encoding="utf-8")
+    runner = _Runner(
+        results=[
+            _command(stdout=f"fabro 0.401.0 ({_SERVING_COMMIT} 2026-10-09)\n"),
+            _command(
+                stdout=_releases(
+                    records=[
+                        {
+                            "tag_name": "v0.401.0-nightly.0",
+                            "published_at": "2026-10-09T00:00:00Z",
+                            "draft": False,
+                            "prerelease": True,
+                        }
+                    ]
+                )
+            ),
+            _command(stdout='{"status": "identical"}'),
+        ],
+        calls=[],
+    )
+
+    decision = importlib.import_module(_MODULE_NAME).fabro_currency_admission(
+        target=FactoryTarget(name="edge", server="https://edge.example", dev_token=None),
+        fabro_bin="/opt/fabro-edge",
+        repo=tmp_path,
+        runner=runner,
+        now=datetime(2026, 10, 10, tzinfo=timezone.utc),
+        cache_path=cache_path,
+    )
+
+    assert decision == FabroCurrencyDecision(admitted=True, message="")
+    assert runner.calls == [
+        ["/opt/fabro-edge", "--version"],
+        [
+            "gh",
+            "api",
+            "--paginate",
+            "--slurp",
+            "repos/fabro-sh/fabro/releases?per_page=100",
+        ],
+        [
+            "gh",
+            "api",
+            "repos/fabro-sh/fabro/compare/v0.401.0-nightly.0...abcdef1234567890",
+        ],
+    ]
+
+
+@pytest.mark.parametrize(
+    "release_stdout",
+    [
+        "not-json",
+        "{}",
+        "[{}]",
+        "[[]]",
+        '[ [{"tag_name": "v0.401.0", "published_at": null, "draft": false}] ]',
+    ],
+)
+def test_an_unusable_successful_release_response_refuses_without_a_traceback(
+    tmp_path: Path,
+    release_stdout: str,
+) -> None:
+    runner = _Runner(
+        results=[
+            _command(stdout=f"fabro 0.401.0 ({_SERVING_COMMIT} 2026-10-09)\n"),
+            _command(stdout=release_stdout),
+        ],
+        calls=[],
+    )
+
+    decision = importlib.import_module(_MODULE_NAME).fabro_currency_admission(
+        target=FactoryTarget(name="edge", server="https://edge.example", dev_token=None),
+        fabro_bin="/opt/fabro-edge",
+        repo=tmp_path,
+        runner=runner,
+        now=datetime(2026, 10, 10, tzinfo=timezone.utc),
+        cache_path=tmp_path / "missing-observation.json",
+    )
+
+    assert decision.admitted is False
+    assert (
+        "no cached release metadata observation exists, and refresh failed at "
+        "2026-10-10T00:00:00Z (GitHub Releases returned unusable metadata:"
+    ) in decision.message
+    assert "newest observed release and observation time are unavailable" in decision.message
+    assert runner.calls == [
+        ["/opt/fabro-edge", "--version"],
+        [
+            "gh",
+            "api",
+            "--paginate",
+            "--slurp",
+            "repos/fabro-sh/fabro/releases?per_page=100",
+        ],
+    ]
 
 
 @pytest.mark.parametrize(
@@ -775,3 +882,71 @@ def test_every_dispatch_entry_reaches_the_target_aware_wall_before_claim(
             "repos/fabro-sh/fabro/compare/v0.401.0-nightly.0...abcdef1234567890",
         ],
     ]
+
+
+def test_an_autonomous_rework_reaches_the_currency_wall_before_claim(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _wall_harness()
+    runner = _Runner(
+        results=[
+            _command(stdout=f"fabro 0.300.0 ({_SERVING_COMMIT} 2026-08-01)\n"),
+            _command(
+                stdout=_releases(
+                    records=[
+                        {
+                            "tag_name": "v0.401.0-nightly.0",
+                            "published_at": "2026-10-09T00:00:00Z",
+                            "draft": False,
+                            "prerelease": True,
+                        },
+                        {
+                            "tag_name": "v0.300.0",
+                            "published_at": "2026-08-01T00:00:00Z",
+                            "draft": False,
+                            "prerelease": False,
+                        },
+                    ]
+                )
+            ),
+            _command(stdout='{"status": "diverged"}'),
+            _command(stdout='{"status": "ahead"}'),
+        ],
+        calls=[],
+    )
+    _stub_currency_wall(
+        monkeypatch=monkeypatch,
+        harness=harness,
+        runners=[runner],
+        cache_root=tmp_path,
+    )
+    monkeypatch.setattr(_dispatcher_pre_dispatch_wall, "ShellCommandRunner", lambda: runner)
+    _stub_dispatch_entries(monkeypatch=monkeypatch, harness=harness)
+    monkeypatch.setattr(_dispatcher_loop_command, "candidates", lambda **_kwargs: [])
+    monkeypatch.setattr(
+        _dispatcher_loop_command,
+        "projected_rework_candidates",
+        lambda **_kwargs: (harness.item,),
+        raising=False,
+    )
+
+    code = _dispatcher_loop_command.run_loop_command(
+        args=argparse.Namespace(
+            repo=str(tmp_path),
+            skip_ledger_check=True,
+            workflow_name=None,
+            workflow=None,
+            fabro_bin="/opt/fabro-global",
+            budget=1,
+            dry_run=False,
+            as_json=False,
+            items=[],
+        )
+    )
+
+    assert code == EXIT_PRECONDITION_ERROR
+    assert harness.selected_targets == [("edge", "/opt/fabro-edge")]
+    assert harness.downstream == []
+    assert harness.reclaims == []
+    assert runner.results == []

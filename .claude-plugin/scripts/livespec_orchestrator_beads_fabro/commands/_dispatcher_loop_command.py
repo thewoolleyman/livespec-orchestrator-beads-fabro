@@ -45,7 +45,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall im
     pre_dispatch_wall_exit,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection import reflect
-from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import ReworkPass
+from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import (
+    ReworkPass,
+    projected_rework_candidates,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_checks import (
     dispatch_preamble,
     requested_items_preflight_error,
@@ -110,10 +113,14 @@ def run_loop_command(*, args: argparse.Namespace) -> int:
         emit_outcomes(outcomes=picked, as_json=args.as_json)
         return 0
     # Every refusal that must land after selection and before the claim, as one
-    # decision. The SAME wall the single dispatch runs, handed the whole wave.
-    wall_exit = pre_dispatch_wall_exit(
-        args=args, repo=repo, items=selected_candidates, journal=journal
-    )
+    # decision. The SAME wall the single dispatch runs, handed every row either
+    # leg could claim. Rework is projected from the full ledger because those
+    # already-active rows do not appear in the ready candidate sequence.
+    wall_items = [
+        *projected_rework_candidates(repo=repo, items=items, journal=journal, rework=rework),
+        *selected_candidates,
+    ]
+    wall_exit = pre_dispatch_wall_exit(args=args, repo=repo, items=wall_items, journal=journal)
     if wall_exit is not None:
         return wall_exit
     outcomes = dispatch_loop_wave(
