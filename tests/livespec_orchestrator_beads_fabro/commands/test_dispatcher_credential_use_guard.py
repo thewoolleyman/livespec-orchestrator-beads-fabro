@@ -52,6 +52,8 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
+    CREDENTIAL_EXPIRY_ENV_VAR,
+    CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
     CREDENTIAL_USE_DEADLINE_ENV_VAR,
     GUARD_REFUSAL_EXIT_CODE,
     GUARD_TERM_GRACE_SECONDS,
@@ -87,6 +89,27 @@ def _guard(*, tmp_path: Path) -> Path:
     return script
 
 
+def _hermetic_env() -> dict[str, str]:
+    """This process's environment with every credential-use projection removed.
+
+    A factory stage runs this suite INSIDE a guarded launch, so its own process
+    carries the deadline, the credential expiry and the required remaining
+    lifetime that the Dispatcher projected for that node. Inherited, they make the
+    start check grade the STAGE's credential against the STAGE's requirement, so
+    a case's verdict depends on which node happens to run the suite: a `review_fix`
+    stage requiring 7200 seconds refused the "fresh" one-hour case on 2026-10-10
+    while the host and CI, which project nothing, passed it.
+    """
+    env = dict(os.environ)
+    for name in (
+        CREDENTIAL_USE_DEADLINE_ENV_VAR,
+        CREDENTIAL_EXPIRY_ENV_VAR,
+        CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
+    ):
+        env.pop(name, None)
+    return env
+
+
 def _run(
     *,
     tmp_path: Path,
@@ -96,8 +119,7 @@ def _run(
     stdin_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run the guard around `argv`, with the deadline supplied as the env var."""
-    env = dict(os.environ)
-    env.pop(CREDENTIAL_USE_DEADLINE_ENV_VAR, None)
+    env = _hermetic_env()
     if deadline is not None:
         env[CREDENTIAL_USE_DEADLINE_ENV_VAR] = deadline
     return subprocess.run(
@@ -364,7 +386,7 @@ def test_the_start_check_reports_remaining_budget_without_running_anything(
     command to wrap: a credential that aged below its remaining worker lifetime
     while the run sat queued must refuse at startup, not mid-turn.
     """
-    env = dict(os.environ)
+    env = _hermetic_env()
     env[CREDENTIAL_USE_DEADLINE_ENV_VAR] = str(int(time.time()) + 3600)
     fresh = subprocess.run(
         ["/bin/sh", str(_guard(tmp_path=tmp_path)), "--check-start"],
@@ -481,7 +503,7 @@ def test_losing_the_waiting_process_does_not_disarm_the_bound(
     beat_file = tmp_path / "beats"
     pid_file = tmp_path / "pid"
     deadline = int(time.time()) + _SOON_SECONDS
-    env = dict(os.environ)
+    env = _hermetic_env()
     env[CREDENTIAL_USE_DEADLINE_ENV_VAR] = str(deadline)
 
     guarded = subprocess.Popen(
