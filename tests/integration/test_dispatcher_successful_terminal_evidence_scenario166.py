@@ -570,3 +570,42 @@ def test_unavailable_or_unstructured_evidence_retains_the_failed_disposition(
         else (name, type(value.error).__name__, "raised", None)
         for name, value in observed
     ] == [(name, "failed", "fabro-run", None) for name, *_rest in cases]
+
+
+def test_missing_or_malformed_per_node_outcomes_fail_closed_without_raising(
+    tmp_path: Path,
+) -> None:
+    missing = _successful_checkpoint(completed_exit=True)
+    missing["node_outcomes"] = {node: {"status": "succeeded"} for node in _SUCCESSFUL_NODES}
+    cases: list[tuple[str, dict[str, object]]] = [("missing", missing)]
+    for name, malformed_outcome in (
+        ("null", None),
+        ("string", "succeeded"),
+        ("number", 1),
+    ):
+        malformed = _successful_checkpoint()
+        outcomes = malformed["node_outcomes"]
+        assert isinstance(outcomes, dict)
+        outcomes["verify_pr"] = malformed_outcome
+        cases.append((name, malformed))
+
+    observed: list[tuple[str, DispatchOutcome | AttemptFailure]] = []
+    for name, checkpoint in cases:
+        dispatched = attempt(
+            action=partial(
+                _dispatch,
+                root=tmp_path / name,
+                inspect_record=_failed_inspect(checkpoint=checkpoint),
+            ),
+            exceptions=(AttributeError, TypeError),
+        )
+        observed.append(
+            (name, dispatched if isinstance(dispatched, AttemptFailure) else dispatched[0])
+        )
+
+    assert [
+        (name, value.status, value.stage, value.pr_number)
+        if isinstance(value, DispatchOutcome)
+        else (name, type(value.error).__name__, "raised", None)
+        for name, value in observed
+    ] == [(name, "failed", "fabro-run", None) for name, _checkpoint in cases]
