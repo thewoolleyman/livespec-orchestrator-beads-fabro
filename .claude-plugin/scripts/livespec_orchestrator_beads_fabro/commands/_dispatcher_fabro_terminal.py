@@ -145,6 +145,7 @@ def _needs_human_terminal_outcome(
         return None
     run_label = "unknown-run" if run_id is None else run_id
     preserved = f"refs/heads/needs-human/{run_label}"
+    reason = _needs_human_reason(text=text)
     return outcome_type(
         work_item_id=plan.work_item_id,
         status="blocked",
@@ -155,12 +156,20 @@ def _needs_human_terminal_outcome(
             f"run {run_label} terminated at the needs_human node (needs-human); "
             f"the tree was preserved on {preserved} (see the preserve-by-reference "
             "pointer on the item for the dump digest); no run is waiting — the "
-            "decision lives in the ledger: answer with "
+            f"decision lives in the ledger. Failure reason: {reason}. Answer with "
             f"`resolve-blocked:{plan.work_item_id}:ready` (re-dispatch, seeding rework "
             "from the preserved ref or from scratch) or leave the item blocked"
         ),
         fabro_run_id=run_id,
     )
+
+
+def _needs_human_reason(*, text: str) -> str:
+    """The terminal node's emitted reason, excluding its routing suffix."""
+    prefix = f"{NEEDS_HUMAN_MARKER}: "
+    suffix = "; run terminated, work preserved by reference, decision routed to the ledger"
+    with_fallback = f"{text}\n{prefix}not recorded"
+    return with_fallback.partition(prefix)[2].partition(suffix)[0].splitlines()[0].strip()
 
 
 def _blocked_detail(
