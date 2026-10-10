@@ -28,6 +28,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from returns.pipeline import is_successful
+from returns.unsafe import unsafe_perform_io
+
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
     acp_preflight_refusal,
@@ -35,10 +38,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import host_only_refusal
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import read_dispatch_labels
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
+    apply_factory_size_dispatch_entry,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile, utc_now_iso
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
     failed_dispatch_outcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion import (
     provider_exhaustion_refusal,
 )
@@ -81,6 +88,23 @@ def _refusal_for(
     journal: JournalFile,
 ) -> DispatchOutcome | None:
     """The first condition this row fails, or `None` when it passes all four."""
+    size_result = apply_factory_size_dispatch_entry(
+        cwd=repo,
+        path_factory=lambda: store_config(repo=repo),
+        items=(item,),
+        journal=journal,
+    )
+    if not is_successful(size_result):
+        failure = unsafe_perform_io(size_result.failure())
+        return failed_dispatch_outcome(
+            journal=journal,
+            work_item_id=item.id,
+            stage="configuration",
+            detail=failure.detail,
+        )
+    size_refusals = unsafe_perform_io(size_result.unwrap())
+    if size_refusals:
+        return size_refusals[0]
     exhaustion_refusal = provider_exhaustion_refusal(
         work_item_id=item.id,
         journal=journal,

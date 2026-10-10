@@ -103,18 +103,34 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from returns.io import IOFailure, IOResult, IOSuccess
+from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
-from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
+from livespec_orchestrator_beads_fabro._beads_client import (
+    EDGE_PARENT_CHILD,
+    make_beads_client,
+)
+from livespec_orchestrator_beads_fabro._intake_factory_size_gate import (
+    apply_intake_factory_size_gate,
+)
+from livespec_orchestrator_beads_fabro._store_factory_size_gate import (
+    record_size_justification,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_advisories import (
     advisory_definition_of_done_findings,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_findings import (
     definition_of_done_findings,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
+    resolve_adopted_assertion_count_ceiling,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display import (
     ADVISORY_FINDING_PREFIX,
     MECHANICAL_FINDING_PREFIX,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
+    PolicySettingUnreadable,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_ADMISSION_POLICY,
@@ -123,6 +139,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
 from livespec_orchestrator_beads_fabro.errors import WorkItemNotFoundError
 from livespec_orchestrator_beads_fabro.store import (
     INTAKE_TRIAGED_LABEL,
+    append_work_item,
     materialize_work_items,
     read_work_items,
 )
@@ -138,6 +155,7 @@ __all__: list[str] = [
     "Verdict",
     "apply_intake_dor",
     "evaluate",
+    "file_captured_work_item",
     "filing_findings",
 ]
 
@@ -244,7 +262,7 @@ def apply_intake_dor(
     path: StoreConfig,
     item_id: str,
     checklist: DefinitionOfReadyChecklist,
-) -> IOResult[Verdict, WorkItemNotFoundError]:
+) -> IOResult[Verdict, WorkItemNotFoundError | PolicySettingUnreadable]:
     """Evaluate the checklist and route a filed item into its lifecycle state.
 
     An item the store does not hold is an EXPECTED failure and rides the
@@ -262,6 +280,12 @@ def apply_intake_dor(
         return IOFailure(WorkItemNotFoundError(item_id=item_id))
 
     item = materialize_work_items(records=read_work_items(path=path))[item_id]
+    size_route = apply_intake_factory_size_gate(path=path, item=item)
+    if not is_successful(size_route):
+        return IOFailure(unsafe_perform_io(size_route.failure()))
+    size_status = unsafe_perform_io(size_route.unwrap())
+    if size_status is not None:
+        return IOSuccess(size_status)
     verdict = evaluate(checklist=checklist)
     status = _routed_status(verdict=verdict, has_dependencies=bool(item.depends_on))
     findings = filing_findings(item=item, repo_root=path.repo_root)
@@ -304,6 +328,42 @@ def apply_intake_dor(
     for body in findings.comment_bodies():
         client.add_comment(issue_id=item_id, body=body)
     return IOSuccess(status)
+
+
+def file_captured_work_item(
+    *,
+    path: StoreConfig,
+    item: WorkItem,
+    checklist: DefinitionOfReadyChecklist,
+    size_justification: object = None,
+    plan_parent_id: str | None = None,
+) -> IOResult[Verdict, WorkItemNotFoundError | PolicySettingUnreadable]:
+    """Validate configuration, file one capture, then route it through intake.
+
+    Configuration is resolved before the first ledger mutation.  The raw
+    justification is recorded before intake evaluates the ceiling, making a
+    valid attributed exception reachable through the public capture operation
+    instead of requiring an out-of-band metadata edit.
+    """
+    repo_root = path.repo_root
+    if repo_root is not None:
+        ceiling = resolve_adopted_assertion_count_ceiling(cwd=repo_root)
+        if not is_successful(ceiling):
+            return IOFailure(unsafe_perform_io(ceiling.failure()))
+    append_work_item(path=path, item=item)
+    if size_justification is not None:
+        record_size_justification(
+            path=path,
+            work_item_id=item.id,
+            justification=size_justification,
+        )
+    if plan_parent_id is not None:
+        make_beads_client(config=path).add_dependency(
+            from_id=item.id,
+            to_id=plan_parent_id,
+            edge_type=EDGE_PARENT_CHILD,
+        )
+    return apply_intake_dor(path=path, item_id=item.id, checklist=checklist)
 
 
 def _routed_status(*, verdict: Verdict, has_dependencies: bool) -> Verdict:

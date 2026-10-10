@@ -42,6 +42,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
     DispatchOutcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
+    size_justified_at_admission,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_implement_adapter import (
     implement_adapter_label,
 )
@@ -107,6 +110,29 @@ def gather_tdd_signals(
             keys=(dispatch_id, item.id) if dispatch_id is not None else (item.id,)
         ),
         adapter=implement_adapter_label(records=records, work_item_id=item.id),
+        size_justified=_size_justified_signal(
+            records=records,
+            item=item,
+            outcome=outcome,
+            dispatch_id=dispatch_id,
+        ),
+    )
+
+
+def _size_justified_signal(
+    *,
+    records: tuple[dict[str, object], ...],
+    item: WorkItem,
+    outcome: DispatchOutcome,
+    dispatch_id: str | None,
+) -> bool | None:
+    """Whether this green dispatch was admitted by an attributed exception."""
+    if outcome.status != "green" or dispatch_id is None:
+        return None
+    return size_justified_at_admission(
+        records=records,
+        work_item_id=item.id,
+        dispatch_id=dispatch_id,
     )
 
 

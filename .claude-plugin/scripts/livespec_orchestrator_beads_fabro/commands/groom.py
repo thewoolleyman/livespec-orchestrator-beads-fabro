@@ -33,28 +33,44 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from livespec_runtime.work_items.rank import key_between
 
 from livespec_orchestrator_beads_fabro import regroom
-from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro._ids import new_work_item_id
+from livespec_orchestrator_beads_fabro._store_factory_size_gate import (
+    record_size_justification,
+)
 from livespec_orchestrator_beads_fabro._store_groom_approval import (
     GroomApproval,
     record_groom_approval,
     require_groom_approval,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
-    EffectiveCriteria,
     effective_criteria,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
+    consensus_groom_cut_size_refusal,
+    factory_size_configuration_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_groom_door import (
     GroomDispatch,
     GroomDoorRefusal,
     groom_dispatch,
 )
+from livespec_orchestrator_beads_fabro.commands._groom_context import (
+    GroomContext,
+    load_groom_context,
+)
 from livespec_orchestrator_beads_fabro.commands._groom_dep_handles import resolve_dep_entries
+from livespec_orchestrator_beads_fabro.commands._groom_types import (
+    CandidateSlice,
+    CrossRepoSlice,
+    GroomResult,
+    SliceCriteriaParse,
+)
 from livespec_orchestrator_beads_fabro.errors import GroomDraftError
 from livespec_orchestrator_beads_fabro.intake_dor import (
     DefinitionOfReadyChecklist,
@@ -64,7 +80,6 @@ from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import DependsOnRaw, WorkItem
 
 if TYPE_CHECKING:
-    from livespec_orchestrator_beads_fabro._beads_client import BeadsRecord
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 # `GroomDispatch` / `GroomDoorRefusal` / `groom_dispatch` are RE-EXPORTS of the
@@ -85,118 +100,6 @@ __all__: list[str] = [
     "groom_dispatch",
     "load_groom_context",
 ]
-
-
-@dataclass(frozen=True, kw_only=True)
-class GroomContext:
-    """The read-only scoping context a groom draft is grounded in.
-
-    Returned by `load_groom_context` after confirming the target is in
-    `backlog`. Carries only what the draft needs; the front-end's dialogue
-    reads the spec / scenarios / ledger separately (read-only).
-    """
-
-    item_id: str
-    title: str
-    description: str
-
-
-@dataclass(frozen=True, kw_only=True)
-class CandidateSlice:
-    """One drafted candidate slice in the layered decomposition.
-
-    The maintainer-approved shape: every field the intake Definition-of-
-    Ready checklist gates on is pre-filled, so a filed factory slice can be
-    routed through the shared intake primitive. `is_spec_change` marks a human-gated
-    spec-change slice that routes to `/livespec:propose-change` instead of
-    being filed into the factory ledger.
-
-    `depends_on` carries the dependency-layer arrangement as DRAFT-LOCAL
-    handles — the `title` of an EARLIER factory slice in the same approved
-    draft that this slice is blocked by. Filing mints each slice's id, so
-    a slice cannot name a not-yet-minted id; `file_approved_slices`
-    resolves each title handle to the earlier slice's minted id and links
-    the real `blocks` edge. The maintainer arranges the draft so a slice's
-    blockers precede it (later layers after earlier layers).
-    """
-
-    title: str
-    description: str
-    acceptance: str
-    autonomy_tier: str
-    repo_target: str
-    depends_on: tuple[str, ...] = ()
-    is_spec_change: bool = False
-
-
-@dataclass(frozen=True, kw_only=True)
-class CrossRepoSlice:
-    """A factory slice targeting a different repo, returned for external routing.
-
-    Not filed in the local tenant (the one-slice/one-ledger model: each
-    slice goes into its target repo's tenant). The `minted_id` is assigned
-    at groom time so local slices that depend on this cross-repo slice can
-    reference it as a `sibling_work_item` dependency with a known id.
-    """
-
-    candidate: CandidateSlice
-    minted_id: str
-
-
-@dataclass(frozen=True, kw_only=True)
-class SliceCriteriaParse:
-    """One filed slice's effective-criteria parse, for the front-end to display.
-
-    Carried as a RESULT rather than enforced as a gate: the
-    effective-acceptance-criteria clause of contracts.md requires groom to
-    display the parse and forbids it refusing on an empty one, because a
-    groomed slice's criteria may legitimately arrive at approve time.
-    """
-
-    slice_id: str
-    criteria: EffectiveCriteria
-
-
-@dataclass(frozen=True, kw_only=True)
-class GroomResult:
-    """The outcome of an approved groom: what was filed, routed, and exited.
-
-    - `filed_slice_ids` — the local factory slices filed and then routed by
-      the intake Definition-of-Ready primitive (in draft order), with their
-      dependency edges linked.
-    - `criteria_parses` — each filed local slice's effective-criteria parse
-      (the gradeable-assertion count and the resolved source), for the
-      front-end to display.
-    - `spec_change_slices` — the approved spec-change slices NOT filed
-      here; the SKILL.md prose routes each to `/livespec:propose-change`.
-    - `cross_repo_slices` — factory slices whose `repo_target` differs from
-      `local_repo`; NOT filed in the local tenant. Returned with their
-      minted ids for the SKILL.md prose to route to the target repo.
-    - `regroomed_out` — True once the original backlog item is explicitly
-      closed against the filed factory slices.
-    """
-
-    filed_slice_ids: tuple[str, ...] = ()
-    criteria_parses: tuple[SliceCriteriaParse, ...] = ()
-    spec_change_slices: tuple[CandidateSlice, ...] = ()
-    cross_repo_slices: tuple[CrossRepoSlice, ...] = ()
-    regroomed_out: bool = False
-
-
-def load_groom_context(*, path: StoreConfig, item_id: str) -> GroomContext:
-    """Read the backlog target read-only, refusing any other lifecycle state.
-
-    The READ-ONLY entry point: it confirms `item_id` is present and currently
-    in `backlog`. Mutates nothing; the draft stays read-only until
-    `file_approved_slices` is called on approval.
-    """
-    regroom.require_backlog_target(path=path, item_id=item_id)
-    record = make_beads_client(config=path).show_issue(issue_id=item_id)
-    return GroomContext(
-        item_id=item_id,
-        title=_record_str(record=record, key="title"),
-        description=_record_str(record=record, key="description"),
-    )
 
 
 def file_approved_slices(
@@ -241,6 +144,10 @@ def file_approved_slices(
     Raises `WorkItemNotFoundError` if `regroom_item_id` is absent.
     """
     approved = require_groom_approval(approval=approval)
+    if path.repo_root is not None and (
+        detail := factory_size_configuration_refusal(cwd=path.repo_root)
+    ):
+        raise GroomDraftError(detail=detail)
     # The WHOLE cut is resolved before the FIRST write. Filing a slice is three
     # writes with no transaction behind them and no compensating delete, so a
     # malformed draft discovered mid-loop would leave the ledger holding some
@@ -250,22 +157,24 @@ def file_approved_slices(
     # all-or-nothing without a transaction, which is the guarantee an absent
     # approval record already carried.
     plan = _plan_approved_slices(slices=slices, local_repo=local_repo, prefix=path.prefix)
+    prepared = _prepare_local_slices(planned=plan.local)
+    if detail := consensus_groom_cut_size_refusal(
+        cwd=path.repo_root or Path.cwd(),
+        approving_invoker=approved.approver,
+        items=tuple(item for _planned, item in prepared),
+    ):
+        raise GroomDraftError(detail=detail)
     filed_ids: list[str] = []
     parses: list[SliceCriteriaParse] = []
-    # Each filed local slice gets a `rank` appended below the previous one
-    # (threaded `key_between`), so the dependency-layered draft order becomes
-    # the ready-lane drain order.
-    prev_rank: str | None = None
-    for planned in plan.local:
-        rank = key_between(a=prev_rank, b=None)
-        prev_rank = rank
-        item = _work_item_for(
-            candidate=planned.candidate,
-            slice_id=planned.slice_id,
-            dep_entries=planned.dep_entries,
-            rank=rank,
+    for planned, item in prepared:
+        parses.append(
+            _file_local_slice(
+                path=path,
+                item=item,
+                approval=approved,
+                size_justification=planned.candidate.size_justification,
+            )
         )
-        parses.append(_file_local_slice(path=path, item=item, approval=approved))
         filed_ids.append(planned.slice_id)
     regroom.close_regroomed_out(path=path, item_id=regroom_item_id, replacement_slice_ids=filed_ids)
     record_groom_approval(path=path, work_item_id=regroom_item_id, approval=approved)
@@ -353,8 +262,31 @@ def _plan_approved_slices(
     )
 
 
+def _prepare_local_slices(
+    *, planned: tuple[_PlannedLocalSlice, ...]
+) -> tuple[tuple[_PlannedLocalSlice, WorkItem], ...]:
+    """Build every local work-item before the filing's first ledger write."""
+    prepared: list[tuple[_PlannedLocalSlice, WorkItem]] = []
+    prev_rank: str | None = None
+    for entry in planned:
+        rank = key_between(a=prev_rank, b=None)
+        prev_rank = rank
+        item = _work_item_for(
+            candidate=entry.candidate,
+            slice_id=entry.slice_id,
+            dep_entries=entry.dep_entries,
+            rank=rank,
+        )
+        prepared.append((entry, item))
+    return tuple(prepared)
+
+
 def _file_local_slice(
-    *, path: StoreConfig, item: WorkItem, approval: GroomApproval
+    *,
+    path: StoreConfig,
+    item: WorkItem,
+    approval: GroomApproval,
+    size_justification: object,
 ) -> SliceCriteriaParse:
     """File one approved local slice, route it, stamp its approval, parse it.
 
@@ -363,6 +295,12 @@ def _file_local_slice(
     not stamped is a slice nobody can attribute later.
     """
     append_work_item(path=path, item=item)
+    if size_justification is not None:
+        record_size_justification(
+            path=path,
+            work_item_id=item.id,
+            justification=size_justification,
+        )
     _route_approved_slice_intake(path=path, item_id=item.id)
     # Stamped AFTER intake routing: the router rewrites the slice's modeled
     # metadata, so a stamp placed before it would be overlaid by the very
@@ -430,11 +368,6 @@ def _route_approved_slice_intake(*, path: StoreConfig, item_id: str) -> None:
             above_floor=True,
         ),
     )
-
-
-def _record_str(*, record: BeadsRecord, key: str) -> str:
-    value = record.get(key)
-    return value if isinstance(value, str) else ""
 
 
 def _now_iso() -> str:
