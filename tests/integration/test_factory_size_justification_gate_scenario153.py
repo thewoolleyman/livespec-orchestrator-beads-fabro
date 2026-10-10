@@ -167,7 +167,7 @@ def _write_repo_config(
     if groom_variant is not None:
         relative = f".fabro/workflows/{groom_variant}"
         workflow = repo / relative
-        workflow.mkdir(parents=True)
+        workflow.mkdir(parents=True, exist_ok=True)
         (workflow / "workflow.toml").write_text(
             '[workflow]\ngraph = "workflow.fabro"\n\n[run.inputs]\nworkflow_kind = "groom"\n',
             encoding="utf-8",
