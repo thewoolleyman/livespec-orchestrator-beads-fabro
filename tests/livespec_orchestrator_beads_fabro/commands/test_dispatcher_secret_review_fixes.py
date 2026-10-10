@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,9 +19,19 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_io_fabro_launcher as launcher_module,
+)
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop as loop_module
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+    CommandResult,
+    CommandRunner,
+    JournalWriter,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io_fabro_launcher import (
+    WatchedFabroLauncher,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_channel import (
     SECRET_CHANNEL_INLINE_OVERLAY,
     SECRET_CHANNEL_NATIVE_SECRETS,
@@ -31,6 +42,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_channel impor
     route_secrets_through_vault,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_vault import FabroVaultSink
+from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import LivenessSample
+from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroRunSummary
 
 _REVIEW_VAULT_KEY = "LIVESPEC_DISPATCH_REVIEW_GITHUB_TOKEN"
 
@@ -52,6 +65,36 @@ class _RejectingRunner:
     ) -> CommandResult:
         _ = argv, cwd, timeout_seconds, env, stdin
         return CommandResult(exit_code=2, stdout="", stderr=self.rejection)
+
+
+@dataclass(kw_only=True)
+class _SignallingRunner:
+    """A successful vault runner that announces its first invocation."""
+
+    entered: threading.Event
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        _ = argv, cwd, timeout_seconds, env, stdin
+        self.entered.set()
+        return CommandResult(exit_code=0, stdout="", stderr="")
+
+
+@dataclass(kw_only=True)
+class _AliveSequence:
+    """The launch thread's liveness across two watchdog discovery polls."""
+
+    alive: list[bool]
+
+    def is_alive(self) -> bool:
+        return self.alive.pop(0)
 
 
 def _route(*, text: str, value_name: str, scope: str) -> RoutedOverlay | SecretChannelRefusal:
@@ -196,3 +239,102 @@ def test_residual_guard_matches_the_overlay_renderers_exact_encoding() -> None:
     assert isinstance(result, SecretChannelRefusal)
     assert "resolved value still appears" in result.message
     assert value not in result.message
+
+
+def test_same_factory_vault_writes_wait_for_the_prior_worker_snapshot() -> None:
+    """A second launch cannot replace any stable key before the first snapshots all."""
+    server = "https://hp-xubuntu.example.invalid:32278/review-round-two"
+    first_entered = threading.Event()
+    second_entered = threading.Event()
+    first = FabroVaultSink(
+        fabro_bin="fabro",
+        server_url=server,
+        runner=_SignallingRunner(entered=first_entered),
+        cwd=Path("/workspace/first"),
+    )
+    second = FabroVaultSink(
+        fabro_bin="fabro",
+        server_url=server,
+        runner=_SignallingRunner(entered=second_entered),
+        cwd=Path("/workspace/second"),
+    )
+    secret = VaultSecret(
+        env_name="GITHUB_TOKEN",
+        secret_name=_REVIEW_VAULT_KEY,
+        value="review-concurrency-canary",
+    )
+    assert first.set(secret=secret) is None
+    assert first_entered.is_set()
+
+    second_result: list[str | None] = []
+    thread = threading.Thread(target=lambda: second_result.append(second.set(secret=secret)))
+    thread.start()
+    # The wait is only a negative observation; the positive release/join below
+    # proves the thread was genuinely attempting the store rather than never run.
+    second_was_blocked = not second_entered.wait(timeout=0.1)
+    getattr(first, "release_launch_guard", lambda: None)()
+    thread.join(timeout=2.0)
+    getattr(second, "release_launch_guard", lambda: None)()
+
+    assert second_was_blocked
+    assert not thread.is_alive()
+    assert second_result == [None]
+
+
+def test_launch_guard_releases_only_after_the_worker_reports_running(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Runnable is too early; running follows the candidate's vault snapshot."""
+    assert "on_worker_running" in inspect.signature(WatchedFabroLauncher).parameters
+    events: list[str] = []
+    discovered = iter(
+        (
+            FabroRunSummary(
+                run_id="01RUNNABLE",
+                status_kind="runnable",
+                goal=None,
+                work_item_id="bd-ib-review",
+                total_usd_micros=None,
+            ),
+            FabroRunSummary(
+                run_id="01RUNNING",
+                status_kind="running",
+                goal=None,
+                work_item_id="bd-ib-review",
+                total_usd_micros=None,
+            ),
+        )
+    )
+
+    def discover(_self: WatchedFabroLauncher, **_: object) -> FabroRunSummary:
+        run = next(discovered)
+        events.append(run.status_kind)
+        return run
+
+    launcher = WatchedFabroLauncher(
+        sleep=lambda _seconds: None,
+        clock=lambda: 0.0,
+        on_worker_running=lambda: events.append("released"),
+    )
+    monkeypatch.setattr(WatchedFabroLauncher, "_discover_run", discover)
+    monkeypatch.setattr(
+        launcher_module,
+        "liveness_sample",
+        lambda **_: LivenessSample(last_event_epoch=None, observed_at=0.0),
+    )
+    _ = launcher._watch(  # noqa: SLF001 - exercises the exact snapshot-release boundary.
+        plan=SimpleNamespace(repo=Path("/workspace/repo"), work_item_id="bd-ib-review"),
+        runner=cast("CommandRunner", object()),
+        journal=cast("JournalWriter", object()),
+        thread=cast("threading.Thread", _AliveSequence(alive=[True, True, True, True, False])),
+        port=cast("FabroPort", object()),
+    )
+
+    assert events == ["runnable", "running", "released"]
+
+
+def test_dispatch_wires_the_vault_guard_to_the_worker_running_boundary() -> None:
+    """The sink's held transaction reaches the production watched launcher."""
+    source = inspect.getsource(loop_module._dispatch_one_locked)  # noqa: SLF001
+    assert "on_worker_running=secret_sink.release_launch_guard" in source
+    assert "secret_sink.release_launch_guard()" in source
