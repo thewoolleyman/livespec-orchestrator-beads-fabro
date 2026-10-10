@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "StageJournalOptions",
     "failed_outcome",
+    "journal_publish_draft_refresh",
     "journal_stage",
     "run_stage",
     "stalled_outcome",
@@ -41,6 +43,37 @@ class StageJournalOptions:
 
 
 _DEFAULT_STAGE_JOURNAL_OPTIONS = StageJournalOptions()
+_PUBLISH_DRAFT_REFRESH_PATTERN = re.compile(
+    "".join(
+        (
+            r"LIVESPEC_PUBLISH_DRAFT_REFRESH: ",
+            r"publish_branch=(?P<publish_branch>\S+) ",
+            r"base_before=(?P<base_before>[0-9a-f]{40,64}) ",
+            r"base_after=(?P<base_after>[0-9a-f]{40,64})",
+        )
+    )
+)
+
+
+def journal_publish_draft_refresh(
+    *,
+    journal: JournalWriter,
+    work_item_id: str,
+    text: str,
+) -> None:
+    """Project the publish-base refresh marker into its own journal row."""
+    match = _PUBLISH_DRAFT_REFRESH_PATTERN.search(text)
+    if match is None:
+        return
+    journal.append(
+        record={
+            "work_item_id": work_item_id,
+            "stage": "publish-draft-refresh",
+            "publish_branch": match.group("publish_branch"),
+            "base_before": match.group("base_before"),
+            "base_after": match.group("base_after"),
+        }
+    )
 
 
 def failed_outcome(
