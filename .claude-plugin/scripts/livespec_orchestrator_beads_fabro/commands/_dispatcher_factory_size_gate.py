@@ -21,6 +21,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
     PolicySettingUnreadable,
     read_dispatcher_config_value,
 )
+from livespec_orchestrator_beads_fabro.effects import IsoDatetimeParseFailure, parse_iso_datetime
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 if TYPE_CHECKING:
@@ -151,9 +152,18 @@ def _adopted_ceiling_value(*, value: object) -> Result[int | None, PolicySetting
 
 
 def _valid_size_justification(*, raw: object) -> bool:
-    values = cast("dict[str, str]", raw)
-    try:
-        stripped = tuple(map(str.strip, (values["rationale"], values["author"], values["at"])))
-    except (KeyError, TypeError):
+    if not isinstance(raw, dict):
         return False
-    return all(stripped)
+    values = cast("dict[object, object]", raw)
+    if set(values) != {"rationale", "author", "at"}:
+        return False
+    for key in ("rationale", "author", "at"):
+        if not _non_empty_string(value=values[key]):
+            return False
+    at = cast("str", values["at"]).strip()
+    normalized = at.removesuffix("Z") + ("+00:00" if at.endswith("Z") else "")
+    return not isinstance(parse_iso_datetime(text=normalized), IsoDatetimeParseFailure)
+
+
+def _non_empty_string(*, value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
