@@ -241,7 +241,7 @@ def _definition_of_done_findings(*, record: BeadsRecord, epic_id: str) -> tuple[
 def _gap_directive(
     *, config: StoreConfig, epic_id: str, findings: tuple[str, ...]
 ) -> ResumeDirective:
-    set_next_action(
+    _ = set_next_action(
         config=config,
         epic_id=epic_id,
         action=NextAction(kind=HUMAN_KIND, ref="", text=missing_section_gap_text()),
