@@ -1395,9 +1395,9 @@
     "heading": "## Scenario 130 \u2014 Dispatch admits only a current, identifiable Fabro base",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified by the fabro-currency revise pass (plan/epic bd-ib-6tcjfx). Integration-tier coverage must exercise the shared target-aware predicate through direct, hand-picked, drain, and autonomous-loop admission, including exact-tag ancestry, publication-window, transition-deadline, stale-observation, release-class, and two-target controls; it is owed by the required post-revise implementation-gap capture.",
-    "work_item": "bd-ib-6tcjfx"
+    "test": "tests.integration.test_fabro_currency_admission_scenario130.test_every_dispatch_entry_reaches_the_target_aware_wall_before_claim",
+    "reason": "Integration-tier acceptance for Scenario 130, completed by bd-ib-j9x. The bound node proves direct, hand-picked, and autonomous dispatches all reach the same target-aware predicate before claim, use the selected factory's own binary, and refuse before downstream claim or publish-branch reclaim. The module's sibling cases bind the predicate's publication-time ordering across stable and prerelease tags, exact-tag ancestry, complete out-of-window evidence, stale-observation refresh refusal, the fixed 0.254 transition deadline, and the fresh-cache current-base control.",
+    "work_item": "bd-ib-j9x"
   },
   {
     "heading": "## Scenario 131 \u2014 The Definition of Done gate admits a coherent item, refuses a malformed one host-side, and rests an incoherent one at needs-human",

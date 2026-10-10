@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import cast
 
@@ -25,6 +25,7 @@ __all__: list[str] = [
 
 _SERVING_COMMIT_RE = re.compile(r"\(([0-9a-fA-F]{7,40})(?:\s|\))")
 _VERSION_TIMEOUT_SECONDS = 20.0
+_CURRENCY_WINDOW = timedelta(days=30)
 _TRANSITION_DEADLINE_TEXT = "2026-11-14T00:00:00Z"
 _TRANSITION_DEADLINE = datetime.fromisoformat(_TRANSITION_DEADLINE_TEXT.replace("Z", "+00:00"))
 
@@ -96,13 +97,16 @@ def fabro_currency_admission(
             serving_commit=serving_commit,
             base=base,
         )
-    return _window_refusal(
-        target=target,
-        serving_commit=serving_commit,
-        base=base,
-        newest=ordered[0],
-        observed_at=observation.observed_at,
-    )
+    newest = ordered[0]
+    if newest.published_at - base.published_at > _CURRENCY_WINDOW:
+        return _window_refusal(
+            target=target,
+            serving_commit=serving_commit,
+            base=base,
+            newest=newest,
+            observed_at=observation.observed_at,
+        )
+    return FabroCurrencyDecision(admitted=True, message="")
 
 
 def _transition_admission(

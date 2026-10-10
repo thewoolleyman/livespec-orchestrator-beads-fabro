@@ -275,13 +275,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 130 \u2014 Dispatch admits only a current, identifiable Fabro base",
-    "work_item": "bd-ib-6tcjfx",
-    "first_seen": "2026-09-30"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 135 \u2014 A plan cannot archive until its own Definition of Done is proved against the released build",
     "work_item": "bd-ib-wbdgil",
     "first_seen": "2026-10-03"

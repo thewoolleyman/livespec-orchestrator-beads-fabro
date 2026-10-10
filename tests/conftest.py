@@ -131,6 +131,14 @@ def _hermetic_state_home(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path_factory.mktemp("state-home")))
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_cache_home(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """Keep cross-process runtime caches out of the developer's real home."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path_factory.mktemp("cache-home")))
+
+
 _FACTORY_CREDENTIAL_SLOT_PREFIX = "CLAUDE_CODE_OAUTH_TOKEN__"
 
 _PROJECTED_CREDENTIAL_GRADE_ENV = (
@@ -261,7 +269,14 @@ def _fabro_stub_bin(tmp_path_factory: pytest.TempPathFactory) -> str:
     """
     stub_dir = tmp_path_factory.mktemp("fabro-stub-bin")
     stub = stub_dir / "fabro"
-    _ = stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    _ = stub.write_text(
+        "#!/bin/sh\n"
+        'if [ "$*" = "--version" ]; then\n'
+        "  printf 'fabro 0.500.0 (abcdef1234567890 2026-10-10)\\n'\n"
+        "fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
     stub.chmod(0o755)
     return str(stub)
 
@@ -281,6 +296,8 @@ GH_STUB_LOG_ENV = "LIVESPEC_TEST_GH_LOG"
 _GH_STUB_DEFAULT_BRANCH = "main"
 _GH_STUB_RUN_LIST = '[{"status":"completed","conclusion":"success","databaseId":900001}]'
 _GH_STUB_JOBS = '{"jobs":[{"name":"ci-green","conclusion":"success","status":"completed"}]}'
+_GH_STUB_FABRO_RELEASES = '[[{"tag_name":"v0.500.0","published_at":"2026-10-10T00:00:00Z"}]]'
+_GH_STUB_FABRO_COMPARE = '{"status":"identical"}'
 
 # A real, executable `gh` stand-in. It never touches the network: it records
 # its argv when asked, replays a scripted stdout, and exits a scripted code
@@ -290,6 +307,12 @@ _GH_STUB_SOURCE = f"""#!/bin/sh
 if [ -n "${{{GH_STUB_LOG_ENV}:-}}" ]; then
   printf '%s\\n' "$*" >> "${GH_STUB_LOG_ENV}"
 fi
+case "$*" in
+  'api --paginate --slurp repos/fabro-sh/fabro/releases?per_page=100')
+    printf '%s' '{_GH_STUB_FABRO_RELEASES}'; exit 0 ;;
+  'api repos/fabro-sh/fabro/compare/'*)
+    printf '%s' '{_GH_STUB_FABRO_COMPARE}'; exit 0 ;;
+esac
 if [ -z "${{{GH_STUB_STDOUT_ENV}:-}}" ] && [ -z "${{{GH_STUB_EXIT_ENV}:-}}" ]; then
   case "$*" in
     'auth token') printf 'hermetic-gh-token\\n'; exit 0 ;;

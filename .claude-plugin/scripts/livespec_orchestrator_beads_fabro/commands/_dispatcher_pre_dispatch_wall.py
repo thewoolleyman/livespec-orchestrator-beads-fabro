@@ -8,7 +8,7 @@ what required every new refusal to be wired twice. It moved out when the Codex
 credential gate became the fourth refusal in each and pushed the single-dispatch
 command module past its file LLOC ceiling — the seam was already there.
 
-WHAT THE WALL IS. Four refusals plus one mutation, sharing one POSITION and one
+WHAT THE WALL IS. Five refusals plus one mutation, sharing one POSITION and one
 guarantee: each runs after selection and BEFORE admission, so a refused item is
 never claimed, no `active` row is left behind, and no factory run exists to reap.
 Reading them as one decision is also what keeps each command entry point's return
@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import os
 from collections.abc import Sequence
+from datetime import datetime, timezone
 from pathlib import Path
 
 from returns.unsafe import unsafe_perform_io
@@ -52,6 +53,18 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_wrapper i
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import (
     read_dispatch_labels,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency_gate import (
+    fabro_currency_admission,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_forge import (
+    fabro_release_cache_path,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import (
+    factory_effective_fabro_bin,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
+    selected_dispatch_factory_target,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
@@ -106,6 +119,14 @@ def pre_dispatch_wall_exit(
     exempts a groom-kind dispatch, whose acceptance is the human approval of the
     draft.
 
+    The Fabro-currency gate follows (bd-ib-j9x): it resolves each item's selected
+    factory WITHOUT recording that selection, asks the client binary belonging
+    to that target for its serving integration commit, and grades the commit
+    against one cached-or-refreshed publication observation. Keeping target
+    selection read-only here is load-bearing: the rejection promised by this
+    wall is before ledger mutation, including the factory pin that the admitted
+    path records later.
+
     The proof-ASSETS gate follows (S5 / bd-ib-b4u6b7): an item carrying a
     `factory_captured` assertion needs this repository's standing proof-assets
     prerelease to exist before its capture stage can store an image, so the
@@ -149,6 +170,9 @@ def pre_dispatch_wall_exit(
     if ungradeable is not None:
         _ = write_stderr(text=ungradeable)
         return EXIT_UNGRADEABLE_CRITERIA
+    currency_exit = _fabro_currency_wall_exit(args=args, repo=repo, items=items)
+    if currency_exit is not None:
+        return currency_exit
     proof_refusal = proof_assets_refusal_for_items(
         runner=ShellCommandRunner(), repo=repo, items=items, journal=journal
     )
@@ -206,6 +230,37 @@ def pre_dispatch_wall_exit(
     # sequence is exactly the drift the one-wall consolidation retired.
     if reclaim_publish_branches:
         reclaim_stale_publish_branches(args=args, repo=repo, items=items, journal=journal)
+    return None
+
+
+def _fabro_currency_wall_exit(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    items: Sequence[WorkItem],
+) -> int | None:
+    """Apply the selected factory's currency predicate before any mutation."""
+    now = datetime.now(timezone.utc)
+    runner = ShellCommandRunner()
+    for item in items:
+        target = selected_dispatch_factory_target(
+            args=args,
+            repo=repo,
+            work_item_id=item.id,
+        )
+        fabro_bin = factory_effective_fabro_bin(args=args, factory=target)
+        decision = fabro_currency_admission(
+            target=target,
+            fabro_bin=fabro_bin or args.fabro_bin,
+            repo=repo,
+            runner=runner,
+            now=now,
+            cache_path=fabro_release_cache_path(repo=repo),
+        )
+        if decision.message != "":
+            _ = write_stderr(text=decision.message)
+        if not decision.admitted:
+            return EXIT_PRECONDITION_ERROR
     return None
 
 

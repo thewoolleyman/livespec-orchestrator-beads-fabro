@@ -413,6 +413,7 @@ def _stub_wall_siblings(*, monkeypatch: pytest.MonkeyPatch) -> None:
     """
     wall = importlib.import_module(_WALL_MODULE)
     monkeypatch.setattr(wall, "pre_dispatch_criteria_refusal", lambda **_kwargs: None)
+    monkeypatch.setattr(wall, "_fabro_currency_wall_exit", lambda **_kwargs: None)
     monkeypatch.setattr(wall, "proof_assets_refusal_for_items", lambda **_kwargs: None)
     monkeypatch.setattr(wall, "proof_credentials_refusal_for_items", lambda **_kwargs: None)
     monkeypatch.setattr(wall, "credential_wrapper_text", lambda **_kwargs: "")

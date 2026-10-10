@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import cast
 from urllib.parse import quote
@@ -15,6 +17,7 @@ __all__: list[str] = [
     "FabroForgeFailure",
     "FabroRelease",
     "FabroReleaseObservation",
+    "fabro_release_cache_path",
     "release_observation",
     "release_tag_is_ancestor",
 ]
@@ -22,6 +25,7 @@ __all__: list[str] = [
 _RELEASES_ENDPOINT = "repos/fabro-sh/fabro/releases?per_page=100"
 _COMPARE_ENDPOINT = "repos/fabro-sh/fabro/compare/{tag}...{commit}"
 _FORGE_TIMEOUT_SECONDS = 60.0
+_MAX_OBSERVATION_AGE = timedelta(days=7)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -42,6 +46,18 @@ class FabroForgeFailure:
     stale_observed_at: datetime
 
 
+def fabro_release_cache_path(*, repo: Path) -> Path:
+    """Return this checkout's release-observation file outside the governed tree."""
+    cache_home = Path(os.getenv("XDG_CACHE_HOME", str(Path.home() / ".cache")))
+    repo_digest = hashlib.sha256(str(repo.resolve()).encode("utf-8")).hexdigest()[:32]
+    return (
+        cache_home
+        / "livespec-orchestrator-beads-fabro"
+        / "fabro-release-observation"
+        / f"{repo_digest}.json"
+    )
+
+
 def release_observation(
     *,
     cache_path: Path,
@@ -51,6 +67,8 @@ def release_observation(
 ) -> FabroReleaseObservation | FabroForgeFailure:
     """Refresh publication evidence, retaining a stale timestamp for refusal."""
     stale = _read_cache(path=cache_path) if cache_path.is_file() else None
+    if stale is not None and now - stale.observed_at <= _MAX_OBSERVATION_AGE:
+        return stale
     result = runner.run(
         argv=["gh", "api", "--paginate", "--slurp", _RELEASES_ENDPOINT],
         cwd=repo,

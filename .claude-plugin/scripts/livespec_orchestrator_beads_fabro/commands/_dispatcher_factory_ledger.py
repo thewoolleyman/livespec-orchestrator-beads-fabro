@@ -24,6 +24,7 @@ from livespec_orchestrator_beads_fabro.store import (
 __all__: list[str] = [
     "args_with_dispatch_factory_target",
     "resolve_dispatch_factory_target",
+    "selected_dispatch_factory_target",
 ]
 
 _ENV_FABRO_FACTORY = "LIVESPEC_FABRO_FACTORY"
@@ -36,13 +37,28 @@ def resolve_dispatch_factory_target(
     work_item_id: str,
 ) -> FactoryTarget:
     """Resolve and persist the Fabro factory target for one dispatch."""
+    target = selected_dispatch_factory_target(
+        args=args,
+        repo=repo,
+        work_item_id=work_item_id,
+    )
+    config = store_config(repo=repo)
+    record_dispatch_factory(path=config, work_item_id=work_item_id, factory=target.name)
+    return target
+
+
+def selected_dispatch_factory_target(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    work_item_id: str,
+) -> FactoryTarget:
+    """Resolve one dispatch's selected target without mutating its ledger row."""
     config = store_config(repo=repo)
     explicit = _explicit_factory(args=args)
     recorded = dispatch_factory_for(path=config, work_item_id=work_item_id)
     factory = explicit or _usable_recorded_factory(repo=repo, recorded=recorded)
-    target = resolve_fabro_factory(cwd=repo, factory=factory)
-    record_dispatch_factory(path=config, work_item_id=work_item_id, factory=target.name)
-    return target
+    return resolve_fabro_factory(cwd=repo, factory=factory)
 
 
 def args_with_dispatch_factory_target(
