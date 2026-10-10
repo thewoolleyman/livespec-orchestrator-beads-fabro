@@ -254,7 +254,7 @@ def _seed_next_actions(
             handoff_body=_newest_handoff(config=config, epic_id=epic.epic_id),
             prefix=config.prefix,
         )
-        set_next_action(
+        _ = set_next_action(
             config=config,
             epic_id=epic.epic_id,
             action=action,

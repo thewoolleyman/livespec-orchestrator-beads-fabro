@@ -23,6 +23,10 @@ from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
     resume_directive,
     set_next_action,
 )
+from livespec_orchestrator_beads_fabro.commands.plan import (
+    append_handoff,
+    append_supervisor_handoff,
+)
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 if TYPE_CHECKING:
@@ -90,7 +94,241 @@ def _impl_action() -> NextAction:
         kind="impl",
         ref="bd-ib-w3nwz5.1",
         text="Dispatch b1 through the factory.",
+        required_result=_RESULT,
+        budget=_BUDGET,
     )
+
+
+_RESULT = {
+    "repo": "livespec-orchestrator-beads-fabro",
+    "item_status": {"item_id": _EPIC_ID, "status": "closed"},
+}
+_BUDGET = {
+    "deadline": "2099-09-04T18:00:00Z",
+    "max_handoffs": 3,
+    "epoch": "epoch-1",
+    "handoff_count": 1,
+}
+
+
+def _tracked_action(*, kind: str, ref: str) -> NextAction:
+    return NextAction(
+        kind=kind,
+        ref=ref,
+        text="Take the recorded plan action.",
+        required_result=_RESULT,
+        budget=_BUDGET,
+    )
+
+
+def _assert_all_tracked_kinds_write_five_key_pointers() -> None:
+    for kind, ref in (
+        ("impl", "bd-ib-w3nwz5.1"),
+        ("spec-op", "propose-change:typed-next-action"),
+        ("proof", f"capture:{_EPIC_ID}"),
+        ("proof", f"verify:{_EPIC_ID}"),
+        ("review", _EPIC_ID),
+        ("archive", _EPIC_ID),
+        ("await", "run:run-1"),
+        ("await", "gate:gate-1"),
+        ("await", "item:bd-ib-w3nwz5.1"),
+        ("await", f"epic:{_EPIC_ID}"),
+    ):
+        action = _tracked_action(kind=kind, ref=ref)
+        assert (
+            set_next_action(
+                config=_config(),
+                epic_id=_EPIC_ID,
+                action=action,
+                session="tracked-writer",
+                now="2026-09-04T18:00:00Z",
+            )
+            is None
+        )
+        assert read_next_action(config=_config(), epic_id=_EPIC_ID) == action
+        pointer = _epic_metadata()[NEXT_ACTION_METADATA_KEY]
+        assert sorted(pointer) == ["budget", "kind", "ref", "required_result", "text"]
+    for action in (
+        NextAction(
+            kind="human",
+            ref="attention-item",
+            text="Ask the maintainer.",
+            required_result=None,
+            budget=None,
+        ),
+        NextAction(
+            kind="none",
+            ref="",
+            text="The plan has no remaining action.",
+            required_result=None,
+            budget=None,
+        ),
+    ):
+        assert (
+            set_next_action(
+                config=_config(),
+                epic_id=_EPIC_ID,
+                action=action,
+                session="tracked-writer",
+                now="2026-09-04T18:00:00Z",
+            )
+            is None
+        )
+        assert read_next_action(config=_config(), epic_id=_EPIC_ID) == action
+        pointer = _epic_metadata()[NEXT_ACTION_METADATA_KEY]
+        assert sorted(pointer) == ["budget", "kind", "ref", "required_result", "text"]
+
+
+def _assert_handoff_writers_accept_tracked_actions() -> None:
+    proof = _tracked_action(kind="proof", ref=f"capture:{_EPIC_ID}")
+    assert (
+        append_handoff(
+            config=_config(),
+            epic_id=_EPIC_ID,
+            body="Capture plan proof.",
+            author="plan-session",
+            now="2026-09-04T18:01:00Z",
+            next_action=proof,
+        )
+        is None
+    )
+    review = _tracked_action(kind="review", ref=_EPIC_ID)
+    assert (
+        append_supervisor_handoff(
+            config=_config(),
+            epic_id=_EPIC_ID,
+            slug="console-control-plane-primitives",
+            body="Commission the completeness review.",
+            now="2026-09-04T18:02:00Z",
+            next_action=review,
+        )
+        is None
+    )
+    assert read_next_action(config=_config(), epic_id=_EPIC_ID) == review
+
+
+def _invalid_tracked_actions() -> tuple[NextAction, ...]:
+    return (
+        _tracked_action(kind="surprise", ref="bd-ib-w3nwz5.1"),
+        _tracked_action(kind="impl", ref=""),
+        _tracked_action(kind="spec-op", ref="propose-change"),
+        _tracked_action(kind="proof", ref=f"capture:wrong-{_EPIC_ID}"),
+        _tracked_action(kind="review", ref="bd-ib-other"),
+        _tracked_action(kind="archive", ref="bd-ib-other"),
+        _tracked_action(kind="await", ref="timer:one-hour"),
+        _tracked_action(kind="await", ref="run:"),
+        NextAction(
+            kind="proof",
+            ref=f"capture:{_EPIC_ID}",
+            text="Capture proof without tracking.",
+        ),
+        NextAction(
+            kind="await",
+            ref="run:run-1",
+            text="Wait for the run.",
+            required_result={},
+            budget=_BUDGET,
+        ),
+        NextAction(
+            kind="impl",
+            ref="bd-ib-w3nwz5.1",
+            text="Dispatch it.",
+            required_result=_RESULT,
+        ),
+        NextAction(
+            kind="impl",
+            ref="bd-ib-w3nwz5.1",
+            text="Dispatch it.",
+            required_result=_RESULT,
+            budget="tomorrow",
+        ),
+        NextAction(
+            kind="impl",
+            ref="bd-ib-w3nwz5.1",
+            text="Dispatch it.",
+            required_result=_RESULT,
+            budget={**_BUDGET, "deadline": 1},
+        ),
+        NextAction(
+            kind="impl",
+            ref="bd-ib-w3nwz5.1",
+            text="Dispatch it.",
+            required_result=_RESULT,
+            budget={**_BUDGET, "deadline": "tomorrow"},
+        ),
+        NextAction(
+            kind="impl",
+            ref="bd-ib-w3nwz5.1",
+            text="Dispatch it.",
+            required_result=_RESULT,
+            budget={**_BUDGET, "deadline": "2099-09-04T18:00:00"},
+        ),
+        NextAction(
+            kind="impl",
+            ref="bd-ib-w3nwz5.1",
+            text="Dispatch it.",
+            required_result=_RESULT,
+            budget={**_BUDGET, "deadline": "2099-09-04T19:00:00+01:00"},
+        ),
+        NextAction(
+            kind="impl",
+            ref="bd-ib-w3nwz5.1",
+            text="Dispatch it.",
+            required_result=_RESULT,
+            budget={**_BUDGET, "max_handoffs": True},
+        ),
+        NextAction(
+            kind="impl",
+            ref="bd-ib-w3nwz5.1",
+            text="Dispatch it.",
+            required_result=_RESULT,
+            budget={**_BUDGET, "max_handoffs": "3"},
+        ),
+        NextAction(
+            kind="impl",
+            ref="bd-ib-w3nwz5.1",
+            text="Dispatch it.",
+            required_result=_RESULT,
+            budget={**_BUDGET, "max_handoffs": 0},
+        ),
+        NextAction(
+            kind="human",
+            ref="attention-item",
+            text="Ask the maintainer.",
+            required_result=_RESULT,
+            budget=_BUDGET,
+        ),
+        NextAction(
+            kind="none",
+            ref="not-empty",
+            text="Record no next step.",
+            required_result=None,
+            budget=None,
+        ),
+    )
+
+
+def _assert_invalid_writes_are_refused_without_mutation() -> None:
+    baseline = dict(_epic_metadata())
+    for action in _invalid_tracked_actions():
+        refused = set_next_action(
+            config=_config(),
+            epic_id=_EPIC_ID,
+            action=action,
+            session="refused-writer",
+            now="2026-09-04T18:03:00Z",
+        )
+        assert hasattr(_plan_next_action, "NextActionRefusal")
+        refusal_type = _plan_next_action.__dict__["NextActionRefusal"]
+        assert isinstance(refused, refusal_type)
+        assert _epic_metadata() == baseline
+    one_tracking_field = {
+        "kind": "impl",
+        "ref": "bd-ib-w3nwz5.1",
+        "text": "Dispatch it.",
+        "required_result": _RESULT,
+    }
+    assert parse_next_action(value=one_tracking_field) is None
 
 
 def test_set_next_action_writes_the_typed_pointer_and_last_session() -> None:
@@ -109,6 +347,8 @@ def test_set_next_action_writes_the_typed_pointer_and_last_session() -> None:
         "kind": "impl",
         "ref": "bd-ib-w3nwz5.1",
         "text": "Dispatch b1 through the factory.",
+        "required_result": _RESULT,
+        "budget": _BUDGET,
     }
     assert metadata[LAST_SESSION_METADATA_KEY] == (
         "console-control-plane-primitives at 2026-09-04T18:00:00Z"
@@ -128,7 +368,13 @@ def test_set_next_action_updates_in_place_and_preserves_other_metadata() -> None
     set_next_action(
         config=_config(),
         epic_id=_EPIC_ID,
-        action=NextAction(kind="none", ref="", text="Nothing is recorded."),
+        action=NextAction(
+            kind="none",
+            ref="",
+            text="Nothing is recorded.",
+            required_result=None,
+            budget=None,
+        ),
         session="second-session",
         now="2026-09-04T19:00:00Z",
     )
@@ -138,6 +384,8 @@ def test_set_next_action_updates_in_place_and_preserves_other_metadata() -> None
         "kind": "none",
         "ref": "",
         "text": "Nothing is recorded.",
+        "required_result": None,
+        "budget": None,
     }
     assert metadata[LAST_SESSION_METADATA_KEY] == "second-session at 2026-09-04T19:00:00Z"
     assert metadata["rank"] == "a1"
@@ -163,7 +411,7 @@ def test_read_next_action_reports_an_epic_that_carries_none() -> None:
     assert read_next_action(config=_config(), epic_id=_EPIC_ID) is None
 
 
-def test_next_action_metadata_overlays_all_three_keys_onto_existing_metadata() -> None:
+def test_next_action_metadata_overlays_all_five_keys_onto_existing_metadata() -> None:
     overlaid = next_action_metadata(
         existing_metadata={"rank": "a1", "audit": {"captured_at": "2026-09-04T00:00:00Z"}},
         action=_impl_action(),
@@ -171,7 +419,13 @@ def test_next_action_metadata_overlays_all_three_keys_onto_existing_metadata() -
         now="2026-09-04T18:00:00Z",
     )
 
-    assert sorted(overlaid[NEXT_ACTION_METADATA_KEY]) == ["kind", "ref", "text"]
+    assert sorted(overlaid[NEXT_ACTION_METADATA_KEY]) == [
+        "budget",
+        "kind",
+        "ref",
+        "required_result",
+        "text",
+    ]
     assert overlaid["audit"] == {"captured_at": "2026-09-04T00:00:00Z"}
 
 
@@ -196,8 +450,21 @@ def test_parse_next_action_rejects_an_absent_or_ill_typed_value() -> None:
     assert parse_next_action(value={"kind": 1, "ref": "x", "text": "y"}) is None
 
 
-def test_the_four_kinds_are_the_ratified_enumeration() -> None:
-    assert NEXT_ACTION_KINDS == ("impl", "spec-op", "human", "none")
+def test_the_eight_kinds_and_all_writers_enforce_the_tracked_pointer_contract() -> None:
+    assert NEXT_ACTION_KINDS == (
+        "impl",
+        "spec-op",
+        "proof",
+        "review",
+        "archive",
+        "await",
+        "human",
+        "none",
+    )
+    _seed_epic()
+    _assert_all_tracked_kinds_write_five_key_pointers()
+    _assert_handoff_writers_accept_tracked_actions()
+    _assert_invalid_writes_are_refused_without_mutation()
 
 
 def test_dispatchable_action_id_composes_the_drive_action_for_impl() -> None:
@@ -251,6 +518,8 @@ def test_unattended_resume_takes_a_spec_op_next_action_without_asking() -> None:
             kind="spec-op",
             ref="propose-change:plan-slug-anchor-and-typed-next-action",
             text="Propose the change.",
+            required_result=_RESULT,
+            budget=_BUDGET,
         ),
         session="console-control-plane-primitives",
         now="2026-09-04T18:00:00Z",
@@ -267,7 +536,13 @@ def test_unattended_resume_raises_the_picker_for_a_human_next_action() -> None:
     set_next_action(
         config=_config(),
         epic_id=_EPIC_ID,
-        action=NextAction(kind="human", ref="", text="Confirm the anchor filename."),
+        action=NextAction(
+            kind="human",
+            ref="",
+            text="Confirm the anchor filename.",
+            required_result=None,
+            budget=None,
+        ),
         session="console-control-plane-primitives",
         now="2026-09-04T18:00:00Z",
     )
@@ -284,7 +559,13 @@ def test_unattended_resume_raises_the_picker_for_a_none_next_action() -> None:
     set_next_action(
         config=_config(),
         epic_id=_EPIC_ID,
-        action=NextAction(kind="none", ref="", text="Nothing is recorded."),
+        action=NextAction(
+            kind="none",
+            ref="",
+            text="Nothing is recorded.",
+            required_result=None,
+            budget=None,
+        ),
         session="console-control-plane-primitives",
         now="2026-09-04T18:00:00Z",
     )
@@ -297,13 +578,20 @@ def test_unattended_resume_raises_the_picker_for_a_none_next_action() -> None:
 
 def test_unattended_resume_raises_the_picker_for_a_dispatchable_kind_with_no_ref() -> None:
     _seed_epic()
-    set_next_action(
-        config=_config(),
-        epic_id=_EPIC_ID,
-        action=NextAction(kind="impl", ref="", text="Dispatch something."),
+    metadata = _epic_metadata()
+    metadata[NEXT_ACTION_METADATA_KEY] = next_action_metadata(
+        existing_metadata={},
+        action=NextAction(
+            kind="impl",
+            ref="",
+            text="Dispatch something.",
+            required_result=_RESULT,
+            budget=_BUDGET,
+        ),
         session="console-control-plane-primitives",
         now="2026-09-04T18:00:00Z",
-    )
+    )[NEXT_ACTION_METADATA_KEY]
+    _fake().update_issue(issue_id=_EPIC_ID, metadata=metadata)
 
     directive = resume_directive(config=_config(), epic_id=_EPIC_ID, unattended=True)
 
@@ -352,7 +640,13 @@ def test_a_wrapped_prose_marker_line_no_longer_decides_the_resume() -> None:
     set_next_action(
         config=_config(),
         epic_id=_EPIC_ID,
-        action=NextAction(kind="impl", ref="overseer-adclcd.6", text="Dispatch it."),
+        action=NextAction(
+            kind="impl",
+            ref="overseer-adclcd.6",
+            text="Dispatch it.",
+            required_result=_RESULT,
+            budget=_BUDGET,
+        ),
         session="console",
         now="2026-09-04T18:00:00Z",
     )

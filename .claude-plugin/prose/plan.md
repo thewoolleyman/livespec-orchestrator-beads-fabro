@@ -207,17 +207,23 @@ plan-level proof is what discharges one.
 
 #### The typed next action
 
-The next action is epic metadata, not prose. Every open epic with a live `plan/<slug>/` directory carries a `next_action` object
-with exactly three keys, beside a `last_session` string naming who wrote it and when:
+The next action is epic metadata, not prose. Every new write carries exactly five keys — `kind`, `ref`, `text`,
+`required_result`, and `budget` — beside a `last_session` string naming who wrote it and when. Legacy three-key pointers remain
+readable until their next sanctioned write:
 
 - `kind: impl` — factory implementation of one work-item. `ref` is that work-item's id, and the action executes as
   `impl:<ref>`.
 - `kind: spec-op` — a spec-lifecycle operation. `ref` is `<operation>:<topic>`, which is itself the action id.
-- `kind: human` — a person is needed. `ref` may be empty or may name the attention item or question that carries the ask.
-- `kind: none` — nothing is recorded, and `ref` is empty.
+- `kind: proof` — `capture:<epic-id>` posts captured plan proof through the plan-record posting primitive; `verify:<epic-id>` starts a separate replaying session and posts its verdict through that same primitive.
+- `kind: review` — the epic id; commission the independent completeness reviewer described by the archive gate.
+- `kind: archive` — the epic id; call `archive_thread(...)` and obey every refusal it returns.
+- `kind: await` — `run:`, `gate:`, `item:`, or `epic:` plus its id; perform a bounded wait on that named handle and report expiry through the required-result rules, never by treating elapsed time as a result.
+- `kind: human` or `none` — always raises the picker; `none` has an empty ref.
 
-`text` is one imperative sentence a person can read with no other context. Write all four fields only through
-`append_handoff(...)`, `append_supervisor_handoff(...)`, or `set_next_action(...)`; never hand-edit epic metadata.
+The six executable kinds carry an authoritative `required_result` and a budget with an absolute UTC `deadline` and positive `max_handoffs`; preserve its epoch, original deadline, and handoff count across routine writes. `human` and `none` carry null tracking fields. Write pointers only through `append_handoff(...)`, `append_supervisor_handoff(...)`, or
+`set_next_action(...)`; those writers refuse any other kind or malformed ref. Never hand-edit epic metadata.
+
+A maintainer may authorize attended continuation by passing `PlanContinuationAuthorization(until=..., by=..., directive=...)` to `record_scope_event(...)`. Only an attended session may write it; the primitive writes `recorded-attended: true` itself. Revoke through `PlanContinuationRevocation(by=...)`. The latest complete ruling in timeline order governs; one missing any required line is not current. A ruling authorizes continuation only: it never supplies store-write consent or admission.
 
 A prose `next action:` line may still appear for a human reader, but it carries no authority: a wrapped line twice truncated a
 live instruction, so typed metadata wins and is the read-back discriminator.
@@ -230,14 +236,16 @@ restart, where no operator is present to answer a question. Nothing else sets it
 and keeps the picker.
 
 Call `resume_directive(config=..., epic_id=..., unattended=...)`. It reads the epic's `next_action` — it parses no comment body
-— and returns `ask`, `next_action`, a `reason`, and `findings`:
+— and returns `ask`, `next_action`, a `reason`, `findings`, and the authoritative result observation:
 
-- `ask` is false only when the session is unattended AND the `kind` is `impl` or `spec-op` AND the `ref` is non-empty. Take the
-  returned `next_action` action id directly and do not raise the which-action picker.
-- `ask` is true in every other case — an attended session, an epic carrying no typed pointer, a `human` or `none` kind, or a
-  dispatchable kind with an empty ref. An attended resume presents the epic's `next_action` as the default choice of that picker.
-  A standing maintainer directive to continue satisfies that picker: when the default remains current and eligible,
-  take the default without re-prompting. Otherwise present the picker and wait.
+- An unattended resume takes any of the six executable kinds with a non-empty ref when its result is observably unsatisfied and
+  its budget is unexpired. An attended resume does the same under a current continuation ruling and names that ruling in its
+  reason. Without a ruling it presents the epic's `next_action` as the default choice of that picker. A standing maintainer directive to continue satisfies that picker only when recorded as that ruling: take the default without re-prompting. `human` and `none` always ask.
+- Reconcile before acting, in order. SATISFIED is stale: report the observed result, do not execute the pointer, then re-read the
+  ledger and derive the next ready child, proof, review, or archive step. If still unsatisfied and within budget, an `impl` or
+  `spec-op` target already driven by a live factory run is rewritten to `await` with `run:<id>`, preserving the required result,
+  epoch, original deadline, and handoff count; do not start a second dispatch. An in-budget unsatisfied `await` reports waiting,
+  performs the bounded wait on its named handle, and is not rewritten. Unobservable or expired obligations do not continue.
 
 Store-write consent remains governed by the consent contract; a typed pointer or standing continuation directive does not
 manufacture consent for a new write.

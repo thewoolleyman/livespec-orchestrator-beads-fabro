@@ -203,9 +203,11 @@ def test_next_action_is_seeded_from_the_newest_handoff_of_each_open_plan(
     human = _fake().show_issue(issue_id="bd-ib-human")["metadata"]
     silent = _fake().show_issue(issue_id="bd-ib-silent")["metadata"]
     assert impl["next_action"] == {
-        "kind": "impl",
+        "kind": "human",
         "ref": "bd-ib-ott6",
-        "text": "run impl:bd-ib-ott6 in the factory",
+        "text": "Confirm required-result tracking and budget before dispatching bd-ib-ott6.",
+        "required_result": None,
+        "budget": None,
     }
     assert human["next_action"]["kind"] == "human"
     assert human["next_action"]["text"] == "ask the maintainer to rule"
@@ -213,7 +215,7 @@ def test_next_action_is_seeded_from_the_newest_handoff_of_each_open_plan(
     assert impl["last_session"] == f"plan-record-migration at {_NOW}"
     assert report.next_actions_seeded == (
         "bd-ib-human kind=human ref=''",
-        "bd-ib-impl kind=impl ref='bd-ib-ott6'",
+        "bd-ib-impl kind=human ref='bd-ib-ott6'",
         "bd-ib-silent kind=none ref=''",
     )
 

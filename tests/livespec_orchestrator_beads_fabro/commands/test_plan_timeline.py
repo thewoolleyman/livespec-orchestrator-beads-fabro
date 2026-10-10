@@ -67,7 +67,14 @@ def test_timeline_ignores_non_plan_comments() -> None:
         author="factory-test",
         now="2026-08-11T01:02:03Z",
         next_action=NextAction(
-            kind="impl", ref="bd-ib-plan.1", text="Continue with the scoped child."
+            kind="impl",
+            ref="bd-ib-plan.1",
+            text="Continue with the scoped child.",
+            required_result={
+                "repo": "repo",
+                "item_status": {"item_id": "bd-ib-plan", "status": "closed"},
+            },
+            budget={"deadline": "2099-08-11T00:00:00Z", "max_handoffs": 3},
         ),
     )
 
@@ -102,7 +109,13 @@ def test_timeline_recovers_missing_header_timestamp_from_comment_record() -> Non
         body="Well-formed later handoff.",
         author="factory-test",
         now="2026-08-21T04:35:00Z",
-        next_action=NextAction(kind="none", ref="", text="Nothing is recorded."),
+        next_action=NextAction(
+            kind="none",
+            ref="",
+            text="Nothing is recorded.",
+            required_result=None,
+            budget=None,
+        ),
     )
 
     entries = read_timeline(config=_config(), epic_id="bd-ib-plan")
