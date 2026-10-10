@@ -309,12 +309,14 @@ reads the epic's `next_action` — it parses no comment body — and returns
   `impl` or `spec-op` AND the `ref` is non-empty. Take the returned
   `next_action` action id directly and do not raise the which-action
   picker.
-- `ask` is true in every other case — an attended session, an epic
-  carrying no typed pointer, a `human` or `none` kind, or a dispatchable
-  kind with an empty ref. Present the picker and wait.
+- `ask` is true in every other case — an attended session, an epic carrying no typed
+  pointer, a `human` or `none` kind, or a dispatchable kind with an empty ref. An attended
+  resume presents the epic's `next_action` as the default choice of that picker.
+  A standing maintainer directive to continue satisfies that picker: when the default remains current
+  and eligible, take the default without re-prompting. Otherwise present the picker and wait.
 
-An attended resume presents the epic's `next_action` as the default
-choice of that picker.
+Store-write consent remains governed by the consent contract; a typed pointer or standing
+continuation directive does not manufacture consent for a new write.
 
 Report the `reason` when the picker is raised in an unattended session:
 that string is how a hands-off restart explains why it stopped rather

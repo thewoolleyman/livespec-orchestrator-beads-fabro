@@ -42,3 +42,13 @@ def test_plan_opens_with_the_archive_goal_and_stop_contract() -> None:
         "human decision",
     )
     assert all(phrase in opening for phrase in required)
+
+
+def test_plan_picker_defaults_to_the_typed_action_under_standing_direction() -> None:
+    text = _read("plan.md")
+    resume = text[text.index("#### Unattended resume") : text.index("### Step 4")]
+
+    assert "presents the epic's `next_action` as the default choice" in resume
+    assert "standing maintainer directive to continue satisfies that picker" in resume
+    assert "take the default without re-prompting" in resume
+    assert "Store-write consent remains governed by the consent contract" in resume
