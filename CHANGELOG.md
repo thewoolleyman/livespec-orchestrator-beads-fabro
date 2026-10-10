@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.181.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.181.0...v0.181.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **dispatcher:** address native secret candidate grammar ([ac16784](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ac16784b33b1f4a45293a0a0f986cd9aea9e6d4d))
+
 ## [0.181.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.180.4...v0.181.0) (2026-10-10)
 
 
