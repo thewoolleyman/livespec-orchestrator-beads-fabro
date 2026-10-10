@@ -1474,6 +1474,14 @@ references passes with its guidance orphaned.
   watching only for `idle` sits through. The self-replay refusal is in
   §"Proof-of-Done, publish-branch reclaim, and drive action-id traps" above;
   that file is the procedure the refusal sits inside.
+- Read `.ai/plan-session-lessons.md` BEFORE proposing a direction in a plan
+  session, filing a plan child, or spinning up an independent reviewer. It
+  carries the maintainer's 2026-10-10 rule to route decisions by the stated
+  goals and source measurements rather than by prior ledger text, the
+  working form for a read-only Codex reviewer on the newest model in a
+  herdr pane, and the plan-primitive gaps (no `title` on `update_issue`, no
+  Definition-of-Done amend primitive, `create_thread` writes into
+  `project_root`) that stall a ledger rewrite.
 
 ## Decision authority — when to ask, proceed, or self-resolve
 
