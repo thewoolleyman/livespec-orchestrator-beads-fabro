@@ -20,7 +20,8 @@ Use this freeform direct-filing operation for work that does not trace to a spec
 
 ### Step 1 — Gather inputs
 
-Ask the user (one question at a time):
+Use values supplied by the invocation for the fields below. Ask only for required values still missing, one question at a time;
+do not re-ask for a supplied value.
 
 1. **Title** — one-line summary.
 2. **Description** — multi-line free-form (markdown permitted).
@@ -122,7 +123,7 @@ and the host-side wall both grade it against
 
 ### Step 2 — Confirm and file
 
-Show the user the assembled record and ask "file?". On `yes`, append:
+Show the user the assembled record and obtain write consent by asking "file?". On `yes`, append:
 
 ```python
 from livespec_orchestrator_beads_fabro._ids import new_work_item_id

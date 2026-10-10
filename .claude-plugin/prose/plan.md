@@ -46,14 +46,17 @@ Compose the open-thread list from both sources and present it:
    a planning artifact.
 2. Live filesystem threads from direct child directories under `plan/`, excluding `plan/archive/`.
 
-Ask whether to resume one listed thread or start a new thread.
+Use values supplied by the invocation for the thread, slug, topic, and Definition of Done. Ask only for required values still
+missing, one question at a time; do not re-ask for a supplied value. When no thread choice was supplied, ask whether to resume
+one listed thread or start a new thread.
 
-To start a new thread, ask for a one- or two-sentence topic description. Propose a canonical dash-cased slug using the same
-canonicalization as `propose-change`: lowercase, replace each run of non-`[a-z0-9]` characters with one hyphen, strip leading and
-trailing hyphens, and truncate to 64 characters. Confirm the proposed slug.
+To start a new thread whose topic was not supplied, ask for a one- or two-sentence topic description. Propose a canonical
+dash-cased slug using the same canonicalization as `propose-change`: lowercase, replace each run of non-`[a-z0-9]` characters
+with one hyphen, strip leading and trailing hyphens, and truncate to 64 characters. Include the proposed slug in the confirmation.
 
-Before creating anything, ask the maintainer what DONE means for this plan, in their own words, and derive the plan's Definition
-of Done from their answer. See "The plan Definition of Done" below; `create_thread` requires it.
+Before creating anything, if DONE was not supplied, ask the maintainer what DONE means for this plan in their own words; derive
+the plan's Definition of Done from that answer or the supplied value. See "The plan Definition of Done" below; `create_thread`
+requires it. Present the assembled thread, slug, topic, and Definition of Done, then obtain write consent for the creation.
 
 On confirmation, create exactly these records:
 
