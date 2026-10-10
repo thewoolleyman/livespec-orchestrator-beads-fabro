@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from pathlib import Path
+
+from returns.pipeline import is_successful
+from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
     admit_and_select,
@@ -19,11 +23,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Dispat
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
     args_with_dispatch_factory_target,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
+    apply_factory_size_dispatch_entry,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import (
     ledger_blocked_after_normalization,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import dispatch_one
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
+    failed_dispatch_outcome,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
     prepare,
     ready_items,
@@ -54,22 +64,21 @@ __all__: list[str] = [
 ]
 
 
+@dataclass(frozen=True, kw_only=True)
+class _DispatchStart:
+    janitor: tuple[str, ...] | None
+    items: list[WorkItem]
+    journal: JournalFile
+
+
 def run_dispatch_command(*, args: argparse.Namespace) -> int:
     repo = Path(args.repo)
-    janitor, preamble_exit = dispatch_preamble(args=args, repo=repo)
-    if preamble_exit is not None:
-        return preamble_exit
-    arm_otel_egress(args=args, repo=repo)
-    prepared = prepare(args=args, repo=repo)
-    if prepared is None:
-        return EXIT_PRECONDITION_ERROR
-    items, journal = prepared
-    if not args.skip_ledger_check and ledger_blocked_after_normalization(
-        items=items,
-        config=store_config(repo=repo),
-        journal=journal,
-    ):
-        return EXIT_FAILURE
+    started = _start_dispatch(args=args, repo=repo)
+    if isinstance(started, int):
+        return started
+    janitor = started.janitor
+    items = started.items
+    journal = started.journal
     selected = _target_item(args=args, repo=repo, items=items, journal=journal)
     if selected is None:
         return EXIT_PRECONDITION_ERROR
@@ -92,6 +101,49 @@ def run_dispatch_command(*, args: argparse.Namespace) -> int:
     # which is what makes "both paths journal the same" a property of one
     # function rather than a claim about two copies of it.
     return dispatch_tail_exit(args=args, repo=repo, outcome=outcome, journal=journal)
+
+
+def _start_dispatch(*, args: argparse.Namespace, repo: Path) -> _DispatchStart | int:
+    """Run every repository-wide and size precondition before selection."""
+    janitor, preamble_exit = dispatch_preamble(args=args, repo=repo)
+    if preamble_exit is not None:
+        return preamble_exit
+    arm_otel_egress(args=args, repo=repo)
+    prepared = prepare(args=args, repo=repo)
+    if prepared is None:
+        return EXIT_PRECONDITION_ERROR
+    items, journal = prepared
+    raw_target = next((item for item in items if item.id == args.item), None)
+    size_result = apply_factory_size_dispatch_entry(
+        cwd=repo,
+        path_factory=lambda: store_config(repo=repo),
+        items=() if raw_target is None else (raw_target,),
+        journal=journal,
+    )
+    if not is_successful(size_result):
+        failure = unsafe_perform_io(size_result.failure())
+        outcome = failed_dispatch_outcome(
+            journal=journal,
+            work_item_id=args.item,
+            stage="configuration",
+            detail=failure.detail,
+        )
+        return dispatch_tail_exit(args=args, repo=repo, outcome=outcome, journal=journal)
+    size_refusals = unsafe_perform_io(size_result.unwrap())
+    if size_refusals:
+        return dispatch_tail_exit(
+            args=args,
+            repo=repo,
+            outcome=size_refusals[0],
+            journal=journal,
+        )
+    if not args.skip_ledger_check and ledger_blocked_after_normalization(
+        items=items,
+        config=store_config(repo=repo),
+        journal=journal,
+    ):
+        return EXIT_FAILURE
+    return _DispatchStart(janitor=janitor, items=items, journal=journal)
 
 
 def _target_item(
