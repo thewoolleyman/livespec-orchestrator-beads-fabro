@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import dataclass, field, replace
-from importlib import import_module
+from dataclasses import dataclass, replace
+from importlib import import_module, util
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -30,6 +30,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_span import (
     calibration_request_line,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import (
+    live_dispatch_lock,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
@@ -59,7 +62,7 @@ from livespec_orchestrator_beads_fabro.commands.groom import (
     file_approved_slices,
 )
 from livespec_orchestrator_beads_fabro.commands.orchestrator import main as orchestrator_main
-from livespec_orchestrator_beads_fabro.errors import GroomDraftError
+from livespec_orchestrator_beads_fabro.errors import GroomDraftError, WorkItemNotFoundError
 from livespec_orchestrator_beads_fabro.intake_dor import (
     DefinitionOfReadyChecklist,
     apply_intake_dor,
@@ -71,6 +74,7 @@ from livespec_orchestrator_beads_fabro.store import (
     read_work_items,
 )
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
+from returns.io import IOFailure
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
@@ -255,14 +259,6 @@ class _EngineRunner:
         return self.queue.pop(0)
 
 
-@dataclass(kw_only=True)
-class _MemoryJournal:
-    records: list[dict[str, object]] = field(default_factory=list)
-
-    def append(self, *, record: dict[str, object]) -> None:
-        self.records.append(record)
-
-
 def _ok(*, stdout: str = "") -> CommandResult:
     return CommandResult(exit_code=0, stdout=stdout, stderr="")
 
@@ -280,11 +276,11 @@ def _pr_json(*, state: str = "OPEN", sha: str | None = None) -> str:
     )
 
 
-def _successful_dispatch(*, repo: Path) -> DispatchOutcome:
+def _successful_dispatch(*, repo: Path, work_item_id: str, journal: JournalFile) -> DispatchOutcome:
     """Run the real engine to a green terminal against scripted external tools."""
     plan = build_plan(
         repo=repo,
-        work_item_id="bd-capture-valid",
+        work_item_id=work_item_id,
         workflow_toml=repo / "workflow.toml",
         goal_file=repo / "goal.md",
         fabro_bin="fabro",
@@ -309,7 +305,7 @@ def _successful_dispatch(*, repo: Path) -> DispatchOutcome:
     outcome = run_dispatch(
         plan=plan,
         runner=runner,
-        journal=_MemoryJournal(),
+        journal=journal,
         sleep=lambda _seconds: None,
         poll=PollPolicy(attempts=1, interval_seconds=0.0),
     )
@@ -347,9 +343,77 @@ def test_absent_ceiling_leaves_every_entry_path_on_ordinary_admission() -> None:
     assert all(decision.size_justified is False for decision in decisions)
 
 
+def test_dispatch_size_audit_does_not_manufacture_missing_evidence() -> None:
+    """A dispatch boundary or malformed record yields unobservable, never stale data."""
+    audit = import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_admission"
+    )
+    malformed = (
+        {
+            "stage": "factory-size-admission",
+            "work_item_id": "bd-audit",
+            "size_justified": "true",
+        },
+        {"stage": "outcome", "work_item_id": "bd-other"},
+        {"stage": "dispatch-id", "work_item_id": "bd-audit", "dispatch_id": "first"},
+    )
+    separated = (
+        {"stage": "dispatch-id", "work_item_id": "bd-audit", "dispatch_id": "prior"},
+        {"stage": "dispatch-id", "work_item_id": "bd-audit", "dispatch_id": "target"},
+    )
+    assert (
+        audit.size_justified_at_admission(
+            records=malformed,
+            work_item_id="bd-audit",
+            dispatch_id="first",
+        )
+        is None
+    )
+    assert (
+        audit.size_justified_at_admission(
+            records=separated,
+            work_item_id="bd-audit",
+            dispatch_id="target",
+        )
+        is None
+    )
+    assert (
+        audit.size_justified_at_admission(
+            records=({"stage": "dispatch-id", "work_item_id": "bd-audit", "dispatch_id": "only"},),
+            work_item_id="bd-audit",
+            dispatch_id="only",
+        )
+        is None
+    )
+
+
+def test_red_replay_helper_supports_the_pre_fix_reader_signature(tmp_path: Path) -> None:
+    """The preserved Red can still replay against the recovered pre-fix API."""
+    path = (
+        Path(__file__).parents[1]
+        / "livespec_orchestrator_beads_fabro"
+        / "commands"
+        / "test_dispatcher_factory_size_gate.py"
+    )
+    spec = util.spec_from_file_location("factory_size_red_replay", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.signature = lambda _function: SimpleNamespace(parameters={})
+    legacy_results = iter((True, False, False, None))
+
+    def legacy_reader(**_kwargs: object) -> bool | None:
+        return next(legacy_results)
+
+    module.size_justified_at_admission = legacy_reader
+    module.test_size_justification_is_attributed_to_the_exact_dispatch(tmp_path=tmp_path)
+
+
 def test_invalid_adopted_ceiling_refuses_before_lifecycle_mutation(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Every non-positive or non-integer configured value fails closed."""
     invalid_values: tuple[object, ...] = (0, -1, True, False, 1.5, "3")
@@ -390,8 +454,13 @@ def test_invalid_adopted_ceiling_refuses_before_lifecycle_mutation(
     }
     assert "adopted_assertion_count_ceiling" not in manifest_keys
 
-    _exercise_invalid_public_entries(tmp_path=tmp_path)
+    _exercise_invalid_public_entries(tmp_path=tmp_path, monkeypatch=monkeypatch)
     _exercise_invalid_gap_capture(tmp_path=tmp_path, capsys=capsys)
+    _exercise_gap_capture_filing_failure(
+        tmp_path=tmp_path,
+        capsys=capsys,
+        monkeypatch=monkeypatch,
+    )
 
 
 def _exercise_invalid_gap_capture(*, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -429,6 +498,51 @@ def _exercise_invalid_gap_capture(*, tmp_path: Path, capsys: pytest.CaptureFixtu
     assert _stored(config=_config(repo_root=repo)) == {}
 
 
+def _exercise_gap_capture_filing_failure(
+    *,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The executable capture surface reports a post-validation store failure."""
+    reset_fake_singleton()
+    repo = tmp_path / "gap-capture-store-failure"
+    repo.mkdir()
+    _write_repo_config(repo=repo, ceiling=None)
+    (repo / "SPECIFICATION" / "history" / "v001").mkdir(parents=True)
+    (repo / "SPECIFICATION" / "proposed_changes").mkdir()
+    (repo / "SPECIFICATION" / "spec.md").write_text("# Spec\n", encoding="utf-8")
+    payload = repo / "gaps.json"
+    payload.write_text(
+        json.dumps(
+            {
+                "gaps": [
+                    {
+                        "gap_id": "gap-scenario153-store-failure",
+                        "title": "Surface the capture failure",
+                        "description": "The configured store refused the filing.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    capture = import_module("livespec_orchestrator_beads_fabro.commands._orchestrator_gap_capture")
+    monkeypatch.setattr(
+        capture,
+        "file_captured_work_item",
+        lambda **_kwargs: IOFailure(WorkItemNotFoundError(item_id="bd-missing")),
+    )
+
+    rc = orchestrator_main(
+        argv=["gap-capture", "--gaps-json", str(payload), "--project-root", str(repo)]
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 3
+    assert "work-item not found in the tenant: bd-missing" in captured.err
+
+
 def test_public_freeform_capture_records_the_exception_before_shared_routing(
     tmp_path: Path,
 ) -> None:
@@ -455,6 +569,26 @@ def test_public_freeform_capture_records_the_exception_before_shared_routing(
     record = make_beads_client(config=config).show_issue(issue_id=item.id)
     assert cast("dict[str, object]", record["metadata"])["size_justification"] == valid
 
+    parent = replace(
+        _item(assertion_count=1, item_id="bd-public-capture-parent"),
+        type="epic",
+        status="backlog",
+    )
+    append_work_item(path=config, item=parent)
+    child = replace(
+        _item(assertion_count=1, item_id="bd-public-capture-child"),
+        status="backlog",
+    )
+    linked = file_captured_work_item(
+        path=config,
+        item=child,
+        checklist=_ready_checklist(),
+        plan_parent_id=parent.id,
+    )
+    assert is_successful(linked)
+    stored_child = make_beads_client(config=config).show_issue(issue_id=child.id)
+    assert {"depends_on_id": parent.id, "type": "parent-child"} in stored_child["dependencies"]
+
     reset_fake_singleton()
     invalid_repo = tmp_path / "public-capture-invalid"
     invalid_repo.mkdir()
@@ -470,7 +604,24 @@ def test_public_freeform_capture_records_the_exception_before_shared_routing(
     assert _stored(config=invalid_config) == {}
 
 
-def _exercise_invalid_public_entries(*, tmp_path: Path) -> None:
+def test_capture_without_repo_root_retains_the_legacy_non_ready_route(tmp_path: Path) -> None:
+    """A connection-only caller with no adopted config can still file backlog work."""
+    reset_fake_singleton()
+    no_repo_config = replace(_config(repo_root=tmp_path), repo_root=None)
+    no_repo_item = replace(
+        _item(assertion_count=3, item_id="bd-public-capture-no-repo"),
+        status="backlog",
+    )
+    unrouted = file_captured_work_item(
+        path=no_repo_config,
+        item=no_repo_item,
+        checklist=replace(_ready_checklist(), single_coherent_done=False),
+    )
+    assert is_successful(unrouted)
+    assert unsafe_perform_io(unrouted.unwrap()) == "backlog"
+
+
+def _exercise_invalid_public_entries(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     reset_fake_singleton()
     repo = tmp_path / "public-entries"
     repo.mkdir()
@@ -478,7 +629,9 @@ def _exercise_invalid_public_entries(*, tmp_path: Path) -> None:
     _write_scenario_reference(repo=repo)
     config = _config(repo_root=repo)
     _exercise_invalid_approval(repo=repo, config=config)
-    _exercise_invalid_dispatch(repo=repo, config=config)
+    _exercise_invalid_dispatch(repo=repo, config=config, monkeypatch=monkeypatch)
+    _exercise_invalid_loop_dispatch(repo=repo, config=config, monkeypatch=monkeypatch)
+    _exercise_invalid_resume_dispatch(repo=repo, config=config, monkeypatch=monkeypatch)
     _exercise_invalid_groom_door(repo=repo, config=config)
     _exercise_invalid_groom_filing(repo=repo, config=config)
 
@@ -496,20 +649,122 @@ def _exercise_invalid_approval(*, repo: Path, config: StoreConfig) -> None:
     assert _stored(config=config)[approval_item.id].status == "pending-approval"
 
 
-def _exercise_invalid_dispatch(*, repo: Path, config: StoreConfig) -> None:
+def _stub_dispatch_entry(
+    *,
+    module: Any,
+    item: WorkItem,
+    journal: JournalFile,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(module, "dispatch_preamble", lambda **_kwargs: (None, None))
+    monkeypatch.setattr(module, "arm_otel_egress", lambda **_kwargs: None)
+    monkeypatch.setattr(module, "prepare", lambda **_kwargs: ([item], journal))
+
+
+def _exercise_invalid_dispatch(
+    *, repo: Path, config: StoreConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
     dispatch_item = _item(assertion_count=3, item_id="bd-invalid-dispatch")
     append_work_item(path=config, item=dispatch_item)
+    command = import_module("livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands")
+    journal = JournalFile(path=repo / "invalid-dispatch.jsonl")
+    _stub_dispatch_entry(
+        module=command,
+        item=dispatch_item,
+        journal=journal,
+        monkeypatch=monkeypatch,
+    )
+    outcomes: list[DispatchOutcome] = []
+
+    def _tail(**kwargs: object) -> int:
+        outcomes.append(cast("DispatchOutcome", kwargs["outcome"]))
+        return 1
+
+    monkeypatch.setattr(command, "dispatch_tail_exit", _tail)
+    monkeypatch.setattr(
+        command,
+        "_target_item",
+        lambda **_kwargs: pytest.fail("selection ran after invalid configuration"),
+    )
+    rc = command.run_dispatch_command(
+        args=argparse.Namespace(
+            repo=str(repo),
+            item=dispatch_item.id,
+            skip_ledger_check=True,
+        )
+    )
+    assert rc == 1
+    assert outcomes[0].stage == "configuration"
+    assert _stored(config=config)[dispatch_item.id].status == "ready"
+
     admission = admit_and_select(
         repo=repo,
         items=[dispatch_item],
         candidates=[dispatch_item],
-        journal=JournalFile(path=repo / "invalid-dispatch.jsonl"),
+        journal=JournalFile(path=repo / "invalid-admission.jsonl"),
         enforce_cap=False,
     )
     assert admission.admitted == []
     assert admission.refused[0].stage == "configuration"
     assert "positive integer" in (admission.refused[0].detail or "")
     assert _stored(config=config)[dispatch_item.id].status == "ready"
+
+
+def _exercise_invalid_loop_dispatch(
+    *, repo: Path, config: StoreConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    command = import_module("livespec_orchestrator_beads_fabro.commands._dispatcher_loop_command")
+    size_gate = import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_size_gate"
+    )
+    item = _stored(config=config)["bd-invalid-dispatch"]
+    journal = JournalFile(path=repo / "invalid-loop.jsonl")
+    _stub_dispatch_entry(module=command, item=item, journal=journal, monkeypatch=monkeypatch)
+    monkeypatch.setattr(command, "emit_outcomes", lambda **_kwargs: None)
+    args = argparse.Namespace(
+        repo=str(repo),
+        items=[item.id],
+        budget=1,
+        dry_run=False,
+        as_json=True,
+        skip_ledger_check=True,
+        journal=None,
+    )
+    assert command.run_loop_command(args=args) == 1
+    assert _stored(config=config)[item.id].status == "ready"
+    assert (
+        size_gate.factory_size_loop_exit(
+            args=args,
+            repo=repo,
+            items=[item],
+            journal=JournalFile(path=repo / "invalid-loop-size.jsonl"),
+        )
+        == 1
+    )
+
+
+def _exercise_invalid_resume_dispatch(
+    *, repo: Path, config: StoreConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    command = import_module("livespec_orchestrator_beads_fabro.commands._dispatcher_resume_command")
+    item = _stored(config=config)["bd-invalid-dispatch"]
+    journal = JournalFile(path=repo / "invalid-resume.jsonl")
+    _stub_dispatch_entry(module=command, item=item, journal=journal, monkeypatch=monkeypatch)
+    outcomes: list[DispatchOutcome] = []
+
+    def _tail(**kwargs: object) -> int:
+        outcomes.append(cast("DispatchOutcome", kwargs["outcome"]))
+        return 1
+
+    monkeypatch.setattr(command, "dispatch_tail_exit", _tail)
+    monkeypatch.setattr(
+        command,
+        "gather_resume",
+        lambda **_kwargs: pytest.fail("resume observation ran after invalid configuration"),
+    )
+    assert command.run_resume_command(args=argparse.Namespace(repo=str(repo), item=item.id)) == 1
+    assert outcomes[0].stage == "configuration"
+    assert _stored(config=config)[item.id].status == "ready"
 
 
 def _exercise_invalid_groom_door(*, repo: Path, config: StoreConfig) -> None:
@@ -810,6 +1065,9 @@ def _exercise_direct_entry(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 
 def _exercise_loop_entry(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     loop = import_module("livespec_orchestrator_beads_fabro.commands._dispatcher_loop_command")
+    size_gate = import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_size_gate"
+    )
     loop_repo, loop_config, loop_item = _oversized_entry_fixture(
         tmp_path=tmp_path, name="loop-entry"
     )
@@ -833,7 +1091,7 @@ def _exercise_loop_entry(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
         _ = as_json
         loop_outcomes.extend(outcomes)
 
-    monkeypatch.setattr(loop, "emit_outcomes", _loop_emit)
+    monkeypatch.setattr(size_gate, "emit_outcomes", _loop_emit)
     loop_rc = loop.run_loop_command(
         args=argparse.Namespace(
             repo=str(loop_repo),
@@ -910,6 +1168,98 @@ def _assert_valid_size_decision(*, valid: dict[str, str]) -> None:
     assert decision.size_justified is True
 
 
+def _run_successful_public_dispatch(
+    *, repo: Path, item: WorkItem, monkeypatch: pytest.MonkeyPatch
+) -> tuple[DispatchOutcome, tuple[dict[str, object], ...]]:
+    """Drive the command entry while standing in only the external factory."""
+    command = import_module("livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands")
+    journal = JournalFile(path=repo / "journal.jsonl")
+    monkeypatch.setattr(command, "dispatch_preamble", lambda **_kwargs: (None, None))
+    monkeypatch.setattr(command, "arm_otel_egress", lambda **_kwargs: None)
+    monkeypatch.setattr(command, "prepare", lambda **_kwargs: ([item], journal))
+    monkeypatch.setattr(command, "pre_dispatch_wall_exit", lambda **_kwargs: None)
+    terminal: list[DispatchOutcome] = []
+
+    def _factory_dispatch(**kwargs: object) -> DispatchOutcome:
+        dispatched_item = cast("WorkItem", kwargs["item"])
+        dispatched_journal = cast("JournalFile", kwargs["journal"])
+        lock = live_dispatch_lock(repo=repo, work_item_id=dispatched_item.id)
+        assert lock is not None
+        assert lock.dispatch_id is not None
+        dispatched_journal.append(
+            record={
+                "stage": "dispatch-id",
+                "work_item_id": dispatched_item.id,
+                "dispatch_id": lock.dispatch_id,
+            }
+        )
+        return _successful_dispatch(
+            repo=repo,
+            work_item_id=dispatched_item.id,
+            journal=dispatched_journal,
+        )
+
+    def _terminal_tail(**kwargs: object) -> int:
+        terminal.append(cast("DispatchOutcome", kwargs["outcome"]))
+        return 0
+
+    monkeypatch.setattr(command, "dispatch_tail_exit", _terminal_tail)
+    monkeypatch.setattr(command, "dispatch_one", _factory_dispatch)
+    rc = command.run_dispatch_command(
+        args=argparse.Namespace(
+            repo=str(repo),
+            skip_ledger_check=True,
+            item=item.id,
+            factory=None,
+            fabro_bin=None,
+            workflow_name=None,
+        )
+    )
+    assert rc == 0
+    assert len(terminal) == 1
+    assert (terminal[0].status, terminal[0].stage) == ("green", "done")
+    records = tuple(
+        cast("dict[str, object]", json.loads(line))
+        for line in journal.path.read_text(encoding="utf-8").splitlines()
+    )
+    return terminal[0], records
+
+
+def _size_telemetry_attributes(
+    *,
+    repo: Path,
+    item: WorkItem,
+    outcome: DispatchOutcome,
+    records: tuple[dict[str, object], ...],
+) -> dict[str, object]:
+    probe_runner = _EngineRunner(
+        queue=[CommandResult(exit_code=1, stdout="", stderr="forge unavailable")]
+    )
+    signals = gather_tdd_signals(
+        repo=repo,
+        item=item,
+        outcome=outcome,
+        records=records,
+        sink=TddOrderSink(path=repo / "tdd-order.json"),
+        runner=probe_runner,
+    )
+    assert probe_runner.queue == []
+    record = build_calibration_record(
+        item=item,
+        outcome=outcome,
+        repo_name=repo.name,
+        journal_records=records,
+        wall_clock_seconds=1.0,
+        token_cost_micros=None,
+        dispatch_context_size=1,
+        merged_pr_diff_size=None,
+        tdd=signals,
+    )
+    payload = json.loads(calibration_request_line(record=record, now_ns=1))
+    span = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    return {entry["key"]: entry["value"] for entry in span["attributes"]}
+
+
 def _exercise_valid_capture_dispatch_and_telemetry(
     *,
     repo: Path,
@@ -927,41 +1277,10 @@ def _exercise_valid_capture_dispatch_and_telemetry(
     assert unsafe_perform_io(captured.unwrap()) == "ready"
 
     captured_item = _stored(config=config)["bd-capture-valid"]
-    command = import_module("livespec_orchestrator_beads_fabro.commands._dispatcher_run_commands")
-    journal = JournalFile(path=repo / "journal.jsonl")
-    green = _successful_dispatch(repo=repo)
-    monkeypatch.setattr(command, "dispatch_preamble", lambda **_kwargs: (None, None))
-    monkeypatch.setattr(command, "arm_otel_egress", lambda **_kwargs: None)
-    monkeypatch.setattr(command, "prepare", lambda **_kwargs: ([captured_item], journal))
-    monkeypatch.setattr(
-        command,
-        "_target_item",
-        lambda **_kwargs: (captured_item, False),
-    )
-    monkeypatch.setattr(command, "pre_dispatch_wall_exit", lambda **_kwargs: None)
-    monkeypatch.setattr(command, "_admit_and_dispatch_target", lambda **_kwargs: green)
-    terminal: list[DispatchOutcome] = []
-
-    def _terminal_tail(**kwargs: object) -> int:
-        terminal.append(cast("DispatchOutcome", kwargs["outcome"]))
-        return 0
-
-    monkeypatch.setattr(command, "dispatch_tail_exit", _terminal_tail)
-    assert (
-        command.run_dispatch_command(
-            args=argparse.Namespace(
-                repo=str(repo),
-                skip_ledger_check=True,
-                item=captured_item.id,
-            )
-        )
-        == 0
-    )
-    assert terminal == [green]
-
-    records = tuple(
-        cast("dict[str, object]", json.loads(line))
-        for line in (repo / "journal.jsonl").read_text(encoding="utf-8").splitlines()
+    green, records = _run_successful_public_dispatch(
+        repo=repo,
+        item=captured_item,
+        monkeypatch=monkeypatch,
     )
     # Configuration and ledger metadata are mutable after admission.  The
     # terminal signal must retain the decision that admitted this dispatch.
@@ -971,28 +1290,12 @@ def _exercise_valid_capture_dispatch_and_telemetry(
         item_id=captured_item.id,
         justification={"rationale": "changed after admission"},
     )
-    signals = gather_tdd_signals(
+    attributes = _size_telemetry_attributes(
         repo=repo,
         item=captured_item,
         outcome=green,
         records=records,
-        sink=TddOrderSink(path=repo / "tdd-order.json"),
-        runner=cast("Any", object()),
     )
-    record = build_calibration_record(
-        item=captured_item,
-        outcome=green,
-        repo_name=repo.name,
-        journal_records=records,
-        wall_clock_seconds=1.0,
-        token_cost_micros=None,
-        dispatch_context_size=1,
-        merged_pr_diff_size=None,
-        tdd=signals,
-    )
-    payload = json.loads(calibration_request_line(record=record, now_ns=1))
-    span = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
-    attributes = {entry["key"]: entry["value"] for entry in span["attributes"]}
     assert attributes["tdd.size_justified"] == {"boolValue": True}
     _write_repo_config(repo=repo, ceiling=2, groom_variant="groom-cut")
 

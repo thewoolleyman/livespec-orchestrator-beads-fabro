@@ -38,20 +38,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from returns.unsafe import unsafe_perform_io
-
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
     DispatchOutcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
-    resolve_adopted_assertion_count_ceiling,
-    stored_factory_size_decision,
+    size_justified_at_admission,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_implement_adapter import (
     implement_adapter_label,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_commits import (
     TddCommitSignals,
     commit_trailers,
@@ -114,25 +110,30 @@ def gather_tdd_signals(
             keys=(dispatch_id, item.id) if dispatch_id is not None else (item.id,)
         ),
         adapter=implement_adapter_label(records=records, work_item_id=item.id),
-        size_justified=_size_justified_signal(repo=repo, item=item, outcome=outcome),
+        size_justified=_size_justified_signal(
+            records=records,
+            item=item,
+            outcome=outcome,
+            dispatch_id=dispatch_id,
+        ),
     )
 
 
-def _size_justified_signal(*, repo: Path, item: WorkItem, outcome: DispatchOutcome) -> bool | None:
-    """Whether a successful dispatch used the attributed ceiling exception."""
-    if outcome.status != "green":
+def _size_justified_signal(
+    *,
+    records: tuple[dict[str, object], ...],
+    item: WorkItem,
+    outcome: DispatchOutcome,
+    dispatch_id: str | None,
+) -> bool | None:
+    """Whether this green dispatch was admitted by an attributed exception."""
+    if outcome.status != "green" or dispatch_id is None:
         return None
-    adopted_ceiling = unsafe_perform_io(
-        resolve_adopted_assertion_count_ceiling(cwd=repo).value_or(None)
+    return size_justified_at_admission(
+        records=records,
+        work_item_id=item.id,
+        dispatch_id=dispatch_id,
     )
-    if adopted_ceiling is None:
-        return False
-    decision = stored_factory_size_decision(
-        path=store_config(repo=repo),
-        item=item,
-        adopted_ceiling=adopted_ceiling,
-    )
-    return decision.size_justified
 
 
 def dispatch_ids_for(

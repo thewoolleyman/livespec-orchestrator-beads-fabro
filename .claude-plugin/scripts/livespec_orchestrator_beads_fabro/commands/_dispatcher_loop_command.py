@@ -6,6 +6,9 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 
+from returns.pipeline import is_successful
+from returns.unsafe import unsafe_perform_io
+
 from livespec_orchestrator_beads_fabro.commands._acp_projection_posture import (
     acp_projection_posture,
 )
@@ -18,15 +21,24 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
     cost_gate_after_verdict,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
+    apply_factory_size_dispatch_entry,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import (
     emit_outcomes,
     ledger_blocked_after_normalization,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_dry_run import dry_run_outcomes
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
+    failed_dispatch_outcome,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
     candidates,
     prepare,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_size_gate import (
+    factory_size_loop_exit,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_wave import (
     dispatch_loop_wave,
@@ -81,6 +93,14 @@ def run_loop_command(*, args: argparse.Namespace) -> int:
     janitor = started.janitor
     items = started.items
     journal = started.journal
+    size_exit = factory_size_loop_exit(
+        args=args,
+        repo=repo,
+        items=items,
+        journal=journal,
+    )
+    if size_exit is not None:
+        return size_exit
     selected_candidates = candidates(args=args, items=items, repo=repo)[: args.budget]
     # `--item` narrows BOTH legs to the named ids, and `--budget` bounds the
     # pass as a whole rather than each leg separately.
@@ -178,12 +198,14 @@ def _start_loop(*, args: argparse.Namespace, repo: Path) -> _LoopStart | int:
     if prepared is None:
         return EXIT_PRECONDITION_ERROR
     items, journal = prepared
-    if not args.skip_ledger_check and ledger_blocked_after_normalization(
+    start_exit = _configuration_or_ledger_exit(
+        args=args,
+        repo=repo,
         items=items,
-        config=store_config(repo=repo),
         journal=journal,
-    ):
-        return EXIT_FAILURE
+    )
+    if start_exit is not None:
+        return start_exit
     requested_ids = set(args.items or [])
     if requested_ids:
         preflight_error = requested_items_preflight_error(
@@ -207,3 +229,33 @@ def _start_loop(*, args: argparse.Namespace, repo: Path) -> _LoopStart | int:
         emit_outcomes(outcomes=[], as_json=args.as_json)
         return 0
     return _LoopStart(janitor=janitor, items=items, journal=journal)
+
+
+def _configuration_or_ledger_exit(
+    *, args: argparse.Namespace, repo: Path, items: list[WorkItem], journal: JournalFile
+) -> int | None:
+    """Refuse invalid size configuration before ledger normalization mutates."""
+    configuration = apply_factory_size_dispatch_entry(
+        cwd=repo,
+        path_factory=lambda: store_config(repo=repo),
+        items=(),
+        journal=journal,
+    )
+    if not is_successful(configuration):
+        failure = unsafe_perform_io(configuration.failure())
+        requested_ids = set(args.items or [])
+        outcome = failed_dispatch_outcome(
+            journal=journal,
+            work_item_id=next(iter(sorted(requested_ids)), "dispatcher-loop"),
+            stage="configuration",
+            detail=failure.detail,
+        )
+        emit_outcomes(outcomes=[outcome], as_json=args.as_json)
+        return dispatch_exit_code(outcomes=[outcome])
+    if not args.skip_ledger_check and ledger_blocked_after_normalization(
+        items=items,
+        config=store_config(repo=repo),
+        journal=journal,
+    ):
+        return EXIT_FAILURE
+    return None
