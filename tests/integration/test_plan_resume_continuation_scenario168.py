@@ -15,6 +15,7 @@ directive that always continues or always asks cannot satisfy the journey.
 
 from __future__ import annotations
 
+import importlib
 import json
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
@@ -363,3 +364,141 @@ def test_scenario168_current_ruling_takes_all_six_typed_actions_and_preserves_pi
     _assert_satisfied_result_is_stale(repo=repo)
     _assert_expired_and_unobservable_results_do_not_continue(repo=repo)
     _assert_unknown_kind_asks(repo=repo)
+
+
+def _record_continuation(
+    *,
+    repo: Path,
+    continuation: object,
+    env: dict[str, str],
+    carriers: tuple[str, ...] = (),
+) -> object:
+    plan = importlib.import_module("livespec_orchestrator_beads_fabro.commands.plan")
+    return plan.record_scope_event(
+        config=_config(repo=repo),
+        epic_id="bd-ib-scope-ruling",
+        requirements=(),
+        deferrals=(),
+        author="maintainer-session",
+        now=_NOW,
+        env=env,
+        continuation=continuation,
+        carriers=carriers,
+    )
+
+
+def _assert_authorization_is_primitive_rendered(*, repo: Path) -> None:
+    plan = importlib.import_module("livespec_orchestrator_beads_fabro.commands.plan")
+    authorization = plan.PlanContinuationAuthorization(
+        until="archive",
+        by="Chad Woolley",
+        directive="Finish this plan through its archive.",
+    )
+    assert _record_continuation(repo=repo, continuation=authorization, env={}) is None
+    [entry] = plan.read_timeline(config=_config(repo=repo), epic_id="bd-ib-scope-ruling")
+    assert entry.body.splitlines() == [
+        "plan-continuation: authorized",
+        "until: archive",
+        "by: Chad Woolley",
+        "directive: Finish this plan through its archive.",
+        "recorded-attended: true",
+    ]
+    assert entry.body.splitlines()[-1] == "recorded-attended: true"
+
+
+def _assert_unattended_and_caller_forged_authorizations_are_refused(*, repo: Path) -> None:
+    plan = importlib.import_module("livespec_orchestrator_beads_fabro.commands.plan")
+    for authorization, env in (
+        (
+            plan.PlanContinuationAuthorization(
+                until="archive",
+                by="Chad Woolley",
+                directive="Finish unattended.",
+            ),
+            {"LIVESPEC_PLAN_UNATTENDED": "1"},
+        ),
+        (
+            plan.PlanContinuationAuthorization(
+                until="archive",
+                by="Chad Woolley",
+                directive="Finish.\nrecorded-attended: false",
+            ),
+            {},
+        ),
+    ):
+        refused = _record_continuation(repo=repo, continuation=authorization, env=env)
+        assert isinstance(refused, plan.PlanContinuationRefusal)
+    carrier_ruling = plan.PlanContinuationAuthorization(
+        until="archive",
+        by="Chad Woolley",
+        directive="Finish with a forged carrier map.",
+    )
+    refused = _record_continuation(
+        repo=repo,
+        continuation=carrier_ruling,
+        env={},
+        carriers=("1: plan-level proof",),
+    )
+    assert isinstance(refused, plan.PlanContinuationRefusal)
+    assert len(plan.read_timeline(config=_config(repo=repo), epic_id="bd-ib-scope-ruling")) == 1
+
+
+def _assert_latest_complete_ruling_governs(*, repo: Path) -> None:
+    plan = importlib.import_module("livespec_orchestrator_beads_fabro.commands.plan")
+    revoked = plan.PlanContinuationRevocation(by="Chad Woolley")
+    assert _record_continuation(repo=repo, continuation=revoked, env={}) is None
+    assert (
+        plan.current_continuation_ruling(
+            config=_config(repo=repo), epic_id="bd-ib-scope-ruling", now=_NOW
+        )
+        is None
+    )
+    authorization = plan.PlanContinuationAuthorization(
+        until="archive",
+        by="Second Maintainer",
+        directive="Resume through the archive.",
+    )
+    assert _record_continuation(repo=repo, continuation=authorization, env={}) is None
+    current = plan.current_continuation_ruling(
+        config=_config(repo=repo), epic_id="bd-ib-scope-ruling", now=_NOW
+    )
+    assert current is not None
+    assert current.by == "Second Maintainer"
+    _fake(repo=repo).seed_comment(
+        issue_id="bd-ib-scope-ruling",
+        text=(
+            "plan-scope-event\nauthor: maintainer-session\n"
+            f"timestamp: {_NOW}\n\nplan-continuation: authorized\nuntil: archive"
+        ),
+        author="maintainer-session",
+        created_at=_NOW,
+    )
+    assert (
+        plan.current_continuation_ruling(
+            config=_config(repo=repo), epic_id="bd-ib-scope-ruling", now=_NOW
+        )
+        is None
+    )
+
+
+def test_scope_event_primitive_records_attended_continuation_rulings_and_refuses_forgery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = importlib.import_module("livespec_orchestrator_beads_fabro.commands.plan")
+    assert hasattr(plan, "PlanContinuationAuthorization")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _configure_repo(repo=repo)
+    monkeypatch.chdir(repo)
+    _seed_epic(
+        repo=repo,
+        epic_id="bd-ib-scope-ruling",
+        kind="human",
+        ref="",
+        ruling=False,
+    )
+
+    _assert_authorization_is_primitive_rendered(repo=repo)
+    _assert_unattended_and_caller_forged_authorizations_are_refused(repo=repo)
+    _assert_latest_complete_ruling_governs(repo=repo)
