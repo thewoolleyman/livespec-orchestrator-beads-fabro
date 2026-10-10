@@ -67,6 +67,23 @@ def _sandbox(*, tmp_path: Path) -> tuple[Path, Path]:
     target.write_text("name: run-owned\n", encoding="utf-8")
     _git(work, "add", _WORKFLOW_PATH)
     _git(work, "commit", "-m", "run changes workflow")
+    hook = origin / "hooks" / "pre-receive"
+    hook.write_text(
+        "#!/bin/sh\n"
+        "while read -r old_revision new_revision ref; do\n"
+        '    if test "$ref" = refs/heads/master; then continue; fi\n'
+        '    workflow_files=$(git diff --name-only refs/heads/master "$new_revision"'
+        " -- .github/workflows)\n"
+        '    if test -n "$workflow_files"; then\n'
+        '        echo "refusing to allow a GitHub App to create or update workflow'
+        ' $workflow_files without workflows permission" >&2\n'
+        "        exit 1\n"
+        "    fi\n"
+        "done\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    hook.chmod(hook.stat().st_mode | stat.S_IXUSR)
     return work, origin
 
 
@@ -157,10 +174,12 @@ def test_run_owned_workflow_edit_is_preserved_and_blocks_with_its_permission_rea
     assert terminal.returncode != 0
     assert _WORKFLOW_PATH in terminal.stderr
     assert "workflows permission" in terminal.stderr
+    assert "LIVESPEC_NEEDS_HUMAN_PUSH_FAILED" in terminal.stderr
+    assert "preserve-by-reference dump pointer" in terminal.stderr
     preserved = _git(
         origin, "for-each-ref", "--format=%(refname)", f"refs/heads/needs-human/{_RUN_ID}"
     ).stdout.strip()
-    assert preserved == f"refs/heads/needs-human/{_RUN_ID}"
+    assert preserved == ""
 
     outcome = fabro_run_terminal_outcome(
         outcome_type=DispatchOutcome,
@@ -174,3 +193,6 @@ def test_run_owned_workflow_edit_is_preserved_and_blocks_with_its_permission_rea
     assert outcome.status == "blocked"
     assert _WORKFLOW_PATH in outcome.detail
     assert "workflows permission" in outcome.detail
+    assert f"refs/heads/needs-human/{_RUN_ID}" not in outcome.detail
+    assert "tree was not pushed" in outcome.detail
+    assert "preserve-by-reference dump pointer" in outcome.detail
