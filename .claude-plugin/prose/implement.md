@@ -14,7 +14,7 @@ This Red→Green driver walks one work-item through the disposition and closure 
 
 - A work-item to drive. Either passed by id (positional argument) or
   derived from the `next` operation if none given.
-- The work-items JSONL store path is reachable.
+- The beads work-items store is reachable through the repository's resolved tenant connection.
 - Tests pass on the current branch (Red is fine; mid-cycle is not).
 - `just check` exists in the consumer project (or equivalent toolchain
   command).
@@ -37,12 +37,10 @@ Resolve the routing before driving anything in-session:
    `git config --get livespec.sandboxExempt` prints `true`), skip this
    step — the session IS the factory-side implementer; proceed to
    Step 1.
-2. **Default: dispatch and stop.** When the work-item's implementation
-   would change product code (any changeset the repo's Red-Green-Replay
-   gate classifies as product), route it factory-side: hand the item to
-   the `drive` operation (action `impl:<id>`), or leave it for the
-   Dispatcher drain, and STOP — the in-session driver below does not
-   run. Monitor the dispatched run instead.
+2. **Default: dispatch and supervise.** For product-code work, route product-code work through
+   `drive` with `impl:<id>` or the Dispatcher drain, then skip the in-session steps below. For a
+   dispatch you launch, retain supervision through the detached gate runner and inspect its result.
+   Submission alone does not complete the work item; report any remaining acceptance or proof leg.
 3. **The in-session exception path.** Drive Red→Green in-session ONLY
    when at least one of the following holds, and record WHICH one (with
    a one-line reason) in the work-item's closure audit:
@@ -72,21 +70,26 @@ Resolve the routing before driving anything in-session:
 
 ### Step 1 — Pick the work-item
 
-If `<work-item-id>` was supplied, load it from the JSONL store:
+If `<work-item-id>` was supplied, load it from the resolved beads tenant:
 
 ```python
+from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 from pathlib import Path
 
-ix = materialize_work_items(read_work_items(path=Path("work-items.jsonl")))
+config = resolve_store_config(cwd=Path.cwd(), work_items_arg=None)
+ix = materialize_work_items(read_work_items(path=config))
 target = ix[work_item_id]
 ```
 
 If no id was supplied, defer to the `next` operation (`--json`), parse
 the `work_item_ref`, and confirm with the user before proceeding.
 
-Refuse to proceed if `target.status != "open"`. Surface a clear error
-and exit.
+Use the livespec lifecycle states rather than an `open` predicate: beads exposes `backlog`, `ready`,
+`blocked`, `active`, `acceptance`, `pending-approval`, and `closed` (`done` in the `WorkItem`
+projection). Route `backlog` through `groom`, `pending-approval` through its valve, and `ready`
+through `drive`; continue in-session only on the Step 0 exception path. Report `blocked`,
+`acceptance`, or `closed` as the actual routed state instead of manufacturing a status refusal.
 
 ### Step 2 — Disposition decision
 
@@ -193,16 +196,18 @@ anchor.
 When `target.origin == "freeform"`, no re-detection runs. Proceed
 directly to closure.
 
-### Step 6 — Append closure record
+### Step 6 — Close through the beads store
 
-Append a new JSONL record with `status: closed`. The exact shape
-branches on the resolution choice:
+Write the consented resolution through the shared beads lifecycle seam. The logical `done` status
+maps to beads-native `closed`; the exact shape branches on the resolution choice:
 
 ```python
-from livespec_orchestrator_beads_fabro.store import append_work_item
-from livespec_orchestrator_beads_fabro.types import AuditRecord, WorkItem
+from dataclasses import replace
 from datetime import datetime, timezone
-from pathlib import Path
+from livespec_orchestrator_beads_fabro.commands._dispatcher_lifecycle_writes import (
+    close_work_item_and_reconcile,
+)
+from livespec_orchestrator_beads_fabro.types import AuditRecord
 
 audit = (
     AuditRecord(
@@ -214,24 +219,14 @@ audit = (
     else None
 )
 
-closing_record = WorkItem(
-    id=target.id,
-    type=target.type,
-    status="closed",
-    title=target.title,
-    description=target.description,
-    origin=target.origin,
-    gap_id=target.gap_id,
-    rank=target.rank,
-    assignee=target.assignee,
-    depends_on=target.depends_on,
-    captured_at=datetime.now(tz=timezone.utc).isoformat(),
+closing_record = replace(
+    target,
+    status="done",
     resolution=resolution,
     reason=user_supplied_reason,
     audit=audit,
-    superseded_by=None,
 )
-append_work_item(path=Path("work-items.jsonl"), item=closing_record)
+close_work_item_and_reconcile(path=config, item=closing_record)
 ```
 
 Print "closed `<id>` (`<resolution>`)" to the user.
@@ -243,9 +238,8 @@ Print "closed `<id>` (`<resolution>`)" to the user.
   items) is the per-operation consent for the Step 6 closure write
   (per SPECIFICATION/contracts.md §"Store-write consent discipline");
   no closure record is written without it.
-- **Same `id`, new record** — closure does NOT mutate the open record.
-  It appends a new record with the same `id`; the materialized view
-  (latest-record-wins) shows the closed state.
+- **Same `id`, in-place beads closure** — the shared store seam retains the item identity while
+  applying the closed status, resolution label, audit metadata, and run reconciliation.
 - **Audit fields REQUIRED for gap-tied completed closure** —
   `verification_timestamp`, `commits`, `files_changed`. Doctor catches
   missing audits.
