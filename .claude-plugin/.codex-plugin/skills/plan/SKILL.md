@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Open or resume a durable plan with filesystem research plus ledger-held plan-epic handoff comments, route scoped work to spec or ledger children, and archive only after child-disposition and completeness-review evidence gates pass. Invoked as livespec-orchestrator-beads-fabro:plan (bare to create or resume interactively; with a slug to resume strictly).
+description: Open or resume a durable plan and carry authorized work through child disposition, independent completeness review, a verified plan Proof of Done with required attestations, and archive. Use released-build proof where applicable. Invoked as livespec-orchestrator-beads-fabro:plan (bare to create or resume interactively; with a slug to resume strictly).
 ---
 
 # plan — Codex binding
@@ -118,10 +118,16 @@ fi
 ```
 
 If resolution fails, STOP and surface those install instructions rather
-than improvising paths. Then read the prose:
+than improvising paths. Otherwise read all three bounded ranges in order.
+A truncation notice is an incomplete read even when a range command exits
+successfully; retrieve that range again before acting.
 
 ```bash
-cat "$PLUGIN_ROOT/prose/plan.md"
+PLAN_PROSE="$PLUGIN_ROOT/prose/plan.md"
+wc -l "$PLAN_PROSE"
+sed -n '1,160p' "$PLAN_PROSE"
+sed -n '161,320p' "$PLAN_PROSE"
+sed -n '321,480p' "$PLAN_PROSE"
 ```
 
 ## Runtime bindings
