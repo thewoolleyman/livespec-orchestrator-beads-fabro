@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import argparse
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
@@ -73,6 +73,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_plan import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_payload import WorkflowPayload
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import DispatchPlan
+from livespec_orchestrator_beads_fabro.commands._fabro_client import (
+    materialized_workflow_config,
+)
 from livespec_orchestrator_beads_fabro.store import WorkItemComment
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -155,6 +158,16 @@ def record_dispatch(
         return failed_dispatch_outcome(
             journal=journal, work_item_id=item.id, stage="ledger-comments", detail=comments
         )
+    engine = engine_binary(fabro_bin=plan.fabro_bin, runner=ShellCommandRunner(), cwd=repo)
+    plan = replace(
+        plan,
+        fabro_version=engine.version,
+        workflow_toml=materialized_workflow_config(
+            version=engine.version,
+            overlay=plan.workflow_toml,
+            package_dir=payload.payload_dir,
+        ),
+    )
     append_dispatch_id_record(
         journal=journal,
         work_item_id=item.id,
@@ -163,7 +176,7 @@ def record_dispatch(
         # `fabro_port_for_plan` opens every verb on, rather than from `args`:
         # the plan is what the launch half actually drives, so a reading taken
         # anywhere else could disagree with it without the record showing it.
-        engine=engine_binary(fabro_bin=plan.fabro_bin, runner=ShellCommandRunner(), cwd=repo),
+        engine=engine,
         started_at_epoch=time.time(),
         workflow_toml=committed_workflow,
         workflow_name=materialized.workflow_name,

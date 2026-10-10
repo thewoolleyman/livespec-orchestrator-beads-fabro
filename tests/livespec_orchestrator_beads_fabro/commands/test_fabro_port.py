@@ -118,6 +118,45 @@ def test_fabro_port_run_builds_livespec_run_argv_and_parses_run_id(tmp_path: Pat
     ]
 
 
+def test_petri_fabro_run_receives_the_self_contained_workflow_package(
+    tmp_path: Path,
+) -> None:
+    """The Petri client collects the package directory, not its config file."""
+    module = _port_module()
+    assert "fabro_version" in module.FabroPort.__dataclass_fields__
+
+    package = tmp_path / "fabro-workflow-bd-ib-na2ddt"
+    package.mkdir()
+    graph = package / "workflow.fabro"
+    workflow_toml = package / "workflow.toml"
+    _ = graph.write_text("digraph Launch { start -> exit }\n", encoding="utf-8")
+    resolved_config = '_version = 1\n\n[run]\ndispatch_id = "dispatch-1"\n'
+    _ = workflow_toml.write_text(resolved_config, encoding="utf-8")
+    runner = _Runner(
+        results=[CommandResult(exit_code=0, stdout="Run: 01PETRI\n", stderr="")],
+        calls=[],
+    )
+    port = module.FabroPort(
+        fabro_bin="/opt/fabro-378",
+        target=module.FabroTarget(server_url="http://127.0.0.1:32278"),
+        runner=runner,
+        cwd=tmp_path,
+        fabro_version="fabro 0.378.0-nightly.0 (fixture)",
+    )
+
+    result = port.run(
+        workflow_toml=workflow_toml,
+        goal_file=tmp_path / "goal.md",
+        inputs=(),
+        timeout_seconds=42.0,
+    )
+
+    assert result.run_id == "01PETRI"
+    assert graph.is_file()
+    assert workflow_toml.read_text(encoding="utf-8") == resolved_config
+    assert runner.calls[0].argv[2] == str(package)
+
+
 def test_fabro_port_auth_login_uses_dev_token_and_server_as_subcommand_flags(
     tmp_path: Path,
 ) -> None:

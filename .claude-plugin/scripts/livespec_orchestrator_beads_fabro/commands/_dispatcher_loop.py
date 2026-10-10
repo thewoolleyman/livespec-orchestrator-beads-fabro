@@ -171,7 +171,7 @@ def _dispatch_one_locked(
         return recorded
     plan = recorded.plan
     goal_file = goal_file_path(work_item_id=item.id)
-    overlay_file = overlay_file_path(work_item_id=item.id)
+    overlay_file = getattr(plan, "workflow_toml", overlay_file_path(work_item_id=item.id))
     if isinstance(token_supplier := selfup.github_token_supplier(), str):
         return failed_dispatch_outcome(
             journal=journal,
