@@ -57,6 +57,14 @@ lease files appeared under the new build's `.in_use` directory immediately after
 the reload. The other supported remedy remains restarting the session, which
 binds afresh by construction.
 
+"Human-typed" means typed at the session's own prompt, not typed by the
+maintainer. A session running in a herdr pane can rebind itself: find its pane
+with `herdr pane current`, then run `herdr pane send-text <pane> "/reload-plugins"`
+followed by `herdr pane send-keys <pane> enter`. The command queues and runs when
+the current turn ends. Never report a plugin reload as a task only the maintainer
+can do; send it, then confirm the rebind by lease ownership as below.
+(Maintainer correction, 2026-10-11.)
+
 ## The trap: a stale lease file is not evidence of current binding
 
 **The old lease file under the previous build is NOT removed on rebind.**
