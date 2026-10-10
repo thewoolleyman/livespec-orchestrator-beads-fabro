@@ -133,6 +133,29 @@ def _hermetic_state_home(
 
 _FACTORY_CREDENTIAL_SLOT_PREFIX = "CLAUDE_CODE_OAUTH_TOKEN__"
 
+_PROJECTED_CREDENTIAL_GRADE_ENV = (
+    "LIVESPEC_CREDENTIAL_EXPIRY_EPOCH",
+    "LIVESPEC_CREDENTIAL_REQUIRED_REMAINING_SECONDS",
+)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_projected_credential_grade(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep worker-only credential grades out of the test process.
+
+    The factory projects these two values for a real dispatched worker. They
+    are ambient runtime inputs, not repository test configuration. If they
+    reach pytest, a deadline-only guard test silently becomes a credential-
+    grade test and its synthetic one-hour deadline is judged against the
+    factory run's longer required lifetime.
+
+    Tests that exercise the grade can set the pair explicitly after this
+    fixture runs. Every other test starts from the same absent state on a
+    developer host, in CI, and inside a factory sandbox.
+    """
+    for name in _PROJECTED_CREDENTIAL_GRADE_ENV:
+        monkeypatch.delenv(name, raising=False)
+
 
 @pytest.fixture(autouse=True)
 def _hermetic_factory_credential_slots(monkeypatch: pytest.MonkeyPatch) -> None:
