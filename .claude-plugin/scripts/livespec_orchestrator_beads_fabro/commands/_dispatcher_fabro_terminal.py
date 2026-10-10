@@ -41,6 +41,7 @@ __all__: list[str] = [
 ]
 
 _FABRO_INSPECT_TIMEOUT_SECONDS = 300.0
+_PRESERVED_SENTINEL = f"{NEEDS_HUMAN_MARKER}_PRESERVED: "
 
 
 def inspect_run(
@@ -135,16 +136,39 @@ def _needs_human_terminal_outcome(
     prints `NEEDS_HUMAN_MARKER` and exits non-green. What the Dispatcher owes
     the ledger is unchanged — the item rests at `blocked / needs-human` and
     the dispatch reports exit code 4 — so the sentinel produces the very same
-    `blocked` outcome the gate did, with a detail that names the preserved
-    ref and the ledger valve instead of a `fabro attach` that would find no
-    run to attach to. The sentinel is read from BOTH the raw stderr and the
-    structured detail, for the same reason the dead-implementer breaker
-    does: neither channel is guaranteed to carry a node's own output.
+    `blocked` outcome the gate did, with a detail that names the ledger valve
+    instead of a `fabro attach` that would find no run to attach to. It names a
+    preservation ref only when the node reported a successful push; otherwise
+    it names the dump pointer as the only preservation. The sentinel is read
+    from BOTH the raw stderr and the structured detail, for the same reason the
+    dead-implementer breaker does: neither channel is guaranteed to carry a
+    node's own output.
     """
     if NEEDS_HUMAN_MARKER not in text:
         return None
     run_label = "unknown-run" if run_id is None else run_id
-    preserved = f"refs/heads/needs-human/{run_label}"
+    marker_lines = (
+        line.split(_PRESERVED_SENTINEL, 1)
+        for line in text.splitlines()
+        if _PRESERVED_SENTINEL in line
+    )
+    preserved_ref = next((parts[1].strip() for parts in marker_lines), None) or None
+    preservation = (
+        (
+            "no run-scoped preservation ref was reported; the preserve-by-reference "
+            "dump pointer is the only preservation"
+        )
+        if preserved_ref is None
+        else (
+            f"the tree was preserved on {preserved_ref} "
+            "(see the preserve-by-reference pointer on the item for the dump digest)"
+        )
+    )
+    rework_source = (
+        "from the dump pointer or from scratch"
+        if preserved_ref is None
+        else "from the preserved ref or from scratch"
+    )
     return outcome_type(
         work_item_id=plan.work_item_id,
         status="blocked",
@@ -153,11 +177,10 @@ def _needs_human_terminal_outcome(
         merge_sha=None,
         detail=(
             f"run {run_label} terminated at the needs_human node (needs-human); "
-            f"the tree was preserved on {preserved} (see the preserve-by-reference "
-            "pointer on the item for the dump digest); no run is waiting — the "
-            "decision lives in the ledger: answer with "
+            f"{preservation}; no run is waiting — the decision lives in the "
+            "ledger: answer with "
             f"`resolve-blocked:{plan.work_item_id}:ready` (re-dispatch, seeding rework "
-            "from the preserved ref or from scratch) or leave the item blocked"
+            f"{rework_source}) or leave the item blocked"
         ),
         fabro_run_id=run_id,
     )
