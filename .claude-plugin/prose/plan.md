@@ -314,7 +314,8 @@ Archiving has three required legs:
    whose verdict is `verified` or `not_reproduced` must be `verified`, must cover every plan assertion that is not
    `human_attested`, and must postdate both the latest `captured` record and the last carrier-map event. Each `human_attested`
    plan assertion is covered separately, by a `human_attested` record postdating that same event. A later `human_attested` record
-   does not unseat an earlier `verified` one, and a ruling or deferral that is not a carrier-map event voids neither.
+   does not unseat an earlier `verified` one, but a later negative verdict defeats an older verified one. A ruling or deferral
+   that is not a carrier-map event voids neither.
    `archive_thread(...)` refuses while this leg is unmet, naming each unproved plan assertion, and leaves the plan directory and
    the epic unchanged. The independent completeness reviewer of leg 2 may be the verifying party of the plan record.
 
