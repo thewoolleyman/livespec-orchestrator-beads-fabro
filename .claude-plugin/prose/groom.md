@@ -79,6 +79,11 @@ Draft candidate slices. Each candidate is pre-filled with all of:
 - **scope** — the slice body, which OPENS with the slice's
   `## Definition of Done` section (see below) and carries the rest of the
   scope as prose after it.
+- **size justification** — normally null. If a human approves an above-ceiling
+  slice, carry the exact object they supplied with exactly non-empty
+  `rationale`, `author`, and ISO-8601 `at` strings. A consensus-approved
+  first cut cannot use this exception and remains bounded by the adopted
+  ceiling.
 
 #### Authoring each slice's Definition of Done
 
@@ -154,6 +159,8 @@ approval" an enforced precondition of this seam rather than an obligation on
 this prose's reader:
 
 ```python
+from pathlib import Path
+
 from livespec_orchestrator_beads_fabro.commands.groom import (
     CandidateSlice,
     GroomApproval,
@@ -163,6 +170,7 @@ from livespec_orchestrator_beads_fabro.commands.groom import (
 result = file_approved_slices(
     path=config,
     regroom_item_id=item_id,
+    local_repo=Path.cwd().name,
     approval=GroomApproval(
         approver=...,   # WHO approved — the approving invoker's identity.
         route=...,      # HOW it was obtained — e.g. the resolve-blocked
@@ -177,6 +185,7 @@ result = file_approved_slices(
             repo_target=...,
             depends_on=(...,),            # earlier factory-slice TITLES
             is_spec_change=False,         # True ⇒ routed, not filed
+            size_justification=...,        # exact attributed object, or None
         ),
         ...
     ],
@@ -220,6 +229,12 @@ is instead surfaced by `needs-attention` while the slice rests in `ready`.
 Either kind is recorded on the filed slice as a ledger comment, so it is
 repaired where it was cut. `result.criteria_parses` still carries the
 per-slice parse for a caller that wants only the one line.
+
+Also read back and display any factory-size decomposition comment on each
+filed slice. A `backlog` slice whose comment names `size_justification` is not
+an epic: narrate that it exceeded the adopted ceiling without a valid
+exception, and show the adopted ceiling, sanctioned-parser assertion count,
+and missing-or-invalid-justification reason verbatim.
 
 `file_approved_slices` files each factory slice via the same
 `append_work_item` machinery the `capture-work-item` operation uses, then

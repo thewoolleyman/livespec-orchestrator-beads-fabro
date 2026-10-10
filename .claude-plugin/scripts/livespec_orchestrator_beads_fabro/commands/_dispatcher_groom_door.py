@@ -59,6 +59,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import JournalWriter
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
+    record_factory_size_admission_decision,
     resolved_stored_factory_size_decision,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
@@ -146,6 +147,11 @@ def groom_dispatch(
             )
         else:
             size = unsafe_perform_io(size_result.unwrap())
+            record_factory_size_admission_decision(
+                journal=journal,
+                item=item,
+                decision=size,
+            )
             if size.disposition == "decompose":
                 reason = cast("str", size.reason)
                 route_factory_size_decomposition(

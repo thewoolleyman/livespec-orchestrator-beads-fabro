@@ -2,24 +2,37 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
-from returns.io import IOResult
+from returns.io import IOFailure, IOResult, IOSuccess
 from returns.pipeline import is_successful
 from returns.result import Failure, Result, Success
 from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro._store_factory_size_gate import (
+    route_factory_size_decomposition,
     size_justification_for,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_assertion_count import (
     assertion_count_for,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_admission import (
+    FACTORY_SIZE_ADMISSION_STAGE,
+    record_factory_size_admission_decision,
+    size_justified_at_admission,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
+    failed_dispatch_outcome,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
     PolicySettingUnreadable,
     read_dispatcher_config_value,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
+    read_journal_records,
 )
 from livespec_orchestrator_beads_fabro.effects import IsoDatetimeParseFailure, parse_iso_datetime
 from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -27,15 +40,23 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+        DispatchOutcome,
+        JournalWriter,
+    )
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
+    "FACTORY_SIZE_ADMISSION_STAGE",
     "FactorySizeDecision",
+    "apply_factory_size_dispatch_entry",
     "consensus_groom_cut_size_refusal",
     "factory_size_configuration_refusal",
     "factory_size_decision",
+    "record_factory_size_admission_decision",
     "resolve_adopted_assertion_count_ceiling",
     "resolved_stored_factory_size_decision",
+    "size_justified_at_admission",
     "stored_factory_size_decision",
 ]
 
@@ -150,6 +171,76 @@ def resolved_stored_factory_size_decision(
                 adopted_ceiling=ceiling,
             )
         )
+    )
+
+
+def apply_factory_size_dispatch_entry(
+    *,
+    cwd: Path,
+    path_factory: Callable[[], StoreConfig],
+    items: Sequence[WorkItem],
+    journal: JournalFile,
+) -> IOResult[tuple[DispatchOutcome, ...], PolicySettingUnreadable]:
+    """Apply the size gate before a public dispatch path selects or claims.
+
+    Configuration is resolved once before any lifecycle mutation.  A valid
+    exception is journaled at this admission moment so terminal telemetry can
+    retain the decision even if committed configuration or ledger metadata
+    changes while the factory run is in flight.
+    """
+    resolved = resolve_adopted_assertion_count_ceiling(cwd=cwd)
+    if not is_successful(resolved):
+        return IOFailure(unsafe_perform_io(resolved.failure()))
+    ceiling = unsafe_perform_io(resolved.unwrap())
+    path = path_factory() if ceiling is not None else None
+    refused: list[DispatchOutcome] = []
+    audit_started = _factory_size_audit_started(journal=journal)
+    for item in items:
+        decision = (
+            factory_size_decision(
+                item=item,
+                adopted_ceiling=None,
+                raw_justification=None,
+            )
+            if ceiling is None
+            else stored_factory_size_decision(
+                path=cast("StoreConfig", path),
+                item=item,
+                adopted_ceiling=ceiling,
+            )
+        )
+        if decision.disposition == "proceed" and (decision.size_justified or audit_started):
+            record_factory_size_admission_decision(
+                journal=journal,
+                item=item,
+                decision=decision,
+            )
+            audit_started = True
+        if decision.disposition == "decompose":
+            reason = cast("str", decision.reason)
+            route_factory_size_decomposition(
+                path=cast("StoreConfig", path),
+                work_item_id=item.id,
+                reason=reason,
+            )
+            refused.append(
+                failed_dispatch_outcome(
+                    journal=journal,
+                    work_item_id=item.id,
+                    stage="size-decomposition",
+                    detail=reason,
+                )
+            )
+    return IOSuccess(tuple(refused))
+
+
+def _factory_size_audit_started(*, journal: JournalWriter) -> bool:
+    """Whether this durable journal already carries factory-size evidence."""
+    if not isinstance(journal, JournalFile):
+        return False
+    return any(
+        record.get("stage") == FACTORY_SIZE_ADMISSION_STAGE
+        for record in read_journal_records(journal_path=journal.path)
     )
 
 
