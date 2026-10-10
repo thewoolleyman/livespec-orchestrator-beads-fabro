@@ -17,9 +17,9 @@ graph that this module pins:
   `attractor.condition.syntax` ERROR at load. Those three errors are the whole
   reason `validate_accepts_livespec_workflow_templated_acp_command` failed on
   the candidate in the Enemy Unit Test comparison.
-- A script node reads the run id from the context source the engine supplies,
-  `stdin_source="context.internal.run_id"`, rather than from `FABRO_RUN_ID`,
-  which the pinned engine exports to HOOKS only and never to script nodes.
+- A script node prefers the run id from the Petri context source while retaining
+  `FABRO_RUN_ID` as the pinned-engine fallback, so one graph preserves the tree
+  on both engines during the parallel rollout.
 
 WHAT THIS MODULE DOES NOT CLAIM. `fabro validate` accepted every ACP attribute
 shape tried on the candidate, so graph VALIDITY is necessary and nowhere near
@@ -137,10 +137,11 @@ def test_the_review_fix_loop_routes_on_preferred_label_and_is_bounded_by_max_vis
 
 
 def test_the_needs_human_script_reads_the_run_id_from_the_engine_context() -> None:
-    """`FABRO_RUN_ID` is exported to hooks only; the Petri-era source is the context."""
+    """The Petri context is authoritative and the pinned-engine env is its fallback."""
     body = _node_bodies(text=_graph_text())["needs_human"]
     assert _RUN_ID_SOURCE in body
-    assert "FABRO_RUN_ID" not in body
+    assert 'environment_run_id=\\"${FABRO_RUN_ID:-}\\"' in body
+    assert 'run_id=\\"$environment_run_id\\"' in body
 
 
 def test_the_pre_port_graph_is_kept_as_a_separately_named_rollback_file() -> None:

@@ -611,33 +611,27 @@ digraph ImplementWorkItem {
     // (commands/_dispatcher_plan.NEEDS_HUMAN_MARKER) — keep the two in
     // lockstep, exactly as LIVESPEC_NON_CONVERGED is.
     //
-    // THE RUN ID ARRIVES ON STDIN, FROM THE ENGINE'S OWN CONTEXT, and that is a
-    // change of SOURCE rather than of policy (plan `fabro-currency` P4,
-    // bd-ib-hti4zf). The ref used to be derived from `$FABRO_RUN_ID`, which the
-    // pinned fabro exports to HOOKS ONLY and never to a script node -- so the
-    // variable was reliably absent here and the step reliably pushed nothing.
-    // The Petri-era engine supplies run identity to a script node through
-    // `stdin_source`, so the node declares `stdin_source="context.internal.run_id"`
-    // and the script reads the id off stdin.
+    // THE RUN ID SOURCE DEPENDS ON THE RUNNING ENGINE. Pinned Fabro 0.254
+    // exports `$FABRO_RUN_ID`; the Petri-era engine supplies run identity to a
+    // script node through `stdin_source`. The node keeps that candidate-era
+    // declaration and prefers its non-empty stdin value, falling back to the
+    // pinned-engine variable only when the context source is absent, so one
+    // graph preserves the run on both engines during rollout.
     //
     // THERE IS STILL DELIBERATELY NO PLACEHOLDER FALLBACK, for the reason the
     // variable form had none: a `${id:-<placeholder>}` shape silently collapsed
     // every run onto ONE shared ref, so the second needs-human exit clobbered or
     // failed against the first and the console's needs-human valve could not find
-    // the tree it was asked to rule on. With no id on stdin the step therefore
-    // pushes NOTHING and says so loudly on stderr
+    // the tree it was asked to rule on. With no id from either engine source the
+    // step therefore pushes NOTHING and says so loudly on stderr
     // (LIVESPEC_NEEDS_HUMAN_NO_RUN_ID), leaving the operator on the
-    // preserve-by-reference dump pointer. That absent-id arm is also what keeps
-    // ONE graph running on BOTH engines through the parallel rollout: the pinned
-    // build supplies no stdin here, so it takes the no-id arm exactly as it does
-    // today, and the run-scoped ref appears on the Petri-era engine with no
-    // further change.
+    // preserve-by-reference dump pointer.
     needs_human [
         label="Needs human: terminate, preserve the tree, route the decision to the ledger"
         shape=parallelogram
         timeout="600s"
         stdin_source="context.internal.run_id"
-        script="run_id=''; read -r run_id 2>/dev/null || true; if test -n \"$run_id\"; then ref=\"refs/heads/needs-human/$run_id\"; git add -A >/dev/null 2>&1 || true; GIT_AUTHOR_NAME=\"${LIVESPEC_GIT_AUTHOR_NAME:?missing LIVESPEC_GIT_AUTHOR_NAME}\" GIT_AUTHOR_EMAIL=\"${LIVESPEC_GIT_AUTHOR_EMAIL:?missing LIVESPEC_GIT_AUTHOR_EMAIL}\" git commit -q -m 'needs-human: preserve tree before terminating' >/dev/null 2>&1 || true; if git push origin \"HEAD:$ref\" >/dev/null 2>&1; then echo \"LIVESPEC_NEEDS_HUMAN_PRESERVED: $ref\" >&2; else echo 'LIVESPEC_NEEDS_HUMAN_PUSH_FAILED: tree not pushed; rely on the preserve-by-reference dump pointer' >&2; fi; else echo 'LIVESPEC_NEEDS_HUMAN_NO_RUN_ID: no run id arrived on the stdin of this script node, so no run-scoped ref exists to push and nothing was pushed; rely on the preserve-by-reference dump pointer' >&2; fi; echo 'LIVESPEC_NEEDS_HUMAN: loop cannot auto-resolve this work-item; run terminated, work preserved by reference, decision routed to the ledger (blocked / needs-human)' >&2; exit 1"
+        script="environment_run_id=\"${FABRO_RUN_ID:-}\"; run_id=''; read -r run_id 2>/dev/null || true; if test -z \"$run_id\"; then run_id=\"$environment_run_id\"; fi; if test -n \"$run_id\"; then ref=\"refs/heads/needs-human/$run_id\"; git add -A >/dev/null 2>&1 || true; GIT_AUTHOR_NAME=\"${LIVESPEC_GIT_AUTHOR_NAME:?missing LIVESPEC_GIT_AUTHOR_NAME}\" GIT_AUTHOR_EMAIL=\"${LIVESPEC_GIT_AUTHOR_EMAIL:?missing LIVESPEC_GIT_AUTHOR_EMAIL}\" git commit -q -m 'needs-human: preserve tree before terminating' >/dev/null 2>&1 || true; if git push origin \"HEAD:$ref\" >/dev/null 2>&1; then echo \"LIVESPEC_NEEDS_HUMAN_PRESERVED: $ref\" >&2; else echo 'LIVESPEC_NEEDS_HUMAN_PUSH_FAILED: tree not pushed; rely on the preserve-by-reference dump pointer' >&2; fi; else echo 'LIVESPEC_NEEDS_HUMAN_NO_RUN_ID: neither engine run-id source supplied an id, so no run-scoped ref exists to push and nothing was pushed; rely on the preserve-by-reference dump pointer' >&2; fi; echo 'LIVESPEC_NEEDS_HUMAN: loop cannot auto-resolve this work-item; run terminated, work preserved by reference, decision routed to the ledger (blocked / needs-human)' >&2; exit 1"
     ]
 
     // Terminal non-converged node (work-item livespec-impl-beads-rw75ym,

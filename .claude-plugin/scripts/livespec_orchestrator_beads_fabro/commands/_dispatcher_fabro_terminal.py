@@ -14,10 +14,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_failure import (
     fabro_failure_outcome_detail,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
-    NEEDS_HUMAN_MARKER,
-    DispatchPlan,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_terminal import (
+    needs_human_terminal_outcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands._fabro_escalation import (
     FabroEscalation,
     fabro_escalation_from_payload,
@@ -88,7 +88,7 @@ def fabro_run_terminal_outcome(
         return None
     failure = None if inspect is None else inspect.failure
     detail = fabro_failure_outcome_detail(failure=failure, fallback=tail(text=stderr))
-    terminated = _needs_human_terminal_outcome(
+    terminated = needs_human_terminal_outcome(
         outcome_type=outcome_type,
         plan=plan,
         run_id=run_id,
@@ -117,49 +117,6 @@ def fabro_run_terminal_outcome(
         # are read, because a probe aimed at one channel would report a clean
         # "no truncation" for a truncation carried on the other.
         dead_implementer_condition=dead_implementer_condition_from_text(text=f"{stderr}\n{detail}"),
-    )
-
-
-def _needs_human_terminal_outcome(
-    *,
-    outcome_type: type[DispatchOutcome],
-    plan: DispatchPlan,
-    run_id: str | None,
-    text: str,
-) -> DispatchOutcome | None:
-    """Map the `needs_human` terminal's sentinel onto the `blocked` outcome.
-
-    The workflow's needs-human path no longer parks the run (plan
-    ledger-is-the-only-gate; contracts.md "A factory run never awaits a
-    human", v093): the terminal node preserves the tree on a run-scoped ref,
-    prints `NEEDS_HUMAN_MARKER` and exits non-green. What the Dispatcher owes
-    the ledger is unchanged — the item rests at `blocked / needs-human` and
-    the dispatch reports exit code 4 — so the sentinel produces the very same
-    `blocked` outcome the gate did, with a detail that names the preserved
-    ref and the ledger valve instead of a `fabro attach` that would find no
-    run to attach to. The sentinel is read from BOTH the raw stderr and the
-    structured detail, for the same reason the dead-implementer breaker
-    does: neither channel is guaranteed to carry a node's own output.
-    """
-    if NEEDS_HUMAN_MARKER not in text:
-        return None
-    run_label = "unknown-run" if run_id is None else run_id
-    preserved = f"refs/heads/needs-human/{run_label}"
-    return outcome_type(
-        work_item_id=plan.work_item_id,
-        status="blocked",
-        stage="fabro-run",
-        pr_number=None,
-        merge_sha=None,
-        detail=(
-            f"run {run_label} terminated at the needs_human node (needs-human); "
-            f"the tree was preserved on {preserved} (see the preserve-by-reference "
-            "pointer on the item for the dump digest); no run is waiting — the "
-            "decision lives in the ledger: answer with "
-            f"`resolve-blocked:{plan.work_item_id}:ready` (re-dispatch, seeding rework "
-            "from the preserved ref or from scratch) or leave the item blocked"
-        ),
-        fabro_run_id=run_id,
     )
 
 
