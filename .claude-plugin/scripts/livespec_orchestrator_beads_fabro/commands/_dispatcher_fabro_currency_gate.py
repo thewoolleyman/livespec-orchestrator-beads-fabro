@@ -63,22 +63,49 @@ def fabro_currency_admission(
         key=lambda release: (release.published_at, release.tag),
         reverse=True,
     )
-    base = next(
-        release
-        for release in ordered
+    base: FabroRelease | None = None
+    for release in ordered:
         if release_tag_is_ancestor(
             tag=release.tag,
             serving_commit=serving_commit,
             repo=repo,
             runner=runner,
+        ):
+            base = release
+            break
+    if base is None:
+        return _no_base_refusal(
+            target=target,
+            serving_commit=serving_commit,
+            newest=ordered[0],
+            observed_at=observation.observed_at,
         )
-    )
     return _window_refusal(
         target=target,
         serving_commit=serving_commit,
         base=base,
         newest=ordered[0],
         observed_at=observation.observed_at,
+    )
+
+
+def _no_base_refusal(
+    *,
+    target: FactoryTarget,
+    serving_commit: str,
+    newest: FabroRelease,
+    observed_at: datetime,
+) -> FabroCurrencyDecision:
+    return FabroCurrencyDecision(
+        admitted=False,
+        message=(
+            f"ERROR: Fabro currency admission refused factory {target.name}: serving "
+            f"integration commit {serving_commit} has no published fabro-sh/fabro "
+            f"release-tag ancestor; newest observed release {newest.tag} was published "
+            f"{_timestamp(value=newest.published_at)}; release metadata was observed "
+            f"{_timestamp(value=observed_at)}. Rebuild factory-integration on an exact "
+            f"published release, re-pin factory {target.name}, and retry dispatch.\n"
+        ),
     )
 
 
