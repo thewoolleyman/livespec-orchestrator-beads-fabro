@@ -1,35 +1,14 @@
 # groom
 
-Harness-neutral driving prose for the `groom` operation, per
-`SPECIFICATION/constraints.md` §"Skill orchestration constraints":
-this artifact is the plugin-owned LLM-facing half of the operation —
-the read-only grooming-context load, the agent-drafts / human-approves
-decomposition dialogue, the approved-slice filing and explicit original-item
-disposition, the spec-change routing, and the
-`livespec_orchestrator_beads_fabro.*` package calls. Each per-runtime
-SKILL.md is a THIN binding that resolves the plugin root, reads this
-prose in full, and maps its harness-neutral vocabulary (the
-`<plugin-root>` token, the "ask the user" / "read the file" / "write
-the file" verbs, the named sibling operations) to that runtime's
-tools. Nothing in this file names a specific agent runtime's tools or
-command namespace.
+Per `SPECIFICATION/constraints.md` §"Skill orchestration constraints", this is the harness-neutral operation prose; each runtime binding only maps its tools to it.
 
-The one new maintainer surface the grooming realization adds: the
-agent-drafts / human-approves backlog-decomposition front-end. Given a
-`backlog` item (an intake Definition-of-Ready epic, or a Dispatcher
-non-convergence bounce), `groom` drafts a layered decomposition. On the
-maintainer's approval it files approved factory slices through the shared
-intake lifecycle router and explicitly closes the original item — never
-silently dropping it.
+## What done looks like
 
-This realizes SPECIFICATION/scenarios.md "Scenario 7 — Regroom an
-oversized work-item" and the contracts.md §"Gap-detectable behavior
-clauses" groom clause. The mechanical seam is
-`livespec_orchestrator_beads_fabro.commands.groom`; the load-bearing state transition
-reuses the shared `livespec_orchestrator_beads_fabro.regroom` backlog
-disposition helpers, and slice filing reuses the `capture-work-item`
-operation's store + intake-routing machinery — `groom` adds NO new ledger
-state and no new store path.
+Done reports the actual routed state of every filed slice and the disposed original. An all-spec
+cut is refused with the original at `backlog`.
+
+`groom` drafts a layered decomposition of a `backlog` item for maintainer approval, then reuses
+the shared intake router and regroom disposition helpers.
 
 ## Pre-requisites
 

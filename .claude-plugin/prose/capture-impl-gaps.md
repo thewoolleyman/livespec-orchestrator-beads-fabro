@@ -1,23 +1,14 @@
 # capture-impl-gaps
 
-Harness-neutral driving prose for the `capture-impl-gaps` operation,
-per `SPECIFICATION/constraints.md` §"Skill orchestration constraints":
-this artifact is the plugin-owned LLM-facing half of the operation —
-the consent flow, the multi-step dialogue, the
-`livespec_orchestrator_beads_fabro.*` package calls, the wrapper-CLI
-invocation flow, and the JSON / handoff semantics. Each per-runtime
-SKILL.md is a THIN binding that resolves the plugin root, reads this
-prose in full, and maps its harness-neutral vocabulary (the
-`<plugin-root>` token, the "ask the user" / "read the file" verbs, the
-named sibling operations) to that runtime's tools. Nothing in this file
-names a specific agent runtime's tools or command namespace.
+Per `SPECIFICATION/constraints.md` §"Skill orchestration constraints", this is the harness-neutral operation prose; each runtime binding only maps its tools to it.
 
-Mechanically surface untracked spec clauses as candidate gaps, then walk
-the user through classifying each against the implementation (Step 2) —
-the tool never reads implementation state itself; that comparison is a
-human judgement call. The plugin's `detect-impl-gaps` thin-transport
-sibling operation and `store` module are the load-bearing surfaces this
-operation composes.
+## What done looks like
+
+Done is the filed consented gap items with every finding displayed, or a reported pass that found
+no candidate; each filed item reports its id and actual lifecycle state.
+
+This operation composes the mechanical `detect-impl-gaps` surface with user classification of
+each candidate against implementation state.
 
 ## Pre-requisites
 
