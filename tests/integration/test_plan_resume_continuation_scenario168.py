@@ -27,6 +27,7 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     make_beads_client,
     reset_fake_singleton,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_next_action import NextAction
 from livespec_orchestrator_beads_fabro.commands.plan import resume_directive
 from livespec_orchestrator_beads_fabro.types import StoreConfig
 
@@ -364,6 +365,83 @@ def test_scenario168_current_ruling_takes_all_six_typed_actions_and_preserves_pi
     _assert_satisfied_result_is_stale(repo=repo)
     _assert_expired_and_unobservable_results_do_not_continue(repo=repo)
     _assert_unknown_kind_asks(repo=repo)
+
+
+def _assert_stale_precedes_liveness(*, repo: Path, liveness_calls: list[str]) -> None:
+    _fake(repo=repo).close_issue(issue_id=_TARGET, reason="already satisfied")
+    _seed_epic(
+        repo=repo,
+        epic_id="bd-ib-stale-before-live",
+        kind="impl",
+        ref="bd-ib-child",
+        ruling=True,
+    )
+    stale = resume_directive(
+        config=_config(repo=repo), epic_id="bd-ib-stale-before-live", unattended=False
+    )
+    assert stale.next_action is None
+    assert "next_action stale" in stale.reason
+    assert liveness_calls == []
+    _fake(repo=repo).update_issue(issue_id=_TARGET, status="ready")
+
+
+def _assert_live_rewrite_and_wait(*, repo: Path, liveness_calls: list[str]) -> None:
+    for index, (kind, ref) in enumerate(
+        (("impl", "bd-ib-child"), ("spec-op", "propose-change:finish-plan")),
+        start=1,
+    ):
+        epic_id = f"bd-ib-live-{index}"
+        _seed_epic(repo=repo, epic_id=epic_id, kind=kind, ref=ref, ruling=True)
+        directive = resume_directive(config=_config(repo=repo), epic_id=epic_id, unattended=False)
+        pointer = _fake(repo=repo).show_issue(issue_id=epic_id)["metadata"]["next_action"]
+        assert pointer == {
+            "kind": "await",
+            "ref": "run:01M4LIVE",
+            "text": "Wait for live factory run 01M4LIVE.",
+            "required_result": _RESULT,
+            "budget": _BUDGET,
+        }
+        assert directive.next_action == "await:run:01M4LIVE"
+        assert "waiting for unsatisfied required result" in directive.reason
+
+    _seed_epic(
+        repo=repo,
+        epic_id="bd-ib-already-waiting",
+        kind="await",
+        ref="run:01M4LIVE",
+        ruling=True,
+    )
+    before = _fake(repo=repo).show_issue(issue_id="bd-ib-already-waiting")["metadata"]
+    waiting = resume_directive(
+        config=_config(repo=repo), epic_id="bd-ib-already-waiting", unattended=False
+    )
+    after = _fake(repo=repo).show_issue(issue_id="bd-ib-already-waiting")["metadata"]
+    assert waiting.next_action == "await:run:01M4LIVE"
+    assert "waiting for unsatisfied required result" in waiting.reason
+    assert after == before
+    assert liveness_calls == ["bd-ib-child", "propose-change:finish-plan"]
+
+
+def test_resume_reconciles_satisfied_live_and_waiting_pointers_before_continuation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _configure_repo(repo=repo)
+    monkeypatch.chdir(repo)
+    _seed_target(repo=repo)
+    plan_resume = importlib.import_module("livespec_orchestrator_beads_fabro.commands._plan_resume")
+    liveness_calls: list[str] = []
+
+    def _live_run_id(*, config: StoreConfig, action: NextAction) -> str:
+        _ = config
+        liveness_calls.append(action.ref)
+        return "01M4LIVE"
+
+    monkeypatch.setattr(plan_resume, "live_factory_run_id", _live_run_id, raising=False)
+    _assert_stale_precedes_liveness(repo=repo, liveness_calls=liveness_calls)
+    _assert_live_rewrite_and_wait(repo=repo, liveness_calls=liveness_calls)
 
 
 def _record_continuation(

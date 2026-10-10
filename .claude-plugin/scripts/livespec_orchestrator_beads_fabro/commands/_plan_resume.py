@@ -9,31 +9,23 @@ ruling, take one of the sanctioned executable kinds.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro._store_ready_dwell import utc_now_iso
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._plan_continuation import (
     ContinuationRuling,
     current_continuation_ruling,
-    instant_expired,
-)
-from livespec_orchestrator_beads_fabro.commands._plan_definition_of_done import (
-    missing_section_finding,
-    missing_section_gap_text,
-    plan_definition_of_done,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
     AWAIT_KIND,
     HUMAN_KIND,
     IMPL_KIND,
-    LEGACY_TRACKING,
     NEXT_ACTION_METADATA_KEY,
     NONE_KIND,
     PLAN_RESUME_ACTOR,
+    SPEC_OP_KIND,
     NextAction,
     ResumeDirective,
     dispatchable_action_id,
@@ -42,21 +34,25 @@ from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
     set_next_action,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_result_observation import (
-    OBSERVATION_SATISFIED,
     OBSERVATION_UNSATISFIED,
     ResultObservation,
 )
-from livespec_orchestrator_beads_fabro.commands._plan_result_reader import read_result
+from livespec_orchestrator_beads_fabro.commands._plan_resume_gap import (
+    definition_of_done_findings,
+    missing_definition_gap_directive,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_resume_tracking import (
+    result_observation,
+    tracked_resume_directive,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_run_liveness import live_factory_run_id
 
 if TYPE_CHECKING:
-    from livespec_orchestrator_beads_fabro._beads_client import BeadsRecord
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 __all__: list[str] = [
     "decide_plan_resume",
 ]
-
-_DESCRIPTION_FIELD = "description"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -78,9 +74,13 @@ def decide_plan_resume(*, config: StoreConfig, epic_id: str, unattended: bool) -
     action = parse_next_action(
         value=plan_record_metadata(record=record).get(NEXT_ACTION_METADATA_KEY)
     )
-    findings = _definition_of_done_findings(record=record, epic_id=epic_id)
+    findings = definition_of_done_findings(record=record, epic_id=epic_id)
     if findings and unattended and not _is_impl(action=action):
-        return _gap_directive(config=config, epic_id=epic_id, findings=findings)
+        return missing_definition_gap_directive(
+            config=config,
+            epic_id=epic_id,
+            findings=findings,
+        )
     if action is None:
         return ResumeDirective(
             ask=True,
@@ -96,14 +96,22 @@ def decide_plan_resume(*, config: StoreConfig, epic_id: str, unattended: bool) -
             reason=_picker_reason(action=action),
             findings=findings,
         )
-    observation = _result_observation(config=config, action=action)
-    tracked = _tracked_directive(
+    observation = result_observation(config=config, action=action)
+    tracked = tracked_resume_directive(
         action=action,
         observation=observation,
         findings=findings,
     )
     if tracked is not None:
         return tracked
+    action = _live_reconciled_action(
+        config=config,
+        epic_id=epic_id,
+        action=action,
+        observation=observation,
+    )
+    if action.kind == AWAIT_KIND:
+        identifier = f"{AWAIT_KIND}:{action.ref}"
     return _continuation_directive(
         state=_ContinuationState(
             config=config,
@@ -114,45 +122,6 @@ def decide_plan_resume(*, config: StoreConfig, epic_id: str, unattended: bool) -
             observation=observation,
             findings=findings,
         )
-    )
-
-
-def _tracked_directive(
-    *,
-    action: NextAction,
-    observation: ResultObservation | None,
-    findings: tuple[str, ...],
-) -> ResumeDirective | None:
-    if observation is not None and observation.status == OBSERVATION_SATISFIED:
-        finding = (
-            f"next_action stale: observed {observation.target} satisfied via"
-            f" {observation.evidence}; derive the next step from the ledger"
-        )
-        return ResumeDirective(
-            ask=False,
-            next_action=None,
-            reason=finding,
-            findings=(*findings, finding),
-            observation=observation,
-        )
-    if observation is not None and observation.status != OBSERVATION_UNSATISFIED:
-        finding = f"next_action result is unobservable: {observation.detail}"
-        return ResumeDirective(
-            ask=False,
-            next_action=None,
-            reason=finding,
-            findings=(*findings, finding),
-            observation=observation,
-        )
-    if observation is None or _budget_unexpired(budget=action.budget):
-        return None
-    finding = f"next_action obligation expired after observing {observation.target}"
-    return ResumeDirective(
-        ask=False,
-        next_action=None,
-        reason=finding,
-        findings=(*findings, finding),
-        observation=observation,
     )
 
 
@@ -204,56 +173,40 @@ def _ruling(*, config: StoreConfig, epic_id: str, unattended: bool) -> Continuat
     )
 
 
-def _result_observation(*, config: StoreConfig, action: NextAction) -> ResultObservation | None:
-    """Read an explicitly tracked pointer; legacy pointers retain their old path."""
-    if action.required_result is LEGACY_TRACKING or action.required_result is None:
-        return None
-    project_root = config.repo_root if config.repo_root is not None else Path.cwd()
-    return read_result(
-        project_root=project_root,
-        reference=action.required_result,
-        runner=ShellCommandRunner(),
+def _live_reconciled_action(
+    *,
+    config: StoreConfig,
+    epic_id: str,
+    action: NextAction,
+    observation: ResultObservation | None,
+) -> NextAction:
+    if (
+        observation is None
+        or observation.status != OBSERVATION_UNSATISFIED
+        or action.kind not in (IMPL_KIND, SPEC_OP_KIND)
+    ):
+        return action
+    run_id = live_factory_run_id(config=config, action=action)
+    if run_id is None:
+        return action
+    rewritten = replace(
+        action,
+        kind=AWAIT_KIND,
+        ref=f"run:{run_id}",
+        text=f"Wait for live factory run {run_id}.",
     )
-
-
-def _budget_unexpired(*, budget: object) -> bool:
-    fields = cast("dict[str, Any]", budget)
-    deadline = cast("str", fields["deadline"])
-    maximum = cast("int", fields["max_handoffs"])
-    count = cast("int", fields.get("handoff_count", 0))
-    if count >= maximum:
-        return False
-    return not instant_expired(until=deadline, now=utc_now_iso())
+    _ = set_next_action(
+        config=config,
+        epic_id=epic_id,
+        action=rewritten,
+        session=PLAN_RESUME_ACTOR,
+        now=utc_now_iso(),
+    )
+    return rewritten
 
 
 def _is_impl(*, action: NextAction | None) -> bool:
     return action is not None and action.kind == IMPL_KIND
-
-
-def _definition_of_done_findings(*, record: BeadsRecord, epic_id: str) -> tuple[str, ...]:
-    description = record.get(_DESCRIPTION_FIELD)
-    text = description if isinstance(description, str) else ""
-    if plan_definition_of_done(description=text).present:
-        return ()
-    return (missing_section_finding(epic_id=epic_id),)
-
-
-def _gap_directive(
-    *, config: StoreConfig, epic_id: str, findings: tuple[str, ...]
-) -> ResumeDirective:
-    _ = set_next_action(
-        config=config,
-        epic_id=epic_id,
-        action=NextAction(kind=HUMAN_KIND, ref="", text=missing_section_gap_text()),
-        session=PLAN_RESUME_ACTOR,
-        now=utc_now_iso(),
-    )
-    return ResumeDirective(
-        ask=True,
-        next_action=None,
-        reason=f"epic {epic_id} carries no plan Definition of Done section",
-        findings=findings,
-    )
 
 
 def _picker_reason(*, action: NextAction) -> str:
