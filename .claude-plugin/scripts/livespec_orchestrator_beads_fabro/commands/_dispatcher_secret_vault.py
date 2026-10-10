@@ -57,7 +57,7 @@ __all__: list[str] = [
 
 # The dispatch-journal stage each store is recorded under.
 #
-# WHY THE STORE IS RECORDED AT ALL. A launch-scoped reference proves which vault
+# WHY THE STORE IS RECORDED AT ALL. A stable reference proves which vault
 # ENTRY the worker will read, but the bundle cannot prove whether this launch
 # successfully put a value there. Only the dispatch-time store result can, so a
 # names-only row records that operation without copying the credential onto a
@@ -99,7 +99,7 @@ class FabroVaultSink:
             return None
         # Recorded as REFUSED rather than omitted. An absent row reads as "this
         # launch never tried", which is the wrong conclusion when the worker's
-        # launch-scoped reference resolves an entry this store never populated.
+        # stable reference resolves an entry this store never refreshed.
         self._record(secret=secret, outcome="refused", exit_code=result.exit_code)
         return f"`fabro secret set {secret.secret_name}` exited {result.exit_code}: " + _excerpt(
             text=_scrubbed(text=result.stderr or result.stdout, value=secret.value)

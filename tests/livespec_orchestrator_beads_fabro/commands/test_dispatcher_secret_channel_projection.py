@@ -20,8 +20,8 @@ names the family.
 
 Third, the values have to REACH THE VAULT. A reference is only a credential once
 the server holds the value it names, so the routed secrets are pushed through a
-    sink and the sink is asserted to have received each one under its
-    launch-scoped vault key.
+    sink and the sink is asserted to have received each one under its stable
+    vault key.
 
 `SPECIFICATION/contracts.md` section "Proof credential projection" governs the
 declared-proof-credential half: the transport is implementation-owned and a
@@ -197,6 +197,23 @@ def test_an_undeclared_factory_keeps_the_inline_overlay(tmp_path: Path) -> None:
     assert resolved == SECRET_CHANNEL_INLINE_OVERLAY
 
 
+@pytest.mark.parametrize(
+    "block",
+    [
+        {},
+        {"factories": []},
+        {"factories": {}},
+        {"factories": {_FACTORY: []}},
+    ],
+)
+def test_an_absent_or_unstructured_factory_has_no_channel_declaration(
+    block: dict[str, object],
+) -> None:
+    """Only an explicit channel value is graded by the channel resolver."""
+    resolved = channel_module.resolve_secret_channel(block=block, factory=_FACTORY)
+    assert resolved == SECRET_CHANNEL_INLINE_OVERLAY
+
+
 def test_a_declared_native_factory_resolves_the_native_channel(tmp_path: Path) -> None:
     """The declaration is what opts a factory into the vault transport."""
     repo = _repo_declaring(tmp_path=tmp_path, channel=SECRET_CHANNEL_NATIVE_SECRETS)
@@ -263,15 +280,15 @@ def test_a_dispatch_to_a_native_factory_routes_all_three_families(
     assert error is None
     rendered = overlay.read_text(encoding="utf-8")
     for env_name in sorted(_EXPECTED_FAMILIES):
-        secret_name = channel_module.vault_secret_name(env_name=env_name, scope=_DISPATCH_SCOPE)
+        secret_name = channel_module.vault_secret_name(env_name=env_name)
         reference = channel_module.secret_reference(secret_name=secret_name)
         assert f"{env_name} = {json.dumps(reference)}\n" in rendered
         assert secret_name in sink.stored
     assert _FAKE_TOKEN not in rendered
     assert _FAKE_GITHUB_TOKEN not in rendered
-    assert sink.stored[
-        channel_module.vault_secret_name(env_name="GITHUB_TOKEN", scope=_DISPATCH_SCOPE)
-    ] == (_FAKE_GITHUB_TOKEN)
+    assert sink.stored[channel_module.vault_secret_name(env_name="GITHUB_TOKEN")] == (
+        _FAKE_GITHUB_TOKEN
+    )
 
 
 def test_a_dispatch_to_an_undeclared_factory_still_inlines_and_stores_nothing(

@@ -8,12 +8,12 @@ credential refresh a redeploy.
 
 Two things have to hold. The repository's workflow source needs no credential
 edit or rebuild when a credential rotates: the run overlay is generated through
-the same path and still contains references only. And each launch must use its
-OWN vault keys, so a later or overlapping launch cannot replace a value before
-the first launch's worker resolves it.
+the same path and still contains references only. And each launch must use the
+SAME stable vault keys, so rotation changes only the server-owned value while
+the immutable bundle remains byte-identical.
 
 The third assertion is about EVIDENCE rather than mechanism. Each store is
-journaled per credential, by launch-scoped vault key and outcome, and the row
+journaled per credential, by stable vault key and outcome, and the row
 carries no value: `SPECIFICATION/contracts.md` section "Proof credential
 projection" requires journals and records to carry names only.
 """
@@ -42,8 +42,6 @@ _FIRST = ("rotation-anthropic-1", "rotation-github-1", "rotation-openai-1")
 _SECOND = ("rotation-anthropic-2", "rotation-github-2", "rotation-openai-2")
 
 _ENV_NAMES = ("CLAUDE_CODE_OAUTH_TOKEN", "GITHUB_TOKEN", "CODEX_AUTH_JSON")
-_FIRST_SCOPE = "dispatch-rotation-first"
-_SECOND_SCOPE = "dispatch-rotation-second"
 
 
 @dataclass(kw_only=True)
@@ -115,16 +113,15 @@ def test_two_launches_with_rotated_credentials_need_no_source_bundle_edit(
     first = tmp_path / "first.toml"
     second = tmp_path / "second.toml"
     sink = _RecordingSink()
-    for overlay, values, scope in (
-        (first, _FIRST, _FIRST_SCOPE),
-        (second, _SECOND, _SECOND_SCOPE),
+    for overlay, values in (
+        (first, _FIRST),
+        (second, _SECOND),
     ):
         assert (
             write_routed_overlay(
                 overlay=overlay,
                 rendered=_bundle(values=values),
                 channel=SECRET_CHANNEL_NATIVE_SECRETS,
-                scope=scope,
                 proof_credentials_env="",
                 sink=sink,
             )
@@ -134,24 +131,23 @@ def test_two_launches_with_rotated_credentials_need_no_source_bundle_edit(
         rendered = path.read_text(encoding="utf-8")
         assert "{{ secrets." in rendered
         assert all(value not in rendered for value in values)
+    assert first.read_bytes() == second.read_bytes()
 
 
-def test_each_launch_leaves_its_own_value_in_the_vault(tmp_path: Path) -> None:
-    """Rotation takes effect without replacing an overlapping launch's values."""
+def test_second_launch_replaces_each_stable_vault_value(tmp_path: Path) -> None:
+    """Rotation takes effect by updating the entries the unchanged bundle names."""
     sink = _RecordingSink()
-    for values, scope in ((_FIRST, _FIRST_SCOPE), (_SECOND, _SECOND_SCOPE)):
+    for values in (_FIRST, _SECOND):
         _ = write_routed_overlay(
             overlay=tmp_path / "overlay.toml",
             rendered=_bundle(values=values),
             channel=SECRET_CHANNEL_NATIVE_SECRETS,
-            scope=scope,
             proof_credentials_env="",
             sink=sink,
         )
     assert sink.stored == {
-        vault_secret_name(env_name=env_name, scope=scope): value
-        for values, scope in ((_FIRST, _FIRST_SCOPE), (_SECOND, _SECOND_SCOPE))
-        for env_name, value in zip(_ENV_NAMES, values, strict=True)
+        vault_secret_name(env_name=env_name): value
+        for env_name, value in zip(_ENV_NAMES, _SECOND, strict=True)
     }
 
 
@@ -170,14 +166,14 @@ def test_each_store_is_journaled_by_vault_key_and_outcome() -> None:
             sink.set(
                 secret=VaultSecret(
                     env_name=env_name,
-                    secret_name=vault_secret_name(env_name=env_name, scope=_SECOND_SCOPE),
+                    secret_name=vault_secret_name(env_name=env_name),
                     value=value,
                 )
             )
             is None
         )
     keys = [record.get("secret") for record in journal.records]
-    assert keys == [vault_secret_name(env_name=name, scope=_SECOND_SCOPE) for name in _ENV_NAMES]
+    assert keys == [vault_secret_name(env_name=name) for name in _ENV_NAMES]
     assert {record.get("outcome") for record in journal.records} == {"stored"}
     rendered = json.dumps(journal.records)
     for value in _SECOND:
@@ -202,7 +198,7 @@ def test_a_refused_store_is_journaled_as_refused() -> None:
     )
     secret = VaultSecret(
         env_name="GITHUB_TOKEN",
-        secret_name=vault_secret_name(env_name="GITHUB_TOKEN", scope=_SECOND_SCOPE),
+        secret_name=vault_secret_name(env_name="GITHUB_TOKEN"),
         value=_SECOND[1],
     )
     assert sink.set(secret=secret) is not None

@@ -37,7 +37,6 @@ def write_routed_overlay(
     overlay: Path,
     rendered: str,
     channel: str,
-    scope: str,
     proof_credentials_env: str,
     sink: VaultSecretSink | None,
 ) -> str | None:
@@ -56,7 +55,6 @@ def write_routed_overlay(
     routed = route_dispatch_secrets(
         overlay_text=rendered,
         channel=channel,
-        scope=scope,
         proof_credentials_env=proof_credentials_env,
         sink=sink,
     )

@@ -47,7 +47,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_channel impor
 _ANTHROPIC_VALUE = "vault-anthropic-placeholder"
 _GITHUB_VALUE = "vault-github-placeholder"
 _OPENAI_VALUE = "vault-openai-placeholder"
-_SCOPE = "dispatch-vault-channel"
 
 
 @dataclass(kw_only=True)
@@ -90,7 +89,6 @@ def test_a_native_dispatch_with_no_vault_wired_refuses() -> None:
     refusal = route_dispatch_secrets(
         overlay_text=_complete_bundle(),
         channel=SECRET_CHANNEL_NATIVE_SECRETS,
-        scope=_SCOPE,
         proof_credentials_env="",
         sink=None,
     )
@@ -108,7 +106,6 @@ def test_a_bundle_missing_a_required_family_refuses_through_the_dispatch_path() 
     refusal = route_dispatch_secrets(
         overlay_text=bundle,
         channel=SECRET_CHANNEL_NATIVE_SECRETS,
-        scope=_SCOPE,
         proof_credentials_env="",
         sink=_AcceptingSink(),
     )
@@ -129,7 +126,6 @@ def test_a_routing_refusal_stores_nothing_at_all() -> None:
     refusal = route_dispatch_secrets(
         overlay_text=bundle,
         channel=SECRET_CHANNEL_NATIVE_SECRETS,
-        scope=_SCOPE,
         proof_credentials_env="",
         sink=sink,
     )
@@ -141,15 +137,14 @@ def test_a_vault_that_refuses_a_write_refuses_the_dispatch() -> None:
     """An ignored store failure is the rotation fault this transport must survive.
 
     The bundle still looks routed, so nothing looks wrong, and the worker would
-    authenticate with an absent or incomplete launch-scoped entry. The
+    authenticate with an absent or incomplete stable entry. The
     refusal names the vault key and carries the server's own reason, never the
     value it could not store.
     """
-    refused_key = vault_secret_name(env_name="GITHUB_TOKEN", scope=_SCOPE)
+    refused_key = vault_secret_name(env_name="GITHUB_TOKEN")
     refusal = route_dispatch_secrets(
         overlay_text=_complete_bundle(),
         channel=SECRET_CHANNEL_NATIVE_SECRETS,
-        scope=_SCOPE,
         proof_credentials_env="",
         sink=_RefusingSink(refuse=refused_key),
     )
@@ -170,7 +165,6 @@ def test_a_routing_refusal_leaves_no_overlay_file_behind(tmp_path: Path) -> None
         overlay=overlay,
         rendered=_complete_bundle(),
         channel=SECRET_CHANNEL_NATIVE_SECRETS,
-        scope=_SCOPE,
         proof_credentials_env="",
         sink=None,
     )
@@ -187,7 +181,6 @@ def test_a_routed_bundle_is_written_mode_600(tmp_path: Path) -> None:
             overlay=overlay,
             rendered=_complete_bundle(),
             channel=SECRET_CHANNEL_NATIVE_SECRETS,
-            scope=_SCOPE,
             proof_credentials_env="",
             sink=sink,
         )
@@ -286,11 +279,10 @@ def test_a_declared_proof_credential_is_routed_with_the_dispatch_set() -> None:
     routed = route_dispatch_secrets(
         overlay_text=_complete_bundle() + proof_env,
         channel=SECRET_CHANNEL_NATIVE_SECRETS,
-        scope=_SCOPE,
         proof_credentials_env=proof_env,
         sink=sink,
     )
     assert isinstance(routed, RoutedOverlay)
-    reader_key = vault_secret_name(env_name="ACME_STATUS_READER", scope=_SCOPE)
+    reader_key = vault_secret_name(env_name="ACME_STATUS_READER")
     assert sink.stored[reader_key] == reader_value
     assert reader_value not in routed.overlay_text

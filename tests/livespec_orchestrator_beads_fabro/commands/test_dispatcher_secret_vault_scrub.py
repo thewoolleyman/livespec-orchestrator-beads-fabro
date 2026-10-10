@@ -22,7 +22,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_channel impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_vault import FabroVaultSink
 
-_KEY = vault_secret_name(env_name="GITHUB_TOKEN", scope="dispatch-vault-scrub")
+_KEY = vault_secret_name(env_name="GITHUB_TOKEN")
 
 
 @dataclass(kw_only=True)
