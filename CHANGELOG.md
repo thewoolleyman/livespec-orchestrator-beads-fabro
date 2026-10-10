@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.181.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.181.1...v0.181.2) (2026-10-10)
+
+
+### Bug Fixes
+
+* launch Petri workflows from their package ([7241054](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7241054bcfe08cb02ad86c23f50e2e38035faafd))
+* preserve pinned Fabro overlay launches ([81e38c8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/81e38c8e45510136156226dfe7fdd5b1a350af80))
+
 ## [0.181.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.181.0...v0.181.1) (2026-10-10)
 
 
