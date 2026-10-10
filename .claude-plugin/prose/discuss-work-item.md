@@ -8,7 +8,8 @@ This operation stands by: it answers, drafts, and records while retaining the ex
 gate on every lifecycle drive.
 
 `discuss-work-item` is the maintainer's day-to-day session over one work item or plan, layered over
-the `context` read primitive. The sibling `plan` operation owns create, resume, and archive.
+the `context` read primitive. It is NOT named `plan`; the sibling `plan` operation owns create,
+resume, and archive.
 
 ## Pre-requisites
 
