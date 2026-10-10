@@ -503,10 +503,19 @@
         "pr": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" },
         "disposition": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "medium" }
       },
+      // `review_fix` is a DIFFERENT node from `fix` and was absent here, so it
+      // fell to the 1800 s default. Measured 2026-10-09/10 on run
+      // 01M4HA8YVAAH (bd-ib-4ipmub): review_fix@1 and review_fix@2 both ended
+      // "ACP turn timed out ... last update at 1800000 ms" while finishing a
+      // Red-Green pair plus this repository's full check (7,194 tests under
+      // load), and the second left an open Red the engine checkpoint could not
+      // commit (bd-ib-qhv7qs). Two hours covers the pair, the coverage rerun
+      // and the full gate with the same headroom `implement` has.
       "node_timeouts": {
         "implement": 14400,
         "janitor": 3600,
-        "fix": 3600
+        "fix": 3600,
+        "review_fix": 7200
       },
       // ACTIVE inventory, not endpoint history: an unnamed `reconcile-runs`
       // pass surveys every entry. Intentionally stopped or retired factories
