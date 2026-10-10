@@ -1,0 +1,51 @@
+"""Minimal recovered-WIP reader prerequisite for the telemetry Red replay."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import JournalWriter
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
+        FactorySizeDecision,
+    )
+    from livespec_orchestrator_beads_fabro.types import WorkItem
+
+__all__: list[str] = [
+    "record_factory_size_admission_decision",
+    "size_justified_at_admission",
+]
+
+_FACTORY_SIZE_ADMISSION_STAGE = "factory-size-admission"
+_SIZE_JUSTIFIED_FIELD = "size_justified"
+
+
+def record_factory_size_admission_decision(
+    *, journal: JournalWriter, item: WorkItem, decision: FactorySizeDecision
+) -> None:
+    """Retain the recovered WIP behavior: ordinary admissions add no record."""
+    if not decision.size_justified:
+        return
+    journal.append(
+        record={
+            "stage": _FACTORY_SIZE_ADMISSION_STAGE,
+            "work_item_id": item.id,
+            "adopted_assertion_count_ceiling": decision.adopted_ceiling,
+            "assertion_count": decision.assertion_count,
+            _SIZE_JUSTIFIED_FIELD: True,
+        }
+    )
+
+
+def size_justified_at_admission(
+    *, records: tuple[dict[str, object], ...], work_item_id: str
+) -> bool | None:
+    """Retain the recovered WIP's item-scoped, latest-true reader."""
+    for record in reversed(records):
+        if (
+            record.get("stage") == _FACTORY_SIZE_ADMISSION_STAGE
+            and record.get("work_item_id") == work_item_id
+        ):
+            value = record.get(_SIZE_JUSTIFIED_FIELD)
+            return value if isinstance(value, bool) else None
+    return None

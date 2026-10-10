@@ -27,14 +27,10 @@ plausible wrong answer a reader has no way to catch.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
 
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
-from livespec_orchestrator_beads_fabro._store_factory_size_gate import (
-    route_factory_size_decomposition,
-)
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_preflight import (
     acp_preflight_refusal,
@@ -43,7 +39,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import ho
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credentials import read_dispatch_labels
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
-    resolved_stored_factory_size_decision,
+    apply_factory_size_dispatch_entry,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile, utc_now_iso
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
@@ -92,10 +88,11 @@ def _refusal_for(
     journal: JournalFile,
 ) -> DispatchOutcome | None:
     """The first condition this row fails, or `None` when it passes all four."""
-    size_result = resolved_stored_factory_size_decision(
+    size_result = apply_factory_size_dispatch_entry(
         cwd=repo,
         path_factory=lambda: store_config(repo=repo),
-        item=item,
+        items=(item,),
+        journal=journal,
     )
     if not is_successful(size_result):
         failure = unsafe_perform_io(size_result.failure())
@@ -105,20 +102,9 @@ def _refusal_for(
             stage="configuration",
             detail=failure.detail,
         )
-    size = unsafe_perform_io(size_result.unwrap())
-    if size.disposition == "decompose":
-        reason = cast("str", size.reason)
-        route_factory_size_decomposition(
-            path=store_config(repo=repo),
-            work_item_id=item.id,
-            reason=reason,
-        )
-        return failed_dispatch_outcome(
-            journal=journal,
-            work_item_id=item.id,
-            stage="size-decomposition",
-            detail=reason,
-        )
+    size_refusals = unsafe_perform_io(size_result.unwrap())
+    if size_refusals:
+        return size_refusals[0]
     exhaustion_refusal = provider_exhaustion_refusal(
         work_item_id=item.id,
         journal=journal,
