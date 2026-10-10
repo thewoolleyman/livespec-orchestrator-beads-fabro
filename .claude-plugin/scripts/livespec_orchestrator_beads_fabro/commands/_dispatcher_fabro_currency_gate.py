@@ -10,6 +10,7 @@ from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_forge import (
+    FabroForgeFailure,
     FabroRelease,
     release_observation,
     release_tag_is_ancestor,
@@ -58,6 +59,13 @@ def fabro_currency_admission(
         runner=runner,
         now=now,
     )
+    if isinstance(observation, FabroForgeFailure):
+        return _stale_observation_refusal(
+            target=target,
+            serving_commit=serving_commit,
+            failure=observation,
+            now=now,
+        )
     ordered = sorted(
         observation.releases,
         key=lambda release: (release.published_at, release.tag),
@@ -86,6 +94,25 @@ def fabro_currency_admission(
         base=base,
         newest=ordered[0],
         observed_at=observation.observed_at,
+    )
+
+
+def _stale_observation_refusal(
+    *,
+    target: FactoryTarget,
+    serving_commit: str,
+    failure: FabroForgeFailure,
+    now: datetime,
+) -> FabroCurrencyDecision:
+    return FabroCurrencyDecision(
+        admitted=False,
+        message=(
+            f"ERROR: Fabro currency admission refused factory {target.name}: serving "
+            f"integration commit {serving_commit}; cached release metadata observed "
+            f"{_timestamp(value=failure.stale_observed_at)} is older than seven days, and "
+            f"refresh failed at {_timestamp(value=now)} ({failure.detail}). Restore the "
+            "fabro-sh/fabro GitHub Releases observation and retry dispatch.\n"
+        ),
     )
 
 

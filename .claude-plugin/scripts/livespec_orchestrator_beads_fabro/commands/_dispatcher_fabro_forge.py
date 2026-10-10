@@ -12,6 +12,7 @@ from urllib.parse import quote
 from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroRunner
 
 __all__: list[str] = [
+    "FabroForgeFailure",
     "FabroRelease",
     "FabroReleaseObservation",
     "release_observation",
@@ -35,19 +36,31 @@ class FabroReleaseObservation:
     releases: tuple[FabroRelease, ...]
 
 
+@dataclass(frozen=True, kw_only=True)
+class FabroForgeFailure:
+    detail: str
+    stale_observed_at: datetime
+
+
 def release_observation(
     *,
     cache_path: Path,
     repo: Path,
     runner: FabroRunner,
     now: datetime,
-) -> FabroReleaseObservation:
-    """Fetch one publication observation and preserve it for later reuse."""
+) -> FabroReleaseObservation | FabroForgeFailure:
+    """Refresh publication evidence, retaining a stale timestamp for refusal."""
+    stale = _read_cache(path=cache_path) if cache_path.is_file() else None
     result = runner.run(
         argv=["gh", "api", "--paginate", "--slurp", _RELEASES_ENDPOINT],
         cwd=repo,
         timeout_seconds=_FORGE_TIMEOUT_SECONDS,
     )
+    if result.exit_code != 0:
+        return FabroForgeFailure(
+            detail=result.stderr.strip(),
+            stale_observed_at=cast(FabroReleaseObservation, stale).observed_at,
+        )
     pages = cast("list[list[dict[str, object]]]", json.loads(result.stdout))
     releases = tuple(
         FabroRelease(
@@ -102,6 +115,21 @@ def release_tag_is_ancestor(
 
 def _parse_timestamp(*, text: str) -> datetime:
     return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(timezone.utc)
+
+
+def _read_cache(*, path: Path) -> FabroReleaseObservation:
+    payload = cast("dict[str, object]", json.loads(path.read_text(encoding="utf-8")))
+    records = cast("list[dict[str, object]]", payload["releases"])
+    return FabroReleaseObservation(
+        observed_at=_parse_timestamp(text=cast(str, payload["observed_at"])),
+        releases=tuple(
+            FabroRelease(
+                tag=cast(str, record["tag_name"]),
+                published_at=_parse_timestamp(text=cast(str, record["published_at"])),
+            )
+            for record in records
+        ),
+    )
 
 
 def _timestamp(*, value: datetime) -> str:

@@ -169,3 +169,60 @@ def test_a_serving_commit_without_a_published_release_ancestor_is_refused(
         "metadata was observed 2026-10-10T03:00:00Z. Rebuild factory-integration on an "
         "exact published release, re-pin factory edge, and retry dispatch.\n"
     )
+
+
+def test_a_failed_refresh_refuses_instead_of_reusing_a_stale_observation(
+    tmp_path: Path,
+) -> None:
+    cache_path = tmp_path / "release-observation.json"
+    _ = cache_path.write_text(
+        json.dumps(
+            {
+                "observed_at": "2026-10-02T02:59:59Z",
+                "releases": [
+                    {
+                        "tag_name": "v0.399.0",
+                        "published_at": "2026-10-01T00:00:00Z",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    runner = _Runner(
+        results=[
+            _command(stdout=f"fabro 0.399.0 ({_SERVING_COMMIT} 2026-10-01)\n"),
+            _command(stdout="[[]]", exit_code=1, stderr="GitHub unavailable"),
+        ],
+        calls=[],
+    )
+    decision = None
+    with suppress(IndexError):
+        decision = importlib.import_module(_MODULE_NAME).fabro_currency_admission(
+            target=FactoryTarget(name="hp", server="https://factory.example", dev_token=None),
+            fabro_bin="/opt/fabro-hp",
+            repo=tmp_path,
+            runner=runner,
+            now=datetime(2026, 10, 10, 3, tzinfo=timezone.utc),
+            cache_path=cache_path,
+        )
+
+    assert decision is not None
+    assert decision.admitted is False
+    assert decision.message == (
+        "ERROR: Fabro currency admission refused factory hp: serving integration commit "
+        "abcdef1234567890; cached release metadata observed 2026-10-02T02:59:59Z is "
+        "older than seven days, and refresh failed at 2026-10-10T03:00:00Z (GitHub "
+        "unavailable). Restore the fabro-sh/fabro GitHub Releases observation and retry "
+        "dispatch.\n"
+    )
+    assert runner.calls == [
+        ["/opt/fabro-hp", "--version"],
+        [
+            "gh",
+            "api",
+            "--paginate",
+            "--slurp",
+            "repos/fabro-sh/fabro/releases?per_page=100",
+        ],
+    ]
