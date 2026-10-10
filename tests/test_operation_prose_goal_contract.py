@@ -219,3 +219,51 @@ def test_rewrite_preserves_the_protected_normative_force() -> None:
         assert "every invocation" in operation, name
         assert "on every exit path" in operation, name
         assert "report `withheld_reason` verbatim" in operation, name
+
+
+def test_plan_and_drive_bindings_share_outcomes_across_runtimes() -> None:
+    plan_bindings = (
+        ROOT / ".claude-plugin" / "skills" / "plan" / "SKILL.md",
+        ROOT / ".claude-plugin" / ".codex-plugin" / "skills" / "plan" / "SKILL.md",
+        ROOT
+        / ".claude-plugin"
+        / ".pi-plugin"
+        / "skills"
+        / "livespec-orchestrator-beads-fabro-plan"
+        / "SKILL.md",
+    )
+    plan_outcome = (
+        "child disposition, independent completeness review, a verified plan proof of done "
+        "with required attestations, and archive"
+    )
+    for binding in plan_bindings:
+        prose = _squash(binding.read_text(encoding="utf-8"))
+        assert plan_outcome in prose, binding
+        assert "released-build proof where applicable" in prose, binding
+        assert "prose/plan.md" in prose, binding
+
+    drive_bindings = (
+        ROOT / ".claude-plugin" / "skills" / "drive" / "SKILL.md",
+        ROOT / ".claude-plugin" / ".codex-plugin" / "skills" / "drive" / "SKILL.md",
+        ROOT
+        / ".claude-plugin"
+        / ".pi-plugin"
+        / "skills"
+        / "livespec-orchestrator-beads-fabro-drive"
+        / "SKILL.md",
+    )
+    for binding in drive_bindings:
+        prose = _squash(binding.read_text(encoding="utf-8"))
+        assert "a valve action is complete when it returns" in prose, binding
+        assert (
+            "an `impl:` dispatch spans the run, the merge, the post-merge janitor, and acceptance"
+            in prose
+        ), binding
+        assert "reported as observed when its gate reports" in prose, binding
+
+    codex = plan_bindings[1].read_text(encoding="utf-8")
+    assert 'cat "$PLUGIN_ROOT/prose/plan.md"' not in codex
+    assert "sed -n '1,160p'" in codex
+    assert "sed -n '161,320p'" in codex
+    assert "sed -n '321,480p'" in codex
+    assert "A truncation notice is an incomplete read" in codex

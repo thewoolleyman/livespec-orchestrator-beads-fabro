@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Open or resume a durable plan with filesystem research plus ledger-held plan-epic handoff comments, route scoped work to spec or ledger children, and archive only after child-disposition and completeness-review evidence gates pass. Invoke bare as `/livespec-orchestrator-beads-fabro:plan` to create or resume interactively, or `/livespec-orchestrator-beads-fabro:plan <slug>` to resume an existing plan strictly.
+description: Open or resume a durable plan and carry authorized work through child disposition, independent completeness review, a verified plan Proof of Done with required attestations, and archive. Use released-build proof where applicable. Invoke bare as `/livespec-orchestrator-beads-fabro:plan` to create or resume interactively, or `/livespec-orchestrator-beads-fabro:plan <slug>` to resume an existing plan strictly.
 allowed-tools: Bash, Read, Grep, Glob, Write
 ---
 

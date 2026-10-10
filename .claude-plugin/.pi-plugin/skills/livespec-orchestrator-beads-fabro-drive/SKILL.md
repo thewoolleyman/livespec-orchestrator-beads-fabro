@@ -13,6 +13,9 @@ mechanics ONLY. The behavior lives in the plugin's reference wrapper
 `scripts/bin/drive.py`; this binding resolves the plugin root and
 dispatches to it, adding no operation behavior of its own.
 
+A valve action is complete when it returns. An `impl:` dispatch spans the run, the merge, the post-merge janitor, and acceptance
+and is reported as observed when its gate reports.
+
 pi's skill namespace is flat — a skill name admits no colon — so this
 plugin's namespace is carried by the unabbreviated `livespec-orchestrator-beads-fabro-` name
 prefix rather than by the `/livespec-orchestrator-beads-fabro:drive` form the Claude and Codex
