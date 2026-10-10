@@ -18,6 +18,7 @@ from __future__ import annotations
 import importlib
 import json
 from collections.abc import Iterator
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import pytest
@@ -27,6 +28,7 @@ from livespec_orchestrator_beads_fabro._beads_client import (
     make_beads_client,
     reset_fake_singleton,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._plan_next_action import NextAction
 from livespec_orchestrator_beads_fabro.commands.plan import resume_directive
 from livespec_orchestrator_beads_fabro.types import StoreConfig
@@ -149,6 +151,17 @@ def _configure_repo(*, repo: Path) -> None:
     )
 
 
+def _replace_pointer_with_legacy_shape(*, repo: Path, epic_id: str) -> None:
+    client = _fake(repo=repo)
+    record = client.show_issue(issue_id=epic_id)
+    metadata = dict(record["metadata"])
+    pointer = dict(metadata["next_action"])
+    pointer.pop("required_result")
+    pointer.pop("budget")
+    metadata["next_action"] = pointer
+    client.update_issue(issue_id=epic_id, metadata=metadata)
+
+
 def _assert_six_kinds_continue(*, repo: Path) -> None:
     cases = (
         ("impl", "bd-ib-child", "impl:bd-ib-child"),
@@ -256,7 +269,7 @@ def _assert_only_current_complete_rulings_continue(*, repo: Path) -> None:
 
     _seed_epic(
         repo=repo,
-        epic_id="bd-ib-future-ruling",
+        epic_id="bd-ib-naive-ruling",
         kind="impl",
         ref="bd-ib-child",
         ruling=False,
@@ -265,11 +278,31 @@ def _assert_only_current_complete_rulings_continue(*, repo: Path) -> None:
             "by: Chad Woolley\ndirective: Finish.\nrecorded-attended: true"
         ),
     )
-    future = resume_directive(
-        config=_config(repo=repo), epic_id="bd-ib-future-ruling", unattended=False
+    naive = resume_directive(
+        config=_config(repo=repo), epic_id="bd-ib-naive-ruling", unattended=False
     )
-    assert not future.ask
-    assert future.next_action == "impl:bd-ib-child"
+    assert naive.ask
+    assert naive.picker_default == "impl:bd-ib-child"
+
+
+def _assert_missing_tracking_never_continues(*, repo: Path) -> None:
+    _seed_epic(
+        repo=repo,
+        epic_id="bd-ib-legacy-tracking",
+        kind="impl",
+        ref="bd-ib-child",
+        ruling=True,
+    )
+    _replace_pointer_with_legacy_shape(repo=repo, epic_id="bd-ib-legacy-tracking")
+    for unattended in (False, True):
+        directive = resume_directive(
+            config=_config(repo=repo),
+            epic_id="bd-ib-legacy-tracking",
+            unattended=unattended,
+        )
+        assert not directive.ask
+        assert directive.next_action is None
+        assert "required_result" in directive.reason
 
 
 def _assert_satisfied_result_is_stale(*, repo: Path) -> None:
@@ -362,6 +395,7 @@ def test_scenario168_current_ruling_takes_all_six_typed_actions_and_preserves_pi
     _assert_six_kinds_continue(repo=repo)
     _assert_picker_controls(repo=repo)
     _assert_only_current_complete_rulings_continue(repo=repo)
+    _assert_missing_tracking_never_continues(repo=repo)
     _assert_satisfied_result_is_stale(repo=repo)
     _assert_expired_and_unobservable_results_do_not_continue(repo=repo)
     _assert_unknown_kind_asks(repo=repo)
@@ -385,23 +419,72 @@ def _assert_stale_precedes_liveness(*, repo: Path, liveness_calls: list[str]) ->
     _fake(repo=repo).update_issue(issue_id=_TARGET, status="ready")
 
 
-def _assert_live_rewrite_and_wait(*, repo: Path, liveness_calls: list[str]) -> None:
+def _stamp_run(*, repo: Path, issue_id: str, run_id: str) -> None:
+    client = _fake(repo=repo)
+    record = client.show_issue(issue_id=issue_id)
+    metadata = dict(record.get("metadata", {}))
+    metadata["dispatch_fabro_run_id"] = run_id
+    metadata["dispatch_factory"] = {"name": "default", "server": None}
+    client.update_issue(issue_id=issue_id, metadata=metadata)
+
+
+def _seed_item(*, repo: Path, issue_id: str) -> None:
+    _ = _fake(repo=repo).create_issue(
+        draft=IssueDraft(
+            issue_id=issue_id,
+            issue_type="task",
+            title=issue_id,
+            description="Factory target.",
+            assignee=None,
+            created_at=_NOW,
+        )
+    )
+
+
+@dataclass(kw_only=True)
+class _InspectRunner:
+    results: list[CommandResult]
+    calls: list[list[str]] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        _ = (cwd, timeout_seconds, env, stdin)
+        self.calls.append(argv)
+        return self.results.pop(0)
+
+
+def _running_result() -> CommandResult:
+    return CommandResult(exit_code=0, stdout='[{"status": "running"}]', stderr="")
+
+
+def _assert_live_rewrite_and_wait(*, repo: Path, runner: _InspectRunner) -> None:
     for index, (kind, ref) in enumerate(
         (("impl", "bd-ib-child"), ("spec-op", "propose-change:finish-plan")),
         start=1,
     ):
         epic_id = f"bd-ib-live-{index}"
         _seed_epic(repo=repo, epic_id=epic_id, kind=kind, ref=ref, ruling=True)
+        target_id = ref if kind == "impl" else epic_id
+        if kind == "impl":
+            _seed_item(repo=repo, issue_id=target_id)
+        _stamp_run(repo=repo, issue_id=target_id, run_id=f"01M4LIVE{index}")
         directive = resume_directive(config=_config(repo=repo), epic_id=epic_id, unattended=False)
         pointer = _fake(repo=repo).show_issue(issue_id=epic_id)["metadata"]["next_action"]
         assert pointer == {
             "kind": "await",
-            "ref": "run:01M4LIVE",
-            "text": "Wait for live factory run 01M4LIVE.",
+            "ref": f"run:01M4LIVE{index}",
+            "text": f"Wait for live factory run 01M4LIVE{index}.",
             "required_result": _RESULT,
             "budget": _BUDGET,
         }
-        assert directive.next_action == "await:run:01M4LIVE"
+        assert directive.next_action == f"await:run:01M4LIVE{index}"
         assert "waiting for unsatisfied required result" in directive.reason
 
     _seed_epic(
@@ -419,7 +502,7 @@ def _assert_live_rewrite_and_wait(*, repo: Path, liveness_calls: list[str]) -> N
     assert waiting.next_action == "await:run:01M4LIVE"
     assert "waiting for unsatisfied required result" in waiting.reason
     assert after == before
-    assert liveness_calls == ["bd-ib-child", "propose-change:finish-plan"]
+    assert [call[2] for call in runner.calls] == ["01M4LIVE1", "01M4LIVE2"]
 
 
 def test_resume_reconciles_satisfied_live_and_waiting_pointers_before_continuation(
@@ -431,17 +514,60 @@ def test_resume_reconciles_satisfied_live_and_waiting_pointers_before_continuati
     _configure_repo(repo=repo)
     monkeypatch.chdir(repo)
     _seed_target(repo=repo)
-    plan_resume = importlib.import_module("livespec_orchestrator_beads_fabro.commands._plan_resume")
-    liveness_calls: list[str] = []
+    liveness = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._plan_run_liveness"
+    )
+    runner = _InspectRunner(results=[_running_result(), _running_result()])
+    monkeypatch.setattr(liveness, "ShellCommandRunner", lambda: runner)
+    _assert_stale_precedes_liveness(repo=repo, liveness_calls=[])
+    _assert_live_rewrite_and_wait(repo=repo, runner=runner)
 
-    def _live_run_id(*, config: StoreConfig, action: NextAction) -> str:
-        _ = config
-        liveness_calls.append(action.ref)
-        return "01M4LIVE"
 
-    monkeypatch.setattr(plan_resume, "live_factory_run_id", _live_run_id, raising=False)
-    _assert_stale_precedes_liveness(repo=repo, liveness_calls=liveness_calls)
-    _assert_live_rewrite_and_wait(repo=repo, liveness_calls=liveness_calls)
+def test_live_factory_reader_covers_absent_unstamped_failed_and_terminal_targets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _configure_repo(repo=repo)
+    monkeypatch.chdir(repo)
+    liveness = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._plan_run_liveness"
+    )
+    runner = _InspectRunner(
+        results=[
+            CommandResult(exit_code=1, stdout="", stderr="factory unavailable"),
+            CommandResult(exit_code=0, stdout='[{"status": "completed"}]', stderr=""),
+        ]
+    )
+    monkeypatch.setattr(liveness, "ShellCommandRunner", lambda: runner)
+
+    missing = NextAction(kind="impl", ref="bd-ib-missing", text="Dispatch it.")
+    assert (
+        liveness.live_factory_run_id(
+            config=_config(repo=repo), epic_id="bd-ib-plan", action=missing
+        )
+        is None
+    )
+    _seed_item(repo=repo, issue_id="bd-ib-unstamped")
+    unstamped = NextAction(kind="impl", ref="bd-ib-unstamped", text="Dispatch it.")
+    assert (
+        liveness.live_factory_run_id(
+            config=_config(repo=repo), epic_id="bd-ib-plan", action=unstamped
+        )
+        is None
+    )
+    for issue_id, run_id in (("bd-ib-failed", "01FAILED"), ("bd-ib-terminal", "01DONE")):
+        _seed_item(repo=repo, issue_id=issue_id)
+        _stamp_run(repo=repo, issue_id=issue_id, run_id=run_id)
+        action = NextAction(kind="impl", ref=issue_id, text="Dispatch it.")
+        assert (
+            liveness.live_factory_run_id(
+                config=_config(repo=repo), epic_id="bd-ib-plan", action=action
+            )
+            is None
+        )
+    assert [call[2] for call in runner.calls] == ["01FAILED", "01DONE"]
 
 
 def _record_continuation(
@@ -580,3 +706,67 @@ def test_scope_event_primitive_records_attended_continuation_rulings_and_refuses
     _assert_authorization_is_primitive_rendered(repo=repo)
     _assert_unattended_and_caller_forged_authorizations_are_refused(repo=repo)
     _assert_latest_complete_ruling_governs(repo=repo)
+
+
+def test_pointer_writers_refuse_missing_tracking_without_partial_handoffs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = importlib.import_module("livespec_orchestrator_beads_fabro.commands.plan")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _configure_repo(repo=repo)
+    monkeypatch.chdir(repo)
+    epic_id = "bd-ib-writer-refusal"
+    _seed_epic(
+        repo=repo,
+        epic_id=epic_id,
+        kind="human",
+        ref="question",
+        ruling=False,
+        required_result=None,
+        budget=None,
+    )
+    client = _fake(repo=repo)
+    baseline_metadata = client.show_issue(issue_id=epic_id)["metadata"]
+    baseline_timeline = plan.read_timeline(config=_config(repo=repo), epic_id=epic_id)
+
+    for kind, ref in (
+        ("impl", "bd-ib-child"),
+        ("spec-op", "propose-change:finish-plan"),
+        ("human", "question"),
+        ("none", ""),
+    ):
+        refused = plan.set_next_action(
+            config=_config(repo=repo),
+            epic_id=epic_id,
+            action=NextAction(kind=kind, ref=ref, text="Take the legacy pointer."),
+            session="legacy-writer",
+            now=_NOW,
+        )
+        assert isinstance(refused, plan.NextActionRefusal)
+        assert "required_result and budget" in refused.detail
+        assert client.show_issue(issue_id=epic_id)["metadata"] == baseline_metadata
+
+    invalid = NextAction(kind="surprise", ref="anything", text="Refuse this pointer.")
+    for append in (
+        lambda: plan.append_handoff(
+            config=_config(repo=repo),
+            epic_id=epic_id,
+            body="This invalid handoff must not land.",
+            author="plan-session",
+            now=_NOW,
+            next_action=invalid,
+        ),
+        lambda: plan.append_supervisor_handoff(
+            config=_config(repo=repo),
+            epic_id=epic_id,
+            slug="writer-refusal",
+            body="This invalid supervisor handoff must not land.",
+            now=_NOW,
+            next_action=invalid,
+        ),
+    ):
+        assert isinstance(append(), plan.NextActionRefusal)
+        assert plan.read_timeline(config=_config(repo=repo), epic_id=epic_id) == baseline_timeline
+        assert client.show_issue(issue_id=epic_id)["metadata"] == baseline_metadata

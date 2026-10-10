@@ -180,7 +180,7 @@ def test_an_unassigned_anchor_completes_and_a_named_one_stands() -> None:
     assert module.anchor_content(current="bd-ib-alpha\n", epic_id="bd-ib-other") is None
 
 
-def test_a_handoff_naming_an_impl_route_seeds_kind_impl() -> None:
+def test_a_handoff_naming_an_impl_route_seeds_a_tracking_decision_human_pointer() -> None:
     assert _MODULE_PATH.is_file()
     module = importlib.import_module(_MODULE_NAME)
 
@@ -189,11 +189,15 @@ def test_a_handoff_naming_an_impl_route_seeds_kind_impl() -> None:
         prefix=_PREFIX,
     )
 
-    assert (action.kind, action.ref) == ("impl", "bd-ib-ott6")
-    assert action.text == "run impl:bd-ib-ott6 through the factory"
+    assert (action.kind, action.ref) == ("human", "bd-ib-ott6")
+    assert action.text == (
+        "Confirm required-result tracking and budget before dispatching bd-ib-ott6."
+    )
+    assert action.required_result is None
+    assert action.budget is None
 
 
-def test_a_handoff_naming_a_bare_work_item_id_seeds_kind_impl() -> None:
+def test_a_handoff_naming_a_bare_work_item_id_also_requires_a_tracking_decision() -> None:
     assert _MODULE_PATH.is_file()
     module = importlib.import_module(_MODULE_NAME)
 
@@ -202,7 +206,7 @@ def test_a_handoff_naming_a_bare_work_item_id_seeds_kind_impl() -> None:
         prefix=_PREFIX,
     )
 
-    assert (action.kind, action.ref) == ("impl", "bd-ib-ott6.2")
+    assert (action.kind, action.ref) == ("human", "bd-ib-ott6.2")
 
 
 def test_a_prose_action_naming_no_work_item_seeds_kind_human() -> None:
@@ -218,6 +222,8 @@ def test_a_prose_action_naming_no_work_item_seeds_kind_human() -> None:
 
     assert (action.kind, action.ref) == ("human", "")
     assert action.text == "ask the maintainer for the follow-up ruling"
+    assert action.required_result is None
+    assert action.budget is None
 
 
 def test_no_handoff_and_an_ambiguous_handoff_both_seed_kind_none() -> None:
@@ -236,6 +242,10 @@ def test_no_handoff_and_an_ambiguous_handoff_both_seed_kind_none() -> None:
         module.UNSEEDED_ACTION_TEXT,
     )
     assert (ambiguous.kind, ambiguous.ref) == ("none", "")
+    assert absent.required_result is None
+    assert absent.budget is None
+    assert ambiguous.required_result is None
+    assert ambiguous.budget is None
 
 
 def test_the_report_renders_writes_skips_and_refusals() -> None:

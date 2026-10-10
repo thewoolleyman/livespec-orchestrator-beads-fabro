@@ -45,7 +45,6 @@ from livespec_orchestrator_beads_fabro.commands._plan_identity import (
 )
 from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
     HUMAN_KIND,
-    IMPL_KIND,
     NONE_KIND,
     NextAction,
 )
@@ -182,21 +181,40 @@ def anchor_content(*, current: str | None, epic_id: str | None) -> str | None:
 def seeded_next_action(*, handoff_body: str | None, prefix: str) -> NextAction:
     """Seed one open plan epic's typed pointer from its newest handoff body.
 
-    `kind: impl` when the one recorded action names a work-item — an
-    `impl:<id>` route and a bare id both read as that id — else `kind: human`
-    carrying the recorded text, and `kind: none` when the handoff records no
-    action, records several, or does not exist. A tenant-prefixed id is what
-    counts as naming one: an unqualified hyphenated word ("follow-up") is prose,
-    and reading it as a route would point a resume at nothing.
+    A legacy handoff cannot supply an authoritative required result or budget,
+    so even when its one recorded action names a work-item the migration writes
+    `kind: human`: the work-item ref is retained and the text asks a maintainer
+    to record the missing tracking before dispatch. A prose-only action also
+    becomes `human` carrying its recorded text, and no/ambiguous action becomes
+    `none`. Every migrated pointer therefore has the five-key shape without
+    inventing a deadline or allowing unbounded continuation.
     """
     actions = () if handoff_body is None else recorded_next_actions(body=handoff_body)
     if len(actions) != _EXACTLY_ONE_ACTION:
-        return NextAction(kind=NONE_KIND, ref="", text=UNSEEDED_ACTION_TEXT)
+        return NextAction(
+            kind=NONE_KIND,
+            ref="",
+            text=UNSEEDED_ACTION_TEXT,
+            required_result=None,
+            budget=None,
+        )
     [action] = actions
     ref = _work_item_ref(action=action, prefix=prefix)
     if ref is None:
-        return NextAction(kind=HUMAN_KIND, ref="", text=action)
-    return NextAction(kind=IMPL_KIND, ref=ref, text=action)
+        return NextAction(
+            kind=HUMAN_KIND,
+            ref="",
+            text=action,
+            required_result=None,
+            budget=None,
+        )
+    return NextAction(
+        kind=HUMAN_KIND,
+        ref=ref,
+        text=f"Confirm required-result tracking and budget before dispatching {ref}.",
+        required_result=None,
+        budget=None,
+    )
 
 
 def total_writes(*, report: PlanRecordMigrationReport) -> int:

@@ -185,7 +185,7 @@ def test_scenario112_the_first_run_writes_every_missing_slug_anchor_and_pointer(
         f"wrote: plan/beta/{_ANCHOR_FILENAME} -> unassigned",
         f"wrote: plan/kappa/{_ANCHOR_FILENAME} -> {_KAPPA}",
         f"wrote: plan/archive/gamma/{_ANCHOR_FILENAME} -> {_GAMMA}",
-        f"wrote: {_ALPHA} kind=impl ref='bd-ib-ott6'",
+        f"wrote: {_ALPHA} kind=human ref='bd-ib-ott6'",
         f"wrote: {_KAPPA} kind=none ref=''",
         f"skipped: {_ALPHA} already carries plan_slug=alpha",
         f"skipped: {_GAMMA} already carries plan_slug=gamma",
@@ -201,9 +201,11 @@ def test_scenario112_the_first_run_writes_every_missing_slug_anchor_and_pointer(
     # The colliding epic is reported and LEFT UNWRITTEN, never renamed.
     assert "plan_slug" not in _client().show_issue(issue_id=_COLLIDES)["metadata"]
     assert _client().show_issue(issue_id=_ALPHA)["metadata"]["next_action"] == {
-        "kind": "impl",
+        "kind": "human",
         "ref": "bd-ib-ott6",
-        "text": "run impl:bd-ib-ott6 in the factory",
+        "text": "Confirm required-result tracking and budget before dispatching bd-ib-ott6.",
+        "required_result": None,
+        "budget": None,
     }
 
 

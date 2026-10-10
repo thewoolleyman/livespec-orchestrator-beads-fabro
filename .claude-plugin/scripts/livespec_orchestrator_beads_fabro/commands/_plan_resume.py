@@ -186,7 +186,7 @@ def _live_reconciled_action(
         or action.kind not in (IMPL_KIND, SPEC_OP_KIND)
     ):
         return action
-    run_id = live_factory_run_id(config=config, action=action)
+    run_id = live_factory_run_id(config=config, epic_id=epic_id, action=action)
     if run_id is None:
         return action
     rewritten = replace(

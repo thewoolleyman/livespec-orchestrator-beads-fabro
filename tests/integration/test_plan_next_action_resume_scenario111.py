@@ -95,8 +95,22 @@ def _config() -> StoreConfig:
     )
 
 
-def _impl_action(*, ref: str) -> NextAction:
-    return NextAction(kind="impl", ref=ref, text="Dispatch b1 through the factory.")
+def _impl_action(*, ref: str, epic_id: str) -> NextAction:
+    return NextAction(
+        kind="impl",
+        ref=ref,
+        text="Dispatch b1 through the factory.",
+        required_result={
+            "repo": "livespec-orchestrator-beads-fabro",
+            "item_status": {"item_id": epic_id, "status": "closed"},
+        },
+        budget={
+            "deadline": "2099-09-04T18:00:00Z",
+            "max_handoffs": 3,
+            "epoch": "scenario-111",
+            "handoff_count": 0,
+        },
+    )
 
 
 def _resumable_plan(*, project_root: Path, ref: str) -> str:
@@ -121,7 +135,7 @@ def _resumable_plan(*, project_root: Path, ref: str) -> str:
         body=_HANDOFF_BODY,
         author=_SESSION,
         now=_NOW,
-        next_action=_impl_action(ref=ref),
+        next_action=_impl_action(ref=ref, epic_id=epic_id),
     )
     return epic_id
 
@@ -149,11 +163,11 @@ def test_scenario111_an_unattended_resume_takes_the_impl_next_action_without_ask
 
     directive = _resume(epic_id=epic_id)
 
-    assert directive == ResumeDirective(
-        ask=False,
-        next_action=f"impl:{_IMPL_REF}",
-        reason="unattended resume takes the typed next_action",
-    )
+    assert not directive.ask
+    assert directive.next_action == f"impl:{_IMPL_REF}"
+    assert directive.reason == "unattended resume takes the typed next_action"
+    assert directive.observation is not None
+    assert directive.observation.status == "unsatisfied"
     # The handoff write updated the pointer in the same call, and the entry it
     # appended is still on the timeline as an append-only record.
     assert [entry.kind for entry in read_timeline(config=_config(), epic_id=epic_id)] == ["handoff"]
@@ -173,6 +187,8 @@ def test_scenario111_a_human_next_action_raises_the_picker_naming_its_kind(
             kind="human",
             ref="",
             text="Confirm the anchor filename with the maintainer.",
+            required_result=None,
+            budget=None,
         ),
         session=_SESSION,
         now=_NOW,
@@ -180,11 +196,9 @@ def test_scenario111_a_human_next_action_raises_the_picker_naming_its_kind(
 
     directive = _resume(epic_id=epic_id)
 
-    assert directive == ResumeDirective(
-        ask=True,
-        next_action=None,
-        reason="next_action kind human raises the picker",
-    )
+    assert directive.ask
+    assert directive.next_action is None
+    assert directive.reason == "next_action kind human raises the picker"
 
 
 def test_scenario111_a_wrapped_prose_marker_line_cannot_decide_the_resume(
@@ -215,4 +229,7 @@ def test_scenario111_an_attended_resume_asks_even_carrying_a_dispatchable_pointe
 
     directive = _resume(epic_id=epic_id)
 
-    assert directive == ResumeDirective(ask=True, next_action=None, reason="interactive resume")
+    assert directive.ask
+    assert directive.next_action is None
+    assert directive.reason == "interactive resume"
+    assert directive.picker_default == f"impl:{_IMPL_REF}"
