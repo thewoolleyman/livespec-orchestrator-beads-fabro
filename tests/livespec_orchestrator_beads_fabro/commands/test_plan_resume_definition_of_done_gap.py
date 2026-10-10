@@ -34,6 +34,11 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig
 
 _EPIC_ID = "bd-ib-legacy"
 _MISSING_FINDING = "plan-definition-of-done: missing"
+_RESULT = {
+    "repo": "livespec-orchestrator-beads-fabro",
+    "item_status": {"item_id": _EPIC_ID, "status": "closed"},
+}
+_BUDGET = {"deadline": "2099-10-04T00:00:00Z", "max_handoffs": 3}
 _SECTION = (
     "Plan anchor for plan/herdr-release.\n"
     "\n"
@@ -97,7 +102,13 @@ def test_an_unattended_resume_of_a_sectionless_epic_sets_a_human_next_action() -
     set_next_action(
         config=_config(),
         epic_id=_EPIC_ID,
-        action=NextAction(kind="spec-op", ref="propose-change:herdr", text="Propose it."),
+        action=NextAction(
+            kind="spec-op",
+            ref="propose-change:herdr",
+            text="Propose it.",
+            required_result=_RESULT,
+            budget=_BUDGET,
+        ),
         session="overseerd",
         now="2026-10-04T00:00:00Z",
     )
@@ -118,7 +129,13 @@ def test_an_unattended_resume_of_a_sectionless_epic_sets_a_human_next_action() -
 def test_an_unattended_resume_still_takes_an_impl_next_action_despite_the_gap() -> None:
     """The carve-out: a live dispatch pointer is NOT overwritten by the gap."""
     _seed_epic(description="plan")
-    impl = NextAction(kind="impl", ref="bd-ib-child", text="Dispatch bd-ib-child.")
+    impl = NextAction(
+        kind="impl",
+        ref="bd-ib-child",
+        text="Dispatch bd-ib-child.",
+        required_result=_RESULT,
+        budget=_BUDGET,
+    )
     set_next_action(
         config=_config(),
         epic_id=_EPIC_ID,
@@ -142,7 +159,13 @@ def test_an_epic_carrying_the_section_reports_no_finding() -> None:
     set_next_action(
         config=_config(),
         epic_id=_EPIC_ID,
-        action=NextAction(kind="human", ref="", text="Confirm the slug."),
+        action=NextAction(
+            kind="human",
+            ref="",
+            text="Confirm the slug.",
+            required_result=None,
+            budget=None,
+        ),
         session="overseerd",
         now="2026-10-04T00:00:00Z",
     )
@@ -155,5 +178,9 @@ def test_an_epic_carrying_the_section_reports_no_finding() -> None:
     assert directive.ask
     assert directive.reason == "next_action kind human raises the picker"
     assert read_next_action(config=_config(), epic_id=_EPIC_ID) == NextAction(
-        kind="human", ref="", text="Confirm the slug."
+        kind="human",
+        ref="",
+        text="Confirm the slug.",
+        required_result=None,
+        budget=None,
     )

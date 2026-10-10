@@ -111,6 +111,14 @@ _ = make_beads_client(config=config).create_issue(
                 "kind": "impl",
                 "ref": "bd-ib-p02l",
                 "text": "Forward the unattended marker through the credential re-exec.",
+                "required_result": {
+                    "repo": os.getcwd().rsplit("/", 1)[-1],
+                    "item_status": {"item_id": "bd-ib-epic", "status": "closed"},
+                },
+                "budget": {
+                    "deadline": "2099-09-07T00:00:00Z",
+                    "max_handoffs": 3,
+                },
             }
         },
     )
@@ -141,7 +149,14 @@ def _write_wrapper_double(*, cwd: Path) -> Path:
     _ = wrapper.write_text(_WRAPPER_DOUBLE, encoding="utf-8")
     wrapper.chmod(0o755)
     _ = (cwd / ".livespec.jsonc").write_text(
-        json.dumps({"credential_wrapper": [str(wrapper), _WRAPPER_SEPARATOR]}),
+        json.dumps(
+            {
+                "credential_wrapper": [str(wrapper), _WRAPPER_SEPARATOR],
+                "livespec-orchestrator-beads-fabro": {
+                    "connection": {"prefix": "bd-ib", "fake": True}
+                },
+            }
+        ),
         encoding="utf-8",
     )
     return wrapper

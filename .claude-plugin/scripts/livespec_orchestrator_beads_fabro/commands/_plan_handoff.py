@@ -6,9 +6,13 @@ from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._plan_next_action import (
+    LEGACY_TRACKING,
     NextAction,
     NextActionRefusal,
     set_next_action,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_next_action_validation import (
+    validate_next_action,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_timeline import (
     PLAN_HANDOFF_PREFIX,
@@ -42,6 +46,13 @@ def append_handoff(
     path cannot see. `author` doubles as the `last_session` identity, because
     the session that signs the entry is the one that wrote the pointer.
     """
+    refusal = validate_next_action(
+        action=next_action,
+        epic_id=epic_id,
+        legacy_tracking=LEGACY_TRACKING,
+    )
+    if refusal is not None:
+        return refusal
     client = make_beads_client(config=config)
     client.add_comment(
         issue_id=epic_id,
