@@ -26,6 +26,7 @@ line, so the assertion is on the ROUTING, never on the sentence.
 
 from __future__ import annotations
 
+import importlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,6 +49,30 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port import (
 _MARKER_LINE = "LIVESPEC_NEEDS_HUMAN: the acceptance criteria name a scenario heading"
 _PETRI_RUN_ID = "01M4DCSSJM6C"
 _LEGACY_RUN_ID = "01M4DCXHTECH"
+
+
+def test_needs_human_terminal_mapping_has_a_cohesive_module_boundary() -> None:
+    """The terminal dispatcher depends on one public needs-human entry point."""
+    module_path = (
+        Path(__file__).resolve().parents[3]
+        / ".claude-plugin"
+        / "scripts"
+        / "livespec_orchestrator_beads_fabro"
+        / "commands"
+        / "_dispatcher_needs_human_terminal.py"
+    )
+    assert module_path.is_file()
+
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_terminal"
+    )
+    assert hasattr(module, "needs_human_terminal_outcome")
+
+    terminal = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal"
+    )
+    assert not hasattr(terminal, "_needs_human_terminal_outcome")
+
 
 # The candidate's terminal conclusion for a goal-gated script node that failed:
 # the script's own stderr arrives in `conclusion.failure.detail.message`.
