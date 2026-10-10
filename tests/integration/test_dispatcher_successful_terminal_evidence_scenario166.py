@@ -97,11 +97,13 @@ class _Runner:
     plan: DispatchPlan
     inspect_record: dict[str, object] = field(default_factory=dict)
     pr_overrides: dict[str, object] = field(default_factory=dict)
+    pr_responses: tuple[dict[str, object], ...] = ()
     pr_available: bool = True
     repository_slug: str = _REPOSITORY
     repository_exit_code: int = 0
     repository_stdout: str | None = None
     calls: list[tuple[list[str], Path]] = field(default_factory=list)
+    pr_view_count: int = 0
 
     def run(
         self,
@@ -129,11 +131,17 @@ class _Runner:
         if argv[:3] == ["gh", "pr", "view"]:
             if not self.pr_available:
                 return CommandResult(exit_code=1, stdout="", stderr="not found")
+            response = (
+                self.pr_responses[min(self.pr_view_count, len(self.pr_responses) - 1)]
+                if self.pr_responses
+                else self.pr_overrides
+            )
+            self.pr_view_count += 1
             return _ok(
                 stdout=json.dumps(
                     {
                         **_pull_request(plan=self.plan),
-                        **self.pr_overrides,
+                        **response,
                     }
                 )
             )
@@ -231,6 +239,7 @@ def _dispatch(
     root: Path,
     inspect_record: dict[str, object] | None = None,
     pr_overrides: dict[str, object] | None = None,
+    pr_responses: tuple[dict[str, object], ...] = (),
     pr_available: bool = True,
     repository_slug: str = _REPOSITORY,
     repository_exit_code: int = 0,
@@ -246,6 +255,7 @@ def _dispatch(
             else inspect_record
         ),
         pr_overrides=pr_overrides or {},
+        pr_responses=pr_responses,
         pr_available=pr_available,
         repository_slug=repository_slug,
         repository_exit_code=repository_exit_code,
@@ -329,6 +339,45 @@ def test_rejected_publication_is_authenticated_before_any_forge_mutation(
             None,
         ), name
         assert not any(argv[:3] == ["gh", "pr", "merge"] for argv, _cwd in runner.calls), name
+
+
+def test_changed_publication_is_reauthenticated_before_any_forge_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        _dispatcher_terminal_publication,
+        "read_current_merge_hold",
+        lambda **_kwargs: "unheld",
+    )
+    initial = {"state": "OPEN", "mergeCommit": None}
+    cases: tuple[tuple[str, dict[str, object]], ...] = (
+        ("changed-head", {"headRefOid": "b" * 40}),
+        ("changed-branch", {"headRefName": "feat/unrelated"}),
+        (
+            "changed-repository",
+            {"headRepository": {"nameWithOwner": "someone-else/proof-repo"}},
+        ),
+        ("changed-number", {"number": 42}),
+    )
+
+    for name, changed in cases:
+        outcome, _journal, runner = _dispatch(
+            root=tmp_path / name,
+            pr_responses=(initial, {**initial, **changed}),
+        )
+
+        assert (outcome.status, outcome.stage, outcome.pr_number) == (
+            "failed",
+            "fabro-run",
+            None,
+        ), name
+        assert not any(argv[:3] == ["gh", "pr", "merge"] for argv, _cwd in runner.calls), name
+        assert all(
+            {"headRefName", "headRefOid", "headRepository"}.issubset(argv[-1].split(","))
+            for argv, _cwd in runner.calls
+            if argv[:3] == ["gh", "pr", "view"]
+        ), name
 
 
 def test_journal_separates_conflict_checkpoint_publication_and_classification(
