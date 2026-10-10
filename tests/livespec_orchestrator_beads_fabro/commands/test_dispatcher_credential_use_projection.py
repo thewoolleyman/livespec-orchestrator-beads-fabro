@@ -60,6 +60,8 @@ from typing import Any
 
 import tomli
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
+    CREDENTIAL_EXPIRY_ENV_VAR,
+    CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
     CREDENTIAL_USE_DEADLINE_ENV_VAR,
     GUARD_REFUSAL_EXIT_CODE,
     GUARD_SCRIPT_PATH,
@@ -186,7 +188,14 @@ def _run_step(
 ) -> subprocess.CompletedProcess[str]:
     """Execute ONE generated prepare step exactly as the engine's shell would."""
     child_env = dict(os.environ)
-    child_env.pop(CREDENTIAL_USE_DEADLINE_ENV_VAR, None)
+    # A factory stage running this suite carries its OWN projection of all three;
+    # inherited, they would grade the stage's credential instead of the case's.
+    for name in (
+        CREDENTIAL_USE_DEADLINE_ENV_VAR,
+        CREDENTIAL_EXPIRY_ENV_VAR,
+        CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
+    ):
+        child_env.pop(name, None)
     child_env.update({key: _rebased(text=value, sandbox=sandbox) for key, value in env.items()})
     return subprocess.run(
         ["/bin/sh", "-c", _rebased(text=script, sandbox=sandbox)],
