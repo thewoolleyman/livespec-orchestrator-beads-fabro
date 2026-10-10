@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.181.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.181.2...v0.181.3) (2026-10-10)
+
+
+### Bug Fixes
+
+* journal publish draft base refresh ([0fb5070](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0fb5070d0188e50fdb29616c2f40ac102e9eff29))
+* preserve published tip across draft refresh ([8861c13](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8861c13f75cfa31e8bea03f650a95ef658f197ab))
+* refresh draft publish base before push ([db1430a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/db1430a19d6a4675e6040fd2099db580328a78a3))
+* refuse divergent draft branch before refresh ([6cd6944](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6cd6944ed176bec6c379a30723bc85a41434602f))
+* refuse run-owned workflow publication ([e9d1452](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e9d1452d53a485f4a3086504d774cb3ac9599f58))
+* report failed needs-human preservation ([cf45baa](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cf45baa7a249a2d5f77e7a7654cc36de818828f6))
+
 ## [0.181.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.181.1...v0.181.2) (2026-10-10)
 
 
