@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "FactorySizeDecision",
+    "consensus_groom_cut_size_refusal",
     "factory_size_configuration_refusal",
     "factory_size_decision",
     "resolve_adopted_assertion_count_ceiling",
@@ -50,6 +51,31 @@ class FactorySizeDecision:
     assertion_count: int
     reason: str | None
     size_justified: bool
+
+
+def consensus_groom_cut_size_refusal(
+    *, cwd: Path, approving_invoker: str, items: tuple[WorkItem, ...]
+) -> str | None:
+    """Enforce the consensus tier's exception-free first-cut size rail."""
+    if approving_invoker.partition(":")[0] != "consensus":
+        return None
+    resolution = resolve_adopted_assertion_count_ceiling(cwd=cwd)
+    adopted_ceiling = unsafe_perform_io(resolution.unwrap())
+    if adopted_ceiling is None:
+        return (
+            "consensus approval requires an adopted assertion-count ceiling; "
+            "the draft must rest for a human"
+        )
+    for item in items:
+        observed = assertion_count_for(item=item).count
+        if observed > adopted_ceiling:
+            return (
+                "consensus approval requires every first-cut slice at or below "
+                f"adopted assertion-count ceiling {adopted_ceiling}; slice {item.title!r} "
+                f"has sanctioned-parser assertion count {observed}; "
+                "size_justification cannot waive the consensus ceiling"
+            )
+    return None
 
 
 def factory_size_decision(
