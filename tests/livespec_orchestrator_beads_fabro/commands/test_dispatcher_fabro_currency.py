@@ -17,8 +17,10 @@ from datetime import datetime, timedelta, timezone
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency import (
     CONDITION_CURRENT,
+    CONDITION_NO_ANCESTOR,
+    CONDITION_OBSERVATION_UNOBSERVABLE,
     CONDITION_OUT_OF_WINDOW,
-    CONDITION_UNOBSERVABLE,
+    CONDITION_UNIDENTIFIED_BUILD,
     CURRENCY_WINDOW_DAYS,
     FabroCurrencySubject,
     FabroRelease,
@@ -143,7 +145,10 @@ def test_an_unmeasured_subject_refuses_and_renders_every_absent_field_as_unknown
 
     Fail-closed is the whole claim — a gauge that admitted here would turn the
     refusal into a pass and leave a journal record that reads exactly like a
-    healthy one.
+    healthy one. The condition it reports is the OBSERVATION one, which is the
+    ladder's first arm: an absent observation makes the base question
+    unanswerable for every target, so naming the per-target fault while the
+    shared one stands would send the operator to the wrong place.
     """
     verdict = fabro_currency_verdict(
         subject=FabroCurrencySubject(
@@ -157,13 +162,37 @@ def test_an_unmeasured_subject_refuses_and_renders_every_absent_field_as_unknown
     )
 
     assert verdict.admitted is False
-    assert verdict.condition == CONDITION_UNOBSERVABLE
+    assert verdict.condition == CONDITION_OBSERVATION_UNOBSERVABLE
     lines = verdict.detail.splitlines()
     assert lines[0].endswith("the currency reading could not be taken")
     assert lines[2] == "  serving integration commit: unknown"
     assert lines[3] == "  upstream base: unknown"
     assert lines[4] == "  newest observed upstream release: unknown"
     assert lines[5] == "  release observation taken at: unknown"
+
+
+def test_an_unidentified_serving_build_reports_its_own_condition() -> None:
+    """The observation IS readable, so the serving build is the finding.
+
+    Distinct from the no-ancestor condition below because the remedies differ: a
+    host whose engine cannot be asked its version is repaired, while a build with
+    no release-tag ancestor is re-pinned.
+    """
+    verdict = fabro_currency_verdict(subject=_subject(serving_commit=None, base=None), now=_NOW)
+
+    assert verdict.condition == CONDITION_UNIDENTIFIED_BUILD
+    assert verdict.detail.splitlines()[2] == "  serving integration commit: unknown"
+    # The newest release is still reported, which is what says the shared
+    # observation was fine and the per-target reading was not.
+    assert "v0.378.0-nightly.0" in verdict.detail.splitlines()[4]
+
+
+def test_a_measured_build_with_no_resolvable_base_reports_the_no_ancestor_condition() -> None:
+    verdict = fabro_currency_verdict(subject=_subject(base=None), now=_NOW)
+
+    assert verdict.condition == CONDITION_NO_ANCESTOR
+    assert verdict.detail.splitlines()[2] == "  serving integration commit: 8869e88"
+    assert verdict.detail.splitlines()[3] == "  upstream base: unknown"
 
 
 def test_a_supplied_unobservable_detail_is_the_clause_the_refusal_leads_with() -> None:
@@ -178,7 +207,7 @@ def test_a_supplied_unobservable_detail_is_the_clause_the_refusal_leads_with() -
         now=_NOW,
     )
 
-    assert verdict.condition == CONDITION_UNOBSERVABLE
+    assert verdict.condition == CONDITION_NO_ANCESTOR
     assert verdict.detail.splitlines()[0].endswith("the forge read failed")
 
 
@@ -194,5 +223,5 @@ def test_an_observation_with_no_releases_refuses_even_with_a_commit_and_a_base()
     )
 
     assert verdict.admitted is False
-    assert verdict.condition == CONDITION_UNOBSERVABLE
+    assert verdict.condition == CONDITION_OBSERVATION_UNOBSERVABLE
     assert verdict.detail.splitlines()[4] == "  newest observed upstream release: unknown"

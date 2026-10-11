@@ -35,8 +35,10 @@ from datetime import datetime, timezone
 
 __all__: list[str] = [
     "CONDITION_CURRENT",
+    "CONDITION_NO_ANCESTOR",
+    "CONDITION_OBSERVATION_UNOBSERVABLE",
     "CONDITION_OUT_OF_WINDOW",
-    "CONDITION_UNOBSERVABLE",
+    "CONDITION_UNIDENTIFIED_BUILD",
     "CURRENCY_WINDOW_DAYS",
     "FABRO_UPSTREAM_REPO",
     "OBSERVATION_MAX_AGE_DAYS",
@@ -60,10 +62,16 @@ OBSERVATION_MAX_AGE_DAYS = 7
 
 CONDITION_CURRENT = "current"
 CONDITION_OUT_OF_WINDOW = "base-out-of-window"
-# The generic unobservable condition. The clause names several distinct ways a
-# currency reading can fail to be taken, and each earns its own condition as
-# its own behaviour lands; this is the arm that has not been split yet.
-CONDITION_UNOBSERVABLE = "currency-unobservable"
+
+# THREE DISTINCT WAYS A READING CAN FAIL TO BE TAKEN, each its own condition,
+# because the three have DIFFERENT REMEDIES and refuse the same dispatch. An
+# unreadable releases surface is waited out; an unidentifiable serving build is
+# a fault on one factory host; a build with no release-tag ancestor is re-pinned
+# onto a published tag. A single generic condition refuses correctly and then
+# makes the operator guess which of the three they have.
+CONDITION_OBSERVATION_UNOBSERVABLE = "release-observation-unobservable"
+CONDITION_UNIDENTIFIED_BUILD = "serving-build-unidentified"
+CONDITION_NO_ANCESTOR = "no-release-tag-ancestor"
 
 _UNKNOWN = "unknown"
 
@@ -155,14 +163,21 @@ def fabro_currency_verdict(*, subject: FabroCurrencySubject, now: datetime) -> F
     admission gate must never fail in.
     """
     newest = _newest(observation=subject.observation)
-    if subject.serving_commit is None or newest is None or subject.base is None:
-        return _refusal(
-            subject=subject,
-            newest=newest,
-            now=now,
-            condition=CONDITION_UNOBSERVABLE,
-            clause=subject.unobservable_detail or "the currency reading could not be taken",
+    # THREE ARMS SPELT OUT rather than one computed condition, because each of
+    # the three also NARROWS a value the arithmetic below needs. A single
+    # condition-returning helper leaves the caller holding optionals it has to
+    # re-assert, and an `assert` in product code is both banned here and a worse
+    # record of the invariant than the branch that established it.
+    if newest is None:
+        return _unmeasured(
+            subject=subject, newest=None, now=now, condition=CONDITION_OBSERVATION_UNOBSERVABLE
         )
+    if subject.serving_commit is None:
+        return _unmeasured(
+            subject=subject, newest=newest, now=now, condition=CONDITION_UNIDENTIFIED_BUILD
+        )
+    if subject.base is None:
+        return _unmeasured(subject=subject, newest=newest, now=now, condition=CONDITION_NO_ANCESTOR)
     gap = calendar_days_between(earlier=subject.base.published_at, later=newest.published_at)
     if gap > CURRENCY_WINDOW_DAYS:
         return _refusal(
@@ -183,6 +198,29 @@ def fabro_currency_verdict(*, subject: FabroCurrencySubject, now: datetime) -> F
             f"Fabro currency admitted for factory target {subject.target!r}: base"
             f" {subject.base.tag} is {gap} calendar days behind {newest.tag}"
         ),
+    )
+
+
+def _unmeasured(
+    *,
+    subject: FabroCurrencySubject,
+    newest: FabroRelease | None,
+    now: datetime,
+    condition: str,
+) -> FabroCurrencyVerdict:
+    """One of the three could-not-measure refusals, carrying the gather's clause.
+
+    The gathering layer's own account of what failed is carried through VERBATIM
+    rather than re-worded per condition: the ladder cannot tell an unreachable
+    forge from a stale cache or an unidentified engine, and a second account of
+    one measurement would be the one a reader trusts instead of the measurement.
+    """
+    return _refusal(
+        subject=subject,
+        newest=newest,
+        now=now,
+        condition=condition,
+        clause=subject.unobservable_detail or "the currency reading could not be taken",
     )
 
 
