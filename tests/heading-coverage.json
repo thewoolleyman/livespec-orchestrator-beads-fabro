@@ -105,9 +105,8 @@
     "heading": "## Dispatch-time baseline conformance gate",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "test": "TODO",
-    "reason": "The original baseline-provisioning gate is enforced by the packaged Fabro prepare chain. The fabro-currency revise pass (plan/epic bd-ib-6tcjfx) adds the target-aware pre-claim currency leg specified by Scenario 130; its integration-tier binding must exercise direct, hand-picked, drain, and autonomous-loop admission and is owed by the required post-revise implementation-gap capture rather than represented as existing coverage.",
-    "work_item": "bd-ib-6tcjfx"
+    "test": "tests.integration.test_fabro_currency_admission_scenario130.test_scenario130_an_out_of_window_base_refuses_before_claim_with_complete_evidence",
+    "reason": "The original baseline-provisioning gate is enforced by the packaged Fabro prepare chain. The target-aware pre-claim CURRENCY leg this section adds is implemented by bd-ib-j9x and bound here: the node id drives the REAL pre-dispatch wall, which is the single sequence the direct, hand-picked, drain and resume paths all reach, so one binding covers every path rather than asserting four similar sequences. The refusal is read line by line against the seven facts this section requires it to name."
   },
   {
     "heading": "## Self-contained plugin dispatch",
@@ -185,9 +184,8 @@
     "heading": "## Fabro runtime constraints",
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
-    "test": "TODO",
-    "reason": "Ratified by the fabro-currency revise pass (plan/epic bd-ib-6tcjfx). The external-runtime pinning rules are decided by release-publication evidence, ancestry, `fabro --version` on both factory hosts, image identity, and the carried-patch disposition table; the plugin-observable dispatch-admission half is specified by Scenario 130. Integration-tier binding is owed by the post-revise implementation-gap capture rather than represented as existing coverage.",
-    "work_item": "bd-ib-6tcjfx"
+    "test": "tests.integration.test_fabro_currency_admission_scenario130.test_scenario130_the_one_transition_admits_the_carrier_until_its_deadline_and_no_longer",
+    "reason": "The external-runtime pinning rules are decided by release-publication evidence, ancestry, `fabro --version` on both factory hosts, image identity, and the carried-patch disposition table. The plugin-observable half -- the bounded currency window and its one non-renewable transition -- is implemented by bd-ib-j9x and bound here. The node id is the TRANSITION case because this section is where the exception and its expiry are ratified, and the case asserts the pair over one fixture: split apart, an admitted-before case passes against an exception that never expires and a refused-after case against one that was never granted."
   },
   {
     "heading": "## Fabro factory host provisioning constraints",
@@ -1395,9 +1393,8 @@
     "heading": "## Scenario 130 \u2014 Dispatch admits only a current, identifiable Fabro base",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Ratified by the fabro-currency revise pass (plan/epic bd-ib-6tcjfx). Integration-tier coverage must exercise the shared target-aware predicate through direct, hand-picked, drain, and autonomous-loop admission, including exact-tag ancestry, publication-window, transition-deadline, stale-observation, release-class, and two-target controls; it is owed by the required post-revise implementation-gap capture.",
-    "work_item": "bd-ib-6tcjfx"
+    "test": "tests.integration.test_fabro_currency_admission_scenario130.test_scenario130_the_window_is_ordered_by_publication_time_not_version_or_enumeration",
+    "reason": "Integration-tier acceptance for the heading, completed by bd-ib-j9x. The bound node id is the RELEASE-CLASS case because it is the one that discriminates every ordering the heading forbids: its three-release fixture makes publication order, the forge's own creation-ordered enumeration and semantic version each yield a DIFFERENT verdict, so an implementation reading a version or a list position admits where publication time refuses. Its siblings in the same module carry the heading's other gherkin scenarios -- the publication-window refusal with its complete evidence block, the no-release-tag-ancestor refusal stating the scope its bounded walk searched, the stale-observation-with-failed-refresh refusal, and the one non-renewable 0.254 transition asserted as a PAIR across its deadline instant. Each runs through the REAL pre-dispatch wall, which is the one sequence every dispatch path reaches, so `refused before claim` is observed rather than inferred; the two-target control lives in `tests.livespec_orchestrator_beads_fabro.commands.test_dispatcher_fabro_currency_gate`, which drives the selection-level gate directly."
   },
   {
     "heading": "## Scenario 131 \u2014 The Definition of Done gate admits a coherent item, refuses a malformed one host-side, and rests an incoherent one at needs-human",

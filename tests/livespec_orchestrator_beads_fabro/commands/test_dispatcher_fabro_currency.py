@@ -32,6 +32,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_currency impor
     calendar_days_between,
     fabro_currency_verdict,
     newest_observed_release,
+    releases_by_publication,
 )
 
 _NOW = datetime(2026, 10, 11, 9, 0, tzinfo=timezone.utc)
@@ -94,10 +95,52 @@ def test_an_observation_holding_no_releases_reports_no_newest_release() -> None:
     assert newest_observed_release(observation=_observation(releases=())) is None
 
 
-def test_the_newest_release_is_the_head_of_the_observation() -> None:
+def test_the_newest_release_is_the_newest_published_one_not_the_list_head() -> None:
+    """The head of the list is the forge's CREATION order, which can disagree.
+
+    A release drafted early and published late arrives ahead of releases
+    published after it, so reading the head admitted a base 35 calendar days out
+    of window before the ordering was made explicit.
+    """
+    drafted_early = FabroRelease(tag="v0.400.0", published_at=_NOW - timedelta(days=40))
+
     assert (
-        newest_observed_release(observation=_observation(releases=(_NEWEST, _IN_WINDOW))) == _NEWEST
+        newest_observed_release(observation=_observation(releases=(drafted_early, _NEWEST)))
+        == _NEWEST
     )
+
+
+def test_releases_are_ordered_by_publication_time_and_not_by_semantic_version() -> None:
+    """A prerelease with a LOWER version published later sorts ahead of a stable one.
+
+    Nothing in the ordering reads a release class or a version, which is what
+    makes an official nightly eligible on exactly the same terms as a stable tag.
+    """
+    stable_high = FabroRelease(tag="v0.400.0", published_at=_NOW - timedelta(days=40))
+    nightly_low = FabroRelease(tag="v0.378.0-nightly.0", published_at=_NOW - timedelta(days=1))
+
+    ordered = releases_by_publication(releases=(stable_high, nightly_low))
+
+    assert [release.tag for release in ordered] == ["v0.378.0-nightly.0", "v0.400.0"]
+
+
+def test_releases_published_in_the_same_instant_order_deterministically_by_tag() -> None:
+    """Equally newest, so the tiebreak is for DETERMINISM and not for precedence.
+
+    An unstable sort would make the resolved base depend on the forge's
+    enumeration, reintroducing by the back door the ordering the sort removes.
+    """
+    first = FabroRelease(tag="v0.401.0", published_at=_NOW)
+    second = FabroRelease(tag="v0.400.0", published_at=_NOW)
+
+    assert [release.tag for release in releases_by_publication(releases=(second, first))] == [
+        "v0.401.0",
+        "v0.400.0",
+    ]
+    assert [release.tag for release in releases_by_publication(releases=(first, second))] == [
+        "v0.401.0",
+        "v0.400.0",
+    ]
 
 
 def test_a_base_inside_the_window_is_admitted_and_reports_its_gap() -> None:

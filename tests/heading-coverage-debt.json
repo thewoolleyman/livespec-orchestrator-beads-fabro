@@ -37,13 +37,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
-    "heading": "## Fabro runtime constraints",
-    "work_item": "bd-ib-6tcjfx",
-    "first_seen": "2026-07-14"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "constraints.md",
     "heading": "## Factory sandbox credential constraints",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-20"
@@ -117,13 +110,6 @@
     "heading": "## Dispatch-brief lessons injection",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "contracts.md",
-    "heading": "## Dispatch-time baseline conformance gate",
-    "work_item": "bd-ib-6tcjfx",
-    "first_seen": "2026-06-26"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -271,13 +257,6 @@
     "heading": "## Scenario 128 \u2014 An unrunnable ready item is visible but never advertised for dispatch",
     "work_item": "livespec-n33rwg.10",
     "first_seen": "2026-09-12"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 130 \u2014 Dispatch admits only a current, identifiable Fabro base",
-    "work_item": "bd-ib-6tcjfx",
-    "first_seen": "2026-09-30"
   },
   {
     "spec_root": "SPECIFICATION",

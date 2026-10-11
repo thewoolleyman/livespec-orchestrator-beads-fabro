@@ -628,13 +628,25 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   which is where the seven-calendar-day age test lives) →
   `_dispatcher_fabro_currency_gate` (the selection-level gate the pre-dispatch
   wall calls).
-  SIX PROPERTIES AN EDITOR MUST NOT INVERT. Every arm that could not MEASURE
+  EIGHT PROPERTIES AN EDITOR MUST NOT INVERT. Every arm that could not MEASURE
   fails CLOSED, because a gauge that admitted when blinded turns the refusal
   into a pass and leaves a journal record that reads exactly like a healthy one.
   Publication time is the ONLY ordering evidence — `constraints.md` says so in
   as many words — so nothing here may read a semantic version or a commit
-  timestamp; upstream publishes nightly prereleases whose semver order and
-  publication order routinely disagree. The serving commit is asked of the
+  timestamp, and `releases_by_publication` exists to be the single place that is
+  true rather than a convention each caller re-applies. It is NOT the forge's
+  enumeration order, which is by CREATION: measured on the release-class
+  fixture, reading the list head as newest ADMITTED a base 35 calendar days out
+  of window, because that head was a stable release published five weeks before
+  the nightly that was actually newest. That sort also runs BEFORE the ancestry
+  walk's candidate bound, so the cap cannot truncate by creation order and leave
+  the answer outside the population the refusal then reports on. The one
+  TRANSITION is `transition-admitted` rather than `current` and states the gap
+  it is excusing, because an admitted transition reporting only "admitted" is
+  indistinguishable at every surface from an in-window base — the one
+  description the clause forbids it — and its three literals are RATIFIED, not
+  configured: a deadline an operator could move is the indefinite 0.254 freeze
+  `constraints.md` forbids. The serving commit is asked of the
   TARGET'S OWN SERVER through `FABRO_SERVER`, never of the local client, which
   on this fleet is routinely a different build (the hosts are re-pinned one at
   a time). The ancestry walk is BOUNDED and its refusal STATES THE SCOPE IT
