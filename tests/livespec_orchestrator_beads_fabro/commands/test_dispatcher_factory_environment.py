@@ -16,22 +16,26 @@ client binary already make.
 
 from __future__ import annotations
 
+import argparse
 import importlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._config import resolve_fabro_factory
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import build_plan
 from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
+from livespec_orchestrator_beads_fabro.commands.dispatcher import dispatch_preamble
 
 _COMMANDS_DIR = Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
 _GRADE_MODULE = "livespec_orchestrator_beads_fabro.commands._dispatcher_factory_environment"
 _CANDIDATE_SERVER = "https://hp-xubuntu.perch-rudd.ts.net:32278"
 _CATALOG_ENVIRONMENT = "livespec-ci"
 _WORK_ITEM_ID = "bd-ib-fgre25"
+_EXIT_PRECONDITION_ERROR = 3
 
 
 @dataclass(kw_only=True)
@@ -54,9 +58,17 @@ class _Runner:
         return CommandResult(exit_code=0, stdout="Run: 01LAUNCHED\n", stderr="")
 
 
-def _write_config(*, cwd: Path, factories: dict[str, object]) -> None:
+def _write_config(
+    *,
+    cwd: Path,
+    factories: dict[str, object],
+    default_factory: str | None = None,
+) -> None:
+    dispatcher: dict[str, object] = {"factories": factories}
+    if default_factory is not None:
+        dispatcher["default_factory"] = default_factory
     _ = (cwd / ".livespec.jsonc").write_text(
-        json.dumps({"livespec-orchestrator-beads-fabro": {"dispatcher": {"factories": factories}}}),
+        json.dumps({"livespec-orchestrator-beads-fabro": {"dispatcher": dispatcher}}),
         encoding="utf-8",
     )
 
@@ -160,3 +172,81 @@ def test_the_run_argv_carries_no_environment_when_a_factory_declares_none(
 
     assert "--environment" not in argv
     assert argv[-2:] == ["--server", _CANDIDATE_SERVER]
+
+
+@pytest.mark.parametrize("declared", ["", 7, None, [], {}])
+def test_an_unusable_declared_environment_is_refused_before_claim_naming_the_factory(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    declared: object,
+) -> None:
+    """A declaration naming no usable id refuses the dispatch, and says whose.
+
+    Every unusable shape is parameterized because they have ONE remedy and
+    must not have several messages: an empty string, a number, an explicit
+    null, and the two container shapes a JSONC author can reach by accident.
+
+    The refusal is taken off `dispatch_preamble`, which is the whole claim it
+    has to land before: the preamble runs ahead of admission, so an
+    unobserved fault here admits the item `ready -> active` with an assignee
+    and then places its run in the server's default environment — a failure
+    that reads as the work-item's, in a sandbox with no `mise` on PATH.
+
+    The message must name the FACTORY as well as the key. A dispatch resolves
+    its factory from `default_factory`, `LIVESPEC_FABRO_FACTORY` or a per-item
+    pin, so "some factory declares an unusable environment" does not say which
+    entry of `dispatcher.factories` to edit.
+    """
+    _write_config(
+        cwd=tmp_path,
+        factories={
+            "hp-candidate": {"server": _CANDIDATE_SERVER, "environment": declared},
+            "hp": {"server": _CANDIDATE_SERVER},
+        },
+        default_factory="hp-candidate",
+    )
+    args = argparse.Namespace(fabro_bin=None, janitor=None, journal=None)
+
+    result = dispatch_preamble(args=args, repo=tmp_path)
+
+    refusal = capsys.readouterr().err
+    assert "dispatcher.factories.hp-candidate.environment" in refusal
+    assert result == (None, _EXIT_PRECONDITION_ERROR)
+
+
+def test_a_usable_declared_environment_is_not_refused(tmp_path: Path) -> None:
+    """The positive control for the refusal above, and it is load-bearing.
+
+    A refusal that convicted EVERY declared `environment` would satisfy every
+    unusable case above while making the key impossible to use — and the two
+    are indistinguishable at the only surface that reports either, since both
+    read as "the dispatch was refused naming this factory's environment". The
+    absent arm cannot stand in for this one: it proves the refusal tolerates a
+    factory that declares nothing, not that it admits one that declares well.
+    """
+    _write_config(
+        cwd=tmp_path,
+        factories={
+            "hp-candidate": {"server": _CANDIDATE_SERVER, "environment": _CATALOG_ENVIRONMENT}
+        },
+    )
+    target = resolve_fabro_factory(cwd=tmp_path, factory="hp-candidate")
+    grade = _grade_module()
+
+    assert grade.factory_environment_refusal(factory=target) is None
+    assert grade.factory_declaration_refusal(factory=target) is None
+
+
+def test_a_caller_holding_no_factory_target_has_no_environment_to_refuse() -> None:
+    """No resolved target is an answer, not a fault.
+
+    The needs-attention and standalone reconcile surfaces build their own
+    arguments and never run a dispatch preamble, so they hold no factory. That
+    is the pre-key behaviour — the same reason `factory_bin_refusal` tolerates
+    it — and a refusal there would reject surfaces that dispatch nothing.
+    """
+    grade = _grade_module()
+
+    assert grade.factory_environment_refusal(factory=None) is None
+    assert grade.factory_declaration_refusal(factory=None) is None
