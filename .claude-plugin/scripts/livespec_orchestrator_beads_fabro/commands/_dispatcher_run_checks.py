@@ -10,14 +10,14 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import cast
 
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_factory_bin as factory_bin
 from livespec_orchestrator_beads_fabro.commands._config import (
     FactoryTarget,
     resolve_fabro_factory,
 )
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
-from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import (
-    factory_bin_refusal,
-    resolve_dispatch_fabro_bin,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_environment import (
+    factory_declaration_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_validation import (
     schema_validation_refusal,
@@ -324,25 +324,27 @@ def dispatch_preamble(
     # in one message, so reporting a capability-mirror typo ahead of it would
     # hand an adopter one fault out of a file carrying several.
     #
-    # The factory's declared engine binary is the third, and it is graded HERE
-    # rather than beside the engine-binary preflight below even though both
-    # catch the same file -- a declared client IS the effective one. The
-    # difference is the remedy: the preflight names the GLOBAL knobs, and an
-    # operator sent to fix `dispatcher.fabro_bin` would be editing a key this
-    # dispatch never read. The factory is resolved ahead of the arm so its
-    # declaration can join it, and ahead of the binary resolution below because
+    # The resolved factory ENTRY's own declarations are the third, graded as a
+    # whole rather than key by key so a new optional key lands beside its
+    # siblings instead of in this sequence. The declared engine binary is
+    # graded HERE rather than beside the engine-binary preflight below even
+    # though both catch the same file -- a declared client IS the effective
+    # one. The difference is the remedy: the preflight names the GLOBAL knobs,
+    # and an operator sent to fix `dispatcher.fabro_bin` would be editing a key
+    # this dispatch never read. The factory is resolved ahead of the arm so its
+    # declarations can join it, and ahead of the binary resolution below because
     # which client a dispatch drives is a property of the factory it is routed
     # to.
     args.fabro_factory_target = _resolve_fabro_factory_for(args=args, repo=repo)
     config_refusal = (
         schema_validation_refusal(args=args, repo=repo)
         or sandbox_capabilities_refusal(repo=repo)
-        or factory_bin_refusal(factory=args.fabro_factory_target)
+        or factory_declaration_refusal(factory=args.fabro_factory_target)
     )
     if config_refusal is not None:
         _ = write_stderr(text=config_refusal)
         return None, _EXIT_PRECONDITION_ERROR
-    args.fabro_bin = resolve_dispatch_fabro_bin(
+    args.fabro_bin = factory_bin.resolve_dispatch_fabro_bin(
         args=args, repo=repo, factory=args.fabro_factory_target
     )
     fabro_error = _fabro_preflight_error(fabro_bin=args.fabro_bin)
