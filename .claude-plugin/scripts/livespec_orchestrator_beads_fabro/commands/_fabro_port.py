@@ -99,6 +99,7 @@ class FabroPort:
             cwd=self.cwd,
             fabro_version=self.fabro_version,
             server_url=self.target.server_url,
+            environment=self.target.environment,
             workflow_toml=workflow_toml,
             goal_file=goal_file,
             inputs=inputs,
@@ -317,6 +318,7 @@ def fabro_port_for_plan(*, plan: Any, runner: FabroRunner) -> FabroPort:
         target=FabroTarget(
             server_url=plan.fabro_factory_server,
             dev_token=plan.fabro_factory_dev_token,
+            environment=plan.fabro_factory_environment,
         ),
         runner=runner,
         cwd=plan.repo,

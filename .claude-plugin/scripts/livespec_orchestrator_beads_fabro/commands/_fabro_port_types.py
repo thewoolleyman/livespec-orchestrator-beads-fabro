@@ -56,6 +56,12 @@ class FabroTarget:
 
     server_url: str | None = None
     dev_token: str | None = None
+    # The server-catalog sandbox environment this factory's runs are placed
+    # in. It sits on the TARGET beside the server rather than on the launch
+    # call because it is a property of the factory, so a port can no more
+    # launch into another factory's environment than it can reach another
+    # factory's server. None means this factory names none.
+    environment: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

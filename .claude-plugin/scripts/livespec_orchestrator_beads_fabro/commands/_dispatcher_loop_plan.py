@@ -23,6 +23,9 @@ from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_default_branch import (
     resolve_default_branch,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_environment import (
+    factory_environment_id,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
     livespec_config_text,
 )
@@ -115,6 +118,7 @@ def dispatch_plan_for_item(  # noqa: PLR0913 — kw-only plan resolver; each fie
         fabro_factory_name=factory_target.name,
         fabro_factory_server=factory_target.server,
         fabro_factory_dev_token=factory_target.dev_token,
+        fabro_factory_environment=factory_environment_id(factory=factory_target),
         janitor=janitor,
         janitor_checkout=janitor_checkout_path(repo=repo, work_item_id=item.id),
         config_text=livespec_config_text(repo=repo),
