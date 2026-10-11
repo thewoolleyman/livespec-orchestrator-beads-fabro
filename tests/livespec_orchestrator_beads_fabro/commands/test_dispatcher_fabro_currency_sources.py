@@ -450,3 +450,40 @@ def test_a_resolved_base_leaves_the_subject_with_no_unobservable_detail() -> Non
 
     assert subject.base == newest
     assert subject.unobservable_detail is None
+
+
+def test_a_populated_but_failed_reading_resolves_no_base_and_spends_no_comparison() -> None:
+    """A STALE record is handed back populated, so the walk would succeed on it.
+
+    Read off the CALL COUNT as well as the base, because "no base was resolved"
+    and "no ancestry was asked" are different claims: a walk that ran and found
+    nothing would satisfy the first while still having treated the expired record
+    as a candidate set.
+    """
+    newest = _release(tag="v0.378.0-nightly.0", days_ago=10)
+    runner = _Runner(
+        results={
+            (_FABRO_BIN, "version"): CommandResult(
+                exit_code=0, stdout=f"Server: ({_SERVER_COMMIT} x)\n", stderr=""
+            ),
+            tuple(compare_argv(base=newest.tag, head=_SERVER_COMMIT)): CommandResult(
+                exit_code=0, stdout="ahead\n", stderr=""
+            ),
+        }
+    )
+
+    subject = fabro_currency_subject(
+        factory=_factory(),
+        fabro_bin=_FABRO_BIN,
+        runner=runner,
+        cwd=_REPO,
+        reading=ObservationReading(
+            observation=FabroReleaseObservation(releases=(newest,), observed_at=_NOW),
+            failure="the cached observation is 9 calendar days old",
+        ),
+    )
+
+    assert subject.base is None
+    assert subject.observation is not None
+    assert subject.observation_failure == "the cached observation is 9 calendar days old"
+    assert tuple(compare_argv(base=newest.tag, head=_SERVER_COMMIT)) not in runner.calls

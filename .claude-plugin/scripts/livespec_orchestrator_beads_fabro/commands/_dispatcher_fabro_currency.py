@@ -38,6 +38,7 @@ __all__: list[str] = [
     "CONDITION_NO_ANCESTOR",
     "CONDITION_OBSERVATION_UNOBSERVABLE",
     "CONDITION_OUT_OF_WINDOW",
+    "CONDITION_STALE_OBSERVATION",
     "CONDITION_UNIDENTIFIED_BUILD",
     "CURRENCY_WINDOW_DAYS",
     "FABRO_UPSTREAM_REPO",
@@ -72,6 +73,12 @@ CONDITION_OUT_OF_WINDOW = "base-out-of-window"
 CONDITION_OBSERVATION_UNOBSERVABLE = "release-observation-unobservable"
 CONDITION_UNIDENTIFIED_BUILD = "serving-build-unidentified"
 CONDITION_NO_ANCESTOR = "no-release-tag-ancestor"
+
+# A reading that EXISTS and is past its bound, separate from one that could not
+# be taken at all. Both refuse; the remedies differ, because a stale record says
+# the refresh path is broken while evidence exists, and an absent one says no
+# evidence has ever been taken on this host.
+CONDITION_STALE_OBSERVATION = "release-observation-stale"
 
 _UNKNOWN = "unknown"
 
@@ -120,6 +127,14 @@ class FabroCurrencySubject:
     base: FabroRelease | None
     observation: FabroReleaseObservation | None
     unobservable_detail: str | None
+    # Why the release reading could not be USED, when it could not. Separate
+    # from `unobservable_detail` — which carries the PER-TARGET gather fault —
+    # because an observation can be PRESENT and unusable at the same time, and
+    # that pair is the one state the two-field shape exists to represent: a
+    # record the refusal must name while never treating it as evidence. Folding
+    # them into one field loses exactly that distinction, which is the
+    # fail-open this field closed.
+    observation_failure: str | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -163,11 +178,29 @@ def fabro_currency_verdict(*, subject: FabroCurrencySubject, now: datetime) -> F
     admission gate must never fail in.
     """
     newest = _newest(observation=subject.observation)
-    # THREE ARMS SPELT OUT rather than one computed condition, because each of
-    # the three also NARROWS a value the arithmetic below needs. A single
-    # condition-returning helper leaves the caller holding optionals it has to
-    # re-assert, and an `assert` in product code is both banned here and a worse
-    # record of the invariant than the branch that established it.
+    # THE UNUSABLE-READING ARM RUNS FIRST, AND IT IS THE FAIL-CLOSED ONE. A
+    # stale observation still carries releases, a newest entry and plausible
+    # ancestry, so every arm below it would succeed on expired evidence and
+    # report `current` — measured, before this arm existed, as an admitted
+    # dispatch on a nine-day-old reading. The two conditions it can raise are
+    # told apart by whether a record EXISTS to be named.
+    if subject.observation_failure is not None:
+        return _refusal(
+            subject=subject,
+            newest=newest,
+            now=now,
+            condition=(
+                CONDITION_STALE_OBSERVATION
+                if subject.observation is not None
+                else CONDITION_OBSERVATION_UNOBSERVABLE
+            ),
+            clause=subject.observation_failure,
+        )
+    # THREE FURTHER ARMS SPELT OUT rather than one computed condition, because
+    # each of the three also NARROWS a value the arithmetic below needs. A
+    # single condition-returning helper leaves the caller holding optionals it
+    # has to re-assert, and an `assert` in product code is both banned here and
+    # a worse record of the invariant than the branch that established it.
     if newest is None:
         return _unmeasured(
             subject=subject, newest=None, now=now, condition=CONDITION_OBSERVATION_UNOBSERVABLE
